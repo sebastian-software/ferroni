@@ -492,6 +492,11 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
     let body = qn.body.as_ref().unwrap();
 
     if qn.upper == 0 {
+        if qn.include_referred != 0 {
+            // {0} with CALLED group: JUMP + body
+            let tlen = compile_length_tree(body, reg, env);
+            return OPSIZE_JUMP + tlen;
+        }
         // {0} matches nothing
         if is_anychar_infinite_greedy(qn) {
             return SIZE_INC;
@@ -555,6 +560,12 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
     let body = qn.body.as_ref().unwrap();
 
     if qn.upper == 0 {
+        if qn.include_referred != 0 {
+            // {0} with CALLED group: JUMP over body, then compile body
+            let tlen = compile_length_tree(body, reg, env);
+            add_op(reg, OpCode::Jump, OperationPayload::Jump { addr: tlen + SIZE_INC });
+            return compile_tree(body, reg, env);
+        }
         return 0;
     }
 
@@ -2235,6 +2246,73 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
     }
 }
 
+/// Check if a node subtree contains any CALLED memory group.
+/// Returns true if a ND_ST_CALLED bag node is found.
+/// Mirrors C's recursive_call_check_trav().
+fn recursive_call_check(node: &mut Node) -> bool {
+    // Check CALLED status before borrowing inner mutably
+    let is_called_mem = if let NodeInner::Bag(ref bn) = node.inner {
+        bn.bag_type == BagType::Memory && node.has_status(ND_ST_CALLED)
+    } else {
+        false
+    };
+
+    match &mut node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            if recursive_call_check(&mut cons.car) {
+                return true;
+            }
+            if let Some(ref mut cdr) = cons.cdr {
+                recursive_call_check(cdr)
+            } else {
+                false
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(ref mut body) = qn.body {
+                let found = recursive_call_check(body);
+                if qn.upper == 0 && found {
+                    qn.include_referred = 1;
+                }
+                found
+            } else {
+                false
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if is_called_mem {
+                return true;
+            }
+            if let Some(ref mut body) = bn.body {
+                if recursive_call_check(body) {
+                    return true;
+                }
+            }
+            if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                if let Some(ref mut then_n) = then_node {
+                    if recursive_call_check(then_n) {
+                        return true;
+                    }
+                }
+                if let Some(ref mut else_n) = else_node {
+                    if recursive_call_check(else_n) {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(ref mut body) = an.body {
+                recursive_call_check(body)
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
 /// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
 /// Mirrors C's tune_tree() from regcomp.c.
 pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
@@ -2739,6 +2817,8 @@ pub fn onig_compile(
         if r != 0 {
             return r;
         }
+        // Detect {0} quantifiers containing CALLED groups
+        recursive_call_check(&mut root);
     }
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)

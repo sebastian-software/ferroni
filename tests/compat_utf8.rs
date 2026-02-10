@@ -6043,7 +6043,6 @@ fn relative_positive_backref() {
 }
 
 #[test]
-#[ignore] // {0} subroutine pattern not yet supported (body not compiled)
 fn relative_positive_call() {
     // C line 756: \g<+2>(abc)(ABC){0} matches "ABCabc" -> 0-6
     x2(b"\\g<+2>(abc)(ABC){0}", b"ABCabc", 0, 6);
@@ -6205,7 +6204,6 @@ fn cap_a_or_b_lazyq_opt_z() {
 }
 
 #[test]
-#[ignore] // {0} subroutine pattern not yet supported (body not compiled)
 fn cap_named_subroutine_zero() {
     // C line 805: ((?<x>abc){0}a\g<x>d)+ matches "aabcd" -> 0-5
     x2(b"((?<x>abc){0}a\\g<x>d)+", b"aabcd", 0, 5);
