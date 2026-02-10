@@ -3565,7 +3565,7 @@ fn prs_exp(
                 if r < 0 {
                     return Err(r);
                 }
-                return check_quantifier(node, tok, p, end, pattern, env, 0, parse_depth);
+                return check_quantifier(node, tok, p, end, pattern, env, 1, parse_depth);
             } else if bag_r == 2 {
                 // Option-only (?i) - no body, no quantifier
                 let r = fetch_token(tok, p, end, pattern, env);
@@ -3776,8 +3776,59 @@ fn check_quantifier(
             return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
         }
 
+        // Split multi-character string: quantifier applies only to last encoded character.
+        // e.g., "ba*" should be parsed as "b" + "a*", not "(ba)*".
+        // Skip when node came from a group body (group != 0), e.g., (?:ab)* should not split.
+        let split_info = if group == 0 {
+            if let NodeInner::String(ref sn) = node.inner {
+                let s = &sn.s;
+                if s.len() > 0 {
+                    if let Some(pos) = onigenc_get_prev_char_head(env.enc, 0, s.len(), s) {
+                        if pos > 0 {
+                            Some((pos, sn.flag, node.status))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let (prefix_node, target_node) = if let Some((split_pos, flag, status)) = split_info {
+            // Clone bytes before splitting (borrow checker)
+            let bytes = if let NodeInner::String(ref sn) = node.inner {
+                sn.s.clone()
+            } else {
+                unreachable!()
+            };
+
+            let mut prefix = node_new_str(&bytes[..split_pos]);
+            if let NodeInner::String(ref mut psn) = prefix.inner {
+                psn.flag = flag;
+            }
+            prefix.status = status;
+
+            let mut last_char = node_new_str(&bytes[split_pos..]);
+            if let NodeInner::String(ref mut lsn) = last_char.inner {
+                lsn.flag = flag;
+            }
+            last_char.status = status;
+
+            (Some(prefix), last_char)
+        } else {
+            (None, node)
+        };
+
         let mut qn = node_new_quantifier(tok.repeat_lower, tok.repeat_upper, tok.repeat_greedy);
-        qn.set_body(Some(node));
+        qn.set_body(Some(target_node));
 
         if tok.repeat_possessive {
             let mut en = node_new_bag(BagType::StopBacktrack);
@@ -3790,6 +3841,14 @@ fn check_quantifier(
         if r < 0 {
             return Err(r);
         }
+
+        if let Some(prefix) = prefix_node {
+            // Return List(prefix, quantified_last_char)
+            let (quant_node, r) = check_quantifier(qn, tok, p, end, pattern, env, 0, depth)?;
+            let result = node_new_list(prefix, Some(node_new_list(quant_node, None)));
+            return Ok((result, r));
+        }
+
         // Recursively check for stacked quantifiers
         return check_quantifier(qn, tok, p, end, pattern, env, 0, depth);
     }
