@@ -729,7 +729,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
 // ============================================================================
 
 /// Calculate bytecode length for a bag node.
-fn compile_length_bag_node(bag: &BagNode, reg: &RegexType, env: &ParseEnv) -> i32 {
+fn compile_length_bag_node(bag: &BagNode, node_status: u32, reg: &RegexType, env: &ParseEnv) -> i32 {
     let body = bag.body.as_ref();
 
     match bag.bag_type {
@@ -742,8 +742,12 @@ fn compile_length_bag_node(bag: &BagNode, reg: &RegexType, env: &ParseEnv) -> i3
             if body_len < 0 {
                 return body_len;
             }
-            // MEM_START + body + MEM_END
-            OPSIZE_MEM_START + body_len + OPSIZE_MEM_END
+            let mut len = OPSIZE_MEM_START + body_len + OPSIZE_MEM_END;
+            if (node_status & ND_ST_CALLED) != 0 {
+                // Called group: CALL + JUMP + (MEM_START + body + MEM_END + RETURN)
+                len += OPSIZE_CALL + OPSIZE_JUMP + OPSIZE_RETURN;
+            }
+            len
         }
         BagType::StopBacktrack => {
             let body_len = if let Some(b) = body {
@@ -803,13 +807,60 @@ fn compile_length_bag_node(bag: &BagNode, reg: &RegexType, env: &ParseEnv) -> i3
 }
 
 /// Compile a bag memory (capture group) node.
-fn compile_bag_memory_node(bag: &BagNode, reg: &mut RegexType, env: &ParseEnv) -> i32 {
-    let (regnum, _called_addr, _entry_count, _called_state) = match &bag.bag_data {
-        BagData::Memory { regnum, called_addr, entry_count, called_state } => {
-            (*regnum, *called_addr, *entry_count, *called_state)
-        }
+fn compile_bag_memory_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &ParseEnv) -> i32 {
+    let regnum = match &bag.bag_data {
+        BagData::Memory { regnum, .. } => *regnum,
         _ => return ONIGERR_TYPE_BUG as i32,
     };
+
+    let is_called = (node_status & ND_ST_CALLED) != 0;
+
+    if is_called {
+        // Called group: emit CALL + JUMP wrapper
+        // Layout: CALL(entry) + JUMP(past_return) + [entry: MEM_START + body + MEM_END + RETURN]
+        let body_len = if let Some(body) = &bag.body {
+            compile_length_tree(body, reg, env)
+        } else {
+            0
+        };
+        if body_len < 0 { return body_len; }
+
+        // Total length of the callable block: MEM_START + body + MEM_END + RETURN
+        let callable_len = OPSIZE_MEM_START + body_len + OPSIZE_MEM_END + OPSIZE_RETURN;
+
+        // Emit CALL pointing to entry (after CALL + JUMP)
+        let call_idx = reg.ops.len();
+        let entry_addr = (call_idx + 2) as i32; // skip CALL and JUMP
+        add_op(reg, OpCode::Call, OperationPayload::Call { addr: entry_addr });
+
+        // Store the called_addr on the BagData for external call resolution
+        // We use the entry_addr as the target for \g<> references
+        // Store it in reg for later fix_unset_addr_list
+        // Actually, we store it differently in Rust - we record the entry address
+        // and external OP_CALL instructions will reference it directly.
+
+        // Emit JUMP to skip over the callable block
+        add_op(reg, OpCode::Jump, OperationPayload::Jump {
+            addr: callable_len + SIZE_INC,
+        });
+
+        // Record the called_addr for this group
+        // This is the address that external \g<> calls will jump to
+        let called_addr = reg.ops.len() as i32;
+
+        // Store it so compile_tree can find it later for Call nodes
+        if regnum > 0 && (regnum as usize) < reg.repeat_range.len() + 100 {
+            // Store called_addr in a way that can be retrieved
+            // We'll use a simple approach: store in a temporary map
+        }
+        // We need a way to store called_addr for the call patching.
+        // Let's store it in the BagData. But BagData is immutable here.
+        // Alternative: store in a Vec on RegexType. Let's add called_addrs.
+        if reg.called_addrs.len() <= regnum as usize {
+            reg.called_addrs.resize(regnum as usize + 1, -1);
+        }
+        reg.called_addrs[regnum as usize] = called_addr;
+    }
 
     // Determine if we need push variants
     let need_push = mem_status_at(reg.push_mem_start, regnum as usize);
@@ -834,14 +885,18 @@ fn compile_bag_memory_node(bag: &BagNode, reg: &mut RegexType, env: &ParseEnv) -
         add_op(reg, OpCode::MemEnd, OperationPayload::MemoryEnd { num: regnum });
     }
 
+    if is_called {
+        add_op(reg, OpCode::Return, OperationPayload::Return);
+    }
+
     0
 }
 
 /// Compile a bag node to bytecode.
-fn compile_bag_node(bag: &BagNode, reg: &mut RegexType, env: &ParseEnv) -> i32 {
+fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &ParseEnv) -> i32 {
     match bag.bag_type {
         BagType::Memory => {
-            compile_bag_memory_node(bag, reg, env)
+            compile_bag_memory_node(bag, node_status, reg, env)
         }
         BagType::StopBacktrack => {
             let id = reg.num_call; // use call count as mark ID
@@ -1335,7 +1390,7 @@ pub fn compile_length_tree(node: &Node, reg: &RegexType, env: &ParseEnv) -> i32 
         }
 
         NodeInner::Bag(bag) => {
-            compile_length_bag_node(bag, reg, env)
+            compile_length_bag_node(bag, node.status, reg, env)
         }
 
         NodeInner::Anchor(an) => {
@@ -1526,7 +1581,7 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
         }
 
         NodeInner::Bag(bag) => {
-            compile_bag_node(bag, reg, env)
+            compile_bag_node(bag, node.status, reg, env)
         }
 
         NodeInner::Anchor(an) => {
@@ -1538,9 +1593,20 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
         }
 
         NodeInner::Call(call) => {
-            add_op(reg, OpCode::Call, OperationPayload::Call {
-                addr: call.called_gnum, // Will be resolved to actual address later
-            });
+            // Look up the called_addr for this group
+            let gnum = call.called_gnum as usize;
+            let addr = if gnum < reg.called_addrs.len() && reg.called_addrs[gnum] >= 0 {
+                reg.called_addrs[gnum]
+            } else {
+                0 // Will be patched later if not yet compiled
+            };
+            add_op(reg, OpCode::Call, OperationPayload::Call { addr });
+            // Record for later patching if the group hasn't been compiled yet
+            if gnum >= reg.called_addrs.len() || reg.called_addrs[gnum] < 0 {
+                // Store the index of this OP_CALL for patching
+                let call_idx = reg.ops.len() - 1;
+                reg.unset_call_addrs.push((call_idx, gnum as i32));
+            }
             0
         }
     }
@@ -2087,6 +2153,88 @@ fn tune_look_behind(node: &mut Node, enc: OnigEncoding) -> i32 {
     }
 }
 
+/// Resolve all \g<name>/\g<num> call references in the tree.
+/// Sets called_gnum on Call nodes and marks target groups as CALLED.
+fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut ParseEnv) -> i32 {
+    match &mut node.inner {
+        NodeInner::Call(call) => {
+            // Resolve the call target
+            if call.by_number {
+                let gnum = call.called_gnum;
+                if gnum > env.num_mem || gnum < 1 {
+                    return ONIGERR_UNDEFINED_GROUP_REFERENCE;
+                }
+                // Mark the target group as CALLED
+                let mem_node = env.mem_env(gnum as usize).mem_node;
+                if !mem_node.is_null() {
+                    unsafe { (*mem_node).status_add(ND_ST_CALLED); }
+                }
+            } else {
+                // Named call - look up name
+                let name = call.name.clone();
+                if let Some(ref nt) = reg.name_table {
+                    if let Some(nums) = nt.name_to_group_numbers(&name) {
+                        if nums.len() != 1 {
+                            return ONIGERR_MULTIPLEX_DEFINITION_NAME_CALL;
+                        }
+                        call.called_gnum = nums[0];
+                        let mem_node = env.mem_env(nums[0] as usize).mem_node;
+                        if !mem_node.is_null() {
+                            unsafe { (*mem_node).status_add(ND_ST_CALLED); }
+                        }
+                    } else {
+                        return ONIGERR_UNDEFINED_NAME_REFERENCE;
+                    }
+                } else {
+                    return ONIGERR_UNDEFINED_NAME_REFERENCE;
+                }
+            }
+            0
+        }
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            let r = resolve_call_references(&mut cons.car, reg, env);
+            if r != 0 { return r; }
+            if let Some(ref mut cdr) = cons.cdr {
+                resolve_call_references(cdr, reg, env)
+            } else {
+                0
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(ref mut body) = qn.body {
+                resolve_call_references(body, reg, env)
+            } else {
+                0
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(ref mut body) = bn.body {
+                let r = resolve_call_references(body, reg, env);
+                if r != 0 { return r; }
+            }
+            if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                if let Some(ref mut then_n) = then_node {
+                    let r = resolve_call_references(then_n, reg, env);
+                    if r != 0 { return r; }
+                }
+                if let Some(ref mut else_n) = else_node {
+                    let r = resolve_call_references(else_n, reg, env);
+                    if r != 0 { return r; }
+                }
+            }
+            0
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(ref mut body) = an.body {
+                resolve_call_references(body, reg, env)
+            } else {
+                0
+            }
+        }
+        _ => 0,
+    }
+}
+
 /// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
 /// Mirrors C's tune_tree() from regcomp.c.
 pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
@@ -2585,6 +2733,14 @@ pub fn onig_compile(
         return r;
     }
 
+    // Resolve subroutine call references before tune_tree
+    if env.num_call > 0 {
+        let r = resolve_call_references(&mut root, reg, &mut env);
+        if r != 0 {
+            return r;
+        }
+    }
+
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
     let r = tune_tree(&mut root, reg, 0, &mut env);
     if r != 0 {
@@ -2607,6 +2763,17 @@ pub fn onig_compile(
     let r = compile_tree(&root, reg, &env);
     if r != 0 {
         return r;
+    }
+
+    // Patch unresolved subroutine call addresses
+    if !reg.unset_call_addrs.is_empty() {
+        for &(op_idx, gnum) in &reg.unset_call_addrs.clone() {
+            let gnum = gnum as usize;
+            if gnum < reg.called_addrs.len() && reg.called_addrs[gnum] >= 0 {
+                let addr = reg.called_addrs[gnum];
+                reg.ops[op_idx].payload = OperationPayload::Call { addr };
+            }
+        }
     }
 
     // Add OP_END
@@ -2689,6 +2856,8 @@ pub fn onig_new(
         map_offset: 0,
         dist_min: 0,
         dist_max: 0,
+        called_addrs: vec![],
+        unset_call_addrs: vec![],
         extp: None,
     };
 
@@ -2739,7 +2908,9 @@ mod tests {
             map_offset: 0,
             dist_min: 0,
             dist_max: 0,
-            extp: None,
+            called_addrs: vec![],
+        unset_call_addrs: vec![],
+        extp: None,
         };
         let env = ParseEnv {
             options: 0,

@@ -2089,9 +2089,41 @@ fn fetch_token(
                     }
                 }
             }
-            // 'g' => \g<name> subexp calls are tokenized but need Call node
-            //        handling in prs_exp + compiler/executor recursion support.
-            //        Deferred until recursion is implemented.
+            'g' => {
+                if !p_end(*p, end) && is_syntax_op2(syn, ONIG_SYN_OP2_ESC_G_SUBEXP_CALL) {
+                    let save = *p;
+                    let c2 = pfetch_s(p, pattern, end, enc);
+                    if c2 == '<' as u32 || c2 == '\'' as u32 {
+                        match fetch_name(c2, p, end, pattern, env, true) {
+                            Ok((name_start, name_end, back_num, num_type, _exist_level, _level)) => {
+                                if num_type != IS_NOT_NUM {
+                                    let mut gnum = back_num;
+                                    if num_type == IS_REL_NUM {
+                                        gnum = backref_rel_to_abs(gnum, env);
+                                        if gnum < 0 {
+                                            return ONIGERR_UNDEFINED_GROUP_REFERENCE;
+                                        }
+                                    }
+                                    tok.token_type = TokenType::Call;
+                                    tok.call_by_number = true;
+                                    tok.call_gnum = gnum;
+                                    tok.call_name_start = name_start;
+                                    tok.call_name_end = name_end;
+                                } else {
+                                    tok.token_type = TokenType::Call;
+                                    tok.call_by_number = false;
+                                    tok.call_gnum = 0;
+                                    tok.call_name_start = name_start;
+                                    tok.call_name_end = name_end;
+                                }
+                            }
+                            Err(e) => return e,
+                        }
+                    } else {
+                        *p = save; // PUNFETCH
+                    }
+                }
+            }
             'R' => {
                 if !is_syntax_op2(syn, ONIG_SYN_OP2_ESC_CAPITAL_R_GENERAL_NEWLINE) {
                     return tok.token_type as i32;
@@ -4188,6 +4220,12 @@ fn prs_exp(
             env.backref_num += 1;
             np
         }
+        TokenType::Call => {
+            let name = &pattern[tok.call_name_start..tok.call_name_end];
+            let np = node_new_call(name, tok.call_gnum, tok.call_by_number);
+            env.num_call += 1;
+            np
+        }
         TokenType::Keep => {
             let id = env.id_entry();
             env.keep_num += 1;
@@ -4596,6 +4634,8 @@ mod tests {
             map_offset: 0,
             dist_min: 0,
             dist_max: 0,
+            called_addrs: vec![],
+            unset_call_addrs: vec![],
             extp: None,
         };
         let env = ParseEnv {

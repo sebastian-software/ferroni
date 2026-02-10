@@ -549,6 +549,10 @@ pub struct RegexType {
     pub dist_min: OnigLen,
     pub dist_max: OnigLen,
 
+    // subroutine call support
+    pub called_addrs: Vec<i32>,  // group_num -> called entry address
+    pub unset_call_addrs: Vec<(usize, i32)>,  // (op_index, group_num) for patching
+
     // extension (callouts)
     pub extp: Option<RegexExt>,
 }

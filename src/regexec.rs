@@ -1901,16 +1901,27 @@ fn match_at(
             }
 
             OpCode::Return => {
-                // Search backwards for CallFrame
+                // Search backwards for CallFrame, skipping nested Return markers.
+                // Each STK_RETURN increments the level; each STK_CALL_FRAME decrements.
+                let mut level = 0i32;
                 let mut ret_addr = None;
                 for i in (0..stack.len()).rev() {
-                    if let StackEntry::CallFrame { ret_addr: ra } = &stack[i] {
-                        ret_addr = Some(*ra);
-                        stack.truncate(i); // Remove call frame and everything above
-                        break;
+                    match &stack[i] {
+                        StackEntry::CallFrame { ret_addr: ra } => {
+                            if level == 0 {
+                                ret_addr = Some(*ra);
+                                break;
+                            }
+                            level -= 1;
+                        }
+                        StackEntry::Return => {
+                            level += 1;
+                        }
+                        _ => {}
                     }
                 }
                 if let Some(ra) = ret_addr {
+                    stack.push(StackEntry::Return);
                     p = ra;
                 } else {
                     goto_fail = true;
@@ -2100,6 +2111,8 @@ mod tests {
             map_offset: 0,
             dist_min: 0,
             dist_max: 0,
+            called_addrs: vec![],
+            unset_call_addrs: vec![],
             extp: None,
         };
         let env = ParseEnv {

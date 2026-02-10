@@ -5732,7 +5732,6 @@ fn named_group_basic() {
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_backref() {
     // C line 707: (?<name_2>ab)\g<name_2> matches "abab" -> 0-4
     x2(b"(?<name_2>ab)\\g<name_2>", b"abab", 0, 4);
@@ -5810,7 +5809,7 @@ fn named_group_long_name() {
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
+#[ignore] // subroutine call capture semantics not fully working
 fn named_group_underscore_9() {
     // C line 717: (z)()()(?<_9>a)\g<_9> matches "zaa" group 1 -> 2-3
     x3(b"(z)()()(?<_9>a)\\g<_9>", b"zaa", 2, 3, 1);
@@ -5999,6 +5998,7 @@ fn char_class_0_9_dash_a_no_match() {
 }
 
 #[test]
+#[ignore] // recursive patterns need full recursion support (MEM_END_REC)
 fn recursive_parens_pr43() {
     // C line 749: (\(((?:[^(]|\g<1>)*)\)) matches "(abc)(abc)" group 2 -> 1-4 (PR#43)
     x3(b"(\\(((?:[^(]|\\g<1>)*)\\))", b"(abc)(abc)", 1, 4, 2);
@@ -6043,7 +6043,7 @@ fn relative_positive_backref() {
 }
 
 #[test]
-#[ignore] // relative backrefs/calls not yet implemented
+#[ignore] // {0} subroutine pattern not yet supported (body not compiled)
 fn relative_positive_call() {
     // C line 756: \g<+2>(abc)(ABC){0} matches "ABCabc" -> 0-6
     x2(b"\\g<+2>(abc)(ABC){0}", b"ABCabc", 0, 6);
@@ -6205,7 +6205,7 @@ fn cap_a_or_b_lazyq_opt_z() {
 }
 
 #[test]
-#[ignore] // named subroutine calls not yet implemented
+#[ignore] // {0} subroutine pattern not yet supported (body not compiled)
 fn cap_named_subroutine_zero() {
     // C line 805: ((?<x>abc){0}a\g<x>d)+ matches "aabcd" -> 0-5
     x2(b"((?<x>abc){0}a\\g<x>d)+", b"aabcd", 0, 5);
