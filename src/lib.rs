@@ -13,3 +13,4 @@ pub mod regsyntax;
 pub mod regparse_types;
 pub mod unicode;
 pub mod encodings;
+pub mod regparse;

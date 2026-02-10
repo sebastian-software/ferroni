@@ -534,7 +534,7 @@ pub struct RegexType {
     pub options: OnigOptionType,
     pub syntax: *const OnigSyntaxType,
     pub case_fold_flag: OnigCaseFoldType,
-    pub name_table: Option<HashMap<Vec<u8>, Vec<i32>>>,
+    pub name_table: Option<crate::regparse_types::NameTable>,
 
     // optimization
     pub optimize: OptimizeType,

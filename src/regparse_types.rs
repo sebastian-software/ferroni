@@ -3,6 +3,8 @@
 
 #![allow(non_upper_case_globals)]
 
+use std::collections::HashMap;
+
 use crate::oniguruma::*;
 use crate::regenc::OnigEncoding;
 use crate::regint::*;
@@ -601,41 +603,41 @@ pub enum TokenType {
 }
 
 // === PToken (Parser Token) ===
+// Flat struct matching C union approach: fields are only valid when token_type matches.
+// This avoids needing to destructure an enum on every access (the C freely writes to
+// different union members as it determines the token type).
 
 pub struct PToken {
     pub token_type: TokenType,
     pub escaped: bool,
     pub code_point_continue: bool,
     pub base_num: i32,
-    pub backp: usize, // backup position for PUNFETCH
-    pub u: TokenData,
-}
-
-pub enum TokenData {
-    None,
-    Code(OnigCodePoint),
-    Anchor(i32),
-    Repeat {
-        lower: i32,
-        upper: i32,
-        greedy: bool,
-        possessive: bool,
-    },
-    Backref {
-        num: i32,
-        refs: Vec<i32>,
-        by_name: bool,
-        level: i32,
-    },
-    Call {
-        name_start: usize,
-        name_end: usize,
-        gnum: i32,
-    },
-    Prop {
-        ctype: i32,
-        not: bool,
-    },
+    pub backp: usize,
+    // Union field: code / byte (valid for TK_CHAR, TK_CODE_POINT, TK_CRUDE_BYTE)
+    pub code: OnigCodePoint,
+    // Union field: anchor / subtype (valid for TK_ANCHOR)
+    pub anchor: i32,
+    // Union field: repeat (valid for TK_REPEAT, TK_INTERVAL)
+    pub repeat_lower: i32,
+    pub repeat_upper: i32,
+    pub repeat_greedy: bool,
+    pub repeat_possessive: bool,
+    // Union field: backref (valid for TK_BACKREF)
+    pub backref_num: i32,
+    pub backref_ref1: i32,
+    pub backref_refs: Vec<i32>,
+    pub backref_by_name: bool,
+    pub backref_exist_level: bool,
+    pub backref_level: i32,
+    // Union field: call (valid for TK_CALL)
+    pub call_name_start: usize,
+    pub call_name_end: usize,
+    pub call_gnum: i32,
+    pub call_by_number: bool,
+    // Union field: prop (valid for TK_CHAR_TYPE, TK_CHAR_PROPERTY)
+    pub prop_ctype: i32,
+    pub prop_not: bool,
+    pub prop_braces: bool,
 }
 
 impl PToken {
@@ -646,17 +648,30 @@ impl PToken {
             code_point_continue: false,
             base_num: 0,
             backp: 0,
-            u: TokenData::None,
+            code: 0,
+            anchor: 0,
+            repeat_lower: 0,
+            repeat_upper: 0,
+            repeat_greedy: false,
+            repeat_possessive: false,
+            backref_num: 0,
+            backref_ref1: 0,
+            backref_refs: Vec::new(),
+            backref_by_name: false,
+            backref_exist_level: false,
+            backref_level: 0,
+            call_name_start: 0,
+            call_name_end: 0,
+            call_gnum: 0,
+            call_by_number: false,
+            prop_ctype: 0,
+            prop_not: false,
+            prop_braces: false,
         }
     }
 
     pub fn init(&mut self) {
-        self.token_type = TokenType::Eot;
-        self.escaped = false;
         self.code_point_continue = false;
-        self.base_num = 0;
-        self.backp = 0;
-        self.u = TokenData::None;
     }
 }
 
@@ -1081,6 +1096,76 @@ pub fn node_str_cat_codepoint(
         return len;
     }
     node_str_cat(node, &buf[..len as usize])
+}
+
+// === Name Table (port of C's NameEntry + hash table) ===
+
+pub struct NameEntry {
+    pub name: Vec<u8>,
+    pub back_num: i32,
+    pub back_refs: Vec<i32>,
+}
+
+pub struct NameTable {
+    pub entries: HashMap<Vec<u8>, NameEntry>,
+}
+
+impl NameTable {
+    pub fn new() -> Self {
+        NameTable {
+            entries: HashMap::new(),
+        }
+    }
+
+    pub fn find(&self, name: &[u8]) -> Option<&NameEntry> {
+        self.entries.get(name)
+    }
+
+    pub fn find_mut(&mut self, name: &[u8]) -> Option<&mut NameEntry> {
+        self.entries.get_mut(name)
+    }
+
+    pub fn add(
+        &mut self,
+        name: &[u8],
+        backref: i32,
+        allow_multiplex: bool,
+    ) -> Result<(), i32> {
+        if name.is_empty() {
+            return Err(ONIGERR_EMPTY_GROUP_NAME);
+        }
+
+        if let Some(e) = self.entries.get_mut(name) {
+            if e.back_num >= 1 && !allow_multiplex {
+                return Err(ONIGERR_MULTIPLEX_DEFINED_NAME);
+            }
+            e.back_num += 1;
+            e.back_refs.push(backref);
+            Ok(())
+        } else {
+            self.entries.insert(
+                name.to_vec(),
+                NameEntry {
+                    name: name.to_vec(),
+                    back_num: 1,
+                    back_refs: vec![backref],
+                },
+            );
+            Ok(())
+        }
+    }
+
+    pub fn num_entries(&self) -> i32 {
+        self.entries.len() as i32
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    pub fn name_to_group_numbers(&self, name: &[u8]) -> Option<&[i32]> {
+        self.entries.get(name).map(|e| e.back_refs.as_slice())
+    }
 }
 
 // === Reduce Quantifier Type Table ===
