@@ -5695,7 +5695,6 @@ fn lookbehind_a_or_caret_cap_or_b_start() {
 }
 
 #[test]
-#[ignore] // negative lookbehind not yet fully implemented
 fn neg_lookbehind_basic() {
     // C line 702: (?<!a)b matches "cb" -> 1-2
     x2(b"(?<!a)b", b"cb", 1, 2);
@@ -5708,7 +5707,6 @@ fn neg_lookbehind_basic_no_match() {
 }
 
 #[test]
-#[ignore] // negative lookbehind not yet fully implemented
 fn neg_lookbehind_alt() {
     // C line 704: (?<!a|bc)b matches "bbb" -> 0-1
     x2(b"(?<!a|bc)b", b"bbb", 0, 1);
@@ -5739,7 +5737,6 @@ fn neg_lookbehind_a_or_noncap_caret_or_b_no_match() {
 }
 
 #[test]
-#[ignore] // negative lookbehind not yet fully implemented
 fn neg_lookbehind_a_or_noncap_caret_or_b_match() {
     // C line 700: (?<!a|(?:^)|b)c matches " cbc" -> 1-2
     x2(b"(?<!a|(?:^)|b)c", b" cbc", 1, 2);
@@ -6275,7 +6272,6 @@ fn casefold_group_d_plus() {
 }
 
 #[test]
-#[ignore] // negative lookbehind not yet fully implemented
 fn neg_lookbehind_def_coverage() {
     // C line 808: ((?<!abc)def)+ matches "bcdef" -> 2-5
     x2(b"((?<!abc)def)+", b"bcdef", 2, 5);

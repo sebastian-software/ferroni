@@ -916,8 +916,8 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
         if body_len < 0 {
             return body_len;
         }
-        OPSIZE_PUSH + OPSIZE_MARK + OPSIZE_STEP_BACK_START + body_len +
-            OPSIZE_POP_TO_MARK + OPSIZE_POP + OPSIZE_FAIL
+        OPSIZE_MARK + OPSIZE_PUSH + OPSIZE_STEP_BACK_START + body_len +
+            OPSIZE_POP_TO_MARK + OPSIZE_FAIL + OPSIZE_POP
     } else {
         // Simple anchors: ^, $, \b, \B, \A, \z, etc.
         SIZE_INC
@@ -1018,6 +1018,7 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
 
     if at == ANCR_LOOK_BEHIND_NOT {
         // (?<!...) negative lookbehind
+        // C sequence: MARK, PUSH, STEP_BACK, body, POP_TO_MARK, FAIL, POP
         let body_len = if let Some(body) = &an.body {
             compile_length_tree(body, reg, env)
         } else {
@@ -1027,20 +1028,20 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
         let id = reg.num_call;
         reg.num_call += 1;
 
-        let push_addr = SIZE_INC + OPSIZE_MARK + OPSIZE_STEP_BACK_START +
-            body_len + OPSIZE_POP_TO_MARK + OPSIZE_POP;
-        add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
-
         add_op(reg, OpCode::Mark, OperationPayload::Mark {
             id,
             save_pos: false,
         });
 
+        let push_addr = SIZE_INC + OPSIZE_STEP_BACK_START +
+            body_len + OPSIZE_POP_TO_MARK + OPSIZE_FAIL;
+        add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
+
         let char_len = an.char_min_len as i32;
         add_op(reg, OpCode::StepBackStart, OperationPayload::StepBackStart {
             initial: char_len,
             remaining: 0,
-            addr: 0,
+            addr: 1,
         });
 
         if let Some(body) = &an.body {
@@ -1051,8 +1052,8 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
         }
 
         add_op(reg, OpCode::PopToMark, OperationPayload::PopToMark { id });
-        add_op(reg, OpCode::Pop, OperationPayload::None);
         add_op(reg, OpCode::Fail, OperationPayload::None);
+        add_op(reg, OpCode::Pop, OperationPayload::None);
         return 0;
     }
 
@@ -1846,8 +1847,9 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
     }
 }
 
-/// Divide variable-length lookbehind with Alt body into Alt of fixed-length lookbehinds.
-/// Transforms: Anchor(LB, body=Alt(a, b, c)) -> Alt(Anchor(LB,a), Anchor(LB,b), Anchor(LB,c))
+/// Divide variable-length lookbehind with Alt body into per-branch fixed-length lookbehinds.
+/// For positive: Alt(Anchor(LB,a), Anchor(LB,b)) — any branch must match (OR).
+/// For negative: List(Anchor(LB_NOT,a), Anchor(LB_NOT,b)) — all branches must pass (AND).
 fn divide_look_behind_alt(node: &mut Node, anchor_type: i32, enc: OnigEncoding) -> i32 {
     // Extract anchor fields
     let (body, ascii_mode) = if let NodeInner::Anchor(ref mut an) = node.inner {
@@ -1867,13 +1869,14 @@ fn divide_look_behind_alt(node: &mut Node, anchor_type: i32, enc: OnigEncoding) 
                 None => break,
             }
         } else {
-            // Single non-Alt node (shouldn't happen but handle gracefully)
             branches.push(cur);
             break;
         }
     }
 
-    // Build new Alt of anchors, from last to first
+    let use_list = anchor_type == ANCR_LOOK_BEHIND_NOT;
+
+    // Build new node tree of anchors, from last to first
     let mut result: Option<Box<Node>> = None;
     for branch in branches.into_iter().rev() {
         let char_len = match node_char_len(&branch, enc) {
@@ -1889,12 +1892,18 @@ fn divide_look_behind_alt(node: &mut Node, anchor_type: i32, enc: OnigEncoding) 
             an.ascii_mode = ascii_mode;
         }
 
-        result = Some(node_new_alt(anchor, result));
+        if use_list {
+            // Negative lookbehind: ALL branches must pass (List = AND)
+            result = Some(node_new_list(anchor, result));
+        } else {
+            // Positive lookbehind: ANY branch must match (Alt = OR)
+            result = Some(node_new_alt(anchor, result));
+        }
     }
 
-    // Replace the original node with the new Alt
-    if let Some(alt_node) = result {
-        *node = *alt_node;
+    // Replace the original node with the new tree
+    if let Some(new_node) = result {
+        *node = *new_node;
     }
 
     ONIG_NORMAL
