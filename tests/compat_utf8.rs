@@ -721,9 +721,56 @@ fn non_capturing_alt() {
 // ============================================================================
 
 #[test]
-#[ignore] // C test: x2("(?:x?)\\?\\?", "", 0, 0) - involves nested quantifier interpretation
-fn lazy_question() {
-    x2(b"(?:x?)\\?\\?", b"", 0, 0);
+fn group_question_empty() {
+    // C: x2("(?:x?)?", "", 0, 0)
+    x2(b"(?:x?)?", b"", 0, 0);
+}
+
+#[test]
+fn group_question_x() {
+    x2(b"(?:x?)?", b"x", 0, 1);
+}
+
+#[test]
+#[ignore] // Infinite loop: needs tune_tree empty-check (OP_EMPTY_CHECK_START/END)
+fn group_star_empty() {
+    x2(b"(?:x?)*", b"", 0, 0);
+}
+
+#[test]
+#[ignore] // Infinite loop: needs tune_tree empty-check
+fn group_star_xx() {
+    x2(b"(?:x?)*", b"xx", 0, 2);
+}
+
+#[test]
+#[ignore] // Infinite loop: needs tune_tree empty-check
+fn group_plus_empty() {
+    x2(b"(?:x?)+", b"", 0, 0);
+}
+
+#[test]
+#[ignore] // Infinite loop: needs tune_tree empty-check
+fn group_plus_xx() {
+    x2(b"(?:x?)+", b"xx", 0, 2);
+}
+
+#[test]
+fn lazy_question_empty() {
+    // C: x2("(?:x?)\?\?", "", 0, 0) — \? in C is trigraph for ?, so pattern is (?:x?)??
+    x2(b"(?:x?)??", b"", 0, 0);
+}
+
+#[test]
+fn lazy_question_x() {
+    // C: x2("(?:x?)\?\?", "x", 0, 0) — lazy ?? prefers 0 matches
+    x2(b"(?:x?)??", b"x", 0, 0);
+}
+
+#[test]
+fn lazy_question_xx() {
+    // C: x2("(?:x?)\?\?", "xx", 0, 0) — lazy ?? prefers 0 matches
+    x2(b"(?:x?)??", b"xx", 0, 0);
 }
 
 #[test]
