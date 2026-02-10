@@ -1,0 +1,366 @@
+// regsyntax.rs - Port of regsyntax.c + OnigSyntaxOniguruma/Ruby from regparse.c
+// Syntax definitions and syntax manipulation functions.
+
+#![allow(non_upper_case_globals)]
+
+use std::sync::RwLock;
+
+use crate::oniguruma::*;
+
+// === Composite Helper Constants (from regint.h) ===
+
+pub const SYN_POSIX_COMMON_OP: u32 =
+    ONIG_SYN_OP_DOT_ANYCHAR | ONIG_SYN_OP_POSIX_BRACKET |
+    ONIG_SYN_OP_DECIMAL_BACKREF |
+    ONIG_SYN_OP_BRACKET_CC | ONIG_SYN_OP_ASTERISK_ZERO_INF |
+    ONIG_SYN_OP_LINE_ANCHOR |
+    ONIG_SYN_OP_ESC_CONTROL_CHARS;
+
+pub const SYN_GNU_REGEX_OP: u32 =
+    ONIG_SYN_OP_DOT_ANYCHAR | ONIG_SYN_OP_BRACKET_CC |
+    ONIG_SYN_OP_POSIX_BRACKET | ONIG_SYN_OP_DECIMAL_BACKREF |
+    ONIG_SYN_OP_BRACE_INTERVAL | ONIG_SYN_OP_LPAREN_SUBEXP |
+    ONIG_SYN_OP_VBAR_ALT |
+    ONIG_SYN_OP_ASTERISK_ZERO_INF | ONIG_SYN_OP_PLUS_ONE_INF |
+    ONIG_SYN_OP_QMARK_ZERO_ONE |
+    ONIG_SYN_OP_ESC_AZ_BUF_ANCHOR | ONIG_SYN_OP_ESC_CAPITAL_G_BEGIN_ANCHOR |
+    ONIG_SYN_OP_ESC_W_WORD |
+    ONIG_SYN_OP_ESC_B_WORD_BOUND | ONIG_SYN_OP_ESC_LTGT_WORD_BEGIN_END |
+    ONIG_SYN_OP_ESC_S_WHITE_SPACE | ONIG_SYN_OP_ESC_D_DIGIT |
+    ONIG_SYN_OP_LINE_ANCHOR;
+
+pub const SYN_GNU_REGEX_BV: u32 =
+    ONIG_SYN_CONTEXT_INDEP_ANCHORS | ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS |
+    ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS | ONIG_SYN_ALLOW_INVALID_INTERVAL |
+    ONIG_SYN_BACKSLASH_ESCAPE_IN_CC | ONIG_SYN_ALLOW_DOUBLE_RANGE_OP_IN_CC;
+
+// === Default meta char table (shared by all built-in syntaxes) ===
+
+const DEFAULT_META_CHAR_TABLE: OnigMetaCharTableType = OnigMetaCharTableType {
+    esc: b'\\' as OnigCodePoint,
+    anychar: ONIG_INEFFECTIVE_META_CHAR,
+    anytime: ONIG_INEFFECTIVE_META_CHAR,
+    zero_or_one_time: ONIG_INEFFECTIVE_META_CHAR,
+    one_or_more_time: ONIG_INEFFECTIVE_META_CHAR,
+    anychar_anytime: ONIG_INEFFECTIVE_META_CHAR,
+};
+
+// === Syntax Definitions ===
+
+pub static OnigSyntaxASIS: OnigSyntaxType = OnigSyntaxType {
+    op: 0,
+    op2: ONIG_SYN_OP2_INEFFECTIVE_ESCAPE,
+    behavior: 0,
+    options: ONIG_OPTION_NONE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+pub static OnigSyntaxPosixBasic: OnigSyntaxType = OnigSyntaxType {
+    op: SYN_POSIX_COMMON_OP | ONIG_SYN_OP_ESC_LPAREN_SUBEXP |
+        ONIG_SYN_OP_ESC_BRACE_INTERVAL,
+    op2: 0,
+    behavior: ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP,
+    options: ONIG_OPTION_SINGLELINE | ONIG_OPTION_MULTILINE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+pub static OnigSyntaxPosixExtended: OnigSyntaxType = OnigSyntaxType {
+    op: SYN_POSIX_COMMON_OP | ONIG_SYN_OP_LPAREN_SUBEXP |
+        ONIG_SYN_OP_BRACE_INTERVAL |
+        ONIG_SYN_OP_PLUS_ONE_INF | ONIG_SYN_OP_QMARK_ZERO_ONE |
+        ONIG_SYN_OP_VBAR_ALT,
+    op2: 0,
+    behavior: ONIG_SYN_CONTEXT_INDEP_ANCHORS |
+        ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS | ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS |
+        ONIG_SYN_ALLOW_UNMATCHED_CLOSE_SUBEXP |
+        ONIG_SYN_ALLOW_DOUBLE_RANGE_OP_IN_CC,
+    options: ONIG_OPTION_SINGLELINE | ONIG_OPTION_MULTILINE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+pub static OnigSyntaxEmacs: OnigSyntaxType = OnigSyntaxType {
+    op: ONIG_SYN_OP_DOT_ANYCHAR | ONIG_SYN_OP_BRACKET_CC |
+        ONIG_SYN_OP_ESC_BRACE_INTERVAL |
+        ONIG_SYN_OP_ESC_LPAREN_SUBEXP | ONIG_SYN_OP_ESC_VBAR_ALT |
+        ONIG_SYN_OP_ASTERISK_ZERO_INF | ONIG_SYN_OP_PLUS_ONE_INF |
+        ONIG_SYN_OP_QMARK_ZERO_ONE | ONIG_SYN_OP_DECIMAL_BACKREF |
+        ONIG_SYN_OP_LINE_ANCHOR | ONIG_SYN_OP_ESC_CONTROL_CHARS,
+    op2: ONIG_SYN_OP2_ESC_GNU_BUF_ANCHOR | ONIG_SYN_OP2_QMARK_GROUP_EFFECT,
+    behavior: ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC,
+    options: ONIG_OPTION_NONE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+pub static OnigSyntaxGrep: OnigSyntaxType = OnigSyntaxType {
+    op: ONIG_SYN_OP_DOT_ANYCHAR | ONIG_SYN_OP_BRACKET_CC |
+        ONIG_SYN_OP_POSIX_BRACKET |
+        ONIG_SYN_OP_ESC_BRACE_INTERVAL | ONIG_SYN_OP_ESC_LPAREN_SUBEXP |
+        ONIG_SYN_OP_ESC_VBAR_ALT |
+        ONIG_SYN_OP_ASTERISK_ZERO_INF | ONIG_SYN_OP_ESC_PLUS_ONE_INF |
+        ONIG_SYN_OP_ESC_QMARK_ZERO_ONE | ONIG_SYN_OP_LINE_ANCHOR |
+        ONIG_SYN_OP_ESC_W_WORD | ONIG_SYN_OP_ESC_B_WORD_BOUND |
+        ONIG_SYN_OP_ESC_LTGT_WORD_BEGIN_END | ONIG_SYN_OP_DECIMAL_BACKREF,
+    op2: 0,
+    behavior: ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC |
+        ONIG_SYN_NOT_NEWLINE_IN_NEGATIVE_CC |
+        ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP,
+    options: ONIG_OPTION_NONE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+pub static OnigSyntaxGnuRegex: OnigSyntaxType = OnigSyntaxType {
+    op: SYN_GNU_REGEX_OP,
+    op2: 0,
+    behavior: SYN_GNU_REGEX_BV,
+    options: ONIG_OPTION_NONE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+pub static OnigSyntaxJava: OnigSyntaxType = OnigSyntaxType {
+    op: (SYN_GNU_REGEX_OP | ONIG_SYN_OP_QMARK_NON_GREEDY |
+         ONIG_SYN_OP_ESC_CONTROL_CHARS | ONIG_SYN_OP_ESC_C_CONTROL |
+         ONIG_SYN_OP_ESC_OCTAL3 | ONIG_SYN_OP_ESC_X_HEX2)
+        & !(ONIG_SYN_OP_ESC_LTGT_WORD_BEGIN_END | ONIG_SYN_OP_POSIX_BRACKET),
+    op2: ONIG_SYN_OP2_ESC_CAPITAL_Q_QUOTE | ONIG_SYN_OP2_QMARK_GROUP_EFFECT |
+        ONIG_SYN_OP2_OPTION_PERL | ONIG_SYN_OP2_PLUS_POSSESSIVE_REPEAT |
+        ONIG_SYN_OP2_PLUS_POSSESSIVE_INTERVAL | ONIG_SYN_OP2_CCLASS_SET_OP |
+        ONIG_SYN_OP2_ESC_V_VTAB | ONIG_SYN_OP2_ESC_U_HEX4 |
+        ONIG_SYN_OP2_ESC_P_BRACE_CHAR_PROPERTY,
+    behavior: SYN_GNU_REGEX_BV | ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH |
+        ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND |
+        ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND |
+        ONIG_SYN_ALLOW_CHAR_TYPE_FOLLOWED_BY_MINUS_IN_CC,
+    options: ONIG_OPTION_SINGLELINE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+pub static OnigSyntaxPerl: OnigSyntaxType = OnigSyntaxType {
+    op: (SYN_GNU_REGEX_OP | ONIG_SYN_OP_QMARK_NON_GREEDY |
+         ONIG_SYN_OP_ESC_OCTAL3 | ONIG_SYN_OP_ESC_X_HEX2 |
+         ONIG_SYN_OP_ESC_X_BRACE_HEX8 | ONIG_SYN_OP_ESC_O_BRACE_OCTAL |
+         ONIG_SYN_OP_ESC_CONTROL_CHARS |
+         ONIG_SYN_OP_ESC_C_CONTROL)
+        & !ONIG_SYN_OP_ESC_LTGT_WORD_BEGIN_END,
+    op2: ONIG_SYN_OP2_ESC_CAPITAL_Q_QUOTE |
+        ONIG_SYN_OP2_QMARK_GROUP_EFFECT | ONIG_SYN_OP2_OPTION_PERL |
+        ONIG_SYN_OP2_PLUS_POSSESSIVE_REPEAT | ONIG_SYN_OP2_PLUS_POSSESSIVE_INTERVAL |
+        ONIG_SYN_OP2_QMARK_LPAREN_IF_ELSE |
+        ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP |
+        ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS |
+        ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME |
+        ONIG_SYN_OP2_ESC_X_Y_TEXT_SEGMENT |
+        ONIG_SYN_OP2_ESC_P_BRACE_CHAR_PROPERTY |
+        ONIG_SYN_OP2_ESC_P_BRACE_CIRCUMFLEX_NOT |
+        ONIG_SYN_OP2_ESC_CAPITAL_K_KEEP |
+        ONIG_SYN_OP2_ESC_CAPITAL_R_GENERAL_NEWLINE |
+        ONIG_SYN_OP2_ESC_CAPITAL_N_O_SUPER_DOT,
+    behavior: SYN_GNU_REGEX_BV | ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH |
+        ONIG_SYN_ALLOW_CHAR_TYPE_FOLLOWED_BY_MINUS_IN_CC |
+        ONIG_SYN_ESC_P_WITH_ONE_CHAR_PROP,
+    options: ONIG_OPTION_SINGLELINE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+// Perl + named group
+pub static OnigSyntaxPerl_NG: OnigSyntaxType = OnigSyntaxType {
+    op: (SYN_GNU_REGEX_OP | ONIG_SYN_OP_QMARK_NON_GREEDY |
+         ONIG_SYN_OP_ESC_OCTAL3 | ONIG_SYN_OP_ESC_X_HEX2 |
+         ONIG_SYN_OP_ESC_X_BRACE_HEX8 | ONIG_SYN_OP_ESC_O_BRACE_OCTAL |
+         ONIG_SYN_OP_ESC_CONTROL_CHARS |
+         ONIG_SYN_OP_ESC_C_CONTROL)
+        & !ONIG_SYN_OP_ESC_LTGT_WORD_BEGIN_END,
+    op2: ONIG_SYN_OP2_ESC_CAPITAL_Q_QUOTE |
+        ONIG_SYN_OP2_QMARK_GROUP_EFFECT | ONIG_SYN_OP2_OPTION_PERL |
+        ONIG_SYN_OP2_PLUS_POSSESSIVE_REPEAT | ONIG_SYN_OP2_PLUS_POSSESSIVE_INTERVAL |
+        ONIG_SYN_OP2_QMARK_LPAREN_IF_ELSE |
+        ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP |
+        ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS |
+        ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME |
+        ONIG_SYN_OP2_ESC_X_Y_TEXT_SEGMENT |
+        ONIG_SYN_OP2_ESC_P_BRACE_CHAR_PROPERTY |
+        ONIG_SYN_OP2_ESC_P_BRACE_CIRCUMFLEX_NOT |
+        ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP |
+        ONIG_SYN_OP2_ESC_K_NAMED_BACKREF |
+        ONIG_SYN_OP2_ESC_G_SUBEXP_CALL |
+        ONIG_SYN_OP2_ESC_CAPITAL_K_KEEP |
+        ONIG_SYN_OP2_ESC_CAPITAL_R_GENERAL_NEWLINE |
+        ONIG_SYN_OP2_ESC_CAPITAL_N_O_SUPER_DOT |
+        ONIG_SYN_OP2_QMARK_PERL_SUBEXP_CALL,
+    behavior: SYN_GNU_REGEX_BV | ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH |
+        ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP |
+        ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME |
+        ONIG_SYN_ALLOW_CHAR_TYPE_FOLLOWED_BY_MINUS_IN_CC |
+        ONIG_SYN_ESC_P_WITH_ONE_CHAR_PROP,
+    options: ONIG_OPTION_SINGLELINE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+// Python 3.9
+pub static OnigSyntaxPython: OnigSyntaxType = OnigSyntaxType {
+    op: (SYN_GNU_REGEX_OP | ONIG_SYN_OP_QMARK_NON_GREEDY |
+         ONIG_SYN_OP_ESC_OCTAL3 | ONIG_SYN_OP_ESC_X_HEX2 |
+         ONIG_SYN_OP_ESC_CONTROL_CHARS |
+         ONIG_SYN_OP_ESC_C_CONTROL)
+        & !(ONIG_SYN_OP_ESC_LTGT_WORD_BEGIN_END | ONIG_SYN_OP_POSIX_BRACKET),
+    op2: ONIG_SYN_OP2_QMARK_GROUP_EFFECT | ONIG_SYN_OP2_OPTION_PERL |
+        ONIG_SYN_OP2_QMARK_LPAREN_IF_ELSE |
+        ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME |
+        ONIG_SYN_OP2_ESC_P_BRACE_CHAR_PROPERTY |
+        ONIG_SYN_OP2_ESC_P_BRACE_CIRCUMFLEX_NOT |
+        ONIG_SYN_OP2_QMARK_CAPITAL_P_NAME |
+        ONIG_SYN_OP2_ESC_CAPITAL_K_KEEP |
+        ONIG_SYN_OP2_ESC_V_VTAB | ONIG_SYN_OP2_ESC_U_HEX4,
+    behavior: SYN_GNU_REGEX_BV | ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH |
+        ONIG_SYN_ALLOW_INTERVAL_LOW_ABBREV | ONIG_SYN_PYTHON,
+    options: ONIG_OPTION_SINGLELINE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+// Oniguruma (from regparse.c)
+pub static OnigSyntaxOniguruma: OnigSyntaxType = OnigSyntaxType {
+    op: (SYN_GNU_REGEX_OP | ONIG_SYN_OP_QMARK_NON_GREEDY |
+         ONIG_SYN_OP_ESC_OCTAL3 | ONIG_SYN_OP_ESC_X_HEX2 |
+         ONIG_SYN_OP_ESC_X_BRACE_HEX8 | ONIG_SYN_OP_ESC_O_BRACE_OCTAL |
+         ONIG_SYN_OP_ESC_CONTROL_CHARS |
+         ONIG_SYN_OP_ESC_C_CONTROL)
+        & !ONIG_SYN_OP_ESC_LTGT_WORD_BEGIN_END,
+    op2: ONIG_SYN_OP2_QMARK_GROUP_EFFECT |
+        ONIG_SYN_OP2_OPTION_ONIGURUMA |
+        ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP | ONIG_SYN_OP2_ESC_K_NAMED_BACKREF |
+        ONIG_SYN_OP2_QMARK_LPAREN_IF_ELSE |
+        ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP |
+        ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS |
+        ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME |
+        ONIG_SYN_OP2_ESC_X_Y_TEXT_SEGMENT |
+        ONIG_SYN_OP2_ESC_CAPITAL_R_GENERAL_NEWLINE |
+        ONIG_SYN_OP2_ESC_CAPITAL_N_O_SUPER_DOT |
+        ONIG_SYN_OP2_ESC_CAPITAL_K_KEEP |
+        ONIG_SYN_OP2_ESC_G_SUBEXP_CALL |
+        ONIG_SYN_OP2_ESC_P_BRACE_CHAR_PROPERTY |
+        ONIG_SYN_OP2_ESC_P_BRACE_CIRCUMFLEX_NOT |
+        ONIG_SYN_OP2_PLUS_POSSESSIVE_REPEAT |
+        ONIG_SYN_OP2_CCLASS_SET_OP | ONIG_SYN_OP2_ESC_CAPITAL_C_BAR_CONTROL |
+        ONIG_SYN_OP2_ESC_CAPITAL_M_BAR_META | ONIG_SYN_OP2_ESC_V_VTAB |
+        ONIG_SYN_OP2_ESC_H_XDIGIT | ONIG_SYN_OP2_ESC_U_HEX4,
+    behavior: SYN_GNU_REGEX_BV |
+        ONIG_SYN_ALLOW_INTERVAL_LOW_ABBREV |
+        ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND |
+        ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND |
+        ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP |
+        ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME |
+        ONIG_SYN_FIXED_INTERVAL_IS_GREEDY_ONLY |
+        ONIG_SYN_ALLOW_INVALID_CODE_END_OF_RANGE_IN_CC |
+        ONIG_SYN_WARN_CC_OP_NOT_ESCAPED |
+        ONIG_SYN_ESC_P_WITH_ONE_CHAR_PROP |
+        ONIG_SYN_WARN_REDUNDANT_NESTED_REPEAT,
+    options: ONIG_OPTION_NONE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+// Ruby (from regparse.c)
+pub static OnigSyntaxRuby: OnigSyntaxType = OnigSyntaxType {
+    op: (SYN_GNU_REGEX_OP | ONIG_SYN_OP_QMARK_NON_GREEDY |
+         ONIG_SYN_OP_ESC_OCTAL3 | ONIG_SYN_OP_ESC_X_HEX2 |
+         ONIG_SYN_OP_ESC_X_BRACE_HEX8 | ONIG_SYN_OP_ESC_O_BRACE_OCTAL |
+         ONIG_SYN_OP_ESC_CONTROL_CHARS |
+         ONIG_SYN_OP_ESC_C_CONTROL)
+        & !ONIG_SYN_OP_ESC_LTGT_WORD_BEGIN_END,
+    op2: ONIG_SYN_OP2_QMARK_GROUP_EFFECT |
+        ONIG_SYN_OP2_OPTION_RUBY |
+        ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP | ONIG_SYN_OP2_ESC_K_NAMED_BACKREF |
+        ONIG_SYN_OP2_QMARK_LPAREN_IF_ELSE |
+        ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP |
+        ONIG_SYN_OP2_ESC_X_Y_TEXT_SEGMENT |
+        ONIG_SYN_OP2_ESC_CAPITAL_R_GENERAL_NEWLINE |
+        ONIG_SYN_OP2_ESC_CAPITAL_K_KEEP |
+        ONIG_SYN_OP2_ESC_G_SUBEXP_CALL |
+        ONIG_SYN_OP2_ESC_P_BRACE_CHAR_PROPERTY |
+        ONIG_SYN_OP2_ESC_P_BRACE_CIRCUMFLEX_NOT |
+        ONIG_SYN_OP2_PLUS_POSSESSIVE_REPEAT |
+        ONIG_SYN_OP2_CCLASS_SET_OP | ONIG_SYN_OP2_ESC_CAPITAL_C_BAR_CONTROL |
+        ONIG_SYN_OP2_ESC_CAPITAL_M_BAR_META | ONIG_SYN_OP2_ESC_V_VTAB |
+        ONIG_SYN_OP2_ESC_H_XDIGIT | ONIG_SYN_OP2_ESC_U_HEX4,
+    behavior: SYN_GNU_REGEX_BV |
+        ONIG_SYN_ALLOW_INTERVAL_LOW_ABBREV |
+        ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND |
+        ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP |
+        ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME |
+        ONIG_SYN_FIXED_INTERVAL_IS_GREEDY_ONLY |
+        ONIG_SYN_WARN_CC_OP_NOT_ESCAPED |
+        ONIG_SYN_WARN_REDUNDANT_NESTED_REPEAT,
+    options: ONIG_OPTION_NONE,
+    meta_char_table: DEFAULT_META_CHAR_TABLE,
+};
+
+// === Default Syntax ===
+
+static ONIG_DEFAULT_SYNTAX: RwLock<&OnigSyntaxType> =
+    RwLock::new(&OnigSyntaxOniguruma);
+
+pub fn onig_get_default_syntax() -> &'static OnigSyntaxType {
+    // Safety: the RwLock always holds a &'static ref
+    *ONIG_DEFAULT_SYNTAX.read().unwrap()
+}
+
+pub fn onig_set_default_syntax(syntax: Option<&'static OnigSyntaxType>) -> i32 {
+    let syntax = syntax.unwrap_or(&OnigSyntaxOniguruma);
+    *ONIG_DEFAULT_SYNTAX.write().unwrap() = syntax;
+    0
+}
+
+// === Syntax Manipulation Functions ===
+
+pub fn onig_copy_syntax(to: &mut OnigSyntaxType, from: &OnigSyntaxType) {
+    *to = from.clone();
+}
+
+pub fn onig_set_syntax_op(syntax: &mut OnigSyntaxType, op: u32) {
+    syntax.op = op;
+}
+
+pub fn onig_set_syntax_op2(syntax: &mut OnigSyntaxType, op2: u32) {
+    syntax.op2 = op2;
+}
+
+pub fn onig_set_syntax_behavior(syntax: &mut OnigSyntaxType, behavior: u32) {
+    syntax.behavior = behavior;
+}
+
+pub fn onig_set_syntax_options(syntax: &mut OnigSyntaxType, options: OnigOptionType) {
+    syntax.options = options;
+}
+
+pub fn onig_get_syntax_op(syntax: &OnigSyntaxType) -> u32 {
+    syntax.op
+}
+
+pub fn onig_get_syntax_op2(syntax: &OnigSyntaxType) -> u32 {
+    syntax.op2
+}
+
+pub fn onig_get_syntax_behavior(syntax: &OnigSyntaxType) -> u32 {
+    syntax.behavior
+}
+
+pub fn onig_get_syntax_options(syntax: &OnigSyntaxType) -> OnigOptionType {
+    syntax.options
+}
+
+// === Meta Char Setter (USE_VARIABLE_META_CHARS) ===
+
+pub fn onig_set_meta_char(
+    syntax: &mut OnigSyntaxType,
+    what: u32,
+    code: OnigCodePoint,
+) -> i32 {
+    match what {
+        ONIG_META_CHAR_ESCAPE => syntax.meta_char_table.esc = code,
+        ONIG_META_CHAR_ANYCHAR => syntax.meta_char_table.anychar = code,
+        ONIG_META_CHAR_ANYTIME => syntax.meta_char_table.anytime = code,
+        ONIG_META_CHAR_ZERO_OR_ONE_TIME => syntax.meta_char_table.zero_or_one_time = code,
+        ONIG_META_CHAR_ONE_OR_MORE_TIME => syntax.meta_char_table.one_or_more_time = code,
+        ONIG_META_CHAR_ANYCHAR_ANYTIME => syntax.meta_char_table.anychar_anytime = code,
+        _ => return ONIGERR_INVALID_ARGUMENT,
+    }
+    0
+}
