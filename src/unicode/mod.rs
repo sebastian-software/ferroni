@@ -2,10 +2,12 @@
 // Unicode character properties, case folding, and related functions.
 // Stub implementations for Phase 2; full data tables will be added later.
 
+mod fold_data;
 mod property_data;
 
 use crate::oniguruma::*;
 use crate::regenc::*;
+use fold_data::*;
 use property_data::{CODE_RANGES, CODE_RANGES_NUM, PROPERTY_NAMES};
 
 // === Unicode ISO 8859-1 Ctype Table ===
@@ -47,54 +49,511 @@ pub static ENC_UNICODE_ISO_8859_1_CTYPE_TABLE: [u16; 256] = [
     0x30e2, 0x30e2, 0x30e2, 0x30e2, 0x30e2, 0x30e2, 0x30e2, 0x30e2,
 ];
 
+// === Unicode Case Fold Lookup Helpers ===
+
+/// Binary search on UNFOLD_KEY: code -> (index, fold_len) or None.
+/// Port of onigenc_unicode_unfold_key (gperf hash in C).
+fn unfold_key(code: OnigCodePoint) -> Option<(usize, usize)> {
+    UNFOLD_KEY
+        .binary_search_by_key(&code, |&(c, _, _)| c)
+        .ok()
+        .map(|i| (UNFOLD_KEY[i].1 as usize, UNFOLD_KEY[i].2 as usize))
+}
+
+/// Binary search on FOLD1_KEY: fold codepoint -> index into UNICODE_FOLDS1.
+fn fold1_key(code: OnigCodePoint) -> Option<usize> {
+    FOLD1_KEY
+        .binary_search_by_key(&code, |&(c, _)| c)
+        .ok()
+        .map(|i| FOLD1_KEY[i].1 as usize)
+}
+
+/// Binary search on FOLD2_KEY: (cp1, cp2) -> index into UNICODE_FOLDS2.
+fn fold2_key(codes: &[OnigCodePoint]) -> Option<usize> {
+    let key = [codes[0], codes[1]];
+    FOLD2_KEY
+        .binary_search_by_key(&key, |&(k, _)| k)
+        .ok()
+        .map(|i| FOLD2_KEY[i].1 as usize)
+}
+
+/// Binary search on FOLD3_KEY: (cp1, cp2, cp3) -> index into UNICODE_FOLDS3.
+fn fold3_key(codes: &[OnigCodePoint]) -> Option<usize> {
+    let key = [codes[0], codes[1], codes[2]];
+    FOLD3_KEY
+        .binary_search_by_key(&key, |&(k, _)| k)
+        .ok()
+        .map(|i| FOLD3_KEY[i].1 as usize)
+}
+
+// FOLDS accessor helpers (port of C macros from regenc.h)
+#[inline] fn folds1_fold(i: usize) -> OnigCodePoint { UNICODE_FOLDS1[i] }
+#[inline] fn folds1_unfolds_num(i: usize) -> usize { UNICODE_FOLDS1[i + 1] as usize }
+#[inline] fn folds1_unfolds(i: usize) -> &'static [u32] { let n = folds1_unfolds_num(i); &UNICODE_FOLDS1[i + 2..i + 2 + n] }
+#[inline] fn folds1_next(i: usize) -> usize { i + 2 + folds1_unfolds_num(i) }
+
+#[inline] fn folds2_fold(i: usize) -> &'static [u32] { &UNICODE_FOLDS2[i..i + 2] }
+#[inline] fn folds2_unfolds_num(i: usize) -> usize { UNICODE_FOLDS2[i + 2] as usize }
+#[inline] fn folds2_unfolds(i: usize) -> &'static [u32] { let n = folds2_unfolds_num(i); &UNICODE_FOLDS2[i + 3..i + 3 + n] }
+#[inline] fn folds2_next(i: usize) -> usize { i + 3 + folds2_unfolds_num(i) }
+
+#[inline] fn folds3_fold(i: usize) -> &'static [u32] { &UNICODE_FOLDS3[i..i + 3] }
+#[inline] fn folds3_unfolds_num(i: usize) -> usize { UNICODE_FOLDS3[i + 3] as usize }
+#[inline] fn folds3_unfolds(i: usize) -> &'static [u32] { let n = folds3_unfolds_num(i); &UNICODE_FOLDS3[i + 4..i + 4 + n] }
+#[inline] fn folds3_next(i: usize) -> usize { i + 4 + folds3_unfolds_num(i) }
+
+/// Get the fold address for a given (index, fold_len) from unfold_key lookup.
+fn folds_fold_addr(index: usize, fold_len: usize) -> &'static [u32] {
+    match fold_len {
+        1 => &UNICODE_FOLDS1[index..index + 1],
+        2 => &UNICODE_FOLDS2[index..index + 2],
+        3 => &UNICODE_FOLDS3[index..index + 3],
+        _ => &[],
+    }
+}
+
 // === Unicode Case Fold Functions ===
-// These will be fully implemented when fold data tables are ported.
 
 /// Case fold a multibyte character using Unicode rules.
-/// Port of onigenc_unicode_mbc_case_fold from unicode.c
+/// Port of onigenc_unicode_mbc_case_fold from unicode.c lines 79-134
 pub fn onigenc_unicode_mbc_case_fold(
     enc: &dyn Encoding,
-    _flag: OnigCaseFoldType,
+    flag: OnigCaseFoldType,
     pp: &mut usize,
-    _end: usize,
+    end: usize,
     data: &[u8],
     fold: &mut [u8],
 ) -> i32 {
-    // TODO: implement with Unicode fold data tables (OnigUnicodeFolds1/2/3)
-    // For now: copy the character unchanged (identity fold)
+    let code = enc.mbc_to_code(&data[*pp..], end);
     let len = enc.mbc_enc_len(&data[*pp..]);
-    for i in 0..len {
-        fold[i] = data[*pp + i];
-    }
+    let p_start = *pp;
     *pp += len;
+
+    if case_fold_is_not_ascii_only(flag) || code < 128 {
+        if let Some((index, fold_len)) = unfold_key(code) {
+            if fold_len == 1 {
+                let fold_code = folds1_fold(index);
+                if case_fold_is_not_ascii_only(flag) || fold_code < 128 {
+                    return enc.code_to_mbc(fold_code, fold);
+                }
+            } else {
+                // Multi-char fold (fold_len == 2 or 3)
+                let addr = folds_fold_addr(index, fold_len);
+                let mut rlen = 0i32;
+                for i in 0..fold_len {
+                    let l = enc.code_to_mbc(addr[i], &mut fold[rlen as usize..]);
+                    rlen += l;
+                }
+                return rlen;
+            }
+        }
+    }
+
+    // No fold found: copy original bytes unchanged
+    for i in 0..len {
+        fold[i] = data[p_start + i];
+    }
     len as i32
 }
 
-/// Apply all Unicode case fold pairs.
-/// Port of onigenc_unicode_apply_all_case_fold from unicode.c
-pub fn onigenc_unicode_apply_all_case_fold(
-    _flag: OnigCaseFoldType,
-    _f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+/// Apply case fold pairs for FOLDS1 entries in range [from..to).
+/// Port of apply_case_fold1 from unicode.c lines 136-174
+fn apply_case_fold1(
+    flag: OnigCaseFoldType,
+    from: usize,
+    to: usize,
+    f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
 ) -> i32 {
-    // TODO: implement with Unicode fold data tables
+    let mut i = from;
+    while i < to {
+        let fold = folds1_fold(i);
+        if case_fold_is_ascii_only(flag) && fold >= 128 {
+            break;
+        }
+        let unfolds = folds1_unfolds(i);
+        let n = unfolds.len();
+        for j in 0..n {
+            let uf = unfolds[j];
+            if case_fold_is_ascii_only(flag) && uf >= 128 {
+                continue;
+            }
+            // fold -> unfold
+            let r = f(fold, &[uf]);
+            if r != 0 { return r; }
+            // unfold -> fold
+            let r = f(uf, &[fold]);
+            if r != 0 { return r; }
+            // pair each unfold with previously seen unfolds
+            for k in 0..j {
+                let uf2 = unfolds[k];
+                if case_fold_is_ascii_only(flag) && uf2 >= 128 {
+                    continue;
+                }
+                let r = f(uf, &[uf2]);
+                if r != 0 { return r; }
+                let r = f(uf2, &[uf]);
+                if r != 0 { return r; }
+            }
+        }
+        i = folds1_next(i);
+    }
+    0
+}
+
+/// Apply case fold pairs for FOLDS2 entries in range [from..to).
+/// Port of apply_case_fold2 from unicode.c lines 176-203
+fn apply_case_fold2(
+    from: usize,
+    to: usize,
+    f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+) -> i32 {
+    let mut i = from;
+    while i < to {
+        let fold = folds2_fold(i);
+        let unfolds = folds2_unfolds(i);
+        let n = unfolds.len();
+        for j in 0..n {
+            let uf = unfolds[j];
+            // unfold -> fold (multi-char)
+            let r = f(uf, fold);
+            if r != 0 { return r; }
+            // pair with previously seen unfolds
+            for k in 0..j {
+                let uf2 = unfolds[k];
+                let r = f(uf, &[uf2]);
+                if r != 0 { return r; }
+                let r = f(uf2, &[uf]);
+                if r != 0 { return r; }
+            }
+        }
+        i = folds2_next(i);
+    }
+    0
+}
+
+/// Apply case fold pairs for FOLDS3 entries in range [from..to).
+/// Port of apply_case_fold3 from unicode.c lines 205-232
+fn apply_case_fold3(
+    from: usize,
+    to: usize,
+    f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+) -> i32 {
+    let mut i = from;
+    while i < to {
+        let fold = folds3_fold(i);
+        let unfolds = folds3_unfolds(i);
+        let n = unfolds.len();
+        for j in 0..n {
+            let uf = unfolds[j];
+            let r = f(uf, fold);
+            if r != 0 { return r; }
+            for k in 0..j {
+                let uf2 = unfolds[k];
+                let r = f(uf, &[uf2]);
+                if r != 0 { return r; }
+                let r = f(uf2, &[uf]);
+                if r != 0 { return r; }
+            }
+        }
+        i = folds3_next(i);
+    }
+    0
+}
+
+/// Apply all Unicode case fold pairs.
+/// Port of onigenc_unicode_apply_all_case_fold from unicode.c lines 234-286
+pub fn onigenc_unicode_apply_all_case_fold(
+    flag: OnigCaseFoldType,
+    f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+) -> i32 {
+    // Normal FOLDS1 entries
+    let mut r = apply_case_fold1(flag, 0, FOLDS1_NORMAL_END_INDEX, f);
+    if r != 0 { return r; }
+
+    // Locale entries (non-Turkish: include all)
+    r = apply_case_fold1(flag, FOLDS1_NORMAL_END_INDEX, FOLDS1_END_INDEX, f);
+    if r != 0 { return r; }
+
+    // Multi-char folds only if MULTI_CHAR flag is set
+    if (flag & INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR) == 0 {
+        return 0;
+    }
+
+    r = apply_case_fold2(0, FOLDS2_NORMAL_END_INDEX, f);
+    if r != 0 { return r; }
+    r = apply_case_fold2(FOLDS2_NORMAL_END_INDEX, FOLDS2_END_INDEX, f);
+    if r != 0 { return r; }
+
+    r = apply_case_fold3(0, FOLDS3_NORMAL_END_INDEX, f);
+    if r != 0 { return r; }
+
     0
 }
 
 /// Get case fold code items for a string.
-/// Port of onigenc_unicode_get_case_fold_codes_by_str from unicode.c
+/// Port of onigenc_unicode_get_case_fold_codes_by_str from unicode.c lines 288-585
 pub fn onigenc_unicode_get_case_fold_codes_by_str(
-    _enc: &dyn Encoding,
+    enc: &dyn Encoding,
     flag: OnigCaseFoldType,
     p: &[u8],
-    end: usize,
+    _end: usize,
     items: &mut [OnigCaseFoldCodeItem],
 ) -> i32 {
-    // For ASCII bytes, delegate to ASCII case fold
-    if p[0] < 128 {
-        return crate::regenc::onigenc_ascii_get_case_fold_codes_by_str(flag, p, end, items);
+    let remaining = p.len(); // use slice length, not end parameter
+    let mut n = 0usize; // number of items accumulated
+
+    let code = enc.mbc_to_code(p, remaining);
+    if case_fold_is_ascii_only(flag) && code >= 128 {
+        return 0;
     }
-    // TODO: implement with Unicode fold data tables for non-ASCII
-    0
+    let len0 = enc.mbc_enc_len(p);
+    let mut orig_codes = [0u32; 3];
+    let mut codes = [0u32; 3];
+    let mut lens = [0usize; 3]; // cumulative byte lengths
+
+    orig_codes[0] = code;
+    lens[0] = len0;
+
+    // Get canonical form of first codepoint
+    let buk1 = unfold_key(orig_codes[0]);
+    if let Some((index, fold_len)) = buk1 {
+        if fold_len == 1 {
+            codes[0] = folds1_fold(index);
+        } else {
+            codes[0] = orig_codes[0];
+        }
+    } else {
+        codes[0] = orig_codes[0];
+    }
+
+    // Multi-char fold handling
+    if (flag & INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR) == 0 {
+        // Skip multi-char, go directly to fold1
+    } else if len0 < remaining {
+        let p1 = &p[len0..];
+        let code1 = enc.mbc_to_code(p1, p1.len());
+        orig_codes[1] = code1;
+        let len1 = enc.mbc_enc_len(p1);
+        lens[1] = lens[0] + len1;
+
+        if let Some((idx, fl)) = unfold_key(orig_codes[1]) {
+            if fl == 1 { codes[1] = folds1_fold(idx); } else { codes[1] = orig_codes[1]; }
+        } else {
+            codes[1] = orig_codes[1];
+        }
+
+        // Try 3-char fold
+        if lens[1] < remaining {
+            let p2 = &p[lens[1]..];
+            let code2 = enc.mbc_to_code(p2, p2.len());
+            orig_codes[2] = code2;
+            let len2 = enc.mbc_enc_len(p2);
+            lens[2] = lens[1] + len2;
+
+            if let Some((idx, fl)) = unfold_key(orig_codes[2]) {
+                if fl == 1 { codes[2] = folds1_fold(idx); } else { codes[2] = orig_codes[2]; }
+            } else {
+                codes[2] = orig_codes[2];
+            }
+
+            if let Some(index) = fold3_key(&codes) {
+                // Add single-codepoint unfolds
+                let unfolds = folds3_unfolds(index);
+                for uf in unfolds {
+                    items[n].byte_len = lens[2] as i32;
+                    items[n].code_len = 1;
+                    items[n].code[0] = *uf;
+                    n += 1;
+                }
+
+                // Build variant combinations at each position
+                let mut cs = [[0u32; 4]; 3];
+                let mut ncs = [0usize; 3];
+                let fold3 = folds3_fold(index);
+                for fn_idx in 0..3 {
+                    cs[fn_idx][0] = fold3[fn_idx];
+                    ncs[fn_idx] = 1;
+                    if let Some(sidx) = fold1_key(cs[fn_idx][0]) {
+                        let sunfolds = folds1_unfolds(sidx);
+                        for (si, &su) in sunfolds.iter().enumerate() {
+                            cs[fn_idx][si + 1] = su;
+                        }
+                        ncs[fn_idx] += sunfolds.len();
+                    }
+                }
+
+                for i in 0..ncs[0] {
+                    for j in 0..ncs[1] {
+                        for k in 0..ncs[2] {
+                            if cs[0][i] == orig_codes[0] && cs[1][j] == orig_codes[1] && cs[2][k] == orig_codes[2] {
+                                continue;
+                            }
+                            items[n].byte_len = lens[2] as i32;
+                            items[n].code_len = 3;
+                            items[n].code[0] = cs[0][i];
+                            items[n].code[1] = cs[1][j];
+                            items[n].code[2] = cs[2][k];
+                            n += 1;
+                        }
+                    }
+                }
+                return n as i32;
+            }
+        }
+
+        // Try 2-char fold
+        if let Some(index) = fold2_key(&codes) {
+            let unfolds = folds2_unfolds(index);
+            for uf in unfolds {
+                items[n].byte_len = lens[1] as i32;
+                items[n].code_len = 1;
+                items[n].code[0] = *uf;
+                n += 1;
+            }
+
+            let mut cs = [[0u32; 4]; 2];
+            let mut ncs = [0usize; 2];
+            let fold2 = folds2_fold(index);
+            for fn_idx in 0..2 {
+                cs[fn_idx][0] = fold2[fn_idx];
+                ncs[fn_idx] = 1;
+                if let Some(sidx) = fold1_key(cs[fn_idx][0]) {
+                    let sunfolds = folds1_unfolds(sidx);
+                    for (si, &su) in sunfolds.iter().enumerate() {
+                        cs[fn_idx][si + 1] = su;
+                    }
+                    ncs[fn_idx] += sunfolds.len();
+                }
+            }
+
+            for i in 0..ncs[0] {
+                for j in 0..ncs[1] {
+                    if cs[0][i] == orig_codes[0] && cs[1][j] == orig_codes[1] {
+                        continue;
+                    }
+                    items[n].byte_len = lens[1] as i32;
+                    items[n].code_len = 2;
+                    items[n].code[0] = cs[0][i];
+                    items[n].code[1] = cs[1][j];
+                    n += 1;
+                }
+            }
+            return n as i32;
+        }
+    }
+
+    // === Single-char fold handling (fold1) ===
+    if let Some((buk_index, buk_fold_len)) = buk1 {
+        if buk_fold_len == 1 {
+            // Input has a 1-to-1 fold
+            let fold_code = folds1_fold(buk_index);
+            if case_fold_is_not_ascii_only(flag) || fold_code < 128 {
+                items[n].byte_len = lens[0] as i32;
+                items[n].code_len = 1;
+                items[n].code[0] = fold_code;
+                n += 1;
+            }
+            // Add all unfold variants (excluding the original)
+            let unfolds = folds1_unfolds(buk_index);
+            for &uf in unfolds {
+                if uf != orig_codes[0] {
+                    if case_fold_is_not_ascii_only(flag) || uf < 128 {
+                        items[n].byte_len = lens[0] as i32;
+                        items[n].code_len = 1;
+                        items[n].code[0] = uf;
+                        n += 1;
+                    }
+                }
+            }
+        } else if (flag & INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR) != 0 {
+            // Input codepoint is itself a multi-char fold target (e.g., sharp-s -> "ss")
+            if buk_fold_len == 2 {
+                // Add other single-codepoint unfolds
+                let unfolds = folds2_unfolds(buk_index);
+                for &uf in unfolds {
+                    if uf == orig_codes[0] { continue; }
+                    items[n].byte_len = lens[0] as i32;
+                    items[n].code_len = 1;
+                    items[n].code[0] = uf;
+                    n += 1;
+                }
+                // Build 2-char variant combinations
+                let mut cs = [[0u32; 4]; 2];
+                let mut ncs = [0usize; 2];
+                let fold2 = folds2_fold(buk_index);
+                for fn_idx in 0..2 {
+                    cs[fn_idx][0] = fold2[fn_idx];
+                    ncs[fn_idx] = 1;
+                    if let Some(sidx) = fold1_key(cs[fn_idx][0]) {
+                        let sunfolds = folds1_unfolds(sidx);
+                        for (si, &su) in sunfolds.iter().enumerate() {
+                            cs[fn_idx][si + 1] = su;
+                        }
+                        ncs[fn_idx] += sunfolds.len();
+                    }
+                }
+                for i in 0..ncs[0] {
+                    for j in 0..ncs[1] {
+                        items[n].byte_len = lens[0] as i32;
+                        items[n].code_len = 2;
+                        items[n].code[0] = cs[0][i];
+                        items[n].code[1] = cs[1][j];
+                        n += 1;
+                    }
+                }
+            } else if buk_fold_len == 3 {
+                let unfolds = folds3_unfolds(buk_index);
+                for &uf in unfolds {
+                    if uf == orig_codes[0] { continue; }
+                    items[n].byte_len = lens[0] as i32;
+                    items[n].code_len = 1;
+                    items[n].code[0] = uf;
+                    n += 1;
+                }
+                let mut cs = [[0u32; 4]; 3];
+                let mut ncs = [0usize; 3];
+                let fold3 = folds3_fold(buk_index);
+                for fn_idx in 0..3 {
+                    cs[fn_idx][0] = fold3[fn_idx];
+                    ncs[fn_idx] = 1;
+                    if let Some(sidx) = fold1_key(cs[fn_idx][0]) {
+                        let sunfolds = folds1_unfolds(sidx);
+                        for (si, &su) in sunfolds.iter().enumerate() {
+                            cs[fn_idx][si + 1] = su;
+                        }
+                        ncs[fn_idx] += sunfolds.len();
+                    }
+                }
+                for i in 0..ncs[0] {
+                    for j in 0..ncs[1] {
+                        for k in 0..ncs[2] {
+                            items[n].byte_len = lens[0] as i32;
+                            items[n].code_len = 3;
+                            items[n].code[0] = cs[0][i];
+                            items[n].code[1] = cs[1][j];
+                            items[n].code[2] = cs[2][k];
+                            n += 1;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Input is already a canonical fold form — look it up as a fold1 key
+        if let Some(index) = fold1_key(orig_codes[0]) {
+            let unfolds = folds1_unfolds(index);
+            for &uf in unfolds {
+                if case_fold_is_not_ascii_only(flag) || uf < 128 {
+                    items[n].byte_len = lens[0] as i32;
+                    items[n].code_len = 1;
+                    items[n].code[0] = uf;
+                    n += 1;
+                }
+            }
+        }
+    }
+
+    n as i32
 }
 
 // === Unicode Property Functions ===

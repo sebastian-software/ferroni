@@ -1688,29 +1688,58 @@ fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, _state: i32) -
                 pending.clear();
             }
 
-            // Create CClass with original char + all alternatives
-            let mut cc_node = node_new_cclass();
-            let cc = cc_node.as_cclass_mut().unwrap();
+            // Check if all items are single-codepoint folds
+            let all_single = (0..n as usize).all(|i| items[i].code_len == 1);
 
-            // Add original character
-            let code = enc.mbc_to_code(&s_bytes[pos..], s_bytes.len());
-            crate::regparse::add_code_into_cc(cc, code, enc);
-
-            // Add all fold alternatives
-            for i in 0..(n as usize) {
-                // Only handle code_len == 1 (single codepoint folds)
-                if items[i].code_len == 1 {
+            if all_single {
+                // All single-char: create CClass with original + alternatives
+                let mut cc_node = node_new_cclass();
+                let cc = cc_node.as_cclass_mut().unwrap();
+                let code = enc.mbc_to_code(&s_bytes[pos..], s_bytes.len() - pos);
+                crate::regparse::add_code_into_cc(cc, code, enc);
+                for i in 0..(n as usize) {
                     crate::regparse::add_code_into_cc(cc, items[i].code[0], enc);
                 }
-            }
+                nodes.push(cc_node);
+                pos += char_len;
+            } else {
+                // Multi-char folds present: create Alt with string alternatives
+                // Determine how many bytes all items cover (should be uniform)
+                let max_byte_len = (0..n as usize).map(|i| items[i].byte_len).max().unwrap_or(char_len as i32) as usize;
 
-            nodes.push(cc_node);
+                // First alternative: original string bytes
+                let orig_str = &s_bytes[pos..pos + max_byte_len];
+                let mut alt_node: Box<Node> = node_new_alt(
+                    node_new_str(orig_str),
+                    None,
+                );
+                let mut curr = &mut alt_node;
+
+                for i in 0..(n as usize) {
+                    // Convert codepoints to string bytes
+                    let item = &items[i];
+                    let mut buf = Vec::new();
+                    let mut tmp = [0u8; 6]; // max UTF-8 bytes per codepoint
+                    for ci in 0..(item.code_len as usize) {
+                        let blen = enc.code_to_mbc(item.code[ci], &mut tmp);
+                        buf.extend_from_slice(&tmp[..blen as usize]);
+                    }
+                    let new_alt = node_new_alt(node_new_str(&buf), None);
+                    // Append to chain
+                    if let NodeInner::Alt(ref mut ca) = curr.inner {
+                        ca.cdr = Some(new_alt);
+                        curr = ca.cdr.as_mut().unwrap();
+                    }
+                }
+
+                nodes.push(alt_node);
+                pos += max_byte_len;
+            }
         } else {
             // No case fold: accumulate into pending string
             pending.extend_from_slice(&s_bytes[pos..pos + char_len]);
+            pos += char_len;
         }
-
-        pos += char_len;
     }
 
     // Flush any remaining pending string

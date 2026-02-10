@@ -4749,28 +4749,24 @@ fn case_insensitive_ss_upper() {
 }
 
 #[test]
-#[ignore] // case folding for LONG S not yet implemented
 fn case_insensitive_ss_long_s_upper() {
     // C line 323: (?i:ss) matches \xc5\xbfS (LATIN SMALL LETTER LONG S + S)
     x2(b"(?i:ss)", b"\xc5\xbfS", 0, 3);
 }
 
 #[test]
-#[ignore] // case folding for LONG S not yet implemented
 fn case_insensitive_ss_s_long_s() {
     // C line 324: (?i:ss) matches s\xc5\xbf (s + LATIN SMALL LETTER LONG S)
     x2(b"(?i:ss)", b"s\xc5\xbf", 0, 3);
 }
 
 #[test]
-#[ignore] // case folding for SHARP S not yet implemented
 fn case_insensitive_ss_sharp_s() {
     // C line 326: (?i:ss) matches \xc3\x9f (LATIN SMALL LETTER SHARP S)
     x2(b"(?i:ss)", b"\xc3\x9f", 0, 2);
 }
 
 #[test]
-#[ignore] // case folding for CAPITAL SHARP S not yet implemented
 fn case_insensitive_ss_capital_sharp_s() {
     // C line 328: (?i:ss) matches \xe1\xba\x9e (LATIN CAPITAL LETTER SHARP S)
     x2(b"(?i:ss)", b"\xe1\xba\x9e", 0, 3);
@@ -4795,77 +4791,68 @@ fn case_insensitive_xssy_upper() {
 }
 
 #[test]
-#[ignore] // case folding for LONG S not yet implemented
 fn case_insensitive_xssy_long_s_upper() {
     // C line 332: (?i:xssy) matches x\xc5\xbfSy
     x2(b"(?i:xssy)", b"x\xc5\xbfSy", 0, 5);
 }
 
 #[test]
-#[ignore] // case folding for LONG S not yet implemented
 fn case_insensitive_xssy_s_long_s() {
     // C line 333: (?i:xssy) matches xs\xc5\xbfy
     x2(b"(?i:xssy)", b"xs\xc5\xbfy", 0, 5);
 }
 
 #[test]
-#[ignore] // case folding for SHARP S not yet implemented
 fn case_insensitive_xssy_sharp_s() {
     // C line 334: (?i:xssy) matches x\xc3\x9fy (sharp s)
     x2(b"(?i:xssy)", b"x\xc3\x9fy", 0, 4);
 }
 
 #[test]
-#[ignore] // case folding for CAPITAL SHARP S not yet implemented
 fn case_insensitive_xssy_capital_sharp_s() {
     // C line 335: (?i:xssy) matches x\xe1\xba\x9ey (capital sharp s)
     x2(b"(?i:xssy)", b"x\xe1\xba\x9ey", 0, 5);
 }
 
 #[test]
-#[ignore] // case folding for SHARP S in pattern not yet implemented
 fn case_insensitive_sharp_s_pattern_lower() {
     // C line 336: (?i:x\xc3\x9fy) matches xssy
     x2(b"(?i:x\xc3\x9fy)", b"xssy", 0, 4);
 }
 
 #[test]
-#[ignore] // case folding for SHARP S in pattern not yet implemented
 fn case_insensitive_sharp_s_pattern_upper() {
     // C line 337: (?i:x\xc3\x9fy) matches xSSy
     x2(b"(?i:x\xc3\x9fy)", b"xSSy", 0, 4);
 }
 
 #[test]
-#[ignore] // case folding for SHARP S not yet implemented
 fn case_insensitive_sharp_s_alone_lower() {
     // C line 338: (?i:\xc3\x9f) matches ss
     x2(b"(?i:\xc3\x9f)", b"ss", 0, 2);
 }
 
 #[test]
-#[ignore] // case folding for SHARP S not yet implemented
 fn case_insensitive_sharp_s_alone_upper() {
     // C line 339: (?i:\xc3\x9f) matches SS
     x2(b"(?i:\xc3\x9f)", b"SS", 0, 2);
 }
 
 #[test]
-#[ignore] // case folding for SHARP S in class not yet implemented
+#[ignore] // case-insensitive char class multi-char fold expansion not yet implemented
 fn case_insensitive_sharp_s_class_lower() {
     // C line 340: (?i:[\xc3\x9f]) matches ss
     x2(b"(?i:[\xc3\x9f])", b"ss", 0, 2);
 }
 
 #[test]
-#[ignore] // case folding for SHARP S in class not yet implemented
+#[ignore] // case-insensitive char class multi-char fold expansion not yet implemented
 fn case_insensitive_sharp_s_class_upper() {
     // C line 341: (?i:[\xc3\x9f]) matches SS
     x2(b"(?i:[\xc3\x9f])", b"SS", 0, 2);
 }
 
 #[test]
-#[ignore] // case-insensitive lookbehind not yet fully implemented
 fn case_insensitive_lookbehind_ss() {
     // C line 342: (?i)(?<!ss)z matches z in qqz
     x2(b"(?i)(?<!ss)z", b"qqz", 2, 3);
