@@ -5564,7 +5564,6 @@ fn capture_casefold_group() {
 }
 
 #[test]
-#[ignore] // case-insensitive backrefs not yet implemented
 fn capture_casefold_backref() {
     // C line 630: (abc)(?i:\1) matches "abcABC" -> 0-6
     x2(b"(abc)(?i:\\1)", b"abcABC", 0, 6);
@@ -5980,7 +5979,6 @@ fn dotstar_star_x() {
 }
 
 #[test]
-#[ignore] // case-insensitive backrefs not yet implemented
 fn dotstar_star_x_casefold_backref() {
     // C line 744: x((.)*)*x(?i:\1)\Z matches "0x1x2x1X2" -> 1-9
     x2(b"x((.)*)*x(?i:\\1)\\Z", b"0x1x2x1X2", 1, 9);

@@ -1383,17 +1383,17 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
 
             if refs.len() == 1 {
                 let n = refs[0];
-                match n {
-                    1 => {
-                        add_op(reg, OpCode::BackRef1, OperationPayload::None);
-                    }
-                    2 => {
-                        add_op(reg, OpCode::BackRef2, OperationPayload::None);
-                    }
-                    _ => {
-                        if node.has_status(ND_ST_IGNORECASE) {
-                            add_op(reg, OpCode::BackRefNIc, OperationPayload::BackRefN { n1: n });
-                        } else {
+                if node.has_status(ND_ST_IGNORECASE) {
+                    add_op(reg, OpCode::BackRefNIc, OperationPayload::BackRefN { n1: n });
+                } else {
+                    match n {
+                        1 => {
+                            add_op(reg, OpCode::BackRef1, OperationPayload::None);
+                        }
+                        2 => {
+                            add_op(reg, OpCode::BackRef2, OperationPayload::None);
+                        }
+                        _ => {
                             add_op(reg, OpCode::BackRefN, OperationPayload::BackRefN { n1: n });
                         }
                     }

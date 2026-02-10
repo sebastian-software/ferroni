@@ -542,6 +542,45 @@ fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
     }
 }
 
+/// Case-insensitive string comparison using encoding-aware case folding.
+/// Compares `mblen` bytes starting at `s1_pos` with bytes starting at `*s2_pos`.
+/// Advances `*s2_pos` past consumed bytes on success. Returns true if equal.
+fn string_cmp_ic(
+    enc: OnigEncoding,
+    case_fold_flag: OnigCaseFoldType,
+    data: &[u8],
+    s1_pos: usize,
+    s2_pos: &mut usize,
+    mblen: usize,
+) -> bool {
+    let mut buf1 = [0u8; ONIGENC_MBC_CASE_FOLD_MAXLEN];
+    let mut buf2 = [0u8; ONIGENC_MBC_CASE_FOLD_MAXLEN];
+    let end1 = s1_pos + mblen;
+    let end2 = *s2_pos + mblen;
+    let mut p1 = s1_pos;
+    let mut p2 = *s2_pos;
+
+    while p1 < end1 {
+        let len1 = enc.mbc_case_fold(case_fold_flag, &mut p1, end1, data, &mut buf1);
+        let len2 = enc.mbc_case_fold(case_fold_flag, &mut p2, end2, data, &mut buf2);
+        if len1 != len2 {
+            return false;
+        }
+        if buf1[..len1 as usize] != buf2[..len2 as usize] {
+            return false;
+        }
+        if p2 >= end2 {
+            if p1 < end1 {
+                return false;
+            }
+            break;
+        }
+    }
+
+    *s2_pos = p2;
+    true
+}
+
 // ============================================================================
 // match_at - the core VM executor (port of C's match_at function)
 // ============================================================================
@@ -1236,15 +1275,128 @@ fn match_at(
                 }
             }
 
-            // Case-insensitive and multi backrefs (TODO: full implementation)
-            OpCode::BackRefNIc
-            | OpCode::BackRefMulti
-            | OpCode::BackRefMultiIc
-            | OpCode::BackRefWithLevel
+            OpCode::BackRefNIc => {
+                if let OperationPayload::BackRefN { n1 } = reg.ops[p].payload {
+                    let n1 = n1 as usize;
+                    if n1 <= num_mem {
+                        if let (Some(ms), Some(me)) = (
+                            get_mem_start(reg, &stack, &mem_start_stk, n1),
+                            get_mem_end(reg, &stack, &mem_end_stk, n1),
+                        ) {
+                            let ref_len = me - ms;
+                            if ref_len != 0 {
+                                if right_range.saturating_sub(s) < ref_len {
+                                    goto_fail = true;
+                                } else if !string_cmp_ic(enc, reg.case_fold_flag, str_data, ms, &mut s, ref_len) {
+                                    goto_fail = true;
+                                } else {
+                                    p += 1;
+                                }
+                            } else {
+                                p += 1;
+                            }
+                        } else {
+                            goto_fail = true;
+                        }
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::BackRefMulti => {
+                if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
+                    let tlen = *num as usize;
+                    let mut matched = false;
+                    for i in 0..tlen {
+                        let mem = ns[i] as usize;
+                        if mem > num_mem { continue; }
+                        if let (Some(ms), Some(me)) = (
+                            get_mem_start(reg, &stack, &mem_start_stk, mem),
+                            get_mem_end(reg, &stack, &mem_end_stk, mem),
+                        ) {
+                            let ref_len = me - ms;
+                            if ref_len != 0 {
+                                if right_range.saturating_sub(s) < ref_len { continue; }
+                                if str_data[s..s + ref_len] != str_data[ms..me] { continue; }
+                                s += ref_len;
+                            }
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if matched {
+                        p += 1;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::BackRefMultiIc => {
+                if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
+                    let tlen = *num as usize;
+                    let mut matched = false;
+                    for i in 0..tlen {
+                        let mem = ns[i] as usize;
+                        if mem > num_mem { continue; }
+                        if let (Some(ms), Some(me)) = (
+                            get_mem_start(reg, &stack, &mem_start_stk, mem),
+                            get_mem_end(reg, &stack, &mem_end_stk, mem),
+                        ) {
+                            let ref_len = me - ms;
+                            if ref_len != 0 {
+                                if right_range.saturating_sub(s) < ref_len { continue; }
+                                let mut swork = s;
+                                if !string_cmp_ic(enc, reg.case_fold_flag, str_data, ms, &mut swork, ref_len) { continue; }
+                                s = swork;
+                            }
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if matched {
+                        p += 1;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::BackRefCheck => {
+                if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
+                    let tlen = *num as usize;
+                    let mut found = false;
+                    for i in 0..tlen {
+                        let mem = ns[i] as usize;
+                        if mem > num_mem { continue; }
+                        if get_mem_start(reg, &stack, &mem_start_stk, mem).is_some()
+                            && get_mem_end(reg, &stack, &mem_end_stk, mem).is_some()
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if found {
+                        p += 1;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::BackRefWithLevel
             | OpCode::BackRefWithLevelIc
-            | OpCode::BackRefCheck
             | OpCode::BackRefCheckWithLevel => {
-                // TODO: implement these variants
+                // TODO: implement level-based backrefs (needed for recursion)
                 goto_fail = true;
             }
 
