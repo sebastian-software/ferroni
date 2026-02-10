@@ -761,7 +761,6 @@ fn multi_line_search_plus() {
 }
 
 #[test]
-#[ignore] // Parser doesn't support (?#...) comment groups yet
 fn comment_in_pattern() {
     x2(b"a(?#....\\\\JJJJ)b", b"ab", 0, 2);
 }
@@ -915,7 +914,6 @@ fn utf8_question() {
 }
 
 #[test]
-#[ignore] // Parser error -103 with multi-byte chars in lookahead - needs investigation
 fn utf8_lookahead() {
     let pattern_bytes = [b"(?=", "せ".as_bytes(), b")", "せ".as_bytes()].concat();
     let input = "せ".as_bytes();

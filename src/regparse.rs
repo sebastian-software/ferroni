@@ -1834,6 +1834,8 @@ fn fetch_token(
         tok.code = c;
         tok.escaped = true;
 
+        // Only match escape sequences for ASCII-range codepoints.
+        if c < 128 {
         match c as u8 as char {
             '*' => {
                 if !is_syntax_op(syn, ONIG_SYN_OP_ESC_ASTERISK_ZERO_INF) {
@@ -2209,10 +2211,28 @@ fn fetch_token(
                 }
             }
         }
+        } else {
+            // Non-ASCII escaped char: treat as literal via fetch_escaped_value
+            *p = pfetch_prev; // PUNFETCH
+            let c2 = match fetch_escaped_value(p, end, pattern, env) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if tok.code != c2 {
+                tok.token_type = TokenType::CodePoint;
+                tok.code = c2;
+            } else {
+                *p = tok.backp + enclen(enc, &pattern[tok.backp..]);
+            }
+        }
     } else {
         tok.code = c;
         tok.escaped = false;
 
+        // Only match metacharacters for ASCII-range codepoints.
+        // Multi-byte characters (c > 127) must not match ASCII metachar arms
+        // (e.g. U+305B has low byte 0x5B = '[' but is not a bracket).
+        if c < 128 {
         match c as u8 as char {
             '.' => {
                 if !is_syntax_op(syn, ONIG_SYN_OP_DOT_ANYCHAR) {
@@ -2272,6 +2292,38 @@ fn fetch_token(
             '(' => {
                 if !is_syntax_op(syn, ONIG_SYN_OP_LPAREN_SUBEXP) {
                     return tok.token_type as i32;
+                }
+                // Check for (?#...) comment group
+                if !p_end(*p, end)
+                    && ppeek_is(*p, pattern, end, enc, '?' as u32)
+                    && is_syntax_op2(syn, ONIG_SYN_OP2_QMARK_GROUP_EFFECT)
+                {
+                    let saved_p = *p;
+                    pinc(p, pattern, enc); // skip '?'
+                    if !p_end(*p, end)
+                        && ppeek_is(*p, pattern, end, enc, '#' as u32)
+                    {
+                        pfetch(p, &mut pfetch_prev, pattern, end, enc); // consume '#'
+                        // Skip comment body until unescaped ')'
+                        loop {
+                            if p_end(*p, end) {
+                                return ONIGERR_END_PATTERN_IN_GROUP;
+                            }
+                            let c2 = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+                            if c2 == syn.meta_char_table.esc {
+                                if !p_end(*p, end) {
+                                    pfetch(p, &mut pfetch_prev, pattern, end, enc);
+                                }
+                            } else if c2 == ')' as u32 {
+                                break;
+                            }
+                        }
+                        // Comment consumed, restart tokenization (goto start)
+                        return fetch_token(tok, p, end, pattern, env);
+                    } else {
+                        // Not a comment group, restore position
+                        *p = saved_p;
+                    }
                 }
                 tok.token_type = TokenType::SubexpOpen;
             }
@@ -2334,6 +2386,7 @@ fn fetch_token(
             }
             _ => {}
         }
+        } // end if c < 128
     }
 
     tok.token_type as i32

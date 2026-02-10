@@ -1375,6 +1375,237 @@ fn mem_status_is_all_on(stats: MemStatusType) -> bool {
     (stats & 1) != 0
 }
 
+/// Flatten a List node into a Vec of car elements.
+fn flatten_list(mut node: Box<Node>) -> Vec<Box<Node>> {
+    let mut items = Vec::new();
+    loop {
+        match node.inner {
+            NodeInner::List(cons) => {
+                items.push(cons.car);
+                match cons.cdr {
+                    Some(next) => node = next,
+                    None => break,
+                }
+            }
+            _ => {
+                // Shouldn't happen - the last cdr should be None
+                items.push(node);
+                break;
+            }
+        }
+    }
+    items
+}
+
+/// Rebuild a List node from a Vec of car elements.
+fn rebuild_list(items: Vec<Box<Node>>) -> Box<Node> {
+    let mut items = items;
+    assert!(!items.is_empty());
+    let mut result = Node {
+        status: 0,
+        parent: std::ptr::null_mut(),
+        inner: NodeInner::List(ConsAltNode {
+            car: items.pop().unwrap(),
+            cdr: None,
+        }),
+    };
+    while let Some(item) = items.pop() {
+        result = Node {
+            status: 0,
+            parent: std::ptr::null_mut(),
+            inner: NodeInner::List(ConsAltNode {
+                car: item,
+                cdr: Some(Box::new(result)),
+            }),
+        };
+    }
+    Box::new(result)
+}
+
+/// Consolidate adjacent string nodes in the parse tree.
+/// Mirrors C's reduce_string_list() from regcomp.c.
+pub fn reduce_string_list(node: &mut Node, enc: OnigEncoding) -> i32 {
+    match &mut node.inner {
+        NodeInner::List(_) => {
+            // Take ownership of the list, flatten, merge, rebuild
+            let placeholder = NodeInner::String(StrNode { s: Vec::new(), flag: 0 });
+            let old_inner = std::mem::replace(&mut node.inner, placeholder);
+            let list_node = Box::new(Node {
+                status: 0,
+                parent: std::ptr::null_mut(),
+                inner: old_inner,
+            });
+            let mut items = flatten_list(list_node);
+
+            // First recurse into non-string children
+            for item in items.iter_mut() {
+                if item.node_type() != NodeType::String {
+                    let r = reduce_string_list(item, enc);
+                    if r != 0 {
+                        // Rebuild and put back before returning error
+                        node.inner = rebuild_list(items).inner;
+                        return r;
+                    }
+                }
+            }
+
+            // Merge adjacent string nodes with same flags and status
+            let mut merged: Vec<Box<Node>> = Vec::new();
+            for item in items {
+                if item.node_type() == NodeType::String {
+                    let can_merge = if let Some(last) = merged.last() {
+                        if last.node_type() == NodeType::String {
+                            let last_str = last.as_str().unwrap();
+                            let curr_str = item.as_str().unwrap();
+                            last_str.flag == curr_str.flag && last.status == item.status
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    if can_merge {
+                        let curr_bytes = item.as_str().unwrap().s.clone();
+                        let last = merged.last_mut().unwrap();
+                        last.as_str_mut().unwrap().s.extend_from_slice(&curr_bytes);
+                    } else {
+                        merged.push(item);
+                    }
+                } else {
+                    merged.push(item);
+                }
+            }
+
+            // Rebuild the list
+            if merged.len() == 1 {
+                // Single node: unwrap from list
+                let single = merged.into_iter().next().unwrap();
+                *node = *single;
+            } else {
+                node.inner = rebuild_list(merged).inner;
+            }
+
+            0
+        }
+
+        NodeInner::Alt(_) => {
+            // Recurse into each alternative
+            let placeholder = NodeInner::String(StrNode { s: Vec::new(), flag: 0 });
+            let old_inner = std::mem::replace(&mut node.inner, placeholder);
+            let alt_node = Box::new(Node {
+                status: 0,
+                parent: std::ptr::null_mut(),
+                inner: old_inner,
+            });
+
+            // Flatten the alt chain
+            let mut items = Vec::new();
+            let mut current: Option<Box<Node>> = Some(alt_node);
+            while let Some(n) = current {
+                match n.inner {
+                    NodeInner::Alt(cons) => {
+                        items.push(cons.car);
+                        current = cons.cdr;
+                    }
+                    _ => {
+                        items.push(n);
+                        current = None;
+                    }
+                }
+            }
+
+            // Recurse into each alternative
+            for item in items.iter_mut() {
+                let r = reduce_string_list(item, enc);
+                if r != 0 {
+                    // Rebuild alt chain and put back
+                    let mut result = Node {
+                        status: 0,
+                        parent: std::ptr::null_mut(),
+                        inner: NodeInner::Alt(ConsAltNode {
+                            car: items.pop().unwrap(),
+                            cdr: None,
+                        }),
+                    };
+                    while let Some(item) = items.pop() {
+                        result = Node {
+                            status: 0,
+                            parent: std::ptr::null_mut(),
+                            inner: NodeInner::Alt(ConsAltNode {
+                                car: item,
+                                cdr: Some(Box::new(result)),
+                            }),
+                        };
+                    }
+                    *node = result;
+                    return r;
+                }
+            }
+
+            // Rebuild alt chain
+            let mut items_rev: Vec<Box<Node>> = items;
+            let last = items_rev.pop().unwrap();
+            let mut result = Node {
+                status: 0,
+                parent: std::ptr::null_mut(),
+                inner: NodeInner::Alt(ConsAltNode {
+                    car: last,
+                    cdr: None,
+                }),
+            };
+            while let Some(item) = items_rev.pop() {
+                result = Node {
+                    status: 0,
+                    parent: std::ptr::null_mut(),
+                    inner: NodeInner::Alt(ConsAltNode {
+                        car: item,
+                        cdr: Some(Box::new(result)),
+                    }),
+                };
+            }
+            *node = result;
+            0
+        }
+
+        NodeInner::Quant(ref mut q) => {
+            if let Some(ref mut body) = q.body {
+                reduce_string_list(body, enc)
+            } else {
+                0
+            }
+        }
+
+        NodeInner::Anchor(ref mut a) => {
+            if let Some(ref mut body) = a.body {
+                let r = reduce_string_list(body, enc);
+                if r != 0 { return r; }
+            }
+            0
+        }
+
+        NodeInner::Bag(ref mut b) => {
+            if let Some(ref mut body) = b.body {
+                let r = reduce_string_list(body, enc);
+                if r != 0 { return r; }
+            }
+            if let BagData::IfElse { ref mut then_node, ref mut else_node } = b.bag_data {
+                if let Some(ref mut then_n) = then_node {
+                    let r = reduce_string_list(then_n, enc);
+                    if r != 0 { return r; }
+                }
+                if let Some(ref mut else_n) = else_node {
+                    let r = reduce_string_list(else_n, enc);
+                    if r != 0 { return r; }
+                }
+            }
+            0
+        }
+
+        _ => 0,
+    }
+}
+
 /// Simple compilation from a pre-parsed AST tree.
 /// Used internally and by tests that parse separately.
 pub fn compile_from_tree(
@@ -1436,10 +1667,16 @@ pub fn onig_compile(
         flags: 0,
     };
 
-    let root = match crate::regparse::onig_parse_tree(pattern, reg, &mut env) {
+    let mut root = match crate::regparse::onig_parse_tree(pattern, reg, &mut env) {
         Ok(node) => node,
         Err(e) => return e,
     };
+
+    // Optimize: consolidate adjacent string nodes (mirrors C's reduce_string_list)
+    let r = reduce_string_list(&mut root, reg.enc);
+    if r != 0 {
+        return r;
+    }
 
     // Set capture/mem tracking from parse env (mirrors C's onig_compile post-parse setup)
     reg.capture_history = env.cap_history;
@@ -1793,5 +2030,36 @@ mod tests {
             &OnigSyntaxOniguruma as *const OnigSyntaxType,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn reduce_string_list_merges() {
+        // Parse "abc" - parser produces 3 single-char string nodes in a list
+        // reduce_string_list should merge them into one "abc" node
+        let (mut reg, mut env) = make_test_context();
+        let mut root = regparse::onig_parse_tree(b"abc", &mut reg, &mut env).unwrap();
+
+        // Before reduction, count the tree structure
+        let before_type = root.node_type();
+
+        // Apply reduction
+        let r = reduce_string_list(&mut root, env.enc);
+        assert_eq!(r, 0);
+
+        // After reduction, "abc" should be a single string node (not a list)
+        assert_eq!(root.node_type(), NodeType::String);
+        let s = root.as_str().unwrap();
+        assert_eq!(s.s, b"abc");
+    }
+
+    #[test]
+    fn reduce_string_list_preserves_non_strings() {
+        // "a.b" has string-dot-string, so strings cannot merge across the dot
+        let (mut reg, mut env) = make_test_context();
+        let mut root = regparse::onig_parse_tree(b"a.b", &mut reg, &mut env).unwrap();
+        let r = reduce_string_list(&mut root, env.enc);
+        assert_eq!(r, 0);
+        // Should still be a list with 3 elements
+        assert_eq!(root.node_type(), NodeType::List);
     }
 }
