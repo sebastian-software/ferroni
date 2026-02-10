@@ -4556,3 +4556,1908 @@ fn ascii_nested_class_xyz_range_c() {
     // C line 1410: [a[xyz]-c] matches c -> 0-1
     x2(b"[a[xyz]-c]", b"c", 0, 1);
 }
+
+// ============================================================================
+// Control char escapes (C lines 167-170)
+// ============================================================================
+
+#[test]
+fn ctrl_a_escape() {
+    // C line 167: \ca matches \x01
+    x2(b"\\ca", b"\x01", 0, 1);
+}
+
+#[test]
+fn ctrl_b_escape() {
+    // C line 168: \C-b matches \x02
+    x2(b"\\C-b", b"\x02", 0, 1);
+}
+
+#[test]
+fn ctrl_backslash_escape() {
+    // C line 169: \c\\ matches \x1c
+    x2(b"\\c\\\\", b"\x1c", 0, 1);
+}
+
+#[test]
+fn ctrl_backslash_in_class() {
+    // C line 170: q[\c\\] matches q\x1c
+    x2(b"q[\\c\\\\]", b"q\x1c", 0, 2);
+}
+
+// ============================================================================
+// Empty pattern on non-empty string (C line 171)
+// ============================================================================
+
+#[test]
+fn empty_pattern_nonempty_string() {
+    // C line 171: "" matches "a" at 0-0
+    x2(b"", b"a", 0, 0);
+}
+
+// ============================================================================
+// Long literal (C line 176)
+// ============================================================================
+
+#[test]
+fn literal_35_a() {
+    // C line 176: 35 a's match 35 a's
+    x2(b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 0, 35);
+}
+
+// ============================================================================
+// Case-insensitive with special chars (C line 180)
+// ============================================================================
+
+#[test]
+fn case_insensitive_ret() {
+    // C line 180: (?i:#RET#) matches #RET# in #INS##RET#
+    x2(b"(?i:#RET#)", b"#INS##RET#", 5, 10);
+}
+
+// ============================================================================
+// Extended mode (?x) (C line 184)
+// ============================================================================
+
+#[test]
+fn extended_mode_whitespace() {
+    // C line 184: (?x)  G (o O(?-x)oO) g L matches GoOoOgL in GoOoOgLe
+    x2(b"(?x)  G (o O(?-x)oO) g L", b"GoOoOgLe", 0, 7);
+}
+
+// ============================================================================
+// Dot no match on empty (C line 186)
+// ============================================================================
+
+#[test]
+fn dot_no_match_empty() {
+    // C line 186: . no match for ""
+    n(b".", b"");
+}
+
+// ============================================================================
+// POSIX bracket edge cases (C lines 242, 244-249)
+// ============================================================================
+
+#[test]
+fn posix_upper_bracket_literal() {
+    // C line 242: [[:upper\] :]] matches ]
+    x2(b"[[:upper\\] :]]", b"]", 0, 1);
+}
+
+#[test]
+#[ignore] // parser rejects [[::]] as invalid POSIX bracket
+fn nested_bracket_double_colon() {
+    // C line 244: [[::]] matches :
+    x2(b"[[::]]", b":", 0, 1);
+}
+
+#[test]
+fn nested_bracket_triple_colon() {
+    // C line 245: [[:::]] matches :
+    x2(b"[[:::]]", b":", 0, 1);
+}
+
+#[test]
+fn nested_bracket_backslash_colon_star() {
+    // C line 246: [[\]:]]*  matches :] (with *)
+    x2(b"[[:\\]:]]*", b":]", 0, 2);
+}
+
+#[test]
+fn nested_bracket_open_bracket_star() {
+    // C line 247: [[\[:]]*  matches :[ (with *)
+    x2(b"[[:\\[:]]*", b":[", 0, 2);
+}
+
+#[test]
+fn nested_bracket_close_bracket_star() {
+    // C line 248: [[\]]]*  matches :] (with *)
+    x2(b"[[:\\]]]*", b":]", 0, 2);
+}
+
+// ============================================================================
+// Case-insensitive (?i:) ASCII patterns (C lines 311-355)
+// ============================================================================
+
+#[test]
+fn case_insensitive_a_lower() {
+    // C line 311: (?i:a) matches a
+    x2(b"(?i:a)", b"a", 0, 1);
+}
+
+#[test]
+fn case_insensitive_a_upper() {
+    // C line 312: (?i:a) matches A
+    x2(b"(?i:a)", b"A", 0, 1);
+}
+
+#[test]
+fn case_insensitive_A_lower() {
+    // C line 313: (?i:A) matches a
+    x2(b"(?i:A)", b"a", 0, 1);
+}
+
+#[test]
+fn case_insensitive_i_upper() {
+    // C line 314: (?i:i) matches I
+    x2(b"(?i:i)", b"I", 0, 1);
+}
+
+#[test]
+fn case_insensitive_I_lower() {
+    // C line 315: (?i:I) matches i
+    x2(b"(?i:I)", b"i", 0, 1);
+}
+
+#[test]
+#[ignore] // case-insensitive char class ranges not yet implemented
+fn case_insensitive_range_upper() {
+    // C line 316: (?i:[A-Z]) matches i
+    x2(b"(?i:[A-Z])", b"i", 0, 1);
+}
+
+#[test]
+#[ignore] // case-insensitive char class ranges not yet implemented
+fn case_insensitive_range_lower() {
+    // C line 317: (?i:[a-z]) matches I
+    x2(b"(?i:[a-z])", b"I", 0, 1);
+}
+
+#[test]
+fn case_insensitive_no_match() {
+    // C line 318: (?i:A) no match for b
+    n(b"(?i:A)", b"b");
+}
+
+#[test]
+fn case_insensitive_ss_lower() {
+    // C line 319: (?i:ss) matches ss
+    x2(b"(?i:ss)", b"ss", 0, 2);
+}
+
+#[test]
+fn case_insensitive_ss_mixed() {
+    // C line 320: (?i:ss) matches Ss
+    x2(b"(?i:ss)", b"Ss", 0, 2);
+}
+
+#[test]
+fn case_insensitive_ss_upper() {
+    // C line 321: (?i:ss) matches SS
+    x2(b"(?i:ss)", b"SS", 0, 2);
+}
+
+#[test]
+#[ignore] // case folding for LONG S not yet implemented
+fn case_insensitive_ss_long_s_upper() {
+    // C line 323: (?i:ss) matches \xc5\xbfS (LATIN SMALL LETTER LONG S + S)
+    x2(b"(?i:ss)", b"\xc5\xbfS", 0, 3);
+}
+
+#[test]
+#[ignore] // case folding for LONG S not yet implemented
+fn case_insensitive_ss_s_long_s() {
+    // C line 324: (?i:ss) matches s\xc5\xbf (s + LATIN SMALL LETTER LONG S)
+    x2(b"(?i:ss)", b"s\xc5\xbf", 0, 3);
+}
+
+#[test]
+#[ignore] // case folding for SHARP S not yet implemented
+fn case_insensitive_ss_sharp_s() {
+    // C line 326: (?i:ss) matches \xc3\x9f (LATIN SMALL LETTER SHARP S)
+    x2(b"(?i:ss)", b"\xc3\x9f", 0, 2);
+}
+
+#[test]
+#[ignore] // case folding for CAPITAL SHARP S not yet implemented
+fn case_insensitive_ss_capital_sharp_s() {
+    // C line 328: (?i:ss) matches \xe1\xba\x9e (LATIN CAPITAL LETTER SHARP S)
+    x2(b"(?i:ss)", b"\xe1\xba\x9e", 0, 3);
+}
+
+#[test]
+fn case_insensitive_xssy_lower() {
+    // C line 329: (?i:xssy) matches xssy
+    x2(b"(?i:xssy)", b"xssy", 0, 4);
+}
+
+#[test]
+fn case_insensitive_xssy_mixed() {
+    // C line 330: (?i:xssy) matches xSsy
+    x2(b"(?i:xssy)", b"xSsy", 0, 4);
+}
+
+#[test]
+fn case_insensitive_xssy_upper() {
+    // C line 331: (?i:xssy) matches xSSy
+    x2(b"(?i:xssy)", b"xSSy", 0, 4);
+}
+
+#[test]
+#[ignore] // case folding for LONG S not yet implemented
+fn case_insensitive_xssy_long_s_upper() {
+    // C line 332: (?i:xssy) matches x\xc5\xbfSy
+    x2(b"(?i:xssy)", b"x\xc5\xbfSy", 0, 5);
+}
+
+#[test]
+#[ignore] // case folding for LONG S not yet implemented
+fn case_insensitive_xssy_s_long_s() {
+    // C line 333: (?i:xssy) matches xs\xc5\xbfy
+    x2(b"(?i:xssy)", b"xs\xc5\xbfy", 0, 5);
+}
+
+#[test]
+#[ignore] // case folding for SHARP S not yet implemented
+fn case_insensitive_xssy_sharp_s() {
+    // C line 334: (?i:xssy) matches x\xc3\x9fy (sharp s)
+    x2(b"(?i:xssy)", b"x\xc3\x9fy", 0, 4);
+}
+
+#[test]
+#[ignore] // case folding for CAPITAL SHARP S not yet implemented
+fn case_insensitive_xssy_capital_sharp_s() {
+    // C line 335: (?i:xssy) matches x\xe1\xba\x9ey (capital sharp s)
+    x2(b"(?i:xssy)", b"x\xe1\xba\x9ey", 0, 5);
+}
+
+#[test]
+#[ignore] // case folding for SHARP S in pattern not yet implemented
+fn case_insensitive_sharp_s_pattern_lower() {
+    // C line 336: (?i:x\xc3\x9fy) matches xssy
+    x2(b"(?i:x\xc3\x9fy)", b"xssy", 0, 4);
+}
+
+#[test]
+#[ignore] // case folding for SHARP S in pattern not yet implemented
+fn case_insensitive_sharp_s_pattern_upper() {
+    // C line 337: (?i:x\xc3\x9fy) matches xSSy
+    x2(b"(?i:x\xc3\x9fy)", b"xSSy", 0, 4);
+}
+
+#[test]
+#[ignore] // case folding for SHARP S not yet implemented
+fn case_insensitive_sharp_s_alone_lower() {
+    // C line 338: (?i:\xc3\x9f) matches ss
+    x2(b"(?i:\xc3\x9f)", b"ss", 0, 2);
+}
+
+#[test]
+#[ignore] // case folding for SHARP S not yet implemented
+fn case_insensitive_sharp_s_alone_upper() {
+    // C line 339: (?i:\xc3\x9f) matches SS
+    x2(b"(?i:\xc3\x9f)", b"SS", 0, 2);
+}
+
+#[test]
+#[ignore] // case folding for SHARP S in class not yet implemented
+fn case_insensitive_sharp_s_class_lower() {
+    // C line 340: (?i:[\xc3\x9f]) matches ss
+    x2(b"(?i:[\xc3\x9f])", b"ss", 0, 2);
+}
+
+#[test]
+#[ignore] // case folding for SHARP S in class not yet implemented
+fn case_insensitive_sharp_s_class_upper() {
+    // C line 341: (?i:[\xc3\x9f]) matches SS
+    x2(b"(?i:[\xc3\x9f])", b"SS", 0, 2);
+}
+
+#[test]
+#[ignore] // case-insensitive lookbehind not yet fully implemented
+fn case_insensitive_lookbehind_ss() {
+    // C line 342: (?i)(?<!ss)z matches z in qqz
+    x2(b"(?i)(?<!ss)z", b"qqz", 2, 3);
+}
+
+#[test]
+#[ignore] // case-insensitive char class ranges not yet implemented
+fn case_insensitive_range_upper_matches_lower() {
+    // C line 343: (?i:[A-Z]) matches a
+    x2(b"(?i:[A-Z])", b"a", 0, 1);
+}
+
+#[test]
+#[ignore] // case-insensitive char class ranges not yet implemented
+fn case_insensitive_range_f_m_upper() {
+    // C line 344: (?i:[f-m]) matches H
+    x2(b"(?i:[f-m])", b"H", 0, 1);
+}
+
+#[test]
+fn case_insensitive_range_f_m_lower() {
+    // C line 345: (?i:[f-m]) matches h
+    x2(b"(?i:[f-m])", b"h", 0, 1);
+}
+
+#[test]
+fn case_insensitive_range_f_m_no_match() {
+    // C line 346: (?i:[f-m]) no match for e
+    n(b"(?i:[f-m])", b"e");
+}
+
+#[test]
+fn case_insensitive_range_A_c_upper() {
+    // C line 347: (?i:[A-c]) matches D
+    x2(b"(?i:[A-c])", b"D", 0, 1);
+}
+
+#[test]
+#[ignore] // case-insensitive negated char class ranges not yet implemented
+fn case_insensitive_neg_range_upper() {
+    // C line 348: (?i:[^a-z]) no match for A
+    n(b"(?i:[^a-z])", b"A");
+}
+
+#[test]
+fn case_insensitive_neg_range_lower() {
+    // C line 349: (?i:[^a-z]) no match for a
+    n(b"(?i:[^a-z])", b"a");
+}
+
+#[test]
+fn case_insensitive_range_bang_k_upper() {
+    // C line 350: (?i:[!-k]) matches Z
+    x2(b"(?i:[!-k])", b"Z", 0, 1);
+}
+
+#[test]
+fn case_insensitive_range_bang_k_digit() {
+    // C line 351: (?i:[!-k]) matches 7
+    x2(b"(?i:[!-k])", b"7", 0, 1);
+}
+
+#[test]
+fn case_insensitive_range_T_brace_lower() {
+    // C line 352: (?i:[T-}]) matches b
+    x2(b"(?i:[T-}])", b"b", 0, 1);
+}
+
+#[test]
+fn case_insensitive_range_T_brace_brace() {
+    // C line 353: (?i:[T-}]) matches {
+    x2(b"(?i:[T-}])", b"{", 0, 1);
+}
+
+#[test]
+fn case_insensitive_escaped_question_a() {
+    // C line 354: (?i:\?a) matches ?A
+    x2(b"(?i:\\?a)", b"?A", 0, 2);
+}
+
+#[test]
+fn case_insensitive_escaped_star_a() {
+    // C line 355: (?i:\*A) matches *a
+    x2(b"(?i:\\*A)", b"*a", 0, 2);
+}
+
+// ============================================================================
+// Multiline mode (?m:) (C lines 357-359, 362)
+// ============================================================================
+
+#[test]
+fn multiline_dot_newline() {
+    // C line 357: (?m:.) matches \n
+    x2(b"(?m:.)", b"\n", 0, 1);
+}
+
+#[test]
+fn multiline_a_dot_newline() {
+    // C line 358: (?m:a.) matches a\n
+    x2(b"(?m:a.)", b"a\n", 0, 2);
+}
+
+#[test]
+fn multiline_dot_b_across_newline() {
+    // C line 359: (?m:.b) matches \nb in a\nb
+    x2(b"(?m:.b)", b"a\nb", 1, 3);
+}
+
+#[test]
+fn multiline_dotstar_abc() {
+    // C line 362: (?m:.*abc) matches dddabddabc -> 0-10
+    x2(b"(?m:.*abc)", b"dddabddabc", 0, 10);
+}
+
+// ============================================================================
+// Case-insensitive negation (C lines 363-364)
+// ============================================================================
+
+#[test]
+fn case_insensitive_then_negate() {
+    // C line 363: (?i)(?-i)a no match for A
+    n(b"(?i)(?-i)a", b"A");
+}
+
+#[test]
+fn case_insensitive_then_negate_group() {
+    // C line 364: (?i)(?-i:a) no match for A
+    n(b"(?i)(?-i:a)", b"A");
+}
+
+// ============================================================================
+// C lines 1155-1176: UTF-8 char class intersection with Japanese chars,
+//                    multibyte string matching
+// ============================================================================
+
+#[test]
+fn japanese_class_intersection_match_ku() {
+    // C line 1155: [[かきく]&&きく] matches く -> 0-3
+    x2("[[かきく]&&きく]".as_bytes(), "く".as_bytes(), 0, 3);
+}
+
+#[test]
+fn japanese_class_intersection_no_match_ka() {
+    // C line 1156: [[かきく]&&きく] does not match か
+    n("[[かきく]&&きく]".as_bytes(), "か".as_bytes());
+}
+
+#[test]
+fn japanese_class_intersection_no_match_ke() {
+    // C line 1157: [[かきく]&&きく] does not match け
+    n("[[かきく]&&きく]".as_bytes(), "け".as_bytes());
+}
+
+#[test]
+fn japanese_range_triple_intersection() {
+    // C line 1158: [あ-ん&&い-を&&う-ゑ] matches ゑ -> 0-3
+    x2("[あ-ん&&い-を&&う-ゑ]".as_bytes(), "ゑ".as_bytes(), 0, 3);
+}
+
+#[test]
+fn japanese_negated_range_triple_intersection() {
+    // C line 1159: [^あ-ん&&い-を&&う-ゑ] does not match ゑ
+    n("[^あ-ん&&い-を&&う-ゑ]".as_bytes(), "ゑ".as_bytes());
+}
+
+#[test]
+fn japanese_negated_inner_class_intersection_match_i() {
+    // C line 1160: [[^あ&&あ]&&あ-ん] matches い -> 0-3
+    x2("[[^あ&&あ]&&あ-ん]".as_bytes(), "い".as_bytes(), 0, 3);
+}
+
+#[test]
+fn japanese_negated_inner_class_intersection_no_match_a() {
+    // C line 1161: [[^あ&&あ]&&あ-ん] does not match あ
+    n("[[^あ&&あ]&&あ-ん]".as_bytes(), "あ".as_bytes());
+}
+
+#[test]
+fn japanese_complex_negated_intersection_match_ki() {
+    // C line 1162: [[^あ-ん&&いうえお]&&[^う-か]] matches き -> 0-3
+    x2("[[^あ-ん&&いうえお]&&[^う-か]]".as_bytes(), "き".as_bytes(), 0, 3);
+}
+
+#[test]
+fn japanese_complex_negated_intersection_no_match_i() {
+    // C line 1163: [[^あ-ん&&いうえお]&&[^う-か]] does not match い
+    n("[[^あ-ん&&いうえお]&&[^う-か]]".as_bytes(), "い".as_bytes());
+}
+
+#[test]
+fn japanese_double_negated_intersection_match_u() {
+    // C line 1164: [^[^あいう]&&[^うえお]] matches う -> 0-3
+    x2("[^[^あいう]&&[^うえお]]".as_bytes(), "う".as_bytes(), 0, 3);
+}
+
+#[test]
+fn japanese_double_negated_intersection_match_e() {
+    // C line 1165: [^[^あいう]&&[^うえお]] matches え -> 0-3
+    x2("[^[^あいう]&&[^うえお]]".as_bytes(), "え".as_bytes(), 0, 3);
+}
+
+#[test]
+fn japanese_double_negated_intersection_no_match_ka() {
+    // C line 1166: [^[^あいう]&&[^うえお]] does not match か
+    n("[^[^あいう]&&[^うえお]]".as_bytes(), "か".as_bytes());
+}
+
+#[test]
+fn japanese_range_dash_intersection() {
+    // C line 1167: [あ-&&-あ] matches - -> 0-1
+    x2("[あ-&&-あ]".as_bytes(), b"-", 0, 1);
+}
+
+#[test]
+fn japanese_mixed_ascii_negated_intersection_match_e() {
+    // C line 1168: [^[^a-zあいう]&&[^bcdefgうえお]q-w] matches え -> 0-3
+    x2("[^[^a-zあいう]&&[^bcdefgうえお]q-w]".as_bytes(), "え".as_bytes(), 0, 3);
+}
+
+#[test]
+fn japanese_mixed_ascii_negated_intersection_match_f() {
+    // C line 1169: [^[^a-zあいう]&&[^bcdefgうえお]g-w] matches f -> 0-1
+    x2("[^[^a-zあいう]&&[^bcdefgうえお]g-w]".as_bytes(), b"f", 0, 1);
+}
+
+#[test]
+fn japanese_mixed_ascii_negated_intersection_match_g() {
+    // C line 1170: [^[^a-zあいう]&&[^bcdefgうえお]g-w] matches g -> 0-1
+    x2("[^[^a-zあいう]&&[^bcdefgうえお]g-w]".as_bytes(), b"g", 0, 1);
+}
+
+#[test]
+fn japanese_mixed_ascii_negated_intersection_no_match_2() {
+    // C line 1171: [^[^a-zあいう]&&[^bcdefgうえお]g-w] does not match 2
+    n("[^[^a-zあいう]&&[^bcdefgうえお]g-w]".as_bytes(), b"2");
+}
+
+#[test]
+fn japanese_version_download_literal() {
+    // C line 1172: a<b>バージョンのダウンロード<\/b> matches -> 0-44
+    let pattern = [b"a<b>" as &[u8], "バージョンのダウンロード".as_bytes(), b"<\\/b>"].concat();
+    let input = [b"a<b>" as &[u8], "バージョンのダウンロード".as_bytes(), b"</b>"].concat();
+    x2(&pattern, &input, 0, 44);
+}
+
+#[test]
+fn japanese_version_download_dot() {
+    // C line 1173: .<b>バージョンのダウンロード<\/b> matches -> 0-44
+    let pattern = [b".<b>" as &[u8], "バージョンのダウンロード".as_bytes(), b"<\\/b>"].concat();
+    let input = [b"a<b>" as &[u8], "バージョンのダウンロード".as_bytes(), b"</b>"].concat();
+    x2(&pattern, &input, 0, 44);
+}
+
+#[test]
+fn japanese_optional_newline_end() {
+    // C line 1174: \n?\z matches end of こんにちは -> 15-15
+    x2(b"\\n?\\z", "こんにちは".as_bytes(), 15, 15);
+}
+
+#[test]
+fn japanese_multiline_dotstar() {
+    // C line 1175: (?m).* matches 青赤黄 -> 0-9
+    x2(b"(?m).*", "青赤黄".as_bytes(), 0, 9);
+}
+
+#[test]
+fn japanese_multiline_dotstar_a() {
+    // C line 1176: (?m).*a matches 青赤黄a -> 0-10
+    let input = ["青赤黄".as_bytes(), b"a"].concat();
+    x2(b"(?m).*a", &input, 0, 10);
+}
+
+// ============================================================================
+// C lines 1178-1201: Unicode general categories \p{Hiragana}, \p{Emoji},
+//                    \pC, \pL, \pM, \pN, \pP, \pS, \pZ, etc.
+// NOTE: \p{...} property lookup is not yet implemented (TODO in unicode/mod.rs)
+//       so all these tests are #[ignore] until property_name_to_ctype is ported.
+// ============================================================================
+
+#[test]
+#[ignore]
+fn unicode_prop_hiragana_match() {
+    // C line 1178: \p{Hiragana} matches ぴ -> 0-3
+    x2("\\p{Hiragana}".as_bytes(), "ぴ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_hiragana_no_match() {
+    // C line 1179: \P{Hiragana} does not match ぴ
+    n("\\P{Hiragana}".as_bytes(), "ぴ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_emoji_match() {
+    // C line 1180: \p{Emoji} matches U+2B50 (star) -> 0-3
+    x2(b"\\p{Emoji}", b"\xe2\xad\x90", 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_emoji_match() {
+    // C line 1181: \p{^Emoji} matches U+FF13 (fullwidth 3) -> 0-3
+    x2(b"\\p{^Emoji}", b"\xef\xbc\x93", 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_extended_pictographic_match() {
+    // C line 1182: \p{Extended_Pictographic} matches U+26A1 (lightning) -> 0-3
+    x2(b"\\p{Extended_Pictographic}", b"\xe2\x9a\xa1", 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_extended_pictographic_no_match() {
+    // C line 1183: \p{Extended_Pictographic} does not match U+3042 (あ)
+    n(b"\\p{Extended_Pictographic}", b"\xe3\x81\x82");
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_pc_soft_hyphen() {
+    // C line 1184: \pC matches U+00AD (Soft Hyphen) -> 0-2
+    x2(b"\\pC", b"\xc2\xad", 0, 2);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_pl_ascii() {
+    // C line 1185: \pL matches U -> 0-1
+    x2(b"\\pL", b"U", 0, 1);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_pm_combining_circle() {
+    // C line 1186: \pM matches U+20DD (Combining Enclosing Circle) -> 0-3
+    x2(b"\\pM", b"\xe2\x83\x9d", 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_pn_plus() {
+    // C line 1187: \pN+ matches "3Ⅴ" -> 0-4
+    let input = [b"3" as &[u8], "\u{2164}".as_bytes()].concat();
+    x2(b"\\pN+", &input, 0, 4);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_pp_plus() {
+    // C line 1188: \pP+ matches "†⁂" -> 0-6
+    let input = ["\u{2020}".as_bytes(), "\u{2042}".as_bytes()].concat();
+    x2(b"\\pP+", &input, 0, 6);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_ps_plus() {
+    // C line 1189: \pS+ matches "€₤" -> 0-6
+    let input = ["\u{20AC}".as_bytes(), "\u{20A4}".as_bytes()].concat();
+    x2(b"\\pS+", &input, 0, 6);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_pz_space() {
+    // C line 1190: \pZ+ matches " " -> 0-1
+    x2(b"\\pZ+", b" ", 0, 1);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_pl_no_match_at() {
+    // C line 1191: \pL does not match @
+    n(b"\\pL", b"@");
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_pl_plus() {
+    // C line 1192: \pL+ matches akZtE -> 0-5
+    x2(b"\\pL+", b"akZtE", 0, 5);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_pl_plus() {
+    // C line 1193: \PL+ matches "1@=-%" -> 0-5
+    x2(b"\\PL+", b"1@=-%", 0, 5);
+}
+
+// C lines 1194-1196: e() error tests -- skipped (no e() helper)
+
+#[test]
+#[ignore]
+fn unicode_prop_pl_in_class() {
+    // C line 1197: [\pL] matches s -> 0-1
+    x2(b"[\\pL]", b"s", 0, 1);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_pl_in_negated_class() {
+    // C line 1198: [^\pL] does not match s
+    n(b"[^\\pL]", b"s");
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_pl_in_class_plus() {
+    // C line 1199: [\PL]+ matches "-3@" -> 0-3
+    x2(b"[\\PL]+", b"-3@", 0, 3);
+}
+
+// C lines 1200-1201: e() error tests -- skipped (no e() helper)
+
+// ============================================================================
+// C lines 1203-1236: \p{Word}, \p{^Word}, \p{Cntrl} with char class
+//                    intersections and negations
+// NOTE: \p{...} property lookup not yet implemented - all #[ignore]
+// ============================================================================
+
+#[test]
+#[ignore]
+fn unicode_prop_word_match_ko() {
+    // C line 1203: \p{Word} matches こ -> 0-3
+    x2("\\p{Word}".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_no_match_ko() {
+    // C line 1204: \p{^Word} does not match こ
+    n("\\p{^Word}".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_word_in_class_match_ko() {
+    // C line 1205: [\p{Word}] matches こ -> 0-3
+    x2("[\\p{Word}]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_in_class_no_match_ko() {
+    // C line 1206: [\p{^Word}] does not match こ
+    n("[\\p{^Word}]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_word_negated_class_no_match_ko() {
+    // C line 1207: [^\p{Word}] does not match こ
+    n("[^\\p{Word}]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_negated_class_match_ko() {
+    // C line 1208: [^\p{^Word}] matches こ -> 0-3
+    x2("[^\\p{^Word}]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_and_ascii_negated_match_ko() {
+    // C line 1209: [^\p{^Word}&&\p{ASCII}] matches こ -> 0-3
+    x2("[^\\p{^Word}&&\\p{ASCII}]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_and_ascii_negated_match_a() {
+    // C line 1210: [^\p{^Word}&&\p{ASCII}] matches a -> 0-1
+    x2("[^\\p{^Word}&&\\p{ASCII}]".as_bytes(), b"a", 0, 1);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_and_ascii_negated_no_match_hash() {
+    // C line 1211: [^\p{^Word}&&\p{ASCII}] does not match #
+    n("[^\\p{^Word}&&\\p{ASCII}]".as_bytes(), b"#");
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_nested_and_ascii_match_ko() {
+    // C line 1212: [^[\p{^Word}]&&[\p{ASCII}]] matches こ -> 0-3
+    x2("[^[\\p{^Word}]&&[\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_ascii_and_not_word_negated_match_ko() {
+    // C line 1213: [^[\p{ASCII}]&&[^\p{Word}]] matches こ -> 0-3
+    x2("[^[\\p{ASCII}]&&[^\\p{Word}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_ascii_and_not_word_no_match_ko() {
+    // C line 1214: [[\p{ASCII}]&&[^\p{Word}]] does not match こ
+    n("[[\\p{ASCII}]&&[^\\p{Word}]]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_and_not_ascii_negated_match_ko() {
+    // C line 1215: [^[\p{^Word}]&&[^\p{ASCII}]] matches こ -> 0-3
+    x2("[^[\\p{^Word}]&&[^\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+fn unicode_prop_negated_hex_code_match_ko() {
+    // C line 1216: [^\x{104a}] matches こ -> 0-3
+    x2("[^\\x{104a}]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_and_not_hex_negated_match_ko() {
+    // C line 1217: [^\p{^Word}&&[^\x{104a}]] matches こ -> 0-3
+    x2("[^\\p{^Word}&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_word_nested_and_not_hex_negated_match_ko() {
+    // C line 1218: [^[\p{^Word}]&&[^\x{104a}]] matches こ -> 0-3
+    x2("[^[\\p{^Word}]&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_word_or_not_hex_negated_no_match_ko() {
+    // C line 1219: [^\p{Word}||[^\x{104a}]] does not match こ
+    n("[^\\p{Word}||[^\\x{104a}]]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_cntrl_match_ko() {
+    // C line 1221: \p{^Cntrl} matches こ -> 0-3
+    x2("\\p{^Cntrl}".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_cntrl_no_match_ko() {
+    // C line 1222: \p{Cntrl} does not match こ
+    n("\\p{Cntrl}".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_cntrl_in_class_match_ko() {
+    // C line 1223: [\p{^Cntrl}] matches こ -> 0-3
+    x2("[\\p{^Cntrl}]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_cntrl_in_class_no_match_ko() {
+    // C line 1224: [\p{Cntrl}] does not match こ
+    n("[\\p{Cntrl}]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_cntrl_negated_class_no_match_ko() {
+    // C line 1225: [^\p{^Cntrl}] does not match こ
+    n("[^\\p{^Cntrl}]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_cntrl_negated_class_match_ko() {
+    // C line 1226: [^\p{Cntrl}] matches こ -> 0-3
+    x2("[^\\p{Cntrl}]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_cntrl_and_ascii_negated_match_ko() {
+    // C line 1227: [^\p{Cntrl}&&\p{ASCII}] matches こ -> 0-3
+    x2("[^\\p{Cntrl}&&\\p{ASCII}]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_cntrl_and_ascii_negated_match_a() {
+    // C line 1228: [^\p{Cntrl}&&\p{ASCII}] matches a -> 0-1
+    x2("[^\\p{Cntrl}&&\\p{ASCII}]".as_bytes(), b"a", 0, 1);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_cntrl_and_ascii_negated_no_match_hash() {
+    // C line 1229: [^\p{^Cntrl}&&\p{ASCII}] does not match #
+    n("[^\\p{^Cntrl}&&\\p{ASCII}]".as_bytes(), b"#");
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_cntrl_nested_and_ascii_negated_match_ko() {
+    // C line 1230: [^[\p{^Cntrl}]&&[\p{ASCII}]] matches こ -> 0-3
+    x2("[^[\\p{^Cntrl}]&&[\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_ascii_and_not_cntrl_negated_match_ko() {
+    // C line 1231: [^[\p{ASCII}]&&[^\p{Cntrl}]] matches こ -> 0-3
+    x2("[^[\\p{ASCII}]&&[^\\p{Cntrl}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_ascii_and_not_cntrl_no_match_ko() {
+    // C line 1232: [[\p{ASCII}]&&[^\p{Cntrl}]] does not match こ
+    n("[[\\p{ASCII}]&&[^\\p{Cntrl}]]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_cntrl_and_not_ascii_negated_no_match_ko() {
+    // C line 1233: [^[\p{^Cntrl}]&&[^\p{ASCII}]] does not match こ
+    n("[^[\\p{^Cntrl}]&&[^\\p{ASCII}]]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_cntrl_and_not_hex_negated_no_match_ko() {
+    // C line 1234: [^\p{^Cntrl}&&[^\x{104a}]] does not match こ
+    n("[^\\p{^Cntrl}&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_not_cntrl_nested_and_not_hex_negated_no_match_ko() {
+    // C line 1235: [^[\p{^Cntrl}]&&[^\x{104a}]] does not match こ
+    n("[^[\\p{^Cntrl}]&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes());
+}
+
+#[test]
+#[ignore]
+fn unicode_prop_cntrl_or_not_hex_negated_no_match_ko() {
+    // C line 1236: [^\p{Cntrl}||[^\x{104a}]] does not match こ
+    n("[^\\p{Cntrl}||[^\\x{104a}]]".as_bytes(), "こ".as_bytes());
+}
+
+// C lines 1238-1273: (?W:...), (?D:...), (?S:...), (?P:...) option modifiers
+// -- skipped: not implemented in group option parser
+
+// ============================================================================
+// C line 1275: \p{InBasicLatin} unicode block
+// NOTE: \p{...} property lookup not yet implemented - #[ignore]
+// ============================================================================
+
+#[test]
+#[ignore]
+fn unicode_prop_in_basic_latin() {
+    // C line 1275: \p{InBasicLatin} matches A -> 0-1
+    x2(b"\\p{InBasicLatin}", b"\x41", 0, 1);
+}
+
+// C lines 1279-1357: Extended grapheme clusters (\y, \Y, \X), text segments
+// (?y{g}), (?y{w}) -- skipped: not implemented
+
+// ============================================================================
+// Atomic groups (C lines 528-529)
+// ============================================================================
+
+#[test]
+fn atomic_group_no_backtrack() {
+    // C line 528: (?>a|abd)c no match for "abdc" (atomic prevents backtrack)
+    n(b"(?>a|abd)c", b"abdc");
+}
+
+#[test]
+fn atomic_group_longest_first() {
+    // C line 529: (?>abd|a)c matches "abdc" -> 0-4
+    x2(b"(?>abd|a)c", b"abdc", 0, 4);
+}
+
+// ============================================================================
+// Case-insensitive alternation (C lines 565-573)
+// ============================================================================
+
+#[test]
+fn alt_casefold_inline() {
+    // C line 565: a|(?i)c matches "C" -> 0-1
+    x2(b"a|(?i)c", b"C", 0, 1);
+}
+
+#[test]
+fn alt_casefold_c_or_a_match_c() {
+    // C line 566: (?i)c|a matches "C" -> 0-1
+    x2(b"(?i)c|a", b"C", 0, 1);
+}
+
+#[test]
+fn alt_casefold_c_or_a_match_a() {
+    // C line 567: (?i)c|a matches "A" -> 0-1
+    x2(b"(?i)c|a", b"A", 0, 1);
+}
+
+#[test]
+fn alt_casefold_scoped_b_or_c_match_b() {
+    // C line 568: a(?i)b|c matches "aB" -> 0-2
+    x2(b"a(?i)b|c", b"aB", 0, 2);
+}
+
+#[test]
+#[ignore] // inline (?i) scoping across alternation not yet matching C behavior
+fn alt_casefold_scoped_b_or_c_match_c() {
+    // C line 569: a(?i)b|c matches "aC" -> 0-2
+    x2(b"a(?i)b|c", b"aC", 0, 2);
+}
+
+#[test]
+#[ignore] // inline (?i) scoping across alternation not yet matching C behavior
+fn alt_casefold_scoped_no_match_ac() {
+    // C line 570: a(?i)b|c no match for "AC" (a must be lowercase)
+    n(b"a(?i)b|c", b"AC");
+}
+
+#[test]
+fn alt_casefold_group_no_leak() {
+    // C line 571: a(?:(?i)b)|c no match for "aC" ((?i) scoped to group)
+    n(b"a(?:(?i)b)|c", b"aC");
+}
+
+#[test]
+fn alt_casefold_modifier_group() {
+    // C line 572: (?i:c)|a matches "C" -> 0-1
+    x2(b"(?i:c)|a", b"C", 0, 1);
+}
+
+#[test]
+fn alt_casefold_modifier_group_no_leak() {
+    // C line 573: (?i:c)|a no match for "A" ((?i) only applies to c)
+    n(b"(?i:c)|a", b"A");
+}
+
+// ============================================================================
+// Case-insensitive with quantifiers (C line 601)
+// ============================================================================
+
+#[test]
+fn casefold_xa_after_star() {
+    // C line 601: (?:X*)(?i:xa) matches "XXXa" -> 0-4
+    x2(b"(?:X*)(?i:xa)", b"XXXa", 0, 4);
+}
+
+// ============================================================================
+// Capture groups with modifiers (C lines 629-635)
+// ============================================================================
+
+#[test]
+fn capture_casefold_group() {
+    // C line 629: ((?i:abc)) matches "AbC" group 1 -> 0-3
+    x3(b"((?i:abc))", b"AbC", 0, 3, 1);
+}
+
+#[test]
+#[ignore] // case-insensitive backrefs not yet implemented
+fn capture_casefold_backref() {
+    // C line 630: (abc)(?i:\1) matches "abcABC" -> 0-6
+    x2(b"(abc)(?i:\\1)", b"abcABC", 0, 6);
+}
+
+#[test]
+fn capture_multiline_group() {
+    // C line 631: ((?m:a.c)) matches "a\nc" group 1 -> 0-3
+    x3(b"((?m:a.c))", b"a\nc", 0, 3, 1);
+}
+
+#[test]
+fn capture_casefold_abc_or_zzz() {
+    // C line 635: (?i:(abc))|(zzz) matches "ABC" group 1 -> 0-3
+    x3(b"(?i:(abc))|(zzz)", b"ABC", 0, 3, 1);
+}
+
+// ============================================================================
+// Case-insensitive backreferences (C lines 680-681)
+// ============================================================================
+
+#[test]
+fn backref_casefold_az() {
+    // C line 680: ((?i:az))\1 matches "AzAz" -> 0-4
+    x2(b"((?i:az))\\1", b"AzAz", 0, 4);
+}
+
+#[test]
+fn backref_casefold_az_no_match() {
+    // C line 681: ((?i:az))\1 no match for "Azaz" (\1 is literal backref, must match case)
+    n(b"((?i:az))\\1", b"Azaz");
+}
+
+// ============================================================================
+// Lookbehind (C lines 682-705)
+// ============================================================================
+
+#[test]
+fn lookbehind_basic() {
+    // C line 682: (?<=a)b matches "ab" -> 1-2
+    x2(b"(?<=a)b", b"ab", 1, 2);
+}
+
+#[test]
+fn lookbehind_basic_no_match() {
+    // C line 683: (?<=a)b no match for "bb"
+    n(b"(?<=a)b", b"bb");
+}
+
+#[test]
+fn lookbehind_alt() {
+    // C line 684: (?<=a|b)b matches "bb" -> 1-2
+    x2(b"(?<=a|b)b", b"bb", 1, 2);
+}
+
+#[test]
+fn lookbehind_alt_bc_1() {
+    // C line 685: (?<=a|bc)b matches "bcb" -> 2-3
+    x2(b"(?<=a|bc)b", b"bcb", 2, 3);
+}
+
+#[test]
+fn lookbehind_alt_bc_2() {
+    // C line 686: (?<=a|bc)b matches "ab" -> 1-2
+    x2(b"(?<=a|bc)b", b"ab", 1, 2);
+}
+
+#[test]
+fn lookbehind_alt_many() {
+    // C line 687: (?<=a|bc||defghij|klmnopq|r)z matches "rz" -> 1-2
+    x2(b"(?<=a|bc||defghij|klmnopq|r)z", b"rz", 1, 2);
+}
+
+#[test]
+fn lookbehind_capture() {
+    // C line 688: (?<=(abc))d matches "abcd", group 1 -> 0-3
+    x3(b"(?<=(abc))d", b"abcd", 0, 3, 1);
+}
+
+#[test]
+fn lookbehind_casefold() {
+    // C line 689: (?<=(?i:abc))d matches "ABCd" -> 3-4
+    x2(b"(?<=(?i:abc))d", b"ABCd", 3, 4);
+}
+
+#[test]
+fn lookbehind_caret_or_b() {
+    // C line 690: (?<=^|b)c matches " cbc" -> 3-4
+    x2(b"(?<=^|b)c", b" cbc", 3, 4);
+}
+
+#[test]
+fn lookbehind_a_or_caret_or_b() {
+    // C line 691: (?<=a|^|b)c matches " cbc" -> 3-4
+    x2(b"(?<=a|^|b)c", b" cbc", 3, 4);
+}
+
+#[test]
+fn lookbehind_a_or_caret_cap_or_b() {
+    // C line 692: (?<=a|(^)|b)c matches " cbc" -> 3-4
+    x2(b"(?<=a|(^)|b)c", b" cbc", 3, 4);
+}
+
+#[test]
+fn lookbehind_a_or_caret_cap_or_b_start() {
+    // C line 693: (?<=a|(^)|b)c matches "cbc" -> 0-1
+    x2(b"(?<=a|(^)|b)c", b"cbc", 0, 1);
+}
+
+#[test]
+#[ignore] // negative lookbehind not yet fully implemented
+fn neg_lookbehind_basic() {
+    // C line 702: (?<!a)b matches "cb" -> 1-2
+    x2(b"(?<!a)b", b"cb", 1, 2);
+}
+
+#[test]
+fn neg_lookbehind_basic_no_match() {
+    // C line 703: (?<!a)b no match for "ab"
+    n(b"(?<!a)b", b"ab");
+}
+
+#[test]
+#[ignore] // negative lookbehind not yet fully implemented
+fn neg_lookbehind_alt() {
+    // C line 704: (?<!a|bc)b matches "bbb" -> 0-1
+    x2(b"(?<!a|bc)b", b"bbb", 0, 1);
+}
+
+#[test]
+fn neg_lookbehind_alt_no_match() {
+    // C line 705: (?<!a|bc)z no match for "bcz"
+    n(b"(?<!a|bc)z", b"bcz");
+}
+
+#[test]
+fn neg_lookbehind_caret_or_b_no_match() {
+    // C line 697: (?<!^|b)c no match for "cbc"
+    n(b"(?<!^|b)c", b"cbc");
+}
+
+#[test]
+fn neg_lookbehind_a_or_caret_or_b_no_match() {
+    // C line 698: (?<!a|^|b)c no match for "cbc"
+    n(b"(?<!a|^|b)c", b"cbc");
+}
+
+#[test]
+fn neg_lookbehind_a_or_noncap_caret_or_b_no_match() {
+    // C line 699: (?<!a|(?:^)|b)c no match for "cbc"
+    n(b"(?<!a|(?:^)|b)c", b"cbc");
+}
+
+#[test]
+#[ignore] // negative lookbehind not yet fully implemented
+fn neg_lookbehind_a_or_noncap_caret_or_b_match() {
+    // C line 700: (?<!a|(?:^)|b)c matches " cbc" -> 1-2
+    x2(b"(?<!a|(?:^)|b)c", b" cbc", 1, 2);
+}
+
+// ============================================================================
+// Named groups (C lines 706-708)
+// ============================================================================
+
+#[test]
+fn named_group_basic() {
+    // C line 706: (?<name1>a) matches "a" -> 0-1
+    x2(b"(?<name1>a)", b"a", 0, 1);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_backref() {
+    // C line 707: (?<name_2>ab)\g<name_2> matches "abab" -> 0-4
+    x2(b"(?<name_2>ab)\\g<name_2>", b"abab", 0, 4);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_backref_k() {
+    // C line 708: (?<name_3>.zv.)\k<name_3> matches "azvbazvb" -> 0-8
+    x2(b"(?<name_3>.zv.)\\k<name_3>", b"azvbazvb", 0, 8);
+}
+
+// ============================================================================
+// Recursive patterns \g<n> (C lines 701, 709-738)
+// ============================================================================
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_g1() {
+    // C line 701: (a)\g<1> matches "aa" -> 0-2
+    x2(b"(a)\\g<1>", b"aa", 0, 2);
+}
+
+#[test]
+#[ignore] // recursive calls inside lookbehind not yet implemented
+fn recursive_lookbehind_named() {
+    // C line 709: (?<=\g<ab>)|-\zEND (?<ab>XyZ) matches "XyZ" -> 3-3
+    x2(b"(?<=\\g<ab>)|-\\zEND (?<ab>XyZ)", b"XyZ", 3, 3);
+}
+
+#[test]
+fn recursive_named_empty_or_a() {
+    // C line 710: (?<n>|a\g<n>)+ matches "" -> 0-0
+    x2(b"(?<n>|a\\g<n>)+", b"", 0, 0);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_parens() {
+    // C line 711: (?<n>|\(\g<n>\))+$ matches "()(())" -> 0-6
+    x2(b"(?<n>|\\(\\g<n>\\))+$", b"()(())", 0, 6);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_g_n_dot_zero() {
+    // C line 712: \g<n>(?<n>.){0} matches "X" group 1 -> 0-1
+    x3(b"\\g<n>(?<n>.){0}", b"X", 0, 1, 1);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_g_n_alt_df() {
+    // C line 713: \g<n>(abc|df(?<n>.YZ){2,8}){0} matches "XYZ" -> 0-3
+    x2(b"\\g<n>(abc|df(?<n>.YZ){2,8}){0}", b"XYZ", 0, 3);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_A_n_a_or_empty() {
+    // C line 714: \A(?<n>(a\g<n>)|)\z matches "aaaa" -> 0-4
+    x2(b"\\A(?<n>(a\\g<n>)|)\\z", b"aaaa", 0, 4);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_mutual() {
+    // C line 715: (?<n>|\g<m>\g<n>)\z|\zEND (?<m>a|(b)\g<m>) matches "bbbbabba" -> 0-8
+    x2(b"(?<n>|\\g<m>\\g<n>)\\z|\\zEND (?<m>a|(b)\\g<m>)", b"bbbbabba", 0, 8);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_long_name() {
+    // C line 716: (?<name1240>\w+\sx)a+\k<name1240> matches "  fg xaaaaaaaafg x" -> 2-18
+    x2(b"(?<name1240>\\w+\\sx)a+\\k<name1240>", b"  fg xaaaaaaaafg x", 2, 18);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_underscore_9() {
+    // C line 717: (z)()()(?<_9>a)\g<_9> matches "zaa" group 1 -> 2-3
+    x3(b"(z)()()(?<_9>a)\\g<_9>", b"zaa", 2, 3, 1);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_underscore_backref() {
+    // C line 718: (.)(((?<_>a)))\k<_> matches "zaa" -> 0-3
+    x2(b"(.)(((?<_>a)))\\k<_>", b"zaa", 0, 3);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_digit_or_word() {
+    // C line 719: ((?<name1>\d)|(?<name2>\w))(\k<name1>|\k<name2>) matches "ff" -> 0-2
+    x2(b"((?<name1>\\d)|(?<name2>\\w))(\\k<name1>|\\k<name2>)", b"ff", 0, 2);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_dup_empty() {
+    // C line 720: (?:(?<x>)|(?<x>efg))\k<x> matches "" -> 0-0
+    x2(b"(?:(?<x>)|(?<x>efg))\\k<x>", b"", 0, 0);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_dup_abc_efg() {
+    // C line 721: (?:(?<x>abc)|(?<x>efg))\k<x> matches "abcefgefg" -> 3-9
+    x2(b"(?:(?<x>abc)|(?<x>efg))\\k<x>", b"abcefgefg", 3, 9);
+}
+
+#[test]
+fn named_group_dup_no_match() {
+    // C line 722: (?:(?<x>abc)|(?<x>efg))\k<x> no match for "abcefg"
+    n(b"(?:(?<x>abc)|(?<x>efg))\\k<x>", b"abcefg");
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_dup_x_xx() {
+    // C line 723: (?<x>x)(?<x>xx)\k<x> matches "xxxx" -> 0-4
+    x2(b"(?<x>x)(?<x>xx)\\k<x>", b"xxxx", 0, 4);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_dup_x_xx_z() {
+    // C line 724: (?<x>x)(?<x>xx)\k<x> matches "xxxxz" -> 0-4
+    x2(b"(?<x>x)(?<x>xx)\\k<x>", b"xxxxz", 0, 4);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_14_dup_pyumpyum() {
+    // C line 725: 14 alternatives of (?<n1>...) followed by \k<n1>$ matches "a-pyumpyum" -> 2-10
+    x2(b"(?:(?<n1>.)|(?<n1>..)|(?<n1>...)|(?<n1>....)|(?<n1>.....)|(?<n1>......)|(?<n1>.......)|(?<n1>........)|(?<n1>.........)|(?<n1>..........)|(?<n1>...........)|(?<n1>............)|(?<n1>.............)|(?<n1>..............))\\k<n1>$", b"a-pyumpyum", 2, 10);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_group_14_dup_capture_14() {
+    // C line 726: same pattern, capture group 14 of long string -> 4-18
+    x3(b"(?:(?<n1>.)|(?<n1>..)|(?<n1>...)|(?<n1>....)|(?<n1>.....)|(?<n1>......)|(?<n1>.......)|(?<n1>........)|(?<n1>.........)|(?<n1>..........)|(?<n1>...........)|(?<n1>............)|(?<n1>.............)|(?<n1>..............))\\k<n1>$", b"xxxxabcdefghijklmnabcdefghijklmn", 4, 18, 14);
+}
+
+#[test]
+fn named_group_16_aaa() {
+    // C line 727: 16 named groups, group 16 = aaa, match "aaa" -> 0-3
+    x3(b"(?<name1>)(?<name2>)(?<name3>)(?<name4>)(?<name5>)(?<name6>)(?<name7>)(?<name8>)(?<name9>)(?<name10>)(?<name11>)(?<name12>)(?<name13>)(?<name14>)(?<name15>)(?<name16>aaa)(?<name17>)$", b"aaa", 0, 3, 16);
+}
+
+#[test]
+fn recursive_foo_parens() {
+    // C line 728: (?<foo>a|\(\g<foo>\)) matches "a" -> 0-1
+    x2(b"(?<foo>a|\\(\\g<foo>\\))", b"a", 0, 1);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_foo_nested_parens() {
+    // C line 729: (?<foo>a|\(\g<foo>\)) matches "((((((a))))))" -> 0-13
+    x2(b"(?<foo>a|\\(\\g<foo>\\))", b"((((((a))))))", 0, 13);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_foo_nested_parens_capture() {
+    // C line 730: (?<foo>a|\(\g<foo>\)) matches "((((((((a))))))))" group 1 -> 0-17
+    x3(b"(?<foo>a|\\(\\g<foo>\\))", b"((((((((a))))))))", 0, 17, 1);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_bar_abc_dollar() {
+    // C line 731: \g<bar>|\zEND(?<bar>.*abc$) matches "abcxxxabc" -> 0-9
+    x2(b"\\g<bar>|\\zEND(?<bar>.*abc$)", b"abcxxxabc", 0, 9);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_g1_bac() {
+    // C line 732: \g<1>|\zEND(.a.) matches "bac" -> 0-3
+    x2(b"\\g<1>|\\zEND(.a.)", b"bac", 0, 3);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_g_A_mutual_capture() {
+    // C line 733: \g<_A>\g<_A>|\zEND(.a.)(?<_A>.b.) matches "xbxyby" group 1 -> 3-6
+    x3(b"\\g<_A>\\g<_A>|\\zEND(.a.)(?<_A>.b.)", b"xbxyby", 3, 6, 1);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_mutual_pan_pon() {
+    // C line 734: mutual recursion pan/pon matches "cdcbcdc" -> 0-7
+    x2(b"\\A(?:\\g<pon>|\\g<pan>|\\zEND  (?<pan>a|c\\g<pon>c)(?<pon>b|d\\g<pan>d))$", b"cdcbcdc", 0, 7);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_A_n_or_a_gm() {
+    // C line 735: \A(?<n>|a\g<m>)\z|\zEND (?<m>\g<n>) matches "aaaa" -> 0-4
+    x2(b"\\A(?<n>|a\\g<m>)\\z|\\zEND (?<m>\\g<n>)", b"aaaa", 0, 4);
+}
+
+#[test]
+fn recursive_n_3_5_interval() {
+    // C line 736: (?<n>(a|b\g<n>c){3,5}) matches "baaaaca" -> 1-5
+    x2(b"(?<n>(a|b\\g<n>c){3,5})", b"baaaaca", 1, 5);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_n_3_5_interval_long() {
+    // C line 737: (?<n>(a|b\g<n>c){3,5}) matches "baaaacaaaaa" -> 0-10
+    x2(b"(?<n>(a|b\\g<n>c){3,5})", b"baaaacaaaaa", 0, 10);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_possessive_parens() {
+    // C line 738: (?<pare>\(([^\(\)]++|\g<pare>)*+\)) matches "((a))" -> 0-5
+    x2(b"(?<pare>\\(([^\\(\\)]++|\\g<pare>)*+\\))", b"((a))", 0, 5);
+}
+
+// ============================================================================
+// Complex backref/capture coverage (C lines 742-758)
+// ============================================================================
+
+#[test]
+#[ignore] // backref in alternation with empty capture not yet implemented
+fn backref_or_empty_capture_star() {
+    // C line 742: (?:\1a|())*  matches "a" group 1 -> 0-0
+    x3(b"(?:\\1a|())*", b"a", 0, 0, 1);
+}
+
+#[test]
+fn dotstar_star_x() {
+    // C line 743: x((.)*)*x matches "0x1x2x3" -> 1-6
+    x2(b"x((.)*)*x", b"0x1x2x3", 1, 6);
+}
+
+#[test]
+#[ignore] // case-insensitive backrefs not yet implemented
+fn dotstar_star_x_casefold_backref() {
+    // C line 744: x((.)*)*x(?i:\1)\Z matches "0x1x2x1X2" -> 1-9
+    x2(b"x((.)*)*x(?i:\\1)\\Z", b"0x1x2x1X2", 1, 9);
+}
+
+#[test]
+fn multi_empty_capture_star_backref() {
+    // C line 745: (?:()|()|()|()|()|())*\2\5 matches "" -> 0-0
+    x2(b"(?:()|()|()|()|()|())*\\2\\5", b"", 0, 0);
+}
+
+#[test]
+fn multi_empty_capture_star_backref_b() {
+    // C line 746: (?:()|()|()|(x)|()|())*\2b\5 matches "b" -> 0-1
+    x2(b"(?:()|()|()|(x)|()|())*\\2b\\5", b"b", 0, 1);
+}
+
+#[test]
+fn char_class_0_9_dash_a() {
+    // C line 747: [0-9-a] matches "-" -> 0-1 (PR#44)
+    x2(b"[0-9-a]", b"-", 0, 1);
+}
+
+#[test]
+fn char_class_0_9_dash_a_no_match() {
+    // C line 748: [0-9-a] no match for ":" (PR#44)
+    n(b"[0-9-a]", b":");
+}
+
+#[test]
+fn recursive_parens_pr43() {
+    // C line 749: (\(((?:[^(]|\g<1>)*)\)) matches "(abc)(abc)" group 2 -> 1-4 (PR#43)
+    x3(b"(\\(((?:[^(]|\\g<1>)*)\\))", b"(abc)(abc)", 1, 4, 2);
+}
+
+#[test]
+fn octal_escape_o101() {
+    // C line 750: \o{101} matches "A" -> 0-1
+    x2(b"\\o{101}", b"A", 0, 1);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_backref_level_k1p3() {
+    // C line 751: \A(a|b\g<1>c)\k<1+3>\z matches "bbacca" -> 0-6
+    x2(b"\\A(a|b\\g<1>c)\\k<1+3>\\z", b"bbacca", 0, 6);
+}
+
+#[test]
+fn recursive_backref_level_k1p3_no_match() {
+    // C line 752: \A(a|b\g<1>c)\k<1+3>\z no match for "bbaccb"
+    n(b"\\A(a|b\\g<1>c)\\k<1+3>\\z", b"bbaccb");
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_casefold_backref_level() {
+    // C line 753: (?i)\A(a|b\g<1>c)\k<1+2>\z matches "bBACcbac" -> 0-8
+    x2(b"(?i)\\A(a|b\\g<1>c)\\k<1+2>\\z", b"bBACcbac", 0, 8);
+}
+
+#[test]
+#[ignore] // case-insensitive backrefs not yet implemented
+fn casefold_named_dup_backref() {
+    // C line 754: (?i)(?<X>aa)|(?<X>bb)\k<X> matches "BBbb" -> 0-4
+    x2(b"(?i)(?<X>aa)|(?<X>bb)\\k<X>", b"BBbb", 0, 4);
+}
+
+#[test]
+#[ignore] // relative backrefs/calls not yet implemented
+fn relative_positive_backref() {
+    // C line 755: (?:\k'+1'B|(A)C)* matches "ACAB" -> 0-4
+    x2(b"(?:\\k'+1'B|(A)C)*", b"ACAB", 0, 4);
+}
+
+#[test]
+#[ignore] // relative backrefs/calls not yet implemented
+fn relative_positive_call() {
+    // C line 756: \g<+2>(abc)(ABC){0} matches "ABCabc" -> 0-6
+    x2(b"\\g<+2>(abc)(ABC){0}", b"ABCabc", 0, 6);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_self_call_g0() {
+    // C line 757: A\g'0'|B() matches "AAAAB" -> 0-5
+    x2(b"A\\g'0'|B()", b"AAAAB", 0, 5);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_self_call_g0_capture() {
+    // C line 758: (A\g'0')|B matches "AAAAB" group 1 -> 0-5
+    x3(b"(A\\g'0')|B", b"AAAAB", 0, 5, 1);
+}
+
+// ============================================================================
+// Conditionals (?(1)...) (C lines 759-771)
+// ============================================================================
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_yes_only() {
+    // C line 759: (a*)(?(1))aa matches "aaaaa" -> 0-5
+    x2(b"(a*)(?(1))aa", b"aaaaa", 0, 5);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_negative_ref() {
+    // C line 760: (a*)(?(-1))aa matches "aaaaa" -> 0-5
+    x2(b"(a*)(?(-1))aa", b"aaaaa", 0, 5);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_named_ref() {
+    // C line 761: (?<name>aaa)(?('name'))aa matches "aaaaa" -> 0-5
+    x2(b"(?<name>aaa)(?('name'))aa", b"aaaaa", 0, 5);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_yes_no() {
+    // C line 762: (a)(?(1)aa|bb)a matches "aaaaa" -> 0-4
+    x2(b"(a)(?(1)aa|bb)a", b"aaaaa", 0, 4);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_named_yes_no() {
+    // C line 763: (?:aa|())(?(<1>)aa|bb)a matches "aabba" -> 0-5
+    x2(b"(?:aa|())(?(<1>)aa|bb)a", b"aabba", 0, 5);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_named_yes_no_cc() {
+    // C line 764: (?:aa|())(?('1')aa|bb|cc)a matches "aacca" -> 0-5
+    x2(b"(?:aa|())(?('1')aa|bb|cc)a", b"aacca", 0, 5);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_capture_group() {
+    // C line 765: (a*)(?(1)aa|a)b matches "aaab" group 1 -> 0-1
+    x3(b"(a*)(?(1)aa|a)b", b"aaab", 0, 1, 1);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_no_match() {
+    // C line 766: (a)(?(1)a|b)c no match for "abc"
+    n(b"(a)(?(1)a|b)c", b"abc");
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_empty_yes() {
+    // C line 767: (a)(?(1)|)c matches "ac" -> 0-2
+    x2(b"(a)(?(1)|)c", b"ac", 0, 2);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_empty_cond_no_match() {
+    // C line 768: (?()aaa|bbb) no match for "bbb"
+    n(b"(?()aaa|bbb)", b"bbb");
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_plus_zero() {
+    // C line 769: (a)(?(1+0)b|c)d matches "abd" -> 0-3
+    x2(b"(a)(?(1+0)b|c)d", b"abd", 0, 3);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_named_alt_ace() {
+    // C line 770: (?:(?'name'a)|(?'name'b))(?('name')c|d)e matches "ace" -> 0-3
+    x2(b"(?:(?'name'a)|(?'name'b))(?('name')c|d)e", b"ace", 0, 3);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_named_alt_bce() {
+    // C line 771: (?:(?'name'a)|(?'name'b))(?('name')c|d)e matches "bce" -> 0-3
+    x2(b"(?:(?'name'a)|(?'name'b))(?('name')c|d)e", b"bce", 0, 3);
+}
+
+// ============================================================================
+// Additional coverage patterns (C lines 791-824, 831-837)
+// Skip: 772-790 (\R, \N, \O, \K), 817 ((?W))
+// ============================================================================
+
+#[test]
+fn empty_cap_star_backref_1() {
+    // C line 791: (?:()|())*\1 matches "abc" -> 0-0
+    x2(b"(?:()|())*\\1", b"abc", 0, 0);
+}
+
+#[test]
+fn empty_cap_star_backref_2() {
+    // C line 792: (?:()|())*\2 matches "abc" -> 0-0
+    x2(b"(?:()|())*\\2", b"abc", 0, 0);
+}
+
+#[test]
+fn triple_empty_cap_star_backref() {
+    // C line 793: (?:()|()|())*\3\1 matches "abc" -> 0-0
+    x2(b"(?:()|()|())*\\3\\1", b"abc", 0, 0);
+}
+
+#[test]
+fn recursive_empty_or_a_g1() {
+    // C line 794: (|(?:a(?:\g'1')*))b| matches "abc" -> 0-2
+    x2(b"(|(?:a(?:\\g'1')*))b|", b"abc", 0, 2);
+}
+
+#[test]
+fn multi_alt_lazy_repeat_z() {
+    // C line 796: (abc|def|ghi|jkl|mno|pqr|stu){0,10}?\z matches "admno" -> 2-5
+    x2(b"(abc|def|ghi|jkl|mno|pqr|stu){0,10}?\\z", b"admno", 2, 5);
+}
+
+#[test]
+fn nested_alt_lazy_repeat_z() {
+    // C line 797: (abc|(def|ghi|jkl|mno|pqr){0,7}?){5}\z matches "adpqrpqrpqr" -> 2-11
+    x2(b"(abc|(def|ghi|jkl|mno|pqr){0,7}?){5}\\z", b"adpqrpqrpqr", 2, 11);
+}
+
+#[test]
+fn capture_noncap_a_opt_plus_coverage() {
+    // C line 802: ((?:a(?:b|c|d|e|f|g|h|i|j|k|l|m|n))+)? matches "abacadae" -> 0-8
+    x2(b"((?:a(?:b|c|d|e|f|g|h|i|j|k|l|m|n))+)?", b"abacadae", 0, 8);
+}
+
+#[test]
+fn capture_noncap_a_lazyplus_z() {
+    // C line 803: ((?:a(?:b|c|d|e|f|g|h|i|j|k|l|m|n))+?)?z matches "abacadaez" -> 0-9
+    x2(b"((?:a(?:b|c|d|e|f|g|h|i|j|k|l|m|n))+?)?z", b"abacadaez", 0, 9);
+}
+
+#[test]
+fn cap_a_or_b_lazyq_opt_z() {
+    // C line 804: \A((a|b)??)?z matches "bz" -> 0-2
+    x2(b"\\A((a|b)??)?z", b"bz", 0, 2);
+}
+
+#[test]
+#[ignore] // named subroutine calls not yet implemented
+fn cap_named_subroutine_zero() {
+    // C line 805: ((?<x>abc){0}a\g<x>d)+ matches "aabcd" -> 0-5
+    x2(b"((?<x>abc){0}a\\g<x>d)+", b"aabcd", 0, 5);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_abc_coverage() {
+    // C line 806: ((?(abc)true|false))+ matches "false" -> 0-5
+    x2(b"((?(abc)true|false))+", b"false", 0, 5);
+}
+
+#[test]
+fn casefold_group_d_plus() {
+    // C line 807: ((?i:abc)d)+ matches "abcdABCd" -> 0-8
+    x2(b"((?i:abc)d)+", b"abcdABCd", 0, 8);
+}
+
+#[test]
+#[ignore] // negative lookbehind not yet fully implemented
+fn neg_lookbehind_def_coverage() {
+    // C line 808: ((?<!abc)def)+ matches "bcdef" -> 2-5
+    x2(b"((?<!abc)def)+", b"bcdef", 2, 5);
+}
+
+#[test]
+fn word_boundary_capture_plus() {
+    // C line 809: (\ba)+ matches "aaa" -> 0-1
+    x2(b"(\\ba)+", b"aaa", 0, 1);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_named_coverage() {
+    // C line 810: ()(?<x>ab)(?(<x>)a|b) matches "aba" -> 0-3
+    x2(b"()(?<x>ab)(?(<x>)a|b)", b"aba", 0, 3);
+}
+
+#[test]
+fn lookbehind_dot_coverage() {
+    // C line 811: (?<=a.b)c matches "azbc" -> 3-4
+    x2(b"(?<=a.b)c", b"azbc", 3, 4);
+}
+
+#[test]
+fn lookbehind_long_repeat_no_match() {
+    // C line 812: (?<=(?:abcde){30})z no match for "abc"
+    n(b"(?<=(?:abcde){30})z", b"abc");
+}
+
+#[test]
+#[ignore] // conditionals inside lookbehind not yet implemented
+fn lookbehind_conditional_coverage() {
+    // C line 813: (?<=(?(a)a|bb))z matches "aaz" -> 2-3
+    x2(b"(?<=(?(a)a|bb))z", b"aaz", 2, 3);
+}
+
+#[test]
+fn lookbehind_nested_coverage() {
+    // C line 818: (?<=ab(?<=ab)) matches "ab" -> 2-2
+    x2(b"(?<=ab(?<=ab))", b"ab", 2, 2);
+}
+
+#[test]
+#[ignore] // named group backrefs/subroutines not yet implemented
+fn named_dup_backref_plus_coverage() {
+    // C line 819: (?<x>a)(?<x>b)(\k<x>)+ matches "abbaab" -> 0-6
+    x2(b"(?<x>a)(?<x>b)(\\k<x>)+", b"abbaab", 0, 6);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_backref_match_coverage() {
+    // C line 821: ((?(a)b|c))(\1) matches "abab" -> 0-4
+    x2(b"((?(a)b|c))(\\1)", b"abab", 0, 4);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_dollar_or_b_coverage() {
+    // C line 822: (?<x>$|b\g<x>) matches "bbb" -> 0-3
+    x2(b"(?<x>$|b\\g<x>)", b"bbb", 0, 3);
+}
+
+#[test]
+#[ignore] // recursive patterns not yet implemented
+fn recursive_conditional_cccb_coverage() {
+    // C line 823: (?<x>(?(a)a|b)|c\g<x>) matches "cccb" -> 0-4
+    x2(b"(?<x>(?(a)a|b)|c\\g<x>)", b"cccb", 0, 4);
+}
+
+#[test]
+#[ignore] // conditionals not yet implemented
+fn conditional_star_plus_coverage() {
+    // C line 824: (a)(?(1)a*|b*)+ matches "aaaa" -> 0-4
+    x2(b"(a)(?(1)a*|b*)+", b"aaaa", 0, 4);
+}
+
+#[test]
+fn nested_cc_intersection_coverage() {
+    // C line 825: [[^abc]&&cde]* matches "de" -> 0-2
+    x2(b"[[^abc]&&cde]*", b"de", 0, 2);
+}
+
+#[test]
+#[ignore] // conditionals inside lookbehind not yet implemented
+fn conditional_lookbehind_Q_no_match() {
+    // C line 694: (Q)|(?<=a|(?(1))|b)c no match for "czc"
+    n(b"(Q)|(?<=a|(?(1))|b)c", b"czc");
+}
+
+#[test]
+#[ignore] // conditionals inside lookbehind not yet implemented
+fn conditional_lookbehind_Q_match() {
+    // C line 695: (Q)(?<=a|(?(1))|b)c matches "cQc" -> 1-3
+    x2(b"(Q)(?<=a|(?(1))|b)c", b"cQc", 1, 3);
+}
+
+#[test]
+fn hex_digit_class() {
+    // C line 831: \h matches "5" -> 0-1
+    x2(b"\\h", b"5", 0, 1);
+}
+
+#[test]
+fn non_hex_digit_class() {
+    // C line 832: \H matches "z" -> 0-1
+    x2(b"\\H", b"z", 0, 1);
+}
+
+#[test]
+fn hex_digit_in_cc() {
+    // C line 833: [\h] matches "5" -> 0-1
+    x2(b"[\\h]", b"5", 0, 1);
+}
+
+#[test]
+fn non_hex_digit_in_cc() {
+    // C line 834: [\H] matches "z" -> 0-1
+    x2(b"[\\H]", b"z", 0, 1);
+}
+
+#[test]
+fn octal_in_cc() {
+    // C line 835: [\o{101}] matches "A" -> 0-1
+    x2(b"[\\o{101}]", b"A", 0, 1);
+}
+
+#[test]
+fn unicode_in_cc() {
+    // C line 836: [\u0041] matches "A" -> 0-1
+    x2(b"[\\u0041]", b"A", 0, 1);
+}
