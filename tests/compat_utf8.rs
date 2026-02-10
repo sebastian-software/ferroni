@@ -5748,7 +5748,6 @@ fn named_group_backref_k() {
 // ============================================================================
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_g1() {
     // C line 701: (a)\g<1> matches "aa" -> 0-2
     x2(b"(a)\\g<1>", b"aa", 0, 2);
@@ -5768,35 +5767,30 @@ fn recursive_named_empty_or_a() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_parens() {
     // C line 711: (?<n>|\(\g<n>\))+$ matches "()(())" -> 0-6
     x2(b"(?<n>|\\(\\g<n>\\))+$", b"()(())", 0, 6);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_g_n_dot_zero() {
     // C line 712: \g<n>(?<n>.){0} matches "X" group 1 -> 0-1
     x3(b"\\g<n>(?<n>.){0}", b"X", 0, 1, 1);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_g_n_alt_df() {
     // C line 713: \g<n>(abc|df(?<n>.YZ){2,8}){0} matches "XYZ" -> 0-3
     x2(b"\\g<n>(abc|df(?<n>.YZ){2,8}){0}", b"XYZ", 0, 3);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_A_n_a_or_empty() {
     // C line 714: \A(?<n>(a\g<n>)|)\z matches "aaaa" -> 0-4
     x2(b"\\A(?<n>(a\\g<n>)|)\\z", b"aaaa", 0, 4);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_mutual() {
     // C line 715: (?<n>|\g<m>\g<n>)\z|\zEND (?<m>a|(b)\g<m>) matches "bbbbabba" -> 0-8
     x2(b"(?<n>|\\g<m>\\g<n>)\\z|\\zEND (?<m>a|(b)\\g<m>)", b"bbbbabba", 0, 8);
@@ -5882,7 +5876,6 @@ fn recursive_foo_parens() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_foo_nested_parens() {
     // C line 729: (?<foo>a|\(\g<foo>\)) matches "((((((a))))))" -> 0-13
     x2(b"(?<foo>a|\\(\\g<foo>\\))", b"((((((a))))))", 0, 13);
@@ -5896,14 +5889,12 @@ fn recursive_foo_nested_parens_capture() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_bar_abc_dollar() {
     // C line 731: \g<bar>|\zEND(?<bar>.*abc$) matches "abcxxxabc" -> 0-9
     x2(b"\\g<bar>|\\zEND(?<bar>.*abc$)", b"abcxxxabc", 0, 9);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_g1_bac() {
     // C line 732: \g<1>|\zEND(.a.) matches "bac" -> 0-3
     x2(b"\\g<1>|\\zEND(.a.)", b"bac", 0, 3);
@@ -5917,14 +5908,12 @@ fn recursive_g_A_mutual_capture() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_mutual_pan_pon() {
     // C line 734: mutual recursion pan/pon matches "cdcbcdc" -> 0-7
     x2(b"\\A(?:\\g<pon>|\\g<pan>|\\zEND  (?<pan>a|c\\g<pon>c)(?<pon>b|d\\g<pan>d))$", b"cdcbcdc", 0, 7);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_A_n_or_a_gm() {
     // C line 735: \A(?<n>|a\g<m>)\z|\zEND (?<m>\g<n>) matches "aaaa" -> 0-4
     x2(b"\\A(?<n>|a\\g<m>)\\z|\\zEND (?<m>\\g<n>)", b"aaaa", 0, 4);
@@ -5937,14 +5926,12 @@ fn recursive_n_3_5_interval() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_n_3_5_interval_long() {
     // C line 737: (?<n>(a|b\g<n>c){3,5}) matches "baaaacaaaaa" -> 0-10
     x2(b"(?<n>(a|b\\g<n>c){3,5})", b"baaaacaaaaa", 0, 10);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_possessive_parens() {
     // C line 738: (?<pare>\(([^\(\)]++|\g<pare>)*+\)) matches "((a))" -> 0-5
     x2(b"(?<pare>\\(([^\\(\\)]++|\\g<pare>)*+\\))", b"((a))", 0, 5);
@@ -6277,14 +6264,12 @@ fn conditional_backref_match_coverage() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_dollar_or_b_coverage() {
     // C line 822: (?<x>$|b\g<x>) matches "bbb" -> 0-3
     x2(b"(?<x>$|b\\g<x>)", b"bbb", 0, 3);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_conditional_cccb_coverage() {
     // C line 823: (?<x>(?(a)a|b)|c\g<x>) matches "cccb" -> 0-4
     x2(b"(?<x>(?(a)a|b)|c\\g<x>)", b"cccb", 0, 4);
