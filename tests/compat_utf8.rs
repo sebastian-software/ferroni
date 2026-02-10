@@ -8639,21 +8639,18 @@ fn large_repeat_literal_nomatch() {
 }
 
 #[test]
-#[ignore] // too-big repeat range detection not yet implemented
 fn too_big_repeat_range_1() {
     // C line 1770
     e(b"x{55380}{77590}", b"", ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);
 }
 
 #[test]
-#[ignore] // too-big repeat range detection not yet implemented
 fn too_big_repeat_range_2() {
     // C line 1771
     e(b"(xyz){40000}{99999}(?<name>vv)", b"", ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);
 }
 
 #[test]
-#[ignore] // too-big repeat range detection not yet implemented
 fn too_big_repeat_range_3() {
     // C line 1772
     e(b"f{90000,90000}{80000,80000}", b"", ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);

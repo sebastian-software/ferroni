@@ -405,6 +405,19 @@ impl ParseEnv {
 // Number scanning
 // ============================================================================
 
+/// Safe multiplication for repeat counts. Returns -1 on overflow.
+/// Port of onig_positive_int_multiply from regcomp.c.
+fn positive_int_multiply(x: i32, y: i32) -> i32 {
+    if x == 0 || y == 0 {
+        return 0;
+    }
+    if x < i32::MAX / y {
+        x * y
+    } else {
+        -1
+    }
+}
+
 fn scan_number(
     p: &mut usize,
     end: usize,
@@ -4352,7 +4365,7 @@ fn check_quantifier(
             None
         };
 
-        let (prefix_node, target_node) = if let Some((split_pos, flag, status)) = split_info {
+        let (prefix_node, mut target_node) = if let Some((split_pos, flag, status)) = split_info {
             // Clone bytes before splitting (borrow checker)
             let bytes = if let NodeInner::String(ref sn) = node.inner {
                 sn.s.clone()
@@ -4378,7 +4391,38 @@ fn check_quantifier(
         };
 
         let mut qn = node_new_quantifier(tok.repeat_lower, tok.repeat_upper, tok.repeat_greedy);
-        qn.set_body(Some(target_node));
+
+        // Reduce nested fixed quantifiers: x{n}{m} => x{n*m}
+        // Port of assign_quantifier_body / onig_reduce_nested_quantifier from C.
+        if let NodeInner::Quant(ref inner_qn) = target_node.inner {
+            let outer_lower = tok.repeat_lower;
+            let outer_upper = tok.repeat_upper;
+            let inner_lower = inner_qn.lower;
+            let inner_upper = inner_qn.upper;
+            if outer_lower == outer_upper && inner_lower == inner_upper {
+                // Both are fixed: {n}{m} => {n*m}
+                let product = positive_int_multiply(inner_lower, outer_lower);
+                if product < 0 {
+                    return Err(ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);
+                }
+                // Merge: take the inner body, set outer counts to the product
+                if let NodeInner::Quant(ref mut qn_inner) = qn.inner {
+                    qn_inner.lower = product;
+                    qn_inner.upper = product;
+                }
+                // Move inner quant's body to outer quant
+                let inner_body = if let NodeInner::Quant(ref mut iqn) = target_node.inner {
+                    iqn.body.take()
+                } else {
+                    None
+                };
+                qn.set_body(inner_body);
+            } else {
+                qn.set_body(Some(target_node));
+            }
+        } else {
+            qn.set_body(Some(target_node));
+        }
 
         if tok.repeat_possessive {
             let mut en = node_new_bag(BagType::StopBacktrack);
