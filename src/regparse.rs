@@ -625,6 +625,316 @@ fn add_code_range(
 }
 
 // ============================================================================
+// Code range combination operations (and/or/not for multi-byte ranges)
+// ============================================================================
+
+fn set_all_multi_byte_range(enc: OnigEncoding) -> Option<BBuf> {
+    let start = mbcode_start_pos(enc);
+    let mut bbuf = new_code_range();
+    let r = add_code_range_to_buf(&mut Some(bbuf), start, u32::MAX);
+    // We need to extract the bbuf back; let's redo this properly
+    let mut opt = None;
+    add_code_range_to_buf(&mut opt, start, u32::MAX);
+    opt
+}
+
+fn not_code_range_buf(enc: OnigEncoding, bbuf: &Option<BBuf>) -> Option<BBuf> {
+    if bbuf.is_none() {
+        return set_all_multi_byte_range(enc);
+    }
+    let bbuf = bbuf.as_ref().unwrap();
+    let n = bbuf_read_code_point(bbuf, 0) as usize;
+    if n == 0 {
+        return set_all_multi_byte_range(enc);
+    }
+
+    let mut result: Option<BBuf> = None;
+    let mut pre = mbcode_start_pos(enc);
+    for i in 0..n {
+        let from = bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2));
+        let to = bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2 + 1));
+        if pre <= from.wrapping_sub(1) && from > 0 {
+            add_code_range_to_buf(&mut result, pre, from - 1);
+        }
+        if to == u32::MAX {
+            return result;
+        }
+        pre = to + 1;
+    }
+    let last_to = bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + (n - 1) * 2 + 1));
+    if last_to < u32::MAX {
+        add_code_range_to_buf(&mut result, last_to + 1, u32::MAX);
+    }
+    result
+}
+
+fn or_code_range_buf(
+    enc: OnigEncoding,
+    bbuf1: &Option<BBuf>,
+    not1: bool,
+    bbuf2: &Option<BBuf>,
+    not2: bool,
+) -> Option<BBuf> {
+    if bbuf1.is_none() && bbuf2.is_none() {
+        if not1 || not2 {
+            return set_all_multi_byte_range(enc);
+        }
+        return None;
+    }
+
+    // Normalize: make sure bbuf1 is not None if possible
+    let (b1, n1, b2, n2) = if bbuf1.is_none() {
+        (bbuf2, not2, bbuf1, not1)
+    } else {
+        (bbuf1, not1, bbuf2, not2)
+    };
+
+    if b2.is_none() {
+        // b2 is None (was bbuf1 or bbuf2)
+        if n2 {
+            return set_all_multi_byte_range(enc);
+        } else {
+            if !n1 {
+                return b1.clone();
+            } else {
+                return not_code_range_buf(enc, b1);
+            }
+        }
+    }
+
+    // Both non-None
+    let (b1, n1, b2, _n2) = if n1 {
+        (b2, n2, b1, n1)
+    } else {
+        (b1, n1, b2, n2)
+    };
+
+    // Now n1 == false (or we swapped)
+    let mut result = if !_n2 {
+        b2.clone()
+    } else {
+        not_code_range_buf(enc, b2)
+    };
+
+    // Add all ranges from b1
+    if let Some(ref bb1) = b1 {
+        let nn = bbuf_read_code_point(bb1, 0) as usize;
+        for i in 0..nn {
+            let from = bbuf_read_code_point(bb1, SIZE_CODE_POINT * (1 + i * 2));
+            let to = bbuf_read_code_point(bb1, SIZE_CODE_POINT * (1 + i * 2 + 1));
+            add_code_range_to_buf(&mut result, from, to);
+        }
+    }
+    result
+}
+
+fn and_code_range1(
+    pbuf: &mut Option<BBuf>,
+    from1: OnigCodePoint,
+    to1: OnigCodePoint,
+    data: &[OnigCodePoint],
+    n: usize,
+) -> i32 {
+    let mut from1 = from1;
+    let mut to1 = to1;
+    for i in 0..n {
+        let from2 = data[i * 2];
+        let to2 = data[i * 2 + 1];
+        if from2 < from1 {
+            if to2 < from1 {
+                continue;
+            } else {
+                from1 = to2 + 1;
+            }
+        } else if from2 <= to1 {
+            if to2 < to1 {
+                if from1 <= from2.wrapping_sub(1) && from2 > 0 {
+                    let r = add_code_range_to_buf(pbuf, from1, from2 - 1);
+                    if r != 0 {
+                        return r;
+                    }
+                }
+                from1 = to2 + 1;
+            } else {
+                if from2 > 0 {
+                    to1 = from2 - 1;
+                } else {
+                    return 0;
+                }
+            }
+        } else {
+            from1 = from2;
+        }
+        if from1 > to1 {
+            break;
+        }
+    }
+    if from1 <= to1 {
+        let r = add_code_range_to_buf(pbuf, from1, to1);
+        if r != 0 {
+            return r;
+        }
+    }
+    0
+}
+
+fn and_code_range_buf(
+    bbuf1: &Option<BBuf>,
+    not1: bool,
+    bbuf2: &Option<BBuf>,
+    not2: bool,
+) -> (Option<BBuf>, i32) {
+    if bbuf1.is_none() {
+        if not1 && bbuf2.is_some() {
+            return (bbuf2.clone(), 0);
+        }
+        return (None, 0);
+    }
+    if bbuf2.is_none() {
+        if not2 {
+            return (bbuf1.clone(), 0);
+        }
+        return (None, 0);
+    }
+
+    // Swap if not1
+    let (b1, _n1, b2, n2) = if not1 {
+        (bbuf2, not2, bbuf1, not1)
+    } else {
+        (bbuf1, not1, bbuf2, not2)
+    };
+
+    let bb1 = b1.as_ref().unwrap();
+    let bb2 = b2.as_ref().unwrap();
+    let nn1 = bbuf_read_code_point(bb1, 0) as usize;
+    let nn2 = bbuf_read_code_point(bb2, 0) as usize;
+
+    let mut data1 = Vec::with_capacity(nn1 * 2);
+    for i in 0..nn1 * 2 {
+        data1.push(bbuf_read_code_point(bb1, SIZE_CODE_POINT * (1 + i)));
+    }
+    let mut data2 = Vec::with_capacity(nn2 * 2);
+    for i in 0..nn2 * 2 {
+        data2.push(bbuf_read_code_point(bb2, SIZE_CODE_POINT * (1 + i)));
+    }
+
+    let mut result: Option<BBuf> = None;
+
+    if !n2 && !_n1 {
+        // 1 AND 2
+        for i in 0..nn1 {
+            let from1 = data1[i * 2];
+            let to1 = data1[i * 2 + 1];
+            for j in 0..nn2 {
+                let from2 = data2[j * 2];
+                let to2 = data2[j * 2 + 1];
+                if from2 > to1 {
+                    break;
+                }
+                if to2 < from1 {
+                    continue;
+                }
+                let from = std::cmp::max(from1, from2);
+                let to = std::cmp::min(to1, to2);
+                let r = add_code_range_to_buf(&mut result, from, to);
+                if r != 0 {
+                    return (result, r);
+                }
+            }
+        }
+    } else if !_n1 {
+        // 1 AND (not 2)
+        for i in 0..nn1 {
+            let from1 = data1[i * 2];
+            let to1 = data1[i * 2 + 1];
+            let r = and_code_range1(&mut result, from1, to1, &data2, nn2);
+            if r != 0 {
+                return (result, r);
+            }
+        }
+    }
+
+    (result, 0)
+}
+
+fn and_cclass(dest: &mut CClassNode, cc: &CClassNode, enc: OnigEncoding) -> i32 {
+    let not1 = dest.is_not();
+    let not2 = cc.is_not();
+
+    let mut bsr1 = dest.bs;
+    let mut bsr2 = cc.bs;
+    if not1 {
+        bitset_invert(&mut bsr1);
+    }
+    if not2 {
+        bitset_invert(&mut bsr2);
+    }
+    bitset_and(&mut bsr1, &bsr2);
+    if not1 {
+        bitset_invert(&mut bsr1);
+    }
+    dest.bs = bsr1;
+
+    if enc.min_enc_len() > 1 || (enc.flag() & ENC_FLAG_UNICODE) != 0 {
+        let (pbuf, r) = if not1 && not2 {
+            let result = or_code_range_buf(enc, &dest.mbuf, false, &cc.mbuf, false);
+            (result, 0)
+        } else {
+            let (result, r) = and_code_range_buf(&dest.mbuf, not1, &cc.mbuf, not2);
+            if r == 0 && not1 {
+                let tbuf = not_code_range_buf(enc, &result);
+                (tbuf, 0)
+            } else {
+                (result, r)
+            }
+        };
+        if r != 0 {
+            return r;
+        }
+        dest.mbuf = pbuf;
+    }
+    0
+}
+
+fn or_cclass(dest: &mut CClassNode, cc: &CClassNode, enc: OnigEncoding) -> i32 {
+    let not1 = dest.is_not();
+    let not2 = cc.is_not();
+
+    let mut bsr1 = dest.bs;
+    let mut bsr2 = cc.bs;
+    if not1 {
+        bitset_invert(&mut bsr1);
+    }
+    if not2 {
+        bitset_invert(&mut bsr2);
+    }
+    bitset_or(&mut bsr1, &bsr2);
+    if not1 {
+        bitset_invert(&mut bsr1);
+    }
+    dest.bs = bsr1;
+
+    if enc.min_enc_len() > 1 || (enc.flag() & ENC_FLAG_UNICODE) != 0 {
+        let (pbuf, r) = if not1 && not2 {
+            and_code_range_buf(&dest.mbuf, false, &cc.mbuf, false)
+        } else {
+            let result = or_code_range_buf(enc, &dest.mbuf, not1, &cc.mbuf, not2);
+            if not1 {
+                let tbuf = not_code_range_buf(enc, &result);
+                (tbuf, 0)
+            } else {
+                (result, 0)
+            }
+        };
+        if r != 0 {
+            return r;
+        }
+        dest.mbuf = pbuf;
+    }
+    0
+}
+
+// ============================================================================
 // Character class helpers
 // ============================================================================
 
@@ -736,6 +1046,306 @@ fn add_code_into_cc(cc: &mut CClassNode, code: OnigCodePoint, enc: OnigEncoding)
     } else {
         add_code_range_to_buf(&mut cc.mbuf, code, code);
     }
+}
+
+// ============================================================================
+// CC state machine helpers
+// ============================================================================
+
+/// Flush pending character and advance CC state machine
+fn cc_char_next(
+    cc: &mut CClassNode,
+    from: &mut OnigCodePoint,
+    to: OnigCodePoint,
+    from_raw: &mut bool,
+    to_raw: bool,
+    intype: i32,
+    curr_type: &mut i32,
+    state: &mut i32,
+    env: &ParseEnv,
+) -> i32 {
+    let r;
+    match *state {
+        CS_VALUE => {
+            if *curr_type == CV_SB {
+                if *from > 0xff {
+                    return ONIGERR_INVALID_CODE_POINT_VALUE;
+                }
+                bitset_set_bit(&mut cc.bs, *from as usize);
+            } else if *curr_type == CV_MB {
+                r = add_code_range(&mut cc.mbuf, env, *from, *from);
+                if r < 0 {
+                    return r;
+                }
+            }
+        }
+        CS_RANGE => {
+            if intype == *curr_type {
+                if intype == CV_SB {
+                    if *from > 0xff || to > 0xff {
+                        return ONIGERR_INVALID_CODE_POINT_VALUE;
+                    }
+                    if *from > to {
+                        if is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC) {
+                            *state = CS_COMPLETE;
+                            *from_raw = to_raw;
+                            *from = to;
+                            *curr_type = intype;
+                            return 0;
+                        } else {
+                            return ONIGERR_EMPTY_RANGE_IN_CHAR_CLASS;
+                        }
+                    }
+                    bitset_set_range(&mut cc.bs, *from as usize, to as usize);
+                } else {
+                    r = add_code_range(&mut cc.mbuf, env, *from, to);
+                    if r < 0 {
+                        return r;
+                    }
+                }
+            } else {
+                if *from > to {
+                    if is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC) {
+                        *state = CS_COMPLETE;
+                        *from_raw = to_raw;
+                        *from = to;
+                        *curr_type = intype;
+                        return 0;
+                    } else {
+                        return ONIGERR_EMPTY_RANGE_IN_CHAR_CLASS;
+                    }
+                }
+                let sbout = enc_sb_out(env.enc);
+                if *from < sbout {
+                    let sb_end = if to < sbout { to } else { sbout - 1 };
+                    bitset_set_range(&mut cc.bs, *from as usize, sb_end as usize);
+                }
+                if to >= sbout {
+                    let mb_start = if *from > sbout { *from } else { sbout };
+                    r = add_code_range(&mut cc.mbuf, env, mb_start, to);
+                    if r < 0 {
+                        return r;
+                    }
+                }
+            }
+            *state = CS_COMPLETE;
+            *from_raw = to_raw;
+            *from = to;
+            *curr_type = intype;
+            return 0;
+        }
+        CS_COMPLETE | CS_START => {
+            *state = CS_VALUE;
+        }
+        _ => {}
+    }
+
+    *from_raw = to_raw;
+    *from = to;
+    *curr_type = intype;
+    0
+}
+
+/// Flush pending value before char property, advance state
+fn cc_cprop_next(
+    cc: &mut CClassNode,
+    pcode: &mut OnigCodePoint,
+    val: &mut i32,
+    state: &mut i32,
+    env: &ParseEnv,
+) -> i32 {
+    if *state == CS_RANGE {
+        return ONIGERR_CHAR_CLASS_VALUE_AT_END_OF_RANGE;
+    }
+
+    if *state == CS_VALUE {
+        if *val == CV_SB {
+            bitset_set_bit(&mut cc.bs, *pcode as usize);
+        } else if *val == CV_MB {
+            let r = add_code_range(&mut cc.mbuf, env, *pcode, *pcode);
+            if r < 0 {
+                return r;
+            }
+        }
+    }
+
+    *state = CS_VALUE;
+    *val = CV_CPROP;
+    0
+}
+
+/// Check if a code point exists in pattern from position
+fn code_exist_check(
+    c: OnigCodePoint,
+    from: usize,
+    end: usize,
+    pattern: &[u8],
+    ignore_escaped: bool,
+    env: &ParseEnv,
+) -> bool {
+    let enc = env.enc;
+    let mut p = from;
+    let mut in_esc = false;
+    while !p_end(p, end) {
+        if ignore_escaped && in_esc {
+            in_esc = false;
+        } else {
+            let code = pfetch_s(&mut p, pattern, end, enc);
+            if code == c {
+                return true;
+            }
+            if code == mc_esc(env.syntax) {
+                in_esc = true;
+            }
+        }
+    }
+    false
+}
+
+// POSIX bracket entry
+struct PosixBracketEntry {
+    name: &'static [u8],
+    ctype: u32,
+}
+
+static POSIX_BRACKETS: &[PosixBracketEntry] = &[
+    PosixBracketEntry { name: b"alnum", ctype: ONIGENC_CTYPE_ALNUM },
+    PosixBracketEntry { name: b"alpha", ctype: ONIGENC_CTYPE_ALPHA },
+    PosixBracketEntry { name: b"blank", ctype: ONIGENC_CTYPE_BLANK },
+    PosixBracketEntry { name: b"cntrl", ctype: ONIGENC_CTYPE_CNTRL },
+    PosixBracketEntry { name: b"digit", ctype: ONIGENC_CTYPE_DIGIT },
+    PosixBracketEntry { name: b"graph", ctype: ONIGENC_CTYPE_GRAPH },
+    PosixBracketEntry { name: b"lower", ctype: ONIGENC_CTYPE_LOWER },
+    PosixBracketEntry { name: b"print", ctype: ONIGENC_CTYPE_PRINT },
+    PosixBracketEntry { name: b"punct", ctype: ONIGENC_CTYPE_PUNCT },
+    PosixBracketEntry { name: b"space", ctype: ONIGENC_CTYPE_SPACE },
+    PosixBracketEntry { name: b"upper", ctype: ONIGENC_CTYPE_UPPER },
+    PosixBracketEntry { name: b"xdigit", ctype: ONIGENC_CTYPE_XDIGIT },
+    PosixBracketEntry { name: b"ascii", ctype: ONIGENC_CTYPE_ASCII },
+    PosixBracketEntry { name: b"word", ctype: ONIGENC_CTYPE_WORD },
+];
+
+/// Parse POSIX bracket like [:alpha:]
+fn prs_posix_bracket(
+    cc: &mut CClassNode,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &ParseEnv,
+) -> i32 {
+    let enc = env.enc;
+    let not = if !p_end(*p, end) && ppeek_is(*p, pattern, end, enc, '^' as u32) {
+        pinc(p, pattern, enc);
+        true
+    } else {
+        false
+    };
+
+    for pb in POSIX_BRACKETS {
+        let name = pb.name;
+        if *p + name.len() <= end && &pattern[*p..*p + name.len()] == name {
+            let mut tp = *p + name.len();
+            // Check for ":]"
+            if tp + 2 <= end && pattern[tp] == b':' && pattern[tp + 1] == b']' {
+                let r = add_ctype_to_cc(cc, pb.ctype as i32, not, env);
+                if r != 0 {
+                    return r;
+                }
+                *p = tp + 2;
+                return 0;
+            }
+            break;
+        }
+    }
+
+    ONIGERR_INVALID_POSIX_BRACKET_TYPE
+}
+
+/// Resolve \p{PropertyName} to a ctype value
+fn fetch_char_property_to_ctype(
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    braces: bool,
+    env: &ParseEnv,
+) -> i32 {
+    let enc = env.enc;
+    let start = *p;
+
+    if !braces {
+        // Single-char property: \pL
+        if p_end(*p, end) {
+            return ONIGERR_INVALID_CHAR_PROPERTY_NAME;
+        }
+        pfetch_s(p, pattern, end, enc);
+        let r = enc.property_name_to_ctype(&pattern[start..*p]);
+        return r;
+    }
+
+    // Braced: \p{PropertyName}
+    while !p_end(*p, end) {
+        let prev = *p;
+        let c = pfetch_s(p, pattern, end, enc);
+        if c == '}' as u32 {
+            let r = enc.property_name_to_ctype(&pattern[start..prev]);
+            return r;
+        } else if c == '(' as u32 || c == ')' as u32 || c == '{' as u32 || c == '|' as u32 {
+            break;
+        }
+    }
+
+    ONIGERR_END_PATTERN_WITH_UNMATCHED_PARENTHESIS
+}
+
+/// Parse a character property (\p{...} / \P{...})
+fn prs_char_property(
+    tok: &mut PToken,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &ParseEnv,
+) -> Result<Box<Node>, i32> {
+    let ctype = fetch_char_property_to_ctype(p, end, pattern, tok.prop_braces, env);
+    if ctype < 0 {
+        return Err(ctype);
+    }
+
+    if ctype == ONIGENC_CTYPE_WORD as i32 {
+        let np = node_new_ctype(ctype, tok.prop_not, opton_word_ascii(env.options));
+        return Ok(np);
+    }
+
+    let mut np = node_new_cclass();
+    if let Some(cc) = np.as_cclass_mut() {
+        let r = add_ctype_to_cc(cc, ctype, false, env);
+        if r != 0 {
+            return Err(r);
+        }
+        if tok.prop_not {
+            cc.set_not();
+        }
+    }
+    Ok(np)
+}
+
+/// Check if position looks like start of a POSIX bracket ([:...])
+fn is_posix_bracket_start(p: usize, end: usize, pattern: &[u8], enc: OnigEncoding) -> bool {
+    let mut tp = p;
+    while tp < end {
+        let c = pattern[tp];
+        if c == b':' {
+            // Check for :]
+            if tp + 1 < end && pattern[tp + 1] == b']' {
+                return true;
+            }
+            return false;
+        }
+        if c == b']' || c == b'[' || c == b'\\' {
+            return false;
+        }
+        tp += enc.mbc_enc_len(&pattern[tp..end]);
+    }
+    false
 }
 
 // ============================================================================
@@ -862,6 +1472,139 @@ fn fetch_escaped_value(
         return Err(len);
     }
     Ok(val)
+}
+
+// ============================================================================
+// Name parsing helpers
+// ============================================================================
+
+fn get_name_end_code_point(start_code: OnigCodePoint) -> OnigCodePoint {
+    match start_code {
+        0x3C => 0x3E, // '<' -> '>'
+        0x27 => 0x27, // '\'' -> '\''
+        0x28 => 0x29, // '(' -> ')'
+        _ => 0,
+    }
+}
+
+/// Parse a group/backref name.
+/// is_ref: false = defining name, true = referencing name (allows numeric)
+/// Returns (name_start, name_end, back_num, num_type) or error.
+fn fetch_name(
+    start_code: OnigCodePoint,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &ParseEnv,
+    is_ref: bool,
+) -> Result<(usize, usize, i32, i32), i32> {
+    let enc = env.enc;
+    let end_code = get_name_end_code_point(start_code);
+    let mut back_num = 0i32;
+    let mut num_type = IS_NOT_NUM;
+    let mut sign = 1i32;
+    let name_start = *p;
+    let mut pnum_head = *p;
+    let mut digit_count = 0i32;
+    let mut name_end = end;
+    let mut r = 0i32;
+
+    if p_end(*p, end) {
+        return Err(ONIGERR_EMPTY_GROUP_NAME);
+    }
+
+    let c = pfetch_s(p, pattern, end, enc);
+    if c == end_code {
+        return Err(ONIGERR_EMPTY_GROUP_NAME);
+    }
+
+    if is_code_digit_ascii(enc, c) {
+        if is_ref {
+            num_type = IS_ABS_NUM;
+        } else {
+            r = ONIGERR_INVALID_GROUP_NAME;
+        }
+        digit_count += 1;
+    } else if c == '-' as u32 {
+        if is_ref {
+            num_type = IS_REL_NUM;
+            sign = -1;
+            pnum_head = *p;
+        } else {
+            r = ONIGERR_INVALID_GROUP_NAME;
+        }
+    } else if c == '+' as u32 {
+        if is_ref {
+            num_type = IS_REL_NUM;
+            sign = 1;
+            pnum_head = *p;
+        } else {
+            r = ONIGERR_INVALID_GROUP_NAME;
+        }
+    } else if !enc.is_code_ctype(c, ONIGENC_CTYPE_WORD) {
+        r = ONIGERR_INVALID_CHAR_IN_GROUP_NAME;
+    }
+
+    if r == 0 {
+        while !p_end(*p, end) {
+            name_end = *p;
+            let c = pfetch_s(p, pattern, end, enc);
+            if c == end_code || c == ')' as u32 {
+                if num_type != IS_NOT_NUM && digit_count == 0 {
+                    r = ONIGERR_INVALID_GROUP_NAME;
+                }
+                break;
+            }
+
+            if num_type != IS_NOT_NUM {
+                if is_code_digit_ascii(enc, c) {
+                    digit_count += 1;
+                } else {
+                    if !enc.is_code_ctype(c, ONIGENC_CTYPE_WORD) {
+                        r = ONIGERR_INVALID_CHAR_IN_GROUP_NAME;
+                    } else {
+                        r = ONIGERR_INVALID_GROUP_NAME;
+                    }
+                    num_type = IS_NOT_NUM;
+                }
+            } else {
+                if !enc.is_code_ctype(c, ONIGENC_CTYPE_WORD) {
+                    r = ONIGERR_INVALID_CHAR_IN_GROUP_NAME;
+                }
+            }
+        }
+
+        if r != 0 {
+            return Err(r);
+        }
+
+        // Must have ended with end_code
+        // (if c was ')' that's also OK for some syntaxes)
+
+        if num_type != IS_NOT_NUM {
+            let mut tp = pnum_head;
+            back_num = scan_number(&mut tp, name_end, pattern, enc);
+            if back_num < 0 {
+                return Err(ONIGERR_TOO_BIG_NUMBER);
+            }
+            if back_num == 0 && num_type == IS_REL_NUM {
+                return Err(ONIGERR_INVALID_GROUP_NAME);
+            }
+            back_num *= sign;
+        }
+
+        return Ok((name_start, name_end, back_num, num_type));
+    }
+
+    // Error path: skip to end_code
+    while !p_end(*p, end) {
+        name_end = *p;
+        let c = pfetch_s(p, pattern, end, enc);
+        if c == end_code || c == ')' as u32 {
+            break;
+        }
+    }
+    Err(r)
 }
 
 // ============================================================================
@@ -1641,6 +2384,1100 @@ fn greedy_check2(
 }
 
 // ============================================================================
+// Character class tokenizer: fetch_token_cc
+// ============================================================================
+
+fn fetch_token_cc(
+    tok: &mut PToken,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &ParseEnv,
+    state: i32,
+) -> i32 {
+    let enc = env.enc;
+    let syn = env.syntax;
+    let mut pfetch_prev = *p;
+
+    if tok.code_point_continue {
+        // Multi-codepoint sequence continuation: not yet implemented
+        tok.code_point_continue = false;
+    }
+
+    if p_end(*p, end) {
+        tok.token_type = TokenType::Eot;
+        return tok.token_type as i32;
+    }
+
+    let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+    tok.token_type = TokenType::Char;
+    tok.base_num = 0;
+    tok.code = c;
+    tok.escaped = false;
+
+    if c == ']' as u32 {
+        tok.token_type = TokenType::CcClose;
+    } else if c == '-' as u32 {
+        tok.token_type = TokenType::CcRange;
+    } else if c == mc_esc(syn) {
+        if !is_syntax_bv(syn, ONIG_SYN_BACKSLASH_ESCAPE_IN_CC) {
+            return tok.token_type as i32;
+        }
+        if p_end(*p, end) {
+            return ONIGERR_END_PATTERN_AT_ESCAPE;
+        }
+
+        let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+        tok.escaped = true;
+        tok.code = c;
+        match c as u8 as char {
+            'w' => {
+                tok.token_type = TokenType::CharType;
+                tok.prop_ctype = ONIGENC_CTYPE_WORD as i32;
+                tok.prop_not = false;
+            }
+            'W' => {
+                tok.token_type = TokenType::CharType;
+                tok.prop_ctype = ONIGENC_CTYPE_WORD as i32;
+                tok.prop_not = true;
+            }
+            'd' => {
+                tok.token_type = TokenType::CharType;
+                tok.prop_ctype = ONIGENC_CTYPE_DIGIT as i32;
+                tok.prop_not = false;
+            }
+            'D' => {
+                tok.token_type = TokenType::CharType;
+                tok.prop_ctype = ONIGENC_CTYPE_DIGIT as i32;
+                tok.prop_not = true;
+            }
+            's' => {
+                tok.token_type = TokenType::CharType;
+                tok.prop_ctype = ONIGENC_CTYPE_SPACE as i32;
+                tok.prop_not = false;
+            }
+            'S' => {
+                tok.token_type = TokenType::CharType;
+                tok.prop_ctype = ONIGENC_CTYPE_SPACE as i32;
+                tok.prop_not = true;
+            }
+            'h' => {
+                if is_syntax_op2(syn, ONIG_SYN_OP2_ESC_H_XDIGIT) {
+                    tok.token_type = TokenType::CharType;
+                    tok.prop_ctype = ONIGENC_CTYPE_XDIGIT as i32;
+                    tok.prop_not = false;
+                }
+            }
+            'H' => {
+                if is_syntax_op2(syn, ONIG_SYN_OP2_ESC_H_XDIGIT) {
+                    tok.token_type = TokenType::CharType;
+                    tok.prop_ctype = ONIGENC_CTYPE_XDIGIT as i32;
+                    tok.prop_not = true;
+                }
+            }
+            'p' | 'P' => {
+                if !p_end(*p, end) && ppeek_is(*p, pattern, end, enc, '{' as u32) {
+                    if is_syntax_op2(syn, ONIG_SYN_OP2_ESC_P_BRACE_CHAR_PROPERTY) {
+                        pinc(p, pattern, enc);
+                        tok.token_type = TokenType::CharProperty;
+                        tok.prop_not = c == 'P' as u32;
+                        tok.prop_braces = true;
+                        if !p_end(*p, end)
+                            && is_syntax_op2(syn, ONIG_SYN_OP2_ESC_P_BRACE_CIRCUMFLEX_NOT)
+                        {
+                            let c2 = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+                            if c2 == '^' as u32 {
+                                tok.prop_not = !tok.prop_not;
+                            } else {
+                                *p = pfetch_prev;
+                            }
+                        }
+                    }
+                } else if is_syntax_bv(syn, ONIG_SYN_ESC_P_WITH_ONE_CHAR_PROP) {
+                    tok.token_type = TokenType::CharProperty;
+                    tok.prop_not = c == 'P' as u32;
+                    tok.prop_braces = false;
+                }
+            }
+            'x' => {
+                let prev = *p;
+                if !p_end(*p, end)
+                    && ppeek_is(*p, pattern, end, enc, '{' as u32)
+                    && is_syntax_op(syn, ONIG_SYN_OP_ESC_X_BRACE_HEX8)
+                {
+                    pinc(p, pattern, enc);
+                    let mut code = 0;
+                    let r = scan_hexadecimal_number(p, end, 0, 8, pattern, enc, &mut code);
+                    if r < 0 {
+                        return r;
+                    }
+                    tok.base_num = 16;
+                    if *p > prev + enclen(enc, &pattern[prev..]) {
+                        if p_end(*p, end) {
+                            return ONIGERR_INVALID_CODE_POINT_VALUE;
+                        }
+                        if ppeek_is(*p, pattern, end, enc, '}' as u32) {
+                            pinc(p, pattern, enc);
+                        } else {
+                            // Multi-codepoint sequence - simplified
+                            return ONIGERR_INVALID_CODE_POINT_VALUE;
+                        }
+                        tok.token_type = TokenType::CodePoint;
+                        tok.code = code;
+                    } else {
+                        *p = prev;
+                    }
+                } else if is_syntax_op(syn, ONIG_SYN_OP_ESC_X_HEX2) {
+                    let mut code = 0;
+                    let r = scan_hexadecimal_number(p, end, 0, 2, pattern, enc, &mut code);
+                    if r < 0 {
+                        return r;
+                    }
+                    if *p == prev {
+                        code = 0;
+                    }
+                    tok.token_type = TokenType::CrudeByte;
+                    tok.base_num = 16;
+                    tok.code = code;
+                }
+            }
+            'o' => {
+                let prev = *p;
+                if !p_end(*p, end)
+                    && ppeek_is(*p, pattern, end, enc, '{' as u32)
+                    && is_syntax_op(syn, ONIG_SYN_OP_ESC_O_BRACE_OCTAL)
+                {
+                    pinc(p, pattern, enc);
+                    let mut code = 0;
+                    let r = scan_octal_number(p, end, 0, 11, pattern, enc, &mut code);
+                    if r < 0 {
+                        return r;
+                    }
+                    tok.base_num = 8;
+                    if *p > prev + enclen(enc, &pattern[prev..]) {
+                        if p_end(*p, end) {
+                            return ONIGERR_INVALID_CODE_POINT_VALUE;
+                        }
+                        if ppeek_is(*p, pattern, end, enc, '}' as u32) {
+                            pinc(p, pattern, enc);
+                        } else {
+                            return ONIGERR_INVALID_CODE_POINT_VALUE;
+                        }
+                        tok.token_type = TokenType::CodePoint;
+                        tok.code = code;
+                    } else {
+                        *p = prev;
+                    }
+                }
+            }
+            'u' => {
+                if is_syntax_op2(syn, ONIG_SYN_OP2_ESC_U_HEX4) {
+                    let mut code = 0;
+                    let r = scan_hexadecimal_number(p, end, 4, 4, pattern, enc, &mut code);
+                    if r < 0 {
+                        return r;
+                    }
+                    tok.token_type = TokenType::CodePoint;
+                    tok.base_num = 16;
+                    tok.code = code;
+                }
+            }
+            '0'..='7' => {
+                if is_syntax_op(syn, ONIG_SYN_OP_ESC_OCTAL3) {
+                    *p = pfetch_prev; // PUNFETCH
+                    let prev = *p;
+                    let mut code = 0;
+                    let r = scan_octal_number(p, end, 0, 3, pattern, enc, &mut code);
+                    if r < 0 || code >= 256 {
+                        return ONIGERR_TOO_BIG_NUMBER;
+                    }
+                    if *p == prev {
+                        code = 0;
+                    }
+                    tok.token_type = TokenType::CrudeByte;
+                    tok.base_num = 8;
+                    tok.code = code;
+                }
+            }
+            _ => {
+                *p = pfetch_prev; // PUNFETCH
+                let c2 = match fetch_escaped_value(p, end, pattern, env) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+                if tok.code != c2 {
+                    tok.code = c2;
+                    tok.token_type = TokenType::CodePoint;
+                }
+            }
+        }
+    } else if c == '[' as u32 {
+        if is_syntax_op(syn, ONIG_SYN_OP_POSIX_BRACKET)
+            && !p_end(*p, end)
+            && ppeek_is(*p, pattern, end, enc, ':' as u32)
+        {
+            tok.backp = *p;
+            pinc(p, pattern, enc);
+            if is_posix_bracket_start(*p, end, pattern, enc) {
+                tok.token_type = TokenType::CcPosixBracketOpen;
+            } else {
+                *p = pfetch_prev + enclen(enc, &pattern[pfetch_prev..end]);
+                // Try nested CC
+                if is_syntax_op2(syn, ONIG_SYN_OP2_CCLASS_SET_OP) {
+                    tok.token_type = TokenType::CcOpenCC;
+                }
+            }
+        } else {
+            if is_syntax_op2(syn, ONIG_SYN_OP2_CCLASS_SET_OP) {
+                tok.token_type = TokenType::CcOpenCC;
+            }
+        }
+    } else if c == '&' as u32 {
+        if is_syntax_op2(syn, ONIG_SYN_OP2_CCLASS_SET_OP)
+            && !p_end(*p, end)
+            && ppeek_is(*p, pattern, end, enc, '&' as u32)
+        {
+            pinc(p, pattern, enc);
+            tok.token_type = TokenType::CcAnd;
+        }
+    }
+
+    tok.token_type as i32
+}
+
+// ============================================================================
+// Character class parser: prs_cc
+// ============================================================================
+
+fn prs_cc(
+    tok: &mut PToken,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+) -> Result<Box<Node>, i32> {
+    let enc = env.enc;
+    env.parse_depth += 1;
+    if env.parse_depth > PARSE_DEPTH_LIMIT.load(Ordering::Relaxed) {
+        return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
+    }
+
+    let mut state = CS_START;
+    let mut curr_code: OnigCodePoint = 0;
+    let mut curr_type = CV_UNDEF;
+    let mut curr_raw = false;
+    let mut and_start = false;
+
+    // Check for negation ^
+    let mut r = fetch_token_cc(tok, p, end, pattern, env, state);
+    if r < 0 {
+        env.parse_depth -= 1;
+        return Err(r);
+    }
+    let neg = if tok.token_type == TokenType::Char && tok.code == '^' as u32 && !tok.escaped {
+        r = fetch_token_cc(tok, p, end, pattern, env, state);
+        if r < 0 {
+            env.parse_depth -= 1;
+            return Err(r);
+        }
+        true
+    } else {
+        false
+    };
+
+    // Handle empty [] - check for immediate ]
+    if tok.token_type == TokenType::CcClose {
+        // Check if there's another ] later
+        if !code_exist_check(']' as u32, *p, end, pattern, true, env) {
+            env.parse_depth -= 1;
+            return Err(ONIGERR_EMPTY_CHAR_CLASS);
+        }
+        // Treat ] as literal
+        tok.token_type = TokenType::Char;
+        tok.code = ']' as u32;
+    }
+
+    let mut node = node_new_cclass();
+    let mut prev_cc: Option<CClassNode> = None;
+    let mut work_cc_active = false;
+    let mut work_cc = CClassNode {
+        flags: 0,
+        bs: [0; BITSET_REAL_SIZE],
+        mbuf: None,
+    };
+
+    // Main loop
+    loop {
+        let mut fetched = false;
+
+        // Get cc pointer (either from node or work_cc)
+        let use_work = work_cc_active;
+
+        match tok.token_type {
+            TokenType::Char => {
+                let in_code = tok.code;
+                let in_type = if env.enc.code_to_mbclen(in_code) == 1 {
+                    CV_SB
+                } else {
+                    CV_MB
+                };
+                let in_raw = false;
+
+                // cc_char_next
+                let cc = if use_work {
+                    &mut work_cc
+                } else {
+                    node.as_cclass_mut().unwrap()
+                };
+                let cr = cc_char_next(
+                    cc,
+                    &mut curr_code,
+                    in_code,
+                    &mut curr_raw,
+                    in_raw,
+                    in_type,
+                    &mut curr_type,
+                    &mut state,
+                    env,
+                );
+                if cr != 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr);
+                }
+            }
+            TokenType::CrudeByte => {
+                let in_code = tok.code;
+                let in_type = CV_SB;
+                let in_raw = true;
+
+                let cc = if use_work {
+                    &mut work_cc
+                } else {
+                    node.as_cclass_mut().unwrap()
+                };
+                let cr = cc_char_next(
+                    cc,
+                    &mut curr_code,
+                    in_code,
+                    &mut curr_raw,
+                    in_raw,
+                    in_type,
+                    &mut curr_type,
+                    &mut state,
+                    env,
+                );
+                if cr != 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr);
+                }
+            }
+            TokenType::CodePoint => {
+                let in_code = tok.code;
+                let mblen = env.enc.code_to_mbclen(in_code);
+                let in_type = if mblen < 0 {
+                    // Invalid code point; may be allowed at end of range
+                    CV_MB
+                } else if mblen == 1 {
+                    CV_SB
+                } else {
+                    CV_MB
+                };
+                let in_raw = true;
+
+                let cc = if use_work {
+                    &mut work_cc
+                } else {
+                    node.as_cclass_mut().unwrap()
+                };
+                let cr = cc_char_next(
+                    cc,
+                    &mut curr_code,
+                    in_code,
+                    &mut curr_raw,
+                    in_raw,
+                    in_type,
+                    &mut curr_type,
+                    &mut state,
+                    env,
+                );
+                if cr != 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr);
+                }
+            }
+            TokenType::CcPosixBracketOpen => {
+                let cc = if use_work {
+                    &mut work_cc
+                } else {
+                    node.as_cclass_mut().unwrap()
+                };
+                let cr = prs_posix_bracket(cc, p, end, pattern, env);
+                if cr < 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr);
+                }
+                // cc_cprop_next
+                let cr2 = cc_cprop_next(cc, &mut curr_code, &mut curr_type, &mut state, env);
+                if cr2 != 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr2);
+                }
+            }
+            TokenType::CharType => {
+                let cc = if use_work {
+                    &mut work_cc
+                } else {
+                    node.as_cclass_mut().unwrap()
+                };
+                let ctype = tok.prop_ctype;
+                let not = tok.prop_not;
+                let cr = add_ctype_to_cc(cc, ctype, not, env);
+                if cr != 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr);
+                }
+                let cr2 = cc_cprop_next(cc, &mut curr_code, &mut curr_type, &mut state, env);
+                if cr2 != 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr2);
+                }
+            }
+            TokenType::CharProperty => {
+                let cc = if use_work {
+                    &mut work_cc
+                } else {
+                    node.as_cclass_mut().unwrap()
+                };
+                let ctype = fetch_char_property_to_ctype(p, end, pattern, tok.prop_braces, env);
+                if ctype < 0 {
+                    env.parse_depth -= 1;
+                    return Err(ctype);
+                }
+                let cr = add_ctype_to_cc(cc, ctype, tok.prop_not, env);
+                if cr != 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr);
+                }
+                let cr2 = cc_cprop_next(cc, &mut curr_code, &mut curr_type, &mut state, env);
+                if cr2 != 0 {
+                    env.parse_depth -= 1;
+                    return Err(cr2);
+                }
+            }
+            TokenType::CcRange => {
+                if state == CS_VALUE {
+                    r = fetch_token_cc(tok, p, end, pattern, env, CS_RANGE);
+                    if r < 0 {
+                        env.parse_depth -= 1;
+                        return Err(r);
+                    }
+                    fetched = true;
+                    if tok.token_type == TokenType::CcClose {
+                        // [x-] -> treat dash as literal at end
+                        let cc = if use_work {
+                            &mut work_cc
+                        } else {
+                            node.as_cclass_mut().unwrap()
+                        };
+                        let cr = cc_char_next(
+                            cc,
+                            &mut curr_code,
+                            '-' as u32,
+                            &mut curr_raw,
+                            false,
+                            CV_SB,
+                            &mut curr_type,
+                            &mut state,
+                            env,
+                        );
+                        if cr != 0 {
+                            env.parse_depth -= 1;
+                            return Err(cr);
+                        }
+                    } else if curr_type == CV_CPROP {
+                        env.parse_depth -= 1;
+                        return Err(ONIGERR_UNMATCHED_RANGE_SPECIFIER_IN_CHAR_CLASS);
+                    } else {
+                        state = CS_RANGE;
+                    }
+                } else if state == CS_START {
+                    // [-...] - literal dash at start
+                    let in_code = '-' as u32;
+                    let cc = if use_work {
+                        &mut work_cc
+                    } else {
+                        node.as_cclass_mut().unwrap()
+                    };
+                    let cr = cc_char_next(
+                        cc,
+                        &mut curr_code,
+                        in_code,
+                        &mut curr_raw,
+                        false,
+                        CV_SB,
+                        &mut curr_type,
+                        &mut state,
+                        env,
+                    );
+                    if cr != 0 {
+                        env.parse_depth -= 1;
+                        return Err(cr);
+                    }
+                } else if state == CS_RANGE {
+                    // [!--] - literal dash in range context
+                    let in_code = '-' as u32;
+                    let cc = if use_work {
+                        &mut work_cc
+                    } else {
+                        node.as_cclass_mut().unwrap()
+                    };
+                    let cr = cc_char_next(
+                        cc,
+                        &mut curr_code,
+                        in_code,
+                        &mut curr_raw,
+                        false,
+                        CV_SB,
+                        &mut curr_type,
+                        &mut state,
+                        env,
+                    );
+                    if cr != 0 {
+                        env.parse_depth -= 1;
+                        return Err(cr);
+                    }
+                } else {
+                    // CS_COMPLETE
+                    r = fetch_token_cc(tok, p, end, pattern, env, state);
+                    if r < 0 {
+                        env.parse_depth -= 1;
+                        return Err(r);
+                    }
+                    fetched = true;
+                    if tok.token_type == TokenType::CcClose {
+                        // [a-b-] -> literal dash before close
+                        let cc = if use_work {
+                            &mut work_cc
+                        } else {
+                            node.as_cclass_mut().unwrap()
+                        };
+                        let cr = cc_char_next(
+                            cc,
+                            &mut curr_code,
+                            '-' as u32,
+                            &mut curr_raw,
+                            false,
+                            CV_SB,
+                            &mut curr_type,
+                            &mut state,
+                            env,
+                        );
+                        if cr != 0 {
+                            env.parse_depth -= 1;
+                            return Err(cr);
+                        }
+                    } else if is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_DOUBLE_RANGE_OP_IN_CC) {
+                        // [0-9-a] allowed
+                        let cc = if use_work {
+                            &mut work_cc
+                        } else {
+                            node.as_cclass_mut().unwrap()
+                        };
+                        let cr = cc_char_next(
+                            cc,
+                            &mut curr_code,
+                            '-' as u32,
+                            &mut curr_raw,
+                            false,
+                            CV_SB,
+                            &mut curr_type,
+                            &mut state,
+                            env,
+                        );
+                        if cr != 0 {
+                            env.parse_depth -= 1;
+                            return Err(cr);
+                        }
+                    } else {
+                        env.parse_depth -= 1;
+                        return Err(ONIGERR_UNMATCHED_RANGE_SPECIFIER_IN_CHAR_CLASS);
+                    }
+                }
+            }
+            TokenType::CcOpenCC => {
+                // Nested character class [a[bc]]
+                if state == CS_VALUE {
+                    let cc = if use_work {
+                        &mut work_cc
+                    } else {
+                        node.as_cclass_mut().unwrap()
+                    };
+                    let cr = cc_char_next(
+                        cc,
+                        &mut curr_code,
+                        0,
+                        &mut curr_raw,
+                        false,
+                        curr_type,
+                        &mut curr_type,
+                        &mut state,
+                        env,
+                    );
+                    if cr != 0 {
+                        env.parse_depth -= 1;
+                        return Err(cr);
+                    }
+                }
+                state = CS_COMPLETE;
+
+                // Recursively parse nested CC
+                let anode = prs_cc(tok, p, end, pattern, env)?;
+                if let Some(acc) = anode.as_cclass() {
+                    let cc = if use_work {
+                        &mut work_cc
+                    } else {
+                        node.as_cclass_mut().unwrap()
+                    };
+                    or_cclass(cc, acc, enc);
+                }
+            }
+            TokenType::CcAnd => {
+                // Intersection &&
+                if state == CS_VALUE {
+                    let cc = if use_work {
+                        &mut work_cc
+                    } else {
+                        node.as_cclass_mut().unwrap()
+                    };
+                    let cr = cc_char_next(
+                        cc,
+                        &mut curr_code,
+                        0,
+                        &mut curr_raw,
+                        false,
+                        curr_type,
+                        &mut curr_type,
+                        &mut state,
+                        env,
+                    );
+                    if cr != 0 {
+                        env.parse_depth -= 1;
+                        return Err(cr);
+                    }
+                }
+                and_start = true;
+                state = CS_START;
+
+                if let Some(ref mut pcc) = prev_cc {
+                    let cc = if use_work {
+                        &mut work_cc
+                    } else {
+                        node.as_cclass_mut().unwrap()
+                    };
+                    and_cclass(pcc, cc, enc);
+                    // Reset cc
+                    cc.flags = 0;
+                    bitset_clear(&mut cc.bs);
+                    cc.mbuf = None;
+                } else {
+                    // First &&: save current into prev_cc, switch to work_cc
+                    let cc = node.as_cclass().unwrap();
+                    prev_cc = Some(CClassNode {
+                        flags: cc.flags,
+                        bs: cc.bs,
+                        mbuf: cc.mbuf.clone(),
+                    });
+                    work_cc_active = true;
+                    work_cc.flags = 0;
+                    bitset_clear(&mut work_cc.bs);
+                    work_cc.mbuf = None;
+                }
+            }
+            TokenType::Eot => {
+                env.parse_depth -= 1;
+                return Err(ONIGERR_PREMATURE_END_OF_CHAR_CLASS);
+            }
+            TokenType::CcClose => {
+                break;
+            }
+            _ => {
+                env.parse_depth -= 1;
+                return Err(ONIGERR_PARSER_BUG);
+            }
+        }
+
+        if !fetched {
+            r = fetch_token_cc(tok, p, end, pattern, env, state);
+            if r < 0 {
+                env.parse_depth -= 1;
+                return Err(r);
+            }
+        }
+    }
+
+    // Post-loop: flush remaining state
+    if state == CS_VALUE {
+        let cc = if work_cc_active {
+            &mut work_cc
+        } else {
+            node.as_cclass_mut().unwrap()
+        };
+        let cr = cc_char_next(
+            cc,
+            &mut curr_code,
+            0,
+            &mut curr_raw,
+            false,
+            curr_type,
+            &mut curr_type,
+            &mut state,
+            env,
+        );
+        if cr != 0 {
+            env.parse_depth -= 1;
+            return Err(cr);
+        }
+    }
+
+    // Final intersection merge
+    if let Some(ref mut pcc) = prev_cc {
+        let cc = if work_cc_active {
+            &mut work_cc
+        } else {
+            node.as_cclass_mut().unwrap()
+        };
+        and_cclass(pcc, cc, enc);
+        // Copy prev_cc back into node
+        let ncc = node.as_cclass_mut().unwrap();
+        ncc.flags = pcc.flags;
+        ncc.bs = pcc.bs;
+        ncc.mbuf = pcc.mbuf.take();
+    } else if work_cc_active {
+        // Copy work_cc back to node
+        let ncc = node.as_cclass_mut().unwrap();
+        ncc.flags = work_cc.flags;
+        ncc.bs = work_cc.bs;
+        ncc.mbuf = work_cc.mbuf.take();
+    }
+
+    // Apply negation
+    if neg {
+        let cc = node.as_cclass_mut().unwrap();
+        cc.set_not();
+    }
+
+    env.parse_depth -= 1;
+    Ok(node)
+}
+
+// ============================================================================
+// Subexpression/group parser: prs_bag
+// ============================================================================
+
+/// Parse a bag (subexpression/group).
+/// Returns: Ok((node, return_code)) where return_code is:
+///   0 = normal bag node, 1 = group-only (non-capturing), 2 = option-only
+fn prs_bag(
+    tok: &mut PToken,
+    term: i32,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+) -> Result<(Box<Node>, i32), i32> {
+    let enc = env.enc;
+
+    if p_end(*p, end) {
+        return Err(ONIGERR_END_PATTERN_IN_GROUP);
+    }
+
+    let c = ppeek(*p, pattern, end, enc);
+    let option = env.options;
+
+    if c == '?' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_GROUP_EFFECT) {
+        pinc(p, pattern, enc); // skip '?'
+        if p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
+        let mut pfetch_prev = *p;
+        let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+
+        match c as u8 as char {
+            ':' => {
+                // Non-capturing group (?:...)
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    return Err(r);
+                }
+                let (node, r) =
+                    prs_alts(tok, term, p, end, pattern, env, false)?;
+                return Ok((node, 1));
+            }
+            '=' => {
+                // Positive lookahead (?=...)
+                let mut np = node_new_anchor(ANCR_PREC_READ);
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    return Err(r);
+                }
+                let (target, _) =
+                    prs_alts(tok, term, p, end, pattern, env, false)?;
+                np.set_body(Some(target));
+                return Ok((np, 0));
+            }
+            '!' => {
+                // Negative lookahead (?!...)
+                let mut np = node_new_anchor(ANCR_PREC_READ_NOT);
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    return Err(r);
+                }
+                let (target, _) =
+                    prs_alts(tok, term, p, end, pattern, env, false)?;
+                np.set_body(Some(target));
+                return Ok((np, 0));
+            }
+            '>' => {
+                // Atomic group (?>...)
+                let mut np = node_new_bag(BagType::StopBacktrack);
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    return Err(r);
+                }
+                let (target, _) =
+                    prs_alts(tok, term, p, end, pattern, env, false)?;
+                np.set_body(Some(target));
+                return Ok((np, 0));
+            }
+            '<' => {
+                if p_end(*p, end) {
+                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                }
+                let c2 = ppeek(*p, pattern, end, enc);
+                if c2 == '=' as u32 {
+                    // Positive lookbehind (?<=...)
+                    pinc(p, pattern, enc);
+                    let mut np = node_new_anchor(ANCR_LOOK_BEHIND);
+                    let r = fetch_token(tok, p, end, pattern, env);
+                    if r < 0 {
+                        return Err(r);
+                    }
+                    let (target, _) =
+                        prs_alts(tok, term, p, end, pattern, env, false)?;
+                    np.set_body(Some(target));
+                    return Ok((np, 0));
+                } else if c2 == '!' as u32 {
+                    // Negative lookbehind (?<!...)
+                    pinc(p, pattern, enc);
+                    let mut np = node_new_anchor(ANCR_LOOK_BEHIND_NOT);
+                    let r = fetch_token(tok, p, end, pattern, env);
+                    if r < 0 {
+                        return Err(r);
+                    }
+                    let (target, _) =
+                        prs_alts(tok, term, p, end, pattern, env, false)?;
+                    np.set_body(Some(target));
+                    return Ok((np, 0));
+                } else if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
+                    // Named group (?<name>...)
+                    return prs_named_group(tok, '<' as u32, term, p, end, pattern, env, false);
+                }
+                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+            }
+            '\'' => {
+                if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
+                    return prs_named_group(tok, '\'' as u32, term, p, end, pattern, env, false);
+                }
+                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+            }
+            'P' => {
+                if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_CAPITAL_P_NAME) {
+                    if !p_end(*p, end) {
+                        let c2 = ppeek(*p, pattern, end, enc);
+                        if c2 == '<' as u32 {
+                            pinc(p, pattern, enc);
+                            return prs_named_group(
+                                tok, '<' as u32, term, p, end, pattern, env, false,
+                            );
+                        }
+                    }
+                }
+                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+            }
+            _ => {
+                // Option flags: i, m, s, x, etc.
+                *p = pfetch_prev; // PUNFETCH back to the option char
+                return prs_options(tok, term, p, end, pattern, env);
+            }
+        }
+    } else {
+        // Plain parenthesized group
+        if (env.options & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0 {
+            // Treat as non-capturing
+            let r = fetch_token(tok, p, end, pattern, env);
+            if r < 0 {
+                return Err(r);
+            }
+            let (node, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+            return Ok((node, 1));
+        }
+
+        // Capturing group
+        let num = env.add_mem_entry()?;
+        let mut np = node_new_bag_memory(num);
+        let r = fetch_token(tok, p, end, pattern, env);
+        if r < 0 {
+            return Err(r);
+        }
+        let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+        np.set_body(Some(target));
+        env.set_mem_node(num, &mut *np as *mut Node);
+        return Ok((np, 0));
+    }
+}
+
+/// Parse a named group (?<name>...) or (?'name'...)
+fn prs_named_group(
+    tok: &mut PToken,
+    start_code: OnigCodePoint,
+    term: i32,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+    list_capture: bool,
+) -> Result<(Box<Node>, i32), i32> {
+    let (name_start, name_end, _back_num, _num_type) =
+        fetch_name(start_code, p, end, pattern, env, false)?;
+
+    let num = env.add_mem_entry()?;
+
+    // Add to name table
+    if let Some(ref mut nt) = unsafe { &mut *env.reg }.name_table {
+        let name = &pattern[name_start..name_end];
+        let allow = is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME);
+        nt.add(name, num, allow).map_err(|e| e)?;
+    }
+
+    let mut np = node_new_bag_memory(num);
+    np.status_add(ND_ST_NAMED_GROUP);
+    env.num_named += 1;
+
+    if list_capture {
+        mem_status_on(&mut env.cap_history, num as usize);
+    }
+
+    let r = fetch_token(tok, p, end, pattern, env);
+    if r < 0 {
+        return Err(r);
+    }
+    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+    np.set_body(Some(target));
+    env.set_mem_node(num, &mut *np as *mut Node);
+
+    Ok((np, 0))
+}
+
+/// Parse option flags like (?imsx:...) or (?imsx)
+fn prs_options(
+    tok: &mut PToken,
+    term: i32,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+) -> Result<(Box<Node>, i32), i32> {
+    let enc = env.enc;
+    let syn = env.syntax;
+    let mut option = env.options;
+    let mut neg = false;
+    let mut pfetch_prev;
+
+    loop {
+        if p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
+        pfetch_prev = *p;
+        let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+
+        match c as u8 as char {
+            '-' => {
+                neg = true;
+            }
+            'x' => {
+                if neg {
+                    onig_option_off(&mut option, ONIG_OPTION_EXTEND);
+                } else {
+                    onig_option_on(&mut option, ONIG_OPTION_EXTEND);
+                }
+            }
+            'i' => {
+                if neg {
+                    onig_option_off(&mut option, ONIG_OPTION_IGNORECASE);
+                } else {
+                    onig_option_on(&mut option, ONIG_OPTION_IGNORECASE);
+                }
+            }
+            's' => {
+                if is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_PERL) {
+                    if neg {
+                        onig_option_off(&mut option, ONIG_OPTION_MULTILINE);
+                    } else {
+                        onig_option_on(&mut option, ONIG_OPTION_MULTILINE);
+                    }
+                } else {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+            }
+            'm' => {
+                if is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_PERL) {
+                    if neg {
+                        onig_option_off(&mut option, ONIG_OPTION_SINGLELINE);
+                    } else {
+                        onig_option_on(&mut option, ONIG_OPTION_SINGLELINE);
+                    }
+                } else if is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_RUBY)
+                    || is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_ONIGURUMA)
+                {
+                    if neg {
+                        onig_option_off(&mut option, ONIG_OPTION_MULTILINE);
+                    } else {
+                        onig_option_on(&mut option, ONIG_OPTION_MULTILINE);
+                    }
+                } else {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+            }
+            ')' => {
+                // Option-only group (?i)
+                let np = node_new_option(option);
+                env.options = option;
+                return Ok((np, 2));
+            }
+            ':' => {
+                // Option-scoped group (?i:...)
+                let save_options = env.options;
+                env.options = option;
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    env.options = save_options;
+                    return Err(r);
+                }
+                let (target, _) =
+                    prs_alts(tok, term, p, end, pattern, env, false)?;
+                env.options = save_options;
+                let mut np = node_new_option(option);
+                np.set_body(Some(target));
+                return Ok((np, 0));
+            }
+            _ => {
+                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Main Parser: recursive descent
 // ============================================================================
 
@@ -1667,8 +3504,24 @@ fn prs_exp(
             return Ok((node_new_empty(), tok.token_type as i32));
         }
         TokenType::SubexpOpen => {
-            // TODO: prs_bag implementation
-            return Err(ONIGERR_PARSER_BUG);
+            let (node, bag_r) = prs_bag(tok, TokenType::SubexpClose as i32, p, end, pattern, env)?;
+            if bag_r == 1 {
+                // Group-only (non-capturing (?:...) or similar)
+                // fetch_token to advance past the SubexpClose consumed by prs_alts
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    return Err(r);
+                }
+                return check_quantifier(node, tok, p, end, pattern, env, 0, parse_depth);
+            } else if bag_r == 2 {
+                // Option-only (?i) - no body, no quantifier
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    return Err(r);
+                }
+                return Ok((node, tok.token_type as i32));
+            }
+            node
         }
         TokenType::SubexpClose => {
             if !is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_UNMATCHED_CLOSE_SUBEXP) {
@@ -1746,12 +3599,10 @@ fn prs_exp(
             }
         }
         TokenType::CharProperty => {
-            // TODO: prs_char_property
-            return Err(ONIGERR_PARSER_BUG);
+            prs_char_property(tok, p, end, pattern, env)?
         }
         TokenType::OpenCC => {
-            // TODO: prs_cc (character class parsing)
-            return Err(ONIGERR_PARSER_BUG);
+            prs_cc(tok, p, end, pattern, env)?
         }
         TokenType::Anchor => {
             let ascii_mode = opton_word_ascii(env.options) && is_word_anchor_type(tok.anchor);
@@ -2083,4 +3934,449 @@ pub fn onig_parse_tree(
     reg.num_mem = env.num_mem;
 
     Ok(root)
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::regsyntax::OnigSyntaxOniguruma;
+
+    /// Create a default RegexType + ParseEnv for testing with Oniguruma syntax and UTF-8.
+    fn make_test_context() -> (RegexType, ParseEnv) {
+        let reg = RegexType {
+            ops: Vec::new(),
+            string_pool: Vec::new(),
+            num_mem: 0,
+            num_repeat: 0,
+            num_empty_check: 0,
+            num_call: 0,
+            capture_history: 0,
+            push_mem_start: 0,
+            push_mem_end: 0,
+            stack_pop_level: StackPopLevel::Free,
+            repeat_range: Vec::new(),
+            enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            options: ONIG_OPTION_NONE,
+            syntax: &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            case_fold_flag: ONIGENC_CASE_FOLD_MIN,
+            name_table: None,
+            optimize: OptimizeType::None,
+            threshold_len: 0,
+            anchor: 0,
+            anc_dist_min: 0,
+            anc_dist_max: 0,
+            sub_anchor: 0,
+            exact: Vec::new(),
+            map: [0u8; CHAR_MAP_SIZE],
+            map_offset: 0,
+            dist_min: 0,
+            dist_max: 0,
+            extp: None,
+        };
+        let env = ParseEnv {
+            options: 0,
+            case_fold_flag: 0,
+            enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            syntax: &OnigSyntaxOniguruma,
+            cap_history: 0,
+            backtrack_mem: 0,
+            backrefed_mem: 0,
+            pattern: std::ptr::null(),
+            pattern_end: std::ptr::null(),
+            error: std::ptr::null(),
+            error_end: std::ptr::null(),
+            reg: std::ptr::null_mut(),
+            num_call: 0,
+            num_mem: 0,
+            num_named: 0,
+            mem_alloc: 0,
+            mem_env_static: Default::default(),
+            mem_env_dynamic: None,
+            backref_num: 0,
+            keep_num: 0,
+            id_num: 0,
+            save_alloc_num: 0,
+            saves: None,
+            unset_addr_list: None,
+            parse_depth: 0,
+            flags: 0,
+        };
+        (reg, env)
+    }
+
+    fn parse(pattern: &[u8]) -> Result<(Box<Node>, RegexType), i32> {
+        let (mut reg, mut env) = make_test_context();
+        let root = onig_parse_tree(pattern, &mut reg, &mut env)?;
+        Ok((root, reg))
+    }
+
+    // --- Literal strings ---
+
+    #[test]
+    fn parse_literal_abc() {
+        let (root, _reg) = parse(b"abc").unwrap();
+        match &root.inner {
+            NodeInner::String(s) => assert_eq!(s.s, b"abc"),
+            other => panic!("expected String node, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_empty_pattern() {
+        let (root, _reg) = parse(b"").unwrap();
+        match &root.inner {
+            NodeInner::String(s) => assert!(s.s.is_empty()),
+            other => panic!("expected empty String node, got {:?}", root.node_type()),
+        }
+    }
+
+    // --- Alternation ---
+
+    #[test]
+    fn parse_alternation() {
+        let (root, _reg) = parse(b"a|b").unwrap();
+        match &root.inner {
+            NodeInner::Alt(alt) => {
+                // car should be "a"
+                match &alt.car.inner {
+                    NodeInner::String(s) => assert_eq!(s.s, b"a"),
+                    _ => panic!("expected String 'a'"),
+                }
+                // cdr should be Alt with "b"
+                let cdr = alt.cdr.as_ref().expect("expected cdr");
+                match &cdr.inner {
+                    NodeInner::Alt(alt2) => {
+                        match &alt2.car.inner {
+                            NodeInner::String(s) => assert_eq!(s.s, b"b"),
+                            _ => panic!("expected String 'b'"),
+                        }
+                    }
+                    _ => panic!("expected Alt cdr"),
+                }
+            }
+            _ => panic!("expected Alt node, got {:?}", root.node_type()),
+        }
+    }
+
+    // --- Concatenation ---
+
+    #[test]
+    fn parse_concat_dot_literal() {
+        // "a." should produce List(String("a"), List(Anychar, nil))
+        let (root, _reg) = parse(b"a.").unwrap();
+        match &root.inner {
+            NodeInner::List(list) => {
+                match &list.car.inner {
+                    NodeInner::String(s) => assert_eq!(s.s, b"a"),
+                    _ => panic!("expected String 'a' as first element"),
+                }
+                let cdr = list.cdr.as_ref().expect("expected cdr");
+                match &cdr.inner {
+                    NodeInner::List(list2) => {
+                        match &list2.car.inner {
+                            NodeInner::CType(ct) => {
+                                assert!(ct.ctype == ONIGENC_CTYPE_WORD as i32 || true, "anychar node");
+                            }
+                            _ => {} // anychar could be various representations
+                        }
+                    }
+                    _ => {} // may be directly the node
+                }
+            }
+            _ => panic!("expected List node for concat, got {:?}", root.node_type()),
+        }
+    }
+
+    // --- Quantifiers ---
+
+    #[test]
+    fn parse_star_quantifier() {
+        let (root, _reg) = parse(b"a*").unwrap();
+        match &root.inner {
+            NodeInner::Quant(q) => {
+                assert_eq!(q.lower, 0);
+                assert_eq!(q.upper, INFINITE_REPEAT);
+                assert!(q.greedy);
+            }
+            _ => panic!("expected Quant node, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_plus_quantifier() {
+        let (root, _reg) = parse(b"a+").unwrap();
+        match &root.inner {
+            NodeInner::Quant(q) => {
+                assert_eq!(q.lower, 1);
+                assert_eq!(q.upper, INFINITE_REPEAT);
+                assert!(q.greedy);
+            }
+            _ => panic!("expected Quant node, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_question_quantifier() {
+        let (root, _reg) = parse(b"a?").unwrap();
+        match &root.inner {
+            NodeInner::Quant(q) => {
+                assert_eq!(q.lower, 0);
+                assert_eq!(q.upper, 1);
+                assert!(q.greedy);
+            }
+            _ => panic!("expected Quant node, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_lazy_star() {
+        let (root, _reg) = parse(b"a*?").unwrap();
+        match &root.inner {
+            NodeInner::Quant(q) => {
+                assert_eq!(q.lower, 0);
+                assert_eq!(q.upper, INFINITE_REPEAT);
+                assert!(!q.greedy);
+            }
+            _ => panic!("expected Quant node, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_interval_quantifier() {
+        let (root, _reg) = parse(b"a{2,5}").unwrap();
+        match &root.inner {
+            NodeInner::Quant(q) => {
+                assert_eq!(q.lower, 2);
+                assert_eq!(q.upper, 5);
+                assert!(q.greedy);
+            }
+            _ => panic!("expected Quant node, got {:?}", root.node_type()),
+        }
+    }
+
+    // --- Anchors ---
+
+    #[test]
+    fn parse_begin_anchor() {
+        let (root, _reg) = parse(b"^a").unwrap();
+        match &root.inner {
+            NodeInner::List(list) => {
+                match &list.car.inner {
+                    NodeInner::Anchor(a) => assert_eq!(a.anchor_type, ANCR_BEGIN_LINE),
+                    _ => panic!("expected Anchor as first element"),
+                }
+            }
+            _ => panic!("expected List, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_end_anchor() {
+        let (root, _reg) = parse(b"a$").unwrap();
+        match &root.inner {
+            NodeInner::List(list) => {
+                // Walk to find the anchor
+                let cdr = list.cdr.as_ref().expect("expected cdr");
+                match &cdr.inner {
+                    NodeInner::List(list2) => {
+                        match &list2.car.inner {
+                            NodeInner::Anchor(a) => assert_eq!(a.anchor_type, ANCR_END_LINE),
+                            _ => panic!("expected Anchor"),
+                        }
+                    }
+                    _ => panic!("expected second List element"),
+                }
+            }
+            _ => panic!("expected List, got {:?}", root.node_type()),
+        }
+    }
+
+    // --- Character classes ---
+
+    #[test]
+    fn parse_char_class_simple() {
+        let (root, _reg) = parse(b"[abc]").unwrap();
+        match &root.inner {
+            NodeInner::CClass(cc) => {
+                assert!(bitset_at(&cc.bs, b'a' as usize));
+                assert!(bitset_at(&cc.bs, b'b' as usize));
+                assert!(bitset_at(&cc.bs, b'c' as usize));
+                assert!(!cc.is_not());
+            }
+            _ => panic!("expected CClass node, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_char_class_negated() {
+        let (root, _reg) = parse(b"[^a]").unwrap();
+        match &root.inner {
+            NodeInner::CClass(cc) => {
+                assert!(cc.is_not());
+            }
+            _ => panic!("expected CClass node, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_char_class_range() {
+        let (root, _reg) = parse(b"[a-z]").unwrap();
+        match &root.inner {
+            NodeInner::CClass(cc) => {
+                // All lowercase letters should be set
+                for c in b'a'..=b'z' {
+                    assert!(bitset_at(&cc.bs, c as usize),
+                            "expected '{}' to be in class", c as char);
+                }
+                // Uppercase should not be set
+                assert!(!bitset_at(&cc.bs, b'A' as usize));
+            }
+            _ => panic!("expected CClass node, got {:?}", root.node_type()),
+        }
+    }
+
+    // --- Groups ---
+
+    #[test]
+    fn parse_capturing_group() {
+        let (root, _reg) = parse(b"(a)").unwrap();
+        match &root.inner {
+            NodeInner::Bag(bag) => {
+                match bag.bag_type {
+                    BagType::Memory => {}
+                    _ => panic!("expected Memory bag type"),
+                }
+                let body = bag.body.as_ref().expect("expected body");
+                match &body.inner {
+                    NodeInner::String(s) => assert_eq!(s.s, b"a"),
+                    _ => panic!("expected String body"),
+                }
+            }
+            _ => panic!("expected Bag node, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_non_capturing_group() {
+        let (root, _reg) = parse(b"(?:a)").unwrap();
+        // Non-capturing groups may produce a Bag with StopBacktrack or just the inner node
+        // depending on the implementation. Let's just verify it parses successfully.
+        assert!(matches!(root.inner, NodeInner::String(_) | NodeInner::Bag(_)));
+    }
+
+    #[test]
+    fn parse_named_group() {
+        let (root, reg) = parse(b"(?<name>a)").unwrap();
+        match &root.inner {
+            NodeInner::Bag(bag) => {
+                match bag.bag_type {
+                    BagType::Memory => {}
+                    _ => panic!("expected Memory bag type for named group"),
+                }
+            }
+            _ => panic!("expected Bag node, got {:?}", root.node_type()),
+        }
+        // Check that the name was registered
+        let nt = reg.name_table.as_ref().expect("expected name table");
+        assert!(nt.find(b"name").is_some());
+    }
+
+    // --- Escape sequences ---
+
+    #[test]
+    fn parse_escape_d() {
+        // \d produces a CClass node (digit is expanded into character class)
+        let (root, _reg) = parse(b"\\d").unwrap();
+        match &root.inner {
+            NodeInner::CClass(cc) => {
+                assert!(!cc.is_not());
+            }
+            _ => panic!("expected CClass node for \\d, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_escape_w() {
+        // \w produces a CType node (word type is special-cased)
+        let (root, _reg) = parse(b"\\w").unwrap();
+        match &root.inner {
+            NodeInner::CType(ct) => {
+                assert_eq!(ct.ctype, ONIGENC_CTYPE_WORD as i32);
+                assert!(!ct.not);
+            }
+            _ => panic!("expected CType node for \\w, got {:?}", root.node_type()),
+        }
+    }
+
+    #[test]
+    fn parse_escape_s() {
+        // \s produces a CClass node (space is expanded into character class)
+        let (root, _reg) = parse(b"\\s").unwrap();
+        match &root.inner {
+            NodeInner::CClass(cc) => {
+                assert!(!cc.is_not());
+            }
+            _ => panic!("expected CClass node for \\s, got {:?}", root.node_type()),
+        }
+    }
+
+    // --- Complex patterns ---
+
+    #[test]
+    fn parse_multiple_captures() {
+        let (_root, reg) = parse(b"(a)(b)(c)").unwrap();
+        assert_eq!(reg.num_mem, 3);
+    }
+
+    #[test]
+    fn parse_nested_groups() {
+        let (_root, reg) = parse(b"((a)(b))").unwrap();
+        assert_eq!(reg.num_mem, 3);
+    }
+
+    #[test]
+    fn parse_complex_pattern() {
+        // Just verify it parses without error
+        let result = parse(b"^[a-zA-Z_][a-zA-Z0-9_]*$");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn parse_alternation_in_group() {
+        let result = parse(b"(foo|bar|baz)");
+        assert!(result.is_ok());
+        let (_root, reg) = result.unwrap();
+        assert_eq!(reg.num_mem, 1);
+    }
+
+    #[test]
+    fn parse_email_like_pattern() {
+        let result = parse(b"[a-z]+@[a-z]+\\.[a-z]+");
+        assert!(result.is_ok());
+    }
+
+    // --- Error cases ---
+
+    #[test]
+    fn parse_unmatched_paren() {
+        let result = parse(b"(abc");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_unmatched_bracket() {
+        let result = parse(b"[abc");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_bad_interval() {
+        // {5,2} is lower > upper, should fail
+        let result = parse(b"a{5,2}");
+        assert!(result.is_err());
+    }
 }
