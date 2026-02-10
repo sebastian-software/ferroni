@@ -3640,12 +3640,38 @@ fn prs_exp(
                 }
                 return check_quantifier(node, tok, p, end, pattern, env, 1, parse_depth);
             } else if bag_r == 2 {
-                // Option-only (?i) - no body, no quantifier
-                let r = fetch_token(tok, p, end, pattern, env);
-                if r < 0 {
-                    return Err(r);
+                // Option-only (?i)
+                let bag_options = match node.as_bag() {
+                    Some(b) => match b.bag_data {
+                        BagData::Option { options } => options,
+                        _ => env.options,
+                    },
+                    None => env.options,
+                };
+                if is_syntax_bv(env.syntax, ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH) {
+                    // Perl/Java: just set options and continue branch
+                    env.options = bag_options;
+                    let r = fetch_token(tok, p, end, pattern, env);
+                    if r < 0 {
+                        return Err(r);
+                    }
+                    // Discard option node, retry from top of prs_exp
+                    return prs_exp(tok, term, p, end, pattern, env, false);
+                } else {
+                    // Oniguruma/Ruby: parse rest of pattern as body of option node
+                    let mut np = node;
+                    let prev = env.options;
+                    env.options = bag_options;
+                    let r = fetch_token(tok, p, end, pattern, env);
+                    if r < 0 {
+                        env.options = prev;
+                        return Err(r);
+                    }
+                    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                    env.options = prev;
+                    np.set_body(Some(target));
+                    return Ok((np, tok.token_type as i32));
                 }
-                return Ok((node, tok.token_type as i32));
             }
             node
         }

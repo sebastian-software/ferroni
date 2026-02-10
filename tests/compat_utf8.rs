@@ -5514,14 +5514,12 @@ fn alt_casefold_scoped_b_or_c_match_b() {
 }
 
 #[test]
-#[ignore] // inline (?i) scoping across alternation not yet matching C behavior
 fn alt_casefold_scoped_b_or_c_match_c() {
     // C line 569: a(?i)b|c matches "aC" -> 0-2
     x2(b"a(?i)b|c", b"aC", 0, 2);
 }
 
 #[test]
-#[ignore] // inline (?i) scoping across alternation not yet matching C behavior
 fn alt_casefold_scoped_no_match_ac() {
     // C line 570: a(?i)b|c no match for "AC" (a must be lowercase)
     n(b"a(?i)b|c", b"AC");
