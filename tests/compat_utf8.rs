@@ -6068,91 +6068,78 @@ fn recursive_self_call_g0_capture() {
 // ============================================================================
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_yes_only() {
     // C line 759: (a*)(?(1))aa matches "aaaaa" -> 0-5
     x2(b"(a*)(?(1))aa", b"aaaaa", 0, 5);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_negative_ref() {
     // C line 760: (a*)(?(-1))aa matches "aaaaa" -> 0-5
     x2(b"(a*)(?(-1))aa", b"aaaaa", 0, 5);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_named_ref() {
     // C line 761: (?<name>aaa)(?('name'))aa matches "aaaaa" -> 0-5
     x2(b"(?<name>aaa)(?('name'))aa", b"aaaaa", 0, 5);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_yes_no() {
     // C line 762: (a)(?(1)aa|bb)a matches "aaaaa" -> 0-4
     x2(b"(a)(?(1)aa|bb)a", b"aaaaa", 0, 4);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_named_yes_no() {
     // C line 763: (?:aa|())(?(<1>)aa|bb)a matches "aabba" -> 0-5
     x2(b"(?:aa|())(?(<1>)aa|bb)a", b"aabba", 0, 5);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_named_yes_no_cc() {
     // C line 764: (?:aa|())(?('1')aa|bb|cc)a matches "aacca" -> 0-5
     x2(b"(?:aa|())(?('1')aa|bb|cc)a", b"aacca", 0, 5);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_capture_group() {
     // C line 765: (a*)(?(1)aa|a)b matches "aaab" group 1 -> 0-1
     x3(b"(a*)(?(1)aa|a)b", b"aaab", 0, 1, 1);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_no_match() {
     // C line 766: (a)(?(1)a|b)c no match for "abc"
     n(b"(a)(?(1)a|b)c", b"abc");
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_empty_yes() {
     // C line 767: (a)(?(1)|)c matches "ac" -> 0-2
     x2(b"(a)(?(1)|)c", b"ac", 0, 2);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_empty_cond_no_match() {
     // C line 768: (?()aaa|bbb) no match for "bbb"
     n(b"(?()aaa|bbb)", b"bbb");
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_plus_zero() {
     // C line 769: (a)(?(1+0)b|c)d matches "abd" -> 0-3
     x2(b"(a)(?(1+0)b|c)d", b"abd", 0, 3);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_named_alt_ace() {
     // C line 770: (?:(?'name'a)|(?'name'b))(?('name')c|d)e matches "ace" -> 0-3
     x2(b"(?:(?'name'a)|(?'name'b))(?('name')c|d)e", b"ace", 0, 3);
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_named_alt_bce() {
     // C line 771: (?:(?'name'a)|(?'name'b))(?('name')c|d)e matches "bce" -> 0-3
     x2(b"(?:(?'name'a)|(?'name'b))(?('name')c|d)e", b"bce", 0, 3);
@@ -6225,7 +6212,6 @@ fn cap_named_subroutine_zero() {
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_abc_coverage() {
     // C line 806: ((?(abc)true|false))+ matches "false" -> 0-5
     x2(b"((?(abc)true|false))+", b"false", 0, 5);
@@ -6250,7 +6236,6 @@ fn word_boundary_capture_plus() {
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_named_coverage() {
     // C line 810: ()(?<x>ab)(?(<x>)a|b) matches "aba" -> 0-3
     x2(b"()(?<x>ab)(?(<x>)a|b)", b"aba", 0, 3);
@@ -6269,7 +6254,7 @@ fn lookbehind_long_repeat_no_match() {
 }
 
 #[test]
-#[ignore] // conditionals inside lookbehind not yet implemented
+#[ignore] // non-backref conditional inside lookbehind not yet implemented
 fn lookbehind_conditional_coverage() {
     // C line 813: (?<=(?(a)a|bb))z matches "aaz" -> 2-3
     x2(b"(?<=(?(a)a|bb))z", b"aaz", 2, 3);
@@ -6288,7 +6273,6 @@ fn named_dup_backref_plus_coverage() {
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_backref_match_coverage() {
     // C line 821: ((?(a)b|c))(\1) matches "abab" -> 0-4
     x2(b"((?(a)b|c))(\\1)", b"abab", 0, 4);
@@ -6309,7 +6293,6 @@ fn recursive_conditional_cccb_coverage() {
 }
 
 #[test]
-#[ignore] // conditionals not yet implemented
 fn conditional_star_plus_coverage() {
     // C line 824: (a)(?(1)a*|b*)+ matches "aaaa" -> 0-4
     x2(b"(a)(?(1)a*|b*)+", b"aaaa", 0, 4);
@@ -6322,14 +6305,12 @@ fn nested_cc_intersection_coverage() {
 }
 
 #[test]
-#[ignore] // conditionals inside lookbehind not yet implemented
 fn conditional_lookbehind_Q_no_match() {
     // C line 694: (Q)|(?<=a|(?(1))|b)c no match for "czc"
     n(b"(Q)|(?<=a|(?(1))|b)c", b"czc");
 }
 
 #[test]
-#[ignore] // conditionals inside lookbehind not yet implemented
 fn conditional_lookbehind_Q_match() {
     // C line 695: (Q)(?<=a|(?(1))|b)c matches "cQc" -> 1-3
     x2(b"(Q)(?<=a|(?(1))|b)c", b"cQc", 1, 3);

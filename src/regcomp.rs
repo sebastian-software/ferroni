@@ -769,16 +769,35 @@ fn compile_length_bag_node(bag: &BagNode, reg: &RegexType, env: &ParseEnv) -> i3
             body_len
         }
         BagType::IfElse => {
-            // TODO: conditional compilation
-            let body_len = if let Some(b) = body {
+            // Conditional: MARK + PUSH + condition + CUT_TO_MARK + then + JUMP + CUT_TO_MARK + else
+            let cond_len = if let Some(b) = body {
                 compile_length_tree(b, reg, env)
             } else {
                 0
             };
-            if body_len < 0 {
-                return body_len;
+            if cond_len < 0 {
+                return cond_len;
             }
-            body_len
+
+            let mut len = OPSIZE_PUSH + OPSIZE_MARK + cond_len + OPSIZE_CUT_TO_MARK;
+
+            if let BagData::IfElse { ref then_node, ref else_node } = bag.bag_data {
+                if let Some(ref then_n) = then_node {
+                    let tlen = compile_length_tree(then_n, reg, env);
+                    if tlen < 0 { return tlen; }
+                    len += tlen;
+                }
+
+                len += OPSIZE_JUMP + OPSIZE_CUT_TO_MARK;
+
+                if let Some(ref else_n) = else_node {
+                    let elen = compile_length_tree(else_n, reg, env);
+                    if elen < 0 { return elen; }
+                    len += elen;
+                }
+            }
+
+            len
         }
     }
 }
@@ -856,10 +875,86 @@ fn compile_bag_node(bag: &BagNode, reg: &mut RegexType, env: &ParseEnv) -> i32 {
             0
         }
         BagType::IfElse => {
-            // TODO: conditional compilation
+            let id = reg.num_call;
+            reg.num_call += 1;
+
+            // Emit MARK
+            add_op(reg, OpCode::Mark, OperationPayload::Mark {
+                id,
+                save_pos: false,
+            });
+
+            // Calculate condition and then lengths for PUSH address
+            let cond_len = if let Some(body) = &bag.body {
+                compile_length_tree(body, reg, env)
+            } else {
+                0
+            };
+            if cond_len < 0 { return cond_len; }
+
+            let then_len = if let BagData::IfElse { ref then_node, .. } = bag.bag_data {
+                if let Some(ref then_n) = then_node {
+                    compile_length_tree(then_n, reg, env)
+                } else {
+                    0
+                }
+            } else {
+                0
+            };
+            if then_len < 0 { return then_len; }
+
+            let jump_len = cond_len + OPSIZE_CUT_TO_MARK + then_len + OPSIZE_JUMP;
+
+            // Emit PUSH to else section
+            add_op(reg, OpCode::Push, OperationPayload::Push {
+                addr: SIZE_INC + jump_len,
+            });
+
+            // Emit condition
             if let Some(body) = &bag.body {
-                return compile_tree(body, reg, env);
+                let r = compile_tree(body, reg, env);
+                if r != 0 { return r; }
             }
+
+            // On condition success, cut mark
+            add_op(reg, OpCode::CutToMark, OperationPayload::CutToMark {
+                id,
+                restore_pos: false,
+            });
+
+            // Emit then branch
+            if let BagData::IfElse { ref then_node, ref else_node } = bag.bag_data {
+                if let Some(ref then_n) = then_node {
+                    let r = compile_tree(then_n, reg, env);
+                    if r != 0 { return r; }
+                }
+
+                // Calculate else length for JUMP
+                let else_len = if let Some(ref else_n) = else_node {
+                    compile_length_tree(else_n, reg, env)
+                } else {
+                    0
+                };
+                if else_len < 0 { return else_len; }
+
+                // Jump over else
+                add_op(reg, OpCode::Jump, OperationPayload::Jump {
+                    addr: OPSIZE_CUT_TO_MARK + else_len + SIZE_INC,
+                });
+
+                // On condition failure, cut mark
+                add_op(reg, OpCode::CutToMark, OperationPayload::CutToMark {
+                    id,
+                    restore_pos: false,
+                });
+
+                // Emit else branch
+                if let Some(ref else_n) = else_node {
+                    let r = compile_tree(else_n, reg, env);
+                    if r != 0 { return r; }
+                }
+            }
+
             0
         }
     }
@@ -1381,7 +1476,15 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
         NodeInner::BackRef(br) => {
             let refs = br.back_refs();
 
-            if refs.len() == 1 {
+            if node.has_status(ND_ST_CHECKER) {
+                // BackRef checker for conditionals: (?(1)then|else)
+                let ns = refs.to_vec();
+                add_op(reg, OpCode::BackRefCheck, OperationPayload::BackRefGeneral {
+                    num: refs.len() as i32,
+                    ns,
+                    nest_level: br.nest_level,
+                });
+            } else if refs.len() == 1 {
                 let n = refs[0];
                 if node.has_status(ND_ST_IGNORECASE) {
                     add_op(reg, OpCode::BackRefNIc, OperationPayload::BackRefN { n1: n });
