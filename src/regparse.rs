@@ -4248,8 +4248,28 @@ fn prs_exp(
             node_new_save_gimmick(SaveType::Keep, id)
         }
         TokenType::GeneralNewline => {
-            // TODO: node_new_general_newline
-            node_new_anychar()
+            // Port of node_new_general_newline from regparse.c
+            // \R matches \r\n (as unit), or any of [\n\v\f\r\x85\u2028\u2029]
+            // Builds: BAG_IF_ELSE(condition="\r\n", then=None, else=[\n-\r\x85\u2028\u2029])
+
+            // 1. Build the CR+LF string node ("\r\n")
+            let mut crnl_buf = [0u8; 8];
+            let dlen = env.enc.code_to_mbc(0x0D, &mut crnl_buf) as usize;
+            let alen = env.enc.code_to_mbc(0x0A, &mut crnl_buf[dlen..]) as usize;
+            let crnl = node_new_str_crude(&crnl_buf[..dlen + alen]);
+
+            // 2. Build character class for other newlines: [\n-\r]
+            let mut ncc = node_new_cclass();
+            if let NodeInner::CClass(ref mut cc) = ncc.inner {
+                // \n (0x0A) through \r (0x0D) covers LF, VT, FF, CR
+                bitset_set_range(&mut cc.bs, 0x0A, 0x0D);
+                // Unicode: NEL (0x85), Line Separator (0x2028), Paragraph Separator (0x2029)
+                add_code_range_to_buf(&mut cc.mbuf, 0x85, 0x85);
+                add_code_range_to_buf(&mut cc.mbuf, 0x2028, 0x2029);
+            }
+
+            // 3. Wrap in BAG_IF_ELSE: try \r\n first, else single newline char
+            node_new_bag_if_else(crnl, None, Some(ncc))
         }
         TokenType::NoNewline => {
             node_new_ctype(CTYPE_ANYCHAR, false, false)

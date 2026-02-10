@@ -8462,70 +8462,60 @@ fn posix_punct_property() {
 // ============================================================================
 
 #[test]
-#[ignore] // \\R general newline not yet implemented
 fn general_newline_dot_star() {
     // C line 1737
     x2(b"\\A.*\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\O true-anychar not yet implemented
 fn true_anychar_star_newline() {
     // C line 1738
     x2(b"\\A\\O*\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\R general newline not yet implemented
 fn newline_star_general_newline() {
     // C line 1739
     x2(b"\\A\\n*\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\R general newline not yet implemented
 fn general_newline_star_general_newline() {
     // C line 1740
     x2(b"\\A\\R*\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\R general newline not yet implemented
 fn literal_t_star_general_newline() {
     // C line 1741
     x2(b"\\At*\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\R general newline not yet implemented
 fn dot_bounded_star_general_newline() {
     // C line 1743
     x2(b"\\A.{0,99}\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\O true-anychar not yet implemented
 fn true_anychar_bounded_general_newline() {
     // C line 1744
     x2(b"\\A\\O{0,99}\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\R general newline not yet implemented
 fn newline_bounded_general_newline() {
     // C line 1745
     x2(b"\\A\\n{0,99}\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\R general newline not yet implemented
 fn general_newline_bounded_general_newline() {
     // C line 1746
     x2(b"\\A\\R{0,99}\\R", b"\n", 0, 1);
 }
 
 #[test]
-#[ignore] // \\R general newline not yet implemented
 fn literal_t_bounded_general_newline() {
     // C line 1747
     x2(b"\\At{0,99}\\R", b"\n", 0, 1);
