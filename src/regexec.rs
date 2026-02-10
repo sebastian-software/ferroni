@@ -280,6 +280,80 @@ fn stack_empty_check(stack: &[StackEntry], zid: usize, s: usize) -> bool {
     false
 }
 
+/// Memory-aware empty check. Returns true only if position is same AND no capture
+/// groups (indicated by empty_status_mem) have changed since the EmptyCheckStart.
+/// Mirrors C's STACK_EMPTY_CHECK_MEM.
+fn stack_empty_check_mem(
+    stack: &[StackEntry],
+    zid: usize,
+    s: usize,
+    empty_status_mem: u32,
+    reg: &RegexType,
+    mem_start_stk: &[MemPtr],
+    mem_end_stk: &[MemPtr],
+) -> bool {
+    // Find the EmptyCheckStart entry
+    let mut klow_idx = None;
+    for (i, entry) in stack.iter().enumerate().rev() {
+        if let StackEntry::EmptyCheckStart { zid: id, pstr } = entry {
+            if *id == zid {
+                if *pstr != s {
+                    return false; // position changed → not empty
+                }
+                klow_idx = Some(i);
+                break;
+            }
+        }
+    }
+
+    let klow_idx = match klow_idx {
+        Some(i) => i,
+        None => return false,
+    };
+
+    // Position is the same. Check if any capture groups changed.
+    let mut ms = empty_status_mem as u32;
+    for k_idx in (klow_idx + 1..stack.len()).rev() {
+        if let StackEntry::MemEnd { zid: mem_zid, pstr: end_pstr, .. } = &stack[k_idx] {
+            if ms & (1u32 << *mem_zid) != 0 {
+                // Found a MemEnd for a tracked group. Check if its value differs
+                // from the previous iteration's value.
+                // Look for the corresponding MemStart between klow and this MemEnd.
+                for kk_idx in klow_idx + 1..k_idx {
+                    if let StackEntry::MemStart { zid: start_zid, prev_end, prev_start, .. } = &stack[kk_idx] {
+                        if *start_zid == *mem_zid {
+                            // Check if prev_end was invalid (group wasn't captured before)
+                            match prev_end {
+                                MemPtr::Invalid => {
+                                    // Previously not captured, now captured → not empty
+                                    return false;
+                                }
+                                MemPtr::Pos(prev_pos) => {
+                                    if *prev_pos != *end_pstr {
+                                        return false; // end position changed
+                                    }
+                                }
+                                MemPtr::StackIdx(si) => {
+                                    if let StackEntry::MemEnd { pstr: prev_pstr, .. } = &stack[*si] {
+                                        if *prev_pstr != *end_pstr {
+                                            return false;
+                                        }
+                                    }
+                                }
+                            }
+                            ms &= !(1u32 << *mem_zid);
+                            break;
+                        }
+                    }
+                }
+                if ms == 0 { break; }
+            }
+        }
+    }
+
+    true // position same AND no captures changed → truly empty
+}
+
 /// Get the saved value for a given save_type and zid from the stack.
 fn stack_get_save_val_last(
     stack: &[StackEntry],
@@ -1414,7 +1488,7 @@ fn match_at(
             // ================================================================
             // OP_REPEAT_INC / OP_REPEAT_INC_NG - increment and check repeat
             // ================================================================
-            OpCode::RepeatInc | OpCode::RepeatIncNg => {
+            OpCode::RepeatInc => {
                 if let OperationPayload::RepeatInc { id } = reg.ops[p].payload {
                     let id = id as usize;
                     let count = stack_get_repeat_count(&stack, id) + 1;
@@ -1422,31 +1496,43 @@ fn match_at(
                     let upper = reg.repeat_range[id].upper;
                     let body_start = reg.repeat_range[id].u_offset as usize;
 
+                    // C order for greedy: branch first, then push count
                     if upper != INFINITE_REPEAT && count >= upper {
-                        // Reached maximum, exit loop
                         p += 1;
                     } else if count >= lower {
-                        // In valid range, can exit or continue
-                        if opcode == OpCode::RepeatInc {
-                            // Greedy: push exit as alternative, continue body
-                            p += 1;
-                            stack.push(StackEntry::Alt { pcode: p, pstr: s });
-                            p = body_start;
-                        } else {
-                            // Non-greedy: push body as alternative, exit
-                            stack.push(StackEntry::Alt {
-                                pcode: body_start,
-                                pstr: s,
-                            });
-                            p += 1;
-                        }
+                        p += 1;
+                        stack.push(StackEntry::Alt { pcode: p, pstr: s });
+                        p = body_start;
                     } else {
-                        // Below minimum, must continue body
                         p = body_start;
                     }
-
-                    // Push updated count
+                    // Count pushed AFTER Alt — gets popped on backtrack (correct for greedy)
                     stack.push(StackEntry::RepeatInc { zid: id, count });
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::RepeatIncNg => {
+                if let OperationPayload::RepeatInc { id } = reg.ops[p].payload {
+                    let id = id as usize;
+                    let count = stack_get_repeat_count(&stack, id) + 1;
+                    let lower = reg.repeat_range[id].lower;
+                    let upper = reg.repeat_range[id].upper;
+                    let body_start = reg.repeat_range[id].u_offset as usize;
+
+                    // C order for non-greedy: push count FIRST, then branch
+                    // Count pushed BEFORE Alt — survives backtrack (correct for lazy)
+                    stack.push(StackEntry::RepeatInc { zid: id, count });
+
+                    if upper != INFINITE_REPEAT && count as i32 == upper {
+                        p += 1;
+                    } else if count >= lower {
+                        stack.push(StackEntry::Alt { pcode: body_start, pstr: s });
+                        p += 1;
+                    } else {
+                        p = body_start;
+                    }
                 } else {
                     goto_fail = true;
                 }
@@ -1468,15 +1554,34 @@ fn match_at(
                 }
             }
 
-            OpCode::EmptyCheckEnd | OpCode::EmptyCheckEndMemst | OpCode::EmptyCheckEndMemstPush => {
+            OpCode::EmptyCheckEnd => {
                 if let OperationPayload::EmptyCheckEnd { mem, .. } = reg.ops[p].payload {
                     let mem = mem as usize;
                     let is_empty = stack_empty_check(&stack, mem, s);
                     p += 1;
                     if is_empty {
-                        // Empty match detected - skip the next instruction
-                        // to break the infinite loop
-                        goto_fail = true;
+                        // Empty loop detected — skip the next instruction
+                        // (JUMP, PUSH, REPEAT_INC, or REPEAT_INC_NG) to break the loop.
+                        // Mirrors C: empty_check_found: INC_OP;
+                        p += 1;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::EmptyCheckEndMemst | OpCode::EmptyCheckEndMemstPush => {
+                if let OperationPayload::EmptyCheckEnd { mem, empty_status_mem } = reg.ops[p].payload {
+                    let mem = mem as usize;
+                    let is_empty = stack_empty_check_mem(&stack, mem, s, empty_status_mem as u32, reg,
+                                                         &mem_start_stk, &mem_end_stk);
+                    p += 1;
+                    if is_empty {
+                        if is_empty && reg.ops[p - 1].opcode == OpCode::EmptyCheckEndMemstPush {
+                            // For recursive patterns: check if is_empty == -1 → fail
+                            // Simplified: just skip
+                        }
+                        p += 1;
                     }
                 } else {
                     goto_fail = true;
@@ -1506,13 +1611,14 @@ fn match_at(
                 } = reg.ops[p].payload
                 {
                     let initial = initial as usize;
-                    // Step back 'initial' characters
-                    if s < initial {
-                        goto_fail = true;
-                    } else {
-                        // For ASCII/single-byte, just subtract
-                        s -= initial;
+                    // Step back 'initial' characters (encoding-aware)
+                    if initial == 0 {
                         p += 1;
+                    } else {
+                        match onigenc_step_back(enc, 0, s, str_data, initial) {
+                            Some(new_s) => { s = new_s; p += 1; }
+                            None => { goto_fail = true; }
+                        }
                     }
                 } else {
                     goto_fail = true;

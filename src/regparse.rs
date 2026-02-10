@@ -1040,7 +1040,7 @@ fn add_ctype_to_cc(
 }
 
 /// Adds code point to character class (bitset or mbuf)
-fn add_code_into_cc(cc: &mut CClassNode, code: OnigCodePoint, enc: OnigEncoding) {
+pub(crate) fn add_code_into_cc(cc: &mut CClassNode, code: OnigCodePoint, enc: OnigEncoding) {
     if code < SINGLE_BYTE_SIZE as u32 {
         bitset_set_bit(&mut cc.bs, code as usize);
     } else {
@@ -1733,7 +1733,7 @@ fn fetch_interval(
 
     let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
     let mut up;
-    let mut r;
+    let mut r = 0; // 0: normal {n,m}, 2: fixed {n} (only set for no-comma form)
     if c == ',' as u32 {
         let prev_p = *p;
         up = scan_number(p, end, pattern, enc);
@@ -1778,18 +1778,21 @@ fn fetch_interval(
     }
 
     if up != INFINITE_REPEAT && low > up {
-        return ONIGERR_UPPER_SMALLER_THAN_LOWER_IN_REPEAT_RANGE;
+        // {n,m}+ supported case: return error
+        if is_syntax_op2(syn, ONIG_SYN_OP2_PLUS_POSSESSIVE_INTERVAL) {
+            return ONIGERR_UPPER_SMALLER_THAN_LOWER_IN_REPEAT_RANGE;
+        }
+        // Otherwise: swap bounds and make possessive
+        tok.repeat_possessive = true;
+        let tmp = low;
+        low = up;
+        up = tmp;
+    } else {
+        tok.repeat_possessive = false;
     }
-
-    tok.repeat_possessive = false;
     tok.token_type = TokenType::Interval;
     tok.repeat_lower = low;
     tok.repeat_upper = up;
-    if up == low {
-        r = 2; // fixed
-    } else {
-        r = 0; // normal
-    }
 
     r
 }
@@ -1875,7 +1878,13 @@ fn fetch_token(
                 if r < 0 {
                     return r;
                 }
-                if r == 0 || r == 2 {
+                if r == 0 {
+                    return greedy_check2(tok, p, end, pattern, enc, syn);
+                } else if r == 2 {
+                    // Fixed interval {n}: skip lazy ? if FIXED_INTERVAL_IS_GREEDY_ONLY
+                    if is_syntax_bv(syn, ONIG_SYN_FIXED_INTERVAL_IS_GREEDY_ONLY) {
+                        return possessive_check(tok, p, end, pattern, enc, syn);
+                    }
                     return greedy_check2(tok, p, end, pattern, enc, syn);
                 }
                 // r == 1: normal char
@@ -2278,7 +2287,13 @@ fn fetch_token(
                 if r < 0 {
                     return r;
                 }
-                if r == 0 || r == 2 {
+                if r == 0 {
+                    return greedy_check2(tok, p, end, pattern, enc, syn);
+                } else if r == 2 {
+                    // Fixed interval {n}: skip lazy ? if FIXED_INTERVAL_IS_GREEDY_ONLY
+                    if is_syntax_bv(syn, ONIG_SYN_FIXED_INTERVAL_IS_GREEDY_ONLY) {
+                        return possessive_check(tok, p, end, pattern, enc, syn);
+                    }
                     return greedy_check2(tok, p, end, pattern, enc, syn);
                 }
                 // r == 1: normal char
@@ -2421,6 +2436,31 @@ fn greedy_check(
             pfetch(p, &mut pfetch_prev, pattern, end, enc); // consume '+'
             tok.repeat_possessive = true;
         }
+    }
+    tok.token_type as i32
+}
+
+fn possessive_check(
+    tok: &mut PToken,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    enc: OnigEncoding,
+    syn: &OnigSyntaxType,
+) -> i32 {
+    // Skip lazy ? check — force greedy, only check for possessive +
+    tok.repeat_greedy = true;
+    if !p_end(*p, end)
+        && ppeek_is(*p, pattern, end, enc, '+' as u32)
+        && ((is_syntax_op2(syn, ONIG_SYN_OP2_PLUS_POSSESSIVE_REPEAT)
+             && tok.token_type != TokenType::Interval)
+            || (is_syntax_op2(syn, ONIG_SYN_OP2_PLUS_POSSESSIVE_INTERVAL)
+                && tok.token_type == TokenType::Interval))
+        && !tok.repeat_possessive
+    {
+        let mut pfetch_prev = *p;
+        pfetch(p, &mut pfetch_prev, pattern, end, enc); // consume '+'
+        tok.repeat_possessive = true;
     }
     tok.token_type as i32
 }
@@ -2925,8 +2965,8 @@ fn prs_cc(
                         return Err(r);
                     }
                     fetched = true;
-                    if tok.token_type == TokenType::CcClose {
-                        // [x-] -> treat dash as literal at end
+                    if tok.token_type == TokenType::CcClose || tok.token_type == TokenType::CcAnd {
+                        // [x-] or [x-&&...] -> treat dash as literal
                         let cc = if use_work {
                             &mut work_cc
                         } else {
@@ -4486,9 +4526,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_bad_interval() {
-        // {5,2} is lower > upper, should fail
+    fn parse_reversed_interval() {
+        // {5,2} reversed interval: swap bounds to {2,5} and set possessive
+        // (OnigSyntaxOniguruma does not have PLUS_POSSESSIVE_INTERVAL)
         let result = parse(b"a{5,2}");
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 }

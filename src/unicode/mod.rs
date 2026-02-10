@@ -81,12 +81,16 @@ pub fn onigenc_unicode_apply_all_case_fold(
 /// Port of onigenc_unicode_get_case_fold_codes_by_str from unicode.c
 pub fn onigenc_unicode_get_case_fold_codes_by_str(
     _enc: &dyn Encoding,
-    _flag: OnigCaseFoldType,
-    _p: &[u8],
-    _end: usize,
-    _items: &mut [OnigCaseFoldCodeItem],
+    flag: OnigCaseFoldType,
+    p: &[u8],
+    end: usize,
+    items: &mut [OnigCaseFoldCodeItem],
 ) -> i32 {
-    // TODO: implement with Unicode fold data tables
+    // For ASCII bytes, delegate to ASCII case fold
+    if p[0] < 128 {
+        return crate::regenc::onigenc_ascii_get_case_fold_codes_by_str(flag, p, end, items);
+    }
+    // TODO: implement with Unicode fold data tables for non-ASCII
     0
 }
 

@@ -173,12 +173,13 @@ fn add_compile_string(
     let op = select_str_opcode(mb_len, str_len);
     let byte_len = mb_len * str_len;
 
-    let payload = if mb_len == 1 && byte_len <= 16 {
-        // Single-byte encoding: use compact Exact payload
+    let payload = if mb_len == 1 && str_len <= 5 {
+        // Single-byte encoding, Str1-Str5: use compact Exact payload
         let mut buf = [0u8; 16];
         buf[..byte_len as usize].copy_from_slice(&s[..byte_len as usize]);
         OperationPayload::Exact { s: buf }
     } else if mb_len == 1 {
+        // Single-byte encoding, StrN: use ExactN payload
         OperationPayload::ExactN {
             s: s[..byte_len as usize].to_vec(),
             n: str_len,
@@ -381,6 +382,47 @@ fn entry_repeat_range(
 // ============================================================================
 
 /// Compile a quantifier body wrapped with empty-match check if needed.
+/// Collect a bitmask of capture group regnums present in a node tree.
+fn collect_mem_status(node: &Node) -> u32 {
+    let mut status: u32 = 0;
+    match &node.inner {
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            let mut cur = node;
+            loop {
+                let (car, cdr) = match &cur.inner {
+                    NodeInner::List(cons) => (&cons.car, &cons.cdr),
+                    NodeInner::Alt(cons) => (&cons.car, &cons.cdr),
+                    _ => break,
+                };
+                status |= collect_mem_status(car);
+                match cdr {
+                    Some(next) => cur = next,
+                    None => break,
+                }
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(ref body) = qn.body {
+                status |= collect_mem_status(body);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if bn.bag_type == BagType::Memory {
+                if let BagData::Memory { regnum, .. } = bn.bag_data {
+                    if regnum > 0 && regnum < 31 {
+                        status |= 1u32 << regnum;
+                    }
+                }
+            }
+            if let Some(ref body) = bn.body {
+                status |= collect_mem_status(body);
+            }
+        }
+        _ => {}
+    }
+    status
+}
+
 fn compile_quant_body_with_empty_check(
     node: &Node,
     reg: &mut RegexType,
@@ -402,7 +444,12 @@ fn compile_quant_body_with_empty_check(
 
     if is_empty {
         let mem = reg.num_empty_check - 1;
-        let empty_status_mem = 0; // TODO: actual status tracking
+        let empty_status_mem = if emptiness == BodyEmptyType::MayBeEmptyMem
+            || emptiness == BodyEmptyType::MayBeEmptyRec {
+            collect_mem_status(node)
+        } else {
+            0
+        };
         let opcode = match emptiness {
             BodyEmptyType::MayBeEmptyMem => OpCode::EmptyCheckEndMemst,
             BodyEmptyType::MayBeEmptyRec => OpCode::EmptyCheckEndMemstPush,
@@ -464,10 +511,10 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
     if is_infinite_repeat(qn.upper) {
         if qn.lower <= 1 {
             // *, +, *?, +?
-            OPSIZE_PUSH + mod_tlen + OPSIZE_JUMP
+            body_len * qn.lower + OPSIZE_PUSH + mod_tlen + OPSIZE_JUMP
         } else {
             // {n,} or {n,}?
-            let n_body_len = compile_length_tree_n_times(body, qn.lower - 1, reg, env);
+            let n_body_len = compile_length_tree_n_times(body, qn.lower, reg, env);
             n_body_len + OPSIZE_PUSH + mod_tlen + OPSIZE_JUMP
         }
     } else if qn.upper == 0 {
@@ -481,8 +528,15 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
             let id_len = OPSIZE_REPEAT + mod_tlen + OPSIZE_REPEAT_INC;
             id_len
         }
+    } else if !qn.greedy && qn.upper == 1 && qn.lower == 0 {
+        // ?? path: PUSH + JUMP + body
+        OPSIZE_PUSH + OPSIZE_JUMP + body_len
+    } else if qn.greedy && !is_infinite_repeat(qn.upper) {
+        // Greedy expansion: lower*body + (upper-lower)*(PUSH+body)
+        let n = qn.upper - qn.lower;
+        body_len * qn.lower + n * (OPSIZE_PUSH + body_len)
     } else {
-        // {n,m} range repeat
+        // {n,m} range repeat (lazy non-trivial)
         OPSIZE_REPEAT + mod_tlen + OPSIZE_REPEAT_INC
     }
 }
@@ -555,8 +609,8 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             }
         } else {
             // {n,} with n >= 2
-            // Compile body n-1 times, then loop
-            let r = compile_tree_n_times(body, qn.lower - 1, reg, env);
+            // Compile body n times, then loop
+            let r = compile_tree_n_times(body, qn.lower, reg, env);
             if r != 0 {
                 return r;
             }
@@ -613,8 +667,39 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
         }
         add_op(reg, if qn.greedy { OpCode::RepeatInc } else { OpCode::RepeatIncNg },
                OperationPayload::RepeatInc { id });
+    } else if !qn.greedy && qn.upper == 1 && qn.lower == 0 {
+        // ?? path: PUSH(skip JUMP + SIZE_INC) + JUMP(skip body + SIZE_INC) + body
+        // C: COP(reg)->push.addr = SIZE_INC + OPSIZE_JUMP;
+        add_op(reg, OpCode::Push, OperationPayload::Push {
+            addr: SIZE_INC + OPSIZE_JUMP,
+        });
+        // C: COP(reg)->jump.addr = body_len + SIZE_INC;
+        add_op(reg, OpCode::Jump, OperationPayload::Jump {
+            addr: body_len + SIZE_INC,
+        });
+        let r = compile_tree(body, reg, env);
+        if r != 0 {
+            return r;
+        }
+    } else if qn.greedy && !is_infinite_repeat(qn.upper) {
+        // Greedy expansion: body*lower + (upper-lower) * (PUSH + body)
+        let r = compile_tree_n_times(body, qn.lower, reg, env);
+        if r != 0 {
+            return r;
+        }
+        let n = qn.upper - qn.lower;
+        // Compute goal position for PUSH addresses
+        let goal = reg.ops.len() as i32 + n * (OPSIZE_PUSH + body_len);
+        for _i in 0..n {
+            let push_addr = goal - reg.ops.len() as i32;
+            add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
+            let r = compile_tree(body, reg, env);
+            if r != 0 {
+                return r;
+            }
+        }
     } else {
-        // {n,m} range repeat
+        // {n,m} range repeat (lazy non-trivial)
         let id = entry_repeat_range(reg, qn.lower, qn.upper);
         if let Err(e) = id {
             return e;
@@ -1216,25 +1301,27 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
                 return compile_tree(branches[0], reg, env);
             }
 
-            // Pre-calculate remaining lengths for PUSH/JUMP addresses
+            // Pre-calculate branch lengths
             let mut branch_lens: Vec<i32> = Vec::with_capacity(n);
             for b in &branches {
                 branch_lens.push(compile_length_tree(b, reg, env));
             }
 
-            // For each branch except the last: PUSH + body + JUMP
-            // Last branch: just body
-            let mut remaining_len = 0i32;
-            for i in (1..n).rev() {
-                remaining_len += branch_lens[i];
+            // Calculate total length to find goal position
+            // Layout: for each branch i < n-1: PUSH + body_i + JUMP; last branch: body_{n-1}
+            let mut total_len = 0i32;
+            for i in 0..n {
+                total_len += branch_lens[i];
                 if i < n - 1 {
-                    remaining_len += OPSIZE_PUSH + OPSIZE_JUMP;
+                    total_len += OPSIZE_PUSH + OPSIZE_JUMP;
                 }
             }
 
+            let goal = reg.ops.len() as i32 + total_len;
+
             for i in 0..n {
                 if i < n - 1 {
-                    // PUSH to next alternative
+                    // PUSH to next alternative (skip over body + JUMP)
                     let push_addr = SIZE_INC + branch_lens[i] + OPSIZE_JUMP;
                     add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
                 }
@@ -1245,21 +1332,11 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
                 }
 
                 if i < n - 1 {
-                    // JUMP past remaining alternatives
-                    remaining_len -= branch_lens[i + 1];
-                    if i + 1 < n - 1 {
-                        remaining_len -= OPSIZE_PUSH + OPSIZE_JUMP;
-                    }
-                    let jump_addr = SIZE_INC + remaining_len;
-                    if i + 1 < n - 1 {
-                        add_op(reg, OpCode::Jump, OperationPayload::Jump {
-                            addr: jump_addr + (n as i32 - i as i32 - 2) * (OPSIZE_PUSH + OPSIZE_JUMP),
-                        });
-                    } else {
-                        add_op(reg, OpCode::Jump, OperationPayload::Jump {
-                            addr: SIZE_INC + branch_lens[i + 1],
-                        });
-                    }
+                    // JUMP to end of alternation (goal position)
+                    let jump_addr = goal - reg.ops.len() as i32;
+                    add_op(reg, OpCode::Jump, OperationPayload::Jump {
+                        addr: jump_addr,
+                    });
                 }
             }
             0
@@ -1508,9 +1585,381 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
     }
 }
 
+/// Check if a quantifier body contains capture groups (Memory bags).
+/// Returns the appropriate emptiness type. Mirrors C's quantifiers_memory_node_info().
+fn quantifiers_memory_node_info(node: &Node) -> BodyEmptyType {
+    let mut r = BodyEmptyType::MayBeEmpty;
+
+    match &node.inner {
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            let mut cur = node;
+            loop {
+                let (car, cdr) = match &cur.inner {
+                    NodeInner::List(cons) => (&cons.car, &cons.cdr),
+                    NodeInner::Alt(cons) => (&cons.car, &cons.cdr),
+                    _ => break,
+                };
+                let v = quantifiers_memory_node_info(car);
+                if v as i32 > r as i32 { r = v; }
+                match cdr {
+                    Some(next) => cur = next,
+                    None => break,
+                }
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if qn.upper != 0 {
+                if let Some(ref body) = qn.body {
+                    r = quantifiers_memory_node_info(body);
+                }
+            }
+        }
+        NodeInner::Bag(bn) => {
+            match bn.bag_type {
+                BagType::Memory => {
+                    return BodyEmptyType::MayBeEmptyMem;
+                }
+                BagType::Option | BagType::StopBacktrack => {
+                    if let Some(ref body) = bn.body {
+                        r = quantifiers_memory_node_info(body);
+                    }
+                }
+                BagType::IfElse => {
+                    if let Some(ref body) = bn.body {
+                        r = quantifiers_memory_node_info(body);
+                    }
+                    if let BagData::IfElse { ref then_node, ref else_node } = bn.bag_data {
+                        if let Some(ref then_n) = then_node {
+                            let v = quantifiers_memory_node_info(then_n);
+                            if v as i32 > r as i32 { r = v; }
+                        }
+                        if let Some(ref else_n) = else_node {
+                            let v = quantifiers_memory_node_info(else_n);
+                            if v as i32 > r as i32 { r = v; }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    r
+}
+
+/// Expand a case-insensitive string node into CClass/List nodes.
+/// Mirrors C's unravel_case_fold_string() from regcomp.c.
+///
+/// For each character in the string:
+/// - If it has case-fold alternatives (e.g. 'c' -> 'C'), create a CClass node [cC]
+/// - Otherwise, accumulate into a plain string node
+/// - Combine all resulting nodes into a List
+fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, _state: i32) -> i32 {
+    let enc = reg.enc;
+
+    // Extract string bytes and clear ignorecase flag
+    let s_bytes = if let NodeInner::String(ref sn) = node.inner {
+        sn.s.clone()
+    } else {
+        return ONIG_NORMAL;
+    };
+    node.status_remove(ND_ST_IGNORECASE);
+
+    let mut items = vec![OnigCaseFoldCodeItem { byte_len: 0, code_len: 0, code: [0; ONIGENC_MAX_COMP_CASE_FOLD_CODE_LEN] }; ONIGENC_GET_CASE_FOLD_CODES_MAX_NUM];
+
+    let mut nodes: Vec<Box<Node>> = Vec::new();
+    let mut pending: Vec<u8> = Vec::new(); // accumulate non-foldable chars
+
+    let mut pos = 0;
+    while pos < s_bytes.len() {
+        let char_len = enc.mbc_enc_len(&s_bytes[pos..]);
+        let n = enc.get_case_fold_codes_by_str(
+            reg.case_fold_flag,
+            &s_bytes[pos..],
+            s_bytes.len(),
+            &mut items,
+        );
+
+        if n > 0 {
+            // Flush pending plain string
+            if !pending.is_empty() {
+                nodes.push(node_new_str(&pending));
+                pending.clear();
+            }
+
+            // Create CClass with original char + all alternatives
+            let mut cc_node = node_new_cclass();
+            let cc = cc_node.as_cclass_mut().unwrap();
+
+            // Add original character
+            let code = enc.mbc_to_code(&s_bytes[pos..], s_bytes.len());
+            crate::regparse::add_code_into_cc(cc, code, enc);
+
+            // Add all fold alternatives
+            for i in 0..(n as usize) {
+                // Only handle code_len == 1 (single codepoint folds)
+                if items[i].code_len == 1 {
+                    crate::regparse::add_code_into_cc(cc, items[i].code[0], enc);
+                }
+            }
+
+            nodes.push(cc_node);
+        } else {
+            // No case fold: accumulate into pending string
+            pending.extend_from_slice(&s_bytes[pos..pos + char_len]);
+        }
+
+        pos += char_len;
+    }
+
+    // Flush any remaining pending string
+    if !pending.is_empty() {
+        nodes.push(node_new_str(&pending));
+    }
+
+    // Build result: single node or List
+    if nodes.is_empty() {
+        node.inner = NodeInner::String(StrNode { s: Vec::new(), flag: 0 });
+    } else if nodes.len() == 1 {
+        let n = nodes.pop().unwrap();
+        *node = *n;
+    } else {
+        // Build List from right to left
+        let mut list: Option<Box<Node>> = None;
+        for n in nodes.into_iter().rev() {
+            list = Some(node_new_list(n, list));
+        }
+        *node = *list.unwrap();
+    }
+
+    ONIG_NORMAL
+}
+
+// ============================================================================
+// Lookbehind support: node_char_len, tune_look_behind, divide_look_behind_alternatives
+// ============================================================================
+
+/// Result of computing character length for a node subtree.
+enum CharLenResult {
+    Fixed(OnigLen),
+    Variable(OnigLen, OnigLen),
+}
+
+/// Compute character count (not byte count) for a node subtree.
+fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
+    match &node.inner {
+        NodeInner::String(sn) => {
+            let n = onigenc_strlen(enc, &sn.s, 0, sn.s.len());
+            CharLenResult::Fixed(n as OnigLen)
+        }
+        NodeInner::CType(_) | NodeInner::CClass(_) => CharLenResult::Fixed(1),
+        NodeInner::List(_) => {
+            let mut sum: OnigLen = 0;
+            let mut variable = false;
+            let mut min_sum: OnigLen = 0;
+            let mut max_sum: OnigLen = 0;
+            let mut cur = node;
+            loop {
+                if let NodeInner::List(cons) = &cur.inner {
+                    match node_char_len(&cons.car, enc) {
+                        CharLenResult::Fixed(n) => {
+                            if variable {
+                                min_sum += n;
+                                max_sum += n;
+                            } else {
+                                sum += n;
+                            }
+                        }
+                        CharLenResult::Variable(mn, mx) => {
+                            if !variable {
+                                min_sum = sum;
+                                max_sum = sum;
+                                variable = true;
+                            }
+                            min_sum += mn;
+                            max_sum += mx;
+                        }
+                    }
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                } else {
+                    break;
+                }
+            }
+            if variable {
+                CharLenResult::Variable(min_sum, max_sum)
+            } else {
+                CharLenResult::Fixed(sum)
+            }
+        }
+        NodeInner::Alt(_) => {
+            let mut min: OnigLen = OnigLen::MAX;
+            let mut max: OnigLen = 0;
+            let mut cur = node;
+            loop {
+                if let NodeInner::Alt(cons) = &cur.inner {
+                    let (mn, mx) = match node_char_len(&cons.car, enc) {
+                        CharLenResult::Fixed(n) => (n, n),
+                        CharLenResult::Variable(mn, mx) => (mn, mx),
+                    };
+                    if mn < min { min = mn; }
+                    if mx > max { max = mx; }
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                } else {
+                    break;
+                }
+            }
+            if min == max {
+                CharLenResult::Fixed(min)
+            } else {
+                CharLenResult::Variable(min, max)
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(ref body) = qn.body {
+                match node_char_len(body, enc) {
+                    CharLenResult::Fixed(n) => {
+                        let lo = n * (qn.lower as OnigLen);
+                        let hi = if qn.upper == INFINITE_REPEAT { OnigLen::MAX } else { n * (qn.upper as OnigLen) };
+                        if lo == hi { CharLenResult::Fixed(lo) } else { CharLenResult::Variable(lo, hi) }
+                    }
+                    v => v,
+                }
+            } else {
+                CharLenResult::Fixed(0)
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(ref body) = bn.body {
+                node_char_len(body, enc)
+            } else {
+                CharLenResult::Fixed(0)
+            }
+        }
+        NodeInner::Anchor(_) => CharLenResult::Fixed(0),
+        _ => CharLenResult::Fixed(0),
+    }
+}
+
+/// Divide variable-length lookbehind with Alt body into Alt of fixed-length lookbehinds.
+/// Transforms: Anchor(LB, body=Alt(a, b, c)) -> Alt(Anchor(LB,a), Anchor(LB,b), Anchor(LB,c))
+fn divide_look_behind_alt(node: &mut Node, anchor_type: i32, enc: OnigEncoding) -> i32 {
+    // Extract anchor fields
+    let (body, ascii_mode) = if let NodeInner::Anchor(ref mut an) = node.inner {
+        (an.body.take().unwrap(), an.ascii_mode)
+    } else {
+        return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+    };
+
+    // Collect all Alt branches
+    let mut branches: Vec<Box<Node>> = Vec::new();
+    let mut cur = body;
+    loop {
+        if let NodeInner::Alt(cons) = cur.inner {
+            branches.push(cons.car);
+            match cons.cdr {
+                Some(next) => cur = next,
+                None => break,
+            }
+        } else {
+            // Single non-Alt node (shouldn't happen but handle gracefully)
+            branches.push(cur);
+            break;
+        }
+    }
+
+    // Build new Alt of anchors, from last to first
+    let mut result: Option<Box<Node>> = None;
+    for branch in branches.into_iter().rev() {
+        let char_len = match node_char_len(&branch, enc) {
+            CharLenResult::Fixed(n) => n,
+            CharLenResult::Variable(_, _) => return ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+        };
+
+        let mut anchor = node_new_anchor(anchor_type);
+        if let NodeInner::Anchor(ref mut an) = anchor.inner {
+            an.body = Some(branch);
+            an.char_min_len = char_len;
+            an.char_max_len = char_len;
+            an.ascii_mode = ascii_mode;
+        }
+
+        result = Some(node_new_alt(anchor, result));
+    }
+
+    // Replace the original node with the new Alt
+    if let Some(alt_node) = result {
+        *node = *alt_node;
+    }
+
+    ONIG_NORMAL
+}
+
+/// Tune a lookbehind anchor: compute char lengths and split variable-length alternatives.
+fn tune_look_behind(node: &mut Node, enc: OnigEncoding) -> i32 {
+    let (anchor_type, has_body) = if let NodeInner::Anchor(ref an) = node.inner {
+        (an.anchor_type, an.body.is_some())
+    } else {
+        return 0;
+    };
+
+    if !has_body {
+        return 0;
+    }
+
+    let body_char_len = {
+        let body = if let NodeInner::Anchor(ref an) = node.inner {
+            an.body.as_ref().unwrap()
+        } else {
+            return 0;
+        };
+        node_char_len(body, enc)
+    };
+
+    match body_char_len {
+        CharLenResult::Fixed(len) => {
+            if let NodeInner::Anchor(ref mut an) = node.inner {
+                an.char_min_len = len;
+                an.char_max_len = len;
+            }
+            ONIG_NORMAL
+        }
+        CharLenResult::Variable(min, max) => {
+            // Check if body is Alt — if so, divide into per-branch anchors
+            let is_alt = if let NodeInner::Anchor(ref an) = node.inner {
+                matches!(an.body.as_ref().unwrap().inner, NodeInner::Alt(_))
+            } else {
+                false
+            };
+
+            if is_alt {
+                divide_look_behind_alt(node, anchor_type, enc)
+            } else {
+                ONIGERR_INVALID_LOOK_BEHIND_PATTERN
+            }
+        }
+    }
+}
+
 /// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
 /// Mirrors C's tune_tree() from regcomp.c.
-pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &ParseEnv) -> i32 {
+pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
+    // Case-fold expansion: before the main match to get full &mut Node access
+    if let NodeInner::String(ref sn) = node.inner {
+        if node.has_status(ND_ST_IGNORECASE) && !sn.is_crude() {
+            let r = unravel_case_fold_string(node, reg, state);
+            if r != 0 { return r; }
+            // After expansion, the node may have changed type (CClass, List, etc.)
+            // Recurse to tune the expanded tree
+            return tune_tree(node, reg, state, env);
+        }
+    }
+
     match &mut node.inner {
         NodeInner::List(_) => {
             // Walk the list iteratively to avoid borrow issues
@@ -1565,7 +2014,8 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &ParseEn
                 if let Some(ref body) = qn.body {
                     let d = node_min_byte_len(body, env);
                     if d == 0 {
-                        qn.emptiness = BodyEmptyType::MayBeEmpty;
+                        // Use quantifiers_memory_node_info to detect captures in body
+                        qn.emptiness = quantifiers_memory_node_info(body);
                     }
                 }
             }
@@ -1604,14 +2054,14 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &ParseEn
                     r
                 }
                 BagType::Memory => {
-                    let new_state = if (state & (IN_ALT | IN_NOT | IN_VAR_REPEAT | IN_MULTI_ENTRY)) != 0 {
+                    if (state & (IN_ALT | IN_NOT | IN_VAR_REPEAT | IN_MULTI_ENTRY)) != 0 {
                         // Backtrack mem needed for captures in alternation/variable repeat
-                        state
-                    } else {
-                        state
-                    };
+                        if let BagData::Memory { regnum, .. } = bn.bag_data {
+                            mem_status_on(&mut env.backtrack_mem, regnum as usize);
+                        }
+                    }
                     if let Some(ref mut body) = bn.body {
-                        tune_tree(body, reg, new_state, env)
+                        tune_tree(body, reg, state, env)
                     } else {
                         0
                     }
@@ -1644,23 +2094,50 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &ParseEn
         }
 
         NodeInner::Anchor(ref mut an) => {
-            if let Some(ref mut body) = an.body {
-                let new_state = if an.anchor_type == ANCR_PREC_READ {
-                    state | IN_PREC_READ
-                } else if an.anchor_type == ANCR_PREC_READ_NOT {
-                    state | IN_PREC_READ | IN_NOT
+            let at = an.anchor_type;
+            // For lookbehind anchors, compute char lengths (may transform node into Alt)
+            if at == ANCR_LOOK_BEHIND || at == ANCR_LOOK_BEHIND_NOT {
+                let enc = env.enc;
+                let r = tune_look_behind(node, enc);
+                if r != 0 { return r; }
+                // tune_look_behind may have transformed node into an Alt;
+                // if so, recurse on the new node structure
+                if !matches!(node.inner, NodeInner::Anchor(_)) {
+                    return tune_tree(node, reg, state, env);
+                }
+            }
+            // Now recurse into the body
+            if let NodeInner::Anchor(ref mut an) = node.inner {
+                if let Some(ref mut body) = an.body {
+                    let new_state = if an.anchor_type == ANCR_PREC_READ {
+                        state | IN_PREC_READ
+                    } else if an.anchor_type == ANCR_PREC_READ_NOT {
+                        state | IN_PREC_READ | IN_NOT
+                    } else {
+                        state
+                    };
+                    tune_tree(body, reg, new_state, env)
                 } else {
-                    state
-                };
-                tune_tree(body, reg, new_state, env)
+                    0
+                }
             } else {
                 0
             }
         }
 
+        NodeInner::BackRef(ref br) => {
+            // Set backrefed_mem for each referenced group
+            for &back in br.back_refs() {
+                if back > 0 {
+                    mem_status_on(&mut env.backrefed_mem, back as usize);
+                }
+            }
+            0
+        }
+
         // Terminal nodes - nothing to tune
         NodeInner::String(_) | NodeInner::CType(_) | NodeInner::CClass(_)
-        | NodeInner::BackRef(_) | NodeInner::Call(_) | NodeInner::Gimmick(_) => 0,
+        | NodeInner::Call(_) | NodeInner::Gimmick(_) => 0,
     }
 }
 
@@ -1968,7 +2445,7 @@ pub fn onig_compile(
     }
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
-    let r = tune_tree(&mut root, reg, 0, &env);
+    let r = tune_tree(&mut root, reg, 0, &mut env);
     if r != 0 {
         return r;
     }
@@ -2234,10 +2711,10 @@ mod tests {
 
     #[test]
     fn compile_interval_quantifier() {
+        // a{2,5} is compiled via greedy expansion: body*2 + 3*(PUSH+body)
         let reg = parse_and_compile(b"a{2,5}").unwrap();
-        let has_repeat = reg.ops.iter().any(|op| op.opcode == OpCode::Repeat || op.opcode == OpCode::RepeatNg);
-        assert!(has_repeat, "expected Repeat for a{{2,5}}");
-        assert_eq!(reg.num_repeat, 1);
+        let has_push = reg.ops.iter().any(|op| op.opcode == OpCode::Push);
+        assert!(has_push, "expected Push for a{{2,5}} greedy expansion");
     }
 
     #[test]

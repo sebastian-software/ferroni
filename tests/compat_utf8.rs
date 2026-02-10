@@ -1171,7 +1171,6 @@ fn cc_intersect_complex2_no_f() {
 }
 
 #[test]
-#[ignore] // TODO: engine bug
 fn cc_intersect_dash() {
     x2(b"[a-&&-a]", b"-", 0, 1);
 }
@@ -1251,7 +1250,6 @@ fn combined_caret_wab_dollar() {
 }
 
 #[test]
-#[ignore] // TODO: engine bug
 fn combined_caret_wabcdef_dollar() {
     x2(b"^\\wabcdef$", b"zabcdef", 0, 7);
 }
@@ -1480,19 +1478,16 @@ fn group_xplus_opt_xx() {
 }
 
 #[test]
-#[ignore] // TODO: REPEAT for (?:x+) with outer quantifier
 fn group_xplus_star_empty() {
     x2(b"(?:x+)*", b"", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: REPEAT for (?:x+) with outer quantifier
 fn group_xplus_star_x() {
     x2(b"(?:x+)*", b"x", 0, 1);
 }
 
 #[test]
-#[ignore] // TODO: REPEAT for (?:x+) with outer quantifier
 fn group_xplus_star_xx() {
     x2(b"(?:x+)*", b"xx", 0, 2);
 }
@@ -1503,13 +1498,11 @@ fn group_xplus_plus_no_match() {
 }
 
 #[test]
-#[ignore] // TODO: REPEAT for (?:x+) with outer quantifier
 fn group_xplus_plus_x() {
     x2(b"(?:x+)+", b"x", 0, 1);
 }
 
 #[test]
-#[ignore] // TODO: REPEAT for (?:x+) with outer quantifier
 fn group_xplus_plus_xx() {
     x2(b"(?:x+)+", b"xx", 0, 2);
 }
@@ -1536,13 +1529,11 @@ fn group_xplus_lazystar_empty() {
 }
 
 #[test]
-#[ignore] // TODO: REPEAT for (?:x+) with outer quantifier
 fn group_xplus_lazystar_x() {
     x2(b"(?:x+)*?", b"x", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: REPEAT for (?:x+) with outer quantifier
 fn group_xplus_lazystar_xx() {
     x2(b"(?:x+)*?", b"xx", 0, 0);
 }
@@ -1573,13 +1564,11 @@ fn group_xlq_opt_empty() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlq_opt_x() {
     x2(b"(?:x??)?", b"x", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlq_opt_xx() {
     x2(b"(?:x??)?", b"xx", 0, 0);
 }
@@ -1590,13 +1579,11 @@ fn group_xlq_star_empty() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlq_star_x() {
     x2(b"(?:x??)*", b"x", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlq_star_xx() {
     x2(b"(?:x??)*", b"xx", 0, 0);
 }
@@ -1607,13 +1594,11 @@ fn group_xlq_plus_empty() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlq_plus_x() {
     x2(b"(?:x??)+", b"x", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlq_plus_xx() {
     x2(b"(?:x??)+", b"xx", 0, 0);
 }
@@ -1674,13 +1659,11 @@ fn group_xls_opt_empty() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xls_opt_x() {
     x2(b"(?:x*?)?", b"x", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xls_opt_xx() {
     x2(b"(?:x*?)?", b"xx", 0, 0);
 }
@@ -1691,13 +1674,11 @@ fn group_xls_star_empty() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xls_star_x() {
     x2(b"(?:x*?)*", b"x", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xls_star_xx() {
     x2(b"(?:x*?)*", b"xx", 0, 0);
 }
@@ -1708,13 +1689,11 @@ fn group_xls_plus_empty() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xls_plus_x() {
     x2(b"(?:x*?)+", b"x", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xls_plus_xx() {
     x2(b"(?:x*?)+", b"xx", 0, 0);
 }
@@ -1785,19 +1764,16 @@ fn group_xlp_opt_xx() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlp_star_empty() {
     x2(b"(?:x+?)*", b"", 0, 0);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlp_star_x() {
     x2(b"(?:x+?)*", b"x", 0, 1);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlp_star_xx() {
     x2(b"(?:x+?)*", b"xx", 0, 2);
 }
@@ -1808,13 +1784,11 @@ fn group_xlp_plus_no_match() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlp_plus_x() {
     x2(b"(?:x+?)+", b"x", 0, 1);
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn group_xlp_plus_xx() {
     x2(b"(?:x+?)+", b"xx", 0, 2);
 }
@@ -1890,7 +1864,6 @@ fn alt_three_way() {
 }
 
 #[test]
-#[ignore] // TODO: many-alternative optimization
 fn alt_many() {
     x2(b"a|b|cd|efg|h|ijk|lmn|o|pq|rstuvwx|yz", b"pqr", 0, 2);
 }
@@ -2036,7 +2009,6 @@ fn alt_plus_a_or_star_b_1() {
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn alt_plus_a_or_star_b_2() {
     x2(b"a+|b*", b"bbb", 0, 3);
 }
@@ -2047,7 +2019,6 @@ fn alt_plus_a_or_star_b_3() {
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn alt_plus_a_or_plus_b_no_match() {
     n(b"a+|b+", b"");
 }
@@ -2138,13 +2109,11 @@ fn interval_dot_0_2_no_match() {
 }
 
 #[test]
-#[ignore] // TODO: interval quantifier edge cases
 fn interval_dot_0_2_lazy_no_match1() {
     n(b"a.{0,2}?a", b"0aXXXa0");
 }
 
 #[test]
-#[ignore] // TODO: interval quantifier edge cases
 fn interval_dot_0_2_lazy_no_match2() {
     n(b"a.{0,2}?a", b"0aXXXXa0");
 }
@@ -2165,19 +2134,16 @@ fn alt_plus_or_A_star_cc() {
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn alt_plus_or_A_star_cc_no_match() {
     n(b"(?:a+|\\Ab*)cc", b"abcc");
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn alt_caret_plus_or_star_c_1() {
     x2(b"(?:^a+|b+)*c", b"aabbbabc", 6, 8);
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn alt_caret_plus_or_star_c_2() {
     x2(b"(?:^a+|b+)*c", b"aabbbbc", 0, 7);
 }
@@ -2258,7 +2224,6 @@ fn lazy_group_a_opt_lazyq() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn lazy_group_a_lazyq_opt() {
     // C: (?:a\?\?)? = (?:a??)? — match "a" expect 0,0
     x2(b"(?:a??)?", b"a", 0, 0);
@@ -2285,7 +2250,6 @@ fn lazy_group_a_plus_lazyq_b() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: interval quantifier edge cases
 fn interval_opt_2() {
     x2(b"(?:ab)?{2}", b"", 0, 0);
 }
@@ -2306,7 +2270,6 @@ fn interval_3_inf() {
 }
 
 #[test]
-#[ignore] // TODO: interval quantifier edge cases
 fn interval_3_inf_no_match() {
     n(b"(?:ab){3,}", b"abab");
 }
@@ -2402,13 +2365,11 @@ fn capture_a_plus() {
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn capture_alt_plus_star() {
     x3(b"(a+|b*)", b"bbbaa", 0, 3, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn capture_alt_plus_opt() {
     x3(b"(a+|b?)", b"bbbaa", 0, 1, 1);
 }
@@ -2419,25 +2380,21 @@ fn capture_abc_opt() {
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn capture_abc_star() {
     x3(b"(abc)*", b"abc", 0, 3, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn capture_abc_plus() {
     x3(b"(abc)+", b"abc", 0, 3, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn capture_alt_xyz_abc() {
     x3(b"(xyz|abc)+", b"abc", 0, 3, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn capture_alt_cc_abc() {
     x3(b"([xyz][abc]|abc)+", b"abc", 0, 3, 1);
 }
@@ -2542,7 +2499,6 @@ fn backref_lookahead() {
 }
 
 #[test]
-#[ignore] // TODO: engine bug
 fn backref_dollar_or() {
     n(b"(a)$|\\1", b"az");
 }
@@ -2668,13 +2624,11 @@ fn dotstar_2_opt_star() {
 }
 
 #[test]
-#[ignore] // TODO: many-alternative optimization
 fn alt_many_letters_opt() {
     x2(b"((a|b|c|d|e|f|g|h|i|j|k|l|m|n)+)?", b"abcde", 0, 5);
 }
 
 #[test]
-#[ignore] // TODO: many-alternative optimization
 fn alt_many_letters_3_opt() {
     x2(b"((a|b|c|d|e|f|g|h|i|j|k|l|m|n){3,})?", b"abcde", 0, 5);
 }
@@ -2705,7 +2659,6 @@ fn group_astar_lazystar() {
 }
 
 #[test]
-#[ignore] // TODO: REPEAT for (?:x+) with outer quantifier
 fn group_aplus_lazy_star() {
     x2(b"(?:a+?)*", b"a", 0, 1);
 }
@@ -3084,7 +3037,6 @@ fn utf8_anchor_A_mid_no_match() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: case-insensitive matching
 fn utf8_case_insensitive_a() {
     // C line 959: (?i:あ) matches あ
     let pattern = [b"(?i:", "あ".as_bytes(), b")"].concat();
@@ -3092,7 +3044,6 @@ fn utf8_case_insensitive_a() {
 }
 
 #[test]
-#[ignore] // TODO: case-insensitive matching
 fn utf8_case_insensitive_pair() {
     // C line 960: (?i:ぶべ) matches ぶべ
     let pattern = [b"(?i:", "ぶべ".as_bytes(), b")"].concat();
@@ -3100,7 +3051,6 @@ fn utf8_case_insensitive_pair() {
 }
 
 #[test]
-#[ignore] // TODO: case-insensitive matching
 fn utf8_case_insensitive_no_match() {
     // C line 961: (?i:い) no match for う
     let pattern = [b"(?i:", "い".as_bytes(), b")"].concat();
@@ -3229,7 +3179,6 @@ fn utf8_alt_three() {
 }
 
 #[test]
-#[ignore] // TODO: many-alternative optimization
 fn utf8_alt_many() {
     // C line 988: long alternation matches しすせ -> 0-9
     let pattern = [
@@ -3428,7 +3377,6 @@ fn utf8_dual_lookahead_alt() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: variable-length lookbehind
 fn utf8_lookbehind() {
     // C line 1013: (?<=あ|いう)い matches い at byte 6-9 in いうい
     let pattern = ["(?<=あ|いう)い".as_bytes()].concat();
@@ -3511,7 +3459,6 @@ fn utf8_plus_or_star_empty() {
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn utf8_plus_or_star_second() {
     // C line 1024: あ+|い* matches いいい -> 0-9
     let pattern = ["あ+|い*".as_bytes()].concat();
@@ -3534,7 +3481,6 @@ fn utf8_plus_or_star_prefix() {
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn utf8_plus_or_plus_no_match() {
     // C line 1027: あ+|い+ no match for ""
     let pattern = ["あ+|い+".as_bytes()].concat();
@@ -3667,7 +3613,6 @@ fn utf8_noncap_plus_or_A_star() {
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn utf8_noncap_plus_or_A_star_no_match() {
     // C line 1045: (?:あ+|\Aい*)うう no match for あいうう
     let pattern = ["(?:あ+|\\Aい*)うう".as_bytes()].concat();
@@ -3675,7 +3620,6 @@ fn utf8_noncap_plus_or_A_star_no_match() {
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn utf8_noncap_caret_or_star_1() {
     // C line 1046: (?:^あ+|い+)*う matches い+う at end of ああいいいあいう -> 18-24
     let pattern = "(?:^あ+|い+)*う".as_bytes();
@@ -3683,7 +3627,6 @@ fn utf8_noncap_caret_or_star_1() {
 }
 
 #[test]
-#[ignore] // TODO: alternation with anchor/quantifier combos
 fn utf8_noncap_caret_or_star_2() {
     // C line 1047: (?:^あ+|い+)*う matches full ああいいいいう -> 0-21
     let pattern = "(?:^あ+|い+)*う".as_bytes();
@@ -3701,7 +3644,6 @@ fn utf8_interval_0_inf() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: case-insensitive matching
 fn utf8_case_insensitive_alt() {
     // C line 1049: あ|(?i)c matches C -> 0-1
     let pattern = ["あ|(?i)c".as_bytes()].concat();
@@ -3709,7 +3651,6 @@ fn utf8_case_insensitive_alt() {
 }
 
 #[test]
-#[ignore] // TODO: case-insensitive matching
 fn utf8_case_insensitive_alt_2() {
     // C line 1050: (?i)c|あ matches C -> 0-1
     let pattern = ["(?i)c|あ".as_bytes()].concat();
@@ -3717,7 +3658,6 @@ fn utf8_case_insensitive_alt_2() {
 }
 
 #[test]
-#[ignore] // TODO: case-insensitive matching
 fn utf8_case_insensitive_group_or_a() {
     // C line 1051: (?i:あ)|a matches a -> 0-1
     let pattern = [b"(?i:", "あ".as_bytes(), b")|a"].concat();
@@ -3725,7 +3665,6 @@ fn utf8_case_insensitive_group_or_a() {
 }
 
 #[test]
-#[ignore] // TODO: case-insensitive matching
 fn utf8_case_insensitive_group_or_a_no() {
     // C line 1052: (?i:あ)|a no match for A
     let pattern = [b"(?i:", "あ".as_bytes(), b")|a"].concat();
@@ -3825,7 +3764,6 @@ fn utf8_group_opt_lazy_question() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn utf8_group_lazy_question_opt() {
     // C line 1066: (?:天??)? matches empty in 天 -> 0-0
     x2("(?:天??)?".as_bytes(), "天".as_bytes(), 0, 0);
@@ -3856,7 +3794,6 @@ fn utf8_group_plus_lazy_question_suffix() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: interval quantifier edge cases
 fn utf8_group_opt_interval_2_empty() {
     // C line 1070: (?:あい)?{2} matches "" -> 0-0
     x2("(?:あい)?{2}".as_bytes(), b"", 0, 0);
@@ -3881,7 +3818,6 @@ fn utf8_group_interval_3_inf() {
 }
 
 #[test]
-#[ignore] // TODO: interval quantifier edge cases
 fn utf8_group_interval_3_inf_no_match() {
     // C line 1074: (?:鬼車){3,} no match for 鬼車鬼車
     n("(?:鬼車){3,}".as_bytes(), "鬼車鬼車".as_bytes());
@@ -3915,7 +3851,6 @@ fn utf8_literal_brace_comma() {
 }
 
 #[test]
-#[ignore] // TODO: inner lazy quantifier in REPEAT
 fn utf8_group_plus_lazy_interval_2() {
     // C line 1079: (?:かきく)+?{2} matches かきくかきく -> 0-18
     x2("(?:かきく)+?{2}".as_bytes(), "かきくかきくかきく".as_bytes(), 0, 18);
@@ -4015,7 +3950,6 @@ fn utf8_capture_opt() {
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn utf8_capture_star() {
     // C line 1095: (ま*) capture 1 = ままま -> 0-9
     x3("(ま*)".as_bytes(), "ままま".as_bytes(), 0, 9, 1);
@@ -4028,21 +3962,18 @@ fn utf8_capture_star_empty() {
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn utf8_capture_plus() {
     // C line 1097: (る+) capture 1 = るるるるるるる -> 0-21
     x3("(る+)".as_bytes(), "るるるるるるる".as_bytes(), 0, 21, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn utf8_capture_alt_plus_star() {
     // C line 1098: (ふ+|へ*) capture 1 = ふふふ -> 0-9
     x3("(ふ+|へ*)".as_bytes(), "ふふふへへ".as_bytes(), 0, 9, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn utf8_capture_alt_plus_opt() {
     // C line 1099: (あ+|い?) capture 1 = い -> 0-3
     x3("(あ+|い?)".as_bytes(), "いいいああ".as_bytes(), 0, 3, 1);
@@ -4055,28 +3986,24 @@ fn utf8_capture_group_opt() {
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn utf8_capture_group_star() {
     // C line 1101: (あいう)* capture 1 = あいう -> 0-9
     x3("(あいう)*".as_bytes(), "あいう".as_bytes(), 0, 9, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn utf8_capture_group_plus() {
     // C line 1102: (あいう)+ capture 1 = あいう -> 0-9
     x3("(あいう)+".as_bytes(), "あいう".as_bytes(), 0, 9, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn utf8_capture_alt_group_plus() {
     // C line 1103: (さしす|あいう)+ capture 1 = あいう -> 0-9
     x3("(さしす|あいう)+".as_bytes(), "あいう".as_bytes(), 0, 9, 1);
 }
 
 #[test]
-#[ignore] // TODO: capture group tracking in REPEAT
 fn utf8_capture_cc_pair_alt_plus() {
     // C line 1104: ([なにぬ][かきく]|かきく)+ capture 1 = かきく -> 0-9
     x3("([なにぬ][かきく]|かきく)+".as_bytes(), "かきく".as_bytes(), 0, 9, 1);
@@ -4087,7 +4014,6 @@ fn utf8_capture_cc_pair_alt_plus() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: case-insensitive matching
 fn utf8_capture_case_insensitive() {
     // C line 1105: ((?i:あいう)) capture 1 = あいう -> 0-9
     x3("((?i:あいう))".as_bytes(), "あいう".as_bytes(), 0, 9, 1);
@@ -4502,7 +4428,6 @@ fn ascii_interval_exact_3_lazy() {
 }
 
 #[test]
-#[ignore] // TODO: interval quantifier edge cases
 fn ascii_interval_exact_3_lazy_short() {
     // C line 1391: a{3}? matches empty in aa -> 0-0
     // a{3}? is treated as (?:a{3})? when input too short
@@ -4547,35 +4472,30 @@ fn ascii_interval_lazy_2_3_no_match() {
 }
 
 #[test]
-#[ignore] // TODO: reversed interval quantifier {upper,lower}
 fn ascii_interval_reversed_no_match() {
     // C line 1398: a{3,2}a no match for aaa (reversed range)
     n(b"a{3,2}a", b"aaa");
 }
 
 #[test]
-#[ignore] // TODO: reversed interval quantifier {upper,lower}
 fn ascii_interval_reversed_b() {
     // C line 1399: a{3,2}b matches aaab -> 0-4
     x2(b"a{3,2}b", b"aaab", 0, 4);
 }
 
 #[test]
-#[ignore] // TODO: reversed interval quantifier {upper,lower}
 fn ascii_interval_reversed_b_2() {
     // C line 1400: a{3,2}b matches aaaab -> 1-5
     x2(b"a{3,2}b", b"aaaab", 1, 5);
 }
 
 #[test]
-#[ignore] // TODO: reversed interval quantifier {upper,lower}
 fn ascii_interval_reversed_b_short() {
     // C line 1401: a{3,2}b matches aab -> 0-3
     x2(b"a{3,2}b", b"aab", 0, 3);
 }
 
 #[test]
-#[ignore] // TODO: reversed interval quantifier {upper,lower}
 fn ascii_interval_reversed_lazy_empty() {
     // C line 1402: a{3,2}? matches empty -> 0-0 (== (?:a{3,2})?)
     x2(b"a{3,2}?", b"", 0, 0);
