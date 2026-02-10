@@ -4224,6 +4224,9 @@ fn prs_exp(
             let name = &pattern[tok.call_name_start..tok.call_name_end];
             let np = node_new_call(name, tok.call_gnum, tok.call_by_number);
             env.num_call += 1;
+            if tok.call_by_number && tok.call_gnum == 0 {
+                env.flags |= PE_FLAG_HAS_CALL_ZERO;
+            }
             np
         }
         TokenType::Keep => {
@@ -4588,7 +4591,17 @@ pub fn onig_parse_tree(
 
     let mut p: usize = 0;
     let end = pattern.len();
-    let root = prs_regexp(&mut p, end, pattern, env)?;
+    let mut root = prs_regexp(&mut p, end, pattern, env)?;
+
+    // Wrap entire pattern in memory group 0 for \g<0> self-calls
+    if (env.flags & PE_FLAG_HAS_CALL_ZERO) != 0 {
+        let mut zero_node = node_new_bag_memory(0);
+        if let NodeInner::Bag(ref mut bn) = zero_node.inner {
+            bn.body = Some(root);
+        }
+        env.set_mem_node(0, &mut *zero_node as *mut Node);
+        root = zero_node;
+    }
 
     reg.num_mem = env.num_mem;
 

@@ -753,6 +753,14 @@ fn compile_length_bag_node(bag: &BagNode, node_status: u32, reg: &RegexType, env
             if body_len < 0 {
                 return body_len;
             }
+            let regnum = match &bag.bag_data {
+                BagData::Memory { regnum, .. } => *regnum,
+                _ => 0,
+            };
+            if regnum == 0 && (node_status & ND_ST_CALLED) != 0 {
+                // \g<0> wrapper: CALL + JUMP + body + RETURN (no MEM_START/END)
+                return OPSIZE_CALL + OPSIZE_JUMP + body_len + OPSIZE_RETURN;
+            }
             let mut len = OPSIZE_MEM_START + body_len + OPSIZE_MEM_END;
             if (node_status & ND_ST_CALLED) != 0 {
                 // Called group: CALL + JUMP + (MEM_START + body + MEM_END + RETURN)
@@ -828,7 +836,6 @@ fn compile_bag_memory_node(bag: &BagNode, node_status: u32, reg: &mut RegexType,
 
     if is_called {
         // Called group: emit CALL + JUMP wrapper
-        // Layout: CALL(entry) + JUMP(past_return) + [entry: MEM_START + body + MEM_END + RETURN]
         let body_len = if let Some(body) = &bag.body {
             compile_length_tree(body, reg, env)
         } else {
@@ -836,37 +843,46 @@ fn compile_bag_memory_node(bag: &BagNode, node_status: u32, reg: &mut RegexType,
         };
         if body_len < 0 { return body_len; }
 
-        // Total length of the callable block: MEM_START + body + MEM_END + RETURN
+        if regnum == 0 {
+            // \g<0> wrapper: simpler layout without MEM_START/END
+            // Layout: CALL(entry) + JUMP(skip) + [entry: body + RETURN]
+            let callable_len = body_len + OPSIZE_RETURN;
+
+            let call_idx = reg.ops.len();
+            let entry_addr = (call_idx + 2) as i32;
+            add_op(reg, OpCode::Call, OperationPayload::Call { addr: entry_addr });
+
+            add_op(reg, OpCode::Jump, OperationPayload::Jump {
+                addr: callable_len + SIZE_INC,
+            });
+
+            let called_addr = reg.ops.len() as i32;
+            if reg.called_addrs.is_empty() {
+                reg.called_addrs.resize(1, -1);
+            }
+            reg.called_addrs[0] = called_addr;
+
+            if let Some(body) = &bag.body {
+                let r = compile_tree(body, reg, env);
+                if r != 0 { return r; }
+            }
+
+            add_op(reg, OpCode::Return, OperationPayload::Return);
+            return 0;
+        }
+
+        // Regular called group: CALL + JUMP + MEM_START + body + MEM_END + RETURN
         let callable_len = OPSIZE_MEM_START + body_len + OPSIZE_MEM_END + OPSIZE_RETURN;
 
-        // Emit CALL pointing to entry (after CALL + JUMP)
         let call_idx = reg.ops.len();
-        let entry_addr = (call_idx + 2) as i32; // skip CALL and JUMP
+        let entry_addr = (call_idx + 2) as i32;
         add_op(reg, OpCode::Call, OperationPayload::Call { addr: entry_addr });
 
-        // Store the called_addr on the BagData for external call resolution
-        // We use the entry_addr as the target for \g<> references
-        // Store it in reg for later fix_unset_addr_list
-        // Actually, we store it differently in Rust - we record the entry address
-        // and external OP_CALL instructions will reference it directly.
-
-        // Emit JUMP to skip over the callable block
         add_op(reg, OpCode::Jump, OperationPayload::Jump {
             addr: callable_len + SIZE_INC,
         });
 
-        // Record the called_addr for this group
-        // This is the address that external \g<> calls will jump to
         let called_addr = reg.ops.len() as i32;
-
-        // Store it so compile_tree can find it later for Call nodes
-        if regnum > 0 && (regnum as usize) < reg.repeat_range.len() + 100 {
-            // Store called_addr in a way that can be retrieved
-            // We'll use a simple approach: store in a temporary map
-        }
-        // We need a way to store called_addr for the call patching.
-        // Let's store it in the BagData. But BagData is immutable here.
-        // Alternative: store in a Vec on RegexType. Let's add called_addrs.
         if reg.called_addrs.len() <= regnum as usize {
             reg.called_addrs.resize(regnum as usize + 1, -1);
         }
@@ -2172,7 +2188,7 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
             // Resolve the call target
             if call.by_number {
                 let gnum = call.called_gnum;
-                if gnum > env.num_mem || gnum < 1 {
+                if gnum > env.num_mem || gnum < 0 {
                     return ONIGERR_UNDEFINED_GROUP_REFERENCE;
                 }
                 // Mark the target group as CALLED

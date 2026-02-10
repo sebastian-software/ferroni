@@ -5754,7 +5754,7 @@ fn recursive_g1() {
 }
 
 #[test]
-#[ignore] // recursive calls inside lookbehind not yet implemented
+#[ignore] // subroutine call inside lookbehind not yet implemented
 fn recursive_lookbehind_named() {
     // C line 709: (?<=\g<ab>)|-\zEND (?<ab>XyZ) matches "XyZ" -> 3-3
     x2(b"(?<=\\g<ab>)|-\\zEND (?<ab>XyZ)", b"XyZ", 3, 3);
@@ -5803,7 +5803,7 @@ fn named_group_long_name() {
 }
 
 #[test]
-#[ignore] // subroutine call capture semantics not fully working
+#[ignore] // recursive capture position needs MEM_END_REC
 fn named_group_underscore_9() {
     // C line 717: (z)()()(?<_9>a)\g<_9> matches "zaa" group 1 -> 2-3
     x3(b"(z)()()(?<_9>a)\\g<_9>", b"zaa", 2, 3, 1);
@@ -5882,7 +5882,7 @@ fn recursive_foo_nested_parens() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
+#[ignore] // recursive capture position needs MEM_END_REC
 fn recursive_foo_nested_parens_capture() {
     // C line 730: (?<foo>a|\(\g<foo>\)) matches "((((((((a))))))))" group 1 -> 0-17
     x3(b"(?<foo>a|\\(\\g<foo>\\))", b"((((((((a))))))))", 0, 17, 1);
@@ -5901,7 +5901,7 @@ fn recursive_g1_bac() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
+#[ignore] // recursive capture position needs MEM_END_REC
 fn recursive_g_A_mutual_capture() {
     // C line 733: \g<_A>\g<_A>|\zEND(.a.)(?<_A>.b.) matches "xbxyby" group 1 -> 3-6
     x3(b"\\g<_A>\\g<_A>|\\zEND(.a.)(?<_A>.b.)", b"xbxyby", 3, 6, 1);
@@ -5998,7 +5998,7 @@ fn octal_escape_o101() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
+#[ignore] // backref level \k<1+3> with recursion not yet implemented
 fn recursive_backref_level_k1p3() {
     // C line 751: \A(a|b\g<1>c)\k<1+3>\z matches "bbacca" -> 0-6
     x2(b"\\A(a|b\\g<1>c)\\k<1+3>\\z", b"bbacca", 0, 6);
@@ -6011,7 +6011,7 @@ fn recursive_backref_level_k1p3_no_match() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
+#[ignore] // backref level \k<1+2> with recursion not yet implemented
 fn recursive_casefold_backref_level() {
     // C line 753: (?i)\A(a|b\g<1>c)\k<1+2>\z matches "bBACcbac" -> 0-8
     x2(b"(?i)\\A(a|b\\g<1>c)\\k<1+2>\\z", b"bBACcbac", 0, 8);
@@ -6036,14 +6036,13 @@ fn relative_positive_call() {
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
 fn recursive_self_call_g0() {
     // C line 757: A\g'0'|B() matches "AAAAB" -> 0-5
     x2(b"A\\g'0'|B()", b"AAAAB", 0, 5);
 }
 
 #[test]
-#[ignore] // recursive patterns not yet implemented
+#[ignore] // recursive capture position needs MEM_END_REC
 fn recursive_self_call_g0_capture() {
     // C line 758: (A\g'0')|B matches "AAAAB" group 1 -> 0-5
     x3(b"(A\\g'0')|B", b"AAAAB", 0, 5, 1);
