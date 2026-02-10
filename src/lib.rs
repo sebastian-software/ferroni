@@ -10,5 +10,6 @@ pub mod oniguruma;
 pub mod regint;
 pub mod regenc;
 pub mod regsyntax;
+pub mod regparse_types;
 pub mod unicode;
 pub mod encodings;
