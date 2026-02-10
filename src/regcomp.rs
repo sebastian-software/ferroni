@@ -520,6 +520,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                     compile_tree_n_times(body, 1, reg, env);
                 }
                 // PUSH → body → JUMP back to PUSH
+                // C: COP(reg)->push.addr = SIZE_INC + mod_tlen + OPSIZE_JUMP;
                 add_op(reg, OpCode::Push, OperationPayload::Push {
                     addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
                 });
@@ -527,8 +528,9 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 if r != 0 {
                     return r;
                 }
+                // C: addr = -(mod_tlen + (int)OPSIZE_PUSH);
                 add_op(reg, OpCode::Jump, OperationPayload::Jump {
-                    addr: -(mod_tlen + OPSIZE_JUMP + OPSIZE_PUSH),
+                    addr: -(mod_tlen + OPSIZE_PUSH),
                 });
             } else {
                 // a*? or a+?
@@ -536,15 +538,17 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                     compile_tree_n_times(body, 1, reg, env);
                 }
                 // JUMP forward → body → PUSH back
+                // C: COP(reg)->jump.addr = mod_tlen + SIZE_INC;
                 add_op(reg, OpCode::Jump, OperationPayload::Jump {
-                    addr: SIZE_INC + mod_tlen + OPSIZE_PUSH,
+                    addr: mod_tlen + SIZE_INC,
                 });
                 let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
                 if r != 0 {
                     return r;
                 }
+                // C: COP(reg)->push.addr = -mod_tlen;
                 add_op(reg, OpCode::Push, OperationPayload::Push {
-                    addr: -(mod_tlen + OPSIZE_PUSH),
+                    addr: -mod_tlen,
                 });
             }
         } else {
@@ -563,19 +567,22 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 if r != 0 {
                     return r;
                 }
+                // C: addr = -(mod_tlen + (int)OPSIZE_PUSH);
                 add_op(reg, OpCode::Jump, OperationPayload::Jump {
-                    addr: -(mod_tlen + OPSIZE_JUMP + OPSIZE_PUSH),
+                    addr: -(mod_tlen + OPSIZE_PUSH),
                 });
             } else {
+                // C: COP(reg)->jump.addr = mod_tlen + SIZE_INC;
                 add_op(reg, OpCode::Jump, OperationPayload::Jump {
-                    addr: SIZE_INC + mod_tlen + OPSIZE_PUSH,
+                    addr: mod_tlen + SIZE_INC,
                 });
                 let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
                 if r != 0 {
                     return r;
                 }
+                // C: COP(reg)->push.addr = -mod_tlen;
                 add_op(reg, OpCode::Push, OperationPayload::Push {
-                    addr: -(mod_tlen + OPSIZE_PUSH),
+                    addr: -mod_tlen,
                 });
             }
         }
@@ -596,6 +603,8 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             id,
             addr: SIZE_INC + mod_tlen + OPSIZE_REPEAT_INC,
         });
+        // Patch u_offset to point to the body start (op after REPEAT)
+        reg.repeat_range[id as usize].u_offset = reg.ops.len() as i32;
         let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
         if r != 0 {
             return r;
@@ -615,6 +624,8 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             id,
             addr: SIZE_INC + mod_tlen + OPSIZE_REPEAT_INC,
         });
+        // Patch u_offset to point to the body start (op after REPEAT)
+        reg.repeat_range[id as usize].u_offset = reg.ops.len() as i32;
         let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
         if r != 0 {
             return r;

@@ -15,3 +15,4 @@ pub mod unicode;
 pub mod encodings;
 pub mod regparse;
 pub mod regcomp;
+pub mod regexec;
