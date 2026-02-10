@@ -732,25 +732,21 @@ fn group_question_x() {
 }
 
 #[test]
-#[ignore] // Infinite loop: needs tune_tree empty-check (OP_EMPTY_CHECK_START/END)
 fn group_star_empty() {
     x2(b"(?:x?)*", b"", 0, 0);
 }
 
 #[test]
-#[ignore] // Infinite loop: needs tune_tree empty-check
 fn group_star_xx() {
     x2(b"(?:x?)*", b"xx", 0, 2);
 }
 
 #[test]
-#[ignore] // Infinite loop: needs tune_tree empty-check
 fn group_plus_empty() {
     x2(b"(?:x?)+", b"", 0, 0);
 }
 
 #[test]
-#[ignore] // Infinite loop: needs tune_tree empty-check
 fn group_plus_xx() {
     x2(b"(?:x?)+", b"xx", 0, 2);
 }

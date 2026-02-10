@@ -1375,6 +1375,295 @@ fn mem_status_is_all_on(stats: MemStatusType) -> bool {
     (stats & 1) != 0
 }
 
+// ============================================================================
+// tune_tree state flags (matching C's IN_* defines from regcomp.c:4481)
+// ============================================================================
+const IN_ALT: i32 = 1 << 0;
+const IN_NOT: i32 = 1 << 1;
+const IN_REAL_REPEAT: i32 = 1 << 2;
+const IN_VAR_REPEAT: i32 = 1 << 3;
+const IN_MULTI_ENTRY: i32 = 1 << 5;
+const IN_PREC_READ: i32 = 1 << 6;
+
+/// Calculate minimum byte length a node can match.
+/// Mirrors C's node_min_byte_len() from regcomp.c.
+fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
+    match &node.inner {
+        NodeInner::String(sn) => sn.s.len() as OnigLen,
+
+        NodeInner::CType(_) | NodeInner::CClass(_) => {
+            env.enc.min_enc_len() as OnigLen
+        }
+
+        NodeInner::List(_) => {
+            let mut len: OnigLen = 0;
+            let mut cur = node;
+            loop {
+                if let NodeInner::List(cons) = &cur.inner {
+                    let tmin = node_min_byte_len(&cons.car, env);
+                    len = distance_add(len, tmin);
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                } else {
+                    break;
+                }
+            }
+            len
+        }
+
+        NodeInner::Alt(_) => {
+            let mut len: OnigLen = 0;
+            let mut first = true;
+            let mut cur = node;
+            loop {
+                if let NodeInner::Alt(cons) = &cur.inner {
+                    let tmin = node_min_byte_len(&cons.car, env);
+                    if first {
+                        len = tmin;
+                        first = false;
+                    } else if len > tmin {
+                        len = tmin;
+                    }
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                } else {
+                    break;
+                }
+            }
+            len
+        }
+
+        NodeInner::Quant(qn) => {
+            if qn.lower > 0 {
+                if let Some(ref body) = qn.body {
+                    let len = node_min_byte_len(body, env);
+                    distance_multiply(len, qn.lower)
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        }
+
+        NodeInner::Bag(bn) => {
+            match bn.bag_type {
+                BagType::Option | BagType::StopBacktrack => {
+                    if let Some(ref body) = bn.body {
+                        node_min_byte_len(body, env)
+                    } else {
+                        0
+                    }
+                }
+                BagType::Memory => {
+                    if node.has_status(ND_ST_FIXED_MIN) {
+                        bn.min_len
+                    } else if node.has_status(ND_ST_MARK1) {
+                        0 // recursive
+                    } else {
+                        if let Some(ref body) = bn.body {
+                            node_min_byte_len(body, env)
+                        } else {
+                            0
+                        }
+                    }
+                }
+                BagType::IfElse => {
+                    if let BagData::IfElse { ref then_node, ref else_node } = bn.bag_data {
+                        let mut len = if let Some(ref body) = bn.body {
+                            node_min_byte_len(body, env)
+                        } else {
+                            0
+                        };
+                        if let Some(ref then_n) = then_node {
+                            len += node_min_byte_len(then_n, env);
+                        }
+                        let elen = if let Some(ref else_n) = else_node {
+                            node_min_byte_len(else_n, env)
+                        } else {
+                            0
+                        };
+                        if elen < len { elen } else { len }
+                    } else {
+                        0
+                    }
+                }
+            }
+        }
+
+        NodeInner::BackRef(br) => {
+            if node.has_status(ND_ST_CHECKER) {
+                0
+            } else {
+                // Simplified: return 0 for backrefs (safe minimum)
+                0
+            }
+        }
+
+        NodeInner::Anchor(_) | NodeInner::Gimmick(_) | NodeInner::Call(_) => 0,
+    }
+}
+
+/// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
+/// Mirrors C's tune_tree() from regcomp.c.
+pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &ParseEnv) -> i32 {
+    match &mut node.inner {
+        NodeInner::List(_) => {
+            // Walk the list iteratively to avoid borrow issues
+            let mut cur: *mut Node = node;
+            unsafe {
+                loop {
+                    if let NodeInner::List(ref mut cons) = (*cur).inner {
+                        let r = tune_tree(&mut cons.car, reg, state, env);
+                        if r != 0 { return r; }
+                        match cons.cdr {
+                            Some(ref mut next) => cur = &mut **next,
+                            None => break,
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+            0
+        }
+
+        NodeInner::Alt(_) => {
+            let mut cur: *mut Node = node;
+            unsafe {
+                loop {
+                    if let NodeInner::Alt(ref mut cons) = (*cur).inner {
+                        let r = tune_tree(&mut cons.car, reg, state | IN_ALT, env);
+                        if r != 0 { return r; }
+                        match cons.cdr {
+                            Some(ref mut next) => cur = &mut **next,
+                            None => break,
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+            0
+        }
+
+        NodeInner::Quant(ref mut qn) => {
+            // Propagate repeat status flags
+            if (state & IN_REAL_REPEAT) != 0 {
+                node.status |= ND_ST_IN_REAL_REPEAT;
+            }
+            if (state & IN_MULTI_ENTRY) != 0 {
+                node.status |= ND_ST_IN_MULTI_ENTRY;
+            }
+
+            // Check if body can match empty
+            if is_infinite_repeat(qn.upper) || qn.upper >= 1 {
+                if let Some(ref body) = qn.body {
+                    let d = node_min_byte_len(body, env);
+                    if d == 0 {
+                        qn.emptiness = BodyEmptyType::MayBeEmpty;
+                    }
+                }
+            }
+
+            // Update state for recursive call
+            let mut new_state = state;
+            if is_infinite_repeat(qn.upper) || qn.upper >= 2 {
+                new_state |= IN_REAL_REPEAT;
+            }
+            if qn.lower != qn.upper {
+                new_state |= IN_VAR_REPEAT;
+            }
+
+            // Recurse into body
+            if let Some(ref mut body) = qn.body {
+                let r = tune_tree(body, reg, new_state, env);
+                if r != 0 { return r; }
+            }
+
+            0
+        }
+
+        NodeInner::Bag(ref mut bn) => {
+            match bn.bag_type {
+                BagType::Option => {
+                    let saved_options = reg.options;
+                    if let BagData::Option { options } = bn.bag_data {
+                        reg.options = options;
+                    }
+                    let r = if let Some(ref mut body) = bn.body {
+                        tune_tree(body, reg, state, env)
+                    } else {
+                        0
+                    };
+                    reg.options = saved_options;
+                    r
+                }
+                BagType::Memory => {
+                    let new_state = if (state & (IN_ALT | IN_NOT | IN_VAR_REPEAT | IN_MULTI_ENTRY)) != 0 {
+                        // Backtrack mem needed for captures in alternation/variable repeat
+                        state
+                    } else {
+                        state
+                    };
+                    if let Some(ref mut body) = bn.body {
+                        tune_tree(body, reg, new_state, env)
+                    } else {
+                        0
+                    }
+                }
+                BagType::StopBacktrack => {
+                    if let Some(ref mut body) = bn.body {
+                        tune_tree(body, reg, state, env)
+                    } else {
+                        0
+                    }
+                }
+                BagType::IfElse => {
+                    if let Some(ref mut body) = bn.body {
+                        let r = tune_tree(body, reg, state | IN_ALT, env);
+                        if r != 0 { return r; }
+                    }
+                    if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                        if let Some(ref mut then_n) = then_node {
+                            let r = tune_tree(then_n, reg, state | IN_ALT, env);
+                            if r != 0 { return r; }
+                        }
+                        if let Some(ref mut else_n) = else_node {
+                            let r = tune_tree(else_n, reg, state | IN_ALT, env);
+                            if r != 0 { return r; }
+                        }
+                    }
+                    0
+                }
+            }
+        }
+
+        NodeInner::Anchor(ref mut an) => {
+            if let Some(ref mut body) = an.body {
+                let new_state = if an.anchor_type == ANCR_PREC_READ {
+                    state | IN_PREC_READ
+                } else if an.anchor_type == ANCR_PREC_READ_NOT {
+                    state | IN_PREC_READ | IN_NOT
+                } else {
+                    state
+                };
+                tune_tree(body, reg, new_state, env)
+            } else {
+                0
+            }
+        }
+
+        // Terminal nodes - nothing to tune
+        NodeInner::String(_) | NodeInner::CType(_) | NodeInner::CClass(_)
+        | NodeInner::BackRef(_) | NodeInner::Call(_) | NodeInner::Gimmick(_) => 0,
+    }
+}
+
 /// Flatten a List node into a Vec of car elements.
 fn flatten_list(mut node: Box<Node>) -> Vec<Box<Node>> {
     let mut items = Vec::new();
@@ -1674,6 +1963,12 @@ pub fn onig_compile(
 
     // Optimize: consolidate adjacent string nodes (mirrors C's reduce_string_list)
     let r = reduce_string_list(&mut root, reg.enc);
+    if r != 0 {
+        return r;
+    }
+
+    // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
+    let r = tune_tree(&mut root, reg, 0, &env);
     if r != 0 {
         return r;
     }
