@@ -5739,7 +5739,6 @@ fn named_group_backref() {
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_backref_k() {
     // C line 708: (?<name_3>.zv.)\k<name_3> matches "azvbazvb" -> 0-8
     x2(b"(?<name_3>.zv.)\\k<name_3>", b"azvbazvb", 0, 8);
@@ -5805,7 +5804,6 @@ fn recursive_mutual() {
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_long_name() {
     // C line 716: (?<name1240>\w+\sx)a+\k<name1240> matches "  fg xaaaaaaaafg x" -> 2-18
     x2(b"(?<name1240>\\w+\\sx)a+\\k<name1240>", b"  fg xaaaaaaaafg x", 2, 18);
@@ -5819,28 +5817,24 @@ fn named_group_underscore_9() {
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_underscore_backref() {
     // C line 718: (.)(((?<_>a)))\k<_> matches "zaa" -> 0-3
     x2(b"(.)(((?<_>a)))\\k<_>", b"zaa", 0, 3);
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_digit_or_word() {
     // C line 719: ((?<name1>\d)|(?<name2>\w))(\k<name1>|\k<name2>) matches "ff" -> 0-2
     x2(b"((?<name1>\\d)|(?<name2>\\w))(\\k<name1>|\\k<name2>)", b"ff", 0, 2);
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_dup_empty() {
     // C line 720: (?:(?<x>)|(?<x>efg))\k<x> matches "" -> 0-0
     x2(b"(?:(?<x>)|(?<x>efg))\\k<x>", b"", 0, 0);
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_dup_abc_efg() {
     // C line 721: (?:(?<x>abc)|(?<x>efg))\k<x> matches "abcefgefg" -> 3-9
     x2(b"(?:(?<x>abc)|(?<x>efg))\\k<x>", b"abcefgefg", 3, 9);
@@ -5853,28 +5847,24 @@ fn named_group_dup_no_match() {
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_dup_x_xx() {
     // C line 723: (?<x>x)(?<x>xx)\k<x> matches "xxxx" -> 0-4
     x2(b"(?<x>x)(?<x>xx)\\k<x>", b"xxxx", 0, 4);
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_dup_x_xx_z() {
     // C line 724: (?<x>x)(?<x>xx)\k<x> matches "xxxxz" -> 0-4
     x2(b"(?<x>x)(?<x>xx)\\k<x>", b"xxxxz", 0, 4);
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_14_dup_pyumpyum() {
     // C line 725: 14 alternatives of (?<n1>...) followed by \k<n1>$ matches "a-pyumpyum" -> 2-10
     x2(b"(?:(?<n1>.)|(?<n1>..)|(?<n1>...)|(?<n1>....)|(?<n1>.....)|(?<n1>......)|(?<n1>.......)|(?<n1>........)|(?<n1>.........)|(?<n1>..........)|(?<n1>...........)|(?<n1>............)|(?<n1>.............)|(?<n1>..............))\\k<n1>$", b"a-pyumpyum", 2, 10);
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_group_14_dup_capture_14() {
     // C line 726: same pattern, capture group 14 of long string -> 4-18
     x3(b"(?:(?<n1>.)|(?<n1>..)|(?<n1>...)|(?<n1>....)|(?<n1>.....)|(?<n1>......)|(?<n1>.......)|(?<n1>........)|(?<n1>.........)|(?<n1>..........)|(?<n1>...........)|(?<n1>............)|(?<n1>.............)|(?<n1>..............))\\k<n1>$", b"xxxxabcdefghijklmnabcdefghijklmn", 4, 18, 14);
@@ -6041,14 +6031,12 @@ fn recursive_casefold_backref_level() {
 }
 
 #[test]
-#[ignore] // case-insensitive backrefs not yet implemented
 fn casefold_named_dup_backref() {
     // C line 754: (?i)(?<X>aa)|(?<X>bb)\k<X> matches "BBbb" -> 0-4
     x2(b"(?i)(?<X>aa)|(?<X>bb)\\k<X>", b"BBbb", 0, 4);
 }
 
 #[test]
-#[ignore] // relative backrefs/calls not yet implemented
 fn relative_positive_backref() {
     // C line 755: (?:\k'+1'B|(A)C)* matches "ACAB" -> 0-4
     x2(b"(?:\\k'+1'B|(A)C)*", b"ACAB", 0, 4);
@@ -6294,7 +6282,6 @@ fn lookbehind_nested_coverage() {
 }
 
 #[test]
-#[ignore] // named group backrefs/subroutines not yet implemented
 fn named_dup_backref_plus_coverage() {
     // C line 819: (?<x>a)(?<x>b)(\k<x>)+ matches "abbaab" -> 0-6
     x2(b"(?<x>a)(?<x>b)(\\k<x>)+", b"abbaab", 0, 6);

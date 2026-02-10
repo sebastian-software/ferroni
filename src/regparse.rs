@@ -1497,7 +1497,8 @@ fn fetch_name(
     pattern: &[u8],
     env: &ParseEnv,
     is_ref: bool,
-) -> Result<(usize, usize, i32, i32), i32> {
+) -> Result<(usize, usize, i32, i32, bool, i32), i32> {
+    // Returns: (name_start, name_end, back_num, num_type, exist_level, level)
     let enc = env.enc;
     let end_code = get_name_end_code_point(start_code);
     let mut back_num = 0i32;
@@ -1508,6 +1509,8 @@ fn fetch_name(
     let mut digit_count = 0i32;
     let mut name_end = end;
     let mut r = 0i32;
+    let mut exist_level = false;
+    let mut level = 0i32;
 
     if p_end(*p, end) {
         return Err(ONIGERR_EMPTY_GROUP_NAME);
@@ -1559,6 +1562,27 @@ fn fetch_name(
             if num_type != IS_NOT_NUM {
                 if is_code_digit_ascii(enc, c) {
                     digit_count += 1;
+                } else if is_ref && (c == '+' as u32 || c == '-' as u32) && digit_count > 0 {
+                    // Level syntax: \k<1+3> or \k<name+2>
+                    // Stop name at the +/-, parse level
+                    name_end = *p - 1; // position before '+'/'-'
+                    let level_sign: i32 = if c == '-' as u32 { -1 } else { 1 };
+                    let mut level_val = 0i32;
+                    while !p_end(*p, end) {
+                        let lc = pfetch_s(p, pattern, end, enc);
+                        if lc == end_code {
+                            exist_level = true;
+                            level = level_val * level_sign;
+                            break;
+                        }
+                        if is_code_digit_ascii(enc, lc) {
+                            level_val = level_val * 10 + (lc as i32 - '0' as i32);
+                        } else {
+                            r = ONIGERR_INVALID_GROUP_NAME;
+                            break;
+                        }
+                    }
+                    break;
                 } else {
                     if !enc.is_code_ctype(c, ONIGENC_CTYPE_WORD) {
                         r = ONIGERR_INVALID_CHAR_IN_GROUP_NAME;
@@ -1568,7 +1592,27 @@ fn fetch_name(
                     num_type = IS_NOT_NUM;
                 }
             } else {
-                if !enc.is_code_ctype(c, ONIGENC_CTYPE_WORD) {
+                if is_ref && (c == '+' as u32 || c == '-' as u32) {
+                    // Level syntax for named refs: \k<name+2>
+                    name_end = *p - 1;
+                    let level_sign: i32 = if c == '-' as u32 { -1 } else { 1 };
+                    let mut level_val = 0i32;
+                    while !p_end(*p, end) {
+                        let lc = pfetch_s(p, pattern, end, enc);
+                        if lc == end_code {
+                            exist_level = true;
+                            level = level_val * level_sign;
+                            break;
+                        }
+                        if is_code_digit_ascii(enc, lc) {
+                            level_val = level_val * 10 + (lc as i32 - '0' as i32);
+                        } else {
+                            r = ONIGERR_INVALID_GROUP_NAME;
+                            break;
+                        }
+                    }
+                    break;
+                } else if !enc.is_code_ctype(c, ONIGENC_CTYPE_WORD) {
                     r = ONIGERR_INVALID_CHAR_IN_GROUP_NAME;
                 }
             }
@@ -1593,7 +1637,7 @@ fn fetch_name(
             back_num *= sign;
         }
 
-        return Ok((name_start, name_end, back_num, num_type));
+        return Ok((name_start, name_end, back_num, num_type, exist_level, level));
     }
 
     // Error path: skip to end_code
@@ -1991,6 +2035,63 @@ fn fetch_token(
                 }
                 tok.token_type = TokenType::Keep;
             }
+            'k' => {
+                if !p_end(*p, end) && is_syntax_op2(syn, ONIG_SYN_OP2_ESC_K_NAMED_BACKREF) {
+                    let save = *p;
+                    let c2 = pfetch_s(p, pattern, end, enc);
+                    if c2 == '<' as u32 || c2 == '\'' as u32 {
+                        match fetch_name(c2, p, end, pattern, env, true) {
+                            Ok((name_start, name_end, back_num, num_type, has_level, level_val)) => {
+                                if num_type != IS_NOT_NUM {
+                                    // Numeric backref
+                                    let mut bn = back_num;
+                                    if num_type == IS_REL_NUM {
+                                        bn = backref_rel_to_abs(bn, env);
+                                    }
+                                    if bn <= 0 {
+                                        return ONIGERR_INVALID_BACKREF;
+                                    }
+                                    tok.token_type = TokenType::Backref;
+                                    tok.backref_by_name = false;
+                                    tok.backref_num = 1;
+                                    tok.backref_ref1 = bn;
+                                    tok.backref_exist_level = has_level;
+                                    tok.backref_level = level_val;
+                                } else {
+                                    // Named backref: look up name
+                                    let name = &pattern[name_start..name_end];
+                                    let reg = unsafe { &*env.reg };
+                                    if let Some(ref nt) = reg.name_table {
+                                        if let Some(entry) = nt.find(name) {
+                                            tok.token_type = TokenType::Backref;
+                                            tok.backref_by_name = true;
+                                            tok.backref_exist_level = has_level;
+                                            tok.backref_level = level_val;
+                                            if entry.back_num == 1 {
+                                                tok.backref_num = 1;
+                                                tok.backref_ref1 = entry.back_refs[0];
+                                            } else {
+                                                tok.backref_num = entry.back_num;
+                                                tok.backref_refs = entry.back_refs.clone();
+                                            }
+                                        } else {
+                                            return ONIGERR_UNDEFINED_NAME_REFERENCE;
+                                        }
+                                    } else {
+                                        return ONIGERR_UNDEFINED_NAME_REFERENCE;
+                                    }
+                                }
+                            }
+                            Err(e) => return e,
+                        }
+                    } else {
+                        *p = save; // PUNFETCH
+                    }
+                }
+            }
+            // 'g' => \g<name> subexp calls are tokenized but need Call node
+            //        handling in prs_exp + compiler/executor recursion support.
+            //        Deferred until recursion is implemented.
             'R' => {
                 if !is_syntax_op2(syn, ONIG_SYN_OP2_ESC_CAPITAL_R_GENERAL_NEWLINE) {
                     return tok.token_type as i32;
@@ -3473,7 +3574,7 @@ fn prs_named_group(
     env: &mut ParseEnv,
     list_capture: bool,
 ) -> Result<(Box<Node>, i32), i32> {
-    let (name_start, name_end, _back_num, _num_type) =
+    let (name_start, name_end, _back_num, _num_type, _, _) =
         fetch_name(start_code, p, end, pattern, env, false)?;
 
     let num = env.add_mem_entry()?;
