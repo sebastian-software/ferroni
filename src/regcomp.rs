@@ -173,7 +173,8 @@ fn add_compile_string(
     let op = select_str_opcode(mb_len, str_len);
     let byte_len = mb_len * str_len;
 
-    let payload = if byte_len <= 16 {
+    let payload = if mb_len == 1 && byte_len <= 16 {
+        // Single-byte encoding: use compact Exact payload
         let mut buf = [0u8; 16];
         buf[..byte_len as usize].copy_from_slice(&s[..byte_len as usize]);
         OperationPayload::Exact { s: buf }
@@ -183,10 +184,11 @@ fn add_compile_string(
             n: str_len,
         }
     } else {
+        // Multi-byte encoding: always use ExactLenN with byte count
         OperationPayload::ExactLenN {
             s: s[..byte_len as usize].to_vec(),
-            n: str_len,
-            len: mb_len,
+            n: byte_len,  // total byte count
+            len: mb_len,  // bytes per character
         }
     };
 
@@ -876,8 +878,8 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
         let id = reg.num_call;
         reg.num_call += 1;
 
-        // PUSH past the fail section
-        let push_addr = SIZE_INC + OPSIZE_MARK + body_len + OPSIZE_POP_TO_MARK + OPSIZE_POP;
+        // PUSH past the fail section (C: SIZE_INC + MARK + body + POP_TO_MARK + POP + FAIL)
+        let push_addr = SIZE_INC + OPSIZE_MARK + body_len + OPSIZE_POP_TO_MARK + OPSIZE_POP + OPSIZE_FAIL;
         add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
 
         add_op(reg, OpCode::Mark, OperationPayload::Mark {
@@ -1367,9 +1369,15 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
 // Entry points
 // ============================================================================
 
-/// Main compilation entry point.
-/// Takes a parsed AST tree and compiles it into bytecode in the regex.
-pub fn onig_compile(
+/// Helper: check if mem_status bit 0 is on (meaning "all on")
+#[inline]
+fn mem_status_is_all_on(stats: MemStatusType) -> bool {
+    (stats & 1) != 0
+}
+
+/// Simple compilation from a pre-parsed AST tree.
+/// Used internally and by tests that parse separately.
+pub fn compile_from_tree(
     root: &Node,
     reg: &mut RegexType,
     env: &ParseEnv,
@@ -1387,6 +1395,159 @@ pub fn onig_compile(
     add_op(reg, OpCode::End, OperationPayload::None);
 
     0
+}
+
+/// Full compilation entry point - mirrors C's onig_compile().
+/// Parses pattern, compiles to bytecode, sets up mem status and stack_pop_level.
+pub fn onig_compile(
+    reg: &mut RegexType,
+    pattern: &[u8],
+) -> i32 {
+    // Clear previous bytecode
+    reg.ops.clear();
+
+    // Parse the pattern into AST
+    let mut env = ParseEnv {
+        options: reg.options,
+        case_fold_flag: reg.case_fold_flag,
+        enc: reg.enc,
+        syntax: unsafe { &*reg.syntax },
+        cap_history: 0,
+        backtrack_mem: 0,
+        backrefed_mem: 0,
+        pattern: std::ptr::null(),
+        pattern_end: std::ptr::null(),
+        error: std::ptr::null(),
+        error_end: std::ptr::null(),
+        reg: reg as *mut RegexType,
+        num_call: 0,
+        num_mem: 0,
+        num_named: 0,
+        mem_alloc: 0,
+        mem_env_static: Default::default(),
+        mem_env_dynamic: None,
+        backref_num: 0,
+        keep_num: 0,
+        id_num: 0,
+        save_alloc_num: 0,
+        saves: None,
+        unset_addr_list: None,
+        parse_depth: 0,
+        flags: 0,
+    };
+
+    let root = match crate::regparse::onig_parse_tree(pattern, reg, &mut env) {
+        Ok(node) => node,
+        Err(e) => return e,
+    };
+
+    // Set capture/mem tracking from parse env (mirrors C's onig_compile post-parse setup)
+    reg.capture_history = env.cap_history;
+    reg.push_mem_start = env.backtrack_mem | env.cap_history;
+    reg.num_mem = env.num_mem;
+
+    // Set push_mem_end
+    if mem_status_is_all_on(reg.push_mem_start) {
+        reg.push_mem_end = env.backrefed_mem | env.cap_history;
+    } else {
+        reg.push_mem_end = reg.push_mem_start & (env.backrefed_mem | env.cap_history);
+    }
+
+    // Compile the tree to bytecode
+    let r = compile_tree(&root, reg, &env);
+    if r != 0 {
+        return r;
+    }
+
+    // Add OP_END
+    add_op(reg, OpCode::End, OperationPayload::None);
+
+    // Set stack pop level based on what captures/features are used
+    if reg.push_mem_end != 0
+        || reg.num_repeat != 0
+        || reg.num_empty_check != 0
+        || reg.num_call > 0
+    {
+        reg.stack_pop_level = StackPopLevel::All;
+    } else if reg.push_mem_start != 0 {
+        reg.stack_pop_level = StackPopLevel::MemStart;
+    } else {
+        reg.stack_pop_level = StackPopLevel::Free;
+    }
+
+    0
+}
+
+/// Create and compile a new regex - mirrors C's onig_new().
+/// This is the main public API entry point.
+pub fn onig_new(
+    pattern: &[u8],
+    option: OnigOptionType,
+    enc: OnigEncoding,
+    syntax: *const OnigSyntaxType,
+) -> Result<RegexType, i32> {
+    // Validate options
+    if (option & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0
+        && (option & ONIG_OPTION_CAPTURE_GROUP) != 0
+    {
+        return Err(ONIGERR_INVALID_COMBINATION_OF_OPTIONS);
+    }
+
+    // Apply syntax default options (mirrors onig_reg_init)
+    let mut effective_option = option;
+    let syn = unsafe { &*syntax };
+    if (option & ONIG_OPTION_NEGATE_SINGLELINE) != 0 {
+        effective_option |= syn.options;
+        effective_option &= !ONIG_OPTION_SINGLELINE;
+    } else {
+        effective_option |= syn.options;
+    }
+
+    // Case fold flag setup
+    let mut case_fold_flag = ONIGENC_CASE_FOLD_MIN;
+    if (effective_option & ONIG_OPTION_IGNORECASE_IS_ASCII) != 0 {
+        case_fold_flag &= !(INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR
+            | ONIGENC_CASE_FOLD_TURKISH_AZERI);
+        case_fold_flag |= ONIGENC_CASE_FOLD_ASCII_ONLY;
+    }
+
+    let mut reg = RegexType {
+        ops: Vec::new(),
+        string_pool: Vec::new(),
+        num_mem: 0,
+        num_repeat: 0,
+        num_empty_check: 0,
+        num_call: 0,
+        capture_history: 0,
+        push_mem_start: 0,
+        push_mem_end: 0,
+        stack_pop_level: StackPopLevel::Free,
+        repeat_range: Vec::new(),
+        enc,
+        options: effective_option,
+        syntax,
+        case_fold_flag,
+        name_table: None,
+        optimize: OptimizeType::None,
+        threshold_len: 0,
+        anchor: 0,
+        anc_dist_min: 0,
+        anc_dist_max: 0,
+        sub_anchor: 0,
+        exact: Vec::new(),
+        map: [0u8; CHAR_MAP_SIZE],
+        map_offset: 0,
+        dist_min: 0,
+        dist_max: 0,
+        extp: None,
+    };
+
+    let r = onig_compile(&mut reg, pattern);
+    if r != 0 {
+        return Err(r);
+    }
+
+    Ok(reg)
 }
 
 // ============================================================================
@@ -1464,7 +1625,7 @@ mod tests {
     fn parse_and_compile(pattern: &[u8]) -> Result<RegexType, i32> {
         let (mut reg, mut env) = make_test_context();
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env)?;
-        let r = onig_compile(&root, &mut reg, &env);
+        let r = compile_from_tree(&root, &mut reg, &env);
         if r != 0 {
             return Err(r);
         }
@@ -1584,5 +1745,53 @@ mod tests {
         let reg = parse_and_compile(b"(?!abc)").unwrap();
         let has_fail = reg.ops.iter().any(|op| op.opcode == OpCode::Fail);
         assert!(has_fail, "expected Fail for negative lookahead");
+    }
+
+    // ---- onig_new API tests ----
+
+    #[test]
+    fn onig_new_basic() {
+        let reg = onig_new(
+            b"abc",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        ).unwrap();
+        assert!(!reg.ops.is_empty());
+        assert_eq!(reg.ops.last().unwrap().opcode, OpCode::End);
+    }
+
+    #[test]
+    fn onig_new_with_captures() {
+        let reg = onig_new(
+            b"(a)(b)",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        ).unwrap();
+        assert_eq!(reg.num_mem, 2);
+    }
+
+    #[test]
+    fn onig_new_stack_pop_level_free() {
+        // Simple pattern with no captures => StackPopLevel::Free
+        let reg = onig_new(
+            b"abc",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        ).unwrap();
+        assert_eq!(reg.stack_pop_level, StackPopLevel::Free);
+    }
+
+    #[test]
+    fn onig_new_invalid_pattern() {
+        let result = onig_new(
+            b"(",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        );
+        assert!(result.is_err());
     }
 }

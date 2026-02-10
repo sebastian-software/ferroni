@@ -345,13 +345,33 @@ fn get_mem_end(
 // Helper functions
 // ============================================================================
 
-/// Check if a byte is a word character (ASCII).
+/// Check if a byte is a word character (ASCII-only).
 #[inline]
 fn is_word_ascii(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
 
-/// Check word boundary at position s.
+/// Check if the character at position s is a word character (encoding-aware).
+/// Uses the encoding's Unicode-aware is_code_ctype for multi-byte encodings.
+#[inline]
+fn is_word_char_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
+    if s >= end {
+        return false;
+    }
+    let code = enc.mbc_to_code(&str_data[s..], end);
+    enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
+}
+
+/// Get the start of the previous character (left_adjust_char_head).
+#[inline]
+fn prev_char_head(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) -> usize {
+    if s <= start {
+        return s;
+    }
+    enc.left_adjust_char_head(start, s - 1, str_data)
+}
+
+/// Check word boundary at position s (encoding-aware).
 /// Returns true if there's a word boundary between s-1 and s.
 fn is_word_boundary(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
     let at_start = s == 0;
@@ -361,45 +381,81 @@ fn is_word_boundary(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) ->
         return false;
     }
     if at_start {
-        return is_word_ascii(str_data[s]);
+        return is_word_char_at(enc, str_data, s, end);
     }
     if at_end {
-        return is_word_ascii(str_data[s - 1]);
+        let prev = prev_char_head(enc, 0, s, str_data);
+        return is_word_char_at(enc, str_data, prev, end);
     }
 
-    let prev_word = is_word_ascii(str_data[s - 1]);
-    let curr_word = is_word_ascii(str_data[s]);
+    let prev = prev_char_head(enc, 0, s, str_data);
+    let prev_word = is_word_char_at(enc, str_data, prev, end);
+    let curr_word = is_word_char_at(enc, str_data, s, end);
     prev_word != curr_word
 }
 
-/// Check if position s is at the start of a word.
+/// Check if position s is at the start of a word (encoding-aware).
 fn is_word_begin(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
     if s >= end {
         return false;
     }
-    let curr_word = is_word_ascii(str_data[s]);
-    if !curr_word {
+    if !is_word_char_at(enc, str_data, s, end) {
         return false;
     }
     if s == 0 {
         return true;
     }
-    !is_word_ascii(str_data[s - 1])
+    let prev = prev_char_head(enc, 0, s, str_data);
+    !is_word_char_at(enc, str_data, prev, end)
 }
 
-/// Check if position s is at the end of a word.
+/// Check if position s is at the end of a word (encoding-aware).
 fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
     if s == 0 {
         return false;
     }
-    let prev_word = is_word_ascii(str_data[s - 1]);
-    if !prev_word {
+    let prev = prev_char_head(enc, 0, s, str_data);
+    if !is_word_char_at(enc, str_data, prev, end) {
         return false;
     }
     if s >= end {
         return true;
     }
-    !is_word_ascii(str_data[s])
+    !is_word_char_at(enc, str_data, s, end)
+}
+
+/// Check if a code point is in a multi-byte range table.
+/// The table format is: n:u32 (range count) followed by n pairs of (from:u32, to:u32).
+/// All values in native-endian byte order. Binary search.
+fn is_in_code_range(mb: &[u8], code: OnigCodePoint) -> bool {
+    if mb.len() < 4 {
+        return false;
+    }
+    let n = u32::from_ne_bytes([mb[0], mb[1], mb[2], mb[3]]) as usize;
+    if mb.len() < 4 + n * 8 {
+        return false;
+    }
+
+    let mut low: usize = 0;
+    let mut high: usize = n;
+    while low < high {
+        let x = (low + high) >> 1;
+        let off = 4 + x * 8;
+        let range_high = u32::from_ne_bytes([mb[off + 4], mb[off + 5], mb[off + 6], mb[off + 7]]);
+        if code > range_high {
+            low = x + 1;
+        } else {
+            high = x;
+        }
+    }
+
+    if low < n {
+        let off = 4 + low * 8;
+        let range_low = u32::from_ne_bytes([mb[off], mb[off + 1], mb[off + 2], mb[off + 3]]);
+        code >= range_low
+    } else {
+        false
+    }
 }
 
 /// Get the character length at position s for the given encoding.
@@ -634,27 +690,17 @@ fn match_at(
             // MB string opcodes (for multibyte encodings)
             OpCode::StrMb2n1 | OpCode::StrMb2n2 | OpCode::StrMb2n3 | OpCode::StrMb2n
             | OpCode::StrMb3n | OpCode::StrMbn => {
-                // For now, treat as ExactN
-                if let OperationPayload::ExactN { s: ref exact, n } = reg.ops[p].payload {
-                    let n = n as usize;
-                    if right_range.saturating_sub(s) < n {
-                        goto_fail = true;
-                    } else if str_data[s..s + n] != exact[..n] {
-                        goto_fail = true;
-                    } else {
-                        s += n;
-                        p += 1;
-                    }
-                } else if let OperationPayload::ExactLenN { s: ref exact, n, len } =
+                // Multi-byte string comparison. ExactLenN.n = total byte count.
+                if let OperationPayload::ExactLenN { s: ref exact, n, .. } =
                     reg.ops[p].payload
                 {
-                    let n = n as usize;
-                    if right_range.saturating_sub(s) < n {
+                    let byte_len = n as usize;
+                    if right_range.saturating_sub(s) < byte_len {
                         goto_fail = true;
-                    } else if str_data[s..s + n] != exact[..n] {
+                    } else if str_data[s..s + byte_len] != exact[..byte_len] {
                         goto_fail = true;
                     } else {
-                        s += n;
+                        s += byte_len;
                         p += 1;
                     }
                 } else {
@@ -696,25 +742,65 @@ fn match_at(
             }
 
             // MB character class (multibyte)
-            OpCode::CClassMb | OpCode::CClassMbNot => {
-                // TODO: implement multibyte character class matching
-                // For now, fail
-                goto_fail = true;
+            OpCode::CClassMb => {
+                if s >= right_range {
+                    goto_fail = true;
+                } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                    let mb_len = enclen(enc, str_data, s);
+                    if right_range.saturating_sub(s) < mb_len {
+                        goto_fail = true;
+                    } else {
+                        let code = enc.mbc_to_code(&str_data[s..], end);
+                        if !is_in_code_range(mb, code) {
+                            goto_fail = true;
+                        } else {
+                            s += mb_len;
+                            p += 1;
+                        }
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::CClassMbNot => {
+                if s >= right_range {
+                    goto_fail = true;
+                } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                    let mb_len = enclen(enc, str_data, s);
+                    if right_range.saturating_sub(s) < mb_len {
+                        goto_fail = true;
+                    } else {
+                        let code = enc.mbc_to_code(&str_data[s..], end);
+                        if is_in_code_range(mb, code) {
+                            goto_fail = true;
+                        } else {
+                            s += mb_len;
+                            p += 1;
+                        }
+                    }
+                } else {
+                    goto_fail = true;
+                }
             }
 
             // Mixed character class (single-byte bitset + multibyte ranges)
             OpCode::CClassMix | OpCode::CClassMixNot => {
                 let not = opcode == OpCode::CClassMixNot;
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClassMix { ref bsp, .. } = reg.ops[p].payload
+                } else if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload
                 {
-                    let c = str_data[s];
-                    let in_class = if c < 128 {
-                        bitset_at(bsp, c as usize)
+                    let in_class = if enc.mbc_enc_len(&str_data[s..]) > 1 {
+                        let code = enc.mbc_to_code(&str_data[s..], end);
+                        is_in_code_range(mb, code)
                     } else {
-                        // TODO: check multibyte ranges
-                        false
+                        let c = str_data[s];
+                        if (c as usize) < SINGLE_BYTE_SIZE {
+                            bitset_at(bsp, c as usize)
+                        } else {
+                            false
+                        }
                     };
                     if in_class == not {
                         goto_fail = true;
@@ -834,7 +920,18 @@ fn match_at(
             // ================================================================
             // Word / NoWord - \w and \W character type matching
             // ================================================================
-            OpCode::Word | OpCode::WordAscii => {
+            OpCode::Word => {
+                if s >= right_range {
+                    goto_fail = true;
+                } else if !is_word_char_at(enc, str_data, s, end) {
+                    goto_fail = true;
+                } else {
+                    s += enclen(enc, str_data, s);
+                    p += 1;
+                }
+            }
+
+            OpCode::WordAscii => {
                 if right_range.saturating_sub(s) < 1 {
                     goto_fail = true;
                 } else if !is_word_ascii(str_data[s]) {
@@ -845,7 +942,18 @@ fn match_at(
                 }
             }
 
-            OpCode::NoWord | OpCode::NoWordAscii => {
+            OpCode::NoWord => {
+                if s >= right_range {
+                    goto_fail = true;
+                } else if is_word_char_at(enc, str_data, s, end) {
+                    goto_fail = true;
+                } else {
+                    s += enclen(enc, str_data, s);
+                    p += 1;
+                }
+            }
+
+            OpCode::NoWordAscii => {
                 if right_range.saturating_sub(s) < 1 {
                     goto_fail = true;
                 } else if is_word_ascii(str_data[s]) {
@@ -1770,7 +1878,7 @@ mod tests {
     fn compile_and_match(pattern: &[u8], input: &[u8]) -> (i32, Option<OnigRegion>) {
         let (mut reg, mut env) = make_test_context();
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
-        let r = regcomp::onig_compile(&root, &mut reg, &env);
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
         assert_eq!(r, 0, "compile failed for {:?}", std::str::from_utf8(pattern));
         onig_match(&reg, input, input.len(), 0, Some(OnigRegion::new()), ONIG_OPTION_NONE)
     }
@@ -1778,7 +1886,7 @@ mod tests {
     fn compile_and_search(pattern: &[u8], input: &[u8]) -> (i32, Option<OnigRegion>) {
         let (mut reg, mut env) = make_test_context();
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
-        let r = regcomp::onig_compile(&root, &mut reg, &env);
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
         assert_eq!(r, 0, "compile failed for {:?}", std::str::from_utf8(pattern));
         onig_search(
             &reg,
