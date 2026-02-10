@@ -2,8 +2,11 @@
 // Unicode character properties, case folding, and related functions.
 // Stub implementations for Phase 2; full data tables will be added later.
 
+mod property_data;
+
 use crate::oniguruma::*;
 use crate::regenc::*;
+use property_data::{CODE_RANGES, CODE_RANGES_NUM, PROPERTY_NAMES};
 
 // === Unicode ISO 8859-1 Ctype Table ===
 // From unicode.c: EncUNICODE_ISO_8859_1_CtypeTable[256]
@@ -98,36 +101,67 @@ pub fn onigenc_unicode_get_case_fold_codes_by_str(
 
 /// Convert Unicode property name to ctype.
 /// Port of onigenc_unicode_property_name_to_ctype from unicode.c
-pub fn onigenc_unicode_property_name_to_ctype(_p: &[u8]) -> i32 {
-    // TODO: implement with gperf hash tables from property_data.c
-    ONIGERR_INVALID_CHAR_PROPERTY_NAME
+pub fn onigenc_unicode_property_name_to_ctype(p: &[u8]) -> i32 {
+    // Normalize: strip spaces/hyphens/underscores, lowercase
+    let mut buf = [0u8; 128];
+    let mut len = 0;
+    for &b in p {
+        if b == b' ' || b == b'-' || b == b'_' {
+            continue;
+        }
+        if b >= 0x80 {
+            return ONIGERR_INVALID_CHAR_PROPERTY_NAME;
+        }
+        if len >= buf.len() {
+            return ONIGERR_INVALID_CHAR_PROPERTY_NAME;
+        }
+        buf[len] = b.to_ascii_lowercase();
+        len += 1;
+    }
+    let key = &buf[..len];
+    // Binary search on sorted PROPERTY_NAMES
+    match PROPERTY_NAMES.binary_search_by_key(&key, |(name, _)| name.as_bytes()) {
+        Ok(idx) => PROPERTY_NAMES[idx].1 as i32,
+        Err(_) => ONIGERR_INVALID_CHAR_PROPERTY_NAME,
+    }
 }
 
 /// Check if code point is of the given Unicode ctype.
 /// Port of onigenc_unicode_is_code_ctype from unicode.c
 pub fn onigenc_unicode_is_code_ctype(code: OnigCodePoint, ctype: u32) -> bool {
-    if ctype <= ONIGENC_MAX_STD_CTYPE {
-        if code < 256 {
-            // Use ISO 8859-1 table for first 256 code points
-            (ENC_UNICODE_ISO_8859_1_CTYPE_TABLE[code as usize]
-                & ctype_to_bit(ctype) as u16) != 0
-        } else {
-            // TODO: implement Unicode property lookup for code >= 256
-            // using CR_* code range tables from property_data.c
-            ctype_is_word_graph_print(ctype)
-        }
-    } else {
-        // Extended property types (Unicode script, etc.)
-        // TODO: implement with property data tables
-        false
+    if ctype <= ONIGENC_MAX_STD_CTYPE && code < 256 {
+        return (ENC_UNICODE_ISO_8859_1_CTYPE_TABLE[code as usize]
+            & ctype_to_bit(ctype) as u16)
+            != 0;
     }
+
+    if (ctype as usize) >= CODE_RANGES_NUM {
+        return false;
+    }
+
+    // Binary search on code range pairs
+    let ranges = CODE_RANGES[ctype as usize];
+    let n = ranges.len() / 2;
+    let mut low = 0usize;
+    let mut high = n;
+    while low < high {
+        let mid = (low + high) / 2;
+        if code > ranges[mid * 2 + 1] {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    low < n && code >= ranges[low * 2]
 }
 
 /// Get Unicode ctype code range.
 /// Port of onigenc_unicode_ctype_code_range from unicode.c
 pub fn onigenc_unicode_ctype_code_range(
-    _ctype: u32,
+    ctype: u32,
 ) -> Option<&'static [OnigCodePoint]> {
-    // TODO: implement with CR_* code range tables from property_data.c
-    None
+    if (ctype as usize) >= CODE_RANGES_NUM {
+        return None;
+    }
+    Some(CODE_RANGES[ctype as usize])
 }

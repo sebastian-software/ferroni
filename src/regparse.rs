@@ -2070,6 +2070,10 @@ fn fetch_token(
                             }
                         }
                     }
+                } else if is_syntax_bv(syn, ONIG_SYN_ESC_P_WITH_ONE_CHAR_PROP) {
+                    tok.token_type = TokenType::CharProperty;
+                    tok.prop_not = c == 'P' as u32;
+                    tok.prop_braces = false;
                 }
             }
             'x' => {

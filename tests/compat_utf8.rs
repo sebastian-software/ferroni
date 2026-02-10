@@ -5146,70 +5146,60 @@ fn japanese_multiline_dotstar_a() {
 // ============================================================================
 
 #[test]
-#[ignore]
 fn unicode_prop_hiragana_match() {
     // C line 1178: \p{Hiragana} matches ぴ -> 0-3
     x2("\\p{Hiragana}".as_bytes(), "ぴ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_hiragana_no_match() {
     // C line 1179: \P{Hiragana} does not match ぴ
     n("\\P{Hiragana}".as_bytes(), "ぴ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_emoji_match() {
     // C line 1180: \p{Emoji} matches U+2B50 (star) -> 0-3
     x2(b"\\p{Emoji}", b"\xe2\xad\x90", 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_emoji_match() {
     // C line 1181: \p{^Emoji} matches U+FF13 (fullwidth 3) -> 0-3
     x2(b"\\p{^Emoji}", b"\xef\xbc\x93", 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_extended_pictographic_match() {
     // C line 1182: \p{Extended_Pictographic} matches U+26A1 (lightning) -> 0-3
     x2(b"\\p{Extended_Pictographic}", b"\xe2\x9a\xa1", 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_extended_pictographic_no_match() {
     // C line 1183: \p{Extended_Pictographic} does not match U+3042 (あ)
     n(b"\\p{Extended_Pictographic}", b"\xe3\x81\x82");
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_pc_soft_hyphen() {
     // C line 1184: \pC matches U+00AD (Soft Hyphen) -> 0-2
     x2(b"\\pC", b"\xc2\xad", 0, 2);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_pl_ascii() {
     // C line 1185: \pL matches U -> 0-1
     x2(b"\\pL", b"U", 0, 1);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_pm_combining_circle() {
     // C line 1186: \pM matches U+20DD (Combining Enclosing Circle) -> 0-3
     x2(b"\\pM", b"\xe2\x83\x9d", 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_pn_plus() {
     // C line 1187: \pN+ matches "3Ⅴ" -> 0-4
     let input = [b"3" as &[u8], "\u{2164}".as_bytes()].concat();
@@ -5217,7 +5207,6 @@ fn unicode_prop_pn_plus() {
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_pp_plus() {
     // C line 1188: \pP+ matches "†⁂" -> 0-6
     let input = ["\u{2020}".as_bytes(), "\u{2042}".as_bytes()].concat();
@@ -5225,7 +5214,6 @@ fn unicode_prop_pp_plus() {
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_ps_plus() {
     // C line 1189: \pS+ matches "€₤" -> 0-6
     let input = ["\u{20AC}".as_bytes(), "\u{20A4}".as_bytes()].concat();
@@ -5233,28 +5221,24 @@ fn unicode_prop_ps_plus() {
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_pz_space() {
     // C line 1190: \pZ+ matches " " -> 0-1
     x2(b"\\pZ+", b" ", 0, 1);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_pl_no_match_at() {
     // C line 1191: \pL does not match @
     n(b"\\pL", b"@");
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_pl_plus() {
     // C line 1192: \pL+ matches akZtE -> 0-5
     x2(b"\\pL+", b"akZtE", 0, 5);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_pl_plus() {
     // C line 1193: \PL+ matches "1@=-%" -> 0-5
     x2(b"\\PL+", b"1@=-%", 0, 5);
@@ -5263,21 +5247,18 @@ fn unicode_prop_not_pl_plus() {
 // C lines 1194-1196: e() error tests -- skipped (no e() helper)
 
 #[test]
-#[ignore]
 fn unicode_prop_pl_in_class() {
     // C line 1197: [\pL] matches s -> 0-1
     x2(b"[\\pL]", b"s", 0, 1);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_pl_in_negated_class() {
     // C line 1198: [^\pL] does not match s
     n(b"[^\\pL]", b"s");
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_pl_in_class_plus() {
     // C line 1199: [\PL]+ matches "-3@" -> 0-3
     x2(b"[\\PL]+", b"-3@", 0, 3);
@@ -5292,91 +5273,78 @@ fn unicode_prop_not_pl_in_class_plus() {
 // ============================================================================
 
 #[test]
-#[ignore]
 fn unicode_prop_word_match_ko() {
     // C line 1203: \p{Word} matches こ -> 0-3
     x2("\\p{Word}".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_no_match_ko() {
     // C line 1204: \p{^Word} does not match こ
     n("\\p{^Word}".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_word_in_class_match_ko() {
     // C line 1205: [\p{Word}] matches こ -> 0-3
     x2("[\\p{Word}]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_in_class_no_match_ko() {
     // C line 1206: [\p{^Word}] does not match こ
     n("[\\p{^Word}]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_word_negated_class_no_match_ko() {
     // C line 1207: [^\p{Word}] does not match こ
     n("[^\\p{Word}]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_negated_class_match_ko() {
     // C line 1208: [^\p{^Word}] matches こ -> 0-3
     x2("[^\\p{^Word}]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_and_ascii_negated_match_ko() {
     // C line 1209: [^\p{^Word}&&\p{ASCII}] matches こ -> 0-3
     x2("[^\\p{^Word}&&\\p{ASCII}]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_and_ascii_negated_match_a() {
     // C line 1210: [^\p{^Word}&&\p{ASCII}] matches a -> 0-1
     x2("[^\\p{^Word}&&\\p{ASCII}]".as_bytes(), b"a", 0, 1);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_and_ascii_negated_no_match_hash() {
     // C line 1211: [^\p{^Word}&&\p{ASCII}] does not match #
     n("[^\\p{^Word}&&\\p{ASCII}]".as_bytes(), b"#");
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_nested_and_ascii_match_ko() {
     // C line 1212: [^[\p{^Word}]&&[\p{ASCII}]] matches こ -> 0-3
     x2("[^[\\p{^Word}]&&[\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_ascii_and_not_word_negated_match_ko() {
     // C line 1213: [^[\p{ASCII}]&&[^\p{Word}]] matches こ -> 0-3
     x2("[^[\\p{ASCII}]&&[^\\p{Word}]]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_ascii_and_not_word_no_match_ko() {
     // C line 1214: [[\p{ASCII}]&&[^\p{Word}]] does not match こ
     n("[[\\p{ASCII}]&&[^\\p{Word}]]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_and_not_ascii_negated_match_ko() {
     // C line 1215: [^[\p{^Word}]&&[^\p{ASCII}]] matches こ -> 0-3
     x2("[^[\\p{^Word}]&&[^\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
@@ -5389,133 +5357,114 @@ fn unicode_prop_negated_hex_code_match_ko() {
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_and_not_hex_negated_match_ko() {
     // C line 1217: [^\p{^Word}&&[^\x{104a}]] matches こ -> 0-3
     x2("[^\\p{^Word}&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_word_nested_and_not_hex_negated_match_ko() {
     // C line 1218: [^[\p{^Word}]&&[^\x{104a}]] matches こ -> 0-3
     x2("[^[\\p{^Word}]&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_word_or_not_hex_negated_no_match_ko() {
     // C line 1219: [^\p{Word}||[^\x{104a}]] does not match こ
     n("[^\\p{Word}||[^\\x{104a}]]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_cntrl_match_ko() {
     // C line 1221: \p{^Cntrl} matches こ -> 0-3
     x2("\\p{^Cntrl}".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_cntrl_no_match_ko() {
     // C line 1222: \p{Cntrl} does not match こ
     n("\\p{Cntrl}".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_cntrl_in_class_match_ko() {
     // C line 1223: [\p{^Cntrl}] matches こ -> 0-3
     x2("[\\p{^Cntrl}]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_cntrl_in_class_no_match_ko() {
     // C line 1224: [\p{Cntrl}] does not match こ
     n("[\\p{Cntrl}]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_cntrl_negated_class_no_match_ko() {
     // C line 1225: [^\p{^Cntrl}] does not match こ
     n("[^\\p{^Cntrl}]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_cntrl_negated_class_match_ko() {
     // C line 1226: [^\p{Cntrl}] matches こ -> 0-3
     x2("[^\\p{Cntrl}]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_cntrl_and_ascii_negated_match_ko() {
     // C line 1227: [^\p{Cntrl}&&\p{ASCII}] matches こ -> 0-3
     x2("[^\\p{Cntrl}&&\\p{ASCII}]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_cntrl_and_ascii_negated_match_a() {
     // C line 1228: [^\p{Cntrl}&&\p{ASCII}] matches a -> 0-1
     x2("[^\\p{Cntrl}&&\\p{ASCII}]".as_bytes(), b"a", 0, 1);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_cntrl_and_ascii_negated_no_match_hash() {
     // C line 1229: [^\p{^Cntrl}&&\p{ASCII}] does not match #
     n("[^\\p{^Cntrl}&&\\p{ASCII}]".as_bytes(), b"#");
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_cntrl_nested_and_ascii_negated_match_ko() {
     // C line 1230: [^[\p{^Cntrl}]&&[\p{ASCII}]] matches こ -> 0-3
     x2("[^[\\p{^Cntrl}]&&[\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_ascii_and_not_cntrl_negated_match_ko() {
     // C line 1231: [^[\p{ASCII}]&&[^\p{Cntrl}]] matches こ -> 0-3
     x2("[^[\\p{ASCII}]&&[^\\p{Cntrl}]]".as_bytes(), "こ".as_bytes(), 0, 3);
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_ascii_and_not_cntrl_no_match_ko() {
     // C line 1232: [[\p{ASCII}]&&[^\p{Cntrl}]] does not match こ
     n("[[\\p{ASCII}]&&[^\\p{Cntrl}]]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_cntrl_and_not_ascii_negated_no_match_ko() {
     // C line 1233: [^[\p{^Cntrl}]&&[^\p{ASCII}]] does not match こ
     n("[^[\\p{^Cntrl}]&&[^\\p{ASCII}]]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_cntrl_and_not_hex_negated_no_match_ko() {
     // C line 1234: [^\p{^Cntrl}&&[^\x{104a}]] does not match こ
     n("[^\\p{^Cntrl}&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_not_cntrl_nested_and_not_hex_negated_no_match_ko() {
     // C line 1235: [^[\p{^Cntrl}]&&[^\x{104a}]] does not match こ
     n("[^[\\p{^Cntrl}]&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes());
 }
 
 #[test]
-#[ignore]
 fn unicode_prop_cntrl_or_not_hex_negated_no_match_ko() {
     // C line 1236: [^\p{Cntrl}||[^\x{104a}]] does not match こ
     n("[^\\p{Cntrl}||[^\\x{104a}]]".as_bytes(), "こ".as_bytes());
@@ -5530,7 +5479,6 @@ fn unicode_prop_cntrl_or_not_hex_negated_no_match_ko() {
 // ============================================================================
 
 #[test]
-#[ignore]
 fn unicode_prop_in_basic_latin() {
     // C line 1275: \p{InBasicLatin} matches A -> 0-1
     x2(b"\\p{InBasicLatin}", b"\x41", 0, 1);
