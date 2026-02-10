@@ -501,7 +501,7 @@ fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool
 /// Check if a code point is in a multi-byte range table.
 /// The table format is: n:u32 (range count) followed by n pairs of (from:u32, to:u32).
 /// All values in native-endian byte order. Binary search.
-fn is_in_code_range(mb: &[u8], code: OnigCodePoint) -> bool {
+pub(crate) fn is_in_code_range(mb: &[u8], code: OnigCodePoint) -> bool {
     if mb.len() < 4 {
         return false;
     }

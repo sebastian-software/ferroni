@@ -3257,6 +3257,35 @@ fn prs_cc(
         ncc.mbuf = work_cc.mbuf.take();
     }
 
+    // Case-fold expansion: add fold equivalents for all codes in the class
+    if opton_ignorecase(env.options) {
+        let cc = node.as_cclass_mut().unwrap();
+        // Collect codes to add (to avoid borrow issues during iteration)
+        let mut codes_to_add: Vec<OnigCodePoint> = Vec::new();
+        enc.apply_all_case_fold(
+            env.case_fold_flag,
+            &mut |from: OnigCodePoint, to: &[OnigCodePoint]| -> i32 {
+                if to.len() == 1 {
+                    // Check if 'from' is in the (non-negated) class
+                    let in_class = if (from as usize) < SINGLE_BYTE_SIZE {
+                        bitset_at(&cc.bs, from as usize)
+                    } else if let Some(ref mbuf) = cc.mbuf {
+                        crate::regexec::is_in_code_range(&mbuf.data, from)
+                    } else {
+                        false
+                    };
+                    if in_class {
+                        codes_to_add.push(to[0]);
+                    }
+                }
+                0
+            },
+        );
+        for code in codes_to_add {
+            add_code_into_cc(cc, code, enc);
+        }
+    }
+
     // Apply negation
     if neg {
         let cc = node.as_cclass_mut().unwrap();

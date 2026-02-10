@@ -4711,14 +4711,12 @@ fn case_insensitive_I_lower() {
 }
 
 #[test]
-#[ignore] // case-insensitive char class ranges not yet implemented
 fn case_insensitive_range_upper() {
     // C line 316: (?i:[A-Z]) matches i
     x2(b"(?i:[A-Z])", b"i", 0, 1);
 }
 
 #[test]
-#[ignore] // case-insensitive char class ranges not yet implemented
 fn case_insensitive_range_lower() {
     // C line 317: (?i:[a-z]) matches I
     x2(b"(?i:[a-z])", b"I", 0, 1);
@@ -4859,14 +4857,12 @@ fn case_insensitive_lookbehind_ss() {
 }
 
 #[test]
-#[ignore] // case-insensitive char class ranges not yet implemented
 fn case_insensitive_range_upper_matches_lower() {
     // C line 343: (?i:[A-Z]) matches a
     x2(b"(?i:[A-Z])", b"a", 0, 1);
 }
 
 #[test]
-#[ignore] // case-insensitive char class ranges not yet implemented
 fn case_insensitive_range_f_m_upper() {
     // C line 344: (?i:[f-m]) matches H
     x2(b"(?i:[f-m])", b"H", 0, 1);
@@ -4891,7 +4887,6 @@ fn case_insensitive_range_A_c_upper() {
 }
 
 #[test]
-#[ignore] // case-insensitive negated char class ranges not yet implemented
 fn case_insensitive_neg_range_upper() {
     // C line 348: (?i:[^a-z]) no match for A
     n(b"(?i:[^a-z])", b"A");
