@@ -7397,10 +7397,9 @@ fn case_insensitive_dot_star_fb05_end() {
 }
 
 #[test]
-#[ignore] // multi-char case fold not yet implemented
 fn case_insensitive_dot_star_fb06_i_end() {
     // C line 1566: U+FB06 + い in pattern
-    x2(b"(?i).*\xef\xac\x86\xe3\x81\x84\\z", b"tttsssst\xe3\x81\x84", 0, 12);
+    x2(b"(?i).*\xef\xac\x86\xe3\x81\x84\\z", b"tttssssst\xe3\x81\x84", 0, 12);
 }
 
 #[test]
