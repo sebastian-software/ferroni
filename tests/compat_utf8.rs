@@ -6383,35 +6383,34 @@ fn e(pattern: &[u8], input: &[u8], expected_error: i32) {
 // ============================================================================
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_backref_a_dot_c_or_def() {
     // C line 1411
     x2(b"(a.c|def)(.{4})(?<=\\1)", b"abcdabc", 0, 7);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_backref_a_dot_c_or_de() {
     // C line 1412
     x2(b"(a.c|de)(.{4})(?<=\\1)", b"abcdabc", 0, 7);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_backref_a_dot_c_or_def_with_d_e() {
     // C line 1413
     x2(b"(a.c|def)(.{5})(?<=d\\1e)", b"abcdabce", 0, 8);
 }
 
 #[test]
-#[ignore] // lookbehind with backref not yet implemented
 fn lookbehind_named_backref_k1() {
     // C line 1414
     x2(b"(a.c|.)d(?<=\\k<1>d)", b"zzzzzabcdabc", 5, 9);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_az_star() {
     // C line 1415
     x2(b"(?<=az*)abc", b"azzzzzzzzzzabcdabcabc", 11, 14);
@@ -6424,7 +6423,7 @@ fn lookbehind_alt_variable_lengths() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_alt_with_plus() {
     // C line 1417
     x2(b"(?<=ta+|tb+|tc+|td+)zz", b"tcccccccccczz", 11, 13);
@@ -6455,56 +6454,56 @@ fn lookbehind_alt_dot_quantified_nomatch() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_capture_alt_lengths() {
     // C line 1422
     x2(b"(?<=(ab|abc|abcd))ef", b"abcdef", 4, 6);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_capture_alt_plus() {
     // C line 1423
     x2(b"(?<=(ta+|tb+|tc+|td+))zz", b"tcccccccccczz", 11, 13);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_capture_dot_quantified_1() {
     // C line 1424
     x2(b"(?<=(t.{7}|t.{5}|t.{2}|t.))zz", b"tczz", 2, 4);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_capture_dot_quantified_2() {
     // C line 1425
     x2(b"(?<=(t.{7}|t.{5}|t.{2}))zz", b"tczzzz", 3, 5);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_capture_dot_quantified_3() {
     // C line 1426
     x2(b"(?<=(t.{7}|t.{5}|t.{3}))zz", b"tczzazzbzz", 8, 10);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_capture_dot_quantified_nomatch() {
     // C line 1427
     n(b"(?<=(t.{7}|t.{5}|t.{3}))zz", b"tczzazzbczz");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_backref_variable_repeat() {
     // C line 1428
     x2(b"(.{1,4})(.{1,4})(?<=\\2\\1)", b"abaaba", 0, 6);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_backref_variable_repeat_2() {
     // C line 1429
     x2(b"(.{1,4})(.{1,4})(?<=\\2\\1)", b"ababab", 0, 6);
@@ -6517,7 +6516,7 @@ fn lookbehind_backref_variable_repeat_nomatch() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_backref_variable_repeat_partial() {
     // C line 1431
     x2(b"(.{1,4})(.{1,4})(?<=\\2\\1)", b"abcdabceabce", 4, 12);
@@ -6530,28 +6529,28 @@ fn lookbehind_fixed_a() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_dot_star_w() {
     // C line 1433
     x2(b"(?<=a.*\\w)z", b"abbbz", 4, 5);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_dot_star_w_nomatch() {
     // C line 1434
     n(b"(?<=a.*\\w)z", b"abb z");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_dot_star_W() {
     // C line 1435
     x2(b"(?<=a.*\\W)z", b"abb z", 4, 5);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_dot_star_b() {
     // C line 1436
     x2(b"(?<=a.*\\b)z", b"abb z", 4, 5);
@@ -6564,119 +6563,119 @@ fn lookbehind_atomic_group() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+#[ignore] // grapheme cluster \\X not yet implemented
 fn lookbehind_with_grapheme_cluster() {
     // C line 1438
     x2(b"(?<=a\\Xz)", b"abz", 3, 3);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_anchor_a_star_nomatch() {
     // C line 1439
     n(b"(?<=^a*)bc", b"zabc");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_star_word_boundary_nomatch() {
     // C line 1440
     n(b"(?<=a*\\b)b", b"abc");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_plus_dot_star_cc() {
     // C line 1441
     x2(b"(?<=a+.*[efg])z", b"abcdfz", 5, 6);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_plus_dot_star_cc_2() {
     // C line 1442
     x2(b"(?<=a+.*[efg])z", b"abcdfgz", 6, 7);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_plus_dot_star_cc_nomatch() {
     // C line 1443
     n(b"(?<=a+.*[efg])z", b"bcdfz");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_star_dot_star_cc() {
     // C line 1444
     x2(b"(?<=a*.*[efg])z", b"bcdfz", 4, 5);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_a_plus_dot_star_cc_nomatch_2() {
     // C line 1445
     n(b"(?<=a+.*[efg])z", b"abcdz");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_alt_v_t_a_plus() {
     // C line 1446
     x2(b"(?<=v|t|a+.*[efg])z", b"abcdfz", 5, 6);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_alt_v_t_anchor_a_plus() {
     // C line 1447
     x2(b"(?<=v|t|^a+.*[efg])z", b"abcdfz", 5, 6);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_anchor_group_alt() {
     // C line 1448
     x2(b"(?<=^(?:v|t|a+.*[efg]))z", b"abcdfz", 5, 6);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_alt_v_anchor_t_a_plus() {
     // C line 1449
     x2(b"(?<=v|^t|a+.*[efg])z", b"uabcdfz", 6, 7);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_shortest_priority_nomatch() {
     // C line 1450: look-behind is shortest priority
     n(b"^..(?<=(a{,2}))\\1z", b"aaaaz");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_shortest_priority_match() {
     // C line 1451: shortest priority
     x2(b"^..(?<=(a{,2}))\\1z", b"aaz", 0, 3);
 }
 
 #[test]
-#[ignore] // absent function not yet implemented
+
 fn lookbehind_absent_function_error_1() {
     // C line 1452
     e(b"(?<=(?~|zoo)a.*z)", b"abcdefz", ONIGERR_INVALID_LOOK_BEHIND_PATTERN);
 }
 
 #[test]
-#[ignore] // absent function not yet implemented
+
 fn lookbehind_absent_function_error_2() {
     // C line 1453
     e(b"(?<=(?~|)a.*z)", b"abcdefz", ONIGERR_INVALID_LOOK_BEHIND_PATTERN);
 }
 
 #[test]
-#[ignore] // absent function not yet implemented
+#[ignore] // requires \g<n> call resolution in lookbehind validation
 fn lookbehind_absent_function_error_3() {
     // C line 1454
     e(b"(a(?~|boo)z){0}(?<=\\g<1>)", b"abcdefz", ONIGERR_INVALID_LOOK_BEHIND_PATTERN);
@@ -6689,7 +6688,7 @@ fn lookbehind_nested_or_empty_173() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_complex_173() {
     // C line 1456: issue #173
     x2(
@@ -6706,7 +6705,6 @@ fn lookbehind_reduced_173() {
 }
 
 #[test]
-#[ignore] // lookbehind with backref not yet implemented
 fn lookbehind_backref_k1_match() {
     // C line 1458
     x2(b"(?<=;()|)\\k<1>", b";", 1, 1);
@@ -6725,7 +6723,7 @@ fn lookbehind_empty_capture_backref() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_too_long_177() {
     // C line 1461: issue #177
     e(
@@ -6742,14 +6740,14 @@ fn lookbehind_nested_positive() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_nested_positive_with_plus() {
     // C line 1463
     x2(b"(?<=ab(?<=.+b)c)def", b"abcdef", 3, 6);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_nested_positive_nomatch() {
     // C line 1464
     n(b"(?<=ab(?<=a+)c)def", b"abcdef");
@@ -6798,84 +6796,84 @@ fn lookbehind_neg_alt_xxxxx_abc_2() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_alt_x_plus_abc() {
     // C line 1472
     n(b"(?<!x+|abc)def", b"abcdef");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_alt_x_plus_abc_2() {
     // C line 1473
     n(b"(?<!x+|abc)def", b"xxxxxxxxxdef");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_alt_x_plus_abc_match() {
     // C line 1474
     x2(b"(?<!x+|abc)def", b"xxxxxxxxzdef", 9, 12);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_z_or_a() {
     // C line 1475
     n(b"(?<!a.*z|a)def", b"axxxxxxxzdef");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_z_or_a_2() {
     // C line 1476
     n(b"(?<!a.*z|a)def", b"bxxxxxxxadef");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_z_or_a_match() {
     // C line 1477
     x2(b"(?<!a.*z|a)def", b"axxxxxxxzdefxxdef", 14, 17);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_z_or_a_match_2() {
     // C line 1478
     x2(b"(?<!a.*z|a)def", b"bxxxxxxxadefxxdef", 14, 17);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_z_or_a_match_3() {
     // C line 1479
     x2(b"(?<!a.*z|a)def", b"bxxxxxxxzdef", 9, 12);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_x_plus_or_y_plus_digits() {
     // C line 1480
     x2(b"(?<!x+|y+)\\d+", b"xxx572", 4, 6);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_3_plus_or_4_plus_digits() {
     // C line 1481
     x2(b"(?<!3+|4+)\\d+", b"33334444", 0, 8);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_3_plus_or_4_plus_digits_nomatch() {
     // C line 1482
     n(b".(?<!3+|4+)\\d+", b"33334444");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_backref_repeat_nomatch() {
     // C line 1483
     n(b"(.{,3})..(?<!\\1)", b"aaaaa");
@@ -6894,14 +6892,14 @@ fn lookbehind_neg_backref_repeat_match_2() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_backref_3_plus() {
     // C line 1486
     x2(b"(a.c)(.{3,}?)(?<!\\1)", b"abcabcd", 0, 7);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_backref_a_star() {
     // C line 1487
     x2(b"(a*)(.{3,}?)(?<!\\1)", b"abcabcd", 0, 5);
@@ -6926,105 +6924,105 @@ fn lookbehind_neg_literal_with_meta() {
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_c() {
     // C line 1491
     x2(b"(?<!a.*c)def", b"abbbbdef", 5, 8);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_c_nomatch() {
     // C line 1492
     n(b"(?<!a.*c)def", b"abbbcdef");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_X_word_boundary() {
     // C line 1493
     x2(b"(?<!a.*X\\b)def", b"abbbbbXdef", 7, 10);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_X_nonword_boundary() {
     // C line 1494
     n(b"(?<!a.*X\\B)def", b"abbbbbXdef");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_uvw_match() {
     // C line 1495
     x2(b"(?<!a.*[uvw])def", b"abbbbbXdef", 7, 10);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_uvw_nomatch() {
     // C line 1496
     n(b"(?<!a.*[uvw])def", b"abbbbbwdef");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_ab_star_nonspace_plus() {
     // C line 1497
     x2(b"(?<!ab*\\S+)def", b"abbbbb   def", 9, 12);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_a_dot_star_nonspace() {
     // C line 1498
     x2(b"(?<!a.*\\S)def", b"abbbbb def", 7, 10);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_ab_star_space_plus() {
     // C line 1499
     n(b"(?<!ab*\\s+)def", b"abbbbb   def");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_ab_star_space_plus_nonword() {
     // C line 1500
     x2(b"(?<!ab*\\s+\\B)def", b"abbbbb   def", 9, 12);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_alt_v_t_a_plus() {
     // C line 1501
     n(b"(?<!v|t|a+.*[efg])z", b"abcdfz");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_alt_v_t_a_plus_match() {
     // C line 1502
     x2(b"(?<!v|t|a+.*[efg])z", b"abcdfzavzuz", 10, 11);
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_alt_v_t_anchor_a_plus() {
     // C line 1503
     n(b"(?<!v|t|^a+.*[efg])z", b"abcdfz");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_anchor_group_alt() {
     // C line 1504
     n(b"(?<!^(?:v|t|a+.*[efg]))z", b"abcdfz");
 }
 
 #[test]
-#[ignore] // variable-length lookbehind not yet implemented
+
 fn lookbehind_neg_v_anchor_t_a_plus() {
     // C line 1505
     x2(b"(?<!v|^t|^a+.*[efg])z", b"uabcdfz", 6, 7);
@@ -8733,168 +8731,168 @@ fn error_posix_bracket_invalid_type_uppers() {
 // --- Absent function (?~...) (C lines 838-861) ---
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_empty() {
     // C line 838
     x2(b"(?~)", b"", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_empty_with_input() {
     // C line 839
     x2(b"(?~)", b"A", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_ab() {
     // C line 840
     x2(b"(?~ab)", b"abc", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_abc() {
     // C line 841
     x2(b"(?~abc)", b"abc", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_abc_or_ab() {
     // C line 842
     x2(b"(?~abc|ab)", b"abc", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_ab_or_abc() {
     // C line 843
     x2(b"(?~ab|abc)", b"abc", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_a_dot_c() {
     // C line 844
     x2(b"(?~a.c)", b"abc", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_a_dot_c_or_ab() {
     // C line 845
     x2(b"(?~a.c|ab)", b"abc", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_ab_or_a_dot_c() {
     // C line 846
     x2(b"(?~ab|a.c)", b"abc", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_after_aaaaa() {
     // C line 847
     x2(b"aaaaa(?~)", b"aaaaaaaaaa", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_empty_alt_aaa() {
     // C line 848
     x2(b"(?~(?:|aaa))", b"aaa", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_aaa_or_empty() {
     // C line 849
     x2(b"(?~aaa|)", b"aaa", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_nested() {
     // C line 850
     x2(b"a(?~(?~)).", b"abcdefghijklmnopqrstuvwxyz", 0, 26);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_c_comment() {
     // C line 851
     x2(b"/\\*(?~\\*/)\\*/", b"/* */ */", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_word_plus_zzzzz() {
     // C line 852
     x2(b"(?~\\w+)zzzzz", b"zzzzz", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_word_star_zzzzz() {
     // C line 853
     x2(b"(?~\\w*)zzzzz", b"zzzzz", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_a_dot_c_or_b() {
     // C line 854
     x2(b"(?~A.C|B)", b"ABC", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_xyz_or_abc_a_1() {
     // C line 855
     x2(b"(?~XYZ|ABC)a", b"ABCa", 1, 4);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_xyz_or_abc_a_2() {
     // C line 856
     x2(b"(?~XYZ|ABC)a", b"aABCa", 0, 1);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_html_tag() {
     // C line 857
     x2(b"<[^>]*>(?~[<>])</[^>]*>", b"<a>vvv</a>   <b>  </b>", 0, 10);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_ab_multiline() {
     // C line 858
     x2(b"(?~ab)", b"ccc\ndab", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_ab_multiline_m() {
     // C line 859
     x2(b"(?m:(?~ab))", b"ccc\ndab", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_ab_multiline_neg_m() {
     // C line 860
     x2(b"(?-m:(?~ab))", b"ccc\ndab", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_abc_xyz() {
     // C line 861
     x2(b"(?~abc)xyz", b"xyz012345678901234567890123456789abc", 0, 3);
@@ -8903,147 +8901,147 @@ fn absent_abc_xyz() {
 // --- Absent with expr (?~|...) (C lines 864-884) ---
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_digits() {
     // C line 864
     x2(b"(?~|78|\\d*)", b"123456789", 0, 6);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_def() {
     // C line 865
     x2(b"(?~|def|(?:abc|de|f){0,100})", b"abcdedeabcfdefabc", 0, 11);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_ab_dot_star() {
     // C line 866
     x2(b"(?~|ab|.*)", b"ccc\nddd", 0, 3);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_ab_true_any_star() {
     // C line 867
     x2(b"(?~|ab|\\O*)", b"ccc\ndab", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_ab_true_any_2_10() {
     // C line 868
     x2(b"(?~|ab|\\O{2,10})", b"ccc\ndab", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_ab_true_any_1_10() {
     // C line 869
     x2(b"(?~|ab|\\O{1,10})", b"ab", 1, 2);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_ab_true_any_2_10_no_match() {
     // C line 870
     n(b"(?~|ab|\\O{2,10})", b"ab");
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_abc_true_any_1_10() {
     // C line 871
     x2(b"(?~|abc|\\O{1,10})", b"abc", 1, 3);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_ab_true_any_5_10_or_abc() {
     // C line 872
     x2(b"(?~|ab|\\O{5,10})|abc", b"abc", 0, 3);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_ab_true_any_1_10_long() {
     // C line 873
     x2(b"(?~|ab|\\O{1,10})", b"cccccccccccab", 0, 10);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_aaa_empty() {
     // C line 874
     x2(b"(?~|aaa|)", b"aaa", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_empty_a_star() {
     // C line 875
     x2(b"(?~||a*)", b"aaaaaa", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_empty_a_star_lazy() {
     // C line 876
     x2(b"(?~||a*?)", b"aaaaaa", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_backref() {
     // C line 877
     x2(b"(a)(?~|b|\\1)", b"aaaaaa", 0, 2);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_backref_2() {
     // C line 878
     x2(b"(a)(?~|bb|(?:a\\1)*)", b"aaaaaa", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_backref_3() {
     // C line 879
     x2(b"(b|c)(?~|abac|(?:a\\1)*)", b"abababacabab", 1, 4);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_possessive_no_match() {
     // C line 880
     n(b"(?~|c|a*+)a", b"aaaaa");
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_possessive_1() {
     // C line 881
     x2(b"(?~|aaaaa|a*+)", b"aaaaa", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_possessive_2() {
     // C line 882
     x2(b"(?~|aaaaaa|a*+)b", b"aaaaaab", 1, 7);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_atomic() {
     // C line 883
     x2(b"(?~|abcd|(?>))", b"zzzabcd", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_expr_lazy() {
     // C line 884
     x2(b"(?~|abc|a*?)", b"aaaabc", 0, 0);
@@ -9052,84 +9050,84 @@ fn absent_expr_lazy() {
 // --- Absent range cutter (C lines 887-898) ---
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_a_star() {
     // C line 887
     x2(b"(?~|abc)a*", b"aaaaaabc", 0, 5);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_a_star_z() {
     // C line 888
     x2(b"(?~|abc)a*z|aaaaaabc", b"aaaaaabc", 0, 8);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_aaaaaa() {
     // C line 889
     x2(b"(?~|aaaaaa)a*", b"aaaaaa", 0, 0);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_abc_aaaa() {
     // C line 890
     x2(b"(?~|abc)aaaa|aaaabc", b"aaaabc", 0, 6);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_atomic_aaaa() {
     // C line 891
     x2(b"(?>(?~|abc))aaaa|aaaabc", b"aaaabc", 0, 6);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_empty() {
     // C line 892
     x2(b"(?~|)a", b"a", 0, 1);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_a_no_match() {
     // C line 893
     n(b"(?~|a)a", b"a");
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_a_nested() {
     // C line 894
     x2(b"(?~|a)(?~|)a", b"a", 0, 1);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_a_dot_star() {
     // C line 895
     x2(b"(?~|a).*(?~|)a", b"bbbbbbbbbbbbbbbbbbbba", 0, 21);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_complex_1() {
     // C line 896
     x2(b"(?~|abc).*(xyz|pqr)(?~|)abc", b"aaaaxyzaaapqrabc", 0, 16);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_complex_2() {
     // C line 897
     x2(b"(?~|abc).*(xyz|pqr)(?~|)abc", b"aaaaxyzaaaabcpqrabc", 11, 19);
 }
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_range_complex_no_match() {
     // C line 898
     n(b"\\A(?~|abc).*(xyz|pqrabc)(?~|)abc", b"aaaaxyzaaaabcpqrabcabc");
@@ -9331,7 +9329,7 @@ fn backref_greedy_star_x2() {
 // --- Absent in lookbehind (C line 696) ---
 
 #[test]
-#[ignore] // absent function not implemented
+
 fn absent_in_lookbehind() {
     // C line 696
     x2(b"(?<=a|(?~END)|b)c", b"ENDc", 3, 4);
