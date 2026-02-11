@@ -257,6 +257,16 @@ impl Node {
         }
     }
 
+    pub fn take_body(&mut self) -> Option<Box<Node>> {
+        match &mut self.inner {
+            NodeInner::Quant(n) => n.body.take(),
+            NodeInner::Bag(n) => n.body.take(),
+            NodeInner::Anchor(n) => n.body.take(),
+            NodeInner::Call(n) => n.body.take(),
+            _ => None,
+        }
+    }
+
     // Variant accessors (matching C macros STR_, CCLASS_, etc.)
     pub fn as_str(&self) -> Option<&StrNode> {
         match &self.inner {
@@ -1012,6 +1022,33 @@ pub fn make_list(a: Box<Node>, b: Box<Node>) -> Box<Node> {
 pub fn make_alt(a: Box<Node>, b: Box<Node>) -> Box<Node> {
     let tail = node_new_alt(b, None);
     node_new_alt(a, Some(tail))
+}
+
+/// Create a right-linked List chain: List(ns[0], List(ns[1], ... List(ns[n-1], nil)))
+pub fn make_list_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
+    assert!(!nodes.is_empty());
+    let mut result = node_new_list(nodes.pop().unwrap(), None);
+    while let Some(n) = nodes.pop() {
+        result = node_new_list(n, Some(result));
+    }
+    result
+}
+
+/// Create a right-linked Alt chain: Alt(ns[0], Alt(ns[1], ... Alt(ns[n-1], nil)))
+pub fn make_alt_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
+    assert!(!nodes.is_empty());
+    let mut result = node_new_alt(nodes.pop().unwrap(), None);
+    while let Some(n) = nodes.pop() {
+        result = node_new_alt(n, Some(result));
+    }
+    result
+}
+
+/// Anychar that matches newlines (C: node_new_true_anychar)
+pub fn node_new_true_anychar() -> Box<Node> {
+    let mut n = node_new_anychar();
+    n.status_add(ND_ST_MULTILINE);
+    n
 }
 
 // === Bitset Utility Functions (from regparse.c) ===

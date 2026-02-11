@@ -4836,14 +4836,12 @@ fn case_insensitive_sharp_s_alone_upper() {
 }
 
 #[test]
-#[ignore] // case-insensitive char class multi-char fold expansion not yet implemented
 fn case_insensitive_sharp_s_class_lower() {
     // C line 340: (?i:[\xc3\x9f]) matches ss
     x2(b"(?i:[\xc3\x9f])", b"ss", 0, 2);
 }
 
 #[test]
-#[ignore] // case-insensitive char class multi-char fold expansion not yet implemented
 fn case_insensitive_sharp_s_class_upper() {
     // C line 341: (?i:[\xc3\x9f]) matches SS
     x2(b"(?i:[\xc3\x9f])", b"SS", 0, 2);
@@ -7534,7 +7532,6 @@ fn case_insensitive_jcaron_cc_self() {
 }
 
 #[test]
-#[ignore] // multi-char case fold not yet implemented
 fn case_insensitive_jcaron_cc_decomposed() {
     // C line 1593
     x2(b"(?i)[\xc7\xb0]", b"j\xcc\x8c", 0, 3);

@@ -3697,20 +3697,39 @@ fn prs_cc(
         let cc = node.as_cclass_mut().unwrap();
         // Collect codes to add (to avoid borrow issues during iteration)
         let mut codes_to_add: Vec<OnigCodePoint> = Vec::new();
+        // Collect multi-char fold alternatives (each is a Vec<u8> of encoded bytes)
+        let mut multi_char_alts: Vec<Vec<u8>> = Vec::new();
         enc.apply_all_case_fold(
             env.case_fold_flag,
             &mut |from: OnigCodePoint, to: &[OnigCodePoint]| -> i32 {
-                if to.len() == 1 {
-                    // Check if 'from' is in the (non-negated) class
-                    let in_class = if (from as usize) < SINGLE_BYTE_SIZE {
-                        bitset_at(&cc.bs, from as usize)
-                    } else if let Some(ref mbuf) = cc.mbuf {
-                        crate::regexec::is_in_code_range(&mbuf.data, from)
-                    } else {
-                        false
-                    };
-                    if in_class {
+                // Check if 'from' is in the (non-negated) class (check both bitset and mbuf)
+                let in_bs = if (from as usize) < SINGLE_BYTE_SIZE {
+                    bitset_at(&cc.bs, from as usize)
+                } else {
+                    false
+                };
+                let in_mb = if let Some(ref mbuf) = cc.mbuf {
+                    crate::regexec::is_in_code_range(&mbuf.data, from)
+                } else {
+                    false
+                };
+                let in_class = in_bs || in_mb;
+                if in_class {
+                    if to.len() == 1 {
                         codes_to_add.push(to[0]);
+                    } else {
+                        // Multi-char fold: encode all codepoints to bytes
+                        let mut buf = Vec::new();
+                        let mut tmp = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
+                        for &cp in to {
+                            let len = enc.code_to_mbc(cp, &mut tmp);
+                            if len > 0 {
+                                buf.extend_from_slice(&tmp[..len as usize]);
+                            }
+                        }
+                        if !buf.is_empty() {
+                            multi_char_alts.push(buf);
+                        }
                     }
                 }
                 0
@@ -3718,6 +3737,31 @@ fn prs_cc(
         );
         for code in codes_to_add {
             add_code_into_cc(cc, code, enc);
+        }
+
+        // If there are multi-char fold alternatives, wrap in Alt(CC, string1, ...)
+        if !multi_char_alts.is_empty() {
+            // Apply negation to CC before wrapping
+            if neg {
+                let cc = node.as_cclass_mut().unwrap();
+                cc.set_not();
+            }
+
+            // Build alternation: Alt(CC, Alt(string1, Alt(string2, ...)))
+            let mut alt_tail: Option<Box<Node>> = None;
+            for alt_bytes in multi_char_alts.into_iter().rev() {
+                let mut sn = node_new_str(&alt_bytes);
+                sn.status_add(ND_ST_IGNORECASE);
+                if let Some(tail) = alt_tail {
+                    alt_tail = Some(node_new_alt(sn, Some(tail)));
+                } else {
+                    alt_tail = Some(node_new_alt(sn, None));
+                }
+            }
+            node = node_new_alt(node, alt_tail);
+
+            env.parse_depth -= 1;
+            return Ok(node);
         }
     }
 
