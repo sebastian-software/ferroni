@@ -7599,28 +7599,24 @@ fn hex_x_single_codepoint() {
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_codepoint_2() {
     // C line 1604
     x2(b"\\x{000A 002f}", b"\x0a\x2f", 0, 2);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_codepoint_trailing_space() {
     // C line 1605
     x2(b"\\x{000A 002f }", b"\x0a\x2f", 0, 2);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_codepoint_extra_spaces() {
     // C line 1606
     x2(b"\\x{007C     001b}", b"\x7c\x1b", 0, 2);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_codepoint_15() {
     // C line 1607
     x2(
@@ -7631,28 +7627,24 @@ fn hex_x_multi_codepoint_15() {
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_codepoint_with_literal() {
     // C line 1608
     x2(b"a\\x{000A 002f}@", b"a\x0a\x2f@", 0, 4);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_codepoint_newline_sep() {
     // C line 1609
     x2(b"a\\x{0060\n0063}@", b"a\x60\x63@", 0, 4);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_too_long_1() {
     // C line 1610
     e(b"\\x{00000001 000000012}", b"", ONIGERR_TOO_LONG_WIDE_CHAR_VALUE);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_too_long_2() {
     // C line 1611
     e(b"\\x{000A 00000002f}", b"", ONIGERR_TOO_LONG_WIDE_CHAR_VALUE);
@@ -7699,21 +7691,18 @@ fn octal_o_single() {
 }
 
 #[test]
-#[ignore] // multi-codepoint \\o{} syntax not yet implemented
 fn octal_o_multi_2() {
     // C line 1618
     x2(b"\\o{102 103}", b"BC", 0, 2);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\o{} syntax not yet implemented
 fn octal_o_multi_pq() {
     // C line 1619
     x2(b"\\o{0160 0000161}", b"pq", 0, 2);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\o{} syntax not yet implemented
 fn octal_o_multi_15() {
     // C line 1620
     x2(
@@ -7724,7 +7713,6 @@ fn octal_o_multi_15() {
 }
 
 #[test]
-#[ignore] // multi-codepoint \\o{} syntax not yet implemented
 fn octal_o_multi_trailing_space() {
     // C line 1621
     x2(b"\\o{0007 0010 }", b"\x07\x08", 0, 2);
@@ -7771,28 +7759,24 @@ fn hex_x_single_in_cc() {
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_in_cc_plus() {
     // C line 1628
     x2(b"[\\x{000A 002f}]+", b"\x0a\x2f\x2e", 0, 2);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_in_cc_5_values() {
     // C line 1629
     x2(b"[\\x{01 0F 1A 2c 4B}]+", b"\x20\x01\x0f\x1a\x2c\x4b\x1b", 1, 6);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_in_cc_with_range() {
     // C line 1630
     x2(b"[\\x{0020 0024}-\\x{0026}]+", b"\x25\x24\x26\x23", 0, 3);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_in_cc_range_and_value() {
     // C line 1631
     x2(b"[\\x{0030}-\\x{0033 005a}]+", b"\x30\x31\x32\x33\x5a\x1c", 0, 5);
@@ -7823,7 +7807,6 @@ fn octal_o_single_in_cc() {
 }
 
 #[test]
-#[ignore] // multi-codepoint \\o{} syntax not yet implemented
 fn octal_o_multi_in_cc_star() {
     // C line 1636
     x2(b"[\\o{102 103}]*", b"BC", 0, 2);
@@ -7836,28 +7819,24 @@ fn octal_o_multi_in_cc_invalid() {
 }
 
 #[test]
-#[ignore] // \\x{NNNN-MMMM} range syntax not yet implemented
 fn hex_x_range_syntax() {
     // C line 1638
     x2(b"[\\x{0030-0039}]+", b"abc0123456789def", 3, 13);
 }
 
 #[test]
-#[ignore] // \\x{NNNN-MMMM} range syntax not yet implemented
 fn hex_x_range_syntax_spaces() {
     // C line 1639
     x2(b"[\\x{0030 - 0039 }]+", b"abc0123456789def", 3, 13);
 }
 
 #[test]
-#[ignore] // \\x{NNNN-MMMM} range syntax not yet implemented
 fn hex_x_range_and_values() {
     // C line 1640
     x2(b"[\\x{0030 - 0039 0063 0064}]+", b"abc0123456789def", 2, 14);
 }
 
 #[test]
-#[ignore] // \\x{NNNN-MMMM} range syntax not yet implemented
 fn hex_x_range_and_range() {
     // C line 1641
     x2(b"[\\x{0030 - 0039 0063-0065}]+", b"acde019b", 1, 7);
@@ -7906,21 +7885,18 @@ fn hex_x_range_invalid_mixed() {
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_in_range() {
     // C line 1649
     x2(b"[a-\\x{0063 0071}]+", b"dabcqz", 1, 5);
 }
 
 #[test]
-#[ignore] // \\x{NNNN-MMMM} range syntax not yet implemented
 fn hex_x_dash_range_in_cc() {
     // C line 1650
     x2(b"[-\\x{0063-0065}]+", b"ace-df", 1, 5);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_mixed_range() {
     // C line 1651
     x2(b"[\\x61-\\x{0063 0065}]+", b"abced", 0, 4);
@@ -7933,14 +7909,12 @@ fn hex_x_mixed_range_invalid() {
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_with_literal_in_cc() {
     // C line 1653
     x2(b"[t\\x{0063 0071}]+", b"tcqb", 0, 3);
 }
 
 #[test]
-#[ignore] // multi-codepoint \\x{} syntax not yet implemented
 fn hex_x_multi_with_shorthand_in_cc() {
     // C line 1654
     x2(b"[\\W\\x{0063 0071}]+", b"*cqa", 0, 3);

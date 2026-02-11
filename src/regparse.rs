@@ -509,6 +509,176 @@ fn scan_octal_number(
 }
 
 // ============================================================================
+// Multi-codepoint sequence helpers for \x{AAAA BBBB} and \o{NNN NNN}
+// ============================================================================
+
+/// Check if character is a code point separator (space or newline).
+fn is_code_point_divide(c: u32) -> bool {
+    c == ' ' as u32 || c == '\n' as u32
+}
+
+/// Validate and count remaining codepoints in a \x{...} or \o{...} sequence.
+/// For use outside character classes (no range '-' support).
+/// Returns number of remaining codepoints, or negative error.
+/// Does NOT modify p (validates only, like C version which takes p by value).
+fn check_code_point_sequence(
+    p: &mut usize,
+    end: usize,
+    base: i32,
+    pattern: &[u8],
+    enc: OnigEncoding,
+) -> i32 {
+    let save_p = *p;
+    let mut pos = *p;
+    let mut n = 0;
+    let mut end_digit = false;
+    let mut pfetch_prev = pos;
+
+    while !p_end(pos, end) {
+        let c = pfetch(&mut pos, &mut pfetch_prev, pattern, end, enc);
+        if c == '}' as u32 {
+            if n == 0 { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+            *p = save_p; // restore - don't consume
+            return n;
+        }
+
+        if is_code_point_divide(c) {
+            while !p_end(pos, end) {
+                let c2 = pfetch(&mut pos, &mut pfetch_prev, pattern, end, enc);
+                if !is_code_point_divide(c2) {
+                    pos = pfetch_prev; // PUNFETCH
+                    break;
+                }
+            }
+            end_digit = false;
+            continue;
+        } else if end_digit {
+            if base == 16 && is_code_xdigit_ascii(enc, c) {
+                return ONIGERR_TOO_LONG_WIDE_CHAR_VALUE;
+            }
+            return ONIGERR_INVALID_CODE_POINT_VALUE;
+        }
+
+        pos = pfetch_prev; // PUNFETCH
+        let mut code = 0u32;
+        let r = if base == 16 {
+            scan_hexadecimal_number(&mut pos, end, 0, 8, pattern, enc, &mut code)
+        } else {
+            scan_octal_number(&mut pos, end, 0, 11, pattern, enc, &mut code)
+        };
+        if r != 0 { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+        n += 1;
+        end_digit = true;
+    }
+
+    ONIGERR_INVALID_CODE_POINT_VALUE
+}
+
+/// Validate and count remaining codepoints in a \x{...} or \o{...} sequence
+/// inside a character class (supports '-' for ranges).
+/// Does NOT modify p (validates only).
+fn check_code_point_sequence_cc(
+    p: &mut usize,
+    end: usize,
+    base: i32,
+    pattern: &[u8],
+    enc: OnigEncoding,
+    state: i32,
+) -> i32 {
+    let save_p = *p;
+    let mut pos = *p;
+    let mut n = 0;
+    let mut end_digit = false;
+    let mut pfetch_prev = pos;
+    let mut cps_state = state;
+
+    while !p_end(pos, end) {
+        let c = pfetch(&mut pos, &mut pfetch_prev, pattern, end, enc);
+        if c == '}' as u32 {
+            if cps_state == CPS_RANGE { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+            *p = save_p; // restore - don't consume
+            return n;
+        }
+
+        if is_code_point_divide(c) {
+            while !p_end(pos, end) {
+                let c2 = pfetch(&mut pos, &mut pfetch_prev, pattern, end, enc);
+                if !is_code_point_divide(c2) {
+                    pos = pfetch_prev; // PUNFETCH
+                    break;
+                }
+            }
+            end_digit = false;
+            continue;
+        } else if c == '-' as u32 {
+            if cps_state != CPS_START_VAL { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+            if p_end(pos, end) { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+            end_digit = false;
+            cps_state = CPS_RANGE;
+            continue;
+        } else if end_digit {
+            if base == 16 && is_code_xdigit_ascii(enc, c) {
+                return ONIGERR_TOO_LONG_WIDE_CHAR_VALUE;
+            }
+            return ONIGERR_INVALID_CODE_POINT_VALUE;
+        }
+
+        pos = pfetch_prev; // PUNFETCH
+        let mut code = 0u32;
+        let r = if base == 16 {
+            scan_hexadecimal_number(&mut pos, end, 0, 8, pattern, enc, &mut code)
+        } else {
+            scan_octal_number(&mut pos, end, 0, 11, pattern, enc, &mut code)
+        };
+        if r != 0 { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+        n += 1;
+        end_digit = true;
+        cps_state = if cps_state == CPS_RANGE { CPS_EMPTY } else { CPS_START_VAL };
+    }
+
+    ONIGERR_INVALID_CODE_POINT_VALUE
+}
+
+/// Get next code point from an ongoing \x{...} or \o{...} sequence.
+/// Returns: 0 = got codepoint, 1 = end of sequence ('}'), 2 = range marker ('-').
+fn get_next_code_point(
+    p: &mut usize,
+    end: usize,
+    base: i32,
+    pattern: &[u8],
+    enc: OnigEncoding,
+    in_cc: bool,
+    rcode: &mut OnigCodePoint,
+) -> i32 {
+    let mut pfetch_prev = *p;
+
+    // Skip whitespace separators
+    while !p_end(*p, end) {
+        let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+        if !is_code_point_divide(c) {
+            if c == '}' as u32 {
+                return 1; // end of sequence
+            } else if c == '-' as u32 && in_cc {
+                return 2; // range marker
+            }
+            *p = pfetch_prev; // PUNFETCH
+            break;
+        } else if p_end(*p, end) {
+            return ONIGERR_INVALID_CODE_POINT_VALUE;
+        }
+    }
+
+    let r = if base == 16 {
+        scan_hexadecimal_number(p, end, 0, 8, pattern, enc, rcode)
+    } else {
+        scan_octal_number(p, end, 0, 11, pattern, enc, rcode)
+    };
+    if r != 0 { return r; }
+
+    ONIG_NORMAL
+}
+
+// ============================================================================
 // Code range operations (BBuf-based multi-byte ranges)
 // ============================================================================
 
@@ -1870,7 +2040,18 @@ fn fetch_token(
     let mut pfetch_prev = *p;
 
     if tok.code_point_continue {
-        tok.code_point_continue = false;
+        let mut code = 0u32;
+        let r = get_next_code_point(p, end, tok.base_num, pattern, enc, false, &mut code);
+        if r == 1 {
+            // End of sequence ('}')
+            tok.code_point_continue = false;
+        } else if r == 0 {
+            tok.token_type = TokenType::CodePoint;
+            tok.code = code;
+            return tok.token_type as i32;
+        } else if r < 0 {
+            return r;
+        }
     }
 
     if p_end(*p, end) {
@@ -2241,10 +2422,18 @@ fn fetch_token(
                         if ppeek_is(*p, pattern, end, enc, '}' as u32) {
                             pinc(p, pattern, enc);
                         } else {
-                            // TODO: check_code_point_sequence
-                            return ONIGERR_INVALID_CODE_POINT_VALUE;
+                            // Multi-codepoint sequence: \x{AAAA BBBB ...}
+                            let c2 = ppeek(*p, pattern, end, enc);
+                            if is_code_xdigit_ascii(enc, c2) {
+                                return ONIGERR_TOO_LONG_WIDE_CHAR_VALUE;
+                            }
+                            let r = check_code_point_sequence(p, end, 16, pattern, enc);
+                            if r < 0 { return r; }
+                            if r == 0 { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+                            tok.code_point_continue = true;
                         }
                         tok.token_type = TokenType::CodePoint;
+                        tok.base_num = 16;
                         tok.code = code;
                     } else {
                         *p = prev;
@@ -2294,9 +2483,14 @@ fn fetch_token(
                         if ppeek_is(*p, pattern, end, enc, '}' as u32) {
                             pinc(p, pattern, enc);
                         } else {
-                            return ONIGERR_INVALID_CODE_POINT_VALUE;
+                            // Multi-codepoint sequence: \o{NNN NNN ...}
+                            let r = check_code_point_sequence(p, end, 8, pattern, enc);
+                            if r < 0 { return r; }
+                            if r == 0 { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+                            tok.code_point_continue = true;
                         }
                         tok.token_type = TokenType::CodePoint;
+                        tok.base_num = 8;
                         tok.code = code;
                     } else {
                         *p = prev;
@@ -2643,8 +2837,23 @@ fn fetch_token_cc(
     let mut pfetch_prev = *p;
 
     if tok.code_point_continue {
-        // Multi-codepoint sequence continuation: not yet implemented
-        tok.code_point_continue = false;
+        let mut code = 0u32;
+        let r = get_next_code_point(p, end, tok.base_num, pattern, enc, true, &mut code);
+        if r == 1 {
+            // End of sequence ('}')
+            tok.code_point_continue = false;
+        } else if r == 0 {
+            tok.token_type = TokenType::CodePoint;
+            tok.code = code;
+            return tok.token_type as i32;
+        } else if r == 2 {
+            // Range marker '-' inside character class
+            tok.token_type = TokenType::CcRange;
+            tok.code_point_continue = true;
+            return tok.token_type as i32;
+        } else if r < 0 {
+            return r;
+        }
     }
 
     if p_end(*p, end) {
@@ -2762,8 +2971,16 @@ fn fetch_token_cc(
                         if ppeek_is(*p, pattern, end, enc, '}' as u32) {
                             pinc(p, pattern, enc);
                         } else {
-                            // Multi-codepoint sequence - simplified
-                            return ONIGERR_INVALID_CODE_POINT_VALUE;
+                            // Multi-codepoint or range: \x{AAAA BBBB} or \x{AAAA-BBBB}
+                            let c2 = ppeek(*p, pattern, end, enc);
+                            if is_code_xdigit_ascii(enc, c2) {
+                                return ONIGERR_TOO_LONG_WIDE_CHAR_VALUE;
+                            }
+                            let curr_state = if state == CS_RANGE { CPS_EMPTY } else { CPS_START_VAL };
+                            let r = check_code_point_sequence_cc(p, end, 16, pattern, enc, curr_state);
+                            if r < 0 { return r; }
+                            if r == 0 { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+                            tok.code_point_continue = true;
                         }
                         tok.token_type = TokenType::CodePoint;
                         tok.code = code;
@@ -2804,7 +3021,12 @@ fn fetch_token_cc(
                         if ppeek_is(*p, pattern, end, enc, '}' as u32) {
                             pinc(p, pattern, enc);
                         } else {
-                            return ONIGERR_INVALID_CODE_POINT_VALUE;
+                            // Multi-codepoint sequence: \o{NNN NNN ...}
+                            let curr_state = if state == CS_RANGE { CPS_EMPTY } else { CPS_START_VAL };
+                            let r = check_code_point_sequence_cc(p, end, 8, pattern, enc, curr_state);
+                            if r < 0 { return r; }
+                            if r == 0 { return ONIGERR_INVALID_CODE_POINT_VALUE; }
+                            tok.code_point_continue = true;
                         }
                         tok.token_type = TokenType::CodePoint;
                         tok.code = code;
