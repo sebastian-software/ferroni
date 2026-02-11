@@ -428,6 +428,7 @@ fn compile_quant_body_with_empty_check(
     reg: &mut RegexType,
     env: &ParseEnv,
     emptiness: BodyEmptyType,
+    qn_empty_status_mem: u32,
 ) -> i32 {
     let is_empty = emptiness != BodyEmptyType::NotEmpty;
 
@@ -446,12 +447,23 @@ fn compile_quant_body_with_empty_check(
         let mem = reg.num_empty_check - 1;
         let empty_status_mem = if emptiness == BodyEmptyType::MayBeEmptyMem
             || emptiness == BodyEmptyType::MayBeEmptyRec {
-            collect_mem_status(node)
+            if qn_empty_status_mem != 0 {
+                qn_empty_status_mem
+            } else {
+                collect_mem_status(node)
+            }
         } else {
             0
         };
         let opcode = match emptiness {
-            BodyEmptyType::MayBeEmptyMem => OpCode::EmptyCheckEndMemst,
+            BodyEmptyType::MayBeEmptyMem => {
+                if qn_empty_status_mem != 0 {
+                    OpCode::EmptyCheckEndMemst
+                } else {
+                    // No external backrefs to tracked captures → use plain empty check
+                    OpCode::EmptyCheckEnd
+                }
+            }
             BodyEmptyType::MayBeEmptyRec => OpCode::EmptyCheckEndMemstPush,
             _ => OpCode::EmptyCheckEnd,
         };
@@ -591,7 +603,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 add_op(reg, OpCode::Push, OperationPayload::Push {
                     addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
                 });
-                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
+                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
                 if r != 0 {
                     return r;
                 }
@@ -609,7 +621,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 add_op(reg, OpCode::Jump, OperationPayload::Jump {
                     addr: mod_tlen + SIZE_INC,
                 });
-                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
+                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
                 if r != 0 {
                     return r;
                 }
@@ -630,7 +642,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 add_op(reg, OpCode::Push, OperationPayload::Push {
                     addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
                 });
-                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
+                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
                 if r != 0 {
                     return r;
                 }
@@ -643,7 +655,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 add_op(reg, OpCode::Jump, OperationPayload::Jump {
                     addr: mod_tlen + SIZE_INC,
                 });
-                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
+                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
                 if r != 0 {
                     return r;
                 }
@@ -672,7 +684,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
         });
         // Patch u_offset to point to the body start (op after REPEAT)
         reg.repeat_range[id as usize].u_offset = reg.ops.len() as i32;
-        let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
+        let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
         if r != 0 {
             return r;
         }
@@ -724,7 +736,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
         });
         // Patch u_offset to point to the body start (op after REPEAT)
         reg.repeat_range[id as usize].u_offset = reg.ops.len() as i32;
-        let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness);
+        let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
         if r != 0 {
             return r;
         }
@@ -2911,6 +2923,198 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
     }
 }
 
+// ============================================================================
+// setup_empty_status_mem: compute qn.empty_status_mem for quantifiers
+// ============================================================================
+
+/// Pass 1: For each quantifier with emptiness >= MayBeEmptyMem, set
+/// empty_repeat_node on all captures in its body.
+fn mark_empty_repeat_node(node: &mut Node, env: &mut ParseEnv) {
+    let node_ptr = node as *mut Node;
+    match &mut node.inner {
+        NodeInner::Quant(ref mut qn) => {
+            let is_empty = qn.emptiness == BodyEmptyType::MayBeEmptyMem
+                || qn.emptiness == BodyEmptyType::MayBeEmptyRec;
+            if is_empty {
+                if let Some(ref body) = qn.body {
+                    set_empty_repeat_node_in_body(body, node_ptr as *const Node, env);
+                }
+            }
+            if let Some(ref mut body) = qn.body {
+                mark_empty_repeat_node(body, env);
+            }
+        }
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            let mut cur: *mut Node = node;
+            unsafe {
+                loop {
+                    let (car, cdr) = match &mut (*cur).inner {
+                        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+                            (&mut cons.car as *mut Box<Node>, &mut cons.cdr as *mut Option<Box<Node>>)
+                        }
+                        _ => break,
+                    };
+                    mark_empty_repeat_node(&mut *(*car), env);
+                    match &mut *cdr {
+                        Some(ref mut next) => cur = &mut **next,
+                        None => break,
+                    }
+                }
+            }
+        }
+        NodeInner::Bag(ref mut bn) => {
+            if let Some(ref mut body) = bn.body {
+                mark_empty_repeat_node(body, env);
+            }
+            if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                if let Some(ref mut t) = then_node { mark_empty_repeat_node(t, env); }
+                if let Some(ref mut e) = else_node { mark_empty_repeat_node(e, env); }
+            }
+        }
+        NodeInner::Anchor(ref mut an) => {
+            if let Some(ref mut body) = an.body {
+                mark_empty_repeat_node(body, env);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Helper: set empty_repeat_node for all BAG_MEMORY nodes in `node`.
+fn set_empty_repeat_node_in_body(node: &Node, quant_ptr: *const Node, env: &mut ParseEnv) {
+    match &node.inner {
+        NodeInner::Bag(bn) => {
+            if bn.bag_type == BagType::Memory {
+                if let BagData::Memory { regnum, .. } = bn.bag_data {
+                    let regnum = regnum as usize;
+                    let entry = env.mem_env_mut(regnum);
+                    entry.empty_repeat_node = quant_ptr as *mut Node;
+                }
+            }
+            if let Some(ref body) = bn.body {
+                set_empty_repeat_node_in_body(body, quant_ptr, env);
+            }
+            if let BagData::IfElse { ref then_node, ref else_node } = bn.bag_data {
+                if let Some(ref t) = then_node { set_empty_repeat_node_in_body(t, quant_ptr, env); }
+                if let Some(ref e) = else_node { set_empty_repeat_node_in_body(e, quant_ptr, env); }
+            }
+        }
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            let mut cur: &Node = node;
+            loop {
+                let (car, cdr) = match &cur.inner {
+                    NodeInner::List(cons) | NodeInner::Alt(cons) => (&cons.car, &cons.cdr),
+                    _ => break,
+                };
+                set_empty_repeat_node_in_body(car, quant_ptr, env);
+                match cdr {
+                    Some(ref next) => cur = next,
+                    None => break,
+                }
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(ref body) = qn.body {
+                set_empty_repeat_node_in_body(body, quant_ptr, env);
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(ref body) = an.body {
+                set_empty_repeat_node_in_body(body, quant_ptr, env);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Pass 2: Walk tree with a stack of enclosing empty-quantifier pointers.
+/// When a backref is found, check if its target's empty_repeat_node is NOT
+/// in the enclosing stack → set empty_status_mem on that quantifier.
+fn resolve_empty_status_backrefs(
+    node: &mut Node,
+    enclosing_quants: &mut Vec<*const Node>,
+    env: &ParseEnv,
+) {
+    let node_ptr = node as *const Node;
+    match &mut node.inner {
+        NodeInner::Quant(ref mut qn) => {
+            let is_empty_quant = qn.emptiness == BodyEmptyType::MayBeEmptyMem
+                || qn.emptiness == BodyEmptyType::MayBeEmptyRec;
+            if is_empty_quant {
+                enclosing_quants.push(node_ptr);
+            }
+            if let Some(ref mut body) = qn.body {
+                resolve_empty_status_backrefs(body, enclosing_quants, env);
+            }
+            if is_empty_quant {
+                enclosing_quants.pop();
+            }
+        }
+        NodeInner::BackRef(ref br) => {
+            for &back in br.back_refs() {
+                if back <= 0 { continue; }
+                let back = back as usize;
+                let entry = env.mem_env(back);
+                let er_node = entry.empty_repeat_node;
+                if !er_node.is_null() {
+                    // Check if the backref is inside the quantifier
+                    if !enclosing_quants.contains(&(er_node as *const Node)) {
+                        // Backref is OUTSIDE the quantifier → set empty_status_mem
+                        unsafe {
+                            if let NodeInner::Quant(ref mut qn) = (*er_node).inner {
+                                qn.empty_status_mem |= 1u32 << back;
+                                (*er_node).status |= ND_ST_EMPTY_STATUS_CHECK;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            let mut cur: *mut Node = node;
+            unsafe {
+                loop {
+                    let (car, cdr) = match &mut (*cur).inner {
+                        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+                            (&mut cons.car as *mut Box<Node>, &mut cons.cdr as *mut Option<Box<Node>>)
+                        }
+                        _ => break,
+                    };
+                    resolve_empty_status_backrefs(&mut *(*car), enclosing_quants, env);
+                    match &mut *cdr {
+                        Some(ref mut next) => cur = &mut **next,
+                        None => break,
+                    }
+                }
+            }
+        }
+        NodeInner::Bag(ref mut bn) => {
+            if let Some(ref mut body) = bn.body {
+                resolve_empty_status_backrefs(body, enclosing_quants, env);
+            }
+            if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                if let Some(ref mut t) = then_node { resolve_empty_status_backrefs(t, enclosing_quants, env); }
+                if let Some(ref mut e) = else_node { resolve_empty_status_backrefs(e, enclosing_quants, env); }
+            }
+        }
+        NodeInner::Anchor(ref mut an) => {
+            if let Some(ref mut body) = an.body {
+                resolve_empty_status_backrefs(body, enclosing_quants, env);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Compute qn.empty_status_mem for all quantifiers in the tree.
+fn setup_empty_status_mem(root: &mut Node, env: &mut ParseEnv) {
+    // Pass 1: mark empty_repeat_node on captures inside empty quantifiers
+    mark_empty_repeat_node(root, env);
+    // Pass 2: resolve backrefs to set empty_status_mem
+    let mut enclosing = Vec::new();
+    resolve_empty_status_backrefs(root, &mut enclosing, env);
+}
+
 /// Flatten a List node into a Vec of car elements.
 fn flatten_list(mut node: Box<Node>) -> Vec<Box<Node>> {
     let mut items = Vec::new();
@@ -3231,6 +3435,9 @@ pub fn onig_compile(
     if r != 0 {
         return r;
     }
+
+    // Compute empty_status_mem for quantifiers (determines EmptyCheckEnd vs EmptyCheckEndMemst)
+    setup_empty_status_mem(&mut root, &mut env);
 
     // Set capture/mem tracking from parse env (mirrors C's onig_compile post-parse setup)
     reg.capture_history = env.cap_history;

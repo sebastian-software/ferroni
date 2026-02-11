@@ -5939,7 +5939,6 @@ fn recursive_possessive_parens() {
 // ============================================================================
 
 #[test]
-#[ignore] // backref in alternation with empty capture not yet implemented
 fn backref_or_empty_capture_star() {
     // C line 742: (?:\1a|())*  matches "a" group 1 -> 0-0
     x3(b"(?:\\1a|())*", b"a", 0, 0, 1);
