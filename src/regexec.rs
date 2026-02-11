@@ -324,14 +324,17 @@ fn stack_empty_check(stack: &[StackEntry], zid: usize, s: usize) -> bool {
 /// Memory-aware empty check. Returns true only if position is same AND no capture
 /// groups (indicated by empty_status_mem) have changed since the EmptyCheckStart.
 /// Mirrors C's STACK_EMPTY_CHECK_MEM.
+/// Check if a quantifier iteration was empty (position unchanged).
+/// Returns: false = not empty (position changed or captures changed),
+///          true = truly empty (pos same AND captures same)
 fn stack_empty_check_mem(
     stack: &[StackEntry],
     zid: usize,
     s: usize,
     empty_status_mem: u32,
-    reg: &RegexType,
-    mem_start_stk: &[MemPtr],
-    mem_end_stk: &[MemPtr],
+    _reg: &RegexType,
+    _mem_start_stk: &[MemPtr],
+    _mem_end_stk: &[MemPtr],
 ) -> bool {
     // Find the EmptyCheckStart entry
     let mut klow_idx = None;
@@ -361,7 +364,7 @@ fn stack_empty_check_mem(
                 // from the previous iteration's value.
                 // Look for the corresponding MemStart between klow and this MemEnd.
                 for kk_idx in klow_idx + 1..k_idx {
-                    if let StackEntry::MemStart { zid: start_zid, prev_end, prev_start, .. } = &stack[kk_idx] {
+                    if let StackEntry::MemStart { zid: start_zid, prev_end, .. } = &stack[kk_idx] {
                         if *start_zid == *mem_zid {
                             // Check if prev_end was invalid (group wasn't captured before)
                             match prev_end {
@@ -641,6 +644,121 @@ fn string_cmp_ic(
 
     *s2_pos = p2;
     true
+}
+
+// ============================================================================
+// ============================================================================
+// Extended Grapheme Cluster boundary detection (simplified)
+// ============================================================================
+
+/// Check if position `s` in `data` is an Extended Grapheme Cluster boundary.
+/// Returns true if there's a break at this position (GB1/GB2 rules).
+///
+/// Simplified implementation covering common cases:
+/// - Start/end of string are always breaks (GB1, GB2)
+/// - CR+LF is not a break (GB3)
+/// - Control chars (CR/LF/Control) cause breaks (GB4, GB5)
+/// - Combining marks (Extend/ZWJ/SpacingMark) after non-control chars are not breaks (GB9, GB9a)
+/// - Everything else is a break (GB999)
+fn egcb_is_break_position(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
+    // GB1: Break at start of text
+    if s == 0 { return true; }
+    // GB2: Break at end of text
+    if s >= end { return true; }
+
+    let prev_pos = prev_char_head(enc, 0, s, str_data);
+    if prev_pos >= s { return true; } // no previous char
+
+    let from = enc.mbc_to_code(&str_data[prev_pos..], end);
+    let to = enc.mbc_to_code(&str_data[s..], end);
+
+    // GB3: Do not break between CR and LF
+    if from == 0x0D && to == 0x0A { return false; }
+
+    // GB4: Break after Control, CR, LF
+    if is_egcb_control_cr_lf(from) { return true; }
+    // GB5: Break before Control, CR, LF
+    if is_egcb_control_cr_lf(to) { return true; }
+
+    // GB9: Do not break before Extend or ZWJ
+    if is_egcb_extend(to) || to == 0x200D { return false; }
+
+    // GB9a: Do not break before SpacingMark
+    if is_egcb_spacing_mark(to) { return false; }
+
+    // GB9b: Do not break after Prepend
+    if is_egcb_prepend(from) { return false; }
+
+    // GB999: Otherwise, break everywhere
+    true
+}
+
+/// Check if a codepoint is a Control, CR, or LF character
+fn is_egcb_control_cr_lf(c: u32) -> bool {
+    c == 0x0D || c == 0x0A
+        || (c >= 0x00 && c <= 0x1F && c != 0x0D && c != 0x0A) // C0 controls
+        || c == 0x7F // DEL
+        || c == 0xAD // SOFT HYPHEN
+        || (c >= 0x0600 && c <= 0x0605) // Arabic number signs (actually Prepend in newer Unicode)
+        || c == 0x200B // ZERO WIDTH SPACE
+        || c == 0x2028 // LINE SEPARATOR
+        || c == 0x2029 // PARAGRAPH SEPARATOR
+        || (c >= 0xFFF0 && c <= 0xFFF8) // Specials
+        || (c >= 0xE0000 && c <= 0xE007F && c != 0xE0020 && c != 0xE007F) // Tags (simplified)
+}
+
+/// Check if a codepoint is an Extend character (combining marks, etc.)
+fn is_egcb_extend(c: u32) -> bool {
+    // Combining Diacritical Marks
+    (c >= 0x0300 && c <= 0x036F)
+    // Combining Diacritical Marks Extended
+    || (c >= 0x1AB0 && c <= 0x1AFF)
+    // Combining Diacritical Marks Supplement
+    || (c >= 0x1DC0 && c <= 0x1DFF)
+    // Combining Diacritical Marks for Symbols
+    || (c >= 0x20D0 && c <= 0x20FF)
+    // Combining Half Marks
+    || (c >= 0xFE20 && c <= 0xFE2F)
+    // General Category M (Mark) approximation for common ranges
+    || (c >= 0x0483 && c <= 0x0489)
+    || (c >= 0x0591 && c <= 0x05BD)
+    || (c >= 0x0610 && c <= 0x061A)
+    || (c >= 0x064B && c <= 0x065F)
+    || c == 0x0670
+    || (c >= 0x06D6 && c <= 0x06DC)
+    || (c >= 0x06DF && c <= 0x06E4)
+    || (c >= 0x06E7 && c <= 0x06E8)
+    || (c >= 0x06EA && c <= 0x06ED)
+    || (c >= 0x0900 && c <= 0x0903)
+    || (c >= 0x093A && c <= 0x094F)
+    // Variation Selectors
+    || (c >= 0xFE00 && c <= 0xFE0F)
+    || (c >= 0xE0100 && c <= 0xE01EF)
+    // Zero Width Joiner is handled separately
+    // Format characters that act as Extend
+    || c == 0x200C // ZWNJ
+    || c == 0x200D // ZWJ (handled separately but include here for safety)
+}
+
+/// Check if a codepoint is a SpacingMark
+fn is_egcb_spacing_mark(c: u32) -> bool {
+    // Common SpacingMark ranges (Indic scripts vowel signs, etc.)
+    (c >= 0x0903 && c <= 0x0903)
+    || (c >= 0x093B && c <= 0x093B)
+    || (c >= 0x093E && c <= 0x0940)
+    || (c >= 0x0949 && c <= 0x094C)
+    || c == 0x094E || c == 0x094F
+    || (c >= 0x0982 && c <= 0x0983)
+}
+
+/// Check if a codepoint is a Prepend character
+fn is_egcb_prepend(c: u32) -> bool {
+    c == 0x0600 || c == 0x0601 || c == 0x0602 || c == 0x0603
+    || c == 0x0604 || c == 0x0605
+    || c == 0x06DD || c == 0x070F
+    || c == 0x0890 || c == 0x0891
+    || c == 0x08E2
+    || c == 0x110BD || c == 0x110CD
 }
 
 // ============================================================================
@@ -1181,8 +1299,25 @@ fn match_at(
             }
 
             OpCode::TextSegmentBoundary => {
-                // TODO: text segment boundary
-                p += 1;
+                if let OperationPayload::TextSegmentBoundary { boundary_type, not } = reg.ops[p].payload {
+                    let is_break = match boundary_type {
+                        TextSegmentBoundaryType::ExtendedGraphemeCluster => {
+                            egcb_is_break_position(enc, str_data, s, end)
+                        }
+                        TextSegmentBoundaryType::Word => {
+                            // Word boundary type - treat as always break for now
+                            true
+                        }
+                    };
+                    let result = if not { !is_break } else { is_break };
+                    if result {
+                        p += 1;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
             }
 
             // ================================================================
@@ -1808,10 +1943,7 @@ fn match_at(
                                                          &mem_start_stk, &mem_end_stk);
                     p += 1;
                     if is_empty {
-                        if is_empty && reg.ops[p - 1].opcode == OpCode::EmptyCheckEndMemstPush {
-                            // For recursive patterns: check if is_empty == -1 → fail
-                            // Simplified: just skip
-                        }
+                        // Truly empty → skip next op (JUMP back)
                         p += 1;
                     }
                 } else {

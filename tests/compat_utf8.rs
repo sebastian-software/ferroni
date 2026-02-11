@@ -6559,7 +6559,6 @@ fn lookbehind_atomic_group() {
 }
 
 #[test]
-#[ignore] // grapheme cluster \\X not yet implemented
 fn lookbehind_with_grapheme_cluster() {
     // C line 1438
     x2(b"(?<=a\\Xz)", b"abz", 3, 3);

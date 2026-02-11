@@ -5209,8 +5209,25 @@ fn prs_exp(
             np
         }
         TokenType::TextSegment => {
-            // TODO: make_text_segment
-            node_new_empty()
+            // \X == (?>\O(?:\Y\O)*)
+            // \Y = NOT text segment boundary, \O = true anychar
+            let boundary = node_new_anchor_with_options(ANCR_NO_TEXT_SEGMENT_BOUNDARY, env.options);
+            let anychar1 = node_new_true_anychar();
+            let inner_list = make_list(boundary, anychar1);
+
+            let mut quant = node_new_quantifier(0, INFINITE_REPEAT, true);
+            if let NodeInner::Quant(ref mut qn) = quant.inner {
+                qn.body = Some(inner_list);
+            }
+
+            let anychar0 = node_new_true_anychar();
+            let seq = make_list(anychar0, quant);
+
+            let mut bag = node_new_bag(BagType::StopBacktrack);
+            if let NodeInner::Bag(ref mut bn) = bag.inner {
+                bn.body = Some(seq);
+            }
+            bag
         }
         TokenType::QuoteOpen => {
             // Collect all chars until \E
