@@ -7117,7 +7117,6 @@ fn conditional_recursive_alt() {
 }
 
 #[test]
-#[ignore] // never-ending recursion detection hangs
 fn conditional_never_ending() {
     // C line 1523
     e(b"(()(?(2)\\g<1>))", b"", ONIGERR_NEVER_ENDING_RECURSION);
@@ -8597,7 +8596,6 @@ fn error_invalid_u_empty() {
 }
 
 #[test]
-#[ignore] // never-ending recursion detection hangs
 fn error_never_ending_recursion() {
     // C line 1782
     e(b"(?<abc>\\g<abc>)", b"zzzz", ONIGERR_NEVER_ENDING_RECURSION);

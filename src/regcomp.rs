@@ -1957,12 +1957,23 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
                     if node.has_status(ND_ST_FIXED_MIN) {
                         bn.min_len
                     } else if node.has_status(ND_ST_MARK1) {
-                        0 // recursive
+                        0 // recursive cycle
                     } else {
-                        if let Some(ref body) = bn.body {
-                            node_min_byte_len(body, env)
-                        } else {
-                            0
+                        // Set MARK1 for cycle detection, compute, cache with FIXED_MIN
+                        unsafe {
+                            let node_ptr = node as *const Node as *mut Node;
+                            (*node_ptr).status_add(ND_ST_MARK1);
+                            let len = if let Some(ref body) = bn.body {
+                                node_min_byte_len(body, env)
+                            } else {
+                                0
+                            };
+                            (*node_ptr).status_remove(ND_ST_MARK1);
+                            if let NodeInner::Bag(ref mut bn_mut) = (*node_ptr).inner {
+                                bn_mut.min_len = len;
+                            }
+                            (*node_ptr).status_add(ND_ST_FIXED_MIN);
+                            len
                         }
                     }
                 }
@@ -1998,7 +2009,15 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
             }
         }
 
-        NodeInner::Anchor(_) | NodeInner::Gimmick(_) | NodeInner::Call(_) => 0,
+        NodeInner::Call(ref cn) => {
+            if !cn.target_node.is_null() {
+                unsafe { node_min_byte_len(&*cn.target_node, env) }
+            } else {
+                0
+            }
+        }
+
+        NodeInner::Anchor(_) | NodeInner::Gimmick(_) => 0,
     }
 }
 
@@ -3245,6 +3264,256 @@ fn disable_noname_group_capture(root: &mut Node, reg: &mut RegexType, env: &mut 
     0
 }
 
+// ============================================================================
+// infinite_recursive_call_check — detect never-ending recursion
+// Patterns like (?<abc>\g<abc>) or (()(?(2)\g<1>)) have no terminating path.
+// ============================================================================
+
+const RECURSION_EXIST: i32 = 1 << 0;
+const RECURSION_MUST: i32 = 1 << 1;
+const RECURSION_INFINITE: i32 = 1 << 2;
+
+/// Analyze a node tree for infinite recursion.
+/// `head` indicates whether we are still at the "head" position (no non-empty prefix consumed).
+fn infinite_recursive_call_check(node: &mut Node, env: &ParseEnv, head: i32) -> i32 {
+    let mut r: i32 = 0;
+    match node.node_type() {
+        NodeType::List => {
+            let mut head = head;
+            let cur = node as *mut Node;
+            unsafe {
+                let mut p = cur;
+                loop {
+                    match &mut (*p).inner {
+                        NodeInner::List(ref mut cons) => {
+                            let ret = infinite_recursive_call_check(&mut cons.car, env, head);
+                            if ret < 0 || (ret & RECURSION_INFINITE) != 0 { return ret; }
+                            r |= ret;
+                            if head != 0 {
+                                let min = node_min_byte_len(&cons.car, env);
+                                if min != 0 { head = 0; }
+                            }
+                            match cons.cdr {
+                                Some(ref mut next) => p = &mut **next,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        }
+        NodeType::Alt => {
+            let mut must = RECURSION_MUST;
+            let cur = node as *mut Node;
+            unsafe {
+                let mut p = cur;
+                loop {
+                    match &mut (*p).inner {
+                        NodeInner::Alt(ref mut cons) => {
+                            let ret = infinite_recursive_call_check(&mut cons.car, env, head);
+                            if ret < 0 || (ret & RECURSION_INFINITE) != 0 { return ret; }
+                            r |= ret & RECURSION_EXIST;
+                            must &= ret;
+                            match cons.cdr {
+                                Some(ref mut next) => p = &mut **next,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            r |= must;
+        }
+        NodeType::Quant => {
+            if let NodeInner::Quant(ref mut qn) = node.inner {
+                if qn.upper == 0 { return 0; }
+                if let Some(ref mut body) = qn.body {
+                    r = infinite_recursive_call_check(body, env, head);
+                    if r < 0 { return r; }
+                    if (r & RECURSION_MUST) != 0 && qn.lower == 0 {
+                        r &= !RECURSION_MUST;
+                    }
+                }
+            }
+        }
+        NodeType::Anchor => {
+            if let NodeInner::Anchor(ref mut a) = node.inner {
+                if let Some(ref mut body) = a.body {
+                    r = infinite_recursive_call_check(body, env, head);
+                }
+            }
+        }
+        NodeType::Call => {
+            // Follow call to its target (the BAG_MEMORY node it references)
+            if let NodeInner::Call(ref cn) = node.inner {
+                if !cn.target_node.is_null() {
+                    r = unsafe { infinite_recursive_call_check(&mut *cn.target_node, env, head) };
+                }
+            }
+        }
+        NodeType::Bag => {
+            let bag_type = if let NodeInner::Bag(ref bn) = node.inner { bn.bag_type } else { BagType::Option };
+            match bag_type {
+                BagType::Memory => {
+                    if node.has_status(ND_ST_MARK2) {
+                        return 0;
+                    } else if node.has_status(ND_ST_MARK1) {
+                        // Recursion back to a marked node
+                        return if head == 0 {
+                            RECURSION_EXIST | RECURSION_MUST
+                        } else {
+                            RECURSION_EXIST | RECURSION_MUST | RECURSION_INFINITE
+                        };
+                    } else {
+                        node.status_add(ND_ST_MARK2);
+                        if let NodeInner::Bag(ref mut bn) = node.inner {
+                            if let Some(ref mut body) = bn.body {
+                                r = infinite_recursive_call_check(body, env, head);
+                            }
+                        }
+                        node.status_remove(ND_ST_MARK2);
+                    }
+                }
+                BagType::IfElse => {
+                    unsafe {
+                        let node_ptr = node as *mut Node;
+                        if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
+                            // Check condition (body)
+                            if let Some(ref mut body) = bn.body {
+                                let ret = infinite_recursive_call_check(body, env, head);
+                                if ret < 0 || (ret & RECURSION_INFINITE) != 0 { return ret; }
+                                r |= ret;
+                            }
+                            if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                                // Check then branch
+                                if let Some(ref mut tn) = then_node {
+                                    let min = if head != 0 {
+                                        if let Some(ref body) = bn.body {
+                                            node_min_byte_len(body, env)
+                                        } else { 0 }
+                                    } else { 0 };
+                                    let ret = infinite_recursive_call_check(tn, env, if min != 0 { 0 } else { head });
+                                    if ret < 0 || (ret & RECURSION_INFINITE) != 0 { return ret; }
+                                    r |= ret;
+                                }
+                                // Check else branch
+                                if let Some(ref mut en) = else_node {
+                                    let eret = infinite_recursive_call_check(en, env, head);
+                                    if eret < 0 || (eret & RECURSION_INFINITE) != 0 { return eret; }
+                                    r |= eret & RECURSION_EXIST;
+                                    if (eret & RECURSION_MUST) == 0 {
+                                        r &= !RECURSION_MUST;
+                                    }
+                                } else {
+                                    r &= !RECURSION_MUST;
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if let NodeInner::Bag(ref mut bn) = node.inner {
+                        if let Some(ref mut body) = bn.body {
+                            r = infinite_recursive_call_check(body, env, head);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    r
+}
+
+/// Traverse tree to find recursive call definitions, check each for infinite recursion.
+fn infinite_recursive_call_check_trav(node: &mut Node, env: &ParseEnv) -> i32 {
+    let r;
+    match node.node_type() {
+        NodeType::List | NodeType::Alt => {
+            let cur = node as *mut Node;
+            unsafe {
+                let mut p = cur;
+                loop {
+                    match &mut (*p).inner {
+                        NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) => {
+                            let ret = infinite_recursive_call_check_trav(&mut cons.car, env);
+                            if ret != 0 { return ret; }
+                            match cons.cdr {
+                                Some(ref mut next) => p = &mut **next,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            r = 0;
+        }
+        NodeType::Anchor => {
+            if let NodeInner::Anchor(ref mut a) = node.inner {
+                if let Some(ref mut body) = a.body {
+                    return infinite_recursive_call_check_trav(body, env);
+                }
+            }
+            r = 0;
+        }
+        NodeType::Quant => {
+            if let NodeInner::Quant(ref mut qn) = node.inner {
+                if let Some(ref mut body) = qn.body {
+                    return infinite_recursive_call_check_trav(body, env);
+                }
+            }
+            r = 0;
+        }
+        NodeType::Bag => {
+            let bag_type = if let NodeInner::Bag(ref bn) = node.inner { bn.bag_type } else { BagType::Option };
+            if bag_type == BagType::Memory {
+                if node.has_status(ND_ST_RECURSION) && node.has_status(ND_ST_CALLED) {
+                    node.status_add(ND_ST_MARK1);
+                    let ret = if let NodeInner::Bag(ref mut bn) = node.inner {
+                        if let Some(ref mut body) = bn.body {
+                            infinite_recursive_call_check(body, env, 1)
+                        } else { 0 }
+                    } else { 0 };
+                    if ret < 0 { return ret; }
+                    if (ret & (RECURSION_MUST | RECURSION_INFINITE)) != 0 {
+                        return ONIGERR_NEVER_ENDING_RECURSION;
+                    }
+                    node.status_remove(ND_ST_MARK1);
+                }
+            }
+            if bag_type == BagType::IfElse {
+                unsafe {
+                    let node_ptr = node as *mut Node;
+                    if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
+                        if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                            if let Some(ref mut tn) = then_node {
+                                let ret = infinite_recursive_call_check_trav(tn, env);
+                                if ret != 0 { return ret; }
+                            }
+                            if let Some(ref mut en) = else_node {
+                                let ret = infinite_recursive_call_check_trav(en, env);
+                                if ret != 0 { return ret; }
+                            }
+                        }
+                    }
+                }
+            }
+            // Also recurse into body for all bag types
+            if let NodeInner::Bag(ref mut bn) = node.inner {
+                if let Some(ref mut body) = bn.body {
+                    return infinite_recursive_call_check_trav(body, env);
+                }
+            }
+            r = 0;
+        }
+        _ => { r = 0; }
+    }
+    r
+}
+
 /// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
 /// Mirrors C's tune_tree() from regcomp.c.
 pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
@@ -3960,6 +4229,11 @@ pub fn onig_compile(
         }
         // Detect recursion and set ND_ST_RECURSION on recursive capture groups
         recursive_call_check_trav(&mut root, &mut env, 0);
+        // Check for never-ending recursion (e.g. (?<abc>\g<abc>))
+        let r = infinite_recursive_call_check_trav(&mut root, &env);
+        if r != 0 {
+            return r;
+        }
     }
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
@@ -4382,5 +4656,19 @@ mod tests {
         assert_eq!(r, 0);
         // Should still be a list with 3 elements
         assert_eq!(root.node_type(), NodeType::List);
+    }
+
+    #[test]
+    fn test_never_ending_recursion_direct() {
+        let mut reg = make_test_context().0;
+        let r = onig_compile(&mut reg, b"(?<abc>\\g<abc>)");
+        assert_eq!(r, ONIGERR_NEVER_ENDING_RECURSION);
+    }
+
+    #[test]
+    fn test_never_ending_recursion_conditional() {
+        let mut reg = make_test_context().0;
+        let r = onig_compile(&mut reg, b"(()(?(2)\\g<1>))");
+        assert_eq!(r, ONIGERR_NEVER_ENDING_RECURSION);
     }
 }
