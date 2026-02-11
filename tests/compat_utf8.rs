@@ -7134,14 +7134,12 @@ fn conditional_never_ending() {
 }
 
 #[test]
-#[ignore] // conditional with pattern condition not yet working
 fn conditional_alt_bc() {
     // C line 1524
     x2(b"(?(a)(?:b|c))", b"ac", 0, 2);
 }
 
 #[test]
-#[ignore] // conditional with pattern condition not yet working
 fn conditional_alt_bc_empty() {
     // C line 1525
     x2(b"(?(a)(?:b|c))", b"", 0, 0);

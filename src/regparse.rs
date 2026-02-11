@@ -3917,26 +3917,29 @@ fn prs_conditional(
         if r < 0 {
             return Err(r);
         }
-        let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
 
         let then_node;
         let else_node;
 
         if then_is_empty {
+            let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
             then_node = None;
             else_node = Some(target);
         } else {
-            // target may be Alt(then, Alt(else, nil)) or just a single node
-            if let NodeInner::Alt(ref cons) = target.inner {
-                // Has alternation: first alt = then, rest = else
-                // We need to destructure the Alt node
-                // Consume the target and split it
-                let (then_n, else_n) = split_alt_for_conditional(target);
-                then_node = Some(then_n);
-                else_node = else_n;
+            // Parse then-branch up to | or )
+            let (then_target, then_r) = prs_branch(tok, term, p, end, pattern, env, false)?;
+            if then_r == TokenType::Alt as i32 {
+                // Top-level | found: parse else-branch
+                then_node = Some(then_target);
+                let r2 = fetch_token(tok, p, end, pattern, env);
+                if r2 < 0 {
+                    return Err(r2);
+                }
+                let (else_target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                else_node = Some(else_target);
             } else {
-                // No alternation: just a then, no else
-                then_node = Some(target);
+                // No top-level | — entire body is then, no else
+                then_node = Some(then_target);
                 else_node = None;
             }
         }
@@ -3961,9 +3964,6 @@ fn prs_conditional(
         }
         let (cond_node, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
 
-        // After parsing condition, expect ')' to close the condition group
-        // Actually the ')' was already consumed by prs_alts as term
-
         // Now parse then|else
         if p_end(*p, end) {
             return Err(ONIGERR_END_PATTERN_IN_GROUP);
@@ -3987,21 +3987,30 @@ fn prs_conditional(
         if r < 0 {
             return Err(r);
         }
-        let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
 
         let then_node;
         let else_node;
 
         if then_is_empty {
+            // (?(cond)|else) - empty then, parse else
+            let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
             then_node = None;
             else_node = Some(target);
         } else {
-            if let NodeInner::Alt(_) = target.inner {
-                let (then_n, else_n) = split_alt_for_conditional(target);
-                then_node = Some(then_n);
-                else_node = else_n;
+            // Parse then-branch up to | or )
+            let (then_target, then_r) = prs_branch(tok, term, p, end, pattern, env, false)?;
+            if then_r == TokenType::Alt as i32 {
+                // Top-level | found: parse else-branch
+                then_node = Some(then_target);
+                let r2 = fetch_token(tok, p, end, pattern, env);
+                if r2 < 0 {
+                    return Err(r2);
+                }
+                let (else_target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                else_node = Some(else_target);
             } else {
-                then_node = Some(target);
+                // No top-level | — entire body is then, no else
+                then_node = Some(then_target);
                 else_node = None;
             }
         }

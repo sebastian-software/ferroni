@@ -36,8 +36,10 @@ enum MemPtr {
 enum StackEntry {
     /// Choice point (STK_ALT / STK_SUPER_ALT) - alternate path for backtracking.
     Alt {
-        pcode: usize, // bytecode index to jump to on backtrack
-        pstr: usize,  // string position to restore
+        pcode: usize,    // bytecode index to jump to on backtrack
+        pstr: usize,     // string position to restore
+        zid: i32,        // remaining count for StepBackNext (-1 = unused)
+        is_super: bool,  // true for SUPER_ALT (survives CutToMark)
     },
     /// Capture group start (STK_MEM_START)
     MemStart {
@@ -88,6 +90,8 @@ enum StackEntry {
     },
     /// Return marker (STK_RETURN)
     Return,
+    /// Voided entry (STK_VOID) - dead space, skipped during pops
+    Void,
 }
 
 impl StackEntry {
@@ -150,18 +154,18 @@ impl MatchArg {
 
 /// Pop stack entries until an ALT (choice point) is found.
 /// Restores mem_start_stk/mem_end_stk as needed based on pop_level.
-/// Returns Some((pcode, pstr)) from the ALT entry, or None if stack is empty.
+/// Returns Some((pcode, pstr, zid)) from the ALT entry, or None if stack is empty.
 fn stack_pop(
     stack: &mut Vec<StackEntry>,
     pop_level: StackPopLevel,
     mem_start_stk: &mut [MemPtr],
     mem_end_stk: &mut [MemPtr],
-) -> Option<(usize, usize)> {
+) -> Option<(usize, usize, i32)> {
     loop {
         let entry = stack.pop()?;
         match entry {
-            StackEntry::Alt { pcode, pstr } => {
-                return Some((pcode, pstr));
+            StackEntry::Alt { pcode, pstr, zid, .. } => {
+                return Some((pcode, pstr, zid));
             }
             _ => match pop_level {
                 StackPopLevel::Free => {
@@ -211,8 +215,8 @@ fn stack_pop(
     }
 }
 
-/// Pop stack entries until a Mark with matching zid is found.
-/// Restores mem_start_stk/mem_end_stk along the way.
+/// Pop stack entries until a Mark with matching zid is found (STACK_POP_TO_MARK).
+/// Removes ALL entries. Restores mem_start_stk/mem_end_stk along the way.
 /// Returns the saved position from the Mark entry (if any).
 fn stack_pop_to_mark(
     stack: &mut Vec<StackEntry>,
@@ -247,6 +251,43 @@ fn stack_pop_to_mark(
             _ => {}
         }
     }
+}
+
+/// Void stack entries until a Mark with matching zid is found (STACK_TO_VOID_TO_MARK).
+/// Only voids "void targets" (regular Alt, EmptyCheckStart, Mark) by setting them to Void.
+/// Preserves non-void targets (SuperAlt, SaveVal, MemStart, MemEnd, RepeatInc, etc.) in place.
+/// Void stack entries from top to the Mark with matching id (C: STACK_TO_VOID_TO_MARK).
+/// Returns the mark's saved position. Voids regular Alt and EmptyCheckStart entries,
+/// but preserves Super Alt entries and Marks with different IDs.
+fn stack_void_to_mark(
+    stack: &mut Vec<StackEntry>,
+    mark_id: usize,
+) -> Option<usize> {
+    let mut i = stack.len();
+    while i > 0 {
+        i -= 1;
+        // Check if this is the target Mark
+        if let StackEntry::Mark { zid, pos } = &stack[i] {
+            if *zid == mark_id {
+                let saved_pos = *pos;
+                stack[i] = StackEntry::Void;
+                return saved_pos;
+            }
+            // Different id mark: don't void, just skip
+            continue;
+        }
+        // Void targets: regular Alt and EmptyCheckStart
+        // Super Alt (is_super=true) is NOT voided — it survives cuts
+        let is_void_target = matches!(
+            &stack[i],
+            StackEntry::Alt { is_super: false, .. }
+            | StackEntry::EmptyCheckStart { .. }
+        );
+        if is_void_target {
+            stack[i] = StackEntry::Void;
+        }
+    }
+    None
 }
 
 /// Search backwards through the stack for the most recent RepeatInc with matching zid.
@@ -641,11 +682,14 @@ fn match_at(
 
     let mut keep: usize = sstart;
     let mut best_len: i32 = ONIG_MISMATCH;
+    let mut last_alt_zid: i32 = -1;
 
     // Push bottom sentinel (like C's STACK_PUSH_BOTTOM with FinishCode)
     stack.push(StackEntry::Alt {
         pcode: FINISH_PCODE,
         pstr: 0,
+        zid: -1,
+        is_super: false,
     });
 
     // ---- Main dispatch loop ----
@@ -997,7 +1041,7 @@ fn match_at(
                     if enc.is_mbc_newline(&str_data[s..], end) {
                         break;
                     }
-                    stack.push(StackEntry::Alt { pcode: p + 1, pstr: s });
+                    stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
                     s += n;
                 }
                 p += 1;
@@ -1009,7 +1053,7 @@ fn match_at(
                     if s + n > right_range {
                         break;
                     }
-                    stack.push(StackEntry::Alt { pcode: p + 1, pstr: s });
+                    stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
                     s += n;
                 }
                 p += 1;
@@ -1026,7 +1070,7 @@ fn match_at(
                             break;
                         }
                         if s < end && str_data[s] == c {
-                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: s });
+                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
                         }
                         s += n;
                     }
@@ -1044,7 +1088,7 @@ fn match_at(
                             break;
                         }
                         if s < end && str_data[s] == c {
-                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: s });
+                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
                         }
                         s += n;
                     }
@@ -1544,9 +1588,12 @@ fn match_at(
             OpCode::Push | OpCode::PushSuper => {
                 if let OperationPayload::Push { addr } = reg.ops[p].payload {
                     let alt_target = (p as i32 + addr) as usize;
+                    let is_super = reg.ops[p].opcode == OpCode::PushSuper;
                     stack.push(StackEntry::Alt {
                         pcode: alt_target,
                         pstr: s,
+                        zid: -1,
+                        is_super,
                     });
                     p += 1; // try main path first
                 } else {
@@ -1598,6 +1645,8 @@ fn match_at(
                         stack.push(StackEntry::Alt {
                             pcode: alt_target,
                             pstr: s,
+                            zid: -1,
+                            is_super: false,
                         });
                         p += 1;
                     } else {
@@ -1619,6 +1668,8 @@ fn match_at(
                         stack.push(StackEntry::Alt {
                             pcode: alt_target,
                             pstr: s,
+                            zid: -1,
+                            is_super: false,
                         });
                     }
                     p += 1;
@@ -1644,12 +1695,16 @@ fn match_at(
                             stack.push(StackEntry::Alt {
                                 pcode: alt_target,
                                 pstr: s,
+                                zid: -1,
+                                is_super: false,
                             });
                         } else {
                             // Non-greedy: push body as alternative, try skip first
                             stack.push(StackEntry::Alt {
                                 pcode: p + 1,
                                 pstr: s,
+                                zid: -1,
+                                is_super: false,
                             });
                             p = alt_target;
                             continue;
@@ -1677,7 +1732,7 @@ fn match_at(
                         p += 1;
                     } else if count >= lower {
                         p += 1;
-                        stack.push(StackEntry::Alt { pcode: p, pstr: s });
+                        stack.push(StackEntry::Alt { pcode: p, pstr: s, zid: -1, is_super: false });
                         p = body_start;
                     } else {
                         p = body_start;
@@ -1704,7 +1759,7 @@ fn match_at(
                     if upper != INFINITE_REPEAT && count as i32 == upper {
                         p += 1;
                     } else if count >= lower {
-                        stack.push(StackEntry::Alt { pcode: body_start, pstr: s });
+                        stack.push(StackEntry::Alt { pcode: body_start, pstr: s, zid: -1, is_super: false });
                         p += 1;
                     } else {
                         p = body_start;
@@ -1769,8 +1824,19 @@ fn match_at(
             // ================================================================
             OpCode::Move => {
                 if let OperationPayload::Move { n } = reg.ops[p].payload {
-                    s = (s as i32 + n) as usize;
-                    p += 1;
+                    if n < 0 {
+                        // Step back n characters (encoding-aware)
+                        match onigenc_step_back(enc, 0, s, str_data, (-n) as usize) {
+                            Some(new_s) => { s = new_s; p += 1; }
+                            None => { goto_fail = true; }
+                        }
+                    } else {
+                        // Step forward n characters
+                        match onigenc_step(enc, s, end, str_data, n as usize) {
+                            Some(new_s) => { s = new_s; p += 1; }
+                            None => { goto_fail = true; }
+                        }
+                    }
                 } else {
                     goto_fail = true;
                 }
@@ -1788,12 +1854,24 @@ fn match_at(
                 {
                     let initial = initial as usize;
                     // Step back 'initial' characters (encoding-aware)
-                    if initial == 0 {
-                        p += 1;
-                    } else {
+                    if initial != 0 {
                         match onigenc_step_back(enc, 0, s, str_data, initial) {
-                            Some(new_s) => { s = new_s; p += 1; }
+                            Some(new_s) => { s = new_s; }
                             None => { goto_fail = true; }
+                        }
+                    }
+                    if !goto_fail {
+                        if remaining != 0 {
+                            // Variable-length: push Alt with remaining count, jump to addr
+                            stack.push(StackEntry::Alt {
+                                pcode: p + 1,
+                                pstr: s,
+                                zid: remaining,
+                                is_super: false,
+                            });
+                            p = (p as i32 + addr as i32) as usize;
+                        } else {
+                            p += 1;
                         }
                     }
                 } else {
@@ -1802,7 +1880,26 @@ fn match_at(
             }
 
             OpCode::StepBackNext => {
-                p += 1;
+                // last_alt_zid was set by the backtrack that jumped here
+                let mut remaining = last_alt_zid;
+                if remaining != INFINITE_LEN as i32 {
+                    remaining -= 1;
+                }
+                match onigenc_step_back(enc, 0, s, str_data, 1) {
+                    Some(new_s) => { s = new_s; }
+                    None => { goto_fail = true; }
+                }
+                if !goto_fail {
+                    if remaining != 0 {
+                        stack.push(StackEntry::Alt {
+                            pcode: p,
+                            pstr: s,
+                            zid: remaining,
+                            is_super: false,
+                        });
+                    }
+                    p += 1;
+                }
             }
 
             // ================================================================
@@ -1820,13 +1917,13 @@ fn match_at(
             }
 
             // ================================================================
-            // OP_CUT_TO_MARK - pop to mark, optionally restore position
+            // OP_CUT_TO_MARK - void entries to mark, optionally restore position
+            // C always uses STACK_TO_VOID_TO_MARK (not POP_TO_MARK)
             // ================================================================
             OpCode::CutToMark => {
                 if let OperationPayload::CutToMark { id, restore_pos } = reg.ops[p].payload {
                     let id = id as usize;
-                    let saved_pos =
-                        stack_pop_to_mark(&mut stack, id, &mut mem_start_stk, &mut mem_end_stk);
+                    let saved_pos = stack_void_to_mark(&mut stack, id);
                     if restore_pos {
                         if let Some(pos) = saved_pos {
                             s = pos;
@@ -1968,13 +2065,14 @@ fn match_at(
                 &mut mem_start_stk,
                 &mut mem_end_stk,
             ) {
-                Some((pcode, pstr)) => {
+                Some((pcode, pstr, alt_zid)) => {
                     if pcode == FINISH_PCODE {
                         // Hit bottom sentinel - no more alternatives
                         break;
                     }
                     p = pcode;
                     s = pstr;
+                    last_alt_zid = alt_zid;
                 }
                 None => {
                     // Stack empty - match failed
@@ -2256,6 +2354,7 @@ mod tests {
         let (r, _) = compile_and_match(b"x", b"xyz");
         assert_eq!(r, 1);
     }
+
 
     // ---- Dot (anychar) ----
 
