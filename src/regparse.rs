@@ -1534,17 +1534,24 @@ fn prs_char_property(
 /// Check if position looks like start of a POSIX bracket ([:...])
 fn is_posix_bracket_start(p: usize, end: usize, pattern: &[u8], enc: OnigEncoding) -> bool {
     let mut tp = p;
+    let mut n = 0;
     while tp < end {
         let c = pattern[tp];
         if c == b':' {
             // Check for :]
             if tp + 1 < end && pattern[tp + 1] == b']' {
-                return true;
+                // Empty name (n == 0) is not a valid POSIX bracket
+                return n > 0;
             }
             return false;
         }
         if c == b']' || c == b'[' || c == b'\\' {
             return false;
+        }
+        if c == b'^' && n == 0 {
+            // Skip negation prefix
+        } else {
+            n += 1;
         }
         tp += enc.mbc_enc_len(&pattern[tp..end]);
     }

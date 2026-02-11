@@ -4646,7 +4646,6 @@ fn posix_upper_bracket_literal() {
 }
 
 #[test]
-#[ignore] // parser rejects [[::]] as invalid POSIX bracket
 fn nested_bracket_double_colon() {
     // C line 244: [[::]] matches :
     x2(b"[[::]]", b":", 0, 1);
