@@ -3231,8 +3231,44 @@ fn prs_cc(
                 }
             }
             TokenType::CrudeByte => {
-                let in_code = tok.code;
-                let in_type = CV_SB;
+                let byte = tok.code as u8;
+                let mut buf = vec![byte];
+
+                if byte >= 0x80 {
+                    let expected_len = env.enc.mbc_enc_len(&[byte]);
+                    if expected_len > 1 {
+                        // Accumulate consecutive CrudeByte tokens for multi-byte sequence
+                        for _ in 1..expected_len {
+                            r = fetch_token_cc(tok, p, end, pattern, env, state);
+                            if r < 0 {
+                                env.parse_depth -= 1;
+                                return Err(r);
+                            }
+                            if tok.token_type == TokenType::CrudeByte {
+                                buf.push(tok.code as u8);
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    // Validate the accumulated byte sequence
+                    if !env.enc.is_valid_mbc_string(&buf) {
+                        env.parse_depth -= 1;
+                        if byte > 0xF4 || byte < 0xC2 {
+                            return Err(ONIGERR_INVALID_CODE_POINT_VALUE);
+                        }
+                        return Err(ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
+                    }
+                }
+
+                // For multi-byte sequences, decode to codepoint and use CV_MB
+                let (in_code, in_type) = if buf.len() > 1 {
+                    let code = env.enc.mbc_to_code(&buf, buf.len());
+                    (code, CV_MB)
+                } else {
+                    (tok.code, CV_SB)
+                };
                 let in_raw = true;
 
                 let cc = if use_work {
@@ -3260,7 +3296,11 @@ fn prs_cc(
                 let in_code = tok.code;
                 let mblen = env.enc.code_to_mbclen(in_code);
                 let in_type = if mblen < 0 {
-                    // Invalid code point; may be allowed at end of range
+                    // Invalid code point; only allowed at end of range
+                    if state != CS_RANGE {
+                        env.parse_depth -= 1;
+                        return Err(ONIGERR_INVALID_CODE_POINT_VALUE);
+                    }
                     CV_MB
                 } else if mblen == 1 {
                     CV_SB
@@ -4525,7 +4565,42 @@ fn prs_exp(
         }
         TokenType::CrudeByte => {
             let byte = tok.code as u8;
-            let np = node_new_str_crude(&[byte]);
+            let mut buf = vec![byte];
+            let mut fetched_non_crude = false;
+
+            if byte >= 0x80 {
+                let expected_len = env.enc.mbc_enc_len(&[byte]);
+                if expected_len > 1 {
+                    // Accumulate consecutive CrudeByte tokens for multi-byte sequence
+                    for _ in 1..expected_len {
+                        let r = fetch_token(tok, p, end, pattern, env);
+                        if r < 0 { return Err(r); }
+                        if tok.token_type == TokenType::CrudeByte {
+                            buf.push(tok.code as u8);
+                        } else {
+                            fetched_non_crude = true;
+                            break;
+                        }
+                    }
+                }
+
+                // Validate the accumulated byte sequence
+                if !env.enc.is_valid_mbc_string(&buf) {
+                    // Invalid lead byte (> 0xF4 or continuation/overlong 0x80-0xC1)
+                    if byte > 0xF4 || byte < 0xC2 {
+                        return Err(ONIGERR_INVALID_CODE_POINT_VALUE);
+                    }
+                    // Valid lead byte but not enough continuation bytes
+                    return Err(ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
+                }
+            }
+
+            let np = node_new_str_crude(&buf);
+
+            // If we already fetched a non-CrudeByte token, use it directly
+            if fetched_non_crude {
+                return check_quantifier(np, tok, p, end, pattern, env, group, parse_depth);
+            }
             np
         }
         TokenType::CodePoint => {

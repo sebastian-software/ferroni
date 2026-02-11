@@ -8596,7 +8596,6 @@ fn error_invalid_codepoint_7fffffff() {
 }
 
 #[test]
-#[ignore] // codepoint validation in char class not detecting 0x7fffffff
 fn error_invalid_codepoint_7fffffff_cc() {
     // C line 1779
     e(b"[\\x{7fffffff}]", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
@@ -9204,42 +9203,36 @@ fn ja_mutual_recursion() {
 // --- UTF-8 encoding validation errors (C lines 1365-1370) ---
 
 #[test]
-#[ignore] // UTF-8 raw byte validation not implemented
 fn error_utf8_too_short_xf4() {
     // C line 1365: \xF4 is a 4-byte lead but no continuation
     e(b"\\xF4", b"", ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
 }
 
 #[test]
-#[ignore] // UTF-8 raw byte validation not implemented
 fn error_utf8_invalid_xf5() {
     // C line 1366: \xF5 is invalid UTF-8 lead byte
     e(b"\\xF5", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
 }
 
 #[test]
-#[ignore] // UTF-8 raw byte validation not implemented
 fn error_utf8_invalid_xff() {
     // C line 1367: \xFF is invalid UTF-8 lead byte
     e(b"\\xFF", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
 }
 
 #[test]
-#[ignore] // UTF-8 raw byte validation not implemented
 fn error_utf8_too_short_xf4_in_cc() {
     // C line 1368: [\xF4] in character class
     e(b"[\\xF4]", b"", ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
 }
 
 #[test]
-#[ignore] // UTF-8 raw byte validation not implemented
 fn error_utf8_invalid_xf5_in_cc() {
     // C line 1369: [\xF5] in character class
     e(b"[\\xF5]", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
 }
 
 #[test]
-#[ignore] // UTF-8 raw byte validation not implemented
 fn error_utf8_invalid_range_xff() {
     // C line 1370: [\x00-\xFF] range with invalid end
     e(b"[\\x00-\\xFF]", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
