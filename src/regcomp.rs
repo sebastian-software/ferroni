@@ -1082,7 +1082,19 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
         if body_len < 0 {
             return body_len;
         }
-        OPSIZE_MARK + OPSIZE_STEP_BACK_START + body_len + OPSIZE_CUT_TO_MARK
+        if an.char_min_len == an.char_max_len {
+            // Fixed-length
+            OPSIZE_MARK + OPSIZE_STEP_BACK_START + body_len + OPSIZE_CUT_TO_MARK
+        } else {
+            // Variable-length: SAVE_VAL + UPDATE_VAR + MARK + PUSH + JUMP +
+            //   UPDATE_VAR + FAIL + STEP_BACK_START + STEP_BACK_NEXT +
+            //   body + CHECK_POSITION + CUT_TO_MARK + UPDATE_VAR
+            OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR + OPSIZE_MARK + OPSIZE_PUSH +
+                OPSIZE_JUMP + OPSIZE_UPDATE_VAR + OPSIZE_FAIL +
+                OPSIZE_STEP_BACK_START + OPSIZE_STEP_BACK_NEXT +
+                body_len + OPSIZE_CHECK_POSITION + OPSIZE_CUT_TO_MARK +
+                OPSIZE_UPDATE_VAR
+        }
     } else if at == ANCR_LOOK_BEHIND_NOT {
         // (?<!...) negative lookbehind
         let body_len = if let Some(body) = &an.body {
@@ -1093,8 +1105,21 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
         if body_len < 0 {
             return body_len;
         }
-        OPSIZE_MARK + OPSIZE_PUSH + OPSIZE_STEP_BACK_START + body_len +
-            OPSIZE_POP_TO_MARK + OPSIZE_FAIL + OPSIZE_POP
+        if an.char_min_len == an.char_max_len {
+            // Fixed-length
+            OPSIZE_MARK + OPSIZE_PUSH + OPSIZE_STEP_BACK_START + body_len +
+                OPSIZE_POP_TO_MARK + OPSIZE_FAIL + OPSIZE_POP
+        } else {
+            // Variable-length: SAVE_VAL + UPDATE_VAR + MARK + PUSH +
+            //   STEP_BACK_START + STEP_BACK_NEXT + body + CHECK_POSITION +
+            //   POP_TO_MARK + UPDATE_VAR + POP + FAIL +
+            //   UPDATE_VAR + POP + POP
+            OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR + OPSIZE_MARK + OPSIZE_PUSH +
+                OPSIZE_STEP_BACK_START + OPSIZE_STEP_BACK_NEXT +
+                body_len + OPSIZE_CHECK_POSITION +
+                OPSIZE_POP_TO_MARK + OPSIZE_UPDATE_VAR + OPSIZE_POP + OPSIZE_FAIL +
+                OPSIZE_UPDATE_VAR + OPSIZE_POP + OPSIZE_POP
+        }
     } else {
         // Simple anchors: ^, $, \b, \B, \A, \z, etc.
         SIZE_INC
@@ -1163,74 +1188,237 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
     }
 
     if at == ANCR_LOOK_BEHIND {
-        // (?<=...) positive lookbehind
-        let id = reg.num_call;
-        reg.num_call += 1;
+        if an.char_min_len == an.char_max_len {
+            // (?<=...) positive lookbehind — fixed-length
+            let id = reg.num_call;
+            reg.num_call += 1;
 
-        add_op(reg, OpCode::Mark, OperationPayload::Mark {
-            id,
-            save_pos: true,
-        });
+            add_op(reg, OpCode::Mark, OperationPayload::Mark {
+                id,
+                save_pos: true,
+            });
 
-        let char_len = an.char_min_len as i32;
-        add_op(reg, OpCode::StepBackStart, OperationPayload::StepBackStart {
-            initial: char_len,
-            remaining: 0,
-            addr: 0, // no variable-length looping
-        });
+            let char_len = an.char_min_len as i32;
+            add_op(reg, OpCode::StepBackStart, OperationPayload::StepBackStart {
+                initial: char_len,
+                remaining: 0,
+                addr: 1,
+            });
 
-        if let Some(body) = &an.body {
-            let r = compile_tree(body, reg, env);
-            if r != 0 {
-                return r;
+            if let Some(body) = &an.body {
+                let r = compile_tree(body, reg, env);
+                if r != 0 {
+                    return r;
+                }
             }
-        }
 
-        add_op(reg, OpCode::CutToMark, OperationPayload::CutToMark {
-            id,
-            restore_pos: true,
-        });
+            add_op(reg, OpCode::CutToMark, OperationPayload::CutToMark {
+                id,
+                restore_pos: true,
+            });
+        } else {
+            // (?<=...) positive lookbehind — variable-length
+            let mid1 = reg.num_call;
+            reg.num_call += 1;
+            let mid2 = reg.num_call;
+            reg.num_call += 1;
+
+            // SAVE_VAL(RightRange, mid1)
+            add_op(reg, OpCode::SaveVal, OperationPayload::SaveVal {
+                save_type: SaveType::RightRange,
+                id: mid1,
+            });
+            // UPDATE_VAR(RightRangeToS)
+            add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+                var_type: UpdateVarType::RightRangeToS,
+                id: 0,
+                clear: false,
+            });
+            // MARK(mid2, save_pos=false)
+            add_op(reg, OpCode::Mark, OperationPayload::Mark {
+                id: mid2,
+                save_pos: false,
+            });
+            // PUSH(addr → JUMP instruction, i.e. skip past JUMP to UPDATE_VAR)
+            // PUSH is at position X, JUMP at X+1, UPDATE_VAR at X+2
+            // So alt target = X + SIZE_INC + OPSIZE_JUMP = X + 2 → UPDATE_VAR
+            add_op(reg, OpCode::Push, OperationPayload::Push {
+                addr: SIZE_INC + OPSIZE_JUMP,
+            });
+            // JUMP(addr → past UPDATE_VAR + FAIL to STEP_BACK_START)
+            add_op(reg, OpCode::Jump, OperationPayload::Jump {
+                addr: SIZE_INC + OPSIZE_UPDATE_VAR + OPSIZE_FAIL,
+            });
+            // UPDATE_VAR(RightRangeFromStack, mid1, clear=false) — fail path restores right_range
+            add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+                var_type: UpdateVarType::RightRangeFromStack,
+                id: mid1,
+                clear: false,
+            });
+            // FAIL
+            add_op(reg, OpCode::Fail, OperationPayload::None);
+
+            // STEP_BACK_START(initial=min, remaining=max-min, addr=2)
+            let diff = if an.char_max_len != INFINITE_LEN {
+                (an.char_max_len - an.char_min_len) as i32
+            } else {
+                INFINITE_LEN as i32
+            };
+            add_op(reg, OpCode::StepBackStart, OperationPayload::StepBackStart {
+                initial: an.char_min_len as i32,
+                remaining: diff,
+                addr: 2,
+            });
+            // STEP_BACK_NEXT
+            add_op(reg, OpCode::StepBackNext, OperationPayload::None);
+
+            // <body>
+            if let Some(body) = &an.body {
+                let r = compile_tree(body, reg, env);
+                if r != 0 {
+                    return r;
+                }
+            }
+
+            // CHECK_POSITION(CurrentRightRange)
+            add_op(reg, OpCode::CheckPosition, OperationPayload::CheckPosition {
+                check_type: CheckPositionType::CurrentRightRange,
+            });
+            // CUT_TO_MARK(mid2, restore_pos=false)
+            add_op(reg, OpCode::CutToMark, OperationPayload::CutToMark {
+                id: mid2,
+                restore_pos: false,
+            });
+            // UPDATE_VAR(RightRangeFromStack, mid1, clear=true)
+            add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+                var_type: UpdateVarType::RightRangeFromStack,
+                id: mid1,
+                clear: true,
+            });
+        }
         return 0;
     }
 
     if at == ANCR_LOOK_BEHIND_NOT {
-        // (?<!...) negative lookbehind
-        // C sequence: MARK, PUSH, STEP_BACK, body, POP_TO_MARK, FAIL, POP
         let body_len = if let Some(body) = &an.body {
             compile_length_tree(body, reg, env)
         } else {
             0
         };
 
-        let id = reg.num_call;
-        reg.num_call += 1;
+        if an.char_min_len == an.char_max_len {
+            // (?<!...) negative lookbehind — fixed-length
+            let id = reg.num_call;
+            reg.num_call += 1;
 
-        add_op(reg, OpCode::Mark, OperationPayload::Mark {
-            id,
-            save_pos: false,
-        });
+            add_op(reg, OpCode::Mark, OperationPayload::Mark {
+                id,
+                save_pos: false,
+            });
 
-        let push_addr = SIZE_INC + OPSIZE_STEP_BACK_START +
-            body_len + OPSIZE_POP_TO_MARK + OPSIZE_FAIL;
-        add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
+            let push_addr = SIZE_INC + OPSIZE_STEP_BACK_START +
+                body_len + OPSIZE_POP_TO_MARK + OPSIZE_FAIL;
+            add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
 
-        let char_len = an.char_min_len as i32;
-        add_op(reg, OpCode::StepBackStart, OperationPayload::StepBackStart {
-            initial: char_len,
-            remaining: 0,
-            addr: 1,
-        });
+            let char_len = an.char_min_len as i32;
+            add_op(reg, OpCode::StepBackStart, OperationPayload::StepBackStart {
+                initial: char_len,
+                remaining: 0,
+                addr: 1,
+            });
 
-        if let Some(body) = &an.body {
-            let r = compile_tree(body, reg, env);
-            if r != 0 {
-                return r;
+            if let Some(body) = &an.body {
+                let r = compile_tree(body, reg, env);
+                if r != 0 {
+                    return r;
+                }
             }
-        }
 
-        add_op(reg, OpCode::PopToMark, OperationPayload::PopToMark { id });
-        add_op(reg, OpCode::Fail, OperationPayload::None);
-        add_op(reg, OpCode::Pop, OperationPayload::None);
+            add_op(reg, OpCode::PopToMark, OperationPayload::PopToMark { id });
+            add_op(reg, OpCode::Fail, OperationPayload::None);
+            add_op(reg, OpCode::Pop, OperationPayload::None);
+        } else {
+            // (?<!...) negative lookbehind — variable-length
+            let mid1 = reg.num_call;
+            reg.num_call += 1;
+            let mid2 = reg.num_call;
+            reg.num_call += 1;
+
+            // SAVE_VAL(RightRange, mid1)
+            add_op(reg, OpCode::SaveVal, OperationPayload::SaveVal {
+                save_type: SaveType::RightRange,
+                id: mid1,
+            });
+            // UPDATE_VAR(RightRangeToS)
+            add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+                var_type: UpdateVarType::RightRangeToS,
+                id: 0,
+                clear: false,
+            });
+            // MARK(mid2, save_pos=false)
+            add_op(reg, OpCode::Mark, OperationPayload::Mark {
+                id: mid2,
+                save_pos: false,
+            });
+            // PUSH(addr → success path past body-matched-fail section)
+            // From PUSH: skip STEP_BACK_START + STEP_BACK_NEXT + body + CHECK_POSITION +
+            //   POP_TO_MARK + UPDATE_VAR + POP + FAIL
+            let push_addr = SIZE_INC + OPSIZE_STEP_BACK_START + OPSIZE_STEP_BACK_NEXT +
+                body_len + OPSIZE_CHECK_POSITION +
+                OPSIZE_POP_TO_MARK + OPSIZE_UPDATE_VAR + OPSIZE_POP + OPSIZE_FAIL;
+            add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
+
+            // STEP_BACK_START(initial=min, remaining=max-min, addr=2)
+            let diff = if an.char_max_len != INFINITE_LEN {
+                (an.char_max_len - an.char_min_len) as i32
+            } else {
+                INFINITE_LEN as i32
+            };
+            add_op(reg, OpCode::StepBackStart, OperationPayload::StepBackStart {
+                initial: an.char_min_len as i32,
+                remaining: diff,
+                addr: 2,
+            });
+            // STEP_BACK_NEXT
+            add_op(reg, OpCode::StepBackNext, OperationPayload::None);
+
+            // <body>
+            if let Some(body) = &an.body {
+                let r = compile_tree(body, reg, env);
+                if r != 0 {
+                    return r;
+                }
+            }
+
+            // CHECK_POSITION(CurrentRightRange) — body matched here, verify position
+            add_op(reg, OpCode::CheckPosition, OperationPayload::CheckPosition {
+                check_type: CheckPositionType::CurrentRightRange,
+            });
+            // POP_TO_MARK(mid2) — body succeeded: clean up mark
+            add_op(reg, OpCode::PopToMark, OperationPayload::PopToMark { id: mid2 });
+            // UPDATE_VAR(RightRangeFromStack, mid1, clear=false) — restore right_range
+            add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+                var_type: UpdateVarType::RightRangeFromStack,
+                id: mid1,
+                clear: false,
+            });
+            // POP — discard outer PUSH's SaveVal
+            add_op(reg, OpCode::Pop, OperationPayload::None);
+            // FAIL — negative lookbehind: body match = overall failure
+            add_op(reg, OpCode::Fail, OperationPayload::None);
+
+            // === Success path (body failed at all positions) ===
+            // UPDATE_VAR(RightRangeFromStack, mid1, clear=false) — restore right_range
+            add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+                var_type: UpdateVarType::RightRangeFromStack,
+                id: mid1,
+                clear: false,
+            });
+            // POP — discard Mark
+            add_op(reg, OpCode::Pop, OperationPayload::None);
+            // POP — discard SaveVal
+            add_op(reg, OpCode::Pop, OperationPayload::None);
+        }
         return 0;
     }
 
@@ -1316,14 +1504,27 @@ fn compile_gimmick_node(gn: &GimmickNode, reg: &mut RegexType, env: &ParseEnv) -
             add_op(reg, OpCode::Fail, OperationPayload::None);
         }
         GimmickType::Save => {
+            let save_type = match gn.detail_type {
+                1 => SaveType::S,
+                2 => SaveType::RightRange,
+                _ => SaveType::Keep,
+            };
             add_op(reg, OpCode::SaveVal, OperationPayload::SaveVal {
-                save_type: SaveType::Keep, // TODO: determine from detail_type
+                save_type,
                 id: gn.id,
             });
         }
         GimmickType::UpdateVar => {
+            let var_type = match gn.detail_type {
+                1 => UpdateVarType::SFromStack,
+                2 => UpdateVarType::RightRangeFromStack,
+                3 => UpdateVarType::RightRangeFromSStack,
+                4 => UpdateVarType::RightRangeToS,
+                5 => UpdateVarType::RightRangeInit,
+                _ => UpdateVarType::KeepFromStackLast,
+            };
             add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
-                var_type: UpdateVarType::KeepFromStackLast, // TODO: determine from detail_type
+                var_type,
                 id: gn.id,
                 clear: false,
             });
@@ -1459,6 +1660,10 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
         }
 
         NodeInner::Alt(cons) => {
+            // Check if this Alt has SUPER status (used by absent function)
+            let is_super = node.has_status(ND_ST_SUPER);
+            let push_opcode = if is_super { OpCode::PushSuper } else { OpCode::Push };
+
             // Collect all alternatives to calculate lengths
             let mut branches: Vec<&Node> = Vec::new();
             branches.push(&cons.car);
@@ -1501,7 +1706,7 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
                 if i < n - 1 {
                     // PUSH to next alternative (skip over body + JUMP)
                     let push_addr = SIZE_INC + branch_lens[i] + OPSIZE_JUMP;
-                    add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
+                    add_op(reg, push_opcode, OperationPayload::Push { addr: push_addr });
                 }
 
                 let r = compile_tree(branches[i], reg, env);
@@ -1990,10 +2195,10 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
                     match node_char_len(&cons.car, enc) {
                         CharLenResult::Fixed(n) => {
                             if variable {
-                                min_sum += n;
-                                max_sum += n;
+                                min_sum = distance_add(min_sum, n);
+                                max_sum = distance_add(max_sum, n);
                             } else {
-                                sum += n;
+                                sum = distance_add(sum, n);
                             }
                         }
                         CharLenResult::Variable(mn, mx) => {
@@ -2002,8 +2207,8 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
                                 max_sum = sum;
                                 variable = true;
                             }
-                            min_sum += mn;
-                            max_sum += mx;
+                            min_sum = distance_add(min_sum, mn);
+                            max_sum = distance_add(max_sum, mx);
                         }
                     }
                     match &cons.cdr {
@@ -2050,24 +2255,71 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
             if let Some(ref body) = qn.body {
                 match node_char_len(body, enc) {
                     CharLenResult::Fixed(n) => {
-                        let lo = n * (qn.lower as OnigLen);
-                        let hi = if qn.upper == INFINITE_REPEAT { OnigLen::MAX } else { n * (qn.upper as OnigLen) };
+                        let lo = distance_multiply(n, qn.lower);
+                        let hi = if qn.upper == INFINITE_REPEAT { INFINITE_LEN } else { distance_multiply(n, qn.upper) };
                         if lo == hi { CharLenResult::Fixed(lo) } else { CharLenResult::Variable(lo, hi) }
                     }
-                    v => v,
+                    CharLenResult::Variable(mn, mx) => {
+                        let lo = distance_multiply(mn, qn.lower);
+                        let hi = if qn.upper == INFINITE_REPEAT { INFINITE_LEN } else { distance_multiply(mx, qn.upper) };
+                        CharLenResult::Variable(lo, hi)
+                    }
                 }
             } else {
                 CharLenResult::Fixed(0)
             }
         }
         NodeInner::Bag(bn) => {
-            if let Some(ref body) = bn.body {
+            if let BagData::IfElse { ref then_node, ref else_node } = bn.bag_data {
+                // Condition (body) may consume input (non-backref pattern conditions)
+                // or be zero-width (backref checker conditions).
+                let cond_len = if let Some(ref body) = bn.body {
+                    if body.has_status(ND_ST_CHECKER) {
+                        // Backref checker: zero length
+                        (0 as OnigLen, 0 as OnigLen)
+                    } else {
+                        match node_char_len(body, enc) {
+                            CharLenResult::Fixed(n) => (n, n),
+                            CharLenResult::Variable(mn, mx) => (mn, mx),
+                        }
+                    }
+                } else {
+                    (0, 0)
+                };
+                let then_len = if let Some(ref n) = then_node {
+                    match node_char_len(n, enc) {
+                        CharLenResult::Fixed(n) => (n, n),
+                        CharLenResult::Variable(mn, mx) => (mn, mx),
+                    }
+                } else {
+                    (0, 0)
+                };
+                let else_len = if let Some(ref n) = else_node {
+                    match node_char_len(n, enc) {
+                        CharLenResult::Fixed(n) => (n, n),
+                        CharLenResult::Variable(mn, mx) => (mn, mx),
+                    }
+                } else {
+                    (0, 0)
+                };
+                // Success path: condition + then; Failure path: else
+                let success_min = distance_add(cond_len.0, then_len.0);
+                let success_max = distance_add(cond_len.1, then_len.1);
+                let min = std::cmp::min(success_min, else_len.0);
+                let max = std::cmp::max(success_max, else_len.1);
+                if min == max {
+                    CharLenResult::Fixed(min)
+                } else {
+                    CharLenResult::Variable(min, max)
+                }
+            } else if let Some(ref body) = bn.body {
                 node_char_len(body, enc)
             } else {
                 CharLenResult::Fixed(0)
             }
         }
         NodeInner::Anchor(_) => CharLenResult::Fixed(0),
+        NodeInner::BackRef(_) => CharLenResult::Variable(0, INFINITE_LEN),
         _ => CharLenResult::Fixed(0),
     }
 }
@@ -2134,8 +2386,83 @@ fn divide_look_behind_alt(node: &mut Node, anchor_type: i32, enc: OnigEncoding) 
     ONIG_NORMAL
 }
 
+/// Check if a node is an Alt where all top-level branches are individually fixed-length.
+/// Returns true only if: node is Alt, and every branch has CharLenResult::Fixed.
+fn is_alt_all_branches_fixed(node: &Node, enc: OnigEncoding) -> bool {
+    let mut cur = node;
+    loop {
+        if let NodeInner::Alt(cons) = &cur.inner {
+            match node_char_len(&cons.car, enc) {
+                CharLenResult::Fixed(_) => {}
+                CharLenResult::Variable(_, _) => return false,
+            }
+            match &cons.cdr {
+                Some(next) => cur = next,
+                None => return true,
+            }
+        } else {
+            return false;
+        }
+    }
+}
+
+/// Check if a node tree contains absent stoppers (ND_ST_ABSENT_WITH_SIDE_EFFECTS).
+/// Returns true if invalid nodes are found inside lookbehind.
+/// C: check_node_in_look_behind (simplified — we only need the absent stopper check).
+fn check_node_in_look_behind(node: &Node) -> bool {
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            if check_node_in_look_behind(&cons.car) {
+                return true;
+            }
+            if let Some(ref cdr) = cons.cdr {
+                return check_node_in_look_behind(cdr);
+            }
+            false
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(ref body) = qn.body {
+                check_node_in_look_behind(body)
+            } else {
+                false
+            }
+        }
+        NodeInner::Bag(en) => {
+            if let Some(ref body) = en.body {
+                if check_node_in_look_behind(body) {
+                    return true;
+                }
+            }
+            if let BagData::IfElse { ref then_node, ref else_node } = en.bag_data {
+                if let Some(ref tn) = then_node {
+                    if check_node_in_look_behind(tn) {
+                        return true;
+                    }
+                }
+                if let Some(ref en) = else_node {
+                    if check_node_in_look_behind(en) {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(ref body) = an.body {
+                check_node_in_look_behind(body)
+            } else {
+                false
+            }
+        }
+        NodeInner::Gimmick(_) => {
+            node.has_status(ND_ST_ABSENT_WITH_SIDE_EFFECTS)
+        }
+        _ => false,
+    }
+}
+
 /// Tune a lookbehind anchor: compute char lengths and split variable-length alternatives.
-fn tune_look_behind(node: &mut Node, enc: OnigEncoding) -> i32 {
+fn tune_look_behind(node: &mut Node, enc: OnigEncoding, syntax: &OnigSyntaxType) -> i32 {
     let (anchor_type, has_body) = if let NodeInner::Anchor(ref an) = node.inner {
         (an.anchor_type, an.body.is_some())
     } else {
@@ -2144,6 +2471,18 @@ fn tune_look_behind(node: &mut Node, enc: OnigEncoding) -> i32 {
 
     if !has_body {
         return 0;
+    }
+
+    // Check for absent stoppers inside lookbehind (C: check_node_in_look_behind)
+    {
+        let body = if let NodeInner::Anchor(ref an) = node.inner {
+            an.body.as_ref().unwrap()
+        } else {
+            return 0;
+        };
+        if check_node_in_look_behind(body) {
+            return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+        }
     }
 
     let body_char_len = {
@@ -2155,6 +2494,18 @@ fn tune_look_behind(node: &mut Node, enc: OnigEncoding) -> i32 {
         node_char_len(body, enc)
     };
 
+    // Overflow check (C: #177)
+    const LOOK_BEHIND_MAX_CHAR_LEN: OnigLen = 65535;
+    let (cmin, cmax) = match body_char_len {
+        CharLenResult::Fixed(n) => (n, n),
+        CharLenResult::Variable(mn, mx) => (mn, mx),
+    };
+    if (cmax != INFINITE_LEN && cmax > LOOK_BEHIND_MAX_CHAR_LEN)
+        || cmin > LOOK_BEHIND_MAX_CHAR_LEN
+    {
+        return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+    }
+
     match body_char_len {
         CharLenResult::Fixed(len) => {
             if let NodeInner::Anchor(ref mut an) = node.inner {
@@ -2164,17 +2515,53 @@ fn tune_look_behind(node: &mut Node, enc: OnigEncoding) -> i32 {
             ONIG_NORMAL
         }
         CharLenResult::Variable(min, max) => {
-            // Check if body is Alt — if so, divide into per-branch anchors
-            let is_alt = if let NodeInner::Anchor(ref an) = node.inner {
-                matches!(an.body.as_ref().unwrap().inner, NodeInner::Alt(_))
+            // Check if body is Alt with all branches individually fixed-length
+            // (C's CHAR_LEN_TOP_ALT_FIXED case)
+            let top_alt_fixed = if let NodeInner::Anchor(ref an) = node.inner {
+                if let Some(ref body) = an.body {
+                    is_alt_all_branches_fixed(body, enc)
+                } else {
+                    false
+                }
             } else {
                 false
             };
 
-            if is_alt {
-                divide_look_behind_alt(node, anchor_type, enc)
+            if top_alt_fixed {
+                // All alt branches are fixed-length, just different sizes
+                if is_syntax_bv(syntax, ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND) {
+                    let r = divide_look_behind_alt(node, anchor_type, enc);
+                    if r == ONIG_NORMAL {
+                        return r;
+                    }
+                    // Should not fail here since we checked all branches are fixed
+                }
+                // Fall through to variable-length path
+                if is_syntax_bv(syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND) {
+                    if min == INFINITE_LEN {
+                        return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+                    }
+                    if let NodeInner::Anchor(ref mut an) = node.inner {
+                        an.char_min_len = min;
+                        an.char_max_len = max;
+                    }
+                    ONIG_NORMAL
+                } else {
+                    ONIGERR_INVALID_LOOK_BEHIND_PATTERN
+                }
             } else {
-                ONIGERR_INVALID_LOOK_BEHIND_PATTERN
+                // Either non-alt body, or alt with variable-length branches
+                if !is_syntax_bv(syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND) {
+                    return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+                }
+                if min == INFINITE_LEN {
+                    return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+                }
+                if let NodeInner::Anchor(ref mut an) = node.inner {
+                    an.char_min_len = min;
+                    an.char_max_len = max;
+                }
+                ONIG_NORMAL
             }
         }
     }
@@ -2481,7 +2868,7 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             // For lookbehind anchors, compute char lengths (may transform node into Alt)
             if at == ANCR_LOOK_BEHIND || at == ANCR_LOOK_BEHIND_NOT {
                 let enc = env.enc;
-                let r = tune_look_behind(node, enc);
+                let r = tune_look_behind(node, enc, env.syntax);
                 if r != 0 { return r; }
                 // tune_look_behind may have transformed node into an Alt;
                 // if so, recurse on the new node structure
@@ -2640,6 +3027,7 @@ pub fn reduce_string_list(node: &mut Node, enc: OnigEncoding) -> i32 {
 
         NodeInner::Alt(_) => {
             // Recurse into each alternative
+            let saved_status = node.status; // preserve flags like ND_ST_SUPER
             let placeholder = NodeInner::String(StrNode { s: Vec::new(), flag: 0 });
             let old_inner = std::mem::replace(&mut node.inner, placeholder);
             let alt_node = Box::new(Node {
@@ -2692,7 +3080,7 @@ pub fn reduce_string_list(node: &mut Node, enc: OnigEncoding) -> i32 {
                 }
             }
 
-            // Rebuild alt chain
+            // Rebuild alt chain, preserving the original root status (e.g. ND_ST_SUPER)
             let mut items_rev: Vec<Box<Node>> = items;
             let last = items_rev.pop().unwrap();
             let mut result = Node {
@@ -2713,6 +3101,7 @@ pub fn reduce_string_list(node: &mut Node, enc: OnigEncoding) -> i32 {
                     }),
                 };
             }
+            result.status = saved_status;
             *node = result;
             0
         }
@@ -2854,6 +3243,10 @@ pub fn onig_compile(
     } else {
         reg.push_mem_end = reg.push_mem_start & (env.backrefed_mem | env.cap_history);
     }
+
+    // Initialize mark/save ID counter from parse env to avoid collisions
+    // (C uses ID_ENTRY(env, id) which shares env->id_num between parser and compiler)
+    reg.num_call = env.id_num;
 
     // Compile the tree to bytecode
     let r = compile_tree(&root, reg, &env);

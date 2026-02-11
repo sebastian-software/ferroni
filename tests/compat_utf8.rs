@@ -6237,7 +6237,6 @@ fn lookbehind_long_repeat_no_match() {
 }
 
 #[test]
-#[ignore] // non-backref conditional inside lookbehind not yet implemented
 fn lookbehind_conditional_coverage() {
     // C line 813: (?<=(?(a)a|bb))z matches "aaz" -> 2-3
     x2(b"(?<=(?(a)a|bb))z", b"aaz", 2, 3);
