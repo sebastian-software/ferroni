@@ -4333,6 +4333,16 @@ fn prs_options(
                 onig_option_on(&mut option, ONIG_OPTION_IGNORECASE_IS_ASCII);
                 whole_options |= ONIG_OPTION_IGNORECASE_IS_ASCII;
             }
+            'C' => {
+                if !is_syntax_bv(syn, ONIG_SYN_WHOLE_OPTIONS) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    return Err(ONIGERR_INVALID_GROUP_OPTION);
+                }
+                onig_option_on(&mut option, ONIG_OPTION_DONT_CAPTURE_GROUP);
+                whole_options |= ONIG_OPTION_DONT_CAPTURE_GROUP;
+            }
             ')' => {
                 // Option-only group (?i) or (?Ii)
                 let mut np = node_new_option(option);
@@ -4561,6 +4571,13 @@ fn prs_exp(
             np
         }
         TokenType::Backref => {
+            // When DONT_CAPTURE_GROUP is active, numbered backrefs are forbidden
+            if (env.options & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0 && !tok.backref_by_name {
+                if env.num_named > 0 {
+                    return Err(ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED);
+                }
+                return Err(ONIGERR_INVALID_BACKREF);
+            }
             let back_num = tok.backref_num;
             let refs = if back_num == 1 {
                 vec![tok.backref_ref1]

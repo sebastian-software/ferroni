@@ -8104,21 +8104,18 @@ fn backref_group_1() {
 }
 
 #[test]
-#[ignore] // (?C) option not yet implemented
 fn no_numbered_backref_error() {
     // C line 1686
     e(b"(?C)(..)\\1", b"abab", ONIGERR_INVALID_BACKREF);
 }
 
 #[test]
-#[ignore] // (?C) option not yet implemented
 fn no_numbered_backref_error_neg() {
     // C line 1687
     e(b"(?-C)", b"", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?C) option not yet implemented
 fn no_numbered_backref_error_named() {
     // C line 1688
     e(b"(?C)(.)(.)(.)(?<name>.)\\1", b"abcdd", ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED);
