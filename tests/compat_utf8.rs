@@ -8618,7 +8618,6 @@ fn error_never_ending_recursion() {
 }
 
 #[test]
-#[ignore] // callouts not yet implemented
 fn error_undefined_callout() {
     // C line 1783
     e(b"(*FOO)", b"abcdefg", ONIGERR_UNDEFINED_CALLOUT_NAME);
@@ -9251,14 +9250,12 @@ fn conditional_recursion_complex() {
 // --- Callouts (C lines 1376-1382) ---
 
 #[test]
-#[ignore] // callouts not implemented
 fn callout_fail() {
     // C line 1376
     n(b"(*FAIL)", b"abcdefg");
 }
 
 #[test]
-#[ignore] // callouts not implemented
 fn callout_fail_repeated() {
     // C line 1377
     n(b"abcd(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)", b"abcdefg");

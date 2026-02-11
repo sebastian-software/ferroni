@@ -4014,6 +4014,307 @@ fn prs_conditional(
 /// Split an Alt node into (first_alt, rest) for conditional then|else parsing.
 /// Given Alt(A, Alt(B, nil)) -> (A, Some(B))
 /// Given Alt(A, Alt(B, Alt(C, nil))) -> (A, Some(Alt(B, Alt(C, nil))))
+// ============================================================================
+// Absent function (?~...) tree builders
+// ============================================================================
+
+/// Build the core absent-checking engine (C: make_absent_engine).
+///
+/// Structure:
+/// ```text
+/// Alt(
+///   [possessive?] Quant[lower..upper, non-greedy](
+///     Alt(
+///       List( Save(S,id), absent, UpdateVar(RR_FROM_S_STACK,id), Fail ),
+///       step_one
+///     )
+///   ),
+///   List( UpdateVar(RR_FROM_STACK, pre_save_right_id), Fail )
+/// )
+/// ```
+fn make_absent_engine(
+    pre_save_right_id: i32,
+    absent: Box<Node>,
+    step_one: Box<Node>,
+    lower: i32,
+    upper: i32,
+    possessive: bool,
+    is_range_cutter: bool,
+    env: &mut ParseEnv,
+) -> Result<Box<Node>, i32> {
+    let id = env.id_entry();
+    let save_s = node_new_save_gimmick(SaveType::S, id);
+    let mut update_rr = node_new_update_var_gimmick(UpdateVarType::RightRangeFromSStack, id);
+    if is_range_cutter {
+        update_rr.status_add(ND_ST_ABSENT_WITH_SIDE_EFFECTS);
+    }
+    let fail1 = node_new_fail();
+
+    let inner_list = make_list_n(vec![save_s, absent, update_rr, fail1]);
+    let inner_alt = make_alt(inner_list, step_one);
+
+    let mut quant = node_new_quantifier(lower, upper, true); // greedy (C: greedy=1 always)
+    quant.set_body(Some(inner_alt));
+
+    let engine: Box<Node> = if possessive {
+        let mut bag = node_new_bag(BagType::StopBacktrack);
+        bag.set_body(Some(quant));
+        bag
+    } else {
+        quant
+    };
+
+    let update_rr2 = node_new_update_var_gimmick(UpdateVarType::RightRangeFromStack, pre_save_right_id);
+    let fail2 = node_new_fail();
+    let tail_list = make_list(update_rr2, fail2);
+
+    let mut outer_alt = make_alt(engine, tail_list);
+    if is_range_cutter {
+        outer_alt.status_add(ND_ST_SUPER);
+    }
+
+    Ok(outer_alt)
+}
+
+/// Build tail nodes for non-range-cutter absent expression (C: make_absent_tail).
+///
+/// Returns (save_node, alt_node) where:
+///   save_node = Save(RIGHT_RANGE, id)
+///   alt_node = Alt( UpdateVar(RR_FROM_STACK, pre_save_id), List(UpdateVar(RR_FROM_STACK, id), Fail) )
+fn make_absent_tail(
+    pre_save_right_id: i32,
+    env: &mut ParseEnv,
+) -> Result<(Box<Node>, Box<Node>), i32> {
+    let id = env.id_entry();
+    let save = node_new_save_gimmick(SaveType::RightRange, id);
+
+    let update1 = node_new_update_var_gimmick(UpdateVarType::RightRangeFromStack, id);
+    let fail = node_new_fail();
+    let list = make_list(update1, fail);
+
+    let update2 = node_new_update_var_gimmick(UpdateVarType::RightRangeFromStack, pre_save_right_id);
+
+    let alt = make_alt(update2, list);
+    Ok((save, alt))
+}
+
+/// Build range cutter (?~|) tree (C: make_range_clear).
+///
+/// Structure:
+/// ```text
+/// List(
+///   Save(RIGHT_RANGE, id),
+///   Alt[SUPER](
+///     UpdateVar(RR_INIT, 0) [ABSENT_WITH_SIDE_EFFECTS],
+///     List( UpdateVar(RR_FROM_STACK, id), Fail )
+///   )
+/// )
+/// ```
+fn make_range_clear(env: &mut ParseEnv) -> Result<Box<Node>, i32> {
+    let id = env.id_entry();
+    let save = node_new_save_gimmick(SaveType::RightRange, id);
+
+    let update1 = node_new_update_var_gimmick(UpdateVarType::RightRangeFromStack, id);
+    let fail = node_new_fail();
+    let list = make_list(update1, fail);
+
+    let mut update_init = node_new_update_var_gimmick(UpdateVarType::RightRangeInit, 0);
+    update_init.status_add(ND_ST_ABSENT_WITH_SIDE_EFFECTS);
+
+    let mut alt = make_alt(update_init, list);
+    alt.status_add(ND_ST_SUPER);
+
+    let result = make_list(save, alt);
+    Ok(result)
+}
+
+/// Check if node is a simple one-char repeat: greedy Quant over single-char String or CClass,
+/// optionally wrapped in StopBacktrack bag (C: is_simple_one_char_repeat).
+///
+/// Returns Some((quant_node_without_body, body, possessive)) on match,
+/// or None and gives back the original node.
+fn is_simple_one_char_repeat(
+    node: Box<Node>,
+    enc: OnigEncoding,
+) -> Result<(Box<Node>, Box<Node>, bool), Box<Node>> {
+    let possessive;
+    let mut quant_node: Box<Node>;
+
+    match &node.inner {
+        NodeInner::Quant(_) => {
+            possessive = false;
+            quant_node = node;
+        }
+        NodeInner::Bag(bag) if bag.bag_type == BagType::StopBacktrack => {
+            possessive = true;
+            // Extract quant from bag body
+            let mut bag_node = node;
+            let body = bag_node.take_body();
+            match body {
+                Some(b) => {
+                    if let NodeInner::Quant(_) = &b.inner {
+                        quant_node = b;
+                    } else {
+                        // Not a quantifier inside StopBacktrack — put it back
+                        bag_node.set_body(Some(b));
+                        return Err(bag_node);
+                    }
+                }
+                None => return Err(bag_node),
+            }
+        }
+        _ => return Err(node),
+    }
+
+    // Check greedy
+    let is_greedy = if let NodeInner::Quant(ref qn) = quant_node.inner {
+        qn.greedy
+    } else {
+        false
+    };
+    if !is_greedy {
+        return Err(quant_node);
+    }
+
+    // Check body is single-char String or CClass
+    let body = quant_node.take_body();
+    match body {
+        Some(b) => {
+            let ok = match &b.inner {
+                NodeInner::String(sn) => {
+                    // Count encoded chars
+                    let s = &sn.s;
+                    let mut pos = 0;
+                    let mut count = 0;
+                    while pos < s.len() {
+                        pos += enc.mbc_enc_len(&s[pos..]);
+                        count += 1;
+                    }
+                    count == 1
+                }
+                NodeInner::CClass(_) => true,
+                _ => false,
+            };
+            if ok {
+                Ok((quant_node, b, possessive))
+            } else {
+                quant_node.set_body(Some(b));
+                Err(quant_node)
+            }
+        }
+        None => Err(quant_node),
+    }
+}
+
+/// Optimized absent tree for simple one-char repeats (C: make_absent_tree_for_simple_one_char_repeat).
+///
+/// Structure:
+/// ```text
+/// List(
+///   Save(RIGHT_RANGE, id1),
+///   absent_engine(id1, absent, body, lower, upper, possessive, false),
+///   UpdateVar(RR_FROM_STACK, id1)
+/// )
+/// ```
+fn make_absent_tree_for_simple_one_char_repeat(
+    absent: Box<Node>,
+    quant: &Node,
+    body: Box<Node>,
+    possessive: bool,
+    env: &mut ParseEnv,
+) -> Result<Box<Node>, i32> {
+    let (lower, upper) = if let NodeInner::Quant(ref qn) = quant.inner {
+        (qn.lower, qn.upper)
+    } else {
+        (0, INFINITE_REPEAT)
+    };
+
+    let id1 = env.id_entry();
+    let save_rr = node_new_save_gimmick(SaveType::RightRange, id1);
+    let engine = make_absent_engine(id1, absent, body, lower, upper, possessive, false, env)?;
+    let update_rr = node_new_update_var_gimmick(UpdateVarType::RightRangeFromStack, id1);
+
+    Ok(make_list_n(vec![save_rr, engine, update_rr]))
+}
+
+/// Main entry point for building the absent function tree (C: make_absent_tree).
+///
+/// Three paths:
+/// 1. Simple path: no range cutter, expr is None or simple one-char repeat
+/// 2. General path with range cutter
+/// 3. General path with complex expr
+fn make_absent_tree(
+    absent: Box<Node>,
+    expr: Option<Box<Node>>,
+    is_range_cutter: bool,
+    env: &mut ParseEnv,
+) -> Result<Box<Node>, i32> {
+    if !is_range_cutter {
+        if let Some(expr_node) = expr {
+            // Try simple one-char repeat optimization
+            match is_simple_one_char_repeat(expr_node, env.enc) {
+                Ok((quant, body, possessive)) => {
+                    return make_absent_tree_for_simple_one_char_repeat(
+                        absent, &quant, body, possessive, env,
+                    );
+                }
+                Err(expr_back) => {
+                    // Fall through to general path with expr
+                    return make_absent_tree_general(absent, Some(expr_back), false, env);
+                }
+            }
+        } else {
+            // Default expr: true_anychar* (greedy). Quant is only used to extract lower/upper.
+            let body = node_new_true_anychar();
+            let quant = node_new_quantifier(0, INFINITE_REPEAT, true);
+            return make_absent_tree_for_simple_one_char_repeat(
+                absent, &quant, body, false, env,
+            );
+        }
+    }
+
+    // Range cutter or complex expr: general path
+    make_absent_tree_general(absent, expr, is_range_cutter, env)
+}
+
+/// General path for absent tree (range cutter or complex expr).
+///
+/// For range cutter:
+/// ```text
+/// List( Save(RR, id1), Save(S, id2), engine, UpdateVar(S_FROM_STACK, id2) )
+/// ```
+/// For non-range-cutter with expr:
+/// ```text
+/// List( Save(RR, id1), Save(S, id2), engine, UpdateVar(S_FROM_STACK, id2), expr, save_tail, alt_tail )
+/// ```
+fn make_absent_tree_general(
+    absent: Box<Node>,
+    expr: Option<Box<Node>>,
+    is_range_cutter: bool,
+    env: &mut ParseEnv,
+) -> Result<Box<Node>, i32> {
+    let id1 = env.id_entry();
+    let save_rr = node_new_save_gimmick(SaveType::RightRange, id1);
+
+    let id2 = env.id_entry();
+    let save_s = node_new_save_gimmick(SaveType::S, id2);
+
+    let step_one = node_new_true_anychar();
+    let engine = make_absent_engine(
+        id1, absent, step_one, 0, INFINITE_REPEAT, true, is_range_cutter, env,
+    )?;
+
+    let update_s = node_new_update_var_gimmick(UpdateVarType::SFromStack, id2);
+
+    if is_range_cutter {
+        Ok(make_list_n(vec![save_rr, save_s, engine, update_s]))
+    } else {
+        let expr_node = expr.unwrap();
+        let (save_tail, alt_tail) = make_absent_tail(id1, env)?;
+        Ok(make_list_n(vec![save_rr, save_s, engine, update_s, expr_node, save_tail, alt_tail]))
+    }
+}
+
 fn split_alt_for_conditional(mut node: Box<Node>) -> (Box<Node>, Option<Box<Node>>) {
     if let NodeInner::Alt(cons) = node.inner {
         let car = cons.car;
@@ -4174,11 +4475,112 @@ fn prs_bag(
                 }
                 return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
             }
+            '~' => {
+                if c < 128 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP) {
+                    if p_end(*p, end) {
+                        return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                    }
+
+                    let head_bar;
+                    if ppeek(*p, pattern, end, enc) == '|' as u32 {
+                        pinc(p, pattern, enc);
+                        if p_end(*p, end) {
+                            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                        }
+                        head_bar = true;
+                        if ppeek(*p, pattern, end, enc) == ')' as u32 {
+                            // (?~|) : range clear
+                            pinc(p, pattern, enc);
+                            let np = make_range_clear(env)?;
+                            env.flags |= PE_FLAG_HAS_ABSENT_STOPPER;
+                            return Ok((np, 1));
+                        }
+                    } else {
+                        head_bar = false;
+                    }
+
+                    let r = fetch_token(tok, p, end, pattern, env);
+                    if r < 0 {
+                        return Err(r);
+                    }
+                    let (absent, _) = prs_alts(tok, term, p, end, pattern, env, true)?;
+
+                    let mut expr: Option<Box<Node>> = None;
+                    let mut is_range_cutter = false;
+
+                    if head_bar {
+                        // Check if Alt with 2+ branches (absent|expr form)
+                        let is_alt_with_cdr = matches!(
+                            &absent.inner,
+                            NodeInner::Alt(cons) if cons.cdr.is_some()
+                        );
+
+                        if !is_alt_with_cdr {
+                            // Single branch: (?~|absent) → range cutter
+                            is_range_cutter = true;
+                            env.flags |= PE_FLAG_HAS_ABSENT_STOPPER;
+                        } else {
+                            // Two+ branches: (?~|absent|expr)
+                            // Split: first branch = absent, rest = expr
+                            if let NodeInner::Alt(cons) = absent.inner {
+                                let absent_part = cons.car;
+                                let rest = cons.cdr.unwrap();
+                                // Unwrap single-element Alt wrapper: Alt(x, nil) → x
+                                let is_single = matches!(
+                                    &rest.inner,
+                                    NodeInner::Alt(rc) if rc.cdr.is_none()
+                                );
+                                let expr_part = if is_single {
+                                    if let NodeInner::Alt(rc) = rest.inner {
+                                        rc.car
+                                    } else {
+                                        unreachable!()
+                                    }
+                                } else {
+                                    rest
+                                };
+                                expr = Some(expr_part);
+                                let np = make_absent_tree(absent_part, expr, is_range_cutter, env)?;
+                                return Ok((np, 1));
+                            } else {
+                                unreachable!();
+                            }
+                        }
+                    }
+
+                    let np = make_absent_tree(absent, expr, is_range_cutter, env)?;
+                    return Ok((np, 1));
+                }
+                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+            }
             _ => {
                 // Option flags: i, m, s, x, etc.
                 *p = pfetch_prev; // PUNFETCH back to the option char
                 return prs_options(tok, term, p, end, pattern, env);
             }
+        }
+    } else if c == '*' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_GROUP_EFFECT) {
+        // Callout of contents: (*FAIL), (*...)
+        pinc(p, pattern, enc); // skip '*'
+        // Read callout name until ')'
+        let name_start = *p;
+        while !p_end(*p, end) {
+            let ch = ppeek(*p, pattern, end, enc);
+            if ch == ')' as u32 {
+                break;
+            }
+            pinc(p, pattern, enc);
+        }
+        let name = &pattern[name_start..*p];
+        if name == b"FAIL" {
+            // Consume the closing ')'
+            if p_end(*p, end) {
+                return Err(ONIGERR_END_PATTERN_IN_GROUP);
+            }
+            pinc(p, pattern, enc); // skip ')'
+            return Ok((node_new_fail(), 1));
+        } else {
+            return Err(ONIGERR_UNDEFINED_CALLOUT_NAME);
         }
     } else {
         // Plain parenthesized group
