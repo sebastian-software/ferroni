@@ -252,7 +252,8 @@ pub static OnigSyntaxOniguruma: OnigSyntaxType = OnigSyntaxType {
         ONIG_SYN_ALLOW_INVALID_CODE_END_OF_RANGE_IN_CC |
         ONIG_SYN_WARN_CC_OP_NOT_ESCAPED |
         ONIG_SYN_ESC_P_WITH_ONE_CHAR_PROP |
-        ONIG_SYN_WARN_REDUNDANT_NESTED_REPEAT,
+        ONIG_SYN_WARN_REDUNDANT_NESTED_REPEAT |
+        ONIG_SYN_WHOLE_OPTIONS,
     options: ONIG_OPTION_NONE,
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };

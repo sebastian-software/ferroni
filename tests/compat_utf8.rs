@@ -7931,63 +7931,54 @@ fn true_anychar_recursive() {
 // ============================================================================
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_abc() {
     // C line 1658
     x2(b"(?Ii)abc", b"abc", 0, 3);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_abc_upper() {
     // C line 1659
     x2(b"(?Ii)abc", b"ABC", 0, 3);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_group() {
     // C line 1660
     x2(b"(?Ii:abc)", b"abc", 0, 3);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_alt() {
     // C line 1661
     x2(b"(?Ii)xyz|abc", b"aBc", 0, 3);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_group_alt() {
     // C line 1662
     x2(b"(?Ii:zz|abc|AZ)", b"ABc", 0, 3);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_suffix() {
     // C line 1663
     e(b"(?Ii:abc)d", b"abc", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_neg() {
     // C line 1664
     e(b"(?-Ii:abc)", b"abc", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_neg_i() {
     // C line 1665
     x2(b"(?I-i:abc)", b"abc", 0, 3);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_i_neg_I() {
     // C line 1666
     e(b"(?i-I:abc)", b"abc", ONIGERR_INVALID_GROUP_OPTION);
@@ -8000,77 +7991,66 @@ fn case_insensitive_kelvin_sign() {
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_kelvin_no_match() {
     // C line 1668
     n(b"(?Ii)\xe2\x84\xaa", b"k");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_in_capture() {
     // C line 1669
     e(b"((?Ii)abc)", b"", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_in_noncapture() {
     // C line 1670
     x2(b"(?:(?Ii)abc)", b"ABC", 0, 3);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_nested_noncapture() {
     // C line 1671
     x2(b"(?:(?:(?Ii)abc))", b"ABC", 0, 3);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_after_x() {
     // C line 1672
     e(b"x(?Ii)", b"", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_after_group() {
     // C line 1673
     e(b"()(?Ii)", b"", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_after_noncapture() {
     // C line 1674
     e(b"(?:)(?Ii)", b"", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_after_anchor() {
     // C line 1675
     e(b"^(?Ii)", b"", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_dollar() {
     // C line 1676
     x2(b"(?Ii)$", b"", 0, 0);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_alt_empty() {
     // C line 1677
     x2(b"(?Ii)|", b"", 0, 0);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_option_error_double() {
     // C line 1678
     e(b"(?Ii)|(?Ii)", b"", ONIGERR_INVALID_GROUP_OPTION);
@@ -8177,70 +8157,60 @@ fn longest_option_recursive_longest() {
 // ============================================================================
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_case_s_no_long_s() {
     // C line 1695
     n(b"(?iI)s", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_case_s_cc_no_long_s() {
     // C line 1696
     n(b"(?iI)[s]", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_case_s_group_no_long_s() {
     // C line 1697
     n(b"(?iI:s)", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_case_s_cc_group_no_long_s() {
     // C line 1698
     n(b"(?iI:[s])", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_case_word_class_long_s() {
     // C line 1699
     x2(b"(?iI)(?:[[:word:]])", b"\xc5\xbf", 0, 2);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_case_W_word_class_no_long_s() {
     // C line 1700
     n(b"(?iI)(?W:[[:word:]])", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_case_W_w_no_long_s() {
     // C line 1701
     n(b"(?iI)(?W:\\w)", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn isolation_case_W_w_cc_no_long_s() {
     // C line 1702
     n(b"(?iI)(?W:[\\w])", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // \\p{} Unicode property not yet implemented
 fn isolation_case_W_p_word_no_long_s() {
     // C line 1703
     n(b"(?iI)(?W:\\p{Word})", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // \\p{} Unicode property not yet implemented
 fn isolation_case_W_p_word_cc_no_long_s() {
     // C line 1704
     n(b"(?iI)(?W:[\\p{Word}])", b"\xc5\xbf");
@@ -8251,35 +8221,30 @@ fn isolation_case_W_p_word_cc_no_long_s() {
 // ============================================================================
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_word_class_long_s() {
     // C line 1706
     x2(b"(?iW:[[:word:]])", b"\xc5\xbf", 0, 2);
 }
 
 #[test]
-#[ignore] // \\p{} Unicode property not yet implemented
 fn iw_p_word_cc_long_s() {
     // C line 1707
     x2(b"(?iW:[\\p{Word}])", b"\xc5\xbf", 0, 2);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_w_cc_long_s() {
     // C line 1708
     x2(b"(?iW:[\\w])", b"\xc5\xbf", 0, 2);
 }
 
 #[test]
-#[ignore] // \\p{} Unicode property not yet implemented
 fn iw_p_word_no_long_s() {
     // C line 1709
     n(b"(?iW:\\p{Word})", b"\xc5\xbf");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_w_no_long_s() {
     // C line 1710
     n(b"(?iW:\\w)", b"\xc5\xbf");
@@ -8298,35 +8263,30 @@ fn case_insensitive_w_long_s() {
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_neg_word_class_long_s() {
     // C line 1714
     x2(b"(?iW:[[:^word:]])", b"\xc5\xbf", 0, 2);
 }
 
 #[test]
-#[ignore] // \\p{} Unicode property not yet implemented
 fn iw_neg_p_word_cc_long_s() {
     // C line 1715
     x2(b"(?iW:[\\P{Word}])", b"\xc5\xbf", 0, 2);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_neg_w_cc_long_s() {
     // C line 1716
     x2(b"(?iW:[\\W])", b"\xc5\xbf", 0, 2);
 }
 
 #[test]
-#[ignore] // \\p{} Unicode property not yet implemented
 fn iw_neg_p_word_long_s() {
     // C line 1717
     x2(b"(?iW:\\P{Word})", b"\xc5\xbf", 0, 2);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_neg_w_long_s() {
     // C line 1718
     x2(b"(?iW:\\W)", b"\xc5\xbf", 0, 2);
@@ -8345,35 +8305,30 @@ fn case_insensitive_neg_w_long_s() {
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_neg_word_class_s() {
     // C line 1722
     x2(b"(?iW:[[:^word:]])", b"s", 0, 1);
 }
 
 #[test]
-#[ignore] // \\p{} Unicode property not yet implemented
 fn iw_neg_p_word_cc_s() {
     // C line 1723
     x2(b"(?iW:[\\P{Word}])", b"s", 0, 1);
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_neg_w_cc_s() {
     // C line 1724
     x2(b"(?iW:[\\W])", b"s", 0, 1);
 }
 
 #[test]
-#[ignore] // \\p{} Unicode property not yet implemented
 fn iw_neg_p_word_s() {
     // C line 1725
     n(b"(?iW:\\P{Word})", b"s");
 }
 
 #[test]
-#[ignore] // (?I) isolation option not yet implemented
 fn iw_neg_w_s() {
     // C line 1726
     n(b"(?iW:\\W)", b"s");
@@ -9237,7 +9192,6 @@ fn ja_alternation_2() {
 // --- Japanese case-insensitive, named groups, mutual recursion (C lines 1147-1149) ---
 
 #[test]
-#[ignore] // case-insensitive Japanese backref
 fn ja_case_insensitive_backref() {
     // C line 1147: ((?i:あvず))\1 matches あvずあvず
     x2("((?i:あvず))\\1".as_bytes(), "あvずあvず".as_bytes(), 0, 14);
@@ -9528,7 +9482,6 @@ fn keep_repeated() {
 // --- (?W) ASCII word option (C line 817) ---
 
 #[test]
-#[ignore] // (?W) option not implemented
 fn option_word_is_ascii() {
     // C line 817: (?W)a*\W no match for "aaa"
     n(b"(?W)a*\\W", b"aaa");

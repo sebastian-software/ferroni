@@ -1193,6 +1193,26 @@ fn add_ctype_to_cc(
     env: &ParseEnv,
 ) -> i32 {
     let enc = env.enc;
+    let ascii_mode = opton_is_ascii_mode_ctype(ctype, env.options);
+    if ascii_mode {
+        // ASCII-only mode: iterate over 0-127 using encoding's ctype check
+        for c in 0..128u32 {
+            if enc.is_code_ctype(c, ctype as u32) {
+                if not {
+                    // Don't set bit for matching chars
+                } else {
+                    bitset_set_bit(&mut cc.bs, c as usize);
+                }
+            } else if not {
+                bitset_set_bit(&mut cc.bs, c as usize);
+            }
+        }
+        if not {
+            // For negated ASCII-only, add all multi-byte codes as matching
+            add_code_range_to_buf(&mut cc.mbuf, 0x80, u32::MAX);
+        }
+        return ONIG_NORMAL;
+    }
     let mut sb_out: OnigCodePoint = 0;
     let range = enc.get_ctype_code_range(ctype as u32, &mut sb_out);
     if let Some(_) = range {
@@ -4009,7 +4029,7 @@ fn prs_bag(
                     return Err(r);
                 }
                 let (node, r) =
-                    prs_alts(tok, term, p, end, pattern, env, false)?;
+                    prs_alts(tok, term, p, end, pattern, env, true)?;
                 return Ok((node, 1));
             }
             '=' => {
@@ -4181,6 +4201,17 @@ fn prs_named_group(
     Ok((np, 0))
 }
 
+/// Apply whole options ((?I), (?L), (?C)) to the regex and parse env.
+fn set_whole_options(option: OnigOptionType, env: &mut ParseEnv) {
+    if (option & ONIG_OPTION_IGNORECASE_IS_ASCII) != 0 {
+        let reg = unsafe { &mut *env.reg };
+        reg.case_fold_flag &= !(INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR
+            | ONIGENC_CASE_FOLD_TURKISH_AZERI);
+        reg.case_fold_flag |= ONIGENC_CASE_FOLD_ASCII_ONLY;
+        env.case_fold_flag = reg.case_fold_flag;
+    }
+}
+
 /// Parse option flags like (?imsx:...) or (?imsx)
 fn prs_options(
     tok: &mut PToken,
@@ -4194,6 +4225,7 @@ fn prs_options(
     let syn = env.syntax;
     let mut option = env.options;
     let mut neg = false;
+    let mut whole_options: OnigOptionType = 0;
     let mut pfetch_prev;
 
     loop {
@@ -4251,16 +4283,72 @@ fn prs_options(
                     return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
                 }
             }
+            'W' => {
+                if !is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    onig_option_off(&mut option, ONIG_OPTION_WORD_IS_ASCII);
+                } else {
+                    onig_option_on(&mut option, ONIG_OPTION_WORD_IS_ASCII);
+                }
+            }
+            'D' => {
+                if !is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    onig_option_off(&mut option, ONIG_OPTION_DIGIT_IS_ASCII);
+                } else {
+                    onig_option_on(&mut option, ONIG_OPTION_DIGIT_IS_ASCII);
+                }
+            }
+            'S' => {
+                if !is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    onig_option_off(&mut option, ONIG_OPTION_SPACE_IS_ASCII);
+                } else {
+                    onig_option_on(&mut option, ONIG_OPTION_SPACE_IS_ASCII);
+                }
+            }
+            'P' => {
+                if !is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    onig_option_off(&mut option, ONIG_OPTION_POSIX_IS_ASCII);
+                } else {
+                    onig_option_on(&mut option, ONIG_OPTION_POSIX_IS_ASCII);
+                }
+            }
+            'I' => {
+                if !is_syntax_bv(syn, ONIG_SYN_WHOLE_OPTIONS) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    return Err(ONIGERR_INVALID_GROUP_OPTION);
+                }
+                onig_option_on(&mut option, ONIG_OPTION_IGNORECASE_IS_ASCII);
+                whole_options |= ONIG_OPTION_IGNORECASE_IS_ASCII;
+            }
             ')' => {
-                // Option-only group (?i)
-                let np = node_new_option(option);
+                // Option-only group (?i) or (?Ii)
+                let mut np = node_new_option(option);
+                if whole_options != 0 {
+                    np.status_add(ND_ST_WHOLE_OPTIONS);
+                }
                 env.options = option;
                 return Ok((np, 2));
             }
             ':' => {
-                // Option-scoped group (?i:...)
+                // Option-scoped group (?i:...) or (?Ii:...)
                 let save_options = env.options;
                 env.options = option;
+                if whole_options != 0 {
+                    set_whole_options(option, env);
+                }
                 let r = fetch_token(tok, p, end, pattern, env);
                 if r < 0 {
                     env.options = save_options;
@@ -4271,6 +4359,9 @@ fn prs_options(
                 env.options = save_options;
                 let mut np = node_new_option(option);
                 np.set_body(Some(target));
+                if whole_options != 0 {
+                    np.status_add(ND_ST_WHOLE_OPTIONS);
+                }
                 return Ok((np, 0));
             }
             _ => {
@@ -4317,7 +4408,7 @@ fn prs_exp(
                 }
                 return check_quantifier(node, tok, p, end, pattern, env, 1, parse_depth);
             } else if bag_r == 2 {
-                // Option-only (?i)
+                // Option-only (?i) or (?Ii)
                 let bag_options = match node.as_bag() {
                     Some(b) => match b.bag_data {
                         BagData::Option { options } => options,
@@ -4325,6 +4416,12 @@ fn prs_exp(
                     },
                     None => env.options,
                 };
+                // Check whole options position
+                if node.has_status(ND_ST_WHOLE_OPTIONS) {
+                    if !group_head {
+                        return Err(ONIGERR_INVALID_GROUP_OPTION);
+                    }
+                }
                 if is_syntax_bv(env.syntax, ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH) {
                     // Perl/Java: just set options and continue branch
                     env.options = bag_options;
@@ -4339,6 +4436,11 @@ fn prs_exp(
                     let mut np = node;
                     let prev = env.options;
                     env.options = bag_options;
+                    // Apply whole options before parsing body
+                    if np.has_status(ND_ST_WHOLE_OPTIONS) {
+                        set_whole_options(bag_options, env);
+                        env.flags |= PE_FLAG_HAS_WHOLE_OPTIONS;
+                    }
                     let r = fetch_token(tok, p, end, pattern, env);
                     if r < 0 {
                         env.options = prev;
@@ -4349,6 +4451,23 @@ fn prs_exp(
                     np.set_body(Some(target));
                     return Ok((np, tok.token_type as i32));
                 }
+            } else if node.has_status(ND_ST_WHOLE_OPTIONS) {
+                // Scoped whole options group (?Ii:abc) — bag_r == 0
+                if !group_head {
+                    return Err(ONIGERR_INVALID_GROUP_OPTION);
+                }
+                // Scoped whole options must be the only item in the branch
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    return Err(r);
+                }
+                if tok.token_type != TokenType::Eot
+                    && tok.token_type as i32 != term
+                    && tok.token_type != TokenType::Alt
+                {
+                    return Err(ONIGERR_INVALID_GROUP_OPTION);
+                }
+                return Ok((node, tok.token_type as i32));
             }
             node
         }
@@ -4838,7 +4957,7 @@ fn prs_regexp(
     if r < 0 {
         return Err(r);
     }
-    let (top, _) = prs_alts(&mut tok, TokenType::Eot as i32, p, end, pattern, env, false)?;
+    let (top, _) = prs_alts(&mut tok, TokenType::Eot as i32, p, end, pattern, env, true)?;
     Ok(top)
 }
 
