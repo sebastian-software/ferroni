@@ -676,7 +676,7 @@ fn match_at(
                     let n = (s - sstart) as i32;
                     if n == 0 && opton_find_not_empty(options) {
                         goto_fail = true;
-                    } else {
+                    } else if n > best_len {
                         best_len = n;
 
                         // Populate region with capture groups
@@ -711,6 +711,9 @@ fn match_at(
                         msa.best_len = best_len;
                         msa.best_s = sstart;
                         goto_fail = true; // backtrack to try longer matches
+                    } else {
+                        // FIND_LONGEST but shorter/equal match: backtrack for more
+                        goto_fail = true;
                     }
                 }
             }
@@ -2064,6 +2067,10 @@ pub fn onig_search(
     }
 
     // Forward search
+    let find_longest = opton_find_longest(msa.options);
+    let mut best_start: i32 = ONIG_MISMATCH;
+    let mut best_len: i32 = ONIG_MISMATCH;
+
     let mut s = start;
     while s <= range {
         if let Some(ref mut r) = msa.region {
@@ -2071,11 +2078,26 @@ pub fn onig_search(
             r.clear();
         }
 
+        msa.best_len = ONIG_MISMATCH;
+        msa.best_s = 0;
+
         let r = match_at(reg, str_data, end, end, s, &mut msa);
         if r != ONIG_MISMATCH {
-            // Found a match - return the match start position
-            // Region is already populated by match_at
-            return (s as i32, msa.region);
+            if find_longest {
+                // match_at with FIND_LONGEST already finds the longest match
+                // at this start position (saved in msa.best_len)
+                let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
+                if best_len == ONIG_MISMATCH || match_len > best_len
+                    || (match_len == best_len && best_start == ONIG_MISMATCH)
+                {
+                    best_start = s as i32;
+                    best_len = match_len;
+                }
+            } else {
+                // Found a match - return the match start position
+                // Region is already populated by match_at
+                return (s as i32, msa.region);
+            }
         }
 
         if s >= end {
@@ -2084,6 +2106,18 @@ pub fn onig_search(
 
         // Advance to next character position
         s += enclen(enc, str_data, s);
+    }
+
+    if find_longest && best_start != ONIG_MISMATCH {
+        // Re-run match_at at the best start position to populate region
+        if let Some(ref mut r) = msa.region {
+            r.resize(reg.num_mem + 1);
+            r.clear();
+        }
+        msa.best_len = ONIG_MISMATCH;
+        msa.best_s = 0;
+        match_at(reg, str_data, end, end, best_start as usize, &mut msa);
+        return (best_start, msa.region);
     }
 
     (ONIG_MISMATCH, msa.region)

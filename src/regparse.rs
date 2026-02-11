@@ -4203,12 +4203,18 @@ fn prs_named_group(
 
 /// Apply whole options ((?I), (?L), (?C)) to the regex and parse env.
 fn set_whole_options(option: OnigOptionType, env: &mut ParseEnv) {
+    let reg = unsafe { &mut *env.reg };
     if (option & ONIG_OPTION_IGNORECASE_IS_ASCII) != 0 {
-        let reg = unsafe { &mut *env.reg };
         reg.case_fold_flag &= !(INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR
             | ONIGENC_CASE_FOLD_TURKISH_AZERI);
         reg.case_fold_flag |= ONIGENC_CASE_FOLD_ASCII_ONLY;
         env.case_fold_flag = reg.case_fold_flag;
+    }
+    if (option & ONIG_OPTION_FIND_LONGEST) != 0 {
+        reg.options |= ONIG_OPTION_FIND_LONGEST;
+    }
+    if (option & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0 {
+        reg.options |= ONIG_OPTION_DONT_CAPTURE_GROUP;
     }
 }
 
@@ -4342,6 +4348,16 @@ fn prs_options(
                 }
                 onig_option_on(&mut option, ONIG_OPTION_DONT_CAPTURE_GROUP);
                 whole_options |= ONIG_OPTION_DONT_CAPTURE_GROUP;
+            }
+            'L' => {
+                if !is_syntax_bv(syn, ONIG_SYN_WHOLE_OPTIONS) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    return Err(ONIGERR_INVALID_GROUP_OPTION);
+                }
+                onig_option_on(&mut option, ONIG_OPTION_FIND_LONGEST);
+                whole_options |= ONIG_OPTION_FIND_LONGEST;
             }
             ')' => {
                 // Option-only group (?i) or (?Ii)

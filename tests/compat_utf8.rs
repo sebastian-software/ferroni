@@ -8063,35 +8063,30 @@ fn greedy_a_star() {
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_a_star() {
     // C line 1680
     x2(b"(?L)a*", b"aabcaaa", 4, 7);
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_alt_quantifiers() {
     // C line 1681
     x2(b"(?L)a{4}|a{3}|b*", b"baaaaabbb", 1, 5);
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_alt_quantifiers_2() {
     // C line 1682
     x2(b"(?L)a{3}|a{4}|b*", b"baaaaabbb", 1, 5);
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_error_suffix() {
     // C line 1683
     e(b"x(?L)xxxxx", b"", ONIGERR_INVALID_GROUP_OPTION);
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_error_neg() {
     // C line 1684
     e(b"(?-L)x", b"", ONIGERR_INVALID_GROUP_OPTION);
@@ -8122,28 +8117,24 @@ fn no_numbered_backref_error_named() {
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_recursive() {
     // C line 1689
     x2(b"(?L)z|a\\g<0>a", b"aazaa", 0, 5);
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_recursive_case_insensitive() {
     // C line 1690
     x2(b"(?Li)z|a\\g<0>a", b"aazAA", 0, 5);
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_group_recursive_case_insensitive() {
     // C line 1691
     x2(b"(?Li:z|a\\g<0>a)", b"aazAA", 0, 5);
 }
 
 #[test]
-#[ignore] // (?L) find-longest option not yet implemented
 fn longest_option_recursive_longest() {
     // C line 1692
     x2(b"(?L)z|a\\g<0>a", b"aazaaaazaaaa", 3, 12);
