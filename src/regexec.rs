@@ -513,6 +513,104 @@ fn stack_get_mem_start_for_rec(
     (MemPtr::Invalid, 0)
 }
 
+/// Match a backref at a specific nesting level in the recursion stack.
+/// Walks the stack backwards counting CallFrame/Return to find the right level,
+/// then matches the captured text at that level against current position.
+fn backref_match_at_nested_level(
+    reg: &RegexType,
+    stack: &[StackEntry],
+    ignore_case: bool,
+    case_fold_flag: OnigCaseFoldType,
+    nest: i32,
+    mem_num: i32,
+    mems: &[i32],
+    s: &mut usize,
+    str_data: &[u8],
+    end: usize,
+) -> bool {
+    let mut level: i32 = 0;
+    let mut pend: Option<usize> = None;
+    let mut k = stack.len();
+
+    while k > 0 {
+        k -= 1;
+        match &stack[k] {
+            StackEntry::CallFrame { .. } => {
+                level -= 1;
+            }
+            StackEntry::Return => {
+                level += 1;
+            }
+            StackEntry::MemStart { zid, pstr, .. } if level == nest => {
+                if mem_is_in_mems(*zid, mem_num, mems) {
+                    if let Some(pe) = pend {
+                        let pstart = *pstr;
+                        let cap_len = pe - pstart;
+                        if cap_len > end - *s {
+                            return false;
+                        }
+                        if ignore_case {
+                            if !string_cmp_ic(reg.enc, case_fold_flag, str_data, pstart, s, cap_len) {
+                                return false;
+                            }
+                        } else {
+                            if str_data[pstart..pe] != str_data[*s..*s + cap_len] {
+                                return false;
+                            }
+                            *s += cap_len;
+                        }
+                        return true;
+                    }
+                }
+            }
+            StackEntry::MemEnd { zid, pstr, .. } if level == nest => {
+                if mem_is_in_mems(*zid, mem_num, mems) {
+                    pend = Some(*pstr);
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Check if a backref capture exists at a specific nesting level.
+fn backref_check_at_nested_level(
+    stack: &[StackEntry],
+    nest: i32,
+    mem_num: i32,
+    mems: &[i32],
+) -> bool {
+    let mut level: i32 = 0;
+    let mut k = stack.len();
+
+    while k > 0 {
+        k -= 1;
+        match &stack[k] {
+            StackEntry::CallFrame { .. } => { level -= 1; }
+            StackEntry::Return => { level += 1; }
+            StackEntry::MemStart { zid, .. } if level == nest => {
+                if mem_is_in_mems(*zid, mem_num, mems) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+#[inline]
+fn mem_is_in_mems(mem: usize, num: i32, mems: &[i32]) -> bool {
+    for i in 0..num as usize {
+        if mem == mems[i] as usize {
+            return true;
+        }
+    }
+    false
+}
+
+
 // ============================================================================
 // Helper functions
 // ============================================================================
@@ -1629,11 +1727,53 @@ fn match_at(
                 }
             }
 
-            OpCode::BackRefWithLevel
-            | OpCode::BackRefWithLevelIc
-            | OpCode::BackRefCheckWithLevel => {
-                // TODO: implement level-based backrefs (needed for recursion)
-                goto_fail = true;
+            OpCode::BackRefWithLevel | OpCode::BackRefWithLevelIc => {
+                if let OperationPayload::BackRefGeneral { num, ref ns, nest_level } = &reg.ops[p].payload {
+                    let ignore_case = reg.ops[p].opcode == OpCode::BackRefWithLevelIc;
+                    if backref_match_at_nested_level(
+                        reg, &stack, ignore_case, reg.case_fold_flag,
+                        *nest_level, *num, ns, &mut s, str_data, end,
+                    ) {
+                        p += 1;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::BackRefCheckWithLevel => {
+                if let OperationPayload::BackRefGeneral { num, ref ns, nest_level } = &reg.ops[p].payload {
+                    let found = if backref_check_at_nested_level(&stack, *nest_level, *num, ns) {
+                        true
+                    } else if *nest_level == 0 {
+                        // At level 0, also check mem arrays directly (group may use
+                        // non-push MemStart with no stack entry)
+                        let tlen = *num as usize;
+                        let mut f = false;
+                        for i in 0..tlen {
+                            let mem = ns[i] as usize;
+                            if mem > num_mem { continue; }
+                            if get_mem_start(reg, &stack, &mem_start_stk, mem).is_some()
+                                && get_mem_end(reg, &stack, &mem_end_stk, mem).is_some()
+                            {
+                                f = true;
+                                break;
+                            }
+                        }
+                        f
+                    } else {
+                        false
+                    };
+                    if found {
+                        p += 1;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
             }
 
             // ================================================================

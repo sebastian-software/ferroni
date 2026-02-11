@@ -1781,7 +1781,25 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
             if node.has_status(ND_ST_CHECKER) {
                 // BackRef checker for conditionals: (?(1)then|else)
                 let ns = refs.to_vec();
-                add_op(reg, OpCode::BackRefCheck, OperationPayload::BackRefGeneral {
+                let opcode = if node.has_status(ND_ST_NEST_LEVEL) {
+                    OpCode::BackRefCheckWithLevel
+                } else {
+                    OpCode::BackRefCheck
+                };
+                add_op(reg, opcode, OperationPayload::BackRefGeneral {
+                    num: refs.len() as i32,
+                    ns,
+                    nest_level: br.nest_level,
+                });
+            } else if node.has_status(ND_ST_NEST_LEVEL) {
+                // Level-based backref for recursion: \k<1+3>
+                let ns = refs.to_vec();
+                let opcode = if node.has_status(ND_ST_IGNORECASE) {
+                    OpCode::BackRefWithLevelIc
+                } else {
+                    OpCode::BackRefWithLevel
+                };
+                add_op(reg, opcode, OperationPayload::BackRefGeneral {
                     num: refs.len() as i32,
                     ns,
                     nest_level: br.nest_level,
@@ -4671,4 +4689,5 @@ mod tests {
         let r = onig_compile(&mut reg, b"(()(?(2)\\g<1>))");
         assert_eq!(r, ONIGERR_NEVER_ENDING_RECURSION);
     }
+
 }

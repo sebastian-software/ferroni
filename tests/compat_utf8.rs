@@ -5990,7 +5990,6 @@ fn octal_escape_o101() {
 }
 
 #[test]
-#[ignore] // backref level \k<1+3> with recursion not yet implemented
 fn recursive_backref_level_k1p3() {
     // C line 751: \A(a|b\g<1>c)\k<1+3>\z matches "bbacca" -> 0-6
     x2(b"\\A(a|b\\g<1>c)\\k<1+3>\\z", b"bbacca", 0, 6);
@@ -6003,7 +6002,6 @@ fn recursive_backref_level_k1p3_no_match() {
 }
 
 #[test]
-#[ignore] // backref level \k<1+2> with recursion not yet implemented
 fn recursive_casefold_backref_level() {
     // C line 753: (?i)\A(a|b\g<1>c)\k<1+2>\z matches "bBACcbac" -> 0-8
     x2(b"(?i)\\A(a|b\\g<1>c)\\k<1+2>\\z", b"bBACcbac", 0, 8);

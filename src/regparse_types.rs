@@ -847,6 +847,9 @@ pub fn node_new_backref(
     if by_name {
         node.status_add(ND_ST_BY_NAME);
     }
+    if nest_level != 0 {
+        node.status_add(ND_ST_NEST_LEVEL);
+    }
     node
 }
 

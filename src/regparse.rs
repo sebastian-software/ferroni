@@ -3798,7 +3798,7 @@ fn prs_conditional(
     let c = pfetch_s(p, pattern, end, enc);
     let mut condition_is_checker;
 
-    let condition: Box<Node>;
+    let mut condition: Box<Node>;
 
     if is_code_digit_ascii(enc, c) || c == '-' as u32 || c == '+' as u32
         || c == '<' as u32 || c == '\'' as u32
@@ -3925,8 +3925,7 @@ fn prs_conditional(
             let backrefs = [back_num];
             condition = node_new_backref(1, &backrefs, false, nest_level);
             if found_level {
-                // Mark as having nest level for BackRefCheckWithLevel
-                // (deferred: level-based not yet implemented in executor)
+                condition.status_add(ND_ST_NEST_LEVEL);
             }
         }
 
