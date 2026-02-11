@@ -9280,7 +9280,6 @@ fn callout_conditional_code() {
 }
 
 #[test]
-#[ignore] // callouts not implemented
 fn callout_conditional_fail() {
     // C line 1382
     x2(b"(?(*FAIL)123|456)", b"456", 0, 3);

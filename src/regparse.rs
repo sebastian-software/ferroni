@@ -3947,22 +3947,40 @@ fn prs_conditional(
         let np = node_new_bag_if_else(cond, then_node, else_node);
         return Ok((np, 0));
     } else {
-        // Non-backref condition: (?(lookahead)...) or (?(pattern)...)
-        // Parse the condition as a subpattern starting with '('
-        // Back up to re-parse from the '(' we already consumed by passing through
-        // Actually the C code re-parses the inner expression.
-        // The '(' was part of '(?(' - we need to parse the inner condition.
-
-        // Back up one char to let the condition be parsed as a group
-        *p = *p - 1; // unfetch the char we just read
-
+        // Non-backref condition: callout or general pattern
         condition_is_checker = false;
 
-        let r = fetch_token(tok, p, end, pattern, env);
-        if r < 0 {
-            return Err(r);
+        let cond_node;
+        if c == '*' as u32 {
+            // Callout-of-name condition: (?(*FAIL)then|else)
+            let name_start = *p;
+            while !p_end(*p, end) {
+                let ch = ppeek(*p, pattern, end, enc);
+                if ch == ')' as u32 {
+                    break;
+                }
+                pinc(p, pattern, enc);
+            }
+            let name = &pattern[name_start..*p];
+            if name == b"FAIL" {
+                if p_end(*p, end) {
+                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                }
+                pinc(p, pattern, enc); // skip ')'
+                cond_node = node_new_fail();
+            } else {
+                return Err(ONIGERR_UNDEFINED_CALLOUT_NAME);
+            }
+        } else {
+            // General pattern condition
+            *p = *p - 1; // unfetch the char we just read
+            let r = fetch_token(tok, p, end, pattern, env);
+            if r < 0 {
+                return Err(r);
+            }
+            let (cn, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+            cond_node = cn;
         }
-        let (cond_node, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
 
         // Now parse then|else
         if p_end(*p, end) {
