@@ -918,10 +918,13 @@ fn compile_bag_memory_node(bag: &BagNode, node_status: u32, reg: &mut RegexType,
     }
 
     let need_push_end = mem_status_at(reg.push_mem_end, regnum as usize);
+    let is_recursion = (node_status & ND_ST_RECURSION) != 0;
     if need_push_end {
-        add_op(reg, OpCode::MemEndPush, OperationPayload::MemoryEnd { num: regnum });
+        let opcode = if is_recursion { OpCode::MemEndPushRec } else { OpCode::MemEndPush };
+        add_op(reg, opcode, OperationPayload::MemoryEnd { num: regnum });
     } else {
-        add_op(reg, OpCode::MemEnd, OperationPayload::MemoryEnd { num: regnum });
+        let opcode = if is_recursion { OpCode::MemEndRec } else { OpCode::MemEnd };
+        add_op(reg, opcode, OperationPayload::MemoryEnd { num: regnum });
     }
 
     if is_called {
@@ -2585,15 +2588,16 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
     match &mut node.inner {
         NodeInner::Call(call) => {
             // Resolve the call target
+            let mem_node_ptr;
             if call.by_number {
                 let gnum = call.called_gnum;
                 if gnum > env.num_mem || gnum < 0 {
                     return ONIGERR_UNDEFINED_GROUP_REFERENCE;
                 }
                 // Mark the target group as CALLED
-                let mem_node = env.mem_env(gnum as usize).mem_node;
-                if !mem_node.is_null() {
-                    unsafe { (*mem_node).status_add(ND_ST_CALLED); }
+                mem_node_ptr = env.mem_env(gnum as usize).mem_node;
+                if !mem_node_ptr.is_null() {
+                    unsafe { (*mem_node_ptr).status_add(ND_ST_CALLED); }
                 }
             } else {
                 // Named call - look up name
@@ -2604,9 +2608,9 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
                             return ONIGERR_MULTIPLEX_DEFINITION_NAME_CALL;
                         }
                         call.called_gnum = nums[0];
-                        let mem_node = env.mem_env(nums[0] as usize).mem_node;
-                        if !mem_node.is_null() {
-                            unsafe { (*mem_node).status_add(ND_ST_CALLED); }
+                        mem_node_ptr = env.mem_env(nums[0] as usize).mem_node;
+                        if !mem_node_ptr.is_null() {
+                            unsafe { (*mem_node_ptr).status_add(ND_ST_CALLED); }
                         }
                     } else {
                         return ONIGERR_UNDEFINED_NAME_REFERENCE;
@@ -2614,6 +2618,13 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
                 } else {
                     return ONIGERR_UNDEFINED_NAME_REFERENCE;
                 }
+            }
+            // Link the call node to its target (so recursive_call_check can follow calls)
+            // Note: we store the raw pointer as a non-owning reference (the target node
+            // is owned by the tree, not by this call). We wrap it in Box without ownership.
+            if !mem_node_ptr.is_null() {
+                // Store target pointer for recursion detection (not owning)
+                call.target_node = mem_node_ptr;
             }
             0
         }
@@ -2663,69 +2674,575 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
 
 /// Check if a node subtree contains any CALLED memory group.
 /// Returns true if a ND_ST_CALLED bag node is found.
-/// Mirrors C's recursive_call_check_trav().
-fn recursive_call_check(node: &mut Node) -> bool {
-    // Check CALLED status before borrowing inner mutably
-    let is_called_mem = if let NodeInner::Bag(ref bn) = node.inner {
-        bn.bag_type == BagType::Memory && node.has_status(ND_ST_CALLED)
-    } else {
-        false
-    };
+/// Inner recursive call check — detects if a call path leads back to a MARK1'd node.
+/// Mirrors C's recursive_call_check(). Returns nonzero if recursion found.
+/// Uses unsafe raw pointers to work around borrow checker limitations with
+/// node.status vs node.inner aliasing.
+fn recursive_call_check_inner(node: &mut Node) -> i32 {
+    let node_ptr = node as *mut Node;
+    let node_type = node.node_type();
 
-    match &mut node.inner {
-        NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            if recursive_call_check(&mut cons.car) {
-                return true;
-            }
-            if let Some(ref mut cdr) = cons.cdr {
-                recursive_call_check(cdr)
-            } else {
-                false
-            }
-        }
-        NodeInner::Quant(qn) => {
-            if let Some(ref mut body) = qn.body {
-                let found = recursive_call_check(body);
-                if qn.upper == 0 && found {
-                    qn.include_referred = 1;
-                }
-                found
-            } else {
-                false
-            }
-        }
-        NodeInner::Bag(bn) => {
-            if is_called_mem {
-                return true;
-            }
-            if let Some(ref mut body) = bn.body {
-                if recursive_call_check(body) {
-                    return true;
-                }
-            }
-            if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
-                if let Some(ref mut then_n) = then_node {
-                    if recursive_call_check(then_n) {
-                        return true;
-                    }
-                }
-                if let Some(ref mut else_n) = else_node {
-                    if recursive_call_check(else_n) {
-                        return true;
+    match node_type {
+        NodeType::List | NodeType::Alt => {
+            let mut r = 0;
+            let mut cur: *mut Node = node;
+            unsafe {
+                loop {
+                    let (car, cdr) = match &mut (*cur).inner {
+                        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+                            (&mut cons.car as *mut Box<Node>, &mut cons.cdr as *mut Option<Box<Node>>)
+                        }
+                        _ => break,
+                    };
+                    r |= recursive_call_check_inner(&mut *(*car));
+                    match &mut *cdr {
+                        Some(ref mut next) => cur = &mut **next,
+                        None => break,
                     }
                 }
             }
-            false
+            r
         }
-        NodeInner::Anchor(an) => {
-            if let Some(ref mut body) = an.body {
-                recursive_call_check(body)
-            } else {
-                false
+        NodeType::Anchor => {
+            if let NodeInner::Anchor(ref mut an) = node.inner {
+                if let Some(ref mut body) = an.body {
+                    recursive_call_check_inner(body)
+                } else { 0 }
+            } else { 0 }
+        }
+        NodeType::Quant => {
+            if let NodeInner::Quant(ref mut qn) = node.inner {
+                if let Some(ref mut body) = qn.body {
+                    recursive_call_check_inner(body)
+                } else { 0 }
+            } else { 0 }
+        }
+        NodeType::Call => {
+            // Follow the call target via raw pointer
+            unsafe {
+                if let NodeInner::Call(ref cn) = (*node_ptr).inner {
+                    let target = cn.target_node;
+                    if !target.is_null() {
+                        let r = recursive_call_check_inner(&mut *target);
+                        if r != 0 && (*target).has_status(ND_ST_MARK1) {
+                            (*node_ptr).status_add(ND_ST_RECURSION);
+                        }
+                        r
+                    } else { 0 }
+                } else { 0 }
             }
         }
-        _ => false,
+        NodeType::Bag => {
+            let is_memory = if let NodeInner::Bag(ref bn) = node.inner {
+                bn.bag_type == BagType::Memory
+            } else { false };
+
+            if is_memory {
+                // Use raw pointer to check/set status while inner is borrowed
+                unsafe {
+                    if (*node_ptr).has_status(ND_ST_MARK2) {
+                        return 0;
+                    } else if (*node_ptr).has_status(ND_ST_MARK1) {
+                        return 1; // recursion found!
+                    }
+                    (*node_ptr).status_add(ND_ST_MARK2);
+                    let r = if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
+                        if let Some(ref mut body) = bn.body {
+                            recursive_call_check_inner(body)
+                        } else { 0 }
+                    } else { 0 };
+                    (*node_ptr).status_remove(ND_ST_MARK2);
+                    r
+                }
+            } else {
+                unsafe {
+                    if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
+                        if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                            let mut r = 0;
+                            if let Some(ref mut t) = then_node { r |= recursive_call_check_inner(t); }
+                            if let Some(ref mut e) = else_node { r |= recursive_call_check_inner(e); }
+                            if let Some(ref mut body) = bn.body {
+                                r |= recursive_call_check_inner(body);
+                            }
+                            r
+                        } else {
+                            if let Some(ref mut body) = bn.body {
+                                recursive_call_check_inner(body)
+                            } else { 0 }
+                        }
+                    } else { 0 }
+                }
+            }
+        }
+        _ => 0,
     }
+}
+
+const IN_RECURSION: i32 = 1;
+const FOUND_CALLED_NODE: i32 = 1;
+
+/// Outer traversal — walks tree, detects recursion in called groups, sets ND_ST_RECURSION.
+/// Mirrors C's recursive_call_check_trav().
+fn recursive_call_check_trav(node: &mut Node, env: &mut ParseEnv, state: i32) -> i32 {
+    let node_ptr = node as *mut Node;
+    let node_type = node.node_type();
+
+    match node_type {
+        NodeType::List | NodeType::Alt => {
+            let mut r = 0;
+            let mut cur: *mut Node = node;
+            unsafe {
+                loop {
+                    let (car, cdr) = match &mut (*cur).inner {
+                        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+                            (&mut cons.car as *mut Box<Node>, &mut cons.cdr as *mut Option<Box<Node>>)
+                        }
+                        _ => break,
+                    };
+                    let ret = recursive_call_check_trav(&mut *(*car), env, state);
+                    if ret == FOUND_CALLED_NODE { r = FOUND_CALLED_NODE; }
+                    match &mut *cdr {
+                        Some(ref mut next) => cur = &mut **next,
+                        None => break,
+                    }
+                }
+            }
+            r
+        }
+        NodeType::Quant => {
+            unsafe {
+                let upper = if let NodeInner::Quant(ref qn) = (*node_ptr).inner { qn.upper } else { 0 };
+                if let NodeInner::Quant(ref mut qn) = (*node_ptr).inner {
+                    if let Some(ref mut body) = qn.body {
+                        let r = recursive_call_check_trav(body, env, state);
+                        if upper == 0 && r == FOUND_CALLED_NODE {
+                            qn.include_referred = 1;
+                        }
+                        r
+                    } else { 0 }
+                } else { 0 }
+            }
+        }
+        NodeType::Anchor => {
+            if let NodeInner::Anchor(ref mut an) = node.inner {
+                if let Some(ref mut body) = an.body {
+                    recursive_call_check_trav(body, env, state)
+                } else { 0 }
+            } else { 0 }
+        }
+        NodeType::Bag => {
+            // Extract info before borrowing inner mutably
+            let (is_memory, is_if_else, is_called, regnum) = unsafe {
+                if let NodeInner::Bag(ref bn) = (*node_ptr).inner {
+                    let is_mem = bn.bag_type == BagType::Memory;
+                    let is_ie = matches!(bn.bag_data, BagData::IfElse { .. });
+                    let regnum = match bn.bag_data {
+                        BagData::Memory { regnum, .. } => regnum,
+                        _ => 0,
+                    };
+                    (is_mem, is_ie, (*node_ptr).has_status(ND_ST_CALLED), regnum)
+                } else {
+                    return 0;
+                }
+            };
+
+            let mut r = 0;
+
+            if is_memory {
+                if is_called {
+                    r = FOUND_CALLED_NODE;
+                }
+                if is_called || (state & IN_RECURSION) != 0 {
+                    unsafe {
+                        if !(*node_ptr).has_status(ND_ST_RECURSION) {
+                            (*node_ptr).status_add(ND_ST_MARK1);
+                            if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
+                                if let Some(ref mut body) = bn.body {
+                                    let ret = recursive_call_check_inner(body);
+                                    if ret != 0 {
+                                        (*node_ptr).status_add(ND_ST_RECURSION);
+                                        env.backtrack_mem |= 1u32 << (regnum as u32);
+                                    }
+                                }
+                            }
+                            (*node_ptr).status_remove(ND_ST_MARK1);
+                        }
+                    }
+                }
+            }
+
+            let mut state1 = state;
+            unsafe {
+                if (*node_ptr).has_status(ND_ST_RECURSION) {
+                    state1 |= IN_RECURSION;
+                }
+            }
+
+            unsafe {
+                if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
+                    if let Some(ref mut body) = bn.body {
+                        let ret = recursive_call_check_trav(body, env, state1);
+                        if ret == FOUND_CALLED_NODE { r = FOUND_CALLED_NODE; }
+                    }
+
+                    if is_if_else {
+                        if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                            if let Some(ref mut t) = then_node {
+                                let ret = recursive_call_check_trav(t, env, state1);
+                                if ret == FOUND_CALLED_NODE { r = FOUND_CALLED_NODE; }
+                            }
+                            if let Some(ref mut e) = else_node {
+                                let ret = recursive_call_check_trav(e, env, state1);
+                                if ret == FOUND_CALLED_NODE { r = FOUND_CALLED_NODE; }
+                            }
+                        }
+                    }
+                }
+            }
+
+            r
+        }
+        _ => 0,
+    }
+}
+
+// ============================================================================
+// disable_noname_group_capture — CAPTURE_ONLY_NAMED_GROUP support
+// When syntax has this flag and named groups exist, unnamed groups become
+// non-capturing and group numbers are renumbered to only include named groups.
+// ============================================================================
+
+/// Traverse tree: assign new sequential numbers to named groups, remove unnamed BAG_MEMORY.
+/// Returns 1 when node was replaced (parent may need to reduce nested quantifiers).
+fn make_named_capture_number_map(node: &mut Node, map: &mut [GroupNumMap], counter: &mut i32) -> i32 {
+    let node_type = node.node_type();
+    match node_type {
+        NodeType::List | NodeType::Alt => {
+            let cur = node as *mut Node;
+            unsafe {
+                let mut p = cur;
+                loop {
+                    let (car_ptr, cdr_opt) = match &mut (*p).inner {
+                        NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) => {
+                            let car = &mut *cons.car as *mut Node;
+                            let cdr = cons.cdr.as_mut().map(|c| &mut **c as *mut Node);
+                            (car, cdr)
+                        }
+                        _ => break,
+                    };
+                    let r = make_named_capture_number_map(&mut *car_ptr, map, counter);
+                    if r < 0 { return r; }
+                    match cdr_opt {
+                        Some(next) => p = next,
+                        None => break,
+                    }
+                }
+            }
+            0
+        }
+        NodeType::Quant => {
+            let body_ptr: Option<*mut Node> = if let NodeInner::Quant(ref mut qn) = node.inner {
+                qn.body.as_mut().map(|b| &mut **b as *mut Node)
+            } else {
+                None
+            };
+            if let Some(bp) = body_ptr {
+                let r = unsafe { make_named_capture_number_map(&mut *bp, map, counter) };
+                if r < 0 { return r; }
+                // If node was replaced and became a quantifier, could reduce nested quantifiers
+                // (rare case, skip for now like C's onig_reduce_nested_quantifier)
+            }
+            0
+        }
+        NodeType::Bag => {
+            let is_memory = matches!(&node.inner, NodeInner::Bag(ref bn) if bn.bag_type == BagType::Memory);
+            let is_named = node.has_status(ND_ST_NAMED_GROUP);
+
+            if is_memory && !is_named {
+                // Unnamed group — remove bag wrapper, replace node with its body
+                let body = if let NodeInner::Bag(ref mut bn) = node.inner {
+                    bn.body.take()
+                } else {
+                    None
+                };
+                if let Some(body) = body {
+                    let body = *body;
+                    node.inner = body.inner;
+                    node.status = body.status;
+                } else {
+                    node.inner = NodeInner::String(StrNode { s: Vec::new(), flag: 0 });
+                }
+                let r = make_named_capture_number_map(node, map, counter);
+                if r < 0 { return r; }
+                return 1;
+            }
+
+            if is_memory && is_named {
+                if let NodeInner::Bag(ref mut bn) = node.inner {
+                    *counter += 1;
+                    if let BagData::Memory { ref mut regnum, .. } = bn.bag_data {
+                        map[*regnum as usize].new_val = *counter;
+                        *regnum = *counter;
+                    }
+                    if let Some(ref mut body) = bn.body {
+                        let r = make_named_capture_number_map(body, map, counter);
+                        if r < 0 { return r; }
+                    }
+                }
+                return 0;
+            }
+
+            // IfElse or other bag types
+            unsafe {
+                let node_ptr = node as *mut Node;
+                if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
+                    if bn.bag_type == BagType::IfElse {
+                        if let Some(ref mut body) = bn.body {
+                            let r = make_named_capture_number_map(body, map, counter);
+                            if r < 0 { return r; }
+                        }
+                        if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                            if let Some(ref mut tn) = then_node {
+                                let r = make_named_capture_number_map(tn, map, counter);
+                                if r < 0 { return r; }
+                            }
+                            if let Some(ref mut en) = else_node {
+                                let r = make_named_capture_number_map(en, map, counter);
+                                if r < 0 { return r; }
+                            }
+                        }
+                    } else {
+                        if let Some(ref mut body) = bn.body {
+                            let r = make_named_capture_number_map(body, map, counter);
+                            if r < 0 { return r; }
+                        }
+                    }
+                }
+            }
+            0
+        }
+        NodeType::Anchor => {
+            if let NodeInner::Anchor(ref mut a) = node.inner {
+                if let Some(ref mut body) = a.body {
+                    let r = make_named_capture_number_map(body, map, counter);
+                    if r < 0 { return r; }
+                }
+            }
+            0
+        }
+        _ => 0,
+    }
+}
+
+/// Renumber backrefs in a single backref node using the group number map.
+fn renumber_backref_node(node: &mut Node, map: &[GroupNumMap]) -> i32 {
+    if !node.has_status(ND_ST_BY_NAME) {
+        return ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED;
+    }
+    if let NodeInner::BackRef(ref mut br) = node.inner {
+        let old_num = br.back_num as usize;
+        let mut pos = 0usize;
+        if let Some(ref mut dyn_refs) = br.back_dynamic {
+            for i in 0..old_num {
+                let n = map[dyn_refs[i] as usize].new_val;
+                if n > 0 {
+                    dyn_refs[pos] = n;
+                    pos += 1;
+                }
+            }
+        } else {
+            for i in 0..old_num {
+                let n = map[br.back_static[i] as usize].new_val;
+                if n > 0 {
+                    br.back_static[pos] = n;
+                    pos += 1;
+                }
+            }
+        }
+        br.back_num = pos as i32;
+    }
+    0
+}
+
+/// Traverse tree to renumber all backrefs using the group number map.
+fn renumber_backref_traverse(node: &mut Node, map: &[GroupNumMap]) -> i32 {
+    match node.node_type() {
+        NodeType::List | NodeType::Alt => {
+            let cur = node as *mut Node;
+            unsafe {
+                let mut p = cur;
+                loop {
+                    let (car_ptr, cdr_opt) = match &mut (*p).inner {
+                        NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) => {
+                            let car = &mut *cons.car as *mut Node;
+                            let cdr = cons.cdr.as_mut().map(|c| &mut **c as *mut Node);
+                            (car, cdr)
+                        }
+                        _ => break,
+                    };
+                    let r = renumber_backref_traverse(&mut *car_ptr, map);
+                    if r != 0 { return r; }
+                    match cdr_opt {
+                        Some(next) => p = next,
+                        None => break,
+                    }
+                }
+            }
+            0
+        }
+        NodeType::Quant => {
+            if let NodeInner::Quant(ref mut qn) = node.inner {
+                if let Some(ref mut body) = qn.body {
+                    return renumber_backref_traverse(body, map);
+                }
+            }
+            0
+        }
+        NodeType::Bag => {
+            unsafe {
+                let node_ptr = node as *mut Node;
+                if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
+                    if let Some(ref mut body) = bn.body {
+                        let r = renumber_backref_traverse(body, map);
+                        if r != 0 { return r; }
+                    }
+                    if bn.bag_type == BagType::IfElse {
+                        if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                            if let Some(ref mut tn) = then_node {
+                                let r = renumber_backref_traverse(tn, map);
+                                if r != 0 { return r; }
+                            }
+                            if let Some(ref mut en) = else_node {
+                                let r = renumber_backref_traverse(en, map);
+                                if r != 0 { return r; }
+                            }
+                        }
+                    }
+                }
+            }
+            0
+        }
+        NodeType::BackRef => {
+            renumber_backref_node(node, map)
+        }
+        NodeType::Anchor => {
+            if let NodeInner::Anchor(ref mut a) = node.inner {
+                if let Some(ref mut body) = a.body {
+                    return renumber_backref_traverse(body, map);
+                }
+            }
+            0
+        }
+        _ => 0,
+    }
+}
+
+/// Check that no numbered (non-named) backrefs exist in the tree.
+/// Called when all captures are named (num_named == num_mem).
+fn numbered_ref_check(node: &Node) -> i32 {
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            let r = numbered_ref_check(&cons.car);
+            if r != 0 { return r; }
+            if let Some(ref next) = cons.cdr {
+                return numbered_ref_check(next);
+            }
+            0
+        }
+        NodeInner::Quant(ref qn) => {
+            if let Some(ref body) = qn.body {
+                numbered_ref_check(body)
+            } else { 0 }
+        }
+        NodeInner::Anchor(ref a) => {
+            if let Some(ref body) = a.body {
+                numbered_ref_check(body)
+            } else { 0 }
+        }
+        NodeInner::Bag(ref bn) => {
+            if let Some(ref body) = bn.body {
+                let r = numbered_ref_check(body);
+                if r != 0 { return r; }
+            }
+            if bn.bag_type == BagType::IfElse {
+                if let BagData::IfElse { ref then_node, ref else_node } = bn.bag_data {
+                    if let Some(ref tn) = then_node {
+                        let r = numbered_ref_check(tn);
+                        if r != 0 { return r; }
+                    }
+                    if let Some(ref en) = else_node {
+                        let r = numbered_ref_check(en);
+                        if r != 0 { return r; }
+                    }
+                }
+            }
+            0
+        }
+        NodeInner::BackRef(_) => {
+            if !node.has_status(ND_ST_BY_NAME) {
+                ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED
+            } else { 0 }
+        }
+        _ => 0,
+    }
+}
+
+/// When CAPTURE_ONLY_NAMED_GROUP is active and both named and unnamed groups
+/// exist, remove unnamed captures and renumber everything to only use named groups.
+fn disable_noname_group_capture(root: &mut Node, reg: &mut RegexType, env: &mut ParseEnv) -> i32 {
+    let num_mem = env.num_mem as usize;
+    let mut map: Vec<GroupNumMap> = (0..=num_mem).map(|_| GroupNumMap { new_val: 0 }).collect();
+    let mut counter: i32 = 0;
+
+    let r = make_named_capture_number_map(root, &mut map, &mut counter);
+    if r < 0 { return r; }
+
+    let r = renumber_backref_traverse(root, &map);
+    if r != 0 { return r; }
+
+    // Compact mem_env: shift named entries down to fill gaps left by removed unnamed groups
+    let mut pos: usize = 1;
+    for i in 1..=num_mem {
+        if map[i].new_val > 0 {
+            if pos != i {
+                let src_node = env.mem_env(i).mem_node;
+                let src_empty = env.mem_env(i).empty_repeat_node;
+                let dst = env.mem_env_mut(pos);
+                dst.mem_node = src_node;
+                dst.empty_repeat_node = src_empty;
+            }
+            pos += 1;
+        }
+    }
+
+    // Update cap_history bitmap with renumbered groups
+    let loc = env.cap_history;
+    env.cap_history = 0;
+    for i in 1..=std::cmp::min(num_mem, 31) {
+        if (loc & (1u32 << i)) != 0 {
+            let new_val = map[i].new_val;
+            if new_val > 0 && new_val <= 31 {
+                env.cap_history |= 1u32 << (new_val as u32);
+            }
+        }
+    }
+
+    env.num_mem = env.num_named;
+    reg.num_mem = env.num_named;
+
+    // Renumber name table entries
+    if let Some(ref mut nt) = reg.name_table {
+        for entry in nt.entries.values_mut() {
+            for back_ref in entry.back_refs.iter_mut() {
+                let idx = *back_ref as usize;
+                if idx < map.len() {
+                    *back_ref = map[idx].new_val;
+                }
+            }
+        }
+    }
+
+    0
 }
 
 /// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
@@ -3414,6 +3931,21 @@ pub fn onig_compile(
         Err(e) => return e,
     };
 
+    // CAPTURE_ONLY_NAMED_GROUP: when named groups exist, disable unnamed captures
+    if env.num_named > 0
+        && is_syntax_bv(env.syntax, ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP)
+        && !opton_capture_group(reg.options)
+    {
+        let r = if env.num_named != env.num_mem {
+            disable_noname_group_capture(&mut root, reg, &mut env)
+        } else {
+            numbered_ref_check(&root)
+        };
+        if r != 0 {
+            return r;
+        }
+    }
+
     // Optimize: consolidate adjacent string nodes (mirrors C's reduce_string_list)
     let r = reduce_string_list(&mut root, reg.enc);
     if r != 0 {
@@ -3426,8 +3958,8 @@ pub fn onig_compile(
         if r != 0 {
             return r;
         }
-        // Detect {0} quantifiers containing CALLED groups
-        recursive_call_check(&mut root);
+        // Detect recursion and set ND_ST_RECURSION on recursive capture groups
+        recursive_call_check_trav(&mut root, &mut env, 0);
     }
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)

@@ -5800,7 +5800,6 @@ fn named_group_long_name() {
 }
 
 #[test]
-#[ignore] // recursive capture position needs MEM_END_REC
 fn named_group_underscore_9() {
     // C line 717: (z)()()(?<_9>a)\g<_9> matches "zaa" group 1 -> 2-3
     x3(b"(z)()()(?<_9>a)\\g<_9>", b"zaa", 2, 3, 1);
@@ -5879,7 +5878,6 @@ fn recursive_foo_nested_parens() {
 }
 
 #[test]
-#[ignore] // recursive capture position needs MEM_END_REC
 fn recursive_foo_nested_parens_capture() {
     // C line 730: (?<foo>a|\(\g<foo>\)) matches "((((((((a))))))))" group 1 -> 0-17
     x3(b"(?<foo>a|\\(\\g<foo>\\))", b"((((((((a))))))))", 0, 17, 1);
@@ -5898,7 +5896,6 @@ fn recursive_g1_bac() {
 }
 
 #[test]
-#[ignore] // recursive capture position needs MEM_END_REC
 fn recursive_g_A_mutual_capture() {
     // C line 733: \g<_A>\g<_A>|\zEND(.a.)(?<_A>.b.) matches "xbxyby" group 1 -> 3-6
     x3(b"\\g<_A>\\g<_A>|\\zEND(.a.)(?<_A>.b.)", b"xbxyby", 3, 6, 1);
@@ -5981,7 +5978,6 @@ fn char_class_0_9_dash_a_no_match() {
 }
 
 #[test]
-#[ignore] // recursive patterns need full recursion support (MEM_END_REC)
 fn recursive_parens_pr43() {
     // C line 749: (\(((?:[^(]|\g<1>)*)\)) matches "(abc)(abc)" group 2 -> 1-4 (PR#43)
     x3(b"(\\(((?:[^(]|\\g<1>)*)\\))", b"(abc)(abc)", 1, 4, 2);
@@ -6038,7 +6034,6 @@ fn recursive_self_call_g0() {
 }
 
 #[test]
-#[ignore] // recursive capture position needs MEM_END_REC
 fn recursive_self_call_g0_capture() {
     // C line 758: (A\g'0')|B matches "AAAAB" group 1 -> 0-5
     x3(b"(A\\g'0')|B", b"AAAAB", 0, 5, 1);

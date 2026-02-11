@@ -480,6 +480,39 @@ fn get_mem_end(
     }
 }
 
+/// Level-aware scan for the matching MEM_START of a recursive capture group.
+/// Mirrors C's STACK_GET_MEM_START macro — counts MemEnd/MemEndMark entries
+/// to track nesting level, finds MemStart at level 0.
+fn stack_get_mem_start_for_rec(
+    stack: &[StackEntry],
+    mem: usize,
+    push_mem_start: u32,
+) -> (MemPtr, usize) {
+    let mut level: i32 = 0;
+    let mut k = stack.len();
+    while k > 0 {
+        k -= 1;
+        match &stack[k] {
+            StackEntry::MemEnd { zid, .. } | StackEntry::MemEndMark { zid } if *zid == mem => {
+                level += 1;
+            }
+            StackEntry::MemStart { zid, pstr, .. } if *zid == mem => {
+                if level == 0 {
+                    // Found matching start at correct level
+                    if mem_status_at(push_mem_start, mem) {
+                        return (MemPtr::StackIdx(k), *pstr);
+                    } else {
+                        return (MemPtr::Pos(*pstr), *pstr);
+                    }
+                }
+                level -= 1;
+            }
+            _ => {}
+        }
+    }
+    (MemPtr::Invalid, 0)
+}
+
 // ============================================================================
 // Helper functions
 // ============================================================================
@@ -1667,19 +1700,20 @@ fn match_at(
             }
 
             OpCode::MemEndPushRec => {
-                // TODO: recursive capture end
+                // Recursive capture end (push variant): find matching MEM_START,
+                // push MEM_END, update start/end tracking
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
-                    let num = num as usize;
-                    let prev_start = mem_start_stk[num];
-                    let prev_end = mem_end_stk[num];
+                    let mem = num as usize;
+                    let (start_ptr, _) = stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
                     let si = stack.len();
                     stack.push(StackEntry::MemEnd {
-                        zid: num,
+                        zid: mem,
                         pstr: s,
-                        prev_start,
-                        prev_end,
+                        prev_start: mem_start_stk[mem],
+                        prev_end: mem_end_stk[mem],
                     });
-                    mem_end_stk[num] = MemPtr::StackIdx(si);
+                    mem_start_stk[mem] = start_ptr;
+                    mem_end_stk[mem] = MemPtr::StackIdx(si);
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -1687,12 +1721,14 @@ fn match_at(
             }
 
             OpCode::MemEndRec => {
-                // TODO: recursive capture end (non-push)
+                // Recursive capture end (non-push variant): find matching MEM_START,
+                // update start/end, push MemEndMark for level tracking
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
-                    let num = num as usize;
-                    mem_end_stk[num] = MemPtr::Pos(s);
-                    // Also push end mark for stack scanning
-                    stack.push(StackEntry::MemEndMark { zid: num });
+                    let mem = num as usize;
+                    mem_end_stk[mem] = MemPtr::Pos(s);
+                    let (start_ptr, _) = stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
+                    mem_start_stk[mem] = start_ptr;
+                    stack.push(StackEntry::MemEndMark { zid: mem });
                     p += 1;
                 } else {
                     goto_fail = true;

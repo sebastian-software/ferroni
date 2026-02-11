@@ -566,6 +566,8 @@ pub struct CallNode {
     pub called_gnum: i32,
     pub name: Vec<u8>,
     pub entry_count: i32,
+    /// Raw pointer to the target BAG_MEMORY node (non-owning, for recursion detection)
+    pub target_node: *mut Node,
 }
 
 pub struct GimmickNode {
@@ -976,6 +978,7 @@ pub fn node_new_call(name: &[u8], gnum: i32, by_number: bool) -> Box<Node> {
         called_gnum: gnum,
         name: name.to_vec(),
         entry_count: 0,
+        target_node: std::ptr::null_mut(),
     }));
     if by_number {
         node.status_add(ND_ST_BY_NUMBER);
