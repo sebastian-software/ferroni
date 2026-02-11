@@ -5751,7 +5751,6 @@ fn recursive_g1() {
 }
 
 #[test]
-#[ignore] // subroutine call inside lookbehind not yet implemented
 fn recursive_lookbehind_named() {
     // C line 709: (?<=\g<ab>)|-\zEND (?<ab>XyZ) matches "XyZ" -> 3-3
     x2(b"(?<=\\g<ab>)|-\\zEND (?<ab>XyZ)", b"XyZ", 3, 3);
@@ -6663,7 +6662,6 @@ fn lookbehind_absent_function_error_2() {
 }
 
 #[test]
-#[ignore] // requires \g<n> call resolution in lookbehind validation
 fn lookbehind_absent_function_error_3() {
     // C line 1454
     e(b"(a(?~|boo)z){0}(?<=\\g<1>)", b"abcdefz", ONIGERR_INVALID_LOOK_BEHIND_PATTERN);

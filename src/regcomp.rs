@@ -2372,6 +2372,15 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
         }
         NodeInner::Anchor(_) => CharLenResult::Fixed(0),
         NodeInner::BackRef(_) => CharLenResult::Variable(0, INFINITE_LEN),
+        NodeInner::Call(ref cn) => {
+            // Follow the call target to compute the character length of the called group
+            if !cn.target_node.is_null() {
+                let target = unsafe { &*cn.target_node };
+                node_char_len(target, enc)
+            } else {
+                CharLenResult::Fixed(0)
+            }
+        }
         _ => CharLenResult::Fixed(0),
     }
 }
@@ -2502,6 +2511,15 @@ fn check_node_in_look_behind(node: &Node) -> bool {
         NodeInner::Anchor(an) => {
             if let Some(ref body) = an.body {
                 check_node_in_look_behind(body)
+            } else {
+                false
+            }
+        }
+        NodeInner::Call(ref cn) => {
+            // Follow the call target to check for forbidden patterns in lookbehind
+            if !cn.target_node.is_null() {
+                let target = unsafe { &*cn.target_node };
+                check_node_in_look_behind(target)
             } else {
                 false
             }
