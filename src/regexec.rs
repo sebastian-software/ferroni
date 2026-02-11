@@ -355,6 +355,27 @@ fn stack_empty_check_mem(
 }
 
 /// Get the saved value for a given save_type and zid from the stack.
+/// Search stack for last SaveVal by type only (C: STACK_GET_SAVE_VAL_TYPE_LAST)
+fn stack_get_save_val_type_last(
+    stack: &[StackEntry],
+    save_type: SaveType,
+) -> Option<usize> {
+    for entry in stack.iter().rev() {
+        if let StackEntry::SaveVal {
+            save_type: st,
+            v,
+            ..
+        } = entry
+        {
+            if *st == save_type {
+                return Some(*v);
+            }
+        }
+    }
+    None
+}
+
+/// Search stack for last SaveVal by type AND id (C: STACK_GET_SAVE_VAL_TYPE_LAST_ID)
 fn stack_get_save_val_last(
     stack: &[StackEntry],
     save_type: SaveType,
@@ -1848,7 +1869,7 @@ fn match_at(
                     match var_type {
                         UpdateVarType::KeepFromStackLast => {
                             if let Some(v) =
-                                stack_get_save_val_last(&stack, SaveType::Keep, id)
+                                stack_get_save_val_type_last(&stack, SaveType::Keep)
                             {
                                 keep = v;
                             }

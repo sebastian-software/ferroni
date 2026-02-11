@@ -2872,6 +2872,15 @@ pub fn onig_compile(
         }
     }
 
+    // Emit UPDATE_VAR(KeepFromStackLast) before OP_END if \K was used
+    if env.keep_num > 0 {
+        add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+            var_type: UpdateVarType::KeepFromStackLast,
+            id: 0,
+            clear: false,
+        });
+    }
+
     // Add OP_END
     add_op(reg, OpCode::End, OperationPayload::None);
 

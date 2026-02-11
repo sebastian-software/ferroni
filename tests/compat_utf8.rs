@@ -8732,3 +8732,818 @@ fn error_target_repeat_not_specified_pipe_question() {
     // C line 1791
     e(b"abc|?", b"", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
 }
+
+// ============================================================
+// Remaining tests ported from test_utf8.c to reach 100% coverage
+// ============================================================
+
+// --- $\O true-anychar (C line 161) ---
+
+#[test]
+fn dollar_true_anychar() {
+    // C line 161: $\O matches at end of "bb\n"
+    x2(b"$\\O", b"bb\n", 2, 3);
+}
+
+// --- POSIX bracket error tests (C lines 235-241) ---
+
+#[test]
+fn error_posix_bracket_premature_end_1() {
+    // C line 235
+    e(b"[[:::]", b":[", ONIGERR_PREMATURE_END_OF_CHAR_CLASS);
+}
+
+#[test]
+fn error_posix_bracket_premature_end_2() {
+    // C line 236
+    e(b"[[:\\]:]", b":]", ONIGERR_PREMATURE_END_OF_CHAR_CLASS);
+}
+
+#[test]
+fn error_posix_bracket_premature_end_3() {
+    // C line 237
+    e(b"[[:\\[:]", b":[", ONIGERR_PREMATURE_END_OF_CHAR_CLASS);
+}
+
+#[test]
+fn error_posix_bracket_premature_end_4() {
+    // C line 238
+    e(b"[[:\\]]", b":]", ONIGERR_PREMATURE_END_OF_CHAR_CLASS);
+}
+
+#[test]
+fn error_posix_bracket_invalid_type_u() {
+    // C line 239
+    e(b"[[:u:]]", b"", ONIGERR_INVALID_POSIX_BRACKET_TYPE);
+}
+
+#[test]
+fn error_posix_bracket_invalid_type_upp() {
+    // C line 240
+    e(b"[[:upp:]]", b"", ONIGERR_INVALID_POSIX_BRACKET_TYPE);
+}
+
+#[test]
+fn error_posix_bracket_invalid_type_uppers() {
+    // C line 241
+    e(b"[[:uppers:]]", b"", ONIGERR_INVALID_POSIX_BRACKET_TYPE);
+}
+
+// --- Absent function (?~...) (C lines 838-861) ---
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_empty() {
+    // C line 838
+    x2(b"(?~)", b"", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_empty_with_input() {
+    // C line 839
+    x2(b"(?~)", b"A", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_ab() {
+    // C line 840
+    x2(b"(?~ab)", b"abc", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_abc() {
+    // C line 841
+    x2(b"(?~abc)", b"abc", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_abc_or_ab() {
+    // C line 842
+    x2(b"(?~abc|ab)", b"abc", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_ab_or_abc() {
+    // C line 843
+    x2(b"(?~ab|abc)", b"abc", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_a_dot_c() {
+    // C line 844
+    x2(b"(?~a.c)", b"abc", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_a_dot_c_or_ab() {
+    // C line 845
+    x2(b"(?~a.c|ab)", b"abc", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_ab_or_a_dot_c() {
+    // C line 846
+    x2(b"(?~ab|a.c)", b"abc", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_after_aaaaa() {
+    // C line 847
+    x2(b"aaaaa(?~)", b"aaaaaaaaaa", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_empty_alt_aaa() {
+    // C line 848
+    x2(b"(?~(?:|aaa))", b"aaa", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_aaa_or_empty() {
+    // C line 849
+    x2(b"(?~aaa|)", b"aaa", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_nested() {
+    // C line 850
+    x2(b"a(?~(?~)).", b"abcdefghijklmnopqrstuvwxyz", 0, 26);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_c_comment() {
+    // C line 851
+    x2(b"/\\*(?~\\*/)\\*/", b"/* */ */", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_word_plus_zzzzz() {
+    // C line 852
+    x2(b"(?~\\w+)zzzzz", b"zzzzz", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_word_star_zzzzz() {
+    // C line 853
+    x2(b"(?~\\w*)zzzzz", b"zzzzz", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_a_dot_c_or_b() {
+    // C line 854
+    x2(b"(?~A.C|B)", b"ABC", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_xyz_or_abc_a_1() {
+    // C line 855
+    x2(b"(?~XYZ|ABC)a", b"ABCa", 1, 4);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_xyz_or_abc_a_2() {
+    // C line 856
+    x2(b"(?~XYZ|ABC)a", b"aABCa", 0, 1);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_html_tag() {
+    // C line 857
+    x2(b"<[^>]*>(?~[<>])</[^>]*>", b"<a>vvv</a>   <b>  </b>", 0, 10);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_ab_multiline() {
+    // C line 858
+    x2(b"(?~ab)", b"ccc\ndab", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_ab_multiline_m() {
+    // C line 859
+    x2(b"(?m:(?~ab))", b"ccc\ndab", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_ab_multiline_neg_m() {
+    // C line 860
+    x2(b"(?-m:(?~ab))", b"ccc\ndab", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_abc_xyz() {
+    // C line 861
+    x2(b"(?~abc)xyz", b"xyz012345678901234567890123456789abc", 0, 3);
+}
+
+// --- Absent with expr (?~|...) (C lines 864-884) ---
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_digits() {
+    // C line 864
+    x2(b"(?~|78|\\d*)", b"123456789", 0, 6);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_def() {
+    // C line 865
+    x2(b"(?~|def|(?:abc|de|f){0,100})", b"abcdedeabcfdefabc", 0, 11);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_ab_dot_star() {
+    // C line 866
+    x2(b"(?~|ab|.*)", b"ccc\nddd", 0, 3);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_ab_true_any_star() {
+    // C line 867
+    x2(b"(?~|ab|\\O*)", b"ccc\ndab", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_ab_true_any_2_10() {
+    // C line 868
+    x2(b"(?~|ab|\\O{2,10})", b"ccc\ndab", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_ab_true_any_1_10() {
+    // C line 869
+    x2(b"(?~|ab|\\O{1,10})", b"ab", 1, 2);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_ab_true_any_2_10_no_match() {
+    // C line 870
+    n(b"(?~|ab|\\O{2,10})", b"ab");
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_abc_true_any_1_10() {
+    // C line 871
+    x2(b"(?~|abc|\\O{1,10})", b"abc", 1, 3);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_ab_true_any_5_10_or_abc() {
+    // C line 872
+    x2(b"(?~|ab|\\O{5,10})|abc", b"abc", 0, 3);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_ab_true_any_1_10_long() {
+    // C line 873
+    x2(b"(?~|ab|\\O{1,10})", b"cccccccccccab", 0, 10);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_aaa_empty() {
+    // C line 874
+    x2(b"(?~|aaa|)", b"aaa", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_empty_a_star() {
+    // C line 875
+    x2(b"(?~||a*)", b"aaaaaa", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_empty_a_star_lazy() {
+    // C line 876
+    x2(b"(?~||a*?)", b"aaaaaa", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_backref() {
+    // C line 877
+    x2(b"(a)(?~|b|\\1)", b"aaaaaa", 0, 2);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_backref_2() {
+    // C line 878
+    x2(b"(a)(?~|bb|(?:a\\1)*)", b"aaaaaa", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_backref_3() {
+    // C line 879
+    x2(b"(b|c)(?~|abac|(?:a\\1)*)", b"abababacabab", 1, 4);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_possessive_no_match() {
+    // C line 880
+    n(b"(?~|c|a*+)a", b"aaaaa");
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_possessive_1() {
+    // C line 881
+    x2(b"(?~|aaaaa|a*+)", b"aaaaa", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_possessive_2() {
+    // C line 882
+    x2(b"(?~|aaaaaa|a*+)b", b"aaaaaab", 1, 7);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_atomic() {
+    // C line 883
+    x2(b"(?~|abcd|(?>))", b"zzzabcd", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_expr_lazy() {
+    // C line 884
+    x2(b"(?~|abc|a*?)", b"aaaabc", 0, 0);
+}
+
+// --- Absent range cutter (C lines 887-898) ---
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_a_star() {
+    // C line 887
+    x2(b"(?~|abc)a*", b"aaaaaabc", 0, 5);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_a_star_z() {
+    // C line 888
+    x2(b"(?~|abc)a*z|aaaaaabc", b"aaaaaabc", 0, 8);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_aaaaaa() {
+    // C line 889
+    x2(b"(?~|aaaaaa)a*", b"aaaaaa", 0, 0);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_abc_aaaa() {
+    // C line 890
+    x2(b"(?~|abc)aaaa|aaaabc", b"aaaabc", 0, 6);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_atomic_aaaa() {
+    // C line 891
+    x2(b"(?>(?~|abc))aaaa|aaaabc", b"aaaabc", 0, 6);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_empty() {
+    // C line 892
+    x2(b"(?~|)a", b"a", 0, 1);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_a_no_match() {
+    // C line 893
+    n(b"(?~|a)a", b"a");
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_a_nested() {
+    // C line 894
+    x2(b"(?~|a)(?~|)a", b"a", 0, 1);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_a_dot_star() {
+    // C line 895
+    x2(b"(?~|a).*(?~|)a", b"bbbbbbbbbbbbbbbbbbbba", 0, 21);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_complex_1() {
+    // C line 896
+    x2(b"(?~|abc).*(xyz|pqr)(?~|)abc", b"aaaaxyzaaapqrabc", 0, 16);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_complex_2() {
+    // C line 897
+    x2(b"(?~|abc).*(xyz|pqr)(?~|)abc", b"aaaaxyzaaaabcpqrabc", 11, 19);
+}
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_range_complex_no_match() {
+    // C line 898
+    n(b"\\A(?~|abc).*(xyz|pqrabc)(?~|)abc", b"aaaaxyzaaaabcpqrabcabc");
+}
+
+// --- Japanese lookahead/lookbehind (C lines 955-958) ---
+
+#[test]
+fn ja_lookahead_positive() {
+    // C line 955: (?=せ)せ matches せ
+    x2("(?=せ)せ".as_bytes(), "せ".as_bytes(), 0, 3);
+}
+
+#[test]
+fn ja_lookahead_positive_no_match() {
+    // C line 956: (?=う). no match for い
+    n("(?=う).".as_bytes(), "い".as_bytes());
+}
+
+#[test]
+fn ja_lookahead_negative() {
+    // C line 957: (?!う)か matches か
+    x2("(?!う)か".as_bytes(), "か".as_bytes(), 0, 3);
+}
+
+#[test]
+fn ja_lookahead_negative_no_match() {
+    // C line 958: (?!と)あ no match for と
+    n("(?!と)あ".as_bytes(), "と".as_bytes());
+}
+
+// --- Japanese alternation (C lines 980-981) ---
+
+#[test]
+fn ja_alternation_1() {
+    // C line 980: あ|い matches あ
+    x2("あ|い".as_bytes(), "あ".as_bytes(), 0, 3);
+}
+
+#[test]
+fn ja_alternation_2() {
+    // C line 981: あ|い matches い
+    x2("あ|い".as_bytes(), "い".as_bytes(), 0, 3);
+}
+
+// --- Japanese case-insensitive, named groups, mutual recursion (C lines 1147-1149) ---
+
+#[test]
+#[ignore] // case-insensitive Japanese backref
+fn ja_case_insensitive_backref() {
+    // C line 1147: ((?i:あvず))\1 matches あvずあvず
+    x2("((?i:あvず))\\1".as_bytes(), "あvずあvず".as_bytes(), 0, 14);
+}
+
+#[test]
+fn ja_named_group_recursion() {
+    // C line 1148: (?<愚か>変|\(\g<愚か>\)) matches ((((((変))))))
+    x2("(?<愚か>変|\\(\\g<愚か>\\))".as_bytes(), "((((((変))))))".as_bytes(), 0, 15);
+}
+
+#[test]
+fn ja_mutual_recursion() {
+    // C line 1149: complex mutual recursion with Japanese group names
+    x2(
+        "\\A(?:\\g<阿_1>|\\g<云_2>|\\z終了  (?<阿_1>観|自\\g<云_2>自)(?<云_2>在|菩薩\\g<阿_1>菩薩))$".as_bytes(),
+        "菩薩自菩薩自在自菩薩自菩薩".as_bytes(),
+        0, 39,
+    );
+}
+
+// --- UTF-8 encoding validation errors (C lines 1365-1370) ---
+
+#[test]
+#[ignore] // UTF-8 raw byte validation not implemented
+fn error_utf8_too_short_xf4() {
+    // C line 1365: \xF4 is a 4-byte lead but no continuation
+    e(b"\\xF4", b"", ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
+}
+
+#[test]
+#[ignore] // UTF-8 raw byte validation not implemented
+fn error_utf8_invalid_xf5() {
+    // C line 1366: \xF5 is invalid UTF-8 lead byte
+    e(b"\\xF5", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+}
+
+#[test]
+#[ignore] // UTF-8 raw byte validation not implemented
+fn error_utf8_invalid_xff() {
+    // C line 1367: \xFF is invalid UTF-8 lead byte
+    e(b"\\xFF", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+}
+
+#[test]
+#[ignore] // UTF-8 raw byte validation not implemented
+fn error_utf8_too_short_xf4_in_cc() {
+    // C line 1368: [\xF4] in character class
+    e(b"[\\xF4]", b"", ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
+}
+
+#[test]
+#[ignore] // UTF-8 raw byte validation not implemented
+fn error_utf8_invalid_xf5_in_cc() {
+    // C line 1369: [\xF5] in character class
+    e(b"[\\xF5]", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+}
+
+#[test]
+#[ignore] // UTF-8 raw byte validation not implemented
+fn error_utf8_invalid_range_xff() {
+    // C line 1370: [\x00-\xFF] range with invalid end
+    e(b"[\\x00-\\xFF]", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+}
+
+// --- Complex conditional with recursion (C line 1374) ---
+
+#[test]
+#[ignore] // complex conditional with recursion - may hang
+fn conditional_recursion_complex() {
+    // C line 1374: complex conditional pattern from issue #139
+    x2(
+        b"((?()0+)+++(((0\\g<0>)0)|())++++((?(1)(0\\g<0>))++++++0*())++++((?(1)(0\\g<1>)+)++++++++++*())++++((?(1)((0)\\g<0>)+)++())+0++*+++(((0\\g<0>))*())++++((?(1)(0\\g<0>)+)++++++++++*|)++++*+++((?(1)((0)\\g<0>)+)+++++++++())++*|)++++((?()0))|",
+        b"abcde",
+        0, 0,
+    );
+}
+
+// --- Callouts (C lines 1376-1382) ---
+
+#[test]
+#[ignore] // callouts not implemented
+fn callout_fail() {
+    // C line 1376
+    n(b"(*FAIL)", b"abcdefg");
+}
+
+#[test]
+#[ignore] // callouts not implemented
+fn callout_fail_repeated() {
+    // C line 1377
+    n(b"abcd(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)(*FAIL)", b"abcdefg");
+}
+
+#[test]
+#[ignore] // callouts not implemented
+fn callout_max() {
+    // C line 1378
+    x2(b"(?:[ab]|(*MAX{2}).)*", b"abcbaaccaaa", 0, 7);
+}
+
+#[test]
+#[ignore] // callouts not implemented
+fn callout_count_cmp() {
+    // C line 1379-1380
+    x2(b"(?:(*COUNT[AB]{X})[ab]|(*COUNT[CD]{X})[cd])*(*CMP{AB,<,CD})", b"abababcdab", 5, 8);
+}
+
+#[test]
+#[ignore] // callouts not implemented
+fn callout_conditional_code() {
+    // C line 1381
+    x2(b"(?(?{....})123|456)", b"123", 0, 3);
+}
+
+#[test]
+#[ignore] // callouts not implemented
+fn callout_conditional_fail() {
+    // C line 1382
+    x2(b"(?(*FAIL)123|456)", b"456", 0, 3);
+}
+
+// --- \g'0' self-call with possessive + {,0} (C lines 1384-1387) ---
+
+#[test]
+fn self_call_possessive_zero() {
+    // C line 1384: \g'0'++{,0} matches empty
+    x2(b"\\g'0'++{,0}", b"abcdefgh", 0, 0);
+}
+
+#[test]
+fn self_call_possessive_zero_lazy() {
+    // C line 1385: \g'0'++{,0}? matches empty
+    x2(b"\\g'0'++{,0}?", b"abcdefgh", 0, 0);
+}
+
+#[test]
+fn self_call_possessive_zero_b() {
+    // C line 1386: \g'0'++{,0}b matches b
+    x2(b"\\g'0'++{,0}b", b"abcdefgh", 1, 2);
+}
+
+#[test]
+fn self_call_possessive_zero_lazy_def() {
+    // C line 1387: \g'0'++{,0}?def matches def
+    x2(b"\\g'0'++{,0}?def", b"abcdefgh", 3, 6);
+}
+
+// --- Backref with greedy star x2 variant (C line 657) ---
+
+#[test]
+fn backref_greedy_star_x2() {
+    // C line 657: (a*)\1 matches aaaa in aaaaa (2+2 chars)
+    x2(b"(a*)\\1", b"aaaaa", 0, 4);
+}
+
+// --- Absent in lookbehind (C line 696) ---
+
+#[test]
+#[ignore] // absent function not implemented
+fn absent_in_lookbehind() {
+    // C line 696
+    x2(b"(?<=a|(?~END)|b)c", b"ENDc", 3, 4);
+}
+
+// --- \R general newline basics (C lines 772-777) ---
+
+#[test]
+fn general_newline_crlf() {
+    // C line 772: \R matches \r\n as a unit
+    x2(b"\\R", b"\r\n", 0, 2);
+}
+
+#[test]
+fn general_newline_cr() {
+    // C line 773: \R matches \r
+    x2(b"\\R", b"\r", 0, 1);
+}
+
+#[test]
+fn general_newline_lf() {
+    // C line 774: \R matches \n
+    x2(b"\\R", b"\n", 0, 1);
+}
+
+#[test]
+fn general_newline_vt() {
+    // C line 775: \R matches \x0b (vertical tab)
+    x2(b"\\R", b"\x0b", 0, 1);
+}
+
+#[test]
+fn general_newline_crlf_no_separate_lf() {
+    // C line 776: \R\n should NOT match \r\n (\R consumes both chars)
+    n(b"\\R\\n", b"\r\n");
+}
+
+#[test]
+fn general_newline_nel() {
+    // C line 777: \R matches U+0085 NEL (UTF-8: \xc2\x85)
+    x2(b"\\R", b"\xc2\x85", 0, 2);
+}
+
+// --- \N not-newline (C lines 778-781) ---
+
+#[test]
+fn not_newline_a() {
+    // C line 778: \N matches 'a'
+    x2(b"\\N", b"a", 0, 1);
+}
+
+#[test]
+fn not_newline_lf() {
+    // C line 779: \N does NOT match \n
+    n(b"\\N", b"\n");
+}
+
+#[test]
+fn not_newline_multiline_mode() {
+    // C line 780: (?m:\N) still does NOT match \n
+    n(b"(?m:\\N)", b"\n");
+}
+
+#[test]
+fn not_newline_non_multiline_mode() {
+    // C line 781: (?-m:\N) does NOT match \n
+    n(b"(?-m:\\N)", b"\n");
+}
+
+// --- \O true-anychar basics (C lines 782-785) ---
+
+#[test]
+fn true_anychar_a() {
+    // C line 782: \O matches 'a'
+    x2(b"\\O", b"a", 0, 1);
+}
+
+#[test]
+fn true_anychar_lf() {
+    // C line 783: \O matches \n
+    x2(b"\\O", b"\n", 0, 1);
+}
+
+#[test]
+fn true_anychar_multiline_mode() {
+    // C line 784: (?m:\O) matches \n
+    x2(b"(?m:\\O)", b"\n", 0, 1);
+}
+
+#[test]
+fn true_anychar_non_multiline_mode() {
+    // C line 785: (?-m:\O) matches \n (true-anychar ignores mode)
+    x2(b"(?-m:\\O)", b"\n", 0, 1);
+}
+
+// --- \K keep (C lines 786-790) ---
+
+#[test]
+fn keep_empty() {
+    // C line 786: \K at start, match is empty at 0
+    x2(b"\\K", b"a", 0, 0);
+}
+
+#[test]
+fn keep_after_a() {
+    // C line 787: a\K resets start to after a
+    x2(b"a\\K", b"a", 1, 1);
+}
+
+#[test]
+fn keep_a_b() {
+    // C line 788: a\Kb matches ab but reports 1-2
+    x2(b"a\\Kb", b"ab", 1, 2);
+}
+
+#[test]
+fn keep_alternation() {
+    // C line 789: (a\Kb|ac\Kd) on "acd" matches via second alt
+    x2(b"(a\\Kb|ac\\Kd)", b"acd", 2, 3);
+}
+
+#[test]
+fn keep_repeated() {
+    // C line 790: (a\Kb|\Kac\K)* on "acababacab" last \K wins
+    x2(b"(a\\Kb|\\Kac\\K)*", b"acababacab", 9, 10);
+}
+
+// --- (?W) ASCII word option (C line 817) ---
+
+#[test]
+#[ignore] // (?W) option not implemented
+fn option_word_is_ascii() {
+    // C line 817: (?W)a*\W no match for "aaa"
+    n(b"(?W)a*\\W", b"aaa");
+}
+
+// --- Japanese missing patterns (C lines 966, 968) ---
+
+#[test]
+fn ja_optional_match() {
+    // C line 966: 変? matches 変
+    x2("変?".as_bytes(), "変".as_bytes(), 0, 3);
+}
+
+#[test]
+fn ja_star_match() {
+    // C line 968: 量* matches 量
+    x2("量*".as_bytes(), "量".as_bytes(), 0, 3);
+}
