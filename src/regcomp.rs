@@ -4053,6 +4053,430 @@ fn infinite_recursive_call_check_trav(node: &mut Node, env: &ParseEnv) -> i32 {
     r
 }
 
+// ============================================================================
+// Call-Node-Tuning: tune_call2 + tune_called_state
+// ============================================================================
+
+/// C: tune_call — mark zero-repeat contexts and adjust entry counts.
+/// Call reference resolution is already handled by resolve_call_references.
+fn tune_call(node: &mut Node, state: i32) {
+    let np = node as *mut Node;
+    unsafe {
+        match &mut (*np).inner {
+            NodeInner::List(_) | NodeInner::Alt(_) => {
+                let mut cur = np;
+                loop {
+                    match &mut (*cur).inner {
+                        NodeInner::List(c) | NodeInner::Alt(c) => {
+                            tune_call(&mut c.car, state);
+                            match &mut c.cdr {
+                                Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            NodeInner::Quant(qn) => {
+                let s = if qn.upper == 0 { state | IN_ZERO_REPEAT } else { state };
+                if let Some(ref mut body) = qn.body {
+                    tune_call(body, s);
+                }
+            }
+            NodeInner::Anchor(an) => {
+                if let Some(ref mut body) = an.body {
+                    tune_call(body, state);
+                }
+            }
+            NodeInner::Bag(bn) => {
+                let bt = bn.bag_type;
+                if bt == BagType::Memory {
+                    if (state & IN_ZERO_REPEAT) != 0 {
+                        (*np).status_add(ND_ST_IN_ZERO_REPEAT);
+                        if let NodeInner::Bag(ref mut bn) = (*np).inner {
+                            if let BagData::Memory { ref mut entry_count, .. } = bn.bag_data {
+                                *entry_count -= 1;
+                            }
+                            if let Some(ref mut body) = bn.body {
+                                tune_call(body, state);
+                            }
+                        }
+                    } else if let Some(ref mut body) = bn.body {
+                        tune_call(body, state);
+                    }
+                } else if bt == BagType::IfElse {
+                    if let Some(ref mut body) = bn.body {
+                        tune_call(body, state);
+                    }
+                    if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                        if let Some(ref mut t) = then_node { tune_call(t, state); }
+                        if let Some(ref mut e) = else_node { tune_call(e, state); }
+                    }
+                } else if let Some(ref mut body) = bn.body {
+                    tune_call(body, state);
+                }
+            }
+            NodeInner::Call(cn) => {
+                if (state & IN_ZERO_REPEAT) != 0 {
+                    (*np).status_add(ND_ST_IN_ZERO_REPEAT);
+                    cn.entry_count -= 1;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// C: tune_call2_call — traverse from a Call node to count entries on called targets.
+fn tune_call2_call(node: &mut Node) {
+    let np = node as *mut Node;
+    unsafe {
+        match &mut (*np).inner {
+            NodeInner::List(_) | NodeInner::Alt(_) => {
+                let mut cur = np;
+                loop {
+                    match &mut (*cur).inner {
+                        NodeInner::List(c) | NodeInner::Alt(c) => {
+                            tune_call2_call(&mut c.car);
+                            match &mut c.cdr {
+                                Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            NodeInner::Quant(qn) => {
+                if let Some(ref mut body) = qn.body {
+                    tune_call2_call(body);
+                }
+            }
+            NodeInner::Anchor(an) => {
+                if let Some(ref mut body) = an.body {
+                    tune_call2_call(body);
+                }
+            }
+            NodeInner::Bag(bn) => {
+                let bt = bn.bag_type;
+                if bt == BagType::Memory {
+                    if !(*np).has_status(ND_ST_MARK1) {
+                        (*np).status_add(ND_ST_MARK1);
+                        if let NodeInner::Bag(ref mut bn) = (*np).inner {
+                            if let Some(ref mut body) = bn.body {
+                                tune_call2_call(body);
+                            }
+                        }
+                        (*np).status_remove(ND_ST_MARK1);
+                    }
+                } else if bt == BagType::IfElse {
+                    if let Some(ref mut body) = bn.body {
+                        tune_call2_call(body);
+                    }
+                    if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                        if let Some(ref mut t) = then_node { tune_call2_call(t); }
+                        if let Some(ref mut e) = else_node { tune_call2_call(e); }
+                    }
+                } else if let Some(ref mut body) = bn.body {
+                    tune_call2_call(body);
+                }
+            }
+            NodeInner::Call(cn) => {
+                if !(*np).has_status(ND_ST_MARK1) {
+                    (*np).status_add(ND_ST_MARK1);
+                    cn.entry_count += 1;
+                    let target = cn.target_node;
+                    if !target.is_null() {
+                        (*target).status_add(ND_ST_CALLED);
+                        if let NodeInner::Bag(ref mut tbn) = (*target).inner {
+                            if let BagData::Memory { ref mut entry_count, .. } = tbn.bag_data {
+                                *entry_count += 1;
+                            }
+                        }
+                        tune_call2_call(&mut *target);
+                    }
+                    (*np).status_remove(ND_ST_MARK1);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// C: tune_call2 — traverse tree, for each non-zero-repeat Call, invoke tune_call2_call.
+fn tune_call2(node: &mut Node) -> i32 {
+    let np = node as *mut Node;
+    unsafe {
+        match &mut (*np).inner {
+            NodeInner::List(_) | NodeInner::Alt(_) => {
+                let mut cur = np;
+                loop {
+                    match &mut (*cur).inner {
+                        NodeInner::List(c) | NodeInner::Alt(c) => {
+                            let r = tune_call2(&mut c.car);
+                            if r != 0 { return r; }
+                            match &mut c.cdr {
+                                Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            NodeInner::Quant(qn) => {
+                if qn.upper != 0 {
+                    if let Some(ref mut body) = qn.body {
+                        return tune_call2(body);
+                    }
+                }
+            }
+            NodeInner::Anchor(an) => {
+                if let Some(ref mut body) = an.body {
+                    return tune_call2(body);
+                }
+            }
+            NodeInner::Bag(bn) => {
+                let in_zero = (*np).has_status(ND_ST_IN_ZERO_REPEAT);
+                if !in_zero {
+                    if let Some(ref mut body) = bn.body {
+                        let r = tune_call2(body);
+                        if r != 0 { return r; }
+                    }
+                }
+                if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                    if let Some(ref mut t) = then_node {
+                        let r = tune_call2(t);
+                        if r != 0 { return r; }
+                    }
+                    if let Some(ref mut e) = else_node {
+                        return tune_call2(e);
+                    }
+                }
+            }
+            NodeInner::Call(_) => {
+                if !(*np).has_status(ND_ST_IN_ZERO_REPEAT) {
+                    tune_call2_call(&mut *np);
+                }
+            }
+            _ => {}
+        }
+    }
+    0
+}
+
+/// C: tune_called_state_call — propagate state flags through called nodes.
+fn tune_called_state_call(node: &mut Node, state: i32) {
+    let np = node as *mut Node;
+    unsafe {
+        match &mut (*np).inner {
+            NodeInner::Alt(_) => {
+                let s = state | IN_ALT;
+                let mut cur = np;
+                loop {
+                    match &mut (*cur).inner {
+                        NodeInner::Alt(c) | NodeInner::List(c) => {
+                            tune_called_state_call(&mut c.car, s);
+                            match &mut c.cdr {
+                                Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            NodeInner::List(_) => {
+                let mut cur = np;
+                loop {
+                    match &mut (*cur).inner {
+                        NodeInner::List(c) | NodeInner::Alt(c) => {
+                            tune_called_state_call(&mut c.car, state);
+                            match &mut c.cdr {
+                                Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            NodeInner::Quant(qn) => {
+                let mut s = state;
+                if is_infinite_repeat(qn.upper) || qn.upper >= 2 { s |= IN_REAL_REPEAT; }
+                if qn.lower != qn.upper { s |= IN_VAR_REPEAT; }
+                if (state & IN_PEEK) != 0 { (*np).status_add(ND_ST_INPEEK); }
+                if let Some(ref mut body) = qn.body {
+                    tune_called_state_call(body, s);
+                }
+            }
+            NodeInner::Anchor(an) => {
+                match an.anchor_type {
+                    ANCR_PREC_READ_NOT | ANCR_LOOK_BEHIND_NOT => {
+                        if let Some(ref mut body) = an.body {
+                            tune_called_state_call(body, state | IN_NOT | IN_PEEK);
+                        }
+                    }
+                    ANCR_PREC_READ | ANCR_LOOK_BEHIND => {
+                        if let Some(ref mut body) = an.body {
+                            tune_called_state_call(body, state | IN_PEEK);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            NodeInner::Bag(bn) => {
+                let bt = bn.bag_type;
+                if bt == BagType::Memory {
+                    if (*np).has_status(ND_ST_MARK1) {
+                        if let NodeInner::Bag(ref mut bn) = (*np).inner {
+                            if let BagData::Memory { ref mut called_state, .. } = bn.bag_data {
+                                if (!*called_state & state) != 0 {
+                                    *called_state |= state;
+                                    if let Some(ref mut body) = bn.body {
+                                        tune_called_state_call(body, state);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        (*np).status_add(ND_ST_MARK1);
+                        if let NodeInner::Bag(ref mut bn) = (*np).inner {
+                            if let BagData::Memory { ref mut called_state, .. } = bn.bag_data {
+                                *called_state |= state;
+                            }
+                            if let Some(ref mut body) = bn.body {
+                                tune_called_state_call(body, state);
+                            }
+                        }
+                        (*np).status_remove(ND_ST_MARK1);
+                    }
+                } else if bt == BagType::IfElse {
+                    let s = state | IN_ALT;
+                    if let Some(ref mut body) = bn.body {
+                        tune_called_state_call(body, s);
+                    }
+                    if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                        if let Some(ref mut t) = then_node { tune_called_state_call(t, s); }
+                        if let Some(ref mut e) = else_node { tune_called_state_call(e, s); }
+                    }
+                } else if let Some(ref mut body) = bn.body {
+                    tune_called_state_call(body, state);
+                }
+            }
+            NodeInner::Call(cn) => {
+                if (state & IN_PEEK) != 0 { (*np).status_add(ND_ST_INPEEK); }
+                if (state & IN_REAL_REPEAT) != 0 { (*np).status_add(ND_ST_IN_REAL_REPEAT); }
+                if let Some(ref mut body) = cn.body {
+                    tune_called_state_call(body, state);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// C: tune_called_state — propagate state flags down the tree, entering called groups.
+fn tune_called_state(node: &mut Node, state: i32) {
+    let np = node as *mut Node;
+    unsafe {
+        match &mut (*np).inner {
+            NodeInner::Alt(_) => {
+                let s = state | IN_ALT;
+                let mut cur = np;
+                loop {
+                    match &mut (*cur).inner {
+                        NodeInner::Alt(c) | NodeInner::List(c) => {
+                            tune_called_state(&mut c.car, s);
+                            match &mut c.cdr {
+                                Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            NodeInner::List(_) => {
+                let mut cur = np;
+                loop {
+                    match &mut (*cur).inner {
+                        NodeInner::List(c) | NodeInner::Alt(c) => {
+                            tune_called_state(&mut c.car, state);
+                            match &mut c.cdr {
+                                Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                                None => break,
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            NodeInner::Call(_) => {
+                if (state & IN_PEEK) != 0 { (*np).status_add(ND_ST_INPEEK); }
+                if (state & IN_REAL_REPEAT) != 0 { (*np).status_add(ND_ST_IN_REAL_REPEAT); }
+                tune_called_state_call(&mut *np, state);
+            }
+            NodeInner::Bag(bn) => {
+                let bt = bn.bag_type;
+                match bt {
+                    BagType::Memory => {
+                        let mut s = state;
+                        if let BagData::Memory { entry_count, ref mut called_state, .. } = bn.bag_data {
+                            if entry_count > 1 { s |= IN_MULTI_ENTRY; }
+                            *called_state |= s;
+                        }
+                        if let Some(ref mut body) = bn.body {
+                            tune_called_state(body, s);
+                        }
+                    }
+                    BagType::Option | BagType::StopBacktrack => {
+                        if let Some(ref mut body) = bn.body {
+                            tune_called_state(body, state);
+                        }
+                    }
+                    BagType::IfElse => {
+                        let s = state | IN_ALT;
+                        if let Some(ref mut body) = bn.body {
+                            tune_called_state(body, s);
+                        }
+                        if let BagData::IfElse { ref mut then_node, ref mut else_node } = bn.bag_data {
+                            if let Some(ref mut t) = then_node { tune_called_state(t, s); }
+                            if let Some(ref mut e) = else_node { tune_called_state(e, s); }
+                        }
+                    }
+                }
+            }
+            NodeInner::Quant(qn) => {
+                let mut s = state;
+                if is_infinite_repeat(qn.upper) || qn.upper >= 2 { s |= IN_REAL_REPEAT; }
+                if qn.lower != qn.upper { s |= IN_VAR_REPEAT; }
+                if (state & IN_PEEK) != 0 { (*np).status_add(ND_ST_INPEEK); }
+                if let Some(ref mut body) = qn.body {
+                    tune_called_state(body, s);
+                }
+            }
+            NodeInner::Anchor(an) => {
+                match an.anchor_type {
+                    ANCR_PREC_READ_NOT | ANCR_LOOK_BEHIND_NOT => {
+                        if let Some(ref mut body) = an.body {
+                            tune_called_state(body, state | IN_NOT | IN_PEEK);
+                        }
+                    }
+                    ANCR_PREC_READ | ANCR_LOOK_BEHIND => {
+                        if let Some(ref mut body) = an.body {
+                            tune_called_state(body, state | IN_PEEK);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
 /// Mirrors C's tune_tree() from regcomp.c.
 pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
@@ -5672,6 +6096,13 @@ pub fn onig_compile(
         if r != 0 {
             return r;
         }
+        // Mark zero-repeat contexts and adjust entry counts
+        tune_call(&mut root, 0);
+        // Count entries on called targets
+        let r = tune_call2(&mut root);
+        if r != 0 {
+            return r;
+        }
         // Detect recursion and set ND_ST_RECURSION on recursive capture groups
         recursive_call_check_trav(&mut root, &mut env, 0);
         // Check for never-ending recursion (e.g. (?<abc>\g<abc>))
@@ -5679,6 +6110,8 @@ pub fn onig_compile(
         if r != 0 {
             return r;
         }
+        // Propagate state flags (IN_ALT, IN_REAL_REPEAT, etc.) through called groups
+        tune_called_state(&mut root, 0);
     }
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
