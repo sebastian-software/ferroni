@@ -16,4 +16,6 @@ pub mod encodings;
 pub mod regparse;
 pub mod regcomp;
 pub mod regexec;
+pub mod regtrav;
+pub mod regset;
 pub mod regerror;
