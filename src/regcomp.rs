@@ -136,6 +136,350 @@ fn is_strict_real_node(node: &Node) -> bool {
 }
 
 // ============================================================================
+// get_tree_head_literal / is_exclusive / tune_next (C lines 3043-4743)
+// ============================================================================
+
+/// Walk the AST to find the leading literal node.
+/// If `exact` is true, only String nodes (not IGNORECASE) qualify.
+/// If `exact` is false, CType and CClass nodes also qualify.
+/// Returns a reference to the found node, or None.
+fn get_tree_head_literal<'a>(node: &'a Node, exact: bool, reg: &RegexType) -> Option<&'a Node> {
+    match &node.inner {
+        NodeInner::BackRef(_) | NodeInner::Alt(_) | NodeInner::Call(_) => None,
+
+        NodeInner::CType(ct) => {
+            if ct.ctype == CTYPE_ANYCHAR { return None; }
+            if !exact { Some(node) } else { None }
+        }
+
+        NodeInner::CClass(_) => {
+            if !exact { Some(node) } else { None }
+        }
+
+        NodeInner::List(cons) => {
+            get_tree_head_literal(&cons.car, exact, reg)
+        }
+
+        NodeInner::String(sn) => {
+            if sn.s.is_empty() { return None; }
+            // ND_IS_REAL_IGNORECASE = IGNORECASE && !CRUDE
+            let is_real_ic = (node.status & ND_ST_IGNORECASE) != 0 && !sn.is_crude();
+            if !exact || !is_real_ic {
+                Some(node)
+            } else {
+                None
+            }
+        }
+
+        NodeInner::Quant(qn) => {
+            if qn.lower > 0 {
+                if let Some(he) = qn.head_exact {
+                    // head_exact is already extracted; but it's a u8, not a node ref.
+                    // For the recursive case, re-derive from body.
+                    None // Fall through to body check
+                } else {
+                    qn.body.as_ref().and_then(|b| get_tree_head_literal(b, exact, reg))
+                }
+            } else {
+                None
+            }
+        }
+
+        NodeInner::Bag(bn) => {
+            match bn.bag_type {
+                BagType::Option | BagType::Memory | BagType::StopBacktrack => {
+                    bn.body.as_ref().and_then(|b| get_tree_head_literal(b, exact, reg))
+                }
+                _ => None,
+            }
+        }
+
+        NodeInner::Anchor(an) => {
+            if an.anchor_type == ANCR_PREC_READ {
+                an.body.as_ref().and_then(|b| get_tree_head_literal(b, exact, reg))
+            } else {
+                None
+            }
+        }
+
+        _ => None,
+    }
+}
+
+/// Extract the first byte from a head literal node (String only, for exact matching).
+fn get_head_literal_byte(node: &Node, exact: bool, reg: &RegexType) -> Option<u8> {
+    let n = get_tree_head_literal(node, exact, reg)?;
+    if let NodeInner::String(sn) = &n.inner {
+        if !sn.s.is_empty() && sn.s[0] != 0 {
+            return Some(sn.s[0]);
+        }
+    }
+    None
+}
+
+/// Check if a codepoint is in a character class.
+fn onig_is_code_in_cc(enc: OnigEncoding, code: OnigCodePoint, cc: &CClassNode) -> bool {
+    let in_bs = if (code as usize) < SINGLE_BYTE_SIZE {
+        bitset_at(&cc.bs, code as usize)
+    } else {
+        false
+    };
+
+    let in_mbuf = if let Some(ref mbuf) = cc.mbuf {
+        onig_is_in_code_range_bbuf(mbuf, code)
+    } else {
+        false
+    };
+
+    let result = in_bs || in_mbuf;
+    if cc.is_not() { !result } else { result }
+}
+
+/// Check if code ranges in a BBuf contain a codepoint.
+/// BBuf stores code ranges as packed u32 values in native-endian bytes.
+fn onig_is_in_code_range_bbuf(mbuf: &BBuf, code: OnigCodePoint) -> bool {
+    let data = &mbuf.data;
+    if data.len() < 4 { return false; }
+
+    let read_u32 = |offset: usize| -> u32 {
+        if offset + 4 > data.len() { return 0; }
+        u32::from_ne_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]])
+    };
+
+    let n = read_u32(0) as usize;
+    let mut low = 0usize;
+    let mut high = n;
+    while low < high {
+        let mid = (low + high) / 2;
+        let from = read_u32((mid * 2 + 1) * 4);
+        let to = read_u32((mid * 2 + 2) * 4);
+        if code < from {
+            high = mid;
+        } else if code > to {
+            low = mid + 1;
+        } else {
+            return true;
+        }
+    }
+    false
+}
+
+/// Check if two head-literal nodes are mutually exclusive.
+/// If they are, a quantifier before x followed by y can be made possessive.
+fn is_exclusive(x: &Node, y: &Node, reg: &RegexType) -> bool {
+    // Dispatch on x type, with swap for certain y types
+    match (&x.inner, &y.inner) {
+        // CType × CType
+        (NodeInner::CType(xct), NodeInner::CType(yct)) => {
+            if xct.ctype == CTYPE_ANYCHAR || yct.ctype == CTYPE_ANYCHAR {
+                return false;
+            }
+            xct.ctype == yct.ctype && xct.not != yct.not && xct.ascii_mode == yct.ascii_mode
+        }
+
+        // CType × CClass or CType × String → swap and retry
+        (NodeInner::CType(_), NodeInner::CClass(_)) => is_exclusive(y, x, reg),
+        (NodeInner::CType(_), NodeInner::String(_)) => is_exclusive(y, x, reg),
+
+        // CClass × CType
+        (NodeInner::CClass(xc), NodeInner::CType(yct)) => {
+            if yct.ctype == CTYPE_ANYCHAR { return false; }
+            if yct.ctype != ONIGENC_CTYPE_WORD as i32 { return false; }
+            if !yct.not {
+                // \w: check if any word chars are in the class
+                if xc.mbuf.is_some() || xc.is_not() { return false; }
+                let range = if yct.ascii_mode { 128 } else { SINGLE_BYTE_SIZE };
+                for i in 0..range {
+                    if bitset_at(&xc.bs, i) {
+                        if is_code_word(reg.enc, i as OnigCodePoint) { return false; }
+                    }
+                }
+                true
+            } else {
+                // \W: check if any non-word chars are in the class
+                if xc.mbuf.is_some() || xc.is_not() { return false; }
+                let range = if yct.ascii_mode { 128 } else { SINGLE_BYTE_SIZE };
+                for i in 0..range {
+                    if !is_code_word(reg.enc, i as OnigCodePoint) {
+                        if bitset_at(&xc.bs, i) { return false; }
+                    }
+                }
+                for i in range..SINGLE_BYTE_SIZE {
+                    if bitset_at(&xc.bs, i) { return false; }
+                }
+                true
+            }
+        }
+
+        // CClass × CClass
+        (NodeInner::CClass(xc), NodeInner::CClass(yc)) => {
+            for i in 0..SINGLE_BYTE_SIZE {
+                let xv = bitset_at(&xc.bs, i);
+                let x_in = if xc.is_not() { !xv } else { xv };
+                if x_in {
+                    let yv = bitset_at(&yc.bs, i);
+                    let y_in = if yc.is_not() { !yv } else { yv };
+                    if y_in { return false; }
+                }
+            }
+            // If either has no mbuf and is not negated, they can't overlap on multi-byte
+            if (xc.mbuf.is_none() && !xc.is_not()) || (yc.mbuf.is_none() && !yc.is_not()) {
+                return true;
+            }
+            false
+        }
+
+        // CClass × String → swap
+        (NodeInner::CClass(_), NodeInner::String(_)) => is_exclusive(y, x, reg),
+
+        // String × CType
+        (NodeInner::String(xs), NodeInner::CType(yct)) => {
+            if xs.s.is_empty() { return false; }
+            if yct.ctype == CTYPE_ANYCHAR { return false; }
+            if yct.ctype == ONIGENC_CTYPE_WORD as i32 {
+                let is_word = if !yct.ascii_mode {
+                    is_mbc_word(reg.enc, &xs.s)
+                } else {
+                    is_mbc_word_ascii(reg.enc, &xs.s)
+                };
+                return if is_word { yct.not } else { !yct.not };
+            }
+            false
+        }
+
+        // String × CClass
+        (NodeInner::String(xs), NodeInner::CClass(yc)) => {
+            if xs.s.is_empty() { return false; }
+            let code = reg.enc.mbc_to_code(&xs.s, xs.s.len());
+            !onig_is_code_in_cc(reg.enc, code, yc)
+        }
+
+        // String × String
+        (NodeInner::String(xs), NodeInner::String(ys)) => {
+            if xs.s.is_empty() || ys.s.is_empty() { return false; }
+            let len = xs.s.len().min(ys.s.len());
+            for i in 0..len {
+                if xs.s[i] != ys.s[i] { return true; }
+            }
+            false
+        }
+
+        _ => false,
+    }
+}
+
+/// Check if a character is a "word" character.
+fn is_code_word(enc: OnigEncoding, code: OnigCodePoint) -> bool {
+    if code < 128 {
+        let c = code as u8;
+        c.is_ascii_alphanumeric() || c == b'_'
+    } else {
+        enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
+    }
+}
+
+/// Check if the first character in buf is a word character.
+fn is_mbc_word(enc: OnigEncoding, buf: &[u8]) -> bool {
+    if buf.is_empty() { return false; }
+    let code = enc.mbc_to_code(buf, buf.len());
+    is_code_word(enc, code)
+}
+
+/// Check if the first character in buf is an ASCII word character.
+fn is_mbc_word_ascii(_enc: OnigEncoding, buf: &[u8]) -> bool {
+    if buf.is_empty() { return false; }
+    let c = buf[0];
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
+/// tune_next: propagate next-node info to optimize quantifiers.
+/// Sets qn.next_head_exact for PushIfPeekNext optimization.
+/// Auto-possessifies when body and next are exclusive.
+fn tune_next(node: &mut Node, next_node: &Node, reg: &RegexType) -> i32 {
+    let mut cur = node as *mut Node;
+    let mut called = false;
+
+    loop {
+        let n = unsafe { &mut *cur };
+        match &mut n.inner {
+            NodeInner::Quant(ref mut qn) => {
+                if qn.greedy && is_infinite_repeat(qn.upper) {
+                    // Set next_head_exact for PushIfPeekNext
+                    if !called {
+                        if let Some(byte) = get_head_literal_byte(next_node, true, reg) {
+                            qn.next_head_exact = Some(byte);
+                        }
+                    }
+
+                    // Automatic possessification: a*b → (?>a*)b when exclusive
+                    if qn.lower <= 1 {
+                        if let Some(ref body) = qn.body {
+                            if is_strict_real_node(body) {
+                                let x = get_tree_head_literal(body, false, reg);
+                                if let Some(x_node) = x {
+                                    let y = get_tree_head_literal(next_node, false, reg);
+                                    if let Some(y_node) = y {
+                                        if is_exclusive(x_node, y_node, reg) {
+                                            // Wrap in StopBacktrack bag
+                                            let body_taken = qn.body.take().unwrap();
+                                            // Create a new Quant node with the body
+                                            let quant_node = Node {
+                                                inner: NodeInner::Quant(QuantNode {
+                                                    body: Some(body_taken),
+                                                    lower: qn.lower,
+                                                    upper: qn.upper,
+                                                    greedy: qn.greedy,
+                                                    emptiness: qn.emptiness,
+                                                    head_exact: qn.head_exact.take(),
+                                                    next_head_exact: qn.next_head_exact.take(),
+                                                    include_referred: qn.include_referred,
+                                                    empty_status_mem: qn.empty_status_mem,
+                                                }),
+                                                status: n.status,
+                                                parent: std::ptr::null_mut(),
+                                            };
+                                            // Replace node with Bag(StopBacktrack) wrapping the quant
+                                            // C: node_swap(node, en); ND_BODY(node) = en;
+                                            n.inner = NodeInner::Bag(BagNode {
+                                                body: Some(Box::new(quant_node)),
+                                                bag_type: BagType::StopBacktrack,
+                                                bag_data: BagData::StopBacktrack,
+                                                min_len: 0,
+                                                max_len: INFINITE_LEN,
+                                                min_char_len: 0,
+                                                max_char_len: INFINITE_LEN,
+                                                opt_count: 0,
+                                            });
+                                            n.status |= ND_ST_STRICT_REAL_REPEAT;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return 0;
+            }
+
+            NodeInner::Bag(ref bn) => {
+                if bn.bag_type == BagType::Memory {
+                    if (n.status & ND_ST_CALLED) != 0 {
+                        called = true;
+                    }
+                    if let Some(ref body) = bn.body {
+                        cur = body.as_ref() as *const Node as *mut Node;
+                        continue;
+                    }
+                }
+                return 0;
+            }
+
+            _ => return 0,
+        }
+    }
+}
+
+// ============================================================================
 // String compilation
 // ============================================================================
 
@@ -495,14 +839,19 @@ fn compile_tree_n_times(
     0
 }
 
-/// Check if a quantifier node represents .* (anychar infinite greedy).
+/// Check if a quantifier node represents .* or .+ (anychar infinite greedy).
 fn is_anychar_infinite_greedy(qn: &QuantNode) -> bool {
     if qn.greedy && is_infinite_repeat(qn.upper) && qn.lower <= 1 {
         if let Some(body) = &qn.body {
-            return matches!(body.inner, NodeInner::CType(ref ct) if ct.ctype == ONIGENC_CTYPE_WORD as i32 || true);
+            return matches!(body.inner, NodeInner::CType(ref ct) if ct.ctype == CTYPE_ANYCHAR);
         }
     }
     false
+}
+
+/// Check if the body of a CType node has MULTILINE flag set.
+fn is_anychar_multiline(body: &Node) -> bool {
+    matches!(&body.inner, NodeInner::CType(_) if (body.status & ND_ST_MULTILINE) != 0)
 }
 
 /// Calculate bytecode length for a quantifier node.
@@ -522,6 +871,15 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         return 0;
     }
 
+    // AnyChar star/plus optimization
+    if is_anychar_infinite_greedy(qn) {
+        let tlen = compile_length_tree(body, reg, env);
+        if qn.next_head_exact.is_some() {
+            return OPSIZE_ANYCHAR_STAR_PEEK_NEXT + tlen * qn.lower;
+        }
+        return SIZE_INC + tlen * qn.lower;
+    }
+
     let is_empty = qn.emptiness != BodyEmptyType::NotEmpty;
     let body_len = compile_length_tree(body, reg, env);
     if body_len < 0 {
@@ -534,7 +892,15 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
     if is_infinite_repeat(qn.upper) {
         if qn.lower <= 1 {
             // *, +, *?, +?
-            body_len * qn.lower + OPSIZE_PUSH + mod_tlen + OPSIZE_JUMP
+            // Use appropriate opsize based on head_exact/next_head_exact
+            let push_size = if qn.greedy && qn.head_exact.is_some() {
+                OPSIZE_PUSH_OR_JUMP_EXACT1
+            } else if qn.greedy && qn.next_head_exact.is_some() {
+                OPSIZE_PUSH_IF_PEEK_NEXT
+            } else {
+                OPSIZE_PUSH
+            };
+            body_len * qn.lower + push_size + mod_tlen + OPSIZE_JUMP
         } else {
             // {n,} or {n,}?
             let n_body_len = compile_length_tree_n_times(body, qn.lower, reg, env);
@@ -587,6 +953,28 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
         return 0;
     }
 
+    // AnyChar star/plus with peek optimization: .* or .+
+    if is_anychar_infinite_greedy(qn) {
+        let r = compile_tree_n_times(body, qn.lower, reg, env);
+        if r != 0 { return r; }
+        if let Some(c) = qn.next_head_exact {
+            let opcode = if is_anychar_multiline(body) {
+                OpCode::AnyCharMlStarPeekNext
+            } else {
+                OpCode::AnyCharStarPeekNext
+            };
+            add_op(reg, opcode, OperationPayload::AnyCharStarPeekNext { c });
+        } else {
+            let opcode = if is_anychar_multiline(body) {
+                OpCode::AnyCharMlStar
+            } else {
+                OpCode::AnyCharStar
+            };
+            add_op(reg, opcode, OperationPayload::None);
+        }
+        return 0;
+    }
+
     let is_empty = qn.emptiness != BodyEmptyType::NotEmpty;
     let body_len = compile_length_tree(body, reg, env);
     if body_len < 0 {
@@ -604,19 +992,37 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                     // a+ : body first, then loop
                     compile_tree_n_times(body, 1, reg, env);
                 }
-                // PUSH → body → JUMP back to PUSH
-                // C: COP(reg)->push.addr = SIZE_INC + mod_tlen + OPSIZE_JUMP;
-                add_op(reg, OpCode::Push, OperationPayload::Push {
-                    addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
-                });
-                let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
-                if r != 0 {
-                    return r;
+
+                // Emit PUSH variant based on head_exact / next_head_exact
+                let addr;
+                if let Some(c) = qn.head_exact {
+                    // PushOrJumpExact1: push alt if char matches, else jump
+                    add_op(reg, OpCode::PushOrJumpExact1, OperationPayload::PushOrJumpExact1 {
+                        addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
+                        c,
+                    });
+                    let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
+                    if r != 0 { return r; }
+                    addr = -(mod_tlen + OPSIZE_PUSH_OR_JUMP_EXACT1);
+                } else if let Some(c) = qn.next_head_exact {
+                    // PushIfPeekNext: push alt only if next char matches peek
+                    add_op(reg, OpCode::PushIfPeekNext, OperationPayload::PushIfPeekNext {
+                        addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
+                        c,
+                    });
+                    let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
+                    if r != 0 { return r; }
+                    addr = -(mod_tlen + OPSIZE_PUSH_IF_PEEK_NEXT);
+                } else {
+                    // Regular PUSH
+                    add_op(reg, OpCode::Push, OperationPayload::Push {
+                        addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
+                    });
+                    let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
+                    if r != 0 { return r; }
+                    addr = -(mod_tlen + OPSIZE_PUSH);
                 }
-                // C: addr = -(mod_tlen + (int)OPSIZE_PUSH);
-                add_op(reg, OpCode::Jump, OperationPayload::Jump {
-                    addr: -(mod_tlen + OPSIZE_PUSH),
-                });
+                add_op(reg, OpCode::Jump, OperationPayload::Jump { addr });
             } else {
                 // a*? or a+?
                 if qn.lower == 1 {
@@ -3584,13 +3990,20 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
 
     match &mut node.inner {
         NodeInner::List(_) => {
-            // Walk the list iteratively to avoid borrow issues
+            // Walk the list: tune each element, then call tune_next for sequential pairs
             let mut cur: *mut Node = node;
+            let mut prev: *mut Node = std::ptr::null_mut();
             unsafe {
                 loop {
                     if let NodeInner::List(ref mut cons) = (*cur).inner {
                         let r = tune_tree(&mut cons.car, reg, state, env);
                         if r != 0 { return r; }
+                        // Call tune_next on previous node with current as next
+                        if !prev.is_null() {
+                            let r = tune_next(&mut *prev, &cons.car, reg);
+                            if r != 0 { return r; }
+                        }
+                        prev = &mut *cons.car;
                         match cons.cdr {
                             Some(ref mut next) => cur = &mut **next,
                             None => break,

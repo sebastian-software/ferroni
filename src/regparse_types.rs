@@ -500,8 +500,8 @@ pub struct QuantNode {
     pub upper: i32,
     pub greedy: bool,
     pub emptiness: BodyEmptyType,
-    pub head_exact: Option<Box<Node>>,
-    pub next_head_exact: Option<Box<Node>>,
+    pub head_exact: Option<u8>,
+    pub next_head_exact: Option<u8>,
     pub include_referred: i32,
     pub empty_status_mem: MemStatusType,
 }
