@@ -1,21 +1,23 @@
 # C Oniguruma vs. Rust Port — Full Comparison
 
-> As of: 2026-02-12 | 1468/1468 tests passing, 0 ignored
+> As of: 2026-02-12 | 1477 tests passing, 0 ignored | ~39,600 LOC Rust (23,500 src + 16,100 unicode data)
 
 ---
 
 ## Overview
 
-| Module | C Lines | Rust Lines | Core Logic | API Completeness |
-|--------|---------|------------|------------|------------------|
-| **Parser** (regparse.c) | 9,493 | ~6,600 | ~97% | Core complete, 6x6 ReduceTypeTable |
-| **Compiler** (regcomp.c) | 8,589 | ~6,600 | ~92% | tune_tree + tune_next + call tuning + optimization |
-| **Executor** (regexec.c) | 7,002 | ~4,060 | ~90% | All 70+ opcodes, forward+backward search, safety limits |
-| **Types** (regint.h+regparse.h) | ~1,564 | ~2,120 | ~95% | All core types incl. OptNode/OptStr/OptMap |
-| **Syntax** (regsyntax.c) | 373 | 367 | 100% | Complete |
-| **Error handling** (regerror.c) | 416 | 206 | 100% | Complete (Rust needs less boilerplate) |
-| **Encoding** (regenc.c+h) | ~1,284 | ~916 | ~70% | ASCII + UTF-8 (2 of 29) |
-| **Unicode** | ~50,000 | ~50,000 | 100% | Complete |
+| Module | C File | Rust LOC | Parity |
+|--------|--------|----------|--------|
+| **Parser** (regparse.c) | 9,493 | 6,648 | ~98% |
+| **Compiler** (regcomp.c) | 8,589 | 6,803 | ~97% |
+| **Executor** (regexec.c) | 7,002 | 5,005 | ~95% |
+| **RegSet** (regset.c) | 536 | 747 | ~95% |
+| **Capture Traversal** (regtrav.c) | 67 | 56 | 100% |
+| **Types** (regint.h+regparse.h) | ~1,564 | 2,095 | ~95% |
+| **Syntax** (regsyntax.c) | 373 | 367 | 100% |
+| **Error handling** (regerror.c) | 416 | 206 | 100% |
+| **Encoding** (regenc.c+h) | ~1,284 | 916 | ~70% (2 of 29 encodings) |
+| **Unicode** | ~50,000 | ~16,100 | 100% (compressed Rust representation) |
 
 ---
 
@@ -41,7 +43,7 @@ CALL/RETURN, CALLOUT_CONTENTS/CALLOUT_NAME, FINISH/END
 `\a \b \t \n \v \f \r \e` (control chars),
 `\x{HH}` `\x{HHHH}` (hex), `\o{OOO}` (octal), `\uHHHH` (Unicode),
 `\w \W \d \D \s \S \h \H` (character classes),
-`\p{...} \P{...}` (Unicode properties),
+`\p{...} \P{...}` (Unicode properties — 629 tables, 886 names),
 `\k<name> \g<name>` (backrefs/calls),
 `\A \z \Z \b \B \G` (anchors), `\K` (keep),
 `\R` (general newline), `\N` (no-newline), `\O` (true anychar),
@@ -51,10 +53,11 @@ CALL/RETURN, CALLOUT_CONTENTS/CALLOUT_NAME, FINISH/END
 
 `(?:...)` non-capturing, `(?=...)` lookahead, `(?!...)` neg. lookahead,
 `(?<=...)` lookbehind, `(?<!...)` neg. lookbehind, `(?>...)` atomic,
-`(?<name>...)` named group, `(?'name'...)` alternate named,
+`(?<name>...)` named group, `(?'name'...)` alternate named, `(?P<name>...)` Python-style,
 `(?(cond)T|F)` conditional, `(?~...)` absent (3 forms),
 `(?{...})` code callout, `(*FAIL)` `(*MAX{n})` `(*COUNT[tag]{X})` `(*CMP{t1,op,t2})`,
-`(?imxWDSPCL-imx:...)` option groups
+`(?imxWDSPCL-imx:...)` option groups, `(?y{g})` `(?y{w})` text segment modes,
+`(?@...)` `(?@<name>...)` capture history
 
 ### Optimization Subsystem
 
@@ -69,9 +72,7 @@ Full forward search optimization matching the C original:
 - **Backward search**: `backward_search` with position-by-position backward scan
 - **Anchor optimization**: `onig_search` uses ANCR_BEGIN_BUF, ANCR_BEGIN_POSITION,
   ANCR_END_BUF, ANCR_SEMI_END_BUF, ANCR_ANYCHAR_INF_ML for position narrowing
-- **~35 helper functions**: scoring (distance_value, comp_distance_value),
-  string ops (concat_opt_exact, alt_merge_opt_exact, select_opt_exact),
-  map ops (add_char_opt_map, select_opt_map), anchor ops (concat_opt_anc_info)
+- **~35 helper functions**: scoring, string ops, map ops, anchor ops
 - **Data structures**: MinMaxLen, OptAnc, OptStr, OptMap, OptNode
 
 ### Safety Limits
@@ -80,6 +81,9 @@ Full forward search optimization matching the C original:
 - **Retry limit in search**: `onig_set/get_retry_limit_in_search`
 - **Time limit**: `onig_set/get_time_limit` (millisecond timeout, checked every 512 ops)
 - **Stack limit**: `onig_set/get_match_stack_limit_size`
+- **Subexp call limit**: `onig_set/get_subexp_call_limit_in_search`
+- **Subexp call max nesting**: `onig_set/get_subexp_call_max_nest_level`
+- **Parse depth limit**: `onig_set/get_parse_depth_limit`
 
 ### tune_tree Pipeline (complete)
 
@@ -95,6 +99,64 @@ Full forward search optimization matching the C original:
   — entry counting, IN_MULTI_ENTRY/IN_REAL_REPEAT propagation
 - **Empty-loop detection**: `qn.emptiness = MayBeEmpty` for `(?:x?)*`
 - **backtrack_mem / backrefed_mem**: captures in Alt/Repeat -> MemStartPush/MemEndPush
+- **Case-fold expansion**: `unravel_case_fold_string` with lookbehind-aware filtering
+
+### Lookbehind Validation (comprehensive)
+
+- **Full bitmask validation**: `check_node_in_look_behind` with ALLOWED_TYPE_IN_LB,
+  ALLOWED_BAG_IN_LB, ALLOWED_BAG_IN_LB_NOT, ALLOWED_ANCHOR_IN_LB, ALLOWED_ANCHOR_IN_LB_NOT
+- **Case-fold in lookbehind**: `unravel_case_fold_string` with `IN_LOOK_BEHIND` state,
+  restricts to same-byte-length single-codepoint folds
+- **Case-fold byte-length validation**: `get_min_max_byte_len_case_fold_items`
+- **Absent stopper save/restore**: SaveVal(RightRange) in variable-length lookbehind
+- **Called-node validation**: `check_called_node_in_look_behind` rejects ABSENT_WITH_SIDE_EFFECTS
+
+### Public API — Complete
+
+**Compilation & Lifecycle:**
+- `onig_new`, `onig_init`/`onig_initialize`/`onig_end`, `onig_version`/`onig_copyright`
+
+**Search & Match (4 entry points):**
+- `onig_match`, `onig_match_with_param`
+- `onig_search`, `onig_search_with_param`
+- `onig_scan` (callback-based scanning)
+
+**Region Management:**
+- `onig_region_new`/`init`/`clear`/`resize`/`set`/`copy`
+
+**Regex Accessors:**
+- `onig_get_encoding`/`options`/`case_fold_flag`
+- `onig_number_of_captures`/`capture_histories`
+- `onig_get_capture_tree`
+
+**Name Table Queries:**
+- `onig_name_to_group_numbers`, `onig_name_to_backref_number`
+- `onig_foreach_name`, `onig_number_of_names`
+- `onig_noname_group_capture_is_active`
+
+**OnigMatchParam (per-search limits):**
+- `onig_new_match_param`, `onig_initialize_match_param`
+- `onig_set_match_stack_limit_size_of_match_param`
+- `onig_set_retry_limit_in_match/search_of_match_param`
+- `onig_set_time_limit_of_match_param`
+- `onig_set_progress/retraction_callout_of_match_param`
+- `onig_set_callout_user_data_of_match_param`
+
+**Callout API:**
+- `onig_get/set_progress_callout`, `onig_get/set_retraction_callout`
+- `onig_get_callout_num/in/name_id/contents/args_num/passed_args_num/arg_by_callout_args`
+- `onig_get_string/string_end/start/right_range/current/regex/retry_counter_by_callout_args`
+- `onig_get/set_callout_data`, `onig_get_callout_num_by_tag`
+- `onig_callout_tag_is_exist_at_callout_num`, `onig_get_callout_tag`
+
+**RegSet (multi-regex search):**
+- `onig_regset_new`/`add`/`replace`/`free`
+- `onig_regset_number_of_regex`/`get_regex`/`get_region`
+- `onig_regset_search`/`search_with_param`
+- Position-lead and regex-lead search modes
+
+**Capture Tree Traversal:**
+- `onig_capture_tree_traverse` (depth-first/breadth-first with callback)
 
 ### Other Complete Features
 
@@ -104,46 +166,56 @@ Full forward search optimization matching the C original:
 - **Recursion**: `\g<n>`, `\k<n+level>`, infinite recursion detection, MEM_END_REC
 - **Variable-length lookbehind**: STEP_BACK_START/NEXT, Alt with zid
 - **Absent functions**: repeater, expression, range cutter
-- **Built-in callouts**: *MAX, *COUNT, *CMP (internal, not as public API)
+- **Built-in callouts**: *FAIL, *MAX, *COUNT, *CMP (with retraction handling)
 - **FIND_LONGEST** / **FIND_NOT_EMPTY** options
 - **CAPTURE_ONLY_NAMED_GROUP** (disable unnamed captures)
+- **Input validity check**: ONIG_OPTION_CHECK_VALIDITY_OF_STRING in match/search/scan
 
 ---
 
 ## 2. What is MISSING — by Priority
 
-### Tier 1: API & Integration
+### Tier 1: Remaining API Gaps
 
-#### A. Public API (~80 missing functions)
+#### A. Missing Public API Functions (~15 functions)
 
-**OnigMatchParam (completely missing):**
-- `onig_new/free/initialize_match_param`
-- `onig_set_match_stack_limit_size_of_match_param`
-- `onig_set_retry_limit_in_match/search_of_match_param`
-- `onig_set_time_limit_of_match_param`
-- `onig_set_progress/retraction_callout_of_match_param`
-- `onig_match_with_param` / `onig_search_with_param`
+**Compilation variants (intentionally deferred):**
+- `onig_new_deluxe` — extended compilation with OnigCompileInfo
+- `onig_new_without_alloc` — compile into pre-allocated memory
+- `onig_reg_init` — low-level regex initialization
+- `onig_free` / `onig_free_body` — Rust uses Drop instead
+- `onig_region_free` — Rust uses Drop instead
+- `onig_free_match_param` / `onig_free_match_param_content` — Rust uses Drop instead
+- `onig_compile` — exposed via `onig_new`
 
-**RegSet (completely missing):**
-- `onig_regset_new/add/replace/free`
-- `onig_regset_number_of_regex/get_regex/get_region`
-- `onig_regset_search/search_with_param`
+**Syntax configuration (trivial getters/setters):**
+- `onig_get_syntax` — return syntax pointer from regex
+- `onig_set_default_syntax`, `onig_copy_syntax`
+- `onig_get/set_syntax_op`, `onig_get/set_syntax_op2`
+- `onig_get/set_syntax_behavior`, `onig_get/set_syntax_options`
+- `onig_set_meta_char`
 
-**Name/Capture queries:**
-- `onig_name_to_group_numbers` / `onig_name_to_backref_number`
-- `onig_foreach_name` / `onig_number_of_names`
-- `onig_number_of_captures` / `onig_number_of_capture_histories`
-- `onig_noname_group_capture_is_active`
+**Encoding/case-fold defaults:**
+- `onig_copy_encoding`, `onig_get/set_default_case_fold_flag`
 
-**Regex accessors:**
-- `onig_get_encoding/options/case_fold_flag/syntax`
-
-**Other:**
-- `onig_scan` (callback-based scanning)
-- `onig_new_deluxe` / `onig_new_without_alloc`
-- `onig_init` / `onig_end` (library initialization)
-- `onig_version` / `onig_copyright`
+**Misc:**
 - `onig_set_warn_func` / `onig_set_verb_warn_func`
+- `onig_unicode_define_user_property`
+- `onig_set/get_callback_each_match`
+- `onig_error_code_to_str` / `onig_is_error_code_needs_param` (partially in regerror.rs)
+
+**Callout registration (user-defined callouts):**
+- `onig_set_callout_of_name` — register named callout function
+- `onig_get_callout_name_by_name_id`
+- `onig_get/set_callout_data_by_tag` (tag-based variants)
+- `onig_get_callout_data_dont_clear_old` / `*_by_callout_args_self*` variants
+- `onig_get_capture_range_in_callout`
+- `onig_get_used_stack_size_in_callout`
+- `onig_setup_builtin_monitors_by_ascii_encoded_name`
+
+**Builtin callout functions (as public API):**
+- `onig_builtin_fail/mismatch/error/skip/count/total_count/max/cmp`
+  (internally functional, but not exposed as standalone public functions)
 
 #### B. Encodings (2 of 29 implemented)
 
@@ -156,67 +228,49 @@ Missing:      UTF-16 BE/LE, UTF-32 BE/LE,
               BIG5, GB18030
 ```
 
-#### C. regtrav.c (Capture Tree Traversal)
-
-Completely missing module:
-- `onig_get_capture_tree` / `onig_capture_tree_traverse`
-- Required for `(?@...)` capture history
-
-#### D. Callout External API (~50 functions)
-
-Internal callout logic works (*MAX, *COUNT, *CMP), but the public API
-for user-defined callouts is completely missing:
-- `onig_set_callout_of_name` / `onig_get_callout_data*`
-- `onig_get_*_by_callout_args` (~15 accessor functions)
-- `onig_set/get_progress/retraction_callout`
-- `onig_builtin_fail/mismatch/error/skip` (only max/count/cmp internally)
+Most users need only ASCII + UTF-8. Additional encodings can be added incrementally.
 
 ---
 
-### Tier 2: Remaining Optimizations
+### Tier 2: Intentional Differences
 
-#### E. Case-Fold in Lookbehind
-
-- `unravel_cf_look_behind_add` — filters multi-char folds in lookbehind
-- `clear_not_flag_cclass` — negated CClass + case-fold expansion
-- Only edge cases with exotic lookbehind patterns affected
-
-#### F. check_node_in_look_behind (comprehensive)
-
-C checks comprehensively (allowed types, Bag types, anchor types, Gimmick/Call/Recursion).
-Rust only checks `ABSENT_WITH_SIDE_EFFECTS`. Affects exotic lookbehind patterns.
-
-#### G. Direct-Threaded Code
+#### C. Direct-Threaded Code
 
 C uses computed goto for ~20% faster opcode dispatch.
-Rust uses standard `match`. Not portable (compiler-specific).
+Rust uses standard `match`. Not portable (compiler-specific in C too).
+
+#### D. POSIX API
+
+`regposix.c` / `reggnu.c` — POSIX-compatible regex API wrapper.
+Intentionally not ported (Rust has its own conventions).
+
+#### E. clear_not_flag_cclass
+
+Negated CClass + case-fold optimization (`[^a-z]` with `/i`).
+Minor optimization, not a correctness issue.
 
 ---
 
-## 3. Subtle Differences in Existing Code
+## 3. Parity Summary
 
-| Area | C | Rust | Impact |
-|------|---|------|--------|
-| Lookbehind case-fold | `unravel_cf_look_behind_add` | Missing | Edge cases with case-insensitive lookbehind |
-| `check_node_in_look_behind` | Comprehensive (type masks, Bag/Anchor/Gimmick/Call) | Only `ABSENT_WITH_SIDE_EFFECTS` | Exotic lookbehind patterns |
-| Negated CClass + case-fold | `clear_not_flag_cclass` | Missing | `[^a-z]/i` may not expand correctly |
-| Direct-threaded code | Computed goto optimization | Standard `match` dispatch | ~20% interpreter overhead |
-| POSIX API | `regposix.c` / `reggnu.c` | Not ported | Intentionally not ported |
+| Category | Status | Notes |
+|----------|--------|-------|
+| **Regex syntax** | 100% | All escape sequences, groups, options |
+| **VM opcodes** | 100% | All 70+ opcodes |
+| **Optimization** | ~98% | BMH, auto-possessification, quantifier reduction, call tuning |
+| **Lookbehind** | ~98% | Variable-length, case-fold, comprehensive validation |
+| **Public API** | ~85% | Core complete; syntax config, user-defined callouts, some callout data variants missing |
+| **Encodings** | 7% | ASCII + UTF-8 only (sufficient for most use cases) |
+| **Safety limits** | 100% | All global and per-search limits |
+| **Test coverage** | 1477/1554 C tests | ~95% of C test_utf8.c patterns ported |
 
----
-
-## 4. Recommended Next Steps (by Impact)
-
-1. **Public API functions** — OnigMatchParam, Name/Capture queries, accessors (Tier 1A)
-2. **Case-fold in lookbehind** — unravel_cf_look_behind_add (Tier 2E)
-3. **Comprehensive check_node_in_look_behind** (Tier 2F)
-4. **Additional encodings** (UTF-16, Latin1 etc.) as needed (Tier 1B)
-5. **regtrav.c** — Capture Tree Traversal (Tier 1C)
-6. **Callout External API** — user-defined callouts (Tier 1D)
+**Overall functional parity: ~95%** for ASCII/UTF-8 workloads.
+The remaining gaps are primarily encoding variety, syntax configuration accessors,
+and user-defined callout registration — none of which affect core regex matching.
 
 ---
 
-## 5. Bugs Found & Fixed (During Porting)
+## 4. Bugs Found & Fixed (During Porting)
 
 1. JUMP/PUSH address formulas
 2. u_offset patching
