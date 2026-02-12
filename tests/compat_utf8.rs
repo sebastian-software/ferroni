@@ -9450,3 +9450,244 @@ fn ja_star_match() {
     // C line 968: 量* matches 量
     x2("量*".as_bytes(), "量".as_bytes(), 0, 3);
 }
+
+// ============================================================================
+// Phase 1: Input string validity check
+// ============================================================================
+
+#[test]
+fn check_validity_invalid_utf8_search() {
+    use ferroni::regexec::onig_search;
+    let reg = onig_new(
+        b"a",
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+    ).unwrap();
+    // Invalid UTF-8: 0xFF is not a valid lead byte
+    let invalid = b"\xff\xfe";
+    let (r, _) = onig_search(
+        &reg, invalid, invalid.len(), 0, invalid.len(),
+        Some(OnigRegion::new()),
+        ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+    );
+    assert_eq!(r, ONIGERR_INVALID_WIDE_CHAR_VALUE);
+}
+
+#[test]
+fn check_validity_valid_utf8_search() {
+    use ferroni::regexec::onig_search;
+    let reg = onig_new(
+        b"a",
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+    ).unwrap();
+    let valid = b"abc";
+    let (r, _) = onig_search(
+        &reg, valid, valid.len(), 0, valid.len(),
+        Some(OnigRegion::new()),
+        ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+    );
+    assert_eq!(r, 0); // match at position 0
+}
+
+#[test]
+fn check_validity_invalid_utf8_match() {
+    use ferroni::regexec::onig_match;
+    let reg = onig_new(
+        b"a",
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+    ).unwrap();
+    let invalid = b"\xc0\x80"; // overlong encoding
+    let (r, _) = onig_match(
+        &reg, invalid, invalid.len(), 0,
+        Some(OnigRegion::new()),
+        ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+    );
+    assert_eq!(r, ONIGERR_INVALID_WIDE_CHAR_VALUE);
+}
+
+#[test]
+fn check_validity_scan_invalid() {
+    use ferroni::regexec::onig_scan;
+    let reg = onig_new(
+        b"a",
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+    ).unwrap();
+    let invalid = b"a\xfe";
+    let (r, _) = onig_scan(
+        &reg, invalid, invalid.len(),
+        OnigRegion::new(),
+        ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+        |_n, _pos, _region| 0,
+    );
+    assert_eq!(r, ONIGERR_INVALID_WIDE_CHAR_VALUE);
+}
+
+// ============================================================================
+// Phase 3: Backward search optimization
+// ============================================================================
+
+#[test]
+fn backward_search_optimized() {
+    use ferroni::regexec::onig_search;
+    // Backward search: start > range
+    let reg = onig_new(
+        b"abc",
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+    ).unwrap();
+    let input = b"xxabcxx";
+    // Search backward from position 6 down to position 0
+    let (r, region) = onig_search(
+        &reg, input, input.len(), 6, 0,
+        Some(OnigRegion::new()),
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(r, 2); // match at position 2
+    let region = region.unwrap();
+    assert_eq!(region.beg[0], 2);
+    assert_eq!(region.end[0], 5);
+}
+
+#[test]
+fn backward_search_multibyte() {
+    use ferroni::regexec::onig_search;
+    let reg = onig_new(
+        "あ".as_bytes(),
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+    ).unwrap();
+    let input = "xxあyy".as_bytes();
+    // Search backward from end to 0
+    let (r, region) = onig_search(
+        &reg, input, input.len(), input.len(), 0,
+        Some(OnigRegion::new()),
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(r, 2);
+    let region = region.unwrap();
+    assert_eq!(region.beg[0], 2);
+    assert_eq!(region.end[0], 5);
+}
+
+// ============================================================================
+// Phase 4: Capture history tree
+// ============================================================================
+
+/// Create an Oniguruma syntax with capture history enabled.
+fn syntax_with_capture_history() -> OnigSyntaxType {
+    let mut syn = OnigSyntaxOniguruma.clone();
+    syn.op2 |= ONIG_SYN_OP2_ATMARK_CAPTURE_HISTORY;
+    syn
+}
+
+#[test]
+fn capture_history_unnamed() {
+    use ferroni::regexec::{onig_search, onig_get_capture_tree};
+    let syn = syntax_with_capture_history();
+    // (?@a+) — unnamed capture with history
+    let reg = onig_new(
+        b"(?@a+)",
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &syn as *const OnigSyntaxType,
+    ).unwrap();
+    let input = b"aaa";
+    let (r, region) = onig_search(
+        &reg, input, input.len(), 0, input.len(),
+        Some(OnigRegion::new()),
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(r, 0);
+    let region = region.unwrap();
+    // Verify capture group 1 matched
+    assert_eq!(region.beg[1], 0);
+    assert_eq!(region.end[1], 3);
+    // Verify capture history tree
+    let tree = onig_get_capture_tree(&region);
+    assert!(tree.is_some(), "capture history tree should be populated");
+    let root = tree.unwrap();
+    assert_eq!(root.group, 0);
+    assert_eq!(root.beg, 0);
+    assert_eq!(root.end, 3);
+    assert_eq!(root.childs.len(), 1);
+    assert_eq!(root.childs[0].group, 1);
+    assert_eq!(root.childs[0].beg, 0);
+    assert_eq!(root.childs[0].end, 3);
+}
+
+#[test]
+fn capture_history_named() {
+    use ferroni::regexec::{onig_search, onig_get_capture_tree};
+    let syn = syntax_with_capture_history();
+    // (?@<name>a+) — named capture with history
+    let reg = onig_new(
+        b"(?@<name>a+)",
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &syn as *const OnigSyntaxType,
+    ).unwrap();
+    let input = b"aaa";
+    let (r, region) = onig_search(
+        &reg, input, input.len(), 0, input.len(),
+        Some(OnigRegion::new()),
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(r, 0);
+    let region = region.unwrap();
+    assert_eq!(region.beg[1], 0);
+    assert_eq!(region.end[1], 3);
+    let tree = onig_get_capture_tree(&region);
+    assert!(tree.is_some());
+    let root = tree.unwrap();
+    assert_eq!(root.childs.len(), 1);
+    assert_eq!(root.childs[0].group, 1);
+}
+
+#[test]
+fn capture_history_traverse() {
+    use ferroni::regexec::{onig_search, onig_get_capture_tree};
+    use ferroni::regtrav::onig_capture_tree_traverse;
+    let syn = syntax_with_capture_history();
+    // (?@a+)b(?@c+) — two history captures
+    let reg = onig_new(
+        b"(?@a+)b(?@c+)",
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &syn as *const OnigSyntaxType,
+    ).unwrap();
+    let input = b"aabcc";
+    let (r, region) = onig_search(
+        &reg, input, input.len(), 0, input.len(),
+        Some(OnigRegion::new()),
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(r, 0);
+    let region = region.unwrap();
+    let tree = onig_get_capture_tree(&region);
+    assert!(tree.is_some());
+    let root = tree.unwrap();
+    assert_eq!(root.childs.len(), 2);
+    assert_eq!(root.childs[0].group, 1);
+    assert_eq!(root.childs[0].beg, 0);
+    assert_eq!(root.childs[0].end, 2);
+    assert_eq!(root.childs[1].group, 2);
+    assert_eq!(root.childs[1].beg, 3);
+    assert_eq!(root.childs[1].end, 5);
+
+    // Also test traverse
+    let mut visited = Vec::new();
+    onig_capture_tree_traverse(&region, ONIG_TRAVERSE_CALLBACK_AT_FIRST, |group, _beg, _end, _level, _at| {
+        visited.push(group);
+        0
+    });
+    assert_eq!(visited, vec![0, 1, 2]);
+}
