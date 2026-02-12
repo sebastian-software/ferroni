@@ -9437,6 +9437,569 @@ fn option_word_is_ascii() {
     n(b"(?W)a*\\W", b"aaa");
 }
 
+// --- (?W/D/S/P) ASCII-restriction options (C lines 1238-1273) ---
+
+#[test]
+fn option_neg_word_pword_match_ko() {
+    // C line 1238: (?-W:\p{Word}) matches こ at 0..3
+    x2(b"(?-W:\\p{Word})", "\u{3053}".as_bytes(), 0, 3);
+}
+
+#[test]
+fn option_word_pword_nomatch_ko() {
+    // C line 1239: (?W:\p{Word}) no match for こ (ASCII-only Word)
+    n(b"(?W:\\p{Word})", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_word_pword_match_k() {
+    // C line 1240: (?W:\p{Word}) matches k at 0..1
+    x2(b"(?W:\\p{Word})", b"k", 0, 1);
+}
+
+#[test]
+fn option_neg_word_posix_word_match_ko() {
+    // C line 1241: (?-W:[[:word:]]) matches こ
+    x2(b"(?-W:[[:word:]])", "\u{3053}".as_bytes(), 0, 3);
+}
+
+#[test]
+fn option_word_posix_word_nomatch_ko() {
+    // C line 1242: (?W:[[:word:]]) no match for こ
+    n(b"(?W:[[:word:]])", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_neg_digit_pdigit_match_fullwidth_3() {
+    // C line 1243: (?-D:\p{Digit}) matches ３ (U+FF13) at 0..3
+    x2(b"(?-D:\\p{Digit})", "\u{FF13}".as_bytes(), 0, 3);
+}
+
+#[test]
+fn option_digit_pdigit_nomatch_fullwidth_3() {
+    // C line 1244: (?D:\p{Digit}) no match for ３ (ASCII-only Digit)
+    n(b"(?D:\\p{Digit})", "\u{FF13}".as_bytes());
+}
+
+#[test]
+fn option_neg_space_pspace_match_nel() {
+    // C line 1245: (?-S:\p{Space}) matches U+0085 (NEL) at 0..2
+    x2(b"(?-S:\\p{Space})", b"\xc2\x85", 0, 2);
+}
+
+#[test]
+fn option_space_pspace_nomatch_nel() {
+    // C line 1246: (?S:\p{Space}) no match for U+0085 (ASCII-only Space)
+    n(b"(?S:\\p{Space})", b"\xc2\x85");
+}
+
+#[test]
+fn option_neg_posix_pword_match_ko() {
+    // C line 1247: (?-P:\p{Word}) matches こ
+    x2(b"(?-P:\\p{Word})", "\u{3053}".as_bytes(), 0, 3);
+}
+
+#[test]
+fn option_posix_pword_nomatch_ko() {
+    // C line 1248: (?P:\p{Word}) no match for こ
+    n(b"(?P:\\p{Word})", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_neg_word_w_match_ko() {
+    // C line 1249: (?-W:\w) matches こ
+    x2(b"(?-W:\\w)", "\u{3053}".as_bytes(), 0, 3);
+}
+
+#[test]
+fn option_word_w_nomatch_ko() {
+    // C line 1250: (?W:\w) no match for こ
+    n(b"(?W:\\w)", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_neg_word_w_match_k() {
+    // C line 1251: (?-W:\w) matches k
+    x2(b"(?-W:\\w)", b"k", 0, 1);
+}
+
+#[test]
+fn option_word_w_match_k() {
+    // C line 1252: (?W:\w) matches k
+    x2(b"(?W:\\w)", b"k", 0, 1);
+}
+
+#[test]
+fn option_neg_word_big_w_nomatch_ko() {
+    // C line 1253: (?-W:\W) no match for こ
+    n(b"(?-W:\\W)", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_word_big_w_match_ko() {
+    // C line 1254: (?W:\W) matches こ (ASCII-only -> こ is non-word)
+    x2(b"(?W:\\W)", "\u{3053}".as_bytes(), 0, 3);
+}
+
+#[test]
+fn option_neg_word_big_w_nomatch_k() {
+    // C line 1255: (?-W:\W) no match for k
+    n(b"(?-W:\\W)", b"k");
+}
+
+#[test]
+fn option_word_big_w_nomatch_k() {
+    // C line 1256: (?W:\W) no match for k
+    n(b"(?W:\\W)", b"k");
+}
+
+#[test]
+fn option_neg_word_b_match_ko() {
+    // C line 1258: (?-W:\b) matches at boundary of こ
+    x2(b"(?-W:\\b)", "\u{3053}".as_bytes(), 0, 0);
+}
+
+#[test]
+fn option_word_b_nomatch_ko() {
+    // C line 1259: (?W:\b) no match for こ (not ASCII word char)
+    n(b"(?W:\\b)", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_neg_word_b_match_h() {
+    // C line 1260: (?-W:\b) matches at boundary of h
+    x2(b"(?-W:\\b)", b"h", 0, 0);
+}
+
+#[test]
+fn option_word_b_match_h() {
+    // C line 1261: (?W:\b) matches at boundary of h
+    x2(b"(?W:\\b)", b"h", 0, 0);
+}
+
+#[test]
+fn option_neg_word_big_b_nomatch_ko() {
+    // C line 1262: (?-W:\B) no match for こ (it IS a boundary)
+    n(b"(?-W:\\B)", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_word_big_b_match_ko() {
+    // C line 1263: (?W:\B) matches for こ (not ASCII word -> no boundary)
+    x2(b"(?W:\\B)", "\u{3053}".as_bytes(), 0, 0);
+}
+
+#[test]
+fn option_neg_word_big_b_nomatch_h() {
+    // C line 1264: (?-W:\B) no match for h (it IS a boundary)
+    n(b"(?-W:\\B)", b"h");
+}
+
+#[test]
+fn option_word_big_b_nomatch_h() {
+    // C line 1265: (?W:\B) no match for h (word char -> boundary)
+    n(b"(?W:\\B)", b"h");
+}
+
+#[test]
+fn option_neg_posix_b_match_ko() {
+    // C line 1266: (?-P:\b) matches at boundary of こ
+    x2(b"(?-P:\\b)", "\u{3053}".as_bytes(), 0, 0);
+}
+
+#[test]
+fn option_posix_b_nomatch_ko() {
+    // C line 1267: (?P:\b) no match for こ
+    n(b"(?P:\\b)", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_neg_posix_b_match_h() {
+    // C line 1268: (?-P:\b) matches at boundary of h
+    x2(b"(?-P:\\b)", b"h", 0, 0);
+}
+
+#[test]
+fn option_posix_b_match_h() {
+    // C line 1269: (?P:\b) matches at boundary of h
+    x2(b"(?P:\\b)", b"h", 0, 0);
+}
+
+#[test]
+fn option_neg_posix_big_b_nomatch_ko() {
+    // C line 1270: (?-P:\B) no match for こ
+    n(b"(?-P:\\B)", "\u{3053}".as_bytes());
+}
+
+#[test]
+fn option_posix_big_b_match_ko() {
+    // C line 1271: (?P:\B) matches for こ
+    x2(b"(?P:\\B)", "\u{3053}".as_bytes(), 0, 0);
+}
+
+#[test]
+fn option_neg_posix_big_b_nomatch_h() {
+    // C line 1272: (?-P:\B) no match for h
+    n(b"(?-P:\\B)", b"h");
+}
+
+#[test]
+fn option_posix_big_b_nomatch_h() {
+    // C line 1273: (?P:\B) no match for h
+    n(b"(?P:\\B)", b"h");
+}
+
+// ============================================================================
+// Extended Grapheme Cluster boundary (\y/\Y) tests (C lines 1282-1307)
+// ============================================================================
+
+// CR + LF
+#[test]
+fn egcb_cr_lf_boundary_nomatch() {
+    // C line 1282: .\y\O no match for CR+LF (no cluster break between CR and LF)
+    n(b".\\y\\O", b"\x0d\x0a");
+}
+
+#[test]
+fn egcb_cr_lf_no_boundary() {
+    // C line 1283: .\Y\O matches CR+LF at 0..2 (no break between CR and LF)
+    x2(b".\\Y\\O", b"\x0d\x0a", 0, 2);
+}
+
+// LATIN SMALL LETTER G + COMBINING DIAERESIS
+#[test]
+fn egcb_g_combining_diaeresis_boundary() {
+    // C line 1286: ^.\y.$ no match (g + diaeresis = 1 cluster)
+    n(b"^.\\y.$", b"\x67\xCC\x88");
+}
+
+#[test]
+fn egcb_g_combining_diaeresis_no_boundary() {
+    // C line 1287: .\Y. matches g + diaeresis at 0..3
+    x2(b".\\Y.", b"\x67\xCC\x88", 0, 3);
+}
+
+#[test]
+fn egcb_g_combining_diaeresis_full() {
+    // C line 1288: \y.\Y.\y matches g + diaeresis at 0..3
+    x2(b"\\y.\\Y.\\y", b"\x67\xCC\x88", 0, 3);
+}
+
+// HANGUL SYLLABLE GAG
+#[test]
+fn egcb_hangul_syllable_gag() {
+    // C line 1290: \y.\y matches HANGUL SYLLABLE GAG at 0..3
+    x2(b"\\y.\\y", b"\xEA\xB0\x81", 0, 3);
+}
+
+// HANGUL CHOSEONG KIYEOK + JUNGSEONG A + JONGSEONG KIYEOK
+#[test]
+fn egcb_hangul_jamo_lvt_no_boundary() {
+    // C line 1292: ^.\Y.\Y.$ matches L+V+T at 0..9
+    x2(b"^.\\Y.\\Y.$", b"\xE1\x84\x80\xE1\x85\xA1\xE1\x86\xA8", 0, 9);
+}
+
+#[test]
+fn egcb_hangul_jamo_lvt_boundary_nomatch() {
+    // C line 1293: ^.\y.\Y.$ no match (L+V = no break)
+    n(b"^.\\y.\\Y.$", b"\xE1\x84\x80\xE1\x85\xA1\xE1\x86\xA8");
+}
+
+// TAMIL LETTER NA + TAMIL VOWEL SIGN I
+#[test]
+fn egcb_tamil_no_boundary() {
+    // C line 1295: .\Y. matches Tamil cluster at 0..6
+    x2(b".\\Y.", b"\xE0\xAE\xA8\xE0\xAE\xBF", 0, 6);
+}
+
+#[test]
+fn egcb_tamil_boundary_nomatch() {
+    // C line 1296: .\y. no match (1 cluster)
+    n(b".\\y.", b"\xE0\xAE\xA8\xE0\xAE\xBF");
+}
+
+// THAI CHARACTER KO KAI + THAI CHARACTER SARA AM
+#[test]
+fn egcb_thai_no_boundary() {
+    // C line 1298: .\Y. matches Thai cluster at 0..6
+    x2(b".\\Y.", b"\xE0\xB8\x81\xE0\xB8\xB3", 0, 6);
+}
+
+#[test]
+fn egcb_thai_boundary_nomatch() {
+    // C line 1299: .\y. no match (1 cluster)
+    n(b".\\y.", b"\xE0\xB8\x81\xE0\xB8\xB3");
+}
+
+// DEVANAGARI LETTER SSA + DEVANAGARI VOWEL SIGN I
+#[test]
+fn egcb_devanagari_no_boundary() {
+    // C line 1301: .\Y. matches Devanagari cluster at 0..6
+    x2(b".\\Y.", b"\xE0\xA4\xB7\xE0\xA4\xBF", 0, 6);
+}
+
+#[test]
+fn egcb_devanagari_boundary_nomatch() {
+    // C line 1302: .\y. no match (1 cluster)
+    n(b".\\y.", b"\xE0\xA4\xB7\xE0\xA4\xBF");
+}
+
+// Extended_Pictographic + ZWJ + Extended_Pictographic (GB11)
+#[test]
+fn egcb_extpict_zwj_extpict() {
+    // C line 1305: ..\Y. matches ExtPict+ZWJ+ExtPict at 0..9
+    x2(b"..\\Y.", b"\xE3\x80\xB0\xE2\x80\x8D\xE2\xAD\x95", 0, 9);
+}
+
+#[test]
+fn egcb_extpict_extend_zwj_extpict() {
+    // C line 1306: ...\Y. matches ExtPict+Extend+ZWJ+ExtPict at 0..11
+    x2(b"...\\Y.", b"\xE3\x80\xB0\xCC\x82\xE2\x80\x8D\xE2\xAD\x95", 0, 11);
+}
+
+#[test]
+fn egcb_extpict_nonextend_zwj_extpict_nomatch() {
+    // C line 1307: ...\Y. no match (non-Extend between ExtPict and ZWJ breaks cluster)
+    n(b"...\\Y.", b"\xE3\x80\xB0\xCD\xB0\xE2\x80\x8D\xE2\xAD\x95");
+}
+
+// ============================================================================
+// Extended Grapheme Cluster (\X) tests (C lines 1310-1331)
+// ============================================================================
+
+// CR + LF
+#[test]
+fn egcb_x_cr_lf_one_cluster() {
+    // C line 1310: ^\X\X$ no match (CR+LF is 1 cluster)
+    n(b"^\\X\\X$", b"\x0d\x0a");
+}
+
+#[test]
+fn egcb_x_cr_lf_single() {
+    // C line 1311: ^\X$ matches CR+LF as 1 cluster at 0..2
+    x2(b"^\\X$", b"\x0d\x0a", 0, 2);
+}
+
+// LATIN SMALL LETTER G + COMBINING DIAERESIS
+#[test]
+fn egcb_x_g_diaeresis_not_three() {
+    // C line 1313: ^\X\X.$ no match (g + diaeresis = 1 cluster)
+    n(b"^\\X\\X.$", b"\x67\xCC\x88");
+}
+
+#[test]
+fn egcb_x_g_diaeresis_one_cluster() {
+    // C line 1314: ^\X$ matches g + diaeresis at 0..3
+    x2(b"^\\X$", b"\x67\xCC\x88", 0, 3);
+}
+
+// HANGUL CHOSEONG KIYEOK + JUNGSEONG A + JONGSEONG KIYEOK
+#[test]
+fn egcb_x_hangul_jamo_one_cluster() {
+    // C line 1316: ^\X$ matches L+V+T as 1 cluster at 0..9
+    x2(b"^\\X$", b"\xE1\x84\x80\xE1\x85\xA1\xE1\x86\xA8", 0, 9);
+}
+
+#[test]
+fn egcb_x_hangul_jamo_not_three() {
+    // C line 1317: ^\X\X\X$ no match (not 3 clusters)
+    n(b"^\\X\\X\\X$", b"\xE1\x84\x80\xE1\x85\xA1\xE1\x86\xA8");
+}
+
+// TAMIL LETTER NA + TAMIL VOWEL SIGN I
+#[test]
+fn egcb_x_tamil_one_cluster() {
+    // C line 1319: ^\X$ matches Tamil at 0..6
+    x2(b"^\\X$", b"\xE0\xAE\xA8\xE0\xAE\xBF", 0, 6);
+}
+
+#[test]
+fn egcb_x_tamil_not_two() {
+    // C line 1320: \X\X no match (only 1 cluster)
+    n(b"\\X\\X", b"\xE0\xAE\xA8\xE0\xAE\xBF");
+}
+
+// THAI CHARACTER KO KAI + THAI CHARACTER SARA AM
+#[test]
+fn egcb_x_thai_one_cluster() {
+    // C line 1322: ^\X$ matches Thai at 0..6
+    x2(b"^\\X$", b"\xE0\xB8\x81\xE0\xB8\xB3", 0, 6);
+}
+
+#[test]
+fn egcb_x_thai_not_two() {
+    // C line 1323: \X\X no match (only 1 cluster)
+    n(b"\\X\\X", b"\xE0\xB8\x81\xE0\xB8\xB3");
+}
+
+// DEVANAGARI LETTER SSA + DEVANAGARI VOWEL SIGN I
+#[test]
+fn egcb_x_devanagari_one_cluster() {
+    // C line 1325: ^\X$ matches Devanagari at 0..6
+    x2(b"^\\X$", b"\xE0\xA4\xB7\xE0\xA4\xBF", 0, 6);
+}
+
+#[test]
+fn egcb_x_devanagari_not_two() {
+    // C line 1326: \X\X no match (only 1 cluster)
+    n(b"\\X\\X", b"\xE0\xA4\xB7\xE0\xA4\xBF");
+}
+
+#[test]
+fn egcb_x_tamil_no_trailing_dot() {
+    // C line 1328: ^\X.$ no match (1 cluster, no room for .)
+    n(b"^\\X.$", b"\xE0\xAE\xA8\xE0\xAE\xBF");
+}
+
+// a + COMBINING GRAVE ACCENT (U+0300)
+#[test]
+fn egcb_x_in_word() {
+    // C line 1331: h\Xllo matches ha+grave+llo at 0..7
+    x2(b"h\\Xllo", b"ha\xCC\x80llo", 0, 7);
+}
+
+// ============================================================================
+// Text Segment: Extended Grapheme Cluster <-> Word Boundary (C lines 1334-1356)
+// ============================================================================
+
+#[test]
+fn text_segment_g_boundary_abc() {
+    // C line 1334: (?y{g})\yabc\y matches abc at 0..3
+    x2(b"(?y{g})\\yabc\\y", b"abc", 0, 3);
+}
+
+#[test]
+fn text_segment_g_x_single_char() {
+    // C line 1335: (?y{g})\y\X\y matches single char at 0..1
+    x2(b"(?y{g})\\y\\X\\y", b"abc", 0, 1);
+}
+
+#[test]
+fn text_segment_w_boundary_abc() {
+    // C line 1336: (?y{w})\yabc\y matches abc at 0..3 (WB1, WB2)
+    x2(b"(?y{w})\\yabc\\y", b"abc", 0, 3);
+}
+
+#[test]
+fn text_segment_w_x_cr_lf() {
+    // C line 1337: (?y{w})\X matches CR+LF at 0..2 (WB3)
+    x2(b"(?y{w})\\X", b"\r\n", 0, 2);
+}
+
+#[test]
+fn text_segment_w_x_wb3a() {
+    // C line 1338: (?y{w})\X matches \x0c at 0..1 (WB3a)
+    x2(b"(?y{w})\\X", b"\x0cz", 0, 1);
+}
+
+#[test]
+fn text_segment_w_x_wb3b() {
+    // C line 1339: (?y{w})\X matches q at 0..1 (WB3b)
+    x2(b"(?y{w})\\X", b"q\x0c", 0, 1);
+}
+
+#[test]
+fn text_segment_w_x_wb3c() {
+    // C line 1340: (?y{w})\X matches ZWJ+dingbat at 0..6 (WB3c)
+    x2(b"(?y{w})\\X", b"\xE2\x80\x8D\xE2\x9D\x87", 0, 6);
+}
+
+#[test]
+fn text_segment_w_x_wb3d() {
+    // C line 1341: (?y{w})\X matches 2 spaces at 0..2 (WB3d)
+    x2(b"(?y{w})\\X", b"\x20\x20", 0, 2);
+}
+
+#[test]
+fn text_segment_w_x_wb4() {
+    // C line 1342: (?y{w})\X matches a+ZWJ at 0..4 (WB4)
+    x2(b"(?y{w})\\X", b"a\xE2\x80\x8D", 0, 4);
+}
+
+#[test]
+fn text_segment_w_x_wb5() {
+    // C line 1343: (?y{w})\y\X\y matches abc at 0..3 (WB5)
+    x2(b"(?y{w})\\y\\X\\y", b"abc", 0, 3);
+}
+
+#[test]
+fn text_segment_w_x_wb6_7() {
+    // C line 1344: (?y{w})\y\X\y matches v+middot+w at 0..4 (WB6, WB7)
+    x2(b"(?y{w})\\y\\X\\y", b"v\xCE\x87w", 0, 4);
+}
+
+#[test]
+fn text_segment_w_x_wb7a() {
+    // C line 1345: (?y{w})\y\X\y matches HebrewLetter+quote at 0..3 (WB7a)
+    x2(b"(?y{w})\\y\\X\\y", b"\xD7\x93\x27", 0, 3);
+}
+
+#[test]
+fn text_segment_w_x_wb7b_7c() {
+    // C line 1346: (?y{w})\y\X\y matches Hebrew+dquote+Hebrew at 0..5 (WB7b, WB7c)
+    x2(b"(?y{w})\\y\\X\\y", b"\xD7\x93\x22\xD7\x93", 0, 5);
+}
+
+#[test]
+fn text_segment_w_x_wb8() {
+    // C line 1347: (?y{w})\X matches "14" at 0..2 (WB8)
+    x2(b"(?y{w})\\X", b"14 45", 0, 2);
+}
+
+#[test]
+fn text_segment_w_x_wb9() {
+    // C line 1348: (?y{w})\X matches "a14" at 0..3 (WB9)
+    x2(b"(?y{w})\\X", b"a14", 0, 3);
+}
+
+#[test]
+fn text_segment_w_x_wb10() {
+    // C line 1349: (?y{w})\X matches "832e" at 0..4 (WB10)
+    x2(b"(?y{w})\\X", b"832e", 0, 4);
+}
+
+#[test]
+fn text_segment_w_x_wb11_12() {
+    // C line 1350: (?y{w})\X matches 8+fullwidth-comma+extended-arabic-digit at 0..6 (WB11, WB12)
+    x2(b"(?y{w})\\X", b"8\xEF\xBC\x8C\xDB\xB0", 0, 6);
+}
+
+#[test]
+fn text_segment_w_x_wb13() {
+    // C line 1351: (?y{w})\y\X\y matches katakana ケン at 0..6 (WB13)
+    x2(b"(?y{w})\\y\\X\\y", "\u{30B1}\u{30F3}".as_bytes(), 0, 6);
+}
+
+#[test]
+fn text_segment_w_x_wb13a_13b() {
+    // C line 1352: (?y{w})\y\X\y matches ケン+NNBSP+タ at 0..12 (WB13a, WB13b)
+    x2(b"(?y{w})\\y\\X\\y", b"\xE3\x82\xB1\xE3\x83\xB3\xE2\x80\xAF\xE3\x82\xBF", 0, 12);
+}
+
+#[test]
+fn text_segment_w_x_wb999() {
+    // C line 1353: (?y{w})\y\X\y matches ! at 0..1 (WB999)
+    x2(b"(?y{w})\\y\\X\\y", b"\x21\x23", 0, 1);
+}
+
+#[test]
+fn text_segment_w_x_kanji() {
+    // C line 1354: (?y{w})\y\X\y matches 山 at 0..3
+    x2(b"(?y{w})\\y\\X\\y", "\u{5C71}\u{30A2}".as_bytes(), 0, 3);
+}
+
+#[test]
+fn text_segment_w_x_numeric_dot() {
+    // C line 1355: (?y{w})\X matches "3.14" at 0..4
+    x2(b"(?y{w})\\X", b"3.14", 0, 4);
+}
+
+#[test]
+fn text_segment_w_x_numeric_space() {
+    // C line 1356: (?y{w})\X matches "3" at 0..1 (space breaks)
+    x2(b"(?y{w})\\X", b"3 14", 0, 1);
+}
+
 // --- Japanese missing patterns (C lines 966, 968) ---
 
 #[test]

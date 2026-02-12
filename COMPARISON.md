@@ -1,6 +1,6 @@
 # C Oniguruma vs. Rust Port — Full Comparison
 
-> As of: 2026-02-12 | 1477 tests passing, 0 ignored | ~39,600 LOC Rust (23,500 src + 16,100 unicode data)
+> As of: 2026-02-12 | 1566 tests passing, 0 ignored | ~42,200 LOC Rust (23,600 src + 18,600 unicode data)
 
 ---
 
@@ -10,7 +10,7 @@
 |--------|--------|----------|--------|
 | **Parser** (regparse.c) | 9,493 | 6,648 | ~98% |
 | **Compiler** (regcomp.c) | 8,589 | 6,803 | ~97% |
-| **Executor** (regexec.c) | 7,002 | 5,005 | ~95% |
+| **Executor** (regexec.c) | 7,002 | 5,005 | ~98% |
 | **RegSet** (regset.c) | 536 | 747 | ~95% |
 | **Capture Traversal** (regtrav.c) | 67 | 56 | 100% |
 | **Types** (regint.h+regparse.h) | ~1,564 | 2,095 | ~95% |
@@ -162,7 +162,7 @@ Full forward search optimization matching the C original:
 
 - **Syntax definitions**: ASIS, PosixBasic, PosixExtended, Emacs, Grep, GnuRegex, Java, Perl, Perl_NG, Python, Oniguruma, Ruby
 - **All ~100 error codes** with parameterized messages
-- **Unicode**: 629 code range tables, 886 property names, grapheme cluster, case folding
+- **Unicode**: 629 code range tables, 886 property names, EGCB/WB segmentation, grapheme cluster, case folding
 - **Recursion**: `\g<n>`, `\k<n+level>`, infinite recursion detection, MEM_END_REC
 - **Variable-length lookbehind**: STEP_BACK_START/NEXT, Alt with zid
 - **Absent functions**: repeater, expression, range cutter
@@ -262,14 +262,14 @@ Minor optimization, not a correctness issue.
 | **Public API** | ~85% | Core complete; syntax config, user-defined callouts, some callout data variants missing |
 | **Encodings** | 7% | ASCII + UTF-8 only (sufficient for most use cases) |
 | **Safety limits** | 100% | All global and per-search limits |
-| **Test coverage** | 1470/1554 C tests ported | 55 blocked (\y/\Y/\X need ICU data), 29 not yet ported |
+| **Test coverage** | 1554/1554 C tests ported | 100% of C test_utf8.c calls ported |
 
-**Overall functional parity: ~95%** for ASCII/UTF-8 workloads.
+**Overall functional parity: ~97%** for ASCII/UTF-8 workloads.
 
-Test breakdown: 1554 C tests total. 1470 ported as Rust x2/x3/n/e calls, plus 7
-Rust-only tests (backward search, validity check, capture history) = 1477 #[test].
-55 tests blocked on \y/\Y (40) and \X (15) which need ICU Unicode segmentation data.
-29 remaining: ~27 are (?W/D/S/P) option tests with multibyte subjects, ~2 Japanese mirrors.
+Test breakdown: All 1554 C test_utf8.c calls ported as Rust x2/x3/n/e calls, plus 12
+Rust-only tests (backward search, validity check, capture history, RegSet) = 1566 #[test].
+Full Unicode text segmentation: EGCB (grapheme cluster) and WB (word boundary) algorithms
+with complete data tables (1376 EGCB + 1085 WB range entries).
 
 The remaining API gaps are primarily encoding variety, syntax configuration accessors,
 and user-defined callout registration — none of which affect core regex matching.
@@ -303,3 +303,6 @@ and user-defined callout registration — none of which affect core regex matchi
 23. reduce_string_list loses ND_ST_SUPER
 24. EmptyCheckEnd mem-ID mismatch with nested quantifiers
 25. Call-node body vs target_node in optimizer
+26. (?P:...) parser fallthrough — 'P' case must delegate to prs_options when QMARK_CAPITAL_P_NAME not set
+27. WordBoundary executor ignored mode parameter — ASCII-mode (?W:\b) always used Unicode word check
+28. TextSegmentBoundary compiler used reg.options instead of node status ND_ST_TEXT_SEGMENT_WORD

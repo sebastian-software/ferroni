@@ -969,6 +969,9 @@ pub fn node_new_anchor_with_options(anchor_type: i32, options: OnigOptionType) -
     if onig_is_option_on(options, ONIG_OPTION_MULTILINE) {
         node.status_add(ND_ST_MULTILINE);
     }
+    if onig_is_option_on(options, ONIG_OPTION_TEXT_SEGMENT_WORD) {
+        node.status_add(ND_ST_TEXT_SEGMENT_WORD);
+    }
     node
 }
 

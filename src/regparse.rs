@@ -5084,8 +5084,11 @@ fn prs_bag(
                             );
                         }
                     }
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
                 }
-                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                // Fall through to option parsing ((?P:...) = POSIX is ASCII)
+                *p = pfetch_prev;
+                return prs_options(tok, term, p, end, pattern, env);
             }
             '~' => {
                 if c < 128 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP) {

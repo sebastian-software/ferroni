@@ -1372,6 +1372,24 @@ fn is_word_char_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> 
     enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
 }
 
+/// Check if position is a word character in ASCII-aware mode.
+/// mode == 0: full Unicode word check, mode != 0: ASCII-only word check.
+#[inline]
+fn is_word_char_ascii_mode(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: ModeType) -> bool {
+    if mode == 0 {
+        return is_word_char_at(enc, str_data, s, end);
+    }
+    // ASCII-only: only a-z, A-Z, 0-9, _ are word characters
+    if s >= end {
+        return false;
+    }
+    let code = enc.mbc_to_code(&str_data[s..], end);
+    if code > 0x7F {
+        return false;
+    }
+    matches!(code as u8, b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_')
+}
+
 /// Get the start of the previous character (left_adjust_char_head).
 #[inline]
 fn prev_char_head(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) -> usize {
@@ -1381,9 +1399,9 @@ fn prev_char_head(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) ->
     enc.left_adjust_char_head(start, s - 1, str_data)
 }
 
-/// Check word boundary at position s (encoding-aware).
-/// Returns true if there's a word boundary between s-1 and s.
-fn is_word_boundary(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
+/// Check word boundary at position s (encoding-aware, mode-aware).
+/// mode == 0: Unicode word, mode != 0: ASCII-only word.
+fn is_word_boundary(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: ModeType) -> bool {
     let at_start = s == 0;
     let at_end = s >= end;
 
@@ -1391,47 +1409,47 @@ fn is_word_boundary(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) ->
         return false;
     }
     if at_start {
-        return is_word_char_at(enc, str_data, s, end);
+        return is_word_char_ascii_mode(enc, str_data, s, end, mode);
     }
     if at_end {
         let prev = prev_char_head(enc, 0, s, str_data);
-        return is_word_char_at(enc, str_data, prev, end);
+        return is_word_char_ascii_mode(enc, str_data, prev, end, mode);
     }
 
     let prev = prev_char_head(enc, 0, s, str_data);
-    let prev_word = is_word_char_at(enc, str_data, prev, end);
-    let curr_word = is_word_char_at(enc, str_data, s, end);
+    let prev_word = is_word_char_ascii_mode(enc, str_data, prev, end, mode);
+    let curr_word = is_word_char_ascii_mode(enc, str_data, s, end, mode);
     prev_word != curr_word
 }
 
-/// Check if position s is at the start of a word (encoding-aware).
-fn is_word_begin(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
+/// Check if position s is at the start of a word (encoding-aware, mode-aware).
+fn is_word_begin(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: ModeType) -> bool {
     if s >= end {
         return false;
     }
-    if !is_word_char_at(enc, str_data, s, end) {
+    if !is_word_char_ascii_mode(enc, str_data, s, end, mode) {
         return false;
     }
     if s == 0 {
         return true;
     }
     let prev = prev_char_head(enc, 0, s, str_data);
-    !is_word_char_at(enc, str_data, prev, end)
+    !is_word_char_ascii_mode(enc, str_data, prev, end, mode)
 }
 
-/// Check if position s is at the end of a word (encoding-aware).
-fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
+/// Check if position s is at the end of a word (encoding-aware, mode-aware).
+fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: ModeType) -> bool {
     if s == 0 {
         return false;
     }
     let prev = prev_char_head(enc, 0, s, str_data);
-    if !is_word_char_at(enc, str_data, prev, end) {
+    if !is_word_char_ascii_mode(enc, str_data, prev, end, mode) {
         return false;
     }
     if s >= end {
         return true;
     }
-    !is_word_char_at(enc, str_data, s, end)
+    !is_word_char_ascii_mode(enc, str_data, s, end, mode)
 }
 
 /// Check if a code point is in a multi-byte range table.
@@ -1515,121 +1533,6 @@ fn string_cmp_ic(
 
     *s2_pos = p2;
     true
-}
-
-// ============================================================================
-// ============================================================================
-// Extended Grapheme Cluster boundary detection (simplified)
-// ============================================================================
-
-/// Check if position `s` in `data` is an Extended Grapheme Cluster boundary.
-/// Returns true if there's a break at this position (GB1/GB2 rules).
-///
-/// Simplified implementation covering common cases:
-/// - Start/end of string are always breaks (GB1, GB2)
-/// - CR+LF is not a break (GB3)
-/// - Control chars (CR/LF/Control) cause breaks (GB4, GB5)
-/// - Combining marks (Extend/ZWJ/SpacingMark) after non-control chars are not breaks (GB9, GB9a)
-/// - Everything else is a break (GB999)
-fn egcb_is_break_position(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
-    // GB1: Break at start of text
-    if s == 0 { return true; }
-    // GB2: Break at end of text
-    if s >= end { return true; }
-
-    let prev_pos = prev_char_head(enc, 0, s, str_data);
-    if prev_pos >= s { return true; } // no previous char
-
-    let from = enc.mbc_to_code(&str_data[prev_pos..], end);
-    let to = enc.mbc_to_code(&str_data[s..], end);
-
-    // GB3: Do not break between CR and LF
-    if from == 0x0D && to == 0x0A { return false; }
-
-    // GB4: Break after Control, CR, LF
-    if is_egcb_control_cr_lf(from) { return true; }
-    // GB5: Break before Control, CR, LF
-    if is_egcb_control_cr_lf(to) { return true; }
-
-    // GB9: Do not break before Extend or ZWJ
-    if is_egcb_extend(to) || to == 0x200D { return false; }
-
-    // GB9a: Do not break before SpacingMark
-    if is_egcb_spacing_mark(to) { return false; }
-
-    // GB9b: Do not break after Prepend
-    if is_egcb_prepend(from) { return false; }
-
-    // GB999: Otherwise, break everywhere
-    true
-}
-
-/// Check if a codepoint is a Control, CR, or LF character
-fn is_egcb_control_cr_lf(c: u32) -> bool {
-    c == 0x0D || c == 0x0A
-        || (c >= 0x00 && c <= 0x1F && c != 0x0D && c != 0x0A) // C0 controls
-        || c == 0x7F // DEL
-        || c == 0xAD // SOFT HYPHEN
-        || (c >= 0x0600 && c <= 0x0605) // Arabic number signs (actually Prepend in newer Unicode)
-        || c == 0x200B // ZERO WIDTH SPACE
-        || c == 0x2028 // LINE SEPARATOR
-        || c == 0x2029 // PARAGRAPH SEPARATOR
-        || (c >= 0xFFF0 && c <= 0xFFF8) // Specials
-        || (c >= 0xE0000 && c <= 0xE007F && c != 0xE0020 && c != 0xE007F) // Tags (simplified)
-}
-
-/// Check if a codepoint is an Extend character (combining marks, etc.)
-fn is_egcb_extend(c: u32) -> bool {
-    // Combining Diacritical Marks
-    (c >= 0x0300 && c <= 0x036F)
-    // Combining Diacritical Marks Extended
-    || (c >= 0x1AB0 && c <= 0x1AFF)
-    // Combining Diacritical Marks Supplement
-    || (c >= 0x1DC0 && c <= 0x1DFF)
-    // Combining Diacritical Marks for Symbols
-    || (c >= 0x20D0 && c <= 0x20FF)
-    // Combining Half Marks
-    || (c >= 0xFE20 && c <= 0xFE2F)
-    // General Category M (Mark) approximation for common ranges
-    || (c >= 0x0483 && c <= 0x0489)
-    || (c >= 0x0591 && c <= 0x05BD)
-    || (c >= 0x0610 && c <= 0x061A)
-    || (c >= 0x064B && c <= 0x065F)
-    || c == 0x0670
-    || (c >= 0x06D6 && c <= 0x06DC)
-    || (c >= 0x06DF && c <= 0x06E4)
-    || (c >= 0x06E7 && c <= 0x06E8)
-    || (c >= 0x06EA && c <= 0x06ED)
-    || (c >= 0x0900 && c <= 0x0903)
-    || (c >= 0x093A && c <= 0x094F)
-    // Variation Selectors
-    || (c >= 0xFE00 && c <= 0xFE0F)
-    || (c >= 0xE0100 && c <= 0xE01EF)
-    // Zero Width Joiner is handled separately
-    // Format characters that act as Extend
-    || c == 0x200C // ZWNJ
-    || c == 0x200D // ZWJ (handled separately but include here for safety)
-}
-
-/// Check if a codepoint is a SpacingMark
-fn is_egcb_spacing_mark(c: u32) -> bool {
-    // Common SpacingMark ranges (Indic scripts vowel signs, etc.)
-    (c >= 0x0903 && c <= 0x0903)
-    || (c >= 0x093B && c <= 0x093B)
-    || (c >= 0x093E && c <= 0x0940)
-    || (c >= 0x0949 && c <= 0x094C)
-    || c == 0x094E || c == 0x094F
-    || (c >= 0x0982 && c <= 0x0983)
-}
-
-/// Check if a codepoint is a Prepend character
-fn is_egcb_prepend(c: u32) -> bool {
-    c == 0x0600 || c == 0x0601 || c == 0x0602 || c == 0x0603
-    || c == 0x0604 || c == 0x0605
-    || c == 0x06DD || c == 0x070F
-    || c == 0x0890 || c == 0x0891
-    || c == 0x08E2
-    || c == 0x110BD || c == 0x110CD
 }
 
 // ============================================================================
@@ -2434,7 +2337,8 @@ fn match_at(
             // Word boundary opcodes
             // ================================================================
             OpCode::WordBoundary => {
-                if !is_word_boundary(enc, str_data, s, end) {
+                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload { mode } else { 0 };
+                if !is_word_boundary(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -2442,7 +2346,8 @@ fn match_at(
             }
 
             OpCode::NoWordBoundary => {
-                if is_word_boundary(enc, str_data, s, end) {
+                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload { mode } else { 0 };
+                if is_word_boundary(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -2450,7 +2355,8 @@ fn match_at(
             }
 
             OpCode::WordBegin => {
-                if !is_word_begin(enc, str_data, s, end) {
+                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload { mode } else { 0 };
+                if !is_word_begin(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -2458,7 +2364,8 @@ fn match_at(
             }
 
             OpCode::WordEnd => {
-                if !is_word_end(enc, str_data, s, end) {
+                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload { mode } else { 0 };
+                if !is_word_end(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -2469,11 +2376,10 @@ fn match_at(
                 if let OperationPayload::TextSegmentBoundary { boundary_type, not } = reg.ops[p].payload {
                     let is_break = match boundary_type {
                         TextSegmentBoundaryType::ExtendedGraphemeCluster => {
-                            egcb_is_break_position(enc, str_data, s, end)
+                            crate::unicode::onigenc_egcb_is_break_position(enc, str_data, s, 0, end)
                         }
                         TextSegmentBoundaryType::Word => {
-                            // Word boundary type - treat as always break for now
-                            true
+                            crate::unicode::onigenc_wb_is_break_position(enc, str_data, s, 0, end)
                         }
                     };
                     let result = if not { !is_break } else { is_break };

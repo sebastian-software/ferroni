@@ -4,11 +4,15 @@
 
 mod fold_data;
 mod property_data;
+pub mod egcb_data;
+pub mod wb_data;
 
 use crate::oniguruma::*;
 use crate::regenc::*;
 use fold_data::*;
 use property_data::{CODE_RANGES, CODE_RANGES_NUM, PROPERTY_NAMES};
+use egcb_data::{EgcbType, EGCB_RANGES};
+use wb_data::{WbType, WB_RANGES};
 
 // === Unicode ISO 8859-1 Ctype Table ===
 // From unicode.c: EncUNICODE_ISO_8859_1_CtypeTable[256]
@@ -623,4 +627,415 @@ pub fn onigenc_unicode_ctype_code_range(
         return None;
     }
     Some(CODE_RANGES[ctype as usize])
+}
+
+// ============================================================================
+// Extended Grapheme Cluster Break (EGCB) algorithm
+// Port of onigenc_egcb_is_break_position from unicode.c
+// ============================================================================
+
+/// EGCB break result from two-character rule table
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EgcbBreakType {
+    NotBreak,
+    Break,
+    BreakUndefGB11,
+    BreakUndefRiRi,
+}
+
+/// Binary search EGCB_RANGES for the EGCB type of a codepoint.
+fn egcb_get_type(code: u32) -> EgcbType {
+    let mut low: usize = 0;
+    let mut high: usize = EGCB_RANGES.len();
+    while low < high {
+        let x = (low + high) >> 1;
+        if code > EGCB_RANGES[x].end {
+            low = x + 1;
+        } else {
+            high = x;
+        }
+    }
+    if low < EGCB_RANGES.len() && code >= EGCB_RANGES[low].start {
+        EGCB_RANGES[low].prop
+    } else {
+        EgcbType::Other
+    }
+}
+
+#[inline]
+fn is_control_cr_lf(t: EgcbType) -> bool {
+    matches!(t, EgcbType::CR | EgcbType::LF | EgcbType::Control)
+}
+
+#[inline]
+fn is_hangul(t: EgcbType) -> bool {
+    matches!(t, EgcbType::L | EgcbType::LV | EgcbType::LVT | EgcbType::T | EgcbType::V)
+}
+
+/// PROP_INDEX_EXTENDEDPICTOGRAPHIC = 81 in property_data.rs
+const PROP_INDEX_EXTENDEDPICTOGRAPHIC: u32 = 81;
+
+/// GB1/GB2 are handled outside. This applies GB3-GB13 two-char rules.
+fn unicode_egcb_is_break_2code(from_code: u32, to_code: u32) -> EgcbBreakType {
+    let from = egcb_get_type(from_code);
+    let to = egcb_get_type(to_code);
+
+    // Short cut: both Other
+    if from == EgcbType::Other && to == EgcbType::Other {
+        return EgcbBreakType::Break; // GB999
+    }
+
+    // GB3: CR + LF
+    if from == EgcbType::CR && to == EgcbType::LF { return EgcbBreakType::NotBreak; }
+    // GB4: Break after Control/CR/LF
+    if is_control_cr_lf(from) { return EgcbBreakType::Break; }
+    // GB5: Break before Control/CR/LF
+    if is_control_cr_lf(to) { return EgcbBreakType::Break; }
+
+    // GB6-GB8: Hangul rules
+    if is_hangul(from) && is_hangul(to) {
+        // GB6: L x (L | V | LV | LVT)
+        if from == EgcbType::L && to != EgcbType::T { return EgcbBreakType::NotBreak; }
+        // GB7: (LV | V) x (V | T)
+        if (from == EgcbType::LV || from == EgcbType::V)
+            && (to == EgcbType::V || to == EgcbType::T) { return EgcbBreakType::NotBreak; }
+        // GB8: (LVT | T) x T
+        if to == EgcbType::T && (from == EgcbType::LVT || from == EgcbType::T) {
+            return EgcbBreakType::NotBreak;
+        }
+        return EgcbBreakType::Break; // GB999
+    }
+
+    // GB9: x (Extend | ZWJ)
+    if to == EgcbType::Extend || to == EgcbType::ZWJ { return EgcbBreakType::NotBreak; }
+    // GB9a: x SpacingMark
+    if to == EgcbType::SpacingMark { return EgcbBreakType::NotBreak; }
+    // GB9b: Prepend x
+    if from == EgcbType::Prepend { return EgcbBreakType::NotBreak; }
+
+    // GB11: ZWJ x Extended_Pictographic (needs backward context)
+    if from == EgcbType::ZWJ {
+        if onigenc_unicode_is_code_ctype(to_code, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
+            return EgcbBreakType::BreakUndefGB11;
+        }
+        return EgcbBreakType::Break; // GB999
+    }
+
+    // GB12/GB13: RI x RI (needs backward context)
+    if from == EgcbType::RegionalIndicator && to == EgcbType::RegionalIndicator {
+        return EgcbBreakType::BreakUndefRiRi;
+    }
+
+    // GB999
+    EgcbBreakType::Break
+}
+
+/// Full EGCB break position check.
+/// Port of onigenc_egcb_is_break_position from unicode.c:998.
+pub fn onigenc_egcb_is_break_position(
+    enc: OnigEncoding, str_data: &[u8], s: usize, start: usize, end: usize,
+) -> bool {
+    // GB1: Break at start of text
+    if s <= start { return true; }
+    // GB2: Break at end of text
+    if s >= end { return true; }
+
+    let mut prev = enc.left_adjust_char_head(start, s - 1, str_data);
+    if prev < start { return true; }
+
+    let from = enc.mbc_to_code(&str_data[prev..], end);
+    let to = enc.mbc_to_code(&str_data[s..], end);
+
+    let btype = unicode_egcb_is_break_2code(from, to);
+    match btype {
+        EgcbBreakType::NotBreak => false,
+        EgcbBreakType::Break => true,
+
+        EgcbBreakType::BreakUndefGB11 => {
+            // GB11: {ExtPict} Extend* ZWJ x {ExtPict}
+            // Scan backward past Extend characters looking for ExtPict
+            loop {
+                if prev <= start { break; }
+                prev = enc.left_adjust_char_head(start, prev - 1, str_data);
+                if prev < start { break; }
+                let code = enc.mbc_to_code(&str_data[prev..], end);
+                if onigenc_unicode_is_code_ctype(code, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
+                    return false; // Found ExtPict before ZWJ
+                }
+                let t = egcb_get_type(code);
+                if t != EgcbType::Extend {
+                    break; // Not Extend, stop scanning
+                }
+            }
+            true // Break (no ExtPict found)
+        }
+
+        EgcbBreakType::BreakUndefRiRi => {
+            // GB12/GB13: Count consecutive RI chars backward
+            let mut n: usize = 0;
+            loop {
+                if prev <= start { break; }
+                prev = enc.left_adjust_char_head(start, prev - 1, str_data);
+                if prev < start { break; }
+                let code = enc.mbc_to_code(&str_data[prev..], end);
+                let t = egcb_get_type(code);
+                if t != EgcbType::RegionalIndicator {
+                    break;
+                }
+                n += 1;
+            }
+            // Even count of preceding RI = no break, odd = break
+            (n % 2) != 0
+        }
+    }
+}
+
+// ============================================================================
+// Word Break (WB) algorithm
+// Port of onigenc_wb_is_break_position from unicode.c:675
+// ============================================================================
+
+/// Binary search WB_RANGES for the WB type of a codepoint.
+fn wb_get_type(code: u32) -> WbType {
+    let mut low: usize = 0;
+    let mut high: usize = WB_RANGES.len();
+    while low < high {
+        let x = (low + high) >> 1;
+        if code > WB_RANGES[x].end {
+            low = x + 1;
+        } else {
+            high = x;
+        }
+    }
+    if low < WB_RANGES.len() && code >= WB_RANGES[low].start {
+        WB_RANGES[low].prop
+    } else {
+        WbType::Any
+    }
+}
+
+#[inline]
+fn is_wb_ignore_tail(t: WbType) -> bool {
+    matches!(t, WbType::Extend | WbType::Format | WbType::ZWJ)
+}
+
+#[inline]
+fn is_wb_ahletter(t: WbType) -> bool {
+    matches!(t, WbType::ALetter | WbType::HebrewLetter)
+}
+
+#[inline]
+fn is_wb_midnumletq(t: WbType) -> bool {
+    matches!(t, WbType::MidNumLet | WbType::SingleQuote)
+}
+
+/// Skip forward past Extend/Format/ZWJ to find next "main" code.
+fn wb_get_next_main_code(enc: OnigEncoding, str_data: &[u8], mut pos: usize, end: usize) -> Option<(u32, WbType)> {
+    loop {
+        pos += enc.mbc_enc_len(&str_data[pos..]);
+        if pos >= end { break; }
+        let code = enc.mbc_to_code(&str_data[pos..], end);
+        let t = wb_get_type(code);
+        if !is_wb_ignore_tail(t) {
+            return Some((code, t));
+        }
+    }
+    None
+}
+
+/// Full WB break position check.
+/// Port of onigenc_wb_is_break_position from unicode.c:675.
+pub fn onigenc_wb_is_break_position(
+    enc: OnigEncoding, str_data: &[u8], s: usize, start: usize, end: usize,
+) -> bool {
+    // WB1: sot / Any
+    if s <= start { return true; }
+    // WB2: Any / eot
+    if s >= end { return true; }
+
+    let mut prev = enc.left_adjust_char_head(start, s - 1, str_data);
+    if prev < start { return true; }
+
+    let cfrom = enc.mbc_to_code(&str_data[prev..], end);
+    let cto = enc.mbc_to_code(&str_data[s..], end);
+
+    let mut from = wb_get_type(cfrom);
+    let to = wb_get_type(cto);
+
+    // Short cut: both Any
+    if from == WbType::Any && to == WbType::Any {
+        return true; // WB999
+    }
+
+    // WB3: CR + LF
+    if from == WbType::CR && to == WbType::LF { return false; }
+
+    // WB3a: (Newline|CR|LF) /
+    if matches!(from, WbType::Newline | WbType::CR | WbType::LF) { return true; }
+    // WB3b: / (Newline|CR|LF)
+    if matches!(to, WbType::Newline | WbType::CR | WbType::LF) { return true; }
+
+    // WB3c: ZWJ x {Extended_Pictographic}
+    if from == WbType::ZWJ {
+        if onigenc_unicode_is_code_ctype(cto, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
+            return false;
+        }
+    }
+
+    // WB3d: WSegSpace x WSegSpace
+    if from == WbType::WSegSpace && to == WbType::WSegSpace { return false; }
+
+    // WB4: X (Extend|Format|ZWJ)* -> X
+    if is_wb_ignore_tail(to) { return false; }
+    if is_wb_ignore_tail(from) {
+        // Scan backward past Extend/Format/ZWJ
+        loop {
+            if prev <= start { break; }
+            let pp = enc.left_adjust_char_head(start, prev - 1, str_data);
+            if pp < start { break; }
+            prev = pp;
+            let cf = enc.mbc_to_code(&str_data[prev..], end);
+            from = wb_get_type(cf);
+            if !is_wb_ignore_tail(from) {
+                break;
+            }
+        }
+    }
+
+    // WB5: AHLetter x AHLetter
+    if is_wb_ahletter(from) {
+        if is_wb_ahletter(to) { return false; }
+
+        // WB6: AHLetter x (MidLetter | MidNumLetQ) AHLetter
+        if to == WbType::MidLetter || is_wb_midnumletq(to) {
+            if let Some((_cto2, to2)) = wb_get_next_main_code(enc, str_data, s, end) {
+                if is_wb_ahletter(to2) { return false; }
+            }
+        }
+    }
+
+    // WB7: AHLetter (MidLetter | MidNumLetQ) x AHLetter
+    if from == WbType::MidLetter || is_wb_midnumletq(from) {
+        if is_wb_ahletter(to) {
+            let mut from2 = WbType::Any;
+            let mut pp = prev;
+            loop {
+                if pp <= start { break; }
+                pp = enc.left_adjust_char_head(start, pp - 1, str_data);
+                if pp < start { break; }
+                let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+                from2 = wb_get_type(cf2);
+                if !is_wb_ignore_tail(from2) {
+                    break;
+                }
+            }
+            if is_wb_ahletter(from2) { return false; }
+        }
+    }
+
+    if from == WbType::HebrewLetter {
+        // WB7a: Hebrew_Letter x Single_Quote
+        if to == WbType::SingleQuote { return false; }
+
+        // WB7b: Hebrew_Letter x Double_Quote Hebrew_Letter
+        if to == WbType::DoubleQuote {
+            if let Some((_cto2, to2)) = wb_get_next_main_code(enc, str_data, s, end) {
+                if to2 == WbType::HebrewLetter { return false; }
+            }
+        }
+    }
+
+    // WB7c: Hebrew_Letter Double_Quote x Hebrew_Letter
+    if from == WbType::DoubleQuote {
+        if to == WbType::HebrewLetter {
+            let mut from2 = WbType::Any;
+            let mut pp = prev;
+            loop {
+                if pp <= start { break; }
+                pp = enc.left_adjust_char_head(start, pp - 1, str_data);
+                if pp < start { break; }
+                let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+                from2 = wb_get_type(cf2);
+                if !is_wb_ignore_tail(from2) {
+                    break;
+                }
+            }
+            if from2 == WbType::HebrewLetter { return false; }
+        }
+    }
+
+    if to == WbType::Numeric {
+        // WB8: Numeric x Numeric
+        if from == WbType::Numeric { return false; }
+        // WB9: AHLetter x Numeric
+        if is_wb_ahletter(from) { return false; }
+
+        // WB11: Numeric (MidNum | MidNumLetQ) x Numeric
+        if from == WbType::MidNum || is_wb_midnumletq(from) {
+            let mut from2 = WbType::Any;
+            let mut pp = prev;
+            loop {
+                if pp <= start { break; }
+                pp = enc.left_adjust_char_head(start, pp - 1, str_data);
+                if pp < start { break; }
+                let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+                from2 = wb_get_type(cf2);
+                if !is_wb_ignore_tail(from2) {
+                    break;
+                }
+            }
+            if from2 == WbType::Numeric { return false; }
+        }
+    }
+
+    if from == WbType::Numeric {
+        // WB10: Numeric x AHLetter
+        if is_wb_ahletter(to) { return false; }
+
+        // WB12: Numeric x (MidNum | MidNumLetQ) Numeric
+        if to == WbType::MidNum || is_wb_midnumletq(to) {
+            if let Some((_cto2, to2)) = wb_get_next_main_code(enc, str_data, s, end) {
+                if to2 == WbType::Numeric { return false; }
+            }
+        }
+    }
+
+    // WB13: Katakana x Katakana
+    if from == WbType::Katakana && to == WbType::Katakana { return false; }
+
+    // WB13a: (AHLetter | Numeric | Katakana | ExtendNumLet) x ExtendNumLet
+    if to == WbType::ExtendNumLet {
+        if is_wb_ahletter(from) || from == WbType::Numeric
+            || from == WbType::Katakana || from == WbType::ExtendNumLet {
+            return false;
+        }
+    }
+
+    // WB13b: ExtendNumLet x (AHLetter | Numeric | Katakana)
+    if from == WbType::ExtendNumLet {
+        if is_wb_ahletter(to) || to == WbType::Numeric || to == WbType::Katakana {
+            return false;
+        }
+    }
+
+    // WB15/WB16: RI x RI (count consecutive RI backward)
+    if from == WbType::RegionalIndicator && to == WbType::RegionalIndicator {
+        let mut n: usize = 0;
+        let mut pp = prev;
+        loop {
+            if pp <= start { break; }
+            pp = enc.left_adjust_char_head(start, pp - 1, str_data);
+            if pp < start { break; }
+            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            let from2 = wb_get_type(cf2);
+            if from2 != WbType::RegionalIndicator {
+                break;
+            }
+            n += 1;
+        }
+        if (n % 2) == 0 { return false; }
+    }
+
+    // WB999: Any / Any
+    true
 }

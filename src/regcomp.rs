@@ -1562,7 +1562,7 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
 }
 
 /// Compile an anchor node to bytecode.
-fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> i32 {
+fn compile_anchor_node(an: &AnchorNode, node_status: u32, reg: &mut RegexType, env: &ParseEnv) -> i32 {
     let at = an.anchor_type;
 
     if at == ANCR_PREC_READ {
@@ -1943,7 +1943,7 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
             add_op(reg, OpCode::WordEnd, OperationPayload::WordBoundary { mode });
         }
         ANCR_TEXT_SEGMENT_BOUNDARY | ANCR_NO_TEXT_SEGMENT_BOUNDARY => {
-            let boundary_type = if onig_is_option_on(reg.options, ONIG_OPTION_TEXT_SEGMENT_WORD) {
+            let boundary_type = if (node_status & ND_ST_TEXT_SEGMENT_WORD) != 0 {
                 TextSegmentBoundaryType::Word
             } else {
                 TextSegmentBoundaryType::ExtendedGraphemeCluster
@@ -2329,7 +2329,7 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
         }
 
         NodeInner::Anchor(an) => {
-            compile_anchor_node(an, reg, env)
+            compile_anchor_node(an, node.status, reg, env)
         }
 
         NodeInner::Gimmick(gn) => {
