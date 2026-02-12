@@ -1514,13 +1514,17 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
             OPSIZE_MARK + OPSIZE_STEP_BACK_START + body_len + OPSIZE_CUT_TO_MARK
         } else {
             // Variable-length: SAVE_VAL + UPDATE_VAR + MARK + PUSH + JUMP +
-            //   UPDATE_VAR + FAIL + STEP_BACK_START + STEP_BACK_NEXT +
-            //   body + CHECK_POSITION + CUT_TO_MARK + UPDATE_VAR
-            OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR + OPSIZE_MARK + OPSIZE_PUSH +
+            //   UPDATE_VAR + FAIL + [SAVE_VAL] + STEP_BACK_START + STEP_BACK_NEXT +
+            //   body + [UPDATE_VAR] + CHECK_POSITION + CUT_TO_MARK + UPDATE_VAR
+            let mut len = OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR + OPSIZE_MARK + OPSIZE_PUSH +
                 OPSIZE_JUMP + OPSIZE_UPDATE_VAR + OPSIZE_FAIL +
                 OPSIZE_STEP_BACK_START + OPSIZE_STEP_BACK_NEXT +
                 body_len + OPSIZE_CHECK_POSITION + OPSIZE_CUT_TO_MARK +
-                OPSIZE_UPDATE_VAR
+                OPSIZE_UPDATE_VAR;
+            if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
+                len += OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR;
+            }
+            len
         }
     } else if at == ANCR_LOOK_BEHIND_NOT {
         // (?<!...) negative lookbehind
@@ -1538,14 +1542,18 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
                 OPSIZE_POP_TO_MARK + OPSIZE_FAIL + OPSIZE_POP
         } else {
             // Variable-length: SAVE_VAL + UPDATE_VAR + MARK + PUSH +
-            //   STEP_BACK_START + STEP_BACK_NEXT + body + CHECK_POSITION +
-            //   POP_TO_MARK + UPDATE_VAR + POP + FAIL +
+            //   [SAVE_VAL] + STEP_BACK_START + STEP_BACK_NEXT + body + [UPDATE_VAR] +
+            //   CHECK_POSITION + POP_TO_MARK + UPDATE_VAR + POP + FAIL +
             //   UPDATE_VAR + POP + POP
-            OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR + OPSIZE_MARK + OPSIZE_PUSH +
+            let mut len = OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR + OPSIZE_MARK + OPSIZE_PUSH +
                 OPSIZE_STEP_BACK_START + OPSIZE_STEP_BACK_NEXT +
                 body_len + OPSIZE_CHECK_POSITION +
                 OPSIZE_POP_TO_MARK + OPSIZE_UPDATE_VAR + OPSIZE_POP + OPSIZE_FAIL +
-                OPSIZE_UPDATE_VAR + OPSIZE_POP + OPSIZE_POP
+                OPSIZE_UPDATE_VAR + OPSIZE_POP + OPSIZE_POP;
+            if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
+                len += OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR;
+            }
+            len
         }
     } else {
         // Simple anchors: ^, $, \b, \B, \A, \z, etc.
@@ -1685,6 +1693,19 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
             // FAIL
             add_op(reg, OpCode::Fail, OperationPayload::None);
 
+            // Absent stopper: save right-range before step-back
+            let mid3 = if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
+                let mid3 = reg.num_call;
+                reg.num_call += 1;
+                add_op(reg, OpCode::SaveVal, OperationPayload::SaveVal {
+                    save_type: SaveType::RightRange,
+                    id: mid3,
+                });
+                mid3
+            } else {
+                0
+            };
+
             // STEP_BACK_START(initial=min, remaining=max-min, addr=2)
             let diff = if an.char_max_len != INFINITE_LEN {
                 (an.char_max_len - an.char_min_len) as i32
@@ -1705,6 +1726,15 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
                 if r != 0 {
                     return r;
                 }
+            }
+
+            // Absent stopper: restore right-range after body
+            if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
+                add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+                    var_type: UpdateVarType::RightRangeFromStack,
+                    id: mid3,
+                    clear: false,
+                });
             }
 
             // CHECK_POSITION(CurrentRightRange)
@@ -1788,12 +1818,28 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
                 save_pos: false,
             });
             // PUSH(addr → success path past body-matched-fail section)
-            // From PUSH: skip STEP_BACK_START + STEP_BACK_NEXT + body + CHECK_POSITION +
-            //   POP_TO_MARK + UPDATE_VAR + POP + FAIL
-            let push_addr = SIZE_INC + OPSIZE_STEP_BACK_START + OPSIZE_STEP_BACK_NEXT +
+            // From PUSH: skip [SAVE_VAL] + STEP_BACK_START + STEP_BACK_NEXT + body +
+            //   [UPDATE_VAR] + CHECK_POSITION + POP_TO_MARK + UPDATE_VAR + POP + FAIL
+            let mut push_addr = SIZE_INC + OPSIZE_STEP_BACK_START + OPSIZE_STEP_BACK_NEXT +
                 body_len + OPSIZE_CHECK_POSITION +
                 OPSIZE_POP_TO_MARK + OPSIZE_UPDATE_VAR + OPSIZE_POP + OPSIZE_FAIL;
+            if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
+                push_addr += OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR;
+            }
             add_op(reg, OpCode::Push, OperationPayload::Push { addr: push_addr });
+
+            // Absent stopper: save right-range before step-back
+            let mid3 = if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
+                let mid3 = reg.num_call;
+                reg.num_call += 1;
+                add_op(reg, OpCode::SaveVal, OperationPayload::SaveVal {
+                    save_type: SaveType::RightRange,
+                    id: mid3,
+                });
+                mid3
+            } else {
+                0
+            };
 
             // STEP_BACK_START(initial=min, remaining=max-min, addr=2)
             let diff = if an.char_max_len != INFINITE_LEN {
@@ -1815,6 +1861,15 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
                 if r != 0 {
                     return r;
                 }
+            }
+
+            // Absent stopper: restore right-range after body
+            if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
+                add_op(reg, OpCode::UpdateVar, OperationPayload::UpdateVar {
+                    var_type: UpdateVarType::RightRangeFromStack,
+                    id: mid3,
+                    clear: false,
+                });
             }
 
             // CHECK_POSITION(CurrentRightRange) — body matched here, verify position
@@ -1887,16 +1942,16 @@ fn compile_anchor_node(an: &AnchorNode, reg: &mut RegexType, env: &ParseEnv) -> 
             let mode = if an.ascii_mode { 1 } else { 0 };
             add_op(reg, OpCode::WordEnd, OperationPayload::WordBoundary { mode });
         }
-        ANCR_TEXT_SEGMENT_BOUNDARY => {
+        ANCR_TEXT_SEGMENT_BOUNDARY | ANCR_NO_TEXT_SEGMENT_BOUNDARY => {
+            let boundary_type = if onig_is_option_on(reg.options, ONIG_OPTION_TEXT_SEGMENT_WORD) {
+                TextSegmentBoundaryType::Word
+            } else {
+                TextSegmentBoundaryType::ExtendedGraphemeCluster
+            };
+            let not = at == ANCR_NO_TEXT_SEGMENT_BOUNDARY;
             add_op(reg, OpCode::TextSegmentBoundary, OperationPayload::TextSegmentBoundary {
-                boundary_type: TextSegmentBoundaryType::ExtendedGraphemeCluster,
-                not: false,
-            });
-        }
-        ANCR_NO_TEXT_SEGMENT_BOUNDARY => {
-            add_op(reg, OpCode::TextSegmentBoundary, OperationPayload::TextSegmentBoundary {
-                boundary_type: TextSegmentBoundaryType::ExtendedGraphemeCluster,
-                not: true,
+                boundary_type,
+                not,
             });
         }
         _ => {
@@ -2528,6 +2583,19 @@ fn quantifiers_memory_node_info(node: &Node) -> BodyEmptyType {
     r
 }
 
+/// Get min and max byte_len across case-fold items.
+/// Mirrors C's get_min_max_byte_len_case_fold_items().
+fn get_min_max_byte_len_case_fold_items(n: i32, items: &[OnigCaseFoldCodeItem]) -> (OnigLen, OnigLen) {
+    let mut min_len: OnigLen = INFINITE_LEN;
+    let mut max_len: OnigLen = 0;
+    for i in 0..(n as usize) {
+        let len = items[i].byte_len as OnigLen;
+        if len < min_len { min_len = len; }
+        if len > max_len { max_len = len; }
+    }
+    (min_len, max_len)
+}
+
 /// Expand a case-insensitive string node into CClass/List nodes.
 /// Mirrors C's unravel_case_fold_string() from regcomp.c.
 ///
@@ -2535,8 +2603,9 @@ fn quantifiers_memory_node_info(node: &Node) -> BodyEmptyType {
 /// - If it has case-fold alternatives (e.g. 'c' -> 'C'), create a CClass node [cC]
 /// - Otherwise, accumulate into a plain string node
 /// - Combine all resulting nodes into a List
-fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, _state: i32) -> i32 {
+fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, state: i32) -> i32 {
     let enc = reg.enc;
+    let in_look_behind = (state & IN_LOOK_BEHIND) != 0;
 
     // Extract string bytes and clear ignorecase flag
     let s_bytes = if let NodeInner::String(ref sn) = node.inner {
@@ -2553,8 +2622,8 @@ fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, _state: i32) -
 
     let mut pos = 0;
     while pos < s_bytes.len() {
-        let char_len = enc.mbc_enc_len(&s_bytes[pos..]);
-        let n = enc.get_case_fold_codes_by_str(
+        let one_len = enc.mbc_enc_len(&s_bytes[pos..]);
+        let mut n = enc.get_case_fold_codes_by_str(
             reg.case_fold_flag,
             &s_bytes[pos..],
             s_bytes.len(),
@@ -2568,57 +2637,100 @@ fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, _state: i32) -
                 pending.clear();
             }
 
-            // Check if all items are single-codepoint folds
-            let all_single = (0..n as usize).all(|i| items[i].code_len == 1);
-
-            if all_single {
-                // All single-char: create CClass with original + alternatives
-                let mut cc_node = node_new_cclass();
-                let cc = cc_node.as_cclass_mut().unwrap();
-                let code = enc.mbc_to_code(&s_bytes[pos..], s_bytes.len() - pos);
-                crate::regparse::add_code_into_cc(cc, code, enc);
-                for i in 0..(n as usize) {
-                    crate::regparse::add_code_into_cc(cc, items[i].code[0], enc);
+            if in_look_behind {
+                // In lookbehind: only allow same-byte-length single-codepoint folds
+                let q = pos + one_len;
+                // If first item's byte_len differs from one_len, re-query with shorter end
+                if items[0].byte_len != one_len as i32 {
+                    n = enc.get_case_fold_codes_by_str(
+                        reg.case_fold_flag,
+                        &s_bytes[pos..q],
+                        q - pos,
+                        &mut items,
+                    );
                 }
-                nodes.push(cc_node);
-                pos += char_len;
+
+                // Check if any same-byte-length single-code fold exists
+                let found = (0..n as usize).any(|i| {
+                    items[i].byte_len == one_len as i32 && items[i].code_len == 1
+                });
+
+                if !found {
+                    // No valid fold for lookbehind — keep as plain string
+                    pending.extend_from_slice(&s_bytes[pos..q]);
+                    pos = q;
+                } else {
+                    // Build CClass with original + same-length folds
+                    let mut cc_node = node_new_cclass();
+                    let cc = cc_node.as_cclass_mut().unwrap();
+                    let code = enc.mbc_to_code(&s_bytes[pos..], s_bytes.len() - pos);
+                    crate::regparse::add_code_into_cc(cc, code, enc);
+                    for i in 0..(n as usize) {
+                        if items[i].byte_len == one_len as i32 && items[i].code_len == 1 {
+                            crate::regparse::add_code_into_cc(cc, items[i].code[0], enc);
+                        }
+                    }
+                    nodes.push(cc_node);
+                    pos = q;
+                }
             } else {
-                // Multi-char folds present: create Alt with string alternatives
-                // Determine how many bytes all items cover (should be uniform)
-                let max_byte_len = (0..n as usize).map(|i| items[i].byte_len).max().unwrap_or(char_len as i32) as usize;
+                // Normal (non-lookbehind) case fold
 
-                // First alternative: original string bytes
-                let orig_str = &s_bytes[pos..pos + max_byte_len];
-                let mut alt_node: Box<Node> = node_new_alt(
-                    node_new_str(orig_str),
-                    None,
-                );
-                let mut curr = &mut alt_node;
+                // Check if all items are single-codepoint folds
+                let all_single = (0..n as usize).all(|i| items[i].code_len == 1);
 
-                for i in 0..(n as usize) {
-                    // Convert codepoints to string bytes
-                    let item = &items[i];
-                    let mut buf = Vec::new();
-                    let mut tmp = [0u8; 6]; // max UTF-8 bytes per codepoint
-                    for ci in 0..(item.code_len as usize) {
-                        let blen = enc.code_to_mbc(item.code[ci], &mut tmp);
-                        buf.extend_from_slice(&tmp[..blen as usize]);
+                if all_single {
+                    // All single-char: create CClass with original + alternatives
+                    let mut cc_node = node_new_cclass();
+                    let cc = cc_node.as_cclass_mut().unwrap();
+                    let code = enc.mbc_to_code(&s_bytes[pos..], s_bytes.len() - pos);
+                    crate::regparse::add_code_into_cc(cc, code, enc);
+                    for i in 0..(n as usize) {
+                        crate::regparse::add_code_into_cc(cc, items[i].code[0], enc);
                     }
-                    let new_alt = node_new_alt(node_new_str(&buf), None);
-                    // Append to chain
-                    if let NodeInner::Alt(ref mut ca) = curr.inner {
-                        ca.cdr = Some(new_alt);
-                        curr = ca.cdr.as_mut().unwrap();
+                    nodes.push(cc_node);
+                    pos += one_len;
+                } else {
+                    // Multi-char folds present: create Alt with string alternatives
+                    let (min_byte_len, max_byte_len_val) = get_min_max_byte_len_case_fold_items(n, &items);
+                    if min_byte_len != max_byte_len_val {
+                        return ONIGERR_PARSER_BUG;
                     }
+                    let max_byte_len = max_byte_len_val as usize;
+
+                    // First alternative: original string bytes
+                    let orig_str = &s_bytes[pos..pos + max_byte_len];
+                    let mut alt_node: Box<Node> = node_new_alt(
+                        node_new_str(orig_str),
+                        None,
+                    );
+                    let mut curr = &mut alt_node;
+
+                    for i in 0..(n as usize) {
+                        // Convert codepoints to string bytes
+                        let item = &items[i];
+                        let mut buf = Vec::new();
+                        let mut tmp = [0u8; 6]; // max UTF-8 bytes per codepoint
+                        for ci in 0..(item.code_len as usize) {
+                            let blen = enc.code_to_mbc(item.code[ci], &mut tmp);
+                            buf.extend_from_slice(&tmp[..blen as usize]);
+                        }
+                        let new_alt = node_new_alt(node_new_str(&buf), None);
+                        // Append to chain
+                        if let NodeInner::Alt(ref mut ca) = curr.inner {
+                            ca.cdr = Some(new_alt);
+                            curr = ca.cdr.as_mut().unwrap();
+                        }
+                    }
+
+                    nodes.push(alt_node);
+                    pos += max_byte_len;
                 }
-
-                nodes.push(alt_node);
-                pos += max_byte_len;
             }
         } else {
             // No case fold: accumulate into pending string
-            pending.extend_from_slice(&s_bytes[pos..pos + char_len]);
-            pos += char_len;
+            pending.extend_from_slice(&s_bytes[pos..pos + one_len]);
+            pos += one_len;
         }
     }
 
@@ -2897,64 +3009,178 @@ fn is_alt_all_branches_fixed(node: &Node, enc: OnigEncoding) -> bool {
 /// Check if a node tree contains absent stoppers (ND_ST_ABSENT_WITH_SIDE_EFFECTS).
 /// Returns true if invalid nodes are found inside lookbehind.
 /// C: check_node_in_look_behind (simplified — we only need the absent stopper check).
-fn check_node_in_look_behind(node: &Node) -> bool {
+// Allowed node types in lookbehind (C: ALLOWED_TYPE_IN_LB)
+const ALLOWED_TYPE_IN_LB: u32 = ND_BIT_LIST | ND_BIT_ALT | ND_BIT_STRING | ND_BIT_CCLASS
+    | ND_BIT_CTYPE | ND_BIT_ANCHOR | ND_BIT_BAG | ND_BIT_QUANT
+    | ND_BIT_CALL | ND_BIT_BACKREF | ND_BIT_GIMMICK;
+
+// Allowed bag types: positive lookbehind allows Memory; negative does not
+const ALLOWED_BAG_IN_LB: u32 = (1 << BagType::Memory as u32) | (1 << BagType::Option as u32)
+    | (1 << BagType::StopBacktrack as u32) | (1 << BagType::IfElse as u32);
+const ALLOWED_BAG_IN_LB_NOT: u32 = (1 << BagType::Option as u32)
+    | (1 << BagType::StopBacktrack as u32) | (1 << BagType::IfElse as u32);
+
+// Allowed anchor types in positive/negative lookbehind
+const ALLOWED_ANCHOR_IN_LB: i32 = ANCR_LOOK_BEHIND | ANCR_BEGIN_LINE | ANCR_END_LINE
+    | ANCR_BEGIN_BUF | ANCR_BEGIN_POSITION | ANCR_WORD_BOUNDARY | ANCR_NO_WORD_BOUNDARY
+    | ANCR_WORD_BEGIN | ANCR_WORD_END
+    | ANCR_TEXT_SEGMENT_BOUNDARY | ANCR_NO_TEXT_SEGMENT_BOUNDARY;
+
+const ALLOWED_ANCHOR_IN_LB_NOT: i32 = ANCR_LOOK_BEHIND | ANCR_LOOK_BEHIND_NOT
+    | ANCR_BEGIN_LINE | ANCR_END_LINE | ANCR_BEGIN_BUF | ANCR_BEGIN_POSITION
+    | ANCR_WORD_BOUNDARY | ANCR_NO_WORD_BOUNDARY | ANCR_WORD_BEGIN | ANCR_WORD_END
+    | ANCR_TEXT_SEGMENT_BOUNDARY | ANCR_NO_TEXT_SEGMENT_BOUNDARY;
+
+/// Check if node tree is valid within a lookbehind call target.
+/// Returns 0 = ok, 1 = forbidden.
+fn check_called_node_in_look_behind(node: &Node, not: bool) -> i32 {
     match &node.inner {
         NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            if check_node_in_look_behind(&cons.car) {
-                return true;
+            let mut r = check_called_node_in_look_behind(&cons.car, not);
+            if r == 0 {
+                if let Some(ref cdr) = cons.cdr {
+                    r = check_called_node_in_look_behind(cdr, not);
+                }
             }
-            if let Some(ref cdr) = cons.cdr {
-                return check_node_in_look_behind(cdr);
-            }
-            false
+            r
         }
         NodeInner::Quant(qn) => {
             if let Some(ref body) = qn.body {
-                check_node_in_look_behind(body)
+                check_called_node_in_look_behind(body, not)
             } else {
-                false
+                0
             }
         }
         NodeInner::Bag(en) => {
-            if let Some(ref body) = en.body {
-                if check_node_in_look_behind(body) {
-                    return true;
+            if en.bag_type == BagType::Memory {
+                if node.has_status(ND_ST_MARK1) {
+                    return 0;
                 }
-            }
-            if let BagData::IfElse { ref then_node, ref else_node } = en.bag_data {
-                if let Some(ref tn) = then_node {
-                    if check_node_in_look_behind(tn) {
-                        return true;
+                // Note: can't mutate here to add MARK1, but recursion cycles are
+                // already broken by tune_call. Just check the body.
+                if let Some(ref body) = en.body {
+                    return check_called_node_in_look_behind(body, not);
+                }
+                0
+            } else {
+                let mut r = 0;
+                if let Some(ref body) = en.body {
+                    r = check_called_node_in_look_behind(body, not);
+                }
+                if r == 0 {
+                    if let BagData::IfElse { ref then_node, ref else_node } = en.bag_data {
+                        if let Some(ref tn) = then_node {
+                            r = check_called_node_in_look_behind(tn, not);
+                            if r != 0 { return r; }
+                        }
+                        if let Some(ref en) = else_node {
+                            r = check_called_node_in_look_behind(en, not);
+                        }
                     }
                 }
-                if let Some(ref en) = else_node {
-                    if check_node_in_look_behind(en) {
-                        return true;
-                    }
-                }
+                r
             }
-            false
         }
         NodeInner::Anchor(an) => {
             if let Some(ref body) = an.body {
-                check_node_in_look_behind(body)
+                check_called_node_in_look_behind(body, not)
             } else {
-                false
-            }
-        }
-        NodeInner::Call(ref cn) => {
-            // Follow the call target to check for forbidden patterns in lookbehind
-            if !cn.target_node.is_null() {
-                let target = unsafe { &*cn.target_node };
-                check_node_in_look_behind(target)
-            } else {
-                false
+                0
             }
         }
         NodeInner::Gimmick(_) => {
-            node.has_status(ND_ST_ABSENT_WITH_SIDE_EFFECTS)
+            if node.has_status(ND_ST_ABSENT_WITH_SIDE_EFFECTS) { 1 } else { 0 }
         }
-        _ => false,
+        _ => 0,
+    }
+}
+
+/// Full validation of nodes in lookbehind. Returns 0 = ok, 1 = forbidden.
+/// `not`: true for negative lookbehind.
+/// `used`: set to true if the body contains backrefs, called groups, or SAVE_KEEP.
+fn check_node_in_look_behind(node: &Node, not: bool, used: &mut bool) -> i32 {
+    let type_bit = node.node_type_bit();
+    if (type_bit & ALLOWED_TYPE_IN_LB) == 0 {
+        return 1;
+    }
+
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            let mut r = check_node_in_look_behind(&cons.car, not, used);
+            if r == 0 {
+                if let Some(ref cdr) = cons.cdr {
+                    r = check_node_in_look_behind(cdr, not, used);
+                }
+            }
+            r
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(ref body) = qn.body {
+                check_node_in_look_behind(body, not, used)
+            } else {
+                0
+            }
+        }
+        NodeInner::Bag(en) => {
+            let bag_mask = if not { ALLOWED_BAG_IN_LB_NOT } else { ALLOWED_BAG_IN_LB };
+            if ((1 << en.bag_type as u32) & bag_mask) == 0 {
+                return 1;
+            }
+
+            let mut r = 0;
+            if let Some(ref body) = en.body {
+                r = check_node_in_look_behind(body, not, used);
+                if r != 0 { return r; }
+            }
+
+            if en.bag_type == BagType::Memory {
+                if node.has_status(ND_ST_BACKREF) || node.has_status(ND_ST_CALLED)
+                    || node.has_status(ND_ST_REFERENCED) {
+                    *used = true;
+                }
+            } else if let BagData::IfElse { ref then_node, ref else_node } = en.bag_data {
+                if let Some(ref tn) = then_node {
+                    r = check_node_in_look_behind(tn, not, used);
+                    if r != 0 { return r; }
+                }
+                if let Some(ref en) = else_node {
+                    r = check_node_in_look_behind(en, not, used);
+                }
+            }
+            r
+        }
+        NodeInner::Anchor(an) => {
+            let anchor_mask = if not { ALLOWED_ANCHOR_IN_LB_NOT } else { ALLOWED_ANCHOR_IN_LB };
+            if (an.anchor_type & anchor_mask) == 0 {
+                return 1;
+            }
+            if let Some(ref body) = an.body {
+                check_node_in_look_behind(body, not, used)
+            } else {
+                0
+            }
+        }
+        NodeInner::Call(ref cn) => {
+            if node.has_status(ND_ST_RECURSION) {
+                *used = true;
+                0
+            } else if !cn.target_node.is_null() {
+                let target = unsafe { &*cn.target_node };
+                check_called_node_in_look_behind(target, not)
+            } else {
+                0
+            }
+        }
+        NodeInner::Gimmick(ref gn) => {
+            if node.has_status(ND_ST_ABSENT_WITH_SIDE_EFFECTS) {
+                return 1;
+            }
+            if gn.gimmick_type == GimmickType::Save && gn.detail_type == SaveType::Keep as i32 {
+                *used = true;
+            }
+            0
+        }
+        _ => 0,
     }
 }
 
@@ -3046,16 +3272,18 @@ fn tune_look_behind(node: &mut Node, enc: OnigEncoding, syntax: &OnigSyntaxType)
         return 0;
     }
 
-    // Check for absent stoppers inside lookbehind (C: check_node_in_look_behind)
+    // Full validation of nodes inside lookbehind (C: check_node_in_look_behind)
+    let mut lb_used = false;
     {
+        let is_not = anchor_type == ANCR_LOOK_BEHIND_NOT;
         let body = if let NodeInner::Anchor(ref an) = node.inner {
             an.body.as_ref().unwrap()
         } else {
             return 0;
         };
-        if check_node_in_look_behind(body) {
-            return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
-        }
+        let r = check_node_in_look_behind(body, is_not, &mut lb_used);
+        if r < 0 { return r; }
+        if r > 0 { return ONIGERR_INVALID_LOOK_BEHIND_PATTERN; }
     }
 
     let body_char_len = {
@@ -4636,8 +4864,15 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
                     r
                 }
                 BagType::Memory => {
-                    if (state & (IN_ALT | IN_NOT | IN_VAR_REPEAT | IN_MULTI_ENTRY)) != 0 {
-                        // Backtrack mem needed for captures in alternation/variable repeat
+                    // Propagate called_state into state (C: state |= en->m.called_state)
+                    let mut state = state;
+                    if let BagData::Memory { called_state, .. } = bn.bag_data {
+                        state |= called_state;
+                    }
+                    if (state & (IN_ALT | IN_NOT | IN_VAR_REPEAT | IN_MULTI_ENTRY)) != 0
+                        || (node.status & ND_ST_RECURSION) != 0
+                    {
+                        // Backtrack mem needed for captures in alternation/variable repeat/recursion
                         if let BagData::Memory { regnum, .. } = bn.bag_data {
                             mem_status_on(&mut env.backtrack_mem, regnum as usize);
                         }
