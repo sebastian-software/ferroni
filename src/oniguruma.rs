@@ -347,11 +347,34 @@ pub fn onig_is_pattern_error(ecode: i32) -> bool {
 pub const ONIG_MAX_CAPTURE_HISTORY_GROUP: usize = 31;
 
 // === Capture Tree Node ===
+#[derive(Clone)]
 pub struct OnigCaptureTreeNode {
     pub group: i32,
     pub beg: i32,
     pub end: i32,
     pub childs: Vec<Box<OnigCaptureTreeNode>>,
+}
+
+impl OnigCaptureTreeNode {
+    pub fn new() -> Self {
+        OnigCaptureTreeNode {
+            group: -1,
+            beg: ONIG_REGION_NOTPOS,
+            end: ONIG_REGION_NOTPOS,
+            childs: Vec::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.childs.clear();
+        self.group = -1;
+        self.beg = ONIG_REGION_NOTPOS;
+        self.end = ONIG_REGION_NOTPOS;
+    }
+
+    pub fn add_child(&mut self, child: Box<OnigCaptureTreeNode>) {
+        self.childs.push(child);
+    }
 }
 
 // === OnigRegion (match result) ===
@@ -396,6 +419,28 @@ impl OnigRegion {
         self.end.resize(n, ONIG_REGION_NOTPOS);
         self.allocated = n as i32;
         self.num_regs = n as i32;
+    }
+
+    pub fn set(&mut self, at: i32, beg: i32, end: i32) -> i32 {
+        if at < 0 {
+            return ONIGERR_INVALID_ARGUMENT;
+        }
+        if at >= self.allocated {
+            self.resize(at + 1);
+        }
+        self.beg[at as usize] = beg;
+        self.end[at as usize] = end;
+        ONIG_NORMAL
+    }
+
+    pub fn copy_from(&mut self, from: &OnigRegion) {
+        self.resize(from.num_regs);
+        for i in 0..from.num_regs as usize {
+            self.beg[i] = from.beg[i];
+            self.end[i] = from.end[i];
+        }
+        self.num_regs = from.num_regs;
+        self.history_root = from.history_root.clone();
     }
 }
 
