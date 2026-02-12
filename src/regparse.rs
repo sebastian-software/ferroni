@@ -2498,6 +2498,20 @@ fn fetch_token(
                 }
                 tok.token_type = TokenType::TextSegment;
             }
+            'y' => {
+                if !is_syntax_op2(syn, ONIG_SYN_OP2_ESC_X_Y_TEXT_SEGMENT) {
+                    return tok.token_type as i32;
+                }
+                tok.token_type = TokenType::Anchor;
+                tok.anchor = ANCR_TEXT_SEGMENT_BOUNDARY;
+            }
+            'Y' => {
+                if !is_syntax_op2(syn, ONIG_SYN_OP2_ESC_X_Y_TEXT_SEGMENT) {
+                    return tok.token_type as i32;
+                }
+                tok.token_type = TokenType::Anchor;
+                tok.anchor = ANCR_NO_TEXT_SEGMENT_BOUNDARY;
+            }
             'A' => {
                 if !is_syntax_op(syn, ONIG_SYN_OP_ESC_AZ_BUF_ANCHOR) {
                     return tok.token_type as i32;
@@ -5027,6 +5041,34 @@ fn prs_bag(
                 }
                 return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
             }
+            '@' => {
+                if USE_CAPTURE_HISTORY && is_syntax_op2(env.syntax, ONIG_SYN_OP2_ATMARK_CAPTURE_HISTORY) {
+                    // (?@<name>...) or (?@'name'...) — named group with capture history
+                    if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) && !p_end(*p, end) {
+                        let c2 = ppeek(*p, pattern, end, enc);
+                        if c2 == '<' as u32 || c2 == '\'' as u32 {
+                            pinc(p, pattern, enc);
+                            return prs_named_group(tok, c2, term, p, end, pattern, env, true);
+                        }
+                    }
+                    // (?@...) — unnamed capture with history
+                    let num = env.add_mem_entry()?;
+                    if num >= MEM_STATUS_BITS_NUM as i32 {
+                        return Err(ONIGERR_GROUP_NUMBER_OVER_FOR_CAPTURE_HISTORY);
+                    }
+                    let mut np = node_new_bag_memory(num);
+                    mem_status_on(&mut env.cap_history, num as usize);
+                    let r = fetch_token(tok, p, end, pattern, env);
+                    if r < 0 {
+                        return Err(r);
+                    }
+                    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                    np.set_body(Some(target));
+                    env.set_mem_node(num, &mut *np as *mut Node);
+                    return Ok((np, 0));
+                }
+                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+            }
             '(' => {
                 // Conditional: (?(condition)then|else)
                 return prs_conditional(tok, term, p, end, pattern, env);
@@ -5367,6 +5409,55 @@ fn prs_options(
                 }
                 onig_option_on(&mut option, ONIG_OPTION_FIND_LONGEST);
                 whole_options |= ONIG_OPTION_FIND_LONGEST;
+            }
+            'y' => {
+                // (?y{g}) or (?y{w}) — text segment boundary mode
+                if !is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if p_end(*p, end) {
+                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                }
+                if ppeek(*p, pattern, end, enc) != '{' as u32 {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                pfetch_prev = *p;
+                pfetch(p, &mut pfetch_prev, pattern, end, enc); // skip '{'
+                if p_end(*p, end) {
+                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                }
+                pfetch_prev = *p;
+                let mode_char = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+                match mode_char as u8 as char {
+                    'g' => {
+                        if !onigenc_is_unicode_encoding(enc) {
+                            return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                        }
+                        onig_option_on(&mut option, ONIG_OPTION_TEXT_SEGMENT_EXTENDED_GRAPHEME_CLUSTER);
+                        onig_option_off(&mut option, ONIG_OPTION_TEXT_SEGMENT_WORD);
+                    }
+                    'w' => {
+                        if !onigenc_is_unicode_encoding(enc) {
+                            return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                        }
+                        onig_option_on(&mut option, ONIG_OPTION_TEXT_SEGMENT_WORD);
+                        onig_option_off(&mut option, ONIG_OPTION_TEXT_SEGMENT_EXTENDED_GRAPHEME_CLUSTER);
+                    }
+                    _ => {
+                        return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                    }
+                }
+                if p_end(*p, end) {
+                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                }
+                pfetch_prev = *p;
+                let closing = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+                if closing != '}' as u32 {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
             }
             ')' => {
                 // Option-only group (?i) or (?Ii)
