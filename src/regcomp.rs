@@ -16,6 +16,12 @@ use crate::regenc::*;
 use crate::regint::*;
 use crate::regparse_types::*;
 
+/// Get encoded character length from a byte slice (for optimization functions).
+fn enclen(enc: OnigEncoding, p: &[u8], _offset: usize) -> usize {
+    if p.is_empty() { return 1; }
+    enc.mbc_enc_len(p)
+}
+
 // ============================================================================
 // Constants (matching C OPSIZE_* and SIZE_INC)
 // ============================================================================
@@ -90,7 +96,7 @@ fn len_multiply_cmp(a: OnigLen, b: i32, limit: OnigLen) -> bool {
 }
 
 /// Add two lengths safely, capping at INFINITE_LEN.
-fn distance_add(d1: OnigLen, d2: OnigLen) -> OnigLen {
+pub fn distance_add(d1: OnigLen, d2: OnigLen) -> OnigLen {
     if d1 == INFINITE_LEN || d2 == INFINITE_LEN {
         INFINITE_LEN
     } else if d1 <= INFINITE_LEN - d2 {
@@ -431,11 +437,11 @@ fn compile_quant_body_with_empty_check(
     qn_empty_status_mem: u32,
 ) -> i32 {
     let is_empty = emptiness != BodyEmptyType::NotEmpty;
+    let saved_mem = reg.num_empty_check;
 
     if is_empty {
-        let mem = reg.num_empty_check;
         reg.num_empty_check += 1;
-        add_op(reg, OpCode::EmptyCheckStart, OperationPayload::EmptyCheckStart { mem });
+        add_op(reg, OpCode::EmptyCheckStart, OperationPayload::EmptyCheckStart { mem: saved_mem });
     }
 
     let r = compile_tree(node, reg, env);
@@ -444,7 +450,7 @@ fn compile_quant_body_with_empty_check(
     }
 
     if is_empty {
-        let mem = reg.num_empty_check - 1;
+        let mem = saved_mem;
         let empty_status_mem = if emptiness == BodyEmptyType::MayBeEmptyMem
             || emptiness == BodyEmptyType::MayBeEmptyRec {
             if qn_empty_status_mem != 0 {
@@ -1506,8 +1512,11 @@ fn compile_length_gimmick_node(gn: &GimmickNode) -> i32 {
         GimmickType::Save => OPSIZE_SAVE_VAL,
         GimmickType::UpdateVar => OPSIZE_UPDATE_VAR,
         GimmickType::Callout => {
-            // TODO: callout compilation
-            SIZE_INC
+            if gn.detail_type == OnigCalloutOf::Name as i32 {
+                SIZE_INC // CalloutName
+            } else {
+                SIZE_INC // CalloutContents
+            }
         }
     }
 }
@@ -1545,7 +1554,16 @@ fn compile_gimmick_node(gn: &GimmickNode, reg: &mut RegexType, env: &ParseEnv) -
             });
         }
         GimmickType::Callout => {
-            // TODO: callout compilation
+            if gn.detail_type == OnigCalloutOf::Name as i32 {
+                add_op(reg, OpCode::CalloutName, OperationPayload::CalloutName {
+                    num: gn.num,
+                    id: gn.id,
+                });
+            } else {
+                add_op(reg, OpCode::CalloutContents, OperationPayload::CalloutContents {
+                    num: gn.num,
+                });
+            }
         }
     }
     0
@@ -4192,6 +4210,849 @@ pub fn compile_from_tree(
     0
 }
 
+// ============================================================================
+// Optimization subsystem — mirrors C's regcomp.c lines 5881-7064
+// ============================================================================
+
+const MAX_ND_OPT_INFO_REF_COUNT: i32 = 5;
+
+fn map_position_value(enc: OnigEncoding, i: usize) -> i32 {
+    static VALS: [i16; 128] = [
+         5,  1,  1,  1,  1,  1,  1,  1,  1, 10, 10,  1,  1, 10,  1,  1,
+         1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+        12,  4,  7,  4,  4,  4,  4,  4,  4,  5,  5,  5,  5,  5,  5,  5,
+         6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  5,  5,  5,  5,  5,  5,
+         5,  6,  6,  6,  6,  7,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,
+         6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  5,  6,  5,  5,  5,
+         5,  6,  6,  6,  6,  7,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,
+         6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  5,  5,  5,  5,  1,
+    ];
+    if i < VALS.len() {
+        if i == 0 && enc.min_enc_len() > 1 {
+            20
+        } else {
+            VALS[i] as i32
+        }
+    } else {
+        4
+    }
+}
+
+fn distance_value(mm: &MinMaxLen) -> i32 {
+    static DIST_VALS: [i16; 100] = [
+        1000, 500, 333, 250, 200, 167, 143, 125, 111, 100,
+          91,  83,  77,  71,  67,  63,  59,  56,  53,  50,
+          48,  45,  43,  42,  40,  38,  37,  36,  34,  33,
+          32,  31,  30,  29,  29,  28,  27,  26,  26,  25,
+          24,  24,  23,  23,  22,  22,  21,  21,  20,  20,
+          20,  19,  19,  19,  18,  18,  18,  17,  17,  17,
+          16,  16,  16,  16,  15,  15,  15,  15,  14,  14,
+          14,  14,  14,  14,  13,  13,  13,  13,  13,  13,
+          12,  12,  12,  12,  12,  12,  11,  11,  11,  11,
+          11,  11,  11,  11,  11,  10,  10,  10,  10,  10,
+    ];
+    if mm.max == INFINITE_LEN { return 0; }
+    let d = (mm.max - mm.min) as usize;
+    if d < DIST_VALS.len() {
+        DIST_VALS[d] as i32
+    } else {
+        1
+    }
+}
+
+fn comp_distance_value(d1: &MinMaxLen, d2: &MinMaxLen, v1: i32, v2: i32) -> i32 {
+    if v2 <= 0 { return -1; }
+    if v1 <= 0 { return 1; }
+    let v1 = v1 * distance_value(d1);
+    let v2 = v2 * distance_value(d2);
+    if v2 > v1 { return 1; }
+    if v2 < v1 { return -1; }
+    if d2.min < d1.min { return 1; }
+    if d2.min > d1.min { return -1; }
+    0
+}
+
+fn concat_opt_anc_info(to: &mut OptAnc, left: &OptAnc, right: &OptAnc,
+                       left_len: OnigLen, right_len: OnigLen) {
+    to.clear();
+    to.left = left.left;
+    if left_len == 0 {
+        to.left |= right.left;
+    }
+    to.right = right.right;
+    if right_len == 0 {
+        to.right |= left.right;
+    } else {
+        to.right |= left.right & ANCR_PREC_READ_NOT;
+    }
+}
+
+fn is_left_anchor(a: i32) -> bool {
+    !(a == ANCR_END_BUF || a == ANCR_SEMI_END_BUF ||
+      a == ANCR_END_LINE || a == ANCR_PREC_READ || a == ANCR_PREC_READ_NOT)
+}
+
+fn is_set_opt_anc_info(to: &OptAnc, anc: i32) -> bool {
+    (to.left & anc) != 0 || (to.right & anc) != 0
+}
+
+fn add_opt_anc_info(to: &mut OptAnc, anc: i32) {
+    if is_left_anchor(anc) {
+        to.left |= anc;
+    } else {
+        to.right |= anc;
+    }
+}
+
+fn remove_opt_anc_info(to: &mut OptAnc, anc: i32) {
+    if is_left_anchor(anc) {
+        to.left &= !anc;
+    } else {
+        to.right &= !anc;
+    }
+}
+
+fn alt_merge_opt_anc_info(to: &mut OptAnc, add: &OptAnc) {
+    to.left &= add.left;
+    to.right &= add.right;
+}
+
+fn concat_opt_exact(to: &mut OptStr, add: &OptStr, enc: OnigEncoding) -> i32 {
+    let mut r = 0;
+    let mut i = to.len;
+    let mut p = 0usize; // index into add.s
+    let end = add.len;
+    while p < end {
+        let len = enclen(enc, &add.s[p..], p);
+        if i + len > OPT_EXACT_MAXLEN {
+            r = 1;
+            break;
+        }
+        for j in 0..len {
+            if p >= end { break; }
+            to.s[i] = add.s[p];
+            i += 1;
+            p += 1;
+            let _ = j;
+        }
+    }
+    to.len = i;
+    to.reach_end = if p == end { add.reach_end } else { 0 };
+    let mut tanc = OptAnc::new();
+    concat_opt_anc_info(&mut tanc, &to.anc, &add.anc, 1, 1);
+    if to.reach_end == 0 { tanc.right = 0; }
+    to.anc = tanc;
+    r
+}
+
+fn concat_opt_exact_str(to: &mut OptStr, s: &[u8], enc: OnigEncoding) {
+    let mut i = to.len;
+    let mut p = 0usize;
+    while p < s.len() && i < OPT_EXACT_MAXLEN {
+        let len = enclen(enc, &s[p..], p);
+        if i + len > OPT_EXACT_MAXLEN { break; }
+        for _ in 0..len {
+            if p >= s.len() { break; }
+            to.s[i] = s[p];
+            i += 1;
+            p += 1;
+        }
+    }
+    to.len = i;
+    if p >= s.len() {
+        to.reach_end = 1;
+    }
+}
+
+fn alt_merge_opt_exact(to: &mut OptStr, add: &OptStr, env_enc: OnigEncoding) {
+    if add.len == 0 || to.len == 0 {
+        to.clear();
+        return;
+    }
+    if !to.mm.is_equal(&add.mm) {
+        to.clear();
+        return;
+    }
+    let mut i = 0;
+    while i < to.len && i < add.len {
+        if to.s[i] != add.s[i] { break; }
+        let len = enclen(env_enc, &to.s[i..], i);
+        let mut ok = true;
+        for j in 1..len {
+            if i + j >= to.len || i + j >= add.len || to.s[i + j] != add.s[i + j] {
+                ok = false;
+                break;
+            }
+        }
+        if !ok { break; }
+        i += len;
+    }
+    if add.reach_end == 0 || i < add.len || i < to.len {
+        to.reach_end = 0;
+    }
+    to.len = i;
+    alt_merge_opt_anc_info(&mut to.anc, &add.anc);
+    if to.reach_end == 0 { to.anc.right = 0; }
+}
+
+fn select_opt_exact(enc: OnigEncoding, now: &mut OptStr, alt: &OptStr) {
+    let mut vn = now.len as i32;
+    let mut va = alt.len as i32;
+
+    if va == 0 { return; }
+    if vn == 0 {
+        *now = *alt;
+        return;
+    }
+    if vn <= 2 && va <= 2 {
+        va = map_position_value(enc, now.s[0] as usize);
+        vn = map_position_value(enc, alt.s[0] as usize);
+        if now.len > 1 { vn += 5; }
+        if alt.len > 1 { va += 5; }
+    }
+    vn *= 2;
+    va *= 2;
+    if comp_distance_value(&now.mm, &alt.mm, vn, va) > 0 {
+        *now = *alt;
+    }
+}
+
+fn add_char_opt_map(m: &mut OptMap, c: u8, enc: OnigEncoding) {
+    if m.map[c as usize] == 0 {
+        m.map[c as usize] = 1;
+        m.value += map_position_value(enc, c as usize);
+    }
+}
+
+fn select_opt_map(now: &mut OptMap, alt: &OptMap) {
+    let z: i32 = 1 << 15;
+    if alt.value == 0 { return; }
+    if now.value == 0 {
+        *now = *alt;
+        return;
+    }
+    let vn = z / now.value;
+    let va = z / alt.value;
+    if comp_distance_value(&now.mm, &alt.mm, vn, va) > 0 {
+        *now = *alt;
+    }
+}
+
+fn comp_opt_exact_or_map(e: &OptStr, m: &OptMap) -> i32 {
+    const COMP_EM_BASE: i32 = 20;
+    if m.value <= 0 { return -1; }
+    let case_value = 3;
+    let ae = COMP_EM_BASE * e.len as i32 * case_value;
+    let am = COMP_EM_BASE * 5 * 2 / m.value;
+    comp_distance_value(&e.mm, &m.mm, ae, am)
+}
+
+fn alt_merge_opt_map(enc: OnigEncoding, to: &mut OptMap, add: &OptMap) {
+    if to.value == 0 { return; }
+    if add.value == 0 || to.mm.max < add.mm.min {
+        to.clear();
+        return;
+    }
+    to.mm.alt_merge(&add.mm);
+    let mut val = 0;
+    for i in 0..CHAR_MAP_SIZE {
+        if add.map[i] != 0 { to.map[i] = 1; }
+        if to.map[i] != 0 {
+            val += map_position_value(enc, i);
+        }
+    }
+    to.value = val;
+    alt_merge_opt_anc_info(&mut to.anc, &add.anc);
+}
+
+fn set_bound_node_opt_info(opt: &mut OptNode, plen: &MinMaxLen) {
+    opt.sb.mm = *plen;
+    opt.spr.mm = *plen;
+    opt.map.mm = *plen;
+}
+
+fn concat_left_node_opt_info(enc: OnigEncoding, to: &mut OptNode, add: &mut OptNode) {
+    let mut tanc = OptAnc::new();
+    concat_opt_anc_info(&mut tanc, &to.anc, &add.anc, to.len.max, add.len.max);
+    to.anc = tanc;
+
+    if add.sb.len > 0 && to.len.max == 0 {
+        let mut tanc2 = OptAnc::new();
+        concat_opt_anc_info(&mut tanc2, &to.anc, &add.sb.anc, to.len.max, add.len.max);
+        add.sb.anc = tanc2;
+    }
+
+    if add.map.value > 0 && to.len.max == 0 {
+        if add.map.mm.max == 0 {
+            add.map.anc.left |= to.anc.left;
+        }
+    }
+
+    let sb_reach = to.sb.reach_end;
+    let sm_reach = to.sm.reach_end;
+
+    if add.len.max != 0 {
+        to.sb.reach_end = 0;
+        to.sm.reach_end = 0;
+    }
+
+    if add.sb.len > 0 {
+        if sb_reach != 0 {
+            concat_opt_exact(&mut to.sb, &add.sb, enc);
+            add.sb.clear();
+        } else if sm_reach != 0 {
+            concat_opt_exact(&mut to.sm, &add.sb, enc);
+            add.sb.clear();
+        }
+    }
+    select_opt_exact(enc, &mut to.sm, &add.sb);
+    select_opt_exact(enc, &mut to.sm, &add.sm);
+
+    if to.spr.len > 0 {
+        if add.len.max > 0 {
+            if to.spr.mm.max == 0 {
+                select_opt_exact(enc, &mut to.sb, &to.spr.clone());
+            } else {
+                select_opt_exact(enc, &mut to.sm, &to.spr.clone());
+            }
+        }
+    } else if add.spr.len > 0 {
+        to.spr = add.spr;
+    }
+
+    select_opt_map(&mut to.map, &add.map);
+    to.len.add(&add.len);
+}
+
+fn alt_merge_node_opt_info(to: &mut OptNode, add: &OptNode, env_enc: OnigEncoding) {
+    alt_merge_opt_anc_info(&mut to.anc, &add.anc);
+    alt_merge_opt_exact(&mut to.sb, &add.sb, env_enc);
+    alt_merge_opt_exact(&mut to.sm, &add.sm, env_enc);
+    alt_merge_opt_exact(&mut to.spr, &add.spr, env_enc);
+    alt_merge_opt_map(env_enc, &mut to.map, &add.map);
+    to.len.alt_merge(&add.len);
+}
+
+fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
+    match &node.inner {
+        NodeInner::List(_) => {
+            let mut len: OnigLen = 0;
+            let mut cur = node;
+            loop {
+                if let NodeInner::List(cons) = &cur.inner {
+                    let tmax = node_max_byte_len(&cons.car, env);
+                    len = distance_add(len, tmax);
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                } else { break; }
+            }
+            len
+        }
+        NodeInner::Alt(_) => {
+            let mut len: OnigLen = 0;
+            let mut cur = node;
+            loop {
+                if let NodeInner::Alt(cons) = &cur.inner {
+                    let tmax = node_max_byte_len(&cons.car, env);
+                    if len < tmax { len = tmax; }
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                } else { break; }
+            }
+            len
+        }
+        NodeInner::String(sn) => sn.s.len() as OnigLen,
+        NodeInner::CType(_) | NodeInner::CClass(_) => {
+            env.enc.max_enc_len() as OnigLen
+        }
+        NodeInner::BackRef(br) => {
+            if node.has_status(ND_ST_CHECKER) {
+                0
+            } else if node.has_status(ND_ST_RECURSION) {
+                if br.nest_level != 0 { INFINITE_LEN } else { 0 }
+            } else {
+                let mut len: OnigLen = 0;
+                for &back in br.back_refs() {
+                    let me = env.mem_env(back as usize);
+                    if !me.mem_node.is_null() {
+                        let mem_node = unsafe { &*me.mem_node };
+                        let tmax = node_max_byte_len(mem_node, env);
+                        if len < tmax { len = tmax; }
+                    }
+                }
+                len
+            }
+        }
+        NodeInner::Call(cn) => {
+            if node.has_status(ND_ST_RECURSION) {
+                INFINITE_LEN
+            } else if !cn.target_node.is_null() {
+                unsafe { node_max_byte_len(&*cn.target_node, env) }
+            } else {
+                0
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if qn.upper == 0 {
+                0
+            } else if let Some(ref body) = qn.body {
+                let len = node_max_byte_len(body, env);
+                if len != 0 {
+                    if !is_infinite_repeat(qn.upper) {
+                        distance_multiply(len, qn.upper)
+                    } else {
+                        INFINITE_LEN
+                    }
+                } else { 0 }
+            } else { 0 }
+        }
+        NodeInner::Bag(bn) => {
+            match bn.bag_type {
+                BagType::Memory => {
+                    if node.has_status(ND_ST_FIXED_MAX) {
+                        bn.max_len
+                    } else if node.has_status(ND_ST_MARK1) {
+                        INFINITE_LEN
+                    } else {
+                        unsafe {
+                            let node_ptr = node as *const Node as *mut Node;
+                            (*node_ptr).status_add(ND_ST_MARK1);
+                            let len = if let Some(ref body) = bn.body {
+                                node_max_byte_len(body, env)
+                            } else { 0 };
+                            (*node_ptr).status_remove(ND_ST_MARK1);
+                            if let NodeInner::Bag(ref mut bm) = (*node_ptr).inner {
+                                bm.max_len = len;
+                            }
+                            (*node_ptr).status_add(ND_ST_FIXED_MAX);
+                            len
+                        }
+                    }
+                }
+                BagType::Option | BagType::StopBacktrack => {
+                    if let Some(ref body) = bn.body {
+                        node_max_byte_len(body, env)
+                    } else { 0 }
+                }
+                BagType::IfElse => {
+                    if let BagData::IfElse { ref then_node, ref else_node } = bn.bag_data {
+                        let mut len = if let Some(ref body) = bn.body {
+                            node_max_byte_len(body, env)
+                        } else { 0 };
+                        if let Some(ref then_n) = then_node {
+                            let tlen = node_max_byte_len(then_n, env);
+                            len = distance_add(len, tlen);
+                        }
+                        let elen = if let Some(ref else_n) = else_node {
+                            node_max_byte_len(else_n, env)
+                        } else { 0 };
+                        if elen > len { elen } else { len }
+                    } else { 0 }
+                }
+            }
+        }
+        NodeInner::Anchor(_) | NodeInner::Gimmick(_) => 0,
+    }
+}
+
+fn optimize_nodes(node: &Node, opt: &mut OptNode, env_enc: OnigEncoding,
+                  env_case_fold_flag: OnigCaseFoldType, env_mm: &mut MinMaxLen,
+                  scan_env: &ParseEnv) -> i32 {
+    let enc = env_enc;
+    opt.clear();
+    set_bound_node_opt_info(opt, env_mm);
+
+    match &node.inner {
+        NodeInner::List(_) => {
+            let mut nenv_mm = *env_mm;
+            let mut cur = node;
+            loop {
+                if let NodeInner::List(cons) = &cur.inner {
+                    let mut xo = OptNode::new();
+                    let r = optimize_nodes(&cons.car, &mut xo, enc, env_case_fold_flag,
+                                          &mut nenv_mm, scan_env);
+                    if r != 0 { return r; }
+                    nenv_mm.add(&xo.len);
+                    concat_left_node_opt_info(enc, opt, &mut xo);
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                } else { break; }
+            }
+        }
+        NodeInner::Alt(_) => {
+            let mut first = true;
+            let mut cur = node;
+            loop {
+                if let NodeInner::Alt(cons) = &cur.inner {
+                    let mut xo = OptNode::new();
+                    let r = optimize_nodes(&cons.car, &mut xo, enc, env_case_fold_flag,
+                                          env_mm, scan_env);
+                    if r != 0 { return r; }
+                    if first {
+                        *opt = xo;
+                        first = false;
+                    } else {
+                        alt_merge_node_opt_info(opt, &xo, enc);
+                    }
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                } else { break; }
+            }
+        }
+        NodeInner::String(sn) => {
+            let slen = sn.s.len();
+            concat_opt_exact_str(&mut opt.sb, &sn.s, enc);
+            if slen > 0 {
+                add_char_opt_map(&mut opt.map, sn.s[0], enc);
+            }
+            opt.len.set(slen as OnigLen, slen as OnigLen);
+        }
+        NodeInner::CClass(cc) => {
+            if cc.mbuf.is_some() || cc.is_not() {
+                let min = enc.min_enc_len() as OnigLen;
+                let max = enc.max_enc_len() as OnigLen;
+                opt.len.set(min, max);
+            } else {
+                for i in 0..SINGLE_BYTE_SIZE {
+                    let z = bitset_at(&cc.bs, i);
+                    if (z && !cc.is_not()) || (!z && cc.is_not()) {
+                        add_char_opt_map(&mut opt.map, i as u8, enc);
+                    }
+                }
+                opt.len.set(1, 1);
+            }
+        }
+        NodeInner::CType(ct) => {
+            let max = enc.max_enc_len() as OnigLen;
+            let min;
+            if max == 1 {
+                min = 1;
+                match ct.ctype {
+                    CTYPE_ANYCHAR => { /* nothing to add to map */ }
+                    _ if ct.ctype == crate::oniguruma::ONIGENC_CTYPE_WORD as i32 => {
+                        let range = if ct.ascii_mode { 128 } else { SINGLE_BYTE_SIZE };
+                        if ct.not {
+                            for i in 0..range {
+                                if !crate::regenc::onigenc_is_code_word(enc, i as u32) {
+                                    add_char_opt_map(&mut opt.map, i as u8, enc);
+                                }
+                            }
+                            for i in range..SINGLE_BYTE_SIZE {
+                                add_char_opt_map(&mut opt.map, i as u8, enc);
+                            }
+                        } else {
+                            for i in 0..range {
+                                if crate::regenc::onigenc_is_code_word(enc, i as u32) {
+                                    add_char_opt_map(&mut opt.map, i as u8, enc);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                min = enc.min_enc_len() as OnigLen;
+            }
+            opt.len.set(min, max);
+        }
+        NodeInner::Anchor(an) => {
+            match an.anchor_type {
+                ANCR_BEGIN_BUF | ANCR_BEGIN_POSITION | ANCR_BEGIN_LINE |
+                ANCR_END_BUF | ANCR_SEMI_END_BUF | ANCR_END_LINE |
+                ANCR_PREC_READ_NOT | ANCR_LOOK_BEHIND => {
+                    add_opt_anc_info(&mut opt.anc, an.anchor_type);
+                }
+                ANCR_PREC_READ => {
+                    if let Some(ref body) = an.body {
+                        let mut xo = OptNode::new();
+                        let r = optimize_nodes(body, &mut xo, enc, env_case_fold_flag,
+                                              env_mm, scan_env);
+                        if r == 0 {
+                            if xo.sb.len > 0 {
+                                opt.spr = xo.sb;
+                            } else if xo.sm.len > 0 {
+                                opt.spr = xo.sm;
+                            }
+                            opt.spr.reach_end = 0;
+                            if xo.map.value > 0 {
+                                opt.map = xo.map;
+                            }
+                        }
+                    }
+                }
+                _ => { /* ANCR_LOOK_BEHIND_NOT etc. */ }
+            }
+        }
+        NodeInner::BackRef(_br) => {
+            if !node.has_status(ND_ST_CHECKER) {
+                let min = node_min_byte_len(node, scan_env);
+                let max = node_max_byte_len(node, scan_env);
+                opt.len.set(min, max);
+            }
+        }
+        NodeInner::Call(cn) => {
+            if node.has_status(ND_ST_RECURSION) {
+                opt.len.set(0, INFINITE_LEN);
+            } else if !cn.target_node.is_null() {
+                let target = unsafe { &*cn.target_node };
+                let r = optimize_nodes(target, opt, enc, env_case_fold_flag,
+                                      env_mm, scan_env);
+                if r != 0 { return r; }
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if qn.upper == 0 {
+                opt.len.set(0, 0);
+            } else if let Some(ref body) = qn.body {
+                let mut xo = OptNode::new();
+                let r = optimize_nodes(body, &mut xo, enc, env_case_fold_flag,
+                                      env_mm, scan_env);
+                if r != 0 { return r; }
+
+                if qn.lower > 0 {
+                    *opt = xo.clone();
+                    if xo.sb.len > 0 && xo.sb.reach_end != 0 {
+                        let mut i = 2;
+                        while i <= qn.lower && !opt.sb.is_full() {
+                            let rc = concat_opt_exact(&mut opt.sb, &xo.sb, enc);
+                            if rc > 0 { break; }
+                            i += 1;
+                        }
+                        if i < qn.lower { opt.sb.reach_end = 0; }
+                    }
+                    if qn.lower != qn.upper {
+                        opt.sb.reach_end = 0;
+                        opt.sm.reach_end = 0;
+                    }
+                    if qn.lower > 1 {
+                        opt.sm.reach_end = 0;
+                    }
+                }
+
+                let max;
+                if is_infinite_repeat(qn.upper) {
+                    if env_mm.max == 0 && body.is_anychar() && qn.greedy {
+                        if body.has_status(ND_ST_MULTILINE) {
+                            add_opt_anc_info(&mut opt.anc, ANCR_ANYCHAR_INF_ML);
+                        } else {
+                            add_opt_anc_info(&mut opt.anc, ANCR_ANYCHAR_INF);
+                        }
+                    }
+                    max = if xo.len.max > 0 { INFINITE_LEN } else { 0 };
+                } else {
+                    max = distance_multiply(xo.len.max, qn.upper);
+                }
+                let min = distance_multiply(xo.len.min, qn.lower);
+                opt.len.set(min, max);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            match bn.bag_type {
+                BagType::StopBacktrack | BagType::Option => {
+                    if let Some(ref body) = bn.body {
+                        let r = optimize_nodes(body, opt, enc, env_case_fold_flag,
+                                              env_mm, scan_env);
+                        if r != 0 { return r; }
+                    }
+                }
+                BagType::Memory => {
+                    let opt_count = unsafe {
+                        let bn_ptr = bn as *const BagNode as *mut BagNode;
+                        (*bn_ptr).opt_count += 1;
+                        (*bn_ptr).opt_count
+                    };
+                    if opt_count > MAX_ND_OPT_INFO_REF_COUNT {
+                        let min = if node.has_status(ND_ST_FIXED_MIN) { bn.min_len } else { 0 };
+                        let max = if node.has_status(ND_ST_FIXED_MAX) { bn.max_len } else { INFINITE_LEN };
+                        opt.len.set(min, max);
+                    } else if let Some(ref body) = bn.body {
+                        let r = optimize_nodes(body, opt, enc, env_case_fold_flag,
+                                              env_mm, scan_env);
+                        if r != 0 { return r; }
+                        if is_set_opt_anc_info(&opt.anc, ANCR_ANYCHAR_INF_MASK) {
+                            if mem_status_at(scan_env.backrefed_mem, bn.regnum() as usize) {
+                                remove_opt_anc_info(&mut opt.anc, ANCR_ANYCHAR_INF_MASK);
+                            }
+                        }
+                    }
+                }
+                BagType::IfElse => {
+                    if let BagData::IfElse { ref then_node, ref else_node } = bn.bag_data {
+                        if else_node.is_some() {
+                            let mut nenv_mm = *env_mm;
+                            if let Some(ref body) = bn.body {
+                                let mut xo = OptNode::new();
+                                let r = optimize_nodes(body, &mut xo, enc, env_case_fold_flag,
+                                                      &mut nenv_mm, scan_env);
+                                if r != 0 { return r; }
+                                nenv_mm.add(&xo.len);
+                                concat_left_node_opt_info(enc, opt, &mut xo);
+                            }
+                            if let Some(ref then_n) = then_node {
+                                let mut xo = OptNode::new();
+                                let r = optimize_nodes(then_n, &mut xo, enc, env_case_fold_flag,
+                                                      &mut nenv_mm, scan_env);
+                                if r != 0 { return r; }
+                                concat_left_node_opt_info(enc, opt, &mut xo);
+                            }
+                            if let Some(ref else_n) = else_node {
+                                let mut xo = OptNode::new();
+                                let r = optimize_nodes(else_n, &mut xo, enc, env_case_fold_flag,
+                                                      env_mm, scan_env);
+                                if r != 0 { return r; }
+                                alt_merge_node_opt_info(opt, &xo, enc);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        NodeInner::Gimmick(_) => {}
+    }
+    0
+}
+
+/// Build Sunday quick search / BMH skip table for exact string matching.
+/// Mirrors C's set_sunday_quick_search_or_bmh_skip_table.
+fn set_sunday_quick_search_or_bmh_skip_table(
+    enc: OnigEncoding, s: &[u8], skip: &mut [u8; CHAR_MAP_SIZE], roffset: &mut i32
+) -> i32 {
+    let mut offset = crate::regenc::enc_get_skip_offset(enc) as i32;
+    if offset == 7 { // ENC_SKIP_OFFSET_1_OR_0
+        let mut p = 0;
+        loop {
+            let len = enclen(enc, &s[p..], p);
+            if p + len >= s.len() {
+                offset = if len == 1 { 1 } else { 0 };
+                break;
+            }
+            p += len;
+        }
+    }
+
+    let slen = s.len() as i32;
+    if slen + offset >= 255 {
+        return ONIGERR_PARSER_BUG;
+    }
+
+    *roffset = offset;
+
+    for i in 0..CHAR_MAP_SIZE {
+        skip[i] = (slen + offset) as u8;
+    }
+
+    let mut p = 0;
+    while p < s.len() {
+        let clen = {
+            let l = enclen(enc, &s[p..], p);
+            if p + l > s.len() { s.len() - p } else { l }
+        };
+        let remaining = (s.len() - p) as i32;
+        for j in 0..clen {
+            let z = remaining - j as i32 + (offset - 1);
+            if z <= 0 { break; }
+            skip[s[p + j] as usize] = z as u8;
+        }
+        p += clen;
+    }
+    0
+}
+
+fn set_optimize_exact(reg: &mut RegexType, e: &OptStr) -> i32 {
+    if e.len == 0 { return 0; }
+    reg.exact = e.s[..e.len].to_vec();
+
+    let allow_reverse = reg.enc.is_allowed_reverse_match(&reg.exact);
+
+    if e.len >= 2 || (e.len >= 1 && allow_reverse) {
+        let exact_copy = reg.exact.clone();
+        let r = set_sunday_quick_search_or_bmh_skip_table(
+            reg.enc, &exact_copy, &mut reg.map, &mut reg.map_offset);
+        if r != 0 { return r; }
+        reg.optimize = if allow_reverse {
+            OptimizeType::StrFast
+        } else {
+            OptimizeType::StrFastStepForward
+        };
+    } else {
+        reg.optimize = OptimizeType::Str;
+    }
+
+    reg.dist_min = e.mm.min;
+    reg.dist_max = e.mm.max;
+
+    if reg.dist_min != INFINITE_LEN {
+        reg.threshold_len = (reg.dist_min as i32) + (reg.exact.len() as i32);
+    }
+    0
+}
+
+fn set_optimize_map(reg: &mut RegexType, m: &OptMap) {
+    reg.map = m.map;
+    reg.optimize = OptimizeType::Map;
+    reg.dist_min = m.mm.min;
+    reg.dist_max = m.mm.max;
+    if reg.dist_min != INFINITE_LEN {
+        reg.threshold_len = (reg.dist_min as i32) + (reg.enc.min_enc_len() as i32);
+    }
+}
+
+fn set_sub_anchor(reg: &mut RegexType, anc: &OptAnc) {
+    reg.sub_anchor |= anc.left & ANCR_BEGIN_LINE;
+    reg.sub_anchor |= anc.right & ANCR_END_LINE;
+}
+
+fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &ParseEnv) -> i32 {
+    let mut env_mm = MinMaxLen::new();
+    let mut opt = OptNode::new();
+    let r = optimize_nodes(root, &mut opt, reg.enc, reg.case_fold_flag,
+                          &mut env_mm, scan_env);
+    if r != 0 { return r; }
+
+    reg.anchor = opt.anc.left & (ANCR_BEGIN_BUF | ANCR_BEGIN_POSITION |
+        ANCR_ANYCHAR_INF | ANCR_ANYCHAR_INF_ML | ANCR_LOOK_BEHIND);
+
+    if (opt.anc.left & (ANCR_LOOK_BEHIND | ANCR_PREC_READ_NOT)) != 0 {
+        reg.anchor &= !ANCR_ANYCHAR_INF_ML;
+    }
+
+    reg.anchor |= opt.anc.right & (ANCR_END_BUF | ANCR_SEMI_END_BUF | ANCR_PREC_READ_NOT);
+
+    if (reg.anchor & (ANCR_END_BUF | ANCR_SEMI_END_BUF)) != 0 {
+        reg.anc_dist_min = opt.len.min;
+        reg.anc_dist_max = opt.len.max;
+    }
+
+    if opt.sb.len > 0 || opt.sm.len > 0 {
+        select_opt_exact(reg.enc, &mut opt.sb, &opt.sm);
+        if opt.map.value > 0 && comp_opt_exact_or_map(&opt.sb, &opt.map) > 0 {
+            set_optimize_map(reg, &opt.map);
+            set_sub_anchor(reg, &opt.map.anc);
+        } else {
+            let r = set_optimize_exact(reg, &opt.sb);
+            if r != 0 { return r; }
+            set_sub_anchor(reg, &opt.sb.anc);
+        }
+    } else if opt.map.value > 0 {
+        set_optimize_map(reg, &opt.map);
+        set_sub_anchor(reg, &opt.map.anc);
+    } else {
+        reg.sub_anchor |= opt.anc.left & ANCR_BEGIN_LINE;
+        if opt.len.max == 0 {
+            reg.sub_anchor |= opt.anc.right & ANCR_END_LINE;
+        }
+    }
+    0
+}
+
 /// Full compilation entry point - mirrors C's onig_compile().
 /// Parses pattern, compiles to bytecode, sets up mem status and stack_pop_level.
 pub fn onig_compile(
@@ -4326,17 +5187,32 @@ pub fn onig_compile(
     // Add OP_END
     add_op(reg, OpCode::End, OperationPayload::None);
 
+    // If callouts exist, set push_mem_end (C: callout_num != 0 → push_mem_end = push_mem_start)
+    if let Some(ref ext) = reg.extp {
+        if ext.callout_num != 0 {
+            reg.push_mem_end = reg.push_mem_start;
+        }
+    }
+
     // Set stack pop level based on what captures/features are used
+    let has_callouts = reg.extp.as_ref().map_or(false, |e| e.callout_num != 0);
     if reg.push_mem_end != 0
         || reg.num_repeat != 0
         || reg.num_empty_check != 0
         || reg.num_call > 0
+        || has_callouts
     {
         reg.stack_pop_level = StackPopLevel::All;
     } else if reg.push_mem_start != 0 {
         reg.stack_pop_level = StackPopLevel::MemStart;
     } else {
         reg.stack_pop_level = StackPopLevel::Free;
+    }
+
+    // Set optimization info (exact string, char map, anchors) from parse tree
+    let r = set_optimize_info_from_tree(&root, reg, &env);
+    if r != 0 {
+        return r;
     }
 
     0

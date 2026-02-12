@@ -90,6 +90,11 @@ enum StackEntry {
     },
     /// Return marker (STK_RETURN)
     Return,
+    /// Callout entry (STK_CALLOUT) - for retraction callbacks
+    Callout {
+        num: i32,       // callout list index (1-based)
+        id: i32,        // builtin id (for name callouts) or ONIG_NON_NAME_ID
+    },
     /// Voided entry (STK_VOID) - dead space, skipped during pops
     Void,
 }
@@ -154,12 +159,15 @@ impl MatchArg {
 
 /// Pop stack entries until an ALT (choice point) is found.
 /// Restores mem_start_stk/mem_end_stk as needed based on pop_level.
+/// Handles callout retraction when reg/callout_data are provided.
 /// Returns Some((pcode, pstr, zid)) from the ALT entry, or None if stack is empty.
 fn stack_pop(
     stack: &mut Vec<StackEntry>,
     pop_level: StackPopLevel,
     mem_start_stk: &mut [MemPtr],
     mem_end_stk: &mut [MemPtr],
+    reg: &RegexType,
+    callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
 ) -> Option<(usize, usize, i32)> {
     loop {
         let entry = stack.pop()?;
@@ -204,6 +212,10 @@ fn stack_pop(
                         } => {
                             mem_start_stk[*zid] = *prev_start;
                             mem_end_stk[*zid] = *prev_end;
+                        }
+                        StackEntry::Callout { num, id } => {
+                            // Retraction callback
+                            run_builtin_callout_retraction(reg, *num, *id, callout_data);
                         }
                         // RepeatInc, EmptyCheckStart, CallFrame, Return:
                         // handled implicitly (popping removes them)
@@ -893,6 +905,258 @@ fn is_egcb_prepend(c: u32) -> bool {
 }
 
 // ============================================================================
+// Builtin callout functions
+// ============================================================================
+
+/// Run a builtin callout in the progress direction.
+/// Returns ONIG_CALLOUT_SUCCESS or ONIG_CALLOUT_FAIL.
+fn run_builtin_callout(
+    reg: &RegexType,
+    num: i32,
+    _id: i32,
+    is_retraction: bool,
+    callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+) -> i32 {
+    let ext = match reg.extp.as_ref() {
+        Some(e) => e,
+        None => return ONIG_CALLOUT_SUCCESS,
+    };
+    if num < 1 || (num as usize) > ext.callout_list.len() {
+        return ONIG_CALLOUT_SUCCESS;
+    }
+    let entry = &ext.callout_list[(num - 1) as usize];
+    let idx = (num - 1) as usize;
+
+    match entry.builtin_id {
+        CALLOUT_BUILTIN_MAX => {
+            let max_val = resolve_callout_arg(&entry.args[0], &ext.callout_list, callout_data);
+            builtin_max(entry, is_retraction, &mut callout_data[idx], max_val)
+        }
+        CALLOUT_BUILTIN_COUNT => builtin_count(entry, is_retraction, &mut callout_data[idx]),
+        CALLOUT_BUILTIN_CMP => {
+            let lv = resolve_callout_arg(&entry.args[0], &ext.callout_list, callout_data);
+            let rv = resolve_callout_arg(&entry.args[2], &ext.callout_list, callout_data);
+            builtin_cmp(entry, &mut callout_data[idx], lv, rv)
+        }
+        _ => ONIG_CALLOUT_SUCCESS,
+    }
+}
+
+/// Run a builtin callout in the retraction direction (called from stack_pop).
+fn run_builtin_callout_retraction(
+    reg: &RegexType,
+    num: i32,
+    _id: i32,
+    callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+) {
+    let ext = match reg.extp.as_ref() {
+        Some(e) => e,
+        None => return,
+    };
+    if num < 1 || (num as usize) > ext.callout_list.len() {
+        return;
+    }
+    let entry = &ext.callout_list[(num - 1) as usize];
+    let slots = &mut callout_data[(num - 1) as usize];
+
+    match entry.builtin_id {
+        CALLOUT_BUILTIN_MAX => {
+            // Retraction for MAX: same logic as progress but with is_retraction=true
+            // We can't pass the full callout_data for tag resolution here since we already
+            // have a mutable borrow. But MAX retraction only reads slots[0] (its own counter).
+            let count_type = if entry.args.len() > 1 {
+                match &entry.args[1] {
+                    CalloutArg::Char(c) => *c,
+                    _ => b'X',
+                }
+            } else {
+                b'X'
+            };
+            if count_type == b'<' {
+                // retraction + '<': increment and check
+                let max_val = resolve_callout_arg(&entry.args[0], &[], &[]);
+                if slots[0] >= max_val {
+                    // fail — but retraction result is ignored per C code
+                } else {
+                    slots[0] += 1;
+                }
+            } else if count_type == b'X' {
+                // retraction + 'X': decrement
+                slots[0] -= 1;
+            }
+            // retraction + '>': no-op
+        }
+        CALLOUT_BUILTIN_COUNT => {
+            let count_type = if !entry.args.is_empty() {
+                match &entry.args[0] {
+                    CalloutArg::Char(c) => *c,
+                    _ => b'>',
+                }
+            } else {
+                b'>'
+            };
+            // Retraction: slot 2
+            if count_type == b'<' {
+                slots[0] += 1;
+            } else if count_type == b'X' {
+                slots[0] -= 1;
+            }
+            // slot 2 (retraction counter) increment
+            slots[2] += 1;
+        }
+        _ => {}
+    }
+}
+
+/// Resolve a callout argument: Long value directly or Tag → lookup slot[0] of tagged callout.
+fn resolve_callout_arg(
+    arg: &CalloutArg,
+    ext_callout_list: &[CalloutListEntry],
+    all_data: &[[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
+) -> i64 {
+    match arg {
+        CalloutArg::Long(n) => *n,
+        CalloutArg::Tag(tag) => {
+            for (i, e) in ext_callout_list.iter().enumerate() {
+                if let Some(ref t) = e.tag {
+                    if t == tag {
+                        if i < all_data.len() {
+                            return all_data[i][0];
+                        }
+                    }
+                }
+            }
+            0
+        }
+        _ => 0,
+    }
+}
+
+fn builtin_max(
+    entry: &CalloutListEntry,
+    is_retraction: bool,
+    slots: &mut [i64; ONIG_CALLOUT_DATA_SLOT_NUM],
+    max_val: i64,
+) -> i32 {
+    // slots[0] = current count
+    let count_type = if entry.args.len() > 1 {
+        match &entry.args[1] {
+            CalloutArg::Char(c) => *c,
+            _ => b'X',
+        }
+    } else {
+        b'X'
+    };
+
+    if is_retraction {
+        if count_type == b'<' {
+            if slots[0] >= max_val {
+                return ONIG_CALLOUT_FAIL;
+            }
+            slots[0] += 1;
+        } else if count_type == b'X' {
+            slots[0] -= 1;
+        }
+    } else {
+        if count_type != b'<' {
+            if slots[0] >= max_val {
+                return ONIG_CALLOUT_FAIL;
+            }
+            slots[0] += 1;
+        }
+    }
+
+    ONIG_CALLOUT_SUCCESS
+}
+
+fn builtin_count(
+    entry: &CalloutListEntry,
+    is_retraction: bool,
+    slots: &mut [i64; ONIG_CALLOUT_DATA_SLOT_NUM],
+) -> i32 {
+    // slots[0] = main counter (progress - retraction adjusted)
+    // slots[1] = progress counter
+    // slots[2] = retraction counter
+    let count_type = if !entry.args.is_empty() {
+        match &entry.args[0] {
+            CalloutArg::Char(c) => *c,
+            _ => b'>',
+        }
+    } else {
+        b'>'
+    };
+
+    if is_retraction {
+        if count_type == b'<' {
+            slots[0] += 1;
+        } else if count_type == b'X' {
+            slots[0] -= 1;
+        }
+        // slot 2 (retraction counter)
+        slots[2] += 1;
+    } else {
+        if count_type != b'<' {
+            slots[0] += 1;
+        }
+        // slot 1 (progress counter)
+        slots[1] += 1;
+    }
+
+    ONIG_CALLOUT_SUCCESS
+}
+
+fn builtin_cmp(
+    entry: &CalloutListEntry,
+    slots: &mut [i64; ONIG_CALLOUT_DATA_SLOT_NUM],
+    lv: i64,
+    rv: i64,
+) -> i32 {
+    // CMP is progress-only
+    if entry.args.len() < 3 {
+        return ONIG_CALLOUT_FAIL;
+    }
+
+    // Parse op on first call, cache in slots[0]
+    let op = if slots[3] == 0 {
+        // First call: parse operator string
+        let op_val = match &entry.args[1] {
+            CalloutArg::Str(s) => parse_cmp_op(s),
+            CalloutArg::Char(c) => parse_cmp_op(&[*c]),
+            _ => return ONIG_CALLOUT_FAIL,
+        };
+        slots[3] = 1; // mark as initialized
+        slots[4] = op_val as i64;
+        op_val
+    } else {
+        slots[4] as i32
+    };
+
+    let result = match op {
+        0 => lv == rv, // ==
+        1 => lv != rv, // !=
+        2 => lv < rv,  // <
+        3 => lv > rv,  // >
+        4 => lv <= rv, // <=
+        5 => lv >= rv, // >=
+        _ => false,
+    };
+
+    if result { ONIG_CALLOUT_SUCCESS } else { ONIG_CALLOUT_FAIL }
+}
+
+fn parse_cmp_op(s: &[u8]) -> i32 {
+    match s {
+        b"==" => 0,
+        b"!=" => 1,
+        b"<" => 2,
+        b">" => 3,
+        b"<=" => 4,
+        b">=" => 5,
+        _ => -1,
+    }
+}
+
+// ============================================================================
 // match_at - the core VM executor (port of C's match_at function)
 // ============================================================================
 
@@ -932,6 +1196,10 @@ fn match_at(
     let mut keep: usize = sstart;
     let mut best_len: i32 = ONIG_MISMATCH;
     let mut last_alt_zid: i32 = -1;
+
+    // Callout data: per-callout mutable slots (indexed by callout num - 1)
+    let callout_count = reg.extp.as_ref().map_or(0, |e| e.callout_num as usize);
+    let mut callout_data: Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]> = vec![[0i64; ONIG_CALLOUT_DATA_SLOT_NUM]; callout_count];
 
     // Push bottom sentinel (like C's STACK_PUSH_BOTTOM with FinishCode)
     stack.push(StackEntry::Alt {
@@ -2358,10 +2626,47 @@ fn match_at(
             }
 
             // ================================================================
-            // Callout opcodes (TODO: not implemented)
+            // Callout opcodes
             // ================================================================
-            OpCode::CalloutContents | OpCode::CalloutName => {
-                p += 1; // Skip for now
+            OpCode::CalloutContents => {
+                // Callout of contents: always succeeds (we don't execute user code)
+                let num = match &reg.ops[p].payload {
+                    OperationPayload::CalloutContents { num } => *num,
+                    _ => 0,
+                };
+                if let Some(ref ext) = reg.extp {
+                    if num >= 1 && (num as usize) <= ext.callout_list.len() {
+                        let entry = &ext.callout_list[(num - 1) as usize];
+                        if (entry.callout_in & CALLOUT_IN_RETRACTION) != 0 {
+                            stack.push(StackEntry::Callout {
+                                num,
+                                id: ONIG_NON_NAME_ID,
+                            });
+                        }
+                    }
+                }
+                p += 1;
+            }
+            OpCode::CalloutName => {
+                let (num, id) = match &reg.ops[p].payload {
+                    OperationPayload::CalloutName { num, id } => (*num, *id),
+                    _ => (0, 0),
+                };
+                let call_result = run_builtin_callout(reg, num, id, false, &mut callout_data);
+                if call_result == ONIG_CALLOUT_FAIL {
+                    goto_fail = true;
+                } else {
+                    // Push retraction entry if needed
+                    if let Some(ref ext) = reg.extp {
+                        if num >= 1 && (num as usize) <= ext.callout_list.len() {
+                            let entry = &ext.callout_list[(num - 1) as usize];
+                            if (entry.callout_in & CALLOUT_IN_RETRACTION) != 0 {
+                                stack.push(StackEntry::Callout { num, id });
+                            }
+                        }
+                    }
+                    p += 1;
+                }
             }
         }
 
@@ -2372,6 +2677,8 @@ fn match_at(
                 pop_level,
                 &mut mem_start_stk,
                 &mut mem_end_stk,
+                reg,
+                &mut callout_data,
             ) {
                 Some((pcode, pstr, alt_zid)) => {
                     if pcode == FINISH_PCODE {
@@ -2448,6 +2755,255 @@ pub fn onig_match(
 ///
 /// Parameters:
 /// - reg: compiled regex
+// ============================================================================
+// Search optimization functions — mirrors C's regexec.c lines 5168-5645
+// ============================================================================
+
+/// Naive string search. Mirrors C's slow_search.
+fn slow_search(enc: OnigEncoding, target: &[u8], text: &[u8],
+               text_start: usize, text_end: usize, text_range: usize) -> Option<usize> {
+    if target.is_empty() { return Some(text_start); }
+    let tlen = target.len();
+    let mut limit = text_end.saturating_sub(tlen - 1);
+    if limit > text_range { limit = text_range; }
+    let mut s = text_start;
+    while s < limit {
+        if text[s] == target[0] {
+            let mut ok = true;
+            for i in 1..tlen {
+                if s + i >= text_end || text[s + i] != target[i] {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok { return Some(s); }
+        }
+        s += enclen(enc, text, s);
+    }
+    None
+}
+
+/// Sunday quick search (BMH variant). Mirrors C's sunday_quick_search.
+fn sunday_quick_search(reg: &RegexType, target: &[u8], text: &[u8],
+                       text_start: usize, text_end: usize, text_range: usize) -> Option<usize> {
+    let map_offset = reg.map_offset as usize;
+    let tlen = target.len();
+    if tlen == 0 { return Some(text_start); }
+    let tail_idx = tlen - 1;
+
+    let end = if tlen > text_end.saturating_sub(text_range) {
+        if tlen > text_end.saturating_sub(text_start) {
+            return None;
+        }
+        text_end
+    } else {
+        text_range + tlen
+    };
+
+    let mut s = text_start + tail_idx;
+    while s < end {
+        let mut p = s;
+        let mut t = tail_idx;
+        loop {
+            if text[p] != target[t] { break; }
+            if t == 0 { return Some(p); }
+            p -= 1;
+            t -= 1;
+        }
+        if s + map_offset >= text_end { break; }
+        s += reg.map[text[s + map_offset] as usize] as usize;
+    }
+    None
+}
+
+/// Sunday quick search with step forward for multi-byte safe operation.
+/// Mirrors C's sunday_quick_search_step_forward.
+fn sunday_quick_search_step_forward(reg: &RegexType, target: &[u8], text: &[u8],
+                                     text_start: usize, text_end: usize,
+                                     text_range: usize) -> Option<usize> {
+    let enc = reg.enc;
+    let tlen = target.len();
+    if tlen == 0 { return Some(text_start); }
+    let tail_idx = tlen - 1;
+    let mut end = text_range;
+    if tail_idx as usize > text_end.saturating_sub(end) {
+        end = text_end.saturating_sub(tail_idx);
+    }
+
+    let map_offset = reg.map_offset as usize;
+    let mut s = text_start;
+    while s < end {
+        let se = s + tail_idx;
+        let mut p = se;
+        let mut t = tail_idx;
+        loop {
+            if text[p] != target[t] { break; }
+            if t == 0 { return Some(s); }
+            p -= 1;
+            t -= 1;
+        }
+        if se + map_offset >= text_end { break; }
+        let skip = reg.map[text[se + map_offset] as usize] as usize;
+        let next = s + skip;
+        if next < end {
+            s = onigenc_get_right_adjust_char_head(enc, text, s, next);
+        } else {
+            break;
+        }
+    }
+    None
+}
+
+/// Character map search. Mirrors C's map_search.
+fn map_search(enc: OnigEncoding, map: &[u8; CHAR_MAP_SIZE], text: &[u8],
+              text_start: usize, text_range: usize) -> Option<usize> {
+    let mut s = text_start;
+    while s < text_range {
+        if map[text[s] as usize] != 0 { return Some(s); }
+        s += enclen(enc, text, s);
+    }
+    None
+}
+
+/// Get right-adjusted char head for multi-byte encoding.
+fn onigenc_get_right_adjust_char_head(enc: OnigEncoding, text: &[u8],
+                                       start: usize, s: usize) -> usize {
+    let mut pos = s;
+    // For UTF-8: if pos lands on a continuation byte, advance to next char start
+    while pos < text.len() {
+        let len = enc.mbc_enc_len(&text[pos..]);
+        if len > 0 { return pos; }
+        pos += 1;
+    }
+    pos
+}
+
+/// Forward search using optimization strategy.
+/// Returns Some((low, high)) if a candidate was found, None otherwise.
+fn forward_search(reg: &RegexType, str_data: &[u8], end: usize,
+                  start: usize, range: usize) -> Option<(usize, usize)> {
+    let mut p = start;
+    if reg.dist_min != 0 {
+        if end.saturating_sub(p) <= reg.dist_min as usize {
+            return None;
+        }
+        if enc_is_singlebyte(reg.enc) {
+            p += reg.dist_min as usize;
+        } else {
+            let target = p + reg.dist_min as usize;
+            while p < target && p < end {
+                p += enclen(reg.enc, str_data, p);
+            }
+        }
+    }
+
+    let mut pprev: Option<usize> = None;
+    loop {
+        // Search for the optimization target
+        let found = match reg.optimize {
+            OptimizeType::Str => {
+                slow_search(reg.enc, &reg.exact, str_data, p, end, range)
+            }
+            OptimizeType::StrFast => {
+                sunday_quick_search(reg, &reg.exact, str_data, p, end, range)
+            }
+            OptimizeType::StrFastStepForward => {
+                sunday_quick_search_step_forward(reg, &reg.exact, str_data, p, end, range)
+            }
+            OptimizeType::Map => {
+                map_search(reg.enc, &reg.map, str_data, p, range)
+            }
+            OptimizeType::None => { return None; }
+        };
+
+        p = match found {
+            Some(pos) if pos < range => pos,
+            _ => return None,
+        };
+
+        if p.saturating_sub(start) < reg.dist_min as usize {
+            pprev = Some(p);
+            p += enclen(reg.enc, str_data, p);
+            continue; // retry
+        }
+
+        // Validate sub_anchor
+        if reg.sub_anchor != 0 {
+            let mut retry = false;
+            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0 {
+                if p > 0 {
+                    let prev = pprev.unwrap_or(0);
+                    let prev_pos = onigenc_get_prev_char_head(reg.enc, str_data, prev, p);
+                    if !is_mbc_newline(reg.enc, str_data, prev_pos, end) {
+                        retry = true;
+                    }
+                }
+            }
+            if !retry && (reg.sub_anchor & ANCR_END_LINE) != 0 {
+                if p >= end {
+                    // at end - OK for some cases
+                } else if !is_mbc_newline(reg.enc, str_data, p, end) {
+                    retry = true;
+                }
+            }
+            if retry {
+                pprev = Some(p);
+                p += enclen(reg.enc, str_data, p);
+                continue; // retry
+            }
+        }
+
+        // Calculate low/high range
+        let (low, high);
+        if reg.dist_max == 0 {
+            low = p;
+            high = p;
+        } else {
+            if reg.dist_max != INFINITE_LEN {
+                if p.saturating_sub(0) < reg.dist_max as usize {
+                    low = 0;
+                } else {
+                    let mut l = p - reg.dist_max as usize;
+                    if l > start {
+                        l = onigenc_get_right_adjust_char_head(reg.enc, str_data, start, l);
+                    }
+                    low = l;
+                }
+            } else {
+                low = start; // infinite dist_max: any position from start
+            }
+            if p.saturating_sub(0) < reg.dist_min as usize {
+                high = 0;
+            } else {
+                high = p - reg.dist_min as usize;
+            }
+        }
+        return Some((low, high));
+    }
+}
+
+/// Check if encoding is single-byte.
+fn enc_is_singlebyte(enc: OnigEncoding) -> bool {
+    enc.max_enc_len() == 1
+}
+
+/// Get previous character head position.
+fn onigenc_get_prev_char_head(_enc: OnigEncoding, _text: &[u8], _start: usize, pos: usize) -> usize {
+    if pos == 0 { return 0; }
+    // For UTF-8: walk backwards past continuation bytes
+    let mut p = pos - 1;
+    while p > 0 && _text[p] & 0xC0 == 0x80 {
+        p -= 1;
+    }
+    p
+}
+
+/// Check if position is a newline.
+fn is_mbc_newline(_enc: OnigEncoding, text: &[u8], pos: usize, end: usize) -> bool {
+    if pos >= end { return false; }
+    text[pos] == b'\n'
+}
+
 /// - str_data: the input string bytes
 /// - end: end position (typically str_data.len())
 /// - start: starting search position
@@ -2468,65 +3024,257 @@ pub fn onig_search(
 
     if start > range {
         // Backward search - not yet optimized
-        // TODO: implement backward search
         return (ONIG_MISMATCH, msa.region);
     }
 
-    // Forward search
     let find_longest = opton_find_longest(msa.options);
     let mut best_start: i32 = ONIG_MISMATCH;
     let mut best_len: i32 = ONIG_MISMATCH;
 
-    let mut s = start;
-    while s <= range {
-        if let Some(ref mut r) = msa.region {
-            r.resize(reg.num_mem + 1);
-            r.clear();
-        }
+    let mut cur_start = start;
+    let mut cur_range = range;
+    let data_range = if range > start { range } else { end };
 
-        msa.best_len = ONIG_MISMATCH;
-        msa.best_s = 0;
-
-        let r = match_at(reg, str_data, end, end, s, &mut msa);
-        if r != ONIG_MISMATCH {
-            if find_longest {
-                // match_at with FIND_LONGEST already finds the longest match
-                // at this start position (saved in msa.best_len)
-                let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
-                if best_len == ONIG_MISMATCH || match_len > best_len
-                    || (match_len == best_len && best_start == ONIG_MISMATCH)
-                {
-                    best_start = s as i32;
-                    best_len = match_len;
-                }
+    // === Anchor optimization: narrow search range ===
+    if reg.anchor != 0 && start < end {
+        if (reg.anchor & ANCR_BEGIN_POSITION) != 0 {
+            // search start-position only
+            if range > start {
+                cur_range = start + 1;
             } else {
-                // Found a match - return the match start position
-                // Region is already populated by match_at
+                cur_range = start;
+            }
+        } else if (reg.anchor & ANCR_BEGIN_BUF) != 0 {
+            // search str-position only (must start at 0)
+            if range > start {
+                if start != 0 {
+                    return (ONIG_MISMATCH, msa.region);
+                }
+                cur_range = 1;
+            } else {
+                return (ONIG_MISMATCH, msa.region);
+            }
+        } else if (reg.anchor & ANCR_END_BUF) != 0 {
+            let min_semi_end = end;
+            let max_semi_end = end;
+            if (max_semi_end as OnigLen) < reg.anc_dist_min {
+                return (ONIG_MISMATCH, msa.region);
+            }
+            if range > start {
+                if reg.anc_dist_max != INFINITE_LEN
+                    && min_semi_end.saturating_sub(start) > reg.anc_dist_max as usize
+                {
+                    cur_start = min_semi_end - reg.anc_dist_max as usize;
+                }
+                if max_semi_end.saturating_sub(cur_range.saturating_sub(1)) < reg.anc_dist_min as usize {
+                    if max_semi_end + 1 < reg.anc_dist_min as usize {
+                        return (ONIG_MISMATCH, msa.region);
+                    } else {
+                        cur_range = max_semi_end - reg.anc_dist_min as usize + 1;
+                    }
+                }
+                if cur_start > cur_range {
+                    return (ONIG_MISMATCH, msa.region);
+                }
+            }
+        } else if (reg.anchor & ANCR_SEMI_END_BUF) != 0 {
+            let mut min_semi_end = end;
+            let max_semi_end = end;
+            // Check if last char before end is newline
+            if end > 0 && str_data[end - 1] == b'\n' {
+                min_semi_end = end - 1;
+            }
+            if (max_semi_end as OnigLen) < reg.anc_dist_min {
+                return (ONIG_MISMATCH, msa.region);
+            }
+            if range > start {
+                if reg.anc_dist_max != INFINITE_LEN
+                    && min_semi_end.saturating_sub(start) > reg.anc_dist_max as usize
+                {
+                    cur_start = min_semi_end - reg.anc_dist_max as usize;
+                }
+                if max_semi_end.saturating_sub(cur_range.saturating_sub(1)) < reg.anc_dist_min as usize {
+                    if max_semi_end + 1 < reg.anc_dist_min as usize {
+                        return (ONIG_MISMATCH, msa.region);
+                    } else {
+                        cur_range = max_semi_end - reg.anc_dist_min as usize + 1;
+                    }
+                }
+                if cur_start > cur_range {
+                    return (ONIG_MISMATCH, msa.region);
+                }
+            }
+        } else if (reg.anchor & ANCR_ANYCHAR_INF_ML) != 0 && range > start {
+            // start-position only
+            if range > start {
+                cur_range = start + 1;
+            }
+        }
+    } else if start == end {
+        // Empty string
+        if reg.threshold_len == 0 {
+            let mut s = start;
+            if let Some(ref mut r) = msa.region {
+                r.resize(reg.num_mem + 1);
+                r.clear();
+            }
+            msa.best_len = ONIG_MISMATCH;
+            msa.best_s = 0;
+            let r = match_at(reg, str_data, end, end, s, &mut msa);
+            if r != ONIG_MISMATCH && r >= 0 {
                 return (s as i32, msa.region);
             }
         }
-
-        if s >= end {
-            break;
-        }
-
-        // Advance to next character position
-        s += enclen(enc, str_data, s);
+        return (ONIG_MISMATCH, msa.region);
     }
 
+    // === Threshold length check ===
+    if (end as i32 - cur_start as i32) < reg.threshold_len {
+        return (ONIG_MISMATCH, msa.region);
+    }
+
+    // === Forward search ===
+    let mut s = cur_start;
+
+    // Use optimization if available
+    if reg.optimize != OptimizeType::None {
+        // Calculate search range for optimization
+        let sch_range = if reg.dist_max != 0 {
+            if reg.dist_max == INFINITE_LEN {
+                end
+            } else if end.saturating_sub(cur_range) < reg.dist_max as usize {
+                end
+            } else {
+                cur_range + reg.dist_max as usize
+            }
+        } else {
+            cur_range
+        };
+
+        if reg.dist_max != INFINITE_LEN {
+            // Finite dist_max: iterate with forward_search
+            loop {
+                let (low, high) = match forward_search(reg, str_data, end, s, sch_range) {
+                    Some(lh) => lh,
+                    None => break, // mismatch
+                };
+                if s < low { s = low; }
+                while s <= high {
+                    if let Some(ref mut r) = msa.region {
+                        r.resize(reg.num_mem + 1);
+                        r.clear();
+                    }
+                    msa.best_len = ONIG_MISMATCH;
+                    msa.best_s = 0;
+                    let r = match_at(reg, str_data, end, data_range, s, &mut msa);
+                    if r != ONIG_MISMATCH {
+                        if r < 0 { return (r, msa.region); } // error
+                        if find_longest {
+                            let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
+                            if best_len == ONIG_MISMATCH || match_len > best_len {
+                                best_start = s as i32;
+                                best_len = match_len;
+                            }
+                        } else {
+                            return (s as i32, msa.region);
+                        }
+                    }
+                    s += enclen(enc, str_data, s);
+                }
+                if s >= cur_range { break; }
+            }
+        } else {
+            // Infinite dist_max: just check once, then fall through to normal loop
+            if forward_search(reg, str_data, end, s, sch_range).is_none() {
+                return finish_search(find_longest, best_start, best_len, reg,
+                                    str_data, end, &mut msa);
+            }
+            // ANCR_ANYCHAR_INF: skip past newlines
+            if (reg.anchor & ANCR_ANYCHAR_INF) != 0
+                && (reg.anchor & (ANCR_LOOK_BEHIND | ANCR_PREC_READ_NOT)) == 0
+            {
+                while s < cur_range {
+                    if let Some(ref mut r) = msa.region {
+                        r.resize(reg.num_mem + 1);
+                        r.clear();
+                    }
+                    msa.best_len = ONIG_MISMATCH;
+                    msa.best_s = 0;
+                    let r = match_at(reg, str_data, end, data_range, s, &mut msa);
+                    if r != ONIG_MISMATCH {
+                        if r < 0 { return (r, msa.region); }
+                        if find_longest {
+                            let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
+                            if best_len == ONIG_MISMATCH || match_len > best_len {
+                                best_start = s as i32;
+                                best_len = match_len;
+                            }
+                        } else {
+                            return (s as i32, msa.region);
+                        }
+                    }
+                    let prev = s;
+                    s += enclen(enc, str_data, s);
+                    // Skip past non-newline chars
+                    while s < cur_range && !is_mbc_newline(enc, str_data, prev, end) {
+                        let prev2 = s;
+                        s += enclen(enc, str_data, s);
+                        if is_mbc_newline(enc, str_data, prev2, end) { break; }
+                    }
+                }
+                return finish_search(find_longest, best_start, best_len, reg,
+                                    str_data, end, &mut msa);
+            }
+            // Fall through to normal position loop below
+        }
+    }
+
+    // Normal position-by-position search (no optimization or fallthrough)
+    if best_start == ONIG_MISMATCH {
+        loop {
+            if let Some(ref mut r) = msa.region {
+                r.resize(reg.num_mem + 1);
+                r.clear();
+            }
+            msa.best_len = ONIG_MISMATCH;
+            msa.best_s = 0;
+            let r = match_at(reg, str_data, end, data_range, s, &mut msa);
+            if r != ONIG_MISMATCH {
+                if r < 0 { return (r, msa.region); }
+                if find_longest {
+                    let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
+                    if best_len == ONIG_MISMATCH || match_len > best_len {
+                        best_start = s as i32;
+                        best_len = match_len;
+                    }
+                } else {
+                    return (s as i32, msa.region);
+                }
+            }
+            if s >= cur_range { break; }
+            if s >= end { break; }
+            s += enclen(enc, str_data, s);
+        }
+    }
+
+    finish_search(find_longest, best_start, best_len, reg, str_data, end, &mut msa)
+}
+
+fn finish_search(
+    find_longest: bool, best_start: i32, best_len: i32,
+    reg: &RegexType, str_data: &[u8], end: usize, msa: &mut MatchArg,
+) -> (i32, Option<OnigRegion>) {
     if find_longest && best_start != ONIG_MISMATCH {
-        // Re-run match_at at the best start position to populate region
         if let Some(ref mut r) = msa.region {
             r.resize(reg.num_mem + 1);
             r.clear();
         }
         msa.best_len = ONIG_MISMATCH;
         msa.best_s = 0;
-        match_at(reg, str_data, end, end, best_start as usize, &mut msa);
-        return (best_start, msa.region);
+        match_at(reg, str_data, end, end, best_start as usize, msa);
+        return (best_start, msa.region.take());
     }
-
-    (ONIG_MISMATCH, msa.region)
+    (ONIG_MISMATCH, msa.region.take())
 }
 
 // ============================================================================

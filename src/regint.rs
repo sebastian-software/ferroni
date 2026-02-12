@@ -181,6 +181,7 @@ pub const ANCR_ANYCHAR_INF: i32 = 1 << 14;
 pub const ANCR_ANYCHAR_INF_ML: i32 = 1 << 15;
 pub const ANCR_TEXT_SEGMENT_BOUNDARY: i32 = 1 << 16;
 pub const ANCR_NO_TEXT_SEGMENT_BOUNDARY: i32 = 1 << 17;
+pub const ANCR_ANYCHAR_INF_MASK: i32 = ANCR_ANYCHAR_INF | ANCR_ANYCHAR_INF_ML;
 
 #[inline]
 pub fn anchor_has_body(anchor_type: i32) -> bool {
@@ -474,26 +475,37 @@ pub enum OperationPayload {
     },
 }
 
-// === CalloutListEntry ===
-pub struct CalloutListEntry {
-    pub flag: i32,
-    pub of: OnigCalloutOf,
-    pub callout_in: i32,
-    pub name_id: i32,
-    pub tag_start: Vec<u8>,
-    pub tag_end: Vec<u8>,
-    pub callout_type: OnigCalloutType,
-    pub content: CalloutContent,
+// === Callout constants ===
+pub const CALLOUT_IN_PROGRESS: i32 = OnigCalloutIn::Progress as i32;
+pub const CALLOUT_IN_RETRACTION: i32 = OnigCalloutIn::Retraction as i32;
+pub const CALLOUT_IN_BOTH: i32 = CALLOUT_IN_PROGRESS | CALLOUT_IN_RETRACTION;
+
+/// Builtin callout IDs (hard-coded instead of global name registry)
+pub const CALLOUT_BUILTIN_FAIL: i32 = 0;
+pub const CALLOUT_BUILTIN_MAX: i32 = 1;
+pub const CALLOUT_BUILTIN_COUNT: i32 = 2;
+pub const CALLOUT_BUILTIN_CMP: i32 = 3;
+
+/// Result codes for callout functions
+pub const ONIG_CALLOUT_FAIL: i32 = 1;
+pub const ONIG_CALLOUT_SUCCESS: i32 = 0;
+
+// === Callout argument ===
+#[derive(Clone, Debug)]
+pub enum CalloutArg {
+    Long(i64),
+    Char(u8),
+    Tag(Vec<u8>),
+    Str(Vec<u8>),
 }
 
-pub enum CalloutContent {
-    Contents { start: Vec<u8> },
-    Args {
-        num: i32,
-        passed_num: i32,
-        types: [OnigType; ONIG_CALLOUT_MAX_ARGS_NUM],
-        vals: [OnigValue; ONIG_CALLOUT_MAX_ARGS_NUM],
-    },
+// === CalloutListEntry ===
+pub struct CalloutListEntry {
+    pub of: i32,              // 0=contents, 1=name
+    pub callout_in: i32,      // CALLOUT_IN_PROGRESS / RETRACTION / BOTH
+    pub builtin_id: i32,      // CALLOUT_BUILTIN_MAX etc., -1 for contents
+    pub tag: Option<Vec<u8>>,
+    pub args: Vec<CalloutArg>,
 }
 
 // === RepeatRange ===
@@ -555,6 +567,153 @@ pub struct RegexType {
 
     // extension (callouts)
     pub extp: Option<RegexExt>,
+}
+
+// === Optimization data structures ===
+pub const OPT_EXACT_MAXLEN: usize = 24;
+
+#[derive(Clone, Copy)]
+pub struct MinMaxLen {
+    pub min: OnigLen,
+    pub max: OnigLen,
+}
+
+impl MinMaxLen {
+    pub fn new() -> Self {
+        MinMaxLen { min: 0, max: 0 }
+    }
+
+    pub fn clear(&mut self) {
+        self.min = 0;
+        self.max = 0;
+    }
+
+    pub fn set(&mut self, min: OnigLen, max: OnigLen) {
+        self.min = min;
+        self.max = max;
+    }
+
+    pub fn add(&mut self, other: &MinMaxLen) {
+        self.min = crate::regcomp::distance_add(self.min, other.min);
+        self.max = crate::regcomp::distance_add(self.max, other.max);
+    }
+
+    pub fn alt_merge(&mut self, other: &MinMaxLen) {
+        if self.min > other.min { self.min = other.min; }
+        if self.max < other.max { self.max = other.max; }
+    }
+
+    pub fn is_equal(&self, other: &MinMaxLen) -> bool {
+        self.min == other.min && self.max == other.max
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct OptAnc {
+    pub left: i32,
+    pub right: i32,
+}
+
+impl OptAnc {
+    pub fn new() -> Self {
+        OptAnc { left: 0, right: 0 }
+    }
+
+    pub fn clear(&mut self) {
+        self.left = 0;
+        self.right = 0;
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct OptStr {
+    pub mm: MinMaxLen,
+    pub anc: OptAnc,
+    pub reach_end: i32,
+    pub len: usize,
+    pub s: [u8; OPT_EXACT_MAXLEN],
+}
+
+impl OptStr {
+    pub fn new() -> Self {
+        OptStr {
+            mm: MinMaxLen::new(),
+            anc: OptAnc::new(),
+            reach_end: 0,
+            len: 0,
+            s: [0u8; OPT_EXACT_MAXLEN],
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.mm.clear();
+        self.anc.clear();
+        self.reach_end = 0;
+        self.len = 0;
+        self.s[0] = 0;
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.len >= OPT_EXACT_MAXLEN
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct OptMap {
+    pub mm: MinMaxLen,
+    pub anc: OptAnc,
+    pub value: i32,
+    pub map: [u8; CHAR_MAP_SIZE],
+}
+
+impl OptMap {
+    pub fn new() -> Self {
+        OptMap {
+            mm: MinMaxLen::new(),
+            anc: OptAnc::new(),
+            value: 0,
+            map: [0u8; CHAR_MAP_SIZE],
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.mm.clear();
+        self.anc.clear();
+        self.value = 0;
+        self.map = [0u8; CHAR_MAP_SIZE];
+    }
+}
+
+#[derive(Clone)]
+pub struct OptNode {
+    pub len: MinMaxLen,
+    pub anc: OptAnc,
+    pub sb: OptStr,
+    pub sm: OptStr,
+    pub spr: OptStr,
+    pub map: OptMap,
+}
+
+impl OptNode {
+    pub fn new() -> Self {
+        OptNode {
+            len: MinMaxLen::new(),
+            anc: OptAnc::new(),
+            sb: OptStr::new(),
+            sm: OptStr::new(),
+            spr: OptStr::new(),
+            map: OptMap::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.len.clear();
+        self.anc.clear();
+        self.sb.clear();
+        self.sm.clear();
+        self.spr.clear();
+        self.map.clear();
+    }
 }
 
 // === Option check macros as functions ===

@@ -237,6 +237,12 @@ impl Node {
         }
     }
 
+    pub fn is_anychar(&self) -> bool {
+        if let NodeInner::CType(ct) = &self.inner {
+            ct.ctype == CTYPE_ANYCHAR
+        } else { false }
+    }
+
     pub fn body_mut(&mut self) -> Option<&mut Node> {
         match &mut self.inner {
             NodeInner::Quant(n) => n.body.as_mut().map(|b| b.as_mut()),
@@ -995,6 +1001,15 @@ pub fn node_new_fail() -> Box<Node> {
         detail_type: 0,
         num: 0,
         id: 0,
+    }))
+}
+
+pub fn node_new_callout(of: i32, num: i32, id: i32) -> Box<Node> {
+    node_new(NodeInner::Gimmick(GimmickNode {
+        gimmick_type: GimmickType::Callout,
+        detail_type: of,   // 0=CONTENTS, 1=NAME
+        num,               // callout list index
+        id,                // builtin id for name callouts, -1 for contents
     }))
 }
 

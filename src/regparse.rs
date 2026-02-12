@@ -3775,6 +3775,379 @@ fn prs_cc(
     Ok(node)
 }
 
+// ============================================================================
+// Callout parsing helpers
+// ============================================================================
+
+/// Allocate a new CalloutListEntry on the regex's ext, return its 1-based num.
+fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
+    let reg = unsafe { &mut *env.reg };
+    if reg.extp.is_none() {
+        reg.extp = Some(RegexExt {
+            pattern: Vec::new(),
+            tag_table: None,
+            callout_num: 0,
+            callout_list: Vec::new(),
+        });
+    }
+    let ext = reg.extp.as_mut().unwrap();
+    ext.callout_num += 1;
+    let num = ext.callout_num;
+    // Placeholder entry — caller will fill in
+    ext.callout_list.push(CalloutListEntry {
+        of: 0,
+        callout_in: CALLOUT_IN_PROGRESS,
+        builtin_id: -1,
+        tag: None,
+        args: Vec::new(),
+    });
+    Ok(num)
+}
+
+/// Register a tag name → callout num mapping.
+fn callout_tag_entry(env: &mut ParseEnv, tag: &[u8], num: i32) {
+    let reg = unsafe { &mut *env.reg };
+    let ext = reg.extp.as_mut().unwrap();
+    if ext.tag_table.is_none() {
+        ext.tag_table = Some(std::collections::HashMap::new());
+    }
+    ext.tag_table.as_mut().unwrap().insert(tag.to_vec(), num);
+}
+
+/// Parse `(*NAME[tag]{args})` callout-of-name.
+/// `p` points right after `*`. Returns (node, 1) on success.
+fn prs_callout_of_name(
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+    cterm: u32,  // closing char: ')' normally
+) -> Result<Box<Node>, i32> {
+    let enc = env.enc;
+
+    if p_end(*p, end) {
+        return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+    }
+
+    // Read name until cterm, '[', or '{'
+    let name_start = *p;
+    let mut c;
+    loop {
+        if p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
+        let name_end_pos = *p;
+        c = pfetch_s(p, pattern, end, enc);
+        if c == cterm || c == '[' as u32 || c == '{' as u32 {
+            break;
+        }
+    }
+    let name_end = *p - enc.mbc_enc_len(&pattern[(*p - 1)..end]); // back up past the delimiter
+    let name = &pattern[name_start..name_end];
+
+    // Identify builtin
+    let (builtin_id, callout_in) = if name == b"FAIL" {
+        // Handle FAIL as before — just return node_new_fail directly
+        // (don't need a callout entry for this)
+        if c != cterm {
+            return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+        }
+        return Ok(node_new_fail());
+    } else if name == b"MAX" {
+        (CALLOUT_BUILTIN_MAX, CALLOUT_IN_BOTH)
+    } else if name == b"COUNT" {
+        (CALLOUT_BUILTIN_COUNT, CALLOUT_IN_BOTH)
+    } else if name == b"CMP" {
+        (CALLOUT_BUILTIN_CMP, CALLOUT_IN_PROGRESS)
+    } else {
+        return Err(ONIGERR_UNDEFINED_CALLOUT_NAME);
+    };
+
+    // Optional tag: [TAG]
+    let tag = if c == '[' as u32 {
+        let tag_start = *p;
+        loop {
+            if p_end(*p, end) {
+                return Err(ONIGERR_END_PATTERN_IN_GROUP);
+            }
+            let tag_end_pos = *p;
+            c = pfetch_s(p, pattern, end, enc);
+            if c == ']' as u32 {
+                let tag_bytes = pattern[tag_start..tag_end_pos].to_vec();
+                if tag_bytes.is_empty() {
+                    return Err(ONIGERR_INVALID_CALLOUT_TAG_NAME);
+                }
+                // Read next char after ]
+                if p_end(*p, end) {
+                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                }
+                c = pfetch_s(p, pattern, end, enc);
+                break Some(tag_bytes);
+            }
+        }
+    } else {
+        None
+    };
+
+    // Parse args: {arg1,arg2,...}
+    let args = if c == '{' as u32 {
+        let mut args = Vec::new();
+        loop {
+            // Skip leading whitespace
+            while !p_end(*p, end) {
+                let ch = ppeek(*p, pattern, end, enc);
+                if ch == ' ' as u32 || ch == '\t' as u32 {
+                    pinc(p, pattern, enc);
+                } else {
+                    break;
+                }
+            }
+            if p_end(*p, end) {
+                return Err(ONIGERR_END_PATTERN_IN_GROUP);
+            }
+            let ch = ppeek(*p, pattern, end, enc);
+            if ch == '}' as u32 {
+                pinc(p, pattern, enc);
+                break;
+            }
+            // Parse one argument
+            let arg = prs_callout_one_arg(p, end, pattern, env)?;
+            args.push(arg);
+            // Expect ',' or '}'
+            if p_end(*p, end) {
+                return Err(ONIGERR_END_PATTERN_IN_GROUP);
+            }
+            let sep = ppeek(*p, pattern, end, enc);
+            if sep == ',' as u32 {
+                pinc(p, pattern, enc);
+            } else if sep == '}' as u32 {
+                pinc(p, pattern, enc);
+                break;
+            } else {
+                return Err(ONIGERR_INVALID_CALLOUT_ARG);
+            }
+        }
+        // Read cterm after }
+        if p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
+        c = pfetch_s(p, pattern, end, enc);
+        args
+    } else {
+        Vec::new()
+    };
+
+    if c != cterm {
+        return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+    }
+
+    // Fill in default args for builtins that have optional args
+    let mut final_args = args;
+    match builtin_id {
+        CALLOUT_BUILTIN_MAX => {
+            // args: [TAG|LONG, CHAR]. Arg 0 is required, arg 1 defaults to 'X'
+            if final_args.is_empty() {
+                return Err(ONIGERR_INVALID_CALLOUT_ARG);
+            }
+            if final_args.len() < 2 {
+                final_args.push(CalloutArg::Char(b'X'));
+            }
+        }
+        CALLOUT_BUILTIN_COUNT => {
+            // args: [CHAR]. Arg 0 defaults to '>'
+            if final_args.is_empty() {
+                final_args.push(CalloutArg::Char(b'>'));
+            }
+        }
+        CALLOUT_BUILTIN_CMP => {
+            // args: [TAG|LONG, STRING, TAG|LONG]. All 3 required
+            if final_args.len() != 3 {
+                return Err(ONIGERR_INVALID_CALLOUT_ARG);
+            }
+        }
+        _ => {}
+    }
+
+    // Create callout list entry
+    let num = reg_callout_list_entry(env)?;
+    let reg = unsafe { &mut *env.reg };
+    let ext = reg.extp.as_mut().unwrap();
+    let entry = &mut ext.callout_list[(num - 1) as usize];
+    entry.of = OnigCalloutOf::Name as i32;
+    entry.callout_in = callout_in;
+    entry.builtin_id = builtin_id;
+    entry.args = final_args;
+
+    // Register tag
+    if let Some(ref tag_bytes) = tag {
+        entry.tag = Some(tag_bytes.clone());
+        callout_tag_entry(env, tag_bytes, num);
+    }
+
+    Ok(node_new_callout(OnigCalloutOf::Name as i32, num, builtin_id))
+}
+
+/// Parse one callout argument value: integer, single char (X, <, >), tag name, or string.
+fn prs_callout_one_arg(
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &ParseEnv,
+) -> Result<CalloutArg, i32> {
+    let enc = env.enc;
+    // Skip whitespace
+    while !p_end(*p, end) {
+        let ch = ppeek(*p, pattern, end, enc);
+        if ch == ' ' as u32 || ch == '\t' as u32 {
+            pinc(p, pattern, enc);
+        } else {
+            break;
+        }
+    }
+    if p_end(*p, end) {
+        return Err(ONIGERR_INVALID_CALLOUT_ARG);
+    }
+
+    let start = *p;
+    // Collect chars until ',' or '}' or ')' (cterm)
+    while !p_end(*p, end) {
+        let ch = ppeek(*p, pattern, end, enc);
+        if ch == ',' as u32 || ch == '}' as u32 || ch == ')' as u32 {
+            break;
+        }
+        pinc(p, pattern, enc);
+    }
+    let arg_bytes = &pattern[start..*p];
+    // Trim trailing whitespace
+    let trimmed = {
+        let mut e = arg_bytes.len();
+        while e > 0 && (arg_bytes[e - 1] == b' ' || arg_bytes[e - 1] == b'\t') {
+            e -= 1;
+        }
+        &arg_bytes[..e]
+    };
+
+    if trimmed.is_empty() {
+        return Err(ONIGERR_INVALID_CALLOUT_ARG);
+    }
+
+    // Try parsing as integer (possibly negative)
+    if let Some(n) = try_parse_i64(trimmed) {
+        return Ok(CalloutArg::Long(n));
+    }
+
+    // Single ASCII char (like 'X', '<', '>')
+    if trimmed.len() == 1 && trimmed[0].is_ascii() {
+        return Ok(CalloutArg::Char(trimmed[0]));
+    }
+
+    // Comparison operators: ==, !=, <, >, <=, >=
+    if (trimmed.len() == 1 || trimmed.len() == 2) && trimmed.iter().all(|&b| matches!(b, b'<' | b'>' | b'=' | b'!')) {
+        return Ok(CalloutArg::Str(trimmed.to_vec()));
+    }
+
+    // Otherwise treat as tag name
+    Ok(CalloutArg::Tag(trimmed.to_vec()))
+}
+
+fn try_parse_i64(s: &[u8]) -> Option<i64> {
+    let s_str = std::str::from_utf8(s).ok()?;
+    s_str.trim().parse::<i64>().ok()
+}
+
+/// Parse `(?{...})` callout-of-contents.
+/// `p` points right after `{`. Returns the callout node.
+fn prs_callout_of_contents(
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+    cterm: u32,
+) -> Result<Box<Node>, i32> {
+    let enc = env.enc;
+
+    if p_end(*p, end) {
+        return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+    }
+
+    // Count opening brace nesting: (?{{...}})
+    let mut brace_nest = 0;
+    while !p_end(*p, end) && ppeek(*p, pattern, end, enc) == '{' as u32 {
+        brace_nest += 1;
+        pinc(p, pattern, enc);
+    }
+
+    // Read content until matching closing braces
+    let code_start = *p;
+    let mut code_end;
+    loop {
+        if p_end(*p, end) {
+            return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+        }
+        code_end = *p;
+        let c = pfetch_s(p, pattern, end, enc);
+        if c == '}' as u32 {
+            let mut i = brace_nest;
+            while i > 0 {
+                if p_end(*p, end) {
+                    return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+                }
+                let c2 = pfetch_s(p, pattern, end, enc);
+                if c2 == '}' as u32 {
+                    i -= 1;
+                } else {
+                    break;
+                }
+            }
+            if i == 0 {
+                break;
+            }
+        }
+    }
+
+    if p_end(*p, end) {
+        return Err(ONIGERR_END_PATTERN_IN_GROUP);
+    }
+
+    // Direction flag after the closing braces
+    let mut callout_in = CALLOUT_IN_PROGRESS;
+    let mut c = pfetch_s(p, pattern, end, enc);
+    if c == 'X' as u32 {
+        callout_in = CALLOUT_IN_BOTH;
+        if p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
+        c = pfetch_s(p, pattern, end, enc);
+    } else if c == '<' as u32 {
+        callout_in = CALLOUT_IN_RETRACTION;
+        if p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
+        c = pfetch_s(p, pattern, end, enc);
+    } else if c == '>' as u32 {
+        // default: PROGRESS
+        if p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
+        c = pfetch_s(p, pattern, end, enc);
+    }
+
+    if c != cterm {
+        return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+    }
+
+    // Create entry
+    let num = reg_callout_list_entry(env)?;
+    let reg = unsafe { &mut *env.reg };
+    let ext = reg.extp.as_mut().unwrap();
+    let entry = &mut ext.callout_list[(num - 1) as usize];
+    entry.of = OnigCalloutOf::Contents as i32;
+    entry.callout_in = callout_in;
+    entry.builtin_id = -1;
+
+    Ok(node_new_callout(OnigCalloutOf::Contents as i32, num, ONIG_NON_NAME_ID))
+}
+
 /// Parse a conditional pattern: (?(condition)then|else)
 /// Called when we've already consumed '(?' and see '('.
 fn prs_conditional(
@@ -3994,26 +4367,24 @@ fn prs_conditional(
         condition_is_checker = false;
 
         let cond_node;
-        if c == '*' as u32 {
-            // Callout-of-name condition: (?(*FAIL)then|else)
-            let name_start = *p;
-            while !p_end(*p, end) {
-                let ch = ppeek(*p, pattern, end, enc);
-                if ch == ')' as u32 {
-                    break;
-                }
-                pinc(p, pattern, enc);
-            }
-            let name = &pattern[name_start..*p];
-            if name == b"FAIL" {
-                if p_end(*p, end) {
-                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
-                }
-                pinc(p, pattern, enc); // skip ')'
-                cond_node = node_new_fail();
+        if c == '?' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS) {
+            // Condition is callout of contents: (?(?{...})THEN|ELSE)
+            if !p_end(*p, end) && ppeek(*p, pattern, end, enc) == '{' as u32 {
+                pinc(p, pattern, enc); // consume '{'
+                cond_node = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
             } else {
-                return Err(ONIGERR_UNDEFINED_CALLOUT_NAME);
+                // Fall through to general pattern condition
+                *p = *p - 1; // unfetch '?'
+                let r = fetch_token(tok, p, end, pattern, env);
+                if r < 0 {
+                    return Err(r);
+                }
+                let (cn, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                cond_node = cn;
             }
+        } else if c == '*' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME) {
+            // Callout-of-name condition: (?(*FAIL)then|else), (?(*MAX{2})then|else)
+            cond_node = prs_callout_of_name(p, end, pattern, env, ')' as u32)?;
         } else {
             // General pattern condition
             *p = *p - 1; // unfetch the char we just read
@@ -4623,35 +4994,25 @@ fn prs_bag(
                 }
                 return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
             }
+            '{' => {
+                // Callout of contents: (?{...})
+                if !is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                let node = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
+                return Ok((node, 1));
+            }
             _ => {
                 // Option flags: i, m, s, x, etc.
                 *p = pfetch_prev; // PUNFETCH back to the option char
                 return prs_options(tok, term, p, end, pattern, env);
             }
         }
-    } else if c == '*' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_GROUP_EFFECT) {
-        // Callout of contents: (*FAIL), (*...)
+    } else if c == '*' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME) {
+        // Callout of name: (*FAIL), (*MAX{2}), (*COUNT[AB]{X}), (*CMP{AB,<,CD})
         pinc(p, pattern, enc); // skip '*'
-        // Read callout name until ')'
-        let name_start = *p;
-        while !p_end(*p, end) {
-            let ch = ppeek(*p, pattern, end, enc);
-            if ch == ')' as u32 {
-                break;
-            }
-            pinc(p, pattern, enc);
-        }
-        let name = &pattern[name_start..*p];
-        if name == b"FAIL" {
-            // Consume the closing ')'
-            if p_end(*p, end) {
-                return Err(ONIGERR_END_PATTERN_IN_GROUP);
-            }
-            pinc(p, pattern, enc); // skip ')'
-            return Ok((node_new_fail(), 1));
-        } else {
-            return Err(ONIGERR_UNDEFINED_CALLOUT_NAME);
-        }
+        let node = prs_callout_of_name(p, end, pattern, env, ')' as u32)?;
+        return Ok((node, 1));
     } else {
         // Plain parenthesized group
         if (env.options & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0 {

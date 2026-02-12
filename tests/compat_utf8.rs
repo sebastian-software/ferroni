@@ -9217,7 +9217,6 @@ fn error_utf8_invalid_range_xff() {
 // --- Complex conditional with recursion (C line 1374) ---
 
 #[test]
-#[ignore] // complex conditional with recursion - may hang
 fn conditional_recursion_complex() {
     // C line 1374: complex conditional pattern from issue #139
     x2(
@@ -9242,21 +9241,18 @@ fn callout_fail_repeated() {
 }
 
 #[test]
-#[ignore] // callouts not implemented
 fn callout_max() {
     // C line 1378
     x2(b"(?:[ab]|(*MAX{2}).)*", b"abcbaaccaaa", 0, 7);
 }
 
 #[test]
-#[ignore] // callouts not implemented
 fn callout_count_cmp() {
     // C line 1379-1380
     x2(b"(?:(*COUNT[AB]{X})[ab]|(*COUNT[CD]{X})[cd])*(*CMP{AB,<,CD})", b"abababcdab", 5, 8);
 }
 
 #[test]
-#[ignore] // callouts not implemented
 fn callout_conditional_code() {
     // C line 1381
     x2(b"(?(?{....})123|456)", b"123", 0, 3);
