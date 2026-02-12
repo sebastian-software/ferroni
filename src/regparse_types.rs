@@ -1227,24 +1227,3 @@ impl NameTable {
 }
 
 // === Reduce Quantifier Type Table ===
-// From regparse.c: ReduceTypeTable[6][6] for nested quantifier reduction
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReduceType {
-    TokenBody,   // 0: use body
-    A,           // 1: reduce type A
-    Del,         // 2: delete
-    AQ,          // 3: reduce type AQ
-    QQ,          // 4: reduce type QQ
-    PQQ,         // 5: reduce type PQQ
-}
-
-pub static REDUCE_TYPE_TABLE: [[ReduceType; 6]; 6] = [
-    // {0,0}, {0,1}, {1,0}, {1,1}, {0,inf}, {1,inf}
-    [ReduceType::Del,  ReduceType::A,   ReduceType::A,  ReduceType::QQ,  ReduceType::A,   ReduceType::Del],  // {0,0}
-    [ReduceType::Del,  ReduceType::Del, ReduceType::Del, ReduceType::PQQ, ReduceType::Del,  ReduceType::Del],  // {0,1}
-    [ReduceType::A,    ReduceType::A,   ReduceType::Del, ReduceType::A,   ReduceType::A,   ReduceType::TokenBody], // {1,0}
-    [ReduceType::Del,  ReduceType::Del, ReduceType::Del, ReduceType::Del, ReduceType::Del,  ReduceType::Del],  // {1,1}
-    [ReduceType::A,    ReduceType::A,   ReduceType::A,  ReduceType::A,   ReduceType::AQ,  ReduceType::Del],  // {0,inf}
-    [ReduceType::A,    ReduceType::A,   ReduceType::A,  ReduceType::A,   ReduceType::AQ,  ReduceType::AQ],   // {1,inf}
-];

@@ -1933,6 +1933,135 @@ fn quantifier_type_num(q: &QuantNode) -> i32 {
     -1
 }
 
+// ReduceType enum for nested quantifier reduction table
+const RQ_ASIS: u8 = 0; // as is
+const RQ_DEL: u8 = 1;  // delete parent (replace parent with child)
+const RQ_A: u8 = 2;    // to '*'
+const RQ_P: u8 = 3;    // to '+'
+const RQ_AQ: u8 = 4;   // to '*?'
+const RQ_QQ: u8 = 5;   // to '??'
+const RQ_P_QQ: u8 = 6; // to '+)??' (child becomes +, parent becomes ??)
+
+// 6×6 reduction table: [child_type][parent_type]
+// Indices: 0=?, 1=*, 2=+, 3=??, 4=*?, 5=+?
+static REDUCE_TYPE_TABLE: [[u8; 6]; 6] = [
+    [RQ_DEL,  RQ_A,    RQ_A,   RQ_QQ,   RQ_AQ,   RQ_ASIS], // '?'
+    [RQ_DEL,  RQ_DEL,  RQ_DEL, RQ_P_QQ, RQ_P_QQ, RQ_DEL],  // '*'
+    [RQ_A,    RQ_A,    RQ_DEL, RQ_ASIS, RQ_P_QQ, RQ_DEL],  // '+'
+    [RQ_DEL,  RQ_AQ,   RQ_AQ,  RQ_DEL,  RQ_AQ,   RQ_AQ],   // '??'
+    [RQ_DEL,  RQ_DEL,  RQ_DEL, RQ_DEL,  RQ_DEL,  RQ_DEL],  // '*?'
+    [RQ_ASIS, RQ_A,    RQ_P,   RQ_AQ,   RQ_AQ,   RQ_DEL],  // '+?'
+];
+
+/// Port of C onig_reduce_nested_quantifier.
+/// pnode is the outer (parent) quantifier node whose body is the inner (child) quantifier.
+fn onig_reduce_nested_quantifier(pnode: &mut Box<Node>) -> Result<(), i32> {
+    // Get parent and child quantifier type indices
+    let pnum = if let NodeInner::Quant(ref pq) = pnode.inner {
+        quantifier_type_num(pq)
+    } else {
+        return Ok(());
+    };
+
+    let cnum = if let Some(ref body) = pnode.body() {
+        if let NodeInner::Quant(ref cq) = body.inner {
+            quantifier_type_num(cq)
+        } else {
+            return Ok(());
+        }
+    } else {
+        return Ok(());
+    };
+
+    if pnum < 0 || cnum < 0 {
+        // Non-standard quantifiers: only handle fixed×fixed
+        let (p_lower, p_upper) = if let NodeInner::Quant(ref pq) = pnode.inner {
+            (pq.lower, pq.upper)
+        } else { return Ok(()); };
+        let (c_lower, c_upper) = if let Some(ref body) = pnode.body() {
+            if let NodeInner::Quant(ref cq) = body.inner {
+                (cq.lower, cq.upper)
+            } else { return Ok(()); }
+        } else { return Ok(()); };
+
+        if p_lower == p_upper && c_lower == c_upper {
+            let product = positive_int_multiply(p_lower, c_lower);
+            if product < 0 {
+                return Err(ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);
+            }
+            if let NodeInner::Quant(ref mut pq) = pnode.inner {
+                pq.lower = product;
+                pq.upper = product;
+            }
+            // Move child's body to parent, removing child node
+            let child_body = extract_grandchild_body(pnode);
+            pnode.set_body(child_body);
+        }
+        return Ok(());
+    }
+
+    let reduce_type = REDUCE_TYPE_TABLE[cnum as usize][pnum as usize];
+
+    match reduce_type {
+        RQ_DEL => {
+            // Delete parent: replace parent node with child node entirely
+            let child = pnode.take_body();
+            if let Some(child_node) = child {
+                *pnode = child_node;
+            }
+        }
+        RQ_A | RQ_P | RQ_AQ | RQ_QQ => {
+            // Remove child quant, set parent's body to grandchild, update parent params
+            let child_body = extract_grandchild_body(pnode);
+            pnode.set_body(child_body);
+            if let NodeInner::Quant(ref mut pq) = pnode.inner {
+                match reduce_type {
+                    RQ_A => { pq.lower = 0; pq.upper = INFINITE_REPEAT; pq.greedy = true; }
+                    RQ_P => { pq.lower = 1; pq.upper = INFINITE_REPEAT; pq.greedy = true; }
+                    RQ_AQ => { pq.lower = 0; pq.upper = INFINITE_REPEAT; pq.greedy = false; }
+                    RQ_QQ => { pq.lower = 0; pq.upper = 1; pq.greedy = false; }
+                    _ => unreachable!()
+                }
+            }
+        }
+        RQ_P_QQ => {
+            // Transform to (+)?? — child becomes '+', parent becomes '??'
+            if let NodeInner::Quant(ref mut pq) = pnode.inner {
+                pq.lower = 0;
+                pq.upper = 1;
+                pq.greedy = false;
+            }
+            if let NodeInner::Quant(ref mut pq) = pnode.inner {
+                if let Some(ref mut body) = pq.body {
+                    if let NodeInner::Quant(ref mut cq) = body.inner {
+                        cq.lower = 1;
+                        cq.upper = INFINITE_REPEAT;
+                        cq.greedy = true;
+                    }
+                }
+            }
+        }
+        _ => {
+            // RQ_ASIS — leave as is
+        }
+    }
+
+    Ok(())
+}
+
+/// Helper: extract the grandchild body from a parent→child→grandchild chain.
+/// Takes the body out of the child quantifier node.
+fn extract_grandchild_body(pnode: &mut Box<Node>) -> Option<Box<Node>> {
+    if let NodeInner::Quant(ref mut pq) = pnode.inner {
+        if let Some(ref mut child) = pq.body {
+            if let NodeInner::Quant(ref mut cq) = child.inner {
+                return cq.body.take();
+            }
+        }
+    }
+    None
+}
+
 // ============================================================================
 // Tokenizer: fetch_interval
 // ============================================================================
@@ -5718,33 +5847,34 @@ fn check_quantifier(
 
         let mut qn = node_new_quantifier(tok.repeat_lower, tok.repeat_upper, tok.repeat_greedy);
 
-        // Reduce nested fixed quantifiers: x{n}{m} => x{n*m}
         // Port of assign_quantifier_body / onig_reduce_nested_quantifier from C.
-        if let NodeInner::Quant(ref inner_qn) = target_node.inner {
-            let outer_lower = tok.repeat_lower;
-            let outer_upper = tok.repeat_upper;
-            let inner_lower = inner_qn.lower;
-            let inner_upper = inner_qn.upper;
-            if outer_lower == outer_upper && inner_lower == inner_upper {
-                // Both are fixed: {n}{m} => {n*m}
-                let product = positive_int_multiply(inner_lower, outer_lower);
-                if product < 0 {
-                    return Err(ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);
+        // Full 6×6 ReduceTypeTable for standard quantifier combinations.
+        if let NodeInner::Quant(_) = target_node.inner {
+            let nestq_num = if let NodeInner::Quant(ref qn_inner) = qn.inner {
+                quantifier_type_num(qn_inner)
+            } else { -1 };
+            let targetq_num = if let NodeInner::Quant(ref tqn) = target_node.inner {
+                quantifier_type_num(tqn)
+            } else { -1 };
+
+            if targetq_num >= 0 && nestq_num < 0 {
+                // Special case: standard inner (target) with non-standard outer (nesting)
+                // (?:a*){n,m}, (?:a+){n,m} => upper clamped
+                if targetq_num == 1 || targetq_num == 2 { // * or +
+                    if let NodeInner::Quant(ref qn_inner) = qn.inner {
+                        if qn_inner.upper != INFINITE_REPEAT && qn_inner.upper > 1 && qn_inner.greedy {
+                            let clamped = if qn_inner.lower == 0 { 1 } else { qn_inner.lower };
+                            if let NodeInner::Quant(ref mut qn_mut) = qn.inner {
+                                qn_mut.upper = clamped;
+                            }
+                        }
+                    }
                 }
-                // Merge: take the inner body, set outer counts to the product
-                if let NodeInner::Quant(ref mut qn_inner) = qn.inner {
-                    qn_inner.lower = product;
-                    qn_inner.upper = product;
-                }
-                // Move inner quant's body to outer quant
-                let inner_body = if let NodeInner::Quant(ref mut iqn) = target_node.inner {
-                    iqn.body.take()
-                } else {
-                    None
-                };
-                qn.set_body(inner_body);
-            } else {
                 qn.set_body(Some(target_node));
+            } else {
+                // Both standard or both non-standard — try onig_reduce_nested_quantifier
+                qn.set_body(Some(target_node));
+                onig_reduce_nested_quantifier(&mut qn)?;
             }
         } else {
             qn.set_body(Some(target_node));
