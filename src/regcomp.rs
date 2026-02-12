@@ -2319,7 +2319,10 @@ const IN_NOT: i32 = 1 << 1;
 const IN_REAL_REPEAT: i32 = 1 << 2;
 const IN_VAR_REPEAT: i32 = 1 << 3;
 const IN_MULTI_ENTRY: i32 = 1 << 5;
+const IN_ZERO_REPEAT: i32 = 1 << 4;
 const IN_PREC_READ: i32 = 1 << 6;
+const IN_LOOK_BEHIND: i32 = 1 << 7;
+const IN_PEEK: i32 = 1 << 8;
 
 /// Calculate minimum byte length a node can match.
 /// Mirrors C's node_min_byte_len() from regcomp.c.
@@ -2952,6 +2955,82 @@ fn check_node_in_look_behind(node: &Node) -> bool {
             node.has_status(ND_ST_ABSENT_WITH_SIDE_EFFECTS)
         }
         _ => false,
+    }
+}
+
+/// Reduce quantifiers in lookbehind: set upper = lower for simple body quantifiers.
+/// C: node_reduce_in_look_behind — returns true if node should be removed (upper==0).
+fn node_reduce_in_look_behind(node: &mut Node) -> bool {
+    if let NodeInner::Quant(ref mut qn) = node.inner {
+        if let Some(ref body) = qn.body {
+            let reducible = matches!(body.inner,
+                NodeInner::String(_) | NodeInner::CType(_) |
+                NodeInner::CClass(_) | NodeInner::BackRef(_));
+            if reducible {
+                qn.upper = qn.lower;
+                return qn.upper == 0;
+            }
+        }
+    }
+    false
+}
+
+/// C: list_reduce_in_look_behind
+fn list_reduce_in_look_behind(node: &mut Node) {
+    match node.inner {
+        NodeInner::Quant(_) => {
+            node_reduce_in_look_behind(node);
+        }
+        NodeInner::List(_) => {
+            // Walk the list, reducing each car
+            let mut cur = node as *mut Node;
+            loop {
+                unsafe {
+                    if let NodeInner::List(ref mut cons) = (*cur).inner {
+                        let removed = node_reduce_in_look_behind(&mut cons.car);
+                        if !removed {
+                            // Only continue if the current node was reduced (removed)
+                            // C: "if (r <= 0) break" — r>0 means removed, keep going
+                            break;
+                        }
+                        if let Some(ref mut cdr) = cons.cdr {
+                            cur = cdr.as_mut() as *mut Node;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// C: alt_reduce_in_look_behind
+fn alt_reduce_in_look_behind(node: &mut Node) {
+    match node.inner {
+        NodeInner::Alt(_) => {
+            let mut cur = node as *mut Node;
+            loop {
+                unsafe {
+                    if let NodeInner::Alt(ref mut cons) = (*cur).inner {
+                        list_reduce_in_look_behind(&mut cons.car);
+                        if let Some(ref mut cdr) = cons.cdr {
+                            cur = cdr.as_mut() as *mut Node;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        _ => {
+            list_reduce_in_look_behind(node);
+        }
     }
 }
 
@@ -4070,6 +4149,50 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
                 if r != 0 { return r; }
             }
 
+            // Expand string: "abc"{3} => "abcabcabc"
+            const EXPAND_STRING_MAX_LENGTH: i32 = 100;
+            if let Some(ref body) = qn.body {
+                if let NodeInner::String(ref sn) = body.inner {
+                    if !is_infinite_repeat(qn.lower) && qn.lower == qn.upper
+                        && qn.lower > 1 && qn.lower <= EXPAND_STRING_MAX_LENGTH
+                    {
+                        let len = sn.s.len() as i32;
+                        if len * qn.lower <= EXPAND_STRING_MAX_LENGTH {
+                            let n = qn.lower as usize;
+                            let orig_bytes = sn.s.clone();
+                            let flag = sn.flag;
+                            // Build expanded string
+                            let mut expanded = Vec::with_capacity(orig_bytes.len() * n);
+                            for _ in 0..n {
+                                expanded.extend_from_slice(&orig_bytes);
+                            }
+                            // Replace quantifier node with string node
+                            let mut str_node = node_new_str(&expanded);
+                            if let NodeInner::String(ref mut esn) = str_node.inner {
+                                esn.flag = flag;
+                            }
+                            str_node.status = node.status;
+                            *node = *str_node;
+                            return 0;
+                        }
+                    }
+                }
+            }
+
+            // Set head_exact: extract leading literal byte from body
+            if qn.greedy && qn.emptiness == BodyEmptyType::NotEmpty {
+                if let Some(ref body) = qn.body {
+                    if let NodeInner::Quant(ref tqn) = body.inner {
+                        // Propagate head_exact from nested quantifier
+                        if tqn.head_exact.is_some() {
+                            qn.head_exact = tqn.head_exact;
+                        }
+                    } else {
+                        qn.head_exact = get_head_literal_byte(body, true, reg);
+                    }
+                }
+            }
+
             0
         }
 
@@ -4143,15 +4266,27 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             }
             // Now recurse into the body
             if let NodeInner::Anchor(ref mut an) = node.inner {
+                let anchor_type = an.anchor_type;
                 if let Some(ref mut body) = an.body {
-                    let new_state = if an.anchor_type == ANCR_PREC_READ {
+                    let new_state = if anchor_type == ANCR_PREC_READ {
                         state | IN_PREC_READ
-                    } else if an.anchor_type == ANCR_PREC_READ_NOT {
+                    } else if anchor_type == ANCR_PREC_READ_NOT {
                         state | IN_PREC_READ | IN_NOT
+                    } else if anchor_type == ANCR_LOOK_BEHIND_NOT {
+                        state | IN_NOT | IN_LOOK_BEHIND
+                    } else if anchor_type == ANCR_LOOK_BEHIND {
+                        state | IN_LOOK_BEHIND
                     } else {
                         state
                     };
-                    tune_tree(body, reg, new_state, env)
+                    let r = tune_tree(body, reg, new_state, env);
+                    if r != 0 { return r; }
+
+                    // Reduce quantifiers in lookbehind (upper = lower)
+                    if anchor_type == ANCR_LOOK_BEHIND || anchor_type == ANCR_LOOK_BEHIND_NOT {
+                        alt_reduce_in_look_behind(body);
+                    }
+                    0
                 } else {
                     0
                 }
