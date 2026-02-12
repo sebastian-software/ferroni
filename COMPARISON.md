@@ -262,10 +262,16 @@ Minor optimization, not a correctness issue.
 | **Public API** | ~85% | Core complete; syntax config, user-defined callouts, some callout data variants missing |
 | **Encodings** | 7% | ASCII + UTF-8 only (sufficient for most use cases) |
 | **Safety limits** | 100% | All global and per-search limits |
-| **Test coverage** | 1477/1554 C tests | ~95% of C test_utf8.c patterns ported |
+| **Test coverage** | 1470/1554 C tests ported | 55 blocked (\y/\Y/\X need ICU data), 29 not yet ported |
 
 **Overall functional parity: ~95%** for ASCII/UTF-8 workloads.
-The remaining gaps are primarily encoding variety, syntax configuration accessors,
+
+Test breakdown: 1554 C tests total. 1470 ported as Rust x2/x3/n/e calls, plus 7
+Rust-only tests (backward search, validity check, capture history) = 1477 #[test].
+55 tests blocked on \y/\Y (40) and \X (15) which need ICU Unicode segmentation data.
+29 remaining: ~27 are (?W/D/S/P) option tests with multibyte subjects, ~2 Japanese mirrors.
+
+The remaining API gaps are primarily encoding variety, syntax configuration accessors,
 and user-defined callout registration — none of which affect core regex matching.
 
 ---
