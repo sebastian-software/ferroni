@@ -3109,15 +3109,67 @@ pub fn onig_search(
 ) -> (i32, Option<OnigRegion>) {
     let mut msa = MatchArg::new(reg, option, region, start);
     let enc = reg.enc;
-
-    if start > range {
-        // Backward search - not yet optimized
-        return (ONIG_MISMATCH, msa.region);
-    }
-
     let find_longest = opton_find_longest(msa.options);
     let mut best_start: i32 = ONIG_MISMATCH;
     let mut best_len: i32 = ONIG_MISMATCH;
+
+    if start > range {
+        // Backward search: start > range, search from start down to range
+        if end == 0 { return (ONIG_MISMATCH, msa.region); }
+
+        // orig_start is the right boundary for matching (upper range)
+        let orig_start = if start < end {
+            let elen = enclen(enc, str_data, start);
+            start + elen
+        } else {
+            end
+        };
+
+        // Threshold length check
+        if (end as i32 - range as i32) < reg.threshold_len {
+            return (ONIG_MISMATCH, msa.region);
+        }
+
+        // Start from the last character position at or before start
+        let mut s = if start >= end {
+            // Start is at or past end, begin from last char
+            onigenc_get_prev_char_head(enc, str_data, 0, end)
+        } else {
+            start
+        };
+
+        loop {
+            if let Some(ref mut r) = msa.region {
+                r.resize(reg.num_mem + 1);
+                r.clear();
+            }
+            msa.best_len = ONIG_MISMATCH;
+            msa.best_s = 0;
+            let r = match_at(reg, str_data, end, orig_start, s, &mut msa);
+            if r != ONIG_MISMATCH {
+                if r < 0 { return (r, msa.region); } // error
+                if find_longest {
+                    let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
+                    if best_len == ONIG_MISMATCH || match_len > best_len {
+                        best_start = s as i32;
+                        best_len = match_len;
+                    }
+                } else {
+                    return (s as i32, msa.region);
+                }
+            }
+            if msa.retry_limit_in_search != 0
+                && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+            {
+                return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region);
+            }
+            if s <= range { break; }
+            if s == 0 { break; }
+            s = onigenc_get_prev_char_head(enc, str_data, 0, s);
+        }
+
+        return finish_search(find_longest, best_start, best_len, reg, str_data, end, &mut msa);
+    }
 
     let mut cur_start = start;
     let mut cur_range = range;
@@ -3831,5 +3883,170 @@ mod tests {
     fn match_back_reference_fail() {
         let (r, _) = compile_and_match(b"(a)\\1", b"ab");
         assert_eq!(r, ONIG_MISMATCH);
+    }
+
+    // ---- Safety limits ----
+
+    // Safety limit tests use a lock to avoid interfering with each other
+    // (since limits are global statics).
+    use std::sync::Mutex;
+    static LIMIT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn retry_limit_in_match() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+
+        // (a*)*b against "aaa..." causes catastrophic backtracking
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"(a*)*b";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(r, 0);
+
+        let input = b"aaaaaaaaaa"; // 10 'a's, no 'b'
+
+        // Save old limits, set low retry limit
+        let old_retry = onig_get_retry_limit_in_match();
+        let old_stack = onig_get_match_stack_limit();
+        let old_time = onig_get_time_limit();
+        onig_set_retry_limit_in_match(100);
+        onig_set_match_stack_limit(0); // unlimited
+        onig_set_time_limit(0); // unlimited
+
+        let (result, _) = onig_search(
+            &reg, input, input.len(), 0, input.len(),
+            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+        );
+        assert_eq!(result, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER);
+
+        // Restore
+        onig_set_retry_limit_in_match(old_retry);
+        onig_set_match_stack_limit(old_stack);
+        onig_set_time_limit(old_time);
+    }
+
+    #[test]
+    fn stack_limit_over() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+
+        // Use onig_match directly to avoid forward_search optimization
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b".*.*.*.*.*";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(r, 0);
+
+        let input = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; // 30 chars
+
+        // Set very low stack limit, disable retry limit
+        let old_retry = onig_get_retry_limit_in_match();
+        let old_stack = onig_get_match_stack_limit();
+        let old_time = onig_get_time_limit();
+        onig_set_retry_limit_in_match(0); // unlimited
+        onig_set_match_stack_limit(20);
+        onig_set_time_limit(0); // unlimited
+
+        let (result, _) = onig_match(
+            &reg, input, input.len(), 0,
+            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+        );
+        assert_eq!(result, ONIGERR_MATCH_STACK_LIMIT_OVER);
+
+        // Restore
+        onig_set_retry_limit_in_match(old_retry);
+        onig_set_match_stack_limit(old_stack);
+        onig_set_time_limit(old_time);
+    }
+
+    #[test]
+    fn time_limit_over() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"(a*)*b";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(r, 0);
+
+        let input = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; // 30 'a's
+
+        // Set 1ms time limit, disable other limits
+        let old_retry = onig_get_retry_limit_in_match();
+        let old_stack = onig_get_match_stack_limit();
+        let old_time = onig_get_time_limit();
+        onig_set_retry_limit_in_match(0); // unlimited
+        onig_set_match_stack_limit(0); // unlimited
+        onig_set_time_limit(1);
+
+        let (result, _) = onig_search(
+            &reg, input, input.len(), 0, input.len(),
+            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+        );
+        assert_eq!(result, ONIGERR_TIME_LIMIT_OVER);
+
+        // Restore
+        onig_set_retry_limit_in_match(old_retry);
+        onig_set_match_stack_limit(old_stack);
+        onig_set_time_limit(old_time);
+    }
+
+    #[test]
+    fn limits_zero_means_unlimited() {
+        // Verify default limits (0 = unlimited) don't interfere with normal matching
+        let (r, _) = compile_and_match(b"a*b", b"aaab");
+        assert_eq!(r, 4);
+    }
+
+    // ---- Backward search ----
+
+    #[test]
+    fn backward_search_basic() {
+        // Search backward from end to find last occurrence
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"ab";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(r, 0);
+
+        let input = b"xxabxxabxx"; // "ab" at positions 2 and 6
+        // Backward search: start=10 (end), range=0 (beginning)
+        let (result, _) = onig_search(
+            &reg, input, input.len(), input.len(), 0,
+            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+        );
+        // Should find the last "ab" at position 6
+        assert_eq!(result, 6);
+    }
+
+    #[test]
+    fn backward_search_at_start() {
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"he";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(r, 0);
+
+        let input = b"hello";
+        let (result, _) = onig_search(
+            &reg, input, input.len(), input.len(), 0,
+            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+        );
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn backward_search_no_match() {
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"xyz";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(r, 0);
+
+        let input = b"hello world";
+        let (result, _) = onig_search(
+            &reg, input, input.len(), input.len(), 0,
+            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+        );
+        assert_eq!(result, ONIG_MISMATCH);
     }
 }
