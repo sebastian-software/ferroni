@@ -10,9 +10,30 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
+use std::sync::atomic::{AtomicU64, AtomicU32, Ordering};
+use std::time::Instant;
+
 use crate::oniguruma::*;
 use crate::regenc::*;
 use crate::regint::*;
+
+// ============================================================================
+// Global Limits (port of C's onig_retry_limit_in_match etc.)
+// ============================================================================
+
+static RETRY_LIMIT_IN_MATCH: AtomicU64 = AtomicU64::new(DEFAULT_RETRY_LIMIT_IN_MATCH);
+static RETRY_LIMIT_IN_SEARCH: AtomicU64 = AtomicU64::new(DEFAULT_RETRY_LIMIT_IN_SEARCH);
+static MATCH_STACK_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_MATCH_STACK_LIMIT_SIZE);
+static TIME_LIMIT: AtomicU64 = AtomicU64::new(DEFAULT_TIME_LIMIT_MSEC);
+
+pub fn onig_set_retry_limit_in_match(n: u64) { RETRY_LIMIT_IN_MATCH.store(n, Ordering::Relaxed); }
+pub fn onig_get_retry_limit_in_match() -> u64 { RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed) }
+pub fn onig_set_retry_limit_in_search(n: u64) { RETRY_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed); }
+pub fn onig_get_retry_limit_in_search() -> u64 { RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed) }
+pub fn onig_set_match_stack_limit(n: u32) { MATCH_STACK_LIMIT.store(n, Ordering::Relaxed); }
+pub fn onig_get_match_stack_limit() -> u32 { MATCH_STACK_LIMIT.load(Ordering::Relaxed) }
+pub fn onig_set_time_limit(n: u64) { TIME_LIMIT.store(n, Ordering::Relaxed); }
+pub fn onig_get_time_limit() -> u64 { TIME_LIMIT.load(Ordering::Relaxed) }
 
 // ============================================================================
 // Stack Types (port of StackType / STK_* constants)
@@ -134,7 +155,18 @@ pub struct MatchArg {
     pub start: usize, // search start position (for \G anchor)
     pub best_len: i32,
     pub best_s: usize,
+    // Safety limits
+    pub retry_limit_in_match: u64,
+    pub retry_limit_in_search: u64,
+    pub retry_limit_in_search_counter: u64,
+    pub match_stack_limit: u32,
+    pub time_limit: u64,  // milliseconds, 0 = unlimited
+    /// Lazily-initialized search start time for time-limit checking.
+    /// None until the first time check fires, then set to Instant::now().
+    time_start: Option<Box<Instant>>,
 }
+
+const CHECK_TIME_INTERVAL: u64 = 512;
 
 impl MatchArg {
     fn new(
@@ -149,8 +181,36 @@ impl MatchArg {
             start,
             best_len: ONIG_MISMATCH,
             best_s: 0,
+            retry_limit_in_match: RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed),
+            retry_limit_in_search: RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed),
+            retry_limit_in_search_counter: 0,
+            match_stack_limit: MATCH_STACK_LIMIT.load(Ordering::Relaxed),
+            time_limit: TIME_LIMIT.load(Ordering::Relaxed),
+            time_start: None,
         }
     }
+
+    /// Check if the time limit has been exceeded. Returns true if over limit.
+    /// On first call, initializes the start time.
+    #[inline]
+    fn check_time_limit(&mut self) -> bool {
+        if self.time_limit == 0 { return false; }
+        let start = self.time_start.get_or_insert_with(|| Box::new(Instant::now()));
+        start.elapsed() >= std::time::Duration::from_millis(self.time_limit)
+    }
+}
+
+// ============================================================================
+// Stack limit check
+// ============================================================================
+
+/// Check stack size against match_stack_limit. Returns Err with error code if exceeded.
+#[inline]
+fn check_stack_limit(stack_len: usize, limit: u32) -> Result<(), i32> {
+    if limit != 0 && stack_len >= limit as usize {
+        return Err(ONIGERR_MATCH_STACK_LIMIT_OVER);
+    }
+    Ok(())
 }
 
 // ============================================================================
@@ -1197,6 +1257,12 @@ fn match_at(
     let mut best_len: i32 = ONIG_MISMATCH;
     let mut last_alt_zid: i32 = -1;
 
+    // Safety limits
+    let retry_limit_in_match = msa.retry_limit_in_match;
+    let mut retry_in_match_counter: u64 = 0;
+    let match_stack_limit = msa.match_stack_limit;
+    let time_limit_ms = msa.time_limit;
+
     // Callout data: per-callout mutable slots (indexed by callout num - 1)
     let callout_count = reg.extp.as_ref().map_or(0, |e| e.callout_num as usize);
     let mut callout_data: Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]> = vec![[0i64; ONIG_CALLOUT_DATA_SLOT_NUM]; callout_count];
@@ -1212,6 +1278,12 @@ fn match_at(
     // ---- Main dispatch loop ----
     loop {
         if p >= reg.ops.len() {
+            break;
+        }
+
+        // Stack limit check (checked once per opcode, like C's STACK_PUSH macro)
+        if match_stack_limit != 0 && stack.len() >= match_stack_limit as usize {
+            best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
             break;
         }
 
@@ -2672,6 +2744,20 @@ fn match_at(
 
         // Handle failure (backtracking)
         if goto_fail {
+            // Retry limit check
+            retry_in_match_counter += 1;
+            if retry_limit_in_match != 0 && retry_in_match_counter > retry_limit_in_match {
+                best_len = ONIGERR_RETRY_LIMIT_IN_MATCH_OVER;
+                break;
+            }
+            // Time limit check (every CHECK_TIME_INTERVAL retries)
+            if time_limit_ms > 0 && (retry_in_match_counter % CHECK_TIME_INTERVAL) == 0 {
+                if msa.check_time_limit() {
+                    best_len = ONIGERR_TIME_LIMIT_OVER;
+                    break;
+                }
+            }
+
             match stack_pop(
                 &mut stack,
                 pop_level,
@@ -2697,6 +2783,8 @@ fn match_at(
         }
     }
 
+    // Accumulate retry counter into search counter
+    msa.retry_limit_in_search_counter += retry_in_match_counter;
     best_len
 }
 
@@ -3121,7 +3209,8 @@ pub fn onig_search(
             msa.best_len = ONIG_MISMATCH;
             msa.best_s = 0;
             let r = match_at(reg, str_data, end, end, s, &mut msa);
-            if r != ONIG_MISMATCH && r >= 0 {
+            if r < ONIG_MISMATCH { return (r, msa.region); } // error
+            if r != ONIG_MISMATCH {
                 return (s as i32, msa.region);
             }
         }
@@ -3179,6 +3268,11 @@ pub fn onig_search(
                             return (s as i32, msa.region);
                         }
                     }
+                    if msa.retry_limit_in_search != 0
+                        && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+                    {
+                        return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region);
+                    }
                     s += enclen(enc, str_data, s);
                 }
                 if s >= cur_range { break; }
@@ -3212,6 +3306,11 @@ pub fn onig_search(
                         } else {
                             return (s as i32, msa.region);
                         }
+                    }
+                    if msa.retry_limit_in_search != 0
+                        && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+                    {
+                        return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region);
                     }
                     let prev = s;
                     s += enclen(enc, str_data, s);
@@ -3250,6 +3349,11 @@ pub fn onig_search(
                 } else {
                     return (s as i32, msa.region);
                 }
+            }
+            if msa.retry_limit_in_search != 0
+                && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+            {
+                return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region);
             }
             if s >= cur_range { break; }
             if s >= end { break; }
