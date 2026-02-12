@@ -1,29 +1,29 @@
-# C Oniguruma vs. Rust Port — Vollstaendiger Vergleich
+# C Oniguruma vs. Rust Port — Full Comparison
 
-> Stand: 2026-02-12 | 1468/1468 Tests bestanden, 0 ignoriert
-
----
-
-## Gesamtbild
-
-| Modul | C Zeilen | Rust Zeilen | Kern-Logik | API-Vollstaendigkeit |
-|-------|----------|-------------|------------|----------------------|
-| **Parser** (regparse.c) | 9.493 | 6.427 | ~95% | Kern komplett |
-| **Compiler** (regcomp.c) | 8.589 | 5.587 | ~80% | Kompilierung + Optimierung komplett |
-| **Executor** (regexec.c) | 7.002 | 3.731 | ~85% | Alle 70+ Opcodes, Vorwaerts-Suchoptimierung |
-| **Types** (regint.h+regparse.h) | ~1.564 | ~2.116 | ~95% | Alle Kern-Typen inkl. OptNode/OptStr/OptMap |
-| **Syntax** (regsyntax.c) | 373 | 367 | 100% | Komplett |
-| **Fehlerbehandlung** (regerror.c) | 416 | 206 | 100% | Komplett (Rust braucht weniger Boilerplate) |
-| **Encoding** (regenc.c+h) | ~1.284 | ~916 | ~70% | ASCII + UTF-8 (2 von 29) |
-| **Unicode** | ~50.000 | ~50.000 | 100% | Komplett |
+> As of: 2026-02-12 | 1468/1468 tests passing, 0 ignored
 
 ---
 
-## 1. Was KOMPLETT ist
+## Overview
 
-### Alle 70+ Opcodes im VM-Executor
+| Module | C Lines | Rust Lines | Core Logic | API Completeness |
+|--------|---------|------------|------------|------------------|
+| **Parser** (regparse.c) | 9,493 | ~6,600 | ~97% | Core complete, 6x6 ReduceTypeTable |
+| **Compiler** (regcomp.c) | 8,589 | ~6,600 | ~92% | tune_tree + tune_next + call tuning + optimization |
+| **Executor** (regexec.c) | 7,002 | ~4,060 | ~90% | All 70+ opcodes, forward+backward search, safety limits |
+| **Types** (regint.h+regparse.h) | ~1,564 | ~2,120 | ~95% | All core types incl. OptNode/OptStr/OptMap |
+| **Syntax** (regsyntax.c) | 373 | 367 | 100% | Complete |
+| **Error handling** (regerror.c) | 416 | 206 | 100% | Complete (Rust needs less boilerplate) |
+| **Encoding** (regenc.c+h) | ~1,284 | ~916 | ~70% | ASCII + UTF-8 (2 of 29) |
+| **Unicode** | ~50,000 | ~50,000 | 100% | Complete |
 
-STR_1..STR_N, STR_MB2N1..STR_MBN, CCLASS/CCLASS_MB/CCLASS_MIX (+ NOT-Varianten),
+---
+
+## 1. What is COMPLETE
+
+### All 70+ Opcodes in the VM Executor
+
+STR_1..STR_N, STR_MB2N1..STR_MBN, CCLASS/CCLASS_MB/CCLASS_MIX (+ NOT variants),
 ANYCHAR, ANYCHAR_ML, ANYCHAR_STAR, ANYCHAR_ML_STAR, ANYCHAR_STAR_PEEK_NEXT,
 WORD/NO_WORD (+ ASCII), WORD_BOUNDARY/NO_WORD_BOUNDARY/WORD_BEGIN/WORD_END,
 TEXT_SEGMENT_BOUNDARY, BEGIN_BUF/END_BUF/BEGIN_LINE/END_LINE/SEMI_END_BUF,
@@ -36,156 +36,87 @@ EMPTY_CHECK_START/EMPTY_CHECK_END/EMPTY_CHECK_END_MEMST/EMPTY_CHECK_END_MEMST_PU
 MOVE, STEP_BACK_START/STEP_BACK_NEXT, CUT_TO_MARK/MARK, SAVE_VAL/UPDATE_VAR,
 CALL/RETURN, CALLOUT_CONTENTS/CALLOUT_NAME, FINISH/END
 
-### Alle Escape-Sequenzen
+### All Escape Sequences
 
-`\a \b \t \n \v \f \r \e` (Steuerzeichen),
-`\x{HH}` `\x{HHHH}` (Hex), `\o{OOO}` (Oktal), `\uHHHH` (Unicode),
-`\w \W \d \D \s \S \h \H` (Zeichenklassen),
-`\p{...} \P{...}` (Unicode-Properties),
-`\k<name> \g<name>` (Backrefs/Calls),
-`\A \z \Z \b \B \G` (Anker), `\K` (Keep),
-`\R` (General Newline), `\N` (No-Newline), `\O` (True Anychar),
-`\X` (Grapheme Cluster), `\y \Y` (Text Segment Boundaries)
+`\a \b \t \n \v \f \r \e` (control chars),
+`\x{HH}` `\x{HHHH}` (hex), `\o{OOO}` (octal), `\uHHHH` (Unicode),
+`\w \W \d \D \s \S \h \H` (character classes),
+`\p{...} \P{...}` (Unicode properties),
+`\k<name> \g<name>` (backrefs/calls),
+`\A \z \Z \b \B \G` (anchors), `\K` (keep),
+`\R` (general newline), `\N` (no-newline), `\O` (true anychar),
+`\X` (grapheme cluster), `\y \Y` (text segment boundaries)
 
-### Alle Gruppen-Typen
+### All Group Types
 
-`(?:...)` Non-Capturing, `(?=...)` Lookahead, `(?!...)` Neg. Lookahead,
-`(?<=...)` Lookbehind, `(?<!...)` Neg. Lookbehind, `(?>...)` Atomic,
-`(?<name>...)` Named Group, `(?'name'...)` Alternate Named,
-`(?(cond)T|F)` Conditional, `(?~...)` Absent (3 Formen),
-`(?{...})` Code Callout, `(*FAIL)` `(*MAX{n})` `(*COUNT[tag]{X})` `(*CMP{t1,op,t2})`,
-`(?imxWDSPCL-imx:...)` Option Groups
+`(?:...)` non-capturing, `(?=...)` lookahead, `(?!...)` neg. lookahead,
+`(?<=...)` lookbehind, `(?<!...)` neg. lookbehind, `(?>...)` atomic,
+`(?<name>...)` named group, `(?'name'...)` alternate named,
+`(?(cond)T|F)` conditional, `(?~...)` absent (3 forms),
+`(?{...})` code callout, `(*FAIL)` `(*MAX{n})` `(*COUNT[tag]{X})` `(*CMP{t1,op,t2})`,
+`(?imxWDSPCL-imx:...)` option groups
 
-### Optimierungs-Subsystem (NEU)
+### Optimization Subsystem
 
-Vollstaendige Vorwaerts-Suchoptimierung wie im C-Original:
-- **AST-Analyse**: `optimize_nodes` extrahiert OptStr/OptMap/OptAnc pro Knoten
-- **Strategie-Auswahl**: `set_optimize_info_from_tree` waehlt beste Suchstrategie
-  - `OptimizeType::StrFast` — Boyer-Moore-Horspool mit Skip-Tabelle
-  - `OptimizeType::StrFastStepForward` — Multi-Byte-sichere BMH-Variante
-  - `OptimizeType::Str` — Naive String-Suche
-  - `OptimizeType::Map` — Zeichen-Map-Suche
-- **Such-Dispatcher**: `forward_search` mit sub_anchor-Validierung und low/high-Berechnung
-- **Anker-Optimierung**: `onig_search` nutzt ANCR_BEGIN_BUF, ANCR_BEGIN_POSITION,
-  ANCR_END_BUF, ANCR_SEMI_END_BUF, ANCR_ANYCHAR_INF_ML fuer Positions-Eingrenzung
-- **~35 Hilfsfunktionen**: Scoring (distance_value, comp_distance_value),
-  String-Ops (concat_opt_exact, alt_merge_opt_exact, select_opt_exact),
-  Map-Ops (add_char_opt_map, select_opt_map), Anker-Ops (concat_opt_anc_info)
-- **Datenstrukturen**: MinMaxLen, OptAnc, OptStr, OptMap, OptNode
+Full forward search optimization matching the C original:
+- **AST analysis**: `optimize_nodes` extracts OptStr/OptMap/OptAnc per node
+- **Strategy selection**: `set_optimize_info_from_tree` chooses best search strategy
+  - `OptimizeType::StrFast` — Boyer-Moore-Horspool with skip table
+  - `OptimizeType::StrFastStepForward` — multi-byte-safe BMH variant
+  - `OptimizeType::Str` — naive string search
+  - `OptimizeType::Map` — character map search
+- **Search dispatcher**: `forward_search` with sub_anchor validation and low/high calculation
+- **Backward search**: `backward_search` with position-by-position backward scan
+- **Anchor optimization**: `onig_search` uses ANCR_BEGIN_BUF, ANCR_BEGIN_POSITION,
+  ANCR_END_BUF, ANCR_SEMI_END_BUF, ANCR_ANYCHAR_INF_ML for position narrowing
+- **~35 helper functions**: scoring (distance_value, comp_distance_value),
+  string ops (concat_opt_exact, alt_merge_opt_exact, select_opt_exact),
+  map ops (add_char_opt_map, select_opt_map), anchor ops (concat_opt_anc_info)
+- **Data structures**: MinMaxLen, OptAnc, OptStr, OptMap, OptNode
 
-### Weitere vollstaendige Features
+### Safety Limits
 
-- **Syntax-Definitionen**: ASIS, PosixBasic, PosixExtended, Emacs, Grep, GnuRegex, Java, Perl, Perl_NG, Python, Oniguruma, Ruby
-- **Alle ~100 Fehlercodes** mit parametrisierten Meldungen
-- **Unicode**: 629 Code-Range-Tabellen, 886 Property-Namen, Grapheme Cluster, Case Folding
-- **Rekursion**: `\g<n>`, `\k<n+level>`, Endlosrekursions-Erkennung, MEM_END_REC
-- **Variable-length Lookbehind**: STEP_BACK_START/NEXT, Alt mit zid
-- **Absent Functions**: Repeater, Expression, Range Cutter
-- **Built-in Callouts**: *MAX, *COUNT, *CMP (intern, nicht als oeffentliche API)
-- **FIND_LONGEST** / **FIND_NOT_EMPTY** Optionen
-- **CAPTURE_ONLY_NAMED_GROUP** (noname capture deaktivieren)
+- **Retry limit in match**: `onig_set/get_retry_limit_in_match` (default: 10,000,000)
+- **Retry limit in search**: `onig_set/get_retry_limit_in_search`
+- **Time limit**: `onig_set/get_time_limit` (millisecond timeout, checked every 512 ops)
+- **Stack limit**: `onig_set/get_match_stack_limit_size`
 
----
+### tune_tree Pipeline (complete)
 
-## 2. Was FEHLT — nach Prioritaet
+- **tune_next + automatic possessification**: `is_exclusive` detects mutually
+  exclusive nodes, `a*b` -> `(?>a*)b` when a and b are disjoint
+- **Head-exact extraction**: `get_tree_head_literal` -> PushOrJumpExact1, PushIfPeekNext,
+  AnyCharStarPeekNext
+- **6x6 quantifier reduction**: Full ReduceTypeTable (?, *, +, ??, *?, +?)
+  — e.g. `(?:a+)?` -> `a*`, `(?:a*)*` -> `a*`
+- **String expansion**: `"abc"{3}` -> `"abcabcabc"` (up to 100 bytes)
+- **Lookbehind reduction**: `node_reduce_in_look_behind` sets upper=lower
+- **Call-node tuning**: 3-pass (tune_call -> tune_call2 -> tune_called_state)
+  — entry counting, IN_MULTI_ENTRY/IN_REAL_REPEAT propagation
+- **Empty-loop detection**: `qn.emptiness = MayBeEmpty` for `(?:x?)*`
+- **backtrack_mem / backrefed_mem**: captures in Alt/Repeat -> MemStartPush/MemEndPush
 
-### Tier 1: Performance-kritisch
+### Other Complete Features
 
-#### A. Retry/Time/Stack-Limits (~15 Funktionen)
-
-**Fehlende Funktionen:**
-- `onig_get/set_retry_limit_in_match` (C-Default: 10.000.000)
-- `onig_get/set_retry_limit_in_search`
-- `onig_get/set_time_limit` (Millisekunden-Timeout)
-- `onig_get/set_match_stack_limit_size`
-- `CHECK_RETRY_LIMIT_IN_MATCH` Makro (prueft jeden Opcode)
-- `CHECK_TIME_LIMIT_IN_MATCH` Makro (prueft alle 512 Ops)
-- `set_limit_end_time` / `time_is_running_out`
-
-**Impact:** Kein Schutz gegen katastrophales Backtracking. Patterns koennen endlos haengen.
-
-#### B. Backward Search (~4 Funktionen)
-
-**Fehlende Funktionen:**
-- `backward_search` / `backward_search_range` — Optimierter Rueckwaerts-Dispatcher
-- `slow_search_backward` / `slow_search_backward_ic` — Naive String-Suche (rueckwaerts)
-- `map_search_backward` — Zeichenmap-Suche (rueckwaerts)
-
-**Impact:** Patterns mit End-Anker (`$`, `\z`) koennen nicht rueckwaerts suchen.
-Forward-Search ist implementiert und reicht fuer die meisten Faelle.
+- **Syntax definitions**: ASIS, PosixBasic, PosixExtended, Emacs, Grep, GnuRegex, Java, Perl, Perl_NG, Python, Oniguruma, Ruby
+- **All ~100 error codes** with parameterized messages
+- **Unicode**: 629 code range tables, 886 property names, grapheme cluster, case folding
+- **Recursion**: `\g<n>`, `\k<n+level>`, infinite recursion detection, MEM_END_REC
+- **Variable-length lookbehind**: STEP_BACK_START/NEXT, Alt with zid
+- **Absent functions**: repeater, expression, range cutter
+- **Built-in callouts**: *MAX, *COUNT, *CMP (internal, not as public API)
+- **FIND_LONGEST** / **FIND_NOT_EMPTY** options
+- **CAPTURE_ONLY_NAMED_GROUP** (disable unnamed captures)
 
 ---
 
-### Tier 2: Fehlende tune_tree-Passes
+## 2. What is MISSING — by Priority
 
-#### C. tune_next / Automatische Possessivierung (~190 Zeilen C)
+### Tier 1: API & Integration
 
-C's `tune_next` + `is_exclusive` erkennt gegenseitig ausschliessende aufeinanderfolgende
-Knoten und wandelt `a*b` automatisch in `(?>a*)b` um (Possessivierung).
-Zusaetzlich setzt es `qn.next_head_exact` fuer ANYCHAR_STAR_PEEK_NEXT.
+#### A. Public API (~80 missing functions)
 
-**Fehlende Funktionen:**
-- `tune_next` — Nachbar-Knoten-Analyse und Possessivierung
-- `is_exclusive` — Gegenseitige Ausschluss-Pruefung
-- `get_tree_head_literal` — Fuehrendes Literal extrahieren
-
-**Impact:** Korrektheit nicht betroffen. Performance-Einbusse bei Patterns wie `.*foo`
-(kein PEEK_NEXT) und `[a-z]*[0-9]` (keine automatische Possessivierung).
-
-#### D. String-Expansion in Quantoren
-
-C expandiert `"abc"{3}` zu `"abcabcabc"` (bis 100 Zeichen).
-Benutzt `node_conv_to_str_node` und `node_str_node_cat`.
-
-**Impact:** Niedrig. Quantoren funktionieren korrekt, nur minimaler Overhead.
-
-#### E. Head-Exact-Extraktion
-
-C setzt `qn.head_exact` fuer greedy Quantoren: `(abc)+` -> head_exact="abc".
-Wird von `get_tree_head_literal` berechnet. Ermoeglicht schnelle String-Suche.
-
-**Impact:** Niedrig. forward_search kompensiert dies weitgehend.
-
-#### F. Vollstaendige Nested-Quantifier-Reduktion
-
-C hat eine 6x6 `ReduceTypeTable`:
-```
-        ?    *    +    ??   *?   +?
-  ?   | ??   ??   DEL  ??   ??   DEL
-  *   | *    *    *    *    *    *
-  +   | DEL  *    DEL  P_QQ *    DEL
-  ??  | ??   AQ   P_QQ ??   AQ   P_QQ
-  *?  | *?   *?   *?   *?   *?   *?
-  +?  | QQ   AQ   DEL  QQ   AQ   DEL
-```
-Rust implementiert nur `{n}{m}` -> `{n*m}` (feste Multiplikation).
-
-**Impact:** Niedrig. Korrektheit nicht betroffen, nur minimale Optimierung fehlt.
-
-#### G. Lookbehind-Spezialbehandlungen
-
-- `node_reduce_in_look_behind` / `list_reduce_in_look_behind` / `alt_reduce_in_look_behind`
-  — C optimiert Knoten innerhalb von Lookbehind (entfernt unnoetigen Overhead)
-- `unravel_cf_look_behind_add` — Case-Fold in Lookbehind
-- `check_node_in_look_behind` — C prueft umfassend (erlaubte Typen, Bag-Typen, Anker-Typen,
-  Gimmick/Call/Recursion), Rust prueft nur `ABSENT_WITH_SIDE_EFFECTS`
-
-**Impact:** Niedrig. Edge Cases bei exotischen Lookbehind-Patterns.
-
-#### H. Call-Node-Tuning (Multi-Pass)
-
-C macht 3 separate Passes: `tune_call` -> `tune_call2` -> `tune_called_state`.
-Rust macht 1 Pass (`resolve_call_references`).
-
-**Impact:** Niedrig. Alle Rekursion/Call-Tests bestehen.
-
----
-
-### Tier 3: API & Module
-
-#### I. Oeffentliche API (~80 fehlende Funktionen)
-
-**OnigMatchParam (komplett fehlend):**
+**OnigMatchParam (completely missing):**
 - `onig_new/free/initialize_match_param`
 - `onig_set_match_stack_limit_size_of_match_param`
 - `onig_set_retry_limit_in_match/search_of_match_param`
@@ -193,107 +124,122 @@ Rust macht 1 Pass (`resolve_call_references`).
 - `onig_set_progress/retraction_callout_of_match_param`
 - `onig_match_with_param` / `onig_search_with_param`
 
-**RegSet (komplett fehlend):**
+**RegSet (completely missing):**
 - `onig_regset_new/add/replace/free`
 - `onig_regset_number_of_regex/get_regex/get_region`
 - `onig_regset_search/search_with_param`
 
-**Name/Capture-Queries:**
+**Name/Capture queries:**
 - `onig_name_to_group_numbers` / `onig_name_to_backref_number`
 - `onig_foreach_name` / `onig_number_of_names`
 - `onig_number_of_captures` / `onig_number_of_capture_histories`
 - `onig_noname_group_capture_is_active`
 
-**Regex-Accessors:**
+**Regex accessors:**
 - `onig_get_encoding/options/case_fold_flag/syntax`
 
-**Sonstige:**
-- `onig_scan` (Callback-basiertes Scanning)
+**Other:**
+- `onig_scan` (callback-based scanning)
 - `onig_new_deluxe` / `onig_new_without_alloc`
-- `onig_init` / `onig_end` (Bibliotheks-Initialisierung)
+- `onig_init` / `onig_end` (library initialization)
 - `onig_version` / `onig_copyright`
 - `onig_set_warn_func` / `onig_set_verb_warn_func`
 
-#### J. Encodings (2 von 29 implementiert)
+#### B. Encodings (2 of 29 implemented)
 
 ```
-Implementiert:  ASCII, UTF-8
-Fehlend:        UTF-16 BE/LE, UTF-32 BE/LE,
-                ISO-8859-1..16,
-                EUC-JP, EUC-TW, EUC-KR, EUC-CN,
-                SJIS, KOI8, KOI8-R, CP1251,
-                BIG5, GB18030
+Implemented:  ASCII, UTF-8
+Missing:      UTF-16 BE/LE, UTF-32 BE/LE,
+              ISO-8859-1..16,
+              EUC-JP, EUC-TW, EUC-KR, EUC-CN,
+              SJIS, KOI8, KOI8-R, CP1251,
+              BIG5, GB18030
 ```
 
-#### K. regtrav.c (Capture Tree Traversal)
+#### C. regtrav.c (Capture Tree Traversal)
 
-Komplett fehlendes Modul:
+Completely missing module:
 - `onig_get_capture_tree` / `onig_capture_tree_traverse`
-- Wird fuer `(?@...)` Capture History benoetigt
+- Required for `(?@...)` capture history
 
-#### L. Callout External API (~50 Funktionen)
+#### D. Callout External API (~50 functions)
 
-Interne Callout-Logik funktioniert (*MAX, *COUNT, *CMP), aber die oeffentliche API
-fuer benutzerdefinierte Callouts fehlt komplett:
+Internal callout logic works (*MAX, *COUNT, *CMP), but the public API
+for user-defined callouts is completely missing:
 - `onig_set_callout_of_name` / `onig_get_callout_data*`
-- `onig_get_*_by_callout_args` (~15 Accessor-Funktionen)
+- `onig_get_*_by_callout_args` (~15 accessor functions)
 - `onig_set/get_progress/retraction_callout`
-- `onig_builtin_fail/mismatch/error/skip` (nur max/count/cmp intern)
+- `onig_builtin_fail/mismatch/error/skip` (only max/count/cmp internally)
 
 ---
 
-## 3. Subtile Unterschiede in existierendem Code
+### Tier 2: Remaining Optimizations
 
-| Bereich | C | Rust | Impact |
-|---------|---|------|--------|
-| Quantifier-Reduktion | 6x6 ReduceTypeTable | Nur fixed x fixed | Niedrig (korrekt, aber nicht optimal) |
-| tune_next / Possessivierung | `a*b` -> `(?>a*)b` automatisch | Fehlt | Mittel (Performance bei `.*foo` Patterns) |
-| Lookbehind Case-Fold | `unravel_cf_look_behind_add` | Fehlt | Edge Cases bei case-insensitivem Lookbehind |
-| `check_node_in_look_behind` | Umfassend (Typen-Masken, Bag/Anchor/Gimmick/Call) | Nur `ABSENT_WITH_SIDE_EFFECTS` | Exotische Lookbehind-Patterns |
-| Negated CClass + Case-Fold | `clear_not_flag_cclass` | Fehlt | `[^a-z]/i` koennte nicht korrekt expandieren |
-| Direct-Threaded Code | Computed goto Optimierung | Standard `match` Dispatch | ~20% Interpreter-Overhead |
-| Backward Search | `backward_search` + `slow_search_backward` | Nicht implementiert | End-Anker-Patterns |
-| POSIX API | `regposix.c` / `reggnu.c` | Nicht portiert | Intentionell nicht portiert |
-| String-Node-Ops | `str_node_split_last_char` etc. | Inline in `check_quantifier` | Funktioniert (Bug #8 behoben) |
+#### E. Case-Fold in Lookbehind
 
----
+- `unravel_cf_look_behind_add` — filters multi-char folds in lookbehind
+- `clear_not_flag_cclass` — negated CClass + case-fold expansion
+- Only edge cases with exotic lookbehind patterns affected
 
-## 4. Empfohlene naechste Schritte (nach Impact)
+#### F. check_node_in_look_behind (comprehensive)
 
-1. **Retry/Time-Limits** — Sicherheit gegen Endlosschleifen (Tier 1A)
-2. **tune_next + is_exclusive** — Automatische Possessivierung, PEEK_NEXT (Tier 2C)
-3. **Vollstaendige ReduceTypeTable** — Bessere Quantifier-Optimierung (Tier 2F)
-4. **Fehlende tune_tree-Passes** (head_exact, string expansion) (Tier 2D/E)
-5. **Backward Search** — Fuer End-Anker-Patterns (Tier 1B)
-6. **Oeffentliche API-Funktionen** nach Bedarf (Tier 3)
-7. **Weitere Encodings** (UTF-16, Latin1 etc.) nach Bedarf (Tier 3)
+C checks comprehensively (allowed types, Bag types, anchor types, Gimmick/Call/Recursion).
+Rust only checks `ABSENT_WITH_SIDE_EFFECTS`. Affects exotic lookbehind patterns.
+
+#### G. Direct-Threaded Code
+
+C uses computed goto for ~20% faster opcode dispatch.
+Rust uses standard `match`. Not portable (compiler-specific).
 
 ---
 
-## 5. Gefundene & behobene Bugs (waehrend der Portierung)
+## 3. Subtle Differences in Existing Code
 
-1. JUMP/PUSH Adressformeln
-2. u_offset Patching
-3. usize Subtraktions-Overflow
-4. Parser arbeitet auf &[u8], nicht &str
-5. Multi-Byte-Codepoint-Trunkierung (U+305B Low-Byte = '[')
-6. C Trigraph-Escaping in Tests (\? = ?)
-7. Empty-Loop-Erkennung (tune_tree setzt qn.emptiness)
-8. String-Split fuer Quantoren (check_quantifier)
+| Area | C | Rust | Impact |
+|------|---|------|--------|
+| Lookbehind case-fold | `unravel_cf_look_behind_add` | Missing | Edge cases with case-insensitive lookbehind |
+| `check_node_in_look_behind` | Comprehensive (type masks, Bag/Anchor/Gimmick/Call) | Only `ABSENT_WITH_SIDE_EFFECTS` | Exotic lookbehind patterns |
+| Negated CClass + case-fold | `clear_not_flag_cclass` | Missing | `[^a-z]/i` may not expand correctly |
+| Direct-threaded code | Computed goto optimization | Standard `match` dispatch | ~20% interpreter overhead |
+| POSIX API | `regposix.c` / `reggnu.c` | Not ported | Intentionally not ported |
+
+---
+
+## 4. Recommended Next Steps (by Impact)
+
+1. **Public API functions** — OnigMatchParam, Name/Capture queries, accessors (Tier 1A)
+2. **Case-fold in lookbehind** — unravel_cf_look_behind_add (Tier 2E)
+3. **Comprehensive check_node_in_look_behind** (Tier 2F)
+4. **Additional encodings** (UTF-16, Latin1 etc.) as needed (Tier 1B)
+5. **regtrav.c** — Capture Tree Traversal (Tier 1C)
+6. **Callout External API** — user-defined callouts (Tier 1D)
+
+---
+
+## 5. Bugs Found & Fixed (During Porting)
+
+1. JUMP/PUSH address formulas
+2. u_offset patching
+3. usize subtraction overflow
+4. Parser operates on &[u8], not &str
+5. Multi-byte codepoint truncation (U+305B low byte = '[')
+6. C trigraph escaping in tests (\? = ?)
+7. Empty-loop detection (tune_tree sets qn.emptiness)
+8. String-split for quantifiers (check_quantifier)
 9. compile_length_quantifier_node off-by-body_len
-10. Alternation JUMP-Adressen (>2 Branches)
-11. Fehlende ?? und greedy Expansion Pfade
+10. Alternation JUMP addresses (>2 branches)
+11. Missing ?? and greedy expansion paths
 12. EmptyCheckEnd skip-next
 13. backtrack_mem / backrefed_mem
 14. EmptyCheckEndMemst (memory-aware empty check)
-15. Reversed Intervals ({5,2} swap)
+15. Reversed intervals ({5,2} swap)
 16. FIXED_INTERVAL_IS_GREEDY_ONLY
-17. StrN Payload Mismatch
-18. RepeatIncNg Stack-Reihenfolge
-19. \pL Single-Char Property Tokenizer
-20. check_code_point_sequence darf p nicht vorruecken
-21. CUT_TO_MARK muss void, nicht pop
-22. SaveVal ID-Kollision
-23. reduce_string_list verliert ND_ST_SUPER
-24. EmptyCheckEnd mem-ID Mismatch bei verschachtelten Quantoren
-25. **Call-Node body vs target_node im Optimizer** — `optimize_nodes` und `node_max_byte_len` benutzten `cn.body` (immer None bei Call-Nodes) statt `cn.target_node` (Raw-Pointer zum Ziel-Knoten). Verursachte falsche dist_min/dist_max-Werte bei Subroutine-Calls wie `\g<+2>(abc)(ABC){0}`.
+17. StrN payload mismatch
+18. RepeatIncNg stack ordering
+19. \pL single-char property tokenizer
+20. check_code_point_sequence must not advance p
+21. CUT_TO_MARK must void, not pop
+22. SaveVal ID collision
+23. reduce_string_list loses ND_ST_SUPER
+24. EmptyCheckEnd mem-ID mismatch with nested quantifiers
+25. Call-node body vs target_node in optimizer
