@@ -40,6 +40,10 @@ in Ferroni -- verified by 1,695 tests ported directly from the C test suite.
 **No C toolchain required.** Pure `cargo build`. Cross-compiles to
 `wasm32-unknown-unknown` out of the box.
 
+**Easy Node.js bindings.** Rust's [napi-rs](https://napi.rs/) ecosystem
+makes it straightforward to publish a native Node.js module -- no
+`node-gyp`, no C compiler on the user's machine.
+
 ## Quick Start
 
 Add to your `Cargo.toml`:
