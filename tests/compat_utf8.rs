@@ -7,11 +7,11 @@
 //
 // These use onig_new() + onig_search() to match the C test harness exactly.
 
+use ferroni::oniguruma::*;
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::onig_search;
-use ferroni::oniguruma::*;
-use ferroni::regsyntax::OnigSyntaxOniguruma;
 use ferroni::regint::*;
+use ferroni::regsyntax::OnigSyntaxOniguruma;
 
 fn x2(pattern: &[u8], input: &[u8], from: i32, to: i32) {
     let reg = onig_new(
@@ -48,7 +48,8 @@ fn x2(pattern: &[u8], input: &[u8], from: i32, to: i32) {
 
     let region = region.unwrap();
     assert_eq!(
-        region.beg[0], from,
+        region.beg[0],
+        from,
         "x2: wrong start for {:?} against {:?}: expected {}, got {}",
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
         std::str::from_utf8(input).unwrap_or("<invalid>"),
@@ -56,7 +57,8 @@ fn x2(pattern: &[u8], input: &[u8], from: i32, to: i32) {
         region.beg[0]
     );
     assert_eq!(
-        region.end[0], to,
+        region.end[0],
+        to,
         "x2: wrong end for {:?} against {:?}: expected {}, got {}",
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
         std::str::from_utf8(input).unwrap_or("<invalid>"),
@@ -107,7 +109,8 @@ fn x3(pattern: &[u8], input: &[u8], from: i32, to: i32, mem: usize) {
         region.num_regs
     );
     assert_eq!(
-        region.beg[mem], from,
+        region.beg[mem],
+        from,
         "x3: wrong start for group {} of {:?}: expected {}, got {}",
         mem,
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -115,7 +118,8 @@ fn x3(pattern: &[u8], input: &[u8], from: i32, to: i32, mem: usize) {
         region.beg[mem]
     );
     assert_eq!(
-        region.end[mem], to,
+        region.end[mem],
+        to,
         "x3: wrong end for group {} of {:?}: expected {}, got {}",
         mem,
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -1064,7 +1068,10 @@ fn cc_hex_range_6a_6d_no_match() {
 
 #[test]
 fn cc_complex_no_match() {
-    n(b"^[0-9A-F]+ 0+ UNDEF ", b"75F 00000000 SECT14A notype ()    External    | _rb_apply");
+    n(
+        b"^[0-9A-F]+ 0+ UNDEF ",
+        b"75F 00000000 SECT14A notype ()    External    | _rb_apply",
+    );
 }
 
 #[test]
@@ -2321,7 +2328,13 @@ fn capture_w_plus_wz() {
 
 #[test]
 fn capture_20_nested() {
-    x3(b"((((((((((((((((((((ab))))))))))))))))))))", b"ab", 0, 2, 20);
+    x3(
+        b"((((((((((((((((((((ab))))))))))))))))))))",
+        b"ab",
+        0,
+        2,
+        20,
+    );
 }
 
 #[test]
@@ -2721,7 +2734,8 @@ fn utf8_empty_pattern() {
 #[test]
 fn utf8_long_repeat() {
     // C line 905: 35 copies of こ
-    let pattern = "こここここここここここここここここここここここここここここここここここ".as_bytes();
+    let pattern =
+        "こここここここここここここここここここここここここここここここここここ".as_bytes();
     let input = "こここここここここここここここここここここここここここここここここここ".as_bytes();
     x2(pattern, input, 0, 105);
 }
@@ -2751,7 +2765,12 @@ fn utf8_raw_bytes() {
 #[test]
 fn utf8_bracket_W() {
     // C line 913: [\W] matches $ in "う$" at byte 3
-    x2(b"[\\W]", [&"う".as_bytes()[..], b"$"].concat().as_slice(), 3, 4);
+    x2(
+        b"[\\W]",
+        [&"う".as_bytes()[..], b"$"].concat().as_slice(),
+        3,
+        4,
+    );
 }
 
 #[test]
@@ -3153,28 +3172,60 @@ fn utf8_alt_pair_second() {
 #[test]
 fn utf8_alt_noncap_first() {
     // C line 984: を(?:かき|きく) matches をかき -> 0-9
-    let pattern = ["を".as_bytes(), b"(?:", "かき".as_bytes(), b"|", "きく".as_bytes(), b")"].concat();
+    let pattern = [
+        "を".as_bytes(),
+        b"(?:",
+        "かき".as_bytes(),
+        b"|",
+        "きく".as_bytes(),
+        b")",
+    ]
+    .concat();
     x2(&pattern, "をかき".as_bytes(), 0, 9);
 }
 
 #[test]
 fn utf8_alt_noncap_second() {
     // C line 985: を(?:かき|きく)け matches をきくけ -> 0-12
-    let pattern = ["を".as_bytes(), b"(?:", "かき".as_bytes(), b"|", "きく".as_bytes(), b")", "け".as_bytes()].concat();
+    let pattern = [
+        "を".as_bytes(),
+        b"(?:",
+        "かき".as_bytes(),
+        b"|",
+        "きく".as_bytes(),
+        b")",
+        "け".as_bytes(),
+    ]
+    .concat();
     x2(&pattern, "をきくけ".as_bytes(), 0, 12);
 }
 
 #[test]
 fn utf8_alt_nested() {
     // C line 986: あい|(?:あう|あを) matches あを -> 0-6
-    let pattern = ["あい".as_bytes(), b"|(?:", "あう".as_bytes(), b"|", "あを".as_bytes(), b")"].concat();
+    let pattern = [
+        "あい".as_bytes(),
+        b"|(?:",
+        "あう".as_bytes(),
+        b"|",
+        "あを".as_bytes(),
+        b")",
+    ]
+    .concat();
     x2(&pattern, "あを".as_bytes(), 0, 6);
 }
 
 #[test]
 fn utf8_alt_three() {
     // C line 987: あ|い|う matches う in えう -> 3-6
-    let pattern = ["あ".as_bytes(), b"|", "い".as_bytes(), b"|", "う".as_bytes()].concat();
+    let pattern = [
+        "あ".as_bytes(),
+        b"|",
+        "い".as_bytes(),
+        b"|",
+        "う".as_bytes(),
+    ]
+    .concat();
     x2(&pattern, "えう".as_bytes(), 3, 6);
 }
 
@@ -3182,13 +3233,29 @@ fn utf8_alt_three() {
 fn utf8_alt_many() {
     // C line 988: long alternation matches しすせ -> 0-9
     let pattern = [
-        "あ".as_bytes(), b"|", "い".as_bytes(), b"|",
-        "うえ".as_bytes(), b"|", "おかき".as_bytes(), b"|",
-        "く".as_bytes(), b"|", "けこさ".as_bytes(), b"|",
-        "しすせ".as_bytes(), b"|", "そ".as_bytes(), b"|",
-        "たち".as_bytes(), b"|", "つてとなに".as_bytes(), b"|",
+        "あ".as_bytes(),
+        b"|",
+        "い".as_bytes(),
+        b"|",
+        "うえ".as_bytes(),
+        b"|",
+        "おかき".as_bytes(),
+        b"|",
+        "く".as_bytes(),
+        b"|",
+        "けこさ".as_bytes(),
+        b"|",
+        "しすせ".as_bytes(),
+        b"|",
+        "そ".as_bytes(),
+        b"|",
+        "たち".as_bytes(),
+        b"|",
+        "つてとなに".as_bytes(),
+        b"|",
         "ぬね".as_bytes(),
-    ].concat();
+    ]
+    .concat();
     x2(&pattern, "しすせ".as_bytes(), 0, 9);
 }
 
@@ -3196,13 +3263,29 @@ fn utf8_alt_many() {
 fn utf8_alt_many_no_match() {
     // C line 989: same long alternation no match for すせ
     let pattern = [
-        "あ".as_bytes(), b"|", "い".as_bytes(), b"|",
-        "うえ".as_bytes(), b"|", "おかき".as_bytes(), b"|",
-        "く".as_bytes(), b"|", "けこさ".as_bytes(), b"|",
-        "しすせ".as_bytes(), b"|", "そ".as_bytes(), b"|",
-        "たち".as_bytes(), b"|", "つてとなに".as_bytes(), b"|",
+        "あ".as_bytes(),
+        b"|",
+        "い".as_bytes(),
+        b"|",
+        "うえ".as_bytes(),
+        b"|",
+        "おかき".as_bytes(),
+        b"|",
+        "く".as_bytes(),
+        b"|",
+        "けこさ".as_bytes(),
+        b"|",
+        "しすせ".as_bytes(),
+        b"|",
+        "そ".as_bytes(),
+        b"|",
+        "たち".as_bytes(),
+        b"|",
+        "つてとなに".as_bytes(),
+        b"|",
         "ぬね".as_bytes(),
-    ].concat();
+    ]
+    .concat();
     n(&pattern, "すせ".as_bytes());
 }
 
@@ -3814,7 +3897,12 @@ fn utf8_group_star_interval_0() {
 #[test]
 fn utf8_group_interval_3_inf() {
     // C line 1073: (?:鬼車){3,} matches 鬼車鬼車鬼車鬼車 -> 0-24
-    x2("(?:鬼車){3,}".as_bytes(), "鬼車鬼車鬼車鬼車".as_bytes(), 0, 24);
+    x2(
+        "(?:鬼車){3,}".as_bytes(),
+        "鬼車鬼車鬼車鬼車".as_bytes(),
+        0,
+        24,
+    );
 }
 
 #[test]
@@ -3832,13 +3920,23 @@ fn utf8_group_interval_2_4() {
 #[test]
 fn utf8_group_interval_2_4_max() {
     // C line 1076: (?:鬼車){2,4} matches 4 in 鬼車鬼車鬼車鬼車鬼車 -> 0-24
-    x2("(?:鬼車){2,4}".as_bytes(), "鬼車鬼車鬼車鬼車鬼車".as_bytes(), 0, 24);
+    x2(
+        "(?:鬼車){2,4}".as_bytes(),
+        "鬼車鬼車鬼車鬼車鬼車".as_bytes(),
+        0,
+        24,
+    );
 }
 
 #[test]
 fn utf8_group_interval_2_4_lazy() {
     // C line 1077: (?:鬼車){2,4}? matches min 2 in 鬼車鬼車鬼車鬼車鬼車 -> 0-12
-    x2("(?:鬼車){2,4}?".as_bytes(), "鬼車鬼車鬼車鬼車鬼車".as_bytes(), 0, 12);
+    x2(
+        "(?:鬼車){2,4}?".as_bytes(),
+        "鬼車鬼車鬼車鬼車鬼車".as_bytes(),
+        0,
+        12,
+    );
 }
 
 #[test]
@@ -3853,7 +3951,12 @@ fn utf8_literal_brace_comma() {
 #[test]
 fn utf8_group_plus_lazy_interval_2() {
     // C line 1079: (?:かきく)+?{2} matches かきくかきく -> 0-18
-    x2("(?:かきく)+?{2}".as_bytes(), "かきくかきくかきく".as_bytes(), 0, 18);
+    x2(
+        "(?:かきく)+?{2}".as_bytes(),
+        "かきくかきくかきく".as_bytes(),
+        0,
+        18,
+    );
 }
 
 // ============================================================================
@@ -4006,7 +4109,13 @@ fn utf8_capture_alt_group_plus() {
 #[test]
 fn utf8_capture_cc_pair_alt_plus() {
     // C line 1104: ([なにぬ][かきく]|かきく)+ capture 1 = かきく -> 0-9
-    x3("([なにぬ][かきく]|かきく)+".as_bytes(), "かきく".as_bytes(), 0, 9, 1);
+    x3(
+        "([なにぬ][かきく]|かきく)+".as_bytes(),
+        "かきく".as_bytes(),
+        0,
+        9,
+        1,
+    );
 }
 
 // ============================================================================
@@ -4602,7 +4711,12 @@ fn empty_pattern_nonempty_string() {
 #[test]
 fn literal_35_a() {
     // C line 176: 35 a's match 35 a's
-    x2(b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 0, 35);
+    x2(
+        b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        0,
+        35,
+    );
 }
 
 // ============================================================================
@@ -5025,7 +5139,12 @@ fn japanese_negated_inner_class_intersection_no_match_a() {
 #[test]
 fn japanese_complex_negated_intersection_match_ki() {
     // C line 1162: [[^あ-ん&&いうえお]&&[^う-か]] matches き -> 0-3
-    x2("[[^あ-ん&&いうえお]&&[^う-か]]".as_bytes(), "き".as_bytes(), 0, 3);
+    x2(
+        "[[^あ-ん&&いうえお]&&[^う-か]]".as_bytes(),
+        "き".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
@@ -5061,7 +5180,12 @@ fn japanese_range_dash_intersection() {
 #[test]
 fn japanese_mixed_ascii_negated_intersection_match_e() {
     // C line 1168: [^[^a-zあいう]&&[^bcdefgうえお]q-w] matches え -> 0-3
-    x2("[^[^a-zあいう]&&[^bcdefgうえお]q-w]".as_bytes(), "え".as_bytes(), 0, 3);
+    x2(
+        "[^[^a-zあいう]&&[^bcdefgうえお]q-w]".as_bytes(),
+        "え".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
@@ -5085,16 +5209,36 @@ fn japanese_mixed_ascii_negated_intersection_no_match_2() {
 #[test]
 fn japanese_version_download_literal() {
     // C line 1172: a<b>バージョンのダウンロード<\/b> matches -> 0-44
-    let pattern = [b"a<b>" as &[u8], "バージョンのダウンロード".as_bytes(), b"<\\/b>"].concat();
-    let input = [b"a<b>" as &[u8], "バージョンのダウンロード".as_bytes(), b"</b>"].concat();
+    let pattern = [
+        b"a<b>" as &[u8],
+        "バージョンのダウンロード".as_bytes(),
+        b"<\\/b>",
+    ]
+    .concat();
+    let input = [
+        b"a<b>" as &[u8],
+        "バージョンのダウンロード".as_bytes(),
+        b"</b>",
+    ]
+    .concat();
     x2(&pattern, &input, 0, 44);
 }
 
 #[test]
 fn japanese_version_download_dot() {
     // C line 1173: .<b>バージョンのダウンロード<\/b> matches -> 0-44
-    let pattern = [b".<b>" as &[u8], "バージョンのダウンロード".as_bytes(), b"<\\/b>"].concat();
-    let input = [b"a<b>" as &[u8], "バージョンのダウンロード".as_bytes(), b"</b>"].concat();
+    let pattern = [
+        b".<b>" as &[u8],
+        "バージョンのダウンロード".as_bytes(),
+        b"<\\/b>",
+    ]
+    .concat();
+    let input = [
+        b"a<b>" as &[u8],
+        "バージョンのダウンロード".as_bytes(),
+        b"</b>",
+    ]
+    .concat();
     x2(&pattern, &input, 0, 44);
 }
 
@@ -5290,7 +5434,12 @@ fn unicode_prop_not_word_negated_class_match_ko() {
 #[test]
 fn unicode_prop_not_word_and_ascii_negated_match_ko() {
     // C line 1209: [^\p{^Word}&&\p{ASCII}] matches こ -> 0-3
-    x2("[^\\p{^Word}&&\\p{ASCII}]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^\\p{^Word}&&\\p{ASCII}]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
@@ -5308,13 +5457,23 @@ fn unicode_prop_not_word_and_ascii_negated_no_match_hash() {
 #[test]
 fn unicode_prop_not_word_nested_and_ascii_match_ko() {
     // C line 1212: [^[\p{^Word}]&&[\p{ASCII}]] matches こ -> 0-3
-    x2("[^[\\p{^Word}]&&[\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^[\\p{^Word}]&&[\\p{ASCII}]]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
 fn unicode_prop_ascii_and_not_word_negated_match_ko() {
     // C line 1213: [^[\p{ASCII}]&&[^\p{Word}]] matches こ -> 0-3
-    x2("[^[\\p{ASCII}]&&[^\\p{Word}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^[\\p{ASCII}]&&[^\\p{Word}]]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
@@ -5326,7 +5485,12 @@ fn unicode_prop_ascii_and_not_word_no_match_ko() {
 #[test]
 fn unicode_prop_not_word_and_not_ascii_negated_match_ko() {
     // C line 1215: [^[\p{^Word}]&&[^\p{ASCII}]] matches こ -> 0-3
-    x2("[^[\\p{^Word}]&&[^\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^[\\p{^Word}]&&[^\\p{ASCII}]]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
@@ -5338,13 +5502,23 @@ fn unicode_prop_negated_hex_code_match_ko() {
 #[test]
 fn unicode_prop_not_word_and_not_hex_negated_match_ko() {
     // C line 1217: [^\p{^Word}&&[^\x{104a}]] matches こ -> 0-3
-    x2("[^\\p{^Word}&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^\\p{^Word}&&[^\\x{104a}]]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
 fn unicode_prop_not_word_nested_and_not_hex_negated_match_ko() {
     // C line 1218: [^[\p{^Word}]&&[^\x{104a}]] matches こ -> 0-3
-    x2("[^[\\p{^Word}]&&[^\\x{104a}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^[\\p{^Word}]&&[^\\x{104a}]]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
@@ -5392,7 +5566,12 @@ fn unicode_prop_cntrl_negated_class_match_ko() {
 #[test]
 fn unicode_prop_cntrl_and_ascii_negated_match_ko() {
     // C line 1227: [^\p{Cntrl}&&\p{ASCII}] matches こ -> 0-3
-    x2("[^\\p{Cntrl}&&\\p{ASCII}]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^\\p{Cntrl}&&\\p{ASCII}]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
@@ -5410,13 +5589,23 @@ fn unicode_prop_not_cntrl_and_ascii_negated_no_match_hash() {
 #[test]
 fn unicode_prop_not_cntrl_nested_and_ascii_negated_match_ko() {
     // C line 1230: [^[\p{^Cntrl}]&&[\p{ASCII}]] matches こ -> 0-3
-    x2("[^[\\p{^Cntrl}]&&[\\p{ASCII}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^[\\p{^Cntrl}]&&[\\p{ASCII}]]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
 fn unicode_prop_ascii_and_not_cntrl_negated_match_ko() {
     // C line 1231: [^[\p{ASCII}]&&[^\p{Cntrl}]] matches こ -> 0-3
-    x2("[^[\\p{ASCII}]&&[^\\p{Cntrl}]]".as_bytes(), "こ".as_bytes(), 0, 3);
+    x2(
+        "[^[\\p{ASCII}]&&[^\\p{Cntrl}]]".as_bytes(),
+        "こ".as_bytes(),
+        0,
+        3,
+    );
 }
 
 #[test]
@@ -5428,7 +5617,10 @@ fn unicode_prop_ascii_and_not_cntrl_no_match_ko() {
 #[test]
 fn unicode_prop_not_cntrl_and_not_ascii_negated_no_match_ko() {
     // C line 1233: [^[\p{^Cntrl}]&&[^\p{ASCII}]] does not match こ
-    n("[^[\\p{^Cntrl}]&&[^\\p{ASCII}]]".as_bytes(), "こ".as_bytes());
+    n(
+        "[^[\\p{^Cntrl}]&&[^\\p{ASCII}]]".as_bytes(),
+        "こ".as_bytes(),
+    );
 }
 
 #[test]
@@ -5789,13 +5981,23 @@ fn recursive_A_n_a_or_empty() {
 #[test]
 fn recursive_mutual() {
     // C line 715: (?<n>|\g<m>\g<n>)\z|\zEND (?<m>a|(b)\g<m>) matches "bbbbabba" -> 0-8
-    x2(b"(?<n>|\\g<m>\\g<n>)\\z|\\zEND (?<m>a|(b)\\g<m>)", b"bbbbabba", 0, 8);
+    x2(
+        b"(?<n>|\\g<m>\\g<n>)\\z|\\zEND (?<m>a|(b)\\g<m>)",
+        b"bbbbabba",
+        0,
+        8,
+    );
 }
 
 #[test]
 fn named_group_long_name() {
     // C line 716: (?<name1240>\w+\sx)a+\k<name1240> matches "  fg xaaaaaaaafg x" -> 2-18
-    x2(b"(?<name1240>\\w+\\sx)a+\\k<name1240>", b"  fg xaaaaaaaafg x", 2, 18);
+    x2(
+        b"(?<name1240>\\w+\\sx)a+\\k<name1240>",
+        b"  fg xaaaaaaaafg x",
+        2,
+        18,
+    );
 }
 
 #[test]
@@ -5813,7 +6015,12 @@ fn named_group_underscore_backref() {
 #[test]
 fn named_group_digit_or_word() {
     // C line 719: ((?<name1>\d)|(?<name2>\w))(\k<name1>|\k<name2>) matches "ff" -> 0-2
-    x2(b"((?<name1>\\d)|(?<name2>\\w))(\\k<name1>|\\k<name2>)", b"ff", 0, 2);
+    x2(
+        b"((?<name1>\\d)|(?<name2>\\w))(\\k<name1>|\\k<name2>)",
+        b"ff",
+        0,
+        2,
+    );
 }
 
 #[test]
@@ -5903,7 +6110,12 @@ fn recursive_g_A_mutual_capture() {
 #[test]
 fn recursive_mutual_pan_pon() {
     // C line 734: mutual recursion pan/pon matches "cdcbcdc" -> 0-7
-    x2(b"\\A(?:\\g<pon>|\\g<pan>|\\zEND  (?<pan>a|c\\g<pon>c)(?<pon>b|d\\g<pan>d))$", b"cdcbcdc", 0, 7);
+    x2(
+        b"\\A(?:\\g<pon>|\\g<pan>|\\zEND  (?<pan>a|c\\g<pon>c)(?<pon>b|d\\g<pan>d))$",
+        b"cdcbcdc",
+        0,
+        7,
+    );
 }
 
 #[test]
@@ -6156,7 +6368,12 @@ fn multi_alt_lazy_repeat_z() {
 #[test]
 fn nested_alt_lazy_repeat_z() {
     // C line 797: (abc|(def|ghi|jkl|mno|pqr){0,7}?){5}\z matches "adpqrpqrpqr" -> 2-11
-    x2(b"(abc|(def|ghi|jkl|mno|pqr){0,7}?){5}\\z", b"adpqrpqrpqr", 2, 11);
+    x2(
+        b"(abc|(def|ghi|jkl|mno|pqr){0,7}?){5}\\z",
+        b"adpqrpqrpqr",
+        2,
+        11,
+    );
 }
 
 #[test]
@@ -6168,7 +6385,12 @@ fn capture_noncap_a_opt_plus_coverage() {
 #[test]
 fn capture_noncap_a_lazyplus_z() {
     // C line 803: ((?:a(?:b|c|d|e|f|g|h|i|j|k|l|m|n))+?)?z matches "abacadaez" -> 0-9
-    x2(b"((?:a(?:b|c|d|e|f|g|h|i|j|k|l|m|n))+?)?z", b"abacadaez", 0, 9);
+    x2(
+        b"((?:a(?:b|c|d|e|f|g|h|i|j|k|l|m|n))+?)?z",
+        b"abacadaez",
+        0,
+        9,
+    );
 }
 
 #[test]
@@ -6335,7 +6557,8 @@ fn e(pattern: &[u8], input: &[u8], expected_error: i32) {
     match result {
         Err(code) => {
             assert_eq!(
-                code, expected_error,
+                code,
+                expected_error,
                 "e: expected error {} for {:?} against {:?}, got error {}",
                 expected_error,
                 std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -6355,7 +6578,8 @@ fn e(pattern: &[u8], input: &[u8], expected_error: i32) {
                 ONIG_OPTION_NONE,
             );
             assert_eq!(
-                result, expected_error,
+                result,
+                expected_error,
                 "e: expected error {} for {:?} against {:?}, but got result {}",
                 expected_error,
                 std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -6651,20 +6875,32 @@ fn lookbehind_shortest_priority_match() {
 
 fn lookbehind_absent_function_error_1() {
     // C line 1452
-    e(b"(?<=(?~|zoo)a.*z)", b"abcdefz", ONIGERR_INVALID_LOOK_BEHIND_PATTERN);
+    e(
+        b"(?<=(?~|zoo)a.*z)",
+        b"abcdefz",
+        ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+    );
 }
 
 #[test]
 
 fn lookbehind_absent_function_error_2() {
     // C line 1453
-    e(b"(?<=(?~|)a.*z)", b"abcdefz", ONIGERR_INVALID_LOOK_BEHIND_PATTERN);
+    e(
+        b"(?<=(?~|)a.*z)",
+        b"abcdefz",
+        ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+    );
 }
 
 #[test]
 fn lookbehind_absent_function_error_3() {
     // C line 1454
-    e(b"(a(?~|boo)z){0}(?<=\\g<1>)", b"abcdefz", ONIGERR_INVALID_LOOK_BEHIND_PATTERN);
+    e(
+        b"(a(?~|boo)z){0}(?<=\\g<1>)",
+        b"abcdefz",
+        ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+    );
 }
 
 #[test]
@@ -6680,7 +6916,8 @@ fn lookbehind_complex_173() {
     x2(
         b"(?<=D|)(?<=@!nnnnnnnnnIIIIn;{1}D?()|<x@x*xxxD|)(?<=@xxx|xxxxx\\g<1>;{1}x)",
         b"(?<=D|)(?<=@!nnnnnnnnnIIIIn;{1}D?()|<x@x*xxxD|)(?<=@xxx|xxxxx\\g<1>;{1}x)",
-        55, 55,
+        55,
+        55,
     );
 }
 
@@ -7348,7 +7585,8 @@ fn case_insensitive_dot_star_a_st_i_end_long_s() {
     x2(
         b"(?i).*\xe3\x81\x82st\xe3\x81\x84\\z",
         b"tttssss\xe3\x81\x82\xc5\xbft\xe3\x81\x84",
-        0, 16,
+        0,
+        16,
     );
 }
 
@@ -7358,7 +7596,8 @@ fn case_insensitive_dot_star_a_st_i_end_fb05() {
     x2(
         b"(?i).*\xe3\x81\x82st\xe3\x81\x84\\z",
         b"tttssss\xe3\x81\x82\xef\xac\x85\xe3\x81\x84",
-        0, 16,
+        0,
+        16,
     );
 }
 
@@ -7368,7 +7607,8 @@ fn case_insensitive_dot_star_a_st_i_end_fb06() {
     x2(
         b"(?i).*\xe3\x81\x82st\xe3\x81\x84\\z",
         b"tttssss\xe3\x81\x82\xef\xac\x86\xe3\x81\x84",
-        0, 16,
+        0,
+        16,
     );
 }
 
@@ -7387,13 +7627,23 @@ fn case_insensitive_dot_star_fb05_end() {
 #[test]
 fn case_insensitive_dot_star_fb06_i_end() {
     // C line 1566: U+FB06 + い in pattern
-    x2(b"(?i).*\xef\xac\x86\xe3\x81\x84\\z", b"tttssssst\xe3\x81\x84", 0, 12);
+    x2(
+        b"(?i).*\xef\xac\x86\xe3\x81\x84\\z",
+        b"tttssssst\xe3\x81\x84",
+        0,
+        12,
+    );
 }
 
 #[test]
 fn case_insensitive_dot_star_fb05_end_self() {
     // C line 1567
-    x2(b"(?i).*\xef\xac\x85\\z", b"tttssss\xe3\x81\x82\xef\xac\x85", 0, 13);
+    x2(
+        b"(?i).*\xef\xac\x85\\z",
+        b"tttssss\xe3\x81\x82\xef\xac\x85",
+        0,
+        13,
+    );
 }
 
 // ============================================================================
@@ -7409,7 +7659,12 @@ fn case_insensitive_ss_eszett() {
 #[test]
 fn case_insensitive_ss_eszett_dot_star() {
     // C line 1570: U+00DF
-    x2(b"(?i).*ss.*", b"abcdefghijklmnopqrstuvwxyz\xc3\x9fxyz", 0, 31);
+    x2(
+        b"(?i).*ss.*",
+        b"abcdefghijklmnopqrstuvwxyz\xc3\x9fxyz",
+        0,
+        31,
+    );
 }
 
 #[test]
@@ -7600,7 +7855,8 @@ fn hex_x_multi_codepoint_15() {
     x2(
         b"\\x{1 2 3 4 5 6 7 8 9 a b c d e f}",
         b"\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-        0, 15,
+        0,
+        15,
     );
 }
 
@@ -7619,13 +7875,21 @@ fn hex_x_multi_codepoint_newline_sep() {
 #[test]
 fn hex_x_multi_too_long_1() {
     // C line 1610
-    e(b"\\x{00000001 000000012}", b"", ONIGERR_TOO_LONG_WIDE_CHAR_VALUE);
+    e(
+        b"\\x{00000001 000000012}",
+        b"",
+        ONIGERR_TOO_LONG_WIDE_CHAR_VALUE,
+    );
 }
 
 #[test]
 fn hex_x_multi_too_long_2() {
     // C line 1611
-    e(b"\\x{000A 00000002f}", b"", ONIGERR_TOO_LONG_WIDE_CHAR_VALUE);
+    e(
+        b"\\x{000A 00000002f}",
+        b"",
+        ONIGERR_TOO_LONG_WIDE_CHAR_VALUE,
+    );
 }
 
 #[test]
@@ -7686,7 +7950,8 @@ fn octal_o_multi_15() {
     x2(
         b"\\o{1 2 3 4 5 6 7 10 11 12 13 14 15 16 17}",
         b"\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-        0, 15,
+        0,
+        15,
     );
 }
 
@@ -7745,7 +8010,12 @@ fn hex_x_multi_in_cc_plus() {
 #[test]
 fn hex_x_multi_in_cc_5_values() {
     // C line 1629
-    x2(b"[\\x{01 0F 1A 2c 4B}]+", b"\x20\x01\x0f\x1a\x2c\x4b\x1b", 1, 6);
+    x2(
+        b"[\\x{01 0F 1A 2c 4B}]+",
+        b"\x20\x01\x0f\x1a\x2c\x4b\x1b",
+        1,
+        6,
+    );
 }
 
 #[test]
@@ -7757,7 +8027,12 @@ fn hex_x_multi_in_cc_with_range() {
 #[test]
 fn hex_x_multi_in_cc_range_and_value() {
     // C line 1631
-    x2(b"[\\x{0030}-\\x{0033 005a}]+", b"\x30\x31\x32\x33\x5a\x1c", 0, 5);
+    x2(
+        b"[\\x{0030}-\\x{0033 005a}]+",
+        b"\x30\x31\x32\x33\x5a\x1c",
+        0,
+        5,
+    );
 }
 
 #[test]
@@ -7793,7 +8068,11 @@ fn octal_o_multi_in_cc_star() {
 #[test]
 fn octal_o_multi_in_cc_invalid() {
     // C line 1637
-    e(b"[a\\o{002  003]bcde|zzz", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"[a\\o{002  003]bcde|zzz",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
@@ -7823,7 +8102,11 @@ fn hex_x_range_and_range() {
 #[test]
 fn hex_x_range_invalid_double_range() {
     // C line 1642
-    e(b"[\\x{0030 - 0039-0063 0064}]+", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"[\\x{0030 - 0039-0063 0064}]+",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
@@ -7835,7 +8118,11 @@ fn hex_x_range_invalid_trailing_dash() {
 #[test]
 fn hex_x_range_invalid_double_dash() {
     // C line 1644
-    e(b"[\\x{0030 -- 0040}]+", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"[\\x{0030 -- 0040}]+",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
@@ -7847,19 +8134,31 @@ fn hex_x_range_invalid_double_dash_no_space() {
 #[test]
 fn hex_x_range_invalid_dash_space_dash() {
     // C line 1646
-    e(b"[\\x{0030 - - 0040}]+", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"[\\x{0030 - - 0040}]+",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
 fn hex_x_range_invalid_value_trailing_dash() {
     // C line 1647
-    e(b"[\\x{0030 0044 - }]+", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"[\\x{0030 0044 - }]+",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
 fn hex_x_range_invalid_mixed() {
     // C line 1648
-    e(b"[a-\\x{0070 - 0039}]+", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"[a-\\x{0070 - 0039}]+",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
@@ -7883,7 +8182,11 @@ fn hex_x_mixed_range() {
 #[test]
 fn hex_x_mixed_range_invalid() {
     // C line 1652
-    e(b"[\\x61-\\x{0063-0065}]+", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"[\\x61-\\x{0063-0065}]+",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
@@ -8091,7 +8394,11 @@ fn no_numbered_backref_error_neg() {
 #[test]
 fn no_numbered_backref_error_named() {
     // C line 1688
-    e(b"(?C)(.)(.)(.)(?<name>.)\\1", b"abcdd", ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED);
+    e(
+        b"(?C)(.)(.)(.)(?<name>.)\\1",
+        b"abcdd",
+        ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED,
+    );
 }
 
 #[test]
@@ -8471,7 +8778,11 @@ fn invalid_utf8_fd() {
 #[test]
 fn invalid_utf8_fc_in_pattern() {
     // C line 1760: https://bugs.php.net/bug.php?id=77371
-    e(b"()0\\xfc00000\\xfc00000\\xfc00000\xfc", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"()0\\xfc00000\\xfc00000\\xfc00000\xfc",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
@@ -8483,7 +8794,11 @@ fn invalid_utf8_fa() {
 #[test]
 fn invalid_utf8_f0_case_insensitive() {
     // C line 1762: https://bugs.php.net/bug.php?id=77382
-    e(b"(?i)000000000000000000000\xf0", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"(?i)000000000000000000000\xf0",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
@@ -8495,7 +8810,11 @@ fn invalid_utf8_f5_backslash() {
 #[test]
 fn invalid_utf8_fd_case_insensitive() {
     // C line 1764: https://bugs.php.net/bug.php?id=77394
-    e(b"(?i)FFF00000000000000000\xfd", b"", ONIGERR_INVALID_CODE_POINT_VALUE);
+    e(
+        b"(?i)FFF00000000000000000\xfd",
+        b"",
+        ONIGERR_INVALID_CODE_POINT_VALUE,
+    );
 }
 
 #[test]
@@ -8513,7 +8832,8 @@ fn long_utf8_string_issue_221() {
     x2(
         b"aaaaaaaaaaaaaaaaaaaaaaa\xe3\x81\x82b",
         b"aaaaaaaaaaaaaaaaaaaaaaa\xe3\x81\x82b",
-        0, 27,
+        0,
+        27,
     );
 }
 
@@ -8526,19 +8846,31 @@ fn large_repeat_literal_nomatch() {
 #[test]
 fn too_big_repeat_range_1() {
     // C line 1770
-    e(b"x{55380}{77590}", b"", ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);
+    e(
+        b"x{55380}{77590}",
+        b"",
+        ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE,
+    );
 }
 
 #[test]
 fn too_big_repeat_range_2() {
     // C line 1771
-    e(b"(xyz){40000}{99999}(?<name>vv)", b"", ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);
+    e(
+        b"(xyz){40000}{99999}(?<name>vv)",
+        b"",
+        ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE,
+    );
 }
 
 #[test]
 fn too_big_repeat_range_3() {
     // C line 1772
-    e(b"f{90000,90000}{80000,80000}", b"", ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE);
+    e(
+        b"f{90000,90000}{80000,80000}",
+        b"",
+        ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE,
+    );
 }
 
 #[test]
@@ -8560,7 +8892,12 @@ fn unicode_property_common() {
 #[test]
 fn unicode_property_enclosed_cjk() {
     // C line 1776: U+32FF
-    x2(b"\\p{In_Enclosed_CJK_Letters_and_Months}", b"\xe3\x8b\xbf", 0, 3);
+    x2(
+        b"\\p{In_Enclosed_CJK_Letters_and_Months}",
+        b"\xe3\x8b\xbf",
+        0,
+        3,
+    );
 }
 
 // ============================================================================
@@ -8606,31 +8943,51 @@ fn error_undefined_callout() {
 #[test]
 fn error_target_repeat_not_specified_star() {
     // C line 1784
-    e(b"*", b"abc", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
+    e(
+        b"*",
+        b"abc",
+        ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED,
+    );
 }
 
 #[test]
 fn error_target_repeat_not_specified_pipe_star() {
     // C line 1785
-    e(b"|*", b"abc", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
+    e(
+        b"|*",
+        b"abc",
+        ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED,
+    );
 }
 
 #[test]
 fn error_target_repeat_not_specified_option_star() {
     // C line 1786
-    e(b"(?i)*", b"abc", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
+    e(
+        b"(?i)*",
+        b"abc",
+        ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED,
+    );
 }
 
 #[test]
 fn error_target_repeat_not_specified_group_star() {
     // C line 1787
-    e(b"(?:*)", b"abc", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
+    e(
+        b"(?:*)",
+        b"abc",
+        ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED,
+    );
 }
 
 #[test]
 fn error_target_repeat_not_specified_m_group_star() {
     // C line 1788
-    e(b"(?m:*)", b"abc", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
+    e(
+        b"(?m:*)",
+        b"abc",
+        ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED,
+    );
 }
 
 #[test]
@@ -8648,7 +9005,11 @@ fn error_target_repeat_invalid_anchor() {
 #[test]
 fn error_target_repeat_not_specified_pipe_question() {
     // C line 1791
-    e(b"abc|?", b"", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
+    e(
+        b"abc|?",
+        b"",
+        ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED,
+    );
 }
 
 // ============================================================
@@ -9102,14 +9463,22 @@ fn absent_range_complex_1() {
 
 fn absent_range_complex_2() {
     // C line 897
-    x2(b"(?~|abc).*(xyz|pqr)(?~|)abc", b"aaaaxyzaaaabcpqrabc", 11, 19);
+    x2(
+        b"(?~|abc).*(xyz|pqr)(?~|)abc",
+        b"aaaaxyzaaaabcpqrabc",
+        11,
+        19,
+    );
 }
 
 #[test]
 
 fn absent_range_complex_no_match() {
     // C line 898
-    n(b"\\A(?~|abc).*(xyz|pqrabc)(?~|)abc", b"aaaaxyzaaaabcpqrabcabc");
+    n(
+        b"\\A(?~|abc).*(xyz|pqrabc)(?~|)abc",
+        b"aaaaxyzaaaabcpqrabcabc",
+    );
 }
 
 // --- Japanese lookahead/lookbehind (C lines 955-958) ---
@@ -9163,7 +9532,12 @@ fn ja_case_insensitive_backref() {
 #[test]
 fn ja_named_group_recursion() {
     // C line 1148: (?<愚か>変|\(\g<愚か>\)) matches ((((((変))))))
-    x2("(?<愚か>変|\\(\\g<愚か>\\))".as_bytes(), "((((((変))))))".as_bytes(), 0, 15);
+    x2(
+        "(?<愚か>変|\\(\\g<愚か>\\))".as_bytes(),
+        "((((((変))))))".as_bytes(),
+        0,
+        15,
+    );
 }
 
 #[test]
@@ -9249,7 +9623,12 @@ fn callout_max() {
 #[test]
 fn callout_count_cmp() {
     // C line 1379-1380
-    x2(b"(?:(*COUNT[AB]{X})[ab]|(*COUNT[CD]{X})[cd])*(*CMP{AB,<,CD})", b"abababcdab", 5, 8);
+    x2(
+        b"(?:(*COUNT[AB]{X})[ab]|(*COUNT[CD]{X})[cd])*(*CMP{AB,<,CD})",
+        b"abababcdab",
+        5,
+        8,
+    );
 }
 
 #[test]
@@ -9696,7 +10075,12 @@ fn egcb_hangul_syllable_gag() {
 #[test]
 fn egcb_hangul_jamo_lvt_no_boundary() {
     // C line 1292: ^.\Y.\Y.$ matches L+V+T at 0..9
-    x2(b"^.\\Y.\\Y.$", b"\xE1\x84\x80\xE1\x85\xA1\xE1\x86\xA8", 0, 9);
+    x2(
+        b"^.\\Y.\\Y.$",
+        b"\xE1\x84\x80\xE1\x85\xA1\xE1\x86\xA8",
+        0,
+        9,
+    );
 }
 
 #[test]
@@ -9754,7 +10138,12 @@ fn egcb_extpict_zwj_extpict() {
 #[test]
 fn egcb_extpict_extend_zwj_extpict() {
     // C line 1306: ...\Y. matches ExtPict+Extend+ZWJ+ExtPict at 0..11
-    x2(b"...\\Y.", b"\xE3\x80\xB0\xCC\x82\xE2\x80\x8D\xE2\xAD\x95", 0, 11);
+    x2(
+        b"...\\Y.",
+        b"\xE3\x80\xB0\xCC\x82\xE2\x80\x8D\xE2\xAD\x95",
+        0,
+        11,
+    );
 }
 
 #[test]
@@ -9973,7 +10362,12 @@ fn text_segment_w_x_wb13() {
 #[test]
 fn text_segment_w_x_wb13a_13b() {
     // C line 1352: (?y{w})\y\X\y matches ケン+NNBSP+タ at 0..12 (WB13a, WB13b)
-    x2(b"(?y{w})\\y\\X\\y", b"\xE3\x82\xB1\xE3\x83\xB3\xE2\x80\xAF\xE3\x82\xBF", 0, 12);
+    x2(
+        b"(?y{w})\\y\\X\\y",
+        b"\xE3\x82\xB1\xE3\x83\xB3\xE2\x80\xAF\xE3\x82\xBF",
+        0,
+        12,
+    );
 }
 
 #[test]
@@ -10026,11 +10420,16 @@ fn check_validity_invalid_utf8_search() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &OnigSyntaxOniguruma as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     // Invalid UTF-8: 0xFF is not a valid lead byte
     let invalid = b"\xff\xfe";
     let (r, _) = onig_search(
-        &reg, invalid, invalid.len(), 0, invalid.len(),
+        &reg,
+        invalid,
+        invalid.len(),
+        0,
+        invalid.len(),
         Some(OnigRegion::new()),
         ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
     );
@@ -10045,10 +10444,15 @@ fn check_validity_valid_utf8_search() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &OnigSyntaxOniguruma as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     let valid = b"abc";
     let (r, _) = onig_search(
-        &reg, valid, valid.len(), 0, valid.len(),
+        &reg,
+        valid,
+        valid.len(),
+        0,
+        valid.len(),
         Some(OnigRegion::new()),
         ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
     );
@@ -10063,10 +10467,14 @@ fn check_validity_invalid_utf8_match() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &OnigSyntaxOniguruma as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     let invalid = b"\xc0\x80"; // overlong encoding
     let (r, _) = onig_match(
-        &reg, invalid, invalid.len(), 0,
+        &reg,
+        invalid,
+        invalid.len(),
+        0,
         Some(OnigRegion::new()),
         ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
     );
@@ -10081,10 +10489,13 @@ fn check_validity_scan_invalid() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &OnigSyntaxOniguruma as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     let invalid = b"a\xfe";
     let (r, _) = onig_scan(
-        &reg, invalid, invalid.len(),
+        &reg,
+        invalid,
+        invalid.len(),
         OnigRegion::new(),
         ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
         |_n, _pos, _region| 0,
@@ -10105,11 +10516,16 @@ fn backward_search_optimized() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &OnigSyntaxOniguruma as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     let input = b"xxabcxx";
     // Search backward from position 6 down to position 0
     let (r, region) = onig_search(
-        &reg, input, input.len(), 6, 0,
+        &reg,
+        input,
+        input.len(),
+        6,
+        0,
         Some(OnigRegion::new()),
         ONIG_OPTION_NONE,
     );
@@ -10127,11 +10543,16 @@ fn backward_search_multibyte() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &OnigSyntaxOniguruma as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     let input = "xxあyy".as_bytes();
     // Search backward from end to 0
     let (r, region) = onig_search(
-        &reg, input, input.len(), input.len(), 0,
+        &reg,
+        input,
+        input.len(),
+        input.len(),
+        0,
         Some(OnigRegion::new()),
         ONIG_OPTION_NONE,
     );
@@ -10154,7 +10575,7 @@ fn syntax_with_capture_history() -> OnigSyntaxType {
 
 #[test]
 fn capture_history_unnamed() {
-    use ferroni::regexec::{onig_search, onig_get_capture_tree};
+    use ferroni::regexec::{onig_get_capture_tree, onig_search};
     let syn = syntax_with_capture_history();
     // (?@a+) — unnamed capture with history
     let reg = onig_new(
@@ -10162,10 +10583,15 @@ fn capture_history_unnamed() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &syn as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     let input = b"aaa";
     let (r, region) = onig_search(
-        &reg, input, input.len(), 0, input.len(),
+        &reg,
+        input,
+        input.len(),
+        0,
+        input.len(),
         Some(OnigRegion::new()),
         ONIG_OPTION_NONE,
     );
@@ -10189,7 +10615,7 @@ fn capture_history_unnamed() {
 
 #[test]
 fn capture_history_named() {
-    use ferroni::regexec::{onig_search, onig_get_capture_tree};
+    use ferroni::regexec::{onig_get_capture_tree, onig_search};
     let syn = syntax_with_capture_history();
     // (?@<name>a+) — named capture with history
     let reg = onig_new(
@@ -10197,10 +10623,15 @@ fn capture_history_named() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &syn as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     let input = b"aaa";
     let (r, region) = onig_search(
-        &reg, input, input.len(), 0, input.len(),
+        &reg,
+        input,
+        input.len(),
+        0,
+        input.len(),
         Some(OnigRegion::new()),
         ONIG_OPTION_NONE,
     );
@@ -10217,7 +10648,7 @@ fn capture_history_named() {
 
 #[test]
 fn capture_history_traverse() {
-    use ferroni::regexec::{onig_search, onig_get_capture_tree};
+    use ferroni::regexec::{onig_get_capture_tree, onig_search};
     use ferroni::regtrav::onig_capture_tree_traverse;
     let syn = syntax_with_capture_history();
     // (?@a+)b(?@c+) — two history captures
@@ -10226,10 +10657,15 @@ fn capture_history_traverse() {
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
         &syn as *const OnigSyntaxType,
-    ).unwrap();
+    )
+    .unwrap();
     let input = b"aabcc";
     let (r, region) = onig_search(
-        &reg, input, input.len(), 0, input.len(),
+        &reg,
+        input,
+        input.len(),
+        0,
+        input.len(),
         Some(OnigRegion::new()),
         ONIG_OPTION_NONE,
     );
@@ -10248,9 +10684,13 @@ fn capture_history_traverse() {
 
     // Also test traverse
     let mut visited = Vec::new();
-    onig_capture_tree_traverse(&region, ONIG_TRAVERSE_CALLBACK_AT_FIRST, |group, _beg, _end, _level, _at| {
-        visited.push(group);
-        0
-    });
+    onig_capture_tree_traverse(
+        &region,
+        ONIG_TRAVERSE_CALLBACK_AT_FIRST,
+        |group, _beg, _end, _level, _at| {
+            visited.push(group);
+            0
+        },
+    );
     assert_eq!(visited, vec![0, 1, 2]);
 }

@@ -68,10 +68,7 @@ extern "C" {
     pub static OnigEncodingUTF8: OnigEncodingType;
     pub static OnigSyntaxOniguruma: OnigSyntaxType;
 
-    pub fn onig_initialize(
-        encodings: *const OnigEncoding,
-        number_of_encodings: c_int,
-    ) -> c_int;
+    pub fn onig_initialize(encodings: *const OnigEncoding, number_of_encodings: c_int) -> c_int;
 
     pub fn onig_end() -> c_int;
 
@@ -192,7 +189,11 @@ impl CRegex {
         let start_ptr = unsafe { str_ptr.add(start) };
         let range_ptr = unsafe { str_ptr.add(range) };
         let region_ptr = region.map_or(ptr::null_mut(), |r| r.raw);
-        unsafe { onig_search(self.raw, str_ptr, end_ptr, start_ptr, range_ptr, region_ptr, option) }
+        unsafe {
+            onig_search(
+                self.raw, str_ptr, end_ptr, start_ptr, range_ptr, region_ptr, option,
+            )
+        }
     }
 
     pub fn match_at(
@@ -256,13 +257,7 @@ impl CRegSet {
     pub fn new(regs: &[OnigRegex]) -> Result<Self, c_int> {
         let _inst = COnigInstance::new();
         let mut set: *mut OnigRegSetType = ptr::null_mut();
-        let r = unsafe {
-            onig_regset_new(
-                &mut set,
-                regs.len() as c_int,
-                regs.as_ptr(),
-            )
-        };
+        let r = unsafe { onig_regset_new(&mut set, regs.len() as c_int, regs.as_ptr()) };
         if r != 0 {
             return Err(r);
         }

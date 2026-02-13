@@ -10,7 +10,7 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
-use std::sync::atomic::{AtomicU64, AtomicU32, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
 use crate::oniguruma::*;
@@ -31,14 +31,39 @@ static RETRY_LIMIT_IN_SEARCH: AtomicU64 = AtomicU64::new(DEFAULT_RETRY_LIMIT_IN_
 static MATCH_STACK_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_MATCH_STACK_LIMIT_SIZE);
 static TIME_LIMIT: AtomicU64 = AtomicU64::new(DEFAULT_TIME_LIMIT_MSEC);
 
-pub fn onig_set_retry_limit_in_match(n: u64) { RETRY_LIMIT_IN_MATCH.store(n, Ordering::Relaxed); }
-pub fn onig_get_retry_limit_in_match() -> u64 { RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed) }
-pub fn onig_set_retry_limit_in_search(n: u64) { RETRY_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed); }
-pub fn onig_get_retry_limit_in_search() -> u64 { RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed) }
-pub fn onig_set_match_stack_limit(n: u32) { MATCH_STACK_LIMIT.store(n, Ordering::Relaxed); }
-pub fn onig_get_match_stack_limit() -> u32 { MATCH_STACK_LIMIT.load(Ordering::Relaxed) }
-pub fn onig_set_time_limit(n: u64) { TIME_LIMIT.store(n, Ordering::Relaxed); }
-pub fn onig_get_time_limit() -> u64 { TIME_LIMIT.load(Ordering::Relaxed) }
+pub fn onig_set_retry_limit_in_match(n: u64) {
+    RETRY_LIMIT_IN_MATCH.store(n, Ordering::Relaxed);
+}
+pub fn onig_get_retry_limit_in_match() -> u64 {
+    RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed)
+}
+pub fn onig_set_retry_limit_in_search(n: u64) {
+    RETRY_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed);
+}
+pub fn onig_get_retry_limit_in_search() -> u64 {
+    RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed)
+}
+pub fn onig_set_match_stack_limit(n: u32) {
+    MATCH_STACK_LIMIT.store(n, Ordering::Relaxed);
+}
+pub fn onig_get_match_stack_limit() -> u32 {
+    MATCH_STACK_LIMIT.load(Ordering::Relaxed)
+}
+
+/// Alias for `onig_set_match_stack_limit` (C API compatibility).
+pub fn onig_set_match_stack_limit_size(n: u32) {
+    onig_set_match_stack_limit(n);
+}
+/// Alias for `onig_get_match_stack_limit` (C API compatibility).
+pub fn onig_get_match_stack_limit_size() -> u32 {
+    onig_get_match_stack_limit()
+}
+pub fn onig_set_time_limit(n: u64) {
+    TIME_LIMIT.store(n, Ordering::Relaxed);
+}
+pub fn onig_get_time_limit() -> u64 {
+    TIME_LIMIT.load(Ordering::Relaxed)
+}
 
 // ============================================================================
 // Global Progress/Retraction Callout (port of C's global callout funcs)
@@ -267,12 +292,19 @@ pub fn onig_copyright() -> &'static str {
     "Oniguruma 6.9.10 : Copyright (C) 2002-2024 K.Kosako"
 }
 
-pub fn onig_init() -> i32 { ONIG_NORMAL }
-pub fn onig_initialize() -> i32 { ONIG_NORMAL }
-pub fn onig_end() -> i32 { ONIG_NORMAL }
+pub fn onig_init() -> i32 {
+    ONIG_NORMAL
+}
+pub fn onig_initialize() -> i32 {
+    ONIG_NORMAL
+}
+pub fn onig_end() -> i32 {
+    ONIG_NORMAL
+}
 
 static SUBEXP_CALL_LIMIT_IN_SEARCH: AtomicU64 = AtomicU64::new(DEFAULT_SUBEXP_CALL_LIMIT_IN_SEARCH);
-static SUBEXP_CALL_MAX_NEST_LEVEL: AtomicU32 = AtomicU32::new(DEFAULT_SUBEXP_CALL_MAX_NEST_LEVEL as u32);
+static SUBEXP_CALL_MAX_NEST_LEVEL: AtomicU32 =
+    AtomicU32::new(DEFAULT_SUBEXP_CALL_MAX_NEST_LEVEL as u32);
 
 pub fn onig_get_subexp_call_limit_in_search() -> u64 {
     SUBEXP_CALL_LIMIT_IN_SEARCH.load(Ordering::Relaxed)
@@ -321,7 +353,8 @@ where
     }
 
     loop {
-        let (r, returned_region) = onig_search(reg, str_data, end, start, end, Some(region), option);
+        let (r, returned_region) =
+            onig_search(reg, str_data, end, start, end, Some(region), option);
         region = returned_region.unwrap_or_else(OnigRegion::new);
 
         if r >= 0 {
@@ -459,6 +492,8 @@ pub struct OnigCalloutArgs {
     str_len: usize,
     // Callout data array (for by_callout_args accessor functions)
     pub(crate) callout_data: *mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+    // Pointer to MatchArg for builtins that need to write back (e.g. SKIP)
+    pub(crate) msa: *mut MatchArg,
 }
 
 impl OnigCalloutArgs {
@@ -488,6 +523,7 @@ impl OnigCalloutArgs {
             str_data: str_data.as_ptr(),
             str_len: str_data.len(),
             callout_data: std::ptr::null_mut(),
+            msa: std::ptr::null_mut(),
         }
     }
 }
@@ -534,10 +570,7 @@ pub fn onig_get_passed_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
     0
 }
 
-pub fn onig_get_arg_by_callout_args(
-    args: &OnigCalloutArgs,
-    index: i32,
-) -> Option<&CalloutArg> {
+pub fn onig_get_arg_by_callout_args(args: &OnigCalloutArgs, index: i32) -> Option<&CalloutArg> {
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
         let idx = (args.num - 1) as usize;
@@ -643,10 +676,7 @@ pub fn onig_set_callout_data(
 // ============================================================================
 
 /// Get the callout number for a given tag in the regex.
-pub fn onig_get_callout_num_by_tag(
-    reg: &RegexType,
-    tag: &[u8],
-) -> i32 {
+pub fn onig_get_callout_num_by_tag(reg: &RegexType, tag: &[u8]) -> i32 {
     if let Some(ref ext) = reg.extp {
         if let Some(ref table) = ext.tag_table {
             if let Some(&num) = table.get(tag) {
@@ -658,10 +688,7 @@ pub fn onig_get_callout_num_by_tag(
 }
 
 /// Check if a callout has a tag.
-pub fn onig_callout_tag_is_exist_at_callout_num(
-    reg: &RegexType,
-    callout_num: i32,
-) -> bool {
+pub fn onig_callout_tag_is_exist_at_callout_num(reg: &RegexType, callout_num: i32) -> bool {
     if let Some(ref ext) = reg.extp {
         let idx = (callout_num - 1) as usize;
         if idx < ext.callout_list.len() {
@@ -672,14 +699,33 @@ pub fn onig_callout_tag_is_exist_at_callout_num(
 }
 
 /// Get the tag for a given callout number.
-pub fn onig_get_callout_tag(
-    reg: &RegexType,
-    callout_num: i32,
-) -> Option<&[u8]> {
+pub fn onig_get_callout_tag(reg: &RegexType, callout_num: i32) -> Option<&[u8]> {
     if let Some(ref ext) = reg.extp {
         let idx = (callout_num - 1) as usize;
         if idx < ext.callout_list.len() {
             return ext.callout_list[idx].tag.as_deref();
+        }
+    }
+    None
+}
+
+/// Get the byte offset of the tag start in the pattern for a given callout number.
+pub fn onig_get_callout_tag_start(reg: &RegexType, callout_num: i32) -> Option<usize> {
+    if let Some(ref ext) = reg.extp {
+        let idx = (callout_num - 1) as usize;
+        if idx < ext.callout_list.len() && ext.callout_list[idx].tag.is_some() {
+            return Some(ext.callout_list[idx].tag_start);
+        }
+    }
+    None
+}
+
+/// Get the byte offset of the tag end in the pattern for a given callout number.
+pub fn onig_get_callout_tag_end(reg: &RegexType, callout_num: i32) -> Option<usize> {
+    if let Some(ref ext) = reg.extp {
+        let idx = (callout_num - 1) as usize;
+        if idx < ext.callout_list.len() && ext.callout_list[idx].tag.is_some() {
+            return Some(ext.callout_list[idx].tag_end);
         }
     }
     None
@@ -696,7 +742,9 @@ pub fn onig_get_callout_data_by_callout_args(
     slot: i32,
 ) -> Option<i64> {
     let reg = unsafe { &*args.regex };
-    if args.callout_data.is_null() { return None; }
+    if args.callout_data.is_null() {
+        return None;
+    }
     let cd = unsafe { &*args.callout_data };
     onig_get_callout_data(reg, cd, callout_num, slot)
 }
@@ -707,7 +755,9 @@ pub fn onig_set_callout_data_by_callout_args(
     slot: i32,
     val: i64,
 ) -> i32 {
-    if args.callout_data.is_null() { return ONIGERR_INVALID_ARGUMENT; }
+    if args.callout_data.is_null() {
+        return ONIGERR_INVALID_ARGUMENT;
+    }
     let cd = unsafe { &mut *args.callout_data };
     onig_set_callout_data(cd, callout_num, slot, val)
 }
@@ -754,7 +804,9 @@ pub fn onig_get_callout_data_by_tag(
     slot: i32,
 ) -> Option<i64> {
     let num = onig_get_callout_num_by_tag(reg, tag);
-    if num < 1 { return None; }
+    if num < 1 {
+        return None;
+    }
     onig_get_callout_data(reg, callout_data, num, slot)
 }
 
@@ -767,7 +819,9 @@ pub fn onig_set_callout_data_by_tag(
     val: i64,
 ) -> i32 {
     let num = onig_get_callout_num_by_tag(reg, tag);
-    if num < 1 { return ONIGERR_INVALID_CALLOUT_TAG_NAME; }
+    if num < 1 {
+        return ONIGERR_INVALID_CALLOUT_TAG_NAME;
+    }
     onig_set_callout_data(callout_data, num, slot, val)
 }
 
@@ -809,9 +863,7 @@ pub fn onig_get_capture_range_in_callout(
 ///
 /// Note: This function requires OnigCalloutArgs to be constructed with stack
 /// state from the VM.
-pub fn onig_get_used_stack_size_in_callout(
-    _args: &OnigCalloutArgs,
-) -> (i32, i32) {
+pub fn onig_get_used_stack_size_in_callout(_args: &OnigCalloutArgs) -> (i32, i32) {
     // Stack size tracking not yet exposed through OnigCalloutArgs.
     (0, 0)
 }
@@ -821,24 +873,15 @@ pub fn onig_get_used_stack_size_in_callout(
 // (port of C's onig_builtin_fail, onig_builtin_mismatch, etc.)
 // ============================================================================
 
-pub fn onig_builtin_fail(
-    _args: &OnigCalloutArgs,
-    _user_data: *mut std::ffi::c_void,
-) -> i32 {
+pub fn onig_builtin_fail(_args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     ONIG_CALLOUT_FAIL
 }
 
-pub fn onig_builtin_mismatch(
-    _args: &OnigCalloutArgs,
-    _user_data: *mut std::ffi::c_void,
-) -> i32 {
+pub fn onig_builtin_mismatch(_args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     ONIG_MISMATCH
 }
 
-pub fn onig_builtin_error(
-    args: &OnigCalloutArgs,
-    _user_data: *mut std::ffi::c_void,
-) -> i32 {
+pub fn onig_builtin_error(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
         let idx = (args.num - 1) as usize;
@@ -858,16 +901,19 @@ pub fn onig_builtin_error(
     ONIGERR_INVALID_CALLOUT_BODY
 }
 
-pub fn onig_builtin_count(
-    args: &OnigCalloutArgs,
-    _user_data: *mut std::ffi::c_void,
-) -> i32 {
-    if args.callout_data.is_null() { return ONIG_CALLOUT_FAIL; }
+pub fn onig_builtin_count(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
+    if args.callout_data.is_null() {
+        return ONIG_CALLOUT_FAIL;
+    }
     let cd = unsafe { &mut *args.callout_data };
     let num = args.num;
-    if num < 1 { return ONIG_CALLOUT_FAIL; }
+    if num < 1 {
+        return ONIG_CALLOUT_FAIL;
+    }
     let idx = (num - 1) as usize;
-    if idx >= cd.len() { return ONIG_CALLOUT_FAIL; }
+    if idx >= cd.len() {
+        return ONIG_CALLOUT_FAIL;
+    }
 
     let reg = unsafe { &*args.regex };
     let count_type = if let Some(ref ext) = reg.extp {
@@ -876,76 +922,95 @@ pub fn onig_builtin_count(
                 CalloutArg::Char(c) => *c,
                 _ => b'>',
             }
-        } else { b'>' }
-    } else { b'>' };
-
-    let is_retraction = args.callout_in == OnigCalloutIn::Retraction;
-    let slots = &mut cd[idx];
-
-    if is_retraction {
-        if count_type == b'<' { slots[0] += 1; }
-        else if count_type == b'X' { slots[0] -= 1; }
-        slots[2] += 1;
-    } else {
-        if count_type != b'<' { slots[0] += 1; }
-        slots[1] += 1;
-    }
-
-    ONIG_CALLOUT_SUCCESS
-}
-
-pub fn onig_builtin_total_count(
-    args: &OnigCalloutArgs,
-    _user_data: *mut std::ffi::c_void,
-) -> i32 {
-    // total_count is the same as count but without clearing old data.
-    // In Rust, count already doesn't clear old data, so they are equivalent.
-    onig_builtin_count(args, _user_data)
-}
-
-pub fn onig_builtin_max(
-    args: &OnigCalloutArgs,
-    _user_data: *mut std::ffi::c_void,
-) -> i32 {
-    if args.callout_data.is_null() { return ONIG_CALLOUT_FAIL; }
-    let cd = unsafe { &mut *args.callout_data };
-    let num = args.num;
-    if num < 1 { return ONIG_CALLOUT_FAIL; }
-    let idx = (num - 1) as usize;
-    if idx >= cd.len() { return ONIG_CALLOUT_FAIL; }
-
-    let reg = unsafe { &*args.regex };
-    let ext = match reg.extp.as_ref() {
-        Some(e) => e,
-        None => return ONIG_CALLOUT_FAIL,
-    };
-    if idx >= ext.callout_list.len() { return ONIG_CALLOUT_FAIL; }
-    let entry = &ext.callout_list[idx];
-
-    let max_val = if !entry.args.is_empty() {
-        resolve_callout_arg(&entry.args[0], &ext.callout_list, cd)
-    } else { 0 };
-
-    let count_type = if entry.args.len() > 1 {
-        match &entry.args[1] {
-            CalloutArg::Char(c) => *c,
-            _ => b'>',
+        } else {
+            b'>'
         }
-    } else { b'>' };
+    } else {
+        b'>'
+    };
 
     let is_retraction = args.callout_in == OnigCalloutIn::Retraction;
     let slots = &mut cd[idx];
 
     if is_retraction {
         if count_type == b'<' {
-            if slots[0] >= max_val { return ONIG_CALLOUT_FAIL; }
+            slots[0] += 1;
+        } else if count_type == b'X' {
+            slots[0] -= 1;
+        }
+        slots[2] += 1;
+    } else {
+        if count_type != b'<' {
+            slots[0] += 1;
+        }
+        slots[1] += 1;
+    }
+
+    ONIG_CALLOUT_SUCCESS
+}
+
+pub fn onig_builtin_total_count(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
+    // total_count is the same as count but without clearing old data.
+    // In Rust, count already doesn't clear old data, so they are equivalent.
+    onig_builtin_count(args, _user_data)
+}
+
+pub fn onig_builtin_max(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
+    if args.callout_data.is_null() {
+        return ONIG_CALLOUT_FAIL;
+    }
+    let cd = unsafe { &mut *args.callout_data };
+    let num = args.num;
+    if num < 1 {
+        return ONIG_CALLOUT_FAIL;
+    }
+    let idx = (num - 1) as usize;
+    if idx >= cd.len() {
+        return ONIG_CALLOUT_FAIL;
+    }
+
+    let reg = unsafe { &*args.regex };
+    let ext = match reg.extp.as_ref() {
+        Some(e) => e,
+        None => return ONIG_CALLOUT_FAIL,
+    };
+    if idx >= ext.callout_list.len() {
+        return ONIG_CALLOUT_FAIL;
+    }
+    let entry = &ext.callout_list[idx];
+
+    let max_val = if !entry.args.is_empty() {
+        resolve_callout_arg(&entry.args[0], &ext.callout_list, cd)
+    } else {
+        0
+    };
+
+    let count_type = if entry.args.len() > 1 {
+        match &entry.args[1] {
+            CalloutArg::Char(c) => *c,
+            _ => b'>',
+        }
+    } else {
+        b'>'
+    };
+
+    let is_retraction = args.callout_in == OnigCalloutIn::Retraction;
+    let slots = &mut cd[idx];
+
+    if is_retraction {
+        if count_type == b'<' {
+            if slots[0] >= max_val {
+                return ONIG_CALLOUT_FAIL;
+            }
             slots[0] += 1;
         } else if count_type == b'X' {
             slots[0] -= 1;
         }
     } else {
         if count_type != b'<' {
-            if slots[0] >= max_val { return ONIG_CALLOUT_FAIL; }
+            if slots[0] >= max_val {
+                return ONIG_CALLOUT_FAIL;
+            }
             slots[0] += 1;
         }
     }
@@ -953,16 +1018,43 @@ pub fn onig_builtin_max(
     ONIG_CALLOUT_SUCCESS
 }
 
-pub fn onig_builtin_cmp(
-    args: &OnigCalloutArgs,
-    _user_data: *mut std::ffi::c_void,
-) -> i32 {
-    if args.callout_data.is_null() { return ONIG_CALLOUT_FAIL; }
+/// Built-in SKIP callout. When a match fails, the search loop advances
+/// to at least the position recorded by SKIP, avoiding redundant attempts.
+/// Port of C's onig_builtin_skip (regexec.c:6642-6648).
+pub fn onig_builtin_skip(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
+    if args.callout_in == OnigCalloutIn::Retraction {
+        return ONIG_CALLOUT_SUCCESS;
+    }
+
+    let current = if args.str_data.is_null() {
+        0
+    } else {
+        unsafe { args.current.offset_from(args.str_data) as usize }
+    };
+
+    if !args.msa.is_null() {
+        let msa = unsafe { &mut *args.msa };
+        if current > msa.skip_search {
+            msa.skip_search = current;
+        }
+    }
+
+    ONIG_CALLOUT_SUCCESS
+}
+
+pub fn onig_builtin_cmp(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
+    if args.callout_data.is_null() {
+        return ONIG_CALLOUT_FAIL;
+    }
     let cd = unsafe { &mut *args.callout_data };
     let num = args.num;
-    if num < 1 { return ONIG_CALLOUT_FAIL; }
+    if num < 1 {
+        return ONIG_CALLOUT_FAIL;
+    }
     let idx = (num - 1) as usize;
-    if idx >= cd.len() { return ONIG_CALLOUT_FAIL; }
+    if idx >= cd.len() {
+        return ONIG_CALLOUT_FAIL;
+    }
 
     let reg = unsafe { &*args.regex };
     let ext = match reg.extp.as_ref() {
@@ -983,13 +1075,21 @@ pub fn onig_builtin_cmp(
         // First call: parse the op string from args[1]
         let op_val = match &entry.args[1] {
             CalloutArg::Str(s) => {
-                if s == b"==" { 1 }
-                else if s == b"!=" { 2 }
-                else if s == b"<" { 3 }
-                else if s == b">" { 4 }
-                else if s == b"<=" { 5 }
-                else if s == b">=" { 6 }
-                else { return ONIGERR_INVALID_CALLOUT_ARG; }
+                if s == b"==" {
+                    1
+                } else if s == b"!=" {
+                    2
+                } else if s == b"<" {
+                    3
+                } else if s == b">" {
+                    4
+                } else if s == b"<=" {
+                    5
+                } else if s == b">=" {
+                    6
+                } else {
+                    return ONIGERR_INVALID_CALLOUT_ARG;
+                }
             }
             _ => return ONIGERR_INVALID_CALLOUT_ARG,
         };
@@ -1003,7 +1103,11 @@ pub fn onig_builtin_cmp(
             6 => lv >= rv,
             _ => false,
         };
-        if result { ONIG_CALLOUT_SUCCESS } else { ONIG_CALLOUT_FAIL }
+        if result {
+            ONIG_CALLOUT_SUCCESS
+        } else {
+            ONIG_CALLOUT_FAIL
+        }
     } else {
         let result = match op {
             1 => lv == rv,
@@ -1014,7 +1118,11 @@ pub fn onig_builtin_cmp(
             6 => lv >= rv,
             _ => false,
         };
-        if result { ONIG_CALLOUT_SUCCESS } else { ONIG_CALLOUT_FAIL }
+        if result {
+            ONIG_CALLOUT_SUCCESS
+        } else {
+            ONIG_CALLOUT_FAIL
+        }
     }
 }
 
@@ -1040,10 +1148,10 @@ enum MemPtr {
 enum StackEntry {
     /// Choice point (STK_ALT / STK_SUPER_ALT) - alternate path for backtracking.
     Alt {
-        pcode: usize,    // bytecode index to jump to on backtrack
-        pstr: usize,     // string position to restore
-        zid: i32,        // remaining count for StepBackNext (-1 = unused)
-        is_super: bool,  // true for SUPER_ALT (survives CutToMark)
+        pcode: usize,   // bytecode index to jump to on backtrack
+        pstr: usize,    // string position to restore
+        zid: i32,       // remaining count for StepBackNext (-1 = unused)
+        is_super: bool, // true for SUPER_ALT (survives CutToMark)
     },
     /// Capture group start (STK_MEM_START)
     MemStart {
@@ -1060,23 +1168,13 @@ enum StackEntry {
         prev_end: MemPtr,
     },
     /// Capture group end marker (STK_MEM_END_MARK) - for recursive groups
-    MemEndMark {
-        zid: usize,
-    },
+    MemEndMark { zid: usize },
     /// Repeat counter (STK_REPEAT_INC)
-    RepeatInc {
-        zid: usize,
-        count: i32,
-    },
+    RepeatInc { zid: usize, count: i32 },
     /// Empty check start marker (STK_EMPTY_CHECK_START)
-    EmptyCheckStart {
-        zid: usize,
-        pstr: usize,
-    },
+    EmptyCheckStart { zid: usize, pstr: usize },
     /// Empty check end marker (STK_EMPTY_CHECK_END)
-    EmptyCheckEnd {
-        zid: usize,
-    },
+    EmptyCheckEnd { zid: usize },
     /// Named checkpoint (STK_MARK) - for lookaheads/lookbehinds
     Mark {
         zid: usize,
@@ -1089,15 +1187,13 @@ enum StackEntry {
         v: usize,
     },
     /// Call frame return address (STK_CALL_FRAME)
-    CallFrame {
-        ret_addr: usize,
-    },
+    CallFrame { ret_addr: usize },
     /// Return marker (STK_RETURN)
     Return,
     /// Callout entry (STK_CALLOUT) - for retraction callbacks
     Callout {
-        num: i32,       // callout list index (1-based)
-        id: i32,        // builtin id (for name callouts) or ONIG_NON_NAME_ID
+        num: i32, // callout list index (1-based)
+        id: i32,  // builtin id (for name callouts) or ONIG_NON_NAME_ID
     },
     /// Voided entry (STK_VOID) - dead space, skipped during pops
     Void,
@@ -1138,12 +1234,15 @@ pub struct MatchArg {
     pub start: usize, // search start position (for \G anchor)
     pub best_len: i32,
     pub best_s: usize,
+    /// Skip target position set by `onig_builtin_skip`. The search loop
+    /// advances past this position after a mismatch.
+    pub skip_search: usize,
     // Safety limits
     pub retry_limit_in_match: u64,
     pub retry_limit_in_search: u64,
     pub retry_limit_in_search_counter: u64,
     pub match_stack_limit: u32,
-    pub time_limit: u64,  // milliseconds, 0 = unlimited
+    pub time_limit: u64, // milliseconds, 0 = unlimited
     /// Lazily-initialized search start time for time-limit checking.
     /// None until the first time check fires, then set to Instant::now().
     time_start: Option<Box<Instant>>,
@@ -1168,6 +1267,7 @@ impl MatchArg {
             start,
             best_len: ONIG_MISMATCH,
             best_s: 0,
+            skip_search: 0,
             retry_limit_in_match: RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed),
             retry_limit_in_search: RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed),
             retry_limit_in_search_counter: 0,
@@ -1193,6 +1293,7 @@ impl MatchArg {
             start,
             best_len: ONIG_MISMATCH,
             best_s: 0,
+            skip_search: 0,
             retry_limit_in_match: mp.retry_limit_in_match,
             retry_limit_in_search: mp.retry_limit_in_search,
             retry_limit_in_search_counter: 0,
@@ -1209,8 +1310,12 @@ impl MatchArg {
     /// On first call, initializes the start time.
     #[inline]
     fn check_time_limit(&mut self) -> bool {
-        if self.time_limit == 0 { return false; }
-        let start = self.time_start.get_or_insert_with(|| Box::new(Instant::now()));
+        if self.time_limit == 0 {
+            return false;
+        }
+        let start = self
+            .time_start
+            .get_or_insert_with(|| Box::new(Instant::now()));
         start.elapsed() >= std::time::Duration::from_millis(self.time_limit)
     }
 }
@@ -1247,7 +1352,9 @@ fn stack_pop(
     loop {
         let entry = stack.pop()?;
         match entry {
-            StackEntry::Alt { pcode, pstr, zid, .. } => {
+            StackEntry::Alt {
+                pcode, pstr, zid, ..
+            } => {
                 return Some((pcode, pstr, zid));
             }
             _ => match pop_level {
@@ -1346,10 +1453,7 @@ fn stack_pop_to_mark(
 /// Void stack entries from top to the Mark with matching id (C: STACK_TO_VOID_TO_MARK).
 /// Returns the mark's saved position. Voids regular Alt and EmptyCheckStart entries,
 /// but preserves Super Alt entries and Marks with different IDs.
-fn stack_void_to_mark(
-    stack: &mut Vec<StackEntry>,
-    mark_id: usize,
-) -> Option<usize> {
+fn stack_void_to_mark(stack: &mut Vec<StackEntry>, mark_id: usize) -> Option<usize> {
     let mut i = stack.len();
     while i > 0 {
         i -= 1;
@@ -1367,8 +1471,10 @@ fn stack_void_to_mark(
         // Super Alt (is_super=true) is NOT voided — it survives cuts
         let is_void_target = matches!(
             &stack[i],
-            StackEntry::Alt { is_super: false, .. }
-            | StackEntry::EmptyCheckStart { .. }
+            StackEntry::Alt {
+                is_super: false,
+                ..
+            } | StackEntry::EmptyCheckStart { .. }
         );
         if is_void_target {
             stack[i] = StackEntry::Void;
@@ -1381,12 +1487,7 @@ fn stack_void_to_mark(
 /// Returns the count from that entry.
 fn stack_get_repeat_count(stack: &[StackEntry], zid: usize) -> i32 {
     for entry in stack.iter().rev() {
-        if let StackEntry::RepeatInc {
-            zid: id,
-            count,
-            ..
-        } = entry
-        {
+        if let StackEntry::RepeatInc { zid: id, count, .. } = entry {
             if *id == zid {
                 return *count;
             }
@@ -1445,13 +1546,23 @@ fn stack_empty_check_mem(
     // Position is the same. Check if any capture groups changed.
     let mut ms = empty_status_mem as u32;
     for k_idx in (klow_idx + 1..stack.len()).rev() {
-        if let StackEntry::MemEnd { zid: mem_zid, pstr: end_pstr, .. } = &stack[k_idx] {
+        if let StackEntry::MemEnd {
+            zid: mem_zid,
+            pstr: end_pstr,
+            ..
+        } = &stack[k_idx]
+        {
             if ms & (1u32 << *mem_zid) != 0 {
                 // Found a MemEnd for a tracked group. Check if its value differs
                 // from the previous iteration's value.
                 // Look for the corresponding MemStart between klow and this MemEnd.
                 for kk_idx in klow_idx + 1..k_idx {
-                    if let StackEntry::MemStart { zid: start_zid, prev_end, .. } = &stack[kk_idx] {
+                    if let StackEntry::MemStart {
+                        zid: start_zid,
+                        prev_end,
+                        ..
+                    } = &stack[kk_idx]
+                    {
                         if *start_zid == *mem_zid {
                             // Check if prev_end was invalid (group wasn't captured before)
                             match prev_end {
@@ -1465,7 +1576,10 @@ fn stack_empty_check_mem(
                                     }
                                 }
                                 MemPtr::StackIdx(si) => {
-                                    if let StackEntry::MemEnd { pstr: prev_pstr, .. } = &stack[*si] {
+                                    if let StackEntry::MemEnd {
+                                        pstr: prev_pstr, ..
+                                    } = &stack[*si]
+                                    {
                                         if *prev_pstr != *end_pstr {
                                             return false;
                                         }
@@ -1477,7 +1591,9 @@ fn stack_empty_check_mem(
                         }
                     }
                 }
-                if ms == 0 { break; }
+                if ms == 0 {
+                    break;
+                }
             }
         }
     }
@@ -1487,15 +1603,10 @@ fn stack_empty_check_mem(
 
 /// Get the saved value for a given save_type and zid from the stack.
 /// Search stack for last SaveVal by type only (C: STACK_GET_SAVE_VAL_TYPE_LAST)
-fn stack_get_save_val_type_last(
-    stack: &[StackEntry],
-    save_type: SaveType,
-) -> Option<usize> {
+fn stack_get_save_val_type_last(stack: &[StackEntry], save_type: SaveType) -> Option<usize> {
     for entry in stack.iter().rev() {
         if let StackEntry::SaveVal {
-            save_type: st,
-            v,
-            ..
+            save_type: st, v, ..
         } = entry
         {
             if *st == save_type {
@@ -1507,11 +1618,7 @@ fn stack_get_save_val_type_last(
 }
 
 /// Search stack for last SaveVal by type AND id (C: STACK_GET_SAVE_VAL_TYPE_LAST_ID)
-fn stack_get_save_val_last(
-    stack: &[StackEntry],
-    save_type: SaveType,
-    zid: usize,
-) -> Option<usize> {
+fn stack_get_save_val_last(stack: &[StackEntry], save_type: SaveType, zid: usize) -> Option<usize> {
     for entry in stack.iter().rev() {
         if let StackEntry::SaveVal {
             zid: id,
@@ -1541,9 +1648,7 @@ fn make_capture_history_tree(
         match &stack[*k] {
             StackEntry::MemStart { zid, pstr, .. } => {
                 let n = *zid;
-                if n <= ONIG_MAX_CAPTURE_HISTORY_GROUP
-                    && mem_status_at(reg.capture_history, n)
-                {
+                if n <= ONIG_MAX_CAPTURE_HISTORY_GROUP && mem_status_at(reg.capture_history, n) {
                     let mut child = Box::new(OnigCaptureTreeNode::new());
                     child.group = n as i32;
                     child.beg = *pstr as i32;
@@ -1551,9 +1656,15 @@ fn make_capture_history_tree(
                     let child_idx = node.childs.len() - 1;
                     *k += 1;
                     let r = make_capture_history_tree(
-                        &mut node.childs[child_idx], k, stack, stk_top, reg,
+                        &mut node.childs[child_idx],
+                        k,
+                        stack,
+                        stk_top,
+                        reg,
                     );
-                    if r < 0 { return r; }
+                    if r < 0 {
+                        return r;
+                    }
                     // After recursive call, k points to the matching MemEnd
                     if let StackEntry::MemEnd { pstr: end_pstr, .. } = &stack[*k] {
                         node.childs[child_idx].end = *end_pstr as i32;
@@ -1683,7 +1794,8 @@ fn backref_match_at_nested_level(
                             return false;
                         }
                         if ignore_case {
-                            if !string_cmp_ic(reg.enc, case_fold_flag, str_data, pstart, s, cap_len) {
+                            if !string_cmp_ic(reg.enc, case_fold_flag, str_data, pstart, s, cap_len)
+                            {
                                 return false;
                             }
                         } else {
@@ -1720,8 +1832,12 @@ fn backref_check_at_nested_level(
     while k > 0 {
         k -= 1;
         match &stack[k] {
-            StackEntry::CallFrame { .. } => { level -= 1; }
-            StackEntry::Return => { level += 1; }
+            StackEntry::CallFrame { .. } => {
+                level -= 1;
+            }
+            StackEntry::Return => {
+                level += 1;
+            }
             StackEntry::MemStart { zid, .. } if level == nest => {
                 if mem_is_in_mems(*zid, mem_num, mems) {
                     return true;
@@ -1742,7 +1858,6 @@ fn mem_is_in_mems(mem: usize, num: i32, mems: &[i32]) -> bool {
     }
     false
 }
-
 
 // ============================================================================
 // Helper functions
@@ -1768,7 +1883,13 @@ fn is_word_char_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> 
 /// Check if position is a word character in ASCII-aware mode.
 /// mode == 0: full Unicode word check, mode != 0: ASCII-only word check.
 #[inline]
-fn is_word_char_ascii_mode(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: ModeType) -> bool {
+fn is_word_char_ascii_mode(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    end: usize,
+    mode: ModeType,
+) -> bool {
     if mode == 0 {
         return is_word_char_at(enc, str_data, s, end);
     }
@@ -1794,7 +1915,13 @@ fn prev_char_head(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) ->
 
 /// Check word boundary at position s (encoding-aware, mode-aware).
 /// mode == 0: Unicode word, mode != 0: ASCII-only word.
-fn is_word_boundary(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: ModeType) -> bool {
+fn is_word_boundary(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    end: usize,
+    mode: ModeType,
+) -> bool {
     let at_start = s == 0;
     let at_end = s >= end;
 
@@ -1964,6 +2091,8 @@ fn run_builtin_callout(
     _id: i32,
     is_retraction: bool,
     callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+    current_s: usize,
+    msa: &mut MatchArg,
 ) -> i32 {
     let ext = match reg.extp.as_ref() {
         Some(e) => e,
@@ -1985,6 +2114,12 @@ fn run_builtin_callout(
             let lv = resolve_callout_arg(&entry.args[0], &ext.callout_list, callout_data);
             let rv = resolve_callout_arg(&entry.args[2], &ext.callout_list, callout_data);
             builtin_cmp(entry, &mut callout_data[idx], lv, rv)
+        }
+        CALLOUT_BUILTIN_SKIP => {
+            if !is_retraction && current_s > msa.skip_search {
+                msa.skip_search = current_s;
+            }
+            ONIG_CALLOUT_SUCCESS
         }
         _ => ONIG_CALLOUT_SUCCESS,
     }
@@ -2189,7 +2324,11 @@ fn builtin_cmp(
         _ => false,
     };
 
-    if result { ONIG_CALLOUT_SUCCESS } else { ONIG_CALLOUT_FAIL }
+    if result {
+        ONIG_CALLOUT_SUCCESS
+    } else {
+        ONIG_CALLOUT_FAIL
+    }
 }
 
 fn parse_cmp_op(s: &[u8]) -> i32 {
@@ -2256,7 +2395,8 @@ fn match_at(
 
     // Callout data: per-callout mutable slots (indexed by callout num - 1)
     let callout_count = reg.extp.as_ref().map_or(0, |e| e.callout_num as usize);
-    let mut callout_data: Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]> = vec![[0i64; ONIG_CALLOUT_DATA_SLOT_NUM]; callout_count];
+    let mut callout_data: Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]> =
+        vec![[0i64; ONIG_CALLOUT_DATA_SLOT_NUM]; callout_count];
 
     // Push bottom sentinel (like C's STACK_PUSH_BOTTOM with FinishCode)
     stack.push(StackEntry::Alt {
@@ -2310,14 +2450,10 @@ fn match_at(
                             region.end[0] = s as i32;
 
                             for i in 1..=num_mem {
-                                if let Some(mem_end) =
-                                    get_mem_end(reg, &stack, &mem_end_stk, i)
-                                {
-                                    let mem_start =
-                                        get_mem_start(reg, &stack, &mem_start_stk, i);
-                                    region.beg[i] = mem_start
-                                        .map(|v| v as i32)
-                                        .unwrap_or(ONIG_REGION_NOTPOS);
+                                if let Some(mem_end) = get_mem_end(reg, &stack, &mem_end_stk, i) {
+                                    let mem_start = get_mem_start(reg, &stack, &mem_start_stk, i);
+                                    region.beg[i] =
+                                        mem_start.map(|v| v as i32).unwrap_or(ONIG_REGION_NOTPOS);
                                     region.end[i] = mem_end as i32;
                                 } else {
                                     region.beg[i] = ONIG_REGION_NOTPOS;
@@ -2328,7 +2464,8 @@ fn match_at(
                             // Build capture history tree
                             if USE_CAPTURE_HISTORY && reg.capture_history != 0 {
                                 let node = if region.history_root.is_none() {
-                                    region.history_root = Some(Box::new(OnigCaptureTreeNode::new()));
+                                    region.history_root =
+                                        Some(Box::new(OnigCaptureTreeNode::new()));
                                     region.history_root.as_mut().unwrap()
                                 } else {
                                     let root = region.history_root.as_mut().unwrap();
@@ -2340,7 +2477,9 @@ fn match_at(
                                 node.end = s as i32;
                                 let mut stkp = 0usize;
                                 let stk_top = stack.len();
-                                let r = make_capture_history_tree(node, &mut stkp, &stack, stk_top, reg);
+                                let r = make_capture_history_tree(
+                                    node, &mut stkp, &stack, stk_top, reg,
+                                );
                                 if r < 0 {
                                     best_len = r;
                                     break;
@@ -2474,11 +2613,16 @@ fn match_at(
             }
 
             // MB string opcodes (for multibyte encodings)
-            OpCode::StrMb2n1 | OpCode::StrMb2n2 | OpCode::StrMb2n3 | OpCode::StrMb2n
-            | OpCode::StrMb3n | OpCode::StrMbn => {
+            OpCode::StrMb2n1
+            | OpCode::StrMb2n2
+            | OpCode::StrMb2n3
+            | OpCode::StrMb2n
+            | OpCode::StrMb3n
+            | OpCode::StrMbn => {
                 // Multi-byte string comparison. ExactLenN.n = total byte count.
-                if let OperationPayload::ExactLenN { s: ref exact, n, .. } =
-                    reg.ops[p].payload
+                if let OperationPayload::ExactLenN {
+                    s: ref exact, n, ..
+                } = reg.ops[p].payload
                 {
                     let byte_len = n as usize;
                     if right_range.saturating_sub(s) < byte_len {
@@ -2575,8 +2719,7 @@ fn match_at(
                 let not = opcode == OpCode::CClassMixNot;
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload
-                {
+                } else if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
                     let in_class = if enc.mbc_enc_len(&str_data[s..]) > 1 {
                         let code = enc.mbc_to_code(&str_data[s..], end);
                         if is_in_code_range(mb, code) {
@@ -2645,12 +2788,19 @@ fn match_at(
                 // Use SIMD to find newline boundary, then push Alt entries up to that point.
                 // In UTF-8/ASCII, 0x0a can only appear as a complete single-byte character,
                 // so memchr finds the exact newline position.
-                let nl_limit = memchr::memchr(b'\n', &str_data[s..right_range])
-                    .map_or(right_range, |i| s + i);
+                let nl_limit =
+                    memchr::memchr(b'\n', &str_data[s..right_range]).map_or(right_range, |i| s + i);
                 while s < nl_limit {
                     let n = enclen(enc, str_data, s);
-                    if s + n > nl_limit { break; }
-                    stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
+                    if s + n > nl_limit {
+                        break;
+                    }
+                    stack.push(StackEntry::Alt {
+                        pcode: p + 1,
+                        pstr: s,
+                        zid: -1,
+                        is_super: false,
+                    });
                     s += n;
                 }
                 p += 1;
@@ -2662,7 +2812,12 @@ fn match_at(
                     if s + n > right_range {
                         break;
                     }
-                    stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
+                    stack.push(StackEntry::Alt {
+                        pcode: p + 1,
+                        pstr: s,
+                        zid: -1,
+                        is_super: false,
+                    });
                     s += n;
                 }
                 p += 1;
@@ -2680,7 +2835,12 @@ fn match_at(
                         let mut iter_pos = s;
                         while let Some(i) = memchr::memchr(c, &str_data[iter_pos..nl_limit]) {
                             let pos = iter_pos + i;
-                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: pos, zid: -1, is_super: false });
+                            stack.push(StackEntry::Alt {
+                                pcode: p + 1,
+                                pstr: pos,
+                                zid: -1,
+                                is_super: false,
+                            });
                             iter_pos = pos + 1;
                         }
                         s = nl_limit;
@@ -2688,9 +2848,16 @@ fn match_at(
                         // Non-ASCII peek: fall back to per-character loop
                         while s < nl_limit {
                             let n = enclen(enc, str_data, s);
-                            if s + n > nl_limit { break; }
+                            if s + n > nl_limit {
+                                break;
+                            }
                             if s < end && str_data[s] == c {
-                                stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
+                                stack.push(StackEntry::Alt {
+                                    pcode: p + 1,
+                                    pstr: s,
+                                    zid: -1,
+                                    is_super: false,
+                                });
                             }
                             s += n;
                         }
@@ -2709,7 +2876,12 @@ fn match_at(
                         let mut iter_pos = s;
                         while let Some(i) = memchr::memchr(c, &str_data[iter_pos..right_range]) {
                             let pos = iter_pos + i;
-                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: pos, zid: -1, is_super: false });
+                            stack.push(StackEntry::Alt {
+                                pcode: p + 1,
+                                pstr: pos,
+                                zid: -1,
+                                is_super: false,
+                            });
                             iter_pos = pos + 1;
                         }
                         s = right_range;
@@ -2717,9 +2889,16 @@ fn match_at(
                         // Non-ASCII peek: fall back to per-character loop
                         while s < right_range {
                             let n = enclen(enc, str_data, s);
-                            if s + n > right_range { break; }
+                            if s + n > right_range {
+                                break;
+                            }
                             if s < end && str_data[s] == c {
-                                stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
+                                stack.push(StackEntry::Alt {
+                                    pcode: p + 1,
+                                    pstr: s,
+                                    zid: -1,
+                                    is_super: false,
+                                });
                             }
                             s += n;
                         }
@@ -2781,7 +2960,11 @@ fn match_at(
             // Word boundary opcodes
             // ================================================================
             OpCode::WordBoundary => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload { mode } else { 0 };
+                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                    mode
+                } else {
+                    0
+                };
                 if !is_word_boundary(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
@@ -2790,7 +2973,11 @@ fn match_at(
             }
 
             OpCode::NoWordBoundary => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload { mode } else { 0 };
+                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                    mode
+                } else {
+                    0
+                };
                 if is_word_boundary(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
@@ -2799,7 +2986,11 @@ fn match_at(
             }
 
             OpCode::WordBegin => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload { mode } else { 0 };
+                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                    mode
+                } else {
+                    0
+                };
                 if !is_word_begin(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
@@ -2808,7 +2999,11 @@ fn match_at(
             }
 
             OpCode::WordEnd => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload { mode } else { 0 };
+                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                    mode
+                } else {
+                    0
+                };
                 if !is_word_end(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
@@ -2817,7 +3012,9 @@ fn match_at(
             }
 
             OpCode::TextSegmentBoundary => {
-                if let OperationPayload::TextSegmentBoundary { boundary_type, not } = reg.ops[p].payload {
+                if let OperationPayload::TextSegmentBoundary { boundary_type, not } =
+                    reg.ops[p].payload
+                {
                     let is_break = match boundary_type {
                         TextSegmentBoundaryType::ExtendedGraphemeCluster => {
                             crate::unicode::onigenc_egcb_is_break_position(enc, str_data, s, 0, end)
@@ -3023,7 +3220,14 @@ fn match_at(
                             if ref_len != 0 {
                                 if right_range.saturating_sub(s) < ref_len {
                                     goto_fail = true;
-                                } else if !string_cmp_ic(enc, reg.case_fold_flag, str_data, ms, &mut s, ref_len) {
+                                } else if !string_cmp_ic(
+                                    enc,
+                                    reg.case_fold_flag,
+                                    str_data,
+                                    ms,
+                                    &mut s,
+                                    ref_len,
+                                ) {
                                     goto_fail = true;
                                 } else {
                                     p += 1;
@@ -3048,15 +3252,21 @@ fn match_at(
                     let mut matched = false;
                     for i in 0..tlen {
                         let mem = ns[i] as usize;
-                        if mem > num_mem { continue; }
+                        if mem > num_mem {
+                            continue;
+                        }
                         if let (Some(ms), Some(me)) = (
                             get_mem_start(reg, &stack, &mem_start_stk, mem),
                             get_mem_end(reg, &stack, &mem_end_stk, mem),
                         ) {
                             let ref_len = me - ms;
                             if ref_len != 0 {
-                                if right_range.saturating_sub(s) < ref_len { continue; }
-                                if str_data[s..s + ref_len] != str_data[ms..me] { continue; }
+                                if right_range.saturating_sub(s) < ref_len {
+                                    continue;
+                                }
+                                if str_data[s..s + ref_len] != str_data[ms..me] {
+                                    continue;
+                                }
                                 s += ref_len;
                             }
                             matched = true;
@@ -3079,16 +3289,29 @@ fn match_at(
                     let mut matched = false;
                     for i in 0..tlen {
                         let mem = ns[i] as usize;
-                        if mem > num_mem { continue; }
+                        if mem > num_mem {
+                            continue;
+                        }
                         if let (Some(ms), Some(me)) = (
                             get_mem_start(reg, &stack, &mem_start_stk, mem),
                             get_mem_end(reg, &stack, &mem_end_stk, mem),
                         ) {
                             let ref_len = me - ms;
                             if ref_len != 0 {
-                                if right_range.saturating_sub(s) < ref_len { continue; }
+                                if right_range.saturating_sub(s) < ref_len {
+                                    continue;
+                                }
                                 let mut swork = s;
-                                if !string_cmp_ic(enc, reg.case_fold_flag, str_data, ms, &mut swork, ref_len) { continue; }
+                                if !string_cmp_ic(
+                                    enc,
+                                    reg.case_fold_flag,
+                                    str_data,
+                                    ms,
+                                    &mut swork,
+                                    ref_len,
+                                ) {
+                                    continue;
+                                }
                                 s = swork;
                             }
                             matched = true;
@@ -3111,7 +3334,9 @@ fn match_at(
                     let mut found = false;
                     for i in 0..tlen {
                         let mem = ns[i] as usize;
-                        if mem > num_mem { continue; }
+                        if mem > num_mem {
+                            continue;
+                        }
                         if get_mem_start(reg, &stack, &mem_start_stk, mem).is_some()
                             && get_mem_end(reg, &stack, &mem_end_stk, mem).is_some()
                         {
@@ -3130,11 +3355,24 @@ fn match_at(
             }
 
             OpCode::BackRefWithLevel | OpCode::BackRefWithLevelIc => {
-                if let OperationPayload::BackRefGeneral { num, ref ns, nest_level } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral {
+                    num,
+                    ref ns,
+                    nest_level,
+                } = &reg.ops[p].payload
+                {
                     let ignore_case = reg.ops[p].opcode == OpCode::BackRefWithLevelIc;
                     if backref_match_at_nested_level(
-                        reg, &stack, ignore_case, reg.case_fold_flag,
-                        *nest_level, *num, ns, &mut s, str_data, end,
+                        reg,
+                        &stack,
+                        ignore_case,
+                        reg.case_fold_flag,
+                        *nest_level,
+                        *num,
+                        ns,
+                        &mut s,
+                        str_data,
+                        end,
                     ) {
                         p += 1;
                     } else {
@@ -3146,7 +3384,12 @@ fn match_at(
             }
 
             OpCode::BackRefCheckWithLevel => {
-                if let OperationPayload::BackRefGeneral { num, ref ns, nest_level } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral {
+                    num,
+                    ref ns,
+                    nest_level,
+                } = &reg.ops[p].payload
+                {
                     let found = if backref_check_at_nested_level(&stack, *nest_level, *num, ns) {
                         true
                     } else if *nest_level == 0 {
@@ -3156,7 +3399,9 @@ fn match_at(
                         let mut f = false;
                         for i in 0..tlen {
                             let mem = ns[i] as usize;
-                            if mem > num_mem { continue; }
+                            if mem > num_mem {
+                                continue;
+                            }
                             if get_mem_start(reg, &stack, &mem_start_stk, mem).is_some()
                                 && get_mem_end(reg, &stack, &mem_end_stk, mem).is_some()
                             {
@@ -3246,7 +3491,8 @@ fn match_at(
                 // push MEM_END, update start/end tracking
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
                     let mem = num as usize;
-                    let (start_ptr, _) = stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
+                    let (start_ptr, _) =
+                        stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
                     let si = stack.len();
                     stack.push(StackEntry::MemEnd {
                         zid: mem,
@@ -3268,7 +3514,8 @@ fn match_at(
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
                     let mem = num as usize;
                     mem_end_stk[mem] = MemPtr::Pos(s);
-                    let (start_ptr, _) = stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
+                    let (start_ptr, _) =
+                        stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
                     mem_start_stk[mem] = start_ptr;
                     stack.push(StackEntry::MemEndMark { zid: mem });
                     p += 1;
@@ -3445,7 +3692,12 @@ fn match_at(
                         p += 1;
                     } else if count >= lower {
                         p += 1;
-                        stack.push(StackEntry::Alt { pcode: p, pstr: s, zid: -1, is_super: false });
+                        stack.push(StackEntry::Alt {
+                            pcode: p,
+                            pstr: s,
+                            zid: -1,
+                            is_super: false,
+                        });
                         p = body_start;
                     } else {
                         p = body_start;
@@ -3472,7 +3724,12 @@ fn match_at(
                     if upper != INFINITE_REPEAT && count as i32 == upper {
                         p += 1;
                     } else if count >= lower {
-                        stack.push(StackEntry::Alt { pcode: body_start, pstr: s, zid: -1, is_super: false });
+                        stack.push(StackEntry::Alt {
+                            pcode: body_start,
+                            pstr: s,
+                            zid: -1,
+                            is_super: false,
+                        });
                         p += 1;
                     } else {
                         p = body_start;
@@ -3488,10 +3745,7 @@ fn match_at(
             OpCode::EmptyCheckStart => {
                 if let OperationPayload::EmptyCheckStart { mem } = reg.ops[p].payload {
                     let mem = mem as usize;
-                    stack.push(StackEntry::EmptyCheckStart {
-                        zid: mem,
-                        pstr: s,
-                    });
+                    stack.push(StackEntry::EmptyCheckStart { zid: mem, pstr: s });
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -3515,10 +3769,21 @@ fn match_at(
             }
 
             OpCode::EmptyCheckEndMemst | OpCode::EmptyCheckEndMemstPush => {
-                if let OperationPayload::EmptyCheckEnd { mem, empty_status_mem } = reg.ops[p].payload {
+                if let OperationPayload::EmptyCheckEnd {
+                    mem,
+                    empty_status_mem,
+                } = reg.ops[p].payload
+                {
                     let mem = mem as usize;
-                    let is_empty = stack_empty_check_mem(&stack, mem, s, empty_status_mem as u32, reg,
-                                                         &mem_start_stk, &mem_end_stk);
+                    let is_empty = stack_empty_check_mem(
+                        &stack,
+                        mem,
+                        s,
+                        empty_status_mem as u32,
+                        reg,
+                        &mem_start_stk,
+                        &mem_end_stk,
+                    );
                     p += 1;
                     if is_empty {
                         // Truly empty → skip next op (JUMP back)
@@ -3537,14 +3802,24 @@ fn match_at(
                     if n < 0 {
                         // Step back n characters (encoding-aware)
                         match onigenc_step_back(enc, 0, s, str_data, (-n) as usize) {
-                            Some(new_s) => { s = new_s; p += 1; }
-                            None => { goto_fail = true; }
+                            Some(new_s) => {
+                                s = new_s;
+                                p += 1;
+                            }
+                            None => {
+                                goto_fail = true;
+                            }
                         }
                     } else {
                         // Step forward n characters
                         match onigenc_step(enc, s, end, str_data, n as usize) {
-                            Some(new_s) => { s = new_s; p += 1; }
-                            None => { goto_fail = true; }
+                            Some(new_s) => {
+                                s = new_s;
+                                p += 1;
+                            }
+                            None => {
+                                goto_fail = true;
+                            }
                         }
                     }
                 } else {
@@ -3566,8 +3841,12 @@ fn match_at(
                     // Step back 'initial' characters (encoding-aware)
                     if initial != 0 {
                         match onigenc_step_back(enc, 0, s, str_data, initial) {
-                            Some(new_s) => { s = new_s; }
-                            None => { goto_fail = true; }
+                            Some(new_s) => {
+                                s = new_s;
+                            }
+                            None => {
+                                goto_fail = true;
+                            }
                         }
                     }
                     if !goto_fail {
@@ -3596,8 +3875,12 @@ fn match_at(
                     remaining -= 1;
                 }
                 match onigenc_step_back(enc, 0, s, str_data, 1) {
-                    Some(new_s) => { s = new_s; }
-                    None => { goto_fail = true; }
+                    Some(new_s) => {
+                        s = new_s;
+                    }
+                    None => {
+                        goto_fail = true;
+                    }
                 }
                 if !goto_fail {
                     if remaining != 0 {
@@ -3672,22 +3955,20 @@ fn match_at(
             // ================================================================
             OpCode::UpdateVar => {
                 if let OperationPayload::UpdateVar {
-                    var_type, id, clear,
+                    var_type,
+                    id,
+                    clear,
                 } = reg.ops[p].payload
                 {
                     let id = id as usize;
                     match var_type {
                         UpdateVarType::KeepFromStackLast => {
-                            if let Some(v) =
-                                stack_get_save_val_type_last(&stack, SaveType::Keep)
-                            {
+                            if let Some(v) = stack_get_save_val_type_last(&stack, SaveType::Keep) {
                                 keep = v;
                             }
                         }
                         UpdateVarType::SFromStack => {
-                            if let Some(v) =
-                                stack_get_save_val_last(&stack, SaveType::S, id)
-                            {
+                            if let Some(v) = stack_get_save_val_last(&stack, SaveType::S, id) {
                                 s = v;
                             }
                         }
@@ -3699,9 +3980,7 @@ fn match_at(
                             }
                         }
                         UpdateVarType::RightRangeFromSStack => {
-                            if let Some(v) =
-                                stack_get_save_val_last(&stack, SaveType::S, id)
-                            {
+                            if let Some(v) = stack_get_save_val_last(&stack, SaveType::S, id) {
                                 right_range = v;
                             }
                         }
@@ -3786,7 +4065,7 @@ fn match_at(
                     OperationPayload::CalloutName { num, id } => (*num, *id),
                     _ => (0, 0),
                 };
-                let call_result = run_builtin_callout(reg, num, id, false, &mut callout_data);
+                let call_result = run_builtin_callout(reg, num, id, false, &mut callout_data, s, msa);
                 if call_result == ONIG_CALLOUT_FAIL {
                     goto_fail = true;
                 } else {
@@ -3932,7 +4211,11 @@ pub fn onig_match_with_param(
     let result = match_at(reg, str_data, end, end, at, &mut msa);
 
     let result = if opton_find_longest(msa.options) && result == ONIG_MISMATCH {
-        if msa.best_len >= 0 { msa.best_len } else { result }
+        if msa.best_len >= 0 {
+            msa.best_len
+        } else {
+            result
+        }
     } else {
         result
     };
@@ -3956,14 +4239,26 @@ pub fn onig_match_with_param(
 
 /// Naive string search. Mirrors C's slow_search.
 /// Uses SIMD-accelerated memchr::memmem for the actual byte search.
-fn slow_search(_enc: OnigEncoding, target: &[u8], text: &[u8],
-               text_start: usize, text_end: usize, text_range: usize) -> Option<usize> {
-    if target.is_empty() { return Some(text_start); }
+fn slow_search(
+    _enc: OnigEncoding,
+    target: &[u8],
+    text: &[u8],
+    text_start: usize,
+    text_end: usize,
+    text_range: usize,
+) -> Option<usize> {
+    if target.is_empty() {
+        return Some(text_start);
+    }
     let tlen = target.len();
     // Search can find matches starting up to limit, needing tlen bytes available.
     let mut search_end = text_end.min(text_range + tlen.saturating_sub(1));
-    if search_end > text_end { search_end = text_end; }
-    if text_start + tlen > search_end { return None; }
+    if search_end > text_end {
+        search_end = text_end;
+    }
+    if text_start + tlen > search_end {
+        return None;
+    }
 
     let haystack = &text[text_start..search_end];
     if tlen == 1 {
@@ -3975,10 +4270,18 @@ fn slow_search(_enc: OnigEncoding, target: &[u8], text: &[u8],
 
 /// Sunday quick search (BMH variant). Mirrors C's sunday_quick_search.
 /// Uses SIMD-accelerated memchr::memmem for the actual byte search.
-fn sunday_quick_search(_reg: &RegexType, target: &[u8], text: &[u8],
-                       text_start: usize, text_end: usize, text_range: usize) -> Option<usize> {
+fn sunday_quick_search(
+    _reg: &RegexType,
+    target: &[u8],
+    text: &[u8],
+    text_start: usize,
+    text_end: usize,
+    text_range: usize,
+) -> Option<usize> {
     let tlen = target.len();
-    if tlen == 0 { return Some(text_start); }
+    if tlen == 0 {
+        return Some(text_start);
+    }
 
     // Compute the search end: we can find matches starting up to text_range,
     // but need tlen bytes available, so search within text[text_start..search_end].
@@ -4001,12 +4304,19 @@ fn sunday_quick_search(_reg: &RegexType, target: &[u8], text: &[u8],
 
 /// Sunday quick search with step forward for multi-byte safe operation.
 /// Mirrors C's sunday_quick_search_step_forward.
-fn sunday_quick_search_step_forward(reg: &RegexType, target: &[u8], text: &[u8],
-                                     text_start: usize, text_end: usize,
-                                     text_range: usize) -> Option<usize> {
+fn sunday_quick_search_step_forward(
+    reg: &RegexType,
+    target: &[u8],
+    text: &[u8],
+    text_start: usize,
+    text_end: usize,
+    text_range: usize,
+) -> Option<usize> {
     let enc = reg.enc;
     let tlen = target.len();
-    if tlen == 0 { return Some(text_start); }
+    if tlen == 0 {
+        return Some(text_start);
+    }
     let tail_idx = tlen - 1;
     let mut end = text_range;
     if tail_idx as usize > text_end.saturating_sub(end) {
@@ -4020,12 +4330,18 @@ fn sunday_quick_search_step_forward(reg: &RegexType, target: &[u8], text: &[u8],
         let mut p = se;
         let mut t = tail_idx;
         loop {
-            if text[p] != target[t] { break; }
-            if t == 0 { return Some(s); }
+            if text[p] != target[t] {
+                break;
+            }
+            if t == 0 {
+                return Some(s);
+            }
             p -= 1;
             t -= 1;
         }
-        if se + map_offset >= text_end { break; }
+        if se + map_offset >= text_end {
+            break;
+        }
         let skip = reg.map[text[se + map_offset] as usize] as usize;
         let next = s + skip;
         if next < end {
@@ -4039,18 +4355,31 @@ fn sunday_quick_search_step_forward(reg: &RegexType, target: &[u8], text: &[u8],
 
 /// Character map search. Mirrors C's map_search.
 /// Uses SIMD-accelerated memchr when the map has 1-3 distinct ASCII bytes.
-fn map_search(enc: OnigEncoding, reg: &RegexType, text: &[u8],
-              text_start: usize, text_range: usize) -> Option<usize> {
+fn map_search(
+    enc: OnigEncoding,
+    reg: &RegexType,
+    text: &[u8],
+    text_start: usize,
+    text_range: usize,
+) -> Option<usize> {
     let haystack = &text[text_start..text_range];
     match reg.map_byte_count {
         1 => memchr::memchr(reg.map_bytes[0], haystack).map(|i| text_start + i),
         2 => memchr::memchr2(reg.map_bytes[0], reg.map_bytes[1], haystack).map(|i| text_start + i),
-        3 => memchr::memchr3(reg.map_bytes[0], reg.map_bytes[1], reg.map_bytes[2], haystack).map(|i| text_start + i),
+        3 => memchr::memchr3(
+            reg.map_bytes[0],
+            reg.map_bytes[1],
+            reg.map_bytes[2],
+            haystack,
+        )
+        .map(|i| text_start + i),
         _ => {
             let map = &reg.map;
             let mut s = text_start;
             while s < text_range {
-                if map[text[s] as usize] != 0 { return Some(s); }
+                if map[text[s] as usize] != 0 {
+                    return Some(s);
+                }
                 s += enclen(enc, text, s);
             }
             None
@@ -4060,18 +4389,28 @@ fn map_search(enc: OnigEncoding, reg: &RegexType, text: &[u8],
 
 /// Backward naive string search. Mirrors C's slow_search_backward.
 /// Uses SIMD-accelerated memchr::memmem for the actual byte search.
-fn slow_search_backward(enc: OnigEncoding, target: &[u8], text: &[u8],
-                        text_start: usize, adjust_text: usize,
-                        text_end: usize, search_start: usize) -> Option<usize> {
+fn slow_search_backward(
+    enc: OnigEncoding,
+    target: &[u8],
+    text: &[u8],
+    text_start: usize,
+    adjust_text: usize,
+    text_end: usize,
+    search_start: usize,
+) -> Option<usize> {
     let tlen = target.len();
-    if tlen == 0 { return Some(search_start); }
+    if tlen == 0 {
+        return Some(search_start);
+    }
     // The rightmost possible match start is min(search_start, text_end - tlen).
     let right = if text_end.saturating_sub(tlen) > search_start {
         search_start
     } else {
         text_end.saturating_sub(tlen)
     };
-    if right < text_start { return None; }
+    if right < text_start {
+        return None;
+    }
 
     // Search backward in text[text_start .. right + tlen]
     let haystack = &text[text_start..right + tlen];
@@ -4095,22 +4434,39 @@ fn slow_search_backward(enc: OnigEncoding, target: &[u8], text: &[u8],
 
 /// Backward character map search. Mirrors C's map_search_backward.
 /// Uses SIMD-accelerated memrchr when the map has 1-3 distinct ASCII bytes.
-fn map_search_backward(enc: OnigEncoding, reg: &RegexType, text: &[u8],
-                       text_start: usize, _adjust_text: usize,
-                       search_start: usize) -> Option<usize> {
+fn map_search_backward(
+    enc: OnigEncoding,
+    reg: &RegexType,
+    text: &[u8],
+    text_start: usize,
+    _adjust_text: usize,
+    search_start: usize,
+) -> Option<usize> {
     let haystack = &text[text_start..search_start + 1];
     match reg.map_byte_count {
         1 => memchr::memrchr(reg.map_bytes[0], haystack).map(|i| text_start + i),
         2 => memchr::memrchr2(reg.map_bytes[0], reg.map_bytes[1], haystack).map(|i| text_start + i),
-        3 => memchr::memrchr3(reg.map_bytes[0], reg.map_bytes[1], reg.map_bytes[2], haystack).map(|i| text_start + i),
+        3 => memchr::memrchr3(
+            reg.map_bytes[0],
+            reg.map_bytes[1],
+            reg.map_bytes[2],
+            haystack,
+        )
+        .map(|i| text_start + i),
         _ => {
             let map = &reg.map;
             let mut s = search_start;
             loop {
-                if map[text[s] as usize] != 0 { return Some(s); }
-                if s <= text_start { break; }
+                if map[text[s] as usize] != 0 {
+                    return Some(s);
+                }
+                if s <= text_start {
+                    break;
+                }
                 s = onigenc_get_prev_char_head(enc, text, _adjust_text, s);
-                if s < text_start { break; }
+                if s < text_start {
+                    break;
+                }
             }
             None
         }
@@ -4120,7 +4476,9 @@ fn map_search_backward(enc: OnigEncoding, reg: &RegexType, text: &[u8],
 /// Left-adjust char head (ONIGENC_LEFT_ADJUST_CHAR_HEAD).
 /// For UTF-8: walk backward from pos to find char boundary at or before pos.
 fn left_adjust_char_head(_enc: OnigEncoding, _text: &[u8], start: usize, pos: usize) -> usize {
-    if pos <= start { return start; }
+    if pos <= start {
+        return start;
+    }
     let mut p = pos;
     while p > start && _text[p] & 0xC0 == 0x80 {
         p -= 1;
@@ -4130,21 +4488,26 @@ fn left_adjust_char_head(_enc: OnigEncoding, _text: &[u8], start: usize, pos: us
 
 /// Backward search using optimization strategy.
 /// Returns Some((low, high)) if a candidate was found, None otherwise.
-fn backward_search(reg: &RegexType, str_data: &[u8], end: usize,
-                   search_start: usize, min_range: usize,
-                   adjrange: usize) -> Option<(usize, usize)> {
+fn backward_search(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    search_start: usize,
+    min_range: usize,
+    adjrange: usize,
+) -> Option<(usize, usize)> {
     let mut p = search_start;
     loop {
         let found = match reg.optimize {
             OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward => {
-                slow_search_backward(reg.enc, &reg.exact, str_data,
-                                     min_range, adjrange, end, p)
+                slow_search_backward(reg.enc, &reg.exact, str_data, min_range, adjrange, end, p)
             }
             OptimizeType::Map => {
-                map_search_backward(reg.enc, reg, str_data,
-                                    min_range, adjrange, p)
+                map_search_backward(reg.enc, reg, str_data, min_range, adjrange, p)
             }
-            OptimizeType::None => { return None; }
+            OptimizeType::None => {
+                return None;
+            }
         };
 
         p = match found {
@@ -4179,9 +4542,13 @@ fn backward_search(reg: &RegexType, str_data: &[u8], end: usize,
                 }
             }
             if retry {
-                if p == 0 { return None; }
+                if p == 0 {
+                    return None;
+                }
                 p = onigenc_get_prev_char_head(reg.enc, str_data, adjrange, p);
-                if p < adjrange { return None; }
+                if p < adjrange {
+                    return None;
+                }
                 continue;
             }
         }
@@ -4195,7 +4562,11 @@ fn backward_search(reg: &RegexType, str_data: &[u8], end: usize,
             };
 
             let high = if reg.dist_min != 0 {
-                if p < reg.dist_min as usize { 0 } else { p - reg.dist_min as usize }
+                if p < reg.dist_min as usize {
+                    0
+                } else {
+                    p - reg.dist_min as usize
+                }
             } else {
                 p
             };
@@ -4211,8 +4582,12 @@ fn backward_search(reg: &RegexType, str_data: &[u8], end: usize,
 /// Get right-adjusted char head for multi-byte encoding.
 /// Mirrors C's onigenc_get_right_adjust_char_head: left-adjust first, then
 /// advance by one character if the result is before s.
-fn onigenc_get_right_adjust_char_head(enc: OnigEncoding, text: &[u8],
-                                       start: usize, s: usize) -> usize {
+fn onigenc_get_right_adjust_char_head(
+    enc: OnigEncoding,
+    text: &[u8],
+    start: usize,
+    s: usize,
+) -> usize {
     let p = left_adjust_char_head(enc, text, start, s);
     if p < s {
         p + enclen(enc, text, p)
@@ -4223,8 +4598,13 @@ fn onigenc_get_right_adjust_char_head(enc: OnigEncoding, text: &[u8],
 
 /// Forward search using optimization strategy.
 /// Returns Some((low, high)) if a candidate was found, None otherwise.
-fn forward_search(reg: &RegexType, str_data: &[u8], end: usize,
-                  start: usize, range: usize) -> Option<(usize, usize)> {
+fn forward_search(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+) -> Option<(usize, usize)> {
     let mut p = start;
     if reg.dist_min != 0 {
         if end.saturating_sub(p) <= reg.dist_min as usize {
@@ -4244,19 +4624,15 @@ fn forward_search(reg: &RegexType, str_data: &[u8], end: usize,
     loop {
         // Search for the optimization target
         let found = match reg.optimize {
-            OptimizeType::Str => {
-                slow_search(reg.enc, &reg.exact, str_data, p, end, range)
-            }
-            OptimizeType::StrFast => {
-                sunday_quick_search(reg, &reg.exact, str_data, p, end, range)
-            }
+            OptimizeType::Str => slow_search(reg.enc, &reg.exact, str_data, p, end, range),
+            OptimizeType::StrFast => sunday_quick_search(reg, &reg.exact, str_data, p, end, range),
             OptimizeType::StrFastStepForward => {
                 sunday_quick_search_step_forward(reg, &reg.exact, str_data, p, end, range)
             }
-            OptimizeType::Map => {
-                map_search(reg.enc, reg, str_data, p, range)
+            OptimizeType::Map => map_search(reg.enc, reg, str_data, p, range),
+            OptimizeType::None => {
+                return None;
             }
-            OptimizeType::None => { return None; }
         };
 
         p = match found {
@@ -4331,8 +4707,15 @@ fn enc_is_singlebyte(enc: OnigEncoding) -> bool {
 }
 
 /// Get previous character head position.
-fn onigenc_get_prev_char_head(_enc: OnigEncoding, _text: &[u8], _start: usize, pos: usize) -> usize {
-    if pos == 0 { return 0; }
+fn onigenc_get_prev_char_head(
+    _enc: OnigEncoding,
+    _text: &[u8],
+    _start: usize,
+    pos: usize,
+) -> usize {
+    if pos == 0 {
+        return 0;
+    }
     // For UTF-8: walk backwards past continuation bytes
     let mut p = pos - 1;
     while p > 0 && _text[p] & 0xC0 == 0x80 {
@@ -4343,7 +4726,9 @@ fn onigenc_get_prev_char_head(_enc: OnigEncoding, _text: &[u8], _start: usize, p
 
 /// Check if position is a newline.
 fn is_mbc_newline(_enc: OnigEncoding, text: &[u8], pos: usize, end: usize) -> bool {
-    if pos >= end { return false; }
+    if pos >= end {
+        return false;
+    }
     text[pos] == b'\n'
 }
 
@@ -4401,7 +4786,9 @@ fn onig_search_inner(
 
     if start > range {
         // Backward search: start > range, search from start down to range
-        if end == 0 { return (ONIG_MISMATCH, msa.region); }
+        if end == 0 {
+            return (ONIG_MISMATCH, msa.region);
+        }
 
         // orig_start is the right boundary for matching (upper range)
         let orig_start = if start < end {
@@ -4425,7 +4812,9 @@ fn onig_search_inner(
                 msa.best_s = 0;
                 let r = match_at(reg, str_data, end, $orig_start, $s, &mut msa);
                 if r != ONIG_MISMATCH {
-                    if r < 0 { return (r, msa.region); }
+                    if r < 0 {
+                        return (r, msa.region);
+                    }
                     if find_longest {
                         let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
                         if best_len == ONIG_MISMATCH || match_len > best_len {
@@ -4472,9 +4861,12 @@ fn onig_search_inner(
                         onigenc_get_prev_char_head(enc, str_data, 0, end)
                     };
 
-                    if let Some((low, high)) = backward_search(reg, str_data, end,
-                                                                sch_start, min_range, adjrange) {
-                        if s > high { s = high; }
+                    if let Some((low, high)) =
+                        backward_search(reg, str_data, end, sch_start, min_range, adjrange)
+                    {
+                        if s > high {
+                            s = high;
+                        }
                         while s >= low {
                             backward_match_and_check!(s, orig_start);
                             if s == 0 {
@@ -4484,12 +4876,30 @@ fn onig_search_inner(
                             s = onigenc_get_prev_char_head(enc, str_data, 0, s);
                         }
                     } else {
-                        return finish_search(find_longest, best_start, best_len, reg, str_data, end, &mut msa);
+                        return finish_search(
+                            find_longest,
+                            best_start,
+                            best_len,
+                            reg,
+                            str_data,
+                            end,
+                            &mut msa,
+                        );
                     }
 
-                    if s == usize::MAX || s < range { break; }
+                    if s == usize::MAX || s < range {
+                        break;
+                    }
                 }
-                return finish_search(find_longest, best_start, best_len, reg, str_data, end, &mut msa);
+                return finish_search(
+                    find_longest,
+                    best_start,
+                    best_len,
+                    reg,
+                    str_data,
+                    end,
+                    &mut msa,
+                );
             } else {
                 // dist_max == INFINITE_LEN: single backward_search as gate
                 let sch_start = onigenc_get_prev_char_head(enc, str_data, 0, end);
@@ -4502,11 +4912,21 @@ fn onig_search_inner(
         // Fallthrough: position-by-position loop (optimize == None or infinite dist_max gate passed)
         loop {
             backward_match_and_check!(s, orig_start);
-            if s <= range { break; }
+            if s <= range {
+                break;
+            }
             s = onigenc_get_prev_char_head(enc, str_data, 0, s);
         }
 
-        return finish_search(find_longest, best_start, best_len, reg, str_data, end, &mut msa);
+        return finish_search(
+            find_longest,
+            best_start,
+            best_len,
+            reg,
+            str_data,
+            end,
+            &mut msa,
+        );
     }
 
     let mut cur_start = start;
@@ -4544,7 +4964,9 @@ fn onig_search_inner(
                 {
                     cur_start = min_semi_end - reg.anc_dist_max as usize;
                 }
-                if max_semi_end.saturating_sub(cur_range.saturating_sub(1)) < reg.anc_dist_min as usize {
+                if max_semi_end.saturating_sub(cur_range.saturating_sub(1))
+                    < reg.anc_dist_min as usize
+                {
                     if max_semi_end + 1 < reg.anc_dist_min as usize {
                         return (ONIG_MISMATCH, msa.region);
                     } else {
@@ -4571,7 +4993,9 @@ fn onig_search_inner(
                 {
                     cur_start = min_semi_end - reg.anc_dist_max as usize;
                 }
-                if max_semi_end.saturating_sub(cur_range.saturating_sub(1)) < reg.anc_dist_min as usize {
+                if max_semi_end.saturating_sub(cur_range.saturating_sub(1))
+                    < reg.anc_dist_min as usize
+                {
                     if max_semi_end + 1 < reg.anc_dist_min as usize {
                         return (ONIG_MISMATCH, msa.region);
                     } else {
@@ -4599,7 +5023,9 @@ fn onig_search_inner(
             msa.best_len = ONIG_MISMATCH;
             msa.best_s = 0;
             let r = match_at(reg, str_data, end, end, s, &mut msa);
-            if r < ONIG_MISMATCH { return (r, msa.region); } // error
+            if r < ONIG_MISMATCH {
+                return (r, msa.region);
+            } // error
             if r != ONIG_MISMATCH {
                 return (s as i32, msa.region);
             }
@@ -4637,7 +5063,9 @@ fn onig_search_inner(
                     Some(lh) => lh,
                     None => break, // mismatch
                 };
-                if s < low { s = low; }
+                if s < low {
+                    s = low;
+                }
                 while s <= high {
                     if let Some(ref mut r) = msa.region {
                         r.resize(reg.num_mem + 1);
@@ -4647,7 +5075,9 @@ fn onig_search_inner(
                     msa.best_s = 0;
                     let r = match_at(reg, str_data, end, data_range, s, &mut msa);
                     if r != ONIG_MISMATCH {
-                        if r < 0 { return (r, msa.region); } // error
+                        if r < 0 {
+                            return (r, msa.region);
+                        } // error
                         if find_longest {
                             let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
                             if best_len == ONIG_MISMATCH || match_len > best_len {
@@ -4664,18 +5094,37 @@ fn onig_search_inner(
                         return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region);
                     }
                     s += enclen(enc, str_data, s);
+                    if msa.skip_search > s {
+                        s = msa.skip_search;
+                    }
                 }
-                if s >= cur_range { break; }
+                if s >= cur_range {
+                    break;
+                }
             }
             // C: goto mismatch -- optimized search exhausted, do not fall
             // through to the byte-by-byte loop below.
-            return finish_search(find_longest, best_start, best_len, reg,
-                                str_data, end, &mut msa);
+            return finish_search(
+                find_longest,
+                best_start,
+                best_len,
+                reg,
+                str_data,
+                end,
+                &mut msa,
+            );
         } else {
             // Infinite dist_max: just check once, then fall through to normal loop
             if forward_search(reg, str_data, end, s, sch_range).is_none() {
-                return finish_search(find_longest, best_start, best_len, reg,
-                                    str_data, end, &mut msa);
+                return finish_search(
+                    find_longest,
+                    best_start,
+                    best_len,
+                    reg,
+                    str_data,
+                    end,
+                    &mut msa,
+                );
             }
             // ANCR_ANYCHAR_INF: skip past newlines
             if (reg.anchor & ANCR_ANYCHAR_INF) != 0
@@ -4690,7 +5139,9 @@ fn onig_search_inner(
                     msa.best_s = 0;
                     let r = match_at(reg, str_data, end, data_range, s, &mut msa);
                     if r != ONIG_MISMATCH {
-                        if r < 0 { return (r, msa.region); }
+                        if r < 0 {
+                            return (r, msa.region);
+                        }
                         if find_longest {
                             let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
                             if best_len == ONIG_MISMATCH || match_len > best_len {
@@ -4708,15 +5159,27 @@ fn onig_search_inner(
                     }
                     let prev = s;
                     s += enclen(enc, str_data, s);
+                    if msa.skip_search > s {
+                        s = msa.skip_search;
+                    }
                     // Skip past non-newline chars
                     while s < cur_range && !is_mbc_newline(enc, str_data, prev, end) {
                         let prev2 = s;
                         s += enclen(enc, str_data, s);
-                        if is_mbc_newline(enc, str_data, prev2, end) { break; }
+                        if is_mbc_newline(enc, str_data, prev2, end) {
+                            break;
+                        }
                     }
                 }
-                return finish_search(find_longest, best_start, best_len, reg,
-                                    str_data, end, &mut msa);
+                return finish_search(
+                    find_longest,
+                    best_start,
+                    best_len,
+                    reg,
+                    str_data,
+                    end,
+                    &mut msa,
+                );
             }
             // Fall through to normal position loop below
         }
@@ -4733,7 +5196,9 @@ fn onig_search_inner(
             msa.best_s = 0;
             let r = match_at(reg, str_data, end, data_range, s, &mut msa);
             if r != ONIG_MISMATCH {
-                if r < 0 { return (r, msa.region); }
+                if r < 0 {
+                    return (r, msa.region);
+                }
                 if find_longest {
                     let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
                     if best_len == ONIG_MISMATCH || match_len > best_len {
@@ -4749,18 +5214,38 @@ fn onig_search_inner(
             {
                 return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region);
             }
-            if s >= cur_range { break; }
-            if s >= end { break; }
+            if s >= cur_range {
+                break;
+            }
+            if s >= end {
+                break;
+            }
             s += enclen(enc, str_data, s);
+            if msa.skip_search > s {
+                s = msa.skip_search;
+            }
         }
     }
 
-    finish_search(find_longest, best_start, best_len, reg, str_data, end, &mut msa)
+    finish_search(
+        find_longest,
+        best_start,
+        best_len,
+        reg,
+        str_data,
+        end,
+        &mut msa,
+    )
 }
 
 fn finish_search(
-    find_longest: bool, best_start: i32, best_len: i32,
-    reg: &RegexType, str_data: &[u8], end: usize, msa: &mut MatchArg,
+    find_longest: bool,
+    best_start: i32,
+    best_len: i32,
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     if find_longest && best_start != ONIG_MISMATCH {
         if let Some(ref mut r) = msa.region {
@@ -4859,15 +5344,32 @@ mod tests {
         let (mut reg, mut env) = make_test_context();
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
         let r = regcomp::compile_from_tree(&root, &mut reg, &env);
-        assert_eq!(r, 0, "compile failed for {:?}", std::str::from_utf8(pattern));
-        onig_match(&reg, input, input.len(), 0, Some(OnigRegion::new()), ONIG_OPTION_NONE)
+        assert_eq!(
+            r,
+            0,
+            "compile failed for {:?}",
+            std::str::from_utf8(pattern)
+        );
+        onig_match(
+            &reg,
+            input,
+            input.len(),
+            0,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        )
     }
 
     fn compile_and_search(pattern: &[u8], input: &[u8]) -> (i32, Option<OnigRegion>) {
         let (mut reg, mut env) = make_test_context();
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
         let r = regcomp::compile_from_tree(&root, &mut reg, &env);
-        assert_eq!(r, 0, "compile failed for {:?}", std::str::from_utf8(pattern));
+        assert_eq!(
+            r,
+            0,
+            "compile failed for {:?}",
+            std::str::from_utf8(pattern)
+        );
         onig_search(
             &reg,
             input,
@@ -4910,7 +5412,6 @@ mod tests {
         let (r, _) = compile_and_match(b"x", b"xyz");
         assert_eq!(r, 1);
     }
-
 
     // ---- Dot (anychar) ----
 
@@ -5258,8 +5759,13 @@ mod tests {
         onig_set_time_limit(0); // unlimited
 
         let (result, _) = onig_search(
-            &reg, input, input.len(), 0, input.len(),
-            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+            &reg,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
         );
         assert_eq!(result, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER);
 
@@ -5291,8 +5797,12 @@ mod tests {
         onig_set_time_limit(0); // unlimited
 
         let (result, _) = onig_match(
-            &reg, input, input.len(), 0,
-            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+            &reg,
+            input,
+            input.len(),
+            0,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
         );
         assert_eq!(result, ONIGERR_MATCH_STACK_LIMIT_OVER);
 
@@ -5323,8 +5833,13 @@ mod tests {
         onig_set_time_limit(1);
 
         let (result, _) = onig_search(
-            &reg, input, input.len(), 0, input.len(),
-            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+            &reg,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
         );
         assert_eq!(result, ONIGERR_TIME_LIMIT_OVER);
 
@@ -5353,10 +5868,15 @@ mod tests {
         assert_eq!(r, 0);
 
         let input = b"xxabxxabxx"; // "ab" at positions 2 and 6
-        // Backward search: start=10 (end), range=0 (beginning)
+                                   // Backward search: start=10 (end), range=0 (beginning)
         let (result, _) = onig_search(
-            &reg, input, input.len(), input.len(), 0,
-            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+            &reg,
+            input,
+            input.len(),
+            input.len(),
+            0,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
         );
         // Should find the last "ab" at position 6
         assert_eq!(result, 6);
@@ -5372,8 +5892,13 @@ mod tests {
 
         let input = b"hello";
         let (result, _) = onig_search(
-            &reg, input, input.len(), input.len(), 0,
-            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+            &reg,
+            input,
+            input.len(),
+            input.len(),
+            0,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
         );
         assert_eq!(result, 0);
     }
@@ -5388,8 +5913,13 @@ mod tests {
 
         let input = b"hello world";
         let (result, _) = onig_search(
-            &reg, input, input.len(), input.len(), 0,
-            Some(OnigRegion::new()), ONIG_OPTION_NONE,
+            &reg,
+            input,
+            input.len(),
+            input.len(),
+            0,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
         );
         assert_eq!(result, ONIG_MISMATCH);
     }

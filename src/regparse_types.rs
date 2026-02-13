@@ -140,7 +140,9 @@ impl BBuf {
     }
 
     pub fn with_capacity(cap: usize) -> Self {
-        BBuf { data: Vec::with_capacity(cap) }
+        BBuf {
+            data: Vec::with_capacity(cap),
+        }
     }
 
     pub fn used(&self) -> usize {
@@ -156,7 +158,9 @@ impl BBuf {
     }
 
     pub fn clone_from(other: &BBuf) -> Self {
-        BBuf { data: other.data.clone() }
+        BBuf {
+            data: other.data.clone(),
+        }
     }
 }
 
@@ -240,7 +244,9 @@ impl Node {
     pub fn is_anychar(&self) -> bool {
         if let NodeInner::CType(ct) = &self.inner {
             ct.ctype == CTYPE_ANYCHAR
-        } else { false }
+        } else {
+            false
+        }
     }
 
     pub fn body_mut(&mut self) -> Option<&mut Node> {
@@ -413,7 +419,8 @@ impl Node {
     }
 
     pub fn cdr(&self) -> Option<&Node> {
-        self.as_cons().and_then(|c| c.cdr.as_ref().map(|b| b.as_ref()))
+        self.as_cons()
+            .and_then(|c| c.cdr.as_ref().map(|b| b.as_ref()))
     }
 }
 
@@ -537,9 +544,12 @@ pub enum BagData {
 impl BagNode {
     pub fn as_memory(&self) -> Option<(i32, AbsAddrType, i32, i32)> {
         match &self.bag_data {
-            BagData::Memory { regnum, called_addr, entry_count, called_state } => {
-                Some((*regnum, *called_addr, *entry_count, *called_state))
-            }
+            BagData::Memory {
+                regnum,
+                called_addr,
+                entry_count,
+                called_state,
+            } => Some((*regnum, *called_addr, *entry_count, *called_state)),
             _ => None,
         }
     }
@@ -859,11 +869,7 @@ pub fn node_new_backref(
     node
 }
 
-pub fn node_new_quantifier(
-    lower: i32,
-    upper: i32,
-    greedy: bool,
-) -> Box<Node> {
+pub fn node_new_quantifier(lower: i32, upper: i32, greedy: bool) -> Box<Node> {
     node_new(NodeInner::Quant(QuantNode {
         body: None,
         lower,
@@ -1010,9 +1016,9 @@ pub fn node_new_fail() -> Box<Node> {
 pub fn node_new_callout(of: i32, num: i32, id: i32) -> Box<Node> {
     node_new(NodeInner::Gimmick(GimmickNode {
         gimmick_type: GimmickType::Callout,
-        detail_type: of,   // 0=CONTENTS, 1=NAME
-        num,               // callout list index
-        id,                // builtin id for name callouts, -1 for contents
+        detail_type: of, // 0=CONTENTS, 1=NAME
+        num,             // callout list index
+        id,              // builtin id for name callouts, -1 for contents
     }))
 }
 
@@ -1146,11 +1152,7 @@ pub fn node_str_clear(node: &mut Node) {
 }
 
 /// Append a single code point to a string node (encoding-aware)
-pub fn node_str_cat_codepoint(
-    node: &mut Node,
-    enc: OnigEncoding,
-    code: OnigCodePoint,
-) -> i32 {
+pub fn node_str_cat_codepoint(node: &mut Node, enc: OnigEncoding, code: OnigCodePoint) -> i32 {
     let mut buf = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
     let len = enc.code_to_mbc(code, &mut buf);
     if len < 0 {
@@ -1186,12 +1188,7 @@ impl NameTable {
         self.entries.get_mut(name)
     }
 
-    pub fn add(
-        &mut self,
-        name: &[u8],
-        backref: i32,
-        allow_multiplex: bool,
-    ) -> Result<(), i32> {
+    pub fn add(&mut self, name: &[u8], backref: i32, allow_multiplex: bool) -> Result<(), i32> {
         if name.is_empty() {
             return Err(ONIGERR_EMPTY_GROUP_NAME);
         }

@@ -3,8 +3,8 @@
 
 use crate::oniguruma::*;
 use crate::regenc::OnigEncoding;
-use crate::regint::*;
 use crate::regexec::{onig_match, onig_search, onig_search_with_param, OnigMatchParam};
+use crate::regint::*;
 
 /// Search lead mode for regset search.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,11 +120,7 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
 /// Replace a regex at index `at`, or remove it if `reg` is None.
 /// Returns ONIG_NORMAL on success.
-pub fn onig_regset_replace(
-    set: &mut OnigRegSet,
-    at: usize,
-    reg: Option<Box<RegexType>>,
-) -> i32 {
+pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<RegexType>>) -> i32 {
     if at >= set.entries.len() {
         return ONIGERR_INVALID_ARGUMENT;
     }
@@ -179,8 +175,7 @@ pub fn onig_regset_replace(
                 set.anchor = *anchor;
                 set.anc_dmin = *anc_dist_min;
                 set.anc_dmax = *anc_dist_max;
-                set.all_low_high =
-                    *optimize != OptimizeType::None && *dist_max != INFINITE_LEN;
+                set.all_low_high = *optimize != OptimizeType::None && *dist_max != INFINITE_LEN;
                 set.anychar_inf = (*anchor & ANCR_ANYCHAR_INF) != 0;
             } else {
                 let new_anchor = set.anchor & anchor;
@@ -292,8 +287,15 @@ fn regset_search_body_regex_lead(
 
     for i in 0..n {
         let region = set.entries[i].region.take();
-        let (r, returned_region) =
-            onig_search(&set.entries[i].reg, str_data, end, start, ep, region, option);
+        let (r, returned_region) = onig_search(
+            &set.entries[i].reg,
+            str_data,
+            end,
+            start,
+            ep,
+            region,
+            option,
+        );
         set.entries[i].region = returned_region;
 
         if r > 0 {
@@ -431,9 +433,7 @@ pub fn onig_regset_search(
     let (result, match_pos) = if lead == OnigRegSetLead::PositionLead {
         regset_search_body_position_lead(set, str_data, end, cur_start, cur_range, option)
     } else {
-        regset_search_body_regex_lead(
-            set, str_data, end, cur_start, orig_range, lead, option,
-        )
+        regset_search_body_regex_lead(set, str_data, end, cur_start, orig_range, lead, option)
     };
 
     // Clear regions for non-matching regexes with FIND_NOT_EMPTY
@@ -555,9 +555,9 @@ pub fn onig_regset_search_with_param(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::encodings::utf8::ONIG_ENCODING_UTF8;
     use crate::regcomp::onig_new;
     use crate::regsyntax::OnigSyntaxOniguruma;
-    use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 
     fn compile(pattern: &[u8]) -> Box<RegexType> {
         let reg = onig_new(
@@ -568,7 +568,11 @@ mod tests {
         );
         match reg {
             Ok(r) => Box::new(r),
-            Err(e) => panic!("failed to compile {:?}: error {}", std::str::from_utf8(pattern), e),
+            Err(e) => panic!(
+                "failed to compile {:?}: error {}",
+                std::str::from_utf8(pattern),
+                e
+            ),
         }
     }
 
@@ -581,8 +585,13 @@ mod tests {
 
         let input = b"xxxdefyyy";
         let (idx, pos) = onig_regset_search(
-            &mut set, input, input.len(), 0, input.len(),
-            OnigRegSetLead::PositionLead, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
         );
         assert_eq!(idx, 1); // "def" matched
         assert_eq!(pos, 3); // at position 3
@@ -597,8 +606,13 @@ mod tests {
 
         let input = b"xxxdefyyy";
         let (idx, pos) = onig_regset_search(
-            &mut set, input, input.len(), 0, input.len(),
-            OnigRegSetLead::RegexLead, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::RegexLead,
+            ONIG_OPTION_NONE,
         );
         assert_eq!(idx, 1); // "def" matched
         assert_eq!(pos, 3); // at position 3
@@ -613,8 +627,13 @@ mod tests {
 
         let input = b"xxxdefyyy";
         let (idx, pos) = onig_regset_search(
-            &mut set, input, input.len(), 0, input.len(),
-            OnigRegSetLead::RegexLead, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::RegexLead,
+            ONIG_OPTION_NONE,
         );
         // "xxx" matches at position 0, which is earliest
         assert_eq!(idx, 2);
@@ -630,8 +649,13 @@ mod tests {
 
         let input = b"xxxdefyyy";
         let (idx, pos) = onig_regset_search(
-            &mut set, input, input.len(), 0, input.len(),
-            OnigRegSetLead::PriorityToRegexOrder, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PriorityToRegexOrder,
+            ONIG_OPTION_NONE,
         );
         // "def" is first regex, matches at position 3.
         // "xxx" is second regex, matches at position 0 (earlier).
@@ -656,8 +680,13 @@ mod tests {
 
         let input = b"xyz";
         let (idx, _pos) = onig_regset_search(
-            &mut set, input, input.len(), 0, input.len(),
-            OnigRegSetLead::PositionLead, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
         );
         assert_eq!(idx, ONIG_MISMATCH);
     }
@@ -671,8 +700,13 @@ mod tests {
 
         let input = b"";
         let (idx, pos) = onig_regset_search(
-            &mut set, input, 0, 0, 0,
-            OnigRegSetLead::PositionLead, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            0,
+            0,
+            0,
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
         );
         assert_eq!(idx, 0); // empty pattern matches empty string
         assert_eq!(pos, 0);
@@ -686,8 +720,13 @@ mod tests {
 
         let input = b"abc";
         let (idx, _) = onig_regset_search(
-            &mut set, input, input.len(), 0, input.len(),
-            OnigRegSetLead::PositionLead, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
         );
         assert_eq!(idx, ONIG_MISMATCH);
     }
@@ -713,8 +752,13 @@ mod tests {
         // The remaining regex should be "def"
         let input = b"def";
         let (idx, pos) = onig_regset_search(
-            &mut set, input, input.len(), 0, input.len(),
-            OnigRegSetLead::PositionLead, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
         );
         assert_eq!(idx, 0);
         assert_eq!(pos, 0);
@@ -729,8 +773,13 @@ mod tests {
 
         let input = b"xdefx";
         let (idx, pos) = onig_regset_search(
-            &mut set, input, input.len(), 0, input.len(),
-            OnigRegSetLead::PositionLead, ONIG_OPTION_NONE,
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
         );
         assert_eq!(idx, 1);
         assert_eq!(pos, 1);

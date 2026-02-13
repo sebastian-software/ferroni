@@ -50,9 +50,7 @@ pub fn onig_error_code_to_format(code: i32) -> &'static str {
         ONIGERR_TARGET_OF_REPEAT_OPERATOR_INVALID => "target of repeat operator is invalid",
         ONIGERR_NESTED_REPEAT_OPERATOR => "nested repeat operator",
         ONIGERR_UNMATCHED_CLOSE_PARENTHESIS => "unmatched close parenthesis",
-        ONIGERR_END_PATTERN_WITH_UNMATCHED_PARENTHESIS => {
-            "end pattern with unmatched parenthesis"
-        }
+        ONIGERR_END_PATTERN_WITH_UNMATCHED_PARENTHESIS => "end pattern with unmatched parenthesis",
         ONIGERR_END_PATTERN_IN_GROUP => "end pattern in group",
         ONIGERR_UNDEFINED_GROUP_OPTION => "undefined group option",
         ONIGERR_INVALID_GROUP_OPTION => "invalid group option",
@@ -94,9 +92,7 @@ pub fn onig_error_code_to_format(code: i32) -> &'static str {
         ONIGERR_INVALID_CHAR_PROPERTY_NAME => "invalid character property name {%n}",
         ONIGERR_INVALID_IF_ELSE_SYNTAX => "invalid if-else syntax",
         ONIGERR_INVALID_ABSENT_GROUP_PATTERN => "invalid absent group pattern",
-        ONIGERR_INVALID_ABSENT_GROUP_GENERATOR_PATTERN => {
-            "invalid absent group generator pattern"
-        }
+        ONIGERR_INVALID_ABSENT_GROUP_GENERATOR_PATTERN => "invalid absent group generator pattern",
         ONIGERR_INVALID_CALLOUT_PATTERN => "invalid callout pattern",
         ONIGERR_INVALID_CALLOUT_NAME => "invalid callout name",
         ONIGERR_UNDEFINED_CALLOUT_NAME => "undefined callout name",
@@ -176,18 +172,12 @@ mod tests {
 
     #[test]
     fn test_undefined_error() {
-        assert_eq!(
-            onig_error_code_to_str(-9999, None),
-            "undefined error code"
-        );
+        assert_eq!(onig_error_code_to_str(-9999, None), "undefined error code");
     }
 
     #[test]
     fn test_parameterized_error() {
-        let msg = onig_error_code_to_str(
-            ONIGERR_UNDEFINED_NAME_REFERENCE,
-            Some(b"foo"),
-        );
+        let msg = onig_error_code_to_str(ONIGERR_UNDEFINED_NAME_REFERENCE, Some(b"foo"));
         assert_eq!(msg, "undefined name <foo> reference");
     }
 
@@ -199,7 +189,9 @@ mod tests {
 
     #[test]
     fn test_needs_param() {
-        assert!(onig_is_error_code_needs_param(ONIGERR_UNDEFINED_NAME_REFERENCE));
+        assert!(onig_is_error_code_needs_param(
+            ONIGERR_UNDEFINED_NAME_REFERENCE
+        ));
         assert!(!onig_is_error_code_needs_param(ONIGERR_MEMORY));
         assert!(!onig_is_error_code_needs_param(ONIG_MISMATCH));
     }

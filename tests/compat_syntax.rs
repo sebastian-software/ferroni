@@ -7,9 +7,9 @@
 // between test groups. Here, each test function receives the syntax as a
 // parameter through syntax-specific helper functions.
 
+use ferroni::oniguruma::*;
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::onig_search;
-use ferroni::oniguruma::*;
 use ferroni::regsyntax::*;
 
 fn x2_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], from: i32, to: i32) {
@@ -47,7 +47,8 @@ fn x2_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], from: i32, to: 
 
     let region = region.unwrap();
     assert_eq!(
-        region.beg[0], from,
+        region.beg[0],
+        from,
         "x2: wrong start for {:?} against {:?}: expected {}, got {}",
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
         std::str::from_utf8(input).unwrap_or("<invalid>"),
@@ -55,7 +56,8 @@ fn x2_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], from: i32, to: 
         region.beg[0]
     );
     assert_eq!(
-        region.end[0], to,
+        region.end[0],
+        to,
         "x2: wrong end for {:?} against {:?}: expected {}, got {}",
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
         std::str::from_utf8(input).unwrap_or("<invalid>"),
@@ -64,14 +66,7 @@ fn x2_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], from: i32, to: 
     );
 }
 
-fn x3_syn(
-    syntax: &OnigSyntaxType,
-    pattern: &[u8],
-    input: &[u8],
-    from: i32,
-    to: i32,
-    mem: usize,
-) {
+fn x3_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], from: i32, to: i32, mem: usize) {
     let reg = onig_new(
         pattern,
         ONIG_OPTION_NONE,
@@ -113,7 +108,8 @@ fn x3_syn(
         region.num_regs
     );
     assert_eq!(
-        region.beg[mem], from,
+        region.beg[mem],
+        from,
         "x3: wrong start for group {} of {:?}: expected {}, got {}",
         mem,
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -121,7 +117,8 @@ fn x3_syn(
         region.beg[mem]
     );
     assert_eq!(
-        region.end[mem], to,
+        region.end[mem],
+        to,
         "x3: wrong end for group {} of {:?}: expected {}, got {}",
         mem,
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -175,7 +172,8 @@ fn e_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], expected_error: 
     match result {
         Err(code) => {
             assert_eq!(
-                code, expected_error,
+                code,
+                expected_error,
                 "e: expected error {} for {:?}, got error {}",
                 expected_error,
                 std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -193,7 +191,8 @@ fn e_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], expected_error: 
                 ONIG_OPTION_NONE,
             );
             assert_eq!(
-                result, expected_error,
+                result,
+                expected_error,
                 "e: expected error {} for {:?}, but got result {}",
                 expected_error,
                 std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -240,10 +239,10 @@ fn test_isolated_option(syn: &OnigSyntaxType) {
     x2_syn(syn, b"(?s)a|.(?-s)", b"\n", 0, 1);
     x2_syn(syn, b"(?s)a|((?-s)).", b"\n", 0, 1);
     x2_syn(syn, b"(?s)a|(?:(?-s)).", b"\n", 0, 1); // !!! Perl 5.26.1 returns empty match
-    x2_syn(syn, b"(?s)a|(?:).", b"\n", 0, 1);       // !!! Perl 5.26.1 returns empty match
+    x2_syn(syn, b"(?s)a|(?:).", b"\n", 0, 1); // !!! Perl 5.26.1 returns empty match
     x2_syn(syn, b"(?s)a|(?:.)", b"\n", 0, 1);
     x2_syn(syn, b"(?s)a|(?:a*).", b"\n", 0, 1);
-    n_syn(syn, b"a|(?:).", b"\n");                   // !!! Perl 5.26.1 returns empty match
+    n_syn(syn, b"a|(?:).", b"\n"); // !!! Perl 5.26.1 returns empty match
     n_syn(syn, b"a|(?:)(.)", b"\n");
     x2_syn(syn, b"(?s)a|(?:)(.)", b"\n", 0, 1);
     x2_syn(syn, b"b(?s)a|(?:)(.)", b"\n", 0, 1);

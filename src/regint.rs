@@ -485,6 +485,7 @@ pub const CALLOUT_BUILTIN_FAIL: i32 = 0;
 pub const CALLOUT_BUILTIN_MAX: i32 = 1;
 pub const CALLOUT_BUILTIN_COUNT: i32 = 2;
 pub const CALLOUT_BUILTIN_CMP: i32 = 3;
+pub const CALLOUT_BUILTIN_SKIP: i32 = 4;
 
 /// Result codes for callout functions
 pub const ONIG_CALLOUT_FAIL: i32 = 1;
@@ -501,10 +502,12 @@ pub enum CalloutArg {
 
 // === CalloutListEntry ===
 pub struct CalloutListEntry {
-    pub of: i32,              // 0=contents, 1=name
-    pub callout_in: i32,      // CALLOUT_IN_PROGRESS / RETRACTION / BOTH
-    pub builtin_id: i32,      // CALLOUT_BUILTIN_MAX etc., -1 for contents
+    pub of: i32,         // 0=contents, 1=name
+    pub callout_in: i32, // CALLOUT_IN_PROGRESS / RETRACTION / BOTH
+    pub builtin_id: i32, // CALLOUT_BUILTIN_MAX etc., -1 for contents
     pub tag: Option<Vec<u8>>,
+    pub tag_start: usize, // byte offset of tag start in pattern
+    pub tag_end: usize,   // byte offset of tag end in pattern
     pub args: Vec<CalloutArg>,
     pub content_end: Option<Vec<u8>>, // Content end bytes for content callouts
 }
@@ -565,8 +568,8 @@ pub struct RegexType {
     pub dist_max: OnigLen,
 
     // subroutine call support
-    pub called_addrs: Vec<i32>,  // group_num -> called entry address
-    pub unset_call_addrs: Vec<(usize, i32)>,  // (op_index, group_num) for patching
+    pub called_addrs: Vec<i32>, // group_num -> called entry address
+    pub unset_call_addrs: Vec<(usize, i32)>, // (op_index, group_num) for patching
 
     // extension (callouts)
     pub extp: Option<RegexExt>,
@@ -602,8 +605,12 @@ impl MinMaxLen {
     }
 
     pub fn alt_merge(&mut self, other: &MinMaxLen) {
-        if self.min > other.min { self.min = other.min; }
-        if self.max < other.max { self.max = other.max; }
+        if self.min > other.min {
+            self.min = other.min;
+        }
+        if self.max < other.max {
+            self.max = other.max;
+        }
     }
 
     pub fn is_equal(&self, other: &MinMaxLen) -> bool {
@@ -843,8 +850,7 @@ pub fn mc_anychar_anytime(syn: &OnigSyntaxType) -> OnigCodePoint {
 
 #[inline]
 pub fn is_mc_esc_code(code: OnigCodePoint, syn: &OnigSyntaxType) -> bool {
-    code == mc_esc(syn)
-        && !is_syntax_op2(syn, ONIG_SYN_OP2_INEFFECTIVE_ESCAPE)
+    code == mc_esc(syn) && !is_syntax_op2(syn, ONIG_SYN_OP2_INEFFECTIVE_ESCAPE)
 }
 
 // === Value helpers ===

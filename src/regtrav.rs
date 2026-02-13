@@ -15,7 +15,13 @@ where
     F: FnMut(i32, i32, i32, i32, i32) -> i32,
 {
     if (at & ONIG_TRAVERSE_CALLBACK_AT_FIRST) != 0 {
-        let r = callback(node.group, node.beg, node.end, level, ONIG_TRAVERSE_CALLBACK_AT_FIRST);
+        let r = callback(
+            node.group,
+            node.beg,
+            node.end,
+            level,
+            ONIG_TRAVERSE_CALLBACK_AT_FIRST,
+        );
         if r != 0 {
             return r;
         }
@@ -29,7 +35,13 @@ where
     }
 
     if (at & ONIG_TRAVERSE_CALLBACK_AT_LAST) != 0 {
-        let r = callback(node.group, node.beg, node.end, level, ONIG_TRAVERSE_CALLBACK_AT_LAST);
+        let r = callback(
+            node.group,
+            node.beg,
+            node.end,
+            level,
+            ONIG_TRAVERSE_CALLBACK_AT_LAST,
+        );
         if r != 0 {
             return r;
         }
@@ -40,11 +52,7 @@ where
 
 /// Traverse the capture tree of a region.
 /// Callback receives (group, beg, end, level, at) and should return 0 to continue.
-pub fn onig_capture_tree_traverse<F>(
-    region: &OnigRegion,
-    at: i32,
-    mut callback: F,
-) -> i32
+pub fn onig_capture_tree_traverse<F>(region: &OnigRegion, at: i32, mut callback: F) -> i32
 where
     F: FnMut(i32, i32, i32, i32, i32) -> i32,
 {

@@ -6,9 +6,9 @@
 // Port note: In the C original, options are passed as the first parameter
 // to x2/x3/n macros and applied to both onig_new() and onig_search().
 
+use ferroni::oniguruma::*;
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::onig_search;
-use ferroni::oniguruma::*;
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 
 fn x2(options: OnigOptionType, pattern: &[u8], input: &[u8], from: i32, to: i32) {
@@ -47,7 +47,8 @@ fn x2(options: OnigOptionType, pattern: &[u8], input: &[u8], from: i32, to: i32)
 
     let region = region.unwrap();
     assert_eq!(
-        region.beg[0], from,
+        region.beg[0],
+        from,
         "x2: wrong start for {:?} against {:?}: expected {}, got {}",
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
         std::str::from_utf8(input).unwrap_or("<invalid>"),
@@ -55,7 +56,8 @@ fn x2(options: OnigOptionType, pattern: &[u8], input: &[u8], from: i32, to: i32)
         region.beg[0]
     );
     assert_eq!(
-        region.end[0], to,
+        region.end[0],
+        to,
         "x2: wrong end for {:?} against {:?}: expected {}, got {}",
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
         std::str::from_utf8(input).unwrap_or("<invalid>"),
@@ -64,14 +66,7 @@ fn x2(options: OnigOptionType, pattern: &[u8], input: &[u8], from: i32, to: i32)
     );
 }
 
-fn x3(
-    options: OnigOptionType,
-    pattern: &[u8],
-    input: &[u8],
-    from: i32,
-    to: i32,
-    mem: usize,
-) {
+fn x3(options: OnigOptionType, pattern: &[u8], input: &[u8], from: i32, to: i32, mem: usize) {
     let reg = onig_new(
         pattern,
         options,
@@ -114,7 +109,8 @@ fn x3(
         region.num_regs
     );
     assert_eq!(
-        region.beg[mem], from,
+        region.beg[mem],
+        from,
         "x3: wrong start for group {} of {:?}: expected {}, got {}",
         mem,
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -122,7 +118,8 @@ fn x3(
         region.beg[mem]
     );
     assert_eq!(
-        region.end[mem], to,
+        region.end[mem],
+        to,
         "x3: wrong end for group {} of {:?}: expected {}, got {}",
         mem,
         std::str::from_utf8(pattern).unwrap_or("<invalid>"),
@@ -226,22 +223,46 @@ fn option_oia_upper_a_to_lower_a() {
 
 #[test]
 fn option_oia_full_alphabet_upper_to_lower() {
-    x2(OIA, b"ABCDEFGHIJKLMNOPQRSTUVWXYZ", b"abcdefghijklmnopqrstuvwxyz", 0, 26);
+    x2(
+        OIA,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        b"abcdefghijklmnopqrstuvwxyz",
+        0,
+        26,
+    );
 }
 
 #[test]
 fn option_oia_full_alphabet_lower_to_upper() {
-    x2(OIA, b"abcdefghijklmnopqrstuvwxyz", b"ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0, 26);
+    x2(
+        OIA,
+        b"abcdefghijklmnopqrstuvwxyz",
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        0,
+        26,
+    );
 }
 
 #[test]
 fn option_oia_upper_alpha_partial_match() {
-    x2(OIA, b"ABCDEFGHIJKLMNOPQRSTUVWXYZ", b"ABCabcdefghijklmnopqrstuvwxyz", 3, 29);
+    x2(
+        OIA,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        b"ABCabcdefghijklmnopqrstuvwxyz",
+        3,
+        29,
+    );
 }
 
 #[test]
 fn option_oia_lower_alpha_partial_match() {
-    x2(OIA, b"abcdefghijklmnopqrstuvwxyz", b"abcABCDEFGHIJKLMNOPQRSTUVWXYZ", 3, 29);
+    x2(
+        OIA,
+        b"abcdefghijklmnopqrstuvwxyz",
+        b"abcABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        3,
+        29,
+    );
 }
 
 #[test]
@@ -416,7 +437,11 @@ fn option_posix_is_ascii_match() {
 
 #[test]
 fn option_posix_is_ascii_no_fullwidth() {
-    n(ONIG_OPTION_POSIX_IS_ASCII, b"\\w|\\d|\\s", "あ４　".as_bytes());
+    n(
+        ONIG_OPTION_POSIX_IS_ASCII,
+        b"\\w|\\d|\\s",
+        "あ４　".as_bytes(),
+    );
 }
 
 // ============================================================================
@@ -435,5 +460,11 @@ fn option_find_longest() {
 
 #[test]
 fn option_find_not_empty() {
-    x2(ONIG_OPTION_FIND_NOT_EMPTY, b"\\w*", b"@@@ abc defg hij", 4, 7);
+    x2(
+        ONIG_OPTION_FIND_NOT_EMPTY,
+        b"\\w*",
+        b"@@@ abc defg hij",
+        4,
+        7,
+    );
 }

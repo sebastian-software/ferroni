@@ -3,13 +3,12 @@
 // Tests the RegSet API: multi-regex simultaneous search with both
 // position-lead and regex-lead modes.
 
+use ferroni::oniguruma::*;
 use ferroni::regcomp::onig_new;
 use ferroni::regint::RegexType;
 use ferroni::regset::{
-    onig_regset_new, onig_regset_search, onig_regset_get_region,
-    OnigRegSet, OnigRegSetLead,
+    onig_regset_get_region, onig_regset_new, onig_regset_search, OnigRegSet, OnigRegSetLead,
 };
-use ferroni::oniguruma::*;
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 
 fn compile(pattern: &[u8]) -> Box<RegexType> {
@@ -55,14 +54,16 @@ fn x2(set: &mut Box<OnigRegSet>, input: &[u8], lead: OnigRegSetLead, from: i32, 
     );
     let region = onig_regset_get_region(set, idx as usize).unwrap();
     assert_eq!(
-        region.beg[0], from,
+        region.beg[0],
+        from,
         "x2: beg mismatch for input {:?}: expected {}, got {}",
         std::str::from_utf8(input).unwrap_or("<?>"),
         from,
         region.beg[0]
     );
     assert_eq!(
-        region.end[0], to,
+        region.end[0],
+        to,
         "x2: end mismatch for input {:?}: expected {}, got {}",
         std::str::from_utf8(input).unwrap_or("<?>"),
         to,
@@ -96,7 +97,8 @@ fn x3(
     );
     let region = onig_regset_get_region(set, idx as usize).unwrap();
     assert_eq!(
-        region.beg[mem], from,
+        region.beg[mem],
+        from,
         "x3: beg[{}] mismatch for input {:?}: expected {}, got {}",
         mem,
         std::str::from_utf8(input).unwrap_or("<?>"),
@@ -104,7 +106,8 @@ fn x3(
         region.beg[mem]
     );
     assert_eq!(
-        region.end[mem], to,
+        region.end[mem],
+        to,
         "x3: end[{}] mismatch for input {:?}: expected {}, got {}",
         mem,
         std::str::from_utf8(input).unwrap_or("<?>"),
@@ -125,7 +128,8 @@ fn n_search(set: &mut Box<OnigRegSet>, input: &[u8], lead: OnigRegSetLead) {
         ONIG_OPTION_NONE,
     );
     assert_eq!(
-        idx, ONIG_MISMATCH,
+        idx,
+        ONIG_MISMATCH,
         "n: expected no match, got index {} for input {:?}",
         idx,
         std::str::from_utf8(input).unwrap_or("<?>")
@@ -150,7 +154,13 @@ fn pos_lead_empty_set() {
 #[test]
 fn pos_lead_p1_x2() {
     let mut set = make_regset(&[b"abc", b"(bca)", b"(cab)"]);
-    x2(&mut set, b" abab bccab ca", OnigRegSetLead::PositionLead, 8, 11);
+    x2(
+        &mut set,
+        b" abab bccab ca",
+        OnigRegSetLead::PositionLead,
+        8,
+        11,
+    );
 }
 
 #[test]
@@ -168,11 +178,7 @@ fn pos_lead_p1_x3() {
 
 #[test]
 fn pos_lead_p2_no_match() {
-    let mut set = make_regset(&[
-        "小説".as_bytes(),
-        b"9",
-        "夏目漱石".as_bytes(),
-    ]);
+    let mut set = make_regset(&["小説".as_bytes(), b"9", "夏目漱石".as_bytes()]);
     n_search(
         &mut set,
         b" XXXX AAA 1223 012345678bbb",
@@ -182,11 +188,7 @@ fn pos_lead_p2_no_match() {
 
 #[test]
 fn pos_lead_p2_digit() {
-    let mut set = make_regset(&[
-        "小説".as_bytes(),
-        b"9",
-        "夏目漱石".as_bytes(),
-    ]);
+    let mut set = make_regset(&["小説".as_bytes(), b"9", "夏目漱石".as_bytes()]);
     x2(&mut set, b"0123456789", OnigRegSetLead::PositionLead, 9, 10);
 }
 
@@ -222,7 +224,13 @@ fn reg_lead_empty_set() {
 #[test]
 fn reg_lead_p1_x2() {
     let mut set = make_regset(&[b"abc", b"(bca)", b"(cab)"]);
-    x2(&mut set, b" abab bccab ca", OnigRegSetLead::RegexLead, 8, 11);
+    x2(
+        &mut set,
+        b" abab bccab ca",
+        OnigRegSetLead::RegexLead,
+        8,
+        11,
+    );
 }
 
 #[test]
@@ -240,11 +248,7 @@ fn reg_lead_p1_x3() {
 
 #[test]
 fn reg_lead_p2_no_match() {
-    let mut set = make_regset(&[
-        "小説".as_bytes(),
-        b"9",
-        "夏目漱石".as_bytes(),
-    ]);
+    let mut set = make_regset(&["小説".as_bytes(), b"9", "夏目漱石".as_bytes()]);
     n_search(
         &mut set,
         b" XXXX AAA 1223 012345678bbb",
@@ -254,11 +258,7 @@ fn reg_lead_p2_no_match() {
 
 #[test]
 fn reg_lead_p2_digit() {
-    let mut set = make_regset(&[
-        "小説".as_bytes(),
-        b"9",
-        "夏目漱石".as_bytes(),
-    ]);
+    let mut set = make_regset(&["小説".as_bytes(), b"9", "夏目漱石".as_bytes()]);
     x2(&mut set, b"0123456789", OnigRegSetLead::RegexLead, 9, 10);
 }
 

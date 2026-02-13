@@ -47,7 +47,11 @@ fn build_oniguruma_c() {
 
 #endif
 "#,
-        long_size = if cfg!(target_os = "windows") { 4 } else { pointer_size },
+        long_size = if cfg!(target_os = "windows") {
+            4
+        } else {
+            pointer_size
+        },
         pointer_size = pointer_size,
     );
     std::fs::write(out_dir.join("config.h"), config_h).unwrap();
