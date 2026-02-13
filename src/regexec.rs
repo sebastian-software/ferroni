@@ -82,6 +82,30 @@ pub fn onig_set_retraction_callout(f: OnigCalloutFunc) -> i32 {
 }
 
 // ============================================================================
+// Global Callback Each Match (port of C's CallbackEachMatch)
+// ============================================================================
+
+pub type OnigCallbackEachMatchFunc =
+    fn(str_data: &[u8], region: &OnigRegion, user_data: *mut std::ffi::c_void) -> i32;
+
+static CALLBACK_EACH_MATCH: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+
+pub fn onig_get_callback_each_match() -> Option<OnigCallbackEachMatchFunc> {
+    let p = CALLBACK_EACH_MATCH.load(Ordering::Relaxed);
+    if p.is_null() {
+        None
+    } else {
+        Some(unsafe { std::mem::transmute(p) })
+    }
+}
+
+pub fn onig_set_callback_each_match(f: OnigCallbackEachMatchFunc) -> i32 {
+    let p: *mut () = f as *mut ();
+    CALLBACK_EACH_MATCH.store(p, Ordering::Relaxed);
+    ONIG_NORMAL
+}
+
+// ============================================================================
 // Region Management (port of C's onig_region_* functions)
 // ============================================================================
 
@@ -124,6 +148,10 @@ pub fn onig_get_options(reg: &RegexType) -> OnigOptionType {
 
 pub fn onig_get_case_fold_flag(reg: &RegexType) -> OnigCaseFoldType {
     reg.case_fold_flag
+}
+
+pub fn onig_get_syntax(reg: &RegexType) -> *const OnigSyntaxType {
+    reg.syntax
 }
 
 pub fn onig_number_of_captures(reg: &RegexType) -> i32 {
@@ -429,6 +457,8 @@ pub struct OnigCalloutArgs {
     // String data for safe access
     str_data: *const u8,
     str_len: usize,
+    // Callout data array (for by_callout_args accessor functions)
+    pub(crate) callout_data: *mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
 }
 
 impl OnigCalloutArgs {
@@ -457,6 +487,7 @@ impl OnigCalloutArgs {
             retry_in_match_counter: retry_counter,
             str_data: str_data.as_ptr(),
             str_len: str_data.len(),
+            callout_data: std::ptr::null_mut(),
         }
     }
 }
@@ -548,6 +579,25 @@ pub fn onig_get_retry_counter_by_callout_args(args: &OnigCalloutArgs) -> u64 {
     args.retry_in_match_counter
 }
 
+/// Get the end position of callout contents.
+/// For content callouts (?{...}), returns the end pointer of the content.
+/// Returns null for name callouts.
+pub fn onig_get_contents_end_by_callout_args(args: &OnigCalloutArgs) -> *const u8 {
+    let reg = unsafe { &*args.regex };
+    if let Some(ref ext) = reg.extp {
+        let idx = (args.num - 1) as usize;
+        if idx < ext.callout_list.len() {
+            let entry = &ext.callout_list[idx];
+            if entry.of == OnigCalloutOf::Contents as i32 {
+                if let Some(ref content_end) = entry.content_end {
+                    return content_end.as_ptr();
+                }
+            }
+        }
+    }
+    std::ptr::null()
+}
+
 // ============================================================================
 // Callout Data Access (port of C's onig_get/set_callout_data)
 // ============================================================================
@@ -633,6 +683,339 @@ pub fn onig_get_callout_tag(
         }
     }
     None
+}
+
+// ============================================================================
+// Callout Data by_callout_args variants
+// (port of C's onig_get/set_callout_data_by_callout_args*)
+// ============================================================================
+
+pub fn onig_get_callout_data_by_callout_args(
+    args: &OnigCalloutArgs,
+    callout_num: i32,
+    slot: i32,
+) -> Option<i64> {
+    let reg = unsafe { &*args.regex };
+    if args.callout_data.is_null() { return None; }
+    let cd = unsafe { &*args.callout_data };
+    onig_get_callout_data(reg, cd, callout_num, slot)
+}
+
+pub fn onig_set_callout_data_by_callout_args(
+    args: &OnigCalloutArgs,
+    callout_num: i32,
+    slot: i32,
+    val: i64,
+) -> i32 {
+    if args.callout_data.is_null() { return ONIGERR_INVALID_ARGUMENT; }
+    let cd = unsafe { &mut *args.callout_data };
+    onig_set_callout_data(cd, callout_num, slot, val)
+}
+
+pub fn onig_get_callout_data_by_callout_args_self(
+    args: &OnigCalloutArgs,
+    slot: i32,
+) -> Option<i64> {
+    onig_get_callout_data_by_callout_args(args, args.num, slot)
+}
+
+pub fn onig_set_callout_data_by_callout_args_self(
+    args: &OnigCalloutArgs,
+    slot: i32,
+    val: i64,
+) -> i32 {
+    onig_set_callout_data_by_callout_args(args, args.num, slot, val)
+}
+
+/// Get callout data without clearing old values.
+/// In the Rust implementation, this behaves identically to onig_get_callout_data
+/// since the Rust version does not implement the clear-on-access pattern.
+pub fn onig_get_callout_data_dont_clear_old(
+    reg: &RegexType,
+    callout_data: &[[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
+    callout_num: i32,
+    slot: i32,
+) -> Option<i64> {
+    onig_get_callout_data(reg, callout_data, callout_num, slot)
+}
+
+pub fn onig_get_callout_data_by_callout_args_self_dont_clear_old(
+    args: &OnigCalloutArgs,
+    slot: i32,
+) -> Option<i64> {
+    onig_get_callout_data_by_callout_args_self(args, slot)
+}
+
+/// Get callout data by tag name.
+pub fn onig_get_callout_data_by_tag(
+    reg: &RegexType,
+    callout_data: &[[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
+    tag: &[u8],
+    slot: i32,
+) -> Option<i64> {
+    let num = onig_get_callout_num_by_tag(reg, tag);
+    if num < 1 { return None; }
+    onig_get_callout_data(reg, callout_data, num, slot)
+}
+
+/// Set callout data by tag name.
+pub fn onig_set_callout_data_by_tag(
+    reg: &RegexType,
+    callout_data: &mut [[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
+    tag: &[u8],
+    slot: i32,
+    val: i64,
+) -> i32 {
+    let num = onig_get_callout_num_by_tag(reg, tag);
+    if num < 1 { return ONIGERR_INVALID_CALLOUT_TAG_NAME; }
+    onig_set_callout_data(callout_data, num, slot, val)
+}
+
+/// Get callout data by tag name without clearing old values.
+pub fn onig_get_callout_data_by_tag_dont_clear_old(
+    reg: &RegexType,
+    callout_data: &[[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
+    tag: &[u8],
+    slot: i32,
+) -> Option<i64> {
+    onig_get_callout_data_by_tag(reg, callout_data, tag, slot)
+}
+
+// ============================================================================
+// Callout Introspection
+// (port of C's onig_get_capture_range_in_callout, onig_get_used_stack_size_in_callout)
+// ============================================================================
+
+/// Get the capture range for a given memory number during a callout.
+/// Returns (begin, end) byte offsets, or ONIG_REGION_NOTPOS if not matched.
+///
+/// Note: This function requires OnigCalloutArgs to be constructed with stack
+/// state from the VM. Currently only available when user callout functions are
+/// called from within the match execution.
+pub fn onig_get_capture_range_in_callout(
+    _args: &OnigCalloutArgs,
+    mem_num: i32,
+) -> Result<(i32, i32), i32> {
+    if mem_num <= 0 {
+        return Err(ONIGERR_INVALID_ARGUMENT);
+    }
+    // Stack-based capture tracking not yet exposed through OnigCalloutArgs.
+    // Returns NOTPOS for now.
+    Ok((ONIG_REGION_NOTPOS, ONIG_REGION_NOTPOS))
+}
+
+/// Get the current used stack size during a callout.
+/// Returns (used_num, used_bytes).
+///
+/// Note: This function requires OnigCalloutArgs to be constructed with stack
+/// state from the VM.
+pub fn onig_get_used_stack_size_in_callout(
+    _args: &OnigCalloutArgs,
+) -> (i32, i32) {
+    // Stack size tracking not yet exposed through OnigCalloutArgs.
+    (0, 0)
+}
+
+// ============================================================================
+// Builtin Callout Public API
+// (port of C's onig_builtin_fail, onig_builtin_mismatch, etc.)
+// ============================================================================
+
+pub fn onig_builtin_fail(
+    _args: &OnigCalloutArgs,
+    _user_data: *mut std::ffi::c_void,
+) -> i32 {
+    ONIG_CALLOUT_FAIL
+}
+
+pub fn onig_builtin_mismatch(
+    _args: &OnigCalloutArgs,
+    _user_data: *mut std::ffi::c_void,
+) -> i32 {
+    ONIG_MISMATCH
+}
+
+pub fn onig_builtin_error(
+    args: &OnigCalloutArgs,
+    _user_data: *mut std::ffi::c_void,
+) -> i32 {
+    let reg = unsafe { &*args.regex };
+    if let Some(ref ext) = reg.extp {
+        let idx = (args.num - 1) as usize;
+        if idx < ext.callout_list.len() {
+            let entry = &ext.callout_list[idx];
+            if !entry.args.is_empty() {
+                if let CalloutArg::Long(n) = &entry.args[0] {
+                    let n = *n as i32;
+                    if n >= 0 {
+                        return ONIGERR_INVALID_CALLOUT_BODY;
+                    }
+                    return n;
+                }
+            }
+        }
+    }
+    ONIGERR_INVALID_CALLOUT_BODY
+}
+
+pub fn onig_builtin_count(
+    args: &OnigCalloutArgs,
+    _user_data: *mut std::ffi::c_void,
+) -> i32 {
+    if args.callout_data.is_null() { return ONIG_CALLOUT_FAIL; }
+    let cd = unsafe { &mut *args.callout_data };
+    let num = args.num;
+    if num < 1 { return ONIG_CALLOUT_FAIL; }
+    let idx = (num - 1) as usize;
+    if idx >= cd.len() { return ONIG_CALLOUT_FAIL; }
+
+    let reg = unsafe { &*args.regex };
+    let count_type = if let Some(ref ext) = reg.extp {
+        if idx < ext.callout_list.len() && !ext.callout_list[idx].args.is_empty() {
+            match &ext.callout_list[idx].args[0] {
+                CalloutArg::Char(c) => *c,
+                _ => b'>',
+            }
+        } else { b'>' }
+    } else { b'>' };
+
+    let is_retraction = args.callout_in == OnigCalloutIn::Retraction;
+    let slots = &mut cd[idx];
+
+    if is_retraction {
+        if count_type == b'<' { slots[0] += 1; }
+        else if count_type == b'X' { slots[0] -= 1; }
+        slots[2] += 1;
+    } else {
+        if count_type != b'<' { slots[0] += 1; }
+        slots[1] += 1;
+    }
+
+    ONIG_CALLOUT_SUCCESS
+}
+
+pub fn onig_builtin_total_count(
+    args: &OnigCalloutArgs,
+    _user_data: *mut std::ffi::c_void,
+) -> i32 {
+    // total_count is the same as count but without clearing old data.
+    // In Rust, count already doesn't clear old data, so they are equivalent.
+    onig_builtin_count(args, _user_data)
+}
+
+pub fn onig_builtin_max(
+    args: &OnigCalloutArgs,
+    _user_data: *mut std::ffi::c_void,
+) -> i32 {
+    if args.callout_data.is_null() { return ONIG_CALLOUT_FAIL; }
+    let cd = unsafe { &mut *args.callout_data };
+    let num = args.num;
+    if num < 1 { return ONIG_CALLOUT_FAIL; }
+    let idx = (num - 1) as usize;
+    if idx >= cd.len() { return ONIG_CALLOUT_FAIL; }
+
+    let reg = unsafe { &*args.regex };
+    let ext = match reg.extp.as_ref() {
+        Some(e) => e,
+        None => return ONIG_CALLOUT_FAIL,
+    };
+    if idx >= ext.callout_list.len() { return ONIG_CALLOUT_FAIL; }
+    let entry = &ext.callout_list[idx];
+
+    let max_val = if !entry.args.is_empty() {
+        resolve_callout_arg(&entry.args[0], &ext.callout_list, cd)
+    } else { 0 };
+
+    let count_type = if entry.args.len() > 1 {
+        match &entry.args[1] {
+            CalloutArg::Char(c) => *c,
+            _ => b'>',
+        }
+    } else { b'>' };
+
+    let is_retraction = args.callout_in == OnigCalloutIn::Retraction;
+    let slots = &mut cd[idx];
+
+    if is_retraction {
+        if count_type == b'<' {
+            if slots[0] >= max_val { return ONIG_CALLOUT_FAIL; }
+            slots[0] += 1;
+        } else if count_type == b'X' {
+            slots[0] -= 1;
+        }
+    } else {
+        if count_type != b'<' {
+            if slots[0] >= max_val { return ONIG_CALLOUT_FAIL; }
+            slots[0] += 1;
+        }
+    }
+
+    ONIG_CALLOUT_SUCCESS
+}
+
+pub fn onig_builtin_cmp(
+    args: &OnigCalloutArgs,
+    _user_data: *mut std::ffi::c_void,
+) -> i32 {
+    if args.callout_data.is_null() { return ONIG_CALLOUT_FAIL; }
+    let cd = unsafe { &mut *args.callout_data };
+    let num = args.num;
+    if num < 1 { return ONIG_CALLOUT_FAIL; }
+    let idx = (num - 1) as usize;
+    if idx >= cd.len() { return ONIG_CALLOUT_FAIL; }
+
+    let reg = unsafe { &*args.regex };
+    let ext = match reg.extp.as_ref() {
+        Some(e) => e,
+        None => return ONIG_CALLOUT_FAIL,
+    };
+    if idx >= ext.callout_list.len() || ext.callout_list[idx].args.len() < 3 {
+        return ONIG_CALLOUT_FAIL;
+    }
+    let entry = &ext.callout_list[idx];
+
+    let lv = resolve_callout_arg(&entry.args[0], &ext.callout_list, cd);
+    let rv = resolve_callout_arg(&entry.args[2], &ext.callout_list, cd);
+
+    // The op is stored in slot 0 after first parse; or read from args[1]
+    let op = cd[idx][0];
+    if op == 0 {
+        // First call: parse the op string from args[1]
+        let op_val = match &entry.args[1] {
+            CalloutArg::Str(s) => {
+                if s == b"==" { 1 }
+                else if s == b"!=" { 2 }
+                else if s == b"<" { 3 }
+                else if s == b">" { 4 }
+                else if s == b"<=" { 5 }
+                else if s == b">=" { 6 }
+                else { return ONIGERR_INVALID_CALLOUT_ARG; }
+            }
+            _ => return ONIGERR_INVALID_CALLOUT_ARG,
+        };
+        cd[idx][0] = op_val;
+        let result = match op_val {
+            1 => lv == rv,
+            2 => lv != rv,
+            3 => lv < rv,
+            4 => lv > rv,
+            5 => lv <= rv,
+            6 => lv >= rv,
+            _ => false,
+        };
+        if result { ONIG_CALLOUT_SUCCESS } else { ONIG_CALLOUT_FAIL }
+    } else {
+        let result = match op {
+            1 => lv == rv,
+            2 => lv != rv,
+            3 => lv < rv,
+            4 => lv > rv,
+            5 => lv <= rv,
+            6 => lv >= rv,
+            _ => false,
+        };
+        if result { ONIG_CALLOUT_SUCCESS } else { ONIG_CALLOUT_FAIL }
+    }
 }
 
 // ============================================================================

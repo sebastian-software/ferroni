@@ -10,10 +10,121 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::Mutex;
+
 use crate::oniguruma::*;
 use crate::regenc::*;
+use crate::regexec::OnigCalloutFunc;
 use crate::regint::*;
 use crate::regparse_types::*;
+
+// ============================================================================
+// Global Warn Functions (port of C's onig_warn / onig_verb_warn)
+// ============================================================================
+
+pub type OnigWarnFunc = fn(s: &str);
+
+static WARN_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+static VERB_WARN_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+
+pub fn onig_set_warn_func(f: OnigWarnFunc) {
+    let p: *mut () = f as *mut ();
+    WARN_FUNC.store(p, Ordering::Relaxed);
+}
+
+pub fn onig_set_verb_warn_func(f: OnigWarnFunc) {
+    let p: *mut () = f as *mut ();
+    VERB_WARN_FUNC.store(p, Ordering::Relaxed);
+}
+
+// ============================================================================
+// Global Callout Name Registry (port of C's GlobalCalloutNameList)
+// ============================================================================
+
+pub struct CalloutNameListEntry {
+    pub callout_type: OnigCalloutType,
+    pub callout_in: i32,
+    pub start_func: Option<OnigCalloutFunc>,
+    pub end_func: Option<OnigCalloutFunc>,
+    pub arg_num: i32,
+    pub opt_arg_num: i32,
+    pub arg_types: Vec<u32>,
+    pub opt_defaults: Vec<OnigValue>,
+    pub name: Vec<u8>,
+}
+
+static CALLOUT_NAME_REGISTRY: Mutex<Vec<CalloutNameListEntry>> = Mutex::new(Vec::new());
+
+/// Register a user-defined named callout.
+/// Port of C's onig_set_callout_of_name.
+pub fn onig_set_callout_of_name(
+    _enc: OnigEncoding,
+    callout_type: OnigCalloutType,
+    name: &[u8],
+    callout_in: i32,
+    start_func: Option<OnigCalloutFunc>,
+    end_func: Option<OnigCalloutFunc>,
+    arg_num: i32,
+    arg_types: &[u32],
+    opt_arg_num: i32,
+    opt_defaults: &[OnigValue],
+) -> i32 {
+    if callout_type != OnigCalloutType::Single {
+        return ONIGERR_INVALID_ARGUMENT;
+    }
+    if arg_num < 0 || arg_num > ONIG_CALLOUT_MAX_ARGS_NUM as i32 {
+        return ONIGERR_INVALID_CALLOUT_ARG;
+    }
+    if opt_arg_num < 0 || opt_arg_num > arg_num {
+        return ONIGERR_INVALID_CALLOUT_ARG;
+    }
+    if start_func.is_none() && end_func.is_none() {
+        return ONIGERR_INVALID_CALLOUT_ARG;
+    }
+    if (callout_in & (OnigCalloutIn::Progress as i32)) == 0
+        && (callout_in & (OnigCalloutIn::Retraction as i32)) == 0
+    {
+        return ONIGERR_INVALID_CALLOUT_ARG;
+    }
+    if name.is_empty() {
+        return ONIGERR_INVALID_CALLOUT_NAME;
+    }
+
+    let entry = CalloutNameListEntry {
+        callout_type,
+        callout_in,
+        start_func,
+        end_func,
+        arg_num,
+        opt_arg_num,
+        arg_types: arg_types.to_vec(),
+        opt_defaults: opt_defaults.to_vec(),
+        name: name.to_vec(),
+    };
+
+    let mut registry = CALLOUT_NAME_REGISTRY.lock().unwrap();
+    // Check if name already exists — update in place
+    for (i, existing) in registry.iter_mut().enumerate() {
+        if existing.name == name {
+            *existing = entry;
+            return i as i32;
+        }
+    }
+    let id = registry.len() as i32;
+    registry.push(entry);
+    id
+}
+
+/// Get the name of a registered callout by its name ID.
+/// Port of C's onig_get_callout_name_by_name_id.
+pub fn onig_get_callout_name_by_name_id(name_id: i32) -> Option<Vec<u8>> {
+    let registry = CALLOUT_NAME_REGISTRY.lock().unwrap();
+    if name_id < 0 || name_id as usize >= registry.len() {
+        return None;
+    }
+    Some(registry[name_id as usize].name.clone())
+}
 
 // ============================================================================
 // Constants
@@ -51,7 +162,7 @@ const PEND_VALUE: OnigCodePoint = 0;
 // Global State (matching C module-level statics)
 // ============================================================================
 
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32};
 
 static MAX_CAPTURE_NUM: AtomicI32 = AtomicI32::new(DEFAULT_MAX_CAPTURE_NUM);
 static PARSE_DEPTH_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_PARSE_DEPTH_LIMIT);
@@ -4186,6 +4297,7 @@ fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
         builtin_id: -1,
         tag: None,
         args: Vec::new(),
+        content_end: None,
     });
     Ok(num)
 }

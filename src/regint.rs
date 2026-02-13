@@ -506,6 +506,7 @@ pub struct CalloutListEntry {
     pub builtin_id: i32,      // CALLOUT_BUILTIN_MAX etc., -1 for contents
     pub tag: Option<Vec<u8>>,
     pub args: Vec<CalloutArg>,
+    pub content_end: Option<Vec<u8>>, // Content end bytes for content callouts
 }
 
 // === RepeatRange ===

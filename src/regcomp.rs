@@ -11,10 +11,27 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use crate::oniguruma::*;
 use crate::regenc::*;
 use crate::regint::*;
 use crate::regparse_types::*;
+
+// ============================================================================
+// Global Default Case Fold Flag (port of C's OnigDefaultCaseFoldFlag)
+// ============================================================================
+
+static DEFAULT_CASE_FOLD_FLAG: AtomicU32 = AtomicU32::new(ONIGENC_CASE_FOLD_MIN);
+
+pub fn onig_get_default_case_fold_flag() -> OnigCaseFoldType {
+    DEFAULT_CASE_FOLD_FLAG.load(Ordering::Relaxed)
+}
+
+pub fn onig_set_default_case_fold_flag(flag: OnigCaseFoldType) -> i32 {
+    DEFAULT_CASE_FOLD_FLAG.store(flag, Ordering::Relaxed);
+    0
+}
 
 /// Get encoded character length from a byte slice (for optimization functions).
 fn enclen(enc: OnigEncoding, p: &[u8], _offset: usize) -> usize {
