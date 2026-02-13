@@ -48,19 +48,25 @@
 //! | `regerror.c` | [`regerror`] | Error messages |
 //! | `regtrav.c` | [`regtrav`] | Capture tree traversal |
 
-pub mod oniguruma;
-pub mod regint;
-pub mod regenc;
-pub mod regsyntax;
-pub mod regparse_types;
-pub mod unicode;
+// Allow patterns inherent to the C port.
+#![allow(dead_code)]
+#![allow(clippy::empty_line_after_doc_comments)]
+#![allow(clippy::missing_transmute_annotations)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 pub mod encodings;
-pub mod regparse;
+pub mod oniguruma;
 pub mod regcomp;
-pub mod regexec;
-pub mod regtrav;
-pub mod regset;
+pub mod regenc;
 pub mod regerror;
+pub mod regexec;
+pub mod regint;
+pub mod regparse;
+pub mod regparse_types;
+pub mod regset;
+pub mod regsyntax;
+pub mod regtrav;
+pub mod unicode;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;

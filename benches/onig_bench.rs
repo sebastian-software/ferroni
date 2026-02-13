@@ -10,11 +10,11 @@ use std::os::raw::c_uint;
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
 use ferroni::ffi;
 use ferroni::oniguruma::{
-    ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE, OnigOptionType, OnigRegion, OnigSyntaxType,
+    OnigOptionType, OnigRegion, OnigSyntaxType, ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE,
 };
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::{onig_match, onig_region_new, onig_search};
-use ferroni::regset::{OnigRegSet, OnigRegSetLead, onig_regset_new, onig_regset_search};
+use ferroni::regset::{onig_regset_new, onig_regset_search, OnigRegSet, OnigRegSetLead};
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,15 @@ fn rust_search(
     text: &[u8],
     region: Option<OnigRegion>,
 ) -> (i32, Option<OnigRegion>) {
-    onig_search(reg, text, text.len(), 0, text.len(), region, ONIG_OPTION_NONE)
+    onig_search(
+        reg,
+        text,
+        text.len(),
+        0,
+        text.len(),
+        region,
+        ONIG_OPTION_NONE,
+    )
 }
 
 fn c_compile(pattern: &[u8], option: c_uint) -> ffi::CRegex {
@@ -67,7 +75,10 @@ fn bench_compile(c: &mut Criterion) {
         ("backref", b"(\\w+)\\s+\\1"),
         ("lookahead", b"foo(?=bar)"),
         ("lookbehind", b"(?<=@)\\w+"),
-        ("named_capture", b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})"),
+        (
+            "named_capture",
+            b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})",
+        ),
     ];
 
     let mut group = c.benchmark_group("compile");
@@ -121,8 +132,13 @@ fn bench_literal_match(c: &mut Criterion) {
             let mut region = ffi::CRegion::new();
             b.iter(|| {
                 region.clear();
-                let pos =
-                    c_reg.search(black_box(text), 0, text.len(), Some(&mut region), ffi::ONIG_OPTION_NONE);
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
                 black_box(pos);
             });
         });
@@ -162,8 +178,13 @@ fn bench_quantifiers(c: &mut Criterion) {
             let mut region = ffi::CRegion::new();
             b.iter(|| {
                 region.clear();
-                let pos =
-                    c_reg.search(black_box(text), 0, text.len(), Some(&mut region), ffi::ONIG_OPTION_NONE);
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
                 black_box(pos);
             });
         });
@@ -180,7 +201,10 @@ fn bench_alternation(c: &mut Criterion) {
     let cases: &[(&str, &[u8])] = &[
         ("two", b"wolf|wolverine"),
         ("five", b"cat|dog|fox|bear|wolverine"),
-        ("ten", b"alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|wolverine"),
+        (
+            "ten",
+            b"alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|wolverine",
+        ),
         ("nested", b"(cat|dog)|(fox|wolverine)"),
     ];
 
@@ -203,8 +227,13 @@ fn bench_alternation(c: &mut Criterion) {
             let mut region = ffi::CRegion::new();
             b.iter(|| {
                 region.clear();
-                let pos =
-                    c_reg.search(black_box(text), 0, text.len(), Some(&mut region), ffi::ONIG_OPTION_NONE);
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
                 black_box(pos);
             });
         });
@@ -243,8 +272,13 @@ fn bench_backreferences(c: &mut Criterion) {
             let mut region = ffi::CRegion::new();
             b.iter(|| {
                 region.clear();
-                let pos =
-                    c_reg.search(black_box(text), 0, text.len(), Some(&mut region), ffi::ONIG_OPTION_NONE);
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
                 black_box(pos);
             });
         });
@@ -285,8 +319,13 @@ fn bench_lookaround(c: &mut Criterion) {
             let mut region = ffi::CRegion::new();
             b.iter(|| {
                 region.clear();
-                let pos =
-                    c_reg.search(black_box(text), 0, text.len(), Some(&mut region), ffi::ONIG_OPTION_NONE);
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
                 black_box(pos);
             });
         });
@@ -327,8 +366,13 @@ fn bench_unicode_properties(c: &mut Criterion) {
             let mut region = ffi::CRegion::new();
             b.iter(|| {
                 region.clear();
-                let pos =
-                    c_reg.search(black_box(text), 0, text.len(), Some(&mut region), ffi::ONIG_OPTION_NONE);
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
                 black_box(pos);
             });
         });
@@ -354,15 +398,28 @@ fn bench_case_insensitive(c: &mut Criterion) {
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_IGNORECASE);
 
         let (r_pos, _) = onig_search(
-            &r_reg, text, text.len(), 0, text.len(), None, ONIG_OPTION_NONE,
+            &r_reg,
+            text,
+            text.len(),
+            0,
+            text.len(),
+            None,
+            ONIG_OPTION_NONE,
         );
         let c_pos = c_reg.search(text, 0, text.len(), None, ffi::ONIG_OPTION_NONE);
         assert_same_result(r_pos, c_pos, name);
 
         group.bench_with_input(BenchmarkId::new("rust", name), &text[..], |b, text| {
             b.iter(|| {
-                let (pos, _) =
-                    onig_search(&r_reg, black_box(text), text.len(), 0, text.len(), None, ONIG_OPTION_NONE);
+                let (pos, _) = onig_search(
+                    &r_reg,
+                    black_box(text),
+                    text.len(),
+                    0,
+                    text.len(),
+                    None,
+                    ONIG_OPTION_NONE,
+                );
                 black_box(pos);
             });
         });
@@ -370,8 +427,13 @@ fn bench_case_insensitive(c: &mut Criterion) {
             let mut region = ffi::CRegion::new();
             b.iter(|| {
                 region.clear();
-                let pos =
-                    c_reg.search(black_box(text), 0, text.len(), Some(&mut region), ffi::ONIG_OPTION_NONE);
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
                 black_box(pos);
             });
         });
@@ -482,24 +544,20 @@ fn bench_large_text(c: &mut Criterion) {
                 });
             },
         );
-        group.bench_with_input(
-            BenchmarkId::new("c", &label_10k),
-            &text_10k,
-            |b, text| {
-                let mut region = ffi::CRegion::new();
-                b.iter(|| {
-                    region.clear();
-                    let pos = c_reg.search(
-                        black_box(text),
-                        0,
-                        text.len(),
-                        Some(&mut region),
-                        ffi::ONIG_OPTION_NONE,
-                    );
-                    black_box(pos);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("c", &label_10k), &text_10k, |b, text| {
+            let mut region = ffi::CRegion::new();
+            b.iter(|| {
+                region.clear();
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
+                black_box(pos);
+            });
+        });
 
         // 50KB
         let label_50k = format!("{}_50k", name);
@@ -513,24 +571,20 @@ fn bench_large_text(c: &mut Criterion) {
                 });
             },
         );
-        group.bench_with_input(
-            BenchmarkId::new("c", &label_50k),
-            &text_50k,
-            |b, text| {
-                let mut region = ffi::CRegion::new();
-                b.iter(|| {
-                    region.clear();
-                    let pos = c_reg.search(
-                        black_box(text),
-                        0,
-                        text.len(),
-                        Some(&mut region),
-                        ffi::ONIG_OPTION_NONE,
-                    );
-                    black_box(pos);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("c", &label_50k), &text_50k, |b, text| {
+            let mut region = ffi::CRegion::new();
+            b.iter(|| {
+                region.clear();
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
+                black_box(pos);
+            });
+        });
     }
     group.finish();
 }

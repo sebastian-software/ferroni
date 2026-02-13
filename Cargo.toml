@@ -10,7 +10,7 @@ homepage = "https://github.com/sebastian-software/ferroni"
 readme = "README.md"
 keywords = ["regex", "oniguruma", "unicode", "pattern-matching", "simd"]
 categories = ["text-processing", "parsing"]
-rust-version = "1.75"
+rust-version = "1.80"
 exclude = ["oniguruma-orig/", "benches/", "docs/", "scripts/"]
 
 [features]

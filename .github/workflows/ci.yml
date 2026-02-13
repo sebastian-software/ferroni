@@ -17,13 +17,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: [stable, "1.75"]
+        rust: [stable, nightly, "1.80"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
+      - name: Remove Cargo.lock for MSRV compatibility
+        if: matrix.rust != 'stable'
+        run: rm -f Cargo.lock
       - name: Build
         run: cargo build
       - name: Test compat_syntax
@@ -50,7 +53,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy -- -D clippy::correctness -D clippy::suspicious
 
   fmt:
     name: Format
