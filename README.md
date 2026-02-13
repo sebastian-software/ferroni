@@ -133,6 +133,41 @@ onig_new() -> onig_compile()
 | `goto fail` | `goto` chains | `loop + break` or `return Err(...)` |
 | Encodings | 29 encoding files | 2 (ASCII + UTF-8) |
 
+## What's Not Included
+
+**27 of 29 encodings** -- only ASCII and UTF-8 are implemented. This is a
+deliberate design decision; UTF-8 covers the vast majority of use cases.
+EUC-JP, Shift-JIS, UTF-16/32, ISO-8859-x, etc. are not ported.
+
+**POSIX API** (`regcomp`/`regexec`/`regfree`) -- intentionally not ported.
+Rust has no need for the POSIX regex interface.
+
+**Memory management functions** (`onig_free`, `onig_region_free`, etc.) --
+replaced by Rust's `Drop` trait. No manual deallocation needed.
+
+**`onig_new_deluxe` / `onig_new_without_alloc`** -- C-specific allocation
+patterns that don't apply in Rust. Use `onig_new()` instead.
+
+**`onig_unicode_define_user_property`** -- requires a mutable global Unicode
+table at runtime. Not ported; the 886 built-in properties cover all standard
+Unicode categories.
+
+**`onig_copy_encoding`** -- not applicable. In Rust, `OnigEncoding` is a
+`&'static dyn Encoding` trait object reference, not a copyable struct.
+
+**`onig_builtin_skip`** -- conditionally compiled in C behind `USE_SKIP_SEARCH`,
+not enabled by default. Niche optimization for specific search patterns.
+
+**`onig_setup_builtin_monitors_by_ascii_encoded_name`** -- registers debug
+monitors that write to a C `FILE*`. No Rust equivalent; use Rust's own
+tracing/logging instead.
+
+**`onig_get_capture_range_in_callout` / `onig_get_used_stack_size_in_callout`** --
+function signatures are present, but return placeholder values. Full
+implementation requires exposing VM stack internals through `OnigCalloutArgs`,
+which is only relevant when user-defined callouts are dispatched through the
+VM (builtins work via an internal fast path).
+
 ## Documentation
 
 - [`COMPARISON.md`](COMPARISON.md) -- detailed parity status vs. C original
