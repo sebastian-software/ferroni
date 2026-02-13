@@ -17,6 +17,12 @@ cc = { version = "1", optional = true }
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 
+[profile.release]
+lto = "thin"
+
+[profile.bench]
+lto = "thin"
+
 [[bench]]
 name = "onig_bench"
 harness = false

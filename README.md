@@ -195,7 +195,7 @@ processing -- the areas where C Oniguruma's CVEs occurred.
 ## Performance
 
 Criterion benchmarks comparing Ferroni (Rust) against the C original,
-compiled at `-O3`. Run on Apple M4 Pro. Lower is better; **bold** marks the
+compiled at `-O3`. Run on Apple M1 Ultra. Lower is better; **bold** marks the
 faster engine. Ratio >1.0 means Rust is slower.
 
 ```
@@ -207,70 +207,70 @@ cargo bench --features ffi
 | Benchmark | Rust | C | Ratio |
 |-----------|-----:|--:|------:|
 | **Literal match** | | | |
-| exact string | **136 ns** | 151 ns | 0.90 |
-| anchored start | **106 ns** | 147 ns | 0.72 |
-| anchored end | 167 ns | **157 ns** | 1.06 |
-| word boundary | **121 ns** | 153 ns | 0.79 |
+| exact string | **134 ns** | 149 ns | 0.90 |
+| anchored start | **103 ns** | 147 ns | 0.70 |
+| anchored end | 165 ns | **160 ns** | 1.03 |
+| word boundary | **118 ns** | 155 ns | 0.76 |
 | **Quantifiers** | | | |
-| greedy | **217 ns** | 259 ns | 0.84 |
-| lazy | **193 ns** | 211 ns | 0.91 |
-| possessive | **191 ns** | 230 ns | 0.83 |
-| nested | **180 ns** | 226 ns | 0.80 |
+| greedy | **222 ns** | 257 ns | 0.86 |
+| lazy | **194 ns** | 222 ns | 0.87 |
+| possessive | **189 ns** | 235 ns | 0.80 |
+| nested | **180 ns** | 234 ns | 0.77 |
 | **Alternation** | | | |
-| 2 branches | **106 ns** | 152 ns | 0.70 |
-| 5 branches | **121 ns** | 170 ns | 0.71 |
-| 10 branches | 237 ns | **218 ns** | 1.09 |
-| nested | **128 ns** | 173 ns | 0.74 |
+| 2 branches | **106 ns** | 153 ns | 0.69 |
+| 5 branches | **118 ns** | 186 ns | 0.64 |
+| 10 branches | 255 ns | **223 ns** | 1.14 |
+| nested | **125 ns** | 176 ns | 0.71 |
 | **Backreferences** | | | |
-| simple `(\w+) \1` | **149 ns** | 188 ns | 0.79 |
-| nested | **154 ns** | 191 ns | 0.81 |
-| named | **148 ns** | 187 ns | 0.79 |
+| simple `(\w+) \1` | **143 ns** | 188 ns | 0.76 |
+| nested | **148 ns** | 201 ns | 0.74 |
+| named | **143 ns** | 189 ns | 0.76 |
 | **Lookaround** | | | |
-| positive lookahead | **127 ns** | 159 ns | 0.80 |
-| negative lookahead | **138 ns** | 178 ns | 0.78 |
-| positive lookbehind | 279 ns | **257 ns** | 1.09 |
-| negative lookbehind | 353 ns | **326 ns** | 1.08 |
-| combined | 301 ns | **280 ns** | 1.08 |
+| positive lookahead | **124 ns** | 163 ns | 0.76 |
+| negative lookahead | **137 ns** | 179 ns | 0.77 |
+| positive lookbehind | 276 ns | **264 ns** | 1.05 |
+| negative lookbehind | 353 ns | **332 ns** | 1.06 |
+| combined | 299 ns | **286 ns** | 1.05 |
 | **Unicode properties** | | | |
 | `\p{Lu}+` | **93 ns** | 143 ns | 0.65 |
-| `\p{Letter}+` | **128 ns** | 172 ns | 0.74 |
-| `\p{Greek}+` | 339 ns | **240 ns** | 1.41 |
-| `\p{Cyrillic}+` | 469 ns | **332 ns** | 1.41 |
+| `\p{Letter}+` | **126 ns** | 170 ns | 0.74 |
+| `\p{Greek}+` | 320 ns | **239 ns** | 1.34 |
+| `\p{Cyrillic}+` | 435 ns | **324 ns** | 1.34 |
 | **Case-insensitive** | | | |
-| single word | **107 ns** | 154 ns | 0.69 |
-| phrase | **160 ns** | 186 ns | 0.86 |
-| alternation | **114 ns** | 154 ns | 0.74 |
+| single word | **106 ns** | 154 ns | 0.69 |
+| phrase | **161 ns** | 185 ns | 0.87 |
+| alternation | **112 ns** | 157 ns | 0.71 |
 | **Named captures** | | | |
-| date extraction | 456 ns | **273 ns** | 1.67 |
+| date extraction | 454 ns | **272 ns** | 1.67 |
 | **Large text (first match)** | | | |
-| literal 10 KB | **113 ns** | 143 ns | 0.79 |
-| literal 50 KB | **113 ns** | 143 ns | 0.79 |
-| timestamp 10 KB | 235 ns | **174 ns** | 1.35 |
-| timestamp 50 KB | 235 ns | **178 ns** | 1.32 |
-| field extract 10 KB | **159 ns** | 168 ns | 0.95 |
-| field extract 50 KB | **159 ns** | 170 ns | 0.93 |
-| no match 10 KB | **375 ns** | 1.9 µs | 0.20 |
+| literal 10 KB | **112 ns** | 147 ns | 0.76 |
+| literal 50 KB | **112 ns** | 142 ns | 0.79 |
+| timestamp 10 KB | 230 ns | **180 ns** | 1.28 |
+| timestamp 50 KB | 230 ns | **179 ns** | 1.28 |
+| field extract 10 KB | **160 ns** | 176 ns | 0.91 |
+| field extract 50 KB | **158 ns** | 173 ns | 0.91 |
+| no match 10 KB | **381 ns** | 1.9 µs | 0.20 |
 | no match 50 KB | **1.5 µs** | 9.3 µs | 0.16 |
 | **RegSet** | | | |
-| position-lead (5 patterns) | **149 ns** | 399 ns | 0.37 |
-| regex-lead (5 patterns) | **162 ns** | 237 ns | 0.68 |
+| position-lead (5 patterns) | **148 ns** | 389 ns | 0.38 |
+| regex-lead (5 patterns) | **162 ns** | 234 ns | 0.69 |
 | **Match at position** | | | |
-| `\d+` at offset 4 | **118 ns** | 155 ns | 0.76 |
+| `\d+` at offset 4 | **117 ns** | 152 ns | 0.77 |
 
 ### Regex Compilation
 
 | Pattern | Rust | C | Ratio |
 |---------|-----:|--:|------:|
-| literal | **436 ns** | 452 ns | 0.96 |
-| `.*` | 779 ns | **522 ns** | 1.49 |
-| alternation | 1,761 ns | **1,410 ns** | 1.25 |
-| char class | 656 ns | **628 ns** | 1.04 |
-| quantifier | 1,385 ns | **1,031 ns** | 1.34 |
-| group | 1,060 ns | **780 ns** | 1.36 |
-| backref | 1,636 ns | **973 ns** | 1.68 |
-| lookahead | 762 ns | **478 ns** | 1.59 |
-| lookbehind | 709 ns | **542 ns** | 1.31 |
-| named capture | 47,563 ns | **5,740 ns** | 8.29 |
+| literal | **429 ns** | 466 ns | 0.92 |
+| `.*` | 769 ns | **532 ns** | 1.45 |
+| alternation | 1,791 ns | **1,449 ns** | 1.24 |
+| char class | 673 ns | **636 ns** | 1.06 |
+| quantifier | 1,403 ns | **1,049 ns** | 1.34 |
+| group | 1,076 ns | **786 ns** | 1.37 |
+| backref | 1,631 ns | **967 ns** | 1.69 |
+| lookahead | 763 ns | **482 ns** | 1.58 |
+| lookbehind | 721 ns | **552 ns** | 1.31 |
+| named capture | 46,849 ns | **5,751 ns** | 8.15 |
 
 ### Analysis
 
@@ -279,7 +279,8 @@ benchmarks are 10-30% faster than C. Quantifiers, backreferences,
 case-insensitive matching, and RegSet searches all show consistent gains.
 The likely explanation is Rust's `Vec<Operation>` layout (contiguous,
 predictable) vs. C's pointer-chased operation arrays giving better cache
-behavior in the VM loop.
+behavior in the VM loop. Thin LTO enables cross-module inlining (e.g.
+Unicode table lookups) without the I-cache pressure of full LTO.
 
 **SIMD-accelerated forward search** is the standout result. The
 `memchr` crate replaces hand-written byte loops in the search pipeline
@@ -287,7 +288,7 @@ with SIMD-vectorized scans (SSE2/AVX2 on x86-64, NEON on aarch64). The
 impact is most visible in full-text no-match scanning, where the engine
 must scan the entire haystack without finding a literal prefix:
 
-- **no match 10 KB: 5.0x faster than C** (375 ns vs 1.9 µs)
+- **no match 10 KB: 4.9x faster than C** (381 ns vs 1.9 µs)
 - **no match 50 KB: 6.1x faster than C** (1.5 µs vs 9.3 µs)
 
 **Where C wins:** No execution benchmark exceeds 1.67x. The remaining
@@ -297,16 +298,16 @@ gaps are:
    overhead from region ownership semantics (move in/out of search
    function) that C avoids with simple pointer passing.
 
-2. **Script-specific Unicode properties (1.41x)** -- `\p{Greek}`
-   and `\p{Cyrillic}` have overhead from Rust's bounds checking in the
-   codepoint classification inner loop.
+2. **Script-specific Unicode properties (1.34x)** -- `\p{Greek}`
+   and `\p{Cyrillic}` have residual overhead from Rust's bounds checking
+   in the codepoint classification inner loop.
 
-3. **Timestamp extraction (1.32-1.35x)** -- character-class map search
+3. **Timestamp extraction (1.28x)** -- character-class map search
    for `\d` first-byte; C's byte-by-byte loop with the 256-entry map
    is hard to beat when the set has > 3 distinct bytes (SIMD dispatch
    only covers 1-3 byte sets).
 
-4. **Lookbehind (1.08-1.09x)** -- effectively at parity with C.
+4. **Lookbehind (1.05-1.06x)** -- effectively at parity with C.
 
 **Compilation** is 1.2-1.7x slower across the board, with a notable 8x
 outlier on named captures. The Rust compiler pipeline allocates more
