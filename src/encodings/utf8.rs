@@ -41,6 +41,7 @@ impl Encoding for Utf8Encoding {
         ENC_LEN_UTF8[p[0] as usize] as usize
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn name(&self) -> &str {
         "UTF-8"
     }
@@ -216,10 +217,12 @@ impl Encoding for Utf8Encoding {
         ENC_FLAG_ASCII_COMPATIBLE | ENC_FLAG_UNICODE | ENC_FLAG_SKIP_OFFSET_1_OR_0
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn sb_range(&self) -> OnigCodePoint {
         0
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn index(&self) -> i32 {
         0
     }

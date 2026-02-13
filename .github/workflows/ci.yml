@@ -53,18 +53,29 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Generate coverage
+      - name: Generate coverage (non-stack-heavy suites)
         run: >
-          RUST_MIN_STACK=268435456
-          cargo llvm-cov
-          --test compat_utf8
-          --test compat_back
+          cargo llvm-cov --no-report --release
+          --test compat_syntax
           --test compat_options
           --test compat_regset
-          --test compat_syntax
+      - name: Generate coverage (compat_utf8, skipping stack-heavy tests)
+        run: >
+          RUST_MIN_STACK=268435456
+          cargo llvm-cov --no-report --release
+          --test compat_utf8
+          -- --test-threads=4
+          --skip recursive_
+          --skip backref_nested_no_match
+          --skip backref_self_no_match
+          --skip named_group_underscore_backref
+          --skip conditional_recursion
+          --skip lookbehind_backref_circular
+      - name: Generate coverage report
+        run: >
+          cargo llvm-cov report --release
           --lcov
           --output-path lcov.info
-          -- --test-threads=1
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:

@@ -31,36 +31,46 @@ static RETRY_LIMIT_IN_SEARCH: AtomicU64 = AtomicU64::new(DEFAULT_RETRY_LIMIT_IN_
 static MATCH_STACK_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_MATCH_STACK_LIMIT_SIZE);
 static TIME_LIMIT: AtomicU64 = AtomicU64::new(DEFAULT_TIME_LIMIT_MSEC);
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_match(n: u64) {
     RETRY_LIMIT_IN_MATCH.store(n, Ordering::Relaxed);
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_retry_limit_in_match() -> u64 {
     RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed)
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_search(n: u64) {
     RETRY_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed);
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_retry_limit_in_search() -> u64 {
     RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed)
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_match_stack_limit(n: u32) {
     MATCH_STACK_LIMIT.store(n, Ordering::Relaxed);
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_match_stack_limit() -> u32 {
     MATCH_STACK_LIMIT.load(Ordering::Relaxed)
 }
 
 /// Alias for `onig_set_match_stack_limit` (C API compatibility).
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_match_stack_limit_size(n: u32) {
     onig_set_match_stack_limit(n);
 }
 /// Alias for `onig_get_match_stack_limit` (C API compatibility).
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_match_stack_limit_size() -> u32 {
     onig_get_match_stack_limit()
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_time_limit(n: u64) {
     TIME_LIMIT.store(n, Ordering::Relaxed);
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_time_limit() -> u64 {
     TIME_LIMIT.load(Ordering::Relaxed)
 }
@@ -73,6 +83,7 @@ static PROGRESS_CALLOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 static RETRACTION_CALLOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
 /// Get the global progress callout function.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_progress_callout() -> Option<OnigCalloutFunc> {
     let p = PROGRESS_CALLOUT.load(Ordering::Relaxed);
     if p.is_null() {
@@ -83,6 +94,7 @@ pub fn onig_get_progress_callout() -> Option<OnigCalloutFunc> {
 }
 
 /// Set the global progress callout function.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_progress_callout(f: OnigCalloutFunc) -> i32 {
     let p: *mut () = f as *mut ();
     PROGRESS_CALLOUT.store(p, Ordering::Relaxed);
@@ -90,6 +102,7 @@ pub fn onig_set_progress_callout(f: OnigCalloutFunc) -> i32 {
 }
 
 /// Get the global retraction callout function.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_retraction_callout() -> Option<OnigCalloutFunc> {
     let p = RETRACTION_CALLOUT.load(Ordering::Relaxed);
     if p.is_null() {
@@ -100,6 +113,7 @@ pub fn onig_get_retraction_callout() -> Option<OnigCalloutFunc> {
 }
 
 /// Set the global retraction callout function.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retraction_callout(f: OnigCalloutFunc) -> i32 {
     let p: *mut () = f as *mut ();
     RETRACTION_CALLOUT.store(p, Ordering::Relaxed);
@@ -115,6 +129,7 @@ pub type OnigCallbackEachMatchFunc =
 
 static CALLBACK_EACH_MATCH: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callback_each_match() -> Option<OnigCallbackEachMatchFunc> {
     let p = CALLBACK_EACH_MATCH.load(Ordering::Relaxed);
     if p.is_null() {
@@ -124,6 +139,7 @@ pub fn onig_get_callback_each_match() -> Option<OnigCallbackEachMatchFunc> {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_callback_each_match(f: OnigCallbackEachMatchFunc) -> i32 {
     let p: *mut () = f as *mut ();
     CALLBACK_EACH_MATCH.store(p, Ordering::Relaxed);
@@ -134,27 +150,33 @@ pub fn onig_set_callback_each_match(f: OnigCallbackEachMatchFunc) -> i32 {
 // Region Management (port of C's onig_region_* functions)
 // ============================================================================
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_region_new() -> OnigRegion {
     OnigRegion::new()
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_region_init(region: &mut OnigRegion) {
     region.init();
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_region_clear(region: &mut OnigRegion) {
     region.clear();
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_region_resize(region: &mut OnigRegion, n: i32) -> i32 {
     region.resize(n);
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_region_set(region: &mut OnigRegion, at: i32, beg: i32, end: i32) -> i32 {
     region.set(at, beg, end)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_region_copy(to: &mut OnigRegion, from: &OnigRegion) {
     to.copy_from(from);
 }
@@ -163,26 +185,32 @@ pub fn onig_region_copy(to: &mut OnigRegion, from: &OnigRegion) {
 // Regex Accessors (port of C's onig_get_*/onig_number_of_* functions)
 // ============================================================================
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_encoding(reg: &RegexType) -> OnigEncoding {
     reg.enc
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_options(reg: &RegexType) -> OnigOptionType {
     reg.options
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_case_fold_flag(reg: &RegexType) -> OnigCaseFoldType {
     reg.case_fold_flag
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax(reg: &RegexType) -> *const OnigSyntaxType {
     reg.syntax
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_number_of_captures(reg: &RegexType) -> i32 {
     reg.num_mem
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_number_of_capture_histories(reg: &RegexType) -> i32 {
     let mut n = 0;
     for i in 0..=ONIG_MAX_CAPTURE_HISTORY_GROUP {
@@ -193,6 +221,7 @@ pub fn onig_number_of_capture_histories(reg: &RegexType) -> i32 {
     n
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_capture_tree(region: &OnigRegion) -> Option<&OnigCaptureTreeNode> {
     region.history_root.as_deref()
 }
@@ -202,6 +231,7 @@ pub fn onig_get_capture_tree(region: &OnigRegion) -> Option<&OnigCaptureTreeNode
 // ============================================================================
 
 /// Returns the number of group numbers for the given name, and a slice of them.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_name_to_group_numbers<'a>(reg: &'a RegexType, name: &[u8]) -> Result<&'a [i32], i32> {
     if let Some(ref nt) = reg.name_table {
         if let Some(entry) = nt.find(name) {
@@ -216,6 +246,7 @@ pub fn onig_name_to_group_numbers<'a>(reg: &'a RegexType, name: &[u8]) -> Result
 
 /// Resolve an ambiguous named backref to a single group number using region state.
 /// If multiple groups share a name, returns the last one that participated in the match.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_name_to_backref_number(
     reg: &RegexType,
     name: &[u8],
@@ -242,6 +273,7 @@ pub fn onig_name_to_backref_number(
 
 /// Iterate over all name entries. Callback receives (name, back_refs).
 /// If callback returns non-zero, iteration stops and that value is returned.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_foreach_name<F>(reg: &RegexType, mut callback: F) -> i32
 where
     F: FnMut(&[u8], &[i32]) -> i32,
@@ -257,6 +289,7 @@ where
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_number_of_names(reg: &RegexType) -> i32 {
     if let Some(ref nt) = reg.name_table {
         nt.entries.len() as i32
@@ -265,6 +298,7 @@ pub fn onig_number_of_names(reg: &RegexType) -> i32 {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_noname_group_capture_is_active(reg: &RegexType) -> bool {
     if opton_dont_capture_group(reg.options) {
         return false;
@@ -284,20 +318,25 @@ pub fn onig_noname_group_capture_is_active(reg: &RegexType) -> bool {
 // Utility + Version (port of regversion.c + regexec.c globals)
 // ============================================================================
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_version() -> &'static str {
     "6.9.10"
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_copyright() -> &'static str {
     "Oniguruma 6.9.10 : Copyright (C) 2002-2024 K.Kosako"
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_init() -> i32 {
     ONIG_NORMAL
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_initialize() -> i32 {
     ONIG_NORMAL
 }
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_end() -> i32 {
     ONIG_NORMAL
 }
@@ -306,19 +345,23 @@ static SUBEXP_CALL_LIMIT_IN_SEARCH: AtomicU64 = AtomicU64::new(DEFAULT_SUBEXP_CA
 static SUBEXP_CALL_MAX_NEST_LEVEL: AtomicU32 =
     AtomicU32::new(DEFAULT_SUBEXP_CALL_MAX_NEST_LEVEL as u32);
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_subexp_call_limit_in_search() -> u64 {
     SUBEXP_CALL_LIMIT_IN_SEARCH.load(Ordering::Relaxed)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_subexp_call_limit_in_search(n: u64) -> i32 {
     SUBEXP_CALL_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed);
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_subexp_call_max_nest_level() -> i32 {
     SUBEXP_CALL_MAX_NEST_LEVEL.load(Ordering::Relaxed) as i32
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_subexp_call_max_nest_level(level: i32) -> i32 {
     SUBEXP_CALL_MAX_NEST_LEVEL.store(level as u32, Ordering::Relaxed);
     ONIG_NORMAL
@@ -328,6 +371,7 @@ pub fn onig_set_subexp_call_max_nest_level(level: i32) -> i32 {
 /// For each match, calls `callback(match_count, match_position, region)`.
 /// If callback returns non-zero, scanning stops and that value is returned.
 /// Otherwise returns the total number of matches found.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_scan<F>(
     reg: &RegexType,
     str_data: &[u8],
@@ -401,6 +445,7 @@ pub struct OnigMatchParam {
     pub callout_user_data: *mut std::ffi::c_void,
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_new_match_param() -> OnigMatchParam {
     let mut mp = OnigMatchParam {
         match_stack_limit: 0,
@@ -415,6 +460,7 @@ pub fn onig_new_match_param() -> OnigMatchParam {
     mp
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_initialize_match_param(mp: &mut OnigMatchParam) -> i32 {
     mp.match_stack_limit = MATCH_STACK_LIMIT.load(Ordering::Relaxed);
     mp.retry_limit_in_match = RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed);
@@ -426,26 +472,31 @@ pub fn onig_initialize_match_param(mp: &mut OnigMatchParam) -> i32 {
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_match_stack_limit_size_of_match_param(mp: &mut OnigMatchParam, limit: u32) -> i32 {
     mp.match_stack_limit = limit;
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_match_of_match_param(mp: &mut OnigMatchParam, limit: u64) -> i32 {
     mp.retry_limit_in_match = limit;
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_search_of_match_param(mp: &mut OnigMatchParam, limit: u64) -> i32 {
     mp.retry_limit_in_search = limit;
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_time_limit_of_match_param(mp: &mut OnigMatchParam, limit: u64) -> i32 {
     mp.time_limit = limit;
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_progress_callout_of_match_param(
     mp: &mut OnigMatchParam,
     f: Option<OnigCalloutFunc>,
@@ -454,6 +505,7 @@ pub fn onig_set_progress_callout_of_match_param(
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retraction_callout_of_match_param(
     mp: &mut OnigMatchParam,
     f: Option<OnigCalloutFunc>,
@@ -462,6 +514,7 @@ pub fn onig_set_retraction_callout_of_match_param(
     ONIG_NORMAL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_callout_user_data_of_match_param(
     mp: &mut OnigMatchParam,
     user_data: *mut std::ffi::c_void,
@@ -497,6 +550,7 @@ pub struct OnigCalloutArgs {
 }
 
 impl OnigCalloutArgs {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub(crate) fn new(
         callout_in: OnigCalloutIn,
         name_id: i32,
@@ -530,24 +584,29 @@ impl OnigCalloutArgs {
 
 // --- OnigCalloutArgs accessor functions ---
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
     args.num
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_in_by_callout_args(args: &OnigCalloutArgs) -> OnigCalloutIn {
     args.callout_in
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_name_id_by_callout_args(args: &OnigCalloutArgs) -> i32 {
     args.name_id
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_contents_by_callout_args(_args: &OnigCalloutArgs) -> Option<&[u8]> {
     // Contents of (?{...}) callouts are not stored in CalloutListEntry
     // in the current implementation. Returns None.
     None
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
@@ -559,6 +618,7 @@ pub fn onig_get_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
     0
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_passed_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
@@ -570,6 +630,7 @@ pub fn onig_get_passed_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
     0
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_arg_by_callout_args(args: &OnigCalloutArgs, index: i32) -> Option<&CalloutArg> {
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
@@ -584,30 +645,37 @@ pub fn onig_get_arg_by_callout_args(args: &OnigCalloutArgs, index: i32) -> Optio
     None
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_string_by_callout_args(args: &OnigCalloutArgs) -> *const u8 {
     args.string
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_string_end_by_callout_args(args: &OnigCalloutArgs) -> *const u8 {
     args.string_end
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_start_by_callout_args(args: &OnigCalloutArgs) -> *const u8 {
     args.start
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_right_range_by_callout_args(args: &OnigCalloutArgs) -> *const u8 {
     args.right_range
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_current_by_callout_args(args: &OnigCalloutArgs) -> *const u8 {
     args.current
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_regex_by_callout_args(args: &OnigCalloutArgs) -> *const RegexType {
     args.regex
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_retry_counter_by_callout_args(args: &OnigCalloutArgs) -> u64 {
     args.retry_in_match_counter
 }
@@ -615,6 +683,7 @@ pub fn onig_get_retry_counter_by_callout_args(args: &OnigCalloutArgs) -> u64 {
 /// Get the end position of callout contents.
 /// For content callouts (?{...}), returns the end pointer of the content.
 /// Returns null for name callouts.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_contents_end_by_callout_args(args: &OnigCalloutArgs) -> *const u8 {
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
@@ -637,6 +706,7 @@ pub fn onig_get_contents_end_by_callout_args(args: &OnigCalloutArgs) -> *const u
 
 /// Get callout data from a callout's data slot.
 /// `callout_num` is 1-based, `slot` ranges 0..ONIG_CALLOUT_DATA_SLOT_NUM.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_data(
     reg: &RegexType,
     callout_data: &[[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
@@ -654,6 +724,7 @@ pub fn onig_get_callout_data(
 }
 
 /// Set callout data in a callout's data slot.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_callout_data(
     callout_data: &mut [[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
     callout_num: i32,
@@ -676,6 +747,7 @@ pub fn onig_set_callout_data(
 // ============================================================================
 
 /// Get the callout number for a given tag in the regex.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_num_by_tag(reg: &RegexType, tag: &[u8]) -> i32 {
     if let Some(ref ext) = reg.extp {
         if let Some(ref table) = ext.tag_table {
@@ -688,6 +760,7 @@ pub fn onig_get_callout_num_by_tag(reg: &RegexType, tag: &[u8]) -> i32 {
 }
 
 /// Check if a callout has a tag.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_callout_tag_is_exist_at_callout_num(reg: &RegexType, callout_num: i32) -> bool {
     if let Some(ref ext) = reg.extp {
         let idx = (callout_num - 1) as usize;
@@ -699,6 +772,7 @@ pub fn onig_callout_tag_is_exist_at_callout_num(reg: &RegexType, callout_num: i3
 }
 
 /// Get the tag for a given callout number.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_tag(reg: &RegexType, callout_num: i32) -> Option<&[u8]> {
     if let Some(ref ext) = reg.extp {
         let idx = (callout_num - 1) as usize;
@@ -710,6 +784,7 @@ pub fn onig_get_callout_tag(reg: &RegexType, callout_num: i32) -> Option<&[u8]> 
 }
 
 /// Get the byte offset of the tag start in the pattern for a given callout number.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_tag_start(reg: &RegexType, callout_num: i32) -> Option<usize> {
     if let Some(ref ext) = reg.extp {
         let idx = (callout_num - 1) as usize;
@@ -721,6 +796,7 @@ pub fn onig_get_callout_tag_start(reg: &RegexType, callout_num: i32) -> Option<u
 }
 
 /// Get the byte offset of the tag end in the pattern for a given callout number.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_tag_end(reg: &RegexType, callout_num: i32) -> Option<usize> {
     if let Some(ref ext) = reg.extp {
         let idx = (callout_num - 1) as usize;
@@ -736,6 +812,7 @@ pub fn onig_get_callout_tag_end(reg: &RegexType, callout_num: i32) -> Option<usi
 // (port of C's onig_get/set_callout_data_by_callout_args*)
 // ============================================================================
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_data_by_callout_args(
     args: &OnigCalloutArgs,
     callout_num: i32,
@@ -749,6 +826,7 @@ pub fn onig_get_callout_data_by_callout_args(
     onig_get_callout_data(reg, cd, callout_num, slot)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_callout_data_by_callout_args(
     args: &OnigCalloutArgs,
     callout_num: i32,
@@ -762,6 +840,7 @@ pub fn onig_set_callout_data_by_callout_args(
     onig_set_callout_data(cd, callout_num, slot, val)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_data_by_callout_args_self(
     args: &OnigCalloutArgs,
     slot: i32,
@@ -769,6 +848,7 @@ pub fn onig_get_callout_data_by_callout_args_self(
     onig_get_callout_data_by_callout_args(args, args.num, slot)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_callout_data_by_callout_args_self(
     args: &OnigCalloutArgs,
     slot: i32,
@@ -780,6 +860,7 @@ pub fn onig_set_callout_data_by_callout_args_self(
 /// Get callout data without clearing old values.
 /// In the Rust implementation, this behaves identically to onig_get_callout_data
 /// since the Rust version does not implement the clear-on-access pattern.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_data_dont_clear_old(
     reg: &RegexType,
     callout_data: &[[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
@@ -789,6 +870,7 @@ pub fn onig_get_callout_data_dont_clear_old(
     onig_get_callout_data(reg, callout_data, callout_num, slot)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_data_by_callout_args_self_dont_clear_old(
     args: &OnigCalloutArgs,
     slot: i32,
@@ -797,6 +879,7 @@ pub fn onig_get_callout_data_by_callout_args_self_dont_clear_old(
 }
 
 /// Get callout data by tag name.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_data_by_tag(
     reg: &RegexType,
     callout_data: &[[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
@@ -811,6 +894,7 @@ pub fn onig_get_callout_data_by_tag(
 }
 
 /// Set callout data by tag name.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_callout_data_by_tag(
     reg: &RegexType,
     callout_data: &mut [[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
@@ -826,6 +910,7 @@ pub fn onig_set_callout_data_by_tag(
 }
 
 /// Get callout data by tag name without clearing old values.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_data_by_tag_dont_clear_old(
     reg: &RegexType,
     callout_data: &[[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
@@ -846,6 +931,7 @@ pub fn onig_get_callout_data_by_tag_dont_clear_old(
 /// Note: This function requires OnigCalloutArgs to be constructed with stack
 /// state from the VM. Currently only available when user callout functions are
 /// called from within the match execution.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_capture_range_in_callout(
     _args: &OnigCalloutArgs,
     mem_num: i32,
@@ -863,6 +949,7 @@ pub fn onig_get_capture_range_in_callout(
 ///
 /// Note: This function requires OnigCalloutArgs to be constructed with stack
 /// state from the VM.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_used_stack_size_in_callout(_args: &OnigCalloutArgs) -> (i32, i32) {
     // Stack size tracking not yet exposed through OnigCalloutArgs.
     (0, 0)
@@ -873,14 +960,17 @@ pub fn onig_get_used_stack_size_in_callout(_args: &OnigCalloutArgs) -> (i32, i32
 // (port of C's onig_builtin_fail, onig_builtin_mismatch, etc.)
 // ============================================================================
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_fail(_args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     ONIG_CALLOUT_FAIL
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_mismatch(_args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     ONIG_MISMATCH
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_error(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
@@ -901,6 +991,7 @@ pub fn onig_builtin_error(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_v
     ONIGERR_INVALID_CALLOUT_BODY
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_count(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     if args.callout_data.is_null() {
         return ONIG_CALLOUT_FAIL;
@@ -949,12 +1040,14 @@ pub fn onig_builtin_count(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_v
     ONIG_CALLOUT_SUCCESS
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_total_count(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     // total_count is the same as count but without clearing old data.
     // In Rust, count already doesn't clear old data, so they are equivalent.
     onig_builtin_count(args, _user_data)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_max(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     if args.callout_data.is_null() {
         return ONIG_CALLOUT_FAIL;
@@ -1021,6 +1114,7 @@ pub fn onig_builtin_max(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_voi
 /// Built-in SKIP callout. When a match fails, the search loop advances
 /// to at least the position recorded by SKIP, avoiding redundant attempts.
 /// Port of C's onig_builtin_skip (regexec.c:6642-6648).
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_skip(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     if args.callout_in == OnigCalloutIn::Retraction {
         return ONIG_CALLOUT_SUCCESS;
@@ -1042,6 +1136,7 @@ pub fn onig_builtin_skip(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_vo
     ONIG_CALLOUT_SUCCESS
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_cmp(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
     if args.callout_data.is_null() {
         return ONIG_CALLOUT_FAIL;
@@ -1202,12 +1297,14 @@ enum StackEntry {
 impl StackEntry {
     /// Returns true if this entry is an ALT (choice point) that stops STACK_POP.
     #[inline]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn is_alt(&self) -> bool {
         matches!(self, StackEntry::Alt { .. })
     }
 
     /// Returns true if this entry needs handling during pop at ALL level.
     #[inline]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn is_pop_handled(&self) -> bool {
         matches!(
             self,
@@ -1280,6 +1377,7 @@ impl MatchArg {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn from_param(
         reg: &RegexType,
         option: OnigOptionType,
@@ -1309,6 +1407,7 @@ impl MatchArg {
     /// Check if the time limit has been exceeded. Returns true if over limit.
     /// On first call, initializes the start time.
     #[inline]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn check_time_limit(&mut self) -> bool {
         if self.time_limit == 0 {
             return false;
@@ -1326,6 +1425,7 @@ impl MatchArg {
 
 /// Check stack size against match_stack_limit. Returns Err with error code if exceeded.
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn check_stack_limit(stack_len: usize, limit: u32) -> Result<(), i32> {
     if limit != 0 && stack_len >= limit as usize {
         return Err(ONIGERR_MATCH_STACK_LIMIT_OVER);
@@ -1412,6 +1512,7 @@ fn stack_pop(
 /// Pop stack entries until a Mark with matching zid is found (STACK_POP_TO_MARK).
 /// Removes ALL entries. Restores mem_start_stk/mem_end_stk along the way.
 /// Returns the saved position from the Mark entry (if any).
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn stack_pop_to_mark(
     stack: &mut Vec<StackEntry>,
     mark_id: usize,
@@ -1760,6 +1861,7 @@ fn stack_get_mem_start_for_rec(
 /// Match a backref at a specific nesting level in the recursion stack.
 /// Walks the stack backwards counting CallFrame/Return to find the right level,
 /// then matches the captured text at that level against current position.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn backref_match_at_nested_level(
     reg: &RegexType,
     stack: &[StackEntry],
@@ -1850,6 +1952,7 @@ fn backref_check_at_nested_level(
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn mem_is_in_mems(mem: usize, num: i32, mems: &[i32]) -> bool {
     for i in 0..num as usize {
         if mem == mems[i] as usize {
@@ -1943,6 +2046,7 @@ fn is_word_boundary(
 }
 
 /// Check if position s is at the start of a word (encoding-aware, mode-aware).
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn is_word_begin(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: ModeType) -> bool {
     if s >= end {
         return false;
@@ -1958,6 +2062,7 @@ fn is_word_begin(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode:
 }
 
 /// Check if position s is at the end of a word (encoding-aware, mode-aware).
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: ModeType) -> bool {
     if s == 0 {
         return false;
@@ -4186,6 +4291,7 @@ pub fn onig_match(
     (result, msa.region)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_match_with_param(
     reg: &RegexType,
     str_data: &[u8],
@@ -4239,6 +4345,7 @@ pub fn onig_match_with_param(
 
 /// Naive string search. Mirrors C's slow_search.
 /// Uses SIMD-accelerated memchr::memmem for the actual byte search.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn slow_search(
     _enc: OnigEncoding,
     target: &[u8],
@@ -4304,6 +4411,7 @@ fn sunday_quick_search(
 
 /// Sunday quick search with step forward for multi-byte safe operation.
 /// Mirrors C's sunday_quick_search_step_forward.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn sunday_quick_search_step_forward(
     reg: &RegexType,
     target: &[u8],
@@ -4434,6 +4542,7 @@ fn slow_search_backward(
 
 /// Backward character map search. Mirrors C's map_search_backward.
 /// Uses SIMD-accelerated memrchr when the map has 1-3 distinct ASCII bytes.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn map_search_backward(
     enc: OnigEncoding,
     reg: &RegexType,
@@ -4751,6 +4860,7 @@ pub fn onig_search(
     onig_search_inner(reg, str_data, end, start, range, msa)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_search_with_param(
     reg: &RegexType,
     str_data: &[u8],

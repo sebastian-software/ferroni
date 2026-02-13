@@ -135,6 +135,7 @@ pub struct BBuf {
 }
 
 impl BBuf {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn new() -> Self {
         BBuf { data: Vec::new() }
     }
@@ -145,18 +146,22 @@ impl BBuf {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn used(&self) -> usize {
         self.data.len()
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn write(&mut self, bytes: &[u8]) {
         self.data.extend_from_slice(bytes);
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn write_u32(&mut self, val: u32) {
         self.data.extend_from_slice(&val.to_ne_bytes());
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn clone_from(other: &BBuf) -> Self {
         BBuf {
             data: other.data.clone(),
@@ -165,6 +170,7 @@ impl BBuf {
 }
 
 impl Default for BBuf {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn default() -> Self {
         Self::new()
     }
@@ -231,6 +237,7 @@ impl Node {
     }
 
     // Body access (only Quant, Bag, Anchor, Call have body)
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn body(&self) -> Option<&Node> {
         match &self.inner {
             NodeInner::Quant(n) => n.body.as_ref().map(|b| b.as_ref()),
@@ -249,6 +256,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn body_mut(&mut self) -> Option<&mut Node> {
         match &mut self.inner {
             NodeInner::Quant(n) => n.body.as_mut().map(|b| b.as_mut()),
@@ -308,6 +316,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_ctype(&self) -> Option<&CtypeNode> {
         match &self.inner {
             NodeInner::CType(n) => Some(n),
@@ -315,6 +324,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_quant(&self) -> Option<&QuantNode> {
         match &self.inner {
             NodeInner::Quant(n) => Some(n),
@@ -322,6 +332,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_quant_mut(&mut self) -> Option<&mut QuantNode> {
         match &mut self.inner {
             NodeInner::Quant(n) => Some(n),
@@ -336,6 +347,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_bag_mut(&mut self) -> Option<&mut BagNode> {
         match &mut self.inner {
             NodeInner::Bag(n) => Some(n),
@@ -343,6 +355,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_anchor(&self) -> Option<&AnchorNode> {
         match &self.inner {
             NodeInner::Anchor(n) => Some(n),
@@ -357,6 +370,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_backref(&self) -> Option<&BackRefNode> {
         match &self.inner {
             NodeInner::BackRef(n) => Some(n),
@@ -364,6 +378,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_backref_mut(&mut self) -> Option<&mut BackRefNode> {
         match &mut self.inner {
             NodeInner::BackRef(n) => Some(n),
@@ -378,6 +393,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_cons_mut(&mut self) -> Option<&mut ConsAltNode> {
         match &mut self.inner {
             NodeInner::List(n) | NodeInner::Alt(n) => Some(n),
@@ -385,6 +401,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_call(&self) -> Option<&CallNode> {
         match &self.inner {
             NodeInner::Call(n) => Some(n),
@@ -392,6 +409,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_call_mut(&mut self) -> Option<&mut CallNode> {
         match &mut self.inner {
             NodeInner::Call(n) => Some(n),
@@ -399,6 +417,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_gimmick(&self) -> Option<&GimmickNode> {
         match &self.inner {
             NodeInner::Gimmick(n) => Some(n),
@@ -406,6 +425,7 @@ impl Node {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_gimmick_mut(&mut self) -> Option<&mut GimmickNode> {
         match &mut self.inner {
             NodeInner::Gimmick(n) => Some(n),
@@ -414,10 +434,12 @@ impl Node {
     }
 
     // ConsAltNode shortcuts (matching C macros ND_CAR, ND_CDR)
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn car(&self) -> Option<&Node> {
         self.as_cons().map(|c| c.car.as_ref())
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn cdr(&self) -> Option<&Node> {
         self.as_cons()
             .and_then(|c| c.cdr.as_ref().map(|b| b.as_ref()))
@@ -440,14 +462,17 @@ impl StrNode {
         (self.flag & ND_STRING_CRUDE) != 0
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn is_case_expanded(&self) -> bool {
         (self.flag & ND_STRING_CASE_EXPANDED) != 0
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn set_crude(&mut self) {
         self.flag |= ND_STRING_CRUDE;
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn clear_crude(&mut self) {
         self.flag &= !ND_STRING_CRUDE;
     }
@@ -468,10 +493,12 @@ impl CClassNode {
         self.flags |= FLAG_NCCLASS_NOT;
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn clear_not(&mut self) {
         self.flags &= !FLAG_NCCLASS_NOT;
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn is_share(&self) -> bool {
         (self.flags & FLAG_NCCLASS_SHARE) != 0
     }
@@ -542,6 +569,7 @@ pub enum BagData {
 }
 
 impl BagNode {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_memory(&self) -> Option<(i32, AbsAddrType, i32, i32)> {
         match &self.bag_data {
             BagData::Memory {
@@ -704,6 +732,7 @@ impl PToken {
 }
 
 impl Default for PToken {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn default() -> Self {
         Self::new()
     }
@@ -1065,6 +1094,7 @@ pub fn make_list_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
 }
 
 /// Create a right-linked Alt chain: Alt(ns[0], Alt(ns[1], ... Alt(ns[n-1], nil)))
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn make_alt_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
     assert!(!nodes.is_empty());
     let mut result = node_new_alt(nodes.pop().unwrap(), None);
@@ -1095,6 +1125,7 @@ pub fn bitset_invert(bs: &mut BitSet) {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn bitset_invert_to(from: &BitSet, to: &mut BitSet) {
     for i in 0..BITSET_REAL_SIZE {
         to[i] = !from[i];
@@ -1113,10 +1144,12 @@ pub fn bitset_or(dest: &mut BitSet, src: &BitSet) {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn bitset_copy(dest: &mut BitSet, src: &BitSet) {
     dest.copy_from_slice(src);
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn bitset_is_empty(bs: &BitSet) -> bool {
     bs.iter().all(|&b| b == 0)
 }
@@ -1134,6 +1167,7 @@ pub fn node_str_cat(node: &mut Node, s: &[u8]) -> i32 {
 }
 
 /// Set string node content
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn node_str_set(node: &mut Node, s: &[u8]) -> i32 {
     if let Some(sn) = node.as_str_mut() {
         sn.s.clear();
@@ -1145,6 +1179,7 @@ pub fn node_str_set(node: &mut Node, s: &[u8]) -> i32 {
 }
 
 /// Clear string node
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn node_str_clear(node: &mut Node) {
     if let Some(sn) = node.as_str_mut() {
         sn.s.clear();
@@ -1152,6 +1187,7 @@ pub fn node_str_clear(node: &mut Node) {
 }
 
 /// Append a single code point to a string node (encoding-aware)
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn node_str_cat_codepoint(node: &mut Node, enc: OnigEncoding, code: OnigCodePoint) -> i32 {
     let mut buf = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
     let len = enc.code_to_mbc(code, &mut buf);
@@ -1184,6 +1220,7 @@ impl NameTable {
         self.entries.get(name)
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn find_mut(&mut self, name: &[u8]) -> Option<&mut NameEntry> {
         self.entries.get_mut(name)
     }
@@ -1213,10 +1250,12 @@ impl NameTable {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn num_entries(&self) -> i32 {
         self.entries.len() as i32
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn clear(&mut self) {
         self.entries.clear();
     }

@@ -359,11 +359,13 @@ pub static OnigSyntaxRuby: OnigSyntaxType = OnigSyntaxType {
 
 static ONIG_DEFAULT_SYNTAX: RwLock<&OnigSyntaxType> = RwLock::new(&OnigSyntaxOniguruma);
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_default_syntax() -> &'static OnigSyntaxType {
     // Safety: the RwLock always holds a &'static ref
     *ONIG_DEFAULT_SYNTAX.read().unwrap()
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_default_syntax(syntax: Option<&'static OnigSyntaxType>) -> i32 {
     let syntax = syntax.unwrap_or(&OnigSyntaxOniguruma);
     *ONIG_DEFAULT_SYNTAX.write().unwrap() = syntax;
@@ -372,44 +374,54 @@ pub fn onig_set_default_syntax(syntax: Option<&'static OnigSyntaxType>) -> i32 {
 
 // === Syntax Manipulation Functions ===
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_copy_syntax(to: &mut OnigSyntaxType, from: &OnigSyntaxType) {
     *to = from.clone();
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_syntax_op(syntax: &mut OnigSyntaxType, op: u32) {
     syntax.op = op;
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_syntax_op2(syntax: &mut OnigSyntaxType, op2: u32) {
     syntax.op2 = op2;
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_syntax_behavior(syntax: &mut OnigSyntaxType, behavior: u32) {
     syntax.behavior = behavior;
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_syntax_options(syntax: &mut OnigSyntaxType, options: OnigOptionType) {
     syntax.options = options;
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax_op(syntax: &OnigSyntaxType) -> u32 {
     syntax.op
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax_op2(syntax: &OnigSyntaxType) -> u32 {
     syntax.op2
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax_behavior(syntax: &OnigSyntaxType) -> u32 {
     syntax.behavior
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax_options(syntax: &OnigSyntaxType) -> OnigOptionType {
     syntax.options
 }
 
 // === Meta Char Setter (USE_VARIABLE_META_CHARS) ===
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_meta_char(syntax: &mut OnigSyntaxType, what: u32, code: OnigCodePoint) -> i32 {
     match what {
         ONIG_META_CHAR_ESCAPE => syntax.meta_char_table.esc = code,

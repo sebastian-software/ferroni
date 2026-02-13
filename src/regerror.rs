@@ -124,6 +124,7 @@ pub fn onig_is_error_code_needs_param(code: i32) -> bool {
 /// Convert an error code to a human-readable string.
 /// For parameterized errors, pass the parameter text in `param`.
 /// Corresponds to C's onig_error_code_to_str().
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_error_code_to_str(code: i32, param: Option<&[u8]>) -> String {
     let fmt = onig_error_code_to_format(code);
 

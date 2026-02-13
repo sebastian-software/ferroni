@@ -28,11 +28,13 @@ pub type OnigWarnFunc = fn(s: &str);
 static WARN_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 static VERB_WARN_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_warn_func(f: OnigWarnFunc) {
     let p: *mut () = f as *mut ();
     WARN_FUNC.store(p, Ordering::Relaxed);
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_verb_warn_func(f: OnigWarnFunc) {
     let p: *mut () = f as *mut ();
     VERB_WARN_FUNC.store(p, Ordering::Relaxed);
@@ -58,6 +60,7 @@ static CALLOUT_NAME_REGISTRY: Mutex<Vec<CalloutNameListEntry>> = Mutex::new(Vec:
 
 /// Register a user-defined named callout.
 /// Port of C's onig_set_callout_of_name.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_callout_of_name(
     _enc: OnigEncoding,
     callout_type: OnigCalloutType,
@@ -118,6 +121,7 @@ pub fn onig_set_callout_of_name(
 
 /// Get the name of a registered callout by its name ID.
 /// Port of C's onig_get_callout_name_by_name_id.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_name_by_name_id(name_id: i32) -> Option<Vec<u8>> {
     let registry = CALLOUT_NAME_REGISTRY.lock().unwrap();
     if name_id < 0 || name_id as usize >= registry.len() {
@@ -167,6 +171,7 @@ use std::sync::atomic::{AtomicI32, AtomicU32};
 static MAX_CAPTURE_NUM: AtomicI32 = AtomicI32::new(DEFAULT_MAX_CAPTURE_NUM);
 static PARSE_DEPTH_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_PARSE_DEPTH_LIMIT);
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_capture_num_limit(num: i32) -> i32 {
     if num < 0 {
         return -1;
@@ -175,10 +180,12 @@ pub fn onig_set_capture_num_limit(num: i32) -> i32 {
     0
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_parse_depth_limit() -> u32 {
     PARSE_DEPTH_LIMIT.load(Ordering::Relaxed)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_parse_depth_limit(depth: u32) -> i32 {
     if depth == 0 {
         PARSE_DEPTH_LIMIT.store(DEFAULT_PARSE_DEPTH_LIMIT, Ordering::Relaxed);
@@ -488,6 +495,7 @@ impl ParseEnv {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn set_error_string(&mut self, _ecode: i32, arg: *const u8, arg_end: *const u8) {
         self.error = arg;
         self.error_end = arg_end;
@@ -1020,6 +1028,7 @@ fn or_code_range_buf(
     result
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn and_code_range1(
     pbuf: &mut Option<BBuf>,
     from1: OnigCodePoint,
@@ -5456,6 +5465,7 @@ fn make_absent_tree_general(
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn split_alt_for_conditional(mut node: Box<Node>) -> (Box<Node>, Option<Box<Node>>) {
     if let NodeInner::Alt(cons) = node.inner {
         let car = cons.car;

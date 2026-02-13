@@ -49,11 +49,13 @@ pub type MemStatusType = u32;
 pub const MEM_STATUS_BITS_NUM: usize = 32;
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mem_status_clear(stats: &mut MemStatusType) {
     *stats = 0;
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mem_status_on_all(stats: &mut MemStatusType) {
     *stats = !0u32;
 }
@@ -68,6 +70,7 @@ pub fn mem_status_at(stats: MemStatusType, n: usize) -> bool {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mem_status_at0(stats: MemStatusType, n: usize) -> bool {
     if n > 0 && n < MEM_STATUS_BITS_NUM {
         (stats & (1u32 << n)) != 0
@@ -77,6 +80,7 @@ pub fn mem_status_at0(stats: MemStatusType, n: usize) -> bool {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mem_status_is_all_on(stats: MemStatusType) -> bool {
     (stats & 1) != 0
 }
@@ -93,6 +97,7 @@ pub fn mem_status_on(stats: &mut MemStatusType, n: usize) {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mem_status_on_simple(stats: &mut MemStatusType, n: usize) {
     if n < MEM_STATUS_BITS_NUM {
         *stats |= 1u32 << n;
@@ -100,6 +105,7 @@ pub fn mem_status_on_simple(stats: &mut MemStatusType, n: usize) {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mem_status_limit_at(stats: MemStatusType, n: usize) -> bool {
     if n < MEM_STATUS_BITS_NUM {
         (stats & (1u32 << n)) != 0
@@ -109,6 +115,7 @@ pub fn mem_status_limit_at(stats: MemStatusType, n: usize) -> bool {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mem_status_limit_on(stats: &mut MemStatusType, n: usize) {
     if n < MEM_STATUS_BITS_NUM && n != 0 {
         *stats |= 1u32 << n;
@@ -153,11 +160,13 @@ pub fn bitset_set_bit(bs: &mut BitSet, pos: usize) {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn bitset_clear_bit(bs: &mut BitSet, pos: usize) {
     bs[bs_room(pos)] &= !bs_bit(pos);
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn bitset_invert_bit(bs: &mut BitSet, pos: usize) {
     bs[bs_room(pos)] ^= bs_bit(pos);
 }
@@ -184,11 +193,13 @@ pub const ANCR_NO_TEXT_SEGMENT_BOUNDARY: i32 = 1 << 17;
 pub const ANCR_ANYCHAR_INF_MASK: i32 = ANCR_ANYCHAR_INF | ANCR_ANYCHAR_INF_ML;
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn anchor_has_body(anchor_type: i32) -> bool {
     anchor_type < ANCR_BEGIN_BUF
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn is_word_anchor_type(anchor_type: i32) -> bool {
     anchor_type == ANCR_WORD_BOUNDARY
         || anchor_type == ANCR_NO_WORD_BOUNDARY
@@ -728,21 +739,25 @@ impl OptNode {
 
 // === Option check macros as functions ===
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_ignorecase(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_IGNORECASE) != 0
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_extend(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_EXTEND) != 0
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_multiline(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_MULTILINE) != 0
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_singleline(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_SINGLELINE) != 0
 }
@@ -758,11 +773,13 @@ pub fn opton_find_not_empty(option: OnigOptionType) -> bool {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_negate_singleline(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_NEGATE_SINGLELINE) != 0
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_dont_capture_group(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0
 }
@@ -783,6 +800,7 @@ pub fn opton_noteol(option: OnigOptionType) -> bool {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_posix_region(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_POSIX_REGION) != 0
 }
@@ -793,6 +811,7 @@ pub fn opton_check_validity_of_string(option: OnigOptionType) -> bool {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_callback_each_match(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_CALLBACK_EACH_MATCH) != 0
 }
@@ -808,6 +827,7 @@ pub fn opton_not_end_string(option: OnigOptionType) -> bool {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_not_begin_position(option: OnigOptionType) -> bool {
     (option & ONIG_OPTION_NOT_BEGIN_POSITION) != 0
 }
@@ -819,57 +839,68 @@ pub fn opton_match_whole_string(option: OnigOptionType) -> bool {
 
 // === Syntax macros ===
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mc_esc(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.esc
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mc_anychar(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.anychar
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mc_anytime(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.anytime
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mc_zero_or_one_time(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.zero_or_one_time
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mc_one_or_more_time(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.one_or_more_time
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn mc_anychar_anytime(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.anychar_anytime
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn is_mc_esc_code(code: OnigCodePoint, syn: &OnigSyntaxType) -> bool {
     code == mc_esc(syn) && !is_syntax_op2(syn, ONIG_SYN_OP2_INEFFECTIVE_ESCAPE)
 }
 
 // === Value helpers ===
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn digitval(code: OnigCodePoint) -> u32 {
     code - b'0' as u32
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn odigitval(code: OnigCodePoint) -> u32 {
     digitval(code)
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn is_code_word_ascii(code: OnigCodePoint) -> bool {
     code < 128
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn is_code_digit_ascii(code: OnigCodePoint) -> bool {
     code < 128 && (code >= b'0' as u32 && code <= b'9' as u32)
 }

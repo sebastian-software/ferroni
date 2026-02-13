@@ -100,11 +100,13 @@ pub trait Encoding: Send + Sync {
     fn is_allowed_reverse_match(&self, p: &[u8]) -> bool;
 
     /// Initialize encoding (for callout registration etc.)
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn init(&self) -> i32 {
         ONIG_NORMAL
     }
 
     /// Is this encoding initialized?
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn is_initialized(&self) -> bool {
         true
     }
@@ -139,36 +141,43 @@ pub fn onigenc_is_unicode_encoding(enc: OnigEncoding) -> bool {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_ascii_compatible_encoding(enc: OnigEncoding) -> bool {
     (enc.flag() & ENC_FLAG_ASCII_COMPATIBLE) != 0
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_singlebyte(enc: OnigEncoding) -> bool {
     enc.max_enc_len() == 1
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_mbc_head(enc: OnigEncoding, p: &[u8]) -> bool {
     enc.mbc_enc_len(p) != 1
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_mbc_ascii(p: &[u8]) -> bool {
     p[0] < 128
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_code_ascii(code: OnigCodePoint) -> bool {
     code < 128
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_code_word(enc: OnigEncoding, code: OnigCodePoint) -> bool {
     enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_code_newline(enc: OnigEncoding, code: OnigCodePoint) -> bool {
     enc.is_code_ctype(code, ONIGENC_CTYPE_NEWLINE)
 }
@@ -209,6 +218,7 @@ pub fn ctype_to_bit(ctype: u32) -> u32 {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn ctype_is_word_graph_print(ctype: u32) -> bool {
     ctype == ONIGENC_CTYPE_WORD || ctype == ONIGENC_CTYPE_GRAPH || ctype == ONIGENC_CTYPE_PRINT
 }
@@ -372,6 +382,7 @@ pub static ONIG_ASCII_LOWER_MAP: [OnigPairCaseFoldCodes; 26] = [
 // === ASCII Ctype check helpers ===
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_ascii_code_ctype(code: u32, ctype: u32) -> bool {
     if code < 256 {
         (ONIG_ENC_ASCII_CTYPE_TABLE[code as usize] & ctype_to_bit(ctype) as u16) != 0
@@ -386,6 +397,7 @@ pub fn onigenc_ascii_code_to_lower_case(c: u8) -> u8 {
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_ascii_code_case_ambig(code: u32) -> bool {
     onigenc_is_ascii_code_ctype(code, ONIGENC_CTYPE_UPPER)
         || onigenc_is_ascii_code_ctype(code, ONIGENC_CTYPE_LOWER)
@@ -395,16 +407,19 @@ pub fn onigenc_is_ascii_code_case_ambig(code: u32) -> bool {
 // These are used by multiple encoding implementations.
 
 /// Single byte: mbc_enc_len always returns 1
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_single_byte_mbc_enc_len(_p: &[u8]) -> usize {
     1
 }
 
 /// Single byte: mbc_to_code returns the byte value
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_single_byte_mbc_to_code(p: &[u8], _end: usize) -> OnigCodePoint {
     p[0] as OnigCodePoint
 }
 
 /// Single byte: code_to_mbclen always returns 1
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_single_byte_code_to_mbclen(code: OnigCodePoint) -> i32 {
     if code < 256 {
         1
@@ -414,27 +429,32 @@ pub fn onigenc_single_byte_code_to_mbclen(code: OnigCodePoint) -> i32 {
 }
 
 /// Single byte: code_to_mbc writes one byte
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_single_byte_code_to_mbc(code: OnigCodePoint, buf: &mut [u8]) -> i32 {
     buf[0] = (code & 0xff) as u8;
     1
 }
 
 /// Single byte: left_adjust_char_head returns s unchanged
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_single_byte_left_adjust_char_head(_start: usize, s: usize, _data: &[u8]) -> usize {
     s
 }
 
 /// Always returns true for is_allowed_reverse_match
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_always_true_is_allowed_reverse_match(_p: &[u8]) -> bool {
     true
 }
 
 /// Always returns false for is_allowed_reverse_match
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_always_false_is_allowed_reverse_match(_p: &[u8]) -> bool {
     false
 }
 
 /// Always returns true for is_valid_mbc_string
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_always_true_is_valid_mbc_string(_s: &[u8]) -> bool {
     true
 }
@@ -445,6 +465,7 @@ pub fn onigenc_is_mbc_newline_0x0a(p: &[u8], end: usize) -> bool {
 }
 
 /// ASCII mbc_case_fold: fold a single ASCII character
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_ascii_mbc_case_fold(
     _flag: OnigCaseFoldType,
     pp: &mut usize,
@@ -458,6 +479,7 @@ pub fn onigenc_ascii_mbc_case_fold(
 }
 
 /// ASCII apply_all_case_fold: iterate all A-Z <-> a-z pairs
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_ascii_apply_all_case_fold(
     _flag: OnigCaseFoldType,
     f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
@@ -479,6 +501,7 @@ pub fn onigenc_ascii_apply_all_case_fold(
 }
 
 /// ASCII get_case_fold_codes_by_str
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_ascii_get_case_fold_codes_by_str(
     _flag: OnigCaseFoldType,
     p: &[u8],
@@ -504,11 +527,13 @@ pub fn onigenc_ascii_get_case_fold_codes_by_str(
 }
 
 /// Minimum property name to ctype (only basic POSIX names)
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_minimum_property_name_to_ctype(_p: &[u8]) -> i32 {
     ONIGERR_INVALID_CHAR_PROPERTY_NAME
 }
 
 /// Not supported get_ctype_code_range
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_not_support_get_ctype_code_range(
     _ctype: u32,
     _sb_out: &mut OnigCodePoint,
@@ -537,6 +562,7 @@ pub fn onigenc_step_back(
 }
 
 /// Step forward n characters from p, returns None if past end
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_step(
     enc: OnigEncoding,
     p: usize,
@@ -581,6 +607,7 @@ pub fn onigenc_get_prev_char_head(
 }
 
 /// Get right-adjusted char head
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_get_right_adjust_char_head(
     enc: OnigEncoding,
     start: usize,
@@ -597,17 +624,20 @@ pub fn onigenc_get_right_adjust_char_head(
 
 /// Count characters in a null-terminated byte string (C API compatibility).
 /// Finds the first `\0` byte and counts characters up to that point.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_strlen_null(enc: OnigEncoding, data: &[u8]) -> usize {
     let null_pos = data.iter().position(|&b| b == 0).unwrap_or(data.len());
     onigenc_strlen(enc, data, 0, null_pos)
 }
 
 /// Free function wrapper for `Encoding::is_valid_mbc_string` (C API compatibility).
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_valid_mbc_string(enc: OnigEncoding, data: &[u8]) -> bool {
     enc.is_valid_mbc_string(data)
 }
 
 /// Free function wrapper for `Encoding::left_adjust_char_head` (C API compatibility).
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_get_left_adjust_char_head(
     enc: OnigEncoding,
     start: usize,
@@ -618,6 +648,7 @@ pub fn onigenc_get_left_adjust_char_head(
 }
 
 /// Is word ASCII check (used by encodings)
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_is_mbc_word_ascii(enc: OnigEncoding, data: &[u8], s: usize, _end: usize) -> bool {
     if data[s] < 128 {
         let code = enc.mbc_to_code(&data[s..], data.len());

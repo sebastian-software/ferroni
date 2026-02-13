@@ -1,6 +1,10 @@
 // build.rs -- Compile C Oniguruma from submodule (gated on `ffi` feature)
 
 fn main() {
+    // Allow the `coverage_nightly` cfg used by #[cfg_attr(coverage_nightly, coverage(off))].
+    // This silences "unexpected cfg" warnings on stable while activating on nightly+coverage.
+    println!("cargo::rustc-check-cfg=cfg(coverage_nightly)");
+
     #[cfg(feature = "ffi")]
     build_oniguruma_c();
 }

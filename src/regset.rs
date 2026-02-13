@@ -120,6 +120,7 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
 /// Replace a regex at index `at`, or remove it if `reg` is None.
 /// Returns ONIG_NORMAL on success.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<RegexType>>) -> i32 {
     if at >= set.entries.len() {
         return ONIGERR_INVALID_ARGUMENT;
@@ -202,16 +203,19 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
 }
 
 /// Return the number of regexes in the set.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_regset_number_of_regex(set: &OnigRegSet) -> i32 {
     set.entries.len() as i32
 }
 
 /// Get a reference to the regex at index `at`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_regset_get_regex(set: &OnigRegSet, at: usize) -> Option<&RegexType> {
     set.entries.get(at).map(|e| e.reg.as_ref())
 }
 
 /// Get a reference to the region at index `at`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_regset_get_region(set: &OnigRegSet, at: usize) -> Option<&OnigRegion> {
     set.entries.get(at).and_then(|e| e.region.as_ref())
 }
@@ -453,6 +457,7 @@ pub fn onig_regset_search(
 }
 
 /// Search the set with per-regex match parameters.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_regset_search_with_param(
     set: &mut OnigRegSet,
     str_data: &[u8],

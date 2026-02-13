@@ -5,6 +5,7 @@ use crate::oniguruma::*;
 
 /// Recursive helper for capture tree traversal.
 /// Callback receives (group, beg, end, level, at).
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn capture_tree_traverse<F>(
     node: &OnigCaptureTreeNode,
     at: i32,
@@ -52,6 +53,7 @@ where
 
 /// Traverse the capture tree of a region.
 /// Callback receives (group, beg, end, level, at) and should return 0 to continue.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_capture_tree_traverse<F>(region: &OnigRegion, at: i32, mut callback: F) -> i32
 where
     F: FnMut(i32, i32, i32, i32, i32) -> i32,

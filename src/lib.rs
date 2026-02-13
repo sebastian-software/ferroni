@@ -53,6 +53,8 @@
 #![allow(clippy::empty_line_after_doc_comments)]
 #![allow(clippy::missing_transmute_annotations)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
+// Enable #[coverage(off)] attribute when running under cargo-llvm-cov on nightly.
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod encodings;
 pub mod oniguruma;

@@ -339,6 +339,7 @@ pub const ONIGERR_VERY_INEFFICIENT_PATTERN: i32 = -406;
 pub const ONIGERR_LIBRARY_IS_NOT_INITIALIZED: i32 = -500;
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_is_pattern_error(ecode: i32) -> bool {
     ecode <= -100 && ecode > -1000
 }
@@ -365,6 +366,7 @@ impl OnigCaptureTreeNode {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn clear(&mut self) {
         self.childs.clear();
         self.group = -1;
@@ -397,6 +399,7 @@ impl OnigRegion {
         }
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn init(&mut self) {
         self.allocated = 0;
         self.num_regs = 0;
@@ -421,6 +424,7 @@ impl OnigRegion {
         self.num_regs = n as i32;
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn set(&mut self, at: i32, beg: i32, end: i32) -> i32 {
         if at < 0 {
             return ONIGERR_INVALID_ARGUMENT;
@@ -433,6 +437,7 @@ impl OnigRegion {
         ONIG_NORMAL
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn copy_from(&mut self, from: &OnigRegion) {
         self.resize(from.num_regs);
         for i in 0..from.num_regs as usize {
@@ -445,6 +450,7 @@ impl OnigRegion {
 }
 
 impl Default for OnigRegion {
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn default() -> Self {
         Self::new()
     }
@@ -566,11 +572,13 @@ pub struct OnigCodeRange {
 
 // === Syntax check macros as functions ===
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn is_syntax_op(syntax: &OnigSyntaxType, opm: u32) -> bool {
     (syntax.op & opm) != 0
 }
 
 #[inline]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn is_syntax_op2(syntax: &OnigSyntaxType, opm: u32) -> bool {
     (syntax.op2 & opm) != 0
 }

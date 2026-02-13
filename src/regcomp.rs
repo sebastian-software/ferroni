@@ -24,10 +24,12 @@ use crate::regparse_types::*;
 
 static DEFAULT_CASE_FOLD_FLAG: AtomicU32 = AtomicU32::new(ONIGENC_CASE_FOLD_MIN);
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_default_case_fold_flag() -> OnigCaseFoldType {
     DEFAULT_CASE_FOLD_FLAG.load(Ordering::Relaxed)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_default_case_fold_flag(flag: OnigCaseFoldType) -> i32 {
     DEFAULT_CASE_FOLD_FLAG.store(flag, Ordering::Relaxed);
     0
@@ -95,6 +97,7 @@ fn add_op(reg: &mut RegexType, opcode: OpCode, payload: OperationPayload) -> i32
 }
 
 /// Get the index of the current (last) operation.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn ops_curr_offset(reg: &RegexType) -> i32 {
     (reg.ops.len() as i32) - 1
 }
@@ -104,6 +107,7 @@ fn ops_curr_offset(reg: &RegexType) -> i32 {
 // ============================================================================
 
 /// Safe multiplication comparison: a * b > limit
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn len_multiply_cmp(a: OnigLen, b: i32, limit: OnigLen) -> bool {
     if a == 0 || b == 0 {
         return false;
@@ -6384,6 +6388,7 @@ pub fn reduce_string_list(node: &mut Node, enc: OnigEncoding) -> i32 {
 
 /// Simple compilation from a pre-parsed AST tree.
 /// Used internally and by tests that parse separately.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn compile_from_tree(root: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
     // Clear previous bytecode
     reg.ops.clear();

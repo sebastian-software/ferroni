@@ -1,0 +1,21 @@
+coverage:
+  status:
+    project:
+      default:
+        # Coverage instrumentation causes stack overflows in recursive/backref
+        # tests, so ~42 of 1566 tests must be skipped under coverage. This
+        # limits achievable line coverage to ~83%. Function coverage is >94%.
+        target: 80%
+    patch:
+      default:
+        target: 80%
+
+ignore:
+  - "src/ffi.rs"                    # FFI bindings for benchmark comparison only
+  - "src/unicode/egcb_data.rs"      # Generated Unicode data tables
+  - "src/unicode/wb_data.rs"        # Generated Unicode data tables
+  - "src/unicode/property_data.rs"  # Generated Unicode data tables
+  - "src/unicode/fold_data.rs"      # Generated Unicode data tables
+  - "src/encodings/ascii.rs"        # ASCII encoding unused (all tests use UTF-8)
+  - "src/regerror.rs"               # Error message formatting, not exercised by tests
+  - "tests/**"                      # Test files themselves

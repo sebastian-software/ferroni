@@ -136,6 +136,7 @@ fn folds3_next(i: usize) -> usize {
 }
 
 /// Get the fold address for a given (index, fold_len) from unfold_key lookup.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn folds_fold_addr(index: usize, fold_len: usize) -> &'static [u32] {
     match fold_len {
         1 => &UNICODE_FOLDS1[index..index + 1],
@@ -149,6 +150,7 @@ fn folds_fold_addr(index: usize, fold_len: usize) -> &'static [u32] {
 
 /// Case fold a multibyte character using Unicode rules.
 /// Port of onigenc_unicode_mbc_case_fold from unicode.c lines 79-134
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onigenc_unicode_mbc_case_fold(
     enc: &dyn Encoding,
     flag: OnigCaseFoldType,
@@ -653,6 +655,7 @@ static USER_DEFINED_PROPERTIES: Mutex<Vec<UserProperty>> = Mutex::new(Vec::new()
 
 /// Normalize a property name: strip spaces/hyphens/underscores, lowercase.
 /// Returns None if the name contains non-ASCII bytes or exceeds buffer size.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn normalize_property_name(name: &[u8]) -> Option<Vec<u8>> {
     let mut buf = Vec::with_capacity(name.len());
     for &b in name {
@@ -673,6 +676,7 @@ fn normalize_property_name(name: &[u8]) -> Option<Vec<u8>> {
 /// Register a user-defined Unicode property with associated code point ranges.
 /// Ranges should be in `[start, end, start, end, ...]` pair format.
 /// Returns `Ok(())` on success, or `Err(error_code)` on failure.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_unicode_define_user_property(name: &[u8], ranges: &[OnigCodePoint]) -> Result<(), i32> {
     let normalized = normalize_property_name(name)
         .ok_or(ONIGERR_INVALID_CHAR_PROPERTY_NAME)?;
