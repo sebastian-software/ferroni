@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 description = "Pure-Rust Oniguruma regex engine with SIMD-accelerated search"
 license = "BSD-2-Clause"
+authors = ["Sebastian Software GmbH"]
+repository = "https://github.com/sebastian-software/ferroni"
+homepage = "https://github.com/sebastian-software/ferroni"
+readme = "README.md"
+keywords = ["regex", "oniguruma", "unicode", "pattern-matching", "simd"]
+categories = ["text-processing", "parsing"]
+rust-version = "1.75"
+exclude = ["oniguruma-orig/", "benches/", "docs/", "scripts/"]
 
 [features]
 ffi = ["cc"]
