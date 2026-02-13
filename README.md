@@ -207,84 +207,85 @@ cargo bench --features ffi
 | Benchmark | Rust | C | Ratio |
 |-----------|-----:|--:|------:|
 | **Literal match** | | | |
-| exact string | **97 ns** | 153 ns | 0.63 |
-| anchored start | **92 ns** | 142 ns | 0.65 |
-| anchored end | **104 ns** | 161 ns | 0.65 |
-| word boundary | **104 ns** | 165 ns | 0.63 |
+| exact string | **94 ns** | 158 ns | 0.59 |
+| anchored start | **90 ns** | 147 ns | 0.61 |
+| anchored end | **101 ns** | 162 ns | 0.62 |
+| word boundary | **104 ns** | 161 ns | 0.65 |
 | **Quantifiers** | | | |
-| greedy | **199 ns** | 256 ns | 0.78 |
-| lazy | **173 ns** | 209 ns | 0.83 |
-| possessive | **178 ns** | 231 ns | 0.77 |
-| nested | **172 ns** | 227 ns | 0.76 |
+| greedy | **197 ns** | 262 ns | 0.75 |
+| lazy | **177 ns** | 207 ns | 0.85 |
+| possessive | **182 ns** | 227 ns | 0.80 |
+| nested | **175 ns** | 229 ns | 0.77 |
 | **Alternation** | | | |
-| 2 branches | **94 ns** | 150 ns | 0.62 |
-| 5 branches | **111 ns** | 169 ns | 0.66 |
-| 10 branches | 293 ns | **219 ns** | 1.34 |
-| nested | **124 ns** | 171 ns | 0.73 |
+| 2 branches | **95 ns** | 147 ns | 0.65 |
+| 5 branches | **114 ns** | 166 ns | 0.69 |
+| 10 branches | 302 ns | **225 ns** | 1.34 |
+| nested | **129 ns** | 174 ns | 0.74 |
 | **Backreferences** | | | |
-| simple `(\w+) \1` | **142 ns** | 189 ns | 0.75 |
-| nested | **148 ns** | 189 ns | 0.78 |
-| named | **142 ns** | 187 ns | 0.76 |
+| simple `(\w+) \1` | **146 ns** | 191 ns | 0.76 |
+| nested | **152 ns** | 198 ns | 0.77 |
+| named | **143 ns** | 196 ns | 0.73 |
 | **Lookaround** | | | |
-| positive lookahead | **120 ns** | 159 ns | 0.76 |
-| negative lookahead | **132 ns** | 175 ns | 0.75 |
-| positive lookbehind | 718 ns | **266 ns** | 2.70 |
-| negative lookbehind | 904 ns | **337 ns** | 2.68 |
-| combined | 772 ns | **284 ns** | 2.72 |
+| positive lookahead | **121 ns** | 171 ns | 0.71 |
+| negative lookahead | **132 ns** | 190 ns | 0.70 |
+| positive lookbehind | 724 ns | **260 ns** | 2.79 |
+| negative lookbehind | 878 ns | **331 ns** | 2.65 |
+| combined | 754 ns | **285 ns** | 2.64 |
 | **Unicode properties** | | | |
-| `\p{Lu}+` | **86 ns** | 139 ns | 0.62 |
-| `\p{Letter}+` | **126 ns** | 164 ns | 0.77 |
-| `\p{Greek}+` | 727 ns | **242 ns** | 3.00 |
-| `\p{Cyrillic}+` | 1,232 ns | **333 ns** | 3.70 |
+| `\p{Lu}+` | **85 ns** | 148 ns | 0.57 |
+| `\p{Letter}+` | **122 ns** | 170 ns | 0.72 |
+| `\p{Greek}+` | 724 ns | **245 ns** | 2.96 |
+| `\p{Cyrillic}+` | 1,214 ns | **331 ns** | 3.67 |
 | **Case-insensitive** | | | |
-| single word | **101 ns** | 156 ns | 0.65 |
-| phrase | 205 ns | **187 ns** | 1.10 |
-| alternation | **104 ns** | 154 ns | 0.68 |
+| single word | **99 ns** | 159 ns | 0.62 |
+| phrase | 199 ns | **187 ns** | 1.06 |
+| alternation | **103 ns** | 161 ns | 0.64 |
 | **Named captures** | | | |
-| date extraction | 1,031 ns | **274 ns** | 3.77 |
+| date extraction | 991 ns | **276 ns** | 3.59 |
 | **Large text (first match)** | | | |
-| literal 10 KB | **89 ns** | 147 ns | 0.60 |
-| literal 50 KB | **89 ns** | 145 ns | 0.61 |
-| timestamp 10 KB | 230 ns | **178 ns** | 1.29 |
-| timestamp 50 KB | 229 ns | **178 ns** | 1.29 |
-| field extract 10 KB | **134 ns** | 173 ns | 0.77 |
-| field extract 50 KB | **134 ns** | 174 ns | 0.77 |
-| no match 10 KB | 676 µs | **1.8 µs** | 366x |
-| no match 50 KB | 3,384 µs | **9.4 µs** | 361x |
+| literal 10 KB | **88 ns** | 146 ns | 0.60 |
+| literal 50 KB | **87 ns** | 145 ns | 0.60 |
+| timestamp 10 KB | 225 ns | **177 ns** | 1.27 |
+| timestamp 50 KB | 226 ns | **181 ns** | 1.25 |
+| field extract 10 KB | **132 ns** | 174 ns | 0.76 |
+| field extract 50 KB | **132 ns** | 176 ns | 0.75 |
+| no match 10 KB | 2.0 µs | **1.9 µs** | 1.09 |
+| no match 50 KB | 10.2 µs | **9.4 µs** | 1.08 |
 | **RegSet** | | | |
-| position-lead (5 patterns) | **141 ns** | 389 ns | 0.36 |
-| regex-lead (5 patterns) | **149 ns** | 227 ns | 0.65 |
+| position-lead (5 patterns) | **142 ns** | 398 ns | 0.36 |
+| regex-lead (5 patterns) | **149 ns** | 234 ns | 0.64 |
 | **Match at position** | | | |
-| `\d+` at offset 4 | **113 ns** | 148 ns | 0.76 |
+| `\d+` at offset 4 | **110 ns** | 152 ns | 0.73 |
 
 ### Regex Compilation
 
 | Pattern | Rust | C | Ratio |
 |---------|-----:|--:|------:|
-| literal | **444 ns** | 468 ns | 0.95 |
-| `.*` | 793 ns | **542 ns** | 1.46 |
-| alternation | 1,773 ns | **1,455 ns** | 1.22 |
-| char class | 661 ns | **652 ns** | 1.01 |
-| quantifier | 1,425 ns | **1,063 ns** | 1.34 |
-| group | 1,101 ns | **806 ns** | 1.37 |
-| backref | 1,671 ns | **1,009 ns** | 1.66 |
-| lookahead | 795 ns | **491 ns** | 1.62 |
-| lookbehind | 734 ns | **563 ns** | 1.31 |
-| named capture | 48,554 ns | **5,930 ns** | 8.19 |
+| literal | **439 ns** | 467 ns | 0.94 |
+| `.*` | 803 ns | **542 ns** | 1.48 |
+| alternation | 1,760 ns | **1,441 ns** | 1.22 |
+| char class | 653 ns | **649 ns** | 1.01 |
+| quantifier | 1,420 ns | **1,068 ns** | 1.33 |
+| group | 1,091 ns | **797 ns** | 1.37 |
+| backref | 1,642 ns | **990 ns** | 1.66 |
+| lookahead | 771 ns | **485 ns** | 1.59 |
+| lookbehind | 729 ns | **557 ns** | 1.31 |
+| named capture | 47,583 ns | **5,807 ns** | 8.19 |
 
 ### Analysis
 
-**Where Rust wins (35 of 48 benchmarks):** Most execution benchmarks are
-20-40% faster than C. Literal matching, quantifiers, backreferences, and
-RegSet searches all show consistent gains. The likely explanation is Rust's
-`Vec<Operation>` layout (contiguous, predictable) vs. C's pointer-chased
-operation arrays giving better cache behavior in the VM loop.
+**Where Rust wins (27 of 39 execution benchmarks):** Most execution
+benchmarks are 20-40% faster than C. Literal matching, quantifiers,
+backreferences, and RegSet searches all show consistent gains. The likely
+explanation is Rust's `Vec<Operation>` layout (contiguous, predictable) vs.
+C's pointer-chased operation arrays giving better cache behavior in the VM
+loop.
 
 **Where C wins:** Three areas show meaningful regressions:
 
-1. **Lookbehind (2.7x slower)** -- the Rust lookbehind implementation scans
-   backwards using index arithmetic on `&[u8]` slices where C uses raw
-   pointer decrement. The bounds checking overhead accumulates in the
+1. **Lookbehind (2.6-2.8x slower)** -- the Rust lookbehind implementation
+   scans backwards using index arithmetic on `&[u8]` slices where C uses
+   raw pointer decrement. The bounds checking overhead accumulates in the
    inner loop.
 
 2. **Script-specific Unicode properties (3-4x slower)** -- `\p{Greek}` and
@@ -293,12 +294,13 @@ operation arrays giving better cache behavior in the VM loop.
    that the C version avoids through direct table lookup with pointer
    arithmetic.
 
-3. **Full-text no-match scan (360x slower)** -- this is the largest gap.
-   When a literal pattern like `CRITICAL_ERROR` has no match in large text,
-   C's Boyer-Moore-Horspool fast-skip loop rejects most positions in one
-   comparison. The Rust port's BMH implementation appears to not engage
-   the skip table on this path, falling back to per-byte scanning. This is
-   a known optimization gap, not a fundamental limitation.
+3. **Named captures (3.6x slower)** -- the Rust capture-handling VM path
+   has overhead from region ownership semantics (move in/out of search
+   function) that C avoids with simple pointer passing.
+
+The remaining C-wins are minor: 10-branch alternation (1.34x), timestamp
+extraction (1.25x), case-insensitive phrases (1.06x), and full-text
+no-match scanning (1.08-1.09x) are all within a small margin.
 
 **Compilation** is 1.2-1.7x slower across the board, with a notable 8x
 outlier on named captures. The Rust compiler pipeline allocates more
@@ -312,8 +314,7 @@ compiles 50-200 patterns and then matches every token in every line of
 source code, yielding a compile:match ratio well above 1:100,000. At that
 ratio, even the 8x named-capture outlier adds < 0.01% to total runtime.
 The 20-40% execution gains, on the other hand, directly reduce the time
-spent in the hot loop. The highest-impact optimization target is the
-no-match BMH scan gap (360x), since that affects the execution path.
+spent in the hot loop.
 
 ### Running Benchmarks
 

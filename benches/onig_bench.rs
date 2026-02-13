@@ -393,17 +393,20 @@ fn bench_named_captures(c: &mut Criterion) {
     let mut group = c.benchmark_group("named_captures");
 
     group.bench_function("rust", |b| {
+        let mut region = Some(onig_region_new());
         b.iter(|| {
-            let region = onig_region_new();
-            let (pos, _region) = onig_search(
+            let mut r = region.take().unwrap();
+            r.clear();
+            let (pos, returned) = onig_search(
                 &r_reg,
                 black_box(text),
                 text.len(),
                 0,
                 text.len(),
-                Some(region),
+                Some(r),
                 ONIG_OPTION_NONE,
             );
+            region = returned;
             black_box(pos);
         });
     });

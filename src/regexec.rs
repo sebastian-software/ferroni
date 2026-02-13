@@ -4587,6 +4587,10 @@ fn onig_search_inner(
                 }
                 if s >= cur_range { break; }
             }
+            // C: goto mismatch -- optimized search exhausted, do not fall
+            // through to the byte-by-byte loop below.
+            return finish_search(find_longest, best_start, best_len, reg,
+                                str_data, end, &mut msa);
         } else {
             // Infinite dist_max: just check once, then fall through to normal loop
             if forward_search(reg, str_data, end, s, sch_range).is_none() {
