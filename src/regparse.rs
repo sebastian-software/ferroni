@@ -5718,7 +5718,7 @@ fn prs_exp(
         }
         TokenType::Anchor => {
             let ascii_mode = opton_word_ascii(env.options) && is_word_anchor_type(tok.anchor);
-            let mut np = node_new_anchor(tok.anchor);
+            let mut np = node_new_anchor_with_options(tok.anchor, env.options);
             if let Some(an) = np.as_anchor_mut() {
                 an.ascii_mode = ascii_mode;
             }

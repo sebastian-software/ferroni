@@ -3730,16 +3730,16 @@ fn backward_search(reg: &RegexType, str_data: &[u8], end: usize,
 }
 
 /// Get right-adjusted char head for multi-byte encoding.
+/// Mirrors C's onigenc_get_right_adjust_char_head: left-adjust first, then
+/// advance by one character if the result is before s.
 fn onigenc_get_right_adjust_char_head(enc: OnigEncoding, text: &[u8],
                                        start: usize, s: usize) -> usize {
-    let mut pos = s;
-    // For UTF-8: if pos lands on a continuation byte, advance to next char start
-    while pos < text.len() {
-        let len = enc.mbc_enc_len(&text[pos..]);
-        if len > 0 { return pos; }
-        pos += 1;
+    let p = left_adjust_char_head(enc, text, start, s);
+    if p < s {
+        p + enclen(enc, text, p)
+    } else {
+        p
     }
-    pos
 }
 
 /// Forward search using optimization strategy.
@@ -3932,17 +3932,8 @@ fn onig_search_inner(
             end
         };
 
-        // Threshold length check
-        if (end as i32 - range as i32) < reg.threshold_len {
-            return (ONIG_MISMATCH, msa.region);
-        }
-
-        // Start from the last character position at or before start
-        let mut s = if start >= end {
-            onigenc_get_prev_char_head(enc, str_data, 0, end)
-        } else {
-            start
-        };
+        // s starts at start (same as C: s = (UChar*)start)
+        let mut s = start;
 
         // Macro-like helper for match_at + result handling in backward search
         macro_rules! backward_match_and_check {
@@ -3975,6 +3966,11 @@ fn onig_search_inner(
         }
 
         if reg.optimize != OptimizeType::None {
+            // Threshold length check (inside optimize branch, matching C)
+            if (end as i32 - range as i32) < reg.threshold_len {
+                return (ONIG_MISMATCH, msa.region);
+            }
+
             let adjrange = if range < end {
                 left_adjust_char_head(enc, str_data, 0, range)
             } else {
@@ -3988,6 +3984,8 @@ fn onig_search_inner(
             };
 
             if reg.dist_max != INFINITE_LEN {
+                // C: do { ... } while (PTR_GE(s, range));
+                // Use usize::MAX as sentinel for C's NULL (past-beginning)
                 loop {
                     let sch_start = if end.saturating_sub(s) > reg.dist_max as usize {
                         s + reg.dist_max as usize
@@ -4000,14 +3998,17 @@ fn onig_search_inner(
                         if s > high { s = high; }
                         while s >= low {
                             backward_match_and_check!(s, orig_start);
-                            if s == 0 { break; }
+                            if s == 0 {
+                                s = usize::MAX; // sentinel: past beginning (C returns NULL)
+                                break;
+                            }
                             s = onigenc_get_prev_char_head(enc, str_data, 0, s);
                         }
                     } else {
                         return finish_search(find_longest, best_start, best_len, reg, str_data, end, &mut msa);
                     }
 
-                    if s < range || s == 0 { break; }
+                    if s == usize::MAX || s < range { break; }
                 }
                 return finish_search(find_longest, best_start, best_len, reg, str_data, end, &mut msa);
             } else {
@@ -4023,7 +4024,6 @@ fn onig_search_inner(
         loop {
             backward_match_and_check!(s, orig_start);
             if s <= range { break; }
-            if s == 0 { break; }
             s = onigenc_get_prev_char_head(enc, str_data, 0, s);
         }
 
