@@ -6235,6 +6235,24 @@ fn set_optimize_map(reg: &mut RegexType, m: &OptMap) {
     if reg.dist_min != INFINITE_LEN {
         reg.threshold_len = (reg.dist_min as i32) + (reg.enc.min_enc_len() as i32);
     }
+
+    // Precompute distinct set bytes for SIMD-accelerated map_search.
+    // Only accelerate when all set bytes are ASCII (< 0x80) to avoid
+    // false positives from UTF-8 continuation bytes.
+    let mut bytes = [0u8; 3];
+    let mut count: u8 = 0;
+    for i in 0..CHAR_MAP_SIZE {
+        if m.map[i] != 0 {
+            if count >= 3 || i >= 0x80 {
+                count = 0;
+                break;
+            }
+            bytes[count as usize] = i as u8;
+            count += 1;
+        }
+    }
+    reg.map_bytes = bytes;
+    reg.map_byte_count = count;
 }
 
 fn set_sub_anchor(reg: &mut RegexType, anc: &OptAnc) {
@@ -6518,6 +6536,8 @@ pub fn onig_new(
         exact: Vec::new(),
         map: [0u8; CHAR_MAP_SIZE],
         map_offset: 0,
+        map_bytes: [0u8; 3],
+        map_byte_count: 0,
         dist_min: 0,
         dist_max: 0,
         called_addrs: vec![],
@@ -6570,6 +6590,8 @@ mod tests {
             exact: Vec::new(),
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
+            map_bytes: [0u8; 3],
+            map_byte_count: 0,
             dist_min: 0,
             dist_max: 0,
             called_addrs: vec![],

@@ -559,6 +559,8 @@ pub struct RegexType {
     pub exact: Vec<u8>,
     pub map: [u8; CHAR_MAP_SIZE],
     pub map_offset: i32,
+    pub map_bytes: [u8; 3],
+    pub map_byte_count: u8,
     pub dist_min: OnigLen,
     pub dist_max: OnigLen,
 

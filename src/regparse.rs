@@ -6657,6 +6657,8 @@ mod tests {
             exact: Vec::new(),
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
+            map_bytes: [0u8; 3],
+            map_byte_count: 0,
             dist_min: 0,
             dist_max: 0,
             called_addrs: vec![],

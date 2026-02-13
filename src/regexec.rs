@@ -2642,16 +2642,14 @@ fn match_at(
             // OP_ANYCHAR_STAR / OP_ANYCHAR_ML_STAR - .* optimization
             // ================================================================
             OpCode::AnyCharStar => {
-                // Push alternation for each possible length
-                // Greedy: try matching as many chars as possible
-                while s < right_range {
+                // Use SIMD to find newline boundary, then push Alt entries up to that point.
+                // In UTF-8/ASCII, 0x0a can only appear as a complete single-byte character,
+                // so memchr finds the exact newline position.
+                let nl_limit = memchr::memchr(b'\n', &str_data[s..right_range])
+                    .map_or(right_range, |i| s + i);
+                while s < nl_limit {
                     let n = enclen(enc, str_data, s);
-                    if s + n > right_range {
-                        break;
-                    }
-                    if enc.is_mbc_newline(&str_data[s..], end) {
-                        break;
-                    }
+                    if s + n > nl_limit { break; }
                     stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
                     s += n;
                 }
@@ -2672,18 +2670,30 @@ fn match_at(
 
             OpCode::AnyCharStarPeekNext => {
                 if let OperationPayload::AnyCharStarPeekNext { c } = reg.ops[p].payload {
-                    while s < right_range {
-                        let n = enclen(enc, str_data, s);
-                        if s + n > right_range {
-                            break;
+                    // Find newline boundary with SIMD
+                    let nl_limit = memchr::memchr(b'\n', &str_data[s..right_range])
+                        .map_or(right_range, |i| s + i);
+                    if c < 0x80 {
+                        // ASCII peek byte: use SIMD to find all occurrences directly.
+                        // In UTF-8, bytes < 0x80 can only be leading (single-byte) characters,
+                        // so every memchr hit is a valid character start.
+                        let mut iter_pos = s;
+                        while let Some(i) = memchr::memchr(c, &str_data[iter_pos..nl_limit]) {
+                            let pos = iter_pos + i;
+                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: pos, zid: -1, is_super: false });
+                            iter_pos = pos + 1;
                         }
-                        if enc.is_mbc_newline(&str_data[s..], end) {
-                            break;
+                        s = nl_limit;
+                    } else {
+                        // Non-ASCII peek: fall back to per-character loop
+                        while s < nl_limit {
+                            let n = enclen(enc, str_data, s);
+                            if s + n > nl_limit { break; }
+                            if s < end && str_data[s] == c {
+                                stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
+                            }
+                            s += n;
                         }
-                        if s < end && str_data[s] == c {
-                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
-                        }
-                        s += n;
                     }
                     p += 1;
                 } else {
@@ -2693,15 +2703,26 @@ fn match_at(
 
             OpCode::AnyCharMlStarPeekNext => {
                 if let OperationPayload::AnyCharStarPeekNext { c } = reg.ops[p].payload {
-                    while s < right_range {
-                        let n = enclen(enc, str_data, s);
-                        if s + n > right_range {
-                            break;
+                    if c < 0x80 {
+                        // ASCII peek byte: use SIMD to find all occurrences directly.
+                        // No newline check needed in multiline mode.
+                        let mut iter_pos = s;
+                        while let Some(i) = memchr::memchr(c, &str_data[iter_pos..right_range]) {
+                            let pos = iter_pos + i;
+                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: pos, zid: -1, is_super: false });
+                            iter_pos = pos + 1;
                         }
-                        if s < end && str_data[s] == c {
-                            stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
+                        s = right_range;
+                    } else {
+                        // Non-ASCII peek: fall back to per-character loop
+                        while s < right_range {
+                            let n = enclen(enc, str_data, s);
+                            if s + n > right_range { break; }
+                            if s < end && str_data[s] == c {
+                                stack.push(StackEntry::Alt { pcode: p + 1, pstr: s, zid: -1, is_super: false });
+                            }
+                            s += n;
                         }
-                        s += n;
                     }
                     p += 1;
                 } else {
@@ -3934,38 +3955,34 @@ pub fn onig_match_with_param(
 // ============================================================================
 
 /// Naive string search. Mirrors C's slow_search.
-fn slow_search(enc: OnigEncoding, target: &[u8], text: &[u8],
+/// Uses SIMD-accelerated memchr::memmem for the actual byte search.
+fn slow_search(_enc: OnigEncoding, target: &[u8], text: &[u8],
                text_start: usize, text_end: usize, text_range: usize) -> Option<usize> {
     if target.is_empty() { return Some(text_start); }
     let tlen = target.len();
-    let mut limit = text_end.saturating_sub(tlen - 1);
-    if limit > text_range { limit = text_range; }
-    let mut s = text_start;
-    while s < limit {
-        if text[s] == target[0] {
-            let mut ok = true;
-            for i in 1..tlen {
-                if s + i >= text_end || text[s + i] != target[i] {
-                    ok = false;
-                    break;
-                }
-            }
-            if ok { return Some(s); }
-        }
-        s += enclen(enc, text, s);
+    // Search can find matches starting up to limit, needing tlen bytes available.
+    let mut search_end = text_end.min(text_range + tlen.saturating_sub(1));
+    if search_end > text_end { search_end = text_end; }
+    if text_start + tlen > search_end { return None; }
+
+    let haystack = &text[text_start..search_end];
+    if tlen == 1 {
+        memchr::memchr(target[0], haystack).map(|i| text_start + i)
+    } else {
+        memchr::memmem::find(haystack, target).map(|i| text_start + i)
     }
-    None
 }
 
 /// Sunday quick search (BMH variant). Mirrors C's sunday_quick_search.
-fn sunday_quick_search(reg: &RegexType, target: &[u8], text: &[u8],
+/// Uses SIMD-accelerated memchr::memmem for the actual byte search.
+fn sunday_quick_search(_reg: &RegexType, target: &[u8], text: &[u8],
                        text_start: usize, text_end: usize, text_range: usize) -> Option<usize> {
-    let map_offset = reg.map_offset as usize;
     let tlen = target.len();
     if tlen == 0 { return Some(text_start); }
-    let tail_idx = tlen - 1;
 
-    let end = if tlen > text_end.saturating_sub(text_range) {
+    // Compute the search end: we can find matches starting up to text_range,
+    // but need tlen bytes available, so search within text[text_start..search_end].
+    let search_end = if tlen > text_end.saturating_sub(text_range) {
         if tlen > text_end.saturating_sub(text_start) {
             return None;
         }
@@ -3974,20 +3991,12 @@ fn sunday_quick_search(reg: &RegexType, target: &[u8], text: &[u8],
         text_range + tlen
     };
 
-    let mut s = text_start + tail_idx;
-    while s < end {
-        let mut p = s;
-        let mut t = tail_idx;
-        loop {
-            if text[p] != target[t] { break; }
-            if t == 0 { return Some(p); }
-            p -= 1;
-            t -= 1;
-        }
-        if s + map_offset >= text_end { break; }
-        s += reg.map[text[s + map_offset] as usize] as usize;
+    let haystack = &text[text_start..search_end];
+    if tlen == 1 {
+        memchr::memchr(target[0], haystack).map(|i| text_start + i)
+    } else {
+        memchr::memmem::find(haystack, target).map(|i| text_start + i)
     }
-    None
 }
 
 /// Sunday quick search with step forward for multi-byte safe operation.
@@ -4029,58 +4038,83 @@ fn sunday_quick_search_step_forward(reg: &RegexType, target: &[u8], text: &[u8],
 }
 
 /// Character map search. Mirrors C's map_search.
-fn map_search(enc: OnigEncoding, map: &[u8; CHAR_MAP_SIZE], text: &[u8],
+/// Uses SIMD-accelerated memchr when the map has 1-3 distinct ASCII bytes.
+fn map_search(enc: OnigEncoding, reg: &RegexType, text: &[u8],
               text_start: usize, text_range: usize) -> Option<usize> {
-    let mut s = text_start;
-    while s < text_range {
-        if map[text[s] as usize] != 0 { return Some(s); }
-        s += enclen(enc, text, s);
+    let haystack = &text[text_start..text_range];
+    match reg.map_byte_count {
+        1 => memchr::memchr(reg.map_bytes[0], haystack).map(|i| text_start + i),
+        2 => memchr::memchr2(reg.map_bytes[0], reg.map_bytes[1], haystack).map(|i| text_start + i),
+        3 => memchr::memchr3(reg.map_bytes[0], reg.map_bytes[1], reg.map_bytes[2], haystack).map(|i| text_start + i),
+        _ => {
+            let map = &reg.map;
+            let mut s = text_start;
+            while s < text_range {
+                if map[text[s] as usize] != 0 { return Some(s); }
+                s += enclen(enc, text, s);
+            }
+            None
+        }
     }
-    None
 }
 
 /// Backward naive string search. Mirrors C's slow_search_backward.
+/// Uses SIMD-accelerated memchr::memmem for the actual byte search.
 fn slow_search_backward(enc: OnigEncoding, target: &[u8], text: &[u8],
                         text_start: usize, adjust_text: usize,
                         text_end: usize, search_start: usize) -> Option<usize> {
     let tlen = target.len();
     if tlen == 0 { return Some(search_start); }
-    let mut s = text_end.saturating_sub(tlen);
-    if s > search_start {
-        s = search_start;
+    // The rightmost possible match start is min(search_start, text_end - tlen).
+    let right = if text_end.saturating_sub(tlen) > search_start {
+        search_start
     } else {
-        s = left_adjust_char_head(enc, text, adjust_text, s);
-    }
-    while s >= text_start {
-        if text[s] == target[0] {
-            let mut ok = true;
-            for i in 1..tlen {
-                if s + i >= text_end || text[s + i] != target[i] {
-                    ok = false;
-                    break;
-                }
-            }
-            if ok { return Some(s); }
+        text_end.saturating_sub(tlen)
+    };
+    if right < text_start { return None; }
+
+    // Search backward in text[text_start .. right + tlen]
+    let haystack = &text[text_start..right + tlen];
+    let found = if tlen == 1 {
+        memchr::memrchr(target[0], &haystack[..right - text_start + 1])
+    } else {
+        // rfind searches for last occurrence in haystack; we need to limit
+        // the starting position of the match to <= right.
+        memchr::memmem::rfind(&text[text_start..right + tlen], target)
+    };
+    if let Some(i) = found {
+        let pos = text_start + i;
+        // Ensure the found position is on a character boundary
+        let adjusted = left_adjust_char_head(enc, text, adjust_text, pos);
+        if adjusted == pos && pos >= text_start {
+            return Some(pos);
         }
-        if s == 0 { break; }
-        s = onigenc_get_prev_char_head(enc, text, adjust_text, s);
-        if s < text_start { break; }
     }
     None
 }
 
 /// Backward character map search. Mirrors C's map_search_backward.
-fn map_search_backward(enc: OnigEncoding, map: &[u8; CHAR_MAP_SIZE], text: &[u8],
-                       text_start: usize, adjust_text: usize,
+/// Uses SIMD-accelerated memrchr when the map has 1-3 distinct ASCII bytes.
+fn map_search_backward(enc: OnigEncoding, reg: &RegexType, text: &[u8],
+                       text_start: usize, _adjust_text: usize,
                        search_start: usize) -> Option<usize> {
-    let mut s = search_start;
-    loop {
-        if map[text[s] as usize] != 0 { return Some(s); }
-        if s <= text_start { break; }
-        s = onigenc_get_prev_char_head(enc, text, adjust_text, s);
-        if s < text_start { break; }
+    let haystack = &text[text_start..search_start + 1];
+    match reg.map_byte_count {
+        1 => memchr::memrchr(reg.map_bytes[0], haystack).map(|i| text_start + i),
+        2 => memchr::memrchr2(reg.map_bytes[0], reg.map_bytes[1], haystack).map(|i| text_start + i),
+        3 => memchr::memrchr3(reg.map_bytes[0], reg.map_bytes[1], reg.map_bytes[2], haystack).map(|i| text_start + i),
+        _ => {
+            let map = &reg.map;
+            let mut s = search_start;
+            loop {
+                if map[text[s] as usize] != 0 { return Some(s); }
+                if s <= text_start { break; }
+                s = onigenc_get_prev_char_head(enc, text, _adjust_text, s);
+                if s < text_start { break; }
+            }
+            None
+        }
     }
-    None
 }
 
 /// Left-adjust char head (ONIGENC_LEFT_ADJUST_CHAR_HEAD).
@@ -4107,7 +4141,7 @@ fn backward_search(reg: &RegexType, str_data: &[u8], end: usize,
                                      min_range, adjrange, end, p)
             }
             OptimizeType::Map => {
-                map_search_backward(reg.enc, &reg.map, str_data,
+                map_search_backward(reg.enc, reg, str_data,
                                     min_range, adjrange, p)
             }
             OptimizeType::None => { return None; }
@@ -4220,7 +4254,7 @@ fn forward_search(reg: &RegexType, str_data: &[u8], end: usize,
                 sunday_quick_search_step_forward(reg, &reg.exact, str_data, p, end, range)
             }
             OptimizeType::Map => {
-                map_search(reg.enc, &reg.map, str_data, p, range)
+                map_search(reg.enc, reg, str_data, p, range)
             }
             OptimizeType::None => { return None; }
         };
@@ -4782,6 +4816,8 @@ mod tests {
             exact: Vec::new(),
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
+            map_bytes: [0u8; 3],
+            map_byte_count: 0,
             dist_min: 0,
             dist_max: 0,
             called_addrs: vec![],
