@@ -2399,6 +2399,10 @@ fn match_at(
             OpCode::BeginBuf => {
                 if s != 0 {
                     goto_fail = true;
+                } else if opton_notbol(options) {
+                    goto_fail = true;
+                } else if opton_not_begin_string(options) {
+                    goto_fail = true;
                 } else {
                     p += 1;
                 }
@@ -2406,6 +2410,10 @@ fn match_at(
 
             OpCode::EndBuf => {
                 if s != end {
+                    goto_fail = true;
+                } else if opton_noteol(options) {
+                    goto_fail = true;
+                } else if opton_not_end_string(options) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -2443,9 +2451,17 @@ fn match_at(
             OpCode::SemiEndBuf => {
                 // Match end of string or before final newline
                 if s == end {
-                    p += 1;
+                    if opton_noteol(options) || opton_not_end_string(options) {
+                        goto_fail = true;
+                    } else {
+                        p += 1;
+                    }
                 } else if s + 1 == end && str_data[s] == b'\n' {
-                    p += 1;
+                    if opton_noteol(options) || opton_not_end_string(options) {
+                        goto_fail = true;
+                    } else {
+                        p += 1;
+                    }
                 } else {
                     goto_fail = true;
                 }

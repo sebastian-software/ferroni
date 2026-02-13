@@ -2180,6 +2180,67 @@ fn fetch_interval(
     r
 }
 
+/// Check if position is at the head of a BRE subexpression.
+/// Returns true if `prev_pos` is at the start of pattern, or preceded by \( or \|
+fn is_head_of_bre_subexp(prev_pos: usize, _end: usize, pattern: &[u8], enc: OnigEncoding, env: &ParseEnv) -> bool {
+    let start = 0usize;
+    if prev_pos > start {
+        if let Some(p1) = onigenc_get_prev_char_head(enc, start, prev_pos, pattern) {
+            if p1 > start {
+                let code1 = pattern[p1] as u32;
+                if code1 == '(' as u32
+                    || (code1 == '|' as u32 && is_syntax_op(env.syntax, ONIG_SYN_OP_ESC_VBAR_ALT))
+                {
+                    if let Some(p2) = onigenc_get_prev_char_head(enc, start, p1, pattern) {
+                        let code2 = pattern[p2] as u32;
+                        if is_mc_esc_code(code2, env.syntax) {
+                            let mut count = 0;
+                            let mut pp = p2;
+                            while pp > start {
+                                if let Some(prev) = onigenc_get_prev_char_head(enc, start, pp, pattern) {
+                                    pp = prev;
+                                    let cc = pattern[pp] as u32;
+                                    if !is_mc_esc_code(cc, env.syntax) {
+                                        break;
+                                    }
+                                    count += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            return count % 2 == 0;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    } else {
+        true
+    }
+}
+
+/// Check if position is at the end of a BRE subexpression.
+/// Returns true if at end-of-pattern, or followed by \) or \|
+fn is_end_of_bre_subexp(pos: usize, end: usize, pattern: &[u8], enc: OnigEncoding, env: &ParseEnv) -> bool {
+    if pos >= end {
+        return true;
+    }
+    let code = pattern[pos] as u32;
+    if is_mc_esc_code(code, env.syntax) {
+        let next = pos + enc.mbc_enc_len(&pattern[pos..]);
+        if next < end {
+            let code2 = pattern[next] as u32;
+            if code2 == ')' as u32
+                || (code2 == '|' as u32 && is_syntax_op(env.syntax, ONIG_SYN_OP_ESC_VBAR_ALT))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // ============================================================================
 // Tokenizer: fetch_token
 // ============================================================================
@@ -2520,13 +2581,22 @@ fn fetch_token(
                 tok.anchor = ANCR_BEGIN_BUF;
             }
             'Z' => {
-                if !is_syntax_op(syn, ONIG_SYN_OP_ESC_AZ_BUF_ANCHOR) {
-                    return tok.token_type as i32;
+                if is_syntax_bv(syn, ONIG_SYN_PYTHON) {
+                    // Python: \Z is end-of-buffer (no newline matching)
+                    tok.token_type = TokenType::Anchor;
+                    tok.anchor = ANCR_END_BUF;
+                } else {
+                    if !is_syntax_op(syn, ONIG_SYN_OP_ESC_AZ_BUF_ANCHOR) {
+                        return tok.token_type as i32;
+                    }
+                    tok.token_type = TokenType::Anchor;
+                    tok.anchor = ANCR_SEMI_END_BUF;
                 }
-                tok.token_type = TokenType::Anchor;
-                tok.anchor = ANCR_SEMI_END_BUF;
             }
             'z' => {
+                if is_syntax_bv(syn, ONIG_SYN_PYTHON) {
+                    return ONIGERR_UNDEFINED_OPERATOR;
+                }
                 if !is_syntax_op(syn, ONIG_SYN_OP_ESC_AZ_BUF_ANCHOR) {
                     return tok.token_type as i32;
                 }
@@ -2628,6 +2698,18 @@ fn fetch_token(
                     let r = scan_hexadecimal_number(p, end, 4, 4, pattern, enc, &mut code);
                     if r < 0 {
                         return r;
+                    }
+                    tok.token_type = TokenType::CodePoint;
+                    tok.base_num = 16;
+                    tok.code = code;
+                }
+            }
+            'U' => {
+                if !p_end(*p, end) && is_syntax_bv(syn, ONIG_SYN_PYTHON) {
+                    let mut code = 0;
+                    let r = scan_hexadecimal_number(p, end, 8, 8, pattern, enc, &mut code);
+                    if r < 0 {
+                        return ONIGERR_INVALID_CODE_POINT_VALUE;
                     }
                     tok.token_type = TokenType::CodePoint;
                     tok.base_num = 16;
@@ -2849,12 +2931,112 @@ fn fetch_token(
                         }
                         // Comment consumed, restart tokenization (goto start)
                         return fetch_token(tok, p, end, pattern, env);
+                    } else if is_syntax_op2(syn, ONIG_SYN_OP2_QMARK_PERL_SUBEXP_CALL) {
+                        // Perl subexp call syntax: (?R), (?&name), (?-1), (?+1), (?1)
+                        let c2 = ppeek(*p, pattern, end, enc);
+                        match c2 as u8 as char {
+                            '&' => {
+                                pinc(p, pattern, enc); // skip '&'
+                                match fetch_name('(' as u32, p, end, pattern, env, false) {
+                                    Ok((name_start, name_end, gnum, _num_type, _has_level, _level)) => {
+                                        let _ = gnum;
+                                        tok.token_type = TokenType::Call;
+                                        tok.call_by_number = false;
+                                        tok.call_gnum = 0;
+                                        tok.call_name_start = name_start;
+                                        tok.call_name_end = name_end;
+                                    }
+                                    Err(e) => return e,
+                                }
+                            }
+                            'R' => {
+                                tok.token_type = TokenType::Call;
+                                tok.call_by_number = true;
+                                tok.call_gnum = 0;
+                                tok.call_name_start = *p;
+                                pinc(p, pattern, enc); // skip 'R'
+                                if p_end(*p, end) || !ppeek_is(*p, pattern, end, enc, ')' as u32) {
+                                    return ONIGERR_UNDEFINED_GROUP_OPTION;
+                                }
+                                tok.call_name_end = *p;
+                            }
+                            '-' | '+' => {
+                                if !p_end(*p, end) {
+                                    let save2 = *p;
+                                    pinc(p, pattern, enc); // skip sign
+                                    if !p_end(*p, end) {
+                                        let c3 = ppeek(*p, pattern, end, enc);
+                                        if c3 >= '0' as u32 && c3 <= '9' as u32 {
+                                            // Relative number: unfetch the sign, then use fetch_name
+                                            *p = save2;
+                                            // Fall through to lparen_qmark_num
+                                            match fetch_name('(' as u32, p, end, pattern, env, true) {
+                                                Ok((name_start, name_end, back_num, num_type, _has_level, _level)) => {
+                                                    if num_type == IS_NOT_NUM {
+                                                        return ONIGERR_INVALID_GROUP_NAME;
+                                                    }
+                                                    let mut gnum = back_num;
+                                                    if num_type == IS_REL_NUM {
+                                                        gnum = backref_rel_to_abs(gnum, env);
+                                                        if gnum < 0 {
+                                                            return ONIGERR_UNDEFINED_GROUP_REFERENCE;
+                                                        }
+                                                    }
+                                                    tok.token_type = TokenType::Call;
+                                                    tok.call_by_number = true;
+                                                    tok.call_gnum = gnum;
+                                                    tok.call_name_start = name_start;
+                                                    tok.call_name_end = name_end;
+                                                }
+                                                Err(e) => return e,
+                                            }
+                                        } else {
+                                            *p = saved_p;
+                                            // Not a call, treat as normal group
+                                        }
+                                    } else {
+                                        *p = saved_p;
+                                    }
+                                } else {
+                                    *p = saved_p;
+                                }
+                            }
+                            '0'..='9' => {
+                                // Absolute number call: (?1), (?2), etc.
+                                match fetch_name('(' as u32, p, end, pattern, env, true) {
+                                    Ok((name_start, name_end, back_num, num_type, _has_level, _level)) => {
+                                        if num_type == IS_NOT_NUM {
+                                            return ONIGERR_INVALID_GROUP_NAME;
+                                        }
+                                        let mut gnum = back_num;
+                                        if num_type == IS_REL_NUM {
+                                            gnum = backref_rel_to_abs(gnum, env);
+                                            if gnum < 0 {
+                                                return ONIGERR_UNDEFINED_GROUP_REFERENCE;
+                                            }
+                                        }
+                                        tok.token_type = TokenType::Call;
+                                        tok.call_by_number = true;
+                                        tok.call_gnum = gnum;
+                                        tok.call_name_start = name_start;
+                                        tok.call_name_end = name_end;
+                                    }
+                                    Err(e) => return e,
+                                }
+                            }
+                            _ => {
+                                // Not a Perl call, restore and handle as normal group
+                                *p = saved_p;
+                            }
+                        }
                     } else {
                         // Not a comment group, restore position
                         *p = saved_p;
                     }
                 }
-                tok.token_type = TokenType::SubexpOpen;
+                if tok.token_type == TokenType::String {
+                    tok.token_type = TokenType::SubexpOpen;
+                }
             }
             ')' => {
                 if !is_syntax_op(syn, ONIG_SYN_OP_LPAREN_SUBEXP) {
@@ -2866,6 +3048,11 @@ fn fetch_token(
                 if !is_syntax_op(syn, ONIG_SYN_OP_LINE_ANCHOR) {
                     return tok.token_type as i32;
                 }
+                if is_syntax_bv(syn, ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP) {
+                    if !is_head_of_bre_subexp(pfetch_prev, end, pattern, enc, env) {
+                        return tok.token_type as i32;
+                    }
+                }
                 tok.token_type = TokenType::Anchor;
                 tok.anchor = if opton_singleline(env.options) {
                     ANCR_BEGIN_BUF
@@ -2876,6 +3063,11 @@ fn fetch_token(
             '$' => {
                 if !is_syntax_op(syn, ONIG_SYN_OP_LINE_ANCHOR) {
                     return tok.token_type as i32;
+                }
+                if is_syntax_bv(syn, ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP) {
+                    if !is_end_of_bre_subexp(*p, end, pattern, enc, env) {
+                        return tok.token_type as i32;
+                    }
                 }
                 tok.token_type = TokenType::Anchor;
                 tok.anchor = if opton_singleline(env.options) {
@@ -2987,7 +3179,22 @@ fn greedy_check2(
     enc: OnigEncoding,
     syn: &OnigSyntaxType,
 ) -> i32 {
-    greedy_check(tok, p, end, pattern, enc, syn)
+    // C: greedy_check2 label — check lazy ? first, then possessive +
+    // Unlike greedy_check, this allows possessive + on intervals via
+    // ONIG_SYN_OP2_PLUS_POSSESSIVE_INTERVAL
+    if !p_end(*p, end)
+        && ppeek_is(*p, pattern, end, enc, '?' as u32)
+        && is_syntax_op(syn, ONIG_SYN_OP_QMARK_NON_GREEDY)
+        && !tok.repeat_possessive
+    {
+        let mut pfetch_prev = *p;
+        pfetch(p, &mut pfetch_prev, pattern, end, enc); // consume '?'
+        tok.repeat_greedy = false;
+        tok.repeat_possessive = false;
+    } else {
+        possessive_check(tok, p, end, pattern, enc, syn);
+    }
+    tok.token_type as i32
 }
 
 // ============================================================================
@@ -3211,6 +3418,18 @@ fn fetch_token_cc(
                     let r = scan_hexadecimal_number(p, end, 4, 4, pattern, enc, &mut code);
                     if r < 0 {
                         return r;
+                    }
+                    tok.token_type = TokenType::CodePoint;
+                    tok.base_num = 16;
+                    tok.code = code;
+                }
+            }
+            'U' => {
+                if !p_end(*p, end) && is_syntax_bv(syn, ONIG_SYN_PYTHON) {
+                    let mut code = 0;
+                    let r = scan_hexadecimal_number(p, end, 8, 8, pattern, enc, &mut code);
+                    if r < 0 {
+                        return ONIGERR_INVALID_CODE_POINT_VALUE;
                     }
                     tok.token_type = TokenType::CodePoint;
                     tok.base_num = 16;
@@ -3570,8 +3789,32 @@ fn prs_cc(
                             return Err(cr);
                         }
                     } else if curr_type == CV_CPROP {
-                        env.parse_depth -= 1;
-                        return Err(ONIGERR_UNMATCHED_RANGE_SPECIFIER_IN_CHAR_CLASS);
+                        if is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_CHAR_TYPE_FOLLOWED_BY_MINUS_IN_CC) {
+                            // Treat dash as literal: [\w-%] -> [\w\-\%]
+                            let cc = if use_work {
+                                &mut work_cc
+                            } else {
+                                node.as_cclass_mut().unwrap()
+                            };
+                            let cr = cc_char_next(
+                                cc,
+                                &mut curr_code,
+                                '-' as u32,
+                                &mut curr_raw,
+                                false,
+                                CV_SB,
+                                &mut curr_type,
+                                &mut state,
+                                env,
+                            );
+                            if cr != 0 {
+                                env.parse_depth -= 1;
+                                return Err(cr);
+                            }
+                        } else {
+                            env.parse_depth -= 1;
+                            return Err(ONIGERR_UNMATCHED_RANGE_SPECIFIER_IN_CHAR_CLASS);
+                        }
                     } else {
                         state = CS_RANGE;
                     }
@@ -4939,7 +5182,7 @@ fn prs_bag(
     let enc = env.enc;
 
     if p_end(*p, end) {
-        return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        return Err(ONIGERR_END_PATTERN_WITH_UNMATCHED_PARENTHESIS);
     }
 
     let c = ppeek(*p, pattern, end, enc);
@@ -5082,6 +5325,47 @@ fn prs_bag(
                             return prs_named_group(
                                 tok, '<' as u32, term, p, end, pattern, env, false,
                             );
+                        } else if c2 == '=' as u32 {
+                            // (?P=name) — Python named backref
+                            pinc(p, pattern, enc); // skip '='
+                            match fetch_name('(' as u32, p, end, pattern, env, false) {
+                                Ok((name_start, name_end, _back_num, _num_type, has_level, level_val)) => {
+                                    let name = &pattern[name_start..name_end];
+                                    let reg = unsafe { &*env.reg };
+                                    if let Some(ref nt) = reg.name_table {
+                                        if let Some(entry) = nt.find(name) {
+                                            let refs = if entry.back_num == 1 {
+                                                vec![entry.back_refs[0]]
+                                            } else {
+                                                entry.back_refs.clone()
+                                            };
+                                            let mut np = node_new_backref(entry.back_num, &refs, true, level_val);
+                                            if has_level {
+                                                // level-based backref (rare)
+                                            }
+                                            if opton_ignorecase(env.options) {
+                                                np.status_add(ND_ST_IGNORECASE);
+                                            }
+                                            env.backref_num += 1;
+                                            return Ok((np, 0));
+                                        }
+                                    }
+                                    return Err(ONIGERR_UNDEFINED_NAME_REFERENCE);
+                                }
+                                Err(e) => return Err(e),
+                            }
+                        } else if c2 == '>' as u32 {
+                            // (?P>name) — Python named call
+                            pinc(p, pattern, enc); // skip '>'
+                            match fetch_name('(' as u32, p, end, pattern, env, false) {
+                                Ok((name_start, name_end, gnum, _num_type, _has_level, _level)) => {
+                                    let name = &pattern[name_start..name_end];
+                                    let np = node_new_call(name, gnum, false);
+                                    env.num_call += 1;
+                                    return Ok((np, 0));
+                                }
+                                Err(e) => return Err(e),
+                            }
                         }
                     }
                     return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
@@ -5326,10 +5610,13 @@ fn prs_options(
             }
             'm' => {
                 if is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_PERL) {
+                    // C: OPTION_NEGATE(option, SINGLELINE, (neg == FALSE ? TRUE : FALSE))
+                    // (?m) CLEARS singleline (making ^ and $ match at line boundaries)
+                    // (?-m) SETS singleline (restoring default)
                     if neg {
-                        onig_option_off(&mut option, ONIG_OPTION_SINGLELINE);
-                    } else {
                         onig_option_on(&mut option, ONIG_OPTION_SINGLELINE);
+                    } else {
+                        onig_option_off(&mut option, ONIG_OPTION_SINGLELINE);
                     }
                 } else if is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_RUBY)
                     || is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_ONIGURUMA)
@@ -5375,6 +5662,16 @@ fn prs_options(
             }
             'P' => {
                 if !is_syntax_op2(syn, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                if neg {
+                    onig_option_off(&mut option, ONIG_OPTION_POSIX_IS_ASCII);
+                } else {
+                    onig_option_on(&mut option, ONIG_OPTION_POSIX_IS_ASCII);
+                }
+            }
+            'a' => {
+                if !is_syntax_bv(syn, ONIG_SYN_PYTHON) {
                     return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
                 }
                 if neg {
@@ -5843,7 +6140,16 @@ fn prs_exp(
                 }
                 node_new_empty()
             } else {
-                node_new_str(&pattern[tok.backp..*p])
+                if tok.token_type == TokenType::Interval
+                    && is_syntax_op(env.syntax, ONIG_SYN_OP_ESC_BRACE_INTERVAL)
+                {
+                    // BRE \{n\} at start: strip backslashes to get literal {n}
+                    let raw = &pattern[tok.backp..*p];
+                    let stripped: Vec<u8> = raw.iter().copied().filter(|&b| b != b'\\').collect();
+                    node_new_str(&stripped)
+                } else {
+                    node_new_str(&pattern[tok.backp..*p])
+                }
             }
         }
         _ => {
