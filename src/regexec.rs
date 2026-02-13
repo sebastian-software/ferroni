@@ -1147,6 +1147,10 @@ pub struct MatchArg {
     /// Lazily-initialized search start time for time-limit checking.
     /// None until the first time check fires, then set to Instant::now().
     time_start: Option<Box<Instant>>,
+    // Reusable VM state (avoids heap allocation per match_at call)
+    stack: Vec<StackEntry>,
+    mem_start_stk: Vec<MemPtr>,
+    mem_end_stk: Vec<MemPtr>,
 }
 
 const CHECK_TIME_INTERVAL: u64 = 512;
@@ -1170,6 +1174,9 @@ impl MatchArg {
             match_stack_limit: MATCH_STACK_LIMIT.load(Ordering::Relaxed),
             time_limit: TIME_LIMIT.load(Ordering::Relaxed),
             time_start: None,
+            stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
+            mem_start_stk: Vec::new(),
+            mem_end_stk: Vec::new(),
         }
     }
 
@@ -1192,6 +1199,9 @@ impl MatchArg {
             match_stack_limit: mp.match_stack_limit,
             time_limit: mp.time_limit,
             time_start: None,
+            stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
+            mem_start_stk: Vec::new(),
+            mem_end_stk: Vec::new(),
         }
     }
 
@@ -1836,9 +1846,33 @@ fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: M
 }
 
 /// Check if a code point is in a multi-byte range table.
-/// The table format is: n:u32 (range count) followed by n pairs of (from:u32, to:u32).
-/// All values in native-endian byte order. Binary search.
-pub(crate) fn is_in_code_range(mb: &[u8], code: OnigCodePoint) -> bool {
+/// The table format is: data[0] = n (range count), followed by n pairs of (from, to).
+/// Binary search, matching C's onig_is_in_code_range exactly.
+#[inline]
+pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
+    if data.is_empty() {
+        return false;
+    }
+    let n = data[0] as usize;
+    let ranges = &data[1..];
+
+    let mut low: usize = 0;
+    let mut high: usize = n;
+    while low < high {
+        let x = (low + high) >> 1;
+        if code > ranges[x * 2 + 1] {
+            low = x + 1;
+        } else {
+            high = x;
+        }
+    }
+
+    low < n && code >= ranges[low * 2]
+}
+
+/// Check if a code point is in a multi-byte range table stored as raw bytes.
+/// Used at compile time (regparse) where data is still in BBuf byte format.
+pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
     if mb.len() < 4 {
         return false;
     }
@@ -2200,12 +2234,15 @@ fn match_at(
     let enc = reg.enc;
     let options = msa.options;
 
-    // Stack for backtracking
-    let mut stack: Vec<StackEntry> = Vec::with_capacity(INIT_MATCH_STACK_SIZE);
-
-    // Capture group tracking arrays
-    let mut mem_start_stk: Vec<MemPtr> = vec![MemPtr::Invalid; num_mem + 1];
-    let mut mem_end_stk: Vec<MemPtr> = vec![MemPtr::Invalid; num_mem + 1];
+    // Reuse stack and capture-group arrays from MatchArg (avoids heap alloc per call)
+    let mut stack = std::mem::take(&mut msa.stack);
+    stack.clear();
+    let mut mem_start_stk = std::mem::take(&mut msa.mem_start_stk);
+    mem_start_stk.clear();
+    mem_start_stk.resize(num_mem + 1, MemPtr::Invalid);
+    let mut mem_end_stk = std::mem::take(&mut msa.mem_end_stk);
+    mem_end_stk.clear();
+    mem_end_stk.resize(num_mem + 1, MemPtr::Invalid);
 
     let mut keep: usize = sstart;
     let mut best_len: i32 = ONIG_MISMATCH;
@@ -2313,6 +2350,9 @@ fn match_at(
 
                         // For non-FIND_LONGEST, return immediately
                         if !opton_find_longest(options) {
+                            msa.stack = stack;
+                            msa.mem_start_stk = mem_start_stk;
+                            msa.mem_end_stk = mem_end_stk;
                             return best_len;
                         }
 
@@ -3786,6 +3826,12 @@ fn match_at(
 
     // Accumulate retry counter into search counter
     msa.retry_limit_in_search_counter += retry_in_match_counter;
+
+    // Return reusable buffers to MatchArg for next call
+    msa.stack = stack;
+    msa.mem_start_stk = mem_start_stk;
+    msa.mem_end_stk = mem_end_stk;
+
     best_len
 }
 

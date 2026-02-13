@@ -4206,7 +4206,7 @@ fn prs_cc(
                     false
                 };
                 let in_mb = if let Some(ref mbuf) = cc.mbuf {
-                    crate::regexec::is_in_code_range(&mbuf.data, from)
+                    crate::regexec::is_in_code_range_bytes(&mbuf.data, from)
                 } else {
                     false
                 };

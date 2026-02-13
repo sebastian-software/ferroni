@@ -373,10 +373,10 @@ pub enum OperationPayload {
         bsp: Box<BitSet>,
     },
     CClassMb {
-        mb: Vec<u8>,
+        mb: Vec<u32>,
     },
     CClassMix {
-        mb: Vec<u8>,
+        mb: Vec<u32>,
         bsp: Box<BitSet>,
     },
     AnyCharStarPeekNext {

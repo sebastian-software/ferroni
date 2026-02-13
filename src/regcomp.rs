@@ -681,6 +681,14 @@ fn compile_length_cclass_node(cc: &CClassNode, reg: &RegexType) -> i32 {
     SIZE_INC
 }
 
+/// Convert a BBuf byte buffer to a Vec<u32> for direct indexing at execution time.
+/// BBuf stores code ranges as packed u32 values in native-endian bytes.
+fn bbuf_to_u32_vec(data: &[u8]) -> Vec<u32> {
+    data.chunks_exact(4)
+        .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
 /// Compile a character class node to bytecode.
 fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
     let has_mb = cc.mbuf.is_some();
@@ -693,7 +701,7 @@ fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
         } else {
             OpCode::CClassMix
         };
-        let mb_data = cc.mbuf.as_ref().map(|b| b.data.clone()).unwrap_or_default();
+        let mb_data = cc.mbuf.as_ref().map(|b| bbuf_to_u32_vec(&b.data)).unwrap_or_default();
         add_op(reg, opcode, OperationPayload::CClassMix {
             mb: mb_data,
             bsp: Box::new(cc.bs),
@@ -705,7 +713,7 @@ fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
         } else {
             OpCode::CClassMb
         };
-        let mb_data = cc.mbuf.as_ref().map(|b| b.data.clone()).unwrap_or_default();
+        let mb_data = cc.mbuf.as_ref().map(|b| bbuf_to_u32_vec(&b.data)).unwrap_or_default();
         add_op(reg, opcode, OperationPayload::CClassMb { mb: mb_data });
     } else {
         // Single-byte only
