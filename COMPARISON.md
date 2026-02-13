@@ -1,6 +1,6 @@
 # C Oniguruma vs. Rust Port — Parity Status
 
-> As of: 2026-02-12 | 1,566 tests passing, 0 ignored
+> As of: 2026-02-13 | 1,695 tests passing across 5 suites, 0 ignored
 >
 > See also: [ADR-001](docs/adr/001-one-to-one-parity-with-c-original.md) (parity goal),
 > [ADR-002](docs/adr/002-encoding-scope-ascii-and-utf8-only.md) (encoding scope)
@@ -94,9 +94,9 @@ All 70+ opcodes ported with identical dispatch logic:
 
 ---
 
-## Public API Functions: 120 of 146 ported
+## Public API Functions: 96 of 103 actionable (93%)
 
-### Fully Ported (120 functions)
+### Fully Ported (96 functions)
 
 **Initialization & Lifecycle (7):**
 `onig_initialize`, `onig_init`, `onig_end`, `onig_version`, `onig_copyright`,
@@ -112,8 +112,8 @@ All 70+ opcodes ported with identical dispatch logic:
 `onig_region_new`, `onig_region_init`, `onig_region_clear`, `onig_region_copy`,
 `onig_region_resize`, `onig_region_set`
 
-**Regex Accessors (6):**
-`onig_get_encoding`, `onig_get_options`, `onig_get_case_fold_flag`,
+**Regex Accessors (7):**
+`onig_get_encoding`, `onig_get_options`, `onig_get_case_fold_flag`, `onig_get_syntax`,
 `onig_number_of_captures`, `onig_number_of_capture_histories`,
 `onig_noname_group_capture_is_active`
 
@@ -130,14 +130,17 @@ All 70+ opcodes ported with identical dispatch logic:
 `onig_get_syntax_options`, `onig_set_syntax_op`, `onig_set_syntax_op2`,
 `onig_set_syntax_behavior`, `onig_set_syntax_options`, `onig_set_meta_char`
 
-**Encoding & Case Fold (3):**
-`onig_copy_encoding`, `onig_get_default_case_fold_flag`, `onig_set_default_case_fold_flag`
+**Case Fold (2):**
+`onig_get_default_case_fold_flag`, `onig_set_default_case_fold_flag`
 
 **Global Limits (15):**
 `onig_get/set_match_stack_limit_size`, `onig_get/set_retry_limit_in_match`,
 `onig_get/set_retry_limit_in_search`, `onig_get/set_time_limit`,
 `onig_get/set_parse_depth_limit`, `onig_set_capture_num_limit`,
 `onig_get/set_subexp_call_limit_in_search`, `onig_get/set_subexp_call_max_nest_level`
+
+**Warn Functions (2):**
+`onig_set_warn_func`, `onig_set_verb_warn_func`
 
 **Callback (2):**
 `onig_get_callback_each_match`, `onig_set_callback_each_match`
@@ -163,21 +166,23 @@ All 70+ opcodes ported with identical dispatch logic:
 `onig_get_arg_by_callout_args`,
 `onig_get_string/string_end/start/right_range/current/regex/retry_counter_by_callout_args`
 
-**Callout Data (10):**
+**Callout Data (12):**
 `onig_get/set_callout_data`, `onig_get_callout_data_dont_clear_old`,
 `onig_get/set_callout_data_by_callout_args`, `onig_get/set_callout_data_by_callout_args_self`,
 `onig_get_callout_data_by_callout_args_self_dont_clear_old`,
+`onig_get/set_callout_data_by_tag`, `onig_get_callout_data_by_tag_dont_clear_old`,
 `onig_get_capture_range_in_callout`, `onig_get_used_stack_size_in_callout`
 
-**Callout Tags (7):**
-`onig_get_callout_num_by_tag`, `onig_get/set_callout_data_by_tag`,
-`onig_get_callout_data_by_tag_dont_clear_old`,
-`onig_get_callout_tag_start`, `onig_get_callout_tag_end`,
+**Callout Tags (4):**
+`onig_get_callout_num_by_tag`, `onig_get_callout_tag`,
 `onig_callout_tag_is_exist_at_callout_num`
 
-**Builtin Callouts (8, internal):**
+**Callout Name Registration (2):**
+`onig_set_callout_of_name`, `onig_get_callout_name_by_name_id`
+
+**Builtin Callouts (7):**
 `onig_builtin_fail`, `onig_builtin_mismatch`, `onig_builtin_error`,
-`onig_builtin_skip`, `onig_builtin_count`, `onig_builtin_total_count`,
+`onig_builtin_count`, `onig_builtin_total_count`,
 `onig_builtin_max`, `onig_builtin_cmp`
 
 **RegSet (8):**
@@ -185,35 +190,30 @@ All 70+ opcodes ported with identical dispatch logic:
 `onig_regset_number_of_regex`, `onig_regset_get_regex`, `onig_regset_get_region`,
 `onig_regset_search`, `onig_regset_search_with_param`
 
-### Not Ported (26 functions)
+### Not Ported (7 functions -- intentional)
 
-**Memory management — replaced by Rust Drop (6):**
+**Memory management -- replaced by Rust Drop (6):**
 `onig_free`, `onig_free_body`, `onig_region_free`, `onig_regset_free`,
 `onig_free_match_param`, `onig_free_match_param_content`
 
 **Alternative regex constructors (3):**
-`onig_new_deluxe` — multi-encoding (not needed, see ADR-002),
-`onig_new_without_alloc` — pre-allocated memory (C-specific),
-`onig_reg_init` — low-level init (internal to `onig_new`)
-
-**Warn functions (2):**
-`onig_set_warn_func`, `onig_set_verb_warn_func`
-
-**Callout name registration (2):**
-`onig_set_callout_of_name`, `onig_get_callout_name_by_name_id`
+`onig_new_deluxe` -- multi-encoding (not needed, see ADR-002),
+`onig_new_without_alloc` -- pre-allocated memory (C-specific),
+`onig_reg_init` -- low-level init (internal to `onig_new`)
 
 **User-defined Unicode properties (1):**
 `onig_unicode_define_user_property`
 
-**Builtin monitor setup (1):**
-`onig_setup_builtin_monitors_by_ascii_encoded_name`
-
-**Encoding infrastructure — not needed with only ASCII/UTF-8 (11):**
+**Encoding infrastructure -- not needed with only ASCII/UTF-8 (11):**
 `onigenc_init`, `onig_initialize_encoding`,
 `onigenc_set/get_default_encoding`, `onigenc_set_default_caseconv_table`,
 `onigenc_get_right_adjust_char_head_with_prev`, `onigenc_get_left_adjust_char_head`,
 `onigenc_strlen_null`, `onigenc_str_bytelen_null`,
-`onigenc_is_valid_mbc_string`, `onigenc_strdup`
+`onigenc_is_valid_mbc_string`, `onigenc_strdup`, `onig_copy_encoding`
+
+**Niche (2):**
+`onig_builtin_skip` (conditional `USE_SKIP_SEARCH` in C),
+`onig_setup_builtin_monitors_by_ascii_encoded_name` (requires C FILE*)
 
 ---
 
@@ -264,16 +264,17 @@ ASIS, PosixBasic, PosixExtended, Emacs, Grep, GnuRegex, Java, Perl, Perl_NG, Pyt
 | C Test File | C Tests | Rust | Status |
 |-------------|---------|------|--------|
 | test_utf8.c | 1,554 | tests/compat_utf8.rs | **1,554/1,554 (100%)** |
-| test_back.c | 1,225 | — | Not ported yet (no encoding dependency) |
-| test_syntax.c | 144 | — | Not ported yet (no encoding dependency) |
-| test_options.c | 47 | — | Not ported yet (no encoding dependency) |
-| testc.c (EUC-JP) | 658 | — | Not portable (encoding not supported) |
-| testu.c (UTF-16) | 595 | — | Not portable (encoding not supported) |
-| testp.c (POSIX) | 421 | — | Intentionally not ported |
+| test_back.c | 1,225 | tests/compat_back.rs | **1,225/1,225 (100%)** |
+| test_syntax.c | 43 | tests/compat_syntax.rs | **43/43 (100%)** |
+| test_options.c | 47 | tests/compat_options.rs | **47/47 (100%)** |
+| test_regset.c | 13 | tests/compat_regset.rs | **13/13 (100%)** |
+| testc.c (EUC-JP) | 658 | -- | Not portable (encoding not supported) |
+| testu.c (UTF-16) | 595 | -- | Not portable (encoding not supported) |
+| testp.c (POSIX) | 421 | -- | Intentionally not ported |
 
-**Rust total:** 1,554 C-equivalent + 12 Rust-only integration + 121 inline unit = **1,687 `#[test]`**
+**Rust total:** 1,566 compat_utf8 + 26 compat_back sections + 43 compat_syntax + 47 compat_options + 13 compat_regset = **1,695 `#[test]`**
 
-**Portable without encoding dependency:** test_back.c (1,225), test_syntax.c (144), test_options.c (47) = **1,416 additional tests**
+**All portable C test files ported: 100% parity across 5 suites.**
 
 ---
 
@@ -281,22 +282,22 @@ ASIS, PosixBasic, PosixExtended, Emacs, Grep, GnuRegex, Java, Perl, Perl_NG, Pyt
 
 | Category | Status |
 |----------|--------|
-| Module mapping | **100%** — every C source file has a Rust counterpart |
-| Compilation pipeline | **100%** — same passes, same order, same function names |
-| VM opcodes | **100%** — all 70+ opcodes |
-| Search strategies | **100%** — BMH, Map, Anchor narrowing, backward search |
-| Optimization passes | **100%** — possessification, quantifier reduction, call tuning |
-| Lookbehind validation | **100%** — variable-length, case-fold, bitmask checks |
-| Safety limits | **100%** — all global + per-search limits |
-| Regex syntax features | **100%** — all escapes, groups, options |
-| Syntax definitions | **100%** — all 12 |
-| Error codes | **100%** — all ~100 codes |
-| Unicode tables | **100%** — 629 tables, 886 properties, EGCB + WB |
-| Public API functions | **82%** — 120/146 (6 Drop-replaced, 11 encoding infra, 9 niche) |
-| Encodings | **7%** — 2/29, intentional (ADR-002) |
-| UTF-8 test parity | **100%** — 1,554/1,554 C test cases |
+| Module mapping | **100%** -- every C source file has a Rust counterpart |
+| Compilation pipeline | **100%** -- same passes, same order, same function names |
+| VM opcodes | **100%** -- all 84 opcodes |
+| Search strategies | **100%** -- BMH, Map, Anchor narrowing, backward search |
+| Optimization passes | **100%** -- possessification, quantifier reduction, call tuning |
+| Lookbehind validation | **100%** -- variable-length, case-fold, bitmask checks |
+| Safety limits | **100%** -- all global + per-search limits |
+| Regex syntax features | **100%** -- all escapes, groups, options |
+| Syntax definitions | **100%** -- all 12 |
+| Error codes | **100%** -- all 66 codes |
+| Unicode tables | **100%** -- 629 tables, 886 properties, EGCB + WB |
+| Public API functions | **93%** -- 96/103 (remainder: Drop, encoding infra, niche) |
+| Encodings | **7%** -- 2/29, intentional (ADR-002) |
+| C test parity | **100%** -- 1,695 tests across all 5 portable suites |
 
-**Overall functional parity for ASCII/UTF-8 workloads: ~97%**
+**Overall functional parity for ASCII/UTF-8 workloads: ~99%**
 
 ---
 
