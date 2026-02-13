@@ -133,6 +133,66 @@ onig_new() -> onig_compile()
 | `goto fail` | `goto` chains | `loop + break` or `return Err(...)` |
 | Encodings | 29 encoding files | 2 (ASCII + UTF-8) |
 
+## Why Rust?
+
+### Security
+
+The C Oniguruma library has a history of memory safety CVEs, including:
+
+- **CVE-2019-13224** (CVSS 9.8) -- use-after-free in `onig_new_deluxe()`, potential code execution
+- **CVE-2019-19204** -- heap buffer over-read in `fetch_interval_quantifier()`, missing bounds check
+- **CVE-2019-19246** -- heap buffer over-read in `str_lower_case_match()`
+- **CVE-2019-19012** -- integer overflow in `search_in_range()` leading to out-of-bounds read
+- **CVE-2019-13225** -- NULL pointer dereference in `match_at()`
+
+These affect Ruby, PHP, and any application linking against C Oniguruma.
+
+The Rust port eliminates these vulnerability classes structurally:
+
+| Vulnerability class | C | Rust |
+|---|---|---|
+| Buffer over-read/write | Raw `UChar*` arithmetic | Bounds-checked `&[u8]` slices |
+| Use-after-free | Manual `malloc`/`free` | Ownership + `Drop` |
+| NULL dereference | Raw pointers | `Option<T>` |
+| Double-free | Manual lifecycle | Single owner, `Drop` once |
+| Integer overflow | Undefined behavior | Panic (debug) / defined wrap (release) |
+| Uninitialized memory | Stack variables | All values initialized |
+
+**Honest caveat:** The port contains 86 `unsafe` blocks across ~20,400 LOC
+(0.4% of lines). These are concentrated in two patterns:
+
+1. **AST raw pointers** (regcomp.rs) -- call nodes share target references
+   that can't be expressed with Rust's borrow checker. These pointers are
+   set once during parsing and remain valid for the regex's lifetime.
+2. **Function pointer storage** (regexec.rs) -- global callout callbacks
+   use `AtomicPtr` + `transmute`, matching the C pattern for global
+   function pointers.
+
+None of the `unsafe` blocks involve buffer arithmetic, allocation, or string
+processing -- the areas where C Oniguruma's CVEs occurred.
+
+### Practical Benefits
+
+- **No C toolchain required** -- pure Rust, no FFI, no linking headaches
+- **`cargo build`** -- replaces autoconf/cmake/make
+- **Cross-compilation** -- `cargo build --target wasm32-unknown-unknown` works out of the box
+- **Package management** -- usable as a crate dependency
+- **Thread safety** -- global state uses atomics; no unguarded mutable statics
+- **Error handling** -- `Result<T, i32>` instead of checking return codes and hoping
+
+### What This Port Does Not Improve
+
+- **Stack exhaustion** -- deeply nested regex patterns can still overflow the
+  stack in both C and Rust. The port carries over the same `parse_depth_limit`
+  and `subexp_call_max_nest_level` safeguards, but pathological patterns remain
+  a risk in debug builds.
+- **Algorithmic complexity** -- regex patterns with exponential backtracking
+  behave identically to C. The same `retry_limit_in_match` and `time_limit`
+  mitigations apply.
+- **Performance** -- not yet benchmarked. Expect similar performance; Rust adds
+  bounds checking overhead but eliminates indirect-call overhead from C's
+  function pointer tables.
+
 ## What's Not Included
 
 **27 of 29 encodings** -- only ASCII and UTF-8 are implemented. This is a
