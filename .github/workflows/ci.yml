@@ -44,6 +44,35 @@ jobs:
         env:
           RUST_MIN_STACK: "268435456"
 
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage
+        run: >
+          RUST_MIN_STACK=268435456
+          cargo llvm-cov
+          --test compat_utf8
+          --test compat_back
+          --test compat_options
+          --test compat_regset
+          --test compat_syntax
+          --lcov
+          --output-path lcov.info
+          -- --test-threads=1
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
