@@ -5,4 +5,18 @@ edition = "2021"
 description = "1:1 Rust port of Oniguruma regex engine"
 license = "BSD-2-Clause"
 
+[features]
+ffi = ["cc"]
+
 [dependencies]
+
+[build-dependencies]
+cc = { version = "1", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "onig_bench"
+harness = false
+required-features = ["ffi"]

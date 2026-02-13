@@ -19,3 +19,6 @@ pub mod regexec;
 pub mod regtrav;
 pub mod regset;
 pub mod regerror;
+
+#[cfg(feature = "ffi")]
+pub mod ffi;
