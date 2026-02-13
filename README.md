@@ -207,95 +207,106 @@ cargo bench --features ffi
 | Benchmark | Rust | C | Ratio |
 |-----------|-----:|--:|------:|
 | **Literal match** | | | |
-| exact string | **104 ns** | 154 ns | 0.68 |
-| anchored start | **99 ns** | 148 ns | 0.67 |
-| anchored end | **111 ns** | 163 ns | 0.68 |
-| word boundary | **113 ns** | 163 ns | 0.69 |
+| exact string | **136 ns** | 151 ns | 0.90 |
+| anchored start | **106 ns** | 147 ns | 0.72 |
+| anchored end | 167 ns | **157 ns** | 1.06 |
+| word boundary | **121 ns** | 153 ns | 0.79 |
 | **Quantifiers** | | | |
-| greedy | **222 ns** | 268 ns | 0.83 |
-| lazy | **193 ns** | 218 ns | 0.89 |
-| possessive | **189 ns** | 241 ns | 0.78 |
-| nested | **176 ns** | 239 ns | 0.74 |
+| greedy | **217 ns** | 259 ns | 0.84 |
+| lazy | **193 ns** | 211 ns | 0.91 |
+| possessive | **191 ns** | 230 ns | 0.83 |
+| nested | **180 ns** | 226 ns | 0.80 |
 | **Alternation** | | | |
-| 2 branches | **101 ns** | 159 ns | 0.64 |
-| 5 branches | **119 ns** | 178 ns | 0.67 |
-| 10 branches | 240 ns | **226 ns** | 1.06 |
-| nested | **128 ns** | 189 ns | 0.68 |
+| 2 branches | **106 ns** | 152 ns | 0.70 |
+| 5 branches | **121 ns** | 170 ns | 0.71 |
+| 10 branches | 237 ns | **218 ns** | 1.09 |
+| nested | **128 ns** | 173 ns | 0.74 |
 | **Backreferences** | | | |
-| simple `(\w+) \1` | **149 ns** | 204 ns | 0.73 |
-| nested | **153 ns** | 212 ns | 0.72 |
-| named | **149 ns** | 207 ns | 0.72 |
+| simple `(\w+) \1` | **149 ns** | 188 ns | 0.79 |
+| nested | **154 ns** | 191 ns | 0.81 |
+| named | **148 ns** | 187 ns | 0.79 |
 | **Lookaround** | | | |
-| positive lookahead | **130 ns** | 173 ns | 0.75 |
-| negative lookahead | **142 ns** | 192 ns | 0.74 |
-| positive lookbehind | 276 ns | **272 ns** | 1.01 |
-| negative lookbehind | 362 ns | **346 ns** | 1.05 |
-| combined | 312 ns | **291 ns** | 1.07 |
+| positive lookahead | **127 ns** | 159 ns | 0.80 |
+| negative lookahead | **138 ns** | 178 ns | 0.78 |
+| positive lookbehind | 279 ns | **257 ns** | 1.09 |
+| negative lookbehind | 353 ns | **326 ns** | 1.08 |
+| combined | 301 ns | **280 ns** | 1.08 |
 | **Unicode properties** | | | |
-| `\p{Lu}+` | **93 ns** | 141 ns | 0.66 |
-| `\p{Letter}+` | **127 ns** | 169 ns | 0.75 |
-| `\p{Greek}+` | 286 ns | **244 ns** | 1.17 |
-| `\p{Cyrillic}+` | 403 ns | **338 ns** | 1.19 |
+| `\p{Lu}+` | **93 ns** | 143 ns | 0.65 |
+| `\p{Letter}+` | **128 ns** | 172 ns | 0.74 |
+| `\p{Greek}+` | 339 ns | **240 ns** | 1.41 |
+| `\p{Cyrillic}+` | 469 ns | **332 ns** | 1.41 |
 | **Case-insensitive** | | | |
-| single word | **108 ns** | 155 ns | 0.70 |
-| phrase | **164 ns** | 190 ns | 0.87 |
-| alternation | **112 ns** | 161 ns | 0.70 |
+| single word | **107 ns** | 154 ns | 0.69 |
+| phrase | **160 ns** | 186 ns | 0.86 |
+| alternation | **114 ns** | 154 ns | 0.74 |
 | **Named captures** | | | |
-| date extraction | 458 ns | **277 ns** | 1.65 |
+| date extraction | 456 ns | **273 ns** | 1.67 |
 | **Large text (first match)** | | | |
-| literal 10 KB | **99 ns** | 157 ns | 0.63 |
-| literal 50 KB | **99 ns** | 155 ns | 0.64 |
-| timestamp 10 KB | 239 ns | **196 ns** | 1.22 |
-| timestamp 50 KB | 238 ns | **196 ns** | 1.21 |
-| field extract 10 KB | **136 ns** | 182 ns | 0.75 |
-| field extract 50 KB | **136 ns** | 182 ns | 0.75 |
-| no match 10 KB | 2.1 µs | **1.9 µs** | 1.11 |
-| no match 50 KB | 10.4 µs | **9.4 µs** | 1.10 |
+| literal 10 KB | **113 ns** | 143 ns | 0.79 |
+| literal 50 KB | **113 ns** | 143 ns | 0.79 |
+| timestamp 10 KB | 235 ns | **174 ns** | 1.35 |
+| timestamp 50 KB | 235 ns | **178 ns** | 1.32 |
+| field extract 10 KB | **159 ns** | 168 ns | 0.95 |
+| field extract 50 KB | **159 ns** | 170 ns | 0.93 |
+| no match 10 KB | **375 ns** | 1.9 µs | 0.20 |
+| no match 50 KB | **1.5 µs** | 9.3 µs | 0.16 |
 | **RegSet** | | | |
-| position-lead (5 patterns) | **151 ns** | 418 ns | 0.36 |
-| regex-lead (5 patterns) | **159 ns** | 255 ns | 0.62 |
+| position-lead (5 patterns) | **149 ns** | 399 ns | 0.37 |
+| regex-lead (5 patterns) | **162 ns** | 237 ns | 0.68 |
 | **Match at position** | | | |
-| `\d+` at offset 4 | **119 ns** | 167 ns | 0.71 |
+| `\d+` at offset 4 | **118 ns** | 155 ns | 0.76 |
 
 ### Regex Compilation
 
 | Pattern | Rust | C | Ratio |
 |---------|-----:|--:|------:|
-| literal | **434 ns** | 455 ns | 0.95 |
-| `.*` | 788 ns | **531 ns** | 1.48 |
-| alternation | 1,735 ns | **1,437 ns** | 1.21 |
-| char class | 644 ns | **637 ns** | 1.01 |
-| quantifier | 1,384 ns | **1,047 ns** | 1.32 |
-| group | 1,079 ns | **795 ns** | 1.36 |
-| backref | 1,651 ns | **979 ns** | 1.69 |
-| lookahead | 767 ns | **486 ns** | 1.58 |
-| lookbehind | 713 ns | **555 ns** | 1.29 |
-| named capture | 47,490 ns | **5,861 ns** | 8.10 |
+| literal | **436 ns** | 452 ns | 0.96 |
+| `.*` | 779 ns | **522 ns** | 1.49 |
+| alternation | 1,761 ns | **1,410 ns** | 1.25 |
+| char class | 656 ns | **628 ns** | 1.04 |
+| quantifier | 1,385 ns | **1,031 ns** | 1.34 |
+| group | 1,060 ns | **780 ns** | 1.36 |
+| backref | 1,636 ns | **973 ns** | 1.68 |
+| lookahead | 762 ns | **478 ns** | 1.59 |
+| lookbehind | 709 ns | **542 ns** | 1.31 |
+| named capture | 47,563 ns | **5,740 ns** | 8.29 |
 
 ### Analysis
 
-**Where Rust wins (28 of 39 execution benchmarks):** Most execution
-benchmarks are 15-35% faster than C. Literal matching, quantifiers,
-backreferences, case-insensitive matching, and RegSet searches all show
-consistent gains. The likely explanation is Rust's `Vec<Operation>` layout
-(contiguous, predictable) vs. C's pointer-chased operation arrays giving
-better cache behavior in the VM loop.
+**Where Rust wins (29 of 39 execution benchmarks):** Most execution
+benchmarks are 10-30% faster than C. Quantifiers, backreferences,
+case-insensitive matching, and RegSet searches all show consistent gains.
+The likely explanation is Rust's `Vec<Operation>` layout (contiguous,
+predictable) vs. C's pointer-chased operation arrays giving better cache
+behavior in the VM loop.
 
-**Where C wins:** No execution benchmark exceeds 1.65x. The remaining
+**SIMD-accelerated forward search** is the standout result. The
+`memchr` crate replaces hand-written byte loops in the search pipeline
+with SIMD-vectorized scans (SSE2/AVX2 on x86-64, NEON on aarch64). The
+impact is most visible in full-text no-match scanning, where the engine
+must scan the entire haystack without finding a literal prefix:
+
+- **no match 10 KB: 5.0x faster than C** (375 ns vs 1.9 µs)
+- **no match 50 KB: 6.1x faster than C** (1.5 µs vs 9.3 µs)
+
+**Where C wins:** No execution benchmark exceeds 1.67x. The remaining
 gaps are:
 
-1. **Named captures (1.65x)** -- the Rust capture-handling VM path has
+1. **Named captures (1.67x)** -- the Rust capture-handling VM path has
    overhead from region ownership semantics (move in/out of search
    function) that C avoids with simple pointer passing.
 
-2. **Script-specific Unicode properties (1.17-1.19x)** -- `\p{Greek}`
-   and `\p{Cyrillic}` have minor residual overhead from Rust's bounds
-   checking in the codepoint classification inner loop.
+2. **Script-specific Unicode properties (1.41x)** -- `\p{Greek}`
+   and `\p{Cyrillic}` have overhead from Rust's bounds checking in the
+   codepoint classification inner loop.
 
-3. **Lookbehind (1.01-1.07x)** -- effectively at parity with C.
+3. **Timestamp extraction (1.32-1.35x)** -- character-class map search
+   for `\d` first-byte; C's byte-by-byte loop with the 256-entry map
+   is hard to beat when the set has > 3 distinct bytes (SIMD dispatch
+   only covers 1-3 byte sets).
 
-The remaining C-wins are minor: timestamp extraction (1.21x), no-match
-scanning (1.10x), and 10-branch alternation (1.06x).
+4. **Lookbehind (1.08-1.09x)** -- effectively at parity with C.
 
 **Compilation** is 1.2-1.7x slower across the board, with a notable 8x
 outlier on named captures. The Rust compiler pipeline allocates more
@@ -308,8 +319,7 @@ against them thousands to millions of times. A typical TextMate grammar
 compiles 50-200 patterns and then matches every token in every line of
 source code, yielding a compile:match ratio well above 1:100,000. At that
 ratio, even the 8x named-capture outlier adds < 0.01% to total runtime.
-The 15-35% execution gains, on the other hand, directly reduce the time
-spent in the hot loop.
+The execution gains directly reduce the time spent in the hot loop.
 
 ### Running Benchmarks
 
