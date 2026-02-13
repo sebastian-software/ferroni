@@ -302,9 +302,18 @@ operation arrays giving better cache behavior in the VM loop.
 
 **Compilation** is 1.2-1.7x slower across the board, with a notable 8x
 outlier on named captures. The Rust compiler pipeline allocates more
-(Vec/String/Box) where C reuses pre-allocated buffers. This is a one-time
-cost per regex and rarely matters in practice since regexes are typically
-compiled once and reused.
+(Vec/String/Box) where C reuses pre-allocated buffers.
+
+**In practice, compilation overhead is nearly invisible.** Real-world
+consumers -- syntax highlighters like Shiki/TextMate, Ruby's regex engine,
+PHP's `mb_ereg` -- compile their patterns once at startup and then match
+against them thousands to millions of times. A typical TextMate grammar
+compiles 50-200 patterns and then matches every token in every line of
+source code, yielding a compile:match ratio well above 1:100,000. At that
+ratio, even the 8x named-capture outlier adds < 0.01% to total runtime.
+The 20-40% execution gains, on the other hand, directly reduce the time
+spent in the hot loop. The highest-impact optimization target is the
+no-match BMH scan gap (360x), since that affects the execution path.
 
 ### Running Benchmarks
 
