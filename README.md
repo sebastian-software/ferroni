@@ -1,10 +1,13 @@
 # Ferroni
 
-**1:1 Rust port of the [Oniguruma](https://github.com/kkos/oniguruma) regular expression engine.**
+**Pure-Rust regex engine based on [Oniguruma](https://github.com/kkos/oniguruma), with SIMD-accelerated search.**
 
-Ferroni is a line-by-line translation of Oniguruma's C source into safe, idiomatic
-Rust. Same structure, same function names, same semantics. No bindings, no FFI --
-pure Rust.
+Ferroni started as a line-by-line port of Oniguruma's C source into safe,
+idiomatic Rust -- same structure, same function names, same semantics. On top
+of that foundation, the search pipeline has been re-engineered with
+SIMD-vectorized scanning (NEON on ARM, SSE2/AVX2 on x86-64) via the `memchr`
+crate, making it **up to 6x faster than C Oniguruma** on full-text search
+workloads. No bindings, no FFI -- pure Rust, zero `unsafe`.
 
 ## Status
 

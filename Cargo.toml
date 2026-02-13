@@ -2,7 +2,7 @@
 name = "ferroni"
 version = "0.1.0"
 edition = "2021"
-description = "1:1 Rust port of Oniguruma regex engine"
+description = "Pure-Rust Oniguruma regex engine with SIMD-accelerated search"
 license = "BSD-2-Clause"
 
 [features]
