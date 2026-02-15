@@ -68,7 +68,7 @@ pub static OnigSyntaxPosixBasic: OnigSyntaxType = OnigSyntaxType {
     op: SYN_POSIX_COMMON_OP | ONIG_SYN_OP_ESC_LPAREN_SUBEXP | ONIG_SYN_OP_ESC_BRACE_INTERVAL,
     op2: 0,
     behavior: ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP,
-    options: ONIG_OPTION_SINGLELINE | ONIG_OPTION_MULTILINE,
+    options: ONIG_OPTION_SINGLELINE.union(ONIG_OPTION_MULTILINE),
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
@@ -85,7 +85,7 @@ pub static OnigSyntaxPosixExtended: OnigSyntaxType = OnigSyntaxType {
         | ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS
         | ONIG_SYN_ALLOW_UNMATCHED_CLOSE_SUBEXP
         | ONIG_SYN_ALLOW_DOUBLE_RANGE_OP_IN_CC,
-    options: ONIG_OPTION_SINGLELINE | ONIG_OPTION_MULTILINE,
+    options: ONIG_OPTION_SINGLELINE.union(ONIG_OPTION_MULTILINE),
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 

@@ -17,7 +17,7 @@ fn x2(pattern: &[u8], input: &[u8], from: i32, to: i32) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -70,7 +70,7 @@ fn x3(pattern: &[u8], input: &[u8], from: i32, to: i32, mem: usize) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -130,7 +130,7 @@ fn n(pattern: &[u8], input: &[u8]) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -166,18 +166,18 @@ fn e(pattern: &[u8], input: &[u8], expected_error: i32) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     );
     match result {
         Err(code) => {
             assert_eq!(
-                code,
+                code.code(),
                 expected_error,
                 "e: expected error {} for {:?} against {:?}, got error {}",
                 expected_error,
                 std::str::from_utf8(pattern).unwrap_or("<invalid>"),
                 std::str::from_utf8(input).unwrap_or("<invalid>"),
-                code
+                code.code()
             );
         }
         Ok(reg) => {

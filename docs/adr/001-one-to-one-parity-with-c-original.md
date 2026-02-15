@@ -26,6 +26,8 @@ The Rust port targets **1:1 structural parity** with the C original:
    - C error codes (negative `int`) -> Rust `Result<T, i32>`
    - C `goto fail` -> Rust `loop { ... break }` or early `return Err(...)`
 
+6. **An idiomatic Rust API layer** wraps the C-ported internals without modifying them ([ADR-010](010-idiomatic-rust-api-layer.md)). This provides `Regex::new()`, typed errors, and safe result types while keeping the internal 1:1 structure intact.
+
 ## Rationale
 
 - **Correctness by construction.** Oniguruma is a mature, battle-tested engine with subtle edge cases in backtracking, empty-loop detection, lookbehind validation, and Unicode folding. Keeping the same structure means every C code path has a verifiable Rust counterpart.

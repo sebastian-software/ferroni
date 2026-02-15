@@ -18,7 +18,7 @@ fn x2(pattern: &[u8], input: &[u8], from: i32, to: i32) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -72,7 +72,7 @@ fn x3(pattern: &[u8], input: &[u8], from: i32, to: i32, mem: usize) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -133,7 +133,7 @@ fn n(pattern: &[u8], input: &[u8]) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -6552,18 +6552,18 @@ fn e(pattern: &[u8], input: &[u8], expected_error: i32) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     );
     match result {
         Err(code) => {
             assert_eq!(
-                code,
+                code.code(),
                 expected_error,
                 "e: expected error {} for {:?} against {:?}, got error {}",
                 expected_error,
                 std::str::from_utf8(pattern).unwrap_or("<invalid>"),
                 std::str::from_utf8(input).unwrap_or("<invalid>"),
-                code
+                code.code()
             );
         }
         Ok(reg) => {
@@ -10419,7 +10419,7 @@ fn check_validity_invalid_utf8_search() {
         b"a",
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap();
     // Invalid UTF-8: 0xFF is not a valid lead byte
@@ -10443,7 +10443,7 @@ fn check_validity_valid_utf8_search() {
         b"a",
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap();
     let valid = b"abc";
@@ -10466,7 +10466,7 @@ fn check_validity_invalid_utf8_match() {
         b"a",
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap();
     let invalid = b"\xc0\x80"; // overlong encoding
@@ -10488,7 +10488,7 @@ fn check_validity_scan_invalid() {
         b"a",
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap();
     let invalid = b"a\xfe";
@@ -10515,7 +10515,7 @@ fn backward_search_optimized() {
         b"abc",
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap();
     let input = b"xxabcxx";
@@ -10542,7 +10542,7 @@ fn backward_search_multibyte() {
         "あ".as_bytes(),
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap();
     let input = "xxあyy".as_bytes();
@@ -10582,7 +10582,7 @@ fn capture_history_unnamed() {
         b"(?@a+)",
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &syn as *const OnigSyntaxType,
+        &syn,
     )
     .unwrap();
     let input = b"aaa";
@@ -10622,7 +10622,7 @@ fn capture_history_named() {
         b"(?@<name>a+)",
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &syn as *const OnigSyntaxType,
+        &syn,
     )
     .unwrap();
     let input = b"aaa";
@@ -10656,7 +10656,7 @@ fn capture_history_traverse() {
         b"(?@a+)b(?@c+)",
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &syn as *const OnigSyntaxType,
+        &syn,
     )
     .unwrap();
     let input = b"aabcc";

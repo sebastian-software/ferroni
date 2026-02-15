@@ -21,9 +21,10 @@ C Oniguruma uses `UChar* p` / `UChar* end` pointer pairs to represent string ran
 
 C Oniguruma returns negative `int` error codes (e.g. `ONIGERR_MEMORY = -5`). In Rust:
 
-- Functions return `Result<T, i32>` where the `Err` variant carries the same negative integer.
+- Internal functions return `Result<T, i32>` where the `Err` variant carries the same negative integer.
 - The error code constants are preserved identically (`ONIGERR_MEMORY`, `ONIGERR_PARSER_BUG`, etc.).
 - `goto fail` cleanup patterns become `loop { ... break }` or early `return Err(...)`.
+- The public entry point `onig_new()` returns `Result<RegexType, RegexError>`, where `RegexError` groups ~100 error codes into semantic variants ([ADR-010](010-idiomatic-rust-api-layer.md)).
 
 ### Unions to Enums
 

@@ -9,6 +9,31 @@
 //! ## Quick Start
 //!
 //! ```rust
+//! use ferroni::prelude::*;
+//!
+//! let re = Regex::new(r"\d{4}-\d{2}-\d{2}").unwrap();
+//! let m = re.find("Date: 2026-02-12").unwrap();
+//! assert_eq!(m.as_str(), "2026-02-12");
+//! assert_eq!(m.start(), 6);
+//! ```
+//!
+//! For fine-grained control, use [`RegexBuilder`]:
+//!
+//! ```rust
+//! use ferroni::prelude::*;
+//!
+//! let re = Regex::builder(r"hello")
+//!     .case_insensitive(true)
+//!     .build()
+//!     .unwrap();
+//! assert!(re.is_match("Hello World"));
+//! ```
+//!
+//! ## Low-Level C-Style API
+//!
+//! The full C-ported API is also available for advanced usage:
+//!
+//! ```rust
 //! use ferroni::regcomp::onig_new;
 //! use ferroni::regexec::onig_search;
 //! use ferroni::oniguruma::*;
@@ -18,12 +43,12 @@
 //!     b"\\d{4}-\\d{2}-\\d{2}",
 //!     ONIG_OPTION_NONE,
 //!     &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-//!     &OnigSyntaxOniguruma as *const OnigSyntaxType,
+//!     &OnigSyntaxOniguruma,
 //! ).unwrap();
 //!
 //! let input = b"Date: 2026-02-12";
 //! let (result, region) = onig_search(
-//!     &reg, input, input.len(), input.len(), 0,
+//!     &reg, input, input.len(), 0, input.len(),
 //!     Some(OnigRegion::new()), ONIG_OPTION_NONE,
 //! );
 //!
@@ -56,8 +81,11 @@
 // Enable #[coverage(off)] attribute when running under cargo-llvm-cov on nightly.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
+pub mod api;
 pub mod encodings;
+pub mod error;
 pub mod oniguruma;
+pub mod prelude;
 pub mod regcomp;
 pub mod regenc;
 pub mod regerror;

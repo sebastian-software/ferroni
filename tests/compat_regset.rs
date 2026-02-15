@@ -16,7 +16,7 @@ fn compile(pattern: &[u8]) -> Box<RegexType> {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     );
     match reg {
         Ok(r) => Box::new(r),

@@ -16,7 +16,7 @@ fn x2(options: OnigOptionType, pattern: &[u8], input: &[u8], from: i32, to: i32)
         pattern,
         options,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -71,7 +71,7 @@ fn x3(options: OnigOptionType, pattern: &[u8], input: &[u8], from: i32, to: i32,
         pattern,
         options,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -133,7 +133,7 @@ fn n(options: OnigOptionType, pattern: &[u8], input: &[u8]) {
         pattern,
         options,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -168,7 +168,7 @@ fn n(options: OnigOptionType, pattern: &[u8], input: &[u8]) {
 // IGNORECASE
 // ============================================================================
 
-const OIA: OnigOptionType = ONIG_OPTION_IGNORECASE | ONIG_OPTION_IGNORECASE_IS_ASCII;
+const OIA: OnigOptionType = ONIG_OPTION_IGNORECASE.union(ONIG_OPTION_IGNORECASE_IS_ASCII);
 
 #[test]
 fn option_ignorecase_basic() {

@@ -17,7 +17,7 @@ fn x2_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], from: i32, to: 
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        syntax as *const OnigSyntaxType,
+        syntax,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -71,7 +71,7 @@ fn x3_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], from: i32, to: 
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        syntax as *const OnigSyntaxType,
+        syntax,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -132,7 +132,7 @@ fn n_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8]) {
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        syntax as *const OnigSyntaxType,
+        syntax,
     )
     .unwrap_or_else(|e| {
         panic!(
@@ -167,17 +167,17 @@ fn e_syn(syntax: &OnigSyntaxType, pattern: &[u8], input: &[u8], expected_error: 
         pattern,
         ONIG_OPTION_NONE,
         &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        syntax as *const OnigSyntaxType,
+        syntax,
     );
     match result {
         Err(code) => {
             assert_eq!(
-                code,
+                code.code(),
                 expected_error,
                 "e: expected error {} for {:?}, got error {}",
                 expected_error,
                 std::str::from_utf8(pattern).unwrap_or("<invalid>"),
-                code
+                code.code()
             );
         }
         Ok(reg) => {

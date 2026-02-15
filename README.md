@@ -1,6 +1,6 @@
 <p align="center">
   <strong>Ferroni</strong><br>
-  Pure-Rust regex engine based on Oniguruma, with SIMD-accelerated search.
+  Pure-Rust regex engine based on Oniguruma, with SIMD-accelerated search and an idiomatic Rust API.
 </p>
 
 <p align="center">
@@ -14,12 +14,15 @@
 
 ---
 
-Ferroni is a line-by-line port of [Oniguruma](https://github.com/kkos/oniguruma)'s
-C source into Rust -- same structure, same function names, same semantics. On
-top of that foundation, the search pipeline uses SIMD-vectorized scanning
-(NEON on ARM, SSE2/AVX2 on x86-64) via the [`memchr`](https://crates.io/crates/memchr)
-crate, making it **up to 6x faster than C Oniguruma** on full-text search
-workloads. No bindings, no FFI -- pure Rust.
+Ferroni started as a line-by-line port of
+[Oniguruma](https://github.com/kkos/oniguruma)'s C source into Rust -- same
+structure, same function names, same semantics. From there it gained
+SIMD-vectorized search (NEON on ARM, SSE2/AVX2 on x86-64) via
+[`memchr`](https://crates.io/crates/memchr), making it **up to 6x faster than
+C Oniguruma** on full-text scanning. Finally, an idiomatic Rust API layer
+(`Regex::new()`, typed errors, `Match`/`Captures`) was added on top -- so you
+get ergonomic Rust with battle-tested Oniguruma semantics underneath. No
+bindings, no FFI -- pure Rust.
 
 ## Why Ferroni?
 
@@ -55,31 +58,60 @@ ferroni = { git = "https://github.com/sebastian-software/ferroni.git" }
 ```
 
 ```rust
+use ferroni::prelude::*;
+
+fn main() -> Result<(), RegexError> {
+    let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})")?;
+
+    let caps = re.captures("Date: 2026-02-12").unwrap();
+    assert_eq!(caps.get(0).unwrap().as_str(), "2026-02-12");
+    assert_eq!(caps.name("year").unwrap().as_str(), "2026");
+    assert_eq!(caps.name("month").unwrap().as_str(), "02");
+    Ok(())
+}
+```
+
+For fine-grained control, use `RegexBuilder`:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::builder(r"hello")
+    .case_insensitive(true)
+    .build()
+    .unwrap();
+assert!(re.is_match("Hello World"));
+```
+
+<details>
+<summary><strong>Low-Level C-Style API</strong></summary>
+
+The full C-ported API is also available for advanced usage:
+
+```rust
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::onig_search;
 use ferroni::oniguruma::*;
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 
-fn main() {
-    let reg = onig_new(
-        b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})",
-        ONIG_OPTION_NONE,
-        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
-    ).unwrap();
+let reg = onig_new(
+    b"\\d{4}-\\d{2}-\\d{2}",
+    ONIG_OPTION_NONE,
+    &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+    &OnigSyntaxOniguruma,
+).unwrap();
 
-    let input = b"Date: 2026-02-12";
-    let (result, region) = onig_search(
-        &reg, input, input.len(), input.len(), 0,
-        Some(OnigRegion::new()), ONIG_OPTION_NONE,
-    );
+let input = b"Date: 2026-02-12";
+let (result, region) = onig_search(
+    &reg, input, input.len(), 0, input.len(),
+    Some(OnigRegion::new()), ONIG_OPTION_NONE,
+);
 
-    let region = region.unwrap();
-    assert!(result >= 0);
-    assert_eq!(region.beg[0], 6);  // "2026-02-12" starts at byte 6
-    assert_eq!(region.end[0], 16);
-}
+assert!(result >= 0);
+assert_eq!(result, 6); // match starts at byte 6
 ```
+
+</details>
 
 ## Supported Features
 
@@ -310,6 +342,7 @@ inflating the denominator.
 | [007](docs/adr/007-posix-and-gnu-api-not-ported.md) | POSIX and GNU API not ported |
 | [008](docs/adr/008-test-strategy-and-c-test-parity.md) | Test strategy and C test suite parity |
 | [009](docs/adr/009-porting-bugs-lessons-learned.md) | Porting bugs: lessons learned |
+| [010](docs/adr/010-idiomatic-rust-api-layer.md) | Idiomatic Rust API layer |
 
 ## Contributing
 

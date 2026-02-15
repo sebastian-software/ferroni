@@ -13,7 +13,43 @@ pub type OnigUChar = u8;
 pub type OnigCtype = u32;
 pub type OnigLen = u32;
 pub type OnigCaseFoldType = u32;
-pub type OnigOptionType = u32;
+
+// OnigOptionType is now a bitflags struct instead of a raw u32 alias.
+// All bitwise operations (|, &, !, |=, &=) work as before.
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct OnigOptionType: u32 {
+        const NONE              = 0;
+        const IGNORECASE        = 1;
+        const EXTEND            = 1 << 1;
+        const MULTILINE         = 1 << 2;
+        const SINGLELINE        = 1 << 3;
+        const FIND_LONGEST      = 1 << 4;
+        const FIND_NOT_EMPTY    = 1 << 5;
+        const NEGATE_SINGLELINE = 1 << 6;
+        const DONT_CAPTURE_GROUP = 1 << 7;
+        const CAPTURE_GROUP     = 1 << 8;
+        // search time
+        const NOTBOL            = 1 << 9;
+        const NOTEOL            = 1 << 10;
+        const POSIX_REGION      = 1 << 11;
+        const CHECK_VALIDITY_OF_STRING = 1 << 12;
+        // compile time (continued, gap of 3 bits)
+        const IGNORECASE_IS_ASCII = 1 << 15;
+        const WORD_IS_ASCII     = 1 << 16;
+        const DIGIT_IS_ASCII    = 1 << 17;
+        const SPACE_IS_ASCII    = 1 << 18;
+        const POSIX_IS_ASCII    = 1 << 19;
+        const TEXT_SEGMENT_EXTENDED_GRAPHEME_CLUSTER = 1 << 20;
+        const TEXT_SEGMENT_WORD = 1 << 21;
+        // search time (continued)
+        const NOT_BEGIN_STRING  = 1 << 22;
+        const NOT_END_STRING    = 1 << 23;
+        const NOT_BEGIN_POSITION = 1 << 24;
+        const CALLBACK_EACH_MATCH = 1 << 25;
+        const MATCH_WHOLE_STRING = 1 << 26;
+    }
+}
 
 // === Konstanten ===
 pub const ONIG_INFINITE_DISTANCE: OnigLen = OnigLen::MAX;
@@ -75,57 +111,52 @@ pub const ONIG_MAX_REPEAT_NUM: i32 = 100000;
 pub const ONIG_MAX_MULTI_BYTE_RANGES_NUM: i32 = 10000;
 pub const ONIG_MAX_ERROR_MESSAGE_LEN: usize = 90;
 
-// === Option Flags ===
-pub const ONIG_OPTION_DEFAULT: OnigOptionType = ONIG_OPTION_NONE;
-pub const ONIG_OPTION_NONE: OnigOptionType = 0;
-// compile time
-pub const ONIG_OPTION_IGNORECASE: OnigOptionType = 1;
-pub const ONIG_OPTION_EXTEND: OnigOptionType = ONIG_OPTION_IGNORECASE << 1;
-pub const ONIG_OPTION_MULTILINE: OnigOptionType = ONIG_OPTION_EXTEND << 1;
-pub const ONIG_OPTION_SINGLELINE: OnigOptionType = ONIG_OPTION_MULTILINE << 1;
-pub const ONIG_OPTION_FIND_LONGEST: OnigOptionType = ONIG_OPTION_SINGLELINE << 1;
-pub const ONIG_OPTION_FIND_NOT_EMPTY: OnigOptionType = ONIG_OPTION_FIND_LONGEST << 1;
-pub const ONIG_OPTION_NEGATE_SINGLELINE: OnigOptionType = ONIG_OPTION_FIND_NOT_EMPTY << 1;
-pub const ONIG_OPTION_DONT_CAPTURE_GROUP: OnigOptionType = ONIG_OPTION_NEGATE_SINGLELINE << 1;
-pub const ONIG_OPTION_CAPTURE_GROUP: OnigOptionType = ONIG_OPTION_DONT_CAPTURE_GROUP << 1;
-// search time
-pub const ONIG_OPTION_NOTBOL: OnigOptionType = ONIG_OPTION_CAPTURE_GROUP << 1;
-pub const ONIG_OPTION_NOTEOL: OnigOptionType = ONIG_OPTION_NOTBOL << 1;
-pub const ONIG_OPTION_POSIX_REGION: OnigOptionType = ONIG_OPTION_NOTEOL << 1;
-pub const ONIG_OPTION_CHECK_VALIDITY_OF_STRING: OnigOptionType = ONIG_OPTION_POSIX_REGION << 1;
-// compile time (continued, gap of 3 bits)
-pub const ONIG_OPTION_IGNORECASE_IS_ASCII: OnigOptionType =
-    ONIG_OPTION_CHECK_VALIDITY_OF_STRING << 3;
-pub const ONIG_OPTION_WORD_IS_ASCII: OnigOptionType = ONIG_OPTION_IGNORECASE_IS_ASCII << 1;
-pub const ONIG_OPTION_DIGIT_IS_ASCII: OnigOptionType = ONIG_OPTION_WORD_IS_ASCII << 1;
-pub const ONIG_OPTION_SPACE_IS_ASCII: OnigOptionType = ONIG_OPTION_DIGIT_IS_ASCII << 1;
-pub const ONIG_OPTION_POSIX_IS_ASCII: OnigOptionType = ONIG_OPTION_SPACE_IS_ASCII << 1;
+// === Option Flag Aliases ===
+// These provide the original C constant names for backward compatibility.
+pub const ONIG_OPTION_DEFAULT: OnigOptionType = OnigOptionType::NONE;
+pub const ONIG_OPTION_NONE: OnigOptionType = OnigOptionType::NONE;
+pub const ONIG_OPTION_IGNORECASE: OnigOptionType = OnigOptionType::IGNORECASE;
+pub const ONIG_OPTION_EXTEND: OnigOptionType = OnigOptionType::EXTEND;
+pub const ONIG_OPTION_MULTILINE: OnigOptionType = OnigOptionType::MULTILINE;
+pub const ONIG_OPTION_SINGLELINE: OnigOptionType = OnigOptionType::SINGLELINE;
+pub const ONIG_OPTION_FIND_LONGEST: OnigOptionType = OnigOptionType::FIND_LONGEST;
+pub const ONIG_OPTION_FIND_NOT_EMPTY: OnigOptionType = OnigOptionType::FIND_NOT_EMPTY;
+pub const ONIG_OPTION_NEGATE_SINGLELINE: OnigOptionType = OnigOptionType::NEGATE_SINGLELINE;
+pub const ONIG_OPTION_DONT_CAPTURE_GROUP: OnigOptionType = OnigOptionType::DONT_CAPTURE_GROUP;
+pub const ONIG_OPTION_CAPTURE_GROUP: OnigOptionType = OnigOptionType::CAPTURE_GROUP;
+pub const ONIG_OPTION_NOTBOL: OnigOptionType = OnigOptionType::NOTBOL;
+pub const ONIG_OPTION_NOTEOL: OnigOptionType = OnigOptionType::NOTEOL;
+pub const ONIG_OPTION_POSIX_REGION: OnigOptionType = OnigOptionType::POSIX_REGION;
+pub const ONIG_OPTION_CHECK_VALIDITY_OF_STRING: OnigOptionType = OnigOptionType::CHECK_VALIDITY_OF_STRING;
+pub const ONIG_OPTION_IGNORECASE_IS_ASCII: OnigOptionType = OnigOptionType::IGNORECASE_IS_ASCII;
+pub const ONIG_OPTION_WORD_IS_ASCII: OnigOptionType = OnigOptionType::WORD_IS_ASCII;
+pub const ONIG_OPTION_DIGIT_IS_ASCII: OnigOptionType = OnigOptionType::DIGIT_IS_ASCII;
+pub const ONIG_OPTION_SPACE_IS_ASCII: OnigOptionType = OnigOptionType::SPACE_IS_ASCII;
+pub const ONIG_OPTION_POSIX_IS_ASCII: OnigOptionType = OnigOptionType::POSIX_IS_ASCII;
 pub const ONIG_OPTION_TEXT_SEGMENT_EXTENDED_GRAPHEME_CLUSTER: OnigOptionType =
-    ONIG_OPTION_POSIX_IS_ASCII << 1;
-pub const ONIG_OPTION_TEXT_SEGMENT_WORD: OnigOptionType =
-    ONIG_OPTION_TEXT_SEGMENT_EXTENDED_GRAPHEME_CLUSTER << 1;
-// search time (continued)
-pub const ONIG_OPTION_NOT_BEGIN_STRING: OnigOptionType = ONIG_OPTION_TEXT_SEGMENT_WORD << 1;
-pub const ONIG_OPTION_NOT_END_STRING: OnigOptionType = ONIG_OPTION_NOT_BEGIN_STRING << 1;
-pub const ONIG_OPTION_NOT_BEGIN_POSITION: OnigOptionType = ONIG_OPTION_NOT_END_STRING << 1;
-pub const ONIG_OPTION_CALLBACK_EACH_MATCH: OnigOptionType = ONIG_OPTION_NOT_BEGIN_POSITION << 1;
-pub const ONIG_OPTION_MATCH_WHOLE_STRING: OnigOptionType = ONIG_OPTION_CALLBACK_EACH_MATCH << 1;
+    OnigOptionType::TEXT_SEGMENT_EXTENDED_GRAPHEME_CLUSTER;
+pub const ONIG_OPTION_TEXT_SEGMENT_WORD: OnigOptionType = OnigOptionType::TEXT_SEGMENT_WORD;
+pub const ONIG_OPTION_NOT_BEGIN_STRING: OnigOptionType = OnigOptionType::NOT_BEGIN_STRING;
+pub const ONIG_OPTION_NOT_END_STRING: OnigOptionType = OnigOptionType::NOT_END_STRING;
+pub const ONIG_OPTION_NOT_BEGIN_POSITION: OnigOptionType = OnigOptionType::NOT_BEGIN_POSITION;
+pub const ONIG_OPTION_CALLBACK_EACH_MATCH: OnigOptionType = OnigOptionType::CALLBACK_EACH_MATCH;
+pub const ONIG_OPTION_MATCH_WHOLE_STRING: OnigOptionType = OnigOptionType::MATCH_WHOLE_STRING;
 
-pub const ONIG_OPTION_MAXBIT: OnigOptionType = ONIG_OPTION_MATCH_WHOLE_STRING;
+pub const ONIG_OPTION_MAXBIT: OnigOptionType = OnigOptionType::MATCH_WHOLE_STRING;
 
 #[inline]
 pub fn onig_option_on(options: &mut OnigOptionType, regopt: OnigOptionType) {
-    *options |= regopt;
+    options.insert(regopt);
 }
 
 #[inline]
 pub fn onig_option_off(options: &mut OnigOptionType, regopt: OnigOptionType) {
-    *options &= !regopt;
+    options.remove(regopt);
 }
 
 #[inline]
 pub fn onig_is_option_on(options: OnigOptionType, option: OnigOptionType) -> bool {
-    (options & option) != 0
+    options.contains(option)
 }
 
 // === Syntax Type ===

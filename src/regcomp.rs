@@ -7623,17 +7623,17 @@ pub fn onig_new(
     pattern: &[u8],
     option: OnigOptionType,
     enc: OnigEncoding,
-    syntax: *const OnigSyntaxType,
-) -> Result<RegexType, i32> {
+    syntax: &OnigSyntaxType,
+) -> Result<RegexType, crate::error::RegexError> {
     // Validate options
-    if (option & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0 && (option & ONIG_OPTION_CAPTURE_GROUP) != 0 {
-        return Err(ONIGERR_INVALID_COMBINATION_OF_OPTIONS);
+    if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP) && option.intersects(ONIG_OPTION_CAPTURE_GROUP) {
+        return Err(ONIGERR_INVALID_COMBINATION_OF_OPTIONS.into());
     }
 
     // Apply syntax default options (mirrors onig_reg_init)
     let mut effective_option = option;
-    let syn = unsafe { &*syntax };
-    if (option & ONIG_OPTION_NEGATE_SINGLELINE) != 0 {
+    let syn = syntax;
+    if option.intersects(ONIG_OPTION_NEGATE_SINGLELINE) {
         effective_option |= syn.options;
         effective_option &= !ONIG_OPTION_SINGLELINE;
     } else {
@@ -7642,7 +7642,7 @@ pub fn onig_new(
 
     // Case fold flag setup
     let mut case_fold_flag = ONIGENC_CASE_FOLD_MIN;
-    if (effective_option & ONIG_OPTION_IGNORECASE_IS_ASCII) != 0 {
+    if effective_option.intersects(ONIG_OPTION_IGNORECASE_IS_ASCII) {
         case_fold_flag &=
             !(INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR | ONIGENC_CASE_FOLD_TURKISH_AZERI);
         case_fold_flag |= ONIGENC_CASE_FOLD_ASCII_ONLY;
@@ -7662,7 +7662,7 @@ pub fn onig_new(
         repeat_range: Vec::new(),
         enc,
         options: effective_option,
-        syntax,
+        syntax: syntax as *const OnigSyntaxType,
         case_fold_flag,
         name_table: None,
         optimize: OptimizeType::None,
@@ -7685,7 +7685,7 @@ pub fn onig_new(
 
     let r = onig_compile(&mut reg, pattern);
     if r != 0 {
-        return Err(r);
+        return Err(r.into());
     }
 
     Ok(reg)
@@ -7716,7 +7716,7 @@ mod tests {
             repeat_range: Vec::new(),
             enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             options: ONIG_OPTION_NONE,
-            syntax: &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            syntax: &OnigSyntaxOniguruma,
             case_fold_flag: ONIGENC_CASE_FOLD_MIN,
             name_table: None,
             optimize: OptimizeType::None,
@@ -7737,7 +7737,7 @@ mod tests {
             extp: None,
         };
         let env = ParseEnv {
-            options: 0,
+            options: OnigOptionType::empty(),
             case_fold_flag: 0,
             enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             syntax: &OnigSyntaxOniguruma,
@@ -7915,7 +7915,7 @@ mod tests {
             b"abc",
             ONIG_OPTION_NONE,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            &OnigSyntaxOniguruma,
         )
         .unwrap();
         assert!(!reg.ops.is_empty());
@@ -7928,7 +7928,7 @@ mod tests {
             b"(a)(b)",
             ONIG_OPTION_NONE,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            &OnigSyntaxOniguruma,
         )
         .unwrap();
         assert_eq!(reg.num_mem, 2);
@@ -7941,7 +7941,7 @@ mod tests {
             b"abc",
             ONIG_OPTION_NONE,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            &OnigSyntaxOniguruma,
         )
         .unwrap();
         assert_eq!(reg.stack_pop_level, StackPopLevel::Free);
@@ -7953,7 +7953,7 @@ mod tests {
             b"(",
             ONIG_OPTION_NONE,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            &OnigSyntaxOniguruma,
         );
         assert!(result.is_err());
     }

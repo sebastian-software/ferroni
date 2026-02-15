@@ -230,42 +230,42 @@ fn is_mc_esc_code(code: OnigCodePoint, syn: &OnigSyntaxType) -> bool {
 
 #[inline]
 fn opton_singleline(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_SINGLELINE) != 0
+    option.intersects(ONIG_OPTION_SINGLELINE)
 }
 
 #[inline]
 fn opton_multiline(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_MULTILINE) != 0
+    option.intersects(ONIG_OPTION_MULTILINE)
 }
 
 #[inline]
 fn opton_ignorecase(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_IGNORECASE) != 0
+    option.intersects(ONIG_OPTION_IGNORECASE)
 }
 
 #[inline]
 fn opton_extend(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_EXTEND) != 0
+    option.intersects(ONIG_OPTION_EXTEND)
 }
 
 #[inline]
 fn opton_word_ascii(option: OnigOptionType) -> bool {
-    (option & (ONIG_OPTION_WORD_IS_ASCII | ONIG_OPTION_POSIX_IS_ASCII)) != 0
+    option.intersects(ONIG_OPTION_WORD_IS_ASCII | ONIG_OPTION_POSIX_IS_ASCII)
 }
 
 #[inline]
 fn opton_digit_ascii(option: OnigOptionType) -> bool {
-    (option & (ONIG_OPTION_DIGIT_IS_ASCII | ONIG_OPTION_POSIX_IS_ASCII)) != 0
+    option.intersects(ONIG_OPTION_DIGIT_IS_ASCII | ONIG_OPTION_POSIX_IS_ASCII)
 }
 
 #[inline]
 fn opton_space_ascii(option: OnigOptionType) -> bool {
-    (option & (ONIG_OPTION_SPACE_IS_ASCII | ONIG_OPTION_POSIX_IS_ASCII)) != 0
+    option.intersects(ONIG_OPTION_SPACE_IS_ASCII | ONIG_OPTION_POSIX_IS_ASCII)
 }
 
 #[inline]
 fn opton_posix_ascii(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_POSIX_IS_ASCII) != 0
+    option.intersects(ONIG_OPTION_POSIX_IS_ASCII)
 }
 
 #[inline]
@@ -5807,7 +5807,7 @@ fn prs_bag(
         return Ok((node, 1));
     } else {
         // Plain parenthesized group
-        if (env.options & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0 {
+        if env.options.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP) {
             // Treat as non-capturing
             let r = fetch_token(tok, p, end, pattern, env);
             if r < 0 {
@@ -5876,16 +5876,16 @@ fn prs_named_group(
 /// Apply whole options ((?I), (?L), (?C)) to the regex and parse env.
 fn set_whole_options(option: OnigOptionType, env: &mut ParseEnv) {
     let reg = unsafe { &mut *env.reg };
-    if (option & ONIG_OPTION_IGNORECASE_IS_ASCII) != 0 {
+    if option.intersects(ONIG_OPTION_IGNORECASE_IS_ASCII) {
         reg.case_fold_flag &=
             !(INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR | ONIGENC_CASE_FOLD_TURKISH_AZERI);
         reg.case_fold_flag |= ONIGENC_CASE_FOLD_ASCII_ONLY;
         env.case_fold_flag = reg.case_fold_flag;
     }
-    if (option & ONIG_OPTION_FIND_LONGEST) != 0 {
+    if option.intersects(ONIG_OPTION_FIND_LONGEST) {
         reg.options |= ONIG_OPTION_FIND_LONGEST;
     }
-    if (option & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0 {
+    if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP) {
         reg.options |= ONIG_OPTION_DONT_CAPTURE_GROUP;
     }
 }
@@ -5903,7 +5903,7 @@ fn prs_options(
     let syn = env.syntax;
     let mut option = env.options;
     let mut neg = false;
-    let mut whole_options: OnigOptionType = 0;
+    let mut whole_options = OnigOptionType::empty();
     let mut pfetch_prev;
 
     loop {
@@ -6102,7 +6102,7 @@ fn prs_options(
             ')' => {
                 // Option-only group (?i) or (?Ii)
                 let mut np = node_new_option(option);
-                if whole_options != 0 {
+                if !whole_options.is_empty() {
                     np.status_add(ND_ST_WHOLE_OPTIONS);
                 }
                 env.options = option;
@@ -6112,7 +6112,7 @@ fn prs_options(
                 // Option-scoped group (?i:...) or (?Ii:...)
                 let save_options = env.options;
                 env.options = option;
-                if whole_options != 0 {
+                if !whole_options.is_empty() {
                     set_whole_options(option, env);
                 }
                 let r = fetch_token(tok, p, end, pattern, env);
@@ -6124,7 +6124,7 @@ fn prs_options(
                 env.options = save_options;
                 let mut np = node_new_option(option);
                 np.set_body(Some(target));
-                if whole_options != 0 {
+                if !whole_options.is_empty() {
                     np.status_add(ND_ST_WHOLE_OPTIONS);
                 }
                 return Ok((np, 0));
@@ -6360,7 +6360,7 @@ fn prs_exp(
         }
         TokenType::Backref => {
             // When DONT_CAPTURE_GROUP is active, numbered backrefs are forbidden
-            if (env.options & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0 && !tok.backref_by_name {
+            if env.options.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP) && !tok.backref_by_name {
                 if env.num_named > 0 {
                     return Err(ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED);
                 }
@@ -6901,7 +6901,7 @@ mod tests {
             extp: None,
         };
         let env = ParseEnv {
-            options: 0,
+            options: OnigOptionType::empty(),
             case_fold_flag: 0,
             enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             syntax: &OnigSyntaxOniguruma,

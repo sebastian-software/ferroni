@@ -201,8 +201,8 @@ pub fn onig_get_case_fold_flag(reg: &RegexType) -> OnigCaseFoldType {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onig_get_syntax(reg: &RegexType) -> *const OnigSyntaxType {
-    reg.syntax
+pub fn onig_get_syntax(reg: &RegexType) -> &OnigSyntaxType {
+    unsafe { &*reg.syntax }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -5380,7 +5380,6 @@ mod tests {
     use crate::regcomp;
     use crate::regparse;
     use crate::regparse_types::ParseEnv;
-    use crate::regsyntax;
 
     fn make_test_context() -> (RegexType, ParseEnv) {
         use crate::regsyntax::OnigSyntaxOniguruma;
@@ -5399,7 +5398,7 @@ mod tests {
             repeat_range: Vec::new(),
             enc,
             options: ONIG_OPTION_NONE,
-            syntax: &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            syntax: &OnigSyntaxOniguruma,
             case_fold_flag: ONIGENC_CASE_FOLD_MIN,
             name_table: None,
             optimize: OptimizeType::None,
@@ -5420,7 +5419,7 @@ mod tests {
             extp: None,
         };
         let env = ParseEnv {
-            options: 0,
+            options: OnigOptionType::empty(),
             case_fold_flag: 0,
             enc,
             syntax: &OnigSyntaxOniguruma,

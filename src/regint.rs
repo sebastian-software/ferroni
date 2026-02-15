@@ -542,48 +542,48 @@ pub struct RegexExt {
 // === regex_t (re_pattern_buffer) ===
 pub struct RegexType {
     // bytecode
-    pub ops: Vec<Operation>,
-    pub string_pool: Vec<u8>,
+    pub(crate) ops: Vec<Operation>,
+    pub(crate) string_pool: Vec<u8>,
 
     // capture info
-    pub num_mem: i32,
-    pub num_repeat: i32,
-    pub num_empty_check: i32,
-    pub num_call: i32,
-    pub capture_history: MemStatusType,
-    pub push_mem_start: MemStatusType,
-    pub push_mem_end: MemStatusType,
-    pub stack_pop_level: StackPopLevel,
-    pub repeat_range: Vec<RepeatRange>,
+    pub(crate) num_mem: i32,
+    pub(crate) num_repeat: i32,
+    pub(crate) num_empty_check: i32,
+    pub(crate) num_call: i32,
+    pub(crate) capture_history: MemStatusType,
+    pub(crate) push_mem_start: MemStatusType,
+    pub(crate) push_mem_end: MemStatusType,
+    pub(crate) stack_pop_level: StackPopLevel,
+    pub(crate) repeat_range: Vec<RepeatRange>,
 
     // metadata
-    pub enc: OnigEncoding,
-    pub options: OnigOptionType,
-    pub syntax: *const OnigSyntaxType,
-    pub case_fold_flag: OnigCaseFoldType,
-    pub name_table: Option<crate::regparse_types::NameTable>,
+    pub(crate) enc: OnigEncoding,
+    pub(crate) options: OnigOptionType,
+    pub(crate) syntax: *const OnigSyntaxType,
+    pub(crate) case_fold_flag: OnigCaseFoldType,
+    pub(crate) name_table: Option<crate::regparse_types::NameTable>,
 
     // optimization
-    pub optimize: OptimizeType,
-    pub threshold_len: i32,
-    pub anchor: i32,
-    pub anc_dist_min: OnigLen,
-    pub anc_dist_max: OnigLen,
-    pub sub_anchor: i32,
-    pub exact: Vec<u8>,
-    pub map: [u8; CHAR_MAP_SIZE],
-    pub map_offset: i32,
-    pub map_bytes: [u8; 3],
-    pub map_byte_count: u8,
-    pub dist_min: OnigLen,
-    pub dist_max: OnigLen,
+    pub(crate) optimize: OptimizeType,
+    pub(crate) threshold_len: i32,
+    pub(crate) anchor: i32,
+    pub(crate) anc_dist_min: OnigLen,
+    pub(crate) anc_dist_max: OnigLen,
+    pub(crate) sub_anchor: i32,
+    pub(crate) exact: Vec<u8>,
+    pub(crate) map: [u8; CHAR_MAP_SIZE],
+    pub(crate) map_offset: i32,
+    pub(crate) map_bytes: [u8; 3],
+    pub(crate) map_byte_count: u8,
+    pub(crate) dist_min: OnigLen,
+    pub(crate) dist_max: OnigLen,
 
     // subroutine call support
-    pub called_addrs: Vec<i32>, // group_num -> called entry address
-    pub unset_call_addrs: Vec<(usize, i32)>, // (op_index, group_num) for patching
+    pub(crate) called_addrs: Vec<i32>, // group_num -> called entry address
+    pub(crate) unset_call_addrs: Vec<(usize, i32)>, // (op_index, group_num) for patching
 
     // extension (callouts)
-    pub extp: Option<RegexExt>,
+    pub(crate) extp: Option<RegexExt>,
 }
 
 // === Optimization data structures ===
@@ -741,100 +741,100 @@ impl OptNode {
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_ignorecase(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_IGNORECASE) != 0
+    option.contains(ONIG_OPTION_IGNORECASE)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_extend(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_EXTEND) != 0
+    option.contains(ONIG_OPTION_EXTEND)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_multiline(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_MULTILINE) != 0
+    option.contains(ONIG_OPTION_MULTILINE)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_singleline(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_SINGLELINE) != 0
+    option.contains(ONIG_OPTION_SINGLELINE)
 }
 
 #[inline]
 pub fn opton_find_longest(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_FIND_LONGEST) != 0
+    option.contains(ONIG_OPTION_FIND_LONGEST)
 }
 
 #[inline]
 pub fn opton_find_not_empty(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_FIND_NOT_EMPTY) != 0
+    option.contains(ONIG_OPTION_FIND_NOT_EMPTY)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_negate_singleline(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_NEGATE_SINGLELINE) != 0
+    option.contains(ONIG_OPTION_NEGATE_SINGLELINE)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_dont_capture_group(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_DONT_CAPTURE_GROUP) != 0
+    option.contains(ONIG_OPTION_DONT_CAPTURE_GROUP)
 }
 
 #[inline]
 pub fn opton_capture_group(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_CAPTURE_GROUP) != 0
+    option.contains(ONIG_OPTION_CAPTURE_GROUP)
 }
 
 #[inline]
 pub fn opton_notbol(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_NOTBOL) != 0
+    option.contains(ONIG_OPTION_NOTBOL)
 }
 
 #[inline]
 pub fn opton_noteol(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_NOTEOL) != 0
+    option.contains(ONIG_OPTION_NOTEOL)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_posix_region(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_POSIX_REGION) != 0
+    option.contains(ONIG_OPTION_POSIX_REGION)
 }
 
 #[inline]
 pub fn opton_check_validity_of_string(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_CHECK_VALIDITY_OF_STRING) != 0
+    option.contains(ONIG_OPTION_CHECK_VALIDITY_OF_STRING)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_callback_each_match(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_CALLBACK_EACH_MATCH) != 0
+    option.contains(ONIG_OPTION_CALLBACK_EACH_MATCH)
 }
 
 #[inline]
 pub fn opton_not_begin_string(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_NOT_BEGIN_STRING) != 0
+    option.contains(ONIG_OPTION_NOT_BEGIN_STRING)
 }
 
 #[inline]
 pub fn opton_not_end_string(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_NOT_END_STRING) != 0
+    option.contains(ONIG_OPTION_NOT_END_STRING)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn opton_not_begin_position(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_NOT_BEGIN_POSITION) != 0
+    option.contains(ONIG_OPTION_NOT_BEGIN_POSITION)
 }
 
 #[inline]
 pub fn opton_match_whole_string(option: OnigOptionType) -> bool {
-    (option & ONIG_OPTION_MATCH_WHOLE_STRING) != 0
+    option.contains(ONIG_OPTION_MATCH_WHOLE_STRING)
 }
 
 // === Syntax macros ===

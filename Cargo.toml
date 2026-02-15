@@ -17,6 +17,7 @@ exclude = ["oniguruma-orig/", "benches/", "docs/", "scripts/"]
 ffi = ["cc"]
 
 [dependencies]
+bitflags = "2"
 memchr = "2"
 
 [build-dependencies]
