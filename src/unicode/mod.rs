@@ -678,8 +678,7 @@ fn normalize_property_name(name: &[u8]) -> Option<Vec<u8>> {
 /// Returns `Ok(())` on success, or `Err(error_code)` on failure.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_unicode_define_user_property(name: &[u8], ranges: &[OnigCodePoint]) -> Result<(), i32> {
-    let normalized = normalize_property_name(name)
-        .ok_or(ONIGERR_INVALID_CHAR_PROPERTY_NAME)?;
+    let normalized = normalize_property_name(name).ok_or(ONIGERR_INVALID_CHAR_PROPERTY_NAME)?;
 
     let mut props = USER_DEFINED_PROPERTIES.lock().unwrap();
 

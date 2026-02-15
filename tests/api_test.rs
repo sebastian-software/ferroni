@@ -142,7 +142,10 @@ fn captures_iter() {
 #[test]
 fn find_iter_multiple() {
     let re = Regex::new(r"\d+").unwrap();
-    let results: Vec<&str> = re.find_iter("1 and 22 and 333").map(|m| m.as_str()).collect();
+    let results: Vec<&str> = re
+        .find_iter("1 and 22 and 333")
+        .map(|m| m.as_str())
+        .collect();
     assert_eq!(results, vec!["1", "22", "333"]);
 }
 

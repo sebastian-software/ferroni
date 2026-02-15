@@ -7626,7 +7626,9 @@ pub fn onig_new(
     syntax: &OnigSyntaxType,
 ) -> Result<RegexType, crate::error::RegexError> {
     // Validate options
-    if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP) && option.intersects(ONIG_OPTION_CAPTURE_GROUP) {
+    if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP)
+        && option.intersects(ONIG_OPTION_CAPTURE_GROUP)
+    {
         return Err(ONIGERR_INVALID_COMBINATION_OF_OPTIONS.into());
     }
 

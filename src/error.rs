@@ -75,13 +75,14 @@ impl From<i32> for RegexError {
             ONIGERR_LIBRARY_IS_NOT_INITIALIZED => RegexError::NotInitialized,
 
             // Internal bugs
-            ONIGERR_TYPE_BUG | ONIGERR_PARSER_BUG | ONIGERR_STACK_BUG
-            | ONIGERR_UNDEFINED_BYTECODE | ONIGERR_UNEXPECTED_BYTECODE => {
-                RegexError::InternalBug {
-                    code,
-                    message: onig_error_code_to_format(code).to_string(),
-                }
-            }
+            ONIGERR_TYPE_BUG
+            | ONIGERR_PARSER_BUG
+            | ONIGERR_STACK_BUG
+            | ONIGERR_UNDEFINED_BYTECODE
+            | ONIGERR_UNEXPECTED_BYTECODE => RegexError::InternalBug {
+                code,
+                message: onig_error_code_to_format(code).to_string(),
+            },
 
             // Encoding errors
             ONIGERR_DEFAULT_ENCODING_IS_NOT_SET

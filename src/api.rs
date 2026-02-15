@@ -252,7 +252,12 @@ impl RegexBuilder {
 
     /// Compile the pattern into a [`Regex`].
     pub fn build(self) -> Result<Regex, RegexError> {
-        let inner = onig_new(&self.pattern, self.options, &ONIG_ENCODING_UTF8, self.syntax)?;
+        let inner = onig_new(
+            &self.pattern,
+            self.options,
+            &ONIG_ENCODING_UTF8,
+            self.syntax,
+        )?;
         Ok(Regex { inner })
     }
 }
@@ -455,8 +460,11 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
                     return None;
                 }
                 // Skip one character to avoid infinite loop on empty match
-                self.last_end +=
-                    self.regex.inner.enc.mbc_enc_len(&self.text[self.last_end..]);
+                self.last_end += self
+                    .regex
+                    .inner
+                    .enc
+                    .mbc_enc_len(&self.text[self.last_end..]);
                 self.last_was_empty = false;
                 return self.next();
             }

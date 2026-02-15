@@ -127,7 +127,8 @@ pub const ONIG_OPTION_CAPTURE_GROUP: OnigOptionType = OnigOptionType::CAPTURE_GR
 pub const ONIG_OPTION_NOTBOL: OnigOptionType = OnigOptionType::NOTBOL;
 pub const ONIG_OPTION_NOTEOL: OnigOptionType = OnigOptionType::NOTEOL;
 pub const ONIG_OPTION_POSIX_REGION: OnigOptionType = OnigOptionType::POSIX_REGION;
-pub const ONIG_OPTION_CHECK_VALIDITY_OF_STRING: OnigOptionType = OnigOptionType::CHECK_VALIDITY_OF_STRING;
+pub const ONIG_OPTION_CHECK_VALIDITY_OF_STRING: OnigOptionType =
+    OnigOptionType::CHECK_VALIDITY_OF_STRING;
 pub const ONIG_OPTION_IGNORECASE_IS_ASCII: OnigOptionType = OnigOptionType::IGNORECASE_IS_ASCII;
 pub const ONIG_OPTION_WORD_IS_ASCII: OnigOptionType = OnigOptionType::WORD_IS_ASCII;
 pub const ONIG_OPTION_DIGIT_IS_ASCII: OnigOptionType = OnigOptionType::DIGIT_IS_ASCII;

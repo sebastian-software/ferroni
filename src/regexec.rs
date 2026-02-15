@@ -4170,7 +4170,8 @@ fn match_at(
                     OperationPayload::CalloutName { num, id } => (*num, *id),
                     _ => (0, 0),
                 };
-                let call_result = run_builtin_callout(reg, num, id, false, &mut callout_data, s, msa);
+                let call_result =
+                    run_builtin_callout(reg, num, id, false, &mut callout_data, s, msa);
                 if call_result == ONIG_CALLOUT_FAIL {
                     goto_fail = true;
                 } else {
