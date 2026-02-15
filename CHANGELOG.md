@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0](https://github.com/sebastian-software/ferroni/compare/v0.1.0...v1.0.0) (2026-02-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* onig_new() return type changed from Result<RegexType, i32> to Result<RegexType, RegexError>. OnigOptionType is now a bitflags struct instead of a u32 type alias. RegexType fields are pub(crate). Syntax parameters take references instead of raw pointers.
+
+### Features
+
+* add code coverage infrastructure and improve coverage to &gt;80% ([d31210b](https://github.com/sebastian-software/ferroni/commit/d31210b6e3937fccde10c470992be9515ac2fdbc))
+* add idiomatic Rust API layer and type-safe internals ([25e4505](https://github.com/sebastian-software/ferroni/commit/25e4505763efd6e44bb665dbe8cb302341be48a5))
+* implement 9 missing C API functions for ~99% API parity ([d7ebbda](https://github.com/sebastian-software/ferroni/commit/d7ebbdab954cebd85977306b9c6de865f793b954))
+
+
+### Bug Fixes
+
+* **ci:** resolve clippy, format, and MSRV failures ([41580d0](https://github.com/sebastian-software/ferroni/commit/41580d057d188267f070cf2c7c850bff95b7d3e3))
+
 ## 0.1.0 (2026-02-13)
 
 
