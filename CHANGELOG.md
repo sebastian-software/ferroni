@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/sebastian-software/ferroni/compare/v1.0.0...v1.0.1) (2026-02-15)
+
+
+### Bug Fixes
+
+* run cargo fmt and bump MSRV from 1.80 to 1.81 ([1306df0](https://github.com/sebastian-software/ferroni/commit/1306df075e26c188081ec6e2d5eb6f59927b86f1))
+
 ## [1.0.0](https://github.com/sebastian-software/ferroni/compare/v0.1.0...v1.0.0) (2026-02-15)
 
 
