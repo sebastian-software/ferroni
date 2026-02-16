@@ -13,7 +13,6 @@
 use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
-
 use crate::oniguruma::*;
 use crate::regenc::*;
 use crate::regint::*;
@@ -5032,15 +5031,7 @@ fn onig_search_inner(
                         break;
                     }
                 }
-                return finish_search(
-                    find_longest,
-                    best_start,
-                    best_len,
-                    reg,
-                    str_data,
-                    end,
-                    msa,
-                );
+                return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
             } else {
                 // dist_max == INFINITE_LEN: single backward_search as gate
                 let sch_start = onigenc_get_prev_char_head(enc, str_data, 0, end);
@@ -5059,15 +5050,7 @@ fn onig_search_inner(
             s = onigenc_get_prev_char_head(enc, str_data, 0, s);
         }
 
-        return finish_search(
-            find_longest,
-            best_start,
-            best_len,
-            reg,
-            str_data,
-            end,
-            msa,
-        );
+        return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
     }
 
     let mut cur_start = start;
@@ -5245,27 +5228,11 @@ fn onig_search_inner(
             }
             // C: goto mismatch -- optimized search exhausted, do not fall
             // through to the byte-by-byte loop below.
-            return finish_search(
-                find_longest,
-                best_start,
-                best_len,
-                reg,
-                str_data,
-                end,
-                msa,
-            );
+            return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
         } else {
             // Infinite dist_max: just check once, then fall through to normal loop
             if forward_search(reg, str_data, end, s, sch_range).is_none() {
-                return finish_search(
-                    find_longest,
-                    best_start,
-                    best_len,
-                    reg,
-                    str_data,
-                    end,
-                    msa,
-                );
+                return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
             }
             // ANCR_ANYCHAR_INF: skip past newlines
             if (reg.anchor & ANCR_ANYCHAR_INF) != 0
@@ -5312,15 +5279,7 @@ fn onig_search_inner(
                         }
                     }
                 }
-                return finish_search(
-                    find_longest,
-                    best_start,
-                    best_len,
-                    reg,
-                    str_data,
-                    end,
-                    msa,
-                );
+                return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
             }
             // Fall through to normal position loop below
         }
@@ -5368,15 +5327,7 @@ fn onig_search_inner(
         }
     }
 
-    finish_search(
-        find_longest,
-        best_start,
-        best_len,
-        reg,
-        str_data,
-        end,
-        msa,
-    )
+    finish_search(find_longest, best_start, best_len, reg, str_data, end, msa)
 }
 
 fn finish_search(

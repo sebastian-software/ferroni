@@ -9,9 +9,7 @@ use std::os::raw::c_uint;
 
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
 use ferroni::ffi;
-use ferroni::oniguruma::{
-    OnigOptionType, OnigRegion, ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE,
-};
+use ferroni::oniguruma::{OnigOptionType, OnigRegion, ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE};
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::{onig_match, onig_region_new, onig_search};
 use ferroni::regset::{onig_regset_new, onig_regset_search, OnigRegSetLead};
@@ -23,13 +21,8 @@ use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions};
 // ---------------------------------------------------------------------------
 
 fn rust_compile(pattern: &[u8], option: OnigOptionType) -> ferroni::regint::RegexType {
-    onig_new(
-        pattern,
-        option,
-        &ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma,
-    )
-    .expect("Rust compile failed")
+    onig_new(pattern, option, &ONIG_ENCODING_UTF8, &OnigSyntaxOniguruma)
+        .expect("Rust compile failed")
 }
 
 fn rust_search(
@@ -782,7 +775,8 @@ fn bench_scanner(c: &mut Criterion) {
 
     // -- short_string_c: vscode-oniguruma C scanner (RegSet fast-path) --
     {
-        let c_scanner = ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
+        let c_scanner =
+            ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
 
         group.bench_function("short_string_c", |b| {
             b.iter(|| {
@@ -836,7 +830,8 @@ fn bench_scanner(c: &mut Criterion) {
     //    Use incrementing strCacheId so the cache never hits.
     {
         let long = make_long_text();
-        let c_scanner = ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
+        let c_scanner =
+            ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
         let mut cache_id = 100i32;
 
         group.bench_function("long_string_cold_c", |b| {
@@ -910,7 +905,8 @@ fn bench_scanner(c: &mut Criterion) {
     // -- long_string_warm_c: vscode-oniguruma C scanner, warm cache (same strCacheId) --
     {
         let long = make_long_text();
-        let c_scanner = ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
+        let c_scanner =
+            ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
 
         // Prime the cache
         c_scanner.find_next_match(&long, 1, 0);

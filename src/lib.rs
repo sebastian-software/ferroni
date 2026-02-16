@@ -95,8 +95,8 @@ pub mod regparse;
 pub mod regparse_types;
 pub mod regset;
 pub mod regsyntax;
-pub mod scanner;
 pub mod regtrav;
+pub mod scanner;
 pub mod unicode;
 
 #[cfg(feature = "ffi")]

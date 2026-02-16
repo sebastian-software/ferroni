@@ -312,21 +312,11 @@ impl Scanner {
 
         for pattern in patterns {
             // Compile once for the per-regex search path.
-            let reg = onig_new(
-                pattern.as_bytes(),
-                options,
-                &ONIG_ENCODING_UTF8,
-                syntax,
-            )?;
+            let reg = onig_new(pattern.as_bytes(), options, &ONIG_ENCODING_UTF8, syntax)?;
             regexes.push(Box::new(reg));
 
             // Compile again for the RegSet (it takes ownership).
-            let reg2 = onig_new(
-                pattern.as_bytes(),
-                options,
-                &ONIG_ENCODING_UTF8,
-                syntax,
-            )?;
+            let reg2 = onig_new(pattern.as_bytes(), options, &ONIG_ENCODING_UTF8, syntax)?;
             regset_regs.push(Box::new(reg2));
 
             caches.push(CacheEntry::new(pattern));
@@ -432,7 +422,15 @@ impl Scanner {
         if end < MAX_REGSET_MATCH_INPUT_LEN {
             self.search_regset(str_data, end, start_position, onig_opts)
         } else {
-            self.search_per_regex(str_data, end, start_position, str_id, options.0, onig_opts, use_cache)
+            self.search_per_regex(
+                str_data,
+                end,
+                start_position,
+                str_id,
+                options.0,
+                onig_opts,
+                use_cache,
+            )
         }
     }
 
@@ -512,23 +510,18 @@ impl Scanner {
             }
 
             // Reuse the cached region (avoids allocation after first call)
-            let region = self.caches[i].last_region.take()
+            let region = self.caches[i]
+                .last_region
+                .take()
                 .unwrap_or_else(OnigRegion::new);
 
             // Create MatchArg on first miss, reuse on subsequent misses
-            let msa = msa.get_or_insert_with(|| {
-                MatchArg::new(&self.regexes[i], onig_opts, None, start)
-            });
+            let msa =
+                msa.get_or_insert_with(|| MatchArg::new(&self.regexes[i], onig_opts, None, start));
             msa.reset_for_search(&self.regexes[i], onig_opts, Some(region), start);
 
-            let (r, returned_region) = onig_search_with_msa(
-                &self.regexes[i],
-                str_data,
-                end,
-                start,
-                end,
-                msa,
-            );
+            let (r, returned_region) =
+                onig_search_with_msa(&self.regexes[i], str_data, end, start, end, msa);
 
             // Put region back in cache (no clone needed)
             let cache = &mut self.caches[i];
@@ -632,14 +625,22 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 1, end: 4, length: 3 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 1,
+                    end: 4,
+                    length: 3
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match(s, 2, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: smallvec![CaptureIndex { start: 6, end: 8, length: 2 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 6,
+                    end: 8,
+                    length: 2
+                }],
             })
         );
     }
@@ -648,29 +649,47 @@ mod tests {
     #[test]
     fn vscode_simple2() {
         let mut scanner = Scanner::new(&["a", "b", "c"]).unwrap();
-        assert_eq!(scanner.find_next_match("x", 0, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match("x", 0, ScannerFindOptions::NONE),
+            None
+        );
         assert_eq!(
             scanner.find_next_match("xxaxxbxxc", 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 2, end: 3, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 2,
+                    end: 3,
+                    length: 1
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match("xxaxxbxxc", 4, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: smallvec![CaptureIndex { start: 5, end: 6, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 5,
+                    end: 6,
+                    length: 1
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match("xxaxxbxxc", 7, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 2,
-                capture_indices: smallvec![CaptureIndex { start: 8, end: 9, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 8,
+                    end: 9,
+                    length: 1
+                }],
             })
         );
-        assert_eq!(scanner.find_next_match("xxaxxbxxc", 9, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match("xxaxxbxxc", 9, ScannerFindOptions::NONE),
+            None
+        );
     }
 
     /// Port of vscode-oniguruma `unicode1`.
@@ -685,7 +704,11 @@ mod tests {
             scanner1.find_next_match("ab\u{2026}cde21", 7, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: smallvec![CaptureIndex { start: 8, end: 9, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 8,
+                    end: 9,
+                    length: 1
+                }],
             })
         );
 
@@ -696,7 +719,11 @@ mod tests {
             scanner2.find_next_match("{\"\\u{2026}\": 1}", 1, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 1, end: 2, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 1,
+                    end: 2,
+                    length: 1
+                }],
             })
         );
     }
@@ -715,7 +742,11 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 6, end: 7, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 6,
+                    end: 7,
+                    length: 1
+                }],
             })
         );
         // From byte 5 (='b'): Y at byte 6
@@ -723,7 +754,11 @@ mod tests {
             scanner.find_next_match(s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 6, end: 7, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 6,
+                    end: 7,
+                    length: 1
+                }],
             })
         );
         // From byte 6 (='Y'): Y at byte 6
@@ -731,7 +766,11 @@ mod tests {
             scanner.find_next_match(s, 6, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 6, end: 7, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 6,
+                    end: 7,
+                    length: 1
+                }],
             })
         );
         // From byte 7 (='X'): X at byte 7
@@ -739,7 +778,11 @@ mod tests {
             scanner.find_next_match(s, 7, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: smallvec![CaptureIndex { start: 7, end: 8, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 7,
+                    end: 8,
+                    length: 1
+                }],
             })
         );
     }
@@ -748,13 +791,18 @@ mod tests {
     /// 'Возврат' = 7 Cyrillic chars × 2 bytes each = 14 bytes
     #[test]
     fn vscode_unicode3() {
-        let mut scanner = Scanner::new(&["\u{0412}\u{043E}\u{0437}\u{0432}\u{0440}\u{0430}\u{0442}"]).unwrap();
+        let mut scanner =
+            Scanner::new(&["\u{0412}\u{043E}\u{0437}\u{0432}\u{0440}\u{0430}\u{0442}"]).unwrap();
         let s = "\u{0412}\u{043E}\u{0437}\u{0432}\u{0440}\u{0430}\u{0442} long_var_name;";
         assert_eq!(
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 0, end: 14, length: 14 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 0,
+                    end: 14,
+                    length: 14
+                }],
             })
         );
     }
@@ -766,16 +814,23 @@ mod tests {
     fn vscode_out_of_bounds() {
         let mut scanner = Scanner::new(&["X"]).unwrap();
         let s = "X\u{1F4BB}X"; // X(1) 💻(4) X(1) = 6 bytes
-        // Start at 0: X at byte 0
+                               // Start at 0: X at byte 0
         assert_eq!(
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 0, end: 1, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 0,
+                    end: 1,
+                    length: 1
+                }],
             })
         );
         // Start beyond end: no match
-        assert_eq!(scanner.find_next_match(s, 1000, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match(s, 1000, ScannerFindOptions::NONE),
+            None
+        );
     }
 
     /// Port of vscode-oniguruma `regex with \G`.
@@ -783,12 +838,19 @@ mod tests {
     fn vscode_g_anchor() {
         let mut scanner = Scanner::new(&["\\G-and"]).unwrap();
         let s = "first-and-second";
-        assert_eq!(scanner.find_next_match(s, 0, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
+            None
+        );
         assert_eq!(
             scanner.find_next_match(s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 5, end: 9, length: 4 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 5,
+                    end: 9,
+                    length: 4
+                }],
             })
         );
     }
@@ -801,7 +863,10 @@ mod tests {
             "(?x)\n  (?<!\\+\\+|--)(?<=[({\\[,?=>:*]|&&|\\|\\||\\?|\\*\\/|^await|[^\\._$[:alnum:]]await|^return|[^\\._$[:alnum:]]return|^default|[^\\._$[:alnum:]]default|^yield|[^\\._$[:alnum:]]yield|^)\\s*\n  (?!<\\s*[_$[:alpha:]][_$[:alnum:]]*((\\s+extends\\s+[^=>])|,)) # look ahead is not type parameter of arrow\n  (?=(<)\\s*(?:([_$[:alpha:]][-_$[:alnum:].]*)(?<!\\.|-)(:))?((?:[a-z][a-z0-9]*|([_$[:alpha:]][-_$[:alnum:].]*))(?<!\\.|-))(?=((<\\s*)|(\\s+))(?!\\?)|\\/?>))",
         ]).unwrap();
         let s = "    while (i < len && f(array[i]))";
-        assert_eq!(scanner.find_next_match(s, 0, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
+            None
+        );
     }
 
     /// Port of vscode-oniguruma `FindOption.NotBeginString`.
@@ -809,12 +874,19 @@ mod tests {
     fn vscode_find_option_not_begin_string() {
         let mut scanner = Scanner::new(&["\\Afirst"]).unwrap();
         let s = "first-and-first";
-        assert_eq!(scanner.find_next_match(s, 10, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match(s, 10, ScannerFindOptions::NONE),
+            None
+        );
         assert_eq!(
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 0, end: 5, length: 5 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 0,
+                    end: 5,
+                    length: 5
+                }],
             })
         );
         assert_eq!(
@@ -832,7 +904,11 @@ mod tests {
             scanner.find_next_match(s, 10, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 10, end: 15, length: 5 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 10,
+                    end: 15,
+                    length: 5
+                }],
             })
         );
         assert_eq!(
@@ -850,7 +926,11 @@ mod tests {
             scanner.find_next_match(s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 5, end: 9, length: 4 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 5,
+                    end: 9,
+                    length: 4
+                }],
             })
         );
         assert_eq!(
@@ -872,7 +952,11 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 0, end: 4, length: 4 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 0,
+                    end: 4,
+                    length: 4
+                }],
             })
         );
     }
@@ -891,8 +975,16 @@ mod tests {
             Some(ScannerMatch {
                 index: 0,
                 capture_indices: smallvec![
-                    CaptureIndex { start: 0, end: 15, length: 15 },
-                    CaptureIndex { start: 0, end: 15, length: 15 },
+                    CaptureIndex {
+                        start: 0,
+                        end: 15,
+                        length: 15
+                    },
+                    CaptureIndex {
+                        start: 0,
+                        end: 15,
+                        length: 15
+                    },
                 ],
             })
         );
@@ -920,14 +1012,22 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 1, end: 4, length: 3 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 1,
+                    end: 4,
+                    length: 3
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 2, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: smallvec![CaptureIndex { start: 6, end: 8, length: 2 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 6,
+                    end: 8,
+                    length: 2
+                }],
             })
         );
     }
@@ -937,30 +1037,48 @@ mod tests {
     fn vscode_utf16_simple2() {
         let mut scanner = Scanner::new(&["a", "b", "c"]).unwrap();
         let x = OnigString::new("x");
-        assert_eq!(scanner.find_next_match_utf16(&x, 0, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match_utf16(&x, 0, ScannerFindOptions::NONE),
+            None
+        );
         let abc = OnigString::new("xxaxxbxxc");
         assert_eq!(
             scanner.find_next_match_utf16(&abc, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 2, end: 3, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 2,
+                    end: 3,
+                    length: 1
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&abc, 4, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: smallvec![CaptureIndex { start: 5, end: 6, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 5,
+                    end: 6,
+                    length: 1
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&abc, 7, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 2,
-                capture_indices: smallvec![CaptureIndex { start: 8, end: 9, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 8,
+                    end: 9,
+                    length: 1
+                }],
             })
         );
-        assert_eq!(scanner.find_next_match_utf16(&abc, 9, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match_utf16(&abc, 9, ScannerFindOptions::NONE),
+            None
+        );
     }
 
     /// Port of vscode-oniguruma `unicode1` — UTF-16 API.
@@ -973,7 +1091,11 @@ mod tests {
             scanner1.find_next_match_utf16(&s1, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: smallvec![CaptureIndex { start: 6, end: 7, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 6,
+                    end: 7,
+                    length: 1
+                }],
             })
         );
 
@@ -983,7 +1105,11 @@ mod tests {
             scanner2.find_next_match_utf16(&s2, 1, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 1, end: 2, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 1,
+                    end: 2,
+                    length: 1
+                }],
             })
         );
     }
@@ -1001,35 +1127,55 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 4, end: 5, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 4,
+                    end: 5,
+                    length: 1
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 1, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 4, end: 5, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 4,
+                    end: 5,
+                    length: 1
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 3, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 4, end: 5, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 4,
+                    end: 5,
+                    length: 1
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 4, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 4, end: 5, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 4,
+                    end: 5,
+                    length: 1
+                }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: smallvec![CaptureIndex { start: 5, end: 6, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 5,
+                    end: 6,
+                    length: 1
+                }],
             })
         );
     }
@@ -1044,7 +1190,11 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 0, end: 7, length: 7 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 0,
+                    end: 7,
+                    length: 7
+                }],
             })
         );
     }
@@ -1058,10 +1208,17 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 0, end: 1, length: 1 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 0,
+                    end: 1,
+                    length: 1
+                }],
             })
         );
-        assert_eq!(scanner.find_next_match_utf16(&s, 1000, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match_utf16(&s, 1000, ScannerFindOptions::NONE),
+            None
+        );
     }
 
     /// Port of vscode-oniguruma `regex with \G` — UTF-16 API.
@@ -1069,12 +1226,19 @@ mod tests {
     fn vscode_utf16_g_anchor() {
         let mut scanner = Scanner::new(&["\\G-and"]).unwrap();
         let s = OnigString::new("first-and-second");
-        assert_eq!(scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
+            None
+        );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 5, end: 9, length: 4 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 5,
+                    end: 9,
+                    length: 4
+                }],
             })
         );
     }
@@ -1086,7 +1250,10 @@ mod tests {
             "(?x)\n  (?<!\\+\\+|--)(?<=[({\\[,?=>:*]|&&|\\|\\||\\?|\\*\\/|^await|[^\\._$[:alnum:]]await|^return|[^\\._$[:alnum:]]return|^default|[^\\._$[:alnum:]]default|^yield|[^\\._$[:alnum:]]yield|^)\\s*\n  (?!<\\s*[_$[:alpha:]][_$[:alnum:]]*((\\s+extends\\s+[^=>])|,)) # look ahead is not type parameter of arrow\n  (?=(<)\\s*(?:([_$[:alpha:]][-_$[:alnum:].]*)(?<!\\.|-)(:))?((?:[a-z][a-z0-9]*|([_$[:alpha:]][-_$[:alnum:].]*))(?<!\\.|-))(?=((<\\s*)|(\\s+))(?!\\?)|\\/?>))",
         ]).unwrap();
         let s = OnigString::new("    while (i < len && f(array[i]))");
-        assert_eq!(scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
+            None
+        );
     }
 
     /// Port of vscode-oniguruma `FindOption.NotBeginString` — UTF-16 API.
@@ -1094,12 +1261,19 @@ mod tests {
     fn vscode_utf16_find_option_not_begin_string() {
         let mut scanner = Scanner::new(&["\\Afirst"]).unwrap();
         let s = OnigString::new("first-and-first");
-        assert_eq!(scanner.find_next_match_utf16(&s, 10, ScannerFindOptions::NONE), None);
+        assert_eq!(
+            scanner.find_next_match_utf16(&s, 10, ScannerFindOptions::NONE),
+            None
+        );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 0, end: 5, length: 5 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 0,
+                    end: 5,
+                    length: 5
+                }],
             })
         );
         assert_eq!(
@@ -1117,7 +1291,11 @@ mod tests {
             scanner.find_next_match_utf16(&s, 10, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 10, end: 15, length: 5 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 10,
+                    end: 15,
+                    length: 5
+                }],
             })
         );
         assert_eq!(
@@ -1135,7 +1313,11 @@ mod tests {
             scanner.find_next_match_utf16(&s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: smallvec![CaptureIndex { start: 5, end: 9, length: 4 }],
+                capture_indices: smallvec![CaptureIndex {
+                    start: 5,
+                    end: 9,
+                    length: 4
+                }],
             })
         );
         assert_eq!(
