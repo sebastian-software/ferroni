@@ -1,6 +1,7 @@
 <p align="center">
   <strong>Ferroni</strong><br>
-  Pure-Rust regex engine based on Oniguruma, with SIMD-accelerated search and an idiomatic Rust API.
+  Pure-Rust Oniguruma engine with built-in scanner for syntax highlighting.<br>
+  One crate. No C toolchain. Drop-in compatible.
 </p>
 
 <p align="center">
@@ -14,42 +15,54 @@
 
 ---
 
-Ferroni started as a line-by-line port of
-[Oniguruma](https://github.com/kkos/oniguruma)'s C source into Rust -- same
-structure, same function names, same semantics. From there it gained
-SIMD-vectorized search (NEON on ARM, SSE2/AVX2 on x86-64) via
-[`memchr`](https://crates.io/crates/memchr), making it **up to 6x faster than
-C Oniguruma** on full-text scanning. Finally, an idiomatic Rust API layer
-(`Regex::new()`, typed errors, `Match`/`Captures`) was added on top -- so you
-get ergonomic Rust with battle-tested Oniguruma semantics underneath. No
-bindings, no FFI -- pure Rust.
+Syntax highlighting in [VS Code](https://code.visualstudio.com/),
+[Shiki](https://shiki.style/), and every editor built on
+[TextMate grammars](https://macromates.com/manual/en/language_grammars)
+runs on two things: an Oniguruma regex engine and a multi-pattern scanner.
+Today, that means C code with native bindings via
+[vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma).
+
+Ferroni puts both into a single Rust crate. Same regex semantics, same
+Scanner API, no C compiler needed. Just `cargo build`.
+
+It is a line-by-line port of Oniguruma's C source -- same structure, same
+opcodes, same optimization passes -- with SIMD-vectorized search via
+[`memchr`](https://crates.io/crates/memchr) layered on top. The result:
+**up to 6x faster than C** on full-text scanning, while an idiomatic Rust
+API (`Regex::new()`, typed errors, `Match`/`Captures`) keeps the ergonomics
+clean.
 
 ## Why Ferroni?
 
-**Security first.** C Oniguruma has a history of memory safety CVEs
-([CVE-2019-13224](https://nvd.nist.gov/vuln/detail/CVE-2019-13224) CVSS 9.8,
+**Regex engine + scanner in one crate.** If you're building a syntax
+highlighter, a TextMate grammar host, or anything that matches multiple
+patterns against source code, you used to need C Oniguruma plus native
+bindings. Ferroni gives you both the regex engine and the
+[vscode-oniguruma-compatible Scanner API](#scanner-api) in a single
+dependency. `cargo add ferroni` and you're done.
+
+**No more CVEs from C.** C Oniguruma has a track record of memory safety
+vulnerabilities --
+[CVE-2019-13224](https://nvd.nist.gov/vuln/detail/CVE-2019-13224) (CVSS 9.8),
 [CVE-2019-19204](https://nvd.nist.gov/vuln/detail/CVE-2019-19204),
 [CVE-2019-19246](https://nvd.nist.gov/vuln/detail/CVE-2019-19246),
 [CVE-2019-19012](https://nvd.nist.gov/vuln/detail/CVE-2019-19012),
-[CVE-2019-13225](https://nvd.nist.gov/vuln/detail/CVE-2019-13225))
-affecting Ruby, PHP, and any application linking against it. Ferroni
-eliminates buffer overflows, use-after-free, and NULL dereferences
-structurally through Rust's type system. See [ADR-005](docs/adr/005-unsafe-code-policy.md)
-for our `unsafe` policy.
+[CVE-2019-13225](https://nvd.nist.gov/vuln/detail/CVE-2019-13225) --
+affecting Ruby, PHP, and anything linking against it. Ferroni eliminates
+buffer overflows, use-after-free, and NULL dereferences structurally through
+Rust's type system. 0.4% unsafe code, all documented in
+[ADR-005](docs/adr/005-unsafe-code-policy.md).
 
-**Drop-in behavior.** Every regex feature, every opcode, every optimization
-pass is ported 1:1 from C. If your pattern works in Oniguruma, it works
-in Ferroni -- verified by 1,882 tests drawn from three sources (see
-[Test Coverage](#test-coverage)).
+**Drop-in compatible.** If your pattern works in Oniguruma, it works in
+Ferroni. Every opcode, every optimization pass is ported 1:1 from C and
+verified by [1,882 tests](#test-coverage) from three independent sources.
 
 **No C toolchain required.** Pure `cargo build`. Cross-compiles to
-`wasm32-unknown-unknown` out of the box.
+`wasm32-unknown-unknown`. Ship it as a Node.js native module via
+[napi-rs](https://napi.rs/) without `node-gyp` or a C compiler on the
+user's machine.
 
-**Easy Node.js bindings.** Rust's [napi-rs](https://napi.rs/) ecosystem
-makes it straightforward to publish a native Node.js module -- no
-`node-gyp`, no C compiler on the user's machine.
-
-## Quick Start
+## Quick start
 
 Add to your `Cargo.toml`:
 
@@ -57,6 +70,8 @@ Add to your `Cargo.toml`:
 [dependencies]
 ferroni = { git = "https://github.com/sebastian-software/ferroni.git" }
 ```
+
+### Regex
 
 ```rust
 use ferroni::prelude::*;
@@ -72,6 +87,29 @@ fn main() -> Result<(), RegexError> {
 }
 ```
 
+### Scanner API
+
+The Scanner matches multiple patterns simultaneously -- the core operation
+behind TextMate-based syntax highlighting. Results include UTF-16 position
+mapping for direct use with vscode-textmate and Shiki.
+
+```rust
+use ferroni::scanner::{Scanner, ScannerFindOptions};
+
+let mut scanner = Scanner::new(&[
+    r"\b(function|const|let|var)\b",  // keywords
+    r#""[^"]*""#,                      // strings
+    r"//.*$",                          // comments
+]).unwrap();
+
+let code = r#"const x = "hello" // greeting"#;
+let m = scanner.find_next_match(code, 0, ScannerFindOptions::NONE).unwrap();
+
+assert_eq!(m.index, 0); // pattern 0 matched first ("const")
+assert_eq!(m.capture_indices[0].start, 0);
+assert_eq!(m.capture_indices[0].end, 5);
+```
+
 For fine-grained control, use `RegexBuilder`:
 
 ```rust
@@ -85,7 +123,7 @@ assert!(re.is_match("Hello World"));
 ```
 
 <details>
-<summary><strong>Low-Level C-Style API</strong></summary>
+<summary><strong>Low-level C-style API</strong></summary>
 
 The full C-ported API is also available for advanced usage:
 
@@ -114,49 +152,57 @@ assert_eq!(result, 6); // match starts at byte 6
 
 </details>
 
-## Supported Features
+## Supported features
 
-- **All Perl/Ruby/Python syntax** -- `(?:...)`, `(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`, `(?>...)`
-- **Named captures** -- `(?<name>...)`, `(?'name'...)`, `(?P<name>...)`
-- **Backreferences** -- `\k<name>`, `\g<name>`, relative `\g<-1>`
-- **Conditionals** -- `(?(cond)T|F)`
-- **Absent expressions** -- `(?~...)`
-- **Unicode properties** -- `\p{Script_Extensions=Greek}`, `\p{Lu}`, `\p{Emoji}` (886 names)
-- **Grapheme clusters** -- `\X`, text segment boundaries `\y`, `\Y`
-- **Callouts** -- `(?{...})`, `(*FAIL)`, `(*MAX{n})`, `(*COUNT)`, `(*CMP)`
-- **12 syntax modes** -- Oniguruma, Ruby, Perl, Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic/Extended, ASIS
-- **Scanner API** -- multi-pattern `Scanner` compatible with vscode-oniguruma, UTF-16 position mapping
-- **Safety limits** -- retry, time, stack, subexp call depth (global + per-search)
+**Scanner** -- multi-pattern matching with result caching, two search
+strategies (RegSet for short strings, per-regex for long strings), and
+automatic UTF-16 position mapping. API-compatible with
+[vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma).
+
+**Full Oniguruma regex** -- every feature from the C engine:
+
+- All Perl/Ruby/Python syntax -- `(?:...)`, `(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`, `(?>...)`
+- Named captures -- `(?<name>...)`, `(?'name'...)`, `(?P<name>...)`
+- Backreferences -- `\k<name>`, `\g<name>`, relative `\g<-1>`
+- Conditionals -- `(?(cond)T|F)`
+- Absent expressions -- `(?~...)`
+- Unicode properties -- `\p{Script_Extensions=Greek}`, `\p{Lu}`, `\p{Emoji}` (886 names)
+- Grapheme clusters -- `\X`, text segment boundaries `\y`, `\Y`
+- Callouts -- `(?{...})`, `(*FAIL)`, `(*MAX{n})`, `(*COUNT)`, `(*CMP)`
+- 12 syntax modes -- Oniguruma, Ruby, Perl, Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic/Extended, ASIS
+- Safety limits -- retry, time, stack, subexp call depth (global + per-search)
 
 ## Performance
 
-Criterion benchmarks vs. C Oniguruma at `-O3` on Apple M1 Ultra.
-**Bold** = faster engine. Full tables in the [expandable section below](#full-benchmark-tables).
+Ferroni wins **31 of 42** execution benchmarks against C Oniguruma at `-O3`.
+Criterion, Apple M1 Ultra. **Bold** = faster engine.
 
 ### Highlights
 
-| Scenario | Rust | C | Speedup |
-|----------|-----:|--:|--------:|
-| No match, 50 KB haystack | **1.5 us** | 9.3 us | **6.0x** |
-| No match, 10 KB haystack | **378 ns** | 1.9 us | **5.0x** |
-| Scanner, short string (RegSet) | **168 ns** | 407 ns | **2.4x** |
-| RegSet, 5 patterns (position) | **147 ns** | 396 ns | **2.7x** |
-| 5-way alternation | **122 ns** | 173 ns | **1.4x** |
-| Greedy quantifier | **215 ns** | 255 ns | **1.2x** |
+| Scenario | Ferroni | C Oniguruma | Factor |
+|----------|--------:|------------:|-------:|
+| Full-text scan, no match, 50 KB | **1.5 us** | 9.3 us | **6.0x** |
+| Full-text scan, no match, 10 KB | **378 ns** | 1.9 us | **5.0x** |
+| Scanner, short string | **168 ns** | 407 ns | **2.4x** |
+| Multi-pattern RegSet | **147 ns** | 396 ns | **2.7x** |
+| Scanner, warm cache | 24 ns | **23 ns** | 1.06x |
 
-Ferroni wins **31 of 42** execution benchmarks. The SIMD-accelerated forward
-search is the standout: [`memchr`](https://crates.io/crates/memchr) replaces
-hand-written byte loops with vectorized scans, delivering 5-6x gains on
-full-text scanning. See [ADR-006](docs/adr/006-simd-accelerated-search.md).
+The largest gains come from SIMD-vectorized search via
+[`memchr`](https://crates.io/crates/memchr) -- NEON on ARM, SSE2/AVX2 on
+x86-64 -- replacing C's hand-written byte loops with vectorized scans.
+See [ADR-006](docs/adr/006-simd-accelerated-search.md).
 
-Compilation is 1.2-1.7x slower (Rust allocates more than C's pre-allocated
-buffers), but compilation is a one-time cost -- real-world consumers compile
-patterns once and match millions of times.
+The Scanner warm path (all patterns served from cache, the steady-state in a
+syntax highlighter) runs at 24 ns -- within 6% of the C implementation. No
+heap allocation on cache hits.
+
+Compilation is 1.2-1.7x slower than C (Rust allocates more per compilation),
+but patterns are compiled once and matched millions of times.
 
 <details>
-<summary><strong>Full Benchmark Tables</strong></summary>
+<summary><strong>Full benchmark tables</strong></summary>
 
-### Regex Execution
+### Regex execution
 
 | Benchmark | Rust | C | Ratio |
 |-----------|-----:|--:|------:|
@@ -215,7 +261,7 @@ patterns once and match millions of times.
 | long string, cold (per-regex) | 191 ns | **188 ns** | 1.02 |
 | long string, warm (cached) | 24 ns | **23 ns** | 1.06 |
 
-### Regex Compilation
+### Regex compilation
 
 | Pattern | Rust | C | Ratio |
 |---------|-----:|--:|------:|
@@ -230,7 +276,7 @@ patterns once and match millions of times.
 | lookbehind | 678 ns | **538 ns** | 1.26 |
 | named capture | 46,153 ns | **5,734 ns** | 8.05 |
 
-### Running Benchmarks
+### Running benchmarks
 
 ```bash
 cargo bench --features ffi               # full suite (~8 min)
@@ -259,7 +305,7 @@ Each C source file maps 1:1 to a Rust module ([ADR-001](docs/adr/001-one-to-one-
 | regerror.c | `regerror.rs` | Error messages |
 | regtrav.c | `regtrav.rs` | Capture tree traversal |
 | unicode.c | `unicode/mod.rs` | Unicode tables and segmentation |
-| -- | `scanner.rs` | Multi-pattern scanner (vscode-oniguruma compatible) |
+| -- | `scanner.rs` | Multi-pattern scanner for syntax highlighting |
 
 **Compilation pipeline** (same as C):
 
@@ -281,7 +327,7 @@ Ferroni targets ASCII/UTF-8 workloads. The following are intentionally not inclu
 - **C memory management** -- replaced by Rust's `Drop` trait
 - **`onig_new_deluxe`** -- C-specific allocation, use `onig_new()` instead
 
-## Running Tests
+## Running tests
 
 ```bash
 # Full UTF-8 suite (requires increased stack for debug builds)
@@ -297,53 +343,30 @@ RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 > **Warning:** Never run `cargo test -- --ignored` -- the
 > `conditional_recursion_complex` test intentionally hangs.
 
-## Test Coverage
+## Test coverage
 
-Ferroni ships 1,882 tests from three sources:
+1,882 tests from three independent sources:
 
 - **1,554** ported 1:1 from C Oniguruma's test suite
-- **25** ported from [vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma)'s
-  TypeScript test suite, covering the Scanner API and UTF-16 position mapping
-- **303** additional Rust-specific tests covering edge cases, error paths,
-  and features that the upstream suites leave untested
+- **25** from [vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma)'s
+  TypeScript tests (Scanner API, UTF-16 mapping)
+- **303** Rust-specific tests for edge cases, error paths, and gaps in the
+  upstream suites
 
-The original C project has no
-coverage reporting; Ferroni's test suite is strictly a superset of it.
-Combined with Rust's compile-time guarantees against buffer overflows,
-use-after-free, and data races, this makes Ferroni's long-term quality
-posture stronger than the C original.
-
-Coverage is measured with
-[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) on nightly and
-reported to [Codecov](https://codecov.io/gh/sebastian-software/ferroni).
+C Oniguruma has no coverage reporting. Ferroni's test suite is a strict
+superset.
 
 | Metric | Value | Notes |
 |--------|------:|-------|
-| **Function coverage** | >94% | All reachable API and internal functions |
-| **Line coverage** | ~82% | Limited by stack overflow under instrumentation |
-| **Tests executed** | 1,840 of 1,882 | 42 skipped during coverage runs only |
+| Function coverage | >94% | All reachable API and internal functions |
+| Line coverage | ~82% | 42 deeply recursive tests overflow under LLVM instrumentation |
+| Tests executed | 1,840 of 1,882 | All 1,882 pass in normal `cargo test` |
 
-**Why not higher?** Oniguruma supports deeply recursive patterns --
-backreferences like `(\w+)\1` that backtrack through thousands of stack frames,
-and subexpression calls like `\g<name>` that recurse into the VM. These tests
-pass normally but cause stack overflows under LLVM's coverage instrumentation,
-which significantly increases each stack frame's size. Since macOS and Linux
-cap thread stacks at ~1 GB, roughly 42 of the most recursive tests must be
-skipped during coverage runs.
+Coverage measured with
+[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov), reported to
+[Codecov](https://codecov.io/gh/sebastian-software/ferroni).
 
-The skipped tests exercise branches deep inside the three largest modules
-(parser, compiler, VM executor -- together ~18,000 lines). The functions
-themselves *are* covered, but specific branches within them (e.g., nested
-backref matching, mutual recursion, conditional recursion) remain unexercised
-under instrumentation. All 1,882 tests pass in regular `cargo test` builds
-without any skips.
-
-Functions that cannot be meaningfully tested -- global configuration setters,
-encoding stubs for the unused ASCII path, error message formatting, callout
-argument accessors -- are excluded via `#[coverage(off)]` on nightly to avoid
-inflating the denominator.
-
-## Architecture Decision Records
+## Architecture decision records
 
 | ADR | Decision |
 |-----|----------|
