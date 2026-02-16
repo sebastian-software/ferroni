@@ -391,7 +391,11 @@ and review the ADRs before submitting a PR.
 Ferroni is built on the work of [K. Kosako](https://github.com/kkos) and
 the Oniguruma contributors. The C original powers regex in
 [Ruby](https://www.ruby-lang.org/), [PHP](https://www.php.net/),
-[TextMate](https://macromates.com/), and many other projects.
+[TextMate](https://macromates.com/), and many other projects. The Scanner
+API and its test suite are based on
+[vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma)
+by [Nicol&ograve; Ribaudo](https://github.com/nicolo-ribaudo) and the
+VS Code team.
 
 ## License
 
