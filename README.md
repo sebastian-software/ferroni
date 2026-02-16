@@ -8,7 +8,7 @@
   <a href="https://codecov.io/gh/sebastian-software/ferroni"><img src="https://img.shields.io/codecov/c/github/sebastian-software/ferroni?style=flat-square&logo=codecov&label=Coverage" alt="Coverage"></a>
   <a href="https://github.com/sebastian-software/ferroni/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/unsafe-0.4%25-green?style=flat-square" alt="Unsafe"></a>
-  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/tests-1%2C695_passing-brightgreen?style=flat-square" alt="Tests"></a>
+  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/tests-1%2C882_passing-brightgreen?style=flat-square" alt="Tests"></a>
   <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/C_parity-100%25-brightgreen?style=flat-square" alt="C Parity"></a>
 </p>
 
@@ -39,7 +39,8 @@ for our `unsafe` policy.
 
 **Drop-in behavior.** Every regex feature, every opcode, every optimization
 pass is ported 1:1 from C. If your pattern works in Oniguruma, it works
-in Ferroni -- verified by 1,695 tests ported directly from the C test suite.
+in Ferroni -- verified by 1,882 tests drawn from three sources (see
+[Test Coverage](#test-coverage)).
 
 **No C toolchain required.** Pure `cargo build`. Cross-compiles to
 `wasm32-unknown-unknown` out of the box.
@@ -124,6 +125,7 @@ assert_eq!(result, 6); // match starts at byte 6
 - **Grapheme clusters** -- `\X`, text segment boundaries `\y`, `\Y`
 - **Callouts** -- `(?{...})`, `(*FAIL)`, `(*MAX{n})`, `(*COUNT)`, `(*CMP)`
 - **12 syntax modes** -- Oniguruma, Ruby, Perl, Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic/Extended, ASIS
+- **Scanner API** -- multi-pattern `Scanner` compatible with vscode-oniguruma, UTF-16 position mapping
 - **Safety limits** -- retry, time, stack, subexp call depth (global + per-search)
 
 ## Performance
@@ -135,14 +137,14 @@ Criterion benchmarks vs. C Oniguruma at `-O3` on Apple M1 Ultra.
 
 | Scenario | Rust | C | Speedup |
 |----------|-----:|--:|--------:|
-| No match, 50 KB haystack | **1.5 us** | 9.3 us | **6.1x** |
-| No match, 10 KB haystack | **381 ns** | 1.9 us | **4.9x** |
-| RegSet, 5 patterns (position) | **148 ns** | 389 ns | **2.6x** |
-| 5-way alternation | **118 ns** | 186 ns | **1.6x** |
-| Greedy quantifier | **222 ns** | 257 ns | **1.2x** |
-| Possessive quantifier | **189 ns** | 235 ns | **1.2x** |
+| No match, 50 KB haystack | **1.5 us** | 9.3 us | **6.0x** |
+| No match, 10 KB haystack | **378 ns** | 1.9 us | **5.0x** |
+| Scanner, short string (RegSet) | **168 ns** | 407 ns | **2.4x** |
+| RegSet, 5 patterns (position) | **147 ns** | 396 ns | **2.7x** |
+| 5-way alternation | **122 ns** | 173 ns | **1.4x** |
+| Greedy quantifier | **215 ns** | 255 ns | **1.2x** |
 
-Ferroni wins **29 of 39** execution benchmarks. The SIMD-accelerated forward
+Ferroni wins **31 of 42** execution benchmarks. The SIMD-accelerated forward
 search is the standout: [`memchr`](https://crates.io/crates/memchr) replaces
 hand-written byte loops with vectorized scans, delivering 5-6x gains on
 full-text scanning. See [ADR-006](docs/adr/006-simd-accelerated-search.md).
@@ -159,76 +161,81 @@ patterns once and match millions of times.
 | Benchmark | Rust | C | Ratio |
 |-----------|-----:|--:|------:|
 | **Literal match** | | | |
-| exact string | **134 ns** | 149 ns | 0.90 |
-| anchored start | **103 ns** | 147 ns | 0.70 |
-| anchored end | 165 ns | **160 ns** | 1.03 |
-| word boundary | **118 ns** | 155 ns | 0.76 |
+| exact string | **135 ns** | 159 ns | 0.85 |
+| anchored start | **105 ns** | 151 ns | 0.69 |
+| anchored end | 167 ns | **163 ns** | 1.02 |
+| word boundary | **120 ns** | 151 ns | 0.80 |
 | **Quantifiers** | | | |
-| greedy | **222 ns** | 257 ns | 0.86 |
-| lazy | **194 ns** | 222 ns | 0.87 |
-| possessive | **189 ns** | 235 ns | 0.80 |
-| nested | **180 ns** | 234 ns | 0.77 |
+| greedy | **215 ns** | 255 ns | 0.84 |
+| lazy | **193 ns** | 206 ns | 0.93 |
+| possessive | **199 ns** | 224 ns | 0.89 |
+| nested | **200 ns** | 212 ns | 0.94 |
 | **Alternation** | | | |
-| 2 branches | **106 ns** | 153 ns | 0.69 |
-| 5 branches | **118 ns** | 186 ns | 0.64 |
-| 10 branches | 255 ns | **223 ns** | 1.14 |
-| nested | **125 ns** | 176 ns | 0.71 |
+| 2 branches | **107 ns** | 155 ns | 0.69 |
+| 5 branches | **122 ns** | 173 ns | 0.71 |
+| 10 branches | 246 ns | **220 ns** | 1.12 |
+| nested | **129 ns** | 184 ns | 0.70 |
 | **Backreferences** | | | |
-| simple `(\w+) \1` | **143 ns** | 188 ns | 0.76 |
-| nested | **148 ns** | 201 ns | 0.74 |
-| named | **143 ns** | 189 ns | 0.76 |
+| simple `(\w+) \1` | **150 ns** | 183 ns | 0.82 |
+| nested | **156 ns** | 185 ns | 0.84 |
+| named | **152 ns** | 188 ns | 0.81 |
 | **Lookaround** | | | |
-| positive lookahead | **124 ns** | 163 ns | 0.76 |
-| negative lookahead | **137 ns** | 179 ns | 0.77 |
-| positive lookbehind | 276 ns | **264 ns** | 1.05 |
-| negative lookbehind | 353 ns | **332 ns** | 1.06 |
-| combined | 299 ns | **286 ns** | 1.05 |
+| positive lookahead | **128 ns** | 170 ns | 0.76 |
+| negative lookahead | **140 ns** | 172 ns | 0.82 |
+| positive lookbehind | 279 ns | **264 ns** | 1.05 |
+| negative lookbehind | 359 ns | **334 ns** | 1.08 |
+| combined | 301 ns | **280 ns** | 1.08 |
 | **Unicode properties** | | | |
-| `\p{Lu}+` | **93 ns** | 143 ns | 0.65 |
-| `\p{Letter}+` | **126 ns** | 170 ns | 0.74 |
-| `\p{Greek}+` | 320 ns | **239 ns** | 1.34 |
-| `\p{Cyrillic}+` | 435 ns | **324 ns** | 1.34 |
+| `\p{Lu}+` | **92 ns** | 150 ns | 0.62 |
+| `\p{Letter}+` | **128 ns** | 164 ns | 0.78 |
+| `\p{Greek}+` | 323 ns | **246 ns** | 1.31 |
+| `\p{Cyrillic}+` | 450 ns | **329 ns** | 1.37 |
 | **Case-insensitive** | | | |
-| single word | **106 ns** | 154 ns | 0.69 |
-| phrase | **161 ns** | 185 ns | 0.87 |
-| alternation | **112 ns** | 157 ns | 0.71 |
+| single word | **107 ns** | 155 ns | 0.69 |
+| phrase | **161 ns** | 183 ns | 0.88 |
+| alternation | **113 ns** | 148 ns | 0.76 |
 | **Named captures** | | | |
-| date extraction | 454 ns | **272 ns** | 1.67 |
+| date extraction | 460 ns | **282 ns** | 1.63 |
 | **Large text (first match)** | | | |
-| literal 10 KB | **112 ns** | 147 ns | 0.76 |
-| literal 50 KB | **112 ns** | 142 ns | 0.79 |
-| timestamp 10 KB | 230 ns | **180 ns** | 1.28 |
-| timestamp 50 KB | 230 ns | **179 ns** | 1.28 |
-| field extract 10 KB | **160 ns** | 176 ns | 0.91 |
-| field extract 50 KB | **158 ns** | 173 ns | 0.91 |
-| no match 10 KB | **381 ns** | 1.9 us | 0.20 |
-| no match 50 KB | **1.5 us** | 9.3 us | 0.16 |
+| literal 10 KB | **113 ns** | 145 ns | 0.78 |
+| literal 50 KB | **114 ns** | 153 ns | 0.75 |
+| timestamp 10 KB | 243 ns | **186 ns** | 1.31 |
+| timestamp 50 KB | 240 ns | **175 ns** | 1.37 |
+| field extract 10 KB | **160 ns** | 170 ns | 0.94 |
+| field extract 50 KB | **162 ns** | 170 ns | 0.95 |
+| no match 10 KB | **378 ns** | 1.9 us | 0.20 |
+| no match 50 KB | **1.5 us** | 9.3 us | 0.17 |
 | **RegSet** | | | |
-| position-lead (5 patterns) | **148 ns** | 389 ns | 0.38 |
-| regex-lead (5 patterns) | **162 ns** | 234 ns | 0.69 |
+| position-lead (5 patterns) | **147 ns** | 396 ns | 0.37 |
+| regex-lead (5 patterns) | **164 ns** | 233 ns | 0.70 |
 | **Match at position** | | | |
-| `\d+` at offset 4 | **117 ns** | 152 ns | 0.77 |
+| `\d+` at offset 4 | **118 ns** | 154 ns | 0.76 |
+| **Scanner** (vs vscode-oniguruma C) | | | |
+| short string (RegSet path) | **168 ns** | 407 ns | 0.41 |
+| long string, cold (per-regex) | 191 ns | **188 ns** | 1.02 |
+| long string, warm (cached) | 24 ns | **23 ns** | 1.06 |
 
 ### Regex Compilation
 
 | Pattern | Rust | C | Ratio |
 |---------|-----:|--:|------:|
-| literal | **429 ns** | 466 ns | 0.92 |
-| `.*` | 769 ns | **532 ns** | 1.45 |
-| alternation | 1,791 ns | **1,449 ns** | 1.24 |
-| char class | 673 ns | **636 ns** | 1.06 |
-| quantifier | 1,403 ns | **1,049 ns** | 1.34 |
-| group | 1,076 ns | **786 ns** | 1.37 |
-| backref | 1,631 ns | **967 ns** | 1.69 |
-| lookahead | 763 ns | **482 ns** | 1.58 |
-| lookbehind | 721 ns | **552 ns** | 1.31 |
-| named capture | 46,849 ns | **5,751 ns** | 8.15 |
+| literal | **416 ns** | 449 ns | 0.93 |
+| `.*` | 745 ns | **517 ns** | 1.44 |
+| alternation | 1,711 ns | **1,410 ns** | 1.21 |
+| char class | 641 ns | **635 ns** | 1.01 |
+| quantifier | 1,356 ns | **1,059 ns** | 1.28 |
+| group | 1,040 ns | **803 ns** | 1.30 |
+| backref | 1,578 ns | **983 ns** | 1.60 |
+| lookahead | 733 ns | **474 ns** | 1.55 |
+| lookbehind | 678 ns | **538 ns** | 1.26 |
+| named capture | 46,153 ns | **5,734 ns** | 8.05 |
 
 ### Running Benchmarks
 
 ```bash
 cargo bench --features ffi               # full suite (~8 min)
 cargo bench --features ffi -- compile    # specific group
+cargo bench --features ffi -- scanner    # scanner API benchmarks
 cargo bench --features ffi -- "large_"   # pattern filter
 # HTML report: target/criterion/report/index.html
 ```
@@ -252,6 +259,7 @@ Each C source file maps 1:1 to a Rust module ([ADR-001](docs/adr/001-one-to-one-
 | regerror.c | `regerror.rs` | Error messages |
 | regtrav.c | `regtrav.rs` | Capture tree traversal |
 | unicode.c | `unicode/mod.rs` | Unicode tables and segmentation |
+| -- | `scanner.rs` | Multi-pattern scanner (vscode-oniguruma compatible) |
 
 **Compilation pipeline** (same as C):
 
@@ -291,9 +299,15 @@ RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 
 ## Test Coverage
 
-Ferroni ships 1,695 tests -- 1,554 ported 1:1 from C Oniguruma's test suite
-plus 141 additional Rust-specific tests covering edge cases, error paths, and
-features that the C suite leaves untested. The original C project has no
+Ferroni ships 1,882 tests from three sources:
+
+- **1,554** ported 1:1 from C Oniguruma's test suite
+- **25** ported from [vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma)'s
+  TypeScript test suite, covering the Scanner API and UTF-16 position mapping
+- **303** additional Rust-specific tests covering edge cases, error paths,
+  and features that the upstream suites leave untested
+
+The original C project has no
 coverage reporting; Ferroni's test suite is strictly a superset of it.
 Combined with Rust's compile-time guarantees against buffer overflows,
 use-after-free, and data races, this makes Ferroni's long-term quality
@@ -307,7 +321,7 @@ reported to [Codecov](https://codecov.io/gh/sebastian-software/ferroni).
 |--------|------:|-------|
 | **Function coverage** | >94% | All reachable API and internal functions |
 | **Line coverage** | ~82% | Limited by stack overflow under instrumentation |
-| **Tests executed** | 1,653 of 1,695 | 42 skipped during coverage runs only |
+| **Tests executed** | 1,840 of 1,882 | 42 skipped during coverage runs only |
 
 **Why not higher?** Oniguruma supports deeply recursive patterns --
 backreferences like `(\w+)\1` that backtrack through thousands of stack frames,
@@ -321,7 +335,7 @@ The skipped tests exercise branches deep inside the three largest modules
 (parser, compiler, VM executor -- together ~18,000 lines). The functions
 themselves *are* covered, but specific branches within them (e.g., nested
 backref matching, mutual recursion, conditional recursion) remain unexercised
-under instrumentation. All 1,695 tests pass in regular `cargo test` builds
+under instrumentation. All 1,882 tests pass in regular `cargo test` builds
 without any skips.
 
 Functions that cannot be meaningfully tested -- global configuration setters,
