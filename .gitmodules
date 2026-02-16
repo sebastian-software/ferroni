@@ -1,3 +1,6 @@
 [submodule "oniguruma-orig"]
 	path = oniguruma-orig
 	url = https://github.com/kkos/oniguruma.git
+[submodule "vscode-oniguruma"]
+	path = vscode-oniguruma
+	url = https://github.com/microsoft/vscode-oniguruma.git

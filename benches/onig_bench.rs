@@ -10,12 +10,13 @@ use std::os::raw::c_uint;
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
 use ferroni::ffi;
 use ferroni::oniguruma::{
-    OnigOptionType, OnigRegion, OnigSyntaxType, ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE,
+    OnigOptionType, OnigRegion, ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE,
 };
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::{onig_match, onig_region_new, onig_search};
-use ferroni::regset::{onig_regset_new, onig_regset_search, OnigRegSet, OnigRegSetLead};
+use ferroni::regset::{onig_regset_new, onig_regset_search, OnigRegSetLead};
 use ferroni::regsyntax::OnigSyntaxOniguruma;
+use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,7 +27,7 @@ fn rust_compile(pattern: &[u8], option: OnigOptionType) -> ferroni::regint::Rege
         pattern,
         option,
         &ONIG_ENCODING_UTF8,
-        &OnigSyntaxOniguruma as *const OnigSyntaxType,
+        &OnigSyntaxOniguruma,
     )
     .expect("Rust compile failed")
 }
@@ -731,6 +732,215 @@ fn bench_match_at_position(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
+// 13. scanner -- Scanner API overhead vs raw RegSet/onig_search
+// ---------------------------------------------------------------------------
+
+/// Same patterns as bench_regset for direct comparison.
+const SCANNER_PATTERNS: &[&str] = &[
+    "Error \\d+",
+    "/api/\\w+/\\d+",
+    "\\d{4}-\\d{2}-\\d{2}",
+    "not found",
+    "\\bpage\\b",
+];
+
+const SCANNER_PATTERNS_BYTES: &[&[u8]] = &[
+    b"Error \\d+",
+    b"/api/\\w+/\\d+",
+    b"\\d{4}-\\d{2}-\\d{2}",
+    b"not found",
+    b"\\bpage\\b",
+];
+
+const SCANNER_TEXT_SHORT: &[u8] = b"Error 404: page not found at /api/users/42 on 2025-06-15";
+
+fn make_long_text() -> Vec<u8> {
+    // ~2KB — above the 1000-byte threshold for per-regex path
+    let base = b"Error 404: page not found at /api/users/42 on 2025-06-15. ";
+    let mut text = Vec::with_capacity(base.len() * 40);
+    for _ in 0..40 {
+        text.extend_from_slice(base);
+    }
+    text
+}
+
+fn bench_scanner(c: &mut Criterion) {
+    let mut group = c.benchmark_group("scanner");
+
+    // -- short_string: Ferroni Scanner (RegSet fast-path) --
+    {
+        let mut scanner = Scanner::new(SCANNER_PATTERNS).unwrap();
+        let text = std::str::from_utf8(SCANNER_TEXT_SHORT).unwrap();
+
+        group.bench_function("short_string", |b| {
+            b.iter(|| {
+                let m = scanner.find_next_match(black_box(text), 0, ScannerFindOptions::NONE);
+                black_box(m);
+            });
+        });
+    }
+
+    // -- short_string_c: vscode-oniguruma C scanner (RegSet fast-path) --
+    {
+        let c_scanner = ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
+
+        group.bench_function("short_string_c", |b| {
+            b.iter(|| {
+                let m = c_scanner.find_next_match(black_box(SCANNER_TEXT_SHORT), 0, 0);
+                black_box(m);
+            });
+        });
+    }
+
+    // -- short_string_c_raw: raw C RegSet (no scanner layer, pure engine) --
+    {
+        let c_regs_owned: Vec<ffi::CRegex> = SCANNER_PATTERNS_BYTES
+            .iter()
+            .map(|p| c_compile(p, ffi::ONIG_OPTION_NONE))
+            .collect();
+        let c_raw_ptrs: Vec<ffi::OnigRegex> = c_regs_owned.iter().map(|r| r.raw()).collect();
+        for r in c_regs_owned {
+            std::mem::forget(r);
+        }
+        let mut c_set = ffi::CRegSet::new(&c_raw_ptrs).expect("C regset_new failed");
+
+        group.bench_function("short_string_c_raw", |b| {
+            b.iter(|| {
+                let (idx, pos) = c_set.search(
+                    black_box(SCANNER_TEXT_SHORT),
+                    0,
+                    SCANNER_TEXT_SHORT.len(),
+                    ffi::ONIG_REGSET_POSITION_LEAD,
+                    ffi::ONIG_OPTION_NONE,
+                );
+                black_box((idx, pos));
+            });
+        });
+    }
+
+    // -- long_string_cold: Ferroni per-regex path, no caching --
+    {
+        let long = make_long_text();
+        let long_str = std::str::from_utf8(&long).unwrap();
+        let mut scanner = Scanner::new(SCANNER_PATTERNS).unwrap();
+
+        group.bench_function("long_string_cold", |b| {
+            b.iter(|| {
+                let m = scanner.find_next_match(black_box(long_str), 0, ScannerFindOptions::NONE);
+                black_box(m);
+            });
+        });
+    }
+
+    // -- long_string_cold_c: vscode-oniguruma C scanner, no caching --
+    //    Use incrementing strCacheId so the cache never hits.
+    {
+        let long = make_long_text();
+        let c_scanner = ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
+        let mut cache_id = 100i32;
+
+        group.bench_function("long_string_cold_c", |b| {
+            b.iter(|| {
+                cache_id = cache_id.wrapping_add(1);
+                let m = c_scanner.find_next_match(black_box(&long), cache_id, 0);
+                black_box(m);
+            });
+        });
+    }
+
+    // -- long_string_cold_c_raw: raw C per-regex search (no scanner, no caching) --
+    //    Mirrors what the scanner does internally: search each regex, pick earliest.
+    {
+        let long = make_long_text();
+        let c_regs: Vec<ffi::CRegex> = SCANNER_PATTERNS_BYTES
+            .iter()
+            .map(|p| c_compile(p, ffi::ONIG_OPTION_NONE))
+            .collect();
+
+        group.bench_function("long_string_cold_c_raw", |b| {
+            let mut region = ffi::CRegion::new();
+            b.iter(|| {
+                let text = black_box(long.as_slice());
+                let mut best_pos: i32 = -1;
+                let mut best_idx: i32 = -1;
+                for (i, reg) in c_regs.iter().enumerate() {
+                    region.clear();
+                    let pos = reg.search(
+                        text,
+                        0,
+                        text.len(),
+                        Some(&mut region),
+                        ffi::ONIG_OPTION_NONE,
+                    );
+                    if pos >= 0 && (best_pos < 0 || pos < best_pos) {
+                        best_pos = pos;
+                        best_idx = i as i32;
+                        if pos == 0 {
+                            break;
+                        }
+                    }
+                }
+                black_box((best_idx, best_pos));
+            });
+        });
+    }
+
+    // -- long_string_warm: Ferroni per-regex path, same str_id → cache hits --
+    {
+        let long = make_long_text();
+        let long_str = std::str::from_utf8(&long).unwrap();
+        let mut scanner = Scanner::new(SCANNER_PATTERNS).unwrap();
+
+        // Prime the cache
+        scanner.find_next_match_with_id(long_str, 1, 0, ScannerFindOptions::NONE);
+
+        group.bench_function("long_string_warm", |b| {
+            b.iter(|| {
+                let m = scanner.find_next_match_with_id(
+                    black_box(long_str),
+                    1,
+                    0,
+                    ScannerFindOptions::NONE,
+                );
+                black_box(m);
+            });
+        });
+    }
+
+    // -- long_string_warm_c: vscode-oniguruma C scanner, warm cache (same strCacheId) --
+    {
+        let long = make_long_text();
+        let c_scanner = ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
+
+        // Prime the cache
+        c_scanner.find_next_match(&long, 1, 0);
+
+        group.bench_function("long_string_warm_c", |b| {
+            b.iter(|| {
+                let m = c_scanner.find_next_match(black_box(&long), 1, 0);
+                black_box(m);
+            });
+        });
+    }
+
+    // -- utf16: OnigString creation + find_next_match_utf16 (no C equivalent) --
+    {
+        let content = "Error 404: page «not found» at /api/users/42 on 2025-06-15 — résumé";
+        let mut scanner = Scanner::new(SCANNER_PATTERNS).unwrap();
+
+        group.bench_function("utf16", |b| {
+            b.iter(|| {
+                let s = OnigString::new(black_box(content));
+                let m = scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE);
+                black_box(m);
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
 // Criterion harness
 // ---------------------------------------------------------------------------
 
@@ -748,5 +958,6 @@ criterion_group!(
     bench_large_text,
     bench_regset,
     bench_match_at_position,
+    bench_scanner,
 );
 criterion_main!(benches);

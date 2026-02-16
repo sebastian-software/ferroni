@@ -128,5 +128,8 @@ fn build_oniguruma_c() {
         build.file(src_dir.join(file));
     }
 
+    // Also compile the vscode-oniguruma scanner wrapper (for benchmarks).
+    build.file("benches/vscode_scanner_native.c");
+
     build.compile("oniguruma");
 }

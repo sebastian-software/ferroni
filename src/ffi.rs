@@ -298,3 +298,110 @@ impl Drop for CRegSet {
         unsafe { onig_regset_free(self.raw) }
     }
 }
+
+// --- vscode-oniguruma C Scanner ---
+//
+// FFI to the extracted scanner from vscode-oniguruma (benches/vscode_scanner_native.c).
+
+/// Opaque C scanner type (OnigScanner_ struct).
+#[repr(C)]
+pub struct COnigScanner {
+    _opaque: [u8; 0],
+}
+
+extern "C" {
+    fn createOnigScanner(
+        patterns: *const *mut u8,
+        lengths: *const c_int,
+        count: c_int,
+        options: c_int,
+        syntax: *const OnigSyntaxType,
+    ) -> *mut COnigScanner;
+
+    fn findNextOnigScannerMatch(
+        scanner: *mut COnigScanner,
+        str_cache_id: c_int,
+        str_data: *const u8,
+        str_length: c_int,
+        position: c_int,
+        options: c_int,
+    ) -> *const c_int;
+
+    fn freeOnigScanner(scanner: *mut COnigScanner);
+}
+
+/// RAII wrapper around the vscode-oniguruma C scanner.
+pub struct CScanner {
+    handle: *mut COnigScanner,
+    /// Owned copies of pattern data (must outlive the scanner).
+    _patterns: Vec<Vec<u8>>,
+}
+
+impl CScanner {
+    /// Create a new C scanner from pattern byte slices.
+    pub fn new(patterns: &[&[u8]]) -> Result<Self, c_int> {
+        let _inst = COnigInstance::new();
+        let mut owned: Vec<Vec<u8>> = patterns.iter().map(|p| p.to_vec()).collect();
+        let ptrs: Vec<*mut u8> = owned.iter_mut().map(|v| v.as_mut_ptr()).collect();
+        let lengths: Vec<c_int> = patterns.iter().map(|p| p.len() as c_int).collect();
+
+        let handle = unsafe {
+            createOnigScanner(
+                ptrs.as_ptr(),
+                lengths.as_ptr(),
+                patterns.len() as c_int,
+                ONIG_OPTION_NONE as c_int,
+                &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            )
+        };
+        if handle.is_null() {
+            return Err(-1);
+        }
+        Ok(CScanner {
+            handle,
+            _patterns: owned,
+        })
+    }
+
+    /// Find the next match. Returns `(pattern_index, [(beg, end), ...])` or `None`.
+    pub fn find_next_match(
+        &self,
+        text: &[u8],
+        str_cache_id: i32,
+        position: usize,
+    ) -> Option<(usize, Vec<(i32, i32)>)> {
+        let encoded = unsafe {
+            findNextOnigScannerMatch(
+                self.handle,
+                str_cache_id as c_int,
+                text.as_ptr(),
+                text.len() as c_int,
+                position as c_int,
+                ONIG_OPTION_NONE as c_int,
+            )
+        };
+        if encoded.is_null() {
+            return None;
+        }
+        // Decode the encoded region: [index, num_regs, beg0, end0, beg1, end1, ...]
+        unsafe {
+            let index = *encoded as usize;
+            let num_regs = *encoded.add(1) as usize;
+            let mut captures = Vec::with_capacity(num_regs);
+            for i in 0..num_regs {
+                let beg = *encoded.add(2 + 2 * i);
+                let end = *encoded.add(3 + 2 * i);
+                captures.push((beg, end));
+            }
+            Some((index, captures))
+        }
+    }
+}
+
+impl Drop for CScanner {
+    fn drop(&mut self) {
+        unsafe {
+            freeOnigScanner(self.handle);
+        }
+    }
+}

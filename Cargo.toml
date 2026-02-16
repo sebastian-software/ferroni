@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["regex", "oniguruma", "unicode", "pattern-matching", "simd"]
 categories = ["text-processing", "parsing"]
 rust-version = "1.81"
-exclude = ["oniguruma-orig/", "benches/", "docs/", "scripts/"]
+exclude = ["oniguruma-orig/", "vscode-oniguruma/", "benches/", "docs/", "scripts/"]
 
 [features]
 ffi = ["cc"]
@@ -19,6 +19,7 @@ ffi = ["cc"]
 [dependencies]
 bitflags = "2"
 memchr = "2"
+smallvec = "1"
 
 [build-dependencies]
 cc = { version = "1", optional = true }
