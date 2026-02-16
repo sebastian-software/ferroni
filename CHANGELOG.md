@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/sebastian-software/ferroni/compare/v1.0.1...v1.1.0) (2026-02-16)
+
+
+### Features
+
+* add Scanner API compatible with vscode-oniguruma ([69606e9](https://github.com/sebastian-software/ferroni/commit/69606e9cad0bf29558a8a8b9cc0e672d1119133b))
+* add vscode-oniguruma C scanner benchmarks ([ad96196](https://github.com/sebastian-software/ferroni/commit/ad96196d0f883dec0a552d359fa2f8f37d299962))
+
+
+### Performance Improvements
+
+* optimize scanner warm path with lazy MatchArg and SmallVec captures ([8ef6252](https://github.com/sebastian-software/ferroni/commit/8ef6252f08b50e594c44e493a2a9756e9d3ab3cd))
+
 ## [1.0.1](https://github.com/sebastian-software/ferroni/compare/v1.0.0...v1.0.1) (2026-02-15)
 
 
