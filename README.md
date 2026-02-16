@@ -403,4 +403,4 @@ VS Code team.
 
 ---
 
-Copyright 2025 [Sebastian Software GmbH](https://www.sebastian-software.de/)
+Copyright 2026 [Sebastian Software GmbH](https://www.sebastian-software.de/)
