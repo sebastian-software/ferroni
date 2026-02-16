@@ -400,3 +400,7 @@ VS Code team.
 ## License
 
 [BSD-2-Clause](LICENSE) (same as Oniguruma)
+
+---
+
+Copyright 2025 [Sebastian Software GmbH](https://www.sebastian-software.de/)
