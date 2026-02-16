@@ -412,6 +412,7 @@ impl OnigCaptureTreeNode {
 }
 
 // === OnigRegion (match result) ===
+#[derive(Clone)]
 pub struct OnigRegion {
     pub allocated: i32,
     pub num_regs: i32,

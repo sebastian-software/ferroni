@@ -12,3 +12,7 @@
 
 pub use crate::api::{Captures, CapturesIter, FindIter, Match, Regex, RegexBuilder};
 pub use crate::error::RegexError;
+pub use crate::scanner::{
+    CaptureIndex, OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch,
+    ScannerSyntax,
+};
