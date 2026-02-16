@@ -3,6 +3,8 @@
 // Compatible with vscode-oniguruma's OnigScanner interface, used by Shiki
 // and other syntax highlighters built on vscode-textmate.
 
+use smallvec::SmallVec;
+
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
@@ -29,7 +31,7 @@ pub struct ScannerMatch {
     /// Index of the pattern that matched (0-based).
     pub index: usize,
     /// Capture group information. Index 0 is the full match.
-    pub capture_indices: Vec<CaptureIndex>,
+    pub capture_indices: SmallVec<[CaptureIndex; 8]>,
 }
 
 /// Options for `Scanner::find_next_match`, matching vscode-oniguruma's `FindOption`.
@@ -480,8 +482,8 @@ impl Scanner {
         let mut best_index: Option<usize> = None;
         let mut best_pos: usize = usize::MAX;
 
-        // Create MatchArg once — allocates stack Vec once, reused across iterations
-        let mut msa = MatchArg::new(&self.regexes[0], onig_opts, None, start);
+        // Lazy MatchArg — only allocated on first cache miss (warm path: zero alloc)
+        let mut msa: Option<MatchArg> = None;
 
         for i in 0..self.regexes.len() {
             let cache = &self.caches[i];
@@ -513,7 +515,10 @@ impl Scanner {
             let region = self.caches[i].last_region.take()
                 .unwrap_or_else(OnigRegion::new);
 
-            // Reuse MatchArg with new regex's options and region
+            // Create MatchArg on first miss, reuse on subsequent misses
+            let msa = msa.get_or_insert_with(|| {
+                MatchArg::new(&self.regexes[i], onig_opts, None, start)
+            });
             msa.reset_for_search(&self.regexes[i], onig_opts, Some(region), start);
 
             let (r, returned_region) = onig_search_with_msa(
@@ -522,7 +527,7 @@ impl Scanner {
                 end,
                 start,
                 end,
-                &mut msa,
+                msa,
             );
 
             // Put region back in cache (no clone needed)
@@ -559,7 +564,7 @@ impl Scanner {
 /// Build a `ScannerMatch` from a regex index and region.
 fn build_scanner_match(index: usize, region: &OnigRegion) -> ScannerMatch {
     let num_regs = region.num_regs as usize;
-    let mut capture_indices = Vec::with_capacity(num_regs);
+    let mut capture_indices = SmallVec::with_capacity(num_regs);
 
     for i in 0..num_regs {
         let beg = region.beg[i];
@@ -611,6 +616,7 @@ fn convert_match_to_utf16(string: &OnigString, m: ScannerMatch) -> ScannerMatch 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smallvec::smallvec;
 
     // =========================================================================
     // Tests ported from vscode-oniguruma (src/test/index.test.ts)
@@ -626,14 +632,14 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 1, end: 4, length: 3 }],
+                capture_indices: smallvec![CaptureIndex { start: 1, end: 4, length: 3 }],
             })
         );
         assert_eq!(
             scanner.find_next_match(s, 2, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: vec![CaptureIndex { start: 6, end: 8, length: 2 }],
+                capture_indices: smallvec![CaptureIndex { start: 6, end: 8, length: 2 }],
             })
         );
     }
@@ -647,21 +653,21 @@ mod tests {
             scanner.find_next_match("xxaxxbxxc", 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 2, end: 3, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 2, end: 3, length: 1 }],
             })
         );
         assert_eq!(
             scanner.find_next_match("xxaxxbxxc", 4, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: vec![CaptureIndex { start: 5, end: 6, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 5, end: 6, length: 1 }],
             })
         );
         assert_eq!(
             scanner.find_next_match("xxaxxbxxc", 7, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 2,
-                capture_indices: vec![CaptureIndex { start: 8, end: 9, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 8, end: 9, length: 1 }],
             })
         );
         assert_eq!(scanner.find_next_match("xxaxxbxxc", 9, ScannerFindOptions::NONE), None);
@@ -679,7 +685,7 @@ mod tests {
             scanner1.find_next_match("ab\u{2026}cde21", 7, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: vec![CaptureIndex { start: 8, end: 9, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 8, end: 9, length: 1 }],
             })
         );
 
@@ -690,7 +696,7 @@ mod tests {
             scanner2.find_next_match("{\"\\u{2026}\": 1}", 1, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 1, end: 2, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 1, end: 2, length: 1 }],
             })
         );
     }
@@ -709,7 +715,7 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 6, end: 7, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 6, end: 7, length: 1 }],
             })
         );
         // From byte 5 (='b'): Y at byte 6
@@ -717,7 +723,7 @@ mod tests {
             scanner.find_next_match(s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 6, end: 7, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 6, end: 7, length: 1 }],
             })
         );
         // From byte 6 (='Y'): Y at byte 6
@@ -725,7 +731,7 @@ mod tests {
             scanner.find_next_match(s, 6, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 6, end: 7, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 6, end: 7, length: 1 }],
             })
         );
         // From byte 7 (='X'): X at byte 7
@@ -733,7 +739,7 @@ mod tests {
             scanner.find_next_match(s, 7, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: vec![CaptureIndex { start: 7, end: 8, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 7, end: 8, length: 1 }],
             })
         );
     }
@@ -748,7 +754,7 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 0, end: 14, length: 14 }],
+                capture_indices: smallvec![CaptureIndex { start: 0, end: 14, length: 14 }],
             })
         );
     }
@@ -765,7 +771,7 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 0, end: 1, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 0, end: 1, length: 1 }],
             })
         );
         // Start beyond end: no match
@@ -782,7 +788,7 @@ mod tests {
             scanner.find_next_match(s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 5, end: 9, length: 4 }],
+                capture_indices: smallvec![CaptureIndex { start: 5, end: 9, length: 4 }],
             })
         );
     }
@@ -808,7 +814,7 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 0, end: 5, length: 5 }],
+                capture_indices: smallvec![CaptureIndex { start: 0, end: 5, length: 5 }],
             })
         );
         assert_eq!(
@@ -826,7 +832,7 @@ mod tests {
             scanner.find_next_match(s, 10, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 10, end: 15, length: 5 }],
+                capture_indices: smallvec![CaptureIndex { start: 10, end: 15, length: 5 }],
             })
         );
         assert_eq!(
@@ -844,7 +850,7 @@ mod tests {
             scanner.find_next_match(s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 5, end: 9, length: 4 }],
+                capture_indices: smallvec![CaptureIndex { start: 5, end: 9, length: 4 }],
             })
         );
         assert_eq!(
@@ -866,7 +872,7 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 0, end: 4, length: 4 }],
+                capture_indices: smallvec![CaptureIndex { start: 0, end: 4, length: 4 }],
             })
         );
     }
@@ -884,7 +890,7 @@ mod tests {
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![
+                capture_indices: smallvec![
                     CaptureIndex { start: 0, end: 15, length: 15 },
                     CaptureIndex { start: 0, end: 15, length: 15 },
                 ],
@@ -914,14 +920,14 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 1, end: 4, length: 3 }],
+                capture_indices: smallvec![CaptureIndex { start: 1, end: 4, length: 3 }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 2, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: vec![CaptureIndex { start: 6, end: 8, length: 2 }],
+                capture_indices: smallvec![CaptureIndex { start: 6, end: 8, length: 2 }],
             })
         );
     }
@@ -937,21 +943,21 @@ mod tests {
             scanner.find_next_match_utf16(&abc, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 2, end: 3, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 2, end: 3, length: 1 }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&abc, 4, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: vec![CaptureIndex { start: 5, end: 6, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 5, end: 6, length: 1 }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&abc, 7, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 2,
-                capture_indices: vec![CaptureIndex { start: 8, end: 9, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 8, end: 9, length: 1 }],
             })
         );
         assert_eq!(scanner.find_next_match_utf16(&abc, 9, ScannerFindOptions::NONE), None);
@@ -967,7 +973,7 @@ mod tests {
             scanner1.find_next_match_utf16(&s1, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: vec![CaptureIndex { start: 6, end: 7, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 6, end: 7, length: 1 }],
             })
         );
 
@@ -977,7 +983,7 @@ mod tests {
             scanner2.find_next_match_utf16(&s2, 1, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 1, end: 2, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 1, end: 2, length: 1 }],
             })
         );
     }
@@ -995,35 +1001,35 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 4, end: 5, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 4, end: 5, length: 1 }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 1, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 4, end: 5, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 4, end: 5, length: 1 }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 3, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 4, end: 5, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 4, end: 5, length: 1 }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 4, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 4, end: 5, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 4, end: 5, length: 1 }],
             })
         );
         assert_eq!(
             scanner.find_next_match_utf16(&s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 1,
-                capture_indices: vec![CaptureIndex { start: 5, end: 6, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 5, end: 6, length: 1 }],
             })
         );
     }
@@ -1038,7 +1044,7 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 0, end: 7, length: 7 }],
+                capture_indices: smallvec![CaptureIndex { start: 0, end: 7, length: 7 }],
             })
         );
     }
@@ -1052,7 +1058,7 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 0, end: 1, length: 1 }],
+                capture_indices: smallvec![CaptureIndex { start: 0, end: 1, length: 1 }],
             })
         );
         assert_eq!(scanner.find_next_match_utf16(&s, 1000, ScannerFindOptions::NONE), None);
@@ -1068,7 +1074,7 @@ mod tests {
             scanner.find_next_match_utf16(&s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 5, end: 9, length: 4 }],
+                capture_indices: smallvec![CaptureIndex { start: 5, end: 9, length: 4 }],
             })
         );
     }
@@ -1093,7 +1099,7 @@ mod tests {
             scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 0, end: 5, length: 5 }],
+                capture_indices: smallvec![CaptureIndex { start: 0, end: 5, length: 5 }],
             })
         );
         assert_eq!(
@@ -1111,7 +1117,7 @@ mod tests {
             scanner.find_next_match_utf16(&s, 10, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 10, end: 15, length: 5 }],
+                capture_indices: smallvec![CaptureIndex { start: 10, end: 15, length: 5 }],
             })
         );
         assert_eq!(
@@ -1129,7 +1135,7 @@ mod tests {
             scanner.find_next_match_utf16(&s, 5, ScannerFindOptions::NONE),
             Some(ScannerMatch {
                 index: 0,
-                capture_indices: vec![CaptureIndex { start: 5, end: 9, length: 4 }],
+                capture_indices: smallvec![CaptureIndex { start: 5, end: 9, length: 4 }],
             })
         );
         assert_eq!(
