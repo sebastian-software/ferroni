@@ -2,6 +2,9 @@
 //
 // Compatible with vscode-oniguruma's OnigScanner interface, used by Shiki
 // and other syntax highlighters built on vscode-textmate.
+//
+// Scanner API design and test cases derived from vscode-oniguruma
+// (MIT License, Copyright (c) Microsoft Corporation).
 
 use smallvec::SmallVec;
 
