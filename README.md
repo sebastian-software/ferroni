@@ -68,7 +68,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ferroni = { git = "https://github.com/sebastian-software/ferroni.git" }
+ferroni = "1"
 ```
 
 ### Regex
