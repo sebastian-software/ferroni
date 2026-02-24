@@ -26,6 +26,7 @@ cc = { version = "1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+criterion-codspeed = { version = "4.3.0", package = "codspeed-criterion-compat" }
 
 [profile.release]
 lto = "thin"
@@ -37,3 +38,7 @@ lto = "thin"
 name = "onig_bench"
 harness = false
 required-features = ["ffi"]
+
+[[bench]]
+name = "codspeed_bench"
+harness = false
