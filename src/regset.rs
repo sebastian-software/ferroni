@@ -34,6 +34,9 @@ pub struct OnigRegSet {
     anc_dmax: OnigLen,
     all_low_high: bool,
     anychar_inf: bool,
+    /// For each byte value 0..255, the list of entry indices whose first-byte
+    /// pre-filter does not exclude that byte. Built at construction time.
+    first_byte_candidates: Box<[Vec<u16>; 256]>,
 }
 
 #[inline]
@@ -42,6 +45,35 @@ fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
         return 1;
     }
     enc.mbc_enc_len(&str_data[s..])
+}
+
+/// Add a single entry's index to the appropriate first-byte dispatch slots.
+fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) {
+    if reg.optimize == OptimizeType::Map && reg.dist_min == 0 {
+        // Map-filterable: only bytes where map[b] != 0
+        for (b, slot) in table.iter_mut().enumerate() {
+            if reg.map[b] != 0 {
+                slot.push(idx);
+            }
+        }
+    } else if reg.dist_min == 0 && !reg.exact.is_empty() {
+        // Exact-filterable: only the first byte of the exact string
+        table[reg.exact[0] as usize].push(idx);
+    } else {
+        // Always-candidate: appears in all 256 slots
+        for slot in table.iter_mut() {
+            slot.push(idx);
+        }
+    }
+}
+
+/// Build the first-byte dispatch table from scratch for all entries.
+fn build_first_byte_table(set: &mut OnigRegSet) {
+    let mut table: Box<[Vec<u16>; 256]> = Box::new(std::array::from_fn(|_| Vec::new()));
+    for (i, entry) in set.entries.iter().enumerate() {
+        add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16);
+    }
+    set.first_byte_candidates = table;
 }
 
 /// Create a new regex set from an array of compiled regexes.
@@ -55,6 +87,7 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         anc_dmax: 0,
         all_low_high: false,
         anychar_inf: false,
+        first_byte_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
     });
 
     for reg in regs {
@@ -63,6 +96,8 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
             return (None, r);
         }
     }
+
+    build_first_byte_table(&mut set);
 
     (Some(set), ONIG_NORMAL)
 }
@@ -79,6 +114,14 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
     let region = Some(OnigRegion::new());
     set.entries.push(RegSetEntry { reg, region });
+
+    // Add the new entry to the first-byte dispatch table
+    let new_idx = (set.entries.len() - 1) as u16;
+    add_entry_to_first_byte_table(
+        &mut set.first_byte_candidates,
+        &set.entries[new_idx as usize].reg,
+        new_idx,
+    );
 
     // Recompute: pass field values to avoid borrow conflict
     let n = set.entries.len();
@@ -199,6 +242,9 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
         }
     }
 
+    // Rebuild first-byte dispatch table from scratch
+    build_first_byte_table(set);
+
     ONIG_NORMAL
 }
 
@@ -230,7 +276,6 @@ fn regset_search_body_position_lead(
     option: OnigOptionType,
 ) -> (i32, i32) {
     // rmatch_pos, regex_index
-    let n = set.entries.len();
     let enc = set.enc;
     let mut s = start;
 
@@ -248,32 +293,17 @@ fn regset_search_body_position_lead(
             true // default: allow matching
         };
 
-        for i in 0..n {
+        for &i in &set.first_byte_candidates[str_data[s] as usize] {
+            let i = i as usize;
+
             // ANCR_ANYCHAR_INF optimization: skip if previous char is not newline
             if (set.entries[i].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
                 continue;
             }
 
+            // Pre-filter: remaining text too short for this pattern
             let reg = &*set.entries[i].reg;
-
-            // Pre-filter 1: remaining text too short for this pattern
             if reg.threshold_len > 0 && (end - s) < reg.threshold_len as usize {
-                continue;
-            }
-
-            // Pre-filter 2: map-optimized pattern, current byte can't start a match
-            if reg.optimize == OptimizeType::Map
-                && reg.dist_min == 0
-                && reg.map[str_data[s] as usize] == 0
-            {
-                continue;
-            }
-
-            // Pre-filter 3: exact-string optimized, first byte doesn't match
-            if reg.dist_min == 0
-                && !reg.exact.is_empty()
-                && str_data[s] != reg.exact[0]
-            {
                 continue;
             }
 
