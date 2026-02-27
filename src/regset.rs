@@ -25,6 +25,20 @@ struct RegSetEntry {
     region: Option<OnigRegion>,
 }
 
+/// Pre-computed memchr needle for SIMD-accelerated position skipping.
+///
+/// When the dispatch table has only 1–3 non-empty byte slots (and zero
+/// always-candidate patterns), we can use `memchr` to jump directly to the
+/// next position where at least one pattern could match.
+#[derive(Clone, Copy)]
+enum SkipNeedle {
+    /// No skipping possible (always-candidate patterns exist, or >3 bytes).
+    None,
+    One(u8),
+    Two(u8, u8),
+    Three(u8, u8, u8),
+}
+
 /// A set of compiled regexes that can be searched simultaneously.
 pub struct OnigRegSet {
     entries: Vec<RegSetEntry>,
@@ -37,6 +51,8 @@ pub struct OnigRegSet {
     /// For each byte value 0..255, the list of entry indices whose first-byte
     /// pre-filter does not exclude that byte. Built at construction time.
     first_byte_candidates: Box<[Vec<u16>; 256]>,
+    /// SIMD-accelerated skip needle derived from the dispatch table.
+    skip_needle: SkipNeedle,
 }
 
 #[inline]
@@ -67,12 +83,33 @@ fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, i
     }
 }
 
+/// Derive the skip needle from a completed dispatch table.
+fn compute_skip_needle(table: &[Vec<u16>; 256]) -> SkipNeedle {
+    let mut bytes: Vec<u8> = Vec::new();
+    for (b, slot) in table.iter().enumerate() {
+        if !slot.is_empty() {
+            bytes.push(b as u8);
+            if bytes.len() > 3 {
+                return SkipNeedle::None;
+            }
+        }
+    }
+    match bytes.len() {
+        0 => SkipNeedle::None,
+        1 => SkipNeedle::One(bytes[0]),
+        2 => SkipNeedle::Two(bytes[0], bytes[1]),
+        3 => SkipNeedle::Three(bytes[0], bytes[1], bytes[2]),
+        _ => SkipNeedle::None,
+    }
+}
+
 /// Build the first-byte dispatch table from scratch for all entries.
 fn build_first_byte_table(set: &mut OnigRegSet) {
     let mut table: Box<[Vec<u16>; 256]> = Box::new(std::array::from_fn(|_| Vec::new()));
     for (i, entry) in set.entries.iter().enumerate() {
         add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16);
     }
+    set.skip_needle = compute_skip_needle(&table);
     set.first_byte_candidates = table;
 }
 
@@ -88,6 +125,7 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         all_low_high: false,
         anychar_inf: false,
         first_byte_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
+        skip_needle: SkipNeedle::None,
     });
 
     for reg in regs {
@@ -285,6 +323,25 @@ fn regset_search_body_position_lead(
         if s >= range {
             break;
         }
+
+        // SIMD-accelerated position skip: jump to next byte that could match.
+        s = match set.skip_needle {
+            SkipNeedle::None => s,
+            SkipNeedle::One(b) => match memchr::memchr(b, &str_data[s..range]) {
+                Some(off) => s + off,
+                None => break,
+            },
+            SkipNeedle::Two(b1, b2) => match memchr::memchr2(b1, b2, &str_data[s..range]) {
+                Some(off) => s + off,
+                None => break,
+            },
+            SkipNeedle::Three(b1, b2, b3) => {
+                match memchr::memchr3(b1, b2, b3, &str_data[s..range]) {
+                    Some(off) => s + off,
+                    None => break,
+                }
+            }
+        };
 
         let prev_is_newline = if prev_is_newline_check && s > 0 {
             // Check if previous character is newline
