@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/sebastian-software/ferroni/compare/v1.2.0...v1.2.1) (2026-02-27)
+
+
+### Performance Improvements
+
+* compact MemPtr from 16 to 8 bytes, shrink StackEntry from 56 to 40 bytes ([6ff71a5](https://github.com/sebastian-software/ferroni/commit/6ff71a5122cde815a24935a9ca5e293cefe25376))
+* reuse MatchArg across RegSet position-lead loop ([0ad4f71](https://github.com/sebastian-software/ferroni/commit/0ad4f71fa4bbe30f6e73b1ad42c1159c158624f8))
+
 ## [1.2.0](https://github.com/sebastian-software/ferroni/compare/v1.1.0...v1.2.0) (2026-02-27)
 
 
