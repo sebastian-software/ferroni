@@ -1421,6 +1421,20 @@ impl MatchArg {
         self.retry_limit_in_search_counter = 0;
     }
 
+    /// Light reset for reusing MatchArg across multiple onig_match calls
+    /// within a regset loop. Keeps allocated buffers and region ownership.
+    pub(crate) fn reset_for_match(
+        &mut self,
+        reg: &RegexType,
+        option: OnigOptionType,
+        start: usize,
+    ) {
+        self.options = option | reg.options;
+        self.start = start;
+        self.best_len = ONIG_MISMATCH;
+        self.best_s = 0;
+    }
+
     /// Check if the time limit has been exceeded. Returns true if over limit.
     /// On first call, initializes the start time.
     #[inline]
@@ -4307,6 +4321,21 @@ pub fn onig_match(
     };
 
     (result, msa.region)
+}
+
+/// Fast match path for regset: reuses an existing MatchArg, skips string
+/// validation (already done by caller), and skips region resize (caller manages).
+pub(crate) fn onig_match_with_msa(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    at: usize,
+    option: OnigOptionType,
+    msa: &mut MatchArg,
+) -> i32 {
+    msa.reset_for_match(reg, option, at);
+
+    match_at(reg, str_data, end, end, at, msa)
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]

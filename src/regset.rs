@@ -3,7 +3,9 @@
 
 use crate::oniguruma::*;
 use crate::regenc::OnigEncoding;
-use crate::regexec::{onig_match, onig_search, onig_search_with_param, OnigMatchParam};
+use crate::regexec::{
+    onig_match, onig_match_with_msa, onig_search, onig_search_with_param, MatchArg, OnigMatchParam,
+};
 use crate::regint::*;
 
 /// Search lead mode for regset search.
@@ -317,6 +319,10 @@ fn regset_search_body_position_lead(
     let enc = set.enc;
     let mut s = start;
 
+    // Reuse a single MatchArg across all patterns (avoids per-pattern allocation)
+    let first_reg = &*set.entries[0].reg;
+    let mut msa = MatchArg::new(first_reg, option, None, start);
+
     let prev_is_newline_check = set.anychar_inf;
 
     loop {
@@ -350,6 +356,8 @@ fn regset_search_body_position_lead(
             true // default: allow matching
         };
 
+        let remaining = end - s;
+
         for &i in &set.first_byte_candidates[str_data[s] as usize] {
             let i = i as usize;
 
@@ -359,21 +367,21 @@ fn regset_search_body_position_lead(
             }
 
             // Pre-filter: remaining text too short for this pattern
-            let reg = &*set.entries[i].reg;
-            if reg.threshold_len > 0 && (end - s) < reg.threshold_len as usize {
+            if set.entries[i].reg.threshold_len > 0
+                && remaining < set.entries[i].reg.threshold_len as usize
+            {
                 continue;
             }
 
-            let region = set.entries[i].region.take();
-            let entry = &set.entries[i];
-            let (r, returned_region) = onig_match(&entry.reg, str_data, end, s, region, option);
-            set.entries[i].region = returned_region;
+            // Swap region into msa for this match, then swap back
+            msa.region = set.entries[i].region.take();
+            let r = onig_match_with_msa(&set.entries[i].reg, str_data, end, s, option, &mut msa);
+            set.entries[i].region = msa.region.take();
 
             if r >= 0 {
                 return (i as i32, s as i32);
             }
             if r != ONIG_MISMATCH {
-                // error
                 return (r, 0);
             }
         }
