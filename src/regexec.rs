@@ -1226,15 +1226,61 @@ pub fn onig_builtin_cmp(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_voi
 // ============================================================================
 
 /// Memory pointer - tracks capture group start/end positions.
-/// Corresponds to C's StkPtrType union { StackIndex i; UChar* s; }
+/// Compact representation of C's StkPtrType union { StackIndex i; UChar* s; }
+///
+/// Encodes three states in a single `usize` to minimize StackEntry size:
+/// - `usize::MAX` = Invalid (not yet matched)
+/// - Bit 63 set = stack index (lower 63 bits)
+/// - Bit 63 clear = string position
 #[derive(Clone, Copy, Debug)]
-enum MemPtr {
-    /// Not yet matched / invalid
-    Invalid,
-    /// Index into the stack (for push_mem variants that use backtracking)
-    StackIdx(usize),
-    /// Direct string position (for non-push variants)
-    Pos(usize),
+struct MemPtr(usize);
+
+const MEM_PTR_INVALID: usize = usize::MAX;
+const MEM_PTR_STACK_BIT: usize = 1 << (usize::BITS - 1);
+
+impl MemPtr {
+    #[inline(always)]
+    const fn invalid() -> Self {
+        MemPtr(MEM_PTR_INVALID)
+    }
+
+    #[inline(always)]
+    const fn pos(p: usize) -> Self {
+        MemPtr(p)
+    }
+
+    #[inline(always)]
+    const fn stack_idx(i: usize) -> Self {
+        MemPtr(i | MEM_PTR_STACK_BIT)
+    }
+
+    #[inline(always)]
+    const fn is_invalid(self) -> bool {
+        self.0 == MEM_PTR_INVALID
+    }
+
+    #[inline(always)]
+    const fn is_stack_idx(self) -> bool {
+        !self.is_invalid() && (self.0 & MEM_PTR_STACK_BIT) != 0
+    }
+
+    #[inline(always)]
+    const fn as_pos(self) -> Option<usize> {
+        if self.is_invalid() || (self.0 & MEM_PTR_STACK_BIT) != 0 {
+            None
+        } else {
+            Some(self.0)
+        }
+    }
+
+    #[inline(always)]
+    const fn as_stack_idx(self) -> Option<usize> {
+        if self.is_stack_idx() {
+            Some(self.0 & !MEM_PTR_STACK_BIT)
+        } else {
+            None
+        }
+    }
 }
 
 /// Stack entry - corresponds to C's StackType struct.
@@ -1697,24 +1743,20 @@ fn stack_empty_check_mem(
                     {
                         if *start_zid == *mem_zid {
                             // Check if prev_end was invalid (group wasn't captured before)
-                            match prev_end {
-                                MemPtr::Invalid => {
-                                    // Previously not captured, now captured → not empty
-                                    return false;
+                            if prev_end.is_invalid() {
+                                // Previously not captured, now captured → not empty
+                                return false;
+                            } else if let Some(prev_pos) = prev_end.as_pos() {
+                                if prev_pos != *end_pstr {
+                                    return false; // end position changed
                                 }
-                                MemPtr::Pos(prev_pos) => {
-                                    if *prev_pos != *end_pstr {
-                                        return false; // end position changed
-                                    }
-                                }
-                                MemPtr::StackIdx(si) => {
-                                    if let StackEntry::MemEnd {
-                                        pstr: prev_pstr, ..
-                                    } = &stack[*si]
-                                    {
-                                        if *prev_pstr != *end_pstr {
-                                            return false;
-                                        }
+                            } else if let Some(si) = prev_end.as_stack_idx() {
+                                if let StackEntry::MemEnd {
+                                    pstr: prev_pstr, ..
+                                } = &stack[si]
+                                {
+                                    if *prev_pstr != *end_pstr {
+                                        return false;
                                     }
                                 }
                             }
@@ -1823,16 +1865,19 @@ fn get_mem_start(
     mem_start_stk: &[MemPtr],
     idx: usize,
 ) -> Option<usize> {
-    match mem_start_stk[idx] {
-        MemPtr::Invalid => None,
-        MemPtr::Pos(pos) => Some(pos),
-        MemPtr::StackIdx(si) => {
-            if let StackEntry::MemStart { pstr, .. } = &stack[si] {
-                Some(*pstr)
-            } else {
-                None
-            }
+    let v = mem_start_stk[idx];
+    if v.is_invalid() {
+        None
+    } else if let Some(pos) = v.as_pos() {
+        Some(pos)
+    } else if let Some(si) = v.as_stack_idx() {
+        if let StackEntry::MemStart { pstr, .. } = &stack[si] {
+            Some(*pstr)
+        } else {
+            None
         }
+    } else {
+        None
     }
 }
 
@@ -1843,16 +1888,19 @@ fn get_mem_end(
     mem_end_stk: &[MemPtr],
     idx: usize,
 ) -> Option<usize> {
-    match mem_end_stk[idx] {
-        MemPtr::Invalid => None,
-        MemPtr::Pos(pos) => Some(pos),
-        MemPtr::StackIdx(si) => {
-            if let StackEntry::MemEnd { pstr, .. } = &stack[si] {
-                Some(*pstr)
-            } else {
-                None
-            }
+    let v = mem_end_stk[idx];
+    if v.is_invalid() {
+        None
+    } else if let Some(pos) = v.as_pos() {
+        Some(pos)
+    } else if let Some(si) = v.as_stack_idx() {
+        if let StackEntry::MemEnd { pstr, .. } = &stack[si] {
+            Some(*pstr)
+        } else {
+            None
         }
+    } else {
+        None
     }
 }
 
@@ -1876,9 +1924,9 @@ fn stack_get_mem_start_for_rec(
                 if level == 0 {
                     // Found matching start at correct level
                     if mem_status_at(push_mem_start, mem) {
-                        return (MemPtr::StackIdx(k), *pstr);
+                        return (MemPtr::stack_idx(k), *pstr);
                     } else {
-                        return (MemPtr::Pos(*pstr), *pstr);
+                        return (MemPtr::pos(*pstr), *pstr);
                     }
                 }
                 level -= 1;
@@ -1886,7 +1934,7 @@ fn stack_get_mem_start_for_rec(
             _ => {}
         }
     }
-    (MemPtr::Invalid, 0)
+    (MemPtr::invalid(), 0)
 }
 
 /// Match a backref at a specific nesting level in the recursion stack.
@@ -2514,10 +2562,10 @@ fn match_at(
     stack.clear();
     let mut mem_start_stk = std::mem::take(&mut msa.mem_start_stk);
     mem_start_stk.clear();
-    mem_start_stk.resize(num_mem + 1, MemPtr::Invalid);
+    mem_start_stk.resize(num_mem + 1, MemPtr::invalid());
     let mut mem_end_stk = std::mem::take(&mut msa.mem_end_stk);
     mem_end_stk.clear();
-    mem_end_stk.resize(num_mem + 1, MemPtr::Invalid);
+    mem_end_stk.resize(num_mem + 1, MemPtr::invalid());
 
     let mut keep: usize = sstart;
     let mut best_len: i32 = ONIG_MISMATCH;
@@ -3565,8 +3613,8 @@ fn match_at(
             OpCode::MemStart => {
                 if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
                     let num = num as usize;
-                    mem_start_stk[num] = MemPtr::Pos(s);
-                    mem_end_stk[num] = MemPtr::Invalid;
+                    mem_start_stk[num] = MemPtr::pos(s);
+                    mem_end_stk[num] = MemPtr::invalid();
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -3585,8 +3633,8 @@ fn match_at(
                         prev_start,
                         prev_end,
                     });
-                    mem_start_stk[num] = MemPtr::StackIdx(si);
-                    mem_end_stk[num] = MemPtr::Invalid;
+                    mem_start_stk[num] = MemPtr::stack_idx(si);
+                    mem_end_stk[num] = MemPtr::invalid();
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -3596,7 +3644,7 @@ fn match_at(
             OpCode::MemEnd => {
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
                     let num = num as usize;
-                    mem_end_stk[num] = MemPtr::Pos(s);
+                    mem_end_stk[num] = MemPtr::pos(s);
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -3615,7 +3663,7 @@ fn match_at(
                         prev_start,
                         prev_end,
                     });
-                    mem_end_stk[num] = MemPtr::StackIdx(si);
+                    mem_end_stk[num] = MemPtr::stack_idx(si);
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -3637,7 +3685,7 @@ fn match_at(
                         prev_end: mem_end_stk[mem],
                     });
                     mem_start_stk[mem] = start_ptr;
-                    mem_end_stk[mem] = MemPtr::StackIdx(si);
+                    mem_end_stk[mem] = MemPtr::stack_idx(si);
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -3649,7 +3697,7 @@ fn match_at(
                 // update start/end, push MemEndMark for level tracking
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
                     let mem = num as usize;
-                    mem_end_stk[mem] = MemPtr::Pos(s);
+                    mem_end_stk[mem] = MemPtr::pos(s);
                     let (start_ptr, _) =
                         stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
                     mem_start_stk[mem] = start_ptr;
