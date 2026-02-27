@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/sebastian-software/ferroni/compare/v1.1.0...v1.2.0) (2026-02-27)
+
+
+### Features
+
+* major Scanner performance improvements for TextMate grammar workloads ([e829b55](https://github.com/sebastian-software/ferroni/commit/e829b559cd43513a134c70a1e92ab4bb42af734d))
+
+
+### Performance Improvements
+
+* add first-byte dispatch table for RegSet position-lead search ([a94ea51](https://github.com/sebastian-software/ferroni/commit/a94ea5173eeac2750617dcab0f85212a72531d34))
+* add memchr-based position skipping for RegSet search ([134c6fe](https://github.com/sebastian-software/ferroni/commit/134c6fe561d395825f270da5331db13e0be9aff6))
+* batch Unicode range compilation and first-byte pre-filter ([6ee7690](https://github.com/sebastian-software/ferroni/commit/6ee76901081249a51fc76a250c6cf9193a2b3b59))
+* deduplicate regex compilation and add range narrowing in Scanner ([111d63e](https://github.com/sebastian-software/ferroni/commit/111d63e94973a06ebb096f0cb8b3c6494389455a))
+* hoist region resize out of search loops, use idiomatic fill ([59d8412](https://github.com/sebastian-software/ferroni/commit/59d8412341f116a9b066bb634d9f1ce4b04748aa))
+
 ## [1.1.0](https://github.com/sebastian-software/ferroni/compare/v1.0.1...v1.1.0) (2026-02-16)
 
 
