@@ -4924,6 +4924,12 @@ fn onig_search_inner(
         }
     }
 
+    // Resize region once before entering search loops (matches C behavior)
+    if let Some(ref mut r) = msa.region {
+        r.resize(reg.num_mem + 1);
+        r.clear();
+    }
+
     if start > range {
         // Backward search: start > range, search from start down to range
         if end == 0 {
@@ -4945,7 +4951,6 @@ fn onig_search_inner(
         macro_rules! backward_match_and_check {
             ($s:expr, $orig_start:expr) => {{
                 if let Some(ref mut r) = msa.region {
-                    r.resize(reg.num_mem + 1);
                     r.clear();
                 }
                 msa.best_len = ONIG_MISMATCH;
@@ -5141,7 +5146,6 @@ fn onig_search_inner(
         if reg.threshold_len == 0 {
             let mut s = start;
             if let Some(ref mut r) = msa.region {
-                r.resize(reg.num_mem + 1);
                 r.clear();
             }
             msa.best_len = ONIG_MISMATCH;
@@ -5192,7 +5196,6 @@ fn onig_search_inner(
                 }
                 while s <= high {
                     if let Some(ref mut r) = msa.region {
-                        r.resize(reg.num_mem + 1);
                         r.clear();
                     }
                     msa.best_len = ONIG_MISMATCH;
@@ -5240,7 +5243,6 @@ fn onig_search_inner(
             {
                 while s < cur_range {
                     if let Some(ref mut r) = msa.region {
-                        r.resize(reg.num_mem + 1);
                         r.clear();
                     }
                     msa.best_len = ONIG_MISMATCH;
@@ -5289,7 +5291,6 @@ fn onig_search_inner(
     if best_start == ONIG_MISMATCH {
         loop {
             if let Some(ref mut r) = msa.region {
-                r.resize(reg.num_mem + 1);
                 r.clear();
             }
             msa.best_len = ONIG_MISMATCH;
@@ -5341,7 +5342,6 @@ fn finish_search(
 ) -> (i32, Option<OnigRegion>) {
     if find_longest && best_start != ONIG_MISMATCH {
         if let Some(ref mut r) = msa.region {
-            r.resize(reg.num_mem + 1);
             r.clear();
         }
         msa.best_len = ONIG_MISMATCH;

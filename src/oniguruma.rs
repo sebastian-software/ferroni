@@ -442,10 +442,9 @@ impl OnigRegion {
     }
 
     pub fn clear(&mut self) {
-        for i in 0..self.num_regs as usize {
-            self.beg[i] = ONIG_REGION_NOTPOS;
-            self.end[i] = ONIG_REGION_NOTPOS;
-        }
+        let n = self.num_regs as usize;
+        self.beg[..n].fill(ONIG_REGION_NOTPOS);
+        self.end[..n].fill(ONIG_REGION_NOTPOS);
         self.history_root = None;
     }
 
