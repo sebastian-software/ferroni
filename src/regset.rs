@@ -254,6 +254,29 @@ fn regset_search_body_position_lead(
                 continue;
             }
 
+            let reg = &*set.entries[i].reg;
+
+            // Pre-filter 1: remaining text too short for this pattern
+            if reg.threshold_len > 0 && (end - s) < reg.threshold_len as usize {
+                continue;
+            }
+
+            // Pre-filter 2: map-optimized pattern, current byte can't start a match
+            if reg.optimize == OptimizeType::Map
+                && reg.dist_min == 0
+                && reg.map[str_data[s] as usize] == 0
+            {
+                continue;
+            }
+
+            // Pre-filter 3: exact-string optimized, first byte doesn't match
+            if reg.dist_min == 0
+                && !reg.exact.is_empty()
+                && str_data[s] != reg.exact[0]
+            {
+                continue;
+            }
+
             let region = set.entries[i].region.take();
             let entry = &set.entries[i];
             let (r, returned_region) = onig_match(&entry.reg, str_data, end, s, region, option);

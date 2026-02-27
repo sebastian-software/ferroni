@@ -908,6 +908,95 @@ fn add_code_range_to_buf(pbuf: &mut Option<BBuf>, from: OnigCodePoint, to: OnigC
     0
 }
 
+/// Batch-add a pre-sorted, non-overlapping slice of (from, to) ranges to a BBuf
+/// in a single O(n) or O(n+m) pass, avoiding the O(n²) cost of repeated
+/// `add_code_range_to_buf` calls.
+fn add_sorted_code_ranges_to_buf(
+    pbuf: &mut Option<BBuf>,
+    ranges: &[(OnigCodePoint, OnigCodePoint)],
+) -> i32 {
+    if ranges.is_empty() {
+        return 0;
+    }
+
+    if pbuf.is_none() {
+        *pbuf = Some(new_code_range());
+    }
+    let bbuf = pbuf.as_mut().unwrap();
+    let existing_n = bbuf_read_code_point(bbuf, 0) as usize;
+
+    if existing_n == 0 {
+        // Fast path: empty buffer — direct serialization
+        let new_n = ranges.len();
+        if new_n as i32 > ONIG_MAX_MULTI_BYTE_RANGES_NUM {
+            return ONIGERR_TOO_MANY_MULTI_BYTE_RANGES;
+        }
+        let total_size = SIZE_CODE_POINT * (1 + new_n * 2);
+        bbuf.data.resize(total_size, 0);
+        bbuf_write_code_point(bbuf, 0, new_n as OnigCodePoint);
+        for (i, &(from, to)) in ranges.iter().enumerate() {
+            bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2), from);
+            bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2 + 1), to);
+        }
+        return 0;
+    }
+
+    // Slow path: merge two sorted range lists
+    let mut existing = Vec::with_capacity(existing_n);
+    for i in 0..existing_n {
+        let from = bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2));
+        let to = bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2 + 1));
+        existing.push((from, to));
+    }
+
+    // Interleave both sorted lists into one sorted sequence, then merge overlapping
+    let mut all: Vec<(OnigCodePoint, OnigCodePoint)> =
+        Vec::with_capacity(existing_n + ranges.len());
+    let mut ei = 0;
+    let mut ri = 0;
+    while ei < existing.len() || ri < ranges.len() {
+        if ei >= existing.len() {
+            all.push(ranges[ri]);
+            ri += 1;
+        } else if ri >= ranges.len() {
+            all.push(existing[ei]);
+            ei += 1;
+        } else if existing[ei].0 <= ranges[ri].0 {
+            all.push(existing[ei]);
+            ei += 1;
+        } else {
+            all.push(ranges[ri]);
+            ri += 1;
+        }
+    }
+
+    // Merge overlapping/adjacent ranges
+    let mut merged: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::with_capacity(all.len());
+    for &(from, to) in &all {
+        if let Some(last) = merged.last_mut() {
+            if from <= last.1.saturating_add(1) {
+                last.1 = std::cmp::max(last.1, to);
+                continue;
+            }
+        }
+        merged.push((from, to));
+    }
+
+    if merged.len() as i32 > ONIG_MAX_MULTI_BYTE_RANGES_NUM {
+        return ONIGERR_TOO_MANY_MULTI_BYTE_RANGES;
+    }
+
+    let total_size = SIZE_CODE_POINT * (1 + merged.len() * 2);
+    bbuf.data.resize(total_size, 0);
+    bbuf_write_code_point(bbuf, 0, merged.len() as OnigCodePoint);
+    for (i, &(from, to)) in merged.iter().enumerate() {
+        bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2), from);
+        bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2 + 1), to);
+    }
+
+    0
+}
+
 fn add_code_range(
     pbuf: &mut Option<BBuf>,
     env: &ParseEnv,
@@ -1257,6 +1346,7 @@ fn add_ctype_to_cc_by_range(
     if not {
         // Inverted: add everything NOT in the ranges
         let mut prev = 0u32;
+        let mut mb_ranges: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::new();
         for i in 0..n {
             let from = range[i * 2];
             let to = range[i * 2 + 1];
@@ -1266,10 +1356,7 @@ fn add_ctype_to_cc_by_range(
                     bitset_set_range(&mut cc.bs, prev as usize, end as usize);
                 }
                 if from > sb_out {
-                    r = add_code_range_to_buf(&mut cc.mbuf, prev, from - 1);
-                    if r != 0 {
-                        return r;
-                    }
+                    mb_ranges.push((prev, from - 1));
                 }
             }
             prev = to + 1;
@@ -1278,12 +1365,16 @@ fn add_ctype_to_cc_by_range(
             bitset_set_range(&mut cc.bs, prev as usize, (sb_out - 1) as usize);
         }
         if prev < u32::MAX {
-            r = add_code_range_to_buf(&mut cc.mbuf, prev, u32::MAX);
+            mb_ranges.push((prev, u32::MAX));
+        }
+        if !mb_ranges.is_empty() {
+            r = add_sorted_code_ranges_to_buf(&mut cc.mbuf, &mb_ranges);
             if r != 0 {
                 return r;
             }
         }
     } else {
+        let mut mb_ranges: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::new();
         for i in 0..n {
             let from = range[i * 2];
             let to = range[i * 2 + 1];
@@ -1293,10 +1384,13 @@ fn add_ctype_to_cc_by_range(
             }
             if to >= sb_out {
                 let start = std::cmp::max(from, sb_out);
-                r = add_code_range_to_buf(&mut cc.mbuf, start, to);
-                if r != 0 {
-                    return r;
-                }
+                mb_ranges.push((start, to));
+            }
+        }
+        if !mb_ranges.is_empty() {
+            r = add_sorted_code_ranges_to_buf(&mut cc.mbuf, &mb_ranges);
+            if r != 0 {
+                return r;
             }
         }
     }
