@@ -13,8 +13,10 @@ use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
 use crate::regexec::{onig_search_with_msa, MatchArg};
-use crate::regint::RegexType;
-use crate::regset::{onig_regset_new, onig_regset_search, OnigRegSet, OnigRegSetLead};
+use crate::regset::{
+    onig_regset_get_regex, onig_regset_new, onig_regset_number_of_regex, onig_regset_search,
+    OnigRegSet, OnigRegSetLead,
+};
 use crate::regsyntax::*;
 
 /// Result of a capture group match.
@@ -277,7 +279,6 @@ const MAX_REGSET_MATCH_INPUT_LEN: usize = 1000;
 /// assert_eq!(m.capture_indices[0].end, 5);
 /// ```
 pub struct Scanner {
-    regexes: Vec<Box<RegexType>>,
     caches: Vec<CacheEntry>,
     regset: Box<OnigRegSet>,
 }
@@ -309,19 +310,12 @@ impl Scanner {
         let syntax = config.syntax.to_onig_syntax();
         let options = config.options;
 
-        let mut regexes = Vec::with_capacity(patterns.len());
         let mut caches = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
 
         for pattern in patterns {
-            // Compile once for the per-regex search path.
             let reg = onig_new(pattern.as_bytes(), options, &ONIG_ENCODING_UTF8, syntax)?;
-            regexes.push(Box::new(reg));
-
-            // Compile again for the RegSet (it takes ownership).
-            let reg2 = onig_new(pattern.as_bytes(), options, &ONIG_ENCODING_UTF8, syntax)?;
-            regset_regs.push(Box::new(reg2));
-
+            regset_regs.push(Box::new(reg));
             caches.push(CacheEntry::new(pattern));
         }
 
@@ -331,7 +325,6 @@ impl Scanner {
         }
 
         Ok(Scanner {
-            regexes,
             caches,
             regset: regset.unwrap(),
         })
@@ -486,8 +479,17 @@ impl Scanner {
         // Lazy MatchArg — only allocated on first cache miss (warm path: zero alloc)
         let mut msa: Option<MatchArg> = None;
 
-        for i in 0..self.regexes.len() {
-            let cache = &self.caches[i];
+        // Split borrows: regset (immutable) and caches (mutable) are disjoint fields.
+        let regset = &self.regset;
+        let caches = &mut self.caches;
+        let n = onig_regset_number_of_regex(regset) as usize;
+
+        // Progressive range narrowing: once a match is found at position P,
+        // narrow subsequent searches to [start, P) since we only need earlier matches.
+        let mut ep = end;
+
+        for i in 0..n {
+            let cache = &caches[i];
 
             // Check cache
             if use_cache
@@ -504,6 +506,7 @@ impl Scanner {
                     if match_pos < best_pos {
                         best_pos = match_pos;
                         best_index = Some(i);
+                        ep = best_pos;
                         if best_pos == start {
                             break;
                         }
@@ -512,22 +515,23 @@ impl Scanner {
                 }
             }
 
+            let reg = onig_regset_get_regex(regset, i).unwrap();
+
             // Reuse the cached region (avoids allocation after first call)
-            let region = self.caches[i]
+            let region = caches[i]
                 .last_region
                 .take()
                 .unwrap_or_else(OnigRegion::new);
 
             // Create MatchArg on first miss, reuse on subsequent misses
-            let msa =
-                msa.get_or_insert_with(|| MatchArg::new(&self.regexes[i], onig_opts, None, start));
-            msa.reset_for_search(&self.regexes[i], onig_opts, Some(region), start);
+            let msa = msa.get_or_insert_with(|| MatchArg::new(reg, onig_opts, None, start));
+            msa.reset_for_search(reg, onig_opts, Some(region), start);
 
             let (r, returned_region) =
-                onig_search_with_msa(&self.regexes[i], str_data, end, start, end, msa);
+                onig_search_with_msa(reg, str_data, end, start, ep, msa);
 
             // Put region back in cache (no clone needed)
-            let cache = &mut self.caches[i];
+            let cache = &mut caches[i];
             cache.last_str_id = str_id;
             cache.last_position = start;
             cache.last_options = options_raw;
@@ -541,6 +545,7 @@ impl Scanner {
                 if match_pos < best_pos {
                     best_pos = match_pos;
                     best_index = Some(i);
+                    ep = best_pos;
                     if best_pos == start {
                         break;
                     }
