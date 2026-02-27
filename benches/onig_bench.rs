@@ -1074,8 +1074,7 @@ fn bench_scanner_textmate(c: &mut Criterion) {
 
     // -- match short: C --
     {
-        let c_scanner =
-            ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
+        let c_scanner = ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
         let label = format!("{pattern_count}_patterns_short_c");
         group.bench_function(&label, |b| {
             b.iter(|| {
@@ -1088,9 +1087,12 @@ fn bench_scanner_textmate(c: &mut Criterion) {
     // verify both engines agree on first match
     {
         let mut scanner = Scanner::new(&patterns).unwrap();
-        let c_scanner =
-            ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
-        let rust_m = scanner.find_next_match(std::str::from_utf8(content_bytes).unwrap(), 0, ScannerFindOptions::NONE);
+        let c_scanner = ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
+        let rust_m = scanner.find_next_match(
+            std::str::from_utf8(content_bytes).unwrap(),
+            0,
+            ScannerFindOptions::NONE,
+        );
         let c_m = c_scanner.find_next_match(content_bytes, 0, 0);
         debug_assert_eq!(
             rust_m.map(|m| m.index as usize),
@@ -1129,8 +1131,7 @@ fn bench_scanner_textmate(c: &mut Criterion) {
 
     // -- tokenize full line: C --
     {
-        let c_scanner =
-            ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
+        let c_scanner = ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
         let label = format!("{pattern_count}_patterns_tokenize_c");
         group.bench_function(&label, |b| {
             b.iter(|| {

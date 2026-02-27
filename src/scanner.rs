@@ -518,17 +518,13 @@ impl Scanner {
             let reg = onig_regset_get_regex(regset, i).unwrap();
 
             // Reuse the cached region (avoids allocation after first call)
-            let region = caches[i]
-                .last_region
-                .take()
-                .unwrap_or_else(OnigRegion::new);
+            let region = caches[i].last_region.take().unwrap_or_else(OnigRegion::new);
 
             // Create MatchArg on first miss, reuse on subsequent misses
             let msa = msa.get_or_insert_with(|| MatchArg::new(reg, onig_opts, None, start));
             msa.reset_for_search(reg, onig_opts, Some(region), start);
 
-            let (r, returned_region) =
-                onig_search_with_msa(reg, str_data, end, start, ep, msa);
+            let (r, returned_region) = onig_search_with_msa(reg, str_data, end, start, ep, msa);
 
             // Put region back in cache (no clone needed)
             let cache = &mut caches[i];
