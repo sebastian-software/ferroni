@@ -415,7 +415,10 @@ impl Scanner {
 
         let onig_opts = options.to_onig_options();
 
-        if end < MAX_REGSET_MATCH_INPUT_LEN {
+        // Use the regset position-lead path (with first-byte dispatch + SIMD skip)
+        // whenever: (a) input is short, or (b) caching is not being used.
+        // The per-regex path is only faster when cache hits avoid redundant searches.
+        if end < MAX_REGSET_MATCH_INPUT_LEN || !use_cache {
             self.search_regset(str_data, end, start_position, onig_opts)
         } else {
             self.search_per_regex(
