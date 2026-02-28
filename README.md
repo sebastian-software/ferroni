@@ -175,20 +175,21 @@ automatic UTF-16 position mapping. API-compatible with
 
 ## Performance
 
-Ferroni wins **26 of 42** execution benchmarks against C Oniguruma at `-O3`.
-Of the remaining 16, eight are within noise (<10%) and eight show C ahead --
-primarily on Unicode multi-byte properties and timestamp extraction.
+Ferroni wins **31 of 42** execution benchmarks against C Oniguruma at `-O3`.
+Of the remaining 11, five are within noise (<10%) and six show C ahead --
+primarily on Unicode multi-byte properties, timestamp extraction, and
+named captures.
 Criterion, Apple M1 Ultra. **Bold** = faster engine.
 
 ### Highlights
 
 | Scenario | Ferroni | C Oniguruma | Factor |
 |----------|--------:|------------:|-------:|
-| Full-text scan, no match, 50 KB | **1.5 us** | 9.5 us | **6.3x** |
-| Full-text scan, no match, 10 KB | **392 ns** | 1.9 us | **4.8x** |
-| Scanner, short string | **182 ns** | 414 ns | **2.3x** |
-| Multi-pattern RegSet | **170 ns** | 388 ns | **2.3x** |
-| Scanner, warm cache | 24 ns | 24 ns | 1.0x |
+| Full-text scan, no match, 50 KB | **1.5 us** | 9.4 us | **6.3x** |
+| Full-text scan, no match, 10 KB | **382 ns** | 1.9 us | **5.0x** |
+| Scanner, short string | **181 ns** | 428 ns | **2.4x** |
+| Multi-pattern RegSet | **169 ns** | 397 ns | **2.3x** |
+| Scanner, warm cache | 25 ns | 23 ns | 1.0x |
 
 ### Scanner with real TextMate grammars (62 patterns)
 
@@ -198,19 +199,21 @@ expression patterns from a Shiki grammar:
 
 | Scenario | Ferroni | C Oniguruma | Factor |
 |----------|--------:|------------:|-------:|
-| Compile 62 patterns | **1.2 ms** | 2.7 ms | **2.3x** |
-| Match, short line (72 chars) | **816 ns** | 5.9 us | **7.2x** |
-| Tokenize full line (13 tokens) | **31.6 us** | 98.6 us | **3.1x** |
+| Compile 62 patterns | **1.2 ms** | 2.8 ms | **2.2x** |
+| Match, short line (72 chars) | **854 ns** | 6.0 us | **7.0x** |
+| Tokenize full line (13 tokens) | **32.2 us** | 99.8 us | **3.1x** |
 
 The largest gains come from SIMD-vectorized search via
 [`memchr`](https://crates.io/crates/memchr) -- NEON on ARM, SSE2/AVX2 on
 x86-64 -- replacing C's hand-written byte loops with vectorized scans.
 See [ADR-006](docs/adr/006-simd-accelerated-search.md). Character class star
 opcodes and lazy backtracking further reduce per-character dispatch overhead
-in greedy repeats like `\w+` and `[-\w]+`.
+in greedy repeats like `\w+` and `[-\w]+`. A lookbehind case-fold
+optimization eliminates redundant multi-char Unicode fold checks,
+preventing `(?i)(?<![-\w])` from generating hundreds of bytecode ops.
 
 The Scanner warm path (all patterns served from cache, the steady-state in a
-syntax highlighter) runs at 24 ns -- matching the C implementation. No
+syntax highlighter) runs at 25 ns -- matching the C implementation. No
 heap allocation on cache hits.
 
 Compilation is 0.9-1.4x of C for simple patterns. Named captures with
@@ -225,74 +228,74 @@ compilation and are now faster than C.
 | Benchmark | Rust | C | Ratio |
 |-----------|-----:|--:|------:|
 | **Literal match** | | | |
-| exact string | 139 ns | 142 ns | 0.98 |
-| anchored start | **108 ns** | 138 ns | 0.78 |
-| anchored end | 171 ns | **150 ns** | 1.14 |
-| word boundary | **126 ns** | 144 ns | 0.88 |
+| exact string | **141 ns** | 150 ns | 0.94 |
+| anchored start | **109 ns** | 144 ns | 0.75 |
+| anchored end | 172 ns | **154 ns** | 1.11 |
+| word boundary | **126 ns** | 156 ns | 0.81 |
 | **Quantifiers** | | | |
-| greedy | **223 ns** | 249 ns | 0.90 |
-| lazy | 201 ns | 199 ns | 1.01 |
-| possessive | **196 ns** | 227 ns | 0.86 |
-| nested | **187 ns** | 217 ns | 0.86 |
+| greedy | **225 ns** | 262 ns | 0.86 |
+| lazy | **202 ns** | 215 ns | 0.94 |
+| possessive | **200 ns** | 234 ns | 0.85 |
+| nested | **188 ns** | 231 ns | 0.82 |
 | **Alternation** | | | |
-| 2 branches | **109 ns** | 140 ns | 0.78 |
-| 5 branches | **124 ns** | 157 ns | 0.79 |
-| 10 branches | 249 ns | **216 ns** | 1.15 |
-| nested | **132 ns** | 158 ns | 0.84 |
+| 2 branches | **111 ns** | 151 ns | 0.73 |
+| 5 branches | **127 ns** | 169 ns | 0.75 |
+| 10 branches | 255 ns | **224 ns** | 1.14 |
+| nested | **135 ns** | 171 ns | 0.79 |
 | **Backreferences** | | | |
-| simple `(\w+) \1` | **137 ns** | 175 ns | 0.78 |
-| nested | **143 ns** | 181 ns | 0.79 |
-| named | **138 ns** | 186 ns | 0.74 |
+| simple `(\w+) \1` | **139 ns** | 183 ns | 0.76 |
+| nested | **143 ns** | 191 ns | 0.75 |
+| named | **138 ns** | 181 ns | 0.76 |
 | **Lookaround** | | | |
-| positive lookahead | **124 ns** | 156 ns | 0.79 |
-| negative lookahead | **133 ns** | 172 ns | 0.77 |
-| positive lookbehind | 274 ns | **261 ns** | 1.05 |
-| negative lookbehind | 355 ns | **331 ns** | 1.07 |
-| combined | 299 ns | **286 ns** | 1.05 |
+| positive lookahead | **122 ns** | 155 ns | 0.78 |
+| negative lookahead | **133 ns** | 173 ns | 0.77 |
+| positive lookbehind | 275 ns | **261 ns** | 1.06 |
+| negative lookbehind | 358 ns | **328 ns** | 1.09 |
+| combined | 299 ns | **285 ns** | 1.05 |
 | **Unicode properties** | | | |
-| `\p{Lu}+` | **93 ns** | 134 ns | 0.69 |
-| `\p{Letter}+` | **107 ns** | 160 ns | 0.67 |
-| `\p{Greek}+` | 355 ns | **242 ns** | 1.47 |
-| `\p{Cyrillic}+` | 437 ns | **330 ns** | 1.32 |
+| `\p{Lu}+` | **92 ns** | 147 ns | 0.63 |
+| `\p{Letter}+` | **106 ns** | 165 ns | 0.64 |
+| `\p{Greek}+` | 325 ns | **244 ns** | 1.33 |
+| `\p{Cyrillic}+` | 441 ns | **332 ns** | 1.33 |
 | **Case-insensitive** | | | |
-| single word | **111 ns** | 146 ns | 0.76 |
-| phrase | **168 ns** | 184 ns | 0.91 |
-| alternation | **117 ns** | 150 ns | 0.78 |
+| single word | **112 ns** | 158 ns | 0.71 |
+| phrase | **173 ns** | 190 ns | 0.91 |
+| alternation | **119 ns** | 164 ns | 0.72 |
 | **Named captures** | | | |
-| date extraction | 510 ns | **276 ns** | 1.85 |
+| date extraction | 518 ns | **279 ns** | 1.86 |
 | **Large text (first match)** | | | |
-| literal 10 KB | **121 ns** | 136 ns | 0.89 |
-| literal 50 KB | **121 ns** | 137 ns | 0.88 |
-| timestamp 10 KB | 239 ns | **175 ns** | 1.37 |
-| timestamp 50 KB | 238 ns | **172 ns** | 1.38 |
-| field extract 10 KB | 163 ns | 162 ns | 1.01 |
-| field extract 50 KB | 164 ns | 159 ns | 1.03 |
-| no match 10 KB | **392 ns** | 1.9 us | 0.21 |
-| no match 50 KB | **1.5 us** | 9.5 us | 0.16 |
+| literal 10 KB | **119 ns** | 143 ns | 0.84 |
+| literal 50 KB | **120 ns** | 143 ns | 0.84 |
+| timestamp 10 KB | 237 ns | **176 ns** | 1.35 |
+| timestamp 50 KB | 234 ns | **174 ns** | 1.35 |
+| field extract 10 KB | 162 ns | 166 ns | 0.97 |
+| field extract 50 KB | 162 ns | 168 ns | 0.96 |
+| no match 10 KB | **382 ns** | 1.9 us | 0.20 |
+| no match 50 KB | **1.5 us** | 9.4 us | 0.16 |
 | **RegSet** | | | |
-| position-lead (5 patterns) | **170 ns** | 388 ns | 0.44 |
-| regex-lead (5 patterns) | **196 ns** | 228 ns | 0.86 |
+| position-lead (5 patterns) | **169 ns** | 397 ns | 0.43 |
+| regex-lead (5 patterns) | **194 ns** | 227 ns | 0.86 |
 | **Match at position** | | | |
-| `\d+` at offset 4 | **101 ns** | 144 ns | 0.70 |
+| `\d+` at offset 4 | **100 ns** | 147 ns | 0.68 |
 | **Scanner** (vs vscode-oniguruma C) | | | |
-| short string (RegSet path) | **182 ns** | 414 ns | 0.44 |
-| long string, cold (per-regex) | 181 ns | 181 ns | 1.00 |
-| long string, warm (cached) | 24 ns | 24 ns | 1.00 |
+| short string (RegSet path) | **181 ns** | 428 ns | 0.42 |
+| long string, cold (per-regex) | 184 ns | 192 ns | 0.96 |
+| long string, warm (cached) | 25 ns | 23 ns | 1.05 |
 
 ### Regex compilation
 
 | Pattern | Rust | C | Ratio |
 |---------|-----:|--:|------:|
-| literal | **423 ns** | 457 ns | 0.93 |
-| `.*` | 752 ns | **533 ns** | 1.41 |
-| alternation | 1,800 ns | **1,500 ns** | 1.20 |
-| char class | **585 ns** | 635 ns | 0.92 |
-| quantifier | 1,400 ns | **1,000 ns** | 1.40 |
-| group | 1,100 ns | **789 ns** | 1.39 |
-| backref | 1,000 ns | 985 ns | 1.02 |
-| lookahead | 741 ns | **484 ns** | 1.53 |
-| lookbehind | 618 ns | **549 ns** | 1.13 |
-| named capture | **3,900 ns** | 5,900 ns | 0.66 |
+| literal | **432 ns** | 472 ns | 0.92 |
+| `.*` | 763 ns | **537 ns** | 1.42 |
+| alternation | 1.8 us | **1.5 us** | 1.23 |
+| char class | **593 ns** | 637 ns | 0.93 |
+| quantifier | 1.4 us | **1.0 us** | 1.34 |
+| group | 1.1 us | **794 ns** | 1.33 |
+| backref | 1.1 us | **979 ns** | 1.09 |
+| lookahead | 744 ns | **485 ns** | 1.53 |
+| lookbehind | 630 ns | **547 ns** | 1.15 |
+| named capture | **3.9 us** | 5.9 us | 0.66 |
 
 ### Running benchmarks
 
