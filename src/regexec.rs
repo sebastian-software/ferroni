@@ -1345,6 +1345,7 @@ enum StackEntry {
         pstr: usize,       // current (rightmost) backtrack position
         pstr_start: usize, // leftmost position (don't go below this)
         ascii: bool,       // true = all chars are 1 byte (can decrement by 1)
+        peek_byte: u8,     // if non-zero, only try positions where str_data[pos] == peek_byte
     },
     /// Voided entry (STK_VOID) - dead space, skipped during pops
     Void,
@@ -1535,6 +1536,7 @@ fn stack_pop(
     mem_end_stk: &mut [MemPtr],
     reg: &RegexType,
     callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+    str_data: &[u8],
 ) -> Option<(usize, usize, i32)> {
     loop {
         let entry = stack.pop()?;
@@ -1545,9 +1547,38 @@ fn stack_pop(
                 return Some((pcode, pstr, zid));
             }
             StackEntry::AltLazy {
-                pcode, pstr, ..
+                pcode,
+                pstr,
+                pstr_start,
+                ascii,
+                peek_byte,
             } => {
-                // AltLazy found: return position. Caller handles lazy peel-back.
+                // Peel off one character and re-push for the remaining range.
+                // If peek_byte is set, use memrchr to skip positions where the
+                // next byte can't match, instead of decrementing by 1.
+                if pstr > pstr_start {
+                    let prev = if peek_byte != 0 {
+                        // Search backward for the peek byte
+                        let search_end = pstr - pstr_start;
+                        memchr::memrchr(peek_byte, &str_data[pstr_start..pstr])
+                    } else if ascii {
+                        Some(pstr - 1)
+                    } else {
+                        Some(prev_char_head(reg.enc, pstr_start, pstr, str_data))
+                    };
+                    if let Some(prev_pos) = prev {
+                        let prev_abs = if peek_byte != 0 { pstr_start + prev_pos } else { prev_pos };
+                        if prev_abs >= pstr_start {
+                            stack.push(StackEntry::AltLazy {
+                                pcode,
+                                pstr: prev_abs,
+                                pstr_start,
+                                ascii,
+                                peek_byte,
+                            });
+                        }
+                    }
+                }
                 return Some((pcode, pstr, -1));
             }
             _ => match pop_level {
@@ -3129,6 +3160,7 @@ fn match_at(
                             pstr: s - 1,
                             pstr_start: start,
                             ascii: true,
+                            peek_byte: 0,
                         });
                     }
                     p += 1;
@@ -3166,6 +3198,7 @@ fn match_at(
                             pstr: prev,
                             pstr_start: start,
                             ascii: false,
+                            peek_byte: 0,
                         });
                     }
                     p += 1;
@@ -3195,6 +3228,7 @@ fn match_at(
                             pstr: prev,
                             pstr_start: start,
                             ascii: false,
+                            peek_byte: 0,
                         });
                     }
                     p += 1;
@@ -3221,6 +3255,7 @@ fn match_at(
                         pstr: prev,
                         pstr_start: start,
                         ascii: false,
+                        peek_byte: 0,
                     });
                 }
                 p += 1;
@@ -3240,9 +3275,62 @@ fn match_at(
                         pstr: s - 1,
                         pstr_start: start,
                         ascii: true,
+                        peek_byte: 0,
                     });
                 }
                 p += 1;
+            }
+
+            // ================================================================
+            // PeekNext star variants - only backtrack to positions matching peek byte
+            // ================================================================
+            OpCode::CClassStarPeekNext => {
+                if let OperationPayload::CClassStarPeekNext { ref bsp, c } = reg.ops[p].payload {
+                    let start = s;
+                    while s < right_range {
+                        let ch = str_data[s];
+                        if (ch as usize) >= SINGLE_BYTE_SIZE || !bitset_at(bsp, ch as usize) {
+                            break;
+                        }
+                        s += 1;
+                    }
+                    if s > start {
+                        stack.push(StackEntry::AltLazy {
+                            pcode: p + 1,
+                            pstr: s - 1,
+                            pstr_start: start,
+                            ascii: true,
+                            peek_byte: c,
+                        });
+                    }
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::WordAsciiStarPeekNext => {
+                if let OperationPayload::WordAsciiStarPeekNext { c } = reg.ops[p].payload {
+                    let start = s;
+                    while s < right_range {
+                        if !is_word_ascii(str_data[s]) {
+                            break;
+                        }
+                        s += 1;
+                    }
+                    if s > start {
+                        stack.push(StackEntry::AltLazy {
+                            pcode: p + 1,
+                            pstr: s - 1,
+                            pstr_start: start,
+                            ascii: true,
+                            peek_byte: c,
+                        });
+                    }
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
             }
 
             // ================================================================
@@ -4436,36 +4524,15 @@ fn match_at(
                 }
             }
 
-            // Fast path: check if top of stack is AltLazy (avoids function call overhead)
-            let pop_result = if let Some(&StackEntry::AltLazy { pcode, pstr, pstr_start, ascii }) = stack.last() {
-                stack.pop();
-                // Peel off one character and re-push for the remaining range
-                if pstr > pstr_start {
-                    let prev = if ascii {
-                        pstr - 1
-                    } else {
-                        prev_char_head(enc, pstr_start, pstr, str_data)
-                    };
-                    if prev >= pstr_start {
-                        stack.push(StackEntry::AltLazy {
-                            pcode,
-                            pstr: prev,
-                            pstr_start,
-                            ascii,
-                        });
-                    }
-                }
-                Some((pcode, pstr, -1i32))
-            } else {
-                stack_pop(
-                    &mut stack,
-                    pop_level,
-                    &mut mem_start_stk,
-                    &mut mem_end_stk,
-                    reg,
-                    &mut callout_data,
-                )
-            };
+            let pop_result = stack_pop(
+                &mut stack,
+                pop_level,
+                &mut mem_start_stk,
+                &mut mem_end_stk,
+                reg,
+                &mut callout_data,
+                str_data,
+            );
             match pop_result {
                 Some((pcode, pstr, alt_zid)) => {
                     if pcode == FINISH_PCODE {

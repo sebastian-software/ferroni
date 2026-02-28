@@ -300,6 +300,8 @@ pub enum OpCode {
     CClassMbStar = 86,
     WordStar = 87,
     WordAsciiStar = 88,
+    CClassStarPeekNext = 89,
+    WordAsciiStarPeekNext = 90,
 }
 
 // === SaveType ===
@@ -396,6 +398,13 @@ pub enum OperationPayload {
         bsp: Box<BitSet>,
     },
     AnyCharStarPeekNext {
+        c: u8,
+    },
+    CClassStarPeekNext {
+        bsp: Box<BitSet>,
+        c: u8,
+    },
+    WordAsciiStarPeekNext {
         c: u8,
     },
     WordBoundary {

@@ -1193,6 +1193,22 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 if r != 0 {
                     return r;
                 }
+                // Use PeekNext variant for ASCII-only classes when next byte is known
+                if let Some(c) = qn.next_head_exact {
+                    let has_mb = cc.mbuf.is_some();
+                    if !has_mb {
+                        // ASCII-only bitset: use CClassStarPeekNext
+                        add_op(
+                            reg,
+                            OpCode::CClassStarPeekNext,
+                            OperationPayload::CClassStarPeekNext {
+                                bsp: Box::new(cc.bs),
+                                c,
+                            },
+                        );
+                        return 0;
+                    }
+                }
                 compile_cclass_star_node(cc, reg);
                 return 0;
             }
@@ -1205,6 +1221,16 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             let r = compile_tree_n_times(body, qn.lower, reg, env);
             if r != 0 {
                 return r;
+            }
+            if ascii_mode {
+                if let Some(c) = qn.next_head_exact {
+                    add_op(
+                        reg,
+                        OpCode::WordAsciiStarPeekNext,
+                        OperationPayload::WordAsciiStarPeekNext { c },
+                    );
+                    return 0;
+                }
             }
             let opcode = if ascii_mode {
                 OpCode::WordAsciiStar
