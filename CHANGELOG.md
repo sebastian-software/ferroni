@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/sebastian-software/ferroni/compare/v1.2.2...v1.2.3) (2026-02-28)
+
+
+### Performance Improvements
+
+* strip redundant case-fold alternatives in lookbehind ([e76ba5e](https://github.com/sebastian-software/ferroni/commit/e76ba5e639eb10109ec9a7c298f38ac83403a799))
+
 ## [1.2.2](https://github.com/sebastian-software/ferroni/compare/v1.2.1...v1.2.2) (2026-02-28)
 
 
