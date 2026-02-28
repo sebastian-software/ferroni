@@ -295,6 +295,11 @@ pub enum OpCode {
     Return = 81,
     CalloutContents = 82,
     CalloutName = 83,
+    CClassStar = 84,
+    CClassMixStar = 85,
+    CClassMbStar = 86,
+    WordStar = 87,
+    WordAsciiStar = 88,
 }
 
 // === SaveType ===

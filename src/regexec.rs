@@ -1336,6 +1336,16 @@ enum StackEntry {
         num: i32, // callout list index (1-based)
         id: i32,  // builtin id (for name callouts) or ONIG_NON_NAME_ID
     },
+    /// Lazy choice point for star opcodes - represents a range of backtrack positions.
+    /// Instead of pushing one Alt per matched character, we push a single AltLazy
+    /// covering the entire matched range. On backtrack, we peel off one character
+    /// and re-push for the remaining range.
+    AltLazy {
+        pcode: usize,      // bytecode index to jump to on backtrack
+        pstr: usize,       // current (rightmost) backtrack position
+        pstr_start: usize, // leftmost position (don't go below this)
+        ascii: bool,       // true = all chars are 1 byte (can decrement by 1)
+    },
     /// Voided entry (STK_VOID) - dead space, skipped during pops
     Void,
 }
@@ -1345,7 +1355,7 @@ impl StackEntry {
     #[inline]
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn is_alt(&self) -> bool {
-        matches!(self, StackEntry::Alt { .. })
+        matches!(self, StackEntry::Alt { .. } | StackEntry::AltLazy { .. })
     }
 
     /// Returns true if this entry needs handling during pop at ALL level.
@@ -1534,6 +1544,12 @@ fn stack_pop(
             } => {
                 return Some((pcode, pstr, zid));
             }
+            StackEntry::AltLazy {
+                pcode, pstr, ..
+            } => {
+                // AltLazy found: return position. Caller handles lazy peel-back.
+                return Some((pcode, pstr, -1));
+            }
             _ => match pop_level {
                 StackPopLevel::Free => {
                     // Skip non-ALT entries without restoration
@@ -1652,7 +1668,8 @@ fn stack_void_to_mark(stack: &mut Vec<StackEntry>, mark_id: usize) -> Option<usi
             StackEntry::Alt {
                 is_super: false,
                 ..
-            } | StackEntry::EmptyCheckStart { .. }
+            } | StackEntry::AltLazy { .. }
+              | StackEntry::EmptyCheckStart { .. }
         );
         if is_void_target {
             stack[i] = StackEntry::Void;
@@ -3094,6 +3111,141 @@ fn match_at(
             }
 
             // ================================================================
+            // CClass star opcodes - greedy [class]* / [class]+ optimization
+            // ================================================================
+            OpCode::CClassStar => {
+                if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
+                    let start = s;
+                    while s < right_range {
+                        let c = str_data[s];
+                        if (c as usize) >= SINGLE_BYTE_SIZE || !bitset_at(bsp, c as usize) {
+                            break;
+                        }
+                        s += 1;
+                    }
+                    if s > start {
+                        stack.push(StackEntry::AltLazy {
+                            pcode: p + 1,
+                            pstr: s - 1,
+                            pstr_start: start,
+                            ascii: true,
+                        });
+                    }
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::CClassMixStar => {
+                if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
+                    let start = s;
+                    while s < right_range {
+                        let in_class = if enc.mbc_enc_len(&str_data[s..]) > 1 {
+                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            if is_in_code_range(mb, code) {
+                                true
+                            } else if (code as usize) < SINGLE_BYTE_SIZE {
+                                bitset_at(bsp, code as usize)
+                            } else {
+                                false
+                            }
+                        } else {
+                            let c = str_data[s];
+                            (c as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, c as usize)
+                        };
+                        if !in_class {
+                            break;
+                        }
+                        s += enclen(enc, str_data, s);
+                    }
+                    if s > start {
+                        let prev = prev_char_head(enc, start, s, str_data);
+                        stack.push(StackEntry::AltLazy {
+                            pcode: p + 1,
+                            pstr: prev,
+                            pstr_start: start,
+                            ascii: false,
+                        });
+                    }
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::CClassMbStar => {
+                if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                    let start = s;
+                    while s < right_range {
+                        let mb_len = enclen(enc, str_data, s);
+                        if right_range.saturating_sub(s) < mb_len {
+                            break;
+                        }
+                        let code = enc.mbc_to_code(&str_data[s..], end);
+                        if !is_in_code_range(mb, code) {
+                            break;
+                        }
+                        s += mb_len;
+                    }
+                    if s > start {
+                        let prev = prev_char_head(enc, start, s, str_data);
+                        stack.push(StackEntry::AltLazy {
+                            pcode: p + 1,
+                            pstr: prev,
+                            pstr_start: start,
+                            ascii: false,
+                        });
+                    }
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            // ================================================================
+            // Word star opcodes - greedy \w* / \w+ optimization
+            // ================================================================
+            OpCode::WordStar => {
+                let start = s;
+                while s < right_range {
+                    if !is_word_char_at(enc, str_data, s, end) {
+                        break;
+                    }
+                    s += enclen(enc, str_data, s);
+                }
+                if s > start {
+                    let prev = prev_char_head(enc, start, s, str_data);
+                    stack.push(StackEntry::AltLazy {
+                        pcode: p + 1,
+                        pstr: prev,
+                        pstr_start: start,
+                        ascii: false,
+                    });
+                }
+                p += 1;
+            }
+
+            OpCode::WordAsciiStar => {
+                let start = s;
+                while s < right_range {
+                    if !is_word_ascii(str_data[s]) {
+                        break;
+                    }
+                    s += 1;
+                }
+                if s > start {
+                    stack.push(StackEntry::AltLazy {
+                        pcode: p + 1,
+                        pstr: s - 1,
+                        pstr_start: start,
+                        ascii: true,
+                    });
+                }
+                p += 1;
+            }
+
+            // ================================================================
             // Word / NoWord - \w and \W character type matching
             // ================================================================
             OpCode::Word => {
@@ -4284,14 +4436,37 @@ fn match_at(
                 }
             }
 
-            match stack_pop(
-                &mut stack,
-                pop_level,
-                &mut mem_start_stk,
-                &mut mem_end_stk,
-                reg,
-                &mut callout_data,
-            ) {
+            // Fast path: check if top of stack is AltLazy (avoids function call overhead)
+            let pop_result = if let Some(&StackEntry::AltLazy { pcode, pstr, pstr_start, ascii }) = stack.last() {
+                stack.pop();
+                // Peel off one character and re-push for the remaining range
+                if pstr > pstr_start {
+                    let prev = if ascii {
+                        pstr - 1
+                    } else {
+                        prev_char_head(enc, pstr_start, pstr, str_data)
+                    };
+                    if prev >= pstr_start {
+                        stack.push(StackEntry::AltLazy {
+                            pcode,
+                            pstr: prev,
+                            pstr_start,
+                            ascii,
+                        });
+                    }
+                }
+                Some((pcode, pstr, -1i32))
+            } else {
+                stack_pop(
+                    &mut stack,
+                    pop_level,
+                    &mut mem_start_stk,
+                    &mut mem_end_stk,
+                    reg,
+                    &mut callout_data,
+                )
+            };
+            match pop_result {
                 Some((pcode, pstr, alt_zid)) => {
                     if pcode == FINISH_PCODE {
                         // Hit bottom sentinel - no more alternatives

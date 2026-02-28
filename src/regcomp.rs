@@ -948,6 +948,77 @@ fn compile_tree_n_times(node: &Node, n: i32, reg: &mut RegexType, env: &ParseEnv
     0
 }
 
+/// Check if this is a greedy infinite repeat of a character class [class]* / [class]+
+fn is_cclass_infinite_greedy(qn: &QuantNode) -> bool {
+    qn.greedy
+        && is_infinite_repeat(qn.upper)
+        && qn.lower <= 1
+        && qn.body
+            .as_ref()
+            .map_or(false, |b| matches!(b.inner, NodeInner::CClass(_)))
+}
+
+/// Check if this is a greedy infinite repeat of \w or \W.
+/// Returns Some((not, ascii_mode)) if match.
+fn is_word_ctype_infinite_greedy(qn: &QuantNode) -> Option<(bool, bool)> {
+    if qn.greedy && is_infinite_repeat(qn.upper) && qn.lower <= 1 {
+        if let Some(body) = &qn.body {
+            if let NodeInner::CType(ct) = &body.inner {
+                if ct.ctype == ONIGENC_CTYPE_WORD as i32 {
+                    return Some((ct.not, ct.ascii_mode));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Compile a character class star node (CClassStar/CClassMixStar/CClassMbStar).
+/// Returns 0 on success, -1 if the class is negated (caller should fall through).
+fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
+    if cc.is_not() {
+        return -1;
+    }
+    let has_mb = cc.mbuf.is_some();
+    let has_sb = !bitset_is_empty(&cc.bs);
+
+    if has_mb && has_sb {
+        let mb_data = cc
+            .mbuf
+            .as_ref()
+            .map(|b| bbuf_to_u32_vec(&b.data))
+            .unwrap_or_default();
+        add_op(
+            reg,
+            OpCode::CClassMixStar,
+            OperationPayload::CClassMix {
+                mb: mb_data,
+                bsp: Box::new(cc.bs),
+            },
+        );
+    } else if has_mb {
+        let mb_data = cc
+            .mbuf
+            .as_ref()
+            .map(|b| bbuf_to_u32_vec(&b.data))
+            .unwrap_or_default();
+        add_op(
+            reg,
+            OpCode::CClassMbStar,
+            OperationPayload::CClassMb { mb: mb_data },
+        );
+    } else {
+        add_op(
+            reg,
+            OpCode::CClassStar,
+            OperationPayload::CClass {
+                bsp: Box::new(cc.bs),
+            },
+        );
+    }
+    0
+}
+
 /// Check if a quantifier node represents .* or .+ (anychar infinite greedy).
 fn is_anychar_infinite_greedy(qn: &QuantNode) -> bool {
     if qn.greedy && is_infinite_repeat(qn.upper) && qn.lower <= 1 {
@@ -987,6 +1058,24 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
             return OPSIZE_ANYCHAR_STAR_PEEK_NEXT + tlen * qn.lower;
         }
         return SIZE_INC + tlen * qn.lower;
+    }
+
+    // CClass star/plus optimization: [class]* or [class]+
+    if is_cclass_infinite_greedy(qn) {
+        if let Some(cc) = body.as_cclass() {
+            if !cc.is_not() {
+                let tlen = compile_length_tree(body, reg, env);
+                return SIZE_INC + tlen * qn.lower;
+            }
+        }
+    }
+
+    // Word ctype star/plus optimization: \w* or \w+
+    if let Some((not, _ascii_mode)) = is_word_ctype_infinite_greedy(qn) {
+        if !not {
+            let tlen = compile_length_tree(body, reg, env);
+            return SIZE_INC + tlen * qn.lower;
+        }
     }
 
     let is_empty = qn.emptiness != BodyEmptyType::NotEmpty;
@@ -1094,6 +1183,37 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             add_op(reg, opcode, OperationPayload::None);
         }
         return 0;
+    }
+
+    // CClass star/plus optimization: [class]* or [class]+
+    if is_cclass_infinite_greedy(qn) {
+        if let Some(cc) = body.as_cclass() {
+            if !cc.is_not() {
+                let r = compile_tree_n_times(body, qn.lower, reg, env);
+                if r != 0 {
+                    return r;
+                }
+                compile_cclass_star_node(cc, reg);
+                return 0;
+            }
+        }
+    }
+
+    // Word ctype star/plus optimization: \w* or \w+
+    if let Some((not, ascii_mode)) = is_word_ctype_infinite_greedy(qn) {
+        if !not {
+            let r = compile_tree_n_times(body, qn.lower, reg, env);
+            if r != 0 {
+                return r;
+            }
+            let opcode = if ascii_mode {
+                OpCode::WordAsciiStar
+            } else {
+                OpCode::WordStar
+            };
+            add_op(reg, opcode, OperationPayload::None);
+            return 0;
+        }
     }
 
     let is_empty = qn.emptiness != BodyEmptyType::NotEmpty;
