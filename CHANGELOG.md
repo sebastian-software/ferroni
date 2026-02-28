@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.2](https://github.com/sebastian-software/ferroni/compare/v1.2.1...v1.2.2) (2026-02-28)
+
+
+### Performance Improvements
+
+* add character class star opcodes with lazy backtracking ([c7e7dfb](https://github.com/sebastian-software/ferroni/commit/c7e7dfbfaeb65e3cddf2b5d8835547e6c104c97a))
+* add PeekNext star variants with memrchr-accelerated backtracking ([0986a1a](https://github.com/sebastian-software/ferroni/commit/0986a1ab40a4271c58dd6d2a3dd6e1beae89bcdb))
+* use regset position-lead path for uncached scanner searches ([3ee6f31](https://github.com/sebastian-software/ferroni/commit/3ee6f31694d7632cfe8cf036698a7dbcba43af47))
+
 ## [1.2.1](https://github.com/sebastian-software/ferroni/compare/v1.2.0...v1.2.1) (2026-02-27)
 
 
