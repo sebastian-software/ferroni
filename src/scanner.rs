@@ -531,12 +531,12 @@ impl Scanner {
 
             // Put region back in cache (no clone needed)
             let cache = &mut caches[i];
-            cache.last_str_id = str_id;
-            cache.last_position = start;
-            cache.last_options = options_raw;
             cache.last_region = returned_region;
 
             if r >= 0 {
+                cache.last_str_id = str_id;
+                cache.last_position = start;
+                cache.last_options = options_raw;
                 cache.last_matched = true;
                 cache.last_result = r;
 
@@ -550,8 +550,21 @@ impl Scanner {
                     }
                 }
             } else {
-                cache.last_matched = false;
-                cache.last_result = r;
+                // If search was truncated to [start, ep), a miss does not imply
+                // "no match at all" for later start positions, so don't cache it.
+                if ep == end {
+                    cache.last_str_id = str_id;
+                    cache.last_position = start;
+                    cache.last_options = options_raw;
+                    cache.last_matched = false;
+                    cache.last_result = r;
+                } else {
+                    cache.last_str_id = 0;
+                    cache.last_position = 0;
+                    cache.last_options = u32::MAX;
+                    cache.last_matched = false;
+                    cache.last_result = ONIG_MISMATCH;
+                }
             }
         }
 
@@ -617,6 +630,35 @@ fn convert_match_to_utf16(string: &OnigString, m: ScannerMatch) -> ScannerMatch 
 mod tests {
     use super::*;
     use smallvec::smallvec;
+
+    #[test]
+    fn cache_miss_with_truncated_range_is_not_reused() {
+        let mut scanner = Scanner::new(&[";", "}"]).unwrap();
+        let s = "a;b}";
+
+        assert_eq!(
+            scanner.find_next_match_with_id(s, 1, 0, ScannerFindOptions::NONE),
+            Some(ScannerMatch {
+                index: 0,
+                capture_indices: smallvec![CaptureIndex {
+                    start: 1,
+                    end: 2,
+                    length: 1
+                }],
+            })
+        );
+        assert_eq!(
+            scanner.find_next_match_with_id(s, 1, 2, ScannerFindOptions::NONE),
+            Some(ScannerMatch {
+                index: 1,
+                capture_indices: smallvec![CaptureIndex {
+                    start: 3,
+                    end: 4,
+                    length: 1
+                }],
+            })
+        );
+    }
 
     // =========================================================================
     // Tests ported from vscode-oniguruma (src/test/index.test.ts)
