@@ -6,6 +6,7 @@
 // Scanner API design and test cases derived from vscode-oniguruma
 // (MIT License, Copyright (c) Microsoft Corporation).
 
+use memchr::memchr;
 use smallvec::SmallVec;
 
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
@@ -261,6 +262,54 @@ impl CacheEntry {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HotPathMatcher {
+    SingleByteLiteral(u8),
+}
+
+impl HotPathMatcher {
+    #[inline]
+    fn search(self, str_data: &[u8], start: usize, end: usize) -> Option<(usize, usize)> {
+        if start >= end {
+            return None;
+        }
+        match self {
+            HotPathMatcher::SingleByteLiteral(byte) => {
+                memchr(byte, &str_data[start..end]).map(|offset| {
+                    let pos = start + offset;
+                    (pos, pos + 1)
+                })
+            }
+        }
+    }
+}
+
+#[inline]
+fn is_regex_meta_byte(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'.' | b'^' | b'$' | b'*' | b'+' | b'?' | b'(' | b')' | b'[' | b']' | b'{' | b'|' | b'\\'
+    )
+}
+
+fn compile_hot_path_matcher(pattern: &str, config: &ScannerConfig) -> Option<HotPathMatcher> {
+    if config.options != ONIG_OPTION_NONE || config.syntax != ScannerSyntax::Oniguruma {
+        return None;
+    }
+
+    let bytes = pattern.as_bytes();
+    if bytes.len() != 1 {
+        return None;
+    }
+
+    let byte = bytes[0];
+    if !byte.is_ascii() || is_regex_meta_byte(byte) {
+        return None;
+    }
+
+    Some(HotPathMatcher::SingleByteLiteral(byte))
+}
+
 /// Threshold for switching between RegSet and per-regex search.
 /// Matches vscode-oniguruma's `MAX_REGSET_MATCH_INPUT_LEN`.
 const MAX_REGSET_MATCH_INPUT_LEN: usize = 1000;
@@ -280,6 +329,7 @@ const MAX_REGSET_MATCH_INPUT_LEN: usize = 1000;
 /// ```
 pub struct Scanner {
     caches: Vec<CacheEntry>,
+    hot_matchers: Vec<Option<HotPathMatcher>>,
     regset: Box<OnigRegSet>,
 }
 
@@ -311,12 +361,14 @@ impl Scanner {
         let options = config.options;
 
         let mut caches = Vec::with_capacity(patterns.len());
+        let mut hot_matchers = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
 
         for pattern in patterns {
             let reg = onig_new(pattern.as_bytes(), options, &ONIG_ENCODING_UTF8, syntax)?;
             regset_regs.push(Box::new(reg));
             caches.push(CacheEntry::new(pattern));
+            hot_matchers.push(compile_hot_path_matcher(pattern, config));
         }
 
         let (regset, r) = onig_regset_new(regset_regs);
@@ -326,6 +378,7 @@ impl Scanner {
 
         Ok(Scanner {
             caches,
+            hot_matchers,
             regset: regset.unwrap(),
         })
     }
@@ -485,6 +538,7 @@ impl Scanner {
         // Split borrows: regset (immutable) and caches (mutable) are disjoint fields.
         let regset = &self.regset;
         let caches = &mut self.caches;
+        let hot_matchers = &self.hot_matchers;
         let n = onig_regset_number_of_regex(regset) as usize;
 
         // Progressive range narrowing: once a match is found at position P,
@@ -518,25 +572,38 @@ impl Scanner {
                 }
             }
 
-            let reg = onig_regset_get_regex(regset, i).unwrap();
+            let (r, returned_region) = if let Some(hot_matcher) = hot_matchers[i] {
+                // Tier-0 hot path: bypass VM for simple single-byte literals.
+                let mut region = caches[i].last_region.take().unwrap_or_else(OnigRegion::new);
+                let r =
+                    if let Some((match_beg, match_end)) = hot_matcher.search(str_data, start, ep) {
+                        set_full_match_region(&mut region, match_beg, match_end);
+                        match_beg as i32
+                    } else {
+                        ONIG_MISMATCH
+                    };
+                (r, Some(region))
+            } else {
+                let reg = onig_regset_get_regex(regset, i).unwrap();
 
-            // Reuse the cached region (avoids allocation after first call)
-            let region = caches[i].last_region.take().unwrap_or_else(OnigRegion::new);
+                // Reuse the cached region (avoids allocation after first call)
+                let region = caches[i].last_region.take().unwrap_or_else(OnigRegion::new);
 
-            // Create MatchArg on first miss, reuse on subsequent misses
-            let msa = msa.get_or_insert_with(|| MatchArg::new(reg, onig_opts, None, start));
-            msa.reset_for_search(reg, onig_opts, Some(region), start);
+                // Create MatchArg on first miss, reuse on subsequent misses
+                let msa = msa.get_or_insert_with(|| MatchArg::new(reg, onig_opts, None, start));
+                msa.reset_for_search(reg, onig_opts, Some(region), start);
 
-            let (r, returned_region) = onig_search_with_msa(reg, str_data, end, start, ep, msa);
+                onig_search_with_msa(reg, str_data, end, start, ep, msa)
+            };
 
             // Put region back in cache (no clone needed)
             let cache = &mut caches[i];
-            cache.last_str_id = str_id;
-            cache.last_position = start;
-            cache.last_options = options_raw;
             cache.last_region = returned_region;
 
             if r >= 0 {
+                cache.last_str_id = str_id;
+                cache.last_position = start;
+                cache.last_options = options_raw;
                 cache.last_matched = true;
                 cache.last_result = r;
 
@@ -550,8 +617,21 @@ impl Scanner {
                     }
                 }
             } else {
-                cache.last_matched = false;
-                cache.last_result = r;
+                // If search was truncated to [start, ep), a miss does not imply
+                // "no match at all" for later start positions, so don't cache it.
+                if ep == end {
+                    cache.last_str_id = str_id;
+                    cache.last_position = start;
+                    cache.last_options = options_raw;
+                    cache.last_matched = false;
+                    cache.last_result = r;
+                } else {
+                    cache.last_str_id = 0;
+                    cache.last_position = 0;
+                    cache.last_options = u32::MAX;
+                    cache.last_matched = false;
+                    cache.last_result = ONIG_MISMATCH;
+                }
             }
         }
 
@@ -593,6 +673,16 @@ fn build_scanner_match(index: usize, region: &OnigRegion) -> ScannerMatch {
     }
 }
 
+#[inline]
+fn set_full_match_region(region: &mut OnigRegion, match_beg: usize, match_end: usize) {
+    if region.allocated < 1 {
+        region.resize(1);
+    }
+    region.num_regs = 1;
+    region.beg[0] = match_beg as i32;
+    region.end[0] = match_end as i32;
+}
+
 /// Convert a `ScannerMatch` with UTF-8 byte offsets to UTF-16 code unit offsets.
 fn convert_match_to_utf16(string: &OnigString, m: ScannerMatch) -> ScannerMatch {
     ScannerMatch {
@@ -617,6 +707,56 @@ fn convert_match_to_utf16(string: &OnigString, m: ScannerMatch) -> ScannerMatch 
 mod tests {
     use super::*;
     use smallvec::smallvec;
+
+    #[test]
+    fn hot_path_compiles_single_ascii_literal() {
+        let config = ScannerConfig::default();
+        assert_eq!(
+            compile_hot_path_matcher(";", &config),
+            Some(HotPathMatcher::SingleByteLiteral(b';'))
+        );
+        assert_eq!(
+            compile_hot_path_matcher("}", &config),
+            Some(HotPathMatcher::SingleByteLiteral(b'}'))
+        );
+    }
+
+    #[test]
+    fn hot_path_rejects_meta_or_complex_patterns() {
+        let config = ScannerConfig::default();
+        assert_eq!(compile_hot_path_matcher(".", &config), None);
+        assert_eq!(compile_hot_path_matcher("\\w", &config), None);
+        assert_eq!(compile_hot_path_matcher("ab", &config), None);
+    }
+
+    #[test]
+    fn literal_hot_path_preserves_match_semantics() {
+        let mut scanner = Scanner::new(&[";", "}"]).unwrap();
+        let s = "a;b}";
+
+        assert_eq!(
+            scanner.find_next_match_with_id(s, 1, 0, ScannerFindOptions::NONE),
+            Some(ScannerMatch {
+                index: 0,
+                capture_indices: smallvec![CaptureIndex {
+                    start: 1,
+                    end: 2,
+                    length: 1
+                }],
+            })
+        );
+        assert_eq!(
+            scanner.find_next_match_with_id(s, 1, 2, ScannerFindOptions::NONE),
+            Some(ScannerMatch {
+                index: 1,
+                capture_indices: smallvec![CaptureIndex {
+                    start: 3,
+                    end: 4,
+                    length: 1
+                }],
+            })
+        );
+    }
 
     // =========================================================================
     // Tests ported from vscode-oniguruma (src/test/index.test.ts)
