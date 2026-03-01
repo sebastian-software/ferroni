@@ -2961,10 +2961,15 @@ fn match_at(
                 if right_range.saturating_sub(s) < 1 {
                     goto_fail = true;
                 } else if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
-                    if !bitset_at(bsp, str_data[s] as usize) {
+                    let b = str_data[s];
+                    if !bitset_at(bsp, b as usize) {
                         goto_fail = true;
                     } else {
-                        s += enclen(enc, str_data, s);
+                        s += if b < 0x80 {
+                            1
+                        } else {
+                            enclen(enc, str_data, s)
+                        };
                         p += 1;
                     }
                 } else {
@@ -2976,10 +2981,15 @@ fn match_at(
                 if right_range.saturating_sub(s) < 1 {
                     goto_fail = true;
                 } else if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
-                    if bitset_at(bsp, str_data[s] as usize) {
+                    let b = str_data[s];
+                    if bitset_at(bsp, b as usize) {
                         goto_fail = true;
                     } else {
-                        s += enclen(enc, str_data, s);
+                        s += if b < 0x80 {
+                            1
+                        } else {
+                            enclen(enc, str_data, s)
+                        };
                         p += 1;
                     }
                 } else {
@@ -3057,29 +3067,34 @@ fn match_at(
                     goto_fail = true;
                 } else if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
                     let b = str_data[s];
-                    let in_class = if b < 0x80 {
-                        bitset_at(bsp, b as usize)
-                    } else if enc.mbc_enc_len(&str_data[s..]) > 1 {
-                        let code = enc.mbc_to_code(&str_data[s..], end);
-                        if is_in_code_range(mb, code) {
-                            true
-                        } else if (code as usize) < SINGLE_BYTE_SIZE {
-                            bitset_at(bsp, code as usize)
-                        } else {
-                            false
-                        }
+                    let (in_class, char_len) = if b < 0x80 {
+                        (bitset_at(bsp, b as usize), 1usize)
                     } else {
-                        let c = str_data[s];
-                        if (c as usize) < SINGLE_BYTE_SIZE {
-                            bitset_at(bsp, c as usize)
+                        let len = enclen(enc, str_data, s);
+                        if len > 1 {
+                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            (
+                                if is_in_code_range(mb, code) {
+                                    true
+                                } else if (code as usize) < SINGLE_BYTE_SIZE {
+                                    bitset_at(bsp, code as usize)
+                                } else {
+                                    false
+                                },
+                                len,
+                            )
                         } else {
-                            false
+                            let c = str_data[s];
+                            (
+                                (c as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, c as usize),
+                                len,
+                            )
                         }
                     };
                     if in_class == not {
                         goto_fail = true;
                     } else {
-                        s += enclen(enc, str_data, s);
+                        s += char_len;
                         p += 1;
                     }
                 } else {
@@ -3281,25 +3296,34 @@ fn match_at(
                     let start = s;
                     while s < right_range {
                         let b = str_data[s];
-                        let in_class = if b < 0x80 {
-                            bitset_at(bsp, b as usize)
-                        } else if enc.mbc_enc_len(&str_data[s..]) > 1 {
-                            let code = enc.mbc_to_code(&str_data[s..], end);
-                            if is_in_code_range(mb, code) {
-                                true
-                            } else if (code as usize) < SINGLE_BYTE_SIZE {
-                                bitset_at(bsp, code as usize)
-                            } else {
-                                false
-                            }
+                        let (in_class, char_len) = if b < 0x80 {
+                            (bitset_at(bsp, b as usize), 1usize)
                         } else {
-                            let c = str_data[s];
-                            (c as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, c as usize)
+                            let len = enclen(enc, str_data, s);
+                            if len > 1 {
+                                let code = enc.mbc_to_code(&str_data[s..], end);
+                                (
+                                    if is_in_code_range(mb, code) {
+                                        true
+                                    } else if (code as usize) < SINGLE_BYTE_SIZE {
+                                        bitset_at(bsp, code as usize)
+                                    } else {
+                                        false
+                                    },
+                                    len,
+                                )
+                            } else {
+                                let c = str_data[s];
+                                (
+                                    (c as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, c as usize),
+                                    len,
+                                )
+                            }
                         };
                         if !in_class {
                             break;
                         }
-                        s += enclen(enc, str_data, s);
+                        s += char_len;
                     }
                     if s > start {
                         let prev = prev_char_head(enc, start, s, str_data);
