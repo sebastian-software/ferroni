@@ -261,10 +261,6 @@ impl CacheEntry {
     }
 }
 
-/// Threshold for switching between RegSet and per-regex search.
-/// Matches vscode-oniguruma's `MAX_REGSET_MATCH_INPUT_LEN`.
-const MAX_REGSET_MATCH_INPUT_LEN: usize = 1000;
-
 /// Multi-pattern scanner compatible with vscode-oniguruma's `OnigScanner`.
 ///
 /// # Example
@@ -332,8 +328,9 @@ impl Scanner {
 
     /// Find the next match starting at `start_position` (byte offset).
     ///
-    /// For short strings (<1000 bytes), uses the RegSet fast path.
-    /// For longer strings, uses per-regex search (no caching without a string ID).
+    /// One-off searches (without a stable string ID) use the RegSet path.
+    /// Use `find_next_match_with_id` to enable per-regex cache reuse when
+    /// repeatedly advancing through the same string.
     pub fn find_next_match(
         &mut self,
         text: &str,
@@ -433,7 +430,7 @@ impl Scanner {
         }
     }
 
-    /// RegSet fast path for short strings.
+    /// RegSet path for one-off searches (`use_cache = false`).
     fn search_regset(
         &mut self,
         str_data: &[u8],
@@ -460,7 +457,7 @@ impl Scanner {
         Some(build_scanner_match(regex_idx, region))
     }
 
-    /// Per-regex search with caching for long strings.
+    /// Per-regex search with optional cache reuse.
     ///
     /// Regions are reused from cache entries to avoid per-call allocation.
     /// A single MatchArg is reused across all regex iterations to avoid
