@@ -2209,11 +2209,51 @@ fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: M
 /// Binary search, matching C's onig_is_in_code_range exactly.
 #[inline]
 pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
-    if data.is_empty() {
+    if data.len() < 3 {
         return false;
     }
     let n = data[0] as usize;
-    let ranges = &data[1..];
+    if n == 0 {
+        return false;
+    }
+    let pair_len = n.saturating_mul(2);
+    let needed = 1usize.saturating_add(pair_len);
+    if data.len() < needed {
+        return false;
+    }
+    let ranges = &data[1..needed];
+
+    let first_low = ranges[0];
+    if code < first_low {
+        return false;
+    }
+    let last_high = ranges[pair_len - 1];
+    if code > last_high {
+        return false;
+    }
+
+    // Common fast path for classes like [^\x00-\x7F] encoded as a single
+    // multi-byte range [0x80..MAX].
+    if n == 1 {
+        return true;
+    }
+
+    // Small range tables are faster with a straight scan than binary search.
+    if n <= 4 {
+        let mut i = 0usize;
+        while i < n {
+            let lo = ranges[i * 2];
+            let hi = ranges[i * 2 + 1];
+            if code < lo {
+                return false;
+            }
+            if code <= hi {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
 
     let mut low: usize = 0;
     let mut high: usize = n;
@@ -2232,11 +2272,51 @@ pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
 /// Check if a code point is in a multi-byte range table stored as raw bytes.
 /// Used at compile time (regparse) where data is still in BBuf byte format.
 pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
-    if mb.len() < 4 {
+    #[inline]
+    fn read_u32(mb: &[u8], off: usize) -> u32 {
+        u32::from_ne_bytes([mb[off], mb[off + 1], mb[off + 2], mb[off + 3]])
+    }
+
+    if mb.len() < 12 {
         return false;
     }
-    let n = u32::from_ne_bytes([mb[0], mb[1], mb[2], mb[3]]) as usize;
-    if mb.len() < 4 + n * 8 {
+    let n = read_u32(mb, 0) as usize;
+    if n == 0 {
+        return false;
+    }
+    let pair_bytes = n.saturating_mul(8);
+    let needed = 4usize.saturating_add(pair_bytes);
+    if mb.len() < needed {
+        return false;
+    }
+
+    let first_low = read_u32(mb, 4);
+    if code < first_low {
+        return false;
+    }
+    let last_high = read_u32(mb, 4 + (n - 1) * 8 + 4);
+    if code > last_high {
+        return false;
+    }
+
+    if n == 1 {
+        return true;
+    }
+
+    if n <= 4 {
+        let mut i = 0usize;
+        while i < n {
+            let off = 4 + i * 8;
+            let range_low = read_u32(mb, off);
+            let range_high = read_u32(mb, off + 4);
+            if code < range_low {
+                return false;
+            }
+            if code <= range_high {
+                return true;
+            }
+            i += 1;
+        }
         return false;
     }
 
@@ -2245,7 +2325,7 @@ pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
     while low < high {
         let x = (low + high) >> 1;
         let off = 4 + x * 8;
-        let range_high = u32::from_ne_bytes([mb[off + 4], mb[off + 5], mb[off + 6], mb[off + 7]]);
+        let range_high = read_u32(mb, off + 4);
         if code > range_high {
             low = x + 1;
         } else {
@@ -2255,7 +2335,7 @@ pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
 
     if low < n {
         let off = 4 + low * 8;
-        let range_low = u32::from_ne_bytes([mb[off], mb[off + 1], mb[off + 2], mb[off + 3]]);
+        let range_low = read_u32(mb, off);
         code >= range_low
     } else {
         false
@@ -2908,16 +2988,26 @@ fn match_at(
                 if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
-                    let mb_len = enclen(enc, str_data, s);
-                    if right_range.saturating_sub(s) < mb_len {
-                        goto_fail = true;
-                    } else {
-                        let code = enc.mbc_to_code(&str_data[s..], end);
-                        if !is_in_code_range(mb, code) {
+                    let b = str_data[s];
+                    if b < 0x80 {
+                        if !is_in_code_range(mb, b as OnigCodePoint) {
                             goto_fail = true;
                         } else {
-                            s += mb_len;
+                            s += 1;
                             p += 1;
+                        }
+                    } else {
+                        let mb_len = enclen(enc, str_data, s);
+                        if right_range.saturating_sub(s) < mb_len {
+                            goto_fail = true;
+                        } else {
+                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            if !is_in_code_range(mb, code) {
+                                goto_fail = true;
+                            } else {
+                                s += mb_len;
+                                p += 1;
+                            }
                         }
                     }
                 } else {
@@ -2929,16 +3019,26 @@ fn match_at(
                 if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
-                    let mb_len = enclen(enc, str_data, s);
-                    if right_range.saturating_sub(s) < mb_len {
-                        goto_fail = true;
-                    } else {
-                        let code = enc.mbc_to_code(&str_data[s..], end);
-                        if is_in_code_range(mb, code) {
+                    let b = str_data[s];
+                    if b < 0x80 {
+                        if is_in_code_range(mb, b as OnigCodePoint) {
                             goto_fail = true;
                         } else {
-                            s += mb_len;
+                            s += 1;
                             p += 1;
+                        }
+                    } else {
+                        let mb_len = enclen(enc, str_data, s);
+                        if right_range.saturating_sub(s) < mb_len {
+                            goto_fail = true;
+                        } else {
+                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            if is_in_code_range(mb, code) {
+                                goto_fail = true;
+                            } else {
+                                s += mb_len;
+                                p += 1;
+                            }
                         }
                     }
                 } else {
@@ -2952,7 +3052,10 @@ fn match_at(
                 if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
-                    let in_class = if enc.mbc_enc_len(&str_data[s..]) > 1 {
+                    let b = str_data[s];
+                    let in_class = if b < 0x80 {
+                        bitset_at(bsp, b as usize)
+                    } else if enc.mbc_enc_len(&str_data[s..]) > 1 {
                         let code = enc.mbc_to_code(&str_data[s..], end);
                         if is_in_code_range(mb, code) {
                             true
@@ -3173,7 +3276,10 @@ fn match_at(
                 if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
                     let start = s;
                     while s < right_range {
-                        let in_class = if enc.mbc_enc_len(&str_data[s..]) > 1 {
+                        let b = str_data[s];
+                        let in_class = if b < 0x80 {
+                            bitset_at(bsp, b as usize)
+                        } else if enc.mbc_enc_len(&str_data[s..]) > 1 {
                             let code = enc.mbc_to_code(&str_data[s..], end);
                             if is_in_code_range(mb, code) {
                                 true
