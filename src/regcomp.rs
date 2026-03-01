@@ -953,7 +953,8 @@ fn is_cclass_infinite_greedy(qn: &QuantNode) -> bool {
     qn.greedy
         && is_infinite_repeat(qn.upper)
         && qn.lower <= 1
-        && qn.body
+        && qn
+            .body
             .as_ref()
             .map_or(false, |b| matches!(b.inner, NodeInner::CClass(_)))
 }
@@ -4210,7 +4211,10 @@ fn strip_redundant_casefold_alts_in_lookbehind(node: &mut Node, enc: OnigEncodin
         // Collapse: replace Alt(CClass, str1, str2, ...) with just the CClass node
         let old_inner = std::mem::replace(
             &mut body.inner,
-            NodeInner::String(StrNode { s: Vec::new(), flag: 0 }),
+            NodeInner::String(StrNode {
+                s: Vec::new(),
+                flag: 0,
+            }),
         );
         if let NodeInner::Alt(cons) = old_inner {
             **body = *cons.car;
@@ -8365,16 +8369,22 @@ mod tests {
             ONIG_OPTION_IGNORECASE,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             &OnigSyntaxOniguruma,
-        ).unwrap();
+        )
+        .unwrap();
         let reg_no_ic = onig_new(
             br"(?<![-\w])x",
             ONIG_OPTION_NONE,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             &OnigSyntaxOniguruma,
-        ).unwrap();
+        )
+        .unwrap();
         // With optimization, both should produce the same number of ops
-        assert_eq!(reg_ic.ops.len(), reg_no_ic.ops.len(),
+        assert_eq!(
+            reg_ic.ops.len(),
+            reg_no_ic.ops.len(),
             "(?i)(?<![-\\w])x should not bloat: got {} ops vs {} without (?i)",
-            reg_ic.ops.len(), reg_no_ic.ops.len());
+            reg_ic.ops.len(),
+            reg_no_ic.ops.len()
+        );
     }
 }

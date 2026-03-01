@@ -1567,7 +1567,11 @@ fn stack_pop(
                         Some(prev_char_head(reg.enc, pstr_start, pstr, str_data))
                     };
                     if let Some(prev_pos) = prev {
-                        let prev_abs = if peek_byte != 0 { pstr_start + prev_pos } else { prev_pos };
+                        let prev_abs = if peek_byte != 0 {
+                            pstr_start + prev_pos
+                        } else {
+                            prev_pos
+                        };
                         if prev_abs >= pstr_start {
                             stack.push(StackEntry::AltLazy {
                                 pcode,
@@ -1700,7 +1704,7 @@ fn stack_void_to_mark(stack: &mut Vec<StackEntry>, mark_id: usize) -> Option<usi
                 is_super: false,
                 ..
             } | StackEntry::AltLazy { .. }
-              | StackEntry::EmptyCheckStart { .. }
+                | StackEntry::EmptyCheckStart { .. }
         );
         if is_void_target {
             stack[i] = StackEntry::Void;
@@ -5895,6 +5899,165 @@ mod tests {
             Some(OnigRegion::new()),
             ONIG_OPTION_NONE,
         )
+    }
+
+    fn compile_regex(pattern: &[u8]) -> RegexType {
+        let (mut reg, mut env) = make_test_context();
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(
+            r,
+            0,
+            "compile failed for {:?}",
+            std::str::from_utf8(pattern)
+        );
+        reg
+    }
+
+    fn has_opcode(reg: &RegexType, opcode: OpCode) -> bool {
+        reg.ops.iter().any(|op| op.opcode == opcode)
+    }
+
+    fn opcode_names(reg: &RegexType) -> String {
+        reg.ops
+            .iter()
+            .map(|op| format!("{:?}", op.opcode))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn make_code_range_table(ranges: &[(u32, u32)]) -> Vec<u32> {
+        let mut out = Vec::with_capacity(1 + ranges.len() * 2);
+        out.push(ranges.len() as u32);
+        for (lo, hi) in ranges {
+            out.push(*lo);
+            out.push(*hi);
+        }
+        out
+    }
+
+    fn make_code_range_bytes(ranges: &[(u32, u32)]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(4 + ranges.len() * 8);
+        out.extend_from_slice(&(ranges.len() as u32).to_ne_bytes());
+        for (lo, hi) in ranges {
+            out.extend_from_slice(&lo.to_ne_bytes());
+            out.extend_from_slice(&hi.to_ne_bytes());
+        }
+        out
+    }
+
+    #[test]
+    fn is_in_code_range_fast_paths() {
+        assert!(!is_in_code_range(&[], 0x41));
+        assert!(!is_in_code_range(&[0], 0x41));
+
+        let single = make_code_range_table(&[(0x80, 0x10FFFF)]);
+        assert!(!is_in_code_range(&single, 0x7F));
+        assert!(is_in_code_range(&single, 0x80));
+        assert!(is_in_code_range(&single, 0x4E00));
+        assert!(!is_in_code_range(&single, 0x110000));
+
+        let small = make_code_range_table(&[(0x20, 0x2F), (0x40, 0x4F)]);
+        assert!(!is_in_code_range(&small, 0x10));
+        assert!(is_in_code_range(&small, 0x20));
+        assert!(!is_in_code_range(&small, 0x35));
+        assert!(is_in_code_range(&small, 0x45));
+
+        let many = make_code_range_table(&[
+            (0x0100, 0x010F),
+            (0x0200, 0x020F),
+            (0x0300, 0x030F),
+            (0x0400, 0x040F),
+            (0x0500, 0x050F),
+        ]);
+        assert!(!is_in_code_range(&many, 0x00FF));
+        assert!(is_in_code_range(&many, 0x0405));
+        assert!(!is_in_code_range(&many, 0x0600));
+    }
+
+    #[test]
+    fn is_in_code_range_bytes_fast_paths() {
+        assert!(!is_in_code_range_bytes(&[], 0x41));
+        assert!(!is_in_code_range_bytes(&[0, 0, 0, 0], 0x41));
+
+        let single = make_code_range_bytes(&[(0x80, 0x10FFFF)]);
+        assert!(!is_in_code_range_bytes(&single, 0x7F));
+        assert!(is_in_code_range_bytes(&single, 0x80));
+        assert!(is_in_code_range_bytes(&single, 0x4E00));
+        assert!(!is_in_code_range_bytes(&single, 0x110000));
+
+        let small = make_code_range_bytes(&[(0x20, 0x2F), (0x40, 0x4F)]);
+        assert!(!is_in_code_range_bytes(&small, 0x10));
+        assert!(is_in_code_range_bytes(&small, 0x20));
+        assert!(!is_in_code_range_bytes(&small, 0x35));
+        assert!(is_in_code_range_bytes(&small, 0x45));
+
+        let many = make_code_range_bytes(&[
+            (0x0100, 0x010F),
+            (0x0200, 0x020F),
+            (0x0300, 0x030F),
+            (0x0400, 0x040F),
+            (0x0500, 0x050F),
+        ]);
+        assert!(!is_in_code_range_bytes(&many, 0x00FF));
+        assert!(is_in_code_range_bytes(&many, 0x0405));
+        assert!(!is_in_code_range_bytes(&many, 0x0600));
+    }
+
+    #[test]
+    fn cclass_mb_ascii_fast_path_matches_and_misses() {
+        let reg = compile_regex("[ぁ-ん]".as_bytes());
+        assert!(
+            has_opcode(&reg, OpCode::CClassMb),
+            "expected CClassMb, got: {}",
+            opcode_names(&reg)
+        );
+
+        let (ascii_miss, _) = compile_and_match("[ぁ-ん]".as_bytes(), b"a");
+        assert_eq!(ascii_miss, ONIG_MISMATCH);
+
+        let (multibyte_hit, _) = compile_and_match("[ぁ-ん]".as_bytes(), "あ".as_bytes());
+        assert_eq!(multibyte_hit, "あ".len() as i32);
+    }
+
+    #[test]
+    fn cclass_mb_not_ascii_fast_path_matches_and_misses() {
+        let reg = compile_regex("[^ぁ-ん]".as_bytes());
+        assert!(
+            has_opcode(&reg, OpCode::CClassMbNot) || has_opcode(&reg, OpCode::CClassMixNot),
+            "expected CClassMbNot/CClassMixNot, got: {}",
+            opcode_names(&reg)
+        );
+
+        let (ascii_hit, _) = compile_and_match("[^ぁ-ん]".as_bytes(), b"a");
+        assert_eq!(ascii_hit, 1);
+
+        let (multibyte_miss, _) = compile_and_match("[^ぁ-ん]".as_bytes(), "あ".as_bytes());
+        assert_eq!(multibyte_miss, ONIG_MISMATCH);
+    }
+
+    #[test]
+    fn cclass_mix_and_star_fast_paths() {
+        let reg = compile_regex("[aぁ]".as_bytes());
+        assert!(
+            has_opcode(&reg, OpCode::CClassMix),
+            "expected CClassMix, got: {}",
+            opcode_names(&reg)
+        );
+
+        let (ascii_hit, _) = compile_and_match("[aぁ]".as_bytes(), b"a");
+        assert_eq!(ascii_hit, 1);
+        let (multibyte_hit, _) = compile_and_match("[aぁ]".as_bytes(), "ぁ".as_bytes());
+        assert_eq!(multibyte_hit, "ぁ".len() as i32);
+
+        let reg_star = compile_regex("[aぁ]*".as_bytes());
+        assert!(
+            has_opcode(&reg_star, OpCode::CClassMixStar),
+            "expected CClassMixStar, got: {}",
+            opcode_names(&reg_star)
+        );
+        let (star_hit, _) = compile_and_match("[aぁ]*".as_bytes(), "aaぁ".as_bytes());
+        assert_eq!(star_hit, "aaぁ".len() as i32);
     }
 
     // ---- Basic literal matching ----

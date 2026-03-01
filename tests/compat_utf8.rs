@@ -10503,6 +10503,18 @@ fn check_validity_scan_invalid() {
     assert_eq!(r, ONIGERR_INVALID_WIDE_CHAR_VALUE);
 }
 
+#[test]
+fn cclass_mb_truncated_utf8_input_mismatch() {
+    // Truncated UTF-8 lead byte exercises CClassMb multibyte-length guard.
+    n("[ぁ-ん]".as_bytes(), &[0xE3]);
+}
+
+#[test]
+fn cclass_mb_not_truncated_utf8_input_mismatch() {
+    // Truncated UTF-8 lead byte exercises CClassMbNot multibyte-length guard.
+    n("[^ぁ-ん]".as_bytes(), &[0xE3]);
+}
+
 // ============================================================================
 // Phase 3: Backward search optimization
 // ============================================================================

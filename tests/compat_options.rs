@@ -304,6 +304,12 @@ fn option_oia_mixed_case_ss() {
     x2(OIA, b"Ss", b"sS", 0, 2);
 }
 
+#[test]
+fn option_ignorecase_inline_lookbehind_cclass() {
+    // Smoke test for the ignorecase lookbehind CClass optimization path.
+    x2(ONIG_OPTION_NONE, b"(?i)(?<![-\\w])x", b" X", 1, 2);
+}
+
 // ============================================================================
 // NOTBOL / NOTEOL
 // ============================================================================
