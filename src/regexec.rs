@@ -2826,7 +2826,7 @@ fn match_at(
             // OP_STR1..STR5 - match 1-5 literal bytes
             // ================================================================
             OpCode::Str1 => {
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
                     if exact[0] != str_data[s] {
@@ -2958,7 +2958,7 @@ fn match_at(
             // OP_CCLASS / OP_CCLASS_NOT - character class matching
             // ================================================================
             OpCode::CClass => {
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
                     let b = str_data[s];
@@ -2978,7 +2978,7 @@ fn match_at(
             }
 
             OpCode::CClassNot => {
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
                     let b = str_data[s];
