@@ -7,7 +7,7 @@
 mod scanner_css_workload;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use scanner_css_workload::{CSS_INPUT, CSS_PATTERNS};
+use scanner_css_workload::{CSS_INPUT, CSS_PATTERNS, CSS_TM_LINES, CSS_TM_PATTERNS};
 use std::os::raw::c_uint;
 
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
@@ -1116,6 +1116,201 @@ fn bench_scanner(c: &mut Criterion) {
             });
         }
 
+        // tm-grammar-like CSS line workload (issue #10 reproduction shape)
+        {
+            let tm_patterns = valid_css_tm_patterns();
+            let tm_pattern_count = tm_patterns.len();
+            let tm_patterns_bytes = valid_css_patterns_bytes(&tm_patterns);
+            let tm_patterns_byte_refs: Vec<&[u8]> =
+                tm_patterns_bytes.iter().map(|v| v.as_slice()).collect();
+
+            let tm_lines: Vec<&str> = CSS_TM_LINES.to_vec();
+            let tm_line_bytes: Vec<&[u8]> = tm_lines.iter().map(|s| s.as_bytes()).collect();
+            let tm_onig_lines: Vec<OnigString> =
+                tm_lines.iter().map(|s| OnigString::new(s)).collect();
+            let tm_line_lens_utf16: Vec<usize> =
+                tm_lines.iter().map(|s| s.encode_utf16().count()).collect();
+            let tm_line_lens_bytes: Vec<usize> = tm_lines.iter().map(|s| s.len()).collect();
+            let tm_line_ids_u64: Vec<u64> = (1..=(tm_lines.len() as u64)).collect();
+            let tm_line_ids_i32: Vec<i32> = (1..=(tm_lines.len() as i32)).collect();
+
+            // compile
+            {
+                let label = format!("css_tm_compile_{tm_pattern_count}_patterns_rust");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let scanner = Scanner::new(black_box(&tm_patterns)).unwrap();
+                        black_box(scanner);
+                    });
+                });
+            }
+            {
+                let label = format!("css_tm_compile_{tm_pattern_count}_patterns_c");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let scanner = ffi::CScanner::new(black_box(&tm_patterns_byte_refs))
+                            .expect("C scanner failed");
+                        black_box(scanner);
+                    });
+                });
+            }
+
+            // first match from line start
+            {
+                let mut scanner = Scanner::new(&tm_patterns).unwrap();
+                let c_scanner =
+                    ffi::CScanner::new(&tm_patterns_byte_refs).expect("C scanner create failed");
+
+                let rust_m = scanner.find_next_match(tm_lines[0], 0, ScannerFindOptions::NONE);
+                let c_m = c_scanner.find_next_match(tm_line_bytes[0], 0, 0);
+                debug_assert_eq!(
+                    rust_m.map(|m| m.index as usize),
+                    c_m.map(|m| m.0),
+                    "Rust/C disagree on first CSS tm match pattern index"
+                );
+
+                let label = format!("css_tm_{tm_pattern_count}_patterns_short_rust");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let m = scanner.find_next_match_utf16(
+                            black_box(&tm_onig_lines[0]),
+                            0,
+                            ScannerFindOptions::NONE,
+                        );
+                        black_box(m);
+                    });
+                });
+
+                let label = format!("css_tm_{tm_pattern_count}_patterns_short_c");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let m = c_scanner.find_next_match(black_box(tm_line_bytes[0]), 0, 0);
+                        black_box(m);
+                    });
+                });
+            }
+
+            // tokenize line-by-line without cache ids (mirrors string-call path)
+            {
+                let mut scanner = Scanner::new(&tm_patterns).unwrap();
+                let c_scanner =
+                    ffi::CScanner::new(&tm_patterns_byte_refs).expect("C scanner create failed");
+
+                let label = format!("css_tm_{tm_pattern_count}_patterns_lines_tokenize_no_id_rust");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let mut count = 0u32;
+                        for i in 0..tm_onig_lines.len() {
+                            let line = &tm_onig_lines[i];
+                            let line_len = tm_line_lens_utf16[i];
+                            let mut pos = 0usize;
+                            while pos < line_len {
+                                match scanner.find_next_match_utf16(
+                                    black_box(line),
+                                    pos,
+                                    ScannerFindOptions::NONE,
+                                ) {
+                                    Some(m) => {
+                                        let end = m.capture_indices[0].end as usize;
+                                        pos = if end > pos { end } else { pos + 1 };
+                                        count += 1;
+                                    }
+                                    None => break,
+                                }
+                            }
+                        }
+                        black_box(count);
+                    });
+                });
+
+                let label = format!("css_tm_{tm_pattern_count}_patterns_lines_tokenize_no_id_c");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let mut count = 0u32;
+                        for i in 0..tm_line_bytes.len() {
+                            let line = tm_line_bytes[i];
+                            let line_len = tm_line_lens_bytes[i];
+                            let mut pos = 0usize;
+                            while pos < line_len {
+                                if let Some((_idx, captures)) =
+                                    c_scanner.find_next_match(black_box(line), 0, pos)
+                                {
+                                    let end = captures[0].1 as usize;
+                                    pos = if end > pos { end } else { pos + 1 };
+                                    count += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        black_box(count);
+                    });
+                });
+            }
+
+            // tokenize line-by-line with stable line ids (mirrors OnigString path)
+            {
+                let mut scanner = Scanner::new(&tm_patterns).unwrap();
+                let c_scanner =
+                    ffi::CScanner::new(&tm_patterns_byte_refs).expect("C scanner create failed");
+
+                let label =
+                    format!("css_tm_{tm_pattern_count}_patterns_lines_tokenize_with_id_rust");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let mut count = 0u32;
+                        for i in 0..tm_onig_lines.len() {
+                            let line = &tm_onig_lines[i];
+                            let line_len = tm_line_lens_utf16[i];
+                            let line_id = tm_line_ids_u64[i];
+                            let mut pos = 0usize;
+                            while pos < line_len {
+                                match scanner.find_next_match_utf16_with_id(
+                                    black_box(line),
+                                    line_id,
+                                    pos,
+                                    ScannerFindOptions::NONE,
+                                ) {
+                                    Some(m) => {
+                                        let end = m.capture_indices[0].end as usize;
+                                        pos = if end > pos { end } else { pos + 1 };
+                                        count += 1;
+                                    }
+                                    None => break,
+                                }
+                            }
+                        }
+                        black_box(count);
+                    });
+                });
+
+                let label = format!("css_tm_{tm_pattern_count}_patterns_lines_tokenize_with_id_c");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let mut count = 0u32;
+                        for i in 0..tm_line_bytes.len() {
+                            let line = tm_line_bytes[i];
+                            let line_len = tm_line_lens_bytes[i];
+                            let line_id = tm_line_ids_i32[i];
+                            let mut pos = 0usize;
+                            while pos < line_len {
+                                if let Some((_idx, captures)) =
+                                    c_scanner.find_next_match(black_box(line), line_id, pos)
+                                {
+                                    let end = captures[0].1 as usize;
+                                    pos = if end > pos { end } else { pos + 1 };
+                                    count += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        black_box(count);
+                    });
+                });
+            }
+        }
+
         // isolate Unicode word-class heavy tokenization path
         {
             let word_patterns = [r"\w+", r"\s+", r"[^\w\s]+"];
@@ -1401,6 +1596,14 @@ fn bench_scanner_textmate(c: &mut Criterion) {
 
 fn valid_css_patterns() -> Vec<&'static str> {
     CSS_PATTERNS
+        .iter()
+        .copied()
+        .filter(|p| Scanner::new(&[*p]).is_ok())
+        .collect()
+}
+
+fn valid_css_tm_patterns() -> Vec<&'static str> {
+    CSS_TM_PATTERNS
         .iter()
         .copied()
         .filter(|p| Scanner::new(&[*p]).is_ok())

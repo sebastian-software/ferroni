@@ -6,7 +6,7 @@
 mod scanner_css_workload;
 
 use criterion_codspeed::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use scanner_css_workload::{CSS_INPUT, CSS_PATTERNS};
+use scanner_css_workload::{CSS_INPUT, CSS_PATTERNS, CSS_TM_LINES, CSS_TM_PATTERNS};
 
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
 use ferroni::oniguruma::{OnigOptionType, OnigRegion, ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE};
@@ -753,6 +753,115 @@ fn bench_scanner(c: &mut Criterion) {
                     black_box(count);
                 });
             });
+        }
+
+        // tm-grammar-like CSS line workload (issue #10 reproduction shape)
+        {
+            let tm_patterns: Vec<&str> = CSS_TM_PATTERNS
+                .iter()
+                .copied()
+                .filter(|p| Scanner::new(&[*p]).is_ok())
+                .collect();
+            let tm_pattern_count = tm_patterns.len();
+            let tm_lines: Vec<&str> = CSS_TM_LINES.to_vec();
+            let tm_onig_lines: Vec<OnigString> =
+                tm_lines.iter().map(|line| OnigString::new(line)).collect();
+            let tm_line_lens_utf16: Vec<usize> = tm_lines
+                .iter()
+                .map(|line| line.encode_utf16().count())
+                .collect();
+            let tm_line_ids: Vec<u64> = (1..=(tm_onig_lines.len() as u64)).collect();
+
+            // compile
+            {
+                let label = format!("css_tm_compile_{tm_pattern_count}_patterns");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let scanner = Scanner::new(black_box(&tm_patterns)).unwrap();
+                        black_box(scanner);
+                    });
+                });
+            }
+
+            // first match from line start
+            {
+                let mut scanner = Scanner::new(&tm_patterns).unwrap();
+                let label = format!("css_tm_{tm_pattern_count}_patterns_short");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let m = scanner.find_next_match_utf16(
+                            black_box(&tm_onig_lines[0]),
+                            0,
+                            ScannerFindOptions::NONE,
+                        );
+                        black_box(m);
+                    });
+                });
+            }
+
+            // tokenize line-by-line without cache ids (string-call path)
+            {
+                let mut scanner = Scanner::new(&tm_patterns).unwrap();
+                let label = format!("css_tm_{tm_pattern_count}_patterns_lines_tokenize_no_id");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let mut count = 0u32;
+                        for i in 0..tm_onig_lines.len() {
+                            let line = &tm_onig_lines[i];
+                            let line_len = tm_line_lens_utf16[i];
+                            let mut pos = 0usize;
+                            while pos < line_len {
+                                match scanner.find_next_match_utf16(
+                                    black_box(line),
+                                    pos,
+                                    ScannerFindOptions::NONE,
+                                ) {
+                                    Some(m) => {
+                                        let end = m.capture_indices[0].end as usize;
+                                        pos = if end > pos { end } else { pos + 1 };
+                                        count += 1;
+                                    }
+                                    None => break,
+                                }
+                            }
+                        }
+                        black_box(count);
+                    });
+                });
+            }
+
+            // tokenize line-by-line with stable line ids (OnigString path)
+            {
+                let mut scanner = Scanner::new(&tm_patterns).unwrap();
+                let label = format!("css_tm_{tm_pattern_count}_patterns_lines_tokenize_with_id");
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let mut count = 0u32;
+                        for i in 0..tm_onig_lines.len() {
+                            let line = &tm_onig_lines[i];
+                            let line_len = tm_line_lens_utf16[i];
+                            let line_id = tm_line_ids[i];
+                            let mut pos = 0usize;
+                            while pos < line_len {
+                                match scanner.find_next_match_utf16_with_id(
+                                    black_box(line),
+                                    line_id,
+                                    pos,
+                                    ScannerFindOptions::NONE,
+                                ) {
+                                    Some(m) => {
+                                        let end = m.capture_indices[0].end as usize;
+                                        pos = if end > pos { end } else { pos + 1 };
+                                        count += 1;
+                                    }
+                                    None => break,
+                                }
+                            }
+                        }
+                        black_box(count);
+                    });
+                });
+            }
         }
     }
 
