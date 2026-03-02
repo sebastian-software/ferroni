@@ -2,7 +2,7 @@
 // Multi-regex search for syntax highlighters and text editors.
 
 use crate::oniguruma::*;
-use crate::regenc::OnigEncoding;
+use crate::regenc::{onigenc_is_ascii_compatible_encoding, OnigEncoding};
 use crate::regexec::{
     onig_match, onig_match_with_msa_start, onig_search, onig_search_with_param, MatchArg,
     OnigMatchParam,
@@ -65,6 +65,9 @@ pub struct OnigRegSet {
 #[inline]
 fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
     if s >= str_data.len() {
+        return 1;
+    }
+    if str_data[s] < 0x80 && onigenc_is_ascii_compatible_encoding(enc) {
         return 1;
     }
     enc.mbc_enc_len(&str_data[s..])

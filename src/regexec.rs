@@ -2210,6 +2210,10 @@ fn prev_char_head(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) ->
     if s <= start {
         return s;
     }
+    // Fast path for ASCII in ASCII-compatible encodings (UTF-8, etc.).
+    if str_data[s - 1] < 0x80 && onigenc_is_ascii_compatible_encoding(enc) {
+        return s - 1;
+    }
     enc.left_adjust_char_head(start, s - 1, str_data)
 }
 
@@ -2416,10 +2420,13 @@ pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
 #[inline]
 fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
     if s >= str_data.len() {
-        1
-    } else {
-        enc.mbc_enc_len(&str_data[s..])
+        return 1;
     }
+    // Hot path: ASCII byte in ASCII-compatible encoding is always length 1.
+    if str_data[s] < 0x80 && onigenc_is_ascii_compatible_encoding(enc) {
+        return 1;
+    }
+    enc.mbc_enc_len(&str_data[s..])
 }
 
 /// Case-insensitive string comparison using encoding-aware case folding.
@@ -3530,21 +3537,76 @@ fn match_at(
             // ================================================================
             OpCode::WordStar => {
                 let start = s;
-                while s < right_range {
-                    if !is_word_char_at(enc, str_data, s, end) {
-                        break;
+                if enc_is_singlebyte(enc) {
+                    while s < right_range {
+                        if !is_word_char_at(enc, str_data, s, end) {
+                            break;
+                        }
+                        s += 1;
                     }
-                    s += enclen(enc, str_data, s);
-                }
-                if s > start {
-                    let prev = prev_char_head(enc, start, s, str_data);
-                    stack.push(StackEntry::AltLazy {
-                        pcode: p + 1,
-                        pstr: prev,
-                        pstr_start: start,
-                        ascii: false,
-                        peek_byte: 0,
-                    });
+                    if s > start {
+                        stack.push(StackEntry::AltLazy {
+                            pcode: p + 1,
+                            pstr: s - 1,
+                            pstr_start: start,
+                            ascii: true,
+                            peek_byte: 0,
+                        });
+                    }
+                } else if onigenc_is_ascii_compatible_encoding(enc) {
+                    let mut ascii_only = true;
+                    while s < right_range {
+                        let b = str_data[s];
+                        if b < 0x80 {
+                            if !is_word_ascii(b) {
+                                break;
+                            }
+                            s += 1;
+                        } else {
+                            if !is_word_char_at(enc, str_data, s, end) {
+                                break;
+                            }
+                            ascii_only = false;
+                            s += enclen(enc, str_data, s);
+                        }
+                    }
+                    if s > start {
+                        if ascii_only {
+                            stack.push(StackEntry::AltLazy {
+                                pcode: p + 1,
+                                pstr: s - 1,
+                                pstr_start: start,
+                                ascii: true,
+                                peek_byte: 0,
+                            });
+                        } else {
+                            let prev = prev_char_head(enc, start, s, str_data);
+                            stack.push(StackEntry::AltLazy {
+                                pcode: p + 1,
+                                pstr: prev,
+                                pstr_start: start,
+                                ascii: false,
+                                peek_byte: 0,
+                            });
+                        }
+                    }
+                } else {
+                    while s < right_range {
+                        if !is_word_char_at(enc, str_data, s, end) {
+                            break;
+                        }
+                        s += enclen(enc, str_data, s);
+                    }
+                    if s > start {
+                        let prev = prev_char_head(enc, start, s, str_data);
+                        stack.push(StackEntry::AltLazy {
+                            pcode: p + 1,
+                            pstr: prev,
+                            pstr_start: start,
+                            ascii: false,
+                            peek_byte: 0,
+                        });
+                    }
                 }
                 p += 1;
             }
