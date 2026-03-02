@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.4](https://github.com/sebastian-software/ferroni/compare/v1.2.3...v1.2.4) (2026-03-02)
+
+
+### Bug Fixes
+
+* **scanner:** avoid caching misses from truncated search ranges ([a440ddf](https://github.com/sebastian-software/ferroni/commit/a440ddfe9bd7d689ce4aa6c1e4923a2fa6eaf848))
+
+
+### Performance Improvements
+
+* **cclass:** add ascii fast paths for case-insensitive classes ([6c0cc0e](https://github.com/sebastian-software/ferroni/commit/6c0cc0ed7edb78dd3e16ada50e785bfd7e897502))
+* **scanner:** improve CSS hot path matching ([2409817](https://github.com/sebastian-software/ferroni/commit/2409817560bc20c8b3ae7ff4ee88cedd08cc9ab0))
+* **scanner:** reduce CSS warm-path overhead in matcher ([403e567](https://github.com/sebastian-software/ferroni/commit/403e567ea527bac559f2bc4ee9f6b3bc43b962c7))
+
 ## [1.2.3](https://github.com/sebastian-software/ferroni/compare/v1.2.2...v1.2.3) (2026-02-28)
 
 
