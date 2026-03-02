@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.6](https://github.com/sebastian-software/ferroni/compare/v1.2.5...v1.2.6) (2026-03-02)
+
+
+### Performance Improvements
+
+* **css:** add ascii vm fastpaths and log rejected ideas ([63f79eb](https://github.com/sebastian-software/ferroni/commit/63f79ebfd27707c0d76341a9c5fee55027120d93))
+* **css:** speed up scanner tm css path and anchor semantics ([52ba6d9](https://github.com/sebastian-software/ferroni/commit/52ba6d916dc5106b2b2ae46262771349220d1964))
+
 ## [1.2.5](https://github.com/sebastian-software/ferroni/compare/v1.2.4...v1.2.5) (2026-03-02)
 
 
