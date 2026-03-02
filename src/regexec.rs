@@ -2960,17 +2960,42 @@ fn match_at(
             OpCode::CClass => {
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
-                    let b = str_data[s];
-                    if !bitset_at(bsp, b as usize) {
-                        goto_fail = true;
-                    } else {
-                        s += if b < 0x80 {
-                            1
-                        } else {
-                            enclen(enc, str_data, s)
-                        };
-                        p += 1;
+                } else if let OperationPayload::CClass {
+                    ref bsp,
+                    ascii_fast,
+                } = reg.ops[p].payload
+                {
+                    match ascii_fast {
+                        CClassAsciiFastKind::Eq(c) => {
+                            if str_data[s] != c {
+                                goto_fail = true;
+                            } else {
+                                s += 1;
+                                p += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::EqFoldLower(lower) => {
+                            let b = str_data[s];
+                            if b >= 0x80 || (b | 0x20) != lower {
+                                goto_fail = true;
+                            } else {
+                                s += 1;
+                                p += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::None => {
+                            let b = str_data[s];
+                            if !bitset_at(bsp, b as usize) {
+                                goto_fail = true;
+                            } else {
+                                s += if b < 0x80 {
+                                    1
+                                } else {
+                                    enclen(enc, str_data, s)
+                                };
+                                p += 1;
+                            }
+                        }
                     }
                 } else {
                     goto_fail = true;
@@ -2980,17 +3005,51 @@ fn match_at(
             OpCode::CClassNot => {
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
-                    let b = str_data[s];
-                    if bitset_at(bsp, b as usize) {
-                        goto_fail = true;
-                    } else {
-                        s += if b < 0x80 {
-                            1
-                        } else {
-                            enclen(enc, str_data, s)
-                        };
-                        p += 1;
+                } else if let OperationPayload::CClass {
+                    ref bsp,
+                    ascii_fast,
+                } = reg.ops[p].payload
+                {
+                    match ascii_fast {
+                        CClassAsciiFastKind::Eq(c) => {
+                            let b = str_data[s];
+                            if b == c {
+                                goto_fail = true;
+                            } else {
+                                s += if b < 0x80 {
+                                    1
+                                } else {
+                                    enclen(enc, str_data, s)
+                                };
+                                p += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::EqFoldLower(lower) => {
+                            let b = str_data[s];
+                            if b < 0x80 && (b | 0x20) == lower {
+                                goto_fail = true;
+                            } else {
+                                s += if b < 0x80 {
+                                    1
+                                } else {
+                                    enclen(enc, str_data, s)
+                                };
+                                p += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::None => {
+                            let b = str_data[s];
+                            if bitset_at(bsp, b as usize) {
+                                goto_fail = true;
+                            } else {
+                                s += if b < 0x80 {
+                                    1
+                                } else {
+                                    enclen(enc, str_data, s)
+                                };
+                                p += 1;
+                            }
+                        }
                     }
                 } else {
                     goto_fail = true;
@@ -3267,14 +3326,39 @@ fn match_at(
             // CClass star opcodes - greedy [class]* / [class]+ optimization
             // ================================================================
             OpCode::CClassStar => {
-                if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
+                if let OperationPayload::CClass {
+                    ref bsp,
+                    ascii_fast,
+                } = reg.ops[p].payload
+                {
                     let start = s;
-                    while s < right_range {
-                        let c = str_data[s];
-                        if (c as usize) >= SINGLE_BYTE_SIZE || !bitset_at(bsp, c as usize) {
-                            break;
+                    match ascii_fast {
+                        CClassAsciiFastKind::Eq(c) => {
+                            while s < right_range {
+                                if str_data[s] != c {
+                                    break;
+                                }
+                                s += 1;
+                            }
                         }
-                        s += 1;
+                        CClassAsciiFastKind::EqFoldLower(lower) => {
+                            while s < right_range {
+                                let c = str_data[s];
+                                if c >= 0x80 || (c | 0x20) != lower {
+                                    break;
+                                }
+                                s += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::None => {
+                            while s < right_range {
+                                let c = str_data[s];
+                                if (c as usize) >= SINGLE_BYTE_SIZE || !bitset_at(bsp, c as usize) {
+                                    break;
+                                }
+                                s += 1;
+                            }
+                        }
                     }
                     if s > start {
                         stack.push(StackEntry::AltLazy {
@@ -6082,6 +6166,66 @@ mod tests {
         );
         let (star_hit, _) = compile_and_match("[aぁ]*".as_bytes(), "aaぁ".as_bytes());
         assert_eq!(star_hit, "aaぁ".len() as i32);
+    }
+
+    #[test]
+    fn cclass_ascii_fast_kind_for_fold_pair() {
+        let reg = compile_regex("[xX]".as_bytes());
+        let cclass_op = reg
+            .ops
+            .iter()
+            .find(|op| op.opcode == OpCode::CClass)
+            .expect("expected CClass opcode");
+        if let OperationPayload::CClass { ascii_fast, .. } = cclass_op.payload {
+            assert_eq!(ascii_fast, CClassAsciiFastKind::EqFoldLower(b'x'));
+        } else {
+            panic!("expected CClass payload");
+        }
+
+        let (lower_hit, _) = compile_and_match("[xX]".as_bytes(), b"x");
+        assert_eq!(lower_hit, 1);
+        let (upper_hit, _) = compile_and_match("[xX]".as_bytes(), b"X");
+        assert_eq!(upper_hit, 1);
+        let (miss, _) = compile_and_match("[xX]".as_bytes(), b"y");
+        assert_eq!(miss, ONIG_MISMATCH);
+    }
+
+    #[test]
+    fn cclass_not_ascii_fast_kind_for_fold_pair() {
+        let reg = compile_regex("[^xX]".as_bytes());
+        let cclass_not_op = reg
+            .ops
+            .iter()
+            .find(|op| op.opcode == OpCode::CClassNot)
+            .expect("expected CClassNot opcode");
+        if let OperationPayload::CClass { ascii_fast, .. } = cclass_not_op.payload {
+            assert_eq!(ascii_fast, CClassAsciiFastKind::EqFoldLower(b'x'));
+        } else {
+            panic!("expected CClass payload");
+        }
+
+        let (miss, _) = compile_and_match("[^xX]".as_bytes(), b"X");
+        assert_eq!(miss, ONIG_MISMATCH);
+        let (hit, _) = compile_and_match("[^xX]".as_bytes(), b"y");
+        assert_eq!(hit, 1);
+    }
+
+    #[test]
+    fn cclass_star_ascii_fast_kind_for_fold_pair() {
+        let reg = compile_regex("[xX]*".as_bytes());
+        let cclass_star_op = reg
+            .ops
+            .iter()
+            .find(|op| op.opcode == OpCode::CClassStar)
+            .expect("expected CClassStar opcode");
+        if let OperationPayload::CClass { ascii_fast, .. } = cclass_star_op.payload {
+            assert_eq!(ascii_fast, CClassAsciiFastKind::EqFoldLower(b'x'));
+        } else {
+            panic!("expected CClass payload");
+        }
+
+        let (star_hit, _) = compile_and_match("[xX]*".as_bytes(), b"XxXy");
+        assert_eq!(star_hit, 3);
     }
 
     // ---- Basic literal matching ----

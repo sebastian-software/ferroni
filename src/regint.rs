@@ -373,6 +373,13 @@ pub struct Operation {
     pub payload: OperationPayload,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CClassAsciiFastKind {
+    None,
+    Eq(u8),
+    EqFoldLower(u8),
+}
+
 pub enum OperationPayload {
     None,
     Exact {
@@ -389,6 +396,7 @@ pub enum OperationPayload {
     },
     CClass {
         bsp: Box<BitSet>,
+        ascii_fast: CClassAsciiFastKind,
     },
     CClassMb {
         mb: Vec<u32>,

@@ -642,8 +642,6 @@ fn compile_length_string_node(node: &Node, reg: &RegexType) -> i32 {
     let mut pos = 0usize;
     let slen = sn.s.len();
 
-    let ambig = node.has_status(ND_ST_IGNORECASE);
-
     while pos < slen {
         let first_len = enc.mbc_enc_len(&sn.s[pos..]);
         let mut run = 1;
@@ -685,7 +683,6 @@ fn compile_string_node(node: &Node, reg: &mut RegexType) -> i32 {
         return 0;
     }
 
-    let ambig = node.has_status(ND_ST_IGNORECASE);
     let mut pos = 0usize;
     let slen = sn.s.len();
 
@@ -754,6 +751,38 @@ fn bbuf_to_u32_vec(data: &[u8]) -> Vec<u32> {
         .collect()
 }
 
+fn detect_cclass_ascii_fast(bs: &BitSet) -> CClassAsciiFastKind {
+    let mut first: Option<u8> = None;
+    let mut second: Option<u8> = None;
+
+    for i in 0..SINGLE_BYTE_SIZE {
+        if bitset_at(bs, i) {
+            let b = i as u8;
+            if first.is_none() {
+                first = Some(b);
+            } else if second.is_none() {
+                second = Some(b);
+            } else {
+                return CClassAsciiFastKind::None;
+            }
+        }
+    }
+
+    match (first, second) {
+        (Some(a), None) if a < 0x80 => CClassAsciiFastKind::Eq(a),
+        (Some(a), Some(b))
+            if a < 0x80
+                && b < 0x80
+                && a.is_ascii_alphabetic()
+                && b.is_ascii_alphabetic()
+                && (a ^ b) == 0x20 =>
+        {
+            CClassAsciiFastKind::EqFoldLower(a | 0x20)
+        }
+        _ => CClassAsciiFastKind::None,
+    }
+}
+
 /// Compile a character class node to bytecode.
 fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
     let has_mb = cc.mbuf.is_some();
@@ -799,11 +828,13 @@ fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
         } else {
             OpCode::CClass
         };
+        let ascii_fast = detect_cclass_ascii_fast(&cc.bs);
         add_op(
             reg,
             opcode,
             OperationPayload::CClass {
                 bsp: Box::new(cc.bs),
+                ascii_fast,
             },
         );
     }
@@ -1034,11 +1065,13 @@ fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
             OperationPayload::CClassMb { mb: mb_data },
         );
     } else {
+        let ascii_fast = detect_cclass_ascii_fast(&cc.bs);
         add_op(
             reg,
             OpCode::CClassStar,
             OperationPayload::CClass {
                 bsp: Box::new(cc.bs),
+                ascii_fast,
             },
         );
     }
@@ -7792,6 +7825,7 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
             reg.sub_anchor |= opt.anc.right & ANCR_END_LINE;
         }
     }
+
     0
 }
 
