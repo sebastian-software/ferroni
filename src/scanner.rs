@@ -261,10 +261,6 @@ impl CacheEntry {
     }
 }
 
-/// Threshold for switching between RegSet and per-regex search.
-/// Matches vscode-oniguruma's `MAX_REGSET_MATCH_INPUT_LEN`.
-const MAX_REGSET_MATCH_INPUT_LEN: usize = 1000;
-
 /// Multi-pattern scanner compatible with vscode-oniguruma's `OnigScanner`.
 ///
 /// # Example
@@ -332,8 +328,9 @@ impl Scanner {
 
     /// Find the next match starting at `start_position` (byte offset).
     ///
-    /// For short strings (<1000 bytes), uses the RegSet fast path.
-    /// For longer strings, uses per-regex search (no caching without a string ID).
+    /// One-off searches (without a stable string ID) use the RegSet path.
+    /// Use `find_next_match_with_id` to enable per-regex cache reuse when
+    /// repeatedly advancing through the same string.
     pub fn find_next_match(
         &mut self,
         text: &str,
@@ -415,10 +412,10 @@ impl Scanner {
 
         let onig_opts = options.to_onig_options();
 
-        // Use the regset position-lead path (with first-byte dispatch + SIMD skip)
-        // whenever: (a) input is short, or (b) caching is not being used.
-        // The per-regex path is only faster when cache hits avoid redundant searches.
-        if end < MAX_REGSET_MATCH_INPUT_LEN || !use_cache {
+        // Keep regset path for one-off searches (no cache key).
+        // When a cache key is provided, prefer per-regex search so repeated
+        // advancing searches on the same string can skip redundant work.
+        if !use_cache {
             self.search_regset(str_data, end, start_position, onig_opts)
         } else {
             self.search_per_regex(
@@ -433,7 +430,7 @@ impl Scanner {
         }
     }
 
-    /// RegSet fast path for short strings.
+    /// RegSet path for one-off searches (`use_cache = false`).
     fn search_regset(
         &mut self,
         str_data: &[u8],
@@ -460,7 +457,7 @@ impl Scanner {
         Some(build_scanner_match(regex_idx, region))
     }
 
-    /// Per-regex search with caching for long strings.
+    /// Per-regex search with optional cache reuse.
     ///
     /// Regions are reused from cache entries to avoid per-call allocation.
     /// A single MatchArg is reused across all regex iterations to avoid
@@ -531,12 +528,12 @@ impl Scanner {
 
             // Put region back in cache (no clone needed)
             let cache = &mut caches[i];
-            cache.last_str_id = str_id;
-            cache.last_position = start;
-            cache.last_options = options_raw;
             cache.last_region = returned_region;
 
             if r >= 0 {
+                cache.last_str_id = str_id;
+                cache.last_position = start;
+                cache.last_options = options_raw;
                 cache.last_matched = true;
                 cache.last_result = r;
 
@@ -550,8 +547,21 @@ impl Scanner {
                     }
                 }
             } else {
-                cache.last_matched = false;
-                cache.last_result = r;
+                // If search was truncated to [start, ep), a miss does not imply
+                // "no match at all" for later start positions, so don't cache it.
+                if ep == end {
+                    cache.last_str_id = str_id;
+                    cache.last_position = start;
+                    cache.last_options = options_raw;
+                    cache.last_matched = false;
+                    cache.last_result = r;
+                } else {
+                    cache.last_str_id = 0;
+                    cache.last_position = 0;
+                    cache.last_options = u32::MAX;
+                    cache.last_matched = false;
+                    cache.last_result = ONIG_MISMATCH;
+                }
             }
         }
 
@@ -617,6 +627,35 @@ fn convert_match_to_utf16(string: &OnigString, m: ScannerMatch) -> ScannerMatch 
 mod tests {
     use super::*;
     use smallvec::smallvec;
+
+    #[test]
+    fn cache_miss_with_truncated_range_is_not_reused() {
+        let mut scanner = Scanner::new(&[";", "}"]).unwrap();
+        let s = "a;b}";
+
+        assert_eq!(
+            scanner.find_next_match_with_id(s, 1, 0, ScannerFindOptions::NONE),
+            Some(ScannerMatch {
+                index: 0,
+                capture_indices: smallvec![CaptureIndex {
+                    start: 1,
+                    end: 2,
+                    length: 1
+                }],
+            })
+        );
+        assert_eq!(
+            scanner.find_next_match_with_id(s, 1, 2, ScannerFindOptions::NONE),
+            Some(ScannerMatch {
+                index: 1,
+                capture_indices: smallvec![CaptureIndex {
+                    start: 3,
+                    end: 4,
+                    length: 1
+                }],
+            })
+        );
+    }
 
     // =========================================================================
     // Tests ported from vscode-oniguruma (src/test/index.test.ts)

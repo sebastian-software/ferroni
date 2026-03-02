@@ -1567,7 +1567,11 @@ fn stack_pop(
                         Some(prev_char_head(reg.enc, pstr_start, pstr, str_data))
                     };
                     if let Some(prev_pos) = prev {
-                        let prev_abs = if peek_byte != 0 { pstr_start + prev_pos } else { prev_pos };
+                        let prev_abs = if peek_byte != 0 {
+                            pstr_start + prev_pos
+                        } else {
+                            prev_pos
+                        };
                         if prev_abs >= pstr_start {
                             stack.push(StackEntry::AltLazy {
                                 pcode,
@@ -1700,7 +1704,7 @@ fn stack_void_to_mark(stack: &mut Vec<StackEntry>, mark_id: usize) -> Option<usi
                 is_super: false,
                 ..
             } | StackEntry::AltLazy { .. }
-              | StackEntry::EmptyCheckStart { .. }
+                | StackEntry::EmptyCheckStart { .. }
         );
         if is_void_target {
             stack[i] = StackEntry::Void;
@@ -2209,11 +2213,51 @@ fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: M
 /// Binary search, matching C's onig_is_in_code_range exactly.
 #[inline]
 pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
-    if data.is_empty() {
+    if data.len() < 3 {
         return false;
     }
     let n = data[0] as usize;
-    let ranges = &data[1..];
+    if n == 0 {
+        return false;
+    }
+    let pair_len = n.saturating_mul(2);
+    let needed = 1usize.saturating_add(pair_len);
+    if data.len() < needed {
+        return false;
+    }
+    let ranges = &data[1..needed];
+
+    let first_low = ranges[0];
+    if code < first_low {
+        return false;
+    }
+    let last_high = ranges[pair_len - 1];
+    if code > last_high {
+        return false;
+    }
+
+    // Common fast path for classes like [^\x00-\x7F] encoded as a single
+    // multi-byte range [0x80..MAX].
+    if n == 1 {
+        return true;
+    }
+
+    // Small range tables are faster with a straight scan than binary search.
+    if n <= 4 {
+        let mut i = 0usize;
+        while i < n {
+            let lo = ranges[i * 2];
+            let hi = ranges[i * 2 + 1];
+            if code < lo {
+                return false;
+            }
+            if code <= hi {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
 
     let mut low: usize = 0;
     let mut high: usize = n;
@@ -2232,11 +2276,51 @@ pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
 /// Check if a code point is in a multi-byte range table stored as raw bytes.
 /// Used at compile time (regparse) where data is still in BBuf byte format.
 pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
-    if mb.len() < 4 {
+    #[inline]
+    fn read_u32(mb: &[u8], off: usize) -> u32 {
+        u32::from_ne_bytes([mb[off], mb[off + 1], mb[off + 2], mb[off + 3]])
+    }
+
+    if mb.len() < 12 {
         return false;
     }
-    let n = u32::from_ne_bytes([mb[0], mb[1], mb[2], mb[3]]) as usize;
-    if mb.len() < 4 + n * 8 {
+    let n = read_u32(mb, 0) as usize;
+    if n == 0 {
+        return false;
+    }
+    let pair_bytes = n.saturating_mul(8);
+    let needed = 4usize.saturating_add(pair_bytes);
+    if mb.len() < needed {
+        return false;
+    }
+
+    let first_low = read_u32(mb, 4);
+    if code < first_low {
+        return false;
+    }
+    let last_high = read_u32(mb, 4 + (n - 1) * 8 + 4);
+    if code > last_high {
+        return false;
+    }
+
+    if n == 1 {
+        return true;
+    }
+
+    if n <= 4 {
+        let mut i = 0usize;
+        while i < n {
+            let off = 4 + i * 8;
+            let range_low = read_u32(mb, off);
+            let range_high = read_u32(mb, off + 4);
+            if code < range_low {
+                return false;
+            }
+            if code <= range_high {
+                return true;
+            }
+            i += 1;
+        }
         return false;
     }
 
@@ -2245,7 +2329,7 @@ pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
     while low < high {
         let x = (low + high) >> 1;
         let off = 4 + x * 8;
-        let range_high = u32::from_ne_bytes([mb[off + 4], mb[off + 5], mb[off + 6], mb[off + 7]]);
+        let range_high = read_u32(mb, off + 4);
         if code > range_high {
             low = x + 1;
         } else {
@@ -2255,7 +2339,7 @@ pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
 
     if low < n {
         let off = 4 + low * 8;
-        let range_low = u32::from_ne_bytes([mb[off], mb[off + 1], mb[off + 2], mb[off + 3]]);
+        let range_low = read_u32(mb, off);
         code >= range_low
     } else {
         false
@@ -2742,7 +2826,7 @@ fn match_at(
             // OP_STR1..STR5 - match 1-5 literal bytes
             // ================================================================
             OpCode::Str1 => {
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
                     if exact[0] != str_data[s] {
@@ -2874,14 +2958,44 @@ fn match_at(
             // OP_CCLASS / OP_CCLASS_NOT - character class matching
             // ================================================================
             OpCode::CClass => {
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
-                    if !bitset_at(bsp, str_data[s] as usize) {
-                        goto_fail = true;
-                    } else {
-                        s += enclen(enc, str_data, s);
-                        p += 1;
+                } else if let OperationPayload::CClass {
+                    ref bsp,
+                    ascii_fast,
+                } = reg.ops[p].payload
+                {
+                    match ascii_fast {
+                        CClassAsciiFastKind::Eq(c) => {
+                            if str_data[s] != c {
+                                goto_fail = true;
+                            } else {
+                                s += 1;
+                                p += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::EqFoldLower(lower) => {
+                            let b = str_data[s];
+                            if b >= 0x80 || (b | 0x20) != lower {
+                                goto_fail = true;
+                            } else {
+                                s += 1;
+                                p += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::None => {
+                            let b = str_data[s];
+                            if !bitset_at(bsp, b as usize) {
+                                goto_fail = true;
+                            } else {
+                                s += if b < 0x80 {
+                                    1
+                                } else {
+                                    enclen(enc, str_data, s)
+                                };
+                                p += 1;
+                            }
+                        }
                     }
                 } else {
                     goto_fail = true;
@@ -2889,14 +3003,53 @@ fn match_at(
             }
 
             OpCode::CClassNot => {
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
-                    if bitset_at(bsp, str_data[s] as usize) {
-                        goto_fail = true;
-                    } else {
-                        s += enclen(enc, str_data, s);
-                        p += 1;
+                } else if let OperationPayload::CClass {
+                    ref bsp,
+                    ascii_fast,
+                } = reg.ops[p].payload
+                {
+                    match ascii_fast {
+                        CClassAsciiFastKind::Eq(c) => {
+                            let b = str_data[s];
+                            if b == c {
+                                goto_fail = true;
+                            } else {
+                                s += if b < 0x80 {
+                                    1
+                                } else {
+                                    enclen(enc, str_data, s)
+                                };
+                                p += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::EqFoldLower(lower) => {
+                            let b = str_data[s];
+                            if b < 0x80 && (b | 0x20) == lower {
+                                goto_fail = true;
+                            } else {
+                                s += if b < 0x80 {
+                                    1
+                                } else {
+                                    enclen(enc, str_data, s)
+                                };
+                                p += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::None => {
+                            let b = str_data[s];
+                            if bitset_at(bsp, b as usize) {
+                                goto_fail = true;
+                            } else {
+                                s += if b < 0x80 {
+                                    1
+                                } else {
+                                    enclen(enc, str_data, s)
+                                };
+                                p += 1;
+                            }
+                        }
                     }
                 } else {
                     goto_fail = true;
@@ -2908,16 +3061,26 @@ fn match_at(
                 if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
-                    let mb_len = enclen(enc, str_data, s);
-                    if right_range.saturating_sub(s) < mb_len {
-                        goto_fail = true;
-                    } else {
-                        let code = enc.mbc_to_code(&str_data[s..], end);
-                        if !is_in_code_range(mb, code) {
+                    let b = str_data[s];
+                    if b < 0x80 {
+                        if !is_in_code_range(mb, b as OnigCodePoint) {
                             goto_fail = true;
                         } else {
-                            s += mb_len;
+                            s += 1;
                             p += 1;
+                        }
+                    } else {
+                        let mb_len = enclen(enc, str_data, s);
+                        if right_range.saturating_sub(s) < mb_len {
+                            goto_fail = true;
+                        } else {
+                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            if !is_in_code_range(mb, code) {
+                                goto_fail = true;
+                            } else {
+                                s += mb_len;
+                                p += 1;
+                            }
                         }
                     }
                 } else {
@@ -2929,16 +3092,26 @@ fn match_at(
                 if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
-                    let mb_len = enclen(enc, str_data, s);
-                    if right_range.saturating_sub(s) < mb_len {
-                        goto_fail = true;
-                    } else {
-                        let code = enc.mbc_to_code(&str_data[s..], end);
-                        if is_in_code_range(mb, code) {
+                    let b = str_data[s];
+                    if b < 0x80 {
+                        if is_in_code_range(mb, b as OnigCodePoint) {
                             goto_fail = true;
                         } else {
-                            s += mb_len;
+                            s += 1;
                             p += 1;
+                        }
+                    } else {
+                        let mb_len = enclen(enc, str_data, s);
+                        if right_range.saturating_sub(s) < mb_len {
+                            goto_fail = true;
+                        } else {
+                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            if is_in_code_range(mb, code) {
+                                goto_fail = true;
+                            } else {
+                                s += mb_len;
+                                p += 1;
+                            }
                         }
                     }
                 } else {
@@ -2952,27 +3125,35 @@ fn match_at(
                 if s >= right_range {
                     goto_fail = true;
                 } else if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
-                    let in_class = if enc.mbc_enc_len(&str_data[s..]) > 1 {
-                        let code = enc.mbc_to_code(&str_data[s..], end);
-                        if is_in_code_range(mb, code) {
-                            true
-                        } else if (code as usize) < SINGLE_BYTE_SIZE {
-                            bitset_at(bsp, code as usize)
-                        } else {
-                            false
-                        }
+                    let b = str_data[s];
+                    let (in_class, char_len) = if b < 0x80 {
+                        (bitset_at(bsp, b as usize), 1usize)
                     } else {
-                        let c = str_data[s];
-                        if (c as usize) < SINGLE_BYTE_SIZE {
-                            bitset_at(bsp, c as usize)
+                        let len = enclen(enc, str_data, s);
+                        if len > 1 {
+                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            (
+                                if is_in_code_range(mb, code) {
+                                    true
+                                } else if (code as usize) < SINGLE_BYTE_SIZE {
+                                    bitset_at(bsp, code as usize)
+                                } else {
+                                    false
+                                },
+                                len,
+                            )
                         } else {
-                            false
+                            let c = str_data[s];
+                            (
+                                (c as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, c as usize),
+                                len,
+                            )
                         }
                     };
                     if in_class == not {
                         goto_fail = true;
                     } else {
-                        s += enclen(enc, str_data, s);
+                        s += char_len;
                         p += 1;
                     }
                 } else {
@@ -3145,14 +3326,39 @@ fn match_at(
             // CClass star opcodes - greedy [class]* / [class]+ optimization
             // ================================================================
             OpCode::CClassStar => {
-                if let OperationPayload::CClass { ref bsp } = reg.ops[p].payload {
+                if let OperationPayload::CClass {
+                    ref bsp,
+                    ascii_fast,
+                } = reg.ops[p].payload
+                {
                     let start = s;
-                    while s < right_range {
-                        let c = str_data[s];
-                        if (c as usize) >= SINGLE_BYTE_SIZE || !bitset_at(bsp, c as usize) {
-                            break;
+                    match ascii_fast {
+                        CClassAsciiFastKind::Eq(c) => {
+                            while s < right_range {
+                                if str_data[s] != c {
+                                    break;
+                                }
+                                s += 1;
+                            }
                         }
-                        s += 1;
+                        CClassAsciiFastKind::EqFoldLower(lower) => {
+                            while s < right_range {
+                                let c = str_data[s];
+                                if c >= 0x80 || (c | 0x20) != lower {
+                                    break;
+                                }
+                                s += 1;
+                            }
+                        }
+                        CClassAsciiFastKind::None => {
+                            while s < right_range {
+                                let c = str_data[s];
+                                if (c as usize) >= SINGLE_BYTE_SIZE || !bitset_at(bsp, c as usize) {
+                                    break;
+                                }
+                                s += 1;
+                            }
+                        }
                     }
                     if s > start {
                         stack.push(StackEntry::AltLazy {
@@ -3173,23 +3379,35 @@ fn match_at(
                 if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
                     let start = s;
                     while s < right_range {
-                        let in_class = if enc.mbc_enc_len(&str_data[s..]) > 1 {
-                            let code = enc.mbc_to_code(&str_data[s..], end);
-                            if is_in_code_range(mb, code) {
-                                true
-                            } else if (code as usize) < SINGLE_BYTE_SIZE {
-                                bitset_at(bsp, code as usize)
-                            } else {
-                                false
-                            }
+                        let b = str_data[s];
+                        let (in_class, char_len) = if b < 0x80 {
+                            (bitset_at(bsp, b as usize), 1usize)
                         } else {
-                            let c = str_data[s];
-                            (c as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, c as usize)
+                            let len = enclen(enc, str_data, s);
+                            if len > 1 {
+                                let code = enc.mbc_to_code(&str_data[s..], end);
+                                (
+                                    if is_in_code_range(mb, code) {
+                                        true
+                                    } else if (code as usize) < SINGLE_BYTE_SIZE {
+                                        bitset_at(bsp, code as usize)
+                                    } else {
+                                        false
+                                    },
+                                    len,
+                                )
+                            } else {
+                                let c = str_data[s];
+                                (
+                                    (c as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, c as usize),
+                                    len,
+                                )
+                            }
                         };
                         if !in_class {
                             break;
                         }
-                        s += enclen(enc, str_data, s);
+                        s += char_len;
                     }
                     if s > start {
                         let prev = prev_char_head(enc, start, s, str_data);
@@ -5789,6 +6007,225 @@ mod tests {
             Some(OnigRegion::new()),
             ONIG_OPTION_NONE,
         )
+    }
+
+    fn compile_regex(pattern: &[u8]) -> RegexType {
+        let (mut reg, mut env) = make_test_context();
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(
+            r,
+            0,
+            "compile failed for {:?}",
+            std::str::from_utf8(pattern)
+        );
+        reg
+    }
+
+    fn has_opcode(reg: &RegexType, opcode: OpCode) -> bool {
+        reg.ops.iter().any(|op| op.opcode == opcode)
+    }
+
+    fn opcode_names(reg: &RegexType) -> String {
+        reg.ops
+            .iter()
+            .map(|op| format!("{:?}", op.opcode))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn make_code_range_table(ranges: &[(u32, u32)]) -> Vec<u32> {
+        let mut out = Vec::with_capacity(1 + ranges.len() * 2);
+        out.push(ranges.len() as u32);
+        for (lo, hi) in ranges {
+            out.push(*lo);
+            out.push(*hi);
+        }
+        out
+    }
+
+    fn make_code_range_bytes(ranges: &[(u32, u32)]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(4 + ranges.len() * 8);
+        out.extend_from_slice(&(ranges.len() as u32).to_ne_bytes());
+        for (lo, hi) in ranges {
+            out.extend_from_slice(&lo.to_ne_bytes());
+            out.extend_from_slice(&hi.to_ne_bytes());
+        }
+        out
+    }
+
+    #[test]
+    fn is_in_code_range_fast_paths() {
+        assert!(!is_in_code_range(&[], 0x41));
+        assert!(!is_in_code_range(&[0], 0x41));
+
+        let single = make_code_range_table(&[(0x80, 0x10FFFF)]);
+        assert!(!is_in_code_range(&single, 0x7F));
+        assert!(is_in_code_range(&single, 0x80));
+        assert!(is_in_code_range(&single, 0x4E00));
+        assert!(!is_in_code_range(&single, 0x110000));
+
+        let small = make_code_range_table(&[(0x20, 0x2F), (0x40, 0x4F)]);
+        assert!(!is_in_code_range(&small, 0x10));
+        assert!(is_in_code_range(&small, 0x20));
+        assert!(!is_in_code_range(&small, 0x35));
+        assert!(is_in_code_range(&small, 0x45));
+
+        let many = make_code_range_table(&[
+            (0x0100, 0x010F),
+            (0x0200, 0x020F),
+            (0x0300, 0x030F),
+            (0x0400, 0x040F),
+            (0x0500, 0x050F),
+        ]);
+        assert!(!is_in_code_range(&many, 0x00FF));
+        assert!(is_in_code_range(&many, 0x0405));
+        assert!(!is_in_code_range(&many, 0x0600));
+    }
+
+    #[test]
+    fn is_in_code_range_bytes_fast_paths() {
+        assert!(!is_in_code_range_bytes(&[], 0x41));
+        assert!(!is_in_code_range_bytes(&[0, 0, 0, 0], 0x41));
+
+        let single = make_code_range_bytes(&[(0x80, 0x10FFFF)]);
+        assert!(!is_in_code_range_bytes(&single, 0x7F));
+        assert!(is_in_code_range_bytes(&single, 0x80));
+        assert!(is_in_code_range_bytes(&single, 0x4E00));
+        assert!(!is_in_code_range_bytes(&single, 0x110000));
+
+        let small = make_code_range_bytes(&[(0x20, 0x2F), (0x40, 0x4F)]);
+        assert!(!is_in_code_range_bytes(&small, 0x10));
+        assert!(is_in_code_range_bytes(&small, 0x20));
+        assert!(!is_in_code_range_bytes(&small, 0x35));
+        assert!(is_in_code_range_bytes(&small, 0x45));
+
+        let many = make_code_range_bytes(&[
+            (0x0100, 0x010F),
+            (0x0200, 0x020F),
+            (0x0300, 0x030F),
+            (0x0400, 0x040F),
+            (0x0500, 0x050F),
+        ]);
+        assert!(!is_in_code_range_bytes(&many, 0x00FF));
+        assert!(is_in_code_range_bytes(&many, 0x0405));
+        assert!(!is_in_code_range_bytes(&many, 0x0600));
+    }
+
+    #[test]
+    fn cclass_mb_ascii_fast_path_matches_and_misses() {
+        let reg = compile_regex("[ぁ-ん]".as_bytes());
+        assert!(
+            has_opcode(&reg, OpCode::CClassMb),
+            "expected CClassMb, got: {}",
+            opcode_names(&reg)
+        );
+
+        let (ascii_miss, _) = compile_and_match("[ぁ-ん]".as_bytes(), b"a");
+        assert_eq!(ascii_miss, ONIG_MISMATCH);
+
+        let (multibyte_hit, _) = compile_and_match("[ぁ-ん]".as_bytes(), "あ".as_bytes());
+        assert_eq!(multibyte_hit, "あ".len() as i32);
+    }
+
+    #[test]
+    fn cclass_mb_not_ascii_fast_path_matches_and_misses() {
+        let reg = compile_regex("[^ぁ-ん]".as_bytes());
+        assert!(
+            has_opcode(&reg, OpCode::CClassMbNot) || has_opcode(&reg, OpCode::CClassMixNot),
+            "expected CClassMbNot/CClassMixNot, got: {}",
+            opcode_names(&reg)
+        );
+
+        let (ascii_hit, _) = compile_and_match("[^ぁ-ん]".as_bytes(), b"a");
+        assert_eq!(ascii_hit, 1);
+
+        let (multibyte_miss, _) = compile_and_match("[^ぁ-ん]".as_bytes(), "あ".as_bytes());
+        assert_eq!(multibyte_miss, ONIG_MISMATCH);
+    }
+
+    #[test]
+    fn cclass_mix_and_star_fast_paths() {
+        let reg = compile_regex("[aぁ]".as_bytes());
+        assert!(
+            has_opcode(&reg, OpCode::CClassMix),
+            "expected CClassMix, got: {}",
+            opcode_names(&reg)
+        );
+
+        let (ascii_hit, _) = compile_and_match("[aぁ]".as_bytes(), b"a");
+        assert_eq!(ascii_hit, 1);
+        let (multibyte_hit, _) = compile_and_match("[aぁ]".as_bytes(), "ぁ".as_bytes());
+        assert_eq!(multibyte_hit, "ぁ".len() as i32);
+
+        let reg_star = compile_regex("[aぁ]*".as_bytes());
+        assert!(
+            has_opcode(&reg_star, OpCode::CClassMixStar),
+            "expected CClassMixStar, got: {}",
+            opcode_names(&reg_star)
+        );
+        let (star_hit, _) = compile_and_match("[aぁ]*".as_bytes(), "aaぁ".as_bytes());
+        assert_eq!(star_hit, "aaぁ".len() as i32);
+    }
+
+    #[test]
+    fn cclass_ascii_fast_kind_for_fold_pair() {
+        let reg = compile_regex("[xX]".as_bytes());
+        let cclass_op = reg
+            .ops
+            .iter()
+            .find(|op| op.opcode == OpCode::CClass)
+            .expect("expected CClass opcode");
+        if let OperationPayload::CClass { ascii_fast, .. } = cclass_op.payload {
+            assert_eq!(ascii_fast, CClassAsciiFastKind::EqFoldLower(b'x'));
+        } else {
+            panic!("expected CClass payload");
+        }
+
+        let (lower_hit, _) = compile_and_match("[xX]".as_bytes(), b"x");
+        assert_eq!(lower_hit, 1);
+        let (upper_hit, _) = compile_and_match("[xX]".as_bytes(), b"X");
+        assert_eq!(upper_hit, 1);
+        let (miss, _) = compile_and_match("[xX]".as_bytes(), b"y");
+        assert_eq!(miss, ONIG_MISMATCH);
+    }
+
+    #[test]
+    fn cclass_not_ascii_fast_kind_for_fold_pair() {
+        let reg = compile_regex("[^xX]".as_bytes());
+        let cclass_not_op = reg
+            .ops
+            .iter()
+            .find(|op| op.opcode == OpCode::CClassNot)
+            .expect("expected CClassNot opcode");
+        if let OperationPayload::CClass { ascii_fast, .. } = cclass_not_op.payload {
+            assert_eq!(ascii_fast, CClassAsciiFastKind::EqFoldLower(b'x'));
+        } else {
+            panic!("expected CClass payload");
+        }
+
+        let (miss, _) = compile_and_match("[^xX]".as_bytes(), b"X");
+        assert_eq!(miss, ONIG_MISMATCH);
+        let (hit, _) = compile_and_match("[^xX]".as_bytes(), b"y");
+        assert_eq!(hit, 1);
+    }
+
+    #[test]
+    fn cclass_star_ascii_fast_kind_for_fold_pair() {
+        let reg = compile_regex("[xX]*".as_bytes());
+        let cclass_star_op = reg
+            .ops
+            .iter()
+            .find(|op| op.opcode == OpCode::CClassStar)
+            .expect("expected CClassStar opcode");
+        if let OperationPayload::CClass { ascii_fast, .. } = cclass_star_op.payload {
+            assert_eq!(ascii_fast, CClassAsciiFastKind::EqFoldLower(b'x'));
+        } else {
+            panic!("expected CClass payload");
+        }
+
+        let (star_hit, _) = compile_and_match("[xX]*".as_bytes(), b"XxXy");
+        assert_eq!(star_hit, 3);
     }
 
     // ---- Basic literal matching ----

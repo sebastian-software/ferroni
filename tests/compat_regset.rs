@@ -10,6 +10,7 @@ use ferroni::regset::{
     onig_regset_get_region, onig_regset_new, onig_regset_search, OnigRegSet, OnigRegSetLead,
 };
 use ferroni::regsyntax::OnigSyntaxOniguruma;
+use ferroni::scanner::{Scanner, ScannerFindOptions};
 
 fn compile(pattern: &[u8]) -> Box<RegexType> {
     let reg = onig_new(
@@ -274,4 +275,33 @@ fn reg_lead_p7_digits() {
         6,
         9,
     );
+}
+
+#[test]
+fn scanner_cache_id_small_input_progression() {
+    let mut scanner = Scanner::new(&[";", "}"]).expect("scanner");
+    let input = "a;b}";
+
+    let m1 = scanner
+        .find_next_match_with_id(input, 1, 0, ScannerFindOptions::NONE)
+        .expect("first match");
+    assert_eq!(m1.index, 0);
+    assert_eq!(m1.capture_indices[0].start, 1);
+    assert_eq!(m1.capture_indices[0].end, 2);
+
+    let m2 = scanner
+        .find_next_match_with_id(input, 1, 2, ScannerFindOptions::NONE)
+        .expect("second match");
+    assert_eq!(m2.index, 1);
+    assert_eq!(m2.capture_indices[0].start, 3);
+    assert_eq!(m2.capture_indices[0].end, 4);
+}
+
+#[test]
+fn scanner_cache_id_small_input_no_match() {
+    let mut scanner = Scanner::new(&[";", "}"]).expect("scanner");
+    let input = "abc";
+
+    let m = scanner.find_next_match_with_id(input, 7, 0, ScannerFindOptions::NONE);
+    assert!(m.is_none());
 }
