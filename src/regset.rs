@@ -55,6 +55,8 @@ pub struct OnigRegSet {
     first_byte_candidates: Box<[Vec<u16>; 256]>,
     /// SIMD-accelerated skip needle derived from the dispatch table.
     skip_needle: SkipNeedle,
+    /// Reused MatchArg scratch space for position-lead searches.
+    scratch_msa: Option<MatchArg>,
 }
 
 #[inline]
@@ -128,6 +130,7 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         anychar_inf: false,
         first_byte_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
         skip_needle: SkipNeedle::None,
+        scratch_msa: None,
     });
 
     for reg in regs {
@@ -319,13 +322,18 @@ fn regset_search_body_position_lead(
     let enc = set.enc;
     let mut s = start;
 
-    // Reuse a single MatchArg across all patterns (avoids per-pattern allocation)
-    let first_reg = &*set.entries[0].reg;
-    let mut msa = MatchArg::new(first_reg, option, None, start);
+    // Reuse a single MatchArg across patterns and across regset calls.
+    let mut msa = if let Some(msa) = set.scratch_msa.take() {
+        msa
+    } else {
+        let first_reg = &*set.entries[0].reg;
+        MatchArg::new(first_reg, option, None, start)
+    };
 
     let prev_is_newline_check = set.anychar_inf;
+    let mut result: (i32, i32) = (ONIG_MISMATCH, 0);
 
-    loop {
+    'search: loop {
         if s >= range {
             break;
         }
@@ -360,7 +368,6 @@ fn regset_search_body_position_lead(
 
         for &i in &set.first_byte_candidates[str_data[s] as usize] {
             let i = i as usize;
-
             // ANCR_ANYCHAR_INF optimization: skip if previous char is not newline
             if (set.entries[i].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
                 continue;
@@ -379,17 +386,20 @@ fn regset_search_body_position_lead(
             set.entries[i].region = msa.region.take();
 
             if r >= 0 {
-                return (i as i32, s as i32);
+                result = (i as i32, s as i32);
+                break 'search;
             }
             if r != ONIG_MISMATCH {
-                return (r, 0);
+                result = (r, 0);
+                break 'search;
             }
         }
 
         s += enclen(enc, str_data, s);
     }
 
-    (ONIG_MISMATCH, 0)
+    set.scratch_msa = Some(msa);
+    result
 }
 
 /// Regex-lead search: iterate regexes, find earliest match.
@@ -439,13 +449,7 @@ fn regset_search_body_regex_lead(
     (match_index, match_pos)
 }
 
-/// Search the set of regexes against a string.
-///
-/// Returns (regex_index, match_position) where:
-/// - regex_index >= 0: index of the matching regex
-/// - regex_index == ONIG_MISMATCH (-1): no match
-/// - regex_index < -1: error code
-pub fn onig_regset_search(
+fn onig_regset_search_impl(
     set: &mut OnigRegSet,
     str_data: &[u8],
     end: usize,
@@ -453,6 +457,7 @@ pub fn onig_regset_search(
     range: usize,
     lead: OnigRegSetLead,
     option: OnigOptionType,
+    eager_region_reset: bool,
 ) -> (i32, i32) {
     let n = set.entries.len();
     if n == 0 {
@@ -468,11 +473,13 @@ pub fn onig_regset_search(
         return (ONIGERR_INVALID_ARGUMENT, 0);
     }
 
-    // Resize and clear all regions
-    for entry in &mut set.entries {
-        if let Some(ref mut region) = entry.region {
-            region.resize(entry.reg.num_mem + 1);
-            region.clear();
+    if eager_region_reset {
+        // Preserve classic regset behavior: all regions are reset on each call.
+        for entry in &mut set.entries {
+            if let Some(ref mut region) = entry.region {
+                region.resize(entry.reg.num_mem + 1);
+                region.clear();
+            }
         }
     }
 
@@ -558,13 +565,15 @@ pub fn onig_regset_search(
         regset_search_body_regex_lead(set, str_data, end, cur_start, orig_range, lead, option)
     };
 
-    // Clear regions for non-matching regexes with FIND_NOT_EMPTY
-    if result >= 0 {
-        for i in 0..n {
-            if opton_find_not_empty(set.entries[i].reg.options) {
-                if let Some(ref mut region) = set.entries[i].region {
-                    if (i as i32) != result {
-                        region.clear();
+    if eager_region_reset {
+        // Clear regions for non-matching regexes with FIND_NOT_EMPTY.
+        if result >= 0 {
+            for i in 0..n {
+                if opton_find_not_empty(set.entries[i].reg.options) {
+                    if let Some(ref mut region) = set.entries[i].region {
+                        if (i as i32) != result {
+                            region.clear();
+                        }
                     }
                 }
             }
@@ -572,6 +581,41 @@ pub fn onig_regset_search(
     }
 
     (result, match_pos)
+}
+
+/// Search the set of regexes against a string.
+///
+/// Returns (regex_index, match_position) where:
+/// - regex_index >= 0: index of the matching regex
+/// - regex_index == ONIG_MISMATCH (-1): no match
+/// - regex_index < -1: error code
+pub fn onig_regset_search(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    lead: OnigRegSetLead,
+    option: OnigOptionType,
+) -> (i32, i32) {
+    onig_regset_search_impl(set, str_data, end, start, range, lead, option, true)
+}
+
+/// Fast regset search for high-frequency callers (e.g. scanner tokenization).
+///
+/// Semantics of match index/position are identical to `onig_regset_search`.
+/// Only the matched regex's region is guaranteed to be up-to-date; non-matching
+/// regex regions may remain from previous calls.
+pub fn onig_regset_search_fast(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    lead: OnigRegSetLead,
+    option: OnigOptionType,
+) -> (i32, i32) {
+    onig_regset_search_impl(set, str_data, end, start, range, lead, option, false)
 }
 
 /// Search the set with per-regex match parameters.

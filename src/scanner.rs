@@ -14,7 +14,7 @@ use crate::oniguruma::*;
 use crate::regcomp::onig_new;
 use crate::regexec::{onig_search_with_msa, MatchArg};
 use crate::regset::{
-    onig_regset_get_regex, onig_regset_new, onig_regset_number_of_regex, onig_regset_search,
+    onig_regset_get_regex, onig_regset_new, onig_regset_number_of_regex, onig_regset_search_fast,
     OnigRegSet, OnigRegSetLead,
 };
 use crate::regsyntax::*;
@@ -159,6 +159,7 @@ impl Default for ScannerConfig {
 /// ```
 pub struct OnigString {
     content: String,
+    is_ascii: bool,
     /// Maps UTF-16 code unit index → UTF-8 byte offset. Length = utf16_len + 1.
     utf16_to_utf8: Vec<usize>,
     /// Maps UTF-8 byte offset → UTF-16 code unit index. Length = utf8_len + 1.
@@ -170,6 +171,7 @@ impl OnigString {
     pub fn new(content: &str) -> Self {
         let utf8_len = content.len();
         let utf16_len: usize = content.chars().map(|c| c.len_utf16()).sum();
+        let is_ascii = content.is_ascii();
 
         let mut utf16_to_utf8 = Vec::with_capacity(utf16_len + 1);
         let mut utf8_to_utf16 = vec![0usize; utf8_len + 1];
@@ -202,6 +204,7 @@ impl OnigString {
 
         OnigString {
             content: content.to_string(),
+            is_ascii,
             utf16_to_utf8,
             utf8_to_utf16,
         }
@@ -212,6 +215,11 @@ impl OnigString {
         &self.content
     }
 
+    #[inline]
+    fn is_ascii(&self) -> bool {
+        self.is_ascii
+    }
+
     /// Length of the string in UTF-16 code units.
     pub fn utf16_len(&self) -> usize {
         self.utf16_to_utf8.len() - 1
@@ -219,7 +227,9 @@ impl OnigString {
 
     /// Convert a UTF-16 code unit offset to a UTF-8 byte offset.
     fn utf16_offset_to_utf8(&self, utf16_offset: usize) -> usize {
-        if utf16_offset >= self.utf16_to_utf8.len() {
+        if self.is_ascii {
+            utf16_offset.min(self.content.len())
+        } else if utf16_offset >= self.utf16_to_utf8.len() {
             self.content.len()
         } else {
             self.utf16_to_utf8[utf16_offset]
@@ -228,8 +238,10 @@ impl OnigString {
 
     /// Convert a UTF-8 byte offset to a UTF-16 code unit offset.
     fn utf8_offset_to_utf16(&self, utf8_offset: usize) -> usize {
-        if utf8_offset >= self.utf8_to_utf16.len() {
-            self.utf16_len()
+        if self.is_ascii {
+            utf8_offset.min(self.content.len())
+        } else if utf8_offset >= self.utf8_to_utf16.len() {
+            self.utf16_to_utf8.len() - 1
         } else {
             self.utf8_to_utf16[utf8_offset]
         }
@@ -261,6 +273,76 @@ impl CacheEntry {
     }
 }
 
+/// Lightweight scanner counters for profiling and routing diagnostics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScannerStats {
+    /// Number of calls routed through RegSet.
+    pub route_regset_calls: u64,
+    /// Number of calls routed through per-regex search.
+    pub route_per_regex_calls: u64,
+    /// Number of cache-mode calls routed through RegSet.
+    pub route_cache_regset_calls: u64,
+    /// Number of cache-mode calls routed through per-regex search.
+    pub route_cache_per_regex_calls: u64,
+    /// Number of per-regex probes while routing was set to RegSet.
+    pub route_cache_probe_calls: u64,
+    /// Number of route switches from per-regex to RegSet.
+    pub route_switch_to_regset: u64,
+    /// Number of route switches from RegSet to per-regex.
+    pub route_switch_to_per_regex: u64,
+    /// Number of cache eligibility checks in per-regex search.
+    pub cache_checks: u64,
+    /// Number of per-regex cache hits.
+    pub cache_hits: u64,
+    /// Number of per-regex cache misses.
+    pub cache_misses: u64,
+    /// Number of VM searches executed in per-regex path.
+    pub vm_search_calls: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CacheRoute {
+    RegSet,
+    PerRegex,
+}
+
+impl Default for CacheRoute {
+    fn default() -> Self {
+        Self::RegSet
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CacheRouteState {
+    str_id: u64,
+    options: u32,
+    route: CacheRoute,
+    calls_since_probe: u32,
+    last_start: usize,
+    same_start_streak: u16,
+    poor_per_regex_streak: u8,
+    good_per_regex_streak: u8,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PerRegexCallStats {
+    cache_checks: u32,
+    cache_hits: u32,
+    vm_calls: u32,
+}
+
+impl PerRegexCallStats {
+    #[inline]
+    fn cache_misses(self) -> u32 {
+        self.cache_checks.saturating_sub(self.cache_hits)
+    }
+}
+
+const ROUTE_PROBE_EVERY: u32 = 8;
+const ROUTE_MIN_SAME_START_FOR_PROBE: u16 = 8;
+const ROUTE_POOR_STREAK_TO_REGSET: u8 = 3;
+const ROUTE_GOOD_STREAK_TO_PER_REGEX: u8 = 2;
+
 /// Multi-pattern scanner compatible with vscode-oniguruma's `OnigScanner`.
 ///
 /// # Example
@@ -277,6 +359,8 @@ impl CacheEntry {
 pub struct Scanner {
     caches: Vec<CacheEntry>,
     regset: Box<OnigRegSet>,
+    stats: ScannerStats,
+    cache_route: CacheRouteState,
 }
 
 impl Scanner {
@@ -323,7 +407,19 @@ impl Scanner {
         Ok(Scanner {
             caches,
             regset: regset.unwrap(),
+            stats: ScannerStats::default(),
+            cache_route: CacheRouteState::default(),
         })
+    }
+
+    /// Get current scanner counters.
+    pub fn stats(&self) -> ScannerStats {
+        self.stats
+    }
+
+    /// Reset scanner counters.
+    pub fn reset_stats(&mut self) {
+        self.stats = ScannerStats::default();
     }
 
     /// Find the next match starting at `start_position` (byte offset).
@@ -377,6 +473,10 @@ impl Scanner {
         start_position: usize,
         options: ScannerFindOptions,
     ) -> Option<ScannerMatch> {
+        if string.is_ascii() {
+            let start = start_position.min(string.content().len());
+            return self.find_next_match_inner(string.content(), 0, start, options, false);
+        }
         let utf8_start = string.utf16_offset_to_utf8(start_position);
         let m = self.find_next_match_inner(string.content(), 0, utf8_start, options, false)?;
         Some(convert_match_to_utf16(string, m))
@@ -390,6 +490,10 @@ impl Scanner {
         start_position: usize,
         options: ScannerFindOptions,
     ) -> Option<ScannerMatch> {
+        if string.is_ascii() {
+            let start = start_position.min(string.content().len());
+            return self.find_next_match_inner(string.content(), str_id, start, options, true);
+        }
         let utf8_start = string.utf16_offset_to_utf8(start_position);
         let m = self.find_next_match_inner(string.content(), str_id, utf8_start, options, true)?;
         Some(convert_match_to_utf16(string, m))
@@ -412,13 +516,25 @@ impl Scanner {
 
         let onig_opts = options.to_onig_options();
 
-        // Keep regset path for one-off searches (no cache key).
-        // When a cache key is provided, prefer per-regex search so repeated
-        // advancing searches on the same string can skip redundant work.
+        // One-off calls always use RegSet.
         if !use_cache {
+            self.stats.route_regset_calls += 1;
+            return self.search_regset(str_data, end, start_position, onig_opts);
+        }
+
+        let use_regset = self.should_use_regset_for_cache(str_id, options.0, start_position);
+        if use_regset {
+            self.stats.route_regset_calls += 1;
+            self.stats.route_cache_regset_calls += 1;
             self.search_regset(str_data, end, start_position, onig_opts)
         } else {
-            self.search_per_regex(
+            self.stats.route_per_regex_calls += 1;
+            self.stats.route_cache_per_regex_calls += 1;
+            let is_probe = self.cache_route.route == CacheRoute::RegSet;
+            if is_probe {
+                self.stats.route_cache_probe_calls += 1;
+            }
+            let (m, run_stats) = self.search_per_regex(
                 str_data,
                 end,
                 start_position,
@@ -426,7 +542,101 @@ impl Scanner {
                 options.0,
                 onig_opts,
                 use_cache,
-            )
+            );
+            self.observe_per_regex_outcome(run_stats);
+            m
+        }
+    }
+
+    #[inline]
+    fn should_use_regset_for_cache(
+        &mut self,
+        str_id: u64,
+        options_raw: u32,
+        start_position: usize,
+    ) -> bool {
+        if self.cache_route.str_id != str_id || self.cache_route.options != options_raw {
+            self.cache_route.options = options_raw;
+            self.cache_route.str_id = str_id;
+            self.cache_route.route = CacheRoute::RegSet;
+            self.cache_route.calls_since_probe = 0;
+            self.cache_route.last_start = start_position;
+            self.cache_route.same_start_streak = 1;
+            self.cache_route.good_per_regex_streak = 0;
+            self.cache_route.poor_per_regex_streak = 0;
+            return true;
+        }
+
+        if start_position == self.cache_route.last_start {
+            self.cache_route.same_start_streak =
+                self.cache_route.same_start_streak.saturating_add(1);
+        } else {
+            self.cache_route.same_start_streak = 1;
+        }
+        self.cache_route.last_start = start_position;
+
+        match self.cache_route.route {
+            CacheRoute::PerRegex => false,
+            CacheRoute::RegSet => {
+                if self.cache_route.same_start_streak < ROUTE_MIN_SAME_START_FOR_PROBE {
+                    return true;
+                }
+                self.cache_route.calls_since_probe =
+                    self.cache_route.calls_since_probe.saturating_add(1);
+                if self.cache_route.calls_since_probe >= ROUTE_PROBE_EVERY {
+                    self.cache_route.calls_since_probe = 0;
+                    false
+                } else {
+                    true
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn observe_per_regex_outcome(&mut self, run_stats: PerRegexCallStats) {
+        self.stats.cache_checks += run_stats.cache_checks as u64;
+        self.stats.cache_hits += run_stats.cache_hits as u64;
+        self.stats.cache_misses += run_stats.cache_misses() as u64;
+        self.stats.vm_search_calls += run_stats.vm_calls as u64;
+
+        // Route quality based on effective cache reuse vs VM work.
+        // This catches line-by-line scans where cache eligibility is low.
+        let denom = run_stats.cache_hits as u64 + run_stats.vm_calls as u64;
+        let reuse_permille = if denom == 0 {
+            0
+        } else {
+            (run_stats.cache_hits as u64 * 1000) / denom
+        };
+        let poor = run_stats.vm_calls >= 4 && reuse_permille < 350;
+        let good = run_stats.cache_hits >= 4 && run_stats.vm_calls <= 2 && reuse_permille >= 700;
+
+        if poor {
+            self.cache_route.poor_per_regex_streak =
+                self.cache_route.poor_per_regex_streak.saturating_add(1);
+            self.cache_route.good_per_regex_streak = 0;
+        } else if good {
+            self.cache_route.good_per_regex_streak =
+                self.cache_route.good_per_regex_streak.saturating_add(1);
+            self.cache_route.poor_per_regex_streak = 0;
+        }
+
+        if self.cache_route.route == CacheRoute::PerRegex
+            && self.cache_route.poor_per_regex_streak >= ROUTE_POOR_STREAK_TO_REGSET
+        {
+            self.cache_route.route = CacheRoute::RegSet;
+            self.cache_route.calls_since_probe = 0;
+            self.cache_route.poor_per_regex_streak = 0;
+            self.cache_route.good_per_regex_streak = 0;
+            self.stats.route_switch_to_regset += 1;
+        } else if self.cache_route.route == CacheRoute::RegSet
+            && self.cache_route.good_per_regex_streak >= ROUTE_GOOD_STREAK_TO_PER_REGEX
+        {
+            self.cache_route.route = CacheRoute::PerRegex;
+            self.cache_route.calls_since_probe = 0;
+            self.cache_route.poor_per_regex_streak = 0;
+            self.cache_route.good_per_regex_streak = 0;
+            self.stats.route_switch_to_per_regex += 1;
         }
     }
 
@@ -438,7 +648,7 @@ impl Scanner {
         start: usize,
         option: OnigOptionType,
     ) -> Option<ScannerMatch> {
-        let (idx, _pos) = onig_regset_search(
+        let (idx, _pos) = onig_regset_search_fast(
             &mut self.regset,
             str_data,
             end,
@@ -472,9 +682,10 @@ impl Scanner {
         options_raw: u32,
         onig_opts: OnigOptionType,
         use_cache: bool,
-    ) -> Option<ScannerMatch> {
+    ) -> (Option<ScannerMatch>, PerRegexCallStats) {
         let mut best_index: Option<usize> = None;
         let mut best_pos: usize = usize::MAX;
+        let mut run_stats = PerRegexCallStats::default();
 
         // Lazy MatchArg — only allocated on first cache miss (warm path: zero alloc)
         let mut msa: Option<MatchArg> = None;
@@ -498,10 +709,13 @@ impl Scanner {
                 && cache.last_options == options_raw
                 && cache.last_position <= start
             {
+                run_stats.cache_checks += 1;
                 if !cache.last_matched {
+                    run_stats.cache_hits += 1;
                     continue;
                 }
                 if cache.last_result >= 0 && (cache.last_result as usize) >= start {
+                    run_stats.cache_hits += 1;
                     let match_pos = cache.last_result as usize;
                     if match_pos < best_pos {
                         best_pos = match_pos;
@@ -516,6 +730,7 @@ impl Scanner {
             }
 
             let reg = onig_regset_get_regex(regset, i).unwrap();
+            run_stats.vm_calls += 1;
 
             // Reuse the cached region (avoids allocation after first call)
             let region = caches[i].last_region.take().unwrap_or_else(OnigRegion::new);
@@ -565,9 +780,16 @@ impl Scanner {
             }
         }
 
-        let idx = best_index?;
-        let region = self.caches[idx].last_region.as_ref()?;
-        Some(build_scanner_match(idx, region))
+        let out = if let Some(idx) = best_index {
+            if let Some(region) = self.caches[idx].last_region.as_ref() {
+                Some(build_scanner_match(idx, region))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        (out, run_stats)
     }
 }
 
@@ -655,6 +877,34 @@ mod tests {
                 }],
             })
         );
+    }
+
+    #[test]
+    fn stats_and_reset_work() {
+        let mut scanner = Scanner::new(&["a"]).unwrap();
+        assert_eq!(scanner.stats(), ScannerStats::default());
+
+        let _ = scanner.find_next_match("ba", 0, ScannerFindOptions::NONE);
+        let _ = scanner.find_next_match_with_id("ba", 1, 0, ScannerFindOptions::NONE);
+
+        let stats = scanner.stats();
+        assert!(stats.route_regset_calls >= 2);
+        assert_eq!(stats.route_per_regex_calls, 0);
+
+        scanner.reset_stats();
+        assert_eq!(scanner.stats(), ScannerStats::default());
+    }
+
+    #[test]
+    fn cache_mode_regset_probe_is_counted() {
+        let mut scanner = Scanner::new(&["a"]).unwrap();
+        for _ in 0..20 {
+            let _ = scanner.find_next_match_with_id("ba", 1, 0, ScannerFindOptions::NONE);
+        }
+        let stats = scanner.stats();
+        assert!(stats.route_cache_regset_calls > 0);
+        assert!(stats.route_cache_probe_calls > 0);
+        assert!(stats.route_per_regex_calls > 0);
     }
 
     // =========================================================================
