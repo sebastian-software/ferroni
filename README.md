@@ -208,7 +208,8 @@ expression patterns from a Shiki grammar:
 
 To track improvements around Unicode-heavy CSS tokenization
 ([Issue #10](https://github.com/sebastian-software/ferroni/issues/10)),
-the main Rust-vs-C benchmark suite now includes `scanner-css`:
+the main Rust-vs-C scanner benchmarks now include CSS cases directly in
+the `scanner` group:
 
 | Scenario | Ferroni | C Oniguruma | Factor |
 |----------|--------:|------------:|-------:|
@@ -317,8 +318,7 @@ compilation and are now faster than C.
 ```bash
 cargo bench --features ffi               # full suite (~8 min)
 cargo bench --features ffi -- compile    # specific group
-cargo bench --features ffi -- scanner    # scanner API benchmarks
-cargo bench --features ffi -- scanner-css # CSS scanner workload vs C
+cargo bench --features ffi -- scanner    # scanner API benchmarks (incl. CSS cases)
 cargo bench --features ffi -- "large_"   # pattern filter
 # HTML report: target/criterion/report/index.html
 ```

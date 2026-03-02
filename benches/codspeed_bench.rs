@@ -627,6 +627,135 @@ fn bench_scanner(c: &mut Criterion) {
         });
     }
 
+    // css workload: integrated into scanner group (no extra benchmark group)
+    {
+        let patterns: Vec<&str> = CSS_PATTERNS
+            .iter()
+            .copied()
+            .filter(|p| Scanner::new(&[*p]).is_ok())
+            .collect();
+        let pattern_count = patterns.len();
+
+        // compile
+        {
+            let label = format!("css_compile_{pattern_count}_patterns");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let scanner = Scanner::new(black_box(&patterns)).unwrap();
+                    black_box(scanner);
+                });
+            });
+        }
+
+        // single match from position 0
+        {
+            let onig_str = OnigString::new(CSS_INPUT);
+            let mut scanner = Scanner::new(&patterns).unwrap();
+
+            let label = format!("css_{pattern_count}_patterns_short");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let m = scanner.find_next_match_utf16(
+                        black_box(&onig_str),
+                        0,
+                        ScannerFindOptions::NONE,
+                    );
+                    black_box(m);
+                });
+            });
+        }
+
+        // tokenize: scan entire CSS input token-by-token
+        {
+            let onig_str = OnigString::new(CSS_INPUT);
+            let mut scanner = Scanner::new(&patterns).unwrap();
+            let input_len = CSS_INPUT.encode_utf16().count();
+
+            let label = format!("css_{pattern_count}_patterns_tokenize");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len {
+                        match scanner.find_next_match_utf16(
+                            black_box(&onig_str),
+                            pos,
+                            ScannerFindOptions::NONE,
+                        ) {
+                            Some(m) => {
+                                let end = m.capture_indices[0].end as usize;
+                                pos = if end > pos { end } else { pos + 1 };
+                                count += 1;
+                            }
+                            None => break,
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+        }
+
+        // tokenize repeated: 10x CSS input to amortize setup
+        {
+            let repeated: String = CSS_INPUT.repeat(10);
+            let onig_str = OnigString::new(&repeated);
+            let mut scanner = Scanner::new(&patterns).unwrap();
+            let input_len = repeated.encode_utf16().count();
+
+            let label = format!("css_{pattern_count}_patterns_tokenize_10x");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len {
+                        match scanner.find_next_match_utf16(
+                            black_box(&onig_str),
+                            pos,
+                            ScannerFindOptions::NONE,
+                        ) {
+                            Some(m) => {
+                                let end = m.capture_indices[0].end as usize;
+                                pos = if end > pos { end } else { pos + 1 };
+                                count += 1;
+                            }
+                            None => break,
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+        }
+
+        // isolated: just \w+ matching against CSS text (isolate Unicode overhead)
+        {
+            let onig_str = OnigString::new(CSS_INPUT);
+            let mut scanner = Scanner::new(&[r"\w+", r"\s+", r"[^\w\s]+"]).unwrap();
+            let input_len = CSS_INPUT.encode_utf16().count();
+
+            group.bench_function("css_word_class_tokenize", |b| {
+                b.iter(|| {
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len {
+                        match scanner.find_next_match_utf16(
+                            black_box(&onig_str),
+                            pos,
+                            ScannerFindOptions::NONE,
+                        ) {
+                            Some(m) => {
+                                let end = m.capture_indices[0].end as usize;
+                                pos = if end > pos { end } else { pos + 1 };
+                                count += 1;
+                            }
+                            None => break,
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+        }
+    }
+
     group.finish();
 }
 
@@ -830,142 +959,6 @@ fn bench_idiomatic_api(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 16. scanner_css -- CSS grammar patterns (Unicode character class heavy)
-//     See https://github.com/sebastian-software/ferroni/issues/10
-// ---------------------------------------------------------------------------
-
-fn bench_scanner_css(c: &mut Criterion) {
-    let patterns: Vec<&str> = CSS_PATTERNS
-        .iter()
-        .copied()
-        .filter(|p| Scanner::new(&[*p]).is_ok())
-        .collect();
-    let pattern_count = patterns.len();
-    let mut group = c.benchmark_group("scanner-css");
-
-    // compile: measure Scanner::new for CSS patterns
-    {
-        let label = format!("compile_{pattern_count}_patterns");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let scanner = Scanner::new(black_box(&patterns)).unwrap();
-                black_box(scanner);
-            });
-        });
-    }
-
-    // single match from position 0
-    {
-        let onig_str = OnigString::new(CSS_INPUT);
-        let mut scanner = Scanner::new(&patterns).unwrap();
-
-        let label = format!("{pattern_count}_patterns_short");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let m = scanner.find_next_match_utf16(
-                    black_box(&onig_str),
-                    0,
-                    ScannerFindOptions::NONE,
-                );
-                black_box(m);
-            });
-        });
-    }
-
-    // tokenize: scan entire CSS input token-by-token
-    {
-        let onig_str = OnigString::new(CSS_INPUT);
-        let mut scanner = Scanner::new(&patterns).unwrap();
-        let input_len = CSS_INPUT.encode_utf16().count();
-
-        let label = format!("{pattern_count}_patterns_tokenize");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len {
-                    match scanner.find_next_match_utf16(
-                        black_box(&onig_str),
-                        pos,
-                        ScannerFindOptions::NONE,
-                    ) {
-                        Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
-                            pos = if end > pos { end } else { pos + 1 };
-                            count += 1;
-                        }
-                        None => break,
-                    }
-                }
-                black_box(count);
-            });
-        });
-    }
-
-    // tokenize repeated: 10x CSS input to amortize setup
-    {
-        let repeated: String = CSS_INPUT.repeat(10);
-        let onig_str = OnigString::new(&repeated);
-        let mut scanner = Scanner::new(&patterns).unwrap();
-        let input_len = repeated.encode_utf16().count();
-
-        let label = format!("{pattern_count}_patterns_tokenize_10x");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len {
-                    match scanner.find_next_match_utf16(
-                        black_box(&onig_str),
-                        pos,
-                        ScannerFindOptions::NONE,
-                    ) {
-                        Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
-                            pos = if end > pos { end } else { pos + 1 };
-                            count += 1;
-                        }
-                        None => break,
-                    }
-                }
-                black_box(count);
-            });
-        });
-    }
-
-    // isolated: just \w+ matching against CSS text (isolate Unicode overhead)
-    {
-        let onig_str = OnigString::new(CSS_INPUT);
-        let mut scanner = Scanner::new(&[r"\w+", r"\s+", r"[^\w\s]+"]).unwrap();
-        let input_len = CSS_INPUT.encode_utf16().count();
-
-        group.bench_function("word_class_tokenize", |b| {
-            b.iter(|| {
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len {
-                    match scanner.find_next_match_utf16(
-                        black_box(&onig_str),
-                        pos,
-                        ScannerFindOptions::NONE,
-                    ) {
-                        Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
-                            pos = if end > pos { end } else { pos + 1 };
-                            count += 1;
-                        }
-                        None => break,
-                    }
-                }
-                black_box(count);
-            });
-        });
-    }
-
-    group.finish();
-}
-
-// ---------------------------------------------------------------------------
 // Criterion harness
 // ---------------------------------------------------------------------------
 
@@ -986,6 +979,5 @@ criterion_group!(
     bench_scanner,
     bench_scanner_textmate,
     bench_idiomatic_api,
-    bench_scanner_css,
 );
 criterion_main!(benches);

@@ -936,6 +936,241 @@ fn bench_scanner(c: &mut Criterion) {
         });
     }
 
+    // -- css workload: folded into scanner group (no separate scanner-css group) --
+    {
+        let patterns = valid_css_patterns();
+        let pattern_count = patterns.len();
+        let patterns_bytes = valid_css_patterns_bytes(&patterns);
+        let patterns_byte_refs: Vec<&[u8]> = patterns_bytes.iter().map(|v| v.as_slice()).collect();
+
+        let content = CSS_INPUT;
+        let content_bytes = content.as_bytes();
+        let onig_str = OnigString::new(content);
+
+        // compile
+        {
+            let label = format!("css_compile_{pattern_count}_patterns_rust");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let scanner = Scanner::new(black_box(&patterns)).unwrap();
+                    black_box(scanner);
+                });
+            });
+        }
+        {
+            let label = format!("css_compile_{pattern_count}_patterns_c");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let scanner = ffi::CScanner::new(black_box(&patterns_byte_refs))
+                        .expect("C scanner failed");
+                    black_box(scanner);
+                });
+            });
+        }
+
+        // first match at position 0
+        {
+            let mut scanner = Scanner::new(&patterns).unwrap();
+            let c_scanner =
+                ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
+
+            let rust_m = scanner.find_next_match(content, 0, ScannerFindOptions::NONE);
+            let c_m = c_scanner.find_next_match(content_bytes, 0, 0);
+            debug_assert_eq!(
+                rust_m.map(|m| m.index as usize),
+                c_m.map(|m| m.0),
+                "Rust/C disagree on first CSS match pattern index"
+            );
+
+            let label = format!("css_{pattern_count}_patterns_short_rust");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let m = scanner.find_next_match_utf16(
+                        black_box(&onig_str),
+                        0,
+                        ScannerFindOptions::NONE,
+                    );
+                    black_box(m);
+                });
+            });
+
+            let label = format!("css_{pattern_count}_patterns_short_c");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let m = c_scanner.find_next_match(black_box(content_bytes), 0, 0);
+                    black_box(m);
+                });
+            });
+        }
+
+        // tokenize full CSS input
+        {
+            let mut scanner = Scanner::new(&patterns).unwrap();
+            let c_scanner =
+                ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
+
+            let input_len_utf16 = content.encode_utf16().count();
+            let label = format!("css_{pattern_count}_patterns_tokenize_rust");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len_utf16 {
+                        match scanner.find_next_match_utf16(
+                            black_box(&onig_str),
+                            pos,
+                            ScannerFindOptions::NONE,
+                        ) {
+                            Some(m) => {
+                                let end = m.capture_indices[0].end as usize;
+                                pos = if end > pos { end } else { pos + 1 };
+                                count += 1;
+                            }
+                            None => break,
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+
+            let input_len_bytes = content_bytes.len();
+            let label = format!("css_{pattern_count}_patterns_tokenize_c");
+            group.bench_function(&label, |b| {
+                b.iter(|| {
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len_bytes {
+                        if let Some((_idx, captures)) =
+                            c_scanner.find_next_match(black_box(content_bytes), 0, pos)
+                        {
+                            let end = captures[0].1 as usize;
+                            pos = if end > pos { end } else { pos + 1 };
+                            count += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+        }
+
+        // tokenize 10x repeated CSS input (amortized scanner overhead)
+        {
+            let repeated = content.repeat(10);
+            let repeated_bytes = repeated.as_bytes();
+            let repeated_onig = OnigString::new(&repeated);
+
+            let mut scanner = Scanner::new(&patterns).unwrap();
+            let c_scanner =
+                ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
+
+            let input_len_utf16 = repeated.encode_utf16().count();
+            let label = format!("css_{pattern_count}_patterns_tokenize_10x_rust");
+            group.bench_function(&label, |b| {
+                let mut str_id = 1u64;
+                b.iter(|| {
+                    str_id = str_id.wrapping_add(1);
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len_utf16 {
+                        match scanner.find_next_match_utf16_with_id(
+                            black_box(&repeated_onig),
+                            str_id,
+                            pos,
+                            ScannerFindOptions::NONE,
+                        ) {
+                            Some(m) => {
+                                let end = m.capture_indices[0].end as usize;
+                                pos = if end > pos { end } else { pos + 1 };
+                                count += 1;
+                            }
+                            None => break,
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+
+            let input_len_bytes = repeated_bytes.len();
+            let label = format!("css_{pattern_count}_patterns_tokenize_10x_c");
+            group.bench_function(&label, |b| {
+                let mut cache_id = 1i32;
+                b.iter(|| {
+                    cache_id = cache_id.wrapping_add(1);
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len_bytes {
+                        if let Some((_idx, captures)) =
+                            c_scanner.find_next_match(black_box(repeated_bytes), cache_id, pos)
+                        {
+                            let end = captures[0].1 as usize;
+                            pos = if end > pos { end } else { pos + 1 };
+                            count += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+        }
+
+        // isolate Unicode word-class heavy tokenization path
+        {
+            let word_patterns = [r"\w+", r"\s+", r"[^\w\s]+"];
+            let word_pattern_bytes: Vec<&[u8]> =
+                word_patterns.iter().map(|p| p.as_bytes()).collect();
+
+            let mut scanner = Scanner::new(&word_patterns).unwrap();
+            let c_scanner = ffi::CScanner::new(&word_pattern_bytes)
+                .expect("C scanner create failed (word class)");
+
+            let input_len_utf16 = content.encode_utf16().count();
+            group.bench_function("css_word_class_tokenize_rust", |b| {
+                b.iter(|| {
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len_utf16 {
+                        match scanner.find_next_match_utf16(
+                            black_box(&onig_str),
+                            pos,
+                            ScannerFindOptions::NONE,
+                        ) {
+                            Some(m) => {
+                                let end = m.capture_indices[0].end as usize;
+                                pos = if end > pos { end } else { pos + 1 };
+                                count += 1;
+                            }
+                            None => break,
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+
+            let input_len_bytes = content_bytes.len();
+            group.bench_function("css_word_class_tokenize_c", |b| {
+                b.iter(|| {
+                    let mut pos = 0usize;
+                    let mut count = 0u32;
+                    while pos < input_len_bytes {
+                        if let Some((_idx, captures)) =
+                            c_scanner.find_next_match(black_box(content_bytes), 0, pos)
+                        {
+                            let end = captures[0].1 as usize;
+                            pos = if end > pos { end } else { pos + 1 };
+                            count += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    black_box(count);
+                });
+            });
+        }
+    }
+
     group.finish();
 }
 
@@ -1161,7 +1396,7 @@ fn bench_scanner_textmate(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 15. scanner_css -- CSS grammar patterns (Unicode character class heavy)
+// CSS scanner helpers used by the integrated scanner benchmarks
 // ---------------------------------------------------------------------------
 
 fn valid_css_patterns() -> Vec<&'static str> {
@@ -1174,241 +1409,6 @@ fn valid_css_patterns() -> Vec<&'static str> {
 
 fn valid_css_patterns_bytes(patterns: &[&str]) -> Vec<Vec<u8>> {
     patterns.iter().map(|p| p.as_bytes().to_vec()).collect()
-}
-
-fn bench_scanner_css(c: &mut Criterion) {
-    let patterns = valid_css_patterns();
-    let pattern_count = patterns.len();
-    let patterns_bytes = valid_css_patterns_bytes(&patterns);
-    let patterns_byte_refs: Vec<&[u8]> = patterns_bytes.iter().map(|v| v.as_slice()).collect();
-    let mut group = c.benchmark_group("scanner-css");
-
-    let content = CSS_INPUT;
-    let content_bytes = content.as_bytes();
-    let onig_str = OnigString::new(content);
-
-    // compile: Rust Scanner::new
-    {
-        let label = format!("compile_{pattern_count}_patterns_rust");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let scanner = Scanner::new(black_box(&patterns)).unwrap();
-                black_box(scanner);
-            });
-        });
-    }
-
-    // compile: C scanner_new
-    {
-        let label = format!("compile_{pattern_count}_patterns_c");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let scanner =
-                    ffi::CScanner::new(black_box(&patterns_byte_refs)).expect("C scanner failed");
-                black_box(scanner);
-            });
-        });
-    }
-
-    // first match at position 0
-    {
-        let mut scanner = Scanner::new(&patterns).unwrap();
-        let c_scanner = ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
-
-        let rust_m = scanner.find_next_match(content, 0, ScannerFindOptions::NONE);
-        let c_m = c_scanner.find_next_match(content_bytes, 0, 0);
-        debug_assert_eq!(
-            rust_m.map(|m| m.index as usize),
-            c_m.map(|m| m.0),
-            "Rust/C disagree on first CSS match pattern index"
-        );
-
-        let label = format!("{pattern_count}_patterns_short_rust");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let m = scanner.find_next_match_utf16(
-                    black_box(&onig_str),
-                    0,
-                    ScannerFindOptions::NONE,
-                );
-                black_box(m);
-            });
-        });
-
-        let label = format!("{pattern_count}_patterns_short_c");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let m = c_scanner.find_next_match(black_box(content_bytes), 0, 0);
-                black_box(m);
-            });
-        });
-    }
-
-    // tokenize full CSS input
-    {
-        let mut scanner = Scanner::new(&patterns).unwrap();
-        let c_scanner = ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
-
-        let input_len_utf16 = content.encode_utf16().count();
-        let label = format!("{pattern_count}_patterns_tokenize_rust");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len_utf16 {
-                    match scanner.find_next_match_utf16(
-                        black_box(&onig_str),
-                        pos,
-                        ScannerFindOptions::NONE,
-                    ) {
-                        Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
-                            pos = if end > pos { end } else { pos + 1 };
-                            count += 1;
-                        }
-                        None => break,
-                    }
-                }
-                black_box(count);
-            });
-        });
-
-        let input_len_bytes = content_bytes.len();
-        let label = format!("{pattern_count}_patterns_tokenize_c");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len_bytes {
-                    if let Some((_idx, captures)) =
-                        c_scanner.find_next_match(black_box(content_bytes), 0, pos)
-                    {
-                        let end = captures[0].1 as usize;
-                        pos = if end > pos { end } else { pos + 1 };
-                        count += 1;
-                    } else {
-                        break;
-                    }
-                }
-                black_box(count);
-            });
-        });
-    }
-
-    // tokenize 10x repeated CSS input (amortized scanner overhead)
-    {
-        let repeated = content.repeat(10);
-        let repeated_bytes = repeated.as_bytes();
-        let repeated_onig = OnigString::new(&repeated);
-
-        let mut scanner = Scanner::new(&patterns).unwrap();
-        let c_scanner = ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
-
-        let input_len_utf16 = repeated.encode_utf16().count();
-        let label = format!("{pattern_count}_patterns_tokenize_10x_rust");
-        group.bench_function(&label, |b| {
-            let mut str_id = 1u64;
-            b.iter(|| {
-                str_id = str_id.wrapping_add(1);
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len_utf16 {
-                    match scanner.find_next_match_utf16_with_id(
-                        black_box(&repeated_onig),
-                        str_id,
-                        pos,
-                        ScannerFindOptions::NONE,
-                    ) {
-                        Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
-                            pos = if end > pos { end } else { pos + 1 };
-                            count += 1;
-                        }
-                        None => break,
-                    }
-                }
-                black_box(count);
-            });
-        });
-
-        let input_len_bytes = repeated_bytes.len();
-        let label = format!("{pattern_count}_patterns_tokenize_10x_c");
-        group.bench_function(&label, |b| {
-            let mut cache_id = 1i32;
-            b.iter(|| {
-                cache_id = cache_id.wrapping_add(1);
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len_bytes {
-                    if let Some((_idx, captures)) =
-                        c_scanner.find_next_match(black_box(repeated_bytes), cache_id, pos)
-                    {
-                        let end = captures[0].1 as usize;
-                        pos = if end > pos { end } else { pos + 1 };
-                        count += 1;
-                    } else {
-                        break;
-                    }
-                }
-                black_box(count);
-            });
-        });
-    }
-
-    // isolate Unicode word-class heavy tokenization path
-    {
-        let word_patterns = [r"\w+", r"\s+", r"[^\w\s]+"];
-        let word_pattern_bytes: Vec<&[u8]> = word_patterns.iter().map(|p| p.as_bytes()).collect();
-
-        let mut scanner = Scanner::new(&word_patterns).unwrap();
-        let c_scanner =
-            ffi::CScanner::new(&word_pattern_bytes).expect("C scanner create failed (word class)");
-
-        let input_len_utf16 = content.encode_utf16().count();
-        group.bench_function("word_class_tokenize_rust", |b| {
-            b.iter(|| {
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len_utf16 {
-                    match scanner.find_next_match_utf16(
-                        black_box(&onig_str),
-                        pos,
-                        ScannerFindOptions::NONE,
-                    ) {
-                        Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
-                            pos = if end > pos { end } else { pos + 1 };
-                            count += 1;
-                        }
-                        None => break,
-                    }
-                }
-                black_box(count);
-            });
-        });
-
-        let input_len_bytes = content_bytes.len();
-        group.bench_function("word_class_tokenize_c", |b| {
-            b.iter(|| {
-                let mut pos = 0usize;
-                let mut count = 0u32;
-                while pos < input_len_bytes {
-                    if let Some((_idx, captures)) =
-                        c_scanner.find_next_match(black_box(content_bytes), 0, pos)
-                    {
-                        let end = captures[0].1 as usize;
-                        pos = if end > pos { end } else { pos + 1 };
-                        count += 1;
-                    } else {
-                        break;
-                    }
-                }
-                black_box(count);
-            });
-        });
-    }
-
-    group.finish();
 }
 
 // ---------------------------------------------------------------------------
@@ -1431,6 +1431,5 @@ criterion_group!(
     bench_match_at_position,
     bench_scanner,
     bench_scanner_textmate,
-    bench_scanner_css,
 );
 criterion_main!(benches);
