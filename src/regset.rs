@@ -57,6 +57,8 @@ pub struct OnigRegSet {
     skip_needle: SkipNeedle,
     /// Reused MatchArg scratch space for position-lead searches.
     scratch_msa: Option<MatchArg>,
+    /// Match length from the last successful position-lead search.
+    last_match_len: i32,
 }
 
 #[inline]
@@ -131,6 +133,7 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         first_byte_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
         skip_needle: SkipNeedle::None,
         scratch_msa: None,
+        last_match_len: ONIG_MISMATCH,
     });
 
     for reg in regs {
@@ -309,6 +312,12 @@ pub fn onig_regset_get_region(set: &OnigRegSet, at: usize) -> Option<&OnigRegion
     set.entries.get(at).and_then(|e| e.region.as_ref())
 }
 
+/// Return the match length from the last successful position-lead search.
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
+    set.last_match_len
+}
+
 /// Position-lead search: iterate positions, try each regex at each position.
 fn regset_search_body_position_lead(
     set: &mut OnigRegSet,
@@ -317,6 +326,7 @@ fn regset_search_body_position_lead(
     start: usize,
     range: usize,
     option: OnigOptionType,
+    skip_region_for_nomem: bool,
 ) -> (i32, i32) {
     // rmatch_pos, regex_index
     let enc = set.enc;
@@ -332,6 +342,7 @@ fn regset_search_body_position_lead(
 
     let prev_is_newline_check = set.anychar_inf;
     let mut result: (i32, i32) = (ONIG_MISMATCH, 0);
+    set.last_match_len = ONIG_MISMATCH;
 
     'search: loop {
         if s >= range {
@@ -380,12 +391,22 @@ fn regset_search_body_position_lead(
                 continue;
             }
 
-            // Swap region into msa for this match, then swap back
-            msa.region = set.entries[i].region.take();
-            let r = onig_match_with_msa(&set.entries[i].reg, str_data, end, s, option, &mut msa);
-            set.entries[i].region = msa.region.take();
+            let r = if skip_region_for_nomem && set.entries[i].reg.num_mem == 0 {
+                // No capture groups: scanner only needs full-match length, so avoid
+                // region take/clear/restore on this hot path.
+                msa.region = None;
+                onig_match_with_msa(&set.entries[i].reg, str_data, end, s, option, &mut msa)
+            } else {
+                // Swap region into msa for this match, then swap back.
+                msa.region = set.entries[i].region.take();
+                let r =
+                    onig_match_with_msa(&set.entries[i].reg, str_data, end, s, option, &mut msa);
+                set.entries[i].region = msa.region.take();
+                r
+            };
 
             if r >= 0 {
+                set.last_match_len = r;
                 result = (i as i32, s as i32);
                 break 'search;
             }
@@ -463,6 +484,7 @@ fn onig_regset_search_impl(
     if n == 0 {
         return (ONIG_MISMATCH, 0);
     }
+    set.last_match_len = ONIG_MISMATCH;
 
     if start > end || start > str_data.len() {
         return (ONIG_MISMATCH, 0);
@@ -560,7 +582,15 @@ fn onig_regset_search_impl(
     }
 
     let (result, match_pos) = if lead == OnigRegSetLead::PositionLead {
-        regset_search_body_position_lead(set, str_data, end, cur_start, cur_range, option)
+        regset_search_body_position_lead(
+            set,
+            str_data,
+            end,
+            cur_start,
+            cur_range,
+            option,
+            !eager_region_reset,
+        )
     } else {
         regset_search_body_regex_lead(set, str_data, end, cur_start, orig_range, lead, option)
     };
@@ -716,7 +746,7 @@ pub fn onig_regset_search_with_param(
 
     // Position-lead with params: delegate to non-param position-lead
     // (params mainly affect limits which are checked within onig_match)
-    regset_search_body_position_lead(set, str_data, end, start, range, option)
+    regset_search_body_position_lead(set, str_data, end, start, range, option, false)
 }
 
 #[cfg(test)]

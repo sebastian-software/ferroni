@@ -14,7 +14,8 @@ use crate::oniguruma::*;
 use crate::regcomp::onig_new;
 use crate::regexec::{onig_search_with_msa, MatchArg};
 use crate::regset::{
-    onig_regset_get_regex, onig_regset_new, onig_regset_number_of_regex, onig_regset_search_fast,
+    onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new,
+    onig_regset_number_of_regex, onig_regset_search_fast,
     OnigRegSet, OnigRegSetLead,
 };
 use crate::regsyntax::*;
@@ -648,7 +649,7 @@ impl Scanner {
         start: usize,
         option: OnigOptionType,
     ) -> Option<ScannerMatch> {
-        let (idx, _pos) = onig_regset_search_fast(
+        let (idx, pos) = onig_regset_search_fast(
             &mut self.regset,
             str_data,
             end,
@@ -663,6 +664,27 @@ impl Scanner {
         }
 
         let regex_idx = idx as usize;
+        let match_start = if pos >= 0 { pos as usize } else { start };
+        if let Some(reg) = onig_regset_get_regex(&self.regset, regex_idx) {
+            if reg.num_mem == 0 {
+                let len = onig_regset_last_match_len(&self.regset);
+                if len < 0 {
+                    return None;
+                }
+                let match_end = match_start.saturating_add(len as usize).min(end);
+                let mut capture_indices = SmallVec::with_capacity(1);
+                capture_indices.push(CaptureIndex {
+                    start: match_start,
+                    end: match_end,
+                    length: match_end.saturating_sub(match_start),
+                });
+                return Some(ScannerMatch {
+                    index: regex_idx,
+                    capture_indices,
+                });
+            }
+        }
+
         let region = crate::regset::onig_regset_get_region(&self.regset, regex_idx)?;
         Some(build_scanner_match(regex_idx, region))
     }
