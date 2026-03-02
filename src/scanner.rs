@@ -15,8 +15,7 @@ use crate::regcomp::onig_new;
 use crate::regexec::{onig_search_with_msa, MatchArg};
 use crate::regset::{
     onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new,
-    onig_regset_number_of_regex, onig_regset_search_fast,
-    OnigRegSet, OnigRegSetLead,
+    onig_regset_number_of_regex, onig_regset_search_fast, OnigRegSet, OnigRegSetLead,
 };
 use crate::regsyntax::*;
 
