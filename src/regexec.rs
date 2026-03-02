@@ -2110,6 +2110,10 @@ fn is_word_char_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> 
     if s >= end {
         return false;
     }
+    let b = str_data[s];
+    if b < 0x80 {
+        return is_word_ascii(b);
+    }
     let code = enc.mbc_to_code(&str_data[s..], end);
     enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
 }
@@ -2131,11 +2135,73 @@ fn is_word_char_ascii_mode(
     if s >= end {
         return false;
     }
-    let code = enc.mbc_to_code(&str_data[s..], end);
-    if code > 0x7F {
-        return false;
+    let b = str_data[s];
+    b < 0x80 && is_word_ascii(b)
+}
+
+/// Fast literal compare at `s` for VM exact-string opcodes.
+///
+/// For short lengths, a manual byte loop avoids libc `memcmp` call overhead
+/// on the hottest matching path.
+#[inline(always)]
+fn exact_eq_at(str_data: &[u8], s: usize, exact: &[u8], len: usize) -> bool {
+    match len {
+        0 => true,
+        1 => str_data[s] == exact[0],
+        2 => str_data[s] == exact[0] && str_data[s + 1] == exact[1],
+        3 => str_data[s] == exact[0] && str_data[s + 1] == exact[1] && str_data[s + 2] == exact[2],
+        4 => {
+            str_data[s] == exact[0]
+                && str_data[s + 1] == exact[1]
+                && str_data[s + 2] == exact[2]
+                && str_data[s + 3] == exact[3]
+        }
+        5 => {
+            str_data[s] == exact[0]
+                && str_data[s + 1] == exact[1]
+                && str_data[s + 2] == exact[2]
+                && str_data[s + 3] == exact[3]
+                && str_data[s + 4] == exact[4]
+        }
+        6 => {
+            str_data[s] == exact[0]
+                && str_data[s + 1] == exact[1]
+                && str_data[s + 2] == exact[2]
+                && str_data[s + 3] == exact[3]
+                && str_data[s + 4] == exact[4]
+                && str_data[s + 5] == exact[5]
+        }
+        7 => {
+            str_data[s] == exact[0]
+                && str_data[s + 1] == exact[1]
+                && str_data[s + 2] == exact[2]
+                && str_data[s + 3] == exact[3]
+                && str_data[s + 4] == exact[4]
+                && str_data[s + 5] == exact[5]
+                && str_data[s + 6] == exact[6]
+        }
+        8 => {
+            str_data[s] == exact[0]
+                && str_data[s + 1] == exact[1]
+                && str_data[s + 2] == exact[2]
+                && str_data[s + 3] == exact[3]
+                && str_data[s + 4] == exact[4]
+                && str_data[s + 5] == exact[5]
+                && str_data[s + 6] == exact[6]
+                && str_data[s + 7] == exact[7]
+        }
+        9..=16 => {
+            let mut i = 0usize;
+            while i < len {
+                if str_data[s + i] != exact[i] {
+                    return false;
+                }
+                i += 1;
+            }
+            true
+        }
+        _ => str_data[s..s + len] == exact[..len],
     }
-    matches!(code as u8, b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_')
 }
 
 /// Get the start of the previous character (left_adjust_char_head).
@@ -2917,7 +2983,7 @@ fn match_at(
                     let n = n as usize;
                     if right_range.saturating_sub(s) < n {
                         goto_fail = true;
-                    } else if str_data[s..s + n] != exact[..n] {
+                    } else if !exact_eq_at(str_data, s, exact, n) {
                         goto_fail = true;
                     } else {
                         s += n;
@@ -2943,7 +3009,7 @@ fn match_at(
                     let byte_len = n as usize;
                     if right_range.saturating_sub(s) < byte_len {
                         goto_fail = true;
-                    } else if str_data[s..s + byte_len] != exact[..byte_len] {
+                    } else if !exact_eq_at(str_data, s, exact, byte_len) {
                         goto_fail = true;
                     } else {
                         s += byte_len;
@@ -3564,18 +3630,22 @@ fn match_at(
                 } else if !is_word_char_at(enc, str_data, s, end) {
                     goto_fail = true;
                 } else {
-                    s += enclen(enc, str_data, s);
+                    s += if str_data[s] < 0x80 {
+                        1
+                    } else {
+                        enclen(enc, str_data, s)
+                    };
                     p += 1;
                 }
             }
 
             OpCode::WordAscii => {
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
                 } else if !is_word_ascii(str_data[s]) {
                     goto_fail = true;
                 } else {
-                    s += enclen(enc, str_data, s);
+                    s += 1;
                     p += 1;
                 }
             }
@@ -3586,18 +3656,26 @@ fn match_at(
                 } else if is_word_char_at(enc, str_data, s, end) {
                     goto_fail = true;
                 } else {
-                    s += enclen(enc, str_data, s);
+                    s += if str_data[s] < 0x80 {
+                        1
+                    } else {
+                        enclen(enc, str_data, s)
+                    };
                     p += 1;
                 }
             }
 
             OpCode::NoWordAscii => {
-                if right_range.saturating_sub(s) < 1 {
+                if s >= right_range {
                     goto_fail = true;
                 } else if is_word_ascii(str_data[s]) {
                     goto_fail = true;
                 } else {
-                    s += enclen(enc, str_data, s);
+                    s += if str_data[s] < 0x80 {
+                        1
+                    } else {
+                        enclen(enc, str_data, s)
+                    };
                     p += 1;
                 }
             }
@@ -4837,6 +4915,21 @@ pub fn onig_match(
 
 /// Fast match path for regset: reuses an existing MatchArg, skips string
 /// validation (already done by caller), and skips region resize (caller manages).
+pub(crate) fn onig_match_with_msa_start(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    at: usize,
+    start: usize,
+    option: OnigOptionType,
+    msa: &mut MatchArg,
+) -> i32 {
+    msa.reset_for_match(reg, option, start);
+
+    match_at(reg, str_data, end, end, at, msa)
+}
+
+/// Fast match path where search start (`\\G` anchor position) equals `at`.
 pub(crate) fn onig_match_with_msa(
     reg: &RegexType,
     str_data: &[u8],
@@ -4845,9 +4938,7 @@ pub(crate) fn onig_match_with_msa(
     option: OnigOptionType,
     msa: &mut MatchArg,
 ) -> i32 {
-    msa.reset_for_match(reg, option, at);
-
-    match_at(reg, str_data, end, end, at, msa)
+    onig_match_with_msa_start(reg, str_data, end, at, at, option, msa)
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]

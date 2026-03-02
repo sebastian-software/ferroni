@@ -4,7 +4,8 @@
 use crate::oniguruma::*;
 use crate::regenc::OnigEncoding;
 use crate::regexec::{
-    onig_match, onig_match_with_msa, onig_search, onig_search_with_param, MatchArg, OnigMatchParam,
+    onig_match, onig_match_with_msa_start, onig_search, onig_search_with_param, MatchArg,
+    OnigMatchParam,
 };
 use crate::regint::*;
 
@@ -395,12 +396,27 @@ fn regset_search_body_position_lead(
                 // No capture groups: scanner only needs full-match length, so avoid
                 // region take/clear/restore on this hot path.
                 msa.region = None;
-                onig_match_with_msa(&set.entries[i].reg, str_data, end, s, option, &mut msa)
+                onig_match_with_msa_start(
+                    &set.entries[i].reg,
+                    str_data,
+                    end,
+                    s,
+                    start,
+                    option,
+                    &mut msa,
+                )
             } else {
                 // Swap region into msa for this match, then swap back.
                 msa.region = set.entries[i].region.take();
-                let r =
-                    onig_match_with_msa(&set.entries[i].reg, str_data, end, s, option, &mut msa);
+                let r = onig_match_with_msa_start(
+                    &set.entries[i].reg,
+                    str_data,
+                    end,
+                    s,
+                    start,
+                    option,
+                    &mut msa,
+                );
                 set.entries[i].region = msa.region.take();
                 r
             };

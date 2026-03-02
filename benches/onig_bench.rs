@@ -1309,6 +1309,43 @@ fn bench_scanner(c: &mut Criterion) {
                     });
                 });
             }
+
+            // tokenize line-by-line with per-iteration OnigString construction
+            // (mirrors callers that pass plain strings into UTF-16 API wrappers)
+            {
+                let mut scanner = Scanner::new(&tm_patterns).unwrap();
+                let label = format!(
+                    "css_tm_{tm_pattern_count}_patterns_lines_tokenize_with_id_build_onigstring_rust"
+                );
+                group.bench_function(&label, |b| {
+                    b.iter(|| {
+                        let mut count = 0u32;
+                        for i in 0..tm_lines.len() {
+                            let line = tm_lines[i];
+                            let line_id = tm_line_ids_u64[i];
+                            let onig = OnigString::new(line);
+                            let line_len = onig.utf16_len();
+                            let mut pos = 0usize;
+                            while pos < line_len {
+                                match scanner.find_next_match_utf16_with_id(
+                                    black_box(&onig),
+                                    line_id,
+                                    pos,
+                                    ScannerFindOptions::NONE,
+                                ) {
+                                    Some(m) => {
+                                        let end = m.capture_indices[0].end as usize;
+                                        pos = if end > pos { end } else { pos + 1 };
+                                        count += 1;
+                                    }
+                                    None => break,
+                                }
+                            }
+                        }
+                        black_box(count);
+                    });
+                });
+            }
         }
 
         // isolate Unicode word-class heavy tokenization path

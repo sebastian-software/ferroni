@@ -12,7 +12,7 @@ use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
-use crate::regexec::{onig_search_with_msa, MatchArg};
+use crate::regexec::{onig_match_with_msa_start, onig_search_with_msa, MatchArg};
 use crate::regset::{
     onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new,
     onig_regset_number_of_regex, onig_regset_search_fast, OnigRegSet, OnigRegSetLead,
@@ -160,6 +160,7 @@ impl Default for ScannerConfig {
 pub struct OnigString {
     content: String,
     is_ascii: bool,
+    utf16_len: usize,
     /// Maps UTF-16 code unit index → UTF-8 byte offset. Length = utf16_len + 1.
     utf16_to_utf8: Vec<usize>,
     /// Maps UTF-8 byte offset → UTF-16 code unit index. Length = utf8_len + 1.
@@ -169,9 +170,19 @@ pub struct OnigString {
 impl OnigString {
     /// Create a new `OnigString` from a Rust string, building offset tables.
     pub fn new(content: &str) -> Self {
+        if content.is_ascii() {
+            let len = content.len();
+            return OnigString {
+                content: content.to_string(),
+                is_ascii: true,
+                utf16_len: len,
+                utf16_to_utf8: Vec::new(),
+                utf8_to_utf16: Vec::new(),
+            };
+        }
+
         let utf8_len = content.len();
         let utf16_len: usize = content.chars().map(|c| c.len_utf16()).sum();
-        let is_ascii = content.is_ascii();
 
         let mut utf16_to_utf8 = Vec::with_capacity(utf16_len + 1);
         let mut utf8_to_utf16 = vec![0usize; utf8_len + 1];
@@ -204,7 +215,8 @@ impl OnigString {
 
         OnigString {
             content: content.to_string(),
-            is_ascii,
+            is_ascii: false,
+            utf16_len,
             utf16_to_utf8,
             utf8_to_utf16,
         }
@@ -222,7 +234,7 @@ impl OnigString {
 
     /// Length of the string in UTF-16 code units.
     pub fn utf16_len(&self) -> usize {
-        self.utf16_to_utf8.len() - 1
+        self.utf16_len
     }
 
     /// Convert a UTF-16 code unit offset to a UTF-8 byte offset.
@@ -241,7 +253,7 @@ impl OnigString {
         if self.is_ascii {
             utf8_offset.min(self.content.len())
         } else if utf8_offset >= self.utf8_to_utf16.len() {
-            self.utf16_to_utf8.len() - 1
+            self.utf16_len
         } else {
             self.utf8_to_utf16[utf8_offset]
         }
@@ -342,6 +354,7 @@ const ROUTE_PROBE_EVERY: u32 = 8;
 const ROUTE_MIN_SAME_START_FOR_PROBE: u16 = 8;
 const ROUTE_POOR_STREAK_TO_REGSET: u8 = 3;
 const ROUTE_GOOD_STREAK_TO_PER_REGEX: u8 = 2;
+const SCANNER_STATS_ENABLED: bool = cfg!(any(test, debug_assertions));
 
 /// Multi-pattern scanner compatible with vscode-oniguruma's `OnigScanner`.
 ///
@@ -518,21 +531,26 @@ impl Scanner {
 
         // One-off calls always use RegSet.
         if !use_cache {
-            self.stats.route_regset_calls += 1;
+            if SCANNER_STATS_ENABLED {
+                self.stats.route_regset_calls += 1;
+            }
             return self.search_regset(str_data, end, start_position, onig_opts);
         }
 
         let use_regset = self.should_use_regset_for_cache(str_id, options.0, start_position);
         if use_regset {
-            self.stats.route_regset_calls += 1;
-            self.stats.route_cache_regset_calls += 1;
+            if SCANNER_STATS_ENABLED {
+                self.stats.route_regset_calls += 1;
+                self.stats.route_cache_regset_calls += 1;
+            }
             self.search_regset(str_data, end, start_position, onig_opts)
         } else {
-            self.stats.route_per_regex_calls += 1;
-            self.stats.route_cache_per_regex_calls += 1;
-            let is_probe = self.cache_route.route == CacheRoute::RegSet;
-            if is_probe {
-                self.stats.route_cache_probe_calls += 1;
+            if SCANNER_STATS_ENABLED {
+                self.stats.route_per_regex_calls += 1;
+                self.stats.route_cache_per_regex_calls += 1;
+                if self.cache_route.route == CacheRoute::RegSet {
+                    self.stats.route_cache_probe_calls += 1;
+                }
             }
             let (m, run_stats) = self.search_per_regex(
                 str_data,
@@ -572,6 +590,10 @@ impl Scanner {
                 self.cache_route.same_start_streak.saturating_add(1);
         } else {
             self.cache_route.same_start_streak = 1;
+            self.cache_route.last_start = start_position;
+            if self.cache_route.route == CacheRoute::RegSet {
+                return true;
+            }
         }
         self.cache_route.last_start = start_position;
 
@@ -595,10 +617,12 @@ impl Scanner {
 
     #[inline]
     fn observe_per_regex_outcome(&mut self, run_stats: PerRegexCallStats) {
-        self.stats.cache_checks += run_stats.cache_checks as u64;
-        self.stats.cache_hits += run_stats.cache_hits as u64;
-        self.stats.cache_misses += run_stats.cache_misses() as u64;
-        self.stats.vm_search_calls += run_stats.vm_calls as u64;
+        if SCANNER_STATS_ENABLED {
+            self.stats.cache_checks += run_stats.cache_checks as u64;
+            self.stats.cache_hits += run_stats.cache_hits as u64;
+            self.stats.cache_misses += run_stats.cache_misses() as u64;
+            self.stats.vm_search_calls += run_stats.vm_calls as u64;
+        }
 
         // Route quality based on effective cache reuse vs VM work.
         // This catches line-by-line scans where cache eligibility is low.
@@ -628,7 +652,9 @@ impl Scanner {
             self.cache_route.calls_since_probe = 0;
             self.cache_route.poor_per_regex_streak = 0;
             self.cache_route.good_per_regex_streak = 0;
-            self.stats.route_switch_to_regset += 1;
+            if SCANNER_STATS_ENABLED {
+                self.stats.route_switch_to_regset += 1;
+            }
         } else if self.cache_route.route == CacheRoute::RegSet
             && self.cache_route.good_per_regex_streak >= ROUTE_GOOD_STREAK_TO_PER_REGEX
         {
@@ -636,7 +662,9 @@ impl Scanner {
             self.cache_route.calls_since_probe = 0;
             self.cache_route.poor_per_regex_streak = 0;
             self.cache_route.good_per_regex_streak = 0;
-            self.stats.route_switch_to_per_regex += 1;
+            if SCANNER_STATS_ENABLED {
+                self.stats.route_switch_to_per_regex += 1;
+            }
         }
     }
 
@@ -722,10 +750,11 @@ impl Scanner {
 
         for i in 0..n {
             let cache = &caches[i];
+            let has_g_anchor = cache.has_g_anchor;
 
             // Check cache
             if use_cache
-                && !cache.has_g_anchor
+                && !has_g_anchor
                 && cache.last_str_id == str_id
                 && cache.last_options == options_raw
                 && cache.last_position <= start
@@ -760,7 +789,11 @@ impl Scanner {
             let msa = msa.get_or_insert_with(|| MatchArg::new(reg, onig_opts, None, start));
             msa.reset_for_search(reg, onig_opts, Some(region), start);
 
-            let (r, returned_region) = onig_search_with_msa(reg, str_data, end, start, ep, msa);
+            let (r, returned_region) = if has_g_anchor {
+                search_g_anchor_with_msa(reg, str_data, end, start, ep, onig_opts, msa)
+            } else {
+                onig_search_with_msa(reg, str_data, end, start, ep, msa)
+            };
 
             // Put region back in cache (no clone needed)
             let cache = &mut caches[i];
@@ -812,6 +845,39 @@ impl Scanner {
         };
         (out, run_stats)
     }
+}
+
+/// Search helper for patterns containing `\G` in per-regex mode.
+///
+/// `onig_search` keeps `msa.start` fixed to the original search start, while
+/// the scanner's position-lead behavior checks each candidate position with
+/// that position as start. For `\G` patterns this changes match semantics.
+/// This helper mirrors position-lead behavior for a single regex.
+fn search_g_anchor_with_msa(
+    reg: &crate::regint::RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+    msa: &mut MatchArg,
+) -> (i32, Option<OnigRegion>) {
+    let mut s = start;
+    let search_end = range.min(end);
+
+    while s < search_end {
+        let r = onig_match_with_msa_start(reg, str_data, end, s, start, option, msa);
+        if r >= 0 {
+            return (s as i32, msa.region.take());
+        }
+        if s >= end {
+            break;
+        }
+        let step = reg.enc.mbc_enc_len(&str_data[s..]).max(1);
+        s = s.saturating_add(step);
+    }
+
+    (ONIG_MISMATCH, msa.region.take())
 }
 
 /// Build a `ScannerMatch` from a regex index and region.
@@ -1773,6 +1839,39 @@ mod tests {
             .find_next_match_with_id(&long, 1, 1, ScannerFindOptions::NONE)
             .unwrap();
         assert_eq!(m.capture_indices[0].start, 1);
+    }
+
+    #[test]
+    fn g_anchor_uses_original_search_start_in_position_lead() {
+        let mut scanner = Scanner::new(&["\\G(\\s+)", "\\s+"]).unwrap();
+        let s = "x> y";
+
+        // Search starts at index 1 ('>').
+        // \G(\\s+) must not be allowed to re-anchor at index 2 (' ').
+        // The plain \\s+ pattern should win.
+        let m = scanner
+            .find_next_match(s, 1, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(m.index, 1);
+        assert_eq!(m.capture_indices[0].start, 2);
+        assert_eq!(m.capture_indices[0].end, 3);
+
+        let m = scanner
+            .find_next_match_with_id(s, 42, 1, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(m.index, 1);
+        assert_eq!(m.capture_indices[0].start, 2);
+        assert_eq!(m.capture_indices[0].end, 3);
+
+        // Warm cache route and re-run at a shifted start to exercise
+        // per-regex probing with the same string id.
+        let _ = scanner.find_next_match_with_id(s, 42, 0, ScannerFindOptions::NONE);
+        let m = scanner
+            .find_next_match_with_id(s, 42, 1, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(m.index, 1);
+        assert_eq!(m.capture_indices[0].start, 2);
+        assert_eq!(m.capture_indices[0].end, 3);
     }
 
     #[test]
