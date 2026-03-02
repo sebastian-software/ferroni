@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.5](https://github.com/sebastian-software/ferroni/compare/v1.2.4...v1.2.5) (2026-03-02)
+
+
+### Performance Improvements
+
+* reuse regset match state and skip no-capture region work ([03f67c7](https://github.com/sebastian-software/ferroni/commit/03f67c7eb0082a8cafd97ae355d694a930ebe4aa))
+* speed up scanner css hot paths ([1d0e060](https://github.com/sebastian-software/ferroni/commit/1d0e060d45528c9be154c0c038beb3b71d5f1fc7))
+
 ## [1.2.4](https://github.com/sebastian-software/ferroni/compare/v1.2.3...v1.2.4) (2026-03-02)
 
 
