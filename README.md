@@ -175,7 +175,7 @@ automatic UTF-16 position mapping. API-compatible with
 
 ## Performance
 
-Ferroni wins **31 of 42** execution benchmarks against C Oniguruma at `-O3`.
+Ferroni wins **31 of 42 core** execution benchmarks against C Oniguruma at `-O3`.
 Of the remaining 11, five are within noise (<10%) and six show C ahead --
 primarily on Unicode multi-byte properties, timestamp extraction, and
 named captures.
@@ -188,6 +188,7 @@ Criterion, Apple M1 Ultra. **Bold** = faster engine.
 | Full-text scan, no match, 50 KB | **1.5 us** | 9.4 us | **6.3x** |
 | Full-text scan, no match, 10 KB | **382 ns** | 1.9 us | **5.0x** |
 | Scanner, short string | **181 ns** | 428 ns | **2.4x** |
+| CSS scanner tokenize (20 patterns) | **35.7 us** | 833 us | **23.3x** |
 | Multi-pattern RegSet | **169 ns** | 397 ns | **2.3x** |
 | Scanner, warm cache | 25 ns | 23 ns | 1.0x |
 
@@ -202,6 +203,20 @@ expression patterns from a Shiki grammar:
 | Compile 62 patterns | **1.2 ms** | 2.8 ms | **2.2x** |
 | Match, short line (72 chars) | **854 ns** | 6.0 us | **7.0x** |
 | Tokenize full line (13 tokens) | **32.2 us** | 99.8 us | **3.1x** |
+
+### Scanner on CSS workload (20 patterns)
+
+To track improvements around Unicode-heavy CSS tokenization
+([Issue #10](https://github.com/sebastian-software/ferroni/issues/10)),
+the main Rust-vs-C benchmark suite now includes `scanner-css`:
+
+| Scenario | Ferroni | C Oniguruma | Factor |
+|----------|--------:|------------:|-------:|
+| Compile 20 patterns | **97 us** | 166 us | **1.7x** |
+| Match, short line | **222 ns** | 6.16 us | **27.8x** |
+| Tokenize full CSS block | **35.7 us** | 833 us | **23.3x** |
+| Tokenize 10x CSS block | **368 us** | 1.32 ms | **3.6x** |
+| Word-class tokenize (`\w+`, `\s+`, other) | **19.0 us** | 113 us | **5.9x** |
 
 The largest gains come from SIMD-vectorized search via
 [`memchr`](https://crates.io/crates/memchr) -- NEON on ARM, SSE2/AVX2 on
@@ -303,6 +318,7 @@ compilation and are now faster than C.
 cargo bench --features ffi               # full suite (~8 min)
 cargo bench --features ffi -- compile    # specific group
 cargo bench --features ffi -- scanner    # scanner API benchmarks
+cargo bench --features ffi -- scanner-css # CSS scanner workload vs C
 cargo bench --features ffi -- "large_"   # pattern filter
 # HTML report: target/criterion/report/index.html
 ```
