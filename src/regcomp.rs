@@ -6032,14 +6032,21 @@ fn tune_called_state(node: &mut Node, state: i32) {
 /// Minimum number of literal alternatives to trigger trie optimization.
 const LITERAL_ALT_THRESHOLD: usize = 4;
 
+/// Maximum number of extracted paths from nested alternation structures.
+/// Prevents exponential blowup from deeply nested optionals.
+const MAX_NESTED_TRIE_PATHS: usize = 8192;
+
 /// Info about one branch in an Alt cons-chain.
 struct AltBranchInfo {
     /// Index of this branch in the Alt cons-chain (0-based).
     index: usize,
-    /// Whether this branch is a plain literal string (non-crude).
+    /// Whether this branch is a literal (plain string or nested structure
+    /// that was successfully extracted into literal paths).
     is_literal: bool,
-    /// The literal bytes (only valid if `is_literal` is true).
-    literal: Vec<u8>,
+    /// The literal byte sequences extracted from this branch.
+    /// A plain string branch has exactly one entry; a nested structure
+    /// may have multiple.  Empty if `is_literal` is false.
+    literals: Vec<Vec<u8>>,
 }
 
 /// Walk the AST and detect alternation nodes where most branches are plain
@@ -6055,15 +6062,14 @@ struct AltBranchInfo {
 ///
 /// **Must be called before `tune_tree`** so that case-fold expansion has not
 /// yet rewritten the string nodes.
-pub fn detect_literal_alternations(node: &mut Node, reg: &mut RegexType) {
-    detect_literal_alternations_inner(node, reg, false);
+pub fn detect_literal_alternations(node: &mut Node, reg: &mut RegexType, backrefed_mem: MemStatusType) {
+    detect_literal_alternations_inner(node, reg, false, backrefed_mem);
 }
 
-fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_anchor: bool) {
-    // First recurse into children so we process bottom-up.
+/// Recurse into the children of a node for literal alternation detection.
+fn recurse_into_children(node: &mut Node, reg: &mut RegexType, in_anchor: bool, backrefed_mem: MemStatusType) {
     match &mut node.inner {
         NodeInner::List(_) | NodeInner::Alt(_) => {
-            // Walk cons-chain children.
             let mut cur: *mut Node = node;
             unsafe {
                 loop {
@@ -6073,7 +6079,7 @@ fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_an
                         }
                         _ => break,
                     };
-                    detect_literal_alternations_inner(&mut *car, reg, in_anchor);
+                    detect_literal_alternations_inner(&mut *car, reg, in_anchor, backrefed_mem);
                     match cdr {
                         Some(ref mut next) => cur = &mut **next,
                         None => break,
@@ -6083,35 +6089,27 @@ fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_an
         }
         NodeInner::Quant(ref mut qn) => {
             if let Some(ref mut body) = qn.body {
-                detect_literal_alternations_inner(body, reg, in_anchor);
+                detect_literal_alternations_inner(body, reg, in_anchor, backrefed_mem);
             }
         }
         NodeInner::Bag(ref mut bn) => {
             if let Some(ref mut body) = bn.body {
-                detect_literal_alternations_inner(body, reg, in_anchor);
+                detect_literal_alternations_inner(body, reg, in_anchor, backrefed_mem);
             }
         }
         NodeInner::Anchor(ref mut an) => {
             if let Some(ref mut body) = an.body {
-                // Lookbehind/lookahead anchors have special matching semantics;
-                // don't trie-optimize Alts inside them.
-                detect_literal_alternations_inner(body, reg, true);
+                detect_literal_alternations_inner(body, reg, true, backrefed_mem);
             }
         }
         _ => {}
     }
+}
 
-    // Now check if *this* node is an Alt.
-    if !matches!(node.inner, NodeInner::Alt(_)) {
-        return;
-    }
-
-    // Skip Alts inside anchors (lookbehinds/lookaheads).
-    if in_anchor {
-        return;
-    }
-
-    // Collect info about each branch in the Alt cons-chain.
+/// Try to trie-optimize an Alt node using nested extraction.  Returns true
+/// if optimization was applied (full or partial).
+fn try_trie_optimize_alt(node: &mut Node, reg: &mut RegexType, backrefed_mem: MemStatusType) -> bool {
+    // Collect info about each branch.
     let mut branches: Vec<AltBranchInfo> = Vec::new();
     let mut case_insensitive = false;
     let mut literal_count = 0usize;
@@ -6123,35 +6121,26 @@ fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_an
             loop {
                 let (car, cdr) = match &(*cur).inner {
                     NodeInner::Alt(ref cons) => (&*cons.car as *const Node, &cons.cdr),
-                    // Last node in the chain might not be an Alt wrapper.
                     _ => {
-                        let (is_lit, lit) = check_literal_branch(&*cur);
-                        if is_lit && (*cur).has_status(ND_ST_IGNORECASE) {
+                        let info = classify_branch(&*cur, backrefed_mem);
+                        if info.is_literal && (*cur).has_status(ND_ST_IGNORECASE) {
                             case_insensitive = true;
                         }
-                        if is_lit {
-                            literal_count += 1;
+                        if info.is_literal {
+                            literal_count += info.literals.len();
                         }
-                        branches.push(AltBranchInfo {
-                            index: idx,
-                            is_literal: is_lit,
-                            literal: lit,
-                        });
+                        branches.push(AltBranchInfo { index: idx, ..info });
                         break;
                     }
                 };
-                let (is_lit, lit) = check_literal_branch(&*car);
-                if is_lit && (*car).has_status(ND_ST_IGNORECASE) {
+                let info = classify_branch(&*car, backrefed_mem);
+                if info.is_literal && (*car).has_status(ND_ST_IGNORECASE) {
                     case_insensitive = true;
                 }
-                if is_lit {
-                    literal_count += 1;
+                if info.is_literal {
+                    literal_count += info.literals.len();
                 }
-                branches.push(AltBranchInfo {
-                    index: idx,
-                    is_literal: is_lit,
-                    literal: lit,
-                });
+                branches.push(AltBranchInfo { index: idx, ..info });
                 idx += 1;
                 match cdr {
                     Some(ref next) => cur = &**next,
@@ -6162,43 +6151,38 @@ fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_an
     }
 
     if literal_count < LITERAL_ALT_THRESHOLD {
-        return;
+        return false;
     }
 
     // Build the trie from literal branches.
-    let literals: Vec<&[u8]> = branches
+    let literals: Vec<Vec<u8>> = branches
         .iter()
         .filter(|b| b.is_literal)
-        .map(|b| b.literal.as_slice())
+        .flat_map(|b| b.literals.iter().cloned())
         .collect();
-    let trie = crate::literal_trie::LiteralTrie::build(&literals, case_insensitive);
+    let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
+    let trie = crate::literal_trie::LiteralTrie::build(&literal_refs, case_insensitive);
     let trie_idx = reg.literal_tries.len() as u32;
     reg.literal_tries.push(trie);
 
-    let all_literal = literal_count == branches.len();
+    let all_literal = branches.iter().all(|b| b.is_literal);
 
     if all_literal {
-        // All branches are literals — replace the entire Alt with a trie node.
         node.inner = NodeInner::String(StrNode {
             s: trie_idx.to_le_bytes().to_vec(),
             flag: 0,
         });
         node.status_add(ND_ST_LITERAL_ALT);
     } else {
-        // Partial optimization: extract non-literal branches from the Alt
-        // cons-chain, then build a new Alt with the trie node as the first
-        // branch followed by the non-literal branches.
         let non_literal_indices: Vec<usize> = branches
             .iter()
             .filter(|b| !b.is_literal)
             .map(|b| b.index)
             .collect();
 
-        // Extract the non-literal branch nodes from the existing cons-chain.
         let mut non_literal_nodes: Vec<Box<Node>> = Vec::new();
         extract_alt_branches(node, &non_literal_indices, &mut non_literal_nodes);
 
-        // Build the trie node.
         let trie_node = Box::new(Node {
             status: ND_ST_LITERAL_ALT,
             parent: std::ptr::null_mut(),
@@ -6208,9 +6192,7 @@ fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_an
             }),
         });
 
-        // Build a new Alt cons-chain: trie_node | non_literal_0 | non_literal_1 | ...
         let mut chain: Option<Box<Node>> = None;
-        // Build from the back
         for non_lit in non_literal_nodes.into_iter().rev() {
             if let Some(tail) = chain.take() {
                 chain = Some(Box::new(Node {
@@ -6222,17 +6204,222 @@ fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_an
                     }),
                 }));
             } else {
-                // Last non-literal becomes the tail (not wrapped in Alt)
                 chain = Some(non_lit);
             }
         }
 
-        // Now prepend the trie node
         let cdr = chain;
         node.inner = NodeInner::Alt(ConsAltNode {
             car: trie_node,
             cdr,
         });
+    }
+
+    true
+}
+
+fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_anchor: bool, backrefed_mem: MemStatusType) {
+    // Try top-down: if this node is an Alt (not in anchor), try nested
+    // extraction BEFORE recursing into children.  This prevents inner Alts
+    // from being trie-optimized first (which makes them opaque to outer
+    // extraction).
+    if matches!(node.inner, NodeInner::Alt(_)) && !in_anchor {
+        if try_trie_optimize_alt(node, reg, backrefed_mem) {
+            // Successfully trie-optimized this Alt.  Recurse into any
+            // remaining non-literal branches (for partial optimization,
+            // the Alt was restructured: trie_node | non_lit_0 | ...).
+            recurse_into_children(node, reg, in_anchor, backrefed_mem);
+            return;
+        }
+    }
+
+    // Recurse into children, then retry flat-check on this Alt.
+    recurse_into_children(node, reg, in_anchor, backrefed_mem);
+
+    // After recursion, retry on this Alt.  Inner Alts may now be trie
+    // nodes; classify_branch handles that via check_literal_branch.
+    if matches!(node.inner, NodeInner::Alt(_)) && !in_anchor {
+        try_trie_optimize_alt(node, reg, backrefed_mem);
+    }
+}
+
+/// Recursively extract all possible literal byte sequences from a nested AST
+/// branch.  Handles String, List (sequence), Alt (fork), Bag (non-capturing or
+/// non-backreferenced capturing groups), and Quant(0,1) (optional `?`).
+///
+/// Returns `None` if any sub-expression is non-literal (CClass, CType, complex
+/// Quant, Anchor, BackRef, etc.).  The `limit` prevents exponential blowup.
+fn extract_literal_paths(
+    node: *const Node,
+    current_prefixes: Vec<Vec<u8>>,
+    limit: usize,
+    backrefed_mem: MemStatusType,
+) -> Option<Vec<Vec<u8>>> {
+    if current_prefixes.len() > limit {
+        return None;
+    }
+    unsafe {
+        match &(*node).inner {
+            NodeInner::String(ref sn) => {
+                if sn.is_crude() || (*node).has_status(ND_ST_LITERAL_ALT) {
+                    return None;
+                }
+                // Append this string's bytes to each prefix
+                let result: Vec<Vec<u8>> = current_prefixes
+                    .into_iter()
+                    .map(|mut prefix| {
+                        prefix.extend_from_slice(&sn.s);
+                        prefix
+                    })
+                    .collect();
+                Some(result)
+            }
+            NodeInner::List(ref cons) => {
+                // Sequence: walk car then cdr, threading prefixes through
+                let car: *const Node = &*cons.car;
+                let after_car = extract_literal_paths(car, current_prefixes, limit, backrefed_mem)?;
+                if after_car.len() > limit {
+                    return None;
+                }
+                match &cons.cdr {
+                    Some(ref next) => {
+                        let cdr: *const Node = &**next;
+                        extract_literal_paths(cdr, after_car, limit, backrefed_mem)
+                    }
+                    None => Some(after_car),
+                }
+            }
+            NodeInner::Alt(ref cons) => {
+                // Fork: recurse into each branch, collect all resulting paths
+                let mut all_paths: Vec<Vec<u8>> = Vec::new();
+                let mut cur: *const Node = node;
+                loop {
+                    let (car, cdr) = match &(*cur).inner {
+                        NodeInner::Alt(ref cons) => {
+                            (&*cons.car as *const Node, &cons.cdr)
+                        }
+                        _ => {
+                            // Last node in the chain (not wrapped in Alt)
+                            let branch_paths = extract_literal_paths(
+                                cur,
+                                current_prefixes.clone(),
+                                limit,
+                                backrefed_mem,
+                            )?;
+                            all_paths.extend(branch_paths);
+                            if all_paths.len() > limit {
+                                return None;
+                            }
+                            break;
+                        }
+                    };
+                    let branch_paths = extract_literal_paths(
+                        car,
+                        current_prefixes.clone(),
+                        limit,
+                        backrefed_mem,
+                    )?;
+                    all_paths.extend(branch_paths);
+                    if all_paths.len() > limit {
+                        return None;
+                    }
+                    match cdr {
+                        Some(ref next) => cur = &**next,
+                        None => break,
+                    }
+                }
+                Some(all_paths)
+            }
+            NodeInner::Bag(ref bn) => {
+                match bn.bag_type {
+                    BagType::Memory => {
+                        // Capturing group: only safe if not backreferenced
+                        if mem_status_at(backrefed_mem, bn.regnum() as usize) {
+                            return None;
+                        }
+                        match &bn.body {
+                            Some(ref body) => {
+                                let body_ptr: *const Node = &**body;
+                                extract_literal_paths(body_ptr, current_prefixes, limit, backrefed_mem)
+                            }
+                            None => Some(current_prefixes),
+                        }
+                    }
+                    BagType::Option => {
+                        // Non-capturing group (?:...) or option group
+                        match &bn.body {
+                            Some(ref body) => {
+                                let body_ptr: *const Node = &**body;
+                                extract_literal_paths(body_ptr, current_prefixes, limit, backrefed_mem)
+                            }
+                            None => Some(current_prefixes),
+                        }
+                    }
+                    _ => None, // StopBacktrack, IfElse — not literal
+                }
+            }
+            NodeInner::Quant(ref qn) => {
+                if qn.lower == 0 && qn.upper == 1 {
+                    // Optional `?`: fork into "with" and "without" paths
+                    match &qn.body {
+                        Some(ref body) => {
+                            let body_ptr: *const Node = &**body;
+                            let with_paths = extract_literal_paths(
+                                body_ptr,
+                                current_prefixes.clone(),
+                                limit,
+                                backrefed_mem,
+                            )?;
+                            let mut all = current_prefixes; // "without" paths
+                            all.extend(with_paths);
+                            if all.len() > limit {
+                                return None;
+                            }
+                            Some(all)
+                        }
+                        None => Some(current_prefixes),
+                    }
+                } else {
+                    None // Complex quantifier — not literal
+                }
+            }
+            // CClass, CType, BackRef, Anchor, Call, Gimmick — not literal
+            _ => None,
+        }
+    }
+}
+
+/// Classify a branch as literal or non-literal.  Tries the fast path
+/// (`check_literal_branch`) first, then falls back to `extract_literal_paths`
+/// for nested structures.
+fn classify_branch(node: *const Node, backrefed_mem: MemStatusType) -> AltBranchInfo {
+    let (is_lit, lit) = check_literal_branch(node);
+    if is_lit {
+        return AltBranchInfo {
+            index: 0, // caller will override
+            is_literal: true,
+            literals: vec![lit],
+        };
+    }
+    // Try nested extraction
+    if let Some(paths) = extract_literal_paths(
+        node,
+        vec![Vec::new()],
+        MAX_NESTED_TRIE_PATHS,
+        backrefed_mem,
+    ) {
+        if !paths.is_empty() && paths.iter().all(|p| !p.is_empty()) {
+            return AltBranchInfo {
+                index: 0,
+                is_literal: true,
+                literals: paths,
+            };
+        }
+    }
+    AltBranchInfo {
+        index: 0,
+        is_literal: false,
+        literals: Vec::new(),
     }
 }
 
@@ -8267,7 +8454,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
 
     // Detect literal alternations and replace with trie (before tune_tree
     // so case-fold expansion hasn't rewritten the string nodes yet).
-    detect_literal_alternations(&mut root, reg);
+    detect_literal_alternations(&mut root, reg, env.backrefed_mem);
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
     let r = tune_tree(&mut root, reg, 0, &mut env);
@@ -8958,5 +9145,148 @@ mod tests {
         assert_eq!(m2.as_str(), "DISPLAY");
         // Should not match partial words
         assert!(re.find("displaying").is_none());
+    }
+
+    // --- Nested alternation trie tests ---
+
+    #[test]
+    fn nested_alt_trie_simple() {
+        // a(b|c)d → should extract ["abd", "acd"] and trigger trie
+        // Need enough branches to exceed threshold, so use multiple nested alts
+        use crate::api::Regex;
+        let re = Regex::new("a(b|c|d|e|f)g").unwrap();
+        assert!(
+            !re.as_raw().literal_tries.is_empty(),
+            "nested alternation a(b|c|d|e|f)g should trigger trie"
+        );
+        let m = re.find("xaegx").unwrap();
+        assert_eq!(m.as_str(), "aeg");
+        let m2 = re.find("xacgx").unwrap();
+        assert_eq!(m2.as_str(), "acg");
+    }
+
+    #[test]
+    fn nested_alt_trie_optional() {
+        // Top-level Alt where first branch has an optional (Quant 0,1).
+        // extract_literal_paths forks into "with" and "without" paths.
+        use crate::api::Regex;
+        let re = Regex::new("ab(cd)?ef|abgh|abij|abkl|abmn").unwrap();
+        assert!(
+            !re.as_raw().literal_tries.is_empty(),
+            "nested alternation with optional should trigger trie"
+        );
+        // With optional present
+        let m = re.find("xabcdefx").unwrap();
+        assert_eq!(m.as_str(), "abcdef");
+        // Without optional
+        let m2 = re.find("xabefx").unwrap();
+        assert_eq!(m2.as_str(), "abef");
+        // Plain branch
+        let m3 = re.find("xabghx").unwrap();
+        assert_eq!(m3.as_str(), "abgh");
+    }
+
+    #[test]
+    fn nested_alt_trie_partial_with_cclass() {
+        // Mixed: nested structure with one CClass branch → partial optimization
+        use crate::api::Regex;
+        let re = Regex::new(r"a(b|c|d|e|f)g|[xy]z").unwrap();
+        assert!(
+            !re.as_raw().literal_tries.is_empty(),
+            "nested alt with partial non-literal should trigger partial trie"
+        );
+        // Match literal branch
+        let m = re.find("xabgx").unwrap();
+        assert_eq!(m.as_str(), "abg");
+        // Match non-literal branch
+        let m2 = re.find("xxzx").unwrap();
+        assert_eq!(m2.as_str(), "xz");
+    }
+
+    #[test]
+    fn nested_alt_trie_entity_like() {
+        // Mimics HTML entity pattern structure: nested trie encoded as regex
+        use crate::api::Regex;
+        let re = Regex::new(
+            "a(s(ymp(eq)?|cr|t)|n(d(slope|and)?|g(le|st|msd)?|e))|b(a(ck(sim(eq)?|prime|cong|epsilon)|r(vee|wed))|o(x(times|plus|minus|dl|dr|ul|ur|v[lrhHV]|h[dDuU])|t)|u(ll(et)?|mp(e(q)?)?)|l(ock|k[34])|e(caus(e)?|rnou|tween|mptyv)|ig(c(ap|up|irc)|o(dot|plus|times)|tri(angle(down|up|left|right)|angle)|s(qcup|tar)|vee|wedge)|n(ot|e(quiv)?)|r(eve|vbar)|s(cr|ol(b|hsub)?|im(e)?)|(?:N|b)rk|f(r|isht)|karow|pf|scr)",
+        )
+        .unwrap();
+        assert!(
+            !re.as_raw().literal_tries.is_empty(),
+            "entity-like nested pattern should trigger trie"
+        );
+        // Match some entity names
+        let m = re.find("xasymp;").unwrap();
+        assert_eq!(m.as_str(), "asymp");
+        let m2 = re.find("xasympeq;").unwrap();
+        assert_eq!(m2.as_str(), "asympeq");
+        let m3 = re.find("xandslope;").unwrap();
+        assert_eq!(m3.as_str(), "andslope");
+        let m4 = re.find("xboxplus;").unwrap();
+        assert_eq!(m4.as_str(), "boxplus");
+    }
+
+    #[test]
+    fn nested_alt_trie_backreferenced_capture_skipped() {
+        // Backreferenced capture group should NOT be optimized
+        use crate::api::Regex;
+        let re = Regex::new(r"(a|b|c|d|e)\1").unwrap();
+        // This should NOT trigger trie because the capture is backreferenced
+        // The alt itself has 5 branches but each is simple, so it might trigger
+        // for the inner alt. The key test is that it still works correctly.
+        let m = re.find("xaax").unwrap();
+        assert_eq!(m.as_str(), "aa");
+        assert!(re.find("xabx").is_none());
+    }
+
+    #[test]
+    fn nested_alt_trie_non_capturing_group() {
+        // Non-capturing group should be transparent
+        use crate::api::Regex;
+        let re = Regex::new("(?:a(?:b|c|d|e|f)g)").unwrap();
+        assert!(
+            !re.as_raw().literal_tries.is_empty(),
+            "nested alt in non-capturing groups should trigger trie"
+        );
+        let m = re.find("xadgx").unwrap();
+        assert_eq!(m.as_str(), "adg");
+    }
+
+    #[test]
+    fn nested_alt_trie_entity_diagnostic() {
+        // Compile the full HTML entity pattern to verify nested extraction
+        let reg = onig_new(
+            b"a(s(ymp(eq)?|cr|t)|n(d(slope|and)?|g(s(t|ph)|zarr|e|le|rt(vb(d)?)?|msd(aa)?)?|e)|c(y|irc|d|ute)?|tilde|o(pf|gon)|uml|p(id|os|prox(eq)?|acir)?|elig|f(r)?|l(pha|e(ph|fsym))|acute|ring|grave|m(p|a(cr|lg))|breve)|b(s(cr|im(e)?|ol(hsub|b)?|emi)|c(y|ong)|ig(s(tar|qcup)|c(irc|up|ap)|triangle(down|up)|o(times|dot|plus)|uplus|vee|wedge)|o(t(tom)?|pf|wtie)|u(ll(et)?|mp(e(q)?)?)|prime|e(caus(e)?|t(h|ween|a)|psi|rnou|mptyv)|karow|fr|l(ock|a(nk|ck(square|triangle(down|left|right)?|lozenge)))|a(ck(sim(eq)?|cong|prime|epsilon)|r(vee|wed(ge)?))|r(eve|vbar)|brk(tbrk)?)|c(s(cr|u(p(e)?|b(e)?))|h(cy|i|eck(mark)?)|ylcty|c(irc|ups(sm)?|edil|a(ps|ron))|tdot|ir(scir|c(eq|le(d(circ|dash|ast)))?|e|fnint|mid)?|o(n(int|g(dot)?)|p(y(sr)?|f|rod)|lon(e(q)?)?|m(p(fn|le(xes|ment))?|ma(t)?))|dot|u(darr(l|r)|p(s|c(up|ap)|or|dot|brcap)?|e(sc|pr)|vee|wed|larr(p)?|r(vearrow(left|right)|ly(eq(succ|prec)|vee|wedge)|arr(m)?|ren))|e(nt(erdot)?|dil|mptyv)|fr|lubs(uit)?|a(cute|p(s|c(up|ap)|dot|and|brcup)?|r(on|et))|r(oss|arr))|d(s(cr|trok|ol)|c(y|aron)|t(dot|ri(f)?)|i(sin|e|v(ide(ontimes)?|onx)?|am(s|ond(suit)?)?|gamma)|o(t(square|plus|eq(dot)?|minus)?|ublebarwedge|pf|wn(harpoon(left|right)|downarrows|arrow)|llar)|d(otseq|a(rr|gger))?|u(har|arr)|jcy|e(lta|g|mptyv)|f(isht|r)|lc(orn|rop)|a(sh(v)?|leth|rr|gger)|r(c(orn|rop)|bkarow)|bkarow|blac)",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        eprintln!(
+            "Entity subset: {} literal tries, {} ops",
+            reg.literal_tries.len(),
+            reg.ops.len()
+        );
+        let alt_lit_count = reg
+            .ops
+            .iter()
+            .filter(|op| op.opcode == OpCode::AltLiterals)
+            .count();
+        let push_count = reg
+            .ops
+            .iter()
+            .filter(|op| op.opcode == OpCode::Push)
+            .count();
+        assert!(
+            reg.literal_tries.len() > 0,
+            "entity pattern should produce at least 1 trie"
+        );
+        // With top-down nested extraction, the entire pure-literal entity
+        // pattern should collapse to a single trie with no Push ops.
+        assert_eq!(
+            push_count, 0,
+            "expected 0 Push ops but got {}",
+            push_count
+        );
     }
 }
