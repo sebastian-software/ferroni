@@ -6030,7 +6030,7 @@ fn tune_called_state(node: &mut Node, state: i32) {
 // ============================================================================
 
 /// Minimum number of literal alternatives to trigger trie optimization.
-const LITERAL_ALT_THRESHOLD: usize = 8;
+const LITERAL_ALT_THRESHOLD: usize = 4;
 
 /// Info about one branch in an Alt cons-chain.
 struct AltBranchInfo {
@@ -8764,9 +8764,9 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_below_threshold() {
-        // 5 alternations — below threshold, should NOT trigger
+        // 3 alternations — below threshold, should NOT trigger
         let reg = onig_new(
-            b"a|bb|ccc|dd|e",
+            b"a|bb|ccc",
             ONIG_OPTION_NONE,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             &crate::regsyntax::OnigSyntaxOniguruma,
@@ -8833,9 +8833,9 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_too_few_literals_with_non_literal() {
-        // Only 5 literal + 1 non-literal = below threshold
+        // Only 2 literal + 1 non-literal = below threshold
         let reg = onig_new(
-            b"a|bb|ccc|dd|eee|\\d+",
+            b"a|bb|\\d+",
             ONIG_OPTION_NONE,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             &crate::regsyntax::OnigSyntaxOniguruma,
