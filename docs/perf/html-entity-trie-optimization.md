@@ -69,9 +69,16 @@ Entity-like pattern without CClass nodes → **1 trie, 1 AltLiterals op, 0 Push 
 ### Real HTML entity pattern: limited impact
 
 The actual entity regex has character classes scattered within nested branches:
-- `[dv]` in `d(slope|[dv]|and)?`
-- `[a-h]` in `msd(a([a-h]))?`
-- `[Ee]` in `p(id|os|prox(eq)?|[Ee]|acir)?`
+- `[dv]` (2 members) in `d(slope|[dv]|and)?`
+- `[a-h]` (8 members) in `msd(a([a-h]))?`
+- `[Ee]` (2 members) in `p(id|os|prox(eq)?|[Ee]|acir)?`
+- `[DUdu]` (4 members) — directional variants (Down/Up)
+- `[LRlr]` (4 members) — directional variants (Left/Right)
+- `[HLRhlr]` (6 members) — multi-directional variants
+- `[er]` (2 members) — suffix variants
+- `[0-9]` (10 members) — numeric suffixes (e.g. `frac12`, `frac34`)
+
+All CClass nodes in the entity pattern have **≤ 10 single-byte members**. None are negated, none contain multi-byte ranges.
 
 These make `extract_literal_paths` return `None` for the containing branch, preventing full extraction. Result: partial optimization (some branches become trie, CClass-containing branches remain as backtracking).
 
@@ -143,7 +150,64 @@ The `enumerate_single_bytes()` helper on `CClassNode` would:
 
 **Expected impact**: High. Most CClass nodes in the entity pattern are small (2-8 members). Full extraction would collapse the entity alternation into a single trie with ~2000 entries, reducing entity matching from O(1700 * len) to O(len).
 
-**Effort**: Small-medium. Need `enumerate_single_bytes()` on `CClassNode` (requires understanding the bitset/range representation) + one new match arm in `extract_literal_paths`.
+**Effort**: Small. The internal representation is simple and well-suited for enumeration.
+
+#### CClassNode internals (verified)
+
+`CClassNode` in `regparse_types.rs:481` has three fields:
+
+```rust
+pub struct CClassNode {
+    pub flags: u32,        // FLAG_NCCLASS_NOT (negation), FLAG_NCCLASS_SHARE
+    pub bs: BitSet,        // [u32; 8] = 256 bits, one per single-byte value
+    pub mbuf: Option<BBuf>, // Multi-byte Unicode ranges (code points ≥ 256)
+}
+```
+
+`BitSet = [u32; 8]` covers all 256 single-byte values. Membership check via `bitset_at(bs, pos)` in `regint.rs:153`.
+
+**`enumerate_single_bytes()` implementation** — trivial:
+
+```rust
+impl CClassNode {
+    fn enumerate_single_bytes(&self) -> Option<Vec<u8>> {
+        // Bail on negated classes ([^...]) — would expand to ~250 entries
+        if self.is_not() { return None; }
+        // Bail if multi-byte ranges exist — can't represent in trie
+        if self.mbuf.is_some() { return None; }
+
+        let mut members = Vec::new();
+        for i in 0u16..256 {
+            if bitset_at(&self.bs, i as usize) {
+                members.push(i as u8);
+            }
+        }
+        if members.is_empty() { return None; }
+        Some(members)
+    }
+}
+```
+
+No complex parsing needed — just iterate 256 bits. The guard clauses (`is_not()`, `mbuf.is_some()`) handle all edge cases.
+
+#### Path explosion analysis for the HTML entity pattern
+
+Worst-case multiplicative effect of CClass expansion on the entity pattern:
+
+| CClass | Members | Context | Multiplier |
+|--------|---------|---------|------------|
+| `[dv]` | 2 | inside optional branch | ×2 |
+| `[Ee]` | 2 | inside optional branch | ×2 |
+| `[er]` | 2 | suffix variant | ×2 |
+| `[DUdu]` | 4 | directional | ×4 |
+| `[LRlr]` | 4 | directional | ×4 |
+| `[HLRhlr]` | 6 | multi-directional | ×6 |
+| `[a-h]` | 8 | inside optional+capture | ×8 |
+| `[0-9]` | 10 | numeric suffix | ×10 |
+
+These CClass nodes appear in **separate top-level branches** of the entity trie (different initial letters), so their multipliers don't compound with each other. The base ~1,700 literal paths would grow to roughly **~2,000-2,200 paths** — well within the `MAX_NESTED_TRIE_PATHS = 8192` limit.
+
+**Recommended CClass expansion limit**: **16 members per class**. This covers all entity-pattern cases while rejecting `[a-z]` (26) and `[A-Za-z]` (52).
 
 ### Approach B: Profile the actual HTML bottleneck
 
@@ -178,3 +242,16 @@ The `enumerate_single_bytes()` helper on `CClassNode` would:
 **Start with Approach A** — it's a focused, incremental change that directly addresses the known gap (CClass nodes blocking extraction). If CClass expansion doesn't close the gap, Approach B provides the diagnostic data to find the real bottleneck.
 
 The two approaches are complementary: A is a concrete optimization, B is a diagnostic. Even if A provides the expected improvement, B's profiling infrastructure is valuable for future work on other languages.
+
+### Decision gate
+
+After implementing Approach A, run the entity-heavy benchmark:
+- **If Rust closes the gap to ≤ 1.05x JS**: Entity trie was the bottleneck. Done.
+- **If gap remains > 1.10x JS**: Entity trie was only part of the problem. Proceed to Approach B.
+- **If gap is unchanged**: CClass branches were rarely hit in practice. Approach B becomes critical to find the real bottleneck.
+
+### Additional context: Pattern structure (912 capture groups)
+
+The full entity pattern structure is: `(&)(?=[A-Za-z])((nested_trie))(;)` with **912 capture groups** total. The lookahead `(?=[A-Za-z])` provides minimal early filtering — it only checks that the next character is a letter, but doesn't narrow down which of the ~1,700 branches will match. This means the regex engine must attempt the full trie on every `&` followed by a letter in the input.
+
+Note: Shiki JS uses the same Oniguruma engine (compiled to WASM via `vscode-oniguruma`), not V8's native `RegExp`. This means the performance difference is not due to V8's regex optimizations but rather differences in the Oniguruma compilation/execution path between native Rust FFI and WASM. This is worth investigating in Approach B — WASM Oniguruma may have different memory access patterns or the JS wrapper may batch regex operations differently.
