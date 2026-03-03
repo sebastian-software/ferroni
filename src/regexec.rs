@@ -4846,6 +4846,19 @@ fn match_at(
                 }
                 p += 1;
             }
+            OpCode::AltLiterals => {
+                if let OperationPayload::AltLiterals { trie_idx } = reg.ops[p].payload {
+                    let trie = &reg.literal_tries[trie_idx as usize];
+                    if let Some(match_len) = trie.find_match(str_data, s, right_range) {
+                        s += match_len;
+                        p += 1;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
             OpCode::CalloutName => {
                 let (num, id) = match &reg.ops[p].payload {
                     OperationPayload::CalloutName { num, id } => (*num, *id),
@@ -6093,6 +6106,7 @@ mod tests {
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,
+            literal_tries: Vec::new(),
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

@@ -302,6 +302,7 @@ pub enum OpCode {
     WordAsciiStar = 88,
     CClassStarPeekNext = 89,
     WordAsciiStarPeekNext = 90,
+    AltLiterals = 91,
 }
 
 // === SaveType ===
@@ -506,6 +507,9 @@ pub enum OperationPayload {
         num: MemNumType,
         id: MemNumType,
     },
+    AltLiterals {
+        trie_idx: u32,
+    },
 }
 
 // === Callout constants ===
@@ -606,6 +610,9 @@ pub struct RegexType {
 
     // extension (callouts)
     pub(crate) extp: Option<RegexExt>,
+
+    // literal alternation tries (for AltLiterals opcode)
+    pub(crate) literal_tries: Vec<crate::literal_trie::LiteralTrie>,
 }
 
 // === Optimization data structures ===

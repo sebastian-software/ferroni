@@ -84,6 +84,7 @@
 pub mod api;
 pub mod encodings;
 pub mod error;
+pub mod literal_trie;
 pub mod oniguruma;
 pub mod prelude;
 pub mod regcomp;

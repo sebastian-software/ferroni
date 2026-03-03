@@ -2817,6 +2817,11 @@ fn compile_gimmick_node(gn: &GimmickNode, reg: &mut RegexType, env: &ParseEnv) -
 /// Pass 1: Calculate the bytecode length needed for a node tree.
 /// Returns the number of operations that will be generated.
 pub fn compile_length_tree(node: &Node, reg: &RegexType, env: &ParseEnv) -> i32 {
+    // Literal alternation trie: single AltLiterals opcode.
+    if node.has_status(ND_ST_LITERAL_ALT) {
+        return SIZE_INC;
+    }
+
     match &node.inner {
         NodeInner::List(cons) => {
             let mut len = 0i32;
@@ -2896,6 +2901,19 @@ pub fn compile_length_tree(node: &Node, reg: &RegexType, env: &ParseEnv) -> i32 
 /// Pass 2: Generate bytecode operations from the node tree.
 /// Returns 0 on success or a negative error code.
 pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
+    // Literal alternation trie: emit single AltLiterals opcode.
+    if node.has_status(ND_ST_LITERAL_ALT) {
+        if let NodeInner::String(ref sn) = node.inner {
+            let trie_idx = u32::from_le_bytes([sn.s[0], sn.s[1], sn.s[2], sn.s[3]]);
+            add_op(
+                reg,
+                OpCode::AltLiterals,
+                OperationPayload::AltLiterals { trie_idx },
+            );
+            return 0;
+        }
+    }
+
     match &node.inner {
         NodeInner::List(cons) => {
             let r = compile_tree(&cons.car, reg, env);
@@ -6007,9 +6025,294 @@ fn tune_called_state(node: &mut Node, state: i32) {
     }
 }
 
+// ============================================================================
+// Literal alternation detection — replaces pure literal Alt trees with trie
+// ============================================================================
+
+/// Minimum number of literal alternatives to trigger trie optimization.
+const LITERAL_ALT_THRESHOLD: usize = 8;
+
+/// Info about one branch in an Alt cons-chain.
+struct AltBranchInfo {
+    /// Index of this branch in the Alt cons-chain (0-based).
+    index: usize,
+    /// Whether this branch is a plain literal string (non-crude).
+    is_literal: bool,
+    /// The literal bytes (only valid if `is_literal` is true).
+    literal: Vec<u8>,
+}
+
+/// Walk the AST and detect alternation nodes where most branches are plain
+/// literal strings.  When found, build a `LiteralTrie`, store it in
+/// `reg.literal_tries`, and restructure the Alt to use a trie node for the
+/// literal branches.
+///
+/// If ALL branches are literals, the entire Alt is replaced with a single
+/// trie-backed String node.  If only some branches are literals (but enough
+/// to exceed the threshold), the literal branches are collected into a trie
+/// and the Alt is restructured to have the trie node as the first branch
+/// followed by the remaining non-literal branches.
+///
+/// **Must be called before `tune_tree`** so that case-fold expansion has not
+/// yet rewritten the string nodes.
+pub fn detect_literal_alternations(node: &mut Node, reg: &mut RegexType) {
+    detect_literal_alternations_inner(node, reg, false);
+}
+
+fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_anchor: bool) {
+    // First recurse into children so we process bottom-up.
+    match &mut node.inner {
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            // Walk cons-chain children.
+            let mut cur: *mut Node = node;
+            unsafe {
+                loop {
+                    let (car, cdr) = match &mut (*cur).inner {
+                        NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) => {
+                            (&mut *cons.car as *mut Node, &mut cons.cdr)
+                        }
+                        _ => break,
+                    };
+                    detect_literal_alternations_inner(&mut *car, reg, in_anchor);
+                    match cdr {
+                        Some(ref mut next) => cur = &mut **next,
+                        None => break,
+                    }
+                }
+            }
+        }
+        NodeInner::Quant(ref mut qn) => {
+            if let Some(ref mut body) = qn.body {
+                detect_literal_alternations_inner(body, reg, in_anchor);
+            }
+        }
+        NodeInner::Bag(ref mut bn) => {
+            if let Some(ref mut body) = bn.body {
+                detect_literal_alternations_inner(body, reg, in_anchor);
+            }
+        }
+        NodeInner::Anchor(ref mut an) => {
+            if let Some(ref mut body) = an.body {
+                // Lookbehind/lookahead anchors have special matching semantics;
+                // don't trie-optimize Alts inside them.
+                detect_literal_alternations_inner(body, reg, true);
+            }
+        }
+        _ => {}
+    }
+
+    // Now check if *this* node is an Alt.
+    if !matches!(node.inner, NodeInner::Alt(_)) {
+        return;
+    }
+
+    // Skip Alts inside anchors (lookbehinds/lookaheads).
+    if in_anchor {
+        return;
+    }
+
+    // Collect info about each branch in the Alt cons-chain.
+    let mut branches: Vec<AltBranchInfo> = Vec::new();
+    let mut case_insensitive = false;
+    let mut literal_count = 0usize;
+
+    {
+        let mut cur: *const Node = node;
+        let mut idx = 0usize;
+        unsafe {
+            loop {
+                let (car, cdr) = match &(*cur).inner {
+                    NodeInner::Alt(ref cons) => (&*cons.car as *const Node, &cons.cdr),
+                    // Last node in the chain might not be an Alt wrapper.
+                    _ => {
+                        let (is_lit, lit) = check_literal_branch(&*cur);
+                        if is_lit && (*cur).has_status(ND_ST_IGNORECASE) {
+                            case_insensitive = true;
+                        }
+                        if is_lit {
+                            literal_count += 1;
+                        }
+                        branches.push(AltBranchInfo {
+                            index: idx,
+                            is_literal: is_lit,
+                            literal: lit,
+                        });
+                        break;
+                    }
+                };
+                let (is_lit, lit) = check_literal_branch(&*car);
+                if is_lit && (*car).has_status(ND_ST_IGNORECASE) {
+                    case_insensitive = true;
+                }
+                if is_lit {
+                    literal_count += 1;
+                }
+                branches.push(AltBranchInfo {
+                    index: idx,
+                    is_literal: is_lit,
+                    literal: lit,
+                });
+                idx += 1;
+                match cdr {
+                    Some(ref next) => cur = &**next,
+                    None => break,
+                }
+            }
+        }
+    }
+
+    if literal_count < LITERAL_ALT_THRESHOLD {
+        return;
+    }
+
+    // Build the trie from literal branches.
+    let literals: Vec<&[u8]> = branches
+        .iter()
+        .filter(|b| b.is_literal)
+        .map(|b| b.literal.as_slice())
+        .collect();
+    let trie = crate::literal_trie::LiteralTrie::build(&literals, case_insensitive);
+    let trie_idx = reg.literal_tries.len() as u32;
+    reg.literal_tries.push(trie);
+
+    let all_literal = literal_count == branches.len();
+
+    if all_literal {
+        // All branches are literals — replace the entire Alt with a trie node.
+        node.inner = NodeInner::String(StrNode {
+            s: trie_idx.to_le_bytes().to_vec(),
+            flag: 0,
+        });
+        node.status_add(ND_ST_LITERAL_ALT);
+    } else {
+        // Partial optimization: extract non-literal branches from the Alt
+        // cons-chain, then build a new Alt with the trie node as the first
+        // branch followed by the non-literal branches.
+        let non_literal_indices: Vec<usize> = branches
+            .iter()
+            .filter(|b| !b.is_literal)
+            .map(|b| b.index)
+            .collect();
+
+        // Extract the non-literal branch nodes from the existing cons-chain.
+        let mut non_literal_nodes: Vec<Box<Node>> = Vec::new();
+        extract_alt_branches(node, &non_literal_indices, &mut non_literal_nodes);
+
+        // Build the trie node.
+        let trie_node = Box::new(Node {
+            status: ND_ST_LITERAL_ALT,
+            parent: std::ptr::null_mut(),
+            inner: NodeInner::String(StrNode {
+                s: trie_idx.to_le_bytes().to_vec(),
+                flag: 0,
+            }),
+        });
+
+        // Build a new Alt cons-chain: trie_node | non_literal_0 | non_literal_1 | ...
+        let mut chain: Option<Box<Node>> = None;
+        // Build from the back
+        for non_lit in non_literal_nodes.into_iter().rev() {
+            if let Some(tail) = chain.take() {
+                chain = Some(Box::new(Node {
+                    status: 0,
+                    parent: std::ptr::null_mut(),
+                    inner: NodeInner::Alt(ConsAltNode {
+                        car: non_lit,
+                        cdr: Some(tail),
+                    }),
+                }));
+            } else {
+                // Last non-literal becomes the tail (not wrapped in Alt)
+                chain = Some(non_lit);
+            }
+        }
+
+        // Now prepend the trie node
+        let cdr = chain;
+        node.inner = NodeInner::Alt(ConsAltNode {
+            car: trie_node,
+            cdr,
+        });
+    }
+}
+
+/// Check if a node is a plain literal string (non-crude, no ND_ST_LITERAL_ALT).
+fn check_literal_branch(node: *const Node) -> (bool, Vec<u8>) {
+    unsafe {
+        if (*node).has_status(ND_ST_LITERAL_ALT) {
+            return (false, Vec::new());
+        }
+        if let NodeInner::String(ref sn) = (*node).inner {
+            if !sn.is_crude() {
+                return (true, sn.s.clone());
+            }
+        }
+        (false, Vec::new())
+    }
+}
+
+/// Extract specific branches (by index) from an Alt cons-chain.
+/// Returns the extracted nodes in the order of their indices.
+fn extract_alt_branches(
+    alt_node: &mut Node,
+    indices: &[usize],
+    out: &mut Vec<Box<Node>>,
+) {
+    // Walk the Alt cons-chain and collect the nodes at the given indices.
+    let mut idx = 0usize;
+    let mut cur: *mut Node = alt_node;
+    unsafe {
+        loop {
+            match &mut (*cur).inner {
+                NodeInner::Alt(ref mut cons) => {
+                    if indices.contains(&idx) {
+                        // Take the car node
+                        let placeholder = Box::new(Node {
+                            status: 0,
+                            parent: std::ptr::null_mut(),
+                            inner: NodeInner::String(StrNode {
+                                s: Vec::new(),
+                                flag: 0,
+                            }),
+                        });
+                        let taken = std::mem::replace(&mut cons.car, placeholder);
+                        out.push(taken);
+                    }
+                    idx += 1;
+                    match cons.cdr {
+                        Some(ref mut next) => cur = &mut **next,
+                        None => break,
+                    }
+                }
+                _ => {
+                    // Last node (tail) — check if it's in the indices
+                    if indices.contains(&idx) {
+                        let placeholder = Node {
+                            status: 0,
+                            parent: std::ptr::null_mut(),
+                            inner: NodeInner::String(StrNode {
+                                s: Vec::new(),
+                                flag: 0,
+                            }),
+                        };
+                        let taken = std::mem::replace(&mut *cur, placeholder);
+                        out.push(Box::new(taken));
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
 /// Mirrors C's tune_tree() from regcomp.c.
 pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
+    // Skip nodes already optimized as literal alternation tries.
+    if node.has_status(ND_ST_LITERAL_ALT) {
+        return 0;
+    }
+
     // Case-fold expansion: before the main match to get full &mut Node access
     if let NodeInner::String(ref sn) = node.inner {
         if node.has_status(ND_ST_IGNORECASE) && !sn.is_crude() {
@@ -7324,6 +7627,13 @@ fn optimize_nodes(
     opt.clear();
     set_bound_node_opt_info(opt, env_mm);
 
+    // Literal alternation trie: we don't know the exact match length
+    // (it's variable), so just set min=1, max=large and skip detailed opts.
+    if node.has_status(ND_ST_LITERAL_ALT) {
+        opt.len.set(1, INFINITE_LEN);
+        return 0;
+    }
+
     match &node.inner {
         NodeInner::List(_) => {
             let mut nenv_mm = *env_mm;
@@ -7915,6 +8225,10 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         tune_called_state(&mut root, 0);
     }
 
+    // Detect literal alternations and replace with trie (before tune_tree
+    // so case-fold expansion hasn't rewritten the string nodes yet).
+    detect_literal_alternations(&mut root, reg);
+
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
     let r = tune_tree(&mut root, reg, 0, &mut env);
     if r != 0 {
@@ -8070,6 +8384,7 @@ pub fn onig_new(
         called_addrs: vec![],
         unset_call_addrs: vec![],
         extp: None,
+        literal_tries: Vec::new(),
     };
 
     let r = onig_compile(&mut reg, pattern);
@@ -8124,6 +8439,7 @@ mod tests {
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,
+            literal_tries: Vec::new(),
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),
@@ -8420,5 +8736,183 @@ mod tests {
             reg_ic.ops.len(),
             reg_no_ic.ops.len()
         );
+    }
+
+    #[test]
+    fn literal_alt_trie_triggers() {
+        // 10 pure literal alternations — above threshold of 8
+        // Use onig_new (full pipeline) to include detect_literal_alternations
+        let reg = onig_new(
+            b"alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(
+            reg.literal_tries.len(),
+            1,
+            "expected 1 literal trie, got {}",
+            reg.literal_tries.len()
+        );
+        let has_alt_literals = reg.ops.iter().any(|op| op.opcode == OpCode::AltLiterals);
+        assert!(has_alt_literals, "expected AltLiterals opcode in bytecode");
+        // Should NOT have Push/Jump from normal Alt compilation
+        let has_push = reg.ops.iter().any(|op| op.opcode == OpCode::Push);
+        assert!(!has_push, "should not have Push opcode for trie-optimized alt");
+    }
+
+    #[test]
+    fn literal_alt_trie_below_threshold() {
+        // 5 alternations — below threshold, should NOT trigger
+        let reg = onig_new(
+            b"a|bb|ccc|dd|e",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(reg.literal_tries.len(), 0);
+        let has_alt_literals = reg.ops.iter().any(|op| op.opcode == OpCode::AltLiterals);
+        assert!(!has_alt_literals);
+    }
+
+    #[test]
+    fn literal_alt_trie_match_works() {
+        use crate::api::Regex;
+        let re = Regex::new("alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa").unwrap();
+        // Match "eta" in "the eta value"
+        let m = re.find("the eta value").unwrap();
+        assert_eq!(m.start(), 4);
+        assert_eq!(m.end(), 7);
+    }
+
+    #[test]
+    fn literal_alt_trie_no_match() {
+        use crate::api::Regex;
+        let re = Regex::new("alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa").unwrap();
+        let result = re.find("no match here");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn literal_alt_trie_mixed_non_literal_no_trigger() {
+        // Only 8 literal + 1 non-literal = 8 literals, should trigger with partial
+        let reg = onig_new(
+            b"a|bb|ccc|dd|eee|ff|ggg|hh|\\d+",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(
+            reg.literal_tries.len(),
+            1,
+            "8 literal branches should trigger partial trie"
+        );
+        let has_push = reg.ops.iter().any(|op| op.opcode == OpCode::Push);
+        assert!(
+            has_push,
+            "partial trie should still have Push for non-literal branch"
+        );
+    }
+
+    #[test]
+    fn literal_alt_trie_partial_match() {
+        // Partial optimization: 9 literal + 1 non-literal ([xy])
+        use crate::api::Regex;
+        let re = Regex::new("alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|[xy]z").unwrap();
+        assert!(!re.as_raw().literal_tries.is_empty());
+        // Match a literal branch
+        let m = re.find("the eta value").unwrap();
+        assert_eq!(m.as_str(), "eta");
+        // Match the non-literal branch
+        let m2 = re.find("the xz value").unwrap();
+        assert_eq!(m2.as_str(), "xz");
+    }
+
+    #[test]
+    fn literal_alt_trie_too_few_literals_with_non_literal() {
+        // Only 5 literal + 1 non-literal = below threshold
+        let reg = onig_new(
+            b"a|bb|ccc|dd|eee|\\d+",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(reg.literal_tries.len(), 0);
+    }
+
+    #[test]
+    fn literal_alt_trie_inside_group() {
+        // CSS-like pattern: alternation inside non-capturing group with lookbehind/lookahead
+        let reg = onig_new(
+            b"(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa)",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(
+            reg.literal_tries.len(),
+            1,
+            "should detect alt inside non-capturing group, got {}",
+            reg.literal_tries.len()
+        );
+    }
+
+    #[test]
+    fn literal_alt_trie_case_insensitive() {
+        // Case-insensitive alternation
+        let reg = onig_new(
+            b"(?i)(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa)",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(
+            reg.literal_tries.len(),
+            1,
+            "should detect case-insensitive alt, got {}",
+            reg.literal_tries.len()
+        );
+        // Verify case-insensitive matching
+        use crate::api::Regex;
+        let re = Regex::new("(?i)(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa)")
+            .unwrap();
+        let m = re.find("DELTA value").unwrap();
+        assert_eq!(m.as_str(), "DELTA");
+    }
+
+    #[test]
+    fn literal_alt_trie_css_like_pattern() {
+        // Mimics CSS property-names: (?i)(?<![-\w])(?:prop1|prop2|...)(?![-\w])
+        use crate::api::Regex;
+        let re = Regex::new(
+            r"(?i)(?<![-\w])(?:color|content|cursor|display|direction|float|font|height|left|margin|padding|position|right|top|width|z-index)(?![-\w])",
+        )
+        .unwrap();
+        assert!(
+            !re.as_raw().literal_tries.is_empty(),
+            "CSS-like pattern should trigger trie optimization"
+        );
+        let has_alt_literals = re
+            .as_raw()
+            .ops
+            .iter()
+            .any(|op| op.opcode == OpCode::AltLiterals);
+        assert!(
+            has_alt_literals,
+            "should have AltLiterals opcode for CSS-like pattern"
+        );
+        let m = re.find("  display: none").unwrap();
+        assert_eq!(m.as_str(), "display");
+        // Case insensitive
+        let m2 = re.find("  DISPLAY: none").unwrap();
+        assert_eq!(m2.as_str(), "DISPLAY");
+        // Should not match partial words
+        assert!(re.find("displaying").is_none());
     }
 }

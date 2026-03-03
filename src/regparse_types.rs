@@ -110,6 +110,7 @@ pub const ND_ST_FIXED_CLEN_MIN_SURE: u32 = 1 << 25;
 pub const ND_ST_REFERENCED: u32 = 1 << 26;
 pub const ND_ST_INPEEK: u32 = 1 << 27;
 pub const ND_ST_WHOLE_OPTIONS: u32 = 1 << 28;
+pub const ND_ST_LITERAL_ALT: u32 = 1 << 29;
 
 // === String Node Flags ===
 pub const ND_STRING_CRUDE: u32 = 1 << 0;

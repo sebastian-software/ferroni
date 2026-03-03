@@ -6993,6 +6993,7 @@ mod tests {
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,
+            literal_tries: Vec::new(),
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),
