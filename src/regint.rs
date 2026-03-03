@@ -604,6 +604,13 @@ pub struct RegexType {
     pub(crate) dist_min: OnigLen,
     pub(crate) dist_max: OnigLen,
 
+    /// First-byte prefilter map for regset dispatch.
+    /// Unlike `map` (which may be repurposed as BMH skip table when optimize=StrFast),
+    /// this always contains the character membership map for possible first bytes.
+    /// Only valid when `has_first_byte_map` is true.
+    pub(crate) first_byte_map: [u8; CHAR_MAP_SIZE],
+    pub(crate) has_first_byte_map: bool,
+
     // subroutine call support
     pub(crate) called_addrs: Vec<i32>, // group_num -> called entry address
     pub(crate) unset_call_addrs: Vec<(usize, i32)>, // (op_index, group_num) for patching

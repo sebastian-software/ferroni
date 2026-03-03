@@ -85,6 +85,16 @@ fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, i
     } else if reg.dist_min == 0 && !reg.exact.is_empty() {
         // Exact-filterable: only the first byte of the exact string
         table[reg.exact[0] as usize].push(idx);
+    } else if reg.has_first_byte_map {
+        // Fallback: use the first-byte prefilter map.
+        // This handles patterns where the main optimization chose StrFast at
+        // dist_min > 0 (e.g., lookbehind patterns) or OptimizeType::None
+        // (e.g., CClass with multi-byte ranges).
+        for (b, slot) in table.iter_mut().enumerate() {
+            if reg.first_byte_map[b] != 0 {
+                slot.push(idx);
+            }
+        }
     } else {
         // Always-candidate: appears in all 256 slots
         for slot in table.iter_mut() {

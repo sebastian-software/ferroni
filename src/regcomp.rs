@@ -7707,6 +7707,25 @@ fn optimize_nodes(
             if cc.mbuf.is_some() || cc.is_not() {
                 let min = enc.min_enc_len() as OnigLen;
                 let max = enc.max_enc_len() as OnigLen;
+                // Even with multi-byte ranges or negation, compute the ASCII
+                // part of the map from the bitset. For non-ASCII lead bytes
+                // (0x80-0xFF), mark them all as possible since any multi-byte
+                // sequence could start there.
+                for i in 0..SINGLE_BYTE_SIZE {
+                    let z = bitset_at(&cc.bs, i);
+                    if (z && !cc.is_not()) || (!z && cc.is_not()) {
+                        add_char_opt_map(&mut opt.map, i as u8, enc);
+                    }
+                }
+                if cc.mbuf.is_some() && !cc.is_not() {
+                    for i in 0x80..SINGLE_BYTE_SIZE {
+                        add_char_opt_map(&mut opt.map, i as u8, enc);
+                    }
+                } else if cc.is_not() && cc.mbuf.is_none() {
+                    for i in 0x80..SINGLE_BYTE_SIZE {
+                        add_char_opt_map(&mut opt.map, i as u8, enc);
+                    }
+                }
                 opt.len.set(min, max);
             } else {
                 for i in 0..SINGLE_BYTE_SIZE {
@@ -7723,31 +7742,45 @@ fn optimize_nodes(
             let min;
             if max == 1 {
                 min = 1;
-                match ct.ctype {
-                    CTYPE_ANYCHAR => { /* nothing to add to map */ }
-                    _ if ct.ctype == crate::oniguruma::ONIGENC_CTYPE_WORD as i32 => {
-                        let range = if ct.ascii_mode { 128 } else { SINGLE_BYTE_SIZE };
-                        if ct.not {
-                            for i in 0..range {
-                                if !crate::regenc::onigenc_is_code_word(enc, i as u32) {
-                                    add_char_opt_map(&mut opt.map, i as u8, enc);
-                                }
-                            }
-                            for i in range..SINGLE_BYTE_SIZE {
+            } else {
+                min = enc.min_enc_len() as OnigLen;
+            }
+            // Compute first-byte map for word, space, and digit types.
+            // For multi-byte encodings (UTF-8), limit positive matches to ASCII
+            // range (0-127) since those are the only single-byte characters.
+            match ct.ctype {
+                CTYPE_ANYCHAR => { /* nothing to add to map */ }
+                _ if ct.ctype == crate::oniguruma::ONIGENC_CTYPE_WORD as i32
+                    || ct.ctype == crate::oniguruma::ONIGENC_CTYPE_SPACE as i32
+                    || ct.ctype == crate::oniguruma::ONIGENC_CTYPE_DIGIT as i32 =>
+                {
+                    let ctype_u32 = ct.ctype as u32;
+                    let range = if ct.ascii_mode || max > 1 { 128 } else { SINGLE_BYTE_SIZE };
+                    if ct.not {
+                        for i in 0..range {
+                            if !enc.is_code_ctype(i as u32, ctype_u32) {
                                 add_char_opt_map(&mut opt.map, i as u8, enc);
                             }
-                        } else {
-                            for i in 0..range {
-                                if crate::regenc::onigenc_is_code_word(enc, i as u32) {
-                                    add_char_opt_map(&mut opt.map, i as u8, enc);
-                                }
+                        }
+                        for i in range..SINGLE_BYTE_SIZE {
+                            add_char_opt_map(&mut opt.map, i as u8, enc);
+                        }
+                    } else {
+                        for i in 0..range {
+                            if enc.is_code_ctype(i as u32, ctype_u32) {
+                                add_char_opt_map(&mut opt.map, i as u8, enc);
+                            }
+                        }
+                        if max > 1 && !ct.ascii_mode {
+                            // Non-ASCII-mode: Unicode spaces/words/digits may
+                            // start with lead bytes >= 0x80
+                            for i in 0x80..SINGLE_BYTE_SIZE {
+                                add_char_opt_map(&mut opt.map, i as u8, enc);
                             }
                         }
                     }
-                    _ => {}
                 }
-            } else {
-                min = enc.min_enc_len() as OnigLen;
+                _ => {}
             }
             opt.len.set(min, max);
         }
@@ -8114,6 +8147,13 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
         reg.anc_dist_max = opt.len.max;
     }
 
+    // Save first-byte map for regset dispatch before the main optimization
+    // choice potentially overwrites reg.map with BMH skip table data.
+    if opt.map.value > 0 && opt.map.mm.min == 0 {
+        reg.first_byte_map = opt.map.map;
+        reg.has_first_byte_map = true;
+    }
+
     if opt.sb.len > 0 || opt.sm.len > 0 {
         select_opt_exact(reg.enc, &mut opt.sb, &opt.sm);
         if opt.map.value > 0 && comp_opt_exact_or_map(&opt.sb, &opt.map) > 0 {
@@ -8381,6 +8421,8 @@ pub fn onig_new(
         map_byte_count: 0,
         dist_min: 0,
         dist_max: 0,
+        first_byte_map: [0u8; CHAR_MAP_SIZE],
+        has_first_byte_map: false,
         called_addrs: vec![],
         unset_call_addrs: vec![],
         extp: None,
@@ -8436,6 +8478,8 @@ mod tests {
             map_byte_count: 0,
             dist_min: 0,
             dist_max: 0,
+            first_byte_map: [0u8; CHAR_MAP_SIZE],
+            has_first_byte_map: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,

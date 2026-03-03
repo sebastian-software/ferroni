@@ -6103,6 +6103,8 @@ mod tests {
             map_byte_count: 0,
             dist_min: 0,
             dist_max: 0,
+            first_byte_map: [0u8; CHAR_MAP_SIZE],
+            has_first_byte_map: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,
