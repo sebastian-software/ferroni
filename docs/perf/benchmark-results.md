@@ -20,8 +20,8 @@ not supported by the `regex` crate.
 | Literal in 50 KB | 74 ns | 150 ns | **10 ns** |
 | No match, 50 KB | 1.53 us | 9.5 us | **1.46 us** |
 | No match, 10 KB | 357 ns | 1.96 us | **298 ns** |
-| Field extract, 50 KB | 101 ns | 172 ns | **56 ns** |
-| Timestamp, 50 KB | 182 ns | 180 ns | **54 ns** |
+| Field extract, 50 KB | 127 ns | 172 ns | **56 ns** |
+| Timestamp, 50 KB | **120 ns** | 177 ns | **54 ns** |
 | RegSet multi-pattern (5) | **101 ns** | 395 ns | — |
 
 ### Pattern matching
@@ -89,10 +89,10 @@ not supported by the `regex` crate.
 | **Large text (first match)** | | | |
 | literal 10 KB | **120 ns** | 145 ns | 0.83 |
 | literal 50 KB | **122 ns** | 147 ns | 0.83 |
-| timestamp 10 KB | 238 ns | **177 ns** | 1.35 |
-| timestamp 50 KB | 236 ns | **176 ns** | 1.34 |
-| field extract 10 KB | **163 ns** | 174 ns | 0.94 |
-| field extract 50 KB | **162 ns** | 172 ns | 0.94 |
+| timestamp 10 KB | **120 ns** | 177 ns | 0.68 |
+| timestamp 50 KB | **120 ns** | 177 ns | 0.68 |
+| field extract 10 KB | **127 ns** | 172 ns | 0.74 |
+| field extract 50 KB | **127 ns** | 172 ns | 0.74 |
 | no match 10 KB | **385 ns** | 1.9 us | 0.20 |
 | no match 50 KB | **1.55 us** | 9.4 us | 0.16 |
 | **RegSet** | | | |
