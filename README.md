@@ -196,75 +196,86 @@ No cherry-picked subsets.
 | Scenario | Ferroni | C Oniguruma | Speedup |
 |----------|--------:|------------:|--------:|
 | **TypeScript** (279 patterns) | | | |
-| Compile | **10.3 ms** | 17.0 ms | **1.6x** |
-| First match | **421 ns** | 25.5 us | **61x** |
-| Tokenize full line | **7.0 us** | 224 us | **32x** |
+| Compile | **10.1 ms** | 16.8 ms | **1.7x** |
+| First match | **414 ns** | 25.3 us | **61x** |
+| Tokenize full line | **7.0 us** | 221 us | **32x** |
 | **Rust** (81 patterns) | | | |
-| Compile | 256 us | **180 us** | 0.7x |
-| First match | **184 ns** | 5.7 us | **31x** |
-| Tokenize full line | **8.3 us** | 84.9 us | **10x** |
+| Compile | 257 us | **181 us** | 0.7x |
+| First match | **181 ns** | 5.6 us | **31x** |
+| Tokenize full line | **8.2 us** | 82.2 us | **10x** |
 | **CSS** (117 patterns) | | | |
-| Compile | **14 ms** | 19 ms | **1.4x** |
-| Tokenize full line | **1.67 ms** | 15.3 ms | **9.2x** |
+| Compile | **13.7 ms** | 19.0 ms | **1.4x** |
+| Tokenize full line | **1.60 ms** | 14.9 ms | **9.3x** |
 
 ### Text search and log scanning
 
-First-match latency and full-scan rejection on log-sized inputs.
+First-match latency and full-scan rejection on log-sized inputs. The
+[`regex`](https://crates.io/crates/regex) crate is included where the
+pattern is compatible with its syntax.
 
-| Scenario | Ferroni | C Oniguruma | Speedup |
+| Scenario | Ferroni | C Oniguruma | `regex` |
 |----------|--------:|------------:|--------:|
-| Literal in 50 KB | **122 ns** | 147 ns | **1.2x** |
-| No match, 50 KB | **1.55 us** | 9.4 us | **6.1x** |
-| No match, 10 KB | **385 ns** | 1.9 us | **5.0x** |
-| Field extract, 50 KB | **162 ns** | 172 ns | **1.1x** |
-| Timestamp, 50 KB | 236 ns | **176 ns** | 0.7x |
-| RegSet multi-pattern (5) | **101 ns** | 400 ns | **4.0x** |
+| Literal in 50 KB | 74 ns | 150 ns | **10 ns** |
+| No match, 50 KB | 1.53 us | 9.5 us | **1.46 us** |
+| No match, 10 KB | 357 ns | 1.96 us | **298 ns** |
+| Field extract, 50 KB | 101 ns | 172 ns | **56 ns** |
+| Timestamp, 50 KB | 182 ns | 180 ns | **54 ns** |
+| RegSet multi-pattern (5) | **101 ns** | 395 ns | — |
 
-No-match rejection shows the largest SIMD gains --
-[`memchr`](https://crates.io/crates/memchr) scans the entire buffer with
-NEON/AVX2 vectorized byte matching instead of per-character loops. Timestamp
-patterns without a literal prefix favor C's inner loop -- no leading byte
-for SIMD to latch onto.
+The `regex` crate's DFA engine gives it a clear advantage on text search
+workloads. [`memchr`](https://crates.io/crates/memchr) (shared by both
+Ferroni and `regex`) enables SIMD-accelerated literal scans, but `regex`
+goes further with full DFA-based matching that avoids per-character
+backtracking. RegSet multi-pattern has no direct `regex` equivalent.
 
 ### Pattern matching
 
-One representative pattern per regex feature. Ferroni is faster in 7 of 9
-categories; C leads on long alternation and named capture extraction.
+One representative pattern per regex feature. **Bold** = fastest engine.
+`regex` is omitted for features it does not support (lookaround,
+backreferences).
 
-| Category | Ferroni | C | Speedup |
-|----------|--------:|--:|--------:|
-| Literal exact | **144 ns** | 148 ns | **1.0x** |
-| Quantifier greedy | **240 ns** | 279 ns | **1.2x** |
-| Lookaround combined | **136 ns** | 288 ns | **2.1x** |
-| Unicode `\p{Greek}+` | **146 ns** | 245 ns | **1.7x** |
-| Backref `(\w+) \1` | **135 ns** | 191 ns | **1.4x** |
-| Case-insensitive phrase | **154 ns** | 187 ns | **1.2x** |
-| Alternation, 2 branches | **116 ns** | 159 ns | **1.4x** |
-| Alternation, 10 branches | 253 ns | **231 ns** | 0.9x |
-| Named capture date | 499 ns | **277 ns** | 0.6x |
+| Category | Ferroni | C Oniguruma | `regex` |
+|----------|--------:|------------:|--------:|
+| Literal exact | 104 ns | 159 ns | **11 ns** |
+| Quantifier greedy | 185 ns | 319 ns | **65 ns** |
+| Lookaround combined | **83 ns** | 292 ns | — |
+| Unicode `\p{Greek}+` | 96 ns | 251 ns | **60 ns** |
+| Backref `(\w+) \1` | **79 ns** | 199 ns | — |
+| Case-insensitive phrase | 101 ns | 188 ns | **62 ns** |
+| Alternation, 2 branches | 62 ns | 157 ns | **48 ns** |
+| Alternation, 10 branches | 204 ns | 223 ns | **21 ns** |
+| Named capture date | 355 ns | 277 ns | **44 ns** |
 
 ### Compilation
 
-Simple patterns compile within 5% of C. Complex patterns with groups and
-lookbehind run 1.3-1.8x slower. Named captures with Unicode character classes
-(`\d`, `\w`) compile faster than C because Ferroni merges Unicode ranges
-in a single pass instead of inserting them one at a time.
+Simple patterns compile within 5% of C. The `regex` crate compiles
+significantly slower due to DFA construction -- the cost of its faster
+matching. Lookbehind is not supported by `regex`.
+
+| Pattern | Ferroni | C Oniguruma | `regex` |
+|---------|--------:|------------:|--------:|
+| Literal | **439 ns** | 448 ns | 2.33 us |
+| Named capture | **4.67 us** | 5.78 us | 193 us |
+| Lookbehind | 992 ns | **556 ns** | — |
 
 ### Where Ferroni is slower
 
-- **Alternation with 5+ branches** -- C advantage 1.1-1.4x
-- **Named capture extraction** -- 1.8x (region bookkeeping overhead)
-- **Timestamp in large text** -- 1.3x (no literal prefix for SIMD to latch onto)
-- **Scanner warm cache** -- 2.7x (C's pointer comparison vs Ferroni's hash lookup)
+- **vs `regex` crate** -- for patterns that `regex` supports, its DFA engine
+  is 2-10x faster at matching (but 5-40x slower to compile)
+- **Named capture extraction** -- 1.3x vs C (region bookkeeping overhead)
+- **Scanner warm cache** -- 2.2x vs C (C's pointer comparison vs hash lookup)
 
 ### Ferroni vs the `regex` crate
 
-If your patterns fit Perl-compatible syntax and you want guaranteed linear
-time, use [regex](https://crates.io/crates/regex). Ferroni covers what
-`regex` does not: named captures with multiple syntaxes
-(`(?<n>)`, `(?'n')`, `(?P<n>)`), variable-length lookbehind, conditional
-patterns, absent expressions, subexpression calls, TextMate grammar support,
-or drop-in replacement for Ruby/PHP regex behavior.
+The `regex` crate is faster at matching for all patterns it supports, thanks
+to its DFA-based engine with guaranteed linear time. However, it compiles
+5-40x slower and does not support: variable-length lookbehind,
+backreferences, conditional patterns, absent expressions, subexpression
+calls, named captures with multiple syntaxes (`(?<n>)`, `(?'n')`,
+`(?P<n>)`), TextMate grammar support, or drop-in replacement for Ruby/PHP
+regex behavior. Use [`regex`](https://crates.io/crates/regex) when your
+patterns fit its syntax and compilation cost is amortized. Use Ferroni when
+you need full Oniguruma compatibility.
 
 <details>
 <summary><strong>Running benchmarks</strong></summary>

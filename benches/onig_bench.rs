@@ -1,4 +1,4 @@
-// Criterion benchmark suite: Ferroni (Rust) vs Oniguruma (C)
+// Criterion benchmark suite: Ferroni (Rust) vs Oniguruma (C) vs regex crate
 //
 // Run: cargo bench --features ffi
 // Specific group: cargo bench --features ffi -- compile
@@ -8,6 +8,7 @@ mod grammar_loader;
 mod scanner_css_workload;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use regex::bytes::{Regex, RegexBuilder};
 use scanner_css_workload::CSS_INPUT;
 use std::os::raw::c_uint;
 
@@ -47,6 +48,15 @@ fn rust_search(
 
 fn c_compile(pattern: &[u8], option: c_uint) -> ffi::CRegex {
     ffi::CRegex::new(pattern, option).expect("C compile failed")
+}
+
+fn regex_compile(pattern: &[u8], case_insensitive: bool) -> Regex {
+    let pat = std::str::from_utf8(pattern).expect("pattern is not UTF-8");
+    RegexBuilder::new(pat)
+        .case_insensitive(case_insensitive)
+        .unicode(true)
+        .build()
+        .expect("regex compile failed")
 }
 
 // Verify both engines agree on match position (debug only)
@@ -1525,6 +1535,7 @@ fn bench_text_scanning(c: &mut Criterion) {
     for (name, pat, text) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
+        let re = regex_compile(pat, false);
 
         group.bench_with_input(
             BenchmarkId::new("rust", name),
@@ -1550,6 +1561,16 @@ fn bench_text_scanning(c: &mut Criterion) {
                 black_box(pos);
             });
         });
+        group.bench_with_input(
+            BenchmarkId::new("regex", name),
+            &text.as_slice(),
+            |b, text| {
+                b.iter(|| {
+                    let m = re.find(black_box(text));
+                    black_box(m);
+                });
+            },
+        );
     }
 
     // regset position-lead
@@ -1619,13 +1640,15 @@ fn bench_text_scanning(c: &mut Criterion) {
 fn bench_single_pattern(c: &mut Criterion) {
     let mut group = c.benchmark_group("single_pattern");
 
-    let cases: &[(&str, &[u8], &[u8], OnigOptionType, c_uint)] = &[
+    // (name, pattern, text, rust_option, c_option, regex_compatible)
+    let cases: &[(&str, &[u8], &[u8], OnigOptionType, c_uint, bool)] = &[
         (
             "literal_exact",
             b"lazy dog",
             b"The quick brown fox jumps over the lazy dog near the riverbank",
             ONIG_OPTION_NONE,
             ffi::ONIG_OPTION_NONE,
+            true,
         ),
         (
             "quantifier_greedy",
@@ -1633,6 +1656,7 @@ fn bench_single_pattern(c: &mut Criterion) {
             b"aaaaabbbbbccccc12345",
             ONIG_OPTION_NONE,
             ffi::ONIG_OPTION_NONE,
+            true,
         ),
         (
             "lookaround_combined",
@@ -1640,6 +1664,7 @@ fn bench_single_pattern(c: &mut Criterion) {
             b"price: $42.99 and cost: $10.00 for item",
             ONIG_OPTION_NONE,
             ffi::ONIG_OPTION_NONE,
+            false, // regex crate does not support lookaround
         ),
         (
             "unicode_greek",
@@ -1647,6 +1672,7 @@ fn bench_single_pattern(c: &mut Criterion) {
             "Hello Κόσμε Привет 世界 café résumé naïve".as_bytes(),
             ONIG_OPTION_NONE,
             ffi::ONIG_OPTION_NONE,
+            true,
         ),
         (
             "backref_simple",
@@ -1654,6 +1680,7 @@ fn bench_single_pattern(c: &mut Criterion) {
             b"the the quick brown fox fox jumped over",
             ONIG_OPTION_NONE,
             ffi::ONIG_OPTION_NONE,
+            false, // regex crate does not support backreferences
         ),
         (
             "case_insensitive_phrase",
@@ -1661,6 +1688,7 @@ fn bench_single_pattern(c: &mut Criterion) {
             b"The Quick BROWN Fox Jumps OVER the Lazy DOG",
             ONIG_OPTION_IGNORECASE,
             ffi::ONIG_OPTION_IGNORECASE,
+            true,
         ),
         (
             "alternation_2_branch",
@@ -1668,6 +1696,7 @@ fn bench_single_pattern(c: &mut Criterion) {
             b"The wolverine dashed across the frozen tundra at midnight",
             ONIG_OPTION_NONE,
             ffi::ONIG_OPTION_NONE,
+            true,
         ),
         (
             "alternation_10_branch",
@@ -1675,6 +1704,7 @@ fn bench_single_pattern(c: &mut Criterion) {
             b"The wolverine dashed across the frozen tundra at midnight",
             ONIG_OPTION_NONE,
             ffi::ONIG_OPTION_NONE,
+            true,
         ),
         (
             "named_capture_date",
@@ -1682,10 +1712,11 @@ fn bench_single_pattern(c: &mut Criterion) {
             b"Event on 2025-12-31 at venue, next on 2026-01-15.",
             ONIG_OPTION_NONE,
             ffi::ONIG_OPTION_NONE,
+            true,
         ),
     ];
 
-    for (name, pat, text, r_option, c_option) in cases {
+    for (name, pat, text, r_option, c_option, regex_compat) in cases {
         let r_reg = rust_compile(pat, *r_option);
         let c_reg = c_compile(pat, *c_option);
 
@@ -1717,6 +1748,21 @@ fn bench_single_pattern(c: &mut Criterion) {
                 black_box(pos);
             });
         });
+
+        if *regex_compat {
+            let case_insensitive = *r_option == ONIG_OPTION_IGNORECASE;
+            let re = regex_compile(pat, case_insensitive);
+            group.bench_with_input(
+                BenchmarkId::new("regex", name),
+                &text[..],
+                |b, text| {
+                    b.iter(|| {
+                        let m = re.find(black_box(text));
+                        black_box(m);
+                    });
+                },
+            );
+        }
     }
 
     group.finish();
@@ -1727,17 +1773,19 @@ fn bench_single_pattern(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_compilation(c: &mut Criterion) {
-    let cases: &[(&str, &[u8])] = &[
-        ("literal", b"hello world"),
+    // (name, pattern, regex_compatible)
+    let cases: &[(&str, &[u8], bool)] = &[
+        ("literal", b"hello world", true),
         (
             "named_capture",
             b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})",
+            true,
         ),
-        ("lookbehind", b"(?<=@)\\w+"),
+        ("lookbehind", b"(?<=@)\\w+", false), // regex crate does not support lookbehind
     ];
 
     let mut group = c.benchmark_group("compilation");
-    for (name, pat) in cases {
+    for (name, pat, regex_compat) in cases {
         group.bench_with_input(BenchmarkId::new("rust", name), pat, |b, pat| {
             b.iter(|| {
                 let reg = rust_compile(black_box(pat), ONIG_OPTION_NONE);
@@ -1750,6 +1798,15 @@ fn bench_compilation(c: &mut Criterion) {
                 black_box(&reg);
             });
         });
+        if *regex_compat {
+            let pat_str = std::str::from_utf8(pat).unwrap();
+            group.bench_with_input(BenchmarkId::new("regex", name), pat, |b, _pat| {
+                b.iter(|| {
+                    let re = Regex::new(black_box(pat_str)).unwrap();
+                    black_box(&re);
+                });
+            });
+        }
     }
     group.finish();
 }

@@ -1,14 +1,52 @@
 # Benchmark Results
 
-Full benchmark tables for Ferroni (Rust) vs C Oniguruma at `-O3`.
+Full benchmark tables for Ferroni (Rust) vs C Oniguruma at `-O3` vs the
+[`regex`](https://crates.io/crates/regex) crate.
 Measured with [Criterion](https://github.com/bheisler/criterion.rs) on Apple M1 Ultra.
 
-> These numbers correspond to commit
-> [`44ef3c3`](https://github.com/sebastian-software/ferroni/commit/44ef3c3)
-> (March 2026). Re-run with `cargo bench --features ffi` to get current numbers
-> on your hardware.
+> Re-run with `cargo bench --features ffi` to get current numbers on your
+> hardware.
 
-## Regex execution
+## Three-way comparison (Tier 1)
+
+Where the pattern is compatible with the `regex` crate syntax, we include
+it for comparison. **Bold** = fastest engine. A dash means the feature is
+not supported by the `regex` crate.
+
+### Text search and log scanning
+
+| Scenario | Ferroni | C Oniguruma | `regex` |
+|----------|--------:|------------:|--------:|
+| Literal in 50 KB | 74 ns | 150 ns | **10 ns** |
+| No match, 50 KB | 1.53 us | 9.5 us | **1.46 us** |
+| No match, 10 KB | 357 ns | 1.96 us | **298 ns** |
+| Field extract, 50 KB | 101 ns | 172 ns | **56 ns** |
+| Timestamp, 50 KB | 182 ns | 180 ns | **54 ns** |
+| RegSet multi-pattern (5) | **101 ns** | 395 ns | — |
+
+### Pattern matching
+
+| Category | Ferroni | C Oniguruma | `regex` |
+|----------|--------:|------------:|--------:|
+| Literal exact | 104 ns | 159 ns | **11 ns** |
+| Quantifier greedy | 185 ns | 319 ns | **65 ns** |
+| Lookaround combined | **83 ns** | 292 ns | — |
+| Unicode `\p{Greek}+` | 96 ns | 251 ns | **60 ns** |
+| Backref `(\w+) \1` | **79 ns** | 199 ns | — |
+| Case-insensitive phrase | 101 ns | 188 ns | **62 ns** |
+| Alternation, 2 branches | 62 ns | 157 ns | **48 ns** |
+| Alternation, 10 branches | 204 ns | 223 ns | **21 ns** |
+| Named capture date | 355 ns | 277 ns | **44 ns** |
+
+### Compilation
+
+| Pattern | Ferroni | C Oniguruma | `regex` |
+|---------|--------:|------------:|--------:|
+| Literal | **439 ns** | 448 ns | 2.33 us |
+| Named capture | **4.67 us** | 5.78 us | 193 us |
+| Lookbehind | 992 ns | **556 ns** | — |
+
+## Regex execution (Ferroni vs C, detailed)
 
 | Benchmark | Rust | C | Ratio |
 |-----------|-----:|--:|------:|
