@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.2.7](https://github.com/sebastian-software/ferroni/compare/v1.2.6...v1.2.7) (2026-03-04)
+
+
+### Bug Fixes
+
+* add lead bytes to opt map for negated CClass with mbuf ([44ef3c3](https://github.com/sebastian-software/ferroni/commit/44ef3c31d29c5e77d3105cff3f4d6b2c72ca5720))
+* **ci:** use debug mode for compat_back, skip deep-recursion on MSRV ([297bf82](https://github.com/sebastian-software/ferroni/commit/297bf82e98a8b0b3da027a01e99384d13ef72718))
+
+
+### Performance Improvements
+
+* 28x faster CSS compilation via inverted case-fold and skip-if-present ([bd1c9a0](https://github.com/sebastian-software/ferroni/commit/bd1c9a0cfe0410f4dce328f143b4189f23a8b814))
+* Aho-Corasick fast path for pure literal alternations ([05cd612](https://github.com/sebastian-software/ferroni/commit/05cd6126ae7731e6973c605142e704ded26c3987))
+* **css:** add trie-based literal alternation optimization ([8a99c7c](https://github.com/sebastian-software/ferroni/commit/8a99c7c6e328e3871d5234b09496ba6c2007b217))
+* **css:** lower literal alternation trie threshold from 8 to 4 ([0bb2c4a](https://github.com/sebastian-software/ferroni/commit/0bb2c4a4d6d24ca7324ade209384c6986e2d1797))
+* extend AC fast path to captured literal alternations ([817c17e](https://github.com/sebastian-software/ferroni/commit/817c17ea910c525b8ac5540f5c520d0a6d78116c))
+* extend trie optimizer for nested alternation patterns ([66ae8db](https://github.com/sebastian-software/ferroni/commit/66ae8dbcb2ebac05a1d1e72658f57bd2e18fcecd))
+* **regset:** add first-byte prefilter map for regset dispatch ([e0685e1](https://github.com/sebastian-software/ferroni/commit/e0685e155c40acfcc77d59e9f542cc90bb8c8e05))
+* thread-local MatchArg cache avoids heap alloc per search/match ([f68d57d](https://github.com/sebastian-software/ferroni/commit/f68d57db04473971159a7e598e0d7952941e88d7))
+* unroll small exact quantifiers into flat bytecode ([2c33486](https://github.com/sebastian-software/ferroni/commit/2c33486d136ee6a45ed86112427f540c109dd1b9))
+
 ## [1.2.6](https://github.com/sebastian-software/ferroni/compare/v1.2.5...v1.2.6) (2026-03-02)
 
 
