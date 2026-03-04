@@ -998,7 +998,6 @@ fn bench_scanner(c: &mut Criterion) {
                 });
             });
         }
-
     }
 
     group.finish();

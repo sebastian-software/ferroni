@@ -6062,12 +6062,21 @@ struct AltBranchInfo {
 ///
 /// **Must be called before `tune_tree`** so that case-fold expansion has not
 /// yet rewritten the string nodes.
-pub fn detect_literal_alternations(node: &mut Node, reg: &mut RegexType, backrefed_mem: MemStatusType) {
+pub fn detect_literal_alternations(
+    node: &mut Node,
+    reg: &mut RegexType,
+    backrefed_mem: MemStatusType,
+) {
     detect_literal_alternations_inner(node, reg, false, backrefed_mem);
 }
 
 /// Recurse into the children of a node for literal alternation detection.
-fn recurse_into_children(node: &mut Node, reg: &mut RegexType, in_anchor: bool, backrefed_mem: MemStatusType) {
+fn recurse_into_children(
+    node: &mut Node,
+    reg: &mut RegexType,
+    in_anchor: bool,
+    backrefed_mem: MemStatusType,
+) {
     match &mut node.inner {
         NodeInner::List(_) | NodeInner::Alt(_) => {
             let mut cur: *mut Node = node;
@@ -6108,7 +6117,11 @@ fn recurse_into_children(node: &mut Node, reg: &mut RegexType, in_anchor: bool, 
 
 /// Try to trie-optimize an Alt node using nested extraction.  Returns true
 /// if optimization was applied (full or partial).
-fn try_trie_optimize_alt(node: &mut Node, reg: &mut RegexType, backrefed_mem: MemStatusType) -> bool {
+fn try_trie_optimize_alt(
+    node: &mut Node,
+    reg: &mut RegexType,
+    backrefed_mem: MemStatusType,
+) -> bool {
     // Collect info about each branch.
     let mut branches: Vec<AltBranchInfo> = Vec::new();
     let mut case_insensitive = false;
@@ -6218,7 +6231,12 @@ fn try_trie_optimize_alt(node: &mut Node, reg: &mut RegexType, backrefed_mem: Me
     true
 }
 
-fn detect_literal_alternations_inner(node: &mut Node, reg: &mut RegexType, in_anchor: bool, backrefed_mem: MemStatusType) {
+fn detect_literal_alternations_inner(
+    node: &mut Node,
+    reg: &mut RegexType,
+    in_anchor: bool,
+    backrefed_mem: MemStatusType,
+) {
     // Try top-down: if this node is an Alt (not in anchor), try nested
     // extraction BEFORE recursing into children.  This prevents inner Alts
     // from being trie-optimized first (which makes them opaque to outer
@@ -6295,9 +6313,7 @@ fn extract_literal_paths(
                 let mut cur: *const Node = node;
                 loop {
                     let (car, cdr) = match &(*cur).inner {
-                        NodeInner::Alt(ref cons) => {
-                            (&*cons.car as *const Node, &cons.cdr)
-                        }
+                        NodeInner::Alt(ref cons) => (&*cons.car as *const Node, &cons.cdr),
                         _ => {
                             // Last node in the chain (not wrapped in Alt)
                             let branch_paths = extract_literal_paths(
@@ -6313,12 +6329,8 @@ fn extract_literal_paths(
                             break;
                         }
                     };
-                    let branch_paths = extract_literal_paths(
-                        car,
-                        current_prefixes.clone(),
-                        limit,
-                        backrefed_mem,
-                    )?;
+                    let branch_paths =
+                        extract_literal_paths(car, current_prefixes.clone(), limit, backrefed_mem)?;
                     all_paths.extend(branch_paths);
                     if all_paths.len() > limit {
                         return None;
@@ -6340,7 +6352,12 @@ fn extract_literal_paths(
                         match &bn.body {
                             Some(ref body) => {
                                 let body_ptr: *const Node = &**body;
-                                extract_literal_paths(body_ptr, current_prefixes, limit, backrefed_mem)
+                                extract_literal_paths(
+                                    body_ptr,
+                                    current_prefixes,
+                                    limit,
+                                    backrefed_mem,
+                                )
                             }
                             None => Some(current_prefixes),
                         }
@@ -6350,7 +6367,12 @@ fn extract_literal_paths(
                         match &bn.body {
                             Some(ref body) => {
                                 let body_ptr: *const Node = &**body;
-                                extract_literal_paths(body_ptr, current_prefixes, limit, backrefed_mem)
+                                extract_literal_paths(
+                                    body_ptr,
+                                    current_prefixes,
+                                    limit,
+                                    backrefed_mem,
+                                )
                             }
                             None => Some(current_prefixes),
                         }
@@ -6402,12 +6424,9 @@ fn classify_branch(node: *const Node, backrefed_mem: MemStatusType) -> AltBranch
         };
     }
     // Try nested extraction
-    if let Some(paths) = extract_literal_paths(
-        node,
-        vec![Vec::new()],
-        MAX_NESTED_TRIE_PATHS,
-        backrefed_mem,
-    ) {
+    if let Some(paths) =
+        extract_literal_paths(node, vec![Vec::new()], MAX_NESTED_TRIE_PATHS, backrefed_mem)
+    {
         if !paths.is_empty() && paths.iter().all(|p| !p.is_empty()) {
             return AltBranchInfo {
                 index: 0,
@@ -6440,11 +6459,7 @@ fn check_literal_branch(node: *const Node) -> (bool, Vec<u8>) {
 
 /// Extract specific branches (by index) from an Alt cons-chain.
 /// Returns the extracted nodes in the order of their indices.
-fn extract_alt_branches(
-    alt_node: &mut Node,
-    indices: &[usize],
-    out: &mut Vec<Box<Node>>,
-) {
+fn extract_alt_branches(alt_node: &mut Node, indices: &[usize], out: &mut Vec<Box<Node>>) {
     // Walk the Alt cons-chain and collect the nodes at the given indices.
     let mut idx = 0usize;
     let mut cur: *mut Node = alt_node;
@@ -7904,14 +7919,11 @@ fn optimize_nodes(
                         add_char_opt_map(&mut opt.map, i as u8, enc);
                     }
                 }
-                if cc.mbuf.is_some() && !cc.is_not() {
-                    for i in 0x80..SINGLE_BYTE_SIZE {
-                        add_char_opt_map(&mut opt.map, i as u8, enc);
-                    }
-                } else if cc.is_not() && cc.mbuf.is_none() {
-                    for i in 0x80..SINGLE_BYTE_SIZE {
-                        add_char_opt_map(&mut opt.map, i as u8, enc);
-                    }
+                // This branch is entered when cc.mbuf.is_some() || cc.is_not().
+                // In both cases, multi-byte characters may match, so mark all
+                // lead bytes >= 0x80 as possible.
+                for i in 0x80..SINGLE_BYTE_SIZE {
+                    add_char_opt_map(&mut opt.map, i as u8, enc);
                 }
                 opt.len.set(min, max);
             } else {
@@ -7942,7 +7954,11 @@ fn optimize_nodes(
                     || ct.ctype == crate::oniguruma::ONIGENC_CTYPE_DIGIT as i32 =>
                 {
                     let ctype_u32 = ct.ctype as u32;
-                    let range = if ct.ascii_mode || max > 1 { 128 } else { SINGLE_BYTE_SIZE };
+                    let range = if ct.ascii_mode || max > 1 {
+                        128
+                    } else {
+                        SINGLE_BYTE_SIZE
+                    };
                     if ct.not {
                         for i in 0..range {
                             if !enc.is_code_ctype(i as u32, ctype_u32) {
@@ -8990,7 +9006,10 @@ mod tests {
         assert!(has_alt_literals, "expected AltLiterals opcode in bytecode");
         // Should NOT have Push/Jump from normal Alt compilation
         let has_push = reg.ops.iter().any(|op| op.opcode == OpCode::Push);
-        assert!(!has_push, "should not have Push opcode for trie-optimized alt");
+        assert!(
+            !has_push,
+            "should not have Push opcode for trie-optimized alt"
+        );
     }
 
     #[test]
@@ -9111,8 +9130,8 @@ mod tests {
         );
         // Verify case-insensitive matching
         use crate::api::Regex;
-        let re = Regex::new("(?i)(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa)")
-            .unwrap();
+        let re =
+            Regex::new("(?i)(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa)").unwrap();
         let m = re.find("DELTA value").unwrap();
         assert_eq!(m.as_str(), "DELTA");
     }
@@ -9283,10 +9302,6 @@ mod tests {
         );
         // With top-down nested extraction, the entire pure-literal entity
         // pattern should collapse to a single trie with no Push ops.
-        assert_eq!(
-            push_count, 0,
-            "expected 0 Push ops but got {}",
-            push_count
-        );
+        assert_eq!(push_count, 0, "expected 0 Push ops but got {}", push_count);
     }
 }
