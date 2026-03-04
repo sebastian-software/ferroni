@@ -1185,9 +1185,7 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         // {n,n} exact repeat
         if qn.lower == 1 {
             body_len
-        } else if !is_empty
-            && qn.include_referred == 0
-            && qn.lower <= EXACT_REPEAT_UNROLL_THRESHOLD
+        } else if !is_empty && qn.include_referred == 0 && qn.lower <= EXACT_REPEAT_UNROLL_THRESHOLD
         {
             // Unroll small exact repeats into flat bytecode
             body_len * qn.lower
@@ -1543,10 +1541,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             return compile_tree(body, reg, env);
         }
         // Unroll small exact repeats into flat bytecode (no REPEAT/REPEAT_INC overhead)
-        if !is_empty
-            && qn.include_referred == 0
-            && qn.lower <= EXACT_REPEAT_UNROLL_THRESHOLD
-        {
+        if !is_empty && qn.include_referred == 0 && qn.lower <= EXACT_REPEAT_UNROLL_THRESHOLD {
             return compile_tree_n_times(body, qn.lower, reg, env);
         }
         // Use REPEAT opcode for large or empty-body repeats
