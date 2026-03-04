@@ -23,7 +23,7 @@ Each was selected because:
 
 1. **Zero or near-zero transitive dependencies.** No dependency tree surprises.
 2. **Battle-tested in the Rust ecosystem.** Used by `regex`, `ripgrep`, `serde`, and other foundational crates.
-3. **Solves a specific problem better than hand-rolling.** `memchr` provides SIMD dispatch across architectures; `bitflags` provides compile-time flag safety; `smallvec` eliminates heap allocation for the common case.
+3. **Solves a specific problem better than hand-rolling.** `aho-corasick` provides a production-grade Aho-Corasick automaton with Teddy SIMD prefilters for single-pass multi-pattern matching — hand-rolling this correctly for all architectures is non-trivial; `memchr` provides SIMD dispatch across architectures; `bitflags` provides compile-time flag safety; `smallvec` eliminates heap allocation for the common case.
 4. **No feature creep.** Each crate does one thing.
 
 ### Dev dependencies
