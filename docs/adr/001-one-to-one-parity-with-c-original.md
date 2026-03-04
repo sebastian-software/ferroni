@@ -26,7 +26,7 @@ The Rust port targets **1:1 structural parity** with the C original:
    - C error codes (negative `int`) -> Rust `Result<T, i32>`
    - C `goto fail` -> Rust `loop { ... break }` or early `return Err(...)`
 
-6. **An idiomatic Rust API layer** wraps the C-ported internals without modifying them ([ADR-010](010-idiomatic-rust-api-layer.md)). This provides `Regex::new()`, typed errors, and safe result types while keeping the internal 1:1 structure intact.
+6. **An idiomatic Rust API layer** wraps the C-ported internals without modifying them ([ADR-005](005-idiomatic-rust-api-layer.md)). This provides `Regex::new()`, typed errors, and safe result types while keeping the internal 1:1 structure intact.
 
 ## Rationale
 
@@ -39,5 +39,5 @@ The Rust port targets **1:1 structural parity** with the C original:
 
 - The Rust code may not look idiomatic in places (e.g. large match arms mirroring C switch statements, manual index tracking instead of iterators).
 - Performance characteristics should be comparable to the C original, not fundamentally different.
-- New features or optimizations should first be contributed upstream to C Oniguruma, then ported — not invented in the Rust port.
+- New features or optimizations should first be contributed upstream to C Oniguruma, then ported — not invented in the Rust port. (Amended by [ADR-008](008-rust-only-optimizations.md): additive, guarded optimizations for TextMate workloads are permitted under defined criteria.)
 - Code review should compare against the C original, not against Rust best practices in isolation.

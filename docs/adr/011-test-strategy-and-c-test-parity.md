@@ -1,4 +1,4 @@
-# ADR-008: Test Strategy and C Test Suite Parity
+# ADR-011: Test Strategy and C Test Suite Parity
 
 ## Status
 
@@ -22,15 +22,15 @@ All C test files that exercise the engine with ASCII/UTF-8 are ported 1:1:
 | `test_options.c` | `tests/compat_options.rs` | 47 | Option flag behavior |
 | `test_regset.c` | `tests/compat_regset.rs` | 13 | RegSet multi-pattern search |
 
-**Total: 1,695 `#[test]` functions.**
+**Total: 1,882 `#[test]` functions** (1,695 from the C test suite + 187 Rust-specific tests for edge cases, error paths, and Scanner API).
 
 ### Not Ported (3)
 
 | C Test File | Tests | Reason |
 |-------------|------:|--------|
-| `testc.c` | 658 | EUC-JP encoding (ADR-002) |
-| `testu.c` | 595 | UTF-16 encoding (ADR-002) |
-| `testp.c` | 421 | POSIX API (ADR-007) |
+| `testc.c` | 658 | EUC-JP encoding (ADR-003) |
+| `testu.c` | 595 | UTF-16 encoding (ADR-003) |
+| `testp.c` | 421 | POSIX API (ADR-012) |
 
 ### Naming Convention
 
@@ -56,7 +56,7 @@ This test exercises deeply nested conditional recursion that causes the VM to ru
 ## Consequences
 
 - Running `cargo test -- --ignored` on the full suite will hang. This is documented in `CLAUDE.md` and the README.
-- Debug builds require increased stack size for the full suite (see ADR-003).
+- Debug builds require increased stack size for the full suite (see ADR-013).
 - Recommended test commands:
   ```bash
   RUST_MIN_STACK=268435456 cargo test --test compat_utf8 -- --test-threads=1

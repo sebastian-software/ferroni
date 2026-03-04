@@ -56,7 +56,7 @@ vulnerabilities --
 affecting Ruby, PHP, and anything linking against it. Ferroni eliminates
 buffer overflows, use-after-free, and NULL dereferences structurally through
 Rust's type system. 0.4% unsafe code, all documented in
-[ADR-005](docs/adr/005-unsafe-code-policy.md).
+[ADR-002](docs/adr/002-unsafe-code-policy.md).
 
 **No C toolchain required.** Pure `cargo build`. Cross-compiles to
 `wasm32-unknown-unknown`. Ship it as a Node.js native module via
@@ -321,8 +321,8 @@ onig_new() -> onig_compile()
 
 Ferroni targets ASCII/UTF-8 workloads. The following are intentionally not included:
 
-- **27 of 29 encodings** -- only ASCII and UTF-8 ([ADR-002](docs/adr/002-encoding-scope-ascii-and-utf8-only.md))
-- **POSIX/GNU API** -- `regcomp`/`regexec`/`regfree` ([ADR-007](docs/adr/007-posix-and-gnu-api-not-ported.md))
+- **27 of 29 encodings** -- only ASCII and UTF-8 ([ADR-003](docs/adr/003-encoding-scope-ascii-and-utf8-only.md))
+- **POSIX/GNU API** -- `regcomp`/`regexec`/`regfree` ([ADR-012](docs/adr/012-posix-and-gnu-api-not-ported.md))
 - **C memory management** -- replaced by Rust's `Drop` trait
 - **`onig_new_deluxe`** -- C-specific allocation, use `onig_new()` instead
 
@@ -370,17 +370,19 @@ Coverage measured with
 | ADR | Decision |
 |-----|----------|
 | [001](docs/adr/001-one-to-one-parity-with-c-original.md) | 1:1 structural parity with C original |
-| [002](docs/adr/002-encoding-scope-ascii-and-utf8-only.md) | ASCII and UTF-8 only |
-| [003](docs/adr/003-stack-overflow-debug-builds.md) | Stack overflow mitigation in debug builds |
+| [002](docs/adr/002-unsafe-code-policy.md) | Unsafe code policy |
+| [003](docs/adr/003-encoding-scope-ascii-and-utf8-only.md) | Encoding scope: ASCII and UTF-8 only |
 | [004](docs/adr/004-c-to-rust-translation-patterns.md) | C-to-Rust translation patterns |
-| [005](docs/adr/005-unsafe-code-policy.md) | Unsafe code policy |
-| [006](docs/adr/006-simd-accelerated-search.md) | SIMD-accelerated search via memchr |
-| [007](docs/adr/007-posix-and-gnu-api-not-ported.md) | POSIX and GNU API not ported |
-| [008](docs/adr/008-test-strategy-and-c-test-parity.md) | Test strategy and C test suite parity |
-| [009](docs/adr/009-porting-bugs-lessons-learned.md) | Porting bugs: lessons learned |
-| [010](docs/adr/010-idiomatic-rust-api-layer.md) | Idiomatic Rust API layer |
-| [011](docs/adr/011-scanner-api.md) | Scanner API for TextMate tokenization |
-| [012](docs/adr/012-rust-only-optimizations.md) | Rust-only optimizations and performance philosophy |
+| [005](docs/adr/005-idiomatic-rust-api-layer.md) | Idiomatic Rust API layer |
+| [006](docs/adr/006-scanner-api.md) | Scanner API for TextMate tokenization |
+| [007](docs/adr/007-simd-accelerated-search.md) | SIMD-accelerated search via memchr |
+| [008](docs/adr/008-rust-only-optimizations.md) | Rust-only optimizations and performance philosophy |
+| [009](docs/adr/009-dependency-philosophy.md) | Dependency philosophy |
+| [010](docs/adr/010-benchmark-strategy.md) | Benchmark strategy |
+| [011](docs/adr/011-test-strategy-and-c-test-parity.md) | Test strategy and C test suite parity |
+| [012](docs/adr/012-posix-and-gnu-api-not-ported.md) | POSIX and GNU API not ported |
+| [013](docs/adr/013-stack-overflow-debug-builds.md) | Stack overflow mitigation in debug builds |
+| [014](docs/adr/014-porting-bugs-lessons-learned.md) | Porting bugs: lessons learned |
 
 ## Contributing
 

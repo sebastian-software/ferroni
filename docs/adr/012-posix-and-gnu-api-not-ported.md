@@ -1,4 +1,4 @@
-# ADR-007: POSIX and GNU API Not Ported
+# ADR-012: POSIX and GNU API Not Ported
 
 ## Status
 
@@ -27,4 +27,4 @@ None of these compatibility layers are ported.
 ## Consequences
 
 - C programs that use Oniguruma through the POSIX API cannot migrate to this Rust port without changing their regex interface calls.
-- This is consistent with ADR-002 (encoding scope) -- both decisions reduce the porting surface to what is actually useful in a Rust context.
+- This is consistent with ADR-003 (encoding scope) -- both decisions reduce the porting surface to what is actually useful in a Rust context.

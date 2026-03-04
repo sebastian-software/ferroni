@@ -1,0 +1,57 @@
+# ADR-006: Scanner API for Multi-Pattern TextMate Tokenization
+
+## Status
+
+Accepted
+
+## Context
+
+Ferroni's primary real-world workload is TextMate grammar tokenization, used by syntax highlighters like [Shiki](https://shiki.matsu.io/) and VS Code. TextMate grammars require a multi-pattern scanning interface: given N compiled regexes and a string position, find which regex matches earliest (and among ties, which has priority).
+
+C Oniguruma provides `OnigRegSet` for multi-pattern matching, but it exposes a low-level C API. The JavaScript ecosystem uses Microsoft's [vscode-oniguruma](https://github.com/nicedoc/nicedoc/tree/master/packages/vscode-oniguruma) (MIT), which wraps Oniguruma in a higher-level `OnigScanner` interface tailored to TextMate tokenization. Shiki, VS Code, and other grammar-based tools depend on this specific interface.
+
+To serve as a drop-in replacement for vscode-oniguruma in the Rust/NAPI ecosystem, Ferroni needs an API-compatible scanner layer — not just raw regex compilation and matching.
+
+## Decision
+
+Add a `Scanner` API (`src/scanner.rs`) that wraps Ferroni's C-ported `RegSet` internals with a vscode-oniguruma-compatible interface.
+
+### API surface
+
+1. **`Scanner::new(patterns)`**: Compiles a set of regex patterns into a `RegSet` with pre-computed first-byte dispatch tables and SIMD skip needles.
+
+2. **`Scanner::find_next_match(text, start_position)`**: Searches all patterns simultaneously and returns a `ScannerMatch` containing the winning pattern index and all capture group positions. Supports `ScannerFindOptions` for anchor control (`NOT_BEGIN_STRING`, `NOT_END_STRING`, `NOT_BEGIN_POSITION`), matching vscode-oniguruma's `FindOption` flags.
+
+3. **`ScannerMatch`** / **`CaptureIndex`**: Result types carrying the matched pattern index and byte-offset capture spans. `CaptureIndex` fields (`start`, `end`, `length`) mirror vscode-oniguruma's output format.
+
+4. **`ScannerSyntax`**: Enum selecting the regex syntax variant (Oniguruma, Asis, POSIX Basic/Extended, Java, Perl, Ruby, Python, etc.), matching vscode-oniguruma's `Syntax` type.
+
+### Layering
+
+```
+  Scanner (public API, vscode-oniguruma-compatible)
+    └── RegSet (C-ported internal, ADR-001)
+         └── onig_search / onig_match (C-ported VM, ADR-001)
+```
+
+The Scanner does **not** modify the C-ported internals. It is an additive layer that:
+- Delegates pattern compilation to `onig_new()` (same as `Regex`)
+- Delegates multi-pattern search to `onig_regset_search_fast()` (C-ported RegSet)
+- Adds result formatting, option translation, and scratch space management
+
+### Relationship to ADR-005
+
+ADR-005 defines the idiomatic Rust API layer (`Regex`, `RegexBuilder`, `Match`, `Captures`). The Scanner extends this layer with a **domain-specific** API for TextMate tokenization. It is not a general-purpose regex API but a purpose-built interface for the grammar tokenization use case.
+
+## Rationale
+
+- **Drop-in compatibility**: Shiki and other tools can switch from vscode-oniguruma (WASM) to Ferroni (native) with minimal API translation.
+- **Performance**: Native execution avoids WASM overhead. Combined with RegSet optimizations (first-byte dispatch, skip needle — see ADR-007), the Scanner achieves 4-6x match speedup and 215x compilation speedup compared to the WASM path.
+- **Zero internal disruption**: The Scanner is purely additive — no C-ported code is modified. The full 1,695-test C-parity suite passes unchanged.
+
+## Consequences
+
+- `src/scanner.rs` is a substantial module (~66 KB) with its own test suite.
+- The `smallvec` crate is added as a dependency for `ScannerMatch::capture_indices`.
+- The Scanner API is Ferroni-specific — it does not exist in C Oniguruma. This is acceptable because it layers on top of (rather than modifying) the C-ported internals, consistent with ADR-001's parity goal.
+- Future Scanner changes should maintain vscode-oniguruma interface compatibility to avoid breaking downstream integrations (Shiki, ferriki).

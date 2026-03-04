@@ -46,7 +46,7 @@ cargo bench --features ffi
      parity goal -- same module mapping, same function names, same control flow.
    - [ADR-004](docs/adr/004-c-to-rust-translation-patterns.md): the canonical
      C-to-Rust translation patterns used throughout the codebase.
-   - [ADR-005](docs/adr/005-unsafe-code-policy.md): the `unsafe` code policy.
+   - [ADR-002](docs/adr/002-unsafe-code-policy.md): the `unsafe` code policy.
 
 2. **Cross-reference the C original.** When modifying `regcomp.rs`,
    `regexec.rs`, or `regparse.rs`, always compare against the corresponding

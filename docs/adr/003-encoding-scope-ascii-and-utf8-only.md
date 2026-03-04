@@ -1,4 +1,4 @@
-# ADR-002: Encoding Scope — ASCII and UTF-8 Only
+# ADR-003: Encoding Scope — ASCII and UTF-8 Only
 
 ## Status
 

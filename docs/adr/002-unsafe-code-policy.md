@@ -1,4 +1,4 @@
-# ADR-005: Unsafe Code Policy
+# ADR-002: Unsafe Code Policy
 
 ## Status
 

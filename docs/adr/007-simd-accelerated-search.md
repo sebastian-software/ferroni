@@ -1,4 +1,4 @@
-# ADR-006: SIMD-Accelerated Search via memchr
+# ADR-007: SIMD-Accelerated Search via memchr
 
 ## Status
 
@@ -38,3 +38,28 @@ The structural shape of the search pipeline is unchanged -- the same functions e
 - Benchmarks for literal and RegSet search are 20-60% faster than C. No-match full-text scans are 5-6x faster.
 - The Map search path (>3 distinct first bytes) still uses a 256-entry byte map, same as C. SIMD dispatch only covers 1-3 byte sets.
 - Thin LTO (`lto = "thin"` in release profile) is enabled to allow cross-crate inlining of `memchr` calls without the compile-time cost of full LTO.
+
+## Extension: RegSet First-Byte Dispatch and Skip Needle
+
+The original `memchr` integration accelerates single-pattern forward search. For multi-pattern workloads (Scanner/RegSet — see [ADR-006](006-scanner-api.md)), two additional SIMD-assisted optimizations were added:
+
+### First-byte dispatch table (`first_byte_candidates`)
+
+A `Box<[Vec<u16>; 256]>` lookup table built at RegSet construction time. For each byte value 0-255, it stores the indices of regexes whose first-byte pre-filter does not exclude that byte. At search time, instead of trying all N regexes at each position, only the candidates matching the current input byte are attempted.
+
+Sources for first-byte information (in priority order):
+1. **Exact prefix**: Only the first byte of the regex's exact literal prefix
+2. **First-byte map**: The regex's 256-entry first-byte prefilter bitmap (covers CClass, multi-byte ranges, etc.)
+3. **Fallback**: Regex is added to all 256 slots (no filtering possible)
+
+### Skip needle (`SkipNeedle`)
+
+Derived from the dispatch table: identifies byte values where **no** regex has candidates. These "impossible" bytes are collected into a SIMD skip needle (1-3 bytes via `memchr`/`memchr2`/`memchr3`). The search loop uses this needle to jump past positions where no regex can possibly match, avoiding per-position candidate lookups entirely.
+
+### Impact
+
+Combined, these optimizations reduce RegSet position-lead search overhead by ~44% on TextMate grammar workloads. The memory cost is one 256-entry dispatch table per RegSet (~2-4 KB depending on regex count).
+
+## Additional consequences
+
+- RegSet dispatch tables add ~2-4 KB memory per RegSet instance. This is negligible compared to the compiled regex bytecode.
