@@ -35,6 +35,10 @@ pub fn onig_set_default_case_fold_flag(flag: OnigCaseFoldType) -> i32 {
     0
 }
 
+/// Maximum `{n}` exact count that gets unrolled into flat bytecode.
+/// Beyond this threshold we fall back to the REPEAT/REPEAT_INC loop.
+const EXACT_REPEAT_UNROLL_THRESHOLD: i32 = 16;
+
 /// Get encoded character length from a byte slice (for optimization functions).
 fn enclen(enc: OnigEncoding, p: &[u8], _offset: usize) -> usize {
     if p.is_empty() {
@@ -1181,10 +1185,15 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         // {n,n} exact repeat
         if qn.lower == 1 {
             body_len
+        } else if !is_empty
+            && qn.include_referred == 0
+            && qn.lower <= EXACT_REPEAT_UNROLL_THRESHOLD
+        {
+            // Unroll small exact repeats into flat bytecode
+            body_len * qn.lower
         } else {
             // Use REPEAT opcodes for larger exact counts
-            let id_len = OPSIZE_REPEAT + mod_tlen + OPSIZE_REPEAT_INC;
-            id_len
+            OPSIZE_REPEAT + mod_tlen + OPSIZE_REPEAT_INC
         }
     } else if !qn.greedy && qn.upper == 1 && qn.lower == 0 {
         // ?? path: PUSH + JUMP + body
@@ -1531,10 +1540,16 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
     } else if qn.lower == qn.upper {
         // {n} exact repeat
         if qn.lower == 1 {
-            let r = compile_tree(body, reg, env);
-            return r;
+            return compile_tree(body, reg, env);
         }
-        // Use REPEAT opcode
+        // Unroll small exact repeats into flat bytecode (no REPEAT/REPEAT_INC overhead)
+        if !is_empty
+            && qn.include_referred == 0
+            && qn.lower <= EXACT_REPEAT_UNROLL_THRESHOLD
+        {
+            return compile_tree_n_times(body, qn.lower, reg, env);
+        }
+        // Use REPEAT opcode for large or empty-body repeats
         let id = entry_repeat_range(reg, qn.lower, qn.upper);
         if let Err(e) = id {
             return e;
