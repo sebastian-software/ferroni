@@ -603,6 +603,9 @@ pub struct RegexType {
     pub(crate) map_byte_count: u8,
     pub(crate) dist_min: OnigLen,
     pub(crate) dist_max: OnigLen,
+    /// True when capture registers are needed for matching semantics even if
+    /// the caller does not request a region (e.g. backrefs, recursive mem ops).
+    pub(crate) needs_capture_tracking: bool,
 
     /// First-byte prefilter map for regset dispatch.
     /// Unlike `map` (which may be repurposed as BMH skip table when optimize=StrFast),

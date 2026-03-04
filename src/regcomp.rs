@@ -7302,8 +7302,39 @@ pub fn compile_from_tree(root: &Node, reg: &mut RegexType, env: &ParseEnv) -> i3
 
     // Add OP_END
     add_op(reg, OpCode::End, OperationPayload::None);
+    refresh_capture_tracking_requirement(reg);
 
     0
+}
+
+fn opcode_requires_capture_tracking(opcode: OpCode) -> bool {
+    matches!(
+        opcode,
+        OpCode::BackRef1
+            | OpCode::BackRef2
+            | OpCode::BackRefN
+            | OpCode::BackRefNIc
+            | OpCode::BackRefMulti
+            | OpCode::BackRefMultiIc
+            | OpCode::BackRefWithLevel
+            | OpCode::BackRefWithLevelIc
+            | OpCode::BackRefCheck
+            | OpCode::BackRefCheckWithLevel
+            | OpCode::MemStartPush
+            | OpCode::MemEndPush
+            | OpCode::MemEndPushRec
+            | OpCode::MemEndRec
+            | OpCode::EmptyCheckEndMemst
+            | OpCode::EmptyCheckEndMemstPush
+            | OpCode::Call
+    )
+}
+
+fn refresh_capture_tracking_requirement(reg: &mut RegexType) {
+    reg.needs_capture_tracking = reg
+        .ops
+        .iter()
+        .any(|op| opcode_requires_capture_tracking(op.opcode));
 }
 
 // ============================================================================
@@ -8583,6 +8614,8 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         }
     }
 
+    refresh_capture_tracking_requirement(reg);
+
     0
 }
 
@@ -8686,6 +8719,7 @@ pub fn onig_new(
         map_byte_count: 0,
         dist_min: 0,
         dist_max: 0,
+        needs_capture_tracking: false,
         first_byte_map: [0u8; CHAR_MAP_SIZE],
         has_first_byte_map: false,
         called_addrs: vec![],
@@ -8745,6 +8779,7 @@ mod tests {
             map_byte_count: 0,
             dist_min: 0,
             dist_max: 0,
+            needs_capture_tracking: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
             called_addrs: vec![],
@@ -9369,5 +9404,23 @@ mod tests {
         // With top-down nested extraction, the entire pure-literal entity
         // pattern should collapse to a single trie with no Push ops.
         assert_eq!(push_count, 0, "expected 0 Push ops but got {}", push_count);
+    }
+
+    #[test]
+    fn dump_named_capture_bytecode() {
+        let pat = b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})";
+        let reg = onig_new(
+            pat,
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        eprintln!("Bytecode ({} ops):", reg.ops.len());
+        for (i, op) in reg.ops.iter().enumerate() {
+            eprintln!("  [{:3}] {:?}", i, op.opcode);
+        }
+        eprintln!("push_mem_start: {}", reg.push_mem_start);
+        eprintln!("push_mem_end: {}", reg.push_mem_end);
     }
 }

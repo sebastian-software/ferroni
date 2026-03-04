@@ -1979,6 +1979,72 @@ fn get_mem_end(
     }
 }
 
+#[inline(never)]
+fn populate_region_for_match(
+    region: &mut OnigRegion,
+    reg: &RegexType,
+    num_mem: usize,
+    keep: usize,
+    s: usize,
+    stack: &[StackEntry],
+    mem_start_stk: &[MemPtr],
+    mem_end_stk: &[MemPtr],
+) -> Result<(), i32> {
+    let region_regs = num_mem + 1;
+    if region.num_regs != region_regs as i32 {
+        region.resize(region_regs as i32);
+    }
+    region.beg[0] = keep as i32;
+    region.end[0] = s as i32;
+
+    if reg.push_mem_start == 0 && reg.push_mem_end == 0 {
+        for i in 1..=num_mem {
+            let mem_start = mem_start_stk[i].0;
+            let mem_end = mem_end_stk[i].0;
+            if mem_start != MEM_PTR_INVALID && mem_end != MEM_PTR_INVALID {
+                region.beg[i] = mem_start as i32;
+                region.end[i] = mem_end as i32;
+            } else {
+                region.beg[i] = ONIG_REGION_NOTPOS;
+                region.end[i] = ONIG_REGION_NOTPOS;
+            }
+        }
+    } else {
+        for i in 1..=num_mem {
+            if let Some(mem_end) = get_mem_end(reg, stack, mem_end_stk, i) {
+                let mem_start = get_mem_start(reg, stack, mem_start_stk, i);
+                region.beg[i] = mem_start.map(|v| v as i32).unwrap_or(ONIG_REGION_NOTPOS);
+                region.end[i] = mem_end as i32;
+            } else {
+                region.beg[i] = ONIG_REGION_NOTPOS;
+                region.end[i] = ONIG_REGION_NOTPOS;
+            }
+        }
+    }
+
+    if USE_CAPTURE_HISTORY && reg.capture_history != 0 {
+        let node = if region.history_root.is_none() {
+            region.history_root = Some(Box::new(OnigCaptureTreeNode::new()));
+            region.history_root.as_mut().unwrap()
+        } else {
+            let root = region.history_root.as_mut().unwrap();
+            root.clear();
+            root
+        };
+        node.group = 0;
+        node.beg = keep as i32;
+        node.end = s as i32;
+        let mut stkp = 0usize;
+        let stk_top = stack.len();
+        let r = make_capture_history_tree(node, &mut stkp, stack, stk_top, reg);
+        if r < 0 {
+            return Err(r);
+        }
+    }
+
+    Ok(())
+}
+
 /// Level-aware scan for the matching MEM_START of a recursive capture group.
 /// Mirrors C's STACK_GET_MEM_START macro — counts MemEnd/MemEndMark entries
 /// to track nesting level, finds MemStart at level 0.
@@ -2784,16 +2850,21 @@ fn match_at(
     let num_mem = reg.num_mem as usize;
     let enc = reg.enc;
     let options = msa.options;
+    let track_captures = msa.region.is_some() || reg.needs_capture_tracking;
 
     // Reuse stack and capture-group arrays from MatchArg (avoids heap alloc per call)
     let mut stack = std::mem::take(&mut msa.stack);
     stack.clear();
     let mut mem_start_stk = std::mem::take(&mut msa.mem_start_stk);
     mem_start_stk.clear();
-    mem_start_stk.resize(num_mem + 1, MemPtr::invalid());
+    if track_captures {
+        mem_start_stk.resize(num_mem + 1, MemPtr::invalid());
+    }
     let mut mem_end_stk = std::mem::take(&mut msa.mem_end_stk);
     mem_end_stk.clear();
-    mem_end_stk.resize(num_mem + 1, MemPtr::invalid());
+    if track_captures {
+        mem_end_stk.resize(num_mem + 1, MemPtr::invalid());
+    }
 
     let mut keep: usize = sstart;
     let mut best_len: i32 = ONIG_MISMATCH;
@@ -2857,45 +2928,18 @@ fn match_at(
 
                         // Populate region with capture groups
                         if let Some(ref mut region) = msa.region {
-                            region.resize(num_mem as i32 + 1);
-                            region.beg[0] = (keep - 0) as i32; // offset from str start
-                            region.end[0] = s as i32;
-
-                            for i in 1..=num_mem {
-                                if let Some(mem_end) = get_mem_end(reg, &stack, &mem_end_stk, i) {
-                                    let mem_start = get_mem_start(reg, &stack, &mem_start_stk, i);
-                                    region.beg[i] =
-                                        mem_start.map(|v| v as i32).unwrap_or(ONIG_REGION_NOTPOS);
-                                    region.end[i] = mem_end as i32;
-                                } else {
-                                    region.beg[i] = ONIG_REGION_NOTPOS;
-                                    region.end[i] = ONIG_REGION_NOTPOS;
-                                }
-                            }
-
-                            // Build capture history tree
-                            if USE_CAPTURE_HISTORY && reg.capture_history != 0 {
-                                let node = if region.history_root.is_none() {
-                                    region.history_root =
-                                        Some(Box::new(OnigCaptureTreeNode::new()));
-                                    region.history_root.as_mut().unwrap()
-                                } else {
-                                    let root = region.history_root.as_mut().unwrap();
-                                    root.clear();
-                                    root
-                                };
-                                node.group = 0;
-                                node.beg = keep as i32;
-                                node.end = s as i32;
-                                let mut stkp = 0usize;
-                                let stk_top = stack.len();
-                                let r = make_capture_history_tree(
-                                    node, &mut stkp, &stack, stk_top, reg,
-                                );
-                                if r < 0 {
-                                    best_len = r;
-                                    break;
-                                }
+                            if let Err(err) = populate_region_for_match(
+                                region,
+                                reg,
+                                num_mem,
+                                keep,
+                                s,
+                                &stack,
+                                &mem_start_stk,
+                                &mem_end_stk,
+                            ) {
+                                best_len = err;
+                                break;
                             }
                         }
 
@@ -4237,9 +4281,11 @@ fn match_at(
             // ================================================================
             OpCode::MemStart => {
                 if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
-                    let num = num as usize;
-                    mem_start_stk[num] = MemPtr::pos(s);
-                    mem_end_stk[num] = MemPtr::invalid();
+                    if track_captures {
+                        let num = num as usize;
+                        mem_start_stk[num] = MemPtr::pos(s);
+                        mem_end_stk[num] = MemPtr::invalid();
+                    }
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -4268,8 +4314,10 @@ fn match_at(
 
             OpCode::MemEnd => {
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
-                    let num = num as usize;
-                    mem_end_stk[num] = MemPtr::pos(s);
+                    if track_captures {
+                        let num = num as usize;
+                        mem_end_stk[num] = MemPtr::pos(s);
+                    }
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -6184,6 +6232,7 @@ mod tests {
             map_byte_count: 0,
             dist_min: 0,
             dist_max: 0,
+            needs_capture_tracking: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
             called_addrs: vec![],
@@ -6308,6 +6357,99 @@ mod tests {
             out.extend_from_slice(&hi.to_ne_bytes());
         }
         out
+    }
+
+    #[test]
+    fn named_capture_can_skip_tracking_when_region_is_none() {
+        let reg = compile_regex(b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})");
+        assert!(
+            !reg.needs_capture_tracking,
+            "plain captures without backrefs should not require tracking when region is absent"
+        );
+
+        let text = b"Event on 2025-12-31 at venue, next on 2026-01-15.";
+        let (pos, region) = onig_search(
+            &reg,
+            text,
+            text.len(),
+            0,
+            text.len(),
+            None,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(pos, 9);
+        assert!(region.is_none());
+    }
+
+    #[test]
+    fn named_capture_region_reuse_mismatch_resets_slots() {
+        let reg = compile_regex(b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})");
+        assert!(!reg.needs_capture_tracking);
+        assert_eq!(reg.push_mem_start, 0);
+        assert_eq!(reg.push_mem_end, 0);
+
+        let mut region = Some(onig_region_new());
+
+        let text_hit = b"Event on 2025-12-31 at venue.";
+        let (pos_hit, returned) = onig_search(
+            &reg,
+            text_hit,
+            text_hit.len(),
+            0,
+            text_hit.len(),
+            region,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(pos_hit, 9);
+        region = returned;
+        let hit = region.as_ref().expect("region after hit");
+        assert_eq!(hit.beg[0], 9);
+        assert_eq!(hit.end[0], 19);
+        assert_eq!(hit.beg[1], 9);
+        assert_eq!(hit.end[1], 13);
+        assert_eq!(hit.beg[2], 14);
+        assert_eq!(hit.end[2], 16);
+        assert_eq!(hit.beg[3], 17);
+        assert_eq!(hit.end[3], 19);
+
+        let text_miss = b"Event on xx-yy-zz at venue.";
+        let (pos_miss, returned) = onig_search(
+            &reg,
+            text_miss,
+            text_miss.len(),
+            0,
+            text_miss.len(),
+            region,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(pos_miss, ONIG_MISMATCH);
+        let miss = returned.expect("region after miss");
+        for i in 0..=reg.num_mem as usize {
+            assert_eq!(miss.beg[i], ONIG_REGION_NOTPOS, "beg[{}]", i);
+            assert_eq!(miss.end[i], ONIG_REGION_NOTPOS, "end[{}]", i);
+        }
+    }
+
+    #[test]
+    fn backref_still_requires_capture_tracking_without_region() {
+        let reg = compile_regex(b"(\\w+) \\1");
+        assert!(
+            reg.needs_capture_tracking,
+            "backrefs depend on capture tracking even when region is absent"
+        );
+
+        let text = b"the the quick";
+        let (pos, region) = onig_search(
+            &reg,
+            text,
+            text.len(),
+            0,
+            text.len(),
+            None,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(pos, 0);
+        assert!(region.is_none());
     }
 
     #[test]
