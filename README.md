@@ -204,21 +204,6 @@ expression patterns from a Shiki grammar:
 | Match, short line (72 chars) | **55.9 ns** | 6.1 us | **109x** |
 | Tokenize full line (13 tokens) | **8.7 us** | 100 us | **11.5x** |
 
-### Scanner on CSS workload (20 patterns)
-
-To track improvements around Unicode-heavy CSS tokenization
-([Issue #10](https://github.com/sebastian-software/ferroni/issues/10)),
-the main Rust-vs-C scanner benchmarks now include CSS cases directly in
-the `scanner` group:
-
-| Scenario | Ferroni | C Oniguruma | Factor |
-|----------|--------:|------------:|-------:|
-| Compile 20 patterns | **89 us** | 159 us | **1.8x** |
-| Match, short line | **144 ns** | 6.27 us | **43.6x** |
-| Tokenize full CSS block | **20.2 us** | 841 us | **41.6x** |
-| Tokenize 10x CSS block | **205 us** | 1.37 ms | **6.7x** |
-| Word-class tokenize (`\w+`, `\s+`, other) | **12.9 us** | 104 us | **8.1x** |
-
 The largest gains come from SIMD-vectorized search via
 [`memchr`](https://crates.io/crates/memchr) -- NEON on ARM, SSE2/AVX2 on
 x86-64 -- replacing C's hand-written byte loops with vectorized scans.
@@ -320,7 +305,7 @@ compilation and are now faster than C.
 ```bash
 cargo bench --features ffi               # full suite (~8 min)
 cargo bench --features ffi -- compile    # specific group
-cargo bench --features ffi -- scanner    # scanner API benchmarks (incl. CSS cases)
+cargo bench --features ffi -- scanner    # scanner API benchmarks
 cargo bench --features ffi -- "large_"   # pattern filter
 # HTML report: target/criterion/report/index.html
 ```
