@@ -218,8 +218,8 @@ pattern is compatible with its syntax.
 | Literal in 50 KB | 74 ns | 150 ns | **10 ns** |
 | No match, 50 KB | 1.53 us | 9.5 us | **1.46 us** |
 | No match, 10 KB | 357 ns | 1.96 us | **298 ns** |
-| Field extract, 50 KB | 101 ns | 172 ns | **56 ns** |
-| Timestamp, 50 KB | 182 ns | 180 ns | **54 ns** |
+| Field extract, 50 KB | 127 ns | 172 ns | **56 ns** |
+| Timestamp, 50 KB | **120 ns** | 177 ns | **54 ns** |
 | RegSet multi-pattern (5) | **101 ns** | 395 ns | — |
 
 The `regex` crate's DFA engine gives it a clear advantage on text search
@@ -244,7 +244,7 @@ backreferences).
 | Case-insensitive phrase | 101 ns | 188 ns | **62 ns** |
 | Alternation, 2 branches | 62 ns | 157 ns | **48 ns** |
 | Alternation, 10 branches | 49 ns | 225 ns | **21 ns** |
-| Named capture date | 355 ns | 277 ns | **44 ns** |
+| Named capture date | 361 ns | 277 ns | **44 ns** |
 
 ### Compilation
 
