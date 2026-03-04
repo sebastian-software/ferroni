@@ -4507,9 +4507,7 @@ fn prs_cc(
                         continue;
                     }
                     if crate::regexec::is_in_code_range_bytes(&mbuf.data, cp) {
-                        if let Some((fold, unfolds)) =
-                            crate::unicode::case_fold_group_1(cp)
-                        {
+                        if let Some((fold, unfolds)) = crate::unicode::case_fold_group_1(cp) {
                             codes_to_add.push(fold);
                             for &uf in unfolds {
                                 codes_to_add.push(uf);
@@ -4519,9 +4517,7 @@ fn prs_cc(
                 }
                 for &(cp, _) in crate::unicode::fold1_key_range(0, 0xFF) {
                     if crate::regexec::is_in_code_range_bytes(&mbuf.data, cp) {
-                        if let Some((fold, unfolds)) =
-                            crate::unicode::case_fold_group_1(cp)
-                        {
+                        if let Some((fold, unfolds)) = crate::unicode::case_fold_group_1(cp) {
                             codes_to_add.push(fold);
                             for &uf in unfolds {
                                 codes_to_add.push(uf);
@@ -4554,9 +4550,7 @@ fn prs_cc(
                     // Check each unfold in mbuf
                     let mut any_uf_in = false;
                     for &uf in unfolds {
-                        if uf >= 256
-                            && crate::regexec::is_in_code_range_bytes(&mbuf.data, uf)
-                        {
+                        if uf >= 256 && crate::regexec::is_in_code_range_bytes(&mbuf.data, uf) {
                             any_uf_in = true;
                             break;
                         }

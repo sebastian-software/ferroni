@@ -222,10 +222,7 @@ pub(crate) fn for_each_folds1_group(
 /// Iterate all FOLDS2 entries, calling `f` for each group.
 /// `f` receives (fold: &[u32], unfolds: &[u32]).
 /// Only called when MULTI_CHAR flag is set in `flag`.
-pub(crate) fn for_each_folds2_group(
-    flag: OnigCaseFoldType,
-    mut f: impl FnMut(&[u32], &[u32]),
-) {
+pub(crate) fn for_each_folds2_group(flag: OnigCaseFoldType, mut f: impl FnMut(&[u32], &[u32])) {
     if (flag & INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR) == 0 {
         return;
     }
@@ -241,10 +238,7 @@ pub(crate) fn for_each_folds2_group(
 /// Iterate all FOLDS3 entries, calling `f` for each group.
 /// `f` receives (fold: &[u32], unfolds: &[u32]).
 /// Only called when MULTI_CHAR flag is set in `flag`.
-pub(crate) fn for_each_folds3_group(
-    flag: OnigCaseFoldType,
-    mut f: impl FnMut(&[u32], &[u32]),
-) {
+pub(crate) fn for_each_folds3_group(flag: OnigCaseFoldType, mut f: impl FnMut(&[u32], &[u32])) {
     if (flag & INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR) == 0 {
         return;
     }
