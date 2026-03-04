@@ -201,6 +201,7 @@ No cherry-picked subsets.
 | Compile 81 Rust patterns | 256 us | **180 us** | 0.7x |
 | Rust first match | **184 ns** | 5.7 us | **31x** |
 | Rust tokenize full line | **8.3 us** | 84.9 us | **10x** |
+| Compile 117 CSS patterns | **14 ms** | 19 ms | **1.4x** |
 | CSS tokenize (117 patterns) | **1.67 ms** | 15.3 ms | **9.2x** |
 | Warm cache (steady-state) | 62 ns | **23 ns** | 0.4x |
 
@@ -208,9 +209,9 @@ The warm-cache path (all patterns served from cache) is the steady state in
 a highlighter. Ferroni runs it at 62 ns with zero heap allocation; C is
 faster here at 23 ns because its cache lookup is a single pointer comparison.
 
-CSS grammar compilation (399 ms vs 19 ms) is a known weak spot --
-complex CSS patterns trigger expensive regex optimization passes. Tokenization
-speed still favors Ferroni 9x despite this.
+CSS grammar compilation was a known weak spot (399 ms vs 19 ms in C) but
+has been resolved -- inverted case-fold iteration and skip-if-present
+optimization brought it down to **14 ms** (1.4x faster than C).
 
 ### Text search and log scanning
 
@@ -257,7 +258,6 @@ in a single pass instead of inserting them one at a time.
 
 ### Where Ferroni is slower
 
-- **CSS grammar compilation** -- 21x (complex patterns with deep nested groups trigger expensive optimization passes)
 - **Alternation with 5+ branches** -- C advantage 1.1-1.4x
 - **Named capture extraction** -- 1.8x (region bookkeeping overhead)
 - **Timestamp in large text** -- 1.3x (no literal prefix for SIMD to latch onto)

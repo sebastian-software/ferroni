@@ -146,6 +146,117 @@ fn folds_fold_addr(index: usize, fold_len: usize) -> &'static [u32] {
     }
 }
 
+// === Inverted Case Fold Helpers ===
+// Used by regparse to iterate CClass members and look up their fold variants,
+// instead of iterating all 4299 fold entries via apply_all_case_fold.
+
+/// Look up the fold group for a single codepoint (fold_len=1 only).
+/// Returns (fold_target, unfolds_slice) regardless of whether `code` is
+/// the fold target or one of its unfolds.
+/// Returns None if the codepoint doesn't participate in any single-char fold.
+#[inline]
+pub(crate) fn case_fold_group_1(code: OnigCodePoint) -> Option<(OnigCodePoint, &'static [u32])> {
+    // Check if code is an unfold (e.g., 'A' → maps to the a/A group)
+    if let Some((index, fold_len)) = unfold_key(code) {
+        if fold_len == 1 {
+            return Some((folds1_fold(index), folds1_unfolds(index)));
+        }
+        // fold_len 2 or 3: multi-char fold, handled separately
+        return None;
+    }
+    // Check if code is a fold target (e.g., 'a' → maps to the a/A group)
+    if let Some(index) = fold1_key(code) {
+        return Some((folds1_fold(index), folds1_unfolds(index)));
+    }
+    None
+}
+
+/// Find UNFOLD_KEY entries with codepoints in [lo, hi].
+/// Returns a slice of (codepoint, folds1_index, fold_len) tuples.
+#[inline]
+pub(crate) fn unfold_key_range(lo: OnigCodePoint, hi: OnigCodePoint) -> &'static [(u32, i16, u8)] {
+    let start = UNFOLD_KEY.partition_point(|&(c, _, _)| c < lo);
+    let end = UNFOLD_KEY.partition_point(|&(c, _, _)| c <= hi);
+    &UNFOLD_KEY[start..end]
+}
+
+/// Find FOLD1_KEY entries with codepoints in [lo, hi].
+/// Returns a slice of (codepoint, folds1_index) tuples.
+#[inline]
+pub(crate) fn fold1_key_range(lo: OnigCodePoint, hi: OnigCodePoint) -> &'static [(u32, u16)] {
+    let start = FOLD1_KEY.partition_point(|&(c, _)| c < lo);
+    let end = FOLD1_KEY.partition_point(|&(c, _)| c <= hi);
+    &FOLD1_KEY[start..end]
+}
+
+/// Iterate all FOLDS1 entries, calling `f(fold_target, unfolds)` for each group.
+/// Respects the ascii_only flag by stopping early when fold >= 128.
+pub(crate) fn for_each_folds1_group(
+    flag: OnigCaseFoldType,
+    mut f: impl FnMut(OnigCodePoint, &[u32]),
+) {
+    let ascii_only = case_fold_is_ascii_only(flag);
+    let mut i = 0;
+    while i < FOLDS1_NORMAL_END_INDEX {
+        let fold = folds1_fold(i);
+        if ascii_only && fold >= 128 {
+            break;
+        }
+        let unfolds = folds1_unfolds(i);
+        f(fold, unfolds);
+        i = folds1_next(i);
+    }
+    // Locale entries (always processed for non-Turkish)
+    let mut i = FOLDS1_NORMAL_END_INDEX;
+    while i < FOLDS1_END_INDEX {
+        let fold = folds1_fold(i);
+        if ascii_only && fold >= 128 {
+            break;
+        }
+        let unfolds = folds1_unfolds(i);
+        f(fold, unfolds);
+        i = folds1_next(i);
+    }
+}
+
+/// Iterate all FOLDS2 entries, calling `f` for each group.
+/// `f` receives (fold: &[u32], unfolds: &[u32]).
+/// Only called when MULTI_CHAR flag is set in `flag`.
+pub(crate) fn for_each_folds2_group(
+    flag: OnigCaseFoldType,
+    mut f: impl FnMut(&[u32], &[u32]),
+) {
+    if (flag & INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR) == 0 {
+        return;
+    }
+    let mut i = 0;
+    while i < FOLDS2_END_INDEX {
+        let fold = folds2_fold(i);
+        let unfolds = folds2_unfolds(i);
+        f(fold, unfolds);
+        i = folds2_next(i);
+    }
+}
+
+/// Iterate all FOLDS3 entries, calling `f` for each group.
+/// `f` receives (fold: &[u32], unfolds: &[u32]).
+/// Only called when MULTI_CHAR flag is set in `flag`.
+pub(crate) fn for_each_folds3_group(
+    flag: OnigCaseFoldType,
+    mut f: impl FnMut(&[u32], &[u32]),
+) {
+    if (flag & INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR) == 0 {
+        return;
+    }
+    let mut i = 0;
+    while i < FOLDS3_END_INDEX {
+        let fold = folds3_fold(i);
+        let unfolds = folds3_unfolds(i);
+        f(fold, unfolds);
+        i = folds3_next(i);
+    }
+}
+
 // === Unicode Case Fold Functions ===
 
 /// Case fold a multibyte character using Unicode rules.
