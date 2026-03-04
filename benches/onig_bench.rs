@@ -1752,16 +1752,12 @@ fn bench_single_pattern(c: &mut Criterion) {
         if *regex_compat {
             let case_insensitive = *r_option == ONIG_OPTION_IGNORECASE;
             let re = regex_compile(pat, case_insensitive);
-            group.bench_with_input(
-                BenchmarkId::new("regex", name),
-                &text[..],
-                |b, text| {
-                    b.iter(|| {
-                        let m = re.find(black_box(text));
-                        black_box(m);
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("regex", name), &text[..], |b, text| {
+                b.iter(|| {
+                    let m = re.find(black_box(text));
+                    black_box(m);
+                });
+            });
         }
     }
 
