@@ -2835,7 +2835,23 @@ fn parse_cmp_op(s: &[u8]) -> i32 {
 /// - in_right_range: right boundary for matching
 /// - sstart: position to start matching at
 /// - msa: mutable match state (options, region, etc.)
+#[inline(always)]
 fn match_at(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    in_right_range: usize,
+    sstart: usize,
+    msa: &mut MatchArg,
+) -> i32 {
+    if msa.region.is_some() || reg.needs_capture_tracking {
+        match_at_impl::<true>(reg, str_data, end, in_right_range, sstart, msa)
+    } else {
+        match_at_impl::<false>(reg, str_data, end, in_right_range, sstart, msa)
+    }
+}
+
+fn match_at_impl<const TRACK_CAPTURES: bool>(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
@@ -2850,20 +2866,31 @@ fn match_at(
     let num_mem = reg.num_mem as usize;
     let enc = reg.enc;
     let options = msa.options;
-    let track_captures = msa.region.is_some() || reg.needs_capture_tracking;
 
     // Reuse stack and capture-group arrays from MatchArg (avoids heap alloc per call)
     let mut stack = std::mem::take(&mut msa.stack);
     stack.clear();
     let mut mem_start_stk = std::mem::take(&mut msa.mem_start_stk);
-    mem_start_stk.clear();
-    if track_captures {
-        mem_start_stk.resize(num_mem + 1, MemPtr::invalid());
+    if TRACK_CAPTURES {
+        let need = num_mem + 1;
+        if mem_start_stk.len() != need {
+            mem_start_stk.resize(need, MemPtr::invalid());
+        } else {
+            mem_start_stk.fill(MemPtr::invalid());
+        }
+    } else {
+        mem_start_stk.clear();
     }
     let mut mem_end_stk = std::mem::take(&mut msa.mem_end_stk);
-    mem_end_stk.clear();
-    if track_captures {
-        mem_end_stk.resize(num_mem + 1, MemPtr::invalid());
+    if TRACK_CAPTURES {
+        let need = num_mem + 1;
+        if mem_end_stk.len() != need {
+            mem_end_stk.resize(need, MemPtr::invalid());
+        } else {
+            mem_end_stk.fill(MemPtr::invalid());
+        }
+    } else {
+        mem_end_stk.clear();
     }
 
     let mut keep: usize = sstart;
@@ -4281,7 +4308,7 @@ fn match_at(
             // ================================================================
             OpCode::MemStart => {
                 if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
-                    if track_captures {
+                    if TRACK_CAPTURES {
                         let num = num as usize;
                         mem_start_stk[num] = MemPtr::pos(s);
                         mem_end_stk[num] = MemPtr::invalid();
@@ -4314,7 +4341,7 @@ fn match_at(
 
             OpCode::MemEnd => {
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
-                    if track_captures {
+                    if TRACK_CAPTURES {
                         let num = num as usize;
                         mem_end_stk[num] = MemPtr::pos(s);
                     }
@@ -5717,7 +5744,81 @@ pub fn onig_search_with_param(
     onig_search_inner(reg, str_data, end, start, range, &mut msa)
 }
 
+#[inline]
+fn can_use_two_pass_capture_fill(
+    reg: &RegexType,
+    start: usize,
+    range: usize,
+    msa: &MatchArg,
+) -> bool {
+    start <= range
+        && msa.region.is_some()
+        && !opton_find_longest(msa.options)
+        && !reg.needs_capture_tracking
+        && reg.extp.as_ref().map_or(true, |ext| ext.callout_num == 0)
+        // Keep this off when wall-time limiting is active: second pass is extra work.
+        && msa.time_limit == 0
+}
+
+fn onig_search_inner_two_pass(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    msa: &mut MatchArg,
+) -> (i32, Option<OnigRegion>) {
+    let mut region = match msa.region.take() {
+        Some(r) => r,
+        None => return onig_search_inner_core(reg, str_data, end, start, range, msa),
+    };
+    region.resize(reg.num_mem + 1);
+    region.clear();
+
+    let (match_start, _) = onig_search_inner_core(reg, str_data, end, start, range, msa);
+    if match_start < 0 {
+        msa.region = Some(region);
+        return (match_start, msa.region.take());
+    }
+
+    msa.region = Some(region);
+    msa.best_len = ONIG_MISMATCH;
+    msa.best_s = 0;
+
+    let data_range = if range > start { range } else { end };
+    let retry_counter_before = msa.retry_limit_in_search_counter;
+    let retry_limit_in_match_before = msa.retry_limit_in_match;
+    // Second pass is implementation-only; avoid consuming retry budget.
+    msa.retry_limit_in_match = 0;
+    let r = match_at(reg, str_data, end, data_range, match_start as usize, msa);
+    msa.retry_limit_in_match = retry_limit_in_match_before;
+    msa.retry_limit_in_search_counter = retry_counter_before;
+    if r < ONIG_MISMATCH {
+        return (r, msa.region.take());
+    }
+    if r == ONIG_MISMATCH {
+        // Conservative fallback: preserve semantics if second pass diverges.
+        return onig_search_inner_core(reg, str_data, end, start, range, msa);
+    }
+
+    (match_start, msa.region.take())
+}
+
 fn onig_search_inner(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    msa: &mut MatchArg,
+) -> (i32, Option<OnigRegion>) {
+    if can_use_two_pass_capture_fill(reg, start, range, msa) {
+        return onig_search_inner_two_pass(reg, str_data, end, start, range, msa);
+    }
+    onig_search_inner_core(reg, str_data, end, start, range, msa)
+}
+
+fn onig_search_inner_core(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
