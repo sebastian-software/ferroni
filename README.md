@@ -1,7 +1,7 @@
 <p align="center">
   <strong>Ferroni</strong><br>
-  Pure-Rust Oniguruma engine with built-in scanner for syntax highlighting.<br>
-  One crate. No C toolchain. Drop-in compatible.
+  Pure-Rust Oniguruma regex engine. Full feature set, no C toolchain, drop-in compatible.<br>
+  Includes a multi-pattern scanner for TextMate grammar tokenization.
 </p>
 
 <p align="center">
@@ -16,31 +16,35 @@
 
 ---
 
-Syntax highlighting in [VS Code](https://code.visualstudio.com/),
-[Shiki](https://shiki.style/), and every editor built on
-[TextMate grammars](https://macromates.com/manual/en/language_grammars)
-runs on two things: an Oniguruma regex engine and a multi-pattern scanner.
-Today, that means C code with native bindings via
-[vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma).
+[Oniguruma](https://github.com/kkos/oniguruma) is the regex engine behind
+[Ruby](https://www.ruby-lang.org/), [PHP](https://www.php.net/) (mbstring),
+[TextMate](https://macromates.com/) grammars, and tools like
+[jq](https://jqlang.github.io/jq/). It supports features that most regex
+libraries don't: named captures with multiple syntaxes, look-behind of
+variable length, conditional patterns, absent expressions, 886 Unicode
+properties, subexpression calls, and 12 syntax modes from Perl to POSIX.
 
-Ferroni puts both into a single Rust crate. Same regex semantics, same
-Scanner API, no C compiler needed. Just `cargo build`.
-
-It is a line-by-line port of Oniguruma's C source -- same structure, same
-opcodes, same optimization passes -- with SIMD-vectorized search via
+Ferroni is a line-by-line Rust port of this engine — same structure, same
+opcodes, same optimization passes — with SIMD-vectorized search via
 [`memchr`](https://crates.io/crates/memchr) layered on top. The result:
 **up to 42x faster than C** on full-text scanning, while an idiomatic Rust
 API (`Regex::new()`, typed errors, `Match`/`Captures`) keeps the ergonomics
 clean.
 
+For syntax highlighting, Ferroni also includes a multi-pattern
+[Scanner API](#scanner-api) compatible with
+[vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma),
+used by [Shiki](https://shiki.style/), VS Code, and other TextMate-based
+highlighters.
+
 ## Why Ferroni?
 
-**Regex engine + scanner in one crate.** If you're building a syntax
-highlighter, a TextMate grammar host, or anything that matches multiple
-patterns against source code, you used to need C Oniguruma plus native
-bindings. Ferroni gives you both the regex engine and the
-[vscode-oniguruma-compatible Scanner API](#scanner-api) in a single
-dependency. `cargo add ferroni` and you're done.
+**Full Oniguruma, pure Rust.** Named captures, variable-length look-behind,
+conditionals, absent expressions, Unicode properties, subexpression calls —
+everything the C engine supports, without linking against C. If your pattern
+works in Oniguruma, it works in Ferroni. Every opcode and optimization pass
+is ported 1:1 and verified by [1,882 tests](#test-coverage) from three
+independent sources.
 
 **No more CVEs from C.** C Oniguruma has a track record of memory safety
 vulnerabilities --
@@ -54,14 +58,15 @@ buffer overflows, use-after-free, and NULL dereferences structurally through
 Rust's type system. 0.4% unsafe code, all documented in
 [ADR-005](docs/adr/005-unsafe-code-policy.md).
 
-**Drop-in compatible.** If your pattern works in Oniguruma, it works in
-Ferroni. Every opcode, every optimization pass is ported 1:1 from C and
-verified by [1,882 tests](#test-coverage) from three independent sources.
-
 **No C toolchain required.** Pure `cargo build`. Cross-compiles to
 `wasm32-unknown-unknown`. Ship it as a Node.js native module via
 [napi-rs](https://napi.rs/) without `node-gyp` or a C compiler on the
 user's machine.
+
+**Built-in multi-pattern scanner.** For syntax highlighting with TextMate
+grammars, Ferroni includes a
+[vscode-oniguruma-compatible Scanner API](#scanner-api) — regex engine and
+scanner in a single dependency. `cargo add ferroni` and you're done.
 
 ## Quick start
 
@@ -175,138 +180,99 @@ automatic UTF-16 position mapping. API-compatible with
 
 ## Performance
 
-Ferroni wins **33 of 42 core** execution benchmarks against C Oniguruma at `-O3`.
-Of the remaining 9, three are within noise (<10%) and six show C ahead --
-primarily on alternation (5/10/nested branches), timestamp extraction,
-named captures, and the warm scanner cache path.
-Criterion, Apple M1 Ultra. **Bold** = faster engine.
+All numbers compare Ferroni against C Oniguruma at `-O3`,
+measured with [Criterion](https://github.com/bheisler/criterion.rs) on
+Apple M1 Ultra. **Bold** = faster engine. See
+[full tables](docs/perf/benchmark-results.md) for all 52 benchmarks.
 
-### Highlights
-
-| Scenario | Ferroni | C Oniguruma | Factor |
-|----------|--------:|------------:|-------:|
-| Full-text scan, no match, 50 KB | **1.55 us** | 9.4 us | **6.1x** |
-| Full-text scan, no match, 10 KB | **385 ns** | 1.9 us | **5.0x** |
-| Scanner, short string | **51 ns** | 418 ns | **8.2x** |
-| CSS scanner tokenize (20 patterns) | **20.2 us** | 841 us | **41.6x** |
-| Multi-pattern RegSet | **101 ns** | 400 ns | **4.0x** |
-| Scanner, warm cache | 52 ns | 23 ns | 0.4x |
-
-### Scanner with real TextMate grammars (62 patterns)
+### Syntax highlighting
 
 Syntax highlighters like [Shiki](https://shiki.style/) compile 50-150+
-patterns per grammar rule. These benchmarks use 62 actual TypeScript
-expression patterns from a Shiki grammar:
+patterns per grammar rule and scan each line token by token. These numbers
+use 62 real TypeScript expression patterns from a Shiki grammar and a
+20-pattern CSS grammar.
 
-| Scenario | Ferroni | C Oniguruma | Factor |
-|----------|--------:|------------:|-------:|
-| Compile 62 patterns | **1.6 ms** | 2.8 ms | **1.8x** |
-| Match, short line (72 chars) | **55.9 ns** | 6.1 us | **109x** |
+| Scenario | Ferroni | C Oniguruma | Speedup |
+|----------|--------:|------------:|--------:|
+| Compile 62 TS patterns | **1.6 ms** | 2.8 ms | **1.8x** |
+| First match, short line | **55.9 ns** | 6.1 us | **109x** |
 | Tokenize full line (13 tokens) | **8.7 us** | 100 us | **11.5x** |
+| CSS tokenize (20 patterns) | **20.2 us** | 841 us | **41.6x** |
+| Warm cache (steady-state) | 52 ns | **23 ns** | 0.4x |
 
-The largest gains come from SIMD-vectorized search via
-[`memchr`](https://crates.io/crates/memchr) -- NEON on ARM, SSE2/AVX2 on
-x86-64 -- replacing C's hand-written byte loops with vectorized scans.
-See [ADR-006](docs/adr/006-simd-accelerated-search.md). Character class star
-opcodes and lazy backtracking further reduce per-character dispatch overhead
-in greedy repeats like `\w+` and `[-\w]+`. A lookbehind case-fold
-optimization eliminates redundant multi-char Unicode fold checks,
-preventing `(?i)(?<![-\w])` from generating hundreds of bytecode ops.
-A first-byte prefilter map on RegSet dispatch further accelerates
-multi-pattern matching by skipping patterns whose leading byte doesn't
-match the input.
+The warm-cache path (all patterns served from cache) is the steady state in
+a highlighter. Ferroni runs it at 52 ns with zero heap allocation; C is
+faster here at 23 ns because its cache lookup is a single pointer comparison.
 
-The Scanner warm path (all patterns served from cache, the steady-state in a
-syntax highlighter) runs at 52 ns (C: 23 ns). No heap allocation on cache hits.
+### Text search and log scanning
 
-Compilation is 0.9-1.7x of C for simple patterns. Named captures with
-Unicode character classes (e.g. `\d`, `\w`) benefit from batch range
-compilation and are now faster than C.
+First-match latency and full-scan rejection on log-sized inputs.
+
+| Scenario | Ferroni | C Oniguruma | Speedup |
+|----------|--------:|------------:|--------:|
+| Literal in 50 KB | **122 ns** | 147 ns | **1.2x** |
+| No match, 50 KB | **1.55 us** | 9.4 us | **6.1x** |
+| No match, 10 KB | **385 ns** | 1.9 us | **5.0x** |
+| Field extract, 50 KB | **162 ns** | 172 ns | **1.1x** |
+| Timestamp, 50 KB | 236 ns | **176 ns** | 0.7x |
+| RegSet multi-pattern (5) | **101 ns** | 400 ns | **4.0x** |
+
+No-match rejection shows the largest SIMD gains --
+[`memchr`](https://crates.io/crates/memchr) scans the entire buffer with
+NEON/AVX2 vectorized byte matching instead of per-character loops. Timestamp
+patterns without a literal prefix favor C's inner loop -- no leading byte
+for SIMD to latch onto.
+
+### Pattern matching
+
+One representative pattern per regex feature. Ferroni is faster in 7 of 9
+categories; C leads on long alternation and named capture extraction.
+
+| Category | Ferroni | C | Speedup |
+|----------|--------:|--:|--------:|
+| Literal exact | **144 ns** | 148 ns | **1.0x** |
+| Quantifier greedy | **240 ns** | 279 ns | **1.2x** |
+| Lookaround combined | **136 ns** | 288 ns | **2.1x** |
+| Unicode `\p{Greek}+` | **146 ns** | 245 ns | **1.7x** |
+| Backref `(\w+) \1` | **135 ns** | 191 ns | **1.4x** |
+| Case-insensitive phrase | **154 ns** | 187 ns | **1.2x** |
+| Alternation, 2 branches | **116 ns** | 159 ns | **1.4x** |
+| Alternation, 10 branches | 253 ns | **231 ns** | 0.9x |
+| Named capture date | 499 ns | **277 ns** | 0.6x |
+
+### Compilation
+
+Simple patterns compile within 5% of C. Complex patterns with groups and
+lookbehind run 1.3-1.8x slower. Named captures with Unicode character classes
+(`\d`, `\w`) compile faster than C because Ferroni merges Unicode ranges
+in a single pass instead of inserting them one at a time.
+
+### Where Ferroni is slower
+
+- **Alternation with 5+ branches** -- C advantage 1.1-1.4x
+- **Named capture extraction** -- 1.8x (region bookkeeping overhead)
+- **Timestamp in large text** -- 1.3x (no literal prefix for SIMD to latch onto)
+- **Scanner warm cache** -- 2.3x (C's pointer comparison vs Ferroni's hash lookup)
+
+### Ferroni vs the `regex` crate
+
+If your patterns fit Perl-compatible syntax and you want guaranteed linear
+time, use [regex](https://crates.io/crates/regex). Ferroni covers what
+`regex` does not: named captures with multiple syntaxes
+(`(?<n>)`, `(?'n')`, `(?P<n>)`), variable-length lookbehind, conditional
+patterns, absent expressions, subexpression calls, TextMate grammar support,
+or drop-in replacement for Ruby/PHP regex behavior.
 
 <details>
-<summary><strong>Full benchmark tables</strong></summary>
-
-### Regex execution
-
-| Benchmark | Rust | C | Ratio |
-|-----------|-----:|--:|------:|
-| **Literal match** | | | |
-| exact string | **144 ns** | 148 ns | 0.97 |
-| anchored start | **111 ns** | 148 ns | 0.75 |
-| anchored end | 176 ns | **163 ns** | 1.08 |
-| word boundary | **117 ns** | 172 ns | 0.68 |
-| **Quantifiers** | | | |
-| greedy | **240 ns** | 279 ns | 0.86 |
-| lazy | **213 ns** | 233 ns | 0.91 |
-| possessive | **204 ns** | 244 ns | 0.84 |
-| nested | **194 ns** | 238 ns | 0.82 |
-| **Alternation** | | | |
-| 2 branches | **116 ns** | 159 ns | 0.73 |
-| 5 branches | 240 ns | **170 ns** | 1.42 |
-| 10 branches | 253 ns | **231 ns** | 1.10 |
-| nested | 241 ns | **173 ns** | 1.40 |
-| **Backreferences** | | | |
-| simple `(\w+) \1` | **135 ns** | 191 ns | 0.71 |
-| nested | **137 ns** | 197 ns | 0.70 |
-| named | **137 ns** | 192 ns | 0.71 |
-| **Lookaround** | | | |
-| positive lookahead | **123 ns** | 163 ns | 0.75 |
-| negative lookahead | **130 ns** | 176 ns | 0.74 |
-| positive lookbehind | **119 ns** | 264 ns | 0.45 |
-| negative lookbehind | **157 ns** | 340 ns | 0.46 |
-| combined | **136 ns** | 288 ns | 0.47 |
-| **Unicode properties** | | | |
-| `\p{Lu}+` | **100 ns** | 145 ns | 0.69 |
-| `\p{Letter}+` | **104 ns** | 165 ns | 0.63 |
-| `\p{Greek}+` | **146 ns** | 245 ns | 0.60 |
-| `\p{Cyrillic}+` | **285 ns** | 339 ns | 0.84 |
-| **Case-insensitive** | | | |
-| single word | **106 ns** | 150 ns | 0.71 |
-| phrase | **154 ns** | 187 ns | 0.82 |
-| alternation | **112 ns** | 156 ns | 0.72 |
-| **Named captures** | | | |
-| date extraction | 499 ns | **277 ns** | 1.80 |
-| **Large text (first match)** | | | |
-| literal 10 KB | **120 ns** | 145 ns | 0.83 |
-| literal 50 KB | **122 ns** | 147 ns | 0.83 |
-| timestamp 10 KB | 238 ns | **177 ns** | 1.35 |
-| timestamp 50 KB | 236 ns | **176 ns** | 1.34 |
-| field extract 10 KB | **163 ns** | 174 ns | 0.94 |
-| field extract 50 KB | **162 ns** | 172 ns | 0.94 |
-| no match 10 KB | **385 ns** | 1.9 us | 0.20 |
-| no match 50 KB | **1.55 us** | 9.4 us | 0.16 |
-| **RegSet** | | | |
-| position-lead (5 patterns) | **101 ns** | 400 ns | 0.25 |
-| regex-lead (5 patterns) | **186 ns** | 238 ns | 0.78 |
-| **Match at position** | | | |
-| `\d+` at offset 4 | **92 ns** | 154 ns | 0.60 |
-| **Scanner** (vs vscode-oniguruma C) | | | |
-| short string (RegSet path) | **51 ns** | 418 ns | 0.12 |
-| long string, cold (per-regex) | **51 ns** | 190 ns | 0.27 |
-| long string, warm (cached) | 52 ns | **23 ns** | 2.24 |
-
-### Regex compilation
-
-| Pattern | Rust | C | Ratio |
-|---------|-----:|--:|------:|
-| literal | **448 ns** | 479 ns | 0.94 |
-| `.*` | 798 ns | **553 ns** | 1.44 |
-| alternation | 1.7 us | **1.5 us** | 1.14 |
-| char class | **652 ns** | 657 ns | 0.99 |
-| quantifier | 1.4 us | **1.1 us** | 1.34 |
-| group | 1.1 us | **823 ns** | 1.36 |
-| backref | 1.7 us | **987 ns** | 1.70 |
-| lookahead | 772 ns | **495 ns** | 1.56 |
-| lookbehind | 991 ns | **563 ns** | 1.76 |
-| named capture | **4.7 us** | 5.9 us | 0.78 |
-
-### Running benchmarks
+<summary><strong>Running benchmarks</strong></summary>
 
 ```bash
-cargo bench --features ffi               # full suite (~8 min)
-cargo bench --features ffi -- compile    # specific group
-cargo bench --features ffi -- scanner    # scanner API benchmarks
-cargo bench --features ffi -- "large_"   # pattern filter
+cargo bench --features ffi                          # full suite (~8 min)
+cargo bench --features ffi -- scanner_highlighting  # tier 1: highlighting
+cargo bench --features ffi -- text_scanning         # tier 1: log scanning
+cargo bench --features ffi -- single_pattern        # tier 1: per-feature
+cargo bench --features ffi -- compilation           # tier 1: compile time
+cargo bench --features ffi -- regression_           # tier 2: all regression
 # HTML report: target/criterion/report/index.html
 ```
 
@@ -404,6 +370,8 @@ Coverage measured with
 | [008](docs/adr/008-test-strategy-and-c-test-parity.md) | Test strategy and C test suite parity |
 | [009](docs/adr/009-porting-bugs-lessons-learned.md) | Porting bugs: lessons learned |
 | [010](docs/adr/010-idiomatic-rust-api-layer.md) | Idiomatic Rust API layer |
+| [011](docs/adr/011-scanner-api.md) | Scanner API for TextMate tokenization |
+| [012](docs/adr/012-rust-only-optimizations.md) | Rust-only optimizations and performance philosophy |
 
 ## Contributing
 
@@ -415,8 +383,8 @@ and review the ADRs before submitting a PR.
 Ferroni is built on the work of [K. Kosako](https://github.com/kkos) and
 the Oniguruma contributors. The C original powers regex in
 [Ruby](https://www.ruby-lang.org/), [PHP](https://www.php.net/),
-[TextMate](https://macromates.com/), and many other projects. The Scanner
-API and its test suite are based on
+[TextMate](https://macromates.com/), [jq](https://jqlang.github.io/jq/),
+and many other projects. The Scanner API and its test suite are based on
 [vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma)
 by [Nicol&ograve; Ribaudo](https://github.com/nicolo-ribaudo) and the
 VS Code team.

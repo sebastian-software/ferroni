@@ -57,11 +57,15 @@ fn assert_same_result(rust_pos: i32, c_pos: i32, label: &str) {
     );
 }
 
+// ===========================================================================
+// Tier 2: Regression benchmarks (per-feature coverage)
+// ===========================================================================
+
 // ---------------------------------------------------------------------------
-// 1. compile -- measure compilation time
+// regression: compile -- measure compilation time
 // ---------------------------------------------------------------------------
 
-fn bench_compile(c: &mut Criterion) {
+fn bench_regression_compile(c: &mut Criterion) {
     let patterns: &[(&str, &[u8])] = &[
         ("literal", b"hello world"),
         ("dot_star", b"foo.*bar"),
@@ -78,7 +82,7 @@ fn bench_compile(c: &mut Criterion) {
         ),
     ];
 
-    let mut group = c.benchmark_group("compile");
+    let mut group = c.benchmark_group("regression_compile");
     for (name, pat) in patterns {
         group.bench_with_input(BenchmarkId::new("rust", name), pat, |b, pat| {
             b.iter(|| {
@@ -97,10 +101,10 @@ fn bench_compile(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. literal_match -- BMH fast-path
+// regression: literal_match -- BMH fast-path
 // ---------------------------------------------------------------------------
 
-fn bench_literal_match(c: &mut Criterion) {
+fn bench_regression_literal(c: &mut Criterion) {
     let text = b"The quick brown fox jumps over the lazy dog near the riverbank";
     let cases: &[(&str, &[u8])] = &[
         ("exact", b"lazy dog"),
@@ -109,7 +113,7 @@ fn bench_literal_match(c: &mut Criterion) {
         ("word_boundary", b"\\bfox\\b"),
     ];
 
-    let mut group = c.benchmark_group("literal_match");
+    let mut group = c.benchmark_group("regression_literal");
     for (name, pat) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
@@ -144,10 +148,10 @@ fn bench_literal_match(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. quantifiers
+// regression: quantifiers
 // ---------------------------------------------------------------------------
 
-fn bench_quantifiers(c: &mut Criterion) {
+fn bench_regression_quantifiers(c: &mut Criterion) {
     let text = b"aaaaabbbbbccccc12345";
     let cases: &[(&str, &[u8])] = &[
         ("greedy", b"a+b+c+"),
@@ -156,7 +160,7 @@ fn bench_quantifiers(c: &mut Criterion) {
         ("nested", b"(a+b+)+"),
     ];
 
-    let mut group = c.benchmark_group("quantifiers");
+    let mut group = c.benchmark_group("regression_quantifiers");
     for (name, pat) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
@@ -190,10 +194,10 @@ fn bench_quantifiers(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. alternation
+// regression: alternation
 // ---------------------------------------------------------------------------
 
-fn bench_alternation(c: &mut Criterion) {
+fn bench_regression_alternation(c: &mut Criterion) {
     let text = b"The wolverine dashed across the frozen tundra at midnight";
     let cases: &[(&str, &[u8])] = &[
         ("two", b"wolf|wolverine"),
@@ -205,7 +209,7 @@ fn bench_alternation(c: &mut Criterion) {
         ("nested", b"(cat|dog)|(fox|wolverine)"),
     ];
 
-    let mut group = c.benchmark_group("alternation");
+    let mut group = c.benchmark_group("regression_alternation");
     for (name, pat) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
@@ -239,10 +243,10 @@ fn bench_alternation(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. backreferences
+// regression: backreferences
 // ---------------------------------------------------------------------------
 
-fn bench_backreferences(c: &mut Criterion) {
+fn bench_regression_backreferences(c: &mut Criterion) {
     let text = b"the the quick brown fox fox jumped over";
     let cases: &[(&str, &[u8])] = &[
         ("simple", b"(\\w+) \\1"),
@@ -250,7 +254,7 @@ fn bench_backreferences(c: &mut Criterion) {
         ("named", b"(?<word>\\w+) \\k<word>"),
     ];
 
-    let mut group = c.benchmark_group("backreferences");
+    let mut group = c.benchmark_group("regression_backreferences");
     for (name, pat) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
@@ -284,10 +288,10 @@ fn bench_backreferences(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. lookaround
+// regression: lookaround
 // ---------------------------------------------------------------------------
 
-fn bench_lookaround(c: &mut Criterion) {
+fn bench_regression_lookaround(c: &mut Criterion) {
     let text = b"price: $42.99 and cost: $10.00 for item";
     let cases: &[(&str, &[u8])] = &[
         ("pos_lookahead", b"\\$\\d+(?=\\.)"),
@@ -297,7 +301,7 @@ fn bench_lookaround(c: &mut Criterion) {
         ("combined", b"(?<=\\$)\\d+(?=\\.)"),
     ];
 
-    let mut group = c.benchmark_group("lookaround");
+    let mut group = c.benchmark_group("regression_lookaround");
     for (name, pat) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
@@ -331,10 +335,10 @@ fn bench_lookaround(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 7. unicode_properties
+// regression: unicode_properties
 // ---------------------------------------------------------------------------
 
-fn bench_unicode_properties(c: &mut Criterion) {
+fn bench_regression_unicode(c: &mut Criterion) {
     // Mixed-script input: Latin, Greek, Cyrillic, CJK
     let text = "Hello Κόσμε Привет 世界 café résumé naïve".as_bytes();
     let cases: &[(&str, &[u8])] = &[
@@ -344,7 +348,7 @@ fn bench_unicode_properties(c: &mut Criterion) {
         ("cyrillic", b"\\p{Cyrillic}+"),
     ];
 
-    let mut group = c.benchmark_group("unicode_properties");
+    let mut group = c.benchmark_group("regression_unicode");
     for (name, pat) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
@@ -378,10 +382,10 @@ fn bench_unicode_properties(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 8. case_insensitive
+// regression: case_insensitive
 // ---------------------------------------------------------------------------
 
-fn bench_case_insensitive(c: &mut Criterion) {
+fn bench_regression_case_insensitive(c: &mut Criterion) {
     let text = b"The Quick BROWN Fox Jumps OVER the Lazy DOG";
     let cases: &[(&str, &[u8])] = &[
         ("word", b"quick"),
@@ -389,7 +393,7 @@ fn bench_case_insensitive(c: &mut Criterion) {
         ("alternation", b"quick|lazy|dog"),
     ];
 
-    let mut group = c.benchmark_group("case_insensitive");
+    let mut group = c.benchmark_group("regression_case_insensitive");
     for (name, pat) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_IGNORECASE);
         let c_reg = c_compile(pat, ffi::ONIG_OPTION_IGNORECASE);
@@ -439,17 +443,17 @@ fn bench_case_insensitive(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 9. named_captures -- extract date fields
+// regression: named_captures -- extract date fields
 // ---------------------------------------------------------------------------
 
-fn bench_named_captures(c: &mut Criterion) {
+fn bench_regression_named_captures(c: &mut Criterion) {
     let text = b"Event on 2025-12-31 at venue, next on 2026-01-15.";
     let pat = b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})";
 
     let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
     let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
 
-    let mut group = c.benchmark_group("named_captures");
+    let mut group = c.benchmark_group("regression_named_captures");
 
     group.bench_function("rust", |b| {
         let mut region = Some(onig_region_new());
@@ -488,7 +492,7 @@ fn bench_named_captures(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 10. large_text -- realistic log scanning
+// regression: large_text -- realistic log scanning
 // ---------------------------------------------------------------------------
 
 fn make_log_line(i: usize) -> String {
@@ -512,7 +516,7 @@ fn make_log_text(num_lines: usize) -> Vec<u8> {
     text.into_bytes()
 }
 
-fn bench_large_text(c: &mut Criterion) {
+fn bench_regression_large_text(c: &mut Criterion) {
     let text_10k = make_log_text(100); // ~10KB
     let text_50k = make_log_text(500); // ~50KB
 
@@ -523,7 +527,7 @@ fn bench_large_text(c: &mut Criterion) {
         ("no_match", b"CRITICAL_ERROR"),
     ];
 
-    let mut group = c.benchmark_group("large_text");
+    let mut group = c.benchmark_group("regression_large_text");
 
     for (name, pat) in cases {
         let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
@@ -587,10 +591,10 @@ fn bench_large_text(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 11. regset -- multi-pattern matching
+// regression: regset -- multi-pattern matching
 // ---------------------------------------------------------------------------
 
-fn bench_regset(c: &mut Criterion) {
+fn bench_regression_regset(c: &mut Criterion) {
     let text = b"Error 404: page not found at /api/users/42 on 2025-06-15";
 
     let patterns: &[&[u8]] = &[
@@ -623,7 +627,7 @@ fn bench_regset(c: &mut Criterion) {
     }
     let mut c_set = ffi::CRegSet::new(&c_raw_ptrs).expect("C regset_new failed");
 
-    let mut group = c.benchmark_group("regset");
+    let mut group = c.benchmark_group("regression_regset");
 
     // Position-lead
     group.bench_function("rust/position_lead", |b| {
@@ -686,10 +690,10 @@ fn bench_regset(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 12. match_at_position -- onig_match at a known offset
+// regression: match_at_position -- onig_match at a known offset
 // ---------------------------------------------------------------------------
 
-fn bench_match_at_position(c: &mut Criterion) {
+fn bench_regression_match_at_position(c: &mut Criterion) {
     let text = b"xxxx1234abcd";
     let pat = b"\\d+";
 
@@ -702,7 +706,7 @@ fn bench_match_at_position(c: &mut Criterion) {
     assert!(r_len == 4, "Rust match_at expected 4, got {r_len}");
     assert!(c_len == 4, "C match_at expected 4, got {c_len}");
 
-    let mut group = c.benchmark_group("match_at_position");
+    let mut group = c.benchmark_group("regression_match_at_position");
 
     group.bench_function("rust", |b| {
         b.iter(|| {
@@ -728,7 +732,7 @@ fn bench_match_at_position(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 13. scanner -- Scanner API overhead vs raw RegSet/onig_search
+// regression: scanner -- Scanner API overhead vs raw RegSet/onig_search
 // ---------------------------------------------------------------------------
 
 /// Same patterns as bench_regset for direct comparison.
@@ -760,8 +764,8 @@ fn make_long_text() -> Vec<u8> {
     text
 }
 
-fn bench_scanner(c: &mut Criterion) {
-    let mut group = c.benchmark_group("scanner");
+fn bench_regression_scanner(c: &mut Criterion) {
+    let mut group = c.benchmark_group("regression_scanner");
 
     // -- short_string: Ferroni Scanner (RegSet fast-path) --
     {
@@ -1004,7 +1008,7 @@ fn bench_scanner(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 14. scanner_textmate -- TextMate-realistic Scanner workload (63 patterns)
+// regression: scanner_textmate -- TextMate-realistic Scanner workload (63 patterns)
 // ---------------------------------------------------------------------------
 
 // 65 patterns extracted from TypeScript grammar "expression" group (shiki-clean).
@@ -1089,12 +1093,12 @@ fn valid_ts_patterns_bytes(patterns: &[&str]) -> Vec<Vec<u8>> {
     patterns.iter().map(|p| p.as_bytes().to_vec()).collect()
 }
 
-fn bench_scanner_textmate(c: &mut Criterion) {
+fn bench_regression_scanner_textmate(c: &mut Criterion) {
     let patterns = valid_ts_patterns();
     let pattern_count = patterns.len();
     let patterns_bytes = valid_ts_patterns_bytes(&patterns);
     let patterns_byte_refs: Vec<&[u8]> = patterns_bytes.iter().map(|v| v.as_slice()).collect();
-    let mut group = c.benchmark_group("scanner-textmate");
+    let mut group = c.benchmark_group("regression_scanner_textmate");
 
     let content = "const result = await fetchUsers({ limit: 100, offset: 0 }); // API call";
     let content_bytes = content.as_bytes();
@@ -1240,25 +1244,499 @@ fn valid_css_patterns_bytes(patterns: &[&str]) -> Vec<Vec<u8>> {
     patterns.iter().map(|p| p.as_bytes().to_vec()).collect()
 }
 
+// ===========================================================================
+// Tier 1: Real-world scenario benchmarks (README-facing, Rust vs C)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// scanner_highlighting -- the Shiki / VS Code / TextMate workload
+// ---------------------------------------------------------------------------
+
+fn bench_scanner_highlighting(c: &mut Criterion) {
+    let ts_patterns = valid_ts_patterns();
+    let ts_count = ts_patterns.len();
+    let ts_patterns_bytes = valid_ts_patterns_bytes(&ts_patterns);
+    let ts_patterns_byte_refs: Vec<&[u8]> = ts_patterns_bytes.iter().map(|v| v.as_slice()).collect();
+
+    let css_patterns = valid_css_patterns();
+    let css_count = css_patterns.len();
+    let css_patterns_bytes = valid_css_patterns_bytes(&css_patterns);
+    let css_patterns_byte_refs: Vec<&[u8]> =
+        css_patterns_bytes.iter().map(|v| v.as_slice()).collect();
+
+    let ts_line = "const result = await fetchUsers({ limit: 100, offset: 0 }); // API call";
+    let ts_line_bytes = ts_line.as_bytes();
+    let ts_onig = OnigString::new(ts_line);
+    let ts_line_len = ts_line.encode_utf16().count();
+
+    let css_onig = OnigString::new(CSS_INPUT);
+    let css_input_len = CSS_INPUT.encode_utf16().count();
+    let css_input_bytes = CSS_INPUT.as_bytes();
+
+    let mut group = c.benchmark_group("scanner_highlighting");
+
+    // compile: Scanner::new for TS patterns
+    {
+        let label = format!("compile_{ts_count}_rust");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let scanner = Scanner::new(black_box(&ts_patterns)).unwrap();
+                black_box(scanner);
+            });
+        });
+
+        let label = format!("compile_{ts_count}_c");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let scanner = ffi::CScanner::new(black_box(&ts_patterns_byte_refs))
+                    .expect("C scanner failed");
+                black_box(scanner);
+            });
+        });
+    }
+
+    // first_match: single match on short TS line
+    {
+        let mut scanner = Scanner::new(&ts_patterns).unwrap();
+        let c_scanner =
+            ffi::CScanner::new(&ts_patterns_byte_refs).expect("C scanner create failed");
+
+        let label = format!("first_match_{ts_count}_rust");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let m = scanner.find_next_match_utf16(
+                    black_box(&ts_onig),
+                    0,
+                    ScannerFindOptions::NONE,
+                );
+                black_box(m);
+            });
+        });
+
+        let label = format!("first_match_{ts_count}_c");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let m = c_scanner.find_next_match(black_box(ts_line_bytes), 0, 0);
+                black_box(m);
+            });
+        });
+    }
+
+    // tokenize_line: scan entire TS line token by token
+    {
+        let mut scanner = Scanner::new(&ts_patterns).unwrap();
+        let c_scanner =
+            ffi::CScanner::new(&ts_patterns_byte_refs).expect("C scanner create failed");
+
+        let label = format!("tokenize_line_{ts_count}_rust");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let mut pos = 0usize;
+                let mut count = 0u32;
+                while pos < ts_line_len {
+                    match scanner.find_next_match_utf16(
+                        black_box(&ts_onig),
+                        pos,
+                        ScannerFindOptions::NONE,
+                    ) {
+                        Some(m) => {
+                            let end = m.capture_indices[0].end as usize;
+                            pos = if end > pos { end } else { pos + 1 };
+                            count += 1;
+                        }
+                        None => break,
+                    }
+                }
+                black_box(count);
+            });
+        });
+
+        let label = format!("tokenize_line_{ts_count}_c");
+        let content_len = ts_line_bytes.len();
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let mut pos = 0usize;
+                let mut count = 0u32;
+                while pos < content_len {
+                    if let Some((_idx, captures)) =
+                        c_scanner.find_next_match(black_box(ts_line_bytes), 0, pos)
+                    {
+                        let end = captures[0].1 as usize;
+                        pos = if end > pos { end } else { pos + 1 };
+                        count += 1;
+                    } else {
+                        break;
+                    }
+                }
+                black_box(count);
+            });
+        });
+    }
+
+    // css_tokenize: tokenize CSS input with real grammar patterns
+    {
+        let mut scanner = Scanner::new(&css_patterns).unwrap();
+        let c_scanner =
+            ffi::CScanner::new(&css_patterns_byte_refs).expect("C scanner create failed");
+
+        let label = format!("css_tokenize_{css_count}_rust");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let mut pos = 0usize;
+                let mut count = 0u32;
+                while pos < css_input_len {
+                    match scanner.find_next_match_utf16(
+                        black_box(&css_onig),
+                        pos,
+                        ScannerFindOptions::NONE,
+                    ) {
+                        Some(m) => {
+                            let end = m.capture_indices[0].end as usize;
+                            pos = if end > pos { end } else { pos + 1 };
+                            count += 1;
+                        }
+                        None => break,
+                    }
+                }
+                black_box(count);
+            });
+        });
+
+        let css_byte_len = css_input_bytes.len();
+        let label = format!("css_tokenize_{css_count}_c");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let mut pos = 0usize;
+                let mut count = 0u32;
+                while pos < css_byte_len {
+                    if let Some((_idx, captures)) =
+                        c_scanner.find_next_match(black_box(css_input_bytes), 0, pos)
+                    {
+                        let end = captures[0].1 as usize;
+                        pos = if end > pos { end } else { pos + 1 };
+                        count += 1;
+                    } else {
+                        break;
+                    }
+                }
+                black_box(count);
+            });
+        });
+    }
+
+    // warm_cache: scanner with primed cache (steady-state path)
+    {
+        let long = make_long_text();
+        let long_str = std::str::from_utf8(&long).unwrap();
+        let mut scanner = Scanner::new(SCANNER_PATTERNS).unwrap();
+        scanner.find_next_match_with_id(long_str, 1, 0, ScannerFindOptions::NONE);
+
+        let c_scanner =
+            ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
+        c_scanner.find_next_match(&long, 1, 0);
+
+        group.bench_function("warm_cache_rust", |b| {
+            b.iter(|| {
+                let m = scanner.find_next_match_with_id(
+                    black_box(long_str),
+                    1,
+                    0,
+                    ScannerFindOptions::NONE,
+                );
+                black_box(m);
+            });
+        });
+
+        group.bench_function("warm_cache_c", |b| {
+            b.iter(|| {
+                let m = c_scanner.find_next_match(black_box(&long), 1, 0);
+                black_box(m);
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
+// text_scanning -- large text search: log parsing, data extraction
+// ---------------------------------------------------------------------------
+
+fn bench_text_scanning(c: &mut Criterion) {
+    let text_10k = make_log_text(100);
+    let text_50k = make_log_text(500);
+
+    let mut group = c.benchmark_group("text_scanning");
+
+    let cases: &[(&str, &[u8], &Vec<u8>)] = &[
+        ("literal_50k", b"INFO" as &[u8], &text_50k),
+        ("no_match_50k", b"CRITICAL_ERROR" as &[u8], &text_50k),
+        ("no_match_10k", b"CRITICAL_ERROR" as &[u8], &text_10k),
+        ("field_extract_50k", b"duration=(\\d+)ms" as &[u8], &text_50k),
+        (
+            "timestamp_50k",
+            b"\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}" as &[u8],
+            &text_50k,
+        ),
+    ];
+
+    for (name, pat, text) in cases {
+        let r_reg = rust_compile(pat, ONIG_OPTION_NONE);
+        let c_reg = c_compile(pat, ffi::ONIG_OPTION_NONE);
+
+        group.bench_with_input(
+            BenchmarkId::new("rust", name),
+            &text.as_slice(),
+            |b, text| {
+                b.iter(|| {
+                    let (pos, _) = rust_search(&r_reg, black_box(text), None);
+                    black_box(pos);
+                });
+            },
+        );
+        group.bench_with_input(BenchmarkId::new("c", name), &text.as_slice(), |b, text| {
+            let mut region = ffi::CRegion::new();
+            b.iter(|| {
+                region.clear();
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
+                black_box(pos);
+            });
+        });
+    }
+
+    // regset position-lead
+    {
+        let patterns: &[&[u8]] = &[
+            b"Error \\d+",
+            b"/api/\\w+/\\d+",
+            b"\\d{4}-\\d{2}-\\d{2}",
+            b"not found",
+            b"\\bpage\\b",
+        ];
+        let text = b"Error 404: page not found at /api/users/42 on 2025-06-15";
+        let rust_regs: Vec<Box<ferroni::regint::RegexType>> = patterns
+            .iter()
+            .map(|p| Box::new(rust_compile(p, ONIG_OPTION_NONE)))
+            .collect();
+        let (rust_set, rc) = onig_regset_new(rust_regs);
+        assert!(rc == 0, "Rust regset_new failed: {rc}");
+        let mut rust_set = rust_set.unwrap();
+
+        let c_regs_owned: Vec<ffi::CRegex> = patterns
+            .iter()
+            .map(|p| c_compile(p, ffi::ONIG_OPTION_NONE))
+            .collect();
+        let c_raw_ptrs: Vec<ffi::OnigRegex> = c_regs_owned.iter().map(|r| r.raw()).collect();
+        for r in c_regs_owned {
+            std::mem::forget(r);
+        }
+        let mut c_set = ffi::CRegSet::new(&c_raw_ptrs).expect("C regset_new failed");
+
+        group.bench_function("regset_position_lead_rust", |b| {
+            b.iter(|| {
+                let (idx, pos) = onig_regset_search(
+                    &mut rust_set,
+                    black_box(text),
+                    text.len(),
+                    0,
+                    text.len(),
+                    OnigRegSetLead::PositionLead,
+                    ONIG_OPTION_NONE,
+                );
+                black_box((idx, pos));
+            });
+        });
+
+        group.bench_function("regset_position_lead_c", |b| {
+            b.iter(|| {
+                let (idx, pos) = c_set.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    ffi::ONIG_REGSET_POSITION_LEAD,
+                    ffi::ONIG_OPTION_NONE,
+                );
+                black_box((idx, pos));
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
+// single_pattern -- one representative per regex feature category
+// ---------------------------------------------------------------------------
+
+fn bench_single_pattern(c: &mut Criterion) {
+    let mut group = c.benchmark_group("single_pattern");
+
+    let cases: &[(&str, &[u8], &[u8], OnigOptionType, c_uint)] = &[
+        (
+            "literal_exact",
+            b"lazy dog",
+            b"The quick brown fox jumps over the lazy dog near the riverbank",
+            ONIG_OPTION_NONE,
+            ffi::ONIG_OPTION_NONE,
+        ),
+        (
+            "quantifier_greedy",
+            b"a+b+c+",
+            b"aaaaabbbbbccccc12345",
+            ONIG_OPTION_NONE,
+            ffi::ONIG_OPTION_NONE,
+        ),
+        (
+            "lookaround_combined",
+            b"(?<=\\$)\\d+(?=\\.)",
+            b"price: $42.99 and cost: $10.00 for item",
+            ONIG_OPTION_NONE,
+            ffi::ONIG_OPTION_NONE,
+        ),
+        (
+            "unicode_greek",
+            b"\\p{Greek}+",
+            "Hello Κόσμε Привет 世界 café résumé naïve".as_bytes(),
+            ONIG_OPTION_NONE,
+            ffi::ONIG_OPTION_NONE,
+        ),
+        (
+            "backref_simple",
+            b"(\\w+) \\1",
+            b"the the quick brown fox fox jumped over",
+            ONIG_OPTION_NONE,
+            ffi::ONIG_OPTION_NONE,
+        ),
+        (
+            "case_insensitive_phrase",
+            b"brown fox",
+            b"The Quick BROWN Fox Jumps OVER the Lazy DOG",
+            ONIG_OPTION_IGNORECASE,
+            ffi::ONIG_OPTION_IGNORECASE,
+        ),
+        (
+            "alternation_2_branch",
+            b"wolf|wolverine",
+            b"The wolverine dashed across the frozen tundra at midnight",
+            ONIG_OPTION_NONE,
+            ffi::ONIG_OPTION_NONE,
+        ),
+        (
+            "alternation_10_branch",
+            b"alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|wolverine",
+            b"The wolverine dashed across the frozen tundra at midnight",
+            ONIG_OPTION_NONE,
+            ffi::ONIG_OPTION_NONE,
+        ),
+        (
+            "named_capture_date",
+            b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})",
+            b"Event on 2025-12-31 at venue, next on 2026-01-15.",
+            ONIG_OPTION_NONE,
+            ffi::ONIG_OPTION_NONE,
+        ),
+    ];
+
+    for (name, pat, text, r_option, c_option) in cases {
+        let r_reg = rust_compile(pat, *r_option);
+        let c_reg = c_compile(pat, *c_option);
+
+        group.bench_with_input(BenchmarkId::new("rust", name), &text[..], |b, text| {
+            b.iter(|| {
+                let (pos, _) = onig_search(
+                    &r_reg,
+                    black_box(text),
+                    text.len(),
+                    0,
+                    text.len(),
+                    None,
+                    ONIG_OPTION_NONE,
+                );
+                black_box(pos);
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("c", name), &text[..], |b, text| {
+            let mut region = ffi::CRegion::new();
+            b.iter(|| {
+                region.clear();
+                let pos = c_reg.search(
+                    black_box(text),
+                    0,
+                    text.len(),
+                    Some(&mut region),
+                    ffi::ONIG_OPTION_NONE,
+                );
+                black_box(pos);
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
+// compilation -- representative compile-time spread
+// ---------------------------------------------------------------------------
+
+fn bench_compilation(c: &mut Criterion) {
+    let cases: &[(&str, &[u8])] = &[
+        ("literal", b"hello world"),
+        (
+            "named_capture",
+            b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})",
+        ),
+        ("lookbehind", b"(?<=@)\\w+"),
+    ];
+
+    let mut group = c.benchmark_group("compilation");
+    for (name, pat) in cases {
+        group.bench_with_input(BenchmarkId::new("rust", name), pat, |b, pat| {
+            b.iter(|| {
+                let reg = rust_compile(black_box(pat), ONIG_OPTION_NONE);
+                black_box(&reg);
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("c", name), pat, |b, pat| {
+            b.iter(|| {
+                let reg = c_compile(black_box(pat), ffi::ONIG_OPTION_NONE);
+                black_box(&reg);
+            });
+        });
+    }
+    group.finish();
+}
+
 // ---------------------------------------------------------------------------
 // Criterion harness
 // ---------------------------------------------------------------------------
 
 criterion_group!(
     benches,
-    bench_compile,
-    bench_literal_match,
-    bench_quantifiers,
-    bench_alternation,
-    bench_backreferences,
-    bench_lookaround,
-    bench_unicode_properties,
-    bench_case_insensitive,
-    bench_named_captures,
-    bench_large_text,
-    bench_regset,
-    bench_match_at_position,
-    bench_scanner,
-    bench_scanner_textmate,
+    // Tier 1: real-world scenarios
+    bench_scanner_highlighting,
+    bench_text_scanning,
+    bench_single_pattern,
+    bench_compilation,
+    // Tier 2: regression coverage
+    bench_regression_compile,
+    bench_regression_literal,
+    bench_regression_quantifiers,
+    bench_regression_alternation,
+    bench_regression_backreferences,
+    bench_regression_lookaround,
+    bench_regression_unicode,
+    bench_regression_case_insensitive,
+    bench_regression_named_captures,
+    bench_regression_large_text,
+    bench_regression_regset,
+    bench_regression_match_at_position,
+    bench_regression_scanner,
+    bench_regression_scanner_textmate,
 );
 criterion_main!(benches);

@@ -1,0 +1,110 @@
+# Benchmark Results
+
+Full benchmark tables for Ferroni (Rust) vs C Oniguruma at `-O3`.
+Measured with [Criterion](https://github.com/bheisler/criterion.rs) on Apple M1 Ultra.
+
+> These numbers correspond to commit
+> [`44ef3c3`](https://github.com/sebastian-software/ferroni/commit/44ef3c3)
+> (March 2026). Re-run with `cargo bench --features ffi` to get current numbers
+> on your hardware.
+
+## Regex execution
+
+| Benchmark | Rust | C | Ratio |
+|-----------|-----:|--:|------:|
+| **Literal match** | | | |
+| exact string | **144 ns** | 148 ns | 0.97 |
+| anchored start | **111 ns** | 148 ns | 0.75 |
+| anchored end | 176 ns | **163 ns** | 1.08 |
+| word boundary | **117 ns** | 172 ns | 0.68 |
+| **Quantifiers** | | | |
+| greedy | **240 ns** | 279 ns | 0.86 |
+| lazy | **213 ns** | 233 ns | 0.91 |
+| possessive | **204 ns** | 244 ns | 0.84 |
+| nested | **194 ns** | 238 ns | 0.82 |
+| **Alternation** | | | |
+| 2 branches | **116 ns** | 159 ns | 0.73 |
+| 5 branches | 240 ns | **170 ns** | 1.42 |
+| 10 branches | 253 ns | **231 ns** | 1.10 |
+| nested | 241 ns | **173 ns** | 1.40 |
+| **Backreferences** | | | |
+| simple `(\w+) \1` | **135 ns** | 191 ns | 0.71 |
+| nested | **137 ns** | 197 ns | 0.70 |
+| named | **137 ns** | 192 ns | 0.71 |
+| **Lookaround** | | | |
+| positive lookahead | **123 ns** | 163 ns | 0.75 |
+| negative lookahead | **130 ns** | 176 ns | 0.74 |
+| positive lookbehind | **119 ns** | 264 ns | 0.45 |
+| negative lookbehind | **157 ns** | 340 ns | 0.46 |
+| combined | **136 ns** | 288 ns | 0.47 |
+| **Unicode properties** | | | |
+| `\p{Lu}+` | **100 ns** | 145 ns | 0.69 |
+| `\p{Letter}+` | **104 ns** | 165 ns | 0.63 |
+| `\p{Greek}+` | **146 ns** | 245 ns | 0.60 |
+| `\p{Cyrillic}+` | **285 ns** | 339 ns | 0.84 |
+| **Case-insensitive** | | | |
+| single word | **106 ns** | 150 ns | 0.71 |
+| phrase | **154 ns** | 187 ns | 0.82 |
+| alternation | **112 ns** | 156 ns | 0.72 |
+| **Named captures** | | | |
+| date extraction | 499 ns | **277 ns** | 1.80 |
+| **Large text (first match)** | | | |
+| literal 10 KB | **120 ns** | 145 ns | 0.83 |
+| literal 50 KB | **122 ns** | 147 ns | 0.83 |
+| timestamp 10 KB | 238 ns | **177 ns** | 1.35 |
+| timestamp 50 KB | 236 ns | **176 ns** | 1.34 |
+| field extract 10 KB | **163 ns** | 174 ns | 0.94 |
+| field extract 50 KB | **162 ns** | 172 ns | 0.94 |
+| no match 10 KB | **385 ns** | 1.9 us | 0.20 |
+| no match 50 KB | **1.55 us** | 9.4 us | 0.16 |
+| **RegSet** | | | |
+| position-lead (5 patterns) | **101 ns** | 400 ns | 0.25 |
+| regex-lead (5 patterns) | **186 ns** | 238 ns | 0.78 |
+| **Match at position** | | | |
+| `\d+` at offset 4 | **92 ns** | 154 ns | 0.60 |
+| **Scanner** (vs vscode-oniguruma C) | | | |
+| short string (RegSet path) | **51 ns** | 418 ns | 0.12 |
+| long string, cold (per-regex) | **51 ns** | 190 ns | 0.27 |
+| long string, warm (cached) | 52 ns | **23 ns** | 2.24 |
+
+## Scanner with real TextMate grammars (62 patterns)
+
+| Scenario | Ferroni | C Oniguruma | Factor |
+|----------|--------:|------------:|-------:|
+| Compile 62 patterns | **1.6 ms** | 2.8 ms | **1.8x** |
+| Match, short line (72 chars) | **55.9 ns** | 6.1 us | **109x** |
+| Tokenize full line (13 tokens) | **8.7 us** | 100 us | **11.5x** |
+
+## Regex compilation
+
+| Pattern | Rust | C | Ratio |
+|---------|-----:|--:|------:|
+| literal | **448 ns** | 479 ns | 0.94 |
+| `.*` | 798 ns | **553 ns** | 1.44 |
+| alternation | 1.7 us | **1.5 us** | 1.14 |
+| char class | **652 ns** | 657 ns | 0.99 |
+| quantifier | 1.4 us | **1.1 us** | 1.34 |
+| group | 1.1 us | **823 ns** | 1.36 |
+| backref | 1.7 us | **987 ns** | 1.70 |
+| lookahead | 772 ns | **495 ns** | 1.56 |
+| lookbehind | 991 ns | **563 ns** | 1.76 |
+| named capture | **4.7 us** | 5.9 us | 0.78 |
+
+## Reproducing
+
+```bash
+# Full suite with C comparison (~8 min)
+cargo bench --features ffi
+
+# Tier 1 only (real-world scenarios)
+cargo bench --features ffi -- scanner_highlighting
+cargo bench --features ffi -- text_scanning
+cargo bench --features ffi -- single_pattern
+cargo bench --features ffi -- compilation
+
+# Tier 2 (regression coverage)
+cargo bench --features ffi -- regression_
+
+# HTML report
+open target/criterion/report/index.html
+```
