@@ -243,7 +243,7 @@ backreferences).
 | Backref `(\w+) \1` | **79 ns** | 199 ns | — |
 | Case-insensitive phrase | 101 ns | 188 ns | **62 ns** |
 | Alternation, 2 branches | 62 ns | 157 ns | **48 ns** |
-| Alternation, 10 branches | 204 ns | 223 ns | **21 ns** |
+| Alternation, 10 branches | 49 ns | 225 ns | **21 ns** |
 | Named capture date | 355 ns | 277 ns | **44 ns** |
 
 ### Compilation
