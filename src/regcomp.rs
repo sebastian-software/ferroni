@@ -8558,39 +8558,56 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         return r;
     }
 
-    // Build Aho-Corasick automaton for pure literal alternation patterns.
+    // Build Aho-Corasick automaton for literal alternation patterns.
     // This enables a single-pass scan instead of position-by-position matching.
-    if is_pure_literal_alternation(reg) {
-        if let Some(trie_idx) = extract_alt_literals_trie_idx(reg) {
-            let trie = &reg.literal_tries[trie_idx];
-            let ac = aho_corasick::AhoCorasick::builder()
-                .match_kind(aho_corasick::MatchKind::LeftmostFirst)
-                .ascii_case_insensitive(trie.is_case_insensitive())
-                .build(trie.literals());
-            if let Ok(ac) = ac {
-                reg.ac_alt = Some(ac);
-            }
+    // Supports both bare `alpha|beta` and captured `(alpha|beta)`.
+    if let Some((trie_idx, has_capture)) = detect_ac_eligible(reg) {
+        let trie = &reg.literal_tries[trie_idx];
+        let ac = aho_corasick::AhoCorasick::builder()
+            .match_kind(aho_corasick::MatchKind::LeftmostFirst)
+            .ascii_case_insensitive(trie.is_case_insensitive())
+            .build(trie.literals());
+        if let Ok(ac) = ac {
+            reg.ac_alt = Some(ac);
+            reg.ac_alt_has_capture = has_capture;
         }
     }
 
     0
 }
 
-/// Check if a compiled regex is a pure literal alternation (e.g. `alpha|beta|gamma`).
-/// Must have: AltLiterals + End, no captures, no anchors.
-fn is_pure_literal_alternation(reg: &RegexType) -> bool {
-    reg.ops.len() == 2
-        && matches!(reg.ops[0].opcode, OpCode::AltLiterals)
-        && matches!(reg.ops[1].opcode, OpCode::End)
-        && reg.num_mem == 0
-        && reg.anchor == 0
-        && reg.sub_anchor == 0
-}
+/// Detect if a compiled regex is eligible for Aho-Corasick fast path.
+/// Returns `(trie_idx, has_capture)` if eligible.
+///
+/// Accepted patterns (no anchors):
+/// - `AltLiterals, End` (bare alternation, no capture)
+/// - `MemStart, AltLiterals, MemEnd, End` (single capture group)
+/// - `MemStartPush, AltLiterals, MemEndPush, End` (single capture group, push variant)
+fn detect_ac_eligible(reg: &RegexType) -> Option<(usize, bool)> {
+    if reg.anchor != 0 || reg.sub_anchor != 0 {
+        return None;
+    }
 
-/// Extract the trie index from an AltLiterals opcode.
-fn extract_alt_literals_trie_idx(reg: &RegexType) -> Option<usize> {
-    if let OperationPayload::AltLiterals { trie_idx } = reg.ops[0].payload {
-        Some(trie_idx as usize)
+    let ops = &reg.ops;
+    let opcodes: Vec<OpCode> = ops.iter().map(|op| op.opcode).collect();
+
+    let (alt_idx, has_capture) = match opcodes.as_slice() {
+        [OpCode::AltLiterals, OpCode::End] if reg.num_mem == 0 => (0, false),
+        [OpCode::MemStart, OpCode::AltLiterals, OpCode::MemEnd, OpCode::End]
+            if reg.num_mem == 1 =>
+        {
+            (1, true)
+        }
+        [OpCode::MemStartPush, OpCode::AltLiterals, OpCode::MemEndPush, OpCode::End]
+            if reg.num_mem == 1 =>
+        {
+            (1, true)
+        }
+        _ => return None,
+    };
+
+    if let OperationPayload::AltLiterals { trie_idx } = ops[alt_idx].payload {
+        Some((trie_idx as usize, has_capture))
     } else {
         None
     }
@@ -8666,6 +8683,7 @@ pub fn onig_new(
         extp: None,
         literal_tries: Vec::new(),
         ac_alt: None,
+        ac_alt_has_capture: false,
     };
 
     let r = onig_compile(&mut reg, pattern);
@@ -8724,6 +8742,7 @@ mod tests {
             extp: None,
             literal_tries: Vec::new(),
             ac_alt: None,
+            ac_alt_has_capture: false,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

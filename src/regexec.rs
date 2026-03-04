@@ -5694,8 +5694,9 @@ fn onig_search_inner(
         r.clear();
     }
 
-    // Aho-Corasick fast path for pure literal alternations.
+    // Aho-Corasick fast path for literal alternations.
     // Single-pass scan replaces the position-by-position loop entirely.
+    // Works for both bare `alpha|beta` and captured `(alpha|beta)`.
     if let Some(ref ac) = reg.ac_alt {
         if start <= range && !find_longest {
             let search_end = range.min(end);
@@ -5705,6 +5706,10 @@ fn onig_search_inner(
                 if let Some(ref mut r) = msa.region {
                     r.beg[0] = match_start as i32;
                     r.end[0] = match_end as i32;
+                    if reg.ac_alt_has_capture {
+                        r.beg[1] = match_start as i32;
+                        r.end[1] = match_end as i32;
+                    }
                 }
                 return (match_start as i32, msa.region.take());
             }
@@ -6186,6 +6191,7 @@ mod tests {
             extp: None,
             literal_tries: Vec::new(),
             ac_alt: None,
+            ac_alt_has_capture: false,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

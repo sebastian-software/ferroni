@@ -621,8 +621,11 @@ pub struct RegexType {
     // literal alternation tries (for AltLiterals opcode)
     pub(crate) literal_tries: Vec<crate::literal_trie::LiteralTrie>,
 
-    // Aho-Corasick automaton for pure literal alternation fast path
+    // Aho-Corasick automaton for pure literal alternation fast path.
+    // `ac_alt_has_capture` is true when the alternation is wrapped in a single
+    // capture group, so the fast path must also populate region[1].
     pub(crate) ac_alt: Option<aho_corasick::AhoCorasick>,
+    pub(crate) ac_alt_has_capture: bool,
 }
 
 // === Optimization data structures ===
