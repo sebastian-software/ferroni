@@ -67,13 +67,23 @@ Measured with [Criterion](https://github.com/bheisler/criterion.rs) on Apple M1 
 | long string, cold (per-regex) | **51 ns** | 190 ns | 0.27 |
 | long string, warm (cached) | 52 ns | **23 ns** | 2.24 |
 
-## Scanner with real TextMate grammars (62 patterns)
+## Scanner with full Shiki TextMate grammars
+
+Full, unmodified grammars from [shikijs/textmate-grammars-themes](https://github.com/shikijs/textmate-grammars-themes).
 
 | Scenario | Ferroni | C Oniguruma | Factor |
 |----------|--------:|------------:|-------:|
-| Compile 62 patterns | **1.6 ms** | 2.8 ms | **1.8x** |
-| Match, short line (72 chars) | **55.9 ns** | 6.1 us | **109x** |
-| Tokenize full line (13 tokens) | **8.7 us** | 100 us | **11.5x** |
+| **TypeScript (279 patterns)** | | | |
+| Compile | **10.3 ms** | 17.0 ms | **1.6x** |
+| First match, short line | **421 ns** | 25.5 us | **61x** |
+| Tokenize full line | **7.0 us** | 224 us | **32x** |
+| **CSS (117 patterns)** | | | |
+| Compile | 399 ms | **19.1 ms** | 0.05x |
+| Tokenize (multi-line) | **1.67 ms** | 15.3 ms | **9.2x** |
+| **Rust (81 patterns)** | | | |
+| Compile | 256 us | **180 us** | 0.70x |
+| First match | **184 ns** | 5.7 us | **31x** |
+| Tokenize full line | **8.3 us** | 84.9 us | **10x** |
 
 ## Regex compilation
 

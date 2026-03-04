@@ -27,7 +27,7 @@ properties, subexpression calls, and 12 syntax modes from Perl to POSIX.
 Ferroni is a line-by-line Rust port of this engine — same structure, same
 opcodes, same optimization passes — with SIMD-vectorized search via
 [`memchr`](https://crates.io/crates/memchr) layered on top. The result:
-**up to 42x faster than C** on full-text scanning, while an idiomatic Rust
+**up to 61x faster than C** on scanner first-match, while an idiomatic Rust
 API (`Regex::new()`, typed errors, `Match`/`Captures`) keeps the ergonomics
 clean.
 
@@ -183,26 +183,34 @@ automatic UTF-16 position mapping. API-compatible with
 All numbers compare Ferroni against C Oniguruma at `-O3`,
 measured with [Criterion](https://github.com/bheisler/criterion.rs) on
 Apple M1 Ultra. **Bold** = faster engine. See
-[full tables](docs/perf/benchmark-results.md) for all 52 benchmarks.
+[full tables](docs/perf/benchmark-results.md) for all benchmarks.
 
 ### Syntax highlighting
 
-Syntax highlighters like [Shiki](https://shiki.style/) compile 50-150+
-patterns per grammar rule and scan each line token by token. These numbers
-use 62 real TypeScript expression patterns from a Shiki grammar and a
-20-pattern CSS grammar.
+Syntax highlighters like [Shiki](https://shiki.style/) compile a full
+TextMate grammar -- hundreds of regex patterns -- and scan each line
+token by token. We benchmark against complete, unmodified Shiki grammars
+for TypeScript (279 patterns), CSS (117 patterns), and Rust (81 patterns).
+No cherry-picked subsets.
 
 | Scenario | Ferroni | C Oniguruma | Speedup |
 |----------|--------:|------------:|--------:|
-| Compile 62 TS patterns | **1.6 ms** | 2.8 ms | **1.8x** |
-| First match, short line | **55.9 ns** | 6.1 us | **109x** |
-| Tokenize full line (13 tokens) | **8.7 us** | 100 us | **11.5x** |
-| CSS tokenize (20 patterns) | **20.2 us** | 841 us | **41.6x** |
-| Warm cache (steady-state) | 52 ns | **23 ns** | 0.4x |
+| Compile 279 TS patterns | **10.3 ms** | 17.0 ms | **1.6x** |
+| TS first match, short line | **421 ns** | 25.5 us | **61x** |
+| TS tokenize full line | **7.0 us** | 224 us | **32x** |
+| Compile 81 Rust patterns | 256 us | **180 us** | 0.7x |
+| Rust first match | **184 ns** | 5.7 us | **31x** |
+| Rust tokenize full line | **8.3 us** | 84.9 us | **10x** |
+| CSS tokenize (117 patterns) | **1.67 ms** | 15.3 ms | **9.2x** |
+| Warm cache (steady-state) | 62 ns | **23 ns** | 0.4x |
 
 The warm-cache path (all patterns served from cache) is the steady state in
-a highlighter. Ferroni runs it at 52 ns with zero heap allocation; C is
+a highlighter. Ferroni runs it at 62 ns with zero heap allocation; C is
 faster here at 23 ns because its cache lookup is a single pointer comparison.
+
+CSS grammar compilation (399 ms vs 19 ms) is a known weak spot --
+complex CSS patterns trigger expensive regex optimization passes. Tokenization
+speed still favors Ferroni 9x despite this.
 
 ### Text search and log scanning
 
@@ -249,10 +257,11 @@ in a single pass instead of inserting them one at a time.
 
 ### Where Ferroni is slower
 
+- **CSS grammar compilation** -- 21x (complex patterns with deep nested groups trigger expensive optimization passes)
 - **Alternation with 5+ branches** -- C advantage 1.1-1.4x
 - **Named capture extraction** -- 1.8x (region bookkeeping overhead)
 - **Timestamp in large text** -- 1.3x (no literal prefix for SIMD to latch onto)
-- **Scanner warm cache** -- 2.3x (C's pointer comparison vs Ferroni's hash lookup)
+- **Scanner warm cache** -- 2.7x (C's pointer comparison vs Ferroni's hash lookup)
 
 ### Ferroni vs the `regex` crate
 

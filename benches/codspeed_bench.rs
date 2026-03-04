@@ -3,6 +3,7 @@
 // Run locally: cargo codspeed build -m simulation && cargo codspeed run
 // Or via codspeed CLI: codspeed run --mode simulation -- cargo codspeed run
 
+mod grammar_loader;
 mod scanner_css_workload;
 
 use criterion_codspeed::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
@@ -482,75 +483,6 @@ const SCANNER_PATTERNS: &[&str] = &[
     "\\bpage\\b",
 ];
 
-// 65 patterns extracted from TypeScript grammar "expression" group (shiki-clean).
-// These are the actual regexes compiled into a single Scanner during TS tokenization.
-// See https://github.com/sebastian-software/ferroni/issues/6
-const TS_EXPRESSION_PATTERNS: &[&str] = &[
-    "'",
-    "\"",
-    "([$_[:alpha:]][$_[:alnum:]]*)?(`)",
-    "(?<!\\+\\+|--|})(?<=[!(+,:=?\\[]|^return|[^$._[:alnum:]]return|^case|[^$._[:alnum:]]case|=>|&&|\\|\\||\\*/)\\s*(/)(?![*/])(?=(?:[^()/\\[\\\\]|\\\\.|\\[([^]\\\\]|\\\\.)+]|\\(([^)\\\\]|\\\\.)+\\))+/([dgimsuvy]+|(?![*/])|(?=/\\*))(?!\\s*[$0-9A-Z_a-z]))",
-    "((?<![]$)_[:alnum:]]|\\+\\+|--|}|\\*/)|((?<=^return|[^$._[:alnum:]]return|^case|[^$._[:alnum:]]case))\\s*)/(?![*/])(?=(?:[^/\\[\\\\]|\\\\.|\\[([^]\\\\]|\\\\.)*])+/([dgimsuvy]+|(?![*/])|(?=/\\*))(?!\\s*[$0-9A-Z_a-z]))",
-    "/\\*\\*(?!/)",
-    "(/\\*)(?:\\s*((@)internal)(?=\\s|(\\*/)))?",
-    "(^[\\t ]+)?((//)(?:\\s*((@)internal)(?=\\s|$))?)",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(async)\\s+)?(function)\\b(?:\\s*(\\*))?(?:(?:\\s+|(?<=\\*))([$_[:alpha:]][$_[:alnum:]]*))?\\s*",
-    "[$_[:alpha:]][$_[:alnum:]]*",
-    "\\*",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(abstract)\\s+)?(class)\\b(?=\\s+|[<{]|/[*/])",
-    "(?:(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))\\b(async)\\s+)?([$_[:alpha:]][$_[:alnum:]]*)\\s*(?==>)",
-    "(?:(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))\\b(async))?((?<![]!)}])\\s*(?=((<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<])*>)*>)*>\\s*)?\\(\\s*(/\\*([^*]|(\\*[^/]))*\\*/\\s*)*((\\)\\s*:)|((\\.\\.\\.\\s*)?[$_[:alpha:]][$_[:alnum:]]*\\s*:)))|((<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<])*>)*>)*>\\s*)?\\(\\s*(/\\*([^*]|(\\*[^/]))*\\*/\\s*)*(([$_[:alpha:]]|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*])|(\\.\\.\\.\\s*[$_[:alpha:]]))([^\"'()`]|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|('([^'\\\\]|\\\\.)*')|(\"([^\"\\\\]|\\\\.)*\")|(`([^\\\\`]|\\\\.)*`))*)?\\)(\\s*:\\s*([^()<>{}]|<([^<>]|<([^<>]|<[^<>]+>)+>)+>|\\([^()]+\\)|\\{[^{}]+})+)?\\s*=>)))",
-    "=>",
-    "(?<=[(,=])\\s*(async)?(?=\\s*((<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<])*>)*>)*>\\s*))?\\(\\s*((([\\[{]\\s*)?)$|((\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})\\s*((:\\s*\\{?)$|((\\s*([^()<>{}]|<([^<>]|<([^<>]|<[^<>]+>)+>)+>|\\([^()]+\\)|\\{[^{}]+})+\\s*)?=\\s*)))|((\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*])\\s*((:\\s*\\[?)$|((\\s*([^()<>{}]|<([^<>]|<([^<>]|<[^<>]+>)+>)+>|\\([^()]+\\)|\\{[^{}]+})+\\s*)?=\\s*)))))",
-    "(?<=[(,=]|=>|^return|[^$._[:alnum:]]return|^throw|[^$._[:alnum:]]throw|^yield|[^$._[:alnum:]]yield|^await|[^$._[:alnum:]]await|^default|[^$._[:alnum:]]default|[\\&(*,:=>?^|]|[^$_[:alnum:]](?:\\+\\+|--)|[^+]\\+|[^-]-)\\s*(async)?(?=\\s*((((<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<])*>)*>)*>\\s*))?\\()|(<)|((<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<])*>)*>)*>\\s*)))\\s*$)",
-    "(?<=\\)|^)\\s*(:)(?=\\s*([^()<>{}]|<([^<>]|<([^<>]|<[^<>]+>)+>)+>|\\([^()]+\\)|\\{[^{}]+})+\\s*=>)",
-    "\\s*(<)\\s*(const)\\s*(>)",
-    "(?<!\\+\\+|--)(?<=^return|[^$._[:alnum:]]return|^throw|[^$._[:alnum:]]throw|^yield|[^$._[:alnum:]]yield|^await|[^$._[:alnum:]]await|^default|[^$._[:alnum:]]default|[\\&(*,:=>?^|]|[^$_[:alnum:]](?:\\+\\+|--)|[^+]\\+|[^-]-)\\s*(<)(?!<?=)(?!\\s*$)",
-    "(?<=^)\\s*(<)(?=[$_[:alpha:]][$_[:alnum:]]*\\s*>)",
-    "(?!\\?\\.\\s*\\D)(\\?)(?!\\?)",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(new)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(instanceof)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(readonly)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))\\s*",
-    "\\{",
-    "(?=\\[)",
-    "(?=[\"'`])",
-    "(?=\\b((?<!\\$)0[Xx]\\h[_\\h]*(n)?\\b(?!\\$))|\\b((?<!\\$)0[Bb][01][01_]*(n)?\\b(?!\\$))|\\b((?<!\\$)0[Oo]?[0-7][0-7_]*(n)?\\b(?!\\$))|((?<!\\$)(?:\\b[0-9][0-9_]*(\\.)[0-9][0-9_]*[Ee][-+]?[0-9][0-9_]*(n)?\\b|\\b[0-9][0-9_]*(\\.)[Ee][-+]?[0-9][0-9_]*(n)?\\b|\\B(\\.)[0-9][0-9_]*[Ee][-+]?[0-9][0-9_]*(n)?\\b|\\b[0-9][0-9_]*[Ee][-+]?[0-9][0-9_]*(n)?\\b|\\b[0-9][0-9_]*(\\.)[0-9][0-9_]*(n)?\\b|\\b[0-9][0-9_]*(\\.)(n)?\\B|\\B(\\.)[0-9][0-9_]*(n)?\\b|\\b[0-9][0-9_]*(n)?\\b(?!\\.))(?!\\$)))",
-    "(?<=[]\"'`])(?=\\s*[(<])",
-    "(?![$_[:alpha:]])(\\d+)\\s*(?=(/\\*([^*]|(\\*[^/]))*\\*/\\s*)*:)",
-    "([$_[:alpha:]][$_[:alnum:]]*)\\s*(?=(/\\*([^*]|(\\*[^/]))*\\*/\\s*)*:(\\s*/\\*([^*]|(\\*[^/]))*\\*/)*\\s*(((async\\s+)?((function\\s*[(*<])|(function\\s+)|([$_[:alpha:]][$_[:alnum:]]*\\s*=>)))|((async\\s*)?(((<\\s*)$|((<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<])*>)*>)*>\\s*)?\\(\\s*((([\\[{]\\s*)?)$|((\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})\\s*((:\\s*\\{?)$|((\\s*([^()<>{}]|<([^<>]|<([^<>]|<[^<>]+>)+>)+>|\\([^()]+\\)|\\{[^{}]+})+\\s*)?=\\s*)))|((\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*])\\s*((:\\s*\\[?)$|((\\s*([^()<>{}]|<([^<>]|<([^<>]|<[^<>]+>)+>)+>|\\([^()]+\\)|\\{[^{}]+})+\\s*)?=\\s*))))))|((<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<])*>)*>)*>\\s*)?\\(\\s*(/\\*([^*]|(\\*[^/]))*\\*/\\s*)*((\\)\\s*:)|((\\.\\.\\.\\s*)?[$_[:alpha:]][$_[:alnum:]]*\\s*:)))|((<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<]|<\\s*(((const\\s+)?[$_[:alpha:]])|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*]))([^<=>]|=[^<])*>)*>)*>\\s*)?\\(\\s*(/\\*([^*]|(\\*[^/]))*\\*/\\s*)*(([$_[:alpha:]]|(\\{([^{}]|(\\{([^{}]|\\{[^{}]*})*}))*})|(\\[([^]\\[]|(\\[([^]\\[]|\\[[^]\\[]*])*]))*])|(\\.\\.\\.\\s*[$_[:alpha:]]))([^\"'()`]|(\\(([^()]|(\\(([^()]|\\([^()]*\\))*\\)))*\\))|('([^'\\\\]|\\\\.)*')|(\"([^\"\\\\]|\\\\.)*\")|(`([^\\\\`]|\\\\.)*`))*)?\\)(\\s*:\\s*([^()<>{}]|<([^<>]|<([^<>]|<[^<>]+>)+>)+>|\\([^()]+\\)|\\{[^{}]+})+)?\\s*=>)))))",
-    "[$_[:alpha:]][$_[:alnum:]]*\\s*(?=(/\\*([^*]|(\\*[^/]))*\\*/\\s*)*:)",
-    "\\.\\.\\.",
-    "([$_[:alpha:]][$_[:alnum:]]*)\\s*(?=[,}]|$|//|/\\*)",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(as)\\s+(const)(?=\\s*([,}]|$))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(as)|(satisfies))\\s+",
-    "(?=[$_[:alpha:]][$_[:alnum:]]*\\s*=)",
-    ":",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(await)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(yield)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))(?=\\s*/\\*([^*]|(\\*[^/]))*\\*/\\s*\\*)",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(yield)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))(?:\\s*(\\*))?",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))delete(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))in(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))(?!\\()",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))of(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))(?!\\()",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(instanceof)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(new)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(typeof)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(void)(?![$_[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(as)\\s+(const)(?=\\s*($|[]),:;}]))",
-    "(?<![$_[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(as)|(satisfies))\\s+",
-    "\\.\\.\\.",
-    "(?:\\*|(?<!\\()/|[-%+])=",
-    "(?:[\\&^]|<<|>>>??|\\|)=",
-    "<<|>>>?",
-    "[!=]==?",
-    "<=|>=|<>|[<>]",
-    "(?<=[$_[:alnum:]])(!)\\s*(?:(/=)|(/)(?![*/]))",
-    "!|&&|\\|\\||\\?\\?",
-    "[\\&^|~]",
-    "=",
-    "--",
-    "\\+\\+",
-];
-
 const SCANNER_TEXT_SHORT: &str = "Error 404: page not found at /api/users/42 on 2025-06-15";
 
 fn make_long_text() -> Vec<u8> {
@@ -675,18 +607,9 @@ fn bench_regression_scanner(c: &mut Criterion) {
 // regression: scanner_textmate -- TextMate-realistic Scanner workload (65 patterns)
 // ---------------------------------------------------------------------------
 
-/// Filter TS_EXPRESSION_PATTERNS to only those that compile successfully.
-/// This mirrors what shiki-rust does in `build_scanner_for_rule` (<=128 patterns path).
-fn valid_ts_patterns() -> Vec<&'static str> {
-    TS_EXPRESSION_PATTERNS
-        .iter()
-        .copied()
-        .filter(|p| Scanner::new(&[*p]).is_ok())
-        .collect()
-}
-
 fn bench_regression_scanner_textmate(c: &mut Criterion) {
-    let patterns = valid_ts_patterns();
+    let ts_all = grammar_loader::typescript_patterns();
+    let patterns: Vec<&str> = ts_all.iter().map(|s| s.as_str()).collect();
     let pattern_count = patterns.len();
     let mut group = c.benchmark_group("regression_scanner_textmate");
 
@@ -879,15 +802,18 @@ fn bench_regression_idiomatic_api(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_scanner_highlighting(c: &mut Criterion) {
-    let ts_patterns = valid_ts_patterns();
+    // Load full, unmodified Shiki grammars
+    let ts_all = grammar_loader::typescript_patterns();
+    let ts_patterns: Vec<&str> = ts_all.iter().map(|s| s.as_str()).collect();
     let ts_count = ts_patterns.len();
 
-    let css_patterns: Vec<&str> = CSS_PATTERNS
-        .iter()
-        .copied()
-        .filter(|p| Scanner::new(&[*p]).is_ok())
-        .collect();
+    let css_all = grammar_loader::css_patterns();
+    let css_patterns: Vec<&str> = css_all.iter().map(|s| s.as_str()).collect();
     let css_count = css_patterns.len();
+
+    let rust_all = grammar_loader::rust_patterns();
+    let rust_patterns: Vec<&str> = rust_all.iter().map(|s| s.as_str()).collect();
+    let rust_count = rust_patterns.len();
 
     let ts_line = "const result = await fetchUsers({ limit: 100, offset: 0 }); // API call";
     let ts_onig = OnigString::new(ts_line);
@@ -896,11 +822,15 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
     let css_onig = OnigString::new(CSS_INPUT);
     let css_input_len = CSS_INPUT.encode_utf16().count();
 
+    let rust_line = "fn main() -> Result<(), Box<dyn std::error::Error>> { let x: Vec<u32> = vec![1, 2, 3]; }";
+    let rust_onig = OnigString::new(rust_line);
+    let rust_line_len = rust_line.encode_utf16().count();
+
     let mut group = c.benchmark_group("scanner_highlighting");
 
-    // compile: Scanner::new for 62 TS patterns
+    // -- TypeScript: compile --
     {
-        let label = format!("compile_{ts_count}_ts_patterns");
+        let label = format!("ts_{ts_count}_patterns_compile");
         group.bench_function(&label, |b| {
             b.iter(|| {
                 let scanner = Scanner::new(black_box(&ts_patterns)).unwrap();
@@ -909,10 +839,10 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         });
     }
 
-    // first_match: single match on short TS line
+    // -- TypeScript: first match --
     {
         let mut scanner = Scanner::new(&ts_patterns).unwrap();
-        let label = format!("first_match_{ts_count}_patterns");
+        let label = format!("ts_{ts_count}_patterns_first_match");
         group.bench_function(&label, |b| {
             b.iter(|| {
                 let m = scanner.find_next_match_utf16(
@@ -925,10 +855,10 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         });
     }
 
-    // tokenize_line: scan entire TS line token by token
+    // -- TypeScript: tokenize line --
     {
         let mut scanner = Scanner::new(&ts_patterns).unwrap();
-        let label = format!("tokenize_line_{ts_count}_patterns");
+        let label = format!("ts_{ts_count}_patterns_tokenize");
         group.bench_function(&label, |b| {
             b.iter(|| {
                 let mut pos = 0usize;
@@ -952,10 +882,21 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         });
     }
 
-    // css_tokenize: tokenize CSS input with real grammar patterns
+    // -- CSS: compile --
+    {
+        let label = format!("css_{css_count}_patterns_compile");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let scanner = Scanner::new(black_box(&css_patterns)).unwrap();
+                black_box(scanner);
+            });
+        });
+    }
+
+    // -- CSS: tokenize --
     {
         let mut scanner = Scanner::new(&css_patterns).unwrap();
-        let label = format!("css_tokenize_{css_count}_patterns");
+        let label = format!("css_{css_count}_patterns_tokenize");
         group.bench_function(&label, |b| {
             b.iter(|| {
                 let mut pos = 0usize;
@@ -979,7 +920,61 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         });
     }
 
-    // warm_cache: scanner with primed cache (steady-state path)
+    // -- Rust: compile --
+    {
+        let label = format!("rust_{rust_count}_patterns_compile");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let scanner = Scanner::new(black_box(&rust_patterns)).unwrap();
+                black_box(scanner);
+            });
+        });
+    }
+
+    // -- Rust: first match --
+    {
+        let mut scanner = Scanner::new(&rust_patterns).unwrap();
+        let label = format!("rust_{rust_count}_patterns_first_match");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let m = scanner.find_next_match_utf16(
+                    black_box(&rust_onig),
+                    0,
+                    ScannerFindOptions::NONE,
+                );
+                black_box(m);
+            });
+        });
+    }
+
+    // -- Rust: tokenize line --
+    {
+        let mut scanner = Scanner::new(&rust_patterns).unwrap();
+        let label = format!("rust_{rust_count}_patterns_tokenize");
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let mut pos = 0usize;
+                let mut count = 0u32;
+                while pos < rust_line_len {
+                    match scanner.find_next_match_utf16(
+                        black_box(&rust_onig),
+                        pos,
+                        ScannerFindOptions::NONE,
+                    ) {
+                        Some(m) => {
+                            let end = m.capture_indices[0].end as usize;
+                            pos = if end > pos { end } else { pos + 1 };
+                            count += 1;
+                        }
+                        None => break,
+                    }
+                }
+                black_box(count);
+            });
+        });
+    }
+
+    // -- warm cache: scanner with primed cache (steady-state path) --
     {
         let long = make_long_text();
         let long_str = std::str::from_utf8(&long).unwrap();

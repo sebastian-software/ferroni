@@ -286,6 +286,7 @@ dependencies = [
  "codspeed-criterion-compat",
  "criterion",
  "memchr",
+ "serde_json",
  "smallvec",
 ]
 

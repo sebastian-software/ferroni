@@ -3,6 +3,7 @@
 // The patterns are derived from common CSS TextMate grammar tokens and are
 // intentionally heavy on `\w`/`[-\w]+` style character classes.
 
+#[allow(dead_code)]
 pub const CSS_PATTERNS: &[&str] = &[
     // Property names (Unicode-aware \w)
     r"[-a-zA-Z_][-\w]*",
