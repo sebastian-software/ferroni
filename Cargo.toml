@@ -17,6 +17,7 @@ exclude = ["oniguruma-orig/", "vscode-oniguruma/", "benches/", "docs/", "scripts
 ffi = ["cc"]
 
 [dependencies]
+aho-corasick = "1"
 bitflags = "2"
 memchr = "2"
 smallvec = "1"

@@ -10,10 +10,11 @@ Ferroni is a pure-Rust regex engine that ships as a single crate. The question i
 
 ## Decision
 
-Ferroni uses **three runtime dependencies**, each chosen because it solves a specific problem better than hand-rolling:
+Ferroni uses **four runtime dependencies**, each chosen because it solves a specific problem better than hand-rolling:
 
 | Crate | Purpose | Transitive deps |
 |-------|---------|----------------:|
+| [`aho-corasick`](https://crates.io/crates/aho-corasick) | Aho-Corasick automaton for single-pass literal alternation search | 1 (`memchr`) |
 | [`bitflags`](https://crates.io/crates/bitflags) | Type-safe option flags replacing `type OnigOptionType = u32` | 0 |
 | [`memchr`](https://crates.io/crates/memchr) | SIMD-vectorized byte search for the forward-scan pipeline (ADR-007) | 0 |
 | [`smallvec`](https://crates.io/crates/smallvec) | Stack-allocated small vectors for `ScannerMatch::capture_indices` | 0 |

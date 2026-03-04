@@ -8558,7 +8558,42 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         return r;
     }
 
+    // Build Aho-Corasick automaton for pure literal alternation patterns.
+    // This enables a single-pass scan instead of position-by-position matching.
+    if is_pure_literal_alternation(reg) {
+        if let Some(trie_idx) = extract_alt_literals_trie_idx(reg) {
+            let trie = &reg.literal_tries[trie_idx];
+            let ac = aho_corasick::AhoCorasick::builder()
+                .match_kind(aho_corasick::MatchKind::LeftmostFirst)
+                .ascii_case_insensitive(trie.is_case_insensitive())
+                .build(trie.literals());
+            if let Ok(ac) = ac {
+                reg.ac_alt = Some(ac);
+            }
+        }
+    }
+
     0
+}
+
+/// Check if a compiled regex is a pure literal alternation (e.g. `alpha|beta|gamma`).
+/// Must have: AltLiterals + End, no captures, no anchors.
+fn is_pure_literal_alternation(reg: &RegexType) -> bool {
+    reg.ops.len() == 2
+        && matches!(reg.ops[0].opcode, OpCode::AltLiterals)
+        && matches!(reg.ops[1].opcode, OpCode::End)
+        && reg.num_mem == 0
+        && reg.anchor == 0
+        && reg.sub_anchor == 0
+}
+
+/// Extract the trie index from an AltLiterals opcode.
+fn extract_alt_literals_trie_idx(reg: &RegexType) -> Option<usize> {
+    if let OperationPayload::AltLiterals { trie_idx } = reg.ops[0].payload {
+        Some(trie_idx as usize)
+    } else {
+        None
+    }
 }
 
 /// Create and compile a new regex - mirrors C's onig_new().
@@ -8630,6 +8665,7 @@ pub fn onig_new(
         unset_call_addrs: vec![],
         extp: None,
         literal_tries: Vec::new(),
+        ac_alt: None,
     };
 
     let r = onig_compile(&mut reg, pattern);
@@ -8687,6 +8723,7 @@ mod tests {
             unset_call_addrs: vec![],
             extp: None,
             literal_tries: Vec::new(),
+            ac_alt: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

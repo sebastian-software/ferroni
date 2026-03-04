@@ -5694,6 +5694,25 @@ fn onig_search_inner(
         r.clear();
     }
 
+    // Aho-Corasick fast path for pure literal alternations.
+    // Single-pass scan replaces the position-by-position loop entirely.
+    if let Some(ref ac) = reg.ac_alt {
+        if start <= range && !find_longest {
+            let search_end = range.min(end);
+            if let Some(mat) = ac.find(&str_data[start..search_end]) {
+                let match_start = start + mat.start();
+                let match_end = start + mat.end();
+                if let Some(ref mut r) = msa.region {
+                    r.beg[0] = match_start as i32;
+                    r.end[0] = match_end as i32;
+                }
+                return (match_start as i32, msa.region.take());
+            }
+            return (ONIG_MISMATCH, msa.region.take());
+        }
+        // backward search or find_longest: fall through to normal path
+    }
+
     if start > range {
         // Backward search: start > range, search from start down to range
         if end == 0 {
@@ -6166,6 +6185,7 @@ mod tests {
             unset_call_addrs: vec![],
             extp: None,
             literal_tries: Vec::new(),
+            ac_alt: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

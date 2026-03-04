@@ -7,6 +7,7 @@
 pub struct LiteralTrie {
     nodes: Vec<TrieNode>,
     case_insensitive: bool,
+    raw_literals: Vec<Vec<u8>>,
 }
 
 struct TrieNode {
@@ -27,6 +28,7 @@ impl LiteralTrie {
                 is_terminal: false,
             }],
             case_insensitive,
+            raw_literals: literals.iter().map(|l| l.to_vec()).collect(),
         };
 
         for lit in literals {
@@ -63,6 +65,16 @@ impl LiteralTrie {
             }
         }
         self.nodes[node_idx as usize].is_terminal = true;
+    }
+
+    /// Returns the raw literals that were used to build this trie.
+    pub fn literals(&self) -> &[Vec<u8>] {
+        &self.raw_literals
+    }
+
+    /// Returns whether this trie was built with case-insensitive matching.
+    pub fn is_case_insensitive(&self) -> bool {
+        self.case_insensitive
     }
 
     /// Try to find the longest matching literal starting at `input[pos]`.

@@ -620,6 +620,9 @@ pub struct RegexType {
 
     // literal alternation tries (for AltLiterals opcode)
     pub(crate) literal_tries: Vec<crate::literal_trie::LiteralTrie>,
+
+    // Aho-Corasick automaton for pure literal alternation fast path
+    pub(crate) ac_alt: Option<aho_corasick::AhoCorasick>,
 }
 
 // === Optimization data structures ===
