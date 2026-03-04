@@ -29,7 +29,7 @@ not supported by the `regex` crate.
 | Category | Ferroni | C Oniguruma | `regex` |
 |----------|--------:|------------:|--------:|
 | Literal exact | 104 ns | 159 ns | **11 ns** |
-| Quantifier greedy | 185 ns | 319 ns | **65 ns** |
+| Quantifier greedy | 183 ns | 261 ns | **65 ns** |
 | Lookaround combined | **83 ns** | 292 ns | — |
 | Unicode `\p{Greek}+` | 96 ns | 251 ns | **60 ns** |
 | Backref `(\w+) \1` | **79 ns** | 199 ns | — |
