@@ -822,7 +822,8 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
     let css_onig = OnigString::new(CSS_INPUT);
     let css_input_len = CSS_INPUT.encode_utf16().count();
 
-    let rust_line = "fn main() -> Result<(), Box<dyn std::error::Error>> { let x: Vec<u32> = vec![1, 2, 3]; }";
+    let rust_line =
+        "fn main() -> Result<(), Box<dyn std::error::Error>> { let x: Vec<u32> = vec![1, 2, 3]; }";
     let rust_onig = OnigString::new(rust_line);
     let rust_line_len = rust_line.encode_utf16().count();
 
@@ -845,11 +846,8 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         let label = format!("ts_{ts_count}_patterns_first_match");
         group.bench_function(&label, |b| {
             b.iter(|| {
-                let m = scanner.find_next_match_utf16(
-                    black_box(&ts_onig),
-                    0,
-                    ScannerFindOptions::NONE,
-                );
+                let m =
+                    scanner.find_next_match_utf16(black_box(&ts_onig), 0, ScannerFindOptions::NONE);
                 black_box(m);
             });
         });

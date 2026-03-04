@@ -61,11 +61,7 @@ fn extract_patterns(json: &str) -> Vec<String> {
 }
 
 /// Recursively collect `match` and `begin` fields from a pattern entry.
-fn collect_patterns(
-    value: &serde_json::Value,
-    seen: &mut HashSet<String>,
-    out: &mut Vec<String>,
-) {
+fn collect_patterns(value: &serde_json::Value, seen: &mut HashSet<String>, out: &mut Vec<String>) {
     // Extract "match" field
     if let Some(s) = value.get("match").and_then(|v| v.as_str()) {
         if seen.insert(s.to_string()) {

@@ -1009,9 +1009,6 @@ fn bench_regression_scanner(c: &mut Criterion) {
     group.finish();
 }
 
-
-
-
 /// Convert pattern slices to byte vectors for C scanner.
 fn patterns_to_bytes(patterns: &[&str]) -> Vec<Vec<u8>> {
     patterns.iter().map(|p| p.as_bytes().to_vec()).collect()
@@ -1167,7 +1164,8 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
     let ts_patterns: Vec<&str> = ts_all.iter().map(|s| s.as_str()).collect();
     let ts_count = ts_patterns.len();
     let ts_patterns_bytes = patterns_to_bytes(&ts_patterns);
-    let ts_patterns_byte_refs: Vec<&[u8]> = ts_patterns_bytes.iter().map(|v| v.as_slice()).collect();
+    let ts_patterns_byte_refs: Vec<&[u8]> =
+        ts_patterns_bytes.iter().map(|v| v.as_slice()).collect();
 
     let css_all = grammar_loader::css_patterns();
     let css_patterns: Vec<&str> = css_all.iter().map(|s| s.as_str()).collect();
@@ -1192,7 +1190,8 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
     let css_input_len = CSS_INPUT.encode_utf16().count();
     let css_input_bytes = CSS_INPUT.as_bytes();
 
-    let rust_line = "fn main() -> Result<(), Box<dyn std::error::Error>> { let x: Vec<u32> = vec![1, 2, 3]; }";
+    let rust_line =
+        "fn main() -> Result<(), Box<dyn std::error::Error>> { let x: Vec<u32> = vec![1, 2, 3]; }";
     let rust_line_bytes = rust_line.as_bytes();
     let rust_onig = OnigString::new(rust_line);
     let rust_line_len = rust_line.encode_utf16().count();
@@ -1228,11 +1227,8 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         let label = format!("ts_{ts_count}_first_match_rust");
         group.bench_function(&label, |b| {
             b.iter(|| {
-                let m = scanner.find_next_match_utf16(
-                    black_box(&ts_onig),
-                    0,
-                    ScannerFindOptions::NONE,
-                );
+                let m =
+                    scanner.find_next_match_utf16(black_box(&ts_onig), 0, ScannerFindOptions::NONE);
                 black_box(m);
             });
         });
@@ -1514,7 +1510,11 @@ fn bench_text_scanning(c: &mut Criterion) {
         ("literal_50k", b"INFO" as &[u8], &text_50k),
         ("no_match_50k", b"CRITICAL_ERROR" as &[u8], &text_50k),
         ("no_match_10k", b"CRITICAL_ERROR" as &[u8], &text_10k),
-        ("field_extract_50k", b"duration=(\\d+)ms" as &[u8], &text_50k),
+        (
+            "field_extract_50k",
+            b"duration=(\\d+)ms" as &[u8],
+            &text_50k,
+        ),
         (
             "timestamp_50k",
             b"\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}" as &[u8],
