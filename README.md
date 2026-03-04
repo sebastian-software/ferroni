@@ -195,23 +195,17 @@ No cherry-picked subsets.
 
 | Scenario | Ferroni | C Oniguruma | Speedup |
 |----------|--------:|------------:|--------:|
-| Compile 279 TS patterns | **10.3 ms** | 17.0 ms | **1.6x** |
-| TS first match, short line | **421 ns** | 25.5 us | **61x** |
-| TS tokenize full line | **7.0 us** | 224 us | **32x** |
-| Compile 81 Rust patterns | 256 us | **180 us** | 0.7x |
-| Rust first match | **184 ns** | 5.7 us | **31x** |
-| Rust tokenize full line | **8.3 us** | 84.9 us | **10x** |
-| Compile 117 CSS patterns | **14 ms** | 19 ms | **1.4x** |
-| CSS tokenize (117 patterns) | **1.67 ms** | 15.3 ms | **9.2x** |
-| Warm cache (steady-state) | 62 ns | **23 ns** | 0.4x |
-
-The warm-cache path (all patterns served from cache) is the steady state in
-a highlighter. Ferroni runs it at 62 ns with zero heap allocation; C is
-faster here at 23 ns because its cache lookup is a single pointer comparison.
-
-CSS grammar compilation was a known weak spot (399 ms vs 19 ms in C) but
-has been resolved -- inverted case-fold iteration and skip-if-present
-optimization brought it down to **14 ms** (1.4x faster than C).
+| **TypeScript** (279 patterns) | | | |
+| Compile | **10.3 ms** | 17.0 ms | **1.6x** |
+| First match | **421 ns** | 25.5 us | **61x** |
+| Tokenize full line | **7.0 us** | 224 us | **32x** |
+| **Rust** (81 patterns) | | | |
+| Compile | 256 us | **180 us** | 0.7x |
+| First match | **184 ns** | 5.7 us | **31x** |
+| Tokenize full line | **8.3 us** | 84.9 us | **10x** |
+| **CSS** (117 patterns) | | | |
+| Compile | **14 ms** | 19 ms | **1.4x** |
+| Tokenize full line | **1.67 ms** | 15.3 ms | **9.2x** |
 
 ### Text search and log scanning
 
