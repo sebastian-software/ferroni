@@ -10,6 +10,7 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -1459,6 +1460,28 @@ impl MatchArg {
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
         }
+    }
+
+    /// Full reset for thread-local reuse: re-reads global limits, keeps allocated buffers.
+    fn reset_full(
+        &mut self,
+        reg: &RegexType,
+        option: OnigOptionType,
+        region: Option<OnigRegion>,
+        start: usize,
+    ) {
+        self.options = option | reg.options;
+        self.region = region;
+        self.start = start;
+        self.best_len = ONIG_MISMATCH;
+        self.best_s = 0;
+        self.skip_search = 0;
+        self.retry_limit_in_match = RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed);
+        self.retry_limit_in_search = RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed);
+        self.retry_limit_in_search_counter = 0;
+        self.match_stack_limit = MATCH_STACK_LIMIT.load(Ordering::Relaxed);
+        self.time_limit = TIME_LIMIT.load(Ordering::Relaxed);
+        self.time_start = None;
     }
 
     /// Reset mutable state for a new search, keeping allocated buffers.
@@ -4959,11 +4982,23 @@ pub fn onig_match(
     region: Option<OnigRegion>,
     option: OnigOptionType,
 ) -> (i32, Option<OnigRegion>) {
-    let mut msa = MatchArg::new(reg, option, region, at);
+    thread_local! {
+        static CACHED_MSA: RefCell<Option<MatchArg>> = const { RefCell::new(None) };
+    }
+
+    let mut msa = match CACHED_MSA.with(|c| c.borrow_mut().take()) {
+        Some(mut cached) => {
+            cached.reset_full(reg, option, region, at);
+            cached
+        }
+        None => MatchArg::new(reg, option, region, at),
+    };
 
     if opton_check_validity_of_string(msa.options) {
         if !reg.enc.is_valid_mbc_string(&str_data[..end]) {
-            return (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
+            let result = (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
+            CACHED_MSA.with(|c| *c.borrow_mut() = Some(msa));
+            return result;
         }
     }
 
@@ -4985,7 +5020,9 @@ pub fn onig_match(
         result
     };
 
-    (result, msa.region)
+    let region = msa.region.take();
+    CACHED_MSA.with(|c| *c.borrow_mut() = Some(msa));
+    (result, region)
 }
 
 /// Fast match path for regset: reuses an existing MatchArg, skips string
@@ -5581,8 +5618,28 @@ pub fn onig_search(
     region: Option<OnigRegion>,
     option: OnigOptionType,
 ) -> (i32, Option<OnigRegion>) {
-    let mut msa = MatchArg::new(reg, option, region, start);
-    onig_search_inner(reg, str_data, end, start, range, &mut msa)
+    thread_local! {
+        static CACHED_MSA: RefCell<Option<MatchArg>> = const { RefCell::new(None) };
+    }
+
+    // Reuse a cached MatchArg to avoid heap allocation per search.
+    // .take() makes this safe for re-entrant calls (e.g. from callouts).
+    let mut msa = match CACHED_MSA.with(|c| c.borrow_mut().take()) {
+        Some(mut cached) => {
+            cached.reset_full(reg, option, region, start);
+            cached
+        }
+        None => MatchArg::new(reg, option, region, start),
+    };
+
+    let result = onig_search_inner(reg, str_data, end, start, range, &mut msa);
+
+    // Return the MSA to cache (region already taken out by inner).
+    CACHED_MSA.with(|c| {
+        *c.borrow_mut() = Some(msa);
+    });
+
+    result
 }
 
 /// Search reusing a pre-allocated MatchArg. Preserves buffer capacity.
