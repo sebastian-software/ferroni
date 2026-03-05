@@ -461,7 +461,7 @@ pub fn onigenc_always_true_is_valid_mbc_string(_s: &[u8]) -> bool {
 
 /// Check if byte at p is 0x0a newline
 pub fn onigenc_is_mbc_newline_0x0a(p: &[u8], end: usize) -> bool {
-    !p.is_empty() && p.len() > 0 && (end - 0) > 0 && p[0] == NEWLINE_CODE as u8
+    !p.is_empty() && end > 0 && p[0] == NEWLINE_CODE as u8
 }
 
 /// ASCII mbc_case_fold: fold a single ASCII character

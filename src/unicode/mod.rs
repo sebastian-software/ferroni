@@ -280,8 +280,8 @@ pub fn onigenc_unicode_mbc_case_fold(
                 // Multi-char fold (fold_len == 2 or 3)
                 let addr = folds_fold_addr(index, fold_len);
                 let mut rlen = 0i32;
-                for i in 0..fold_len {
-                    let l = enc.code_to_mbc(addr[i], &mut fold[rlen as usize..]);
+                for code in addr.iter().take(fold_len) {
+                    let l = enc.code_to_mbc(*code, &mut fold[rlen as usize..]);
                     rlen += l;
                 }
                 return rlen;
@@ -290,9 +290,7 @@ pub fn onigenc_unicode_mbc_case_fold(
     }
 
     // No fold found: copy original bytes unchanged
-    for i in 0..len {
-        fold[i] = data[p_start + i];
-    }
+    fold[..len].copy_from_slice(&data[p_start..(len + p_start)]);
     len as i32
 }
 
@@ -311,9 +309,7 @@ fn apply_case_fold1(
             break;
         }
         let unfolds = folds1_unfolds(i);
-        let n = unfolds.len();
-        for j in 0..n {
-            let uf = unfolds[j];
+        for (j, &uf) in unfolds.iter().enumerate() {
             if case_fold_is_ascii_only(flag) && uf >= 128 {
                 continue;
             }
@@ -328,8 +324,7 @@ fn apply_case_fold1(
                 return r;
             }
             // pair each unfold with previously seen unfolds
-            for k in 0..j {
-                let uf2 = unfolds[k];
+            for &uf2 in unfolds.iter().take(j) {
                 if case_fold_is_ascii_only(flag) && uf2 >= 128 {
                     continue;
                 }
@@ -359,17 +354,14 @@ fn apply_case_fold2(
     while i < to {
         let fold = folds2_fold(i);
         let unfolds = folds2_unfolds(i);
-        let n = unfolds.len();
-        for j in 0..n {
-            let uf = unfolds[j];
+        for (j, &uf) in unfolds.iter().enumerate() {
             // unfold -> fold (multi-char)
             let r = f(uf, fold);
             if r != 0 {
                 return r;
             }
             // pair with previously seen unfolds
-            for k in 0..j {
-                let uf2 = unfolds[k];
+            for &uf2 in unfolds.iter().take(j) {
                 let r = f(uf, &[uf2]);
                 if r != 0 {
                     return r;
@@ -396,15 +388,12 @@ fn apply_case_fold3(
     while i < to {
         let fold = folds3_fold(i);
         let unfolds = folds3_unfolds(i);
-        let n = unfolds.len();
-        for j in 0..n {
-            let uf = unfolds[j];
+        for (j, &uf) in unfolds.iter().enumerate() {
             let r = f(uf, fold);
             if r != 0 {
                 return r;
             }
-            for k in 0..j {
-                let uf2 = unfolds[k];
+            for &uf2 in unfolds.iter().take(j) {
                 let r = f(uf, &[uf2]);
                 if r != 0 {
                     return r;
@@ -637,13 +626,11 @@ pub fn onigenc_unicode_get_case_fold_codes_by_str(
             // Add all unfold variants (excluding the original)
             let unfolds = folds1_unfolds(buk_index);
             for &uf in unfolds {
-                if uf != orig_codes[0] {
-                    if case_fold_is_not_ascii_only(flag) || uf < 128 {
-                        items[n].byte_len = lens[0] as i32;
-                        items[n].code_len = 1;
-                        items[n].code[0] = uf;
-                        n += 1;
-                    }
+                if uf != orig_codes[0] && (case_fold_is_not_ascii_only(flag) || uf < 128) {
+                    items[n].byte_len = lens[0] as i32;
+                    items[n].code_len = 1;
+                    items[n].code[0] = uf;
+                    n += 1;
                 }
             }
         } else if (flag & INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR) != 0 {
@@ -1210,11 +1197,10 @@ pub fn onigenc_wb_is_break_position(
     }
 
     // WB3c: ZWJ x {Extended_Pictographic}
-    if from == WbType::ZWJ {
-        if onigenc_unicode_is_code_ctype(cto, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
+    if from == WbType::ZWJ
+        && onigenc_unicode_is_code_ctype(cto, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
             return false;
         }
-    }
 
     // WB3d: WSegSpace x WSegSpace
     if from == WbType::WSegSpace && to == WbType::WSegSpace {
@@ -1261,8 +1247,8 @@ pub fn onigenc_wb_is_break_position(
     }
 
     // WB7: AHLetter (MidLetter | MidNumLetQ) x AHLetter
-    if from == WbType::MidLetter || is_wb_midnumletq(from) {
-        if is_wb_ahletter(to) {
+    if (from == WbType::MidLetter || is_wb_midnumletq(from))
+        && is_wb_ahletter(to) {
             let mut from2 = WbType::Any;
             let mut pp = prev;
             loop {
@@ -1283,7 +1269,6 @@ pub fn onigenc_wb_is_break_position(
                 return false;
             }
         }
-    }
 
     if from == WbType::HebrewLetter {
         // WB7a: Hebrew_Letter x Single_Quote
@@ -1302,8 +1287,8 @@ pub fn onigenc_wb_is_break_position(
     }
 
     // WB7c: Hebrew_Letter Double_Quote x Hebrew_Letter
-    if from == WbType::DoubleQuote {
-        if to == WbType::HebrewLetter {
+    if from == WbType::DoubleQuote
+        && to == WbType::HebrewLetter {
             let mut from2 = WbType::Any;
             let mut pp = prev;
             loop {
@@ -1324,7 +1309,6 @@ pub fn onigenc_wb_is_break_position(
                 return false;
             }
         }
-    }
 
     if to == WbType::Numeric {
         // WB8: Numeric x Numeric
@@ -1382,22 +1366,20 @@ pub fn onigenc_wb_is_break_position(
     }
 
     // WB13a: (AHLetter | Numeric | Katakana | ExtendNumLet) x ExtendNumLet
-    if to == WbType::ExtendNumLet {
-        if is_wb_ahletter(from)
+    if to == WbType::ExtendNumLet
+        && (is_wb_ahletter(from)
             || from == WbType::Numeric
             || from == WbType::Katakana
-            || from == WbType::ExtendNumLet
+            || from == WbType::ExtendNumLet)
         {
             return false;
         }
-    }
 
     // WB13b: ExtendNumLet x (AHLetter | Numeric | Katakana)
-    if from == WbType::ExtendNumLet {
-        if is_wb_ahletter(to) || to == WbType::Numeric || to == WbType::Katakana {
+    if from == WbType::ExtendNumLet
+        && (is_wb_ahletter(to) || to == WbType::Numeric || to == WbType::Katakana) {
             return false;
         }
-    }
 
     // WB15/WB16: RI x RI (count consecutive RI backward)
     if from == WbType::RegionalIndicator && to == WbType::RegionalIndicator {
