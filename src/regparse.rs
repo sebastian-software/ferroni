@@ -2478,9 +2478,7 @@ fn fetch_interval(
         }
         // Otherwise: swap bounds and make possessive
         tok.repeat_possessive = true;
-        let tmp = low;
-        low = up;
-        up = tmp;
+        std::mem::swap(&mut low, &mut up);
     } else {
         tok.repeat_possessive = false;
     }
@@ -3100,7 +3098,7 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                     let prev = *p;
                     let r = scan_number(p, end, pattern, enc);
                     if r >= 0
-                        && r <= ONIG_MAX_BACKREF_NUM
+                        && (0..=ONIG_MAX_BACKREF_NUM).contains(&r)
                         && is_syntax_op(syn, ONIG_SYN_OP_DECIMAL_BACKREF)
                         && (r <= env.num_mem || r <= 9)
                     {
@@ -4011,7 +4009,7 @@ fn prs_cc(
                     // Validate the accumulated byte sequence
                     if !env.enc.is_valid_mbc_string(&buf) {
                         env.parse_depth -= 1;
-                        if byte > 0xF4 || byte < 0xC2 {
+                        if !(0xC2..=0xF4).contains(&byte) {
                             return Err(ONIGERR_INVALID_CODE_POINT_VALUE);
                         }
                         return Err(ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
@@ -5307,7 +5305,7 @@ fn prs_conditional(
         }
 
         let np = node_new_bag_if_else(cond, then_node, else_node);
-        return Ok((np, 0));
+        Ok((np, 0))
     } else {
         // Non-backref condition: callout or general pattern
         condition_is_checker = false;
@@ -5320,7 +5318,7 @@ fn prs_conditional(
                 cond_node = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
             } else {
                 // Fall through to general pattern condition
-                *p = *p - 1; // unfetch '?'
+                *p -= 1; // unfetch '?'
                 let r = fetch_token(tok, p, end, pattern, env);
                 if r < 0 {
                     return Err(r);
@@ -5333,7 +5331,7 @@ fn prs_conditional(
             cond_node = prs_callout_of_name(p, end, pattern, env, ')' as u32)?;
         } else {
             // General pattern condition
-            *p = *p - 1; // unfetch the char we just read
+            *p -= 1; // unfetch the char we just read
             let r = fetch_token(tok, p, end, pattern, env);
             if r < 0 {
                 return Err(r);
@@ -5353,12 +5351,9 @@ fn prs_conditional(
             return Err(ONIGERR_INVALID_IF_ELSE_SYNTAX);
         }
 
-        let then_is_empty;
-        if peek_c == '|' as u32 {
+        let then_is_empty = peek_c == '|' as u32;
+        if then_is_empty {
             pinc(p, pattern, enc);
-            then_is_empty = true;
-        } else {
-            then_is_empty = false;
         }
 
         let r = fetch_token(tok, p, end, pattern, env);
@@ -5394,7 +5389,7 @@ fn prs_conditional(
         }
 
         let np = node_new_bag_if_else(cond_node, then_node, else_node);
-        return Ok((np, 0));
+        Ok((np, 0))
     }
 }
 
@@ -5771,43 +5766,47 @@ fn prs_bag(
                 // Non-capturing group (?:...)
                 let r = fetch_token(tok, p, end, pattern, env);
                 if r < 0 {
-                    return Err(r);
+                    Err(r)
+                } else {
+                    let (node, _) = prs_alts(tok, term, p, end, pattern, env, true)?;
+                    Ok((node, 1))
                 }
-                let (node, r) = prs_alts(tok, term, p, end, pattern, env, true)?;
-                return Ok((node, 1));
             }
             '=' => {
                 // Positive lookahead (?=...)
                 let mut np = node_new_anchor(ANCR_PREC_READ);
                 let r = fetch_token(tok, p, end, pattern, env);
                 if r < 0 {
-                    return Err(r);
+                    Err(r)
+                } else {
+                    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                    np.set_body(Some(target));
+                    Ok((np, 0))
                 }
-                let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                np.set_body(Some(target));
-                return Ok((np, 0));
             }
             '!' => {
                 // Negative lookahead (?!...)
                 let mut np = node_new_anchor(ANCR_PREC_READ_NOT);
                 let r = fetch_token(tok, p, end, pattern, env);
                 if r < 0 {
-                    return Err(r);
+                    Err(r)
+                } else {
+                    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                    np.set_body(Some(target));
+                    Ok((np, 0))
                 }
-                let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                np.set_body(Some(target));
-                return Ok((np, 0));
             }
             '>' => {
                 // Atomic group (?>...)
                 let mut np = node_new_bag(BagType::StopBacktrack);
                 let r = fetch_token(tok, p, end, pattern, env);
                 if r < 0 {
-                    return Err(r);
+                    Err(r)
+                } else {
+                    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                    np.set_body(Some(target));
+                    Ok((np, 0))
                 }
-                let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                np.set_body(Some(target));
-                return Ok((np, 0));
             }
             '<' => {
                 if p_end(*p, end) {
@@ -5820,33 +5819,37 @@ fn prs_bag(
                     let mut np = node_new_anchor(ANCR_LOOK_BEHIND);
                     let r = fetch_token(tok, p, end, pattern, env);
                     if r < 0 {
-                        return Err(r);
+                        Err(r)
+                    } else {
+                        let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                        np.set_body(Some(target));
+                        Ok((np, 0))
                     }
-                    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                    np.set_body(Some(target));
-                    return Ok((np, 0));
                 } else if c2 == '!' as u32 {
                     // Negative lookbehind (?<!...)
                     pinc(p, pattern, enc);
                     let mut np = node_new_anchor(ANCR_LOOK_BEHIND_NOT);
                     let r = fetch_token(tok, p, end, pattern, env);
                     if r < 0 {
-                        return Err(r);
+                        Err(r)
+                    } else {
+                        let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                        np.set_body(Some(target));
+                        Ok((np, 0))
                     }
-                    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                    np.set_body(Some(target));
-                    return Ok((np, 0));
                 } else if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
                     // Named group (?<name>...)
-                    return prs_named_group(tok, '<' as u32, term, p, end, pattern, env, false);
+                    prs_named_group(tok, '<' as u32, term, p, end, pattern, env, false)
+                } else {
+                    Err(ONIGERR_UNDEFINED_GROUP_OPTION)
                 }
-                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
             }
             '\'' => {
                 if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
-                    return prs_named_group(tok, '\'' as u32, term, p, end, pattern, env, false);
+                    prs_named_group(tok, '\'' as u32, term, p, end, pattern, env, false)
+                } else {
+                    Err(ONIGERR_UNDEFINED_GROUP_OPTION)
                 }
-                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
             }
             '@' => {
                 if USE_CAPTURE_HISTORY
@@ -5859,30 +5862,37 @@ fn prs_bag(
                         let c2 = ppeek(*p, pattern, end, enc);
                         if c2 == '<' as u32 || c2 == '\'' as u32 {
                             pinc(p, pattern, enc);
-                            return prs_named_group(tok, c2, term, p, end, pattern, env, true);
+                            prs_named_group(tok, c2, term, p, end, pattern, env, true)
+                        } else {
+                            // (?@...) — unnamed capture with history
+                            let num = env.add_mem_entry()?;
+                            if num >= MEM_STATUS_BITS_NUM as i32 {
+                                Err(ONIGERR_GROUP_NUMBER_OVER_FOR_CAPTURE_HISTORY)
+                            } else {
+                                let mut np = node_new_bag_memory(num);
+                                mem_status_on(&mut env.cap_history, num as usize);
+                                let r = fetch_token(tok, p, end, pattern, env);
+                                if r < 0 {
+                                    Err(r)
+                                } else {
+                                    let (target, _) =
+                                        prs_alts(tok, term, p, end, pattern, env, false)?;
+                                    np.set_body(Some(target));
+                                    env.set_mem_node(num, &mut *np as *mut Node);
+                                    Ok((np, 0))
+                                }
+                            }
                         }
+                    } else {
+                        Err(ONIGERR_UNDEFINED_GROUP_OPTION)
                     }
-                    // (?@...) — unnamed capture with history
-                    let num = env.add_mem_entry()?;
-                    if num >= MEM_STATUS_BITS_NUM as i32 {
-                        return Err(ONIGERR_GROUP_NUMBER_OVER_FOR_CAPTURE_HISTORY);
-                    }
-                    let mut np = node_new_bag_memory(num);
-                    mem_status_on(&mut env.cap_history, num as usize);
-                    let r = fetch_token(tok, p, end, pattern, env);
-                    if r < 0 {
-                        return Err(r);
-                    }
-                    let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                    np.set_body(Some(target));
-                    env.set_mem_node(num, &mut *np as *mut Node);
-                    return Ok((np, 0));
+                } else {
+                    Err(ONIGERR_UNDEFINED_GROUP_OPTION)
                 }
-                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
             }
             '(' => {
                 // Conditional: (?(condition)then|else)
-                return prs_conditional(tok, term, p, end, pattern, env);
+                prs_conditional(tok, term, p, end, pattern, env)
             }
             'P' => {
                 if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_CAPITAL_P_NAME) {
@@ -5890,9 +5900,7 @@ fn prs_bag(
                         let c2 = ppeek(*p, pattern, end, enc);
                         if c2 == '<' as u32 {
                             pinc(p, pattern, enc);
-                            return prs_named_group(
-                                tok, '<' as u32, term, p, end, pattern, env, false,
-                            );
+                            prs_named_group(tok, '<' as u32, term, p, end, pattern, env, false)
                         } else if c2 == '=' as u32 {
                             // (?P=name) — Python named backref
                             pinc(p, pattern, enc); // skip '='
@@ -5927,12 +5935,15 @@ fn prs_bag(
                                                 np.status_add(ND_ST_IGNORECASE);
                                             }
                                             env.backref_num += 1;
-                                            return Ok((np, 0));
+                                            Ok((np, 0))
+                                        } else {
+                                            Err(ONIGERR_UNDEFINED_NAME_REFERENCE)
                                         }
+                                    } else {
+                                        Err(ONIGERR_UNDEFINED_NAME_REFERENCE)
                                     }
-                                    return Err(ONIGERR_UNDEFINED_NAME_REFERENCE);
                                 }
-                                Err(e) => return Err(e),
+                                Err(e) => Err(e),
                             }
                         } else if c2 == '>' as u32 {
                             // (?P>name) — Python named call
@@ -5942,17 +5953,21 @@ fn prs_bag(
                                     let name = &pattern[name_start..name_end];
                                     let np = node_new_call(name, gnum, false);
                                     env.num_call += 1;
-                                    return Ok((np, 0));
+                                    Ok((np, 0))
                                 }
-                                Err(e) => return Err(e),
+                                Err(e) => Err(e),
                             }
+                        } else {
+                            Err(ONIGERR_UNDEFINED_GROUP_OPTION)
                         }
+                    } else {
+                        Err(ONIGERR_UNDEFINED_GROUP_OPTION)
                     }
-                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                } else {
+                    // Fall through to option parsing ((?P:...) = POSIX is ASCII)
+                    *p = pfetch_prev;
+                    prs_options(tok, term, p, end, pattern, env)
                 }
-                // Fall through to option parsing ((?P:...) = POSIX is ASCII)
-                *p = pfetch_prev;
-                return prs_options(tok, term, p, end, pattern, env);
             }
             '~' => {
                 if c < 128 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP) {
@@ -6038,19 +6053,19 @@ fn prs_bag(
                     return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
                 }
                 let node = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
-                return Ok((node, 1));
+                Ok((node, 1))
             }
             _ => {
                 // Option flags: i, m, s, x, etc.
                 *p = pfetch_prev; // PUNFETCH back to the option char
-                return prs_options(tok, term, p, end, pattern, env);
+                prs_options(tok, term, p, end, pattern, env)
             }
         }
     } else if c == '*' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME) {
         // Callout of name: (*FAIL), (*MAX{2}), (*COUNT[AB]{X}), (*CMP{AB,<,CD})
         pinc(p, pattern, enc); // skip '*'
         let node = prs_callout_of_name(p, end, pattern, env, ')' as u32)?;
-        return Ok((node, 1));
+        Ok((node, 1))
     } else {
         // Plain parenthesized group
         if env.options.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP) {
@@ -6073,7 +6088,7 @@ fn prs_bag(
         let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
         np.set_body(Some(target));
         env.set_mem_node(num, &mut *np as *mut Node);
-        return Ok((np, 0));
+        Ok((np, 0))
     }
 }
 
@@ -6097,7 +6112,7 @@ fn prs_named_group(
     if let Some(ref mut nt) = unsafe { &mut *env.reg }.name_table {
         let name = &pattern[name_start..name_end];
         let allow = is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME);
-        nt.add(name, num, allow).map_err(|e| e)?;
+        nt.add(name, num, allow)?;
     }
 
     let mut np = node_new_bag_memory(num);
@@ -6534,7 +6549,7 @@ fn prs_exp(
                 // Validate the accumulated byte sequence
                 if !env.enc.is_valid_mbc_string(&buf) {
                     // Invalid lead byte (> 0xF4 or continuation/overlong 0x80-0xC1)
-                    if byte > 0xF4 || byte < 0xC2 {
+                    if !(0xC2..=0xF4).contains(&byte) {
                         return Err(ONIGERR_INVALID_CODE_POINT_VALUE);
                     }
                     // Valid lead byte but not enough continuation bytes
@@ -6781,7 +6796,7 @@ fn check_quantifier(
         let split_info = if group == 0 {
             if let NodeInner::String(ref sn) = node.inner {
                 let s = &sn.s;
-                if s.len() > 0 {
+                if !s.is_empty() {
                     if let Some(pos) = onigenc_get_prev_char_head(env.enc, 0, s.len(), s) {
                         if pos > 0 {
                             Some((pos, sn.flag, node.status))
@@ -6977,7 +6992,7 @@ fn prs_alts(
     if r == term {
         env.options = save_options;
         env.parse_depth -= 1;
-        return Ok((node, r));
+        Ok((node, r))
     } else if r == TokenType::Alt as i32 {
         let top = node_new_alt(node, None);
         let mut headp: *mut Option<Box<Node>>;
