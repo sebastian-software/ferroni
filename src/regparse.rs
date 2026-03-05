@@ -901,8 +901,8 @@ fn add_code_range_to_buf(pbuf: &mut Option<BBuf>, from: OnigCodePoint, to: OnigC
     let total_size = SIZE_CODE_POINT * (1 + new_n * 2);
     bbuf.data.resize(total_size, 0);
     bbuf_write_code_point(bbuf, 0, new_n as OnigCodePoint);
-    for i in 0..new_data.len() {
-        bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i), new_data[i]);
+    for (i, code) in new_data.iter().enumerate() {
+        bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i), *code);
     }
 
     0
@@ -955,18 +955,20 @@ fn add_sorted_code_ranges_to_buf(
     let mut ei = 0;
     let mut ri = 0;
     while ei < existing.len() || ri < ranges.len() {
-        if ei >= existing.len() {
-            all.push(ranges[ri]);
-            ri += 1;
-        } else if ri >= ranges.len() {
-            all.push(existing[ei]);
-            ei += 1;
-        } else if existing[ei].0 <= ranges[ri].0 {
-            all.push(existing[ei]);
-            ei += 1;
+        let take_existing = if ri >= ranges.len() {
+            true
+        } else if ei >= existing.len() {
+            false
         } else {
-            all.push(ranges[ri]);
+            existing[ei].0 <= ranges[ri].0
+        };
+
+        if take_existing {
+            ei += 1;
+            all.push(existing[ei - 1]);
+        } else {
             ri += 1;
+            all.push(ranges[ri - 1]);
         }
     }
 
@@ -1456,16 +1458,26 @@ pub(crate) fn add_code_into_cc(cc: &mut CClassNode, code: OnigCodePoint, enc: On
 // ============================================================================
 
 /// Flush pending character and advance CC state machine
+struct CcCharNextCtx<'a> {
+    from: &'a mut OnigCodePoint,
+    from_raw: &'a mut bool,
+    curr_type: &'a mut i32,
+    state: &'a mut i32,
+    env: &'a ParseEnv,
+}
+
 fn cc_char_next(
     cc: &mut CClassNode,
-    from: &mut OnigCodePoint,
     to: OnigCodePoint,
-    from_raw: &mut bool,
     to_raw: bool,
     intype: i32,
-    curr_type: &mut i32,
-    state: &mut i32,
-    env: &ParseEnv,
+    CcCharNextCtx {
+        from,
+        from_raw,
+        curr_type,
+        state,
+        env,
+    }: CcCharNextCtx<'_>,
 ) -> i32 {
     let r;
     match *state {
@@ -3948,14 +3960,16 @@ fn prs_cc(
                 };
                 let cr = cc_char_next(
                     cc,
-                    &mut curr_code,
                     in_code,
-                    &mut curr_raw,
                     in_raw,
                     in_type,
-                    &mut curr_type,
-                    &mut state,
-                    env,
+                    CcCharNextCtx {
+                        from: &mut curr_code,
+                        from_raw: &mut curr_raw,
+                        curr_type: &mut curr_type,
+                        state: &mut state,
+                        env,
+                    },
                 );
                 if cr != 0 {
                     env.parse_depth -= 1;
@@ -4010,14 +4024,16 @@ fn prs_cc(
                 };
                 let cr = cc_char_next(
                     cc,
-                    &mut curr_code,
                     in_code,
-                    &mut curr_raw,
                     in_raw,
                     in_type,
-                    &mut curr_type,
-                    &mut state,
-                    env,
+                    CcCharNextCtx {
+                        from: &mut curr_code,
+                        from_raw: &mut curr_raw,
+                        curr_type: &mut curr_type,
+                        state: &mut state,
+                        env,
+                    },
                 );
                 if cr != 0 {
                     env.parse_depth -= 1;
@@ -4048,14 +4064,16 @@ fn prs_cc(
                 };
                 let cr = cc_char_next(
                     cc,
-                    &mut curr_code,
                     in_code,
-                    &mut curr_raw,
                     in_raw,
                     in_type,
-                    &mut curr_type,
-                    &mut state,
-                    env,
+                    CcCharNextCtx {
+                        from: &mut curr_code,
+                        from_raw: &mut curr_raw,
+                        curr_type: &mut curr_type,
+                        state: &mut state,
+                        env,
+                    },
                 );
                 if cr != 0 {
                     env.parse_depth -= 1;
@@ -4138,14 +4156,16 @@ fn prs_cc(
                         };
                         let cr = cc_char_next(
                             cc,
-                            &mut curr_code,
                             '-' as u32,
-                            &mut curr_raw,
                             false,
                             CV_SB,
-                            &mut curr_type,
-                            &mut state,
-                            env,
+                            CcCharNextCtx {
+                                from: &mut curr_code,
+                                from_raw: &mut curr_raw,
+                                curr_type: &mut curr_type,
+                                state: &mut state,
+                                env,
+                            },
                         );
                         if cr != 0 {
                             env.parse_depth -= 1;
@@ -4164,14 +4184,16 @@ fn prs_cc(
                             };
                             let cr = cc_char_next(
                                 cc,
-                                &mut curr_code,
                                 '-' as u32,
-                                &mut curr_raw,
                                 false,
                                 CV_SB,
-                                &mut curr_type,
-                                &mut state,
-                                env,
+                                CcCharNextCtx {
+                                    from: &mut curr_code,
+                                    from_raw: &mut curr_raw,
+                                    curr_type: &mut curr_type,
+                                    state: &mut state,
+                                    env,
+                                },
                             );
                             if cr != 0 {
                                 env.parse_depth -= 1;
@@ -4194,14 +4216,16 @@ fn prs_cc(
                     };
                     let cr = cc_char_next(
                         cc,
-                        &mut curr_code,
                         in_code,
-                        &mut curr_raw,
                         false,
                         CV_SB,
-                        &mut curr_type,
-                        &mut state,
-                        env,
+                        CcCharNextCtx {
+                            from: &mut curr_code,
+                            from_raw: &mut curr_raw,
+                            curr_type: &mut curr_type,
+                            state: &mut state,
+                            env,
+                        },
                     );
                     if cr != 0 {
                         env.parse_depth -= 1;
@@ -4217,14 +4241,16 @@ fn prs_cc(
                     };
                     let cr = cc_char_next(
                         cc,
-                        &mut curr_code,
                         in_code,
-                        &mut curr_raw,
                         false,
                         CV_SB,
-                        &mut curr_type,
-                        &mut state,
-                        env,
+                        CcCharNextCtx {
+                            from: &mut curr_code,
+                            from_raw: &mut curr_raw,
+                            curr_type: &mut curr_type,
+                            state: &mut state,
+                            env,
+                        },
                     );
                     if cr != 0 {
                         env.parse_depth -= 1;
@@ -4247,14 +4273,16 @@ fn prs_cc(
                         };
                         let cr = cc_char_next(
                             cc,
-                            &mut curr_code,
                             '-' as u32,
-                            &mut curr_raw,
                             false,
                             CV_SB,
-                            &mut curr_type,
-                            &mut state,
-                            env,
+                            CcCharNextCtx {
+                                from: &mut curr_code,
+                                from_raw: &mut curr_raw,
+                                curr_type: &mut curr_type,
+                                state: &mut state,
+                                env,
+                            },
                         );
                         if cr != 0 {
                             env.parse_depth -= 1;
@@ -4269,14 +4297,16 @@ fn prs_cc(
                         };
                         let cr = cc_char_next(
                             cc,
-                            &mut curr_code,
                             '-' as u32,
-                            &mut curr_raw,
                             false,
                             CV_SB,
-                            &mut curr_type,
-                            &mut state,
-                            env,
+                            CcCharNextCtx {
+                                from: &mut curr_code,
+                                from_raw: &mut curr_raw,
+                                curr_type: &mut curr_type,
+                                state: &mut state,
+                                env,
+                            },
                         );
                         if cr != 0 {
                             env.parse_depth -= 1;
@@ -4298,14 +4328,16 @@ fn prs_cc(
                     };
                     let cr = cc_char_next(
                         cc,
-                        &mut curr_code,
                         0,
-                        &mut curr_raw,
                         false,
                         curr_type,
-                        &mut curr_type,
-                        &mut state,
-                        env,
+                        CcCharNextCtx {
+                            from: &mut curr_code,
+                            from_raw: &mut curr_raw,
+                            curr_type: &mut curr_type,
+                            state: &mut state,
+                            env,
+                        },
                     );
                     if cr != 0 {
                         env.parse_depth -= 1;
@@ -4335,14 +4367,16 @@ fn prs_cc(
                     };
                     let cr = cc_char_next(
                         cc,
-                        &mut curr_code,
                         0,
-                        &mut curr_raw,
                         false,
                         curr_type,
-                        &mut curr_type,
-                        &mut state,
-                        env,
+                        CcCharNextCtx {
+                            from: &mut curr_code,
+                            from_raw: &mut curr_raw,
+                            curr_type: &mut curr_type,
+                            state: &mut state,
+                            env,
+                        },
                     );
                     if cr != 0 {
                         env.parse_depth -= 1;
@@ -4408,14 +4442,16 @@ fn prs_cc(
         };
         let cr = cc_char_next(
             cc,
-            &mut curr_code,
             0,
-            &mut curr_raw,
             false,
             curr_type,
-            &mut curr_type,
-            &mut state,
-            env,
+            CcCharNextCtx {
+                from: &mut curr_code,
+                from_raw: &mut curr_raw,
+                curr_type: &mut curr_type,
+                state: &mut state,
+                env,
+            },
         );
         if cr != 0 {
             env.parse_depth -= 1;
@@ -5391,20 +5427,24 @@ fn prs_conditional(
 ///   List( UpdateVar(RR_FROM_STACK, pre_save_right_id), Fail )
 /// )
 /// ```
-fn make_absent_engine(
+struct MakeAbsentEngineCtx<'a> {
     pre_save_right_id: i32,
-    absent: Box<Node>,
-    step_one: Box<Node>,
     lower: i32,
     upper: i32,
     possessive: bool,
     is_range_cutter: bool,
-    env: &mut ParseEnv,
+    env: &'a mut ParseEnv,
+}
+
+fn make_absent_engine(
+    absent: Box<Node>,
+    step_one: Box<Node>,
+    mut ctx: MakeAbsentEngineCtx<'_>,
 ) -> Result<Box<Node>, i32> {
-    let id = env.id_entry();
+    let id = ctx.env.id_entry();
     let save_s = node_new_save_gimmick(SaveType::S, id);
     let mut update_rr = node_new_update_var_gimmick(UpdateVarType::RightRangeFromSStack, id);
-    if is_range_cutter {
+    if ctx.is_range_cutter {
         update_rr.status_add(ND_ST_ABSENT_WITH_SIDE_EFFECTS);
     }
     let fail1 = node_new_fail();
@@ -5412,10 +5452,10 @@ fn make_absent_engine(
     let inner_list = make_list_n(vec![save_s, absent, update_rr, fail1]);
     let inner_alt = make_alt(inner_list, step_one);
 
-    let mut quant = node_new_quantifier(lower, upper, true); // greedy (C: greedy=1 always)
+    let mut quant = node_new_quantifier(ctx.lower, ctx.upper, true); // greedy (C: greedy=1 always)
     quant.set_body(Some(inner_alt));
 
-    let engine: Box<Node> = if possessive {
+    let engine: Box<Node> = if ctx.possessive {
         let mut bag = node_new_bag(BagType::StopBacktrack);
         bag.set_body(Some(quant));
         bag
@@ -5424,12 +5464,12 @@ fn make_absent_engine(
     };
 
     let update_rr2 =
-        node_new_update_var_gimmick(UpdateVarType::RightRangeFromStack, pre_save_right_id);
+        node_new_update_var_gimmick(UpdateVarType::RightRangeFromStack, ctx.pre_save_right_id);
     let fail2 = node_new_fail();
     let tail_list = make_list(update_rr2, fail2);
 
     let mut outer_alt = make_alt(engine, tail_list);
-    if is_range_cutter {
+    if ctx.is_range_cutter {
         outer_alt.status_add(ND_ST_SUPER);
     }
 
@@ -5592,7 +5632,18 @@ fn make_absent_tree_for_simple_one_char_repeat(
 
     let id1 = env.id_entry();
     let save_rr = node_new_save_gimmick(SaveType::RightRange, id1);
-    let engine = make_absent_engine(id1, absent, body, lower, upper, possessive, false, env)?;
+    let engine = make_absent_engine(
+        absent,
+        body,
+        MakeAbsentEngineCtx {
+            pre_save_right_id: id1,
+            lower,
+            upper,
+            possessive,
+            is_range_cutter: false,
+            env,
+        },
+    )?;
     let update_rr = node_new_update_var_gimmick(UpdateVarType::RightRangeFromStack, id1);
 
     Ok(make_list_n(vec![save_rr, engine, update_rr]))
@@ -5660,14 +5711,16 @@ fn make_absent_tree_general(
 
     let step_one = node_new_true_anychar();
     let engine = make_absent_engine(
-        id1,
         absent,
         step_one,
-        0,
-        INFINITE_REPEAT,
-        true,
-        is_range_cutter,
-        env,
+        MakeAbsentEngineCtx {
+            pre_save_right_id: id1,
+            lower: 0,
+            upper: INFINITE_REPEAT,
+            possessive: true,
+            is_range_cutter,
+            env,
+        },
     )?;
 
     let update_s = node_new_update_var_gimmick(UpdateVarType::SFromStack, id2);
@@ -5816,14 +5869,36 @@ fn prs_bag(
                     }
                 } else if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
                     // Named group (?<name>...)
-                    prs_named_group(tok, '<' as u32, term, p, end, pattern, env, false)
+                    prs_named_group(
+                        '<' as u32,
+                        NamedGroupCtx {
+                            tok,
+                            term,
+                            p,
+                            end,
+                            pattern,
+                            env,
+                            list_capture: false,
+                        },
+                    )
                 } else {
                     Err(ONIGERR_UNDEFINED_GROUP_OPTION)
                 }
             }
             '\'' => {
                 if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
-                    prs_named_group(tok, '\'' as u32, term, p, end, pattern, env, false)
+                    prs_named_group(
+                        '\'' as u32,
+                        NamedGroupCtx {
+                            tok,
+                            term,
+                            p,
+                            end,
+                            pattern,
+                            env,
+                            list_capture: false,
+                        },
+                    )
                 } else {
                     Err(ONIGERR_UNDEFINED_GROUP_OPTION)
                 }
@@ -5839,7 +5914,18 @@ fn prs_bag(
                         let c2 = ppeek(*p, pattern, end, enc);
                         if c2 == '<' as u32 || c2 == '\'' as u32 {
                             pinc(p, pattern, enc);
-                            prs_named_group(tok, c2, term, p, end, pattern, env, true)
+                            prs_named_group(
+                                c2,
+                                NamedGroupCtx {
+                                    tok,
+                                    term,
+                                    p,
+                                    end,
+                                    pattern,
+                                    env,
+                                    list_capture: true,
+                                },
+                            )
                         } else {
                             // (?@...) — unnamed capture with history
                             let num = env.add_mem_entry()?;
@@ -5877,7 +5963,18 @@ fn prs_bag(
                         let c2 = ppeek(*p, pattern, end, enc);
                         if c2 == '<' as u32 {
                             pinc(p, pattern, enc);
-                            prs_named_group(tok, '<' as u32, term, p, end, pattern, env, false)
+                            prs_named_group(
+                                '<' as u32,
+                                NamedGroupCtx {
+                                    tok,
+                                    term,
+                                    p,
+                                    end,
+                                    pattern,
+                                    env,
+                                    list_capture: false,
+                                },
+                            )
                         } else if c2 == '=' as u32 {
                             // (?P=name) — Python named backref
                             pinc(p, pattern, enc); // skip '='
@@ -6071,15 +6168,19 @@ fn prs_bag(
 
 /// Parse a named group (?<name>...) or (?'name'...)
 fn prs_named_group(
-    tok: &mut PToken,
     start_code: OnigCodePoint,
-    term: i32,
-    p: &mut usize,
-    end: usize,
-    pattern: &[u8],
-    env: &mut ParseEnv,
-    list_capture: bool,
+    mut ctx: NamedGroupCtx<'_>,
 ) -> Result<(Box<Node>, i32), i32> {
+    let NamedGroupCtx {
+        tok,
+        term,
+        p,
+        end,
+        pattern,
+        env,
+        list_capture,
+    } = ctx;
+
     let (name_start, name_end, _back_num, _num_type, _, _) =
         fetch_name(start_code, p, end, pattern, env, false)?;
 
@@ -6109,6 +6210,16 @@ fn prs_named_group(
     env.set_mem_node(num, &mut *np as *mut Node);
 
     Ok((np, 0))
+}
+
+struct NamedGroupCtx<'a> {
+    tok: &'a mut PToken,
+    term: i32,
+    p: &'a mut usize,
+    end: usize,
+    pattern: &'a [u8],
+    env: &'a mut ParseEnv,
+    list_capture: bool,
 }
 
 /// Apply whole options ((?I), (?L), (?C)) to the regex and parse env.
@@ -6409,7 +6520,16 @@ fn prs_exp(
                 if r < 0 {
                     return Err(r);
                 }
-                return check_quantifier(node, tok, p, end, pattern, env, 1, parse_depth);
+                let ctx = CheckQuantifierCtx {
+                    tok,
+                    p,
+                    end,
+                    pattern,
+                    env,
+                    group: 1,
+                    parse_depth,
+                };
+                return check_quantifier(node, ctx);
             } else if bag_r == 2 {
                 // Option-only (?i) or (?Ii)
                 let bag_options = match node.as_bag() {
@@ -6420,10 +6540,8 @@ fn prs_exp(
                     None => env.options,
                 };
                 // Check whole options position
-                if node.has_status(ND_ST_WHOLE_OPTIONS) {
-                    if !group_head {
-                        return Err(ONIGERR_INVALID_GROUP_OPTION);
-                    }
+                if node.has_status(ND_ST_WHOLE_OPTIONS) && !group_head {
+                    return Err(ONIGERR_INVALID_GROUP_OPTION);
                 }
                 if is_syntax_bv(env.syntax, ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH) {
                     // Perl/Java: just set options and continue branch
@@ -6498,7 +6616,16 @@ fn prs_exp(
                 node_str_cat(&mut np, &pattern[tok.backp..*p]);
             }
             // Check for quantifier
-            return check_quantifier(np, tok, p, end, pattern, env, group, parse_depth);
+            let ctx = CheckQuantifierCtx {
+                tok,
+                p,
+                end,
+                pattern,
+                env,
+                group,
+                parse_depth,
+            };
+            return check_quantifier(np, ctx);
         }
         TokenType::CrudeByte => {
             let byte = tok.code as u8;
@@ -6538,7 +6665,16 @@ fn prs_exp(
 
             // If we already fetched a non-CrudeByte token, use it directly
             if fetched_non_crude {
-                return check_quantifier(np, tok, p, end, pattern, env, group, parse_depth);
+                let ctx = CheckQuantifierCtx {
+                    tok,
+                    p,
+                    end,
+                    pattern,
+                    env,
+                    group,
+                    parse_depth,
+                };
+                return check_quantifier(np, ctx);
             }
             np
         }
@@ -6735,26 +6871,39 @@ fn prs_exp(
     if r < 0 {
         return Err(r);
     }
-    check_quantifier(node, tok, p, end, pattern, env, group, parse_depth)
+    let ctx = CheckQuantifierCtx {
+        tok,
+        p,
+        end,
+        pattern,
+        env,
+        group,
+        parse_depth,
+    };
+    check_quantifier(node, ctx)
 }
 
 /// Check if current token is a quantifier and apply it to node
-fn check_quantifier(
-    mut node: Box<Node>,
-    tok: &mut PToken,
-    p: &mut usize,
+struct CheckQuantifierCtx<'a> {
+    tok: &'a mut PToken,
+    p: &'a mut usize,
     end: usize,
-    pattern: &[u8],
-    env: &mut ParseEnv,
+    pattern: &'a [u8],
+    env: &'a mut ParseEnv,
     group: i32,
     parse_depth: u32,
-) -> Result<(Box<Node>, i32), i32> {
-    let r = tok.token_type as i32;
+}
 
-    if tok.token_type == TokenType::Repeat || tok.token_type == TokenType::Interval {
+fn check_quantifier(
+    mut node: Box<Node>,
+    ctx: CheckQuantifierCtx<'_>,
+) -> Result<(Box<Node>, i32), i32> {
+    let r = ctx.tok.token_type as i32;
+
+    if ctx.tok.token_type == TokenType::Repeat || ctx.tok.token_type == TokenType::Interval {
         if is_invalid_quantifier_target(&node)
-            && is_syntax_bv(env.syntax, ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS)
-            && is_syntax_bv(env.syntax, ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS)
+            && is_syntax_bv(ctx.env.syntax, ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS)
+            && is_syntax_bv(ctx.env.syntax, ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS)
         {
             return Err(ONIGERR_TARGET_OF_REPEAT_OPERATOR_INVALID);
         } else if is_invalid_quantifier_target(&node) {
@@ -6762,7 +6911,7 @@ fn check_quantifier(
         }
 
         // Check parse depth
-        let depth = parse_depth + 1;
+        let depth = ctx.parse_depth + 1;
         if depth > PARSE_DEPTH_LIMIT.load(Ordering::Relaxed) {
             return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
         }
@@ -6770,11 +6919,11 @@ fn check_quantifier(
         // Split multi-character string: quantifier applies only to last encoded character.
         // e.g., "ba*" should be parsed as "b" + "a*", not "(ba)*".
         // Skip when node came from a group body (group != 0), e.g., (?:ab)* should not split.
-        let split_info = if group == 0 {
+        let split_info = if ctx.group == 0 {
             if let NodeInner::String(ref sn) = node.inner {
                 let s = &sn.s;
                 if !s.is_empty() {
-                    if let Some(pos) = onigenc_get_prev_char_head(env.enc, 0, s.len(), s) {
+                    if let Some(pos) = onigenc_get_prev_char_head(ctx.env.enc, 0, s.len(), s) {
                         if pos > 0 {
                             Some((pos, sn.flag, node.status))
                         } else {
@@ -6818,7 +6967,11 @@ fn check_quantifier(
             (None, node)
         };
 
-        let mut qn = node_new_quantifier(tok.repeat_lower, tok.repeat_upper, tok.repeat_greedy);
+        let mut qn = node_new_quantifier(
+            ctx.tok.repeat_lower,
+            ctx.tok.repeat_upper,
+            ctx.tok.repeat_greedy,
+        );
 
         // Port of assign_quantifier_body / onig_reduce_nested_quantifier from C.
         // Full 6×6 ReduceTypeTable for standard quantifier combinations.
@@ -6865,27 +7018,33 @@ fn check_quantifier(
             qn.set_body(Some(target_node));
         }
 
-        if tok.repeat_possessive {
+        if ctx.tok.repeat_possessive {
             let mut en = node_new_bag(BagType::StopBacktrack);
             en.set_body(Some(qn));
             qn = en;
         }
 
         // Fetch next token and check for more quantifiers
-        let r = fetch_token(tok, p, end, pattern, env);
+        let r = fetch_token(ctx.tok, ctx.p, ctx.end, ctx.pattern, ctx.env);
         if r < 0 {
             return Err(r);
         }
 
         if let Some(prefix) = prefix_node {
             // Return List(prefix, quantified_last_char)
-            let (quant_node, r) = check_quantifier(qn, tok, p, end, pattern, env, 0, depth)?;
+            let mut inner_ctx = ctx;
+            inner_ctx.group = 0;
+            inner_ctx.parse_depth = depth;
+            let (quant_node, r) = check_quantifier(qn, inner_ctx)?;
             let result = node_new_list(prefix, Some(node_new_list(quant_node, None)));
             return Ok((result, r));
         }
 
         // Recursively check for stacked quantifiers
-        return check_quantifier(qn, tok, p, end, pattern, env, 0, depth);
+        let mut inner_ctx = ctx;
+        inner_ctx.group = 0;
+        inner_ctx.parse_depth = depth;
+        return check_quantifier(qn, inner_ctx);
     }
 
     Ok((node, r))
