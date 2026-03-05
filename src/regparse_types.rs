@@ -1210,6 +1210,12 @@ pub struct NameTable {
     pub entries: HashMap<Vec<u8>, NameEntry>,
 }
 
+impl Default for NameTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NameTable {
     pub fn new() -> Self {
         NameTable {
