@@ -68,8 +68,8 @@ impl Encoding for Utf8Encoding {
         if len > 1 {
             let remaining = len - 1;
             let mut n = c & ((1u32 << (6 - remaining)) - 1);
-            for i in 1..len {
-                n = (n << 6) | ((p[i] as u32) & 0x3f);
+            for &byte in p[1..len].iter() {
+                n = (n << 6) | ((byte as u32) & 0x3f);
             }
             n
         } else {

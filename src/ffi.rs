@@ -6,7 +6,7 @@
 #![allow(non_camel_case_types, non_upper_case_globals, dead_code)]
 
 use std::ffi::c_void;
-use std::os::raw::{c_char, c_int, c_uint};
+use std::os::raw::{c_int, c_uint};
 use std::ptr;
 use std::sync::Once;
 

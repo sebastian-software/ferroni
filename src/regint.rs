@@ -634,7 +634,7 @@ pub struct RegexType {
 // === Optimization data structures ===
 pub const OPT_EXACT_MAXLEN: usize = 24;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct MinMaxLen {
     pub min: OnigLen,
     pub max: OnigLen,
@@ -674,7 +674,7 @@ impl MinMaxLen {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct OptAnc {
     pub left: i32,
     pub right: i32,
@@ -691,7 +691,7 @@ impl OptAnc {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct OptStr {
     pub mm: MinMaxLen,
     pub anc: OptAnc,
@@ -747,6 +747,17 @@ impl OptMap {
         self.anc.clear();
         self.value = 0;
         self.map = [0u8; CHAR_MAP_SIZE];
+    }
+}
+
+impl Default for OptMap {
+    fn default() -> Self {
+        Self {
+            mm: MinMaxLen::default(),
+            anc: OptAnc::default(),
+            value: 0,
+            map: [0u8; CHAR_MAP_SIZE],
+        }
     }
 }
 

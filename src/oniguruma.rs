@@ -389,16 +389,6 @@ pub struct OnigCaptureTreeNode {
 }
 
 impl OnigCaptureTreeNode {
-    pub fn new() -> Self {
-        OnigCaptureTreeNode {
-            group: -1,
-            beg: ONIG_REGION_NOTPOS,
-            end: ONIG_REGION_NOTPOS,
-            childs: Vec::new(),
-        }
-    }
-
-    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn clear(&mut self) {
         self.childs.clear();
         self.group = -1;
@@ -408,6 +398,23 @@ impl OnigCaptureTreeNode {
 
     pub fn add_child(&mut self, child: Box<OnigCaptureTreeNode>) {
         self.childs.push(child);
+    }
+}
+
+impl Default for OnigCaptureTreeNode {
+    fn default() -> Self {
+        OnigCaptureTreeNode {
+            group: -1,
+            beg: ONIG_REGION_NOTPOS,
+            end: ONIG_REGION_NOTPOS,
+            childs: Vec::new(),
+        }
+    }
+}
+
+impl OnigCaptureTreeNode {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

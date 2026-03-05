@@ -7250,15 +7250,11 @@ mod tests {
                 let cdr = list.cdr.as_ref().expect("expected cdr");
                 match &cdr.inner {
                     NodeInner::List(list2) => {
-                        match &list2.car.inner {
-                            NodeInner::CType(ct) => {
-                                assert!(
-                                    ct.ctype == ONIGENC_CTYPE_WORD as i32 || true,
-                                    "anychar node"
-                                );
-                            }
-                            _ => {} // anychar could be various representations
-                        }
+                        assert!(
+                            matches!(&list2.car.inner, NodeInner::CType(_)),
+                            "expected CType node for anychar, got {:?}",
+                            list2.car.node_type()
+                        );
                     }
                     _ => {} // may be directly the node
                 }
