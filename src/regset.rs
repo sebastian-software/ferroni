@@ -499,6 +499,7 @@ fn regset_search_body_regex_lead(
     (match_index, match_pos)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn onig_regset_search_impl(
     set: &mut OnigRegSet,
     str_data: &[u8],
@@ -520,7 +521,7 @@ fn onig_regset_search_impl(
     }
 
     // Forward search only
-    if str_data.len() > 0 && range < start {
+    if !str_data.is_empty() && range < start {
         return (ONIGERR_INVALID_ARGUMENT, 0);
     }
 
@@ -679,6 +680,7 @@ pub fn onig_regset_search_fast(
 
 /// Search the set with per-regex match parameters.
 #[cfg_attr(coverage_nightly, coverage(off))]
+#[allow(clippy::too_many_arguments)]
 pub fn onig_regset_search_with_param(
     set: &mut OnigRegSet,
     str_data: &[u8],
@@ -702,7 +704,7 @@ pub fn onig_regset_search_with_param(
     }
 
     // Forward search only
-    if str_data.len() > 0 && range < start {
+    if !str_data.is_empty() && range < start {
         return (ONIGERR_INVALID_ARGUMENT, 0);
     }
 
@@ -740,10 +742,10 @@ pub fn onig_regset_search_with_param(
         let mut match_pos: i32 = 0;
         let mut ep = orig_range;
 
-        for i in 0..n {
-            let region = set.entries[i].region.take();
+        for (i, entry) in set.entries.iter_mut().take(n).enumerate() {
+            let region = entry.region.take();
             let (r, returned_region) = onig_search_with_param(
-                &set.entries[i].reg,
+                &entry.reg,
                 str_data,
                 end,
                 start,
@@ -752,7 +754,7 @@ pub fn onig_regset_search_with_param(
                 option,
                 &mps[i],
             );
-            set.entries[i].region = returned_region;
+            entry.region = returned_region;
 
             if r > 0 {
                 if (r as usize) < ep {
