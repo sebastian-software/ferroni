@@ -1826,7 +1826,9 @@ fn stack_empty_check_mem(
                                     return false; // end position changed
                                 }
                             } else if let Some(si) = prev_end.as_stack_idx() {
-                                if let StackEntry::MemEnd {
+                                if si >= stack.len() {
+                                    // stale ref after backtracking → treat as unchanged
+                                } else if let StackEntry::MemEnd {
                                     pstr: prev_pstr, ..
                                 } = &stack[si]
                                 {
