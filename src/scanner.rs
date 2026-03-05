@@ -307,8 +307,7 @@ pub struct ScannerStats {
     pub vm_search_calls: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum CacheRoute {
     #[default]
     RegSet,
@@ -618,11 +617,9 @@ impl Scanner {
         // Route quality based on effective cache reuse vs VM work.
         // This catches line-by-line scans where cache eligibility is low.
         let denom = run_stats.cache_hits as u64 + run_stats.vm_calls as u64;
-        let reuse_permille = if denom == 0 {
-            0
-        } else {
-            (run_stats.cache_hits as u64 * 1000) / denom
-        };
+        let reuse_permille = (run_stats.cache_hits as u64 * 1000)
+            .checked_div(denom)
+            .unwrap_or(0);
         let poor = run_stats.vm_calls >= 4 && reuse_permille < 350;
         let good = run_stats.cache_hits >= 4 && run_stats.vm_calls <= 2 && reuse_permille >= 700;
 
@@ -713,6 +710,7 @@ impl Scanner {
     /// A single MatchArg is reused across all regex iterations to avoid
     /// repeated heap allocations for the VM stack.
     /// The best match is read directly from the cache at the end (no cloning).
+    #[allow(clippy::too_many_arguments)]
     fn search_per_regex(
         &mut self,
         str_data: &[u8],
@@ -739,8 +737,7 @@ impl Scanner {
         // narrow subsequent searches to [start, P) since we only need earlier matches.
         let mut ep = end;
 
-        for i in 0..n {
-            let cache = &caches[i];
+        for (i, cache) in caches.iter_mut().enumerate().take(n) {
             let has_g_anchor = cache.has_g_anchor;
 
             // Check cache
@@ -774,7 +771,7 @@ impl Scanner {
             run_stats.vm_calls += 1;
 
             // Reuse the cached region (avoids allocation after first call)
-            let region = caches[i].last_region.take().unwrap_or_else(OnigRegion::new);
+            let region = cache.last_region.take().unwrap_or_default();
 
             // Create MatchArg on first miss, reuse on subsequent misses
             let msa = msa.get_or_insert_with(|| MatchArg::new(reg, onig_opts, None, start));
@@ -787,7 +784,6 @@ impl Scanner {
             };
 
             // Put region back in cache (no clone needed)
-            let cache = &mut caches[i];
             cache.last_region = returned_region;
 
             if r >= 0 {
@@ -825,15 +821,7 @@ impl Scanner {
             }
         }
 
-        let out = if let Some(idx) = best_index {
-            if let Some(region) = self.caches[idx].last_region.as_ref() {
-                Some(build_scanner_match(idx, region))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        let out = best_index.and_then(|idx| self.caches[idx].last_region.as_ref().map(|region| build_scanner_match(idx, region)));
         (out, run_stats)
     }
 }
