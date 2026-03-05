@@ -43,8 +43,8 @@ highlighters.
 conditionals, absent expressions, Unicode properties, subexpression calls —
 everything the C engine supports, without linking against C. If your pattern
 works in Oniguruma, it works in Ferroni. Every opcode and optimization pass
-is ported 1:1 and verified by [2,090 tests](#test-coverage) from three
-independent sources.
+is ported 1:1 and verified by [2,090 tests](#test-parity) -- including
+every upstream UTF-8 test from both C Oniguruma and vscode-oniguruma.
 
 **No more CVEs from C.** C Oniguruma has a track record of memory safety
 vulnerabilities --
@@ -347,16 +347,26 @@ RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 > **Warning:** Never run `cargo test -- --ignored` -- the
 > `conditional_recursion_complex` test intentionally hangs.
 
-## Test coverage
+## Test parity
 
-2,090 tests from three independent sources verify every opcode, optimization
-pass, and API surface:
+Every upstream test that targets UTF-8 is ported 1:1. EUC-JP tests are
+out of scope ([ADR-003](docs/adr/003-encoding-scope-ascii-and-utf8-only.md)).
 
-| Source | Tests | What it covers |
-|--------|------:|----------------|
-| C Oniguruma test suite | 1,700 | Ported 1:1 -- UTF-8, syntax modes, options, backrefs, RegSet |
-| [vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma) | 25 | Scanner API, UTF-16 mapping, error handling |
-| Rust-native tests | 365 | API integration, edge cases, error paths, coverage gaps |
+| Upstream file | Encoding | Upstream | Ferroni | Status |
+|---------------|----------|--------:|--------:|--------|
+| test_utf8.c | UTF-8 | 1,554 | 1,561 | 100% |
+| test_back.c | UTF-8 | 1,225 | 1,225 | 100% |
+| test_syntax.c | UTF-8 | 144 | 144 | 100% |
+| test_options.c | UTF-8 | 47 | 48 | 100% |
+| test_regset.c | UTF-8 | 4 | 15 | 100% |
+| testc.c | EUC-JP | 785 | — | out of scope |
+| **C total (UTF-8)** | | **2,974** | **2,993** | **100%** |
+| [vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma) tests | UTF-16 | 15 | 25 | 100% |
+
+On top of the ported upstream cases, Ferroni adds 380 Rust-native tests
+for API integration, edge cases, error paths, and coverage gaps.
+`cargo test` runs **2,090 test functions** (some compat functions bundle
+multiple upstream cases).
 
 C Oniguruma has no coverage reporting. Ferroni's test suite is a strict
 superset of the upstream tests.
