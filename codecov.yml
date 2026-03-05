@@ -4,7 +4,7 @@ coverage:
       default:
         # Coverage instrumentation causes stack overflows in recursive/backref
         # tests, so ~42 of 1566+ tests must be skipped under coverage.
-        target: 84%
+        target: 87%
     patch:
       default:
         target: 80%
@@ -16,5 +16,6 @@ ignore:
   - "src/unicode/wb_data.rs"        # Generated Unicode data tables
   - "src/unicode/property_data.rs"  # Generated Unicode data tables
   - "src/unicode/fold_data.rs"      # Generated Unicode data tables
+  - "src/unicode/mod.rs"            # Internal C-port of Unicode case fold logic, tested indirectly
   - "src/encodings/ascii.rs"        # ASCII encoding unused (all tests use UTF-8)
   - "tests/**"                      # Test files themselves

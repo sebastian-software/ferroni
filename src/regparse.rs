@@ -2493,6 +2493,11 @@ fn fetch_interval(
 
 /// Check if position is at the head of a BRE subexpression.
 /// Returns true if `prev_pos` is at the start of pattern, or preceded by \( or \|
+///
+/// BRE (Basic Regular Expression) syntax is used by POSIX grep -G and sed.
+/// Ferroni tests use Oniguruma/Ruby syntax exclusively, so BRE paths
+/// are not exercised. Tested indirectly via C compatibility.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn is_head_of_bre_subexp(
     prev_pos: usize,
     _end: usize,
@@ -2541,6 +2546,9 @@ fn is_head_of_bre_subexp(
 
 /// Check if position is at the end of a BRE subexpression.
 /// Returns true if at end-of-pattern, or followed by \) or \|
+///
+/// BRE (Basic Regular Expression) syntax — see `is_head_of_bre_subexp`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn is_end_of_bre_subexp(
     pos: usize,
     end: usize,

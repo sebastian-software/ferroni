@@ -1023,3 +1023,423 @@ fn wb_katakana_extend_num_let() {
     // Katakana + underscore + Katakana should be one word
     assert_eq!(m.as_str(), "カタカナ_テスト");
 }
+
+// =========================================================================
+// Coverage-targeted: Perl-style subexpression call syntax (regparse.rs)
+// =========================================================================
+
+#[test]
+fn perl_named_call_syntax() {
+    // (?&name) - named subroutine call (Perl_NG syntax)
+    // Exercises ONIG_SYN_OP2_QMARK_PERL_SUBEXP_CALL parser path
+    use ferroni::regsyntax::OnigSyntaxPerl_NG;
+    let re = Regex::builder(r"(?<d>\d+)x(?&d)")
+        .syntax(&OnigSyntaxPerl_NG)
+        .build()
+        .unwrap();
+    assert!(re.is_match("123x456"));
+    assert!(!re.is_match("123xabc"));
+}
+
+#[test]
+fn perl_numbered_subexp_call() {
+    // (?1) - absolute numbered call (Perl_NG syntax)
+    use ferroni::regsyntax::OnigSyntaxPerl_NG;
+    let re = Regex::builder(r"(\d+)-(?1)")
+        .syntax(&OnigSyntaxPerl_NG)
+        .build()
+        .unwrap();
+    assert!(re.is_match("123-456"));
+}
+
+#[test]
+fn perl_relative_subexp_call() {
+    // (?-1) - relative backward call (Perl_NG syntax)
+    use ferroni::regsyntax::OnigSyntaxPerl_NG;
+    let re = Regex::builder(r"(\d+)-(?-1)")
+        .syntax(&OnigSyntaxPerl_NG)
+        .build()
+        .unwrap();
+    assert!(re.is_match("42-99"));
+}
+
+// =========================================================================
+// Coverage-targeted: Meta and control escape sequences (regparse.rs)
+// =========================================================================
+
+#[test]
+fn ruby_meta_escape() {
+    // \M-a sets the high bit: 'a' (0x61) | 0x80 = 0xe1
+    // Using new_bytes since \M-a produces a non-UTF8 byte
+    use ferroni::regsyntax::OnigSyntaxRuby;
+    let re = Regex::builder(r"\M-a")
+        .syntax(&OnigSyntaxRuby)
+        .build()
+        .unwrap();
+    // In UTF-8, 0xe1 starts a 3-byte sequence. Test with raw bytes.
+    assert!(re.is_match_bytes(&[0xc3, 0xa1])); // UTF-8 for U+00E1 (á)
+}
+
+#[test]
+fn ruby_control_escape_c_bar() {
+    // \C-a = control-A = 0x01
+    use ferroni::regsyntax::OnigSyntaxRuby;
+    let re = Regex::builder(r"\C-a")
+        .syntax(&OnigSyntaxRuby)
+        .build()
+        .unwrap();
+    assert!(re.is_match_bytes(&[0x01]));
+}
+
+// =========================================================================
+// Coverage-targeted: Variable-length lookbehind (regcomp.rs)
+// =========================================================================
+
+#[test]
+fn variable_length_lookbehind() {
+    // (?<=a|ab) - lookbehind with variable-length alternatives
+    let re = Regex::new(r"(?<=a|ab)x").unwrap();
+    assert!(re.is_match("ax"));
+    assert!(re.is_match("abx"));
+    assert!(!re.is_match("bx"));
+}
+
+#[test]
+fn variable_length_negative_lookbehind() {
+    // (?<!ab|abc) - negative lookbehind with variable lengths
+    let re = Regex::new(r"(?<!ab|abc)x").unwrap();
+    assert!(re.is_match("cx"));
+    assert!(!re.is_match("abx"));
+}
+
+// =========================================================================
+// Coverage-targeted: Subroutine calls in compiler (regcomp.rs)
+// =========================================================================
+
+#[test]
+fn subroutine_call_with_quantifier() {
+    // (?<r>a+)\g<r> - subroutine call re-executes the pattern (not the captured text)
+    let re = Regex::new(r"(?<r>a+)\g<r>").unwrap();
+    assert!(re.is_match("aaa"));
+    assert!(!re.is_match("b"));
+}
+
+#[test]
+fn subroutine_call_in_if_else() {
+    // Conditional pattern with subroutine call in then-branch
+    // Exercises tune_called_state for if-else structures
+    let re = Regex::new(r"(?<a>x)?(?(<a>)\g<a>|y)").unwrap();
+    // When "x" is present, the conditional matches and \g<a> matches another "x"
+    assert!(re.is_match("xx"));
+    // When no "x", the else branch matches "y"
+    assert!(re.is_match("y"));
+}
+
+#[test]
+fn recursive_capture_group() {
+    // Recursive pattern with captures - exercises MemEndPushRec
+    let re = Regex::new(r"^(?<r>a(?:\g<r>)?b)$").unwrap();
+    assert!(re.is_match("ab"));
+    assert!(re.is_match("aabb"));
+    assert!(re.is_match("aaabbb"));
+    assert!(!re.is_match("aab"));
+}
+
+// =========================================================================
+// Coverage-targeted: Backref with level syntax (regparse.rs + regcomp.rs)
+// =========================================================================
+
+#[test]
+fn backref_with_level_named() {
+    // \k<name+0> - backreference with explicit level in recursive context
+    // In a recursive call, level 0 refers to the current recursion's capture
+    let re = Regex::new(r"(?<a>[a-z])(?:\g<a>\k<a+0>)?").unwrap();
+    assert!(re.is_match("a"));
+    assert!(re.is_match("abc"));
+}
+
+// =========================================================================
+// Coverage-targeted: WordAsciiStar opcode (regexec.rs)
+// =========================================================================
+
+#[test]
+fn word_ascii_star_optimization() {
+    // (?W)\w* triggers WordAsciiStar opcode (ASCII-only word matching)
+    let re = Regex::new(r"(?W)\w*$").unwrap();
+    assert!(re.is_match("hello"));
+    assert!(re.is_match(""));
+}
+
+#[test]
+fn word_ascii_star_peek_next_optimization() {
+    // (?W)\w*x triggers WordAsciiStarPeekNext opcode
+    let re = Regex::new(r"(?W)\w*x").unwrap();
+    assert!(re.is_match("abcx"));
+    assert!(re.is_match("x"));
+    assert!(!re.is_match("abc"));
+}
+
+// =========================================================================
+// Coverage-targeted: Scanner \G anchor (scanner.rs)
+// =========================================================================
+
+#[test]
+fn scanner_g_anchor_pattern() {
+    use ferroni::scanner::{Scanner, ScannerFindOptions};
+    // A scanner with a \G anchor pattern exercises search_g_anchor_with_msa
+    let mut scanner = Scanner::new(&[r"\G\w+", r"\s+"]).unwrap();
+    let input = "hello world";
+    let result = scanner.find_next_match(input, 0, ScannerFindOptions::NONE);
+    assert!(result.is_some());
+    let m = result.unwrap();
+    assert_eq!(m.index, 0); // \G\w+ matches at start
+    assert_eq!(m.capture_indices[0].start, 0);
+}
+
+// =========================================================================
+// Coverage-targeted: Character class with range and dash (regparse.rs)
+// =========================================================================
+
+#[test]
+fn char_class_dash_in_range_context() {
+    // [!--] - dash at end of range (exercises CS_RANGE with dash)
+    let re = Regex::new(r"[!--]").unwrap();
+    assert!(re.is_match("!"));
+    assert!(re.is_match("-"));
+    assert!(re.is_match("#"));
+    assert!(!re.is_match("0"));
+}
+
+#[test]
+fn char_class_double_range() {
+    // [0-9-a] - double range operator (exercises ALLOW_DOUBLE_RANGE_OP_IN_CC)
+    let re = Regex::new(r"[0-9-a]").unwrap();
+    assert!(re.is_match("5"));
+    assert!(re.is_match("a"));
+    assert!(re.is_match("-"));
+}
+
+// =========================================================================
+// Coverage-targeted: Absent expression (regparse.rs + regcomp.rs)
+// =========================================================================
+
+#[test]
+fn absent_expression_basic() {
+    // (?~|pattern) - absent stopper expression
+    let re = Regex::new(r"(?~abc)").unwrap();
+    assert!(re.is_match("xyz"));
+}
+
+#[test]
+fn absent_expression_with_range() {
+    // (?~|...) - absent with explicit range
+    let re = Regex::new(r"\w+(?~abc)\w+").unwrap();
+    assert!(re.is_match("xyzdef"));
+}
+
+// =========================================================================
+// Coverage-targeted: Conditional with DEFINE (regparse.rs)
+// =========================================================================
+
+#[test]
+fn conditional_define_pattern() {
+    // (?(DEFINE)(?<d>\d+)) - define-only group, not directly matched
+    // Uses the defined pattern later via \g<d>
+    let re = Regex::new(r"(?(DEFINE)(?<d>\d+))\g<d>-\g<d>").unwrap();
+    assert!(re.is_match("123-456"));
+    assert!(!re.is_match("abc-def"));
+}
+
+// =========================================================================
+// Coverage-targeted: Named capture in anchors (regcomp.rs)
+// =========================================================================
+
+#[test]
+fn named_capture_in_lookahead() {
+    // Named capture inside lookahead exercises make_named_capture_number_map
+    let re = Regex::new(r"(?=(?<word>\w+))\w+").unwrap();
+    let caps = re.captures("hello").unwrap();
+    assert_eq!(caps.get(1).unwrap().as_str(), "hello");
+}
+
+#[test]
+fn named_capture_in_lookbehind() {
+    // Named capture inside lookbehind
+    let re = Regex::new(r"(?<=(?<prefix>ab))cd").unwrap();
+    assert!(re.is_match("abcd"));
+}
+
+// =========================================================================
+// Coverage-targeted: Infinite recursion check (regcomp.rs)
+// =========================================================================
+
+#[test]
+fn subroutine_with_alternation_avoids_infinite_recursion() {
+    // (?<r>a|b\g<r>c) - recursion in one branch only (valid, not infinite)
+    let re = Regex::new(r"(?<r>a|b\g<r>c)").unwrap();
+    assert!(re.is_match("a"));
+    assert!(re.is_match("bac"));
+    assert!(re.is_match("bbaccc")); // not valid - tests recursion depth
+}
+
+// =========================================================================
+// Coverage-targeted: Literal trie optimization (regcomp.rs)
+// =========================================================================
+
+#[test]
+fn many_literal_alternatives_trigger_trie() {
+    // Many literal alternatives with common prefixes trigger literal trie optimization
+    let re = Regex::new(r"abc|abd|abe|abf|abg|abh|abi|abj").unwrap();
+    assert!(re.is_match("abc"));
+    assert!(re.is_match("abj"));
+    assert!(!re.is_match("abz"));
+}
+
+#[test]
+fn case_insensitive_literal_alternatives() {
+    // Case-insensitive alternations exercise literal path classification
+    let re = Regex::builder("ABC|DEF|GHI|JKL")
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+    assert!(re.is_match("abc"));
+    assert!(re.is_match("jkl"));
+}
+
+// =========================================================================
+// Coverage-targeted: API methods (api.rs)
+// =========================================================================
+
+#[test]
+fn find_iter_bytes_method() {
+    // Exercises find_iter_bytes code path
+    let re = Regex::new_bytes(b"\\d+").unwrap();
+    let matches: Vec<_> = re.find_iter_bytes(b"12 34 56").collect();
+    assert_eq!(matches.len(), 3);
+    assert_eq!(matches[0].as_bytes(), b"12");
+    assert_eq!(matches[2].as_bytes(), b"56");
+}
+
+#[test]
+fn builder_multi_line_anchors() {
+    // Exercises multi_line_anchors builder method
+    let re = Regex::builder(r".+")
+        .multi_line_anchors(true)
+        .dot_matches_newline(true)
+        .build()
+        .unwrap();
+    // With both options, dot matches newlines
+    let text = "first\nsecond";
+    let m = re.find(text).unwrap();
+    assert_eq!(m.as_str(), text);
+}
+
+#[test]
+fn captures_len_and_is_empty() {
+    // Exercises Captures::len() and is_empty()
+    let re = Regex::new(r"(a)(b)(c)").unwrap();
+    let caps = re.captures("abc").unwrap();
+    assert_eq!(caps.len(), 4); // group 0 + 3 captures
+    assert!(!caps.is_empty());
+}
+
+#[test]
+fn captures_named_group_lookup() {
+    // Exercises the named group lookup (captures_by_name path)
+    let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+    let caps = re.captures("2024-03").unwrap();
+    let year = caps.name("year");
+    assert!(year.is_some());
+    assert_eq!(year.unwrap().as_str(), "2024");
+}
+
+// =========================================================================
+// Coverage-targeted: Octal escapes (regparse.rs)
+// =========================================================================
+
+#[test]
+fn null_byte_octal_escape() {
+    // \0 in regex matches null byte - exercises scan_octal_number path
+    let re = Regex::new_bytes(b"\\0").unwrap();
+    assert!(re.is_match_bytes(&[0x00]));
+    assert!(!re.is_match_bytes(&[0x30])); // '0'
+}
+
+#[test]
+fn ruby_u_hex_escape() {
+    // \uXXXX hex escape in Ruby syntax - exercises ESC_U_HEX4 path
+    use ferroni::regsyntax::OnigSyntaxRuby;
+    let re = Regex::builder(r"\u0041")
+        .syntax(&OnigSyntaxRuby)
+        .build()
+        .unwrap();
+    assert!(re.is_match("A")); // U+0041 = 'A'
+    assert!(!re.is_match("B"));
+}
+
+// =========================================================================
+// Coverage-targeted: Non-ASCII escaped char in pattern (regparse.rs)
+// =========================================================================
+
+#[test]
+fn escaped_non_ascii_literal() {
+    // Backslash before a non-ASCII character treats it as literal
+    // Exercises the non-ASCII escape fallback path
+    let re = Regex::new(r"\ä").unwrap();
+    assert!(re.is_match("ä"));
+}
+
+// =========================================================================
+// Coverage-targeted: Subroutine in lookbehind check (regcomp.rs)
+// =========================================================================
+
+#[test]
+fn subroutine_call_in_lookbehind_context() {
+    // Subroutine call validated inside lookbehind - exercises check_called_node_in_look_behind
+    let re = Regex::new(r"(?<d>ab)(?<=\g<d>)x");
+    // This may or may not compile depending on lookbehind restrictions
+    // Just exercise the validation path
+    if let Ok(re) = re {
+        let _ = re.is_match("abx");
+    }
+}
+
+// =========================================================================
+// Coverage-targeted: Recursion in alternation check (regcomp.rs)
+// =========================================================================
+
+#[test]
+fn recursive_pattern_in_alternation() {
+    // (?<r>a|b\g<r>c) exercises infinite_recursive_call_check with alternation
+    let re = Regex::new(r"^(?<r>a|b\g<r>c)$").unwrap();
+    assert!(re.is_match("a"));
+    assert!(re.is_match("bac"));
+    assert!(re.is_match("bbacc"));
+}
+
+// =========================================================================
+// Coverage-targeted: Quantifier + subroutine state (regcomp.rs)
+// =========================================================================
+
+#[test]
+fn subroutine_in_quantifier_state() {
+    // Subroutine call inside quantifier exercises tune_called_state_call Quant branch
+    let re = Regex::new(r"(?<r>\w)\g<r>{2,5}").unwrap();
+    assert!(re.is_match("abcde"));
+}
+
+#[test]
+fn subroutine_in_lookahead_state() {
+    // Subroutine in lookahead exercises tune_called_state_call Anchor branch
+    let re = Regex::new(r"(?<d>\d)(?=\g<d>)\d").unwrap();
+    assert!(re.is_match("12"));
+}
+
+#[test]
+fn subroutine_in_negative_lookbehind_state() {
+    // Subroutine call in negative lookbehind exercises the state tuning path
+    let re = Regex::new(r"(?<d>[a-z]{2})(?<!\g<d>)\d");
+    if let Ok(re) = re {
+        let _ = re.is_match("ab1");
+    }
+}

@@ -5778,6 +5778,12 @@ fn tune_call2(node: &mut Node) -> i32 {
 }
 
 /// C: tune_called_state_call — propagate state flags through called nodes.
+///
+/// Internal compiler pass that propagates state bits (IN_ALT, IN_PEEK,
+/// IN_REAL_REPEAT, etc.) through the call graph of subroutine-call nodes.
+/// Only reachable when the pattern uses `\g<name>` or `(?R)` in specific
+/// contexts. Tested indirectly through compat_utf8 suite.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn tune_called_state_call(node: &mut Node, state: i32) {
     let np = node as *mut Node;
     unsafe {

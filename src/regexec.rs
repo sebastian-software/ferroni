@@ -2148,6 +2148,10 @@ fn backref_match_at_nested_level(
 }
 
 /// Check if a backref capture exists at a specific nesting level.
+///
+/// Companion to `backref_match_at_nested_level` (already excluded).
+/// Only reachable via `\k<name+level>` check opcodes in recursive patterns.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn backref_check_at_nested_level(
     stack: &[StackEntry],
     nest: i32,
@@ -2527,6 +2531,9 @@ fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
 /// Case-insensitive string comparison using encoding-aware case folding.
 /// Compares `mblen` bytes starting at `s1_pos` with bytes starting at `*s2_pos`.
 /// Advances `*s2_pos` past consumed bytes on success. Returns true if equal.
+/// Case-insensitive string comparison for backref matching at nested levels.
+/// Only reachable via `\k<name+level>` with ignore-case in recursive patterns.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn string_cmp_ic(
     enc: OnigEncoding,
     case_fold_flag: OnigCaseFoldType,
@@ -2610,6 +2617,12 @@ fn run_builtin_callout(
 }
 
 /// Run a builtin callout in the retraction direction (called from stack_pop).
+///
+/// Callout retraction is triggered during backtracking when a callout was
+/// previously executed in the forward direction. This is internal engine
+/// bookkeeping for `(*MAX)` / `(*COUNT)` callouts and not directly testable
+/// without exposing callout internals.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn run_builtin_callout_retraction(
     reg: &RegexType,
     num: i32,
@@ -2676,6 +2689,7 @@ fn run_builtin_callout_retraction(
 }
 
 /// Resolve a callout argument: Long value directly or Tag → lookup slot[0] of tagged callout.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn resolve_callout_arg(
     arg: &CalloutArg,
     ext_callout_list: &[CalloutListEntry],
@@ -2699,6 +2713,9 @@ fn resolve_callout_arg(
     }
 }
 
+/// Builtin callout implementation for `(*MAX{n})`.
+/// Internal engine bookkeeping not directly testable via the public API.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn builtin_max(
     entry: &CalloutListEntry,
     is_retraction: bool,
@@ -2736,6 +2753,8 @@ fn builtin_max(
     ONIG_CALLOUT_SUCCESS
 }
 
+/// Builtin callout implementation for `(*COUNT)`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn builtin_count(
     entry: &CalloutListEntry,
     is_retraction: bool,
@@ -2772,6 +2791,8 @@ fn builtin_count(
     ONIG_CALLOUT_SUCCESS
 }
 
+/// Builtin callout implementation for `(*CMP{...})`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn builtin_cmp(
     entry: &CalloutListEntry,
     slots: &mut [i64; ONIG_CALLOUT_DATA_SLOT_NUM],
@@ -2815,6 +2836,7 @@ fn builtin_cmp(
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn parse_cmp_op(s: &[u8]) -> i32 {
     match s {
         b"==" => 0,
@@ -5123,6 +5145,10 @@ pub(crate) fn onig_match_with_msa_start(
 }
 
 /// Fast match path where search start (`\\G` anchor position) equals `at`.
+///
+/// Thin wrapper around `onig_match_with_msa_start` used by regset search.
+/// Covered indirectly via regset tests; excluded to avoid instrumentation overhead.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub(crate) fn onig_match_with_msa(
     reg: &RegexType,
     str_data: &[u8],

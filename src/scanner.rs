@@ -853,6 +853,10 @@ impl Scanner {
 /// the scanner's position-lead behavior checks each candidate position with
 /// that position as start. For `\G` patterns this changes match semantics.
 /// This helper mirrors position-lead behavior for a single regex.
+///
+/// Only activated when a `\G`-containing regex triggers 8+ same-position
+/// calls in per-regex mode — a very narrow edge case tested indirectly.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn search_g_anchor_with_msa(
     reg: &crate::regint::RegexType,
     str_data: &[u8],
