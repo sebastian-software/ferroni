@@ -47,7 +47,7 @@ fn main() {
     let start = std::time::Instant::now();
     let mut region = region;
     for _ in 0..n {
-        let mut r = region.take().unwrap();
+        let r = region.take().unwrap();
         let (pos, ret) = onig_search(
             &reg_named,
             std::hint::black_box(text),
@@ -90,7 +90,7 @@ fn main() {
     let start = std::time::Instant::now();
     let mut region = Some(onig_region_new());
     for _ in 0..n {
-        let mut r = region.take().unwrap();
+        let r = region.take().unwrap();
         let (pos, ret) = onig_search(
             &reg_bare,
             std::hint::black_box(text),
