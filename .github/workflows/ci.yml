@@ -39,7 +39,7 @@ jobs:
       - name: Test compat_utf8
         run: cargo test --test compat_utf8 -- --test-threads=1
         env:
-          RUST_MIN_STACK: "268435456"
+          RUST_MIN_STACK: "536870912"
       - name: Test compat_back
         if: matrix.rust != '1.81'
         run: cargo test --test compat_back -- --test-threads=1

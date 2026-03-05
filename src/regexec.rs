@@ -1826,7 +1826,9 @@ fn stack_empty_check_mem(
                                     return false; // end position changed
                                 }
                             } else if let Some(si) = prev_end.as_stack_idx() {
-                                if let StackEntry::MemEnd {
+                                if si >= stack.len() {
+                                    // stale ref after backtracking → treat as unchanged
+                                } else if let StackEntry::MemEnd {
                                     pstr: prev_pstr, ..
                                 } = &stack[si]
                                 {
@@ -1946,7 +1948,9 @@ fn get_mem_start(
     } else if let Some(pos) = v.as_pos() {
         Some(pos)
     } else if let Some(si) = v.as_stack_idx() {
-        if let StackEntry::MemStart { pstr, .. } = &stack[si] {
+        if si >= stack.len() {
+            None
+        } else if let StackEntry::MemStart { pstr, .. } = &stack[si] {
             Some(*pstr)
         } else {
             None
@@ -1969,7 +1973,9 @@ fn get_mem_end(
     } else if let Some(pos) = v.as_pos() {
         Some(pos)
     } else if let Some(si) = v.as_stack_idx() {
-        if let StackEntry::MemEnd { pstr, .. } = &stack[si] {
+        if si >= stack.len() {
+            None
+        } else if let StackEntry::MemEnd { pstr, .. } = &stack[si] {
             Some(*pstr)
         } else {
             None
@@ -6551,6 +6557,41 @@ mod tests {
         );
         assert_eq!(pos, 0);
         assert!(region.is_none());
+    }
+
+    #[test]
+    fn populate_region_ignores_out_of_bounds_capture_stack_refs() {
+        let (mut reg, _) = make_test_context();
+        reg.num_mem = 1;
+        reg.push_mem_start = 1;
+        reg.push_mem_end = 1;
+
+        let stack = vec![StackEntry::Alt {
+            pcode: FINISH_PCODE,
+            pstr: 0,
+            zid: -1,
+            is_super: false,
+        }];
+        let mem_start_stk = vec![MemPtr::invalid(), MemPtr::stack_idx(4)];
+        let mem_end_stk = vec![MemPtr::invalid(), MemPtr::stack_idx(5)];
+
+        let mut region = OnigRegion::new();
+        populate_region_for_match(
+            &mut region,
+            &reg,
+            1,
+            0,
+            1,
+            &stack,
+            &mem_start_stk,
+            &mem_end_stk,
+        )
+        .unwrap();
+
+        assert_eq!(region.beg[0], 0);
+        assert_eq!(region.end[0], 1);
+        assert_eq!(region.beg[1], ONIG_REGION_NOTPOS);
+        assert_eq!(region.end[1], ONIG_REGION_NOTPOS);
     }
 
     #[test]
