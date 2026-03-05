@@ -134,8 +134,8 @@ pub const SIZE_BITSET: usize = std::mem::size_of::<BitSet>();
 
 #[inline]
 pub fn bitset_clear(bs: &mut BitSet) {
-    for i in 0..BITSET_REAL_SIZE {
-        bs[i] = 0;
+    for slot in bs.iter_mut() {
+        *slot = 0;
     }
 }
 
@@ -769,6 +769,12 @@ pub struct OptNode {
     pub sm: OptStr,
     pub spr: OptStr,
     pub map: OptMap,
+}
+
+impl Default for OptNode {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OptNode {

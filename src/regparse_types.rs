@@ -1121,8 +1121,8 @@ pub fn bitset_set_range(bs: &mut BitSet, from: usize, to: usize) {
 }
 
 pub fn bitset_invert(bs: &mut BitSet) {
-    for i in 0..BITSET_REAL_SIZE {
-        bs[i] = !bs[i];
+    for slot in bs.iter_mut() {
+        *slot = !*slot;
     }
 }
 
