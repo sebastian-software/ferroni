@@ -5242,14 +5242,13 @@ fn prs_conditional(
         }
 
         // Parse then|else
-        let then_is_empty;
-        if peek_c == '|' as u32 {
+        let then_is_empty = if peek_c == '|' as u32 {
             // (?(1)|else) - empty then
             pinc(p, pattern, enc);
-            then_is_empty = true;
+            true
         } else {
-            then_is_empty = false;
-        }
+            false
+        };
 
         let r = fetch_token(tok, p, end, pattern, env);
         if r < 0 {
@@ -6023,7 +6022,7 @@ fn prs_bag(
                     let np = make_absent_tree(absent, expr, is_range_cutter, env)?;
                     return Ok((np, 1));
                 }
-                return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                Err(ONIGERR_UNDEFINED_GROUP_OPTION)
             }
             '{' => {
                 // Callout of contents: (?{...})
@@ -6753,12 +6752,12 @@ fn check_quantifier(
     let r = tok.token_type as i32;
 
     if tok.token_type == TokenType::Repeat || tok.token_type == TokenType::Interval {
-        if is_invalid_quantifier_target(&node) {
-            if is_syntax_bv(env.syntax, ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS) {
-                if is_syntax_bv(env.syntax, ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS) {
-                    return Err(ONIGERR_TARGET_OF_REPEAT_OPERATOR_INVALID);
-                }
-            }
+        if is_invalid_quantifier_target(&node)
+            && is_syntax_bv(env.syntax, ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS)
+            && is_syntax_bv(env.syntax, ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS)
+        {
+            return Err(ONIGERR_TARGET_OF_REPEAT_OPERATOR_INVALID);
+        } else if is_invalid_quantifier_target(&node) {
             return Ok((node, r));
         }
 
