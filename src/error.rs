@@ -173,4 +173,145 @@ mod tests {
         let err: Box<dyn std::error::Error> = Box::new(RegexError::Memory);
         assert_eq!(err.to_string(), "memory allocation failed");
     }
+
+    #[test]
+    fn display_all_variants() {
+        let cases: Vec<(RegexError, &str)> = vec![
+            (RegexError::Memory, "memory allocation failed"),
+            (RegexError::MatchStackLimitOver, "match-stack limit over"),
+            (
+                RegexError::RetryLimitInMatchOver,
+                "retry-limit-in-match over",
+            ),
+            (
+                RegexError::RetryLimitInSearchOver,
+                "retry-limit-in-search over",
+            ),
+            (
+                RegexError::SubexpCallLimitOver,
+                "subexp-call-limit-in-search over",
+            ),
+            (RegexError::TimeLimitOver, "time limit over"),
+            (RegexError::ParseDepthLimitOver, "parse depth limit over"),
+            (
+                RegexError::Syntax {
+                    code: -100,
+                    message: "bad pattern".into(),
+                },
+                "syntax error: bad pattern",
+            ),
+            (RegexError::InvalidArgument, "invalid argument"),
+            (
+                RegexError::InternalBug {
+                    code: -1,
+                    message: "oops".into(),
+                },
+                "internal error: oops",
+            ),
+            (RegexError::NotInitialized, "library is not initialized"),
+            (
+                RegexError::Encoding {
+                    code: -21,
+                    message: "bad enc".into(),
+                },
+                "encoding error: bad enc",
+            ),
+            (RegexError::Other(-9999), "error code -9999"),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(err.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn code_all_variants() {
+        assert_eq!(RegexError::Memory.code(), ONIGERR_MEMORY);
+        assert_eq!(
+            RegexError::MatchStackLimitOver.code(),
+            ONIGERR_MATCH_STACK_LIMIT_OVER
+        );
+        assert_eq!(
+            RegexError::RetryLimitInMatchOver.code(),
+            ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+        );
+        assert_eq!(
+            RegexError::RetryLimitInSearchOver.code(),
+            ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER
+        );
+        assert_eq!(
+            RegexError::SubexpCallLimitOver.code(),
+            ONIGERR_SUBEXP_CALL_LIMIT_IN_SEARCH_OVER
+        );
+        assert_eq!(RegexError::TimeLimitOver.code(), ONIGERR_TIME_LIMIT_OVER);
+        assert_eq!(
+            RegexError::ParseDepthLimitOver.code(),
+            ONIGERR_PARSE_DEPTH_LIMIT_OVER
+        );
+        assert_eq!(RegexError::InvalidArgument.code(), ONIGERR_INVALID_ARGUMENT);
+        assert_eq!(
+            RegexError::NotInitialized.code(),
+            ONIGERR_LIBRARY_IS_NOT_INITIALIZED
+        );
+        assert_eq!(
+            RegexError::Syntax {
+                code: -100,
+                message: String::new()
+            }
+            .code(),
+            -100
+        );
+        assert_eq!(
+            RegexError::InternalBug {
+                code: -5,
+                message: String::new()
+            }
+            .code(),
+            -5
+        );
+        assert_eq!(
+            RegexError::Encoding {
+                code: -21,
+                message: String::new()
+            }
+            .code(),
+            -21
+        );
+        assert_eq!(RegexError::Other(-9999).code(), -9999);
+    }
+
+    #[test]
+    fn from_limit_errors() {
+        assert!(matches!(
+            RegexError::from(ONIGERR_MATCH_STACK_LIMIT_OVER),
+            RegexError::MatchStackLimitOver
+        ));
+        assert!(matches!(
+            RegexError::from(ONIGERR_RETRY_LIMIT_IN_MATCH_OVER),
+            RegexError::RetryLimitInMatchOver
+        ));
+        assert!(matches!(
+            RegexError::from(ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER),
+            RegexError::RetryLimitInSearchOver
+        ));
+        assert!(matches!(
+            RegexError::from(ONIGERR_SUBEXP_CALL_LIMIT_IN_SEARCH_OVER),
+            RegexError::SubexpCallLimitOver
+        ));
+        assert!(matches!(
+            RegexError::from(ONIGERR_TIME_LIMIT_OVER),
+            RegexError::TimeLimitOver
+        ));
+        assert!(matches!(
+            RegexError::from(ONIGERR_PARSE_DEPTH_LIMIT_OVER),
+            RegexError::ParseDepthLimitOver
+        ));
+        assert!(matches!(
+            RegexError::from(ONIGERR_INVALID_ARGUMENT),
+            RegexError::InvalidArgument
+        ));
+        assert!(matches!(
+            RegexError::from(ONIGERR_LIBRARY_IS_NOT_INITIALIZED),
+            RegexError::NotInitialized
+        ));
+    }
 }

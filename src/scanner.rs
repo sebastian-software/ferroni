@@ -1925,4 +1925,190 @@ mod tests {
         assert_eq!(m.capture_indices[2].end, 0);
         assert_eq!(m.capture_indices[2].length, 0);
     }
+
+    // =================================================================
+    // Coverage-targeted: per-regex cache hit paths
+    // =================================================================
+
+    #[test]
+    fn cache_hit_on_repeated_search_same_string() {
+        // Exercises per-regex cache reuse: need ≥8 same-start calls to trigger probe
+        let mut scanner = Scanner::new(&["foo", "bar", "baz"]).unwrap();
+        let input = "xxfooxxbarxxbaz";
+
+        // Do 9 calls from same start to trigger per-regex probe (ROUTE_MIN_SAME_START_FOR_PROBE=8)
+        for _ in 0..9 {
+            let _ = scanner.find_next_match_with_id(input, 42, 0, ScannerFindOptions::NONE);
+        }
+        // After probing, do more calls — some should use per-regex with cache
+        for _ in 0..20 {
+            let _ = scanner.find_next_match_with_id(input, 42, 0, ScannerFindOptions::NONE);
+        }
+
+        let stats = scanner.stats();
+        assert!(
+            stats.route_per_regex_calls > 0 || stats.cache_hits > 0,
+            "expected per-regex or cache activity, got {:?}",
+            stats
+        );
+    }
+
+    #[test]
+    fn cache_no_match_reused() {
+        // Exercises cache path where a pattern previously found no match
+        // Need repeated same-start calls to trigger per-regex mode
+        let mut scanner = Scanner::new(&["zzz", "a"]).unwrap();
+        let input = "aaa";
+
+        // 30 calls from same start → triggers per-regex mode and cache reuse
+        for _ in 0..30 {
+            let m = scanner.find_next_match_with_id(input, 1, 0, ScannerFindOptions::NONE);
+            assert!(m.is_some());
+            assert_eq!(m.unwrap().index, 1); // always "a"
+        }
+
+        let stats = scanner.stats();
+        assert!(
+            stats.route_per_regex_calls > 0 || stats.cache_hits > 0,
+            "expected per-regex or cache activity, got {:?}",
+            stats
+        );
+    }
+
+    #[test]
+    fn cache_invalidated_on_new_string() {
+        // Exercises cache reset when str_id changes
+        let mut scanner = Scanner::new(&["x"]).unwrap();
+
+        let m1 = scanner
+            .find_next_match_with_id("axb", 1, 0, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(m1.capture_indices[0].start, 1);
+
+        // Different str_id → cache reset
+        let m2 = scanner
+            .find_next_match_with_id("xab", 2, 0, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(m2.capture_indices[0].start, 0);
+    }
+
+    // =================================================================
+    // Coverage-targeted: UTF-16 with ID
+    // =================================================================
+
+    #[test]
+    fn utf16_with_id_ascii() {
+        let mut scanner = Scanner::new(&["x"]).unwrap();
+        let s = OnigString::new("axb");
+        let m = scanner
+            .find_next_match_utf16_with_id(&s, 10, 0, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(m.capture_indices[0].start, 1);
+    }
+
+    #[test]
+    fn utf16_with_id_unicode() {
+        let mut scanner = Scanner::new(&["x"]).unwrap();
+        let s = OnigString::new("💻x");
+        let m = scanner
+            .find_next_match_utf16_with_id(&s, 20, 0, ScannerFindOptions::NONE)
+            .unwrap();
+        // 💻 = 2 UTF-16 code units, so x is at UTF-16 offset 2
+        assert_eq!(m.capture_indices[0].start, 2);
+    }
+
+    // =================================================================
+    // Coverage-targeted: ScannerSyntax variants
+    // =================================================================
+
+    #[test]
+    fn scanner_syntax_variants() {
+        let syntaxes = [
+            ScannerSyntax::Asis,
+            ScannerSyntax::PosixBasic,
+            ScannerSyntax::Emacs,
+            ScannerSyntax::Grep,
+            ScannerSyntax::GnuRegex,
+            ScannerSyntax::Java,
+            ScannerSyntax::Perl,
+            ScannerSyntax::PerlNg,
+            ScannerSyntax::Ruby,
+            ScannerSyntax::Python,
+        ];
+        for syntax in syntaxes {
+            let config = ScannerConfig {
+                options: ONIG_OPTION_NONE,
+                syntax,
+            };
+            // Simple literal pattern should work in all syntaxes
+            let scanner = Scanner::with_config(&["hello"], &config);
+            assert!(scanner.is_ok(), "failed for {:?}", syntax);
+        }
+    }
+
+    // =================================================================
+    // Coverage-targeted: \G anchor in per-regex mode
+    // =================================================================
+
+    #[test]
+    fn g_anchor_pattern() {
+        // Exercises search_g_anchor_with_msa path
+        let mut scanner = Scanner::new(&[r"\Gx", "y"]).unwrap();
+        let input = "xxy";
+
+        // First match: \G matches at position 0
+        let m1 = scanner
+            .find_next_match_with_id(input, 1, 0, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(m1.index, 0); // \Gx
+        assert_eq!(m1.capture_indices[0].start, 0);
+
+        // Search from position 2: \G should match at 2 if using per-regex path
+        let m2 = scanner
+            .find_next_match_with_id(input, 1, 2, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(m2.index, 1); // "y" at position 2
+    }
+
+    // =================================================================
+    // Coverage-targeted: route switching (RegSet ↔ PerRegex)
+    // =================================================================
+
+    #[test]
+    fn many_searches_trigger_route_switching() {
+        // Exercises observe_per_regex_outcome and route switching logic
+        let mut scanner = Scanner::new(&["a+", "b+", "c+"]).unwrap();
+        let input = "aabbcc";
+
+        // Do many searches on the same string to trigger route switching
+        let mut pos = 0;
+        let mut matches = Vec::new();
+        for _ in 0..20 {
+            if let Some(m) =
+                scanner.find_next_match_with_id(input, 99, pos, ScannerFindOptions::NONE)
+            {
+                pos = m.capture_indices[0].end;
+                matches.push(m.index);
+            } else {
+                break;
+            }
+        }
+        assert_eq!(matches, vec![0, 1, 2]); // a+, b+, c+
+        let stats = scanner.stats();
+        assert!(stats.route_regset_calls > 0);
+    }
+
+    #[test]
+    fn same_start_streak_triggers_per_regex() {
+        // Exercises same_start_streak counting in should_use_regset_for_cache
+        let mut scanner = Scanner::new(&["x", "y"]).unwrap();
+        let input = "xy";
+
+        // Search multiple times from same position to build streak
+        for _ in 0..12 {
+            let _ = scanner.find_next_match_with_id(input, 1, 0, ScannerFindOptions::NONE);
+        }
+        let stats = scanner.stats();
+        assert!(stats.route_regset_calls > 0 || stats.route_per_regex_calls > 0);
+    }
 }

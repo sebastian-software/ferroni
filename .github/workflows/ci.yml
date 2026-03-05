@@ -60,9 +60,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Generate coverage (non-stack-heavy suites)
+      - name: Generate coverage (library unit tests)
+        run: cargo llvm-cov --no-report --release --lib
+      - name: Generate coverage (API + non-stack-heavy suites)
         run: >
           cargo llvm-cov --no-report --release
+          --test api_test
           --test compat_syntax
           --test compat_options
           --test compat_regset
