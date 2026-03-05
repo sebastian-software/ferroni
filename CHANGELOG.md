@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.8](https://github.com/sebastian-software/ferroni/compare/v1.2.7...v1.2.8) (2026-03-05)
+
+
+### Bug Fixes
+
+* **regexec:** guard capture stack indices in region population ([3c270c3](https://github.com/sebastian-software/ferroni/commit/3c270c35291b8f2a0008c76f53891e5492122606))
+* **regexec:** guard stale capture stack refs during region population ([a949b17](https://github.com/sebastian-software/ferroni/commit/a949b174ffea6d9d5597c9db7c2b743123ab85e4))
+* **regexec:** guard stale stack idx in is_empty_check_after_backtrack ([61bf200](https://github.com/sebastian-software/ferroni/commit/61bf2006ee7317b8d616a93fb2f9c74490e333af))
+
 ## [1.2.7](https://github.com/sebastian-software/ferroni/compare/v1.2.6...v1.2.7) (2026-03-04)
 
 
