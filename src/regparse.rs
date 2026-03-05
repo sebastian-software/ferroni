@@ -61,6 +61,7 @@ static CALLOUT_NAME_REGISTRY: Mutex<Vec<CalloutNameListEntry>> = Mutex::new(Vec:
 /// Register a user-defined named callout.
 /// Port of C's onig_set_callout_of_name.
 #[cfg_attr(coverage_nightly, coverage(off))]
+#[allow(clippy::too_many_arguments)]
 pub fn onig_set_callout_of_name(
     _enc: OnigEncoding,
     callout_type: OnigCalloutType,
