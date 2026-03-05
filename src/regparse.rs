@@ -1422,7 +1422,7 @@ fn add_ctype_to_cc(cc: &mut CClassNode, ctype: i32, not: bool, env: &ParseEnv) -
     }
     let mut sb_out: OnigCodePoint = 0;
     let range = enc.get_ctype_code_range(ctype as u32, &mut sb_out);
-    if let Some(_) = range {
+    if range.is_some() {
         return add_ctype_to_cc_by_range(cc, ctype, not, enc, sb_out);
     }
 
@@ -1433,20 +1433,9 @@ fn add_ctype_to_cc(cc: &mut CClassNode, ctype: i32, not: bool, env: &ParseEnv) -
         SINGLE_BYTE_SIZE as OnigCodePoint
     };
     for c in 0..max_code {
-        if enc.is_code_ctype(c, ctype as u32) {
-            if not {
-                // Don't set bit
-            } else {
-                if (c as usize) < SINGLE_BYTE_SIZE {
-                    bitset_set_bit(&mut cc.bs, c as usize);
-                }
-            }
-        } else {
-            if not {
-                if (c as usize) < SINGLE_BYTE_SIZE {
-                    bitset_set_bit(&mut cc.bs, c as usize);
-                }
-            }
+        let is_code = enc.is_code_ctype(c, ctype as u32);
+        if (c as usize) < SINGLE_BYTE_SIZE && (is_code != not) {
+            bitset_set_bit(&mut cc.bs, c as usize);
         }
     }
 
@@ -2125,34 +2114,26 @@ fn is_invalid_quantifier_target(node: &Node) -> bool {
         NodeType::List => {
             // Check all elements
             let mut n = node;
-            loop {
-                if let Some(cons) = n.as_cons() {
-                    if !is_invalid_quantifier_target(&cons.car) {
-                        return false;
-                    }
-                    match &cons.cdr {
-                        Some(next) => n = next,
-                        None => break,
-                    }
-                } else {
-                    break;
+            while let Some(cons) = n.as_cons() {
+                if !is_invalid_quantifier_target(&cons.car) {
+                    return false;
+                }
+                match &cons.cdr {
+                    Some(next) => n = next,
+                    None => break,
                 }
             }
             false
         }
         NodeType::Alt => {
             let mut n = node;
-            loop {
-                if let Some(cons) = n.as_cons() {
-                    if is_invalid_quantifier_target(&cons.car) {
-                        return true;
-                    }
-                    match &cons.cdr {
-                        Some(next) => n = next,
-                        None => break,
-                    }
-                } else {
-                    break;
+            while let Some(cons) = n.as_cons() {
+                if is_invalid_quantifier_target(&cons.car) {
+                    return true;
+                }
+                match &cons.cdr {
+                    Some(next) => n = next,
+                    None => break,
                 }
             }
             false
@@ -2216,7 +2197,7 @@ fn onig_reduce_nested_quantifier(pnode: &mut Box<Node>) -> Result<(), i32> {
         return Ok(());
     };
 
-    let cnum = if let Some(ref body) = pnode.body() {
+    let cnum = if let Some(body) = pnode.body() {
         if let NodeInner::Quant(ref cq) = body.inner {
             quantifier_type_num(cq)
         } else {
@@ -2233,7 +2214,7 @@ fn onig_reduce_nested_quantifier(pnode: &mut Box<Node>) -> Result<(), i32> {
         } else {
             return Ok(());
         };
-        let (c_lower, c_upper) = if let Some(ref body) = pnode.body() {
+        let (c_lower, c_upper) = if let Some(body) = pnode.body() {
             if let NodeInner::Quant(ref cq) = body.inner {
                 (cq.lower, cq.upper)
             } else {
@@ -3415,10 +3396,10 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                     if !is_syntax_op(syn, ONIG_SYN_OP_LINE_ANCHOR) {
                         return tok.token_type as i32;
                     }
-                    if is_syntax_bv(syn, ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP) {
-                        if !is_head_of_bre_subexp(pfetch_prev, end, pattern, enc, env) {
-                            return tok.token_type as i32;
-                        }
+                    if is_syntax_bv(syn, ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP)
+                        && !is_head_of_bre_subexp(pfetch_prev, end, pattern, enc, env)
+                    {
+                        return tok.token_type as i32;
                     }
                     tok.token_type = TokenType::Anchor;
                     tok.anchor = if opton_singleline(env.options) {
@@ -3431,10 +3412,10 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                     if !is_syntax_op(syn, ONIG_SYN_OP_LINE_ANCHOR) {
                         return tok.token_type as i32;
                     }
-                    if is_syntax_bv(syn, ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP) {
-                        if !is_end_of_bre_subexp(*p, end, pattern, enc, env) {
-                            return tok.token_type as i32;
-                        }
+                    if is_syntax_bv(syn, ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP)
+                        && !is_end_of_bre_subexp(*p, end, pattern, enc, env)
+                    {
+                        return tok.token_type as i32;
                     }
                     tok.token_type = TokenType::Anchor;
                     tok.anchor = if opton_singleline(env.options) {
@@ -3866,19 +3847,16 @@ fn fetch_token_cc(
                     tok.token_type = TokenType::CcOpenCC;
                 }
             }
-        } else {
-            if is_syntax_op2(syn, ONIG_SYN_OP2_CCLASS_SET_OP) {
-                tok.token_type = TokenType::CcOpenCC;
-            }
+        } else if is_syntax_op2(syn, ONIG_SYN_OP2_CCLASS_SET_OP) {
+            tok.token_type = TokenType::CcOpenCC;
         }
-    } else if c == '&' as u32 {
-        if is_syntax_op2(syn, ONIG_SYN_OP2_CCLASS_SET_OP)
-            && !p_end(*p, end)
-            && ppeek_is(*p, pattern, end, enc, '&' as u32)
-        {
-            pinc(p, pattern, enc);
-            tok.token_type = TokenType::CcAnd;
-        }
+    } else if c == '&' as u32
+        && is_syntax_op2(syn, ONIG_SYN_OP2_CCLASS_SET_OP)
+        && !p_end(*p, end)
+        && ppeek_is(*p, pattern, end, enc, '&' as u32)
+    {
+        pinc(p, pattern, enc);
+        tok.token_type = TokenType::CcAnd;
     }
 
     tok.token_type as i32
