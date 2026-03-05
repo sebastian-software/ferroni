@@ -551,8 +551,9 @@ pub struct OnigCalloutArgs {
 }
 
 impl OnigCalloutArgs {
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    pub(crate) fn new(
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn new(
         callout_in: OnigCalloutIn,
         name_id: i32,
         num: i32,
@@ -1705,7 +1706,7 @@ fn stack_pop_to_mark(
 /// Void stack entries from top to the Mark with matching id (C: STACK_TO_VOID_TO_MARK).
 /// Returns the mark's saved position. Voids regular Alt and EmptyCheckStart entries,
 /// but preserves Super Alt entries and Marks with different IDs.
-fn stack_void_to_mark(stack: &mut Vec<StackEntry>, mark_id: usize) -> Option<usize> {
+fn stack_void_to_mark(stack: &mut [StackEntry], mark_id: usize) -> Option<usize> {
     let mut i = stack.len();
     while i > 0 {
         i -= 1;
@@ -1797,7 +1798,7 @@ fn stack_empty_check_mem(
     };
 
     // Position is the same. Check if any capture groups changed.
-    let mut ms = empty_status_mem as u32;
+    let mut ms = empty_status_mem;
     for k_idx in (klow_idx + 1..stack.len()).rev() {
         if let StackEntry::MemEnd {
             zid: mem_zid,
@@ -1986,6 +1987,7 @@ fn get_mem_end(
 }
 
 #[inline(never)]
+#[allow(clippy::too_many_arguments)]
 fn populate_region_for_match(
     region: &mut OnigRegion,
     reg: &RegexType,
@@ -2029,14 +2031,10 @@ fn populate_region_for_match(
     }
 
     if USE_CAPTURE_HISTORY && reg.capture_history != 0 {
-        let node = if region.history_root.is_none() {
-            region.history_root = Some(Box::new(OnigCaptureTreeNode::new()));
-            region.history_root.as_mut().unwrap()
-        } else {
-            let root = region.history_root.as_mut().unwrap();
-            root.clear();
-            root
-        };
+        let node = region
+            .history_root
+            .get_or_insert_with(|| Box::new(OnigCaptureTreeNode::new()));
+        node.clear();
         node.group = 0;
         node.beg = keep as i32;
         node.end = s as i32;
@@ -2088,6 +2086,7 @@ fn stack_get_mem_start_for_rec(
 /// Walks the stack backwards counting CallFrame/Return to find the right level,
 /// then matches the captured text at that level against current position.
 #[cfg_attr(coverage_nightly, coverage(off))]
+#[allow(clippy::too_many_arguments)]
 fn backref_match_at_nested_level(
     reg: &RegexType,
     stack: &[StackEntry],
@@ -2184,8 +2183,8 @@ fn backref_check_at_nested_level(
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn mem_is_in_mems(mem: usize, num: i32, mems: &[i32]) -> bool {
-    for i in 0..num as usize {
-        if mem == mems[i] as usize {
+    for candidate in mems.iter().take(num as usize) {
+        if mem == *candidate as usize {
             return true;
         }
     }
@@ -2581,7 +2580,7 @@ fn run_builtin_callout(
     num: i32,
     _id: i32,
     is_retraction: bool,
-    callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+    callout_data: &mut [[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
     current_s: usize,
     msa: &mut MatchArg,
 ) -> i32 {
@@ -2627,7 +2626,7 @@ fn run_builtin_callout_retraction(
     reg: &RegexType,
     num: i32,
     _id: i32,
-    callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+    callout_data: &mut [[i64; ONIG_CALLOUT_DATA_SLOT_NUM]],
 ) {
     let ext = match reg.extp.as_ref() {
         Some(e) => e,
@@ -2700,11 +2699,10 @@ fn resolve_callout_arg(
         CalloutArg::Tag(tag) => {
             for (i, e) in ext_callout_list.iter().enumerate() {
                 if let Some(ref t) = e.tag {
-                    if t == tag {
-                        if i < all_data.len() {
+                    if t == tag
+                        && i < all_data.len() {
                             return all_data[i][0];
                         }
-                    }
                 }
             }
             0
@@ -3110,9 +3108,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             OpCode::StrN => {
                 if let OperationPayload::ExactN { s: ref exact, n } = reg.ops[p].payload {
                     let n = n as usize;
-                    if right_range.saturating_sub(s) < n {
-                        goto_fail = true;
-                    } else if !exact_eq_at(str_data, s, exact, n) {
+                    if right_range.saturating_sub(s) < n || !exact_eq_at(str_data, s, exact, n) {
                         goto_fail = true;
                     } else {
                         s += n;
@@ -3136,9 +3132,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 } = reg.ops[p].payload
                 {
                     let byte_len = n as usize;
-                    if right_range.saturating_sub(s) < byte_len {
-                        goto_fail = true;
-                    } else if !exact_eq_at(str_data, s, exact, byte_len) {
+                    if right_range.saturating_sub(s) < byte_len
+                        || !exact_eq_at(str_data, s, exact, byte_len)
+                    {
                         goto_fail = true;
                     } else {
                         s += byte_len;
@@ -3809,9 +3805,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // Word / NoWord - \w and \W character type matching
             // ================================================================
             OpCode::Word => {
-                if s >= right_range {
-                    goto_fail = true;
-                } else if !is_word_char_at(enc, str_data, s, end) {
+                if s >= right_range || !is_word_char_at(enc, str_data, s, end) {
                     goto_fail = true;
                 } else {
                     s += if str_data[s] < 0x80 {
@@ -3824,9 +3818,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             OpCode::WordAscii => {
-                if s >= right_range {
-                    goto_fail = true;
-                } else if !is_word_ascii(str_data[s]) {
+                if s >= right_range || !is_word_ascii(str_data[s]) {
                     goto_fail = true;
                 } else {
                     s += 1;
@@ -3835,9 +3827,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             OpCode::NoWord => {
-                if s >= right_range {
-                    goto_fail = true;
-                } else if is_word_char_at(enc, str_data, s, end) {
+                if s >= right_range || is_word_char_at(enc, str_data, s, end) {
                     goto_fail = true;
                 } else {
                     s += if str_data[s] < 0x80 {
@@ -3850,9 +3840,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             OpCode::NoWordAscii => {
-                if s >= right_range {
-                    goto_fail = true;
-                } else if is_word_ascii(str_data[s]) {
+                if s >= right_range || is_word_ascii(str_data[s]) {
                     goto_fail = true;
                 } else {
                     s += if str_data[s] < 0x80 {
@@ -3946,11 +3934,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // Position anchors
             // ================================================================
             OpCode::BeginBuf => {
-                if s != 0 {
-                    goto_fail = true;
-                } else if opton_notbol(options) {
-                    goto_fail = true;
-                } else if opton_not_begin_string(options) {
+                if s != 0 || opton_notbol(options) || opton_not_begin_string(options) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -3958,11 +3942,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             OpCode::EndBuf => {
-                if s != end {
-                    goto_fail = true;
-                } else if opton_noteol(options) {
-                    goto_fail = true;
-                } else if opton_not_end_string(options) {
+                if s != end || opton_noteol(options) || opton_not_end_string(options) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -3999,20 +3979,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
 
             OpCode::SemiEndBuf => {
                 // Match end of string or before final newline
-                if s == end {
-                    if opton_noteol(options) || opton_not_end_string(options) {
-                        goto_fail = true;
-                    } else {
-                        p += 1;
-                    }
-                } else if s + 1 == end && str_data[s] == b'\n' {
-                    if opton_noteol(options) || opton_not_end_string(options) {
-                        goto_fail = true;
-                    } else {
-                        p += 1;
-                    }
-                } else {
+                let is_before_end = s == end || (s + 1 == end && str_data[s] == b'\n');
+                if !is_before_end || opton_noteol(options) || opton_not_end_string(options) {
                     goto_fail = true;
+                } else {
+                    p += 1;
                 }
             }
 
@@ -4043,45 +4014,41 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // Back references
             // ================================================================
             OpCode::BackRef1 => {
-                if num_mem >= 1 {
-                    if let (Some(ms), Some(me)) = (
-                        get_mem_start(reg, &stack, &mem_start_stk, 1),
-                        get_mem_end(reg, &stack, &mem_end_stk, 1),
-                    ) {
-                        let ref_len = me - ms;
-                        if right_range.saturating_sub(s) < ref_len {
-                            goto_fail = true;
-                        } else if str_data[s..s + ref_len] != str_data[ms..me] {
-                            goto_fail = true;
-                        } else {
-                            s += ref_len;
-                            p += 1;
-                        }
+                if num_mem < 1 {
+                    goto_fail = true;
+                } else if let (Some(ms), Some(me)) = (
+                    get_mem_start(reg, &stack, &mem_start_stk, 1),
+                    get_mem_end(reg, &stack, &mem_end_stk, 1),
+                ) {
+                    let ref_len = me - ms;
+                    if right_range.saturating_sub(s) < ref_len
+                        || str_data[s..s + ref_len] != str_data[ms..me]
+                    {
+                        goto_fail = true;
                     } else {
-                        goto_fail = true; // group not yet matched
+                        s += ref_len;
+                        p += 1;
                     }
                 } else {
-                    goto_fail = true;
+                    goto_fail = true; // group not yet matched
                 }
             }
 
             OpCode::BackRef2 => {
-                if num_mem >= 2 {
-                    if let (Some(ms), Some(me)) = (
-                        get_mem_start(reg, &stack, &mem_start_stk, 2),
-                        get_mem_end(reg, &stack, &mem_end_stk, 2),
-                    ) {
-                        let ref_len = me - ms;
-                        if right_range.saturating_sub(s) < ref_len {
-                            goto_fail = true;
-                        } else if str_data[s..s + ref_len] != str_data[ms..me] {
-                            goto_fail = true;
-                        } else {
-                            s += ref_len;
-                            p += 1;
-                        }
-                    } else {
+                if num_mem < 2 {
+                    goto_fail = true;
+                } else if let (Some(ms), Some(me)) = (
+                    get_mem_start(reg, &stack, &mem_start_stk, 2),
+                    get_mem_end(reg, &stack, &mem_end_stk, 2),
+                ) {
+                    let ref_len = me - ms;
+                    if right_range.saturating_sub(s) < ref_len
+                        || str_data[s..s + ref_len] != str_data[ms..me]
+                    {
                         goto_fail = true;
+                    } else {
+                        s += ref_len;
+                        p += 1;
                     }
                 } else {
                     goto_fail = true;
@@ -4091,22 +4058,20 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             OpCode::BackRefN => {
                 if let OperationPayload::BackRefN { n1 } = reg.ops[p].payload {
                     let n1 = n1 as usize;
-                    if n1 <= num_mem {
-                        if let (Some(ms), Some(me)) = (
-                            get_mem_start(reg, &stack, &mem_start_stk, n1),
-                            get_mem_end(reg, &stack, &mem_end_stk, n1),
-                        ) {
-                            let ref_len = me - ms;
-                            if right_range.saturating_sub(s) < ref_len {
-                                goto_fail = true;
-                            } else if str_data[s..s + ref_len] != str_data[ms..me] {
-                                goto_fail = true;
-                            } else {
-                                s += ref_len;
-                                p += 1;
-                            }
-                        } else {
+                    if n1 > num_mem {
+                        goto_fail = true;
+                    } else if let (Some(ms), Some(me)) = (
+                        get_mem_start(reg, &stack, &mem_start_stk, n1),
+                        get_mem_end(reg, &stack, &mem_end_stk, n1),
+                    ) {
+                        let ref_len = me - ms;
+                        if right_range.saturating_sub(s) < ref_len
+                            || str_data[s..s + ref_len] != str_data[ms..me]
+                        {
                             goto_fail = true;
+                        } else {
+                            s += ref_len;
+                            p += 1;
                         }
                     } else {
                         goto_fail = true;
@@ -4119,32 +4084,27 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             OpCode::BackRefNIc => {
                 if let OperationPayload::BackRefN { n1 } = reg.ops[p].payload {
                     let n1 = n1 as usize;
-                    if n1 <= num_mem {
-                        if let (Some(ms), Some(me)) = (
-                            get_mem_start(reg, &stack, &mem_start_stk, n1),
-                            get_mem_end(reg, &stack, &mem_end_stk, n1),
-                        ) {
-                            let ref_len = me - ms;
-                            if ref_len != 0 {
-                                if right_range.saturating_sub(s) < ref_len {
-                                    goto_fail = true;
-                                } else if !string_cmp_ic(
+                    if n1 > num_mem {
+                        goto_fail = true;
+                    } else if let (Some(ms), Some(me)) = (
+                        get_mem_start(reg, &stack, &mem_start_stk, n1),
+                        get_mem_end(reg, &stack, &mem_end_stk, n1),
+                    ) {
+                        let ref_len = me - ms;
+                        if ref_len != 0
+                            && (right_range.saturating_sub(s) < ref_len
+                                || !string_cmp_ic(
                                     enc,
                                     reg.case_fold_flag,
                                     str_data,
                                     ms,
                                     &mut s,
                                     ref_len,
-                                ) {
-                                    goto_fail = true;
-                                } else {
-                                    p += 1;
-                                }
-                            } else {
-                                p += 1;
-                            }
-                        } else {
+                                ))
+                        {
                             goto_fail = true;
+                        } else {
+                            p += 1;
                         }
                     } else {
                         goto_fail = true;
@@ -4158,8 +4118,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
                     let tlen = *num as usize;
                     let mut matched = false;
-                    for i in 0..tlen {
-                        let mem = ns[i] as usize;
+                    for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
                         if mem > num_mem {
                             continue;
                         }
@@ -4195,8 +4154,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
                     let tlen = *num as usize;
                     let mut matched = false;
-                    for i in 0..tlen {
-                        let mem = ns[i] as usize;
+                    for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
                         if mem > num_mem {
                             continue;
                         }
@@ -4240,8 +4198,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
                     let tlen = *num as usize;
                     let mut found = false;
-                    for i in 0..tlen {
-                        let mem = ns[i] as usize;
+                    for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
                         if mem > num_mem {
                             continue;
                         }
@@ -4305,8 +4262,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         // non-push MemStart with no stack entry)
                         let tlen = *num as usize;
                         let mut f = false;
-                        for i in 0..tlen {
-                            let mem = ns[i] as usize;
+                        for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
                             if mem > num_mem {
                                 continue;
                             }
@@ -4489,15 +4445,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     let id = id as usize;
                     // Pop entries until we find the matching Mark, but don't
                     // restore positions (unlike CutToMark)
-                    loop {
-                        if let Some(entry) = stack.pop() {
-                            if let StackEntry::Mark { zid, .. } = &entry {
-                                if *zid == id {
-                                    break;
-                                }
+                    while let Some(entry) = stack.pop() {
+                        if let StackEntry::Mark { zid, .. } = &entry {
+                            if *zid == id {
+                                break;
                             }
-                        } else {
-                            break;
                         }
                     }
                     p += 1;
@@ -4633,7 +4585,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     // Count pushed BEFORE Alt — survives backtrack (correct for lazy)
                     stack.push(StackEntry::RepeatInc { zid: id, count });
 
-                    if upper != INFINITE_REPEAT && count as i32 == upper {
+                    if upper != INFINITE_REPEAT && count == upper {
                         p += 1;
                     } else if count >= lower {
                         stack.push(StackEntry::Alt {
@@ -4691,7 +4643,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         &stack,
                         mem,
                         s,
-                        empty_status_mem as u32,
+                        empty_status_mem,
                         reg,
                         &mem_start_stk,
                         &mem_end_stk,
@@ -4770,7 +4722,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                                 zid: remaining,
                                 is_super: false,
                             });
-                            p = (p as i32 + addr as i32) as usize;
+                            p = (p as i32 + addr) as usize;
                         } else {
                             p += 1;
                         }
@@ -5018,12 +4970,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 break;
             }
             // Time limit check (every CHECK_TIME_INTERVAL retries)
-            if time_limit_ms > 0 && (retry_in_match_counter % CHECK_TIME_INTERVAL) == 0 {
-                if msa.check_time_limit() {
+            if time_limit_ms > 0 && (retry_in_match_counter % CHECK_TIME_INTERVAL) == 0
+                && msa.check_time_limit() {
                     best_len = ONIGERR_TIME_LIMIT_OVER;
                     break;
                 }
-            }
 
             let pop_result = stack_pop(
                 &mut stack,
@@ -5097,13 +5048,12 @@ pub fn onig_match(
         None => MatchArg::new(reg, option, region, at),
     };
 
-    if opton_check_validity_of_string(msa.options) {
-        if !reg.enc.is_valid_mbc_string(&str_data[..end]) {
+    if opton_check_validity_of_string(msa.options)
+        && !reg.enc.is_valid_mbc_string(&str_data[..end]) {
             let result = (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
             CACHED_MSA.with(|c| *c.borrow_mut() = Some(msa));
             return result;
         }
-    }
 
     if let Some(ref mut r) = msa.region {
         r.resize(reg.num_mem + 1);
@@ -5172,11 +5122,10 @@ pub fn onig_match_with_param(
 ) -> (i32, Option<OnigRegion>) {
     let mut msa = MatchArg::from_param(reg, option, region, at, mp);
 
-    if opton_check_validity_of_string(msa.options) {
-        if !reg.enc.is_valid_mbc_string(&str_data[..end]) {
+    if opton_check_validity_of_string(msa.options)
+        && !reg.enc.is_valid_mbc_string(&str_data[..end]) {
             return (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
         }
-    }
 
     if let Some(ref mut r) = msa.region {
         r.resize(reg.num_mem + 1);
@@ -5207,13 +5156,15 @@ pub fn onig_match_with_param(
 /// Returns the match position on success, ONIG_MISMATCH (-1) on failure.
 ///
 /// Parameters:
-/// - reg: compiled regex
+///     - `reg`: compiled regex
 // ============================================================================
 // Search optimization functions — mirrors C's regexec.c lines 5168-5645
 // ============================================================================
 
-/// Naive string search. Mirrors C's slow_search.
-/// Uses SIMD-accelerated memchr::memmem for the actual byte search.
+/// Search helper.
+///
+///   Naive string search. Mirrors C's slow_search.
+///   Uses SIMD-accelerated memchr::memmem for the actual byte search.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn slow_search(
     _enc: OnigEncoding,
@@ -5296,7 +5247,7 @@ fn sunday_quick_search_step_forward(
     }
     let tail_idx = tlen - 1;
     let mut end = text_range;
-    if tail_idx as usize > text_end.saturating_sub(end) {
+    if tail_idx > text_end.saturating_sub(end) {
         end = text_end.saturating_sub(tail_idx);
     }
 
@@ -5488,22 +5439,18 @@ fn backward_search(
             }
         };
 
-        p = match found {
-            Some(pos) => pos,
-            None => return None,
-        };
+        p = found?;
 
         // Validate sub_anchor
         if reg.sub_anchor != 0 {
             let mut retry = false;
-            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0 {
-                if p > 0 {
+            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0
+                && p > 0 {
                     let prev = onigenc_get_prev_char_head(reg.enc, str_data, 0, p);
                     if !is_mbc_newline(reg.enc, str_data, prev, end) {
                         retry = true;
                     }
                 }
-            }
             if !retry && (reg.sub_anchor & ANCR_END_LINE) != 0 {
                 if p >= end {
                     // at end, check previous
@@ -5533,18 +5480,10 @@ fn backward_search(
 
         // Calculate low/high range
         if reg.dist_max != INFINITE_LEN {
-            let low = if p < reg.dist_max as usize {
-                0
-            } else {
-                p - reg.dist_max as usize
-            };
+            let low = p.saturating_sub(reg.dist_max as usize);
 
             let high = if reg.dist_min != 0 {
-                if p < reg.dist_min as usize {
-                    0
-                } else {
-                    p - reg.dist_min as usize
-                }
+                p.saturating_sub(reg.dist_min as usize)
             } else {
                 p
             };
@@ -5627,15 +5566,14 @@ fn forward_search(
         // Validate sub_anchor
         if reg.sub_anchor != 0 {
             let mut retry = false;
-            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0 {
-                if p > 0 {
+            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0
+                && p > 0 {
                     let prev = pprev.unwrap_or(0);
                     let prev_pos = onigenc_get_prev_char_head(reg.enc, str_data, prev, p);
                     if !is_mbc_newline(reg.enc, str_data, prev_pos, end) {
                         retry = true;
                     }
                 }
-            }
             if !retry && (reg.sub_anchor & ANCR_END_LINE) != 0 {
                 if p >= end {
                     // at end - OK for some cases
@@ -5762,6 +5700,7 @@ pub(crate) fn onig_search_with_msa(
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+#[allow(clippy::too_many_arguments)]
 pub fn onig_search_with_param(
     reg: &RegexType,
     str_data: &[u8],
@@ -5863,11 +5802,10 @@ fn onig_search_inner_core(
     let mut best_start: i32 = ONIG_MISMATCH;
     let mut best_len: i32 = ONIG_MISMATCH;
 
-    if opton_check_validity_of_string(msa.options) {
-        if !enc.is_valid_mbc_string(&str_data[..end]) {
+    if opton_check_validity_of_string(msa.options)
+        && !enc.is_valid_mbc_string(&str_data[..end]) {
             return (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
         }
-    }
 
     // Resize region once before entering search loops (matches C behavior)
     if let Some(ref mut r) = msa.region {
@@ -6142,9 +6080,7 @@ fn onig_search_inner_core(
     if reg.optimize != OptimizeType::None {
         // Calculate search range for optimization
         let sch_range = if reg.dist_max != 0 {
-            if reg.dist_max == INFINITE_LEN {
-                end
-            } else if end.saturating_sub(cur_range) < reg.dist_max as usize {
+            if reg.dist_max == INFINITE_LEN || end.saturating_sub(cur_range) < reg.dist_max as usize {
                 end
             } else {
                 cur_range + reg.dist_max as usize
@@ -6155,11 +6091,7 @@ fn onig_search_inner_core(
 
         if reg.dist_max != INFINITE_LEN {
             // Finite dist_max: iterate with forward_search
-            loop {
-                let (low, high) = match forward_search(reg, str_data, end, s, sch_range) {
-                    Some(lh) => lh,
-                    None => break, // mismatch
-                };
+            while let Some((low, high)) = forward_search(reg, str_data, end, s, sch_range) {
                 if s < low {
                     s = low;
                 }
