@@ -10,7 +10,7 @@
   <a href="https://codecov.io/gh/sebastian-software/ferroni"><img src="https://img.shields.io/codecov/c/github/sebastian-software/ferroni?style=flat-square&logo=codecov&label=Coverage" alt="Coverage"></a>
   <a href="https://github.com/sebastian-software/ferroni/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/unsafe-0.4%25-green?style=flat-square" alt="Unsafe"></a>
-  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/tests-1%2C882_passing-brightgreen?style=flat-square" alt="Tests"></a>
+  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/tests-2%2C090_passing-brightgreen?style=flat-square" alt="Tests"></a>
   <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/C_parity-100%25-brightgreen?style=flat-square" alt="C Parity"></a>
 </p>
 
@@ -43,7 +43,7 @@ highlighters.
 conditionals, absent expressions, Unicode properties, subexpression calls —
 everything the C engine supports, without linking against C. If your pattern
 works in Oniguruma, it works in Ferroni. Every opcode and optimization pass
-is ported 1:1 and verified by [1,882 tests](#test-coverage) from three
+is ported 1:1 and verified by [2,090 tests](#test-coverage) from three
 independent sources.
 
 **No more CVEs from C.** C Oniguruma has a track record of memory safety
@@ -349,26 +349,23 @@ RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 
 ## Test coverage
 
-1,882 tests from three independent sources:
+2,090 tests from three independent sources verify every opcode, optimization
+pass, and API surface:
 
-- **1,554** ported 1:1 from C Oniguruma's test suite
-- **25** from [vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma)'s
-  TypeScript tests (Scanner API, UTF-16 mapping)
-- **303** Rust-specific tests for edge cases, error paths, and gaps in the
-  upstream suites
+| Source | Tests | What it covers |
+|--------|------:|----------------|
+| C Oniguruma test suite | 1,700 | Ported 1:1 -- UTF-8, syntax modes, options, backrefs, RegSet |
+| [vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma) | 25 | Scanner API, UTF-16 mapping, error handling |
+| Rust-native tests | 365 | API integration, edge cases, error paths, coverage gaps |
 
 C Oniguruma has no coverage reporting. Ferroni's test suite is a strict
-superset.
+superset of the upstream tests.
 
-| Metric | Value | Notes |
-|--------|------:|-------|
-| Function coverage | >94% | All reachable API and internal functions |
-| Line coverage | ~82% | 42 deeply recursive tests overflow under LLVM instrumentation |
-| Tests executed | 1,840 of 1,882 | All 1,882 pass in normal `cargo test` |
-
-Coverage measured with
+**Line coverage: 87%.** Measured with
 [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov), reported to
-[Codecov](https://codecov.io/gh/sebastian-software/ferroni).
+[Codecov](https://codecov.io/gh/sebastian-software/ferroni). 42 deeply
+recursive tests are skipped under LLVM instrumentation (stack overflow from
+coverage bookkeeping) but pass in normal `cargo test`.
 
 ## Architecture decision records
 
