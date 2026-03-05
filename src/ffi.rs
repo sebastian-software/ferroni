@@ -145,6 +145,12 @@ impl COnigInstance {
     }
 }
 
+impl Default for COnigInstance {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Compiled C regex with auto-free on drop.
 pub struct CRegex {
     raw: OnigRegex,
@@ -235,6 +241,12 @@ impl CRegion {
 
     pub fn clear(&mut self) {
         unsafe { onig_region_clear(self.raw) }
+    }
+}
+
+impl Default for CRegion {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

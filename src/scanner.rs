@@ -70,9 +70,10 @@ impl ScannerFindOptions {
 }
 
 /// Regex syntax variant, matching vscode-oniguruma's `Syntax` enum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScannerSyntax {
     /// Oniguruma syntax (default).
+    #[default]
     Oniguruma,
     /// Plain text, no metacharacters.
     Asis,
@@ -99,7 +100,7 @@ pub enum ScannerSyntax {
 }
 
 impl ScannerSyntax {
-    fn to_onig_syntax(&self) -> &'static OnigSyntaxType {
+    fn as_onig_syntax(&self) -> &'static OnigSyntaxType {
         match self {
             Self::Oniguruma => &OnigSyntaxOniguruma,
             Self::Asis => &OnigSyntaxASIS,
@@ -114,12 +115,6 @@ impl ScannerSyntax {
             Self::Ruby => &OnigSyntaxRuby,
             Self::Python => &OnigSyntaxPython,
         }
-    }
-}
-
-impl Default for ScannerSyntax {
-    fn default() -> Self {
-        Self::Oniguruma
     }
 }
 
@@ -313,15 +308,11 @@ pub struct ScannerStats {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 enum CacheRoute {
+    #[default]
     RegSet,
     PerRegex,
-}
-
-impl Default for CacheRoute {
-    fn default() -> Self {
-        Self::RegSet
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -400,7 +391,7 @@ impl Scanner {
     /// assert!(m.is_some());
     /// ```
     pub fn with_config(patterns: &[&str], config: &ScannerConfig) -> Result<Scanner, RegexError> {
-        let syntax = config.syntax.to_onig_syntax();
+        let syntax = config.syntax.as_onig_syntax();
         let options = config.options;
 
         let mut caches = Vec::with_capacity(patterns.len());
