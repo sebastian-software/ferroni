@@ -7400,15 +7400,12 @@ mod tests {
                     _ => panic!("expected String 'a' as first element"),
                 }
                 let cdr = list.cdr.as_ref().expect("expected cdr");
-                match &cdr.inner {
-                    NodeInner::List(list2) => {
+                if let NodeInner::List(list2) = &cdr.inner {
                         assert!(
                             matches!(&list2.car.inner, NodeInner::CType(_)),
                             "expected CType node for anychar, got {:?}",
                             list2.car.node_type()
                         );
-                    }
-                    _ => {} // may be directly the node
                 }
             }
             _ => panic!("expected List node for concat, got {:?}", root.node_type()),

@@ -9193,10 +9193,7 @@ mod tests {
             .iter()
             .filter(|op| op.opcode == OpCode::Push)
             .count();
-        assert!(
-            reg.literal_tries.len() > 0,
-            "entity pattern should produce at least 1 trie"
-        );
+        assert!(!reg.literal_tries.is_empty(), "entity pattern should produce at least 1 trie");
         // With top-down nested extraction, the entire pure-literal entity
         // pattern should collapse to a single trie with no Push ops.
         assert_eq!(push_count, 0, "expected 0 Push ops but got {}", push_count);
