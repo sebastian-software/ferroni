@@ -62,6 +62,8 @@ Rust's type system. 0.4% unsafe code, all documented in
 `wasm32-unknown-unknown`. Ship it as a Node.js native module via
 [napi-rs](https://napi.rs/) without `node-gyp` or a C compiler on the
 user's machine.
+Only enabling the optional `ffi` feature requires compiling bundled C sources
+for reference benchmarks.
 
 **Built-in multi-pattern scanner.** For syntax highlighting with TextMate
 grammars, Ferroni includes a
@@ -280,15 +282,38 @@ you need full Oniguruma compatibility.
 <details>
 <summary><strong>Running benchmarks</strong></summary>
 
-```bash
-cargo bench --features ffi                          # full suite (~8 min)
-cargo bench --features ffi -- scanner_highlighting  # tier 1: highlighting
-cargo bench --features ffi -- text_scanning         # tier 1: log scanning
-cargo bench --features ffi -- single_pattern        # tier 1: per-feature
-cargo bench --features ffi -- compilation           # tier 1: compile time
-cargo bench --features ffi -- regression_           # tier 2: all regression
-# HTML report: target/criterion/report/index.html
-```
+Ferroni keeps benchmark modes separated:
+
+- **Rust-only mode (default, no C build):**
+  ```bash
+  cargo bench
+  cargo bench --bench codspeed_bench
+  ```
+
+- **Reference mode (`ffi`, compares against C Oniguruma + vscode-oniguruma scanner behavior):**
+  ```bash
+  # one-time setup
+  git submodule update --init --recursive
+
+  # run the full C-comparison suite (full suite ~8 min)
+  cargo bench --features ffi
+
+  # target specific suites
+  cargo bench --features ffi -- scanner_highlighting
+  cargo bench --features ffi -- text_scanning
+  cargo bench --features ffi -- single_pattern
+  cargo bench --features ffi -- compilation
+  cargo bench --features ffi -- regression_
+  ```
+
+- **Practical local baseline strategy (often enough for contributors):**
+  Use the same Rust benchmark binary on two commits and compare offline with
+  Criterion's built-in baseline tracking:
+  ```bash
+  cargo bench --bench codspeed_bench -- --baseline main
+  cargo bench --bench codspeed_bench -- --baseline feature-branch
+  ```
+  or store artifacts in a branch/release and compare reports manually.
 
 </details>
 
