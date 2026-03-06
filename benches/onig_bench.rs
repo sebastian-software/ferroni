@@ -11,6 +11,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use regex::bytes::{Regex, RegexBuilder};
 use scanner_css_workload::CSS_INPUT;
 use std::os::raw::c_uint;
+use std::time::Duration;
 
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
 use ferroni::ffi;
@@ -20,6 +21,285 @@ use ferroni::regexec::{onig_match, onig_region_new, onig_search};
 use ferroni::regset::{onig_regset_new, onig_regset_search, OnigRegSetLead};
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions};
+
+fn is_smoke_benchmark() -> bool {
+    matches!(
+        std::env::var("FERRONI_BENCH_SMOKE")
+            .unwrap_or_else(|_| String::new())
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Smoke benchmark (5-10 high-signal kernels, fast iteration)
+// ---------------------------------------------------------------------------
+
+fn bench_smoke_compare(c: &mut Criterion) {
+    let mut group = c.benchmark_group("smoke_compare");
+    group.sample_size(40);
+    group.warm_up_time(Duration::from_millis(200));
+    group.measurement_time(Duration::from_secs(2));
+
+    // --------------------------------------------------------------------
+    // Compile throughput (small set)
+    // --------------------------------------------------------------------
+    let compile_cases: &[(&str, &[u8])] = &[
+        ("literal", b"hello world"),
+        (
+            "named_capture",
+            b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})",
+        ),
+    ];
+
+    for (name, pattern) in compile_cases {
+        group.bench_function(format!("compile/{name}/rust"), |b| {
+            b.iter(|| {
+                let reg = rust_compile(black_box(pattern), ONIG_OPTION_NONE);
+                black_box(reg);
+            })
+        });
+        group.bench_function(format!("compile/{name}/c"), |b| {
+            b.iter(|| {
+                let reg = c_compile(black_box(pattern), ffi::ONIG_OPTION_NONE);
+                black_box(reg);
+            })
+        });
+    }
+
+    // --------------------------------------------------------------------
+    // Representative execution kernels
+    // --------------------------------------------------------------------
+    let text_common = b"The quick brown fox jumps over the lazy dog near 2025-06-15";
+    let lit = b"lazy dog";
+    let alt = b"wolf|wolverine";
+    let backref = b"(\\w+) \\1";
+    let greek = b"\\p{Greek}+";
+    let unicode_text = "Hello Κόσμε Привет 世界".as_bytes();
+
+    let rust_lit = rust_compile(lit, ONIG_OPTION_NONE);
+    let c_lit = c_compile(lit, ffi::ONIG_OPTION_NONE);
+    let rust_alt = rust_compile(alt, ONIG_OPTION_NONE);
+    let c_alt = c_compile(alt, ffi::ONIG_OPTION_NONE);
+    let rust_backref = rust_compile(backref, ONIG_OPTION_NONE);
+    let c_backref = c_compile(backref, ffi::ONIG_OPTION_NONE);
+    let rust_greek = rust_compile(greek, ONIG_OPTION_NONE);
+    let c_greek = c_compile(greek, ffi::ONIG_OPTION_NONE);
+
+    let (rust_lit_match, _) = rust_search(&rust_lit, text_common, None);
+    let c_lit_match = c_lit.search(
+        text_common,
+        0,
+        text_common.len(),
+        None,
+        ffi::ONIG_OPTION_NONE,
+    );
+    assert_same_result(rust_lit_match, c_lit_match, "literal");
+
+    let (rust_alt_match, _) = rust_search(&rust_alt, text_common, None);
+    let c_alt_match = c_alt.search(
+        text_common,
+        0,
+        text_common.len(),
+        None,
+        ffi::ONIG_OPTION_NONE,
+    );
+    assert_same_result(rust_alt_match, c_alt_match, "alternation");
+
+    let utf8_text = b"the the quick brown fox";
+    let (rust_backref_match, _) = rust_search(&rust_backref, utf8_text, None);
+    let c_backref_match =
+        c_backref.search(utf8_text, 0, utf8_text.len(), None, ffi::ONIG_OPTION_NONE);
+    assert_same_result(rust_backref_match, c_backref_match, "backref");
+
+    let (rust_greek_match, _) = rust_search(&rust_greek, unicode_text, None);
+    let c_greek_match = c_greek.search(
+        unicode_text,
+        0,
+        unicode_text.len(),
+        None,
+        ffi::ONIG_OPTION_NONE,
+    );
+    assert_same_result(rust_greek_match, c_greek_match, "unicode_greek");
+
+    group.bench_function("search/literal/rust", |b| {
+        b.iter(|| {
+            let (pos, _) = rust_search(&rust_lit, black_box(text_common), None);
+            black_box(pos);
+        })
+    });
+    let mut lit_region = ffi::CRegion::new();
+    group.bench_function("search/literal/c", |b| {
+        b.iter(|| {
+            lit_region.clear();
+            let pos = c_lit.search(
+                black_box(text_common),
+                0,
+                text_common.len(),
+                Some(&mut lit_region),
+                ffi::ONIG_OPTION_NONE,
+            );
+            black_box(pos);
+        })
+    });
+
+    group.bench_function("search/alternation/rust", |b| {
+        b.iter(|| {
+            let (pos, _) = rust_search(&rust_alt, black_box(text_common), None);
+            black_box(pos);
+        })
+    });
+    let mut alt_region = ffi::CRegion::new();
+    group.bench_function("search/alternation/c", |b| {
+        b.iter(|| {
+            alt_region.clear();
+            let pos = c_alt.search(
+                black_box(text_common),
+                0,
+                text_common.len(),
+                Some(&mut alt_region),
+                ffi::ONIG_OPTION_NONE,
+            );
+            black_box(pos);
+        })
+    });
+
+    group.bench_function("search/backref/rust", |b| {
+        b.iter(|| {
+            let (pos, _) = rust_search(&rust_backref, black_box(utf8_text), None);
+            black_box(pos);
+        })
+    });
+    let mut backref_region = ffi::CRegion::new();
+    group.bench_function("search/backref/c", |b| {
+        b.iter(|| {
+            backref_region.clear();
+            let pos = c_backref.search(
+                black_box(utf8_text),
+                0,
+                utf8_text.len(),
+                Some(&mut backref_region),
+                ffi::ONIG_OPTION_NONE,
+            );
+            black_box(pos);
+        })
+    });
+
+    group.bench_function("search/unicode_greek/rust", |b| {
+        b.iter(|| {
+            let (pos, _) = rust_search(&rust_greek, black_box(unicode_text), None);
+            black_box(pos);
+        })
+    });
+    let mut greek_region = ffi::CRegion::new();
+    group.bench_function("search/unicode_greek/c", |b| {
+        b.iter(|| {
+            greek_region.clear();
+            let pos = c_greek.search(
+                black_box(unicode_text),
+                0,
+                unicode_text.len(),
+                Some(&mut greek_region),
+                ffi::ONIG_OPTION_NONE,
+            );
+            black_box(pos);
+        })
+    });
+
+    group.bench_function("match_at_position/rust", |b| {
+        b.iter(|| {
+            let (len, _) = onig_match(
+                &rust_backref,
+                text_common,
+                text_common.len(),
+                4,
+                None,
+                ONIG_OPTION_NONE,
+            );
+            black_box(len);
+        })
+    });
+    group.bench_function("match_at_position/c", |b| {
+        b.iter(|| {
+            let len = c_backref.match_at(text_common, 4, None, ffi::ONIG_OPTION_NONE);
+            black_box(len);
+        })
+    });
+
+    // --------------------------------------------------------------------
+    // Scanner + RegSet kernel mix
+    // --------------------------------------------------------------------
+    let regset_patterns: &[&[u8]] = &[
+        b"Error \\d+",
+        b"/api/\\w+/\\d+",
+        b"\\d{4}-\\d{2}-\\d{2}",
+        b"not found",
+        b"\\bpage\\b",
+    ];
+    let regset_text = b"Error 404: page not found at /api/users/42 on 2025-06-15";
+    let rust_regs: Vec<Box<ferroni::regint::RegexType>> = regset_patterns
+        .iter()
+        .map(|pat| Box::new(rust_compile(pat, ONIG_OPTION_NONE)))
+        .collect();
+    let (rust_set, rc) = onig_regset_new(rust_regs);
+    assert!(rc == 0, "Rust regset_new failed: {rc}");
+    let mut rust_set = rust_set.unwrap();
+
+    let c_regs_owned: Vec<ffi::CRegex> = regset_patterns
+        .iter()
+        .map(|pat| c_compile(pat, ffi::ONIG_OPTION_NONE))
+        .collect();
+    let c_raw_ptrs: Vec<ffi::OnigRegex> = c_regs_owned.iter().map(|r| r.raw()).collect();
+    for r in c_regs_owned {
+        std::mem::forget(r);
+    }
+    let mut c_set = ffi::CRegSet::new(&c_raw_ptrs).expect("C regset_new failed");
+
+    group.bench_function("regset/position_lead/rust", |b| {
+        b.iter(|| {
+            let (idx, pos) = onig_regset_search(
+                &mut rust_set,
+                black_box(regset_text),
+                regset_text.len(),
+                0,
+                regset_text.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            );
+            black_box((idx, pos));
+        })
+    });
+    group.bench_function("regset/position_lead/c", |b| {
+        b.iter(|| {
+            let (idx, pos) = c_set.search(
+                black_box(regset_text),
+                0,
+                regset_text.len(),
+                ffi::ONIG_REGSET_POSITION_LEAD,
+                ffi::ONIG_OPTION_NONE,
+            );
+            black_box((idx, pos));
+        })
+    });
+
+    let mut scanner = Scanner::new(SCANNER_PATTERNS).unwrap();
+    let c_scanner = ffi::CScanner::new(SCANNER_PATTERNS_BYTES).expect("C scanner create failed");
+    let scanner_text = std::str::from_utf8(SCANNER_TEXT_SHORT).unwrap();
+    group.bench_function("scanner/short_rust", |b| {
+        b.iter(|| {
+            let m = scanner.find_next_match(black_box(scanner_text), 0, ScannerFindOptions::NONE);
+            black_box(m);
+        })
+    });
+    group.bench_function("scanner/short_c", |b| {
+        b.iter(|| {
+            let m = c_scanner.find_next_match(black_box(SCANNER_TEXT_SHORT), 0, 0);
+            black_box(m);
+        })
+    });
+    group.finish();
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1811,27 +2091,33 @@ fn bench_compilation(c: &mut Criterion) {
 // Criterion harness
 // ---------------------------------------------------------------------------
 
-criterion_group!(
-    benches,
+fn bench_onig_bench(c: &mut Criterion) {
+    if is_smoke_benchmark() {
+        bench_smoke_compare(c);
+        return;
+    }
+
     // Tier 1: real-world scenarios
-    bench_scanner_highlighting,
-    bench_text_scanning,
-    bench_single_pattern,
-    bench_compilation,
+    bench_scanner_highlighting(c);
+    bench_text_scanning(c);
+    bench_single_pattern(c);
+    bench_compilation(c);
     // Tier 2: regression coverage
-    bench_regression_compile,
-    bench_regression_literal,
-    bench_regression_quantifiers,
-    bench_regression_alternation,
-    bench_regression_backreferences,
-    bench_regression_lookaround,
-    bench_regression_unicode,
-    bench_regression_case_insensitive,
-    bench_regression_named_captures,
-    bench_regression_large_text,
-    bench_regression_regset,
-    bench_regression_match_at_position,
-    bench_regression_scanner,
-    bench_regression_scanner_textmate,
-);
+    bench_regression_compile(c);
+    bench_regression_literal(c);
+    bench_regression_quantifiers(c);
+    bench_regression_alternation(c);
+    bench_regression_backreferences(c);
+    bench_regression_lookaround(c);
+    bench_regression_unicode(c);
+    bench_regression_case_insensitive(c);
+    bench_regression_named_captures(c);
+    bench_regression_large_text(c);
+    bench_regression_regset(c);
+    bench_regression_match_at_position(c);
+    bench_regression_scanner(c);
+    bench_regression_scanner_textmate(c);
+}
+
+criterion_group!(benches, bench_onig_bench);
 criterion_main!(benches);

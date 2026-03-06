@@ -298,6 +298,9 @@ Ferroni keeps benchmark modes separated:
   # run the full C-comparison suite (full suite ~8 min)
   cargo bench --features ffi
 
+  # quick smoke comparison (fast, 5-10 core kernels, reduced warmup/sample)
+  FERRONI_BENCH_SMOKE=1 cargo bench --features ffi
+
   # target specific suites
   cargo bench --features ffi -- scanner_highlighting
   cargo bench --features ffi -- text_scanning
