@@ -7,10 +7,12 @@
 //
 // These use onig_new() + onig_search() to match the C test harness exactly.
 
+#![allow(non_snake_case)]
+// Keep the original Oniguruma fixture naming to preserve test traceability.
+
 use ferroni::oniguruma::*;
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::onig_search;
-use ferroni::regint::*;
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 
 fn x2(pattern: &[u8], input: &[u8], from: i32, to: i32) {
@@ -948,7 +950,7 @@ fn utf8_anchor_begin() {
 
 #[test]
 fn utf8_anchor_end() {
-    let pattern = "む$".as_bytes();
+    let _pattern = "む$".as_bytes();
     let input = "む".as_bytes();
     x2(b"^", input, 0, 0);
 }
@@ -2767,7 +2769,7 @@ fn utf8_bracket_W() {
     // C line 913: [\W] matches $ in "う$" at byte 3
     x2(
         b"[\\W]",
-        [&"う".as_bytes()[..], b"$"].concat().as_slice(),
+        ["う".as_bytes(), b"$"].concat().as_slice(),
         3,
         4,
     );
@@ -2788,21 +2790,21 @@ fn utf8_S_kanji() {
 #[test]
 fn utf8_word_boundary_start() {
     // C line 916: \b at start of "気 " -> 0
-    let input = [&"気".as_bytes()[..], b" "].concat();
+    let input = ["気".as_bytes(), b" "].concat();
     x2(b"\\b", &input, 0, 0);
 }
 
 #[test]
 fn utf8_word_boundary_after_space() {
     // C line 917: \b in " ほ" at byte 1
-    let input = [b" ", &"ほ".as_bytes()[..]].concat();
+    let input = [b" ", "ほ".as_bytes()].concat();
     x2(b"\\b", &input, 1, 1);
 }
 
 #[test]
 fn utf8_non_boundary_mid() {
     // C line 918: \B in "せそ " at byte 3
-    let input = [&"せそ".as_bytes()[..], b" "].concat();
+    let input = ["せそ".as_bytes(), b" "].concat();
     x2(b"\\B", &input, 3, 3);
 }
 
@@ -2811,14 +2813,14 @@ fn utf8_non_boundary_after_char() {
     // C line 919: \B in "う " at byte 4 (after う=3 bytes, at space boundary... no)
     // Actually \B matches at non-word boundary. "う " has boundary after う.
     // Byte 4 = after space? "う "(3+1=4). \B at position 4 (end of string after space)
-    let input = [&"う".as_bytes()[..], b" "].concat();
+    let input = ["う".as_bytes(), b" "].concat();
     x2(b"\\B", &input, 4, 4);
 }
 
 #[test]
 fn utf8_non_boundary_start_space() {
     // C line 920: \B in " い" at byte 0
-    let input = [b" ", &"い".as_bytes()[..]].concat();
+    let input = [b" ", "い".as_bytes()].concat();
     x2(b"\\B", &input, 0, 0);
 }
 
@@ -2880,7 +2882,7 @@ fn utf8_bracket_wd() {
 #[test]
 fn utf8_bracket_wd_skip_space() {
     // C line 931: [\w\d] matches よ at offset 3 in "   よ"
-    let input = [b"   ", &"よ".as_bytes()[..]].concat();
+    let input = [b"   ", "よ".as_bytes()].concat();
     x2(b"[\\w\\d]", &input, 3, 6);
 }
 
@@ -2891,7 +2893,7 @@ fn utf8_bracket_wd_skip_space() {
 #[test]
 fn utf8_w_kanji_no_match() {
     // C line 932: \w鬼車 no match for " 鬼車"
-    let input = [b" ", &"鬼車".as_bytes()[..]].concat();
+    let input = [b" ", "鬼車".as_bytes()].concat();
     n([b"\\w", "鬼車".as_bytes()].concat().as_slice(), &input);
 }
 
@@ -2899,7 +2901,7 @@ fn utf8_w_kanji_no_match() {
 fn utf8_kanji_W_kanji() {
     // C line 933: 鬼\W車 matches "鬼 車" -> 0-7
     let pattern = ["鬼".as_bytes(), b"\\W", "車".as_bytes()].concat();
-    let input = [&"鬼".as_bytes()[..], b" ", &"車".as_bytes()[..]].concat();
+    let input = ["鬼".as_bytes(), b" ", "車".as_bytes()].concat();
     x2(&pattern, &input, 0, 7);
 }
 
@@ -3158,14 +3160,14 @@ fn utf8_dot_plus_stops_at_newline() {
 #[test]
 fn utf8_alt_pair_first() {
     // C line 982: あい|いう matches あい -> 0-6
-    let pattern = [&"あい".as_bytes()[..], b"|", "いう".as_bytes()].concat();
+    let pattern = ["あい".as_bytes(), b"|", "いう".as_bytes()].concat();
     x2(&pattern, "あい".as_bytes(), 0, 6);
 }
 
 #[test]
 fn utf8_alt_pair_second() {
     // C line 983: あい|いう matches いう -> 0-6
-    let pattern = [&"あい".as_bytes()[..], b"|", "いう".as_bytes()].concat();
+    let pattern = ["あい".as_bytes(), b"|", "いう".as_bytes()].concat();
     x2(&pattern, "いう".as_bytes(), 0, 6);
 }
 
@@ -3624,7 +3626,7 @@ fn utf8_capture_pair_alt_plus_5() {
     // C line 1035: (あい|うあ)+ matches あい in $$zzzzあいをうあ -> 6-12
     let pattern = "(あい|うあ)+".as_bytes();
     let input = [b"$$zzzz", "あいをうあ".as_bytes()].concat();
-    x2(&pattern, &input, 6, 12);
+    x2(pattern, &input, 6, 12);
 }
 
 #[test]
@@ -4355,7 +4357,7 @@ fn utf8_backref_alt_fullwidth() {
 fn utf8_backref_alt_prefix() {
     // C line 1137: ...(誰？|[あ-う]{3})\1 matches あaあ誰？誰？ -> 0-19
     let pattern = [b"...", "(誰？|[あ-う]{3})".as_bytes(), b"\\1"].concat();
-    let input = [&"あ".as_bytes()[..], b"a", "あ誰？誰？".as_bytes()].concat();
+    let input = ["あ".as_bytes(), b"a", "あ誰？誰？".as_bytes()].concat();
     x2(&pattern, &input, 0, 19);
 }
 
