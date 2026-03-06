@@ -8,7 +8,9 @@ use ferroni::scanner::Scanner;
 use std::collections::HashSet;
 
 const TYPESCRIPT_JSON: &str = include_str!("grammars/typescript.json");
+#[allow(dead_code)]
 const CSS_JSON: &str = include_str!("grammars/css.json");
+#[allow(dead_code)]
 const RUST_JSON: &str = include_str!("grammars/rust.json");
 
 /// All compilable patterns from the full Shiki TypeScript grammar.
@@ -16,11 +18,13 @@ pub fn typescript_patterns() -> Vec<String> {
     extract_patterns(TYPESCRIPT_JSON)
 }
 
+#[allow(dead_code)]
 /// All compilable patterns from the full Shiki CSS grammar.
 pub fn css_patterns() -> Vec<String> {
     extract_patterns(CSS_JSON)
 }
 
+#[allow(dead_code)]
 /// All compilable patterns from the full Shiki Rust grammar.
 pub fn rust_patterns() -> Vec<String> {
     extract_patterns(RUST_JSON)

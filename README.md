@@ -27,9 +27,9 @@ properties, subexpression calls, and 12 syntax modes from Perl to POSIX.
 Ferroni is a line-by-line Rust port of this engine — same structure, same
 opcodes, same optimization passes — with SIMD-vectorized search via
 [`memchr`](https://crates.io/crates/memchr) layered on top. The result:
-**up to 61x faster than C** on scanner first-match, while an idiomatic Rust
-API (`Regex::new()`, typed errors, `Match`/`Captures`) keeps the ergonomics
-clean.
+**often dramatically faster than C** on scanner first-match workloads, while
+an idiomatic Rust API (`Regex::new()`, typed errors, `Match`/`Captures`)
+keeps the ergonomics clean.
 
 For syntax highlighting, Ferroni also includes a multi-pattern
 [Scanner API](#scanner-api) compatible with
@@ -182,10 +182,17 @@ automatic UTF-16 position mapping. API-compatible with
 
 ## Performance
 
-All numbers compare Ferroni against C Oniguruma at `-O3`,
-measured with [Criterion](https://github.com/bheisler/criterion.rs) on
-Apple M1 Ultra. **Bold** = faster engine. See
-[full tables](docs/perf/benchmark-results.md) for all benchmarks.
+This section is prepared for a fresh rerun of `battle_bench` on a quiet
+machine. The README focuses on a few representative, human-readable
+comparisons. Exact raw tables live in
+[docs/perf/benchmark-results.md](docs/perf/benchmark-results.md).
+
+What we want the README to answer:
+
+- How does Ferroni behave on real syntax-highlighting workloads?
+- How fast is it on practical search and log-scanning tasks?
+- Where is it clearly ahead of Oniguruma?
+- Where is it still slower?
 
 ### Syntax highlighting
 
@@ -195,77 +202,67 @@ token by token. We benchmark against complete, unmodified Shiki grammars
 for TypeScript (279 patterns), CSS (117 patterns), and Rust (81 patterns).
 No cherry-picked subsets.
 
-| Scenario | Ferroni | C Oniguruma | Speedup |
-|----------|--------:|------------:|--------:|
-| **TypeScript** (279 patterns) | | | |
-| Compile | **10.1 ms** | 16.8 ms | **1.7x** |
-| First match | **414 ns** | 25.3 us | **61x** |
-| Tokenize full line | **7.0 us** | 221 us | **32x** |
-| **Rust** (81 patterns) | | | |
-| Compile | 257 us | **181 us** | 0.7x |
-| First match | **181 ns** | 5.6 us | **31x** |
-| Tokenize full line | **8.2 us** | 82.2 us | **10x** |
-| **CSS** (117 patterns) | | | |
-| Compile | **13.7 ms** | 19.0 ms | **1.4x** |
-| Tokenize full line | **1.60 ms** | 14.9 ms | **9.3x** |
+| Scenario | Why it matters | Ferroni | Oniguruma | What the result should communicate |
+|----------|----------------|--------:|------------:|-----------------------------------|
+| TypeScript grammar compile | Startup cost for a full Shiki grammar | `TBD` | `TBD` | Whether Ferroni starts faster or slower on a realistic grammar |
+| TypeScript first match | Time to find the next token on a real grammar | `TBD` | `TBD` | Ferroni should show a dramatic first-token latency win |
+| TypeScript tokenize full line | End-to-end line tokenization cost | `TBD` | `TBD` | Ferroni should show a large practical scanner advantage |
+| Rust grammar compile | Compile cost on a smaller, real grammar | `TBD` | `TBD` | This is the place where Oniguruma may still look better |
+| Rust first match | First-token latency on another production grammar | `TBD` | `TBD` | Ferroni should still be clearly ahead |
+| Rust tokenize full line | Whole-line scanner work on a real grammar | `TBD` | `TBD` | Should confirm the scanner advantage is not TS-only |
+| CSS tokenize representative input | Heavier multi-pattern scanner workload | `TBD` | `TBD` | Should show a clear real-world tokenization win |
 
 ### Text search and log scanning
 
-First-match latency and full-scan rejection on log-sized inputs. The
-[`regex`](https://crates.io/crates/regex) crate is included where the
-pattern is compatible with its syntax.
+First-match latency and rejection speed on log-sized inputs:
 
-| Scenario | Ferroni | C Oniguruma | `regex` |
-|----------|--------:|------------:|--------:|
-| Literal in 50 KB | 74 ns | 150 ns | **10 ns** |
-| No match, 50 KB | 1.53 us | 9.5 us | **1.46 us** |
-| No match, 10 KB | 357 ns | 1.96 us | **298 ns** |
-| Field extract, 50 KB | 127 ns | 172 ns | **56 ns** |
-| Timestamp, 50 KB | **120 ns** | 177 ns | **54 ns** |
-| RegSet multi-pattern (5) | **101 ns** | 395 ns | — |
+| Scenario | Why it matters | Ferroni | Oniguruma | What the result should communicate |
+|----------|----------------|--------:|------------:|-----------------------------------|
+| Literal in 50 KB | Plain substring-like scanning in a real log buffer | `TBD` | `TBD` | Both should feel instant; Ferroni should still lead |
+| No match, 50 KB | Rejection cost when the pattern is absent | `TBD` | `TBD` | Ferroni should show a strong no-match advantage |
+| No match, 10 KB | Same rejection story on smaller log chunks | `TBD` | `TBD` | Confirms the advantage is not only on large inputs |
+| Field extract, 50 KB | Practical capture-based scanning | `TBD` | `TBD` | Should show that useful extraction stays cheap |
+| Timestamp, 50 KB | Structured log parsing | `TBD` | `TBD` | A relatable benchmark for everyday scanning tasks |
+| RegSet multi-pattern (5) | Multi-pattern search, relevant for scanners | `TBD` | `TBD` | One of the clearest Ferroni-vs-Oniguruma wins |
 
-The `regex` crate's DFA engine gives it a clear advantage on text search
-workloads. [`memchr`](https://crates.io/crates/memchr) (shared by both
-Ferroni and `regex`) enables SIMD-accelerated literal scans, but `regex`
-goes further with full DFA-based matching that avoids per-character
-backtracking. RegSet multi-pattern has no direct `regex` equivalent.
+For plain-text workloads that fit Rust's
+[`regex`](https://crates.io/crates/regex) syntax, `regex` still wins on raw
+matching speed. Ferroni's goal here is "full Oniguruma compatibility without
+giving up practical throughput", not "beat a DFA engine at its own game."
 
 ### Pattern matching
 
-One representative pattern per regex feature. **Bold** = fastest engine.
-`regex` is omitted for features it does not support (lookaround,
-backreferences).
+One representative pattern per feature family:
 
-| Category | Ferroni | C Oniguruma | `regex` |
-|----------|--------:|------------:|--------:|
-| Literal exact | 104 ns | 159 ns | **11 ns** |
-| Quantifier greedy | 183 ns | 261 ns | **65 ns** |
-| Lookaround combined | **83 ns** | 292 ns | — |
-| Unicode `\p{Greek}+` | 96 ns | 251 ns | **60 ns** |
-| Backref `(\w+) \1` | **79 ns** | 199 ns | — |
-| Case-insensitive phrase | 101 ns | 188 ns | **62 ns** |
-| Alternation, 2 branches | 62 ns | 157 ns | **48 ns** |
-| Alternation, 10 branches | 49 ns | 225 ns | **21 ns** |
-| Named capture date | 361 ns | 277 ns | **44 ns** |
+| Pattern | Why it matters | Ferroni | Oniguruma | What the result should communicate |
+|---------|----------------|--------:|------------:|-----------------------------------|
+| Literal exact | Baseline single-pattern matching | `TBD` | `TBD` | Ferroni should be ahead, but this is not the headline story |
+| Quantifier greedy | Classic backtracking-heavy pattern | `TBD` | `TBD` | Good proxy for everyday regex engine work |
+| Lookaround combined | A feature many Rust regex engines do not support | `TBD` | `TBD` | Ferroni should show that full features do not mean slow by default |
+| Unicode `\p{Greek}+` | Unicode-property support on real text | `TBD` | `TBD` | Strong example of "full Oniguruma, still fast" |
+| Backref `(\w+) \1` | Backreferences are a real compatibility differentiator | `TBD` | `TBD` | A clean feature-heavy showcase |
+| Alternation, 10 branches | Branch-heavy matching | `TBD` | `TBD` | Good example of optimized search paths paying off |
+| Named capture date | Practical extraction pattern | `TBD` | `TBD` | Important because this may still favor Oniguruma |
 
 ### Compilation
 
-Simple patterns compile within 5% of C. The `regex` crate compiles
-significantly slower due to DFA construction -- the cost of its faster
-matching. Lookbehind is not supported by `regex`.
+Compilation should stay short and pragmatic in the README. We only need three
+reference points:
 
-| Pattern | Ferroni | C Oniguruma | `regex` |
-|---------|--------:|------------:|--------:|
-| Literal | **439 ns** | 448 ns | 2.33 us |
-| Named capture | **4.67 us** | 5.78 us | 193 us |
-| Lookbehind | 992 ns | **556 ns** | — |
+| Pattern | Why it matters | Ferroni | Oniguruma | What the result should communicate |
+|---------|----------------|--------:|------------:|-----------------------------------|
+| Literal | Smallest possible compile path | `TBD` | `TBD` | Usually close enough that compile overhead is not the story |
+| Named capture | More realistic structured pattern | `TBD` | `TBD` | Useful to show Ferroni is still competitive on practical patterns |
+| Lookbehind | Feature-heavy compile path | `TBD` | `TBD` | The place where Oniguruma may still keep a lead |
 
 ### Where Ferroni is slower
 
-- **vs `regex` crate** -- for patterns that `regex` supports, its DFA engine
-  is 2-10x faster at matching (but 5-40x slower to compile)
-- **Named capture extraction** -- 1.3x vs C (region bookkeeping overhead)
-- **Scanner warm cache** -- 2.2x vs C (C's pointer comparison vs hash lookup)
+- **vs `regex` crate** -- if your pattern fits `regex`, its DFA engine is still
+  the right tool for maximum plain-text match throughput
+- **Named capture extraction** -- region bookkeeping still makes this slower
+  than Oniguruma in representative date-style patterns
+- **Some compile paths** -- lookbehind and a few scanner compile cases still
+  need work
 
 ### Ferroni vs the `regex` crate
 
@@ -279,45 +276,43 @@ regex behavior. Use [`regex`](https://crates.io/crates/regex) when your
 patterns fit its syntax and compilation cost is amortized. Use Ferroni when
 you need full Oniguruma compatibility.
 
+### Refresh Checklist
+
+When we rerun `battle_bench` on a clean machine, these are the numbers to
+drop into the README:
+
+- Syntax highlighting: TypeScript compile/first match/tokenize, Rust compile/first match/tokenize, CSS tokenize
+- Text scanning: literal 50 KB, no-match 50 KB, no-match 10 KB, field extract 50 KB, timestamp 50 KB, RegSet position-lead
+- Pattern matching: literal exact, quantifier greedy, lookaround combined, Unicode Greek, backref simple, alternation 10 branches, named capture date
+- Compilation: literal, named capture, lookbehind
+
 <details>
 <summary><strong>Running benchmarks</strong></summary>
 
-Ferroni keeps benchmark modes separated:
+Ferroni keeps benchmark suites separated by purpose:
 
-- **Rust-only mode (default, no C build):**
+- **Internal suite (`codspeed_bench`, Rust-only, regression/optimization work):**
   ```bash
   cargo bench
   cargo bench --bench codspeed_bench
+
+  # compare two local baselines
+  cargo bench --bench codspeed_bench -- --baseline main
+  cargo bench --bench codspeed_bench -- --baseline feature-branch
   ```
 
-- **Reference mode (`ffi`, compares against C Oniguruma + vscode-oniguruma scanner behavior):**
+- **Reference suite (`battle_bench`, Ferroni vs Oniguruma for publishable numbers):**
   ```bash
   # one-time setup
   git submodule update --init --recursive
 
-  # run the user-facing end-to-end C-comparison suite (~minutes)
-  cargo bench --features ffi
-  # alternative on full benchmark binary name
-  cargo bench --features ffi --bench onig_bench
-
-  # quick smoke comparison (5-10 core kernels, reduced warmup/sample)
-  FERRONI_BENCH_SMOKE=1 cargo bench --features ffi
-
-  # full detail suite: scanner, text, compile, and regression kernels
-  FERRONI_BENCH_DETAILED=1 cargo bench --features ffi
-
-  # codspeed baseline (Rust-only CI tracking)
-  cargo bench --bench codspeed_bench
+  cargo bench --features ffi --bench battle_bench
   ```
 
-- **Practical local baseline strategy (often enough for contributors):**
-  Use the same Rust benchmark binary on two commits and compare offline with
-  Criterion's built-in baseline tracking:
+- **HTML report:**
   ```bash
-  cargo bench --bench codspeed_bench -- --baseline main
-  cargo bench --bench codspeed_bench -- --baseline feature-branch
+  open target/criterion/report/index.html
   ```
-  or store artifacts in a branch/release and compare reports manually.
 
 </details>
 

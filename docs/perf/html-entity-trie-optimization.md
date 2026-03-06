@@ -217,7 +217,7 @@ These CClass nodes appear in **separate top-level branches** of the entity trie 
 
 1. **Micro-benchmark the entity regex directly in ferroni**:
    ```rust
-   // In ferroni/benches/onig_bench.rs: add a benchmark that compiles the
+   // In ferroni/benches/codspeed_bench.rs: add a benchmark that compiles the
    // full entity regex and matches it against entity-heavy input
    let re = Regex::new(ENTITY_PATTERN).unwrap();
    b.iter(|| re.find("&pi; &mdash; &amp; &hellip; ..."));

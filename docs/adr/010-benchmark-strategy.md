@@ -10,11 +10,11 @@ Ferroni's performance claims need reproducible evidence. The question is what to
 
 ## Decision
 
-A two-tier benchmark architecture:
+A two-suite benchmark architecture:
 
-### Tier 1: README-facing benchmarks
+### Reference suite: `battle_bench`
 
-Real-world scenarios that produce the numbers we publish. Always Ferroni vs C Oniguruma at `-O3`.
+Real-world scenarios that produce the numbers we publish. Always Ferroni vs Oniguruma at `-O3`.
 
 | Category | What is measured |
 |----------|-----------------|
@@ -25,9 +25,9 @@ Real-world scenarios that produce the numbers we publish. Always Ferroni vs C On
 
 Key rule: **benchmark against complete, unmodified production grammars** -- no cherry-picked subsets. The Shiki grammars are committed as-is in `benches/grammars/`.
 
-### Tier 2: Regression tracking
+### Internal suite: `codspeed_bench`
 
-Per-feature micro-benchmarks tracked by [CodSpeed](https://codspeed.io/) in CI. These catch performance regressions before they reach `main`. Not published in the README -- they measure internal implementation details, not user-facing workloads.
+Ferroni-only micro-benchmarks tracked by [CodSpeed](https://codspeed.io/) in CI. These catch performance regressions before they reach `main`. They are intentionally internal-facing: useful for optimizing parser, executor, scanner, RegSet, and public API paths, but not meant for README marketing tables.
 
 ### Tooling
 
@@ -43,12 +43,13 @@ Both `release` and `bench` profiles use `lto = "thin"` to allow cross-crate inli
 
 - **Real grammars prevent overfitting.** Benchmarking against subsets risks optimizing for patterns that don't matter.
 - **C comparison keeps claims honest.** Every speedup number is relative to the same engine at `-O3`, not a strawman.
-- **Two tiers separate concerns.** Tier 1 numbers are stable and publishable; Tier 2 catches implementation-level regressions without cluttering the README.
+- **Two suites separate concerns.** `battle_bench` is small, stable, and publishable; `codspeed_bench` is free to optimize for regression coverage and engineering feedback.
 - **Compilation is part of the workload.** Syntax highlighters compile grammars at startup. Ignoring compile time gives an incomplete picture.
+- **README numbers should stay human-scale.** The README intentionally rounds values; exact raw numbers live in `docs/perf/benchmark-results.md`.
 
 ## Consequences
 
 - Shiki grammar JSON files are committed to the repository (`benches/grammars/`). These are updated when Shiki releases new grammar versions.
-- The `ffi` feature adds a C build step. Running `cargo bench --features ffi` requires a C compiler; `cargo bench` (without `ffi`) runs Ferroni-only benchmarks.
-- Tier 1 benchmark results are documented in `docs/perf/benchmark-results.md` and summarized in `README.md`.
-- New optimizations must include Tier 1 benchmark numbers in their commit or PR description (per ADR-008).
+- The `ffi` feature adds a C build step. Running `cargo bench --features ffi --bench battle_bench` requires a C compiler; `cargo bench` (without `ffi`) runs the Rust-only internal suite.
+- Reference benchmark results are documented in `docs/perf/benchmark-results.md` and summarized in `README.md`.
+- New optimizations should be validated against the internal suite first; user-facing claims should cite the reference suite.
