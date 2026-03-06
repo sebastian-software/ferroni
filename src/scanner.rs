@@ -821,7 +821,12 @@ impl Scanner {
             }
         }
 
-        let out = best_index.and_then(|idx| self.caches[idx].last_region.as_ref().map(|region| build_scanner_match(idx, region)));
+        let out = best_index.and_then(|idx| {
+            self.caches[idx]
+                .last_region
+                .as_ref()
+                .map(|region| build_scanner_match(idx, region))
+        });
         (out, run_stats)
     }
 }

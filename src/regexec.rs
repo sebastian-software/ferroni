@@ -551,9 +551,9 @@ pub struct OnigCalloutArgs {
 }
 
 impl OnigCalloutArgs {
-#[cfg_attr(coverage_nightly, coverage(off))]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn new(
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
         callout_in: OnigCalloutIn,
         name_id: i32,
         num: i32,
@@ -2699,10 +2699,9 @@ fn resolve_callout_arg(
         CalloutArg::Tag(tag) => {
             for (i, e) in ext_callout_list.iter().enumerate() {
                 if let Some(ref t) = e.tag {
-                    if t == tag
-                        && i < all_data.len() {
-                            return all_data[i][0];
-                        }
+                    if t == tag && i < all_data.len() {
+                        return all_data[i][0];
+                    }
                 }
             }
             0
@@ -4970,11 +4969,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 break;
             }
             // Time limit check (every CHECK_TIME_INTERVAL retries)
-            if time_limit_ms > 0 && (retry_in_match_counter % CHECK_TIME_INTERVAL) == 0
-                && msa.check_time_limit() {
-                    best_len = ONIGERR_TIME_LIMIT_OVER;
-                    break;
-                }
+            if time_limit_ms > 0
+                && (retry_in_match_counter % CHECK_TIME_INTERVAL) == 0
+                && msa.check_time_limit()
+            {
+                best_len = ONIGERR_TIME_LIMIT_OVER;
+                break;
+            }
 
             let pop_result = stack_pop(
                 &mut stack,
@@ -5048,12 +5049,12 @@ pub fn onig_match(
         None => MatchArg::new(reg, option, region, at),
     };
 
-    if opton_check_validity_of_string(msa.options)
-        && !reg.enc.is_valid_mbc_string(&str_data[..end]) {
-            let result = (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
-            CACHED_MSA.with(|c| *c.borrow_mut() = Some(msa));
-            return result;
-        }
+    if opton_check_validity_of_string(msa.options) && !reg.enc.is_valid_mbc_string(&str_data[..end])
+    {
+        let result = (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
+        CACHED_MSA.with(|c| *c.borrow_mut() = Some(msa));
+        return result;
+    }
 
     if let Some(ref mut r) = msa.region {
         r.resize(reg.num_mem + 1);
@@ -5122,10 +5123,10 @@ pub fn onig_match_with_param(
 ) -> (i32, Option<OnigRegion>) {
     let mut msa = MatchArg::from_param(reg, option, region, at, mp);
 
-    if opton_check_validity_of_string(msa.options)
-        && !reg.enc.is_valid_mbc_string(&str_data[..end]) {
-            return (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
-        }
+    if opton_check_validity_of_string(msa.options) && !reg.enc.is_valid_mbc_string(&str_data[..end])
+    {
+        return (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
+    }
 
     if let Some(ref mut r) = msa.region {
         r.resize(reg.num_mem + 1);
@@ -5444,13 +5445,12 @@ fn backward_search(
         // Validate sub_anchor
         if reg.sub_anchor != 0 {
             let mut retry = false;
-            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0
-                && p > 0 {
-                    let prev = onigenc_get_prev_char_head(reg.enc, str_data, 0, p);
-                    if !is_mbc_newline(reg.enc, str_data, prev, end) {
-                        retry = true;
-                    }
+            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0 && p > 0 {
+                let prev = onigenc_get_prev_char_head(reg.enc, str_data, 0, p);
+                if !is_mbc_newline(reg.enc, str_data, prev, end) {
+                    retry = true;
                 }
+            }
             if !retry && (reg.sub_anchor & ANCR_END_LINE) != 0 {
                 if p >= end {
                     // at end, check previous
@@ -5566,14 +5566,13 @@ fn forward_search(
         // Validate sub_anchor
         if reg.sub_anchor != 0 {
             let mut retry = false;
-            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0
-                && p > 0 {
-                    let prev = pprev.unwrap_or(0);
-                    let prev_pos = onigenc_get_prev_char_head(reg.enc, str_data, prev, p);
-                    if !is_mbc_newline(reg.enc, str_data, prev_pos, end) {
-                        retry = true;
-                    }
+            if (reg.sub_anchor & ANCR_BEGIN_LINE) != 0 && p > 0 {
+                let prev = pprev.unwrap_or(0);
+                let prev_pos = onigenc_get_prev_char_head(reg.enc, str_data, prev, p);
+                if !is_mbc_newline(reg.enc, str_data, prev_pos, end) {
+                    retry = true;
                 }
+            }
             if !retry && (reg.sub_anchor & ANCR_END_LINE) != 0 {
                 if p >= end {
                     // at end - OK for some cases
@@ -5802,10 +5801,9 @@ fn onig_search_inner_core(
     let mut best_start: i32 = ONIG_MISMATCH;
     let mut best_len: i32 = ONIG_MISMATCH;
 
-    if opton_check_validity_of_string(msa.options)
-        && !enc.is_valid_mbc_string(&str_data[..end]) {
-            return (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
-        }
+    if opton_check_validity_of_string(msa.options) && !enc.is_valid_mbc_string(&str_data[..end]) {
+        return (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
+    }
 
     // Resize region once before entering search loops (matches C behavior)
     if let Some(ref mut r) = msa.region {
@@ -6080,7 +6078,8 @@ fn onig_search_inner_core(
     if reg.optimize != OptimizeType::None {
         // Calculate search range for optimization
         let sch_range = if reg.dist_max != 0 {
-            if reg.dist_max == INFINITE_LEN || end.saturating_sub(cur_range) < reg.dist_max as usize {
+            if reg.dist_max == INFINITE_LEN || end.saturating_sub(cur_range) < reg.dist_max as usize
+            {
                 end
             } else {
                 cur_range + reg.dist_max as usize

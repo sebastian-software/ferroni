@@ -2767,12 +2767,7 @@ fn utf8_raw_bytes() {
 #[test]
 fn utf8_bracket_W() {
     // C line 913: [\W] matches $ in "う$" at byte 3
-    x2(
-        b"[\\W]",
-        ["う".as_bytes(), b"$"].concat().as_slice(),
-        3,
-        4,
-    );
+    x2(b"[\\W]", ["う".as_bytes(), b"$"].concat().as_slice(), 3, 4);
 }
 
 #[test]

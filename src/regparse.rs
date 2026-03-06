@@ -7401,11 +7401,11 @@ mod tests {
                 }
                 let cdr = list.cdr.as_ref().expect("expected cdr");
                 if let NodeInner::List(list2) = &cdr.inner {
-                        assert!(
-                            matches!(&list2.car.inner, NodeInner::CType(_)),
-                            "expected CType node for anychar, got {:?}",
-                            list2.car.node_type()
-                        );
+                    assert!(
+                        matches!(&list2.car.inner, NodeInner::CType(_)),
+                        "expected CType node for anychar, got {:?}",
+                        list2.car.node_type()
+                    );
                 }
             }
             _ => panic!("expected List node for concat, got {:?}", root.node_type()),

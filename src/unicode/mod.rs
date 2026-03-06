@@ -1197,10 +1197,9 @@ pub fn onigenc_wb_is_break_position(
     }
 
     // WB3c: ZWJ x {Extended_Pictographic}
-    if from == WbType::ZWJ
-        && onigenc_unicode_is_code_ctype(cto, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
-            return false;
-        }
+    if from == WbType::ZWJ && onigenc_unicode_is_code_ctype(cto, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
+        return false;
+    }
 
     // WB3d: WSegSpace x WSegSpace
     if from == WbType::WSegSpace && to == WbType::WSegSpace {
@@ -1247,28 +1246,27 @@ pub fn onigenc_wb_is_break_position(
     }
 
     // WB7: AHLetter (MidLetter | MidNumLetQ) x AHLetter
-    if (from == WbType::MidLetter || is_wb_midnumletq(from))
-        && is_wb_ahletter(to) {
-            let mut from2 = WbType::Any;
-            let mut pp = prev;
-            loop {
-                if pp <= start {
-                    break;
-                }
-                pp = enc.left_adjust_char_head(start, pp - 1, str_data);
-                if pp < start {
-                    break;
-                }
-                let cf2 = enc.mbc_to_code(&str_data[pp..], end);
-                from2 = wb_get_type(cf2);
-                if !is_wb_ignore_tail(from2) {
-                    break;
-                }
+    if (from == WbType::MidLetter || is_wb_midnumletq(from)) && is_wb_ahletter(to) {
+        let mut from2 = WbType::Any;
+        let mut pp = prev;
+        loop {
+            if pp <= start {
+                break;
             }
-            if is_wb_ahletter(from2) {
-                return false;
+            pp = enc.left_adjust_char_head(start, pp - 1, str_data);
+            if pp < start {
+                break;
+            }
+            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            from2 = wb_get_type(cf2);
+            if !is_wb_ignore_tail(from2) {
+                break;
             }
         }
+        if is_wb_ahletter(from2) {
+            return false;
+        }
+    }
 
     if from == WbType::HebrewLetter {
         // WB7a: Hebrew_Letter x Single_Quote
@@ -1287,28 +1285,27 @@ pub fn onigenc_wb_is_break_position(
     }
 
     // WB7c: Hebrew_Letter Double_Quote x Hebrew_Letter
-    if from == WbType::DoubleQuote
-        && to == WbType::HebrewLetter {
-            let mut from2 = WbType::Any;
-            let mut pp = prev;
-            loop {
-                if pp <= start {
-                    break;
-                }
-                pp = enc.left_adjust_char_head(start, pp - 1, str_data);
-                if pp < start {
-                    break;
-                }
-                let cf2 = enc.mbc_to_code(&str_data[pp..], end);
-                from2 = wb_get_type(cf2);
-                if !is_wb_ignore_tail(from2) {
-                    break;
-                }
+    if from == WbType::DoubleQuote && to == WbType::HebrewLetter {
+        let mut from2 = WbType::Any;
+        let mut pp = prev;
+        loop {
+            if pp <= start {
+                break;
             }
-            if from2 == WbType::HebrewLetter {
-                return false;
+            pp = enc.left_adjust_char_head(start, pp - 1, str_data);
+            if pp < start {
+                break;
+            }
+            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            from2 = wb_get_type(cf2);
+            if !is_wb_ignore_tail(from2) {
+                break;
             }
         }
+        if from2 == WbType::HebrewLetter {
+            return false;
+        }
+    }
 
     if to == WbType::Numeric {
         // WB8: Numeric x Numeric
@@ -1371,15 +1368,16 @@ pub fn onigenc_wb_is_break_position(
             || from == WbType::Numeric
             || from == WbType::Katakana
             || from == WbType::ExtendNumLet)
-        {
-            return false;
-        }
+    {
+        return false;
+    }
 
     // WB13b: ExtendNumLet x (AHLetter | Numeric | Katakana)
     if from == WbType::ExtendNumLet
-        && (is_wb_ahletter(to) || to == WbType::Numeric || to == WbType::Katakana) {
-            return false;
-        }
+        && (is_wb_ahletter(to) || to == WbType::Numeric || to == WbType::Katakana)
+    {
+        return false;
+    }
 
     // WB15/WB16: RI x RI (count consecutive RI backward)
     if from == WbType::RegionalIndicator && to == WbType::RegionalIndicator {

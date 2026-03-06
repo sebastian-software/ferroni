@@ -745,14 +745,7 @@ pub fn onig_regset_search_with_param(
         for (i, entry) in set.entries.iter_mut().take(n).enumerate() {
             let region = entry.region.take();
             let (r, returned_region) = onig_search_with_param(
-                &entry.reg,
-                str_data,
-                end,
-                start,
-                ep,
-                region,
-                option,
-                &mps[i],
+                &entry.reg, str_data, end, start, ep, region, option, &mps[i],
             );
             entry.region = returned_region;
 

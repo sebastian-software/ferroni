@@ -151,7 +151,10 @@ fn bitset_is_empty(bs: &BitSet) -> bool {
 
 /// Check if a node is a "strict real" node (actually matches characters).
 fn is_strict_real_node(node: &Node) -> bool {
-    matches!(node.inner, NodeInner::String(_) | NodeInner::CClass(_) | NodeInner::CType(_))
+    matches!(
+        node.inner,
+        NodeInner::String(_) | NodeInner::CClass(_) | NodeInner::CType(_)
+    )
 }
 
 // ============================================================================
@@ -177,7 +180,11 @@ fn get_tree_head_literal<'a>(node: &'a Node, exact: bool, _reg: &RegexType) -> O
         }
 
         NodeInner::CClass(_) => {
-            if !exact { Some(node) } else { None }
+            if !exact {
+                Some(node)
+            } else {
+                None
+            }
         }
 
         NodeInner::List(cons) => get_tree_head_literal(&cons.car, exact, _reg),
@@ -2727,9 +2734,7 @@ fn compile_length_gimmick_node(gn: &GimmickNode) -> i32 {
         GimmickType::Fail => SIZE_INC,
         GimmickType::Save => OPSIZE_SAVE_VAL,
         GimmickType::UpdateVar => OPSIZE_UPDATE_VAR,
-        GimmickType::Callout => {
-            SIZE_INC
-        }
+        GimmickType::Callout => SIZE_INC,
     }
 }
 
@@ -3441,14 +3446,14 @@ fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, state: i32) ->
             &mut items,
         );
 
-            if n > 0 {
+        if n > 0 {
             // Flush pending plain string
             if !pending.is_empty() {
                 nodes.push(node_new_str(&pending));
                 pending.clear();
             }
 
-                if in_look_behind {
+            if in_look_behind {
                 // In lookbehind: only allow same-byte-length single-codepoint folds
                 let q = pos + one_len;
                 // If first item's byte_len differs from one_len, re-query with shorter end
@@ -3617,7 +3622,7 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
                     Some(next) => cur = next,
                     None => break,
                 }
-                    }
+            }
             if variable {
                 CharLenResult::Variable(min_sum, max_sum)
             } else {
@@ -4787,7 +4792,8 @@ fn make_named_capture_number_map(
             let cur = node as *mut Node;
             unsafe {
                 let mut p = cur;
-                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) = (*p).inner {
+                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) = (*p).inner
+                {
                     let car_ptr = &mut *cons.car as *mut Node;
                     let cdr_opt = cons.cdr.as_mut().map(|c| &mut **c as *mut Node);
                     let r = make_named_capture_number_map(&mut *car_ptr, map, counter);
@@ -4957,7 +4963,9 @@ fn renumber_backref_traverse(node: &mut Node, map: &[GroupNumMap]) -> i32 {
             let cur = node as *mut Node;
             unsafe {
                 let mut p = cur;
-                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) = &mut (*p).inner {
+                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
+                    &mut (*p).inner
+                {
                     let car_ptr = &mut *cons.car as *mut Node;
                     let cdr_opt = cons.cdr.as_mut().map(|c| &mut **c as *mut Node);
                     let r = renumber_backref_traverse(&mut *car_ptr, map);
@@ -5393,25 +5401,27 @@ fn infinite_recursive_call_check_trav(node: &mut Node, env: &ParseEnv) -> i32 {
                 BagType::Option
             };
             if bag_type == BagType::Memory
-                && node.has_status(ND_ST_RECURSION) && node.has_status(ND_ST_CALLED) {
-                    node.status_add(ND_ST_MARK1);
-                    let ret = if let NodeInner::Bag(ref mut bn) = node.inner {
-                        if let Some(ref mut body) = bn.body {
-                            infinite_recursive_call_check(body, env, 1)
-                        } else {
-                            0
-                        }
+                && node.has_status(ND_ST_RECURSION)
+                && node.has_status(ND_ST_CALLED)
+            {
+                node.status_add(ND_ST_MARK1);
+                let ret = if let NodeInner::Bag(ref mut bn) = node.inner {
+                    if let Some(ref mut body) = bn.body {
+                        infinite_recursive_call_check(body, env, 1)
                     } else {
                         0
-                    };
-                    if ret < 0 {
-                        return ret;
                     }
-                    if (ret & (RECURSION_MUST | RECURSION_INFINITE)) != 0 {
-                        return ONIGERR_NEVER_ENDING_RECURSION;
-                    }
-                    node.status_remove(ND_ST_MARK1);
+                } else {
+                    0
+                };
+                if ret < 0 {
+                    return ret;
                 }
+                if (ret & (RECURSION_MUST | RECURSION_INFINITE)) != 0 {
+                    return ONIGERR_NEVER_ENDING_RECURSION;
+                }
+                node.status_remove(ND_ST_MARK1);
+            }
             if bag_type == BagType::IfElse {
                 unsafe {
                     let node_ptr = node as *mut Node;
@@ -5988,7 +5998,9 @@ fn recurse_into_children(
         NodeInner::List(_) | NodeInner::Alt(_) => {
             let mut cur: *mut Node = node;
             unsafe {
-                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) = (*cur).inner {
+                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
+                    (*cur).inner
+                {
                     let car = &mut *cons.car as *mut Node;
                     let cdr = &mut cons.cdr;
                     detect_literal_alternations_inner(&mut *car, reg, in_anchor, backrefed_mem);
@@ -6145,14 +6157,16 @@ fn detect_literal_alternations_inner(
     // extraction BEFORE recursing into children.  This prevents inner Alts
     // from being trie-optimized first (which makes them opaque to outer
     // extraction).
-    if matches!(node.inner, NodeInner::Alt(_)) && !in_anchor
-        && try_trie_optimize_alt(node, reg, backrefed_mem) {
-            // Successfully trie-optimized this Alt.  Recurse into any
-            // remaining non-literal branches (for partial optimization,
-            // the Alt was restructured: trie_node | non_lit_0 | ...).
-            recurse_into_children(node, reg, in_anchor, backrefed_mem);
-            return;
-        }
+    if matches!(node.inner, NodeInner::Alt(_))
+        && !in_anchor
+        && try_trie_optimize_alt(node, reg, backrefed_mem)
+    {
+        // Successfully trie-optimized this Alt.  Recurse into any
+        // remaining non-literal branches (for partial optimization,
+        // the Alt was restructured: trie_node | non_lit_0 | ...).
+        recurse_into_children(node, reg, in_anchor, backrefed_mem);
+        return;
+    }
 
     // Recurse into children, then retry flat-check on this Alt.
     recurse_into_children(node, reg, in_anchor, backrefed_mem);
@@ -6727,7 +6741,9 @@ fn mark_empty_repeat_node(node: &mut Node, env: &mut ParseEnv) {
         NodeInner::List(_) | NodeInner::Alt(_) => {
             let mut cur: *mut Node = node;
             unsafe {
-                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) = (*cur).inner {
+                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
+                    (*cur).inner
+                {
                     mark_empty_repeat_node(cons.car.as_mut(), env);
                     match cons.cdr {
                         Some(ref mut next) => cur = &mut **next,
@@ -6861,7 +6877,9 @@ fn resolve_empty_status_backrefs(
         NodeInner::List(_) | NodeInner::Alt(_) => {
             let mut cur: *mut Node = node;
             unsafe {
-                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) = (*cur).inner {
+                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
+                    (*cur).inner
+                {
                     resolve_empty_status_backrefs(cons.car.as_mut(), enclosing_quants, env);
                     match cons.cdr {
                         Some(ref mut next) => cur = &mut **next,
@@ -6909,10 +6927,10 @@ fn setup_empty_status_mem(root: &mut Node, env: &mut ParseEnv) {
 fn flatten_list(mut node: Node) -> Vec<Node> {
     let mut items = Vec::new();
     loop {
-            match node.inner {
-                NodeInner::List(cons) => {
-                    items.push(*cons.car);
-                    match cons.cdr {
+        match node.inner {
+            NodeInner::List(cons) => {
+                items.push(*cons.car);
+                match cons.cdr {
                     Some(next) => node = *next,
                     None => break,
                 }
@@ -7513,10 +7531,9 @@ fn concat_left_node_opt_info(enc: OnigEncoding, to: &mut OptNode, add: &mut OptN
         add.sb.anc = tanc2;
     }
 
-    if add.map.value > 0 && to.len.max == 0
-        && add.map.mm.max == 0 {
-            add.map.anc.left |= to.anc.left;
-        }
+    if add.map.value > 0 && to.len.max == 0 && add.map.mm.max == 0 {
+        add.map.anc.left |= to.anc.left;
+    }
 
     let sb_reach = to.sb.reach_end;
     let sm_reach = to.sm.reach_end;
@@ -7943,7 +7960,11 @@ fn optimize_nodes(
                             add_opt_anc_info(&mut opt.anc, ANCR_ANYCHAR_INF);
                         }
                     }
-                    if xo.len.max > 0 { INFINITE_LEN } else { 0 }
+                    if xo.len.max > 0 {
+                        INFINITE_LEN
+                    } else {
+                        0
+                    }
                 } else {
                     distance_multiply(xo.len.max, qn.upper)
                 };
@@ -7984,9 +8005,10 @@ fn optimize_nodes(
                         return r;
                     }
                     if is_set_opt_anc_info(&opt.anc, ANCR_ANYCHAR_INF_MASK)
-                        && mem_status_at(scan_env.backrefed_mem, bn.regnum() as usize) {
-                            remove_opt_anc_info(&mut opt.anc, ANCR_ANYCHAR_INF_MASK);
-                        }
+                        && mem_status_at(scan_env.backrefed_mem, bn.regnum() as usize)
+                    {
+                        remove_opt_anc_info(&mut opt.anc, ANCR_ANYCHAR_INF_MASK);
+                    }
                 }
             }
             BagType::IfElse => {
@@ -8158,13 +8180,7 @@ fn set_sub_anchor(reg: &mut RegexType, anc: &OptAnc) {
 fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &ParseEnv) -> i32 {
     let mut env_mm = MinMaxLen::new();
     let mut opt = OptNode::new();
-    let r = optimize_nodes(
-        root,
-        &mut opt,
-        reg.enc,
-        &mut env_mm,
-        scan_env,
-    );
+    let r = optimize_nodes(root, &mut opt, reg.enc, &mut env_mm, scan_env);
     if r != 0 {
         return r;
     }
@@ -9193,7 +9209,10 @@ mod tests {
             .iter()
             .filter(|op| op.opcode == OpCode::Push)
             .count();
-        assert!(!reg.literal_tries.is_empty(), "entity pattern should produce at least 1 trie");
+        assert!(
+            !reg.literal_tries.is_empty(),
+            "entity pattern should produce at least 1 trie"
+        );
         // With top-down nested extraction, the entire pure-literal entity
         // pattern should collapse to a single trie with no Push ops.
         assert_eq!(push_count, 0, "expected 0 Push ops but got {}", push_count);
