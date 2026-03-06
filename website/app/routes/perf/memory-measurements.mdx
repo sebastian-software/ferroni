@@ -1,0 +1,62 @@
+---
+title: "Memory Measurement Method"
+---
+
+
+Ferroni keeps memory comparison separate from the timing-oriented
+`battle_bench` suite.
+
+## Current scope
+
+- Full committed TypeScript TextMate grammar from `benches/grammars/typescript.json`
+- Two isolated processes:
+  - `battle_mem_rust`
+  - `battle_mem_onig`
+- Two phases per engine:
+  - `compile`: build the full scanner from the committed TypeScript grammar
+  - `scan`: run one scanner search from the start of each line in a large deterministic TypeScript source
+
+Exact external input revisions live in
+[`benches/battle_inputs.toml`](../../benches/battle_inputs.toml).
+
+## Why separate harnesses
+
+Criterion is good for throughput and latency, but poor for memory attribution.
+For memory comparison we want one engine per process and explicit phase
+boundaries, otherwise Rust and Oniguruma allocations get mixed in the same RSS
+sample.
+
+## What is reported
+
+Each harness prints one `RESULT` line per phase:
+
+- `compile`: peak RSS through scanner compilation
+- `scan`: peak RSS through compile + first-match scanning across the whole file
+
+The peak comes from `getrusage(RUSAGE_SELF).ru_maxrss` inside the process.
+On macOS this is reported in bytes; on Linux the harness normalizes the kernel
+value from KiB to bytes.
+
+## Running it
+
+```bash
+./scripts/run-battle-memory.sh
+```
+
+Run this on a quiet machine after a fresh restart if you want numbers suitable
+for publication.
+
+## Latest local sample
+
+Measured on 2026-03-06 on `arm64` macOS `26.3` with
+`rustc 1.95.0-nightly (842bd5be2 2026-01-29)`.
+
+| Engine | Phase | Peak RSS |
+|--------|-------|---------:|
+| Ferroni | Compile full TS grammar | 15,155,200 B |
+| Ferroni | Compile + line scan | 15,237,120 B |
+| Oniguruma | Compile full TS grammar | 14,761,984 B |
+| Oniguruma | Compile + line scan | 14,860,288 B |
+
+Rounded for README communication, both engines are effectively in the same
+memory range at about 15 MB peak RSS on this workload.

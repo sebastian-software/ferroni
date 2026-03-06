@@ -1,0 +1,76 @@
+---
+title: "Rust-Only Optimizations and Performance Philosophy"
+---
+
+
+## Status
+
+Accepted (amends ADR-001)
+
+## Context
+
+ADR-001 states: *"New features or optimizations should first be contributed upstream to C Oniguruma, then ported — not invented in the Rust port."*
+
+This policy served the project well during the initial port: it ensured correctness and prevented accidental divergence. However, Ferroni's primary workload — TextMate grammar tokenization for Shiki — creates performance requirements that the upstream C engine does not face. C Oniguruma is used via WASM in the JavaScript ecosystem (vscode-oniguruma), where compilation and matching overhead is dominated by the WASM boundary, not by regex engine internals.
+
+Ferroni, running natively, exposes regex engine internals as the bottleneck. Specific patterns in real-world TextMate grammars (CSS property lists with 200+ alternations, HTML entity tries with 1,700+ nested branches) require optimizations that do not exist in C Oniguruma and would not benefit the upstream project.
+
+## Decision
+
+Allow **additive, Rust-only optimizations** that do not modify the C-ported core engine, subject to the following criteria:
+
+### Acceptance criteria
+
+An optimization may be implemented in Ferroni without upstream contribution when **all** of the following hold:
+
+1. **Additive**: The optimization is a new pass or data structure that layers on top of the C-ported code. It does not modify existing C-ported control flow, data structures, or function signatures.
+
+2. **Guarded**: The optimization activates only when specific conditions are met (e.g., alternation has ≥8 pure literal branches). Patterns that do not meet the conditions follow the original C code path unchanged.
+
+3. **Measurable**: The optimization produces a demonstrated improvement on a real-world workload (benchmark numbers required in the commit or PR).
+
+4. **Non-regressive**: The full C-parity test suite (1,695 tests) passes without modification. No existing pattern produces different match results.
+
+5. **Bounded complexity**: The optimization has clear worst-case bounds (e.g., `MAX_NESTED_TRIE_PATHS = 8192`) and does not introduce unbounded memory or time growth.
+
+### Current Rust-only optimizations
+
+#### Literal trie (`src/literal_trie.rs`, `regcomp.rs`)
+
+Detects alternations consisting entirely of literal strings (flat: `word1|word2|...` or nested: `a(b|c)d|e(f|g)h`) and replaces them at compile time with a compact trie. The VM executes a single `OP_ANYCHAR_STAR`-like trie walk instead of backtracking through N branches.
+
+- **Trigger**: Alternation with ≥8 branches where all branches resolve to literal byte sequences
+- **Data structure**: `LiteralTrie` — sorted child arrays with binary search, longest-match semantics
+- **Impact**: CSS tokenization 35% faster (3.76x → 2.46x vs JS); CSS `codeToHtml` reaches JS parity (1.65x → 1.04x)
+- **Bounds**: `MAX_NESTED_TRIE_PATHS = 8192` caps path extraction; CClass expansion limited to ≤16 single-byte members per class
+- **Detailed analysis**: [`docs/perf/html-entity-trie-optimization.md`](../perf/html-entity-trie-optimization.md)
+
+#### RegSet first-byte dispatch and skip needle (`src/regset.rs`)
+
+Pre-computes a 256-entry lookup table mapping each possible input byte to the subset of regexes that could match starting with that byte. Combined with a SIMD skip needle (via `memchr`) to advance past positions where no regex can match.
+
+- **Trigger**: Always active for RegSet (Scanner) workloads
+- **Data structure**: `first_byte_candidates: Box<[Vec<u16>; 256]>`, `SkipNeedle` (1-3 byte memchr)
+- **Impact**: 44% reduction in RegSet position-lead search overhead
+- **Extends**: ADR-007 (SIMD via memchr)
+
+#### ASCII fast paths in VM execution (`src/regexec.rs`)
+
+Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` traversal) for ASCII bytes, avoiding full UTF-8 decode on the hot path.
+
+- **Trigger**: Input byte < 0x80
+- **Impact**: Low single-digit percentage gains; primarily reduces constant factors in tight loops
+- **Bounds**: Single `if` guard per call site; no additional memory
+
+## Rationale
+
+- **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.
+- **The core engine remains 1:1 with C.** All optimizations are additive passes that transform the AST before compilation or add pre-filter data structures around the existing VM. The C-ported `regparse.rs`, `regcomp.rs` (core), `regexec.rs` (core), and `regenc.rs` remain structurally faithful.
+- **ADR-001's goal is preserved.** The intent of the upstream-first rule was to prevent accidental divergence that makes future C updates hard to apply. Additive optimizations do not interfere with C-to-Rust diffing — they are clearly separated new code that can be toggled or removed without affecting the ported baseline.
+
+## Consequences
+
+- Ferroni's compiled bytecode may differ from C Oniguruma for patterns that trigger the trie optimizer. Match results remain identical, but internal representations diverge.
+- Future C Oniguruma updates can still be applied by diffing against the C-ported baseline. Optimization passes are clearly separated in the compilation pipeline.
+- Each new optimization must document its trigger conditions, bounds, and benchmark results — either in this ADR (for significant changes) or in `docs/perf/` (for detailed analysis).
+- Performance documentation in `docs/perf/` serves as the detailed log; this ADR serves as the policy and index.

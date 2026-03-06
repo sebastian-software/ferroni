@@ -1,0 +1,44 @@
+---
+title: "CSS Performance Optimization Log"
+---
+
+
+This log tracks attempted CSS-path optimizations and whether they were kept.
+Goal is to avoid re-trying low-value ideas without new evidence.
+
+## 2026-03-02 - RegSet context quickcheck (rejected)
+- Hypothesis: Add branch-aware/context-aware quickchecks in `regset` to reduce VM calls for CSS patterns (especially `@charset`-style alternations with look-behind).
+- Implementation sketch:
+  - first-byte mask inference from opcode graph
+  - branch-root extraction from push-chain
+  - start-only + previous-literal context rules
+  - pre-`match_at` reject in `regset_search_body_position_lead`
+- Outcome: no meaningful CSS hotspot gain (typically noise / low single-digit percent, unstable across reruns).
+- Cost: large complexity increase in hot-path code and maintenance burden.
+- Decision: removed from `main`.
+- Revisit only if: we have new profiling proof that failed `match_at` calls are dominated by context-guardable branches and we can show >=10% stable win.
+
+## 2026-03-02 - RegSet `exact_prefix2` prefilter (rejected)
+- Hypothesis: Add a second-byte prefilter for case-sensitive `exact` prefixes before calling `match_at`.
+- Implementation sketch:
+  - store optional 2-byte exact prefix per regset entry
+  - reject candidates early if `str[s+1]` does not match
+- Outcome: no stable gain in CSS tokenize hotspots; improvements/regressions were within run-to-run noise.
+- Cost: extra branch/state in regset hot path for little value.
+- Decision: removed from `main`.
+- Revisit only if: candidate fanout profile shows many false positives where second-byte filtering is dominant.
+
+## 2026-03-02 - ASCII fastpaths in `regexec` (kept)
+- Hypothesis: Reduce per-character overhead in VM inner loop for ASCII-heavy CSS input.
+- Implementation:
+  - `regexec::enclen`: ASCII-compatible + ASCII-byte fast return `1`
+  - `regexec::prev_char_head`: ASCII-compatible + ASCII-byte fast return `s - 1`
+  - `OpCode::WordStar`: ASCII/single-byte fast traversal and `AltLazy.ascii=true` where safe
+- Outcome: small but repeatable improvement in CSS tokenizer benchmarks (roughly low single-digit percent).
+- Decision: kept.
+
+## Measurement notes
+- Use direct benchmark binary invocation to avoid mixing with compile-time warnings and unrelated runs:
+  - `target/release/deps/onig_bench-... --bench scanner/css_tm_15_patterns_lines_tokenize_no_id_rust`
+  - `target/release/deps/onig_bench-... --bench scanner/css_tm_15_patterns_lines_tokenize_with_id_rust`
+- Always compare against a clean baseline worktree (`52ba6d9` in this round) and rerun at least twice to avoid thermal/noise misreads.
