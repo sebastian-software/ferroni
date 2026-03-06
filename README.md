@@ -255,6 +255,23 @@ reference points:
 | Named capture | More realistic structured pattern | `TBD` | `TBD` | Useful to show Ferroni is still competitive on practical patterns |
 | Lookbehind | Feature-heavy compile path | `TBD` | `TBD` | The place where Oniguruma may still keep a lead |
 
+### Memory footprint
+
+Speed is only half the story. We also measure peak RSS in isolated Rust and
+Oniguruma processes on a large TypeScript scanner workload: compile the full
+TypeScript grammar, then scan a large TypeScript file line by line. Exact
+method and raw numbers live in
+[docs/perf/memory-measurements.md](docs/perf/memory-measurements.md).
+
+| Scenario | Why it matters | Ferroni | Oniguruma | What the result should communicate |
+|---------|----------------|--------:|------------:|-----------------------------------|
+| Full TS grammar compile | Memory cost before any scanning starts | ~15 MB | ~14.5 MB | Same ballpark; Rust is not paying a large memory tax |
+| Compile + scan large TS file | Practical peak RSS for a realistic scanner pass | ~15 MB | ~14.5 MB | Ferroni stays memory-competitive while being much faster on scanner workloads |
+
+Oniguruma is slightly lower in the current local sample, but the important
+point is that both engines land in the same range rather than a different
+memory class.
+
 ### Where Ferroni is slower
 
 - **vs `regex` crate** -- if your pattern fits `regex`, its DFA engine is still
@@ -285,6 +302,7 @@ drop into the README:
 - Text scanning: literal 50 KB, no-match 50 KB, no-match 10 KB, field extract 50 KB, timestamp 50 KB, RegSet position-lead
 - Pattern matching: literal exact, quantifier greedy, lookaround combined, Unicode Greek, backref simple, alternation 10 branches, named capture date
 - Compilation: literal, named capture, lookbehind
+- Memory: TypeScript grammar compile peak RSS, compile + scan peak RSS
 
 <details>
 <summary><strong>Running benchmarks</strong></summary>
@@ -310,6 +328,11 @@ Ferroni keeps benchmark suites separated by purpose:
   ```
   Exact external input pins for this suite live in
   [`benches/battle_inputs.toml`](benches/battle_inputs.toml).
+
+- **Memory comparison (process-isolated peak RSS on the large TypeScript scanner workload):**
+  ```bash
+  ./scripts/run-battle-memory.sh
+  ```
 
 - **HTML report:**
   ```bash

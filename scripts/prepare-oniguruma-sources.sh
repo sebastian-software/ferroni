@@ -58,6 +58,12 @@ if [[ -f "${STAMP_FILE}" ]] && [[ "$(cat "${STAMP_FILE}")" == "${ONIGURUMA_COMMI
   exit 0
 fi
 
+if [[ -d "${TARGET_DIR}/src" ]]; then
+  echo "Using existing local Oniguruma sources at ${TARGET_DIR}"
+  echo "No pinned stamp file found; remove the directory to force a fresh pinned download."
+  exit 0
+fi
+
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ferroni-oniguruma.XXXXXX")"
 ARCHIVE_PATH="${TMP_DIR}/oniguruma.tar.gz"
 EXTRACT_DIR="${TMP_DIR}/extract"

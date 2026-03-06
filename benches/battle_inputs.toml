@@ -35,3 +35,10 @@ sha256 = "eeed15521cc9e32ef9a92fa36dbf3674a6c13ba2fc20c666ef8c257e355246ec"
 id = "rust"
 file = "benches/grammars/rust.json"
 sha256 = "41ad4b92eff153b69b65d03216d2f787861d3a23a0b4ab7a3ee8d6d6c016e34f"
+
+[memory_workload]
+scenario = "typescript_scanner_large"
+kind = "deterministic synthetic TypeScript source"
+repeat_blocks = 16000
+driver = "line-by-line first-match scanning with full committed TypeScript grammar"
+template_revision = 3

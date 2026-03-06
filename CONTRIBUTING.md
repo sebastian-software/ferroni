@@ -42,6 +42,13 @@ cargo bench --features ffi --bench battle_bench
 Exact external input revisions for the publishable battle suite are pinned in
 [`benches/battle_inputs.toml`](benches/battle_inputs.toml).
 
+For process-isolated memory comparison on the large TypeScript scanner
+workload, use:
+
+```bash
+./scripts/run-battle-memory.sh
+```
+
 ## Regenerating Unicode Tables
 
 The checked-in Unicode tables are generated from upstream Oniguruma sources.
