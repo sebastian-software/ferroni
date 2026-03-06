@@ -1,6 +1,6 @@
 <p align="center">
   <strong>Ferroni</strong><br>
-  Pure-Rust Oniguruma regex engine. Full feature set, no C toolchain, drop-in compatible.<br>
+  Pure-Rust Oniguruma-compatible engine. Faster in the hot path, same feature class, no C toolchain.<br>
   Includes a multi-pattern scanner for TextMate grammar tokenization.
 </p>
 
@@ -24,12 +24,17 @@ libraries don't: named captures with multiple syntaxes, look-behind of
 variable length, conditional patterns, absent expressions, 886 Unicode
 properties, subexpression calls, and 12 syntax modes from Perl to POSIX.
 
-Ferroni is a line-by-line Rust port of this engine — same structure, same
-opcodes, same optimization passes — with SIMD-vectorized search via
-[`memchr`](https://crates.io/crates/memchr) layered on top. The result:
-**often dramatically faster than C** on scanner first-match workloads, while
-an idiomatic Rust API (`Regex::new()`, typed errors, `Match`/`Captures`)
-keeps the ergonomics clean.
+Ferroni started with a practical goal: build a fast Rust core for
+syntax-highlighting and other scanner-heavy workloads without falling back to
+C. That requirement led straight to Oniguruma compatibility, because the
+surrounding ecosystems depend on features most regex engines skip.
+
+So Ferroni does not wrap Oniguruma. It ports the engine into Rust, keeps the
+same structure and optimization pipeline, and then tunes the runtime path
+hard with tools like [`memchr`](https://crates.io/crates/memchr). In the
+current reference suite, Ferroni is ahead of Oniguruma across the measured
+runtime cases while staying in the same peak-memory class on the large
+TypeScript scanner workload.
 
 For syntax highlighting, Ferroni also includes a multi-pattern
 [Scanner API](#scanner-api) compatible with
@@ -39,31 +44,31 @@ highlighters.
 
 ## Why Ferroni?
 
-**Full Oniguruma, pure Rust.** Named captures, variable-length look-behind,
-conditionals, absent expressions, Unicode properties, subexpression calls —
-everything the C engine supports, without linking against C. If your pattern
-works in Oniguruma, it works in Ferroni. Every opcode and optimization pass
-is ported 1:1 and verified by [2,090 tests](#test-parity) -- including
-every upstream UTF-8 test from both C Oniguruma and vscode-oniguruma.
+**Built for runtime performance.** Ferroni was driven by the need for a fast
+Rust core for syntax highlighting, not by a generic "rewrite C in Rust"
+exercise. In the current `battle_bench` reference suite it is ahead of
+Oniguruma across all measured runtime cases: scanner first-match, full-line
+tokenization, practical text scanning, and representative feature-heavy
+matching. On the measured large TypeScript scanner workload, peak RSS stays
+in the same ~15 MB class as Oniguruma.
 
-**No more CVEs from C.** C Oniguruma has a track record of memory safety
-vulnerabilities --
-[CVE-2019-13224](https://nvd.nist.gov/vuln/detail/CVE-2019-13224) (CVSS 9.8),
-[CVE-2019-19204](https://nvd.nist.gov/vuln/detail/CVE-2019-19204),
-[CVE-2019-19246](https://nvd.nist.gov/vuln/detail/CVE-2019-19246),
-[CVE-2019-19012](https://nvd.nist.gov/vuln/detail/CVE-2019-19012),
-[CVE-2019-13225](https://nvd.nist.gov/vuln/detail/CVE-2019-13225) --
-affecting Ruby, PHP, and anything linking against it. Ferroni eliminates
-buffer overflows, use-after-free, and NULL dereferences structurally through
-Rust's type system. 0.4% unsafe code, all documented in
-[ADR-002](docs/adr/002-unsafe-code-policy.md).
+**Full Oniguruma compatibility.** Named captures, variable-length
+look-behind, conditionals, absent expressions, Unicode properties,
+subexpression calls — everything the C engine supports, without linking
+against C. If your pattern works in Oniguruma, it works in Ferroni. Every
+opcode and optimization pass is ported 1:1 and verified by
+[2,090 tests](#test-parity) -- including every upstream UTF-8 test from both
+Oniguruma and vscode-oniguruma.
 
-**No C toolchain required.** Pure `cargo build`. Cross-compiles to
-`wasm32-unknown-unknown`. Ship it as a Node.js native module via
-[napi-rs](https://napi.rs/) without `node-gyp` or a C compiler on the
-user's machine.
+**Rust improves the operational story.** Pure `cargo build`.
+Cross-compiles to `wasm32-unknown-unknown`. Easier to package in Rust-native
+stacks and downstream bindings, including N-API modules, without `node-gyp`
+or a local C compiler.
 Only enabling the optional `ffi` feature requires a local Oniguruma source
-snapshot for reference benchmarks.
+snapshot for reference benchmarks. Rust also removes whole classes of C
+memory bugs structurally; C Oniguruma has a long history of memory-safety
+CVEs, while Ferroni keeps `unsafe` at 0.4%, all documented in
+[ADR-002](docs/adr/002-unsafe-code-policy.md).
 
 **Built-in multi-pattern scanner.** For syntax highlighting with TextMate
 grammars, Ferroni includes a
@@ -182,17 +187,14 @@ automatic UTF-16 position mapping. API-compatible with
 
 ## Performance
 
-This section is prepared for a fresh rerun of `battle_bench` on a quiet
-machine. The README focuses on a few representative, human-readable
-comparisons. Exact raw tables live in
+This section is based on a fresh `battle_bench` run on a quiet machine. The
+README keeps the numbers rounded and human-readable. Exact raw tables and
+measurement context live in
 [docs/perf/benchmark-results.md](docs/perf/benchmark-results.md).
 
-What we want the README to answer:
-
-- How does Ferroni behave on real syntax-highlighting workloads?
-- How fast is it on practical search and log-scanning tasks?
-- Where is it clearly ahead of Oniguruma?
-- Where is it still slower?
+The headline is simple: once compiled, Ferroni is ahead of Oniguruma across
+the measured runtime paths in the current reference suite. The detail below
+shows where that lead comes from, and where compile time still needs work.
 
 ### Syntax highlighting
 
@@ -202,28 +204,28 @@ token by token. We benchmark against complete, unmodified Shiki grammars
 for TypeScript (279 patterns), CSS (117 patterns), and Rust (81 patterns).
 No cherry-picked subsets.
 
-| Scenario | Why it matters | Ferroni | Oniguruma | What the result should communicate |
-|----------|----------------|--------:|------------:|-----------------------------------|
-| TypeScript grammar compile | Startup cost for a full Shiki grammar | `TBD` | `TBD` | Whether Ferroni starts faster or slower on a realistic grammar |
-| TypeScript first match | Time to find the next token on a real grammar | `TBD` | `TBD` | Ferroni should show a dramatic first-token latency win |
-| TypeScript tokenize full line | End-to-end line tokenization cost | `TBD` | `TBD` | Ferroni should show a large practical scanner advantage |
-| Rust grammar compile | Compile cost on a smaller, real grammar | `TBD` | `TBD` | This is the place where Oniguruma may still look better |
-| Rust first match | First-token latency on another production grammar | `TBD` | `TBD` | Ferroni should still be clearly ahead |
-| Rust tokenize full line | Whole-line scanner work on a real grammar | `TBD` | `TBD` | Should confirm the scanner advantage is not TS-only |
-| CSS tokenize representative input | Heavier multi-pattern scanner workload | `TBD` | `TBD` | Should show a clear real-world tokenization win |
+| Scenario | Why it matters | Ferroni | Oniguruma | Takeaway |
+|----------|----------------|--------:|------------:|----------|
+| TypeScript grammar compile | Startup cost for a full Shiki grammar | ~12 ms | ~17 ms | Ferroni starts faster even on a full production grammar |
+| TypeScript first match | Time to find the next token on a real grammar | ~425 ns | ~25 us | First-token latency is dramatically lower |
+| TypeScript tokenize full line | End-to-end line tokenization cost | ~6.9 us | ~217 us | Real scanner throughput is in a different class |
+| Rust grammar compile | Compile cost on a smaller, real grammar | ~315 us | ~195 us | One of the smaller-grammar startup cases that still favors Oniguruma |
+| Rust first match | First-token latency on another production grammar | ~165 ns | ~5.5 us | The scanner win is not TypeScript-only |
+| Rust tokenize full line | Whole-line scanner work on a real grammar | ~8.3 us | ~78 us | Whole-line scanner work still stays much faster |
+| CSS tokenize representative input | Heavier multi-pattern scanner workload | ~1.3 ms | ~14.7 ms | Even heavier scanner workloads stay about an order of magnitude faster |
 
 ### Text search and log scanning
 
 First-match latency and rejection speed on log-sized inputs:
 
-| Scenario | Why it matters | Ferroni | Oniguruma | What the result should communicate |
-|----------|----------------|--------:|------------:|-----------------------------------|
-| Literal in 50 KB | Plain substring-like scanning in a real log buffer | `TBD` | `TBD` | Both should feel instant; Ferroni should still lead |
-| No match, 50 KB | Rejection cost when the pattern is absent | `TBD` | `TBD` | Ferroni should show a strong no-match advantage |
-| No match, 10 KB | Same rejection story on smaller log chunks | `TBD` | `TBD` | Confirms the advantage is not only on large inputs |
-| Field extract, 50 KB | Practical capture-based scanning | `TBD` | `TBD` | Should show that useful extraction stays cheap |
-| Timestamp, 50 KB | Structured log parsing | `TBD` | `TBD` | A relatable benchmark for everyday scanning tasks |
-| RegSet multi-pattern (5) | Multi-pattern search, relevant for scanners | `TBD` | `TBD` | One of the clearest Ferroni-vs-Oniguruma wins |
+| Scenario | Why it matters | Ferroni | Oniguruma | Takeaway |
+|----------|----------------|--------:|------------:|----------|
+| Literal in 50 KB | Plain substring-like scanning in a real log buffer | <75 ns | ~130 ns | Both are instant; Ferroni is still ahead |
+| No match, 50 KB | Rejection cost when the pattern is absent | ~1.5 us | ~9.2 us | Rejection speed is a very strong Ferroni win |
+| No match, 10 KB | Same rejection story on smaller log chunks | ~370 ns | ~1.9 us | The no-match advantage also holds on smaller buffers |
+| Field extract, 50 KB | Practical capture-based scanning | ~105 ns | ~165 ns | Useful extraction stays cheap |
+| Timestamp, 50 KB | Structured log parsing | <85 ns | ~160 ns | Everyday log parsing remains very fast |
+| RegSet multi-pattern (5) | Multi-pattern search, relevant for scanners | <100 ns | ~385 ns | One of the clearest Ferroni-vs-Oniguruma wins |
 
 For plain-text workloads that fit Rust's
 [`regex`](https://crates.io/crates/regex) syntax, `regex` still wins on raw
@@ -234,26 +236,26 @@ giving up practical throughput", not "beat a DFA engine at its own game."
 
 One representative pattern per feature family:
 
-| Pattern | Why it matters | Ferroni | Oniguruma | What the result should communicate |
-|---------|----------------|--------:|------------:|-----------------------------------|
-| Literal exact | Baseline single-pattern matching | `TBD` | `TBD` | Ferroni should be ahead, but this is not the headline story |
-| Quantifier greedy | Classic backtracking-heavy pattern | `TBD` | `TBD` | Good proxy for everyday regex engine work |
-| Lookaround combined | A feature many Rust regex engines do not support | `TBD` | `TBD` | Ferroni should show that full features do not mean slow by default |
-| Unicode `\p{Greek}+` | Unicode-property support on real text | `TBD` | `TBD` | Strong example of "full Oniguruma, still fast" |
-| Backref `(\w+) \1` | Backreferences are a real compatibility differentiator | `TBD` | `TBD` | A clean feature-heavy showcase |
-| Alternation, 10 branches | Branch-heavy matching | `TBD` | `TBD` | Good example of optimized search paths paying off |
-| Named capture date | Practical extraction pattern | `TBD` | `TBD` | Important because this may still favor Oniguruma |
+| Pattern | Why it matters | Ferroni | Oniguruma | Takeaway |
+|---------|----------------|--------:|------------:|----------|
+| Literal exact | Baseline single-pattern matching | ~95 ns | ~135 ns | Ferroni is ahead, but this is not the headline story |
+| Quantifier greedy | Classic backtracking-heavy pattern | ~150 ns | ~240 ns | Everyday regex engine work is also faster |
+| Lookaround combined | A feature many Rust regex engines do not support | <80 ns | ~280 ns | Full features do not mean slow by default |
+| Unicode `\p{Greek}+` | Unicode-property support on real text | ~96 ns | ~235 ns | Unicode-property support stays fast |
+| Backref `(\w+) \1` | Backreferences are a real compatibility differentiator | <80 ns | ~170 ns | A strong compatibility showcase without a speed penalty |
+| Alternation, 10 branches | Branch-heavy matching | ~50 ns | ~230 ns | Optimized search paths pay off strongly |
+| Named capture date | Practical extraction pattern | ~240 ns | ~280 ns | Still close, but Ferroni keeps a lead in this sample |
 
 ### Compilation
 
 Compilation should stay short and pragmatic in the README. We only need three
 reference points:
 
-| Pattern | Why it matters | Ferroni | Oniguruma | What the result should communicate |
-|---------|----------------|--------:|------------:|-----------------------------------|
-| Literal | Smallest possible compile path | `TBD` | `TBD` | Usually close enough that compile overhead is not the story |
-| Named capture | More realistic structured pattern | `TBD` | `TBD` | Useful to show Ferroni is still competitive on practical patterns |
-| Lookbehind | Feature-heavy compile path | `TBD` | `TBD` | The place where Oniguruma may still keep a lead |
+| Pattern | Why it matters | Ferroni | Oniguruma | Takeaway |
+|---------|----------------|--------:|------------:|----------|
+| Literal | Smallest possible compile path | ~520 ns | ~535 ns | Effectively tied |
+| Named capture | More realistic structured pattern | ~6.2 us | ~6.4 us | Ferroni stays competitive on practical compile paths |
+| Lookbehind | Feature-heavy compile path | ~1.2 us | ~640 ns | One of the compile paths that still favors Oniguruma |
 
 ### Memory footprint
 
@@ -263,8 +265,8 @@ TypeScript grammar, then scan a large TypeScript file line by line. Exact
 method and raw numbers live in
 [docs/perf/memory-measurements.md](docs/perf/memory-measurements.md).
 
-| Scenario | Why it matters | Ferroni | Oniguruma | What the result should communicate |
-|---------|----------------|--------:|------------:|-----------------------------------|
+| Scenario | Why it matters | Ferroni | Oniguruma | Takeaway |
+|---------|----------------|--------:|------------:|----------|
 | Full TS grammar compile | Memory cost before any scanning starts | ~15 MB | ~14.5 MB | Same ballpark; Rust is not paying a large memory tax |
 | Compile + scan large TS file | Practical peak RSS for a realistic scanner pass | ~15 MB | ~14.5 MB | Ferroni stays memory-competitive while being much faster on scanner workloads |
 
@@ -276,16 +278,16 @@ memory class.
 
 - **vs `regex` crate** -- if your pattern fits `regex`, its DFA engine is still
   the right tool for maximum plain-text match throughput
-- **Named capture extraction** -- region bookkeeping still makes this slower
-  than Oniguruma in representative date-style patterns
-- **Some compile paths** -- lookbehind and a few scanner compile cases still
-  need work
+- **Feature-heavy compile paths** -- lookbehind compile still favors
+  Oniguruma
+- **Some smaller grammar startup cases** -- Rust grammar compile is still one
+  of the places where Oniguruma can look better
 
 ### Ferroni vs the `regex` crate
 
-The `regex` crate is faster at matching for all patterns it supports, thanks
-to its DFA-based engine with guaranteed linear time. However, it compiles
-5-40x slower and does not support: variable-length lookbehind,
+The `regex` crate is usually faster on pure matching for the patterns it
+supports, thanks to its DFA-based engine with guaranteed linear time.
+However, it compiles 5-40x slower and does not support: variable-length lookbehind,
 backreferences, conditional patterns, absent expressions, subexpression
 calls, named captures with multiple syntaxes (`(?<n>)`, `(?'n')`,
 `(?P<n>)`), TextMate grammar support, or drop-in replacement for Ruby/PHP
@@ -295,8 +297,8 @@ you need full Oniguruma compatibility.
 
 ### Refresh Checklist
 
-When we rerun `battle_bench` on a clean machine, these are the numbers to
-drop into the README:
+When we refresh `battle_bench` on a clean machine, these are the README rows
+to revisit:
 
 - Syntax highlighting: TypeScript compile/first match/tokenize, Rust compile/first match/tokenize, CSS tokenize
 - Text scanning: literal 50 KB, no-match 50 KB, no-match 10 KB, field extract 50 KB, timestamp 50 KB, RegSet position-lead

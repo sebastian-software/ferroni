@@ -19,17 +19,13 @@ raw numbers.
 Exact external input revisions for the publishable battle suite are pinned in
 [`benches/battle_inputs.toml`](../../benches/battle_inputs.toml).
 
-The current raw table predates structured run metadata. The next clean rerun
-should refresh the numbers below together with the missing machine/toolchain
-fields.
-
 | Field | Value |
 |-------|-------|
-| Ferroni commit | `TBD on next rerun` |
-| Measurement date | `TBD on next rerun` |
-| Host | `Apple M1 Ultra` |
-| macOS | `TBD on next rerun` |
-| `rustc` | `TBD on next rerun` |
+| Ferroni commit | `e8f120aa64a122ebdfdda5d44ebcb7550235ea3f` |
+| Measurement date | `2026-03-06 16:04 CET` |
+| Host | `Mac13,2 (Apple M1 Ultra, 64 GB)` |
+| macOS | `26.3` |
+| `rustc` | `rustc 1.95.0-nightly (842bd5be2 2026-01-29)` |
 | Command | `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench` |
 | Input pins | [`benches/battle_inputs.toml`](../../benches/battle_inputs.toml) |
 
@@ -43,34 +39,34 @@ supported by the `regex` crate.
 
 | Scenario | Ferroni | Oniguruma | `regex` |
 |----------|--------:|------------:|--------:|
-| Literal in 50 KB | 74 ns | 150 ns | **10 ns** |
-| No match, 50 KB | 1.53 us | 9.5 us | **1.46 us** |
-| No match, 10 KB | 357 ns | 1.96 us | **298 ns** |
-| Field extract, 50 KB | 127 ns | 172 ns | **56 ns** |
-| Timestamp, 50 KB | **120 ns** | 177 ns | **54 ns** |
-| RegSet multi-pattern (5) | **101 ns** | 395 ns | — |
+| Literal in 50 KB | 73.625 ns | 129.910 ns | **10.238 ns** |
+| No match, 50 KB | 1.500 us | 9.217 us | **1.436 us** |
+| No match, 10 KB | 369.519 ns | 1.918 us | **296.251 ns** |
+| Field extract, 50 KB | 103.788 ns | 163.257 ns | **54.746 ns** |
+| Timestamp, 50 KB | **81.102 ns** | 159.923 ns | 96.311 ns |
+| RegSet multi-pattern (5) | **97.976 ns** | 385.195 ns | — |
 
 ### Pattern matching
 
 | Category | Ferroni | Oniguruma | `regex` |
 |----------|--------:|------------:|--------:|
-| Literal exact | 104 ns | 159 ns | **11 ns** |
-| Quantifier greedy | 183 ns | 261 ns | **65 ns** |
-| Lookaround combined | **83 ns** | 292 ns | — |
-| Unicode `\p{Greek}+` | 96 ns | 251 ns | **60 ns** |
-| Backref `(\w+) \1` | **79 ns** | 199 ns | — |
-| Case-insensitive phrase | 101 ns | 188 ns | **62 ns** |
-| Alternation, 2 branches | 62 ns | 157 ns | **48 ns** |
-| Alternation, 10 branches | 49 ns | 225 ns | **21 ns** |
-| Named capture date | 361 ns | 277 ns | **44 ns** |
+| Literal exact | 94.558 ns | 135.280 ns | **11.077 ns** |
+| Quantifier greedy | 152.132 ns | 239.941 ns | **63.088 ns** |
+| Lookaround combined | **78.500 ns** | 279.991 ns | — |
+| Unicode `\p{Greek}+` | 96.288 ns | 236.438 ns | **57.992 ns** |
+| Backref `(\w+) \1` | **79.834 ns** | 168.520 ns | — |
+| Case-insensitive phrase | 93.563 ns | 175.405 ns | **60.179 ns** |
+| Alternation, 2 branches | 66.909 ns | 139.808 ns | **49.756 ns** |
+| Alternation, 10 branches | 52.273 ns | 232.464 ns | **21.315 ns** |
+| Named capture date | 241.920 ns | 282.236 ns | **45.475 ns** |
 
 ### Compilation
 
 | Pattern | Ferroni | Oniguruma | `regex` |
 |---------|--------:|------------:|--------:|
-| Literal | **439 ns** | 448 ns | 2.33 us |
-| Named capture | **4.67 us** | 5.78 us | 193 us |
-| Lookbehind | 992 ns | **556 ns** | — |
+| Literal | **521.266 ns** | 533.510 ns | 2.966 us |
+| Named capture | **6.243 us** | 6.431 us | 219.380 us |
+| Lookbehind | 1.174 us | **643.704 ns** | — |
 
 ### Scanner with full Shiki TextMate grammars
 
@@ -80,16 +76,16 @@ Full, unmodified grammars from
 | Scenario | Ferroni | Oniguruma | Factor |
 |----------|--------:|------------:|-------:|
 | **TypeScript (279 patterns)** | | | |
-| Compile | **10.3 ms** | 17.0 ms | **1.6x** |
-| First match, short line | **421 ns** | 25.5 us | **61x** |
-| Tokenize full line | **7.0 us** | 224 us | **32x** |
+| Compile | **11.986 ms** | 17.431 ms | **1.45x** |
+| First match, short line | **423.541 ns** | 24.931 us | **58.9x** |
+| Tokenize full line | **6.860 us** | 217.101 us | **31.6x** |
 | **CSS (117 patterns)** | | | |
-| Compile | 399 ms | **19.1 ms** | 0.05x |
-| Tokenize (multi-line) | **1.67 ms** | 15.3 ms | **9.2x** |
+| Compile | **14.387 ms** | 19.967 ms | **1.39x** |
+| Tokenize (multi-line) | **1.305 ms** | 14.733 ms | **11.3x** |
 | **Rust (81 patterns)** | | | |
-| Compile | 256 us | **180 us** | 0.70x |
-| First match | **184 ns** | 5.7 us | **31x** |
-| Tokenize full line | **8.3 us** | 84.9 us | **10x** |
+| Compile | 313.695 us | **196.406 us** | 0.63x |
+| First match | **163.055 ns** | 5.480 us | **33.6x** |
+| Tokenize full line | **8.263 us** | 78.471 us | **9.5x** |
 
 ## Reproducing
 
