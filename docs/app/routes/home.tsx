@@ -299,12 +299,8 @@ function PerfSection() {
 
         <p className="fh-perf-note">
           Full benchmark tables and methodology in{" "}
-          <a
-            href="https://github.com/sebastian-software/ferroni/blob/main/docs/perf/benchmark-results.md"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            docs/perf/benchmark-results.md
+          <a href="/perf/benchmark-results">
+            Benchmark Results
           </a>
         </p>
       </div>
@@ -458,10 +454,8 @@ function CTASection() {
             <Github size={14} /> GitHub
           </a>
           <a
-            href="https://github.com/sebastian-software/ferroni/blob/main/docs/perf/benchmark-results.md"
+            href="/perf/benchmark-results"
             className="fh-final-link"
-            target="_blank"
-            rel="noopener noreferrer"
           >
             <ExternalLink size={14} /> Benchmarks
           </a>

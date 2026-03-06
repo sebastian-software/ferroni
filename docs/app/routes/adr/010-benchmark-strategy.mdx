@@ -51,12 +51,12 @@ Both `release` and `bench` profiles use `lto = "thin"` to allow cross-crate inli
 - **C comparison keeps claims honest.** Every speedup number is relative to the same engine at `-O3`, not a strawman.
 - **Two suites separate concerns.** `battle_bench` is small, stable, and publishable; `codspeed_bench` is free to optimize for regression coverage and engineering feedback.
 - **Compilation is part of the workload.** Syntax highlighters compile grammars at startup. Ignoring compile time gives an incomplete picture.
-- **README numbers should stay human-scale.** The README intentionally rounds values; exact raw numbers live in `docs/perf/benchmark-results.md`.
+- **README numbers should stay human-scale.** The README intentionally rounds values; exact raw numbers live in `/perf/benchmark-results`.
 
 ## Consequences
 
 - Shiki grammar JSON files are committed to the repository (`benches/grammars/`). These are updated when Shiki releases new grammar versions.
 - The `ffi` feature adds a C build step. Running `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench` requires a C compiler; `cargo bench` (without `ffi`) runs the Rust-only internal suite.
-- Exact external input revisions for `battle_bench` live in `benches/battle_inputs.toml`; each published measurement run should also record machine and toolchain details in `docs/perf/benchmark-results.md`.
-- Reference benchmark results are documented in `docs/perf/benchmark-results.md` and summarized in `README.md`.
+- Exact external input revisions for `battle_bench` live in `benches/battle_inputs.toml`; each published measurement run should also record machine and toolchain details in `/perf/benchmark-results`.
+- Reference benchmark results are documented in `/perf/benchmark-results.md` and summarized in `README`.
 - New optimizations should be validated against the internal suite first; user-facing claims should cite the reference suite.

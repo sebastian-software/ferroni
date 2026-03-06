@@ -69,13 +69,13 @@ change:
 
 ## Guidelines
 
-1. **Read the ADRs first.** The [`docs/adr/`](docs/adr/) directory documents
+1. **Read the ADRs first.** The [`docs/adr/`](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original) directory documents
    all major architectural decisions. In particular:
-   - [ADR-001](docs/adr/001-one-to-one-parity-with-c-original.md): the 1:1
+   - [ADR-001](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original): the 1:1
      parity goal -- same module mapping, same function names, same control flow.
-   - [ADR-004](docs/adr/004-c-to-rust-translation-patterns.md): the canonical
+   - [ADR-004](https://sebastian-software.github.io/ferroni/adr/004-c-to-rust-translation-patterns): the canonical
      C-to-Rust translation patterns used throughout the codebase.
-   - [ADR-002](docs/adr/002-unsafe-code-policy.md): the `unsafe` code policy.
+   - [ADR-002](https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy): the `unsafe` code policy.
 
 2. **Cross-reference the C original.** When modifying `regcomp.rs`,
    `regexec.rs`, or `regparse.rs`, compare against the corresponding

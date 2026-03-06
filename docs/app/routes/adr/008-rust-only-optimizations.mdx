@@ -1,4 +1,9 @@
-# ADR-008: Rust-Only Optimizations and Performance Philosophy
+---
+title: "Rust-Only Optimizations and Performance Philosophy"
+---
+
+# Rust-Only Optimizations and Performance Philosophy
+
 
 ## Status
 
@@ -40,7 +45,7 @@ Detects alternations consisting entirely of literal strings (flat: `word1|word2|
 - **Data structure**: `LiteralTrie` — sorted child arrays with binary search, longest-match semantics
 - **Impact**: CSS tokenization 35% faster (3.76x → 2.46x vs JS); CSS `codeToHtml` reaches JS parity (1.65x → 1.04x)
 - **Bounds**: `MAX_NESTED_TRIE_PATHS = 8192` caps path extraction; CClass expansion limited to ≤16 single-byte members per class
-- **Detailed analysis**: [`docs/perf/html-entity-trie-optimization.md`](../perf/html-entity-trie-optimization.md)
+- **Detailed analysis**: [`/perf/html-entity-trie-optimization`](/perf/html-entity-trie-optimization)
 
 #### RegSet first-byte dispatch and skip needle (`src/regset.rs`)
 
@@ -69,5 +74,5 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 
 - Ferroni's compiled bytecode may differ from C Oniguruma for patterns that trigger the trie optimizer. Match results remain identical, but internal representations diverge.
 - Future C Oniguruma updates can still be applied by diffing against the C-ported baseline. Optimization passes are clearly separated in the compilation pipeline.
-- Each new optimization must document its trigger conditions, bounds, and benchmark results — either in this ADR (for significant changes) or in `docs/perf/` (for detailed analysis).
-- Performance documentation in `docs/perf/` serves as the detailed log; this ADR serves as the policy and index.
+- Each new optimization must document its trigger conditions, bounds, and benchmark results — either in this ADR (for significant changes) or in `/perf/` (for detailed analysis).
+- Performance documentation in `/perf/` serves as the detailed log; this ADR serves as the policy and index.
