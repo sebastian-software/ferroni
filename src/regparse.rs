@@ -7615,7 +7615,10 @@ mod tests {
                     NodeInner::String(s) => assert_eq!(s.s, b"a"),
                     _ => panic!("expected leading String 'a'"),
                 }
-                let cdr = list.cdr.as_ref().expect("expected cdr after leading string");
+                let cdr = list
+                    .cdr
+                    .as_ref()
+                    .expect("expected cdr after leading string");
                 match &cdr.inner {
                     NodeInner::List(list2) => match &list2.car.inner {
                         NodeInner::Bag(bag) => {
@@ -7640,9 +7643,9 @@ mod tests {
                                             );
                                             match &alt2.car.inner {
                                                 NodeInner::String(s) => assert_eq!(s.s, b"c"),
-                                                _ => panic!(
-                                                    "expected second option alt branch 'c'"
-                                                ),
+                                                _ => {
+                                                    panic!("expected second option alt branch 'c'")
+                                                }
                                             }
                                         }
                                         _ => panic!("expected option alt cdr"),
