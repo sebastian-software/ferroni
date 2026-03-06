@@ -1,0 +1,11 @@
+node_modules
+build
+.DS_Store
+*.local
+
+# React Router generated files
+.react-router
+
+# Ardo generated files
+app/routes.ts
+app/routes/api-reference/
