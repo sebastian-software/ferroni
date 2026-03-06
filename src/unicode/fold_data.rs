@@ -1,5 +1,5 @@
 //! Auto-generated Unicode case fold data. Do not edit.
-//! Generated from oniguruma-orig/src/unicode_fold*.c
+//! Generated from upstream Oniguruma unicode_fold*.c
 //! by scripts/gen_unicode_fold_data.py
 
 #![allow(dead_code)]

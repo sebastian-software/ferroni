@@ -32,11 +32,33 @@ RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 
 ## Running Benchmarks
 
-Benchmarks require the C original for comparison (via the `ffi` feature):
+`battle_bench` requires a local Oniguruma source snapshot for comparison:
 
 ```bash
-cargo bench --features ffi
+./scripts/prepare-oniguruma-sources.sh
+cargo bench --features ffi --bench battle_bench
 ```
+
+Exact external input revisions for the publishable battle suite are pinned in
+[`benches/battle_inputs.toml`](benches/battle_inputs.toml).
+
+## Regenerating Unicode Tables
+
+The checked-in Unicode tables are generated from upstream Oniguruma sources.
+These scripts are maintainer tools; normal `cargo build`, tests, and CI do not
+run them automatically.
+
+```bash
+./scripts/prepare-oniguruma-sources.sh
+python3 scripts/gen_unicode_property_data.py
+python3 scripts/gen_unicode_fold_data.py
+```
+
+If you regenerate them, commit the generated files together with the source
+change:
+
+- `src/unicode/property_data.rs`
+- `src/unicode/fold_data.rs`
 
 ## Guidelines
 
@@ -49,8 +71,10 @@ cargo bench --features ffi
    - [ADR-002](docs/adr/002-unsafe-code-policy.md): the `unsafe` code policy.
 
 2. **Cross-reference the C original.** When modifying `regcomp.rs`,
-   `regexec.rs`, or `regparse.rs`, always compare against the corresponding
-   C source file in `oniguruma-orig/src/`.
+   `regexec.rs`, or `regparse.rs`, compare against the corresponding
+   upstream Oniguruma source file. Run
+   `./scripts/prepare-oniguruma-sources.sh` if you want a local checkout.
+   The pinned benchmark input revisions live in `benches/battle_inputs.toml`.
 
 3. **US English only.** All code, comments, commit messages, and documentation
    must be in English.

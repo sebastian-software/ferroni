@@ -2,7 +2,8 @@
 //
 // Embeds full, unmodified Shiki grammars (TypeScript, CSS, Rust) and extracts
 // every `match` and `begin` pattern from the grammar's pattern tree and
-// repository. Filters to patterns that Ferroni can compile.
+// repository. Filters to patterns that Ferroni can compile. External snapshot
+// pins and file hashes live in benches/battle_inputs.toml.
 
 use ferroni::scanner::Scanner;
 use std::collections::HashSet;

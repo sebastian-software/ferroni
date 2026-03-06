@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate src/unicode/property_data.rs from oniguruma-orig/src/unicode_property_data.c
+Generate src/unicode/property_data.rs from upstream Oniguruma unicode_property_data.c
 
 Extracts:
 1. CR_* code range arrays (strip count prefix, emit start/end pairs)
@@ -16,8 +16,27 @@ import os
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(SCRIPT_DIR)
-C_FILE = os.path.join(ROOT_DIR, "oniguruma-orig", "src", "unicode_property_data.c")
 OUT_FILE = os.path.join(ROOT_DIR, "src", "unicode", "property_data.rs")
+
+
+def resolve_oniguruma_c_file():
+    env_dir = os.environ.get("FERRONI_ONIGURUMA_DIR")
+    candidates = []
+    if env_dir:
+        candidates.append(env_dir)
+    candidates.append(os.path.join(ROOT_DIR, ".cache", "upstream", "oniguruma-orig"))
+    candidates.append(os.path.join(ROOT_DIR, "oniguruma-orig"))
+
+    for root in candidates:
+        c_file = os.path.join(root, "src", "unicode_property_data.c")
+        if os.path.isfile(c_file):
+            return c_file
+
+    raise SystemExit(
+        "Could not find local Oniguruma sources. "
+        "Run ./scripts/prepare-oniguruma-sources.sh "
+        "or set FERRONI_ONIGURUMA_DIR=/path/to/oniguruma."
+    )
 
 
 def parse_cr_aliases(text):
@@ -111,7 +130,7 @@ def generate_rust(arrays, aliases, code_ranges, wordlist):
     """Generate the Rust source file."""
     lines = []
     lines.append("//! Auto-generated Unicode property data. Do not edit.")
-    lines.append("//! Generated from oniguruma-orig/src/unicode_property_data.c")
+    lines.append("//! Generated from upstream Oniguruma unicode_property_data.c")
     lines.append("//! by scripts/gen_unicode_property_data.py")
     lines.append("")
     lines.append("#![allow(dead_code, non_upper_case_globals)]")
@@ -172,10 +191,12 @@ def generate_rust(arrays, aliases, code_ranges, wordlist):
 
 
 def main():
-    with open(C_FILE, 'r') as f:
+    c_file = resolve_oniguruma_c_file()
+
+    with open(c_file, 'r') as f:
         text = f.read()
 
-    print(f"Parsing {C_FILE}...")
+    print(f"Parsing {c_file}...")
     arrays, aliases = parse_cr_arrays(text)
     print(f"  Found {len(arrays)} CR_* arrays ({len(aliases)} aliases)")
 

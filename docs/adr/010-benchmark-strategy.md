@@ -33,7 +33,8 @@ Ferroni-only micro-benchmarks tracked by [CodSpeed](https://codspeed.io/) in CI.
 
 - **Criterion.rs** for local measurement and HTML reports (`target/criterion/report/index.html`).
 - **codspeed-criterion-compat** for CI integration -- same benchmark code, instrumented for CodSpeed's wall-time tracking.
-- **C comparison** via optional `ffi` feature. The `cc` crate builds C Oniguruma from source in `oniguruma-orig/` for head-to-head measurement.
+- **C comparison** via optional `ffi` feature. The `cc` crate builds Oniguruma from a pinned local source snapshot prepared on demand for head-to-head measurement.
+- **Pinned battle inputs** in `benches/battle_inputs.toml`. This records the exact external artifacts behind the publishable suite.
 
 ### Build profile
 
@@ -50,6 +51,7 @@ Both `release` and `bench` profiles use `lto = "thin"` to allow cross-crate inli
 ## Consequences
 
 - Shiki grammar JSON files are committed to the repository (`benches/grammars/`). These are updated when Shiki releases new grammar versions.
-- The `ffi` feature adds a C build step. Running `cargo bench --features ffi --bench battle_bench` requires a C compiler; `cargo bench` (without `ffi`) runs the Rust-only internal suite.
+- The `ffi` feature adds a C build step. Running `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench` requires a C compiler; `cargo bench` (without `ffi`) runs the Rust-only internal suite.
+- Exact external input revisions for `battle_bench` live in `benches/battle_inputs.toml`; each published measurement run should also record machine and toolchain details in `docs/perf/benchmark-results.md`.
 - Reference benchmark results are documented in `docs/perf/benchmark-results.md` and summarized in `README.md`.
 - New optimizations should be validated against the internal suite first; user-facing claims should cite the reference suite.

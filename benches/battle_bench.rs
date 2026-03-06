@@ -2,6 +2,7 @@
 //
 // Run: cargo bench --features ffi --bench battle_bench
 // HTML report: target/criterion/report/index.html
+// Pinned external inputs: benches/battle_inputs.toml
 
 mod grammar_loader;
 mod scanner_css_workload;

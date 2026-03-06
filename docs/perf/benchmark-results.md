@@ -8,11 +8,30 @@ compatible.
 Measured with [Criterion](https://github.com/bheisler/criterion.rs) on Apple
 M1 Ultra.
 
-> Re-run with `cargo bench --features ffi --bench battle_bench` to get
-> current numbers on your hardware.
+> Re-run with `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench`
+> to get current numbers on your hardware.
 
 The README intentionally rounds values for readability. This file keeps the
 raw numbers.
+
+## Measurement context
+
+Exact external input revisions for the publishable battle suite are pinned in
+[`benches/battle_inputs.toml`](../../benches/battle_inputs.toml).
+
+The current raw table predates structured run metadata. The next clean rerun
+should refresh the numbers below together with the missing machine/toolchain
+fields.
+
+| Field | Value |
+|-------|-------|
+| Ferroni commit | `TBD on next rerun` |
+| Measurement date | `TBD on next rerun` |
+| Host | `Apple M1 Ultra` |
+| macOS | `TBD on next rerun` |
+| `rustc` | `TBD on next rerun` |
+| Command | `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench` |
+| Input pins | [`benches/battle_inputs.toml`](../../benches/battle_inputs.toml) |
 
 ## Reference suite (`battle_bench`)
 
@@ -76,6 +95,7 @@ Full, unmodified grammars from
 
 ```bash
 # Reference suite for publishable Ferroni-vs-C numbers
+./scripts/prepare-oniguruma-sources.sh
 cargo bench --features ffi --bench battle_bench
 
 # Internal Rust-only regression suite

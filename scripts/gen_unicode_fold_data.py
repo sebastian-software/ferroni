@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate src/unicode/fold_data.rs from oniguruma-orig/src/unicode_fold*.c
+Generate src/unicode/fold_data.rs from upstream Oniguruma unicode_fold*.c
 
 Extracts:
 1. OnigUnicodeFolds1/2/3 arrays (flat u32 arrays)
@@ -14,8 +14,27 @@ import os
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(SCRIPT_DIR)
-SRC = os.path.join(ROOT_DIR, "oniguruma-orig", "src")
 OUT_FILE = os.path.join(ROOT_DIR, "src", "unicode", "fold_data.rs")
+
+
+def resolve_oniguruma_src_dir():
+    env_dir = os.environ.get("FERRONI_ONIGURUMA_DIR")
+    candidates = []
+    if env_dir:
+        candidates.append(env_dir)
+    candidates.append(os.path.join(ROOT_DIR, ".cache", "upstream", "oniguruma-orig"))
+    candidates.append(os.path.join(ROOT_DIR, "oniguruma-orig"))
+
+    for root in candidates:
+        src_dir = os.path.join(root, "src")
+        if os.path.isdir(src_dir):
+            return src_dir
+
+    raise SystemExit(
+        "Could not find local Oniguruma sources. "
+        "Run ./scripts/prepare-oniguruma-sources.sh "
+        "or set FERRONI_ONIGURUMA_DIR=/path/to/oniguruma."
+    )
 
 
 def parse_fold_array(text, name):
@@ -97,7 +116,7 @@ def generate_rust(folds1, folds2, folds3, consts, fold1_key, fold2_key, fold3_ke
     """Generate the Rust source file."""
     lines = []
     lines.append("//! Auto-generated Unicode case fold data. Do not edit.")
-    lines.append("//! Generated from oniguruma-orig/src/unicode_fold*.c")
+    lines.append("//! Generated from upstream Oniguruma unicode_fold*.c")
     lines.append("//! by scripts/gen_unicode_fold_data.py")
     lines.append("")
     lines.append("#![allow(dead_code)]")
@@ -158,10 +177,12 @@ def generate_rust(folds1, folds2, folds3, consts, fold1_key, fold2_key, fold3_ke
 
 
 def main():
+    src_dir = resolve_oniguruma_src_dir()
+
     # Read source files
-    with open(os.path.join(SRC, "unicode_fold_data.c"), 'r') as f:
+    with open(os.path.join(src_dir, "unicode_fold_data.c"), 'r') as f:
         fold_text = f.read()
-    with open(os.path.join(SRC, "unicode_unfold_key.c"), 'r') as f:
+    with open(os.path.join(src_dir, "unicode_unfold_key.c"), 'r') as f:
         unfold_text = f.read()
 
     print("Parsing fold data...")

@@ -1,4 +1,4 @@
-// build.rs -- Compile C Oniguruma from submodule (gated on `ffi` feature)
+// build.rs -- Compile upstream Oniguruma sources for `ffi` benchmarks.
 
 fn main() {
     // Allow the `coverage_nightly` cfg used by #[cfg_attr(coverage_nightly, coverage(off))].
@@ -15,7 +15,8 @@ fn build_oniguruma_c() {
     use std::path::PathBuf;
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let src_dir = PathBuf::from("oniguruma-orig/src");
+    let oniguruma_dir = resolve_oniguruma_dir();
+    let src_dir = oniguruma_dir.join("src");
 
     // Generate config.h
     let pointer_size = env::var("CARGO_CFG_TARGET_POINTER_WIDTH")
@@ -132,4 +133,40 @@ fn build_oniguruma_c() {
     build.file("benches/vscode_scanner_native.c");
 
     build.compile("oniguruma");
+}
+
+#[cfg(feature = "ffi")]
+fn resolve_oniguruma_dir() -> std::path::PathBuf {
+    use std::env;
+    use std::path::PathBuf;
+
+    const DEFAULT_ONIGURUMA_DIR: &str = ".cache/upstream/oniguruma-orig";
+    const LEGACY_ONIGURUMA_DIR: &str = "oniguruma-orig";
+
+    println!("cargo:rerun-if-env-changed=FERRONI_ONIGURUMA_DIR");
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=scripts/prepare-oniguruma-sources.sh");
+
+    if let Ok(path) = env::var("FERRONI_ONIGURUMA_DIR") {
+        let dir = PathBuf::from(path);
+        if dir.join("src").is_dir() {
+            println!("cargo:rerun-if-changed={}", dir.join("src").display());
+            return dir;
+        }
+        panic!("FERRONI_ONIGURUMA_DIR must point to an Oniguruma checkout root containing `src/`.");
+    }
+
+    for candidate in [DEFAULT_ONIGURUMA_DIR, LEGACY_ONIGURUMA_DIR] {
+        let dir = PathBuf::from(candidate);
+        if dir.join("src").is_dir() {
+            println!("cargo:rerun-if-changed={}", dir.join("src").display());
+            return dir;
+        }
+    }
+
+    panic!(
+        "ffi benchmarks require local Oniguruma sources.\n\
+Run `./scripts/prepare-oniguruma-sources.sh` first,\n\
+or set FERRONI_ONIGURUMA_DIR=/path/to/oniguruma."
+    );
 }

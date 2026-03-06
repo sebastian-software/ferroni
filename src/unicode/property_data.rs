@@ -1,5 +1,5 @@
 //! Auto-generated Unicode property data. Do not edit.
-//! Generated from oniguruma-orig/src/unicode_property_data.c
+//! Generated from upstream Oniguruma unicode_property_data.c
 //! by scripts/gen_unicode_property_data.py
 
 #![allow(dead_code, non_upper_case_globals)]

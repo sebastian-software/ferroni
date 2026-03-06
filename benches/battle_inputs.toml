@@ -1,0 +1,37 @@
+# Canonical external input pins for the publishable `battle_bench` reference suite.
+# Update this file whenever battle inputs or their source snapshots change.
+format_version = 1
+
+[oniguruma]
+repo = "https://github.com/kkos/oniguruma"
+commit = "f95747b462de672b6f8dbdeb478245ddf061ca53"
+local_cache_dir = ".cache/upstream/oniguruma-orig"
+prepare_script = "scripts/prepare-oniguruma-sources.sh"
+
+[scanner_wrapper]
+file = "benches/vscode_scanner_native.c"
+source_repo = "https://github.com/microsoft/vscode-oniguruma"
+source_path = "src/onig.cc"
+imported_in_ferroni_commit = "ad96196d0f883dec0a552d359fa2f8f37d299962"
+sha256 = "74e57ca90d0251932837195e0dbaf9194327c8b8c62f13a654a22cdec587c479"
+note = "Locally extracted C scanner wrapper used by battle_bench."
+
+[grammars]
+source_repo = "https://github.com/shikijs/textmate-grammars-themes"
+imported_in_ferroni_commit = "0e7016172a4563d385b362bca15308cc6225449f"
+note = "Full committed grammar snapshots consumed by benches/grammar_loader.rs."
+
+[[grammar]]
+id = "typescript"
+file = "benches/grammars/typescript.json"
+sha256 = "e86e45f551919f50ac5e5cf89990c3520877305b35708294de5ae83c9b6ca559"
+
+[[grammar]]
+id = "css"
+file = "benches/grammars/css.json"
+sha256 = "eeed15521cc9e32ef9a92fa36dbf3674a6c13ba2fc20c666ef8c257e355246ec"
+
+[[grammar]]
+id = "rust"
+file = "benches/grammars/rust.json"
+sha256 = "41ad4b92eff153b69b65d03216d2f787861d3a23a0b4ab7a3ee8d6d6c016e34f"

@@ -62,8 +62,8 @@ Rust's type system. 0.4% unsafe code, all documented in
 `wasm32-unknown-unknown`. Ship it as a Node.js native module via
 [napi-rs](https://napi.rs/) without `node-gyp` or a C compiler on the
 user's machine.
-Only enabling the optional `ffi` feature requires compiling bundled C sources
-for reference benchmarks.
+Only enabling the optional `ffi` feature requires a local Oniguruma source
+snapshot for reference benchmarks.
 
 **Built-in multi-pattern scanner.** For syntax highlighting with TextMate
 grammars, Ferroni includes a
@@ -304,10 +304,12 @@ Ferroni keeps benchmark suites separated by purpose:
 - **Reference suite (`battle_bench`, Ferroni vs Oniguruma for publishable numbers):**
   ```bash
   # one-time setup
-  git submodule update --init --recursive
+  ./scripts/prepare-oniguruma-sources.sh
 
   cargo bench --features ffi --bench battle_bench
   ```
+  Exact external input pins for this suite live in
+  [`benches/battle_inputs.toml`](benches/battle_inputs.toml).
 
 - **HTML report:**
   ```bash
