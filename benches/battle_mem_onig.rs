@@ -15,7 +15,10 @@ fn main() {
         .iter()
         .map(|pattern| pattern.as_bytes().to_vec())
         .collect();
-    let pattern_refs: Vec<&[u8]> = pattern_bytes.iter().map(|pattern| pattern.as_slice()).collect();
+    let pattern_refs: Vec<&[u8]> = pattern_bytes
+        .iter()
+        .map(|pattern| pattern.as_slice())
+        .collect();
 
     let scanner = ffi::CScanner::new(&pattern_refs).expect("Oniguruma scanner compile failed");
     let compile_peak = max_rss_bytes();

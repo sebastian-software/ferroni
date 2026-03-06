@@ -119,7 +119,8 @@ fn build_large_typescript_source(repeat_blocks: usize) -> String {
 }
 
 fn read_repeat_blocks() -> usize {
-    let metadata_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("benches/battle_inputs.toml");
+    let metadata_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("benches/battle_inputs.toml");
     let contents = fs::read_to_string(&metadata_path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", metadata_path.display()));
     let mut in_memory_workload = false;

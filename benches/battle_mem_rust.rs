@@ -10,7 +10,11 @@ use ferroni::scanner::Scanner;
 
 fn main() {
     let workload = load_typescript_workload();
-    let pattern_refs: Vec<&str> = workload.patterns.iter().map(|pattern| pattern.as_str()).collect();
+    let pattern_refs: Vec<&str> = workload
+        .patterns
+        .iter()
+        .map(|pattern| pattern.as_str())
+        .collect();
 
     let mut scanner = Scanner::new(&pattern_refs).expect("Rust scanner compile failed");
     let compile_peak = max_rss_bytes();
@@ -18,11 +22,5 @@ fn main() {
 
     let tokenize_stats = scan_rust_lines(&mut scanner, &workload.source);
     let total_peak = max_rss_bytes();
-    print_result(
-        "rust",
-        "scan",
-        &workload,
-        total_peak,
-        Some(&tokenize_stats),
-    );
+    print_result("rust", "scan", &workload, total_peak, Some(&tokenize_stats));
 }
