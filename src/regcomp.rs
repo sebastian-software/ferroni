@@ -1071,8 +1071,12 @@ fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
 }
 
 /// Check if a quantifier node represents .* or .+ (anychar infinite greedy).
-fn is_anychar_infinite_greedy(qn: &QuantNode) -> bool {
-    if qn.greedy && is_infinite_repeat(qn.upper) && qn.lower <= 1 {
+///
+/// Keep backref-bearing patterns on the generic quantifier path. The specialized
+/// ANYCHAR_STAR opcodes precompute all exit points up front, which is unsafe for
+/// backref-heavy patterns like `(.*)a\\1f` that rely on conservative backtracking.
+fn is_anychar_infinite_greedy(qn: &QuantNode, env: &ParseEnv) -> bool {
+    if env.backref_num == 0 && qn.greedy && is_infinite_repeat(qn.upper) && qn.lower <= 1 {
         if let Some(body) = &qn.body {
             return matches!(body.inner, NodeInner::CType(ref ct) if ct.ctype == CTYPE_ANYCHAR);
         }
@@ -1096,14 +1100,14 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
             return OPSIZE_JUMP + tlen;
         }
         // {0} matches nothing
-        if is_anychar_infinite_greedy(qn) {
+        if is_anychar_infinite_greedy(qn, env) {
             return SIZE_INC;
         }
         return 0;
     }
 
     // AnyChar star/plus optimization
-    if is_anychar_infinite_greedy(qn) {
+    if is_anychar_infinite_greedy(qn, env) {
         let tlen = compile_length_tree(body, reg, env);
         if qn.next_head_exact.is_some() {
             return OPSIZE_ANYCHAR_STAR_PEEK_NEXT + tlen * qn.lower;
@@ -1224,7 +1228,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
     }
 
     // AnyChar star/plus with peek optimization: .* or .+
-    if is_anychar_infinite_greedy(qn) {
+    if is_anychar_infinite_greedy(qn, env) {
         let r = compile_tree_n_times(body, qn.lower, reg, env);
         if r != 0 {
             return r;
@@ -6923,6 +6927,127 @@ fn setup_empty_status_mem(root: &mut Node, env: &mut ParseEnv) {
     resolve_empty_status_backrefs(root, &mut enclosing, env);
 }
 
+fn refresh_capture_nodes(node: &mut Node, env: &mut ParseEnv) {
+    let node_ptr = node as *mut Node;
+    match &mut node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            refresh_capture_nodes(cons.car.as_mut(), env);
+            if let Some(cdr) = cons.cdr.as_mut() {
+                refresh_capture_nodes(cdr.as_mut(), env);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = qn.body.as_mut() {
+                refresh_capture_nodes(body.as_mut(), env);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if bn.bag_type == BagType::Memory {
+                let regnum = bn.regnum() as usize;
+                if regnum <= env.num_mem as usize {
+                    env.mem_env_mut(regnum).mem_node = node_ptr;
+                }
+            }
+            if let Some(body) = bn.body.as_mut() {
+                refresh_capture_nodes(body.as_mut(), env);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &mut bn.bag_data
+            {
+                if let Some(then_n) = then_node.as_mut() {
+                    refresh_capture_nodes(then_n.as_mut(), env);
+                }
+                if let Some(else_n) = else_node.as_mut() {
+                    refresh_capture_nodes(else_n.as_mut(), env);
+                }
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = an.body.as_mut() {
+                refresh_capture_nodes(body.as_mut(), env);
+            }
+            if let Some(lead) = an.lead_node.as_mut() {
+                refresh_capture_nodes(lead.as_mut(), env);
+            }
+        }
+        NodeInner::Call(cn) => {
+            if let Some(body) = cn.body.as_mut() {
+                refresh_capture_nodes(body.as_mut(), env);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn refresh_call_targets(node: &mut Node, env: &ParseEnv) {
+    match &mut node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            refresh_call_targets(cons.car.as_mut(), env);
+            if let Some(cdr) = cons.cdr.as_mut() {
+                refresh_call_targets(cdr.as_mut(), env);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = qn.body.as_mut() {
+                refresh_call_targets(body.as_mut(), env);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(body) = bn.body.as_mut() {
+                refresh_call_targets(body.as_mut(), env);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &mut bn.bag_data
+            {
+                if let Some(then_n) = then_node.as_mut() {
+                    refresh_call_targets(then_n.as_mut(), env);
+                }
+                if let Some(else_n) = else_node.as_mut() {
+                    refresh_call_targets(else_n.as_mut(), env);
+                }
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = an.body.as_mut() {
+                refresh_call_targets(body.as_mut(), env);
+            }
+            if let Some(lead) = an.lead_node.as_mut() {
+                refresh_call_targets(lead.as_mut(), env);
+            }
+        }
+        NodeInner::Call(cn) => {
+            cn.target_node = if cn.called_gnum > 0 && cn.called_gnum <= env.num_mem {
+                env.mem_env(cn.called_gnum as usize).mem_node
+            } else {
+                std::ptr::null_mut()
+            };
+            if let Some(body) = cn.body.as_mut() {
+                refresh_call_targets(body.as_mut(), env);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn refresh_node_references(root: &mut Node, env: &mut ParseEnv) {
+    if env.num_mem <= 0 && env.num_call <= 0 {
+        return;
+    }
+
+    for i in 1..=env.num_mem as usize {
+        env.mem_env_mut(i).mem_node = std::ptr::null_mut();
+    }
+    refresh_capture_nodes(root, env);
+
+    if env.num_call > 0 {
+        refresh_call_targets(root, env);
+    }
+}
+
 /// Flatten a List node into a Vec of car elements.
 fn flatten_list(mut node: Node) -> Vec<Node> {
     let mut items = Vec::new();
@@ -6949,18 +7074,25 @@ fn flatten_list(mut node: Node) -> Vec<Node> {
 fn rebuild_list(items: Vec<Node>) -> Box<Node> {
     let mut items = items;
     assert!(!items.is_empty());
-    let mut result = items.pop().unwrap();
+    let mut result = Box::new(Node {
+        status: 0,
+        parent: std::ptr::null_mut(),
+        inner: NodeInner::List(ConsAltNode {
+            car: Box::new(items.pop().unwrap()),
+            cdr: None,
+        }),
+    });
     while let Some(item) = items.pop() {
-        result = Node {
+        result = Box::new(Node {
             status: 0,
             parent: std::ptr::null_mut(),
             inner: NodeInner::List(ConsAltNode {
                 car: Box::new(item),
-                cdr: Some(Box::new(result)),
+                cdr: Some(result),
             }),
-        };
+        });
     }
-    Box::new(result)
+    result
 }
 
 /// Consolidate adjacent string nodes in the parse tree.
@@ -8296,6 +8428,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     if r != 0 {
         return r;
     }
+    refresh_node_references(&mut root, &mut env);
 
     // Resolve subroutine call references before tune_tree
     if env.num_call > 0 {
@@ -8324,12 +8457,14 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     // Detect literal alternations and replace with trie (before tune_tree
     // so case-fold expansion hasn't rewritten the string nodes yet).
     detect_literal_alternations(&mut root, reg, env.backrefed_mem);
+    refresh_node_references(&mut root, &mut env);
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
     let r = tune_tree(&mut root, reg, 0, &mut env);
     if r != 0 {
         return r;
     }
+    refresh_node_references(&mut root, &mut env);
 
     // Compute empty_status_mem for quantifiers (determines EmptyCheckEnd vs EmptyCheckEndMemst)
     setup_empty_status_mem(&mut root, &mut env);
@@ -9234,5 +9369,54 @@ mod tests {
         }
         eprintln!("push_mem_start: {}", reg.push_mem_start);
         eprintln!("push_mem_end: {}", reg.push_mem_end);
+    }
+
+    #[test]
+    fn option_only_group_mid_pattern_keeps_ignorecase_semantics() {
+        let reg = onig_new(
+            b"a(?i)b|c",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert!(
+            reg.ops.iter().any(|op| op.opcode == OpCode::CClass),
+            "expected case-folded branch bytecode"
+        );
+        let input_b = b"aB";
+        let input_c = b"aC";
+        let (result_b, _) = crate::regexec::onig_match(
+            &reg,
+            input_b,
+            input_b.len(),
+            0,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        let (result_c, _) = crate::regexec::onig_match(
+            &reg,
+            input_c,
+            input_c.len(),
+            0,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(result_b, 2, "expected aB to match");
+        assert_eq!(result_c, 2, "expected aC to match");
+    }
+
+    #[test]
+    fn repeated_compile_absent_expr_backref_does_not_overflow() {
+        for _ in 0..2 {
+            let reg = onig_new(
+                br"(a)(?~|b|\1)",
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            std::mem::forget(reg);
+        }
     }
 }

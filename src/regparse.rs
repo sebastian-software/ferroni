@@ -7606,6 +7606,60 @@ mod tests {
         assert!(nt.find(b"name").is_some());
     }
 
+    #[test]
+    fn parse_mid_pattern_option_group_marks_following_alternatives_ignorecase() {
+        let (root, _reg) = parse(b"a(?i)b|c").unwrap();
+        match &root.inner {
+            NodeInner::List(list) => {
+                match &list.car.inner {
+                    NodeInner::String(s) => assert_eq!(s.s, b"a"),
+                    _ => panic!("expected leading String 'a'"),
+                }
+                let cdr = list.cdr.as_ref().expect("expected cdr after leading string");
+                match &cdr.inner {
+                    NodeInner::List(list2) => match &list2.car.inner {
+                        NodeInner::Bag(bag) => {
+                            assert!(matches!(bag.bag_type, BagType::Option));
+                            let body = bag.body.as_ref().expect("expected option body");
+                            match &body.inner {
+                                NodeInner::Alt(alt) => {
+                                    assert!(
+                                        alt.car.has_status(ND_ST_IGNORECASE),
+                                        "expected first option alt branch to be ignorecase"
+                                    );
+                                    match &alt.car.inner {
+                                        NodeInner::String(s) => assert_eq!(s.s, b"b"),
+                                        _ => panic!("expected first option alt branch 'b'"),
+                                    }
+                                    let cdr = alt.cdr.as_ref().expect("expected second alt branch");
+                                    match &cdr.inner {
+                                        NodeInner::Alt(alt2) => {
+                                            assert!(
+                                                alt2.car.has_status(ND_ST_IGNORECASE),
+                                                "expected second option alt branch to be ignorecase"
+                                            );
+                                            match &alt2.car.inner {
+                                                NodeInner::String(s) => assert_eq!(s.s, b"c"),
+                                                _ => panic!(
+                                                    "expected second option alt branch 'c'"
+                                                ),
+                                            }
+                                        }
+                                        _ => panic!("expected option alt cdr"),
+                                    }
+                                }
+                                _ => panic!("expected option body alternation"),
+                            }
+                        }
+                        _ => panic!("expected option bag after leading string"),
+                    },
+                    _ => panic!("expected second list node"),
+                }
+            }
+            _ => panic!("expected List node, got {:?}", root.node_type()),
+        }
+    }
+
     // --- Escape sequences ---
 
     #[test]
