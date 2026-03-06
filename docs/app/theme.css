@@ -1,0 +1,17 @@
+/* Ferroni brand: amber/copper instead of Ardo's default green */
+
+:root {
+  --ardo-color-brand: oklch(0.55 0.16 55);
+  --ardo-color-brandLight: oklch(0.65 0.16 55);
+  --ardo-color-brandDark: oklch(0.45 0.18 55);
+  --ardo-color-brandSubtle: oklch(0.96 0.03 55);
+  --ardo-color-brandGradient: linear-gradient(135deg, oklch(0.55 0.16 55) 0%, oklch(0.50 0.14 40) 100%);
+}
+
+.dark {
+  --ardo-color-brand: oklch(0.72 0.16 65);
+  --ardo-color-brandLight: oklch(0.82 0.14 65);
+  --ardo-color-brandDark: oklch(0.62 0.18 60);
+  --ardo-color-brandSubtle: oklch(0.22 0.04 55);
+  --ardo-color-brandGradient: linear-gradient(135deg, oklch(0.72 0.16 65) 0%, oklch(0.65 0.14 50) 100%);
+}
