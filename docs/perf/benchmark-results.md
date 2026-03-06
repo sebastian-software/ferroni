@@ -141,20 +141,17 @@ Full, unmodified grammars from [shikijs/textmate-grammars-themes](https://github
 ## Reproducing
 
 ```bash
-# Full suite with C comparison (~8 min)
+# User-facing C-comparison suite (scanner + text scanning)
 cargo bench --features ffi
 
-# Fast smoke comparison (5-10 kernels, reduced measurement overhead)
+# Fast smoke comparison (5-10 core kernels, reduced warmup/sample)
 FERRONI_BENCH_SMOKE=1 cargo bench --features ffi
 
-# Tier 1 only (real-world scenarios)
-cargo bench --features ffi -- scanner_highlighting
-cargo bench --features ffi -- text_scanning
-cargo bench --features ffi -- single_pattern
-cargo bench --features ffi -- compilation
+# Full detail suite for engine compatibility and regressions
+FERRONI_BENCH_DETAILED=1 cargo bench --features ffi
 
-# Tier 2 (regression coverage)
-cargo bench --features ffi -- regression_
+# Rust-only CI-tracked series
+cargo bench --bench codspeed_bench
 
 # HTML report
 open target/criterion/report/index.html

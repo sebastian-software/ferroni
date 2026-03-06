@@ -1,7 +1,8 @@
 // Criterion benchmark suite: Ferroni (Rust) vs Oniguruma (C) vs regex crate
 //
 // Run: cargo bench --features ffi
-// Specific group: cargo bench --features ffi -- compile
+// - quick: FERRONI_BENCH_SMOKE=1 cargo bench --features ffi
+// - detailed: FERRONI_BENCH_DETAILED=1 cargo bench --features ffi
 // HTML report: target/criterion/report/index.html
 
 mod grammar_loader;
@@ -22,14 +23,19 @@ use ferroni::regset::{onig_regset_new, onig_regset_search, OnigRegSetLead};
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions};
 
+fn is_benchmark_feature_enabled(var: &str) -> bool {
+    let value = std::env::var(var)
+        .unwrap_or_else(|_| String::new())
+        .to_ascii_lowercase();
+    matches!(value.as_str(), "1" | "true" | "yes" | "on")
+}
+
 fn is_smoke_benchmark() -> bool {
-    matches!(
-        std::env::var("FERRONI_BENCH_SMOKE")
-            .unwrap_or_else(|_| String::new())
-            .to_ascii_lowercase()
-            .as_str(),
-        "1" | "true" | "yes" | "on"
-    )
+    is_benchmark_feature_enabled("FERRONI_BENCH_SMOKE")
+}
+
+fn is_detailed_benchmark() -> bool {
+    is_benchmark_feature_enabled("FERRONI_BENCH_DETAILED")
 }
 
 // ---------------------------------------------------------------------------
@@ -2097,26 +2103,29 @@ fn bench_onig_bench(c: &mut Criterion) {
         return;
     }
 
-    // Tier 1: real-world scenarios
+    // User-facing baseline suite
     bench_scanner_highlighting(c);
     bench_text_scanning(c);
-    bench_single_pattern(c);
-    bench_compilation(c);
-    // Tier 2: regression coverage
-    bench_regression_compile(c);
-    bench_regression_literal(c);
-    bench_regression_quantifiers(c);
-    bench_regression_alternation(c);
-    bench_regression_backreferences(c);
-    bench_regression_lookaround(c);
-    bench_regression_unicode(c);
-    bench_regression_case_insensitive(c);
-    bench_regression_named_captures(c);
-    bench_regression_large_text(c);
-    bench_regression_regset(c);
-    bench_regression_match_at_position(c);
-    bench_regression_scanner(c);
-    bench_regression_scanner_textmate(c);
+
+    if is_detailed_benchmark() {
+        // Extended compatibility scan for maintainers
+        bench_single_pattern(c);
+        bench_compilation(c);
+        bench_regression_compile(c);
+        bench_regression_literal(c);
+        bench_regression_quantifiers(c);
+        bench_regression_alternation(c);
+        bench_regression_backreferences(c);
+        bench_regression_lookaround(c);
+        bench_regression_unicode(c);
+        bench_regression_case_insensitive(c);
+        bench_regression_named_captures(c);
+        bench_regression_large_text(c);
+        bench_regression_regset(c);
+        bench_regression_match_at_position(c);
+        bench_regression_scanner(c);
+        bench_regression_scanner_textmate(c);
+    }
 }
 
 criterion_group!(benches, bench_onig_bench);
