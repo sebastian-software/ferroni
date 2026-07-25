@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.0](https://github.com/sebastian-software/ferroni/compare/v1.2.8...v1.3.0) (2026-07-25)
+
+
+### Features
+
+* added new website ([b5a51a1](https://github.com/sebastian-software/ferroni/commit/b5a51a15397b595f80f81a45347b29a92e5b453b))
+* **bench:** add fast C-vs-Rust smoke benchmark mode ([f2959fe](https://github.com/sebastian-software/ferroni/commit/f2959fe543610742ea56a31709f0261a2bb28fe5))
+* **bench:** add memory comparison harness ([47dba7c](https://github.com/sebastian-software/ferroni/commit/47dba7c21ed3e6685a402126926d8bdc87a189a3))
+* **bench:** split default suite from detailed C-vs-Rust benchmarks ([380e77a](https://github.com/sebastian-software/ferroni/commit/380e77a22e0064873b2a5a6fc7e8e2f318d3862a))
+* **website:** add marketing homepage and publish docs ([2902f02](https://github.com/sebastian-software/ferroni/commit/2902f02b28e4fa2fee7681b1dbe22a791548da3d))
+
+
+### Bug Fixes
+
+* **bench:** remove unnecessary casts in capture end extraction ([eb1555a](https://github.com/sebastian-software/ferroni/commit/eb1555a22131f77bc300c2cc8b7f42fed60a9b92))
+* **ci:** keep Cargo.lock in the MSRV lane to stop dependency drift ([5238076](https://github.com/sebastian-software/ferroni/commit/523807604c7147ae2e904b5bef13a960281bb7ff))
+* **ci:** point pnpm setup to docs/package.json for version detection ([c07d0e0](https://github.com/sebastian-software/ferroni/commit/c07d0e033c0ec63ed6e6a131e42a1e108601393f))
+* read version from Cargo.toml for Ardo footer display ([0e99fb9](https://github.com/sebastian-software/ferroni/commit/0e99fb978a2edd4f9f3dc3832fcc78a9dc67d686))
+* **regcomp:** stabilize compat utf8 rewrites ([1f14097](https://github.com/sebastian-software/ferroni/commit/1f14097e4f860193079253ed395b24deb0c54b05))
+* **release:** drop stale release-as pin and match existing v* tags ([91053ac](https://github.com/sebastian-software/ferroni/commit/91053ace567a78e7ae04334356524a6a43c57a87))
+* repair the MSRV lane and Release Please versioning ([9c3cb0b](https://github.com/sebastian-software/ferroni/commit/9c3cb0b8c5bfd59df28757204e42e1aa15641244))
+* **website:** restore H1 headings in MDX docs for proper rendering ([8c3fe0f](https://github.com/sebastian-software/ferroni/commit/8c3fe0f02f299930754fcc88ec5c5542088fe639))
+
 ## [1.2.8](https://github.com/sebastian-software/ferroni/compare/v1.2.7...v1.2.8) (2026-03-05)
 
 
