@@ -24,8 +24,11 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      - name: Remove Cargo.lock for MSRV compatibility
-        if: matrix.rust != 'stable'
+      # The MSRV (1.81) lane keeps the committed Cargo.lock: fresh resolution
+      # pulls dependencies whose manifests cargo 1.81 cannot parse (e.g. clap
+      # 4.6 uses edition 2024), so only nightly tests an unpinned graph.
+      - name: Remove Cargo.lock for fresh resolution
+        if: matrix.rust == 'nightly'
         shell: bash
         run: rm -f Cargo.lock
       - name: Build
