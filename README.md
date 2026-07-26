@@ -11,7 +11,7 @@
   <a href="https://codecov.io/gh/sebastian-software/ferroni"><img src="https://img.shields.io/codecov/c/github/sebastian-software/ferroni?style=flat-square&logo=codecov&label=Coverage" alt="Coverage"></a>
   <a href="https://github.com/sebastian-software/ferroni/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/unsafe-0.4%25-green?style=flat-square" alt="Unsafe"></a>
-  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/tests-2%2C090_passing-brightgreen?style=flat-square" alt="Tests"></a>
+  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/tests-2%2C083_passing-brightgreen?style=flat-square" alt="Tests"></a>
   <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/C_parity-100%25-brightgreen?style=flat-square" alt="C Parity"></a>
 </p>
 
@@ -58,7 +58,7 @@ look-behind, conditionals, absent expressions, Unicode properties,
 subexpression calls — everything the C engine supports, without linking
 against C. If your pattern works in Oniguruma, it works in Ferroni. Every
 opcode and optimization pass is ported 1:1 and verified by
-[2,090 tests](#test-parity) -- including every upstream UTF-8 test from both
+[2,083 tests](#test-parity) -- including every upstream UTF-8 test from both
 Oniguruma and vscode-oniguruma.
 
 **Rust improves the operational story.** Pure `cargo build`.
@@ -84,6 +84,8 @@ Add to your `Cargo.toml`:
 [dependencies]
 ferroni = "1"
 ```
+
+MSRV: Rust 1.81 (enforced in CI).
 
 ### Regex
 
@@ -418,7 +420,7 @@ out of scope ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-enc
 
 On top of the ported upstream cases, Ferroni adds 380 Rust-native tests
 for API integration, edge cases, error paths, and coverage gaps.
-`cargo test` runs **2,090 test functions** (some compat functions bundle
+`cargo test` runs **2,083 test functions** (some compat functions bundle
 multiple upstream cases).
 
 C Oniguruma has no coverage reporting. Ferroni's test suite is a strict

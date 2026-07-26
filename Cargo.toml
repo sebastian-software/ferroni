@@ -6,11 +6,13 @@ description = "Pure-Rust Oniguruma regex engine with SIMD-accelerated search"
 license = "BSD-2-Clause"
 authors = ["Sebastian Software GmbH"]
 repository = "https://github.com/sebastian-software/ferroni"
-homepage = "https://github.com/sebastian-software/ferroni"
+homepage = "https://sebastian-software.github.io/ferroni/"
+documentation = "https://docs.rs/ferroni"
 readme = "README.md"
 keywords = ["regex", "oniguruma", "unicode", "pattern-matching", "simd"]
 categories = ["text-processing", "parsing"]
 rust-version = "1.81"
+autobenches = false
 exclude = [".cache/", "benches/", "docs/", "scripts/"]
 
 [features]
