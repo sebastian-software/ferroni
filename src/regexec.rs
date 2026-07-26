@@ -90,7 +90,10 @@ pub fn onig_get_progress_callout() -> Option<OnigCalloutFunc> {
     if p.is_null() {
         None
     } else {
-        Some(unsafe { std::mem::transmute(p) })
+        // SAFETY: a non-null pointer in this static was stored by
+        // onig_set_progress_callout, which cast an OnigCalloutFunc to
+        // *mut (), so the round-trip restores the original fn pointer.
+        Some(unsafe { std::mem::transmute::<*mut (), OnigCalloutFunc>(p) })
     }
 }
 
@@ -109,7 +112,10 @@ pub fn onig_get_retraction_callout() -> Option<OnigCalloutFunc> {
     if p.is_null() {
         None
     } else {
-        Some(unsafe { std::mem::transmute(p) })
+        // SAFETY: a non-null pointer in this static was stored by
+        // onig_set_retraction_callout, which cast an OnigCalloutFunc to
+        // *mut (), so the round-trip restores the original fn pointer.
+        Some(unsafe { std::mem::transmute::<*mut (), OnigCalloutFunc>(p) })
     }
 }
 
@@ -136,7 +142,11 @@ pub fn onig_get_callback_each_match() -> Option<OnigCallbackEachMatchFunc> {
     if p.is_null() {
         None
     } else {
-        Some(unsafe { std::mem::transmute(p) })
+        // SAFETY: a non-null pointer in this static was stored by
+        // onig_set_callback_each_match, which cast an
+        // OnigCallbackEachMatchFunc to *mut (), so the round-trip restores
+        // the original fn pointer.
+        Some(unsafe { std::mem::transmute::<*mut (), OnigCallbackEachMatchFunc>(p) })
     }
 }
 
@@ -203,6 +213,10 @@ pub fn onig_get_case_fold_flag(reg: &RegexType) -> OnigCaseFoldType {
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax(reg: &RegexType) -> &OnigSyntaxType {
+    // SAFETY: reg.syntax was set by onig_new (regcomp.rs) from the
+    // `&OnigSyntaxType` supplied at compile time -- in practice one of the
+    // `static OnigSyntax*` definitions in regsyntax.rs. The API requires
+    // that syntax to outlive the regex, so the pointer is valid and aligned.
     unsafe { &*reg.syntax }
 }
 
@@ -305,6 +319,10 @@ pub fn onig_noname_group_capture_is_active(reg: &RegexType) -> bool {
         return false;
     }
     if onig_number_of_names(reg) > 0 {
+        // SAFETY: reg.syntax was set by onig_new from the `&OnigSyntaxType`
+        // supplied at compile time (in practice a `static` from
+        // regsyntax.rs), which the API requires to outlive the regex, so the
+        // pointer is valid and aligned.
         let syntax = unsafe { &*reg.syntax };
         if is_syntax_bv(syntax, ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP)
             && !opton_capture_group(reg.options)
@@ -571,9 +589,21 @@ impl OnigCalloutArgs {
             num,
             regex: reg as *const RegexType,
             string: str_data.as_ptr(),
+            // SAFETY: the match engine passes `end` as the subject length in
+            // bytes (end <= str_data.len()), so the offset stays inside or
+            // one past the end of the `str_data` allocation.
             string_end: unsafe { str_data.as_ptr().add(end) },
+            // SAFETY: the match engine passes `start` as a byte offset into
+            // the subject (start <= str_data.len()), so the offset stays
+            // inside or one past the end of the `str_data` allocation.
             start: unsafe { str_data.as_ptr().add(start) },
+            // SAFETY: the match engine passes `right_range` as a byte offset
+            // into the subject (right_range <= str_data.len()), so the offset
+            // stays inside or one past the end of the `str_data` allocation.
             right_range: unsafe { str_data.as_ptr().add(right_range) },
+            // SAFETY: the match engine passes `current` as a byte offset into
+            // the subject (current <= str_data.len()), so the offset stays
+            // inside or one past the end of the `str_data` allocation.
             current: unsafe { str_data.as_ptr().add(current) },
             retry_in_match_counter: retry_counter,
             str_data: str_data.as_ptr(),
@@ -610,6 +640,9 @@ pub fn onig_get_contents_by_callout_args(_args: &OnigCalloutArgs) -> Option<&[u8
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
         let idx = (args.num - 1) as usize;
@@ -622,6 +655,9 @@ pub fn onig_get_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_passed_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
         let idx = (args.num - 1) as usize;
@@ -634,6 +670,9 @@ pub fn onig_get_passed_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_arg_by_callout_args(args: &OnigCalloutArgs, index: i32) -> Option<&CalloutArg> {
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
         let idx = (args.num - 1) as usize;
@@ -687,6 +726,9 @@ pub fn onig_get_retry_counter_by_callout_args(args: &OnigCalloutArgs) -> u64 {
 /// Returns null for name callouts.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_contents_end_by_callout_args(args: &OnigCalloutArgs) -> *const u8 {
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
         let idx = (args.num - 1) as usize;
@@ -820,10 +862,17 @@ pub fn onig_get_callout_data_by_callout_args(
     callout_num: i32,
     slot: i32,
 ) -> Option<i64> {
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     if args.callout_data.is_null() {
         return None;
     }
+    // SAFETY: non-null was checked above. Whoever stores a non-null
+    // callout_data must point it at the match engine's live callout-data
+    // vector and hold no mutable reference to it while the callout runs, so
+    // the shared borrow is sound for the duration of this call.
     let cd = unsafe { &*args.callout_data };
     onig_get_callout_data(reg, cd, callout_num, slot)
 }
@@ -838,6 +887,10 @@ pub fn onig_set_callout_data_by_callout_args(
     if args.callout_data.is_null() {
         return ONIGERR_INVALID_ARGUMENT;
     }
+    // SAFETY: non-null was checked above. Whoever stores a non-null
+    // callout_data must point it at the match engine's live callout-data
+    // vector and hold no other reference to it while the callout runs, so
+    // the unique borrow is sound for the duration of this call.
     let cd = unsafe { &mut *args.callout_data };
     onig_set_callout_data(cd, callout_num, slot, val)
 }
@@ -974,6 +1027,9 @@ pub fn onig_builtin_mismatch(_args: &OnigCalloutArgs, _user_data: *mut std::ffi:
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_builtin_error(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     if let Some(ref ext) = reg.extp {
         let idx = (args.num - 1) as usize;
@@ -998,6 +1054,10 @@ pub fn onig_builtin_count(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_v
     if args.callout_data.is_null() {
         return ONIG_CALLOUT_FAIL;
     }
+    // SAFETY: non-null was checked above. Whoever stores a non-null
+    // callout_data must point it at the match engine's live callout-data
+    // vector and hold no other reference to it while the callout runs, so
+    // the unique borrow is sound for the duration of this call.
     let cd = unsafe { &mut *args.callout_data };
     let num = args.num;
     if num < 1 {
@@ -1008,6 +1068,9 @@ pub fn onig_builtin_count(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_v
         return ONIG_CALLOUT_FAIL;
     }
 
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     let count_type = if let Some(ref ext) = reg.extp {
         if idx < ext.callout_list.len() && !ext.callout_list[idx].args.is_empty() {
@@ -1054,6 +1117,10 @@ pub fn onig_builtin_max(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_voi
     if args.callout_data.is_null() {
         return ONIG_CALLOUT_FAIL;
     }
+    // SAFETY: non-null was checked above. Whoever stores a non-null
+    // callout_data must point it at the match engine's live callout-data
+    // vector and hold no other reference to it while the callout runs, so
+    // the unique borrow is sound for the duration of this call.
     let cd = unsafe { &mut *args.callout_data };
     let num = args.num;
     if num < 1 {
@@ -1064,6 +1131,9 @@ pub fn onig_builtin_max(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_voi
         return ONIG_CALLOUT_FAIL;
     }
 
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     let ext = match reg.extp.as_ref() {
         Some(e) => e,
@@ -1125,10 +1195,19 @@ pub fn onig_builtin_skip(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_vo
     let current = if args.str_data.is_null() {
         0
     } else {
+        // SAFETY: `current` was computed in OnigCalloutArgs::new as
+        // `str_data.as_ptr().add(current)` from the same base pointer that
+        // was stored in `str_data`, so both pointers lie within the same
+        // allocation and current >= str_data; the offset is therefore valid
+        // and non-negative.
         unsafe { args.current.offset_from(args.str_data) as usize }
     };
 
     if !args.msa.is_null() {
+        // SAFETY: non-null was checked above. Whoever stores a non-null msa
+        // must point it at the MatchArg of the match in progress, kept alive
+        // and otherwise unreferenced by the match engine while the callout
+        // runs, so the unique borrow is sound for the duration of this call.
         let msa = unsafe { &mut *args.msa };
         if current > msa.skip_search {
             msa.skip_search = current;
@@ -1143,6 +1222,10 @@ pub fn onig_builtin_cmp(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_voi
     if args.callout_data.is_null() {
         return ONIG_CALLOUT_FAIL;
     }
+    // SAFETY: non-null was checked above. Whoever stores a non-null
+    // callout_data must point it at the match engine's live callout-data
+    // vector and hold no other reference to it while the callout runs, so
+    // the unique borrow is sound for the duration of this call.
     let cd = unsafe { &mut *args.callout_data };
     let num = args.num;
     if num < 1 {
@@ -1153,6 +1236,9 @@ pub fn onig_builtin_cmp(args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_voi
         return ONIG_CALLOUT_FAIL;
     }
 
+    // SAFETY: args.regex was set in OnigCalloutArgs::new from a `&RegexType`
+    // that the match engine keeps borrowed for as long as it hands these args
+    // to callout functions, so the pointer is valid and aligned here.
     let reg = unsafe { &*args.regex };
     let ext = match reg.extp.as_ref() {
         Some(e) => e,

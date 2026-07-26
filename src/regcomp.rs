@@ -481,6 +481,10 @@ fn tune_next(node: &mut Node, next_node: &Node, reg: &RegexType) -> i32 {
     let mut called = false;
 
     loop {
+        // SAFETY: `cur` starts as the exclusive `&mut node` argument and is only
+        // reassigned to the boxed body of the Memory bag it points to (below), so
+        // it always points to a live node inside the caller's exclusively borrowed
+        // tree, and no other reference to it exists while `n` is in use.
         let n = unsafe { &mut *cur };
         match &mut n.inner {
             NodeInner::Quant(ref mut qn) => {
@@ -3250,6 +3254,12 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
                         0 // recursive cycle
                     } else {
                         // Set MARK1 for cycle detection, compute, cache with FIXED_MIN
+                        // SAFETY: this analysis runs single-threaded while onig_compile
+                        // holds the tree exclusively; `node` derives from that exclusive
+                        // borrow, so no other live reference observes the writes. Only
+                        // the `status` flags and the `min_len` cache are mutated, and
+                        // the MARK1 flag set here prevents re-entering this node
+                        // through a recursive call cycle.
                         unsafe {
                             let node_ptr = node as *const Node as *mut Node;
                             (*node_ptr).status_add(ND_ST_MARK1);
@@ -3309,6 +3319,10 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
 
         NodeInner::Call(ref cn) => {
             if !cn.target_node.is_null() {
+                // SAFETY: `target_node` is non-null (checked above) and was set by
+                // resolve_call_references/refresh_call_targets to the called group's
+                // Bag node inside this same tree, which stays alive and unmoved for
+                // the duration of the analysis.
                 unsafe { node_min_byte_len(&*cn.target_node, env) }
             } else {
                 0
@@ -3747,6 +3761,9 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
         NodeInner::Call(ref cn) => {
             // Follow the call target to compute the character length of the called group
             if !cn.target_node.is_null() {
+                // SAFETY: `target_node` is non-null (checked above) and was set by
+                // resolve_call_references/refresh_call_targets to the called group's
+                // Bag node inside this same live tree; only shared reads follow.
                 let target = unsafe { &*cn.target_node };
                 node_char_len(target, enc)
             } else {
@@ -4052,6 +4069,9 @@ fn check_node_in_look_behind(node: &Node, not: bool, used: &mut bool) -> i32 {
                 *used = true;
                 0
             } else if !cn.target_node.is_null() {
+                // SAFETY: `target_node` is non-null (checked above) and was set by
+                // resolve_call_references/refresh_call_targets to the called group's
+                // Bag node inside this same live tree; only shared reads follow.
                 let target = unsafe { &*cn.target_node };
                 check_called_node_in_look_behind(target, not)
             } else {
@@ -4102,6 +4122,9 @@ fn list_reduce_in_look_behind(node: &mut Node) {
             // Walk the list, reducing each car
             let mut cur = node as *mut Node;
             loop {
+                // SAFETY: `cur` starts as the exclusive `&mut node` argument and is
+                // only advanced to the boxed cdr of the cons it points to, so it
+                // always points to a live node in the exclusively borrowed chain.
                 unsafe {
                     if let NodeInner::List(ref mut cons) = (*cur).inner {
                         let removed = node_reduce_in_look_behind(&mut cons.car);
@@ -4131,6 +4154,9 @@ fn alt_reduce_in_look_behind(node: &mut Node) {
         NodeInner::Alt(_) => {
             let mut cur = node as *mut Node;
             loop {
+                // SAFETY: `cur` starts as the exclusive `&mut node` argument and is
+                // only advanced to the boxed cdr of the cons it points to, so it
+                // always points to a live node in the exclusively borrowed chain.
                 unsafe {
                     if let NodeInner::Alt(ref mut cons) = (*cur).inner {
                         list_reduce_in_look_behind(&mut cons.car);
@@ -4184,6 +4210,9 @@ fn strip_redundant_casefold_alts_in_lookbehind(node: &mut Node, enc: OnigEncodin
 
     // Walk the cdr chain and check each string alternative
     let all_covered = {
+        // SAFETY: `cc_ptr` was taken just above from the CClass in the first Alt
+        // branch of `body`; the walk below only reads the chain and never mutates
+        // `body`, so the pointee stays live while `cc` is in use.
         let cc = unsafe { &*cc_ptr };
         let mut cur: &Node = body;
         let mut has_alts = false;
@@ -4406,6 +4435,12 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
                 // Mark the target group as CALLED
                 mem_node_ptr = env.mem_env(gnum as usize).mem_node;
                 if !mem_node_ptr.is_null() {
+                    // SAFETY: `mem_node_ptr` is non-null (checked above) and was
+                    // recorded by the parser as group `gnum`'s Bag node in the tree
+                    // currently being resolved, so it is live. Only a `status` bit is
+                    // set; suspended traversal frames that borrow this node (when the
+                    // target encloses this call) do not read `status` until after
+                    // this write completes.
                     unsafe {
                         (*mem_node_ptr).status_add(ND_ST_CALLED);
                     }
@@ -4421,6 +4456,12 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
                         call.called_gnum = nums[0];
                         mem_node_ptr = env.mem_env(nums[0] as usize).mem_node;
                         if !mem_node_ptr.is_null() {
+                            // SAFETY: `mem_node_ptr` is non-null (checked above) and
+                            // was recorded by the parser as the named group's Bag node
+                            // in the tree currently being resolved, so it is live.
+                            // Only a `status` bit is set; suspended traversal frames
+                            // that borrow this node (when the target encloses this
+                            // call) do not read `status` until after this write.
                             unsafe {
                                 (*mem_node_ptr).status_add(ND_ST_CALLED);
                             }
@@ -4511,6 +4552,12 @@ fn recursive_call_check_inner(node: &mut Node) -> i32 {
         NodeType::List | NodeType::Alt => {
             let mut r = 0;
             let mut cur: *mut Node = node;
+            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
+            // advances to the boxed cdr, so every deref is of a live node. `car`
+            // and `cdr` are disjoint fields of the cons, so recursing into car
+            // while keeping the cdr pointer creates no overlapping &mut; re-entry
+            // into this chain via call targets is cut off by the MARK1/MARK2
+            // guards on Bag Memory nodes.
             unsafe {
                 while let NodeInner::List(cons) | NodeInner::Alt(cons) = &mut (*cur).inner {
                     let car = &mut cons.car as *mut Box<Node>;
@@ -4549,6 +4596,11 @@ fn recursive_call_check_inner(node: &mut Node) -> i32 {
         }
         NodeType::Call => {
             // Follow the call target via raw pointer
+            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; `target`
+            // (when non-null) points to the called group's Bag node in this same
+            // tree, set by resolve_call_references. The MARK1/MARK2 guards in the
+            // Bag Memory arm stop the recursion before any node is entered twice
+            // on one path, so no overlapping &mut is created.
             unsafe {
                 if let NodeInner::Call(ref cn) = (*node_ptr).inner {
                     let target = cn.target_node;
@@ -4575,6 +4627,11 @@ fn recursive_call_check_inner(node: &mut Node) -> i32 {
 
             if is_memory {
                 // Use raw pointer to check/set status while inner is borrowed
+                // SAFETY: `node_ptr` is the exclusive `&mut node` argument, so it is
+                // valid and live; the raw pointer only lets the `status` flags be
+                // toggled around the borrow of `inner` (disjoint fields). The MARK2
+                // flag set here makes any re-entry through a call cycle return at
+                // the guards above before the body is borrowed a second time.
                 unsafe {
                     if (*node_ptr).has_status(ND_ST_MARK2) {
                         return 0;
@@ -4595,6 +4652,8 @@ fn recursive_call_check_inner(node: &mut Node) -> i32 {
                     r
                 }
             } else {
+                // SAFETY: `node_ptr` is the exclusive `&mut node` argument; this is
+                // a plain reborrow used to recurse into the bag's children.
                 unsafe {
                     if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
                         if let BagData::IfElse {
@@ -4643,6 +4702,10 @@ fn recursive_call_check_trav(node: &mut Node, env: &mut ParseEnv, state: i32) ->
         NodeType::List | NodeType::Alt => {
             let mut r = 0;
             let mut cur: *mut Node = node;
+            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
+            // advances to the boxed cdr, so every deref is of a live node. `car`
+            // and `cdr` are disjoint fields of the cons, so recursing into car
+            // while keeping the cdr pointer creates no overlapping &mut.
             unsafe {
                 while let NodeInner::List(cons) | NodeInner::Alt(cons) = &mut (*cur).inner {
                     let car = &mut cons.car as *mut Box<Node>;
@@ -4660,6 +4723,8 @@ fn recursive_call_check_trav(node: &mut Node, env: &mut ParseEnv, state: i32) ->
             }
             r
         }
+        // SAFETY: `node_ptr` is the exclusive `&mut node` argument; the two
+        // sequential borrows of `inner` through it never overlap.
         NodeType::Quant => unsafe {
             let upper = if let NodeInner::Quant(ref qn) = (*node_ptr).inner {
                 qn.upper
@@ -4693,6 +4758,8 @@ fn recursive_call_check_trav(node: &mut Node, env: &mut ParseEnv, state: i32) ->
         }
         NodeType::Bag => {
             // Extract info before borrowing inner mutably
+            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; only shared
+            // reads of `inner` and `status` are performed here.
             let (is_memory, is_if_else, is_called, regnum) = unsafe {
                 if let NodeInner::Bag(ref bn) = (*node_ptr).inner {
                     let is_mem = bn.bag_type == BagType::Memory;
@@ -4714,6 +4781,10 @@ fn recursive_call_check_trav(node: &mut Node, env: &mut ParseEnv, state: i32) ->
                     r = FOUND_CALLED_NODE;
                 }
                 if is_called || (state & IN_RECURSION) != 0 {
+                    // SAFETY: `node_ptr` is the exclusive `&mut node` argument. The
+                    // MARK1 bit set here makes recursive_call_check_inner return at
+                    // its guard if a call cycle leads back to this node, so its body
+                    // is never mutably entered twice.
                     unsafe {
                         if !(*node_ptr).has_status(ND_ST_RECURSION) {
                             (*node_ptr).status_add(ND_ST_MARK1);
@@ -4733,12 +4804,16 @@ fn recursive_call_check_trav(node: &mut Node, env: &mut ParseEnv, state: i32) ->
             }
 
             let mut state1 = state;
+            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; shared read
+            // of the `status` flags only.
             unsafe {
                 if (*node_ptr).has_status(ND_ST_RECURSION) {
                     state1 |= IN_RECURSION;
                 }
             }
 
+            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; plain
+            // reborrow used to recurse into the bag's children.
             unsafe {
                 if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
                     if let Some(ref mut body) = bn.body {
@@ -4794,6 +4869,11 @@ fn make_named_capture_number_map(
     match node_type {
         NodeType::List | NodeType::Alt => {
             let cur = node as *mut Node;
+            // SAFETY: `p` starts as the exclusive `&mut node` argument and only
+            // advances to the boxed cdr, so every deref is of a live node; `car`
+            // and `cdr` are disjoint fields, so recursing into car while holding
+            // the cdr pointer creates no overlapping &mut (this pass follows no
+            // call targets).
             unsafe {
                 let mut p = cur;
                 while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) = (*p).inner
@@ -4819,6 +4899,9 @@ fn make_named_capture_number_map(
                 None
             };
             if let Some(bp) = body_ptr {
+                // SAFETY: `bp` points to the quantifier's boxed body, extracted above
+                // to end the borrow of `node.inner`; no other reference to the body
+                // exists during the call.
                 let r = unsafe { make_named_capture_number_map(&mut *bp, map, counter) };
                 if r < 0 {
                     return r;
@@ -4875,6 +4958,8 @@ fn make_named_capture_number_map(
             }
 
             // IfElse or other bag types
+            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; plain
+            // reborrow used to recurse into the bag's children.
             unsafe {
                 let node_ptr = node as *mut Node;
                 if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
@@ -4965,6 +5050,11 @@ fn renumber_backref_traverse(node: &mut Node, map: &[GroupNumMap]) -> i32 {
     match node.node_type() {
         NodeType::List | NodeType::Alt => {
             let cur = node as *mut Node;
+            // SAFETY: `p` starts as the exclusive `&mut node` argument and only
+            // advances to the boxed cdr, so every deref is of a live node; `car`
+            // and `cdr` are disjoint fields, so recursing into car while holding
+            // the cdr pointer creates no overlapping &mut (this pass follows no
+            // call targets).
             unsafe {
                 let mut p = cur;
                 while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
@@ -4995,6 +5085,8 @@ fn renumber_backref_traverse(node: &mut Node, map: &[GroupNumMap]) -> i32 {
             0
         }
         NodeType::Bag => {
+            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; plain
+            // reborrow used to recurse into the bag's children.
             unsafe {
                 let node_ptr = node as *mut Node;
                 if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
@@ -5193,6 +5285,10 @@ fn infinite_recursive_call_check(node: &mut Node, env: &ParseEnv, head: i32) -> 
         NodeType::List => {
             let mut head = head;
             let cur = node as *mut Node;
+            // SAFETY: `p` starts as the exclusive `&mut node` argument and only
+            // advances to the boxed cdr, so every deref is of a live node. Cycles
+            // through call targets are cut by the MARK1/MARK2 guards on Bag
+            // Memory nodes before this chain could be re-entered.
             unsafe {
                 let mut p = cur;
                 while let NodeInner::List(ref mut cons) = &mut (*p).inner {
@@ -5217,6 +5313,10 @@ fn infinite_recursive_call_check(node: &mut Node, env: &ParseEnv, head: i32) -> 
         NodeType::Alt => {
             let mut must = RECURSION_MUST;
             let cur = node as *mut Node;
+            // SAFETY: `p` starts as the exclusive `&mut node` argument and only
+            // advances to the boxed cdr, so every deref is of a live node. Cycles
+            // through call targets are cut by the MARK1/MARK2 guards on Bag
+            // Memory nodes before this chain could be re-entered.
             unsafe {
                 let mut p = cur;
                 while let NodeInner::Alt(ref mut cons) = &mut (*p).inner {
@@ -5261,6 +5361,11 @@ fn infinite_recursive_call_check(node: &mut Node, env: &ParseEnv, head: i32) -> 
             // Follow call to its target (the BAG_MEMORY node it references)
             if let NodeInner::Call(ref cn) = node.inner {
                 if !cn.target_node.is_null() {
+                    // SAFETY: `target_node` is non-null (checked above) and points to
+                    // the called group's Bag Memory node in this same live tree. A
+                    // target already being visited has MARK1 or MARK2 set and returns
+                    // at the guards before touching its body, so no overlapping &mut
+                    // to a node's children is created.
                     r = unsafe { infinite_recursive_call_check(&mut *cn.target_node, env, head) };
                 }
             }
@@ -5293,6 +5398,8 @@ fn infinite_recursive_call_check(node: &mut Node, env: &ParseEnv, head: i32) -> 
                     }
                 }
                 BagType::IfElse => {
+                    // SAFETY: `node_ptr` is the exclusive `&mut node` argument; plain
+                    // reborrow used to recurse into the bag's children.
                     unsafe {
                         let node_ptr = node as *mut Node;
                         if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
@@ -5367,6 +5474,9 @@ fn infinite_recursive_call_check_trav(node: &mut Node, env: &ParseEnv) -> i32 {
     match node.node_type() {
         NodeType::List | NodeType::Alt => {
             let cur = node as *mut Node;
+            // SAFETY: `p` starts as the exclusive `&mut node` argument and only
+            // advances to the boxed cdr, so every deref is of a live node; the
+            // recursion into car borrows a field disjoint from the cdr link.
             unsafe {
                 let mut p = cur;
                 while let NodeInner::List(cons) | NodeInner::Alt(cons) = &mut (*p).inner {
@@ -5427,6 +5537,8 @@ fn infinite_recursive_call_check_trav(node: &mut Node, env: &ParseEnv) -> i32 {
                 node.status_remove(ND_ST_MARK1);
             }
             if bag_type == BagType::IfElse {
+                // SAFETY: `node_ptr` is the exclusive `&mut node` argument; plain
+                // reborrow used to recurse into the if-else branches.
                 unsafe {
                     let node_ptr = node as *mut Node;
                     if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
@@ -5474,6 +5586,10 @@ fn infinite_recursive_call_check_trav(node: &mut Node, env: &ParseEnv) -> i32 {
 /// Call reference resolution is already handled by resolve_call_references.
 fn tune_call(node: &mut Node, state: i32) {
     let np = node as *mut Node;
+    // SAFETY: `np` is the exclusive `&mut node` argument; all derefs are
+    // reborrows of it or of boxed cdr nodes reached from it, and the raw
+    // pointer only serves to update `status` around borrows of `inner`
+    // (disjoint fields). This pass follows no call targets.
     unsafe {
         match &mut (*np).inner {
             NodeInner::List(_) | NodeInner::Alt(_) => {
@@ -5555,6 +5671,11 @@ fn tune_call(node: &mut Node, state: i32) {
 /// C: tune_call2_call — traverse from a Call node to count entries on called targets.
 fn tune_call2_call(node: &mut Node) {
     let np = node as *mut Node;
+    // SAFETY: `np` is the exclusive `&mut node` argument; derefs are reborrows
+    // of it or of boxed cdr nodes. The Call arm also follows `target_node`,
+    // which points to the called group's Bag node in this same live tree; the
+    // MARK1 guards on both Call and Memory nodes stop call cycles before any
+    // node is mutably entered twice on one path.
     unsafe {
         match &mut (*np).inner {
             NodeInner::List(_) | NodeInner::Alt(_) => {
@@ -5638,6 +5759,9 @@ fn tune_call2_call(node: &mut Node) {
 /// C: tune_call2 — traverse tree, for each non-zero-repeat Call, invoke tune_call2_call.
 fn tune_call2(node: &mut Node) -> i32 {
     let np = node as *mut Node;
+    // SAFETY: `np` is the exclusive `&mut node` argument; all derefs are
+    // reborrows of it or of boxed cdr nodes reached from it. Call targets are
+    // only entered via tune_call2_call, which guards cycles with MARK1.
     unsafe {
         match &mut (*np).inner {
             NodeInner::List(_) | NodeInner::Alt(_) => {
@@ -5711,6 +5835,10 @@ fn tune_call2(node: &mut Node) -> i32 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn tune_called_state_call(node: &mut Node, state: i32) {
     let np = node as *mut Node;
+    // SAFETY: `np` is the exclusive `&mut node` argument; derefs are reborrows
+    // of it or of boxed cdr nodes, and the raw pointer only updates `status`
+    // around borrows of `inner` (disjoint fields). Re-entry through call
+    // cycles is cut by the MARK1 guard on Bag Memory nodes.
     unsafe {
         match &mut (*np).inner {
             NodeInner::Alt(_) => {
@@ -5836,6 +5964,10 @@ fn tune_called_state_call(node: &mut Node, state: i32) {
 /// C: tune_called_state — propagate state flags down the tree, entering called groups.
 fn tune_called_state(node: &mut Node, state: i32) {
     let np = node as *mut Node;
+    // SAFETY: `np` is the exclusive `&mut node` argument; all derefs are
+    // reborrows of it or of boxed cdr nodes reached from it. Called groups are
+    // entered only through tune_called_state_call, which guards call cycles
+    // with MARK1.
     unsafe {
         match &mut (*np).inner {
             NodeInner::Alt(_) => {
@@ -6001,6 +6133,10 @@ fn recurse_into_children(
     match &mut node.inner {
         NodeInner::List(_) | NodeInner::Alt(_) => {
             let mut cur: *mut Node = node;
+            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
+            // advances to the boxed cdr; `car` and `cdr` are disjoint fields, so
+            // recursing into car (which may rewrite that subtree in place) never
+            // aliases the cdr chain still being walked.
             unsafe {
                 while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
                     (*cur).inner
@@ -6049,6 +6185,9 @@ fn try_trie_optimize_alt(
     {
         let mut cur: *const Node = node;
         let mut idx = 0usize;
+        // SAFETY: `cur` starts as the exclusive `&mut node` argument (demoted to
+        // shared) and only advances to boxed cdr nodes, so every deref is of a
+        // live node; this walk and classify_branch perform reads only.
         unsafe {
             loop {
                 let (car, cdr) = match &(*cur).inner {
@@ -6197,6 +6336,10 @@ fn extract_literal_paths(
     if current_prefixes.len() > limit {
         return None;
     }
+    // SAFETY: callers pass `node` pointing at a live node of the tree currently
+    // borrowed by try_trie_optimize_alt (classify_branch derives it from a
+    // reference; recursive calls pass children of the dereferenced node), and
+    // only shared reads are performed.
     unsafe {
         match &(*node).inner {
             NodeInner::String(ref sn) => {
@@ -6365,6 +6508,9 @@ fn classify_branch(node: *const Node, backrefed_mem: MemStatusType) -> AltBranch
 
 /// Check if a node is a plain literal string (non-crude, no ND_ST_LITERAL_ALT).
 fn check_literal_branch(node: *const Node) -> (bool, Vec<u8>) {
+    // SAFETY: callers pass `node` pointing at a live node of the currently
+    // borrowed tree (derived from references in try_trie_optimize_alt and
+    // classify_branch); only shared reads are performed.
     unsafe {
         if (*node).has_status(ND_ST_LITERAL_ALT) {
             return (false, Vec::new());
@@ -6384,6 +6530,10 @@ fn extract_alt_branches(alt_node: &mut Node, indices: &[usize], out: &mut Vec<No
     // Walk the Alt cons-chain and collect the nodes at the given indices.
     let mut idx = 0usize;
     let mut cur: *mut Node = alt_node;
+    // SAFETY: `cur` starts as the exclusive `&mut alt_node` argument and only
+    // advances to boxed cdr nodes, so every deref is of a live, exclusively
+    // borrowed node; the mem::replace calls swap out whole cars (or the tail
+    // node) without touching the chain links still to be walked.
     unsafe {
         loop {
             match &mut (*cur).inner {
@@ -6456,6 +6606,12 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             // Walk the list: tune each element, then call tune_next for sequential pairs
             let mut cur: *mut Node = node;
             let mut prev: *mut Node = std::ptr::null_mut();
+            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
+            // advances to boxed cdr nodes. `prev` points at the previous
+            // element's car — a node distinct from the current `cons.car` — so
+            // the `&mut *prev` passed to tune_next does not alias the `&cons.car`
+            // passed alongside it; tune_tree rewrites cars in place and never
+            // moves or frees their boxed allocations.
             unsafe {
                 while let NodeInner::List(ref mut cons) = (*cur).inner {
                     let r = tune_tree(&mut cons.car, reg, state, env);
@@ -6481,6 +6637,9 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
 
         NodeInner::Alt(_) => {
             let mut cur: *mut Node = node;
+            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
+            // advances to boxed cdr nodes, so every deref is of a live,
+            // exclusively borrowed node.
             unsafe {
                 while let NodeInner::Alt(ref mut cons) = (*cur).inner {
                     let r = tune_tree(&mut cons.car, reg, state | IN_ALT, env);
@@ -6744,6 +6903,10 @@ fn mark_empty_repeat_node(node: &mut Node, env: &mut ParseEnv) {
         }
         NodeInner::List(_) | NodeInner::Alt(_) => {
             let mut cur: *mut Node = node;
+            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
+            // advances to boxed cdr nodes, so every deref is of a live,
+            // exclusively borrowed node; the recursion into car borrows a field
+            // disjoint from the cdr link.
             unsafe {
                 while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
                     (*cur).inner
@@ -6868,6 +7031,12 @@ fn resolve_empty_status_backrefs(
                     // Check if the backref is inside the quantifier
                     if !enclosing_quants.contains(&(er_node as *const Node)) {
                         // Backref is OUTSIDE the quantifier → set empty_status_mem
+                        // SAFETY: `er_node` was set by mark_empty_repeat_node (pass 1)
+                        // to a Quant node in this same tree, which has not been
+                        // restructured since, so it is live. Every empty quantifier
+                        // on the current traversal path is in `enclosing_quants`, so
+                        // the contains() check above guarantees `er_node` is not a
+                        // node this traversal currently borrows.
                         unsafe {
                             if let NodeInner::Quant(ref mut qn) = (*er_node).inner {
                                 qn.empty_status_mem |= 1u32 << back;
@@ -6880,6 +7049,10 @@ fn resolve_empty_status_backrefs(
         }
         NodeInner::List(_) | NodeInner::Alt(_) => {
             let mut cur: *mut Node = node;
+            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
+            // advances to boxed cdr nodes, so every deref is of a live,
+            // exclusively borrowed node; the recursion into car borrows a field
+            // disjoint from the cdr link.
             unsafe {
                 while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
                     (*cur).inner
@@ -7758,6 +7931,10 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
                 for &back in br.back_refs() {
                     let me = env.mem_env(back as usize);
                     if !me.mem_node.is_null() {
+                        // SAFETY: `mem_node` is non-null (checked above) and was set
+                        // by refresh_capture_nodes to the referenced group's Bag node
+                        // in this same tree, which stays alive and unmoved
+                        // throughout this analysis pass.
                         let mem_node = unsafe { &*me.mem_node };
                         let tmax = node_max_byte_len(mem_node, env);
                         if len < tmax {
@@ -7772,6 +7949,10 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
             if node.has_status(ND_ST_RECURSION) {
                 INFINITE_LEN
             } else if !cn.target_node.is_null() {
+                // SAFETY: `target_node` is non-null (checked above) and was set by
+                // resolve_call_references/refresh_call_targets to the called group's
+                // Bag node inside this same tree, which stays alive and unmoved for
+                // the duration of the analysis.
                 unsafe { node_max_byte_len(&*cn.target_node, env) }
             } else {
                 0
@@ -7802,6 +7983,12 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
                 } else if node.has_status(ND_ST_MARK1) {
                     INFINITE_LEN
                 } else {
+                    // SAFETY: this analysis runs single-threaded while onig_compile
+                    // holds the tree exclusively; `node` derives from that exclusive
+                    // borrow, so no other live reference observes the writes. Only
+                    // the `status` flags and the `max_len` cache are mutated, and
+                    // the MARK1 flag set here prevents re-entering this node through
+                    // a recursive call cycle.
                     unsafe {
                         let node_ptr = node as *const Node as *mut Node;
                         (*node_ptr).status_add(ND_ST_MARK1);
@@ -8043,6 +8230,10 @@ fn optimize_nodes(
             if node.has_status(ND_ST_RECURSION) {
                 opt.len.set(0, INFINITE_LEN);
             } else if !cn.target_node.is_null() {
+                // SAFETY: `target_node` is non-null (checked above) and was set by
+                // resolve_call_references/refresh_call_targets to the called group's
+                // Bag node inside this same live tree; recursion through the target
+                // is bounded by the `opt_count` counter in the Memory arm below.
                 let target = unsafe { &*cn.target_node };
                 let r = optimize_nodes(target, opt, enc, env_mm, scan_env);
                 if r != 0 {
@@ -8114,6 +8305,10 @@ fn optimize_nodes(
                 }
             }
             BagType::Memory => {
+                // SAFETY: the optimize pass runs single-threaded on a tree that
+                // onig_compile holds exclusively (demoted to shared references for
+                // this traversal), so no other reference observes the write; only
+                // the `opt_count` recursion-bound counter is mutated.
                 let opt_count = unsafe {
                     let bn_ptr = bn as *const BagNode as *mut BagNode;
                     (*bn_ptr).opt_count += 1;
@@ -8378,6 +8573,10 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         options: reg.options,
         case_fold_flag: reg.case_fold_flag,
         enc: reg.enc,
+        // SAFETY: `reg.syntax` is set by the safe constructors (api.rs) from a
+        // `&'static OnigSyntaxType`; FFI entry points require the caller to pass
+        // a valid syntax that outlives the regex. Either way the pointee is
+        // live, aligned, and not mutated for the whole compile.
         syntax: unsafe { &*reg.syntax },
         cap_history: 0,
         backtrack_mem: 0,

@@ -2797,6 +2797,12 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                                     } else {
                                         // Named backref: look up name
                                         let name = &pattern[name_start..name_end];
+                                        // SAFETY: `env.reg` was set by `onig_parse_tree`
+                                        // from the `&mut RegexType` borrowed for the
+                                        // entire parse, so it is non-null and live; the
+                                        // parser only reaches the regex through
+                                        // `env.reg`, so no aliasing `&mut` exists while
+                                        // this shared reborrow is used.
                                         let reg = unsafe { &*env.reg };
                                         if let Some(ref nt) = reg.name_table {
                                             if let Some(entry) = nt.find(name) {
@@ -4713,6 +4719,10 @@ fn prs_cc(
 
 /// Allocate a new CalloutListEntry on the regex's ext, return its 1-based num.
 fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
+    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
+    // borrowed for the entire parse, so it is non-null and live; we hold the
+    // only `&mut ParseEnv` and the parser reaches the regex only through
+    // `env.reg`, so this exclusive reborrow does not alias any other reference.
     let reg = unsafe { &mut *env.reg };
     if reg.extp.is_none() {
         reg.extp = Some(RegexExt {
@@ -4741,6 +4751,9 @@ fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
 
 /// Register a tag name → callout num mapping.
 fn callout_tag_entry(env: &mut ParseEnv, tag: &[u8], num: i32) {
+    // SAFETY: as in `reg_callout_list_entry` above — `env.reg` points to the
+    // `RegexType` mutably borrowed by `onig_parse_tree` for the whole parse,
+    // and no other reference to it is live during this exclusive reborrow.
     let reg = unsafe { &mut *env.reg };
     let ext = reg.extp.as_mut().unwrap();
     if ext.tag_table.is_none() {
@@ -4907,6 +4920,10 @@ fn prs_callout_of_name(
 
     // Create callout list entry
     let num = reg_callout_list_entry(env)?;
+    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
+    // borrowed for the entire parse; the reborrow taken inside
+    // `reg_callout_list_entry` ended when it returned, so this exclusive
+    // reborrow is the only live reference to the regex.
     let reg = unsafe { &mut *env.reg };
     let ext = reg.extp.as_mut().unwrap();
     let entry = &mut ext.callout_list[(num - 1) as usize];
@@ -5085,6 +5102,10 @@ fn prs_callout_of_contents(
 
     // Create entry
     let num = reg_callout_list_entry(env)?;
+    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
+    // borrowed for the entire parse; the reborrow taken inside
+    // `reg_callout_list_entry` ended when it returned, so this exclusive
+    // reborrow is the only live reference to the regex.
     let reg = unsafe { &mut *env.reg };
     let ext = reg.extp.as_mut().unwrap();
     let entry = &mut ext.callout_list[(num - 1) as usize];
@@ -5156,6 +5177,10 @@ fn prs_conditional(
             } else {
                 // Named ref
                 let name = &pattern[name_start..name_end];
+                // SAFETY: `env.reg` was set by `onig_parse_tree` from the
+                // `&mut RegexType` borrowed for the entire parse, so it is
+                // non-null and live; no aliasing `&mut` to the regex exists
+                // while this shared reborrow is used.
                 let reg = unsafe { &*env.reg };
                 let group_nums = if let Some(ref nt) = reg.name_table {
                     nt.name_to_group_numbers(name).map(|s| s.to_vec())
@@ -5989,6 +6014,12 @@ fn prs_bag(
                                     level_val,
                                 )) => {
                                     let name = &pattern[name_start..name_end];
+                                    // SAFETY: `env.reg` was set by
+                                    // `onig_parse_tree` from the
+                                    // `&mut RegexType` borrowed for the entire
+                                    // parse, so it is non-null and live; no
+                                    // aliasing `&mut` to the regex exists
+                                    // while this shared reborrow is used.
                                     let reg = unsafe { &*env.reg };
                                     if let Some(ref nt) = reg.name_table {
                                         if let Some(entry) = nt.find(name) {
@@ -6188,6 +6219,10 @@ fn prs_named_group(
     let num = env.add_mem_entry()?;
 
     // Add to name table
+    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
+    // borrowed for the entire parse, so it is non-null and live; this
+    // exclusive reborrow ends with the `if let` and does not overlap any
+    // other reference to the regex.
     if let Some(ref mut nt) = unsafe { &mut *env.reg }.name_table {
         let name = &pattern[name_start..name_end];
         let allow = is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME);
@@ -6225,6 +6260,10 @@ struct NamedGroupCtx<'a> {
 
 /// Apply whole options ((?I), (?L), (?C)) to the regex and parse env.
 fn set_whole_options(option: OnigOptionType, env: &mut ParseEnv) {
+    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
+    // borrowed for the entire parse, so it is non-null and live; we hold the
+    // only `&mut ParseEnv` and the parser reaches the regex only through
+    // `env.reg`, so this exclusive reborrow does not alias any other reference.
     let reg = unsafe { &mut *env.reg };
     if option.intersects(ONIG_OPTION_IGNORECASE_IS_ASCII) {
         reg.case_fold_flag &=
@@ -7076,6 +7115,11 @@ fn prs_branch(
     let top = node_new_list(node, None);
     let mut headp: *mut Option<Box<Node>>;
     // We need to build a linked list. Use unsafe pointer to the cdr slot.
+    // SAFETY: `top` is a freshly created `Box<Node>` exclusively owned by this
+    // function; nothing else references it, so casting away constness and
+    // mutating through `top_ptr` cannot conflict with another borrow. `headp`
+    // is derived from the List cell's `cdr` field, which lives in `top`'s
+    // stable heap allocation (a `Box` never moves its contents).
     unsafe {
         let top_ptr = &*top as *const Node as *mut Node;
         if let NodeInner::List(ref mut cons) = (*top_ptr).inner {
@@ -7091,6 +7135,12 @@ fn prs_branch(
         r = r2;
 
         let new_cell = node_new_list(node2, None);
+        // SAFETY: `headp` points at the `cdr` slot of the most recently
+        // appended List cell, which is owned by `top` and kept alive in its
+        // stable heap allocation until this function returns; `prs_exp` above
+        // does not touch `top`, so the slot is still valid. Writing the new
+        // cell and then re-deriving `headp` from it happens while no other
+        // reference into the list exists.
         unsafe {
             *headp = Some(new_cell);
             // Advance headp to the new cell's cdr
@@ -7133,6 +7183,12 @@ fn prs_alts(
     } else if r == TokenType::Alt as i32 {
         let top = node_new_alt(node, None);
         let mut headp: *mut Option<Box<Node>>;
+        // SAFETY: `top` is a freshly created `Box<Node>` exclusively owned by
+        // this function; nothing else references it, so casting away
+        // constness and mutating through `top_ptr` cannot conflict with
+        // another borrow. `headp` is derived from the Alt cell's `cdr` field,
+        // which lives in `top`'s stable heap allocation (a `Box` never moves
+        // its contents).
         unsafe {
             let top_ptr = &*top as *const Node as *mut Node;
             if let NodeInner::Alt(ref mut cons) = (*top_ptr).inner {
@@ -7152,6 +7208,13 @@ fn prs_alts(
             r = r2;
 
             let new_cell = node_new_alt(node2, None);
+            // SAFETY: `headp` points at the `cdr` slot of the most recently
+            // appended Alt cell, which is owned by `top` and kept alive in
+            // its stable heap allocation until this function returns;
+            // `fetch_token`/`prs_branch` above do not touch `top`, so the
+            // slot is still valid. Writing the new cell and then re-deriving
+            // `headp` from it happens while no other reference into the list
+            // exists.
             unsafe {
                 *headp = Some(new_cell);
                 if let Some(ref mut cell) = *headp {
@@ -7224,8 +7287,18 @@ pub fn onig_parse_tree(
     env.options = reg.options;
     env.case_fold_flag = reg.case_fold_flag;
     env.enc = reg.enc;
+    // SAFETY: `reg.syntax` is always set from a `&'static OnigSyntaxType`
+    // (the built-in `static` syntaxes in regsyntax.rs, or a caller-provided
+    // 'static syntax via the API builder), mirroring C Oniguruma where syntax
+    // definitions are global. It is therefore non-null, properly aligned, and
+    // valid for the 'static lifetime claimed by `env.syntax`. A caller that
+    // stored a dangling or non-'static pointer in `reg.syntax` would break
+    // this invariant.
     env.syntax = unsafe { &*reg.syntax };
     env.pattern = pattern.as_ptr();
+    // SAFETY: offsetting the slice's base pointer by its own length yields
+    // the one-past-the-end pointer of the same allocation, which `add`
+    // permits; the result is used only as an end sentinel, never dereferenced.
     env.pattern_end = unsafe { pattern.as_ptr().add(pattern.len()) };
     env.reg = reg as *mut RegexType;
 
