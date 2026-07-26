@@ -112,6 +112,17 @@ jobs:
         run: ./scripts/prepare-oniguruma-sources.sh
       - name: Check ffi feature
         run: cargo check --features ffi
+      # The original breakage only showed in the published layout (benches/
+      # and scripts/ are excluded from the crate), so also check the packaged
+      # artifact with the sources supplied via FERRONI_ONIGURUMA_DIR.
+      - name: Check ffi feature from the packaged crate
+        run: |
+          cargo package --no-verify
+          crate=$(ls target/package/ferroni-*.crate)
+          tar -xzf "$crate" -C target/package
+          pkg_dir="${crate%.crate}"
+          FERRONI_ONIGURUMA_DIR="$GITHUB_WORKSPACE/.cache/upstream/oniguruma-orig" \
+            cargo check --features ffi --manifest-path "$pkg_dir/Cargo.toml"
 
   clippy:
     name: Clippy
