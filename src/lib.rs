@@ -76,8 +76,8 @@
 // Allow patterns inherent to the C port.
 #![allow(dead_code)]
 #![allow(clippy::empty_line_after_doc_comments)]
-#![allow(clippy::missing_transmute_annotations)]
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
+#![deny(unsafe_op_in_unsafe_fn)]
+#![warn(clippy::undocumented_unsafe_blocks)]
 // Enable #[coverage(off)] attribute when running under cargo-llvm-cov on nightly.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 

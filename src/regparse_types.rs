@@ -447,8 +447,25 @@ impl Node {
     }
 }
 
-// Allow sending Node across threads (raw pointers require manual impl)
+// Raw pointers require manual Send/Sync impls.
+//
+// SAFETY: the raw pointers in a Node (`parent`, and `CallNode::target_node`)
+// are non-owning links to other nodes inside the same AST, which is owned as
+// a single `Box<Node>` tree. Sending the tree to another thread transfers all
+// of the pointees along with it, so the internal pointers stay valid and no
+// two threads ever own the same node. This would break if a Node were sent
+// while its `parent`/`target_node` pointed into a tree left behind on the
+// original thread — the parser never does that: trees are built, compiled,
+// and dropped whole.
 unsafe impl Send for Node {}
+// SAFETY: no safe method dereferences the raw pointers, so `&Node` shared
+// between threads permits no data race through them; any dereference happens
+// in crate-internal unsafe code during parse/compile, which is single-threaded
+// (the tree is confined to the one thread running onig_new-style compilation).
+// Note this impl is trusting rather than airtight: `parent`/`target_node` can
+// alias other nodes in the same tree, so unsafe code that mutated through them
+// while another thread held any `&Node` into the tree would be a data race.
+// Kept to mirror the C code, where node trees are likewise thread-confined.
 unsafe impl Sync for Node {}
 
 // === Node Variant Structs ===
@@ -761,8 +778,18 @@ impl Default for MemEnv {
     }
 }
 
-// Safety: MemEnv contains raw pointers that are only used within the parser
+// SAFETY: `mem_node` and `empty_repeat_node` are non-owning pointers to
+// BAG_MEMORY / quantifier nodes inside the parse tree of the regex currently
+// being compiled. A MemEnv lives inside a ParseEnv, which exists only for the
+// duration of a single-threaded parse/compile pass and is never handed to
+// another thread while those pointers are live (they dangle once the tree is
+// dropped). Sending a MemEnv with live pointers to a thread that outlives the
+// tree would break this invariant.
 unsafe impl Send for MemEnv {}
+// SAFETY: nothing dereferences these pointers through `&MemEnv` outside the
+// single compilation thread; sharing across threads never happens in practice
+// because the owning ParseEnv is parser-scoped. Concurrent mutation of the
+// pointees from another thread would be a data race and would break this.
 unsafe impl Sync for MemEnv {}
 
 // === Save Item ===
@@ -778,8 +805,16 @@ pub struct UnsetAddr {
     pub target: *mut Node,
 }
 
-// Safety: UnsetAddr contains raw pointers used within the parser
+// SAFETY: `target` is a non-owning pointer to a BAG_MEMORY node in the parse
+// tree, recorded so the compiler can patch call addresses later in the same
+// compilation pass. The list of UnsetAddr entries lives in the parser-scoped
+// ParseEnv and is consumed on the same thread before the tree is dropped;
+// sending an entry to a thread that outlives the tree would break this.
 unsafe impl Send for UnsetAddr {}
+// SAFETY: `target` is never dereferenced through `&UnsetAddr` outside the
+// single compilation thread, and UnsetAddr values are not shared across
+// threads in practice (parser-scoped, single-threaded use during
+// compilation). Concurrent mutation of the pointee would be a data race.
 unsafe impl Sync for UnsetAddr {}
 
 // === Parse Environment (ScanEnv in C) ===
@@ -813,8 +848,21 @@ pub struct ParseEnv {
     pub flags: u32,
 }
 
-// Safety: ParseEnv contains raw pointers used within the parser scope
+// SAFETY: the raw pointers in ParseEnv point into data owned by the caller of
+// `onig_parse_tree` for the whole compilation: `pattern`/`pattern_end` (and
+// `error`/`error_end`) into the pattern bytes, `reg` at the RegexType under
+// construction, and the MemEnv slots into the parse tree. A ParseEnv is
+// created per compilation, used on that one thread, and discarded; moving it
+// to another thread is only sound while pattern, regex, and tree are moved or
+// kept alive with it. Sending a ParseEnv beyond the lifetime of those
+// referents would break this invariant.
 unsafe impl Send for ParseEnv {}
+// SAFETY: ParseEnv is never shared across threads in practice — parsing is
+// strictly single-threaded and every function takes `&mut ParseEnv`, so no
+// concurrent access through `&ParseEnv` occurs. This impl is trusting rather
+// than airtight: `reg` is a mutably-dereferenced interior pointer, so two
+// threads holding `&ParseEnv` and dereferencing `reg` (as the parser's unsafe
+// blocks do) would race. Kept to mirror the C code's thread-confined ScanEnv.
 unsafe impl Sync for ParseEnv {}
 
 // === Node Creation Helper Functions ===
