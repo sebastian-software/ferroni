@@ -3,7 +3,7 @@ coverage:
     project:
       default:
         # Coverage instrumentation causes stack overflows in recursive/backref
-        # tests, so ~42 of 1566+ tests must be skipped under coverage.
+        # tests, so ~42 tests must be skipped under coverage.
         target: 87%
     patch:
       default:
@@ -11,7 +11,6 @@ coverage:
 
 ignore:
   - "src/ffi.rs"                    # FFI bindings for benchmark comparison only
-  - "src/bin/**"                    # Binary entrypoints (profiling tools, not library code)
   - "src/unicode/egcb_data.rs"      # Generated Unicode data tables
   - "src/unicode/wb_data.rs"        # Generated Unicode data tables
   - "src/unicode/property_data.rs"  # Generated Unicode data tables

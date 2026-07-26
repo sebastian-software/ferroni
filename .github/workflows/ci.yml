@@ -33,6 +33,10 @@ jobs:
         run: rm -f Cargo.lock
       - name: Build
         run: cargo build
+      - name: Test lib and api
+        run: cargo test --lib --test api_test
+      - name: Test doctests
+        run: cargo test --doc
       - name: Test compat_syntax
         run: cargo test --test compat_syntax
       - name: Test compat_options

@@ -12,12 +12,14 @@ cd ferroni
 cargo build
 ```
 
+Ferroni's MSRV is Rust 1.81, enforced by a dedicated CI lane.
+
 ## Running Tests
 
 Debug builds require increased stack size:
 
 ```bash
-# Full UTF-8 test suite (1,554 tests)
+# Full UTF-8 test suite (1,568 tests)
 RUST_MIN_STACK=268435456 cargo test --test compat_utf8 -- --test-threads=1
 
 # Other suites
