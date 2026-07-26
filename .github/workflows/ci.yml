@@ -101,6 +101,18 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  ffi-smoke:
+    name: FFI feature smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Prepare Oniguruma sources
+        run: ./scripts/prepare-oniguruma-sources.sh
+      - name: Check ffi feature
+        run: cargo check --features ffi
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

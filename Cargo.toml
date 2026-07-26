@@ -16,6 +16,9 @@ autobenches = false
 exclude = [".cache/", "benches/", "docs/", "scripts/"]
 
 [features]
+# Benchmark-comparison harness: links a local upstream Oniguruma checkout
+# (scripts/prepare-oniguruma-sources.sh or FERRONI_ONIGURUMA_DIR) for the
+# in-repo C-vs-Rust benches. Not needed to use the library.
 ffi = ["cc"]
 
 [dependencies]
