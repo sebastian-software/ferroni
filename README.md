@@ -65,8 +65,9 @@ Oniguruma and vscode-oniguruma.
 Cross-compiles to `wasm32-unknown-unknown`. Easier to package in Rust-native
 stacks and downstream bindings, including N-API modules, without `node-gyp`
 or a local C compiler.
-Only enabling the optional `ffi` feature requires a local Oniguruma source
-snapshot for reference benchmarks. Rust also removes whole classes of C
+Only the optional `ffi` feature — the C-vs-Rust benchmark harness, not
+needed to use the library — requires a local Oniguruma source snapshot
+(`./scripts/prepare-oniguruma-sources.sh` or `FERRONI_ONIGURUMA_DIR`). Rust also removes whole classes of C
 memory bugs structurally; C Oniguruma has a long history of memory-safety
 CVEs, while Ferroni keeps `unsafe` at 0.4%, all documented in
 [ADR-002](https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy).
