@@ -7268,6 +7268,59 @@ fn prs_regexp(
 // Entry point: onig_parse_tree
 // ============================================================================
 
+/// Validate numeric backrefs after the full pattern has established all captures.
+/// This preserves supported forward references while rejecting missing groups.
+fn check_numbered_backref_bounds(node: &Node, num_mem: i32) -> Result<(), i32> {
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            check_numbered_backref_bounds(&cons.car, num_mem)?;
+            if let Some(next) = &cons.cdr {
+                check_numbered_backref_bounds(next, num_mem)?;
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &qn.body {
+                check_numbered_backref_bounds(body, num_mem)?;
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &an.body {
+                check_numbered_backref_bounds(body, num_mem)?;
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(body) = &bn.body {
+                check_numbered_backref_bounds(body, num_mem)?;
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    check_numbered_backref_bounds(then_node, num_mem)?;
+                }
+                if let Some(else_node) = else_node {
+                    check_numbered_backref_bounds(else_node, num_mem)?;
+                }
+            }
+        }
+        NodeInner::BackRef(br) => {
+            if !node.has_status(ND_ST_BY_NAME)
+                && br
+                    .back_refs()
+                    .iter()
+                    .any(|&backref| backref < 1 || backref > num_mem)
+            {
+                return Err(ONIGERR_INVALID_BACKREF);
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
 pub fn onig_parse_tree(
     pattern: &[u8],
     reg: &mut RegexType,
@@ -7320,6 +7373,8 @@ pub fn onig_parse_tree(
         env.set_mem_node(0, &mut *zero_node as *mut Node);
         root = zero_node;
     }
+
+    check_numbered_backref_bounds(&root, env.num_mem)?;
 
     reg.num_mem = env.num_mem;
 
