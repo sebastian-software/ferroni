@@ -3915,11 +3915,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if s >= right_range || is_word_ascii(str_data[s]) {
                     goto_fail = true;
                 } else {
-                    s += if str_data[s] < 0x80 {
-                        1
-                    } else {
-                        enclen(enc, str_data, s)
-                    };
+                    s = advance_char_to_end(enc, str_data, s, end);
                     p += 1;
                 }
             }

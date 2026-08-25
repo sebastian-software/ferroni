@@ -259,6 +259,7 @@ fn byte_matching_clamps_truncated_utf8_word_steps() {
         (r"\b\w+\b", b"\xf0\x9f"),
         (r"\w\b", b"\xf0\x9f"),
         (r"\w+", b"abc\xc2"),
+        (r"(?W)\W", b"\xf0"),
     ];
 
     for &(pattern, input) in cases {
