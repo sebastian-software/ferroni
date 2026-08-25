@@ -2,6 +2,7 @@
 
 use ferroni::api::{Regex, RegexBuilder};
 use ferroni::error::RegexError;
+use ferroni::oniguruma::ONIGERR_INVALID_BACKREF;
 use ferroni::prelude::*;
 
 // === Regex::new ===
@@ -308,6 +309,37 @@ fn backreference() {
     let re = Regex::new(r"(\w+)\s+\1").unwrap();
     let m = re.find("hello hello world").unwrap();
     assert_eq!(m.as_str(), "hello hello");
+}
+
+#[test]
+fn numbered_backreferences_validate_capture_group_bounds() {
+    for pattern in [
+        b"\\1".as_slice(),
+        b"\\8",
+        b"\\9",
+        b"(a)\\2",
+        b"\\k<2>",
+        b"\\k<8>",
+        b"\\k<9>",
+        b"\\k<80>",
+        b"(a)\\k<2>",
+    ] {
+        let err = Regex::new_bytes(pattern).unwrap_err();
+        assert_eq!(err.code(), ONIGERR_INVALID_BACKREF, "pattern: {pattern:?}");
+    }
+}
+
+#[test]
+fn valid_numbered_backreferences_compile_and_match() {
+    for (pattern, input) in [
+        (b"(a)\\1".as_slice(), "aa"),
+        (b"(a)\\k<1>".as_slice(), "aa"),
+        (b"(a)(b)(c)(d)(e)(f)(g)(h)\\8".as_slice(), "abcdefghh"),
+        (b"(a)(b)(c)(d)(e)(f)(g)(h)\\k<8>".as_slice(), "abcdefghh"),
+    ] {
+        let re = Regex::new_bytes(pattern).unwrap();
+        assert!(re.is_match(input), "pattern: {pattern:?}, input: {input:?}");
+    }
 }
 
 #[test]
