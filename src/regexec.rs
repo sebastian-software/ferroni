@@ -2298,7 +2298,7 @@ fn is_word_char_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> 
     if b < 0x80 {
         return is_word_ascii(b);
     }
-    let code = enc.mbc_to_code(&str_data[s..], end);
+    let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
     enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
 }
 
@@ -3339,7 +3339,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         if s + mb_len > right_range {
                             goto_fail = true;
                         } else {
-                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
                             if !is_in_code_range(mb, code) {
                                 goto_fail = true;
                             } else {
@@ -3368,9 +3368,12 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     } else {
                         let mb_len = enclen(enc, str_data, s);
                         if s + mb_len > right_range {
-                            goto_fail = true;
+                            // Upstream treats a multibyte character truncated
+                            // by the logical end as matching a negated class.
+                            s = right_range;
+                            p += 1;
                         } else {
-                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
                             if is_in_code_range(mb, code) {
                                 goto_fail = true;
                             } else {
@@ -3402,12 +3405,19 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     } else {
                         let len = enclen(enc, str_data, s);
                         if s + len > right_range {
-                            goto_fail = true;
+                            if not {
+                                // Keep CClassMixNot consistent with CClassMbNot
+                                // and consume the trailing truncated character.
+                                s = right_range;
+                                p += 1;
+                            } else {
+                                goto_fail = true;
+                            }
                         } else {
                             let in_class = if len == 1 {
                                 bitset_at(bsp, b as usize)
                             } else {
-                                let code = enc.mbc_to_code(&str_data[s..], end);
+                                let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
                                 if is_in_code_range(mb, code) {
                                     true
                                 } else if (code as usize) < SINGLE_BYTE_SIZE {
@@ -3664,7 +3674,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         let in_class = if len == 1 {
                             bitset_at(bsp, b as usize)
                         } else {
-                            let code = enc.mbc_to_code(&str_data[s..], end);
+                            let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
                             if is_in_code_range(mb, code) {
                                 true
                             } else if (code as usize) < SINGLE_BYTE_SIZE {
@@ -3702,7 +3712,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         if s + mb_len > right_range {
                             break;
                         }
-                        let code = enc.mbc_to_code(&str_data[s..], end);
+                        let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
                         if !is_in_code_range(mb, code) {
                             break;
                         }
@@ -6785,6 +6795,40 @@ mod tests {
 
         let (multibyte_miss, _) = compile_and_match("[^ぁ-ん]".as_bytes(), "あ".as_bytes());
         assert_eq!(multibyte_miss, ONIG_MISMATCH);
+    }
+
+    #[test]
+    fn logical_end_truncates_multibyte_decoding_and_matches_negated_classes() {
+        let truncated = [0xE2, 0x82];
+        let reg = compile_regex(br"\S+");
+        let (position, region) = onig_search(
+            &reg,
+            &truncated,
+            truncated.len(),
+            0,
+            truncated.len(),
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(position, 0);
+        assert_eq!(region.unwrap().end[0], truncated.len() as i32);
+
+        // `\xC2\xA1` is U+00A1 (not a word character), but its leading byte
+        // alone decodes as U+00C2 (a word character). This distinguishes the
+        // logical end from the physical slice length.
+        let split_character = [0xC2, 0xA1];
+        let reg = compile_regex(br"\w");
+        let (position, region) = onig_search(
+            &reg,
+            &split_character,
+            1,
+            0,
+            1,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(position, 0);
+        assert_eq!(region.unwrap().end[0], 1);
     }
 
     #[test]
