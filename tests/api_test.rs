@@ -388,6 +388,20 @@ fn numbered_backreferences_validate_capture_group_bounds() {
 }
 
 #[test]
+fn group_reference_numbers_reject_overflow_and_missing_terminators() {
+    for pattern in [
+        br"(a)\k<a+999999999999999>".as_slice(),
+        br"(?(9999999999999)a|b)".as_slice(),
+        br"(a)(?(1+9999999999999)a|b)".as_slice(),
+        br"(a)\k<1".as_slice(),
+        br"(a)\g<1".as_slice(),
+        br"(a)\k'1".as_slice(),
+    ] {
+        assert!(Regex::new_bytes(pattern).is_err(), "{pattern:?}");
+    }
+}
+
+#[test]
 fn valid_numbered_backreferences_compile_and_match() {
     for (pattern, input) in [
         (b"(a)\\1".as_slice(), "aa"),

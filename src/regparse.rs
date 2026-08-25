@@ -546,6 +546,18 @@ fn scan_number(p: &mut usize, end: usize, pattern: &[u8], enc: OnigEncoding) -> 
     num
 }
 
+#[inline]
+fn append_decimal_digit(value: &mut i32, code: OnigCodePoint) -> bool {
+    let digit = digitval(code) as i32;
+    match value.checked_mul(10).and_then(|n| n.checked_add(digit)) {
+        Some(next) => {
+            *value = next;
+            true
+        }
+        None => false,
+    }
+}
+
 fn scan_hexadecimal_number(
     p: &mut usize,
     end: usize,
@@ -1976,6 +1988,7 @@ fn fetch_name(
     let mut r = 0i32;
     let mut exist_level = false;
     let mut level = 0i32;
+    let mut ended_with_end_code = false;
 
     if p_end(*p, end) {
         return Err(ONIGERR_EMPTY_GROUP_NAME);
@@ -2018,6 +2031,7 @@ fn fetch_name(
             name_end = *p;
             let c = pfetch_s(p, pattern, end, enc);
             if c == end_code || c == ')' as u32 {
+                ended_with_end_code = c == end_code;
                 if num_type != IS_NOT_NUM && digit_count == 0 {
                     r = ONIGERR_INVALID_GROUP_NAME;
                 }
@@ -2033,19 +2047,27 @@ fn fetch_name(
                     name_end = *p - 1; // position before '+'/'-'
                     let level_sign: i32 = if c == '-' as u32 { -1 } else { 1 };
                     let mut level_val = 0i32;
+                    let mut level_ended = false;
                     while !p_end(*p, end) {
                         let lc = pfetch_s(p, pattern, end, enc);
                         if lc == end_code {
                             exist_level = true;
                             level = level_val * level_sign;
+                            level_ended = true;
+                            ended_with_end_code = true;
                             break;
                         }
                         if is_code_digit_ascii(enc, lc) {
-                            level_val = level_val * 10 + (lc as i32 - '0' as i32);
+                            if !append_decimal_digit(&mut level_val, lc) {
+                                return Err(ONIGERR_TOO_BIG_NUMBER);
+                            }
                         } else {
                             r = ONIGERR_INVALID_GROUP_NAME;
                             break;
                         }
+                    }
+                    if r == 0 && !level_ended {
+                        return Err(ONIGERR_END_PATTERN_IN_GROUP);
                     }
                     break;
                 } else {
@@ -2062,19 +2084,27 @@ fn fetch_name(
                     name_end = *p - 1;
                     let level_sign: i32 = if c == '-' as u32 { -1 } else { 1 };
                     let mut level_val = 0i32;
+                    let mut level_ended = false;
                     while !p_end(*p, end) {
                         let lc = pfetch_s(p, pattern, end, enc);
                         if lc == end_code {
                             exist_level = true;
                             level = level_val * level_sign;
+                            level_ended = true;
+                            ended_with_end_code = true;
                             break;
                         }
                         if is_code_digit_ascii(enc, lc) {
-                            level_val = level_val * 10 + (lc as i32 - '0' as i32);
+                            if !append_decimal_digit(&mut level_val, lc) {
+                                return Err(ONIGERR_TOO_BIG_NUMBER);
+                            }
                         } else {
                             r = ONIGERR_INVALID_GROUP_NAME;
                             break;
                         }
+                    }
+                    if r == 0 && !level_ended {
+                        return Err(ONIGERR_END_PATTERN_IN_GROUP);
                     }
                     break;
                 } else if !enc.is_code_ctype(c, ONIGENC_CTYPE_WORD) {
@@ -2087,8 +2117,9 @@ fn fetch_name(
             return Err(r);
         }
 
-        // Must have ended with end_code
-        // (if c was ')' that's also OK for some syntaxes)
+        if !ended_with_end_code && p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
 
         if num_type != IS_NOT_NUM {
             let mut tp = pnum_head;
@@ -5248,7 +5279,9 @@ fn prs_conditional(
                             break;
                         }
                         if is_code_digit_ascii(enc, ld) {
-                            level_val = level_val * 10 + (ld as i32 - '0' as i32);
+                            if !append_decimal_digit(&mut level_val, ld) {
+                                return Err(ONIGERR_TOO_BIG_NUMBER);
+                            }
                         } else {
                             return Err(ONIGERR_INVALID_GROUP_NAME);
                         }
@@ -5256,7 +5289,9 @@ fn prs_conditional(
                     break;
                 }
                 if is_code_digit_ascii(enc, d) {
-                    num_val = num_val * 10 + (d as i32 - '0' as i32);
+                    if !append_decimal_digit(&mut num_val, d) {
+                        return Err(ONIGERR_TOO_BIG_NUMBER);
+                    }
                 } else {
                     return Err(ONIGERR_INVALID_GROUP_NAME);
                 }
