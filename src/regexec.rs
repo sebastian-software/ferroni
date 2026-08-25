@@ -2613,6 +2613,17 @@ fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
     enc.mbc_enc_len(&str_data[s..])
 }
 
+/// Advance over one character without moving past the logical end of input.
+///
+/// A UTF-8 lead byte can report a character length larger than the remaining
+/// input when callers use the byte API with truncated input. The matcher must
+/// consume the available bytes in that case, rather than retaining an offset
+/// beyond `end` for a later opcode or match region.
+#[inline]
+fn advance_char_to_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> usize {
+    s.saturating_add(enclen(enc, str_data, s)).min(end)
+}
+
 /// Case-insensitive string comparison using encoding-aware case folding.
 /// Compares `mblen` bytes starting at `s1_pos` with bytes starting at `*s2_pos`.
 /// Advances `*s2_pos` past consumed bytes on success. Returns true if equal.
@@ -3258,11 +3269,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             if !bitset_at(bsp, b as usize) {
                                 goto_fail = true;
                             } else {
-                                s += if b < 0x80 {
-                                    1
-                                } else {
-                                    enclen(enc, str_data, s)
-                                };
+                                s = advance_char_to_end(enc, str_data, s, end);
                                 p += 1;
                             }
                         }
@@ -3286,11 +3293,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             if b == c {
                                 goto_fail = true;
                             } else {
-                                s += if b < 0x80 {
-                                    1
-                                } else {
-                                    enclen(enc, str_data, s)
-                                };
+                                s = advance_char_to_end(enc, str_data, s, end);
                                 p += 1;
                             }
                         }
@@ -3299,11 +3302,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             if b < 0x80 && (b | 0x20) == lower {
                                 goto_fail = true;
                             } else {
-                                s += if b < 0x80 {
-                                    1
-                                } else {
-                                    enclen(enc, str_data, s)
-                                };
+                                s = advance_char_to_end(enc, str_data, s, end);
                                 p += 1;
                             }
                         }
@@ -3312,11 +3311,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             if bitset_at(bsp, b as usize) {
                                 goto_fail = true;
                             } else {
-                                s += if b < 0x80 {
-                                    1
-                                } else {
-                                    enclen(enc, str_data, s)
-                                };
+                                s = advance_char_to_end(enc, str_data, s, end);
                                 p += 1;
                             }
                         }
@@ -3764,7 +3759,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                                 break;
                             }
                             ascii_only = false;
-                            s += enclen(enc, str_data, s);
+                            s = advance_char_to_end(enc, str_data, s, end);
                         }
                     }
                     if s > start {
@@ -3792,7 +3787,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         if !is_word_char_at(enc, str_data, s, end) {
                             break;
                         }
-                        s += enclen(enc, str_data, s);
+                        s = advance_char_to_end(enc, str_data, s, end);
                     }
                     if s > start {
                         let prev = prev_char_head(enc, start, s, str_data);
@@ -3887,11 +3882,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if s >= right_range || !is_word_char_at(enc, str_data, s, end) {
                     goto_fail = true;
                 } else {
-                    s += if str_data[s] < 0x80 {
-                        1
-                    } else {
-                        enclen(enc, str_data, s)
-                    };
+                    s = advance_char_to_end(enc, str_data, s, end);
                     p += 1;
                 }
             }
@@ -3909,11 +3900,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if s >= right_range || is_word_char_at(enc, str_data, s, end) {
                     goto_fail = true;
                 } else {
-                    s += if str_data[s] < 0x80 {
-                        1
-                    } else {
-                        enclen(enc, str_data, s)
-                    };
+                    s = advance_char_to_end(enc, str_data, s, end);
                     p += 1;
                 }
             }
@@ -3922,11 +3909,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if s >= right_range || is_word_ascii(str_data[s]) {
                     goto_fail = true;
                 } else {
-                    s += if str_data[s] < 0x80 {
-                        1
-                    } else {
-                        enclen(enc, str_data, s)
-                    };
+                    s = advance_char_to_end(enc, str_data, s, end);
                     p += 1;
                 }
             }

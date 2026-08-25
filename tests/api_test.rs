@@ -274,6 +274,43 @@ fn is_match_bytes() {
     assert!(!re.is_match_bytes(b"goodbye"));
 }
 
+#[test]
+fn byte_matching_clamps_truncated_utf8_word_steps() {
+    let cases: &[(&str, &[u8])] = &[
+        (r"\w+", b"hello\xf0\x9f\x92"),
+        (r"\b\w+\b", b"\xf0\x9f"),
+        (r"\w\b", b"\xf0\x9f"),
+        (r"\w+", b"abc\xc2"),
+        (r"(?W)\W", b"\xf0"),
+    ];
+
+    for &(pattern, input) in cases {
+        let re = Regex::new(pattern).unwrap();
+        assert!(re.is_match_bytes(input), "pattern {pattern:?}");
+
+        let matched = re.find_bytes(input).expect("matching input");
+        assert_eq!(matched.range(), 0..input.len(), "pattern {pattern:?}");
+        assert_eq!(matched.as_bytes(), input, "pattern {pattern:?}");
+    }
+}
+
+#[test]
+fn byte_matching_clamps_truncated_utf8_negated_class_steps() {
+    let input = b"\xf0";
+    let re = Regex::new_bytes(b"([^a]+)").unwrap();
+
+    let matched = re.find_bytes(input).expect("matching input");
+    assert_eq!(matched.range(), 0..input.len());
+    assert_eq!(matched.as_bytes(), input);
+
+    let captures = re.captures_bytes(input).expect("matching input");
+    for index in 0..captures.len() {
+        let capture = captures.get(index).expect("participating capture");
+        assert_eq!(capture.range(), 0..input.len());
+        assert_eq!(capture.as_bytes(), input);
+    }
+}
+
 // === RegexError ===
 
 #[test]
