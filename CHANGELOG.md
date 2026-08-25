@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.3.1](https://github.com/sebastian-software/ferroni/compare/v1.3.0...v1.3.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* clamp ASCII non-word truncated UTF-8 ([0675e20](https://github.com/sebastian-software/ferroni/commit/0675e20a62f79329eefe172e738c8f4ad7cd13e8))
+* clamp truncated UTF-8 matcher steps ([0c4e7fe](https://github.com/sebastian-software/ferroni/commit/0c4e7fe261f1a5747184cb414e7780d6c8269907))
+* clamp truncated UTF-8 matcher steps ([f166a67](https://github.com/sebastian-software/ferroni/commit/f166a671253800fd9546752c67a5763068425cb8))
+* make the ffi feature survive crate packaging and gate it in CI ([847c0a2](https://github.com/sebastian-software/ferroni/commit/847c0a2e37e18856eab96c62b3ce96b2d534b4c8))
+* make the ffi feature survive crate packaging and gate it in CI ([118c95d](https://github.com/sebastian-software/ferroni/commit/118c95dc561a1afb468079cf8d826d058164b824))
+* **regcomp:** bound finite quantifier expansion ([17baae6](https://github.com/sebastian-software/ferroni/commit/17baae631fed9ebc7379b01ecb4c273d9eadbae6))
+* **regcomp:** bound finite quantifier expansion ([84f3e0a](https://github.com/sebastian-software/ferroni/commit/84f3e0aad647a4cec5a7ecbdb4eaa7ca666e3513))
+* **regcomp:** keep expansion bound with unrelated calls ([acf1049](https://github.com/sebastian-software/ferroni/commit/acf104999e8782509b9d4fd45fec429214547de7))
+* reset cached capture buffers ([4b22b26](https://github.com/sebastian-software/ferroni/commit/4b22b2627a1608320b6a5fb8c9ff3c72fa528dc7))
+* reset cached capture buffers ([08396d3](https://github.com/sebastian-software/ferroni/commit/08396d359b651bda5016e54e2ff5e2828438534e))
+* validate numbered backreference bounds ([baf82e7](https://github.com/sebastian-software/ferroni/commit/baf82e7fe5bc490457672a6baeae45e5829f47a0))
+* validate numbered backreference bounds ([f437095](https://github.com/sebastian-software/ferroni/commit/f437095554aba307a852d0d455fc4415501ea15c))
+
 ## [1.3.0](https://github.com/sebastian-software/ferroni/compare/v1.2.8...v1.3.0) (2026-07-25)
 
 
