@@ -5021,33 +5021,40 @@ fn recursive_call_check_trav(node: &mut Node, env: &mut ParseEnv, state: i32) ->
     }
 }
 
-fn collect_call_edges(node: &Node, current_group: usize, edges: &mut [Vec<usize>]) {
+fn collect_call_edges(node: &Node, current_groups: &mut Vec<usize>, edges: &mut [Vec<usize>]) {
     match &node.inner {
         NodeInner::Call(call) => {
             let target = call.called_gnum as usize;
             if target < edges.len() {
-                edges[current_group].push(target);
+                for &group in current_groups.iter() {
+                    edges[group].push(target);
+                }
             }
         }
         NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            collect_call_edges(&cons.car, current_group, edges);
+            collect_call_edges(&cons.car, current_groups, edges);
             if let Some(cdr) = &cons.cdr {
-                collect_call_edges(cdr, current_group, edges);
+                collect_call_edges(cdr, current_groups, edges);
             }
         }
         NodeInner::Quant(qn) => {
             if let Some(body) = &qn.body {
-                collect_call_edges(body, current_group, edges);
+                collect_call_edges(body, current_groups, edges);
             }
         }
         NodeInner::Bag(bn) => {
-            let group = if bn.bag_type == BagType::Memory {
-                bn.regnum() as usize
-            } else {
-                current_group
-            };
+            let is_memory = bn.bag_type == BagType::Memory;
+            if is_memory {
+                let group = bn.regnum() as usize;
+                for &parent in current_groups.iter() {
+                    if parent != group {
+                        edges[parent].push(group);
+                    }
+                }
+                current_groups.push(group);
+            }
             if let Some(body) = &bn.body {
-                collect_call_edges(body, group, edges);
+                collect_call_edges(body, current_groups, edges);
             }
             if let BagData::IfElse {
                 then_node,
@@ -5055,16 +5062,19 @@ fn collect_call_edges(node: &Node, current_group: usize, edges: &mut [Vec<usize>
             } = &bn.bag_data
             {
                 if let Some(then_node) = then_node {
-                    collect_call_edges(then_node, group, edges);
+                    collect_call_edges(then_node, current_groups, edges);
                 }
                 if let Some(else_node) = else_node {
-                    collect_call_edges(else_node, group, edges);
+                    collect_call_edges(else_node, current_groups, edges);
                 }
+            }
+            if is_memory {
+                current_groups.pop();
             }
         }
         NodeInner::Anchor(an) => {
             if let Some(body) = &an.body {
-                collect_call_edges(body, current_group, edges);
+                collect_call_edges(body, current_groups, edges);
             }
         }
         _ => {}
@@ -5085,57 +5095,69 @@ fn reaches_group(edges: &[Vec<usize>], from: usize, target: usize, seen: &mut [b
         .any(|next| reaches_group(edges, next, target, seen))
 }
 
-fn node_contains_call(node: &Node) -> bool {
+fn node_contains_called_group(node: &Node) -> bool {
+    if node.has_status(ND_ST_CALLED) {
+        return true;
+    }
+
     match &node.inner {
-        NodeInner::Call(_) => true,
         NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            node_contains_call(&cons.car) || cons.cdr.as_deref().is_some_and(node_contains_call)
+            node_contains_called_group(&cons.car)
+                || cons.cdr.as_deref().is_some_and(node_contains_called_group)
         }
-        NodeInner::Quant(qn) => qn.body.as_deref().is_some_and(node_contains_call),
+        NodeInner::Quant(qn) => qn.body.as_deref().is_some_and(node_contains_called_group),
         NodeInner::Bag(bn) => {
-            bn.body.as_deref().is_some_and(node_contains_call)
+            bn.body.as_deref().is_some_and(node_contains_called_group)
                 || match &bn.bag_data {
                     BagData::IfElse {
                         then_node,
                         else_node,
                     } => {
-                        then_node.as_deref().is_some_and(node_contains_call)
-                            || else_node.as_deref().is_some_and(node_contains_call)
+                        then_node.as_deref().is_some_and(node_contains_called_group)
+                            || else_node.as_deref().is_some_and(node_contains_called_group)
                     }
                     _ => false,
                 }
         }
-        NodeInner::Anchor(an) => an.body.as_deref().is_some_and(node_contains_call),
+        NodeInner::Anchor(an) => an.body.as_deref().is_some_and(node_contains_called_group),
         _ => false,
     }
 }
 
-fn apply_call_graph_state(node: &mut Node, recursive: &[bool], env: &mut ParseEnv) {
+fn apply_call_graph_state(
+    node: &mut Node,
+    current_groups: &mut Vec<usize>,
+    edges: &[Vec<usize>],
+    recursive: &[bool],
+    env: &mut ParseEnv,
+) {
     let mut recursive_group = None;
     match &mut node.inner {
         NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            apply_call_graph_state(&mut cons.car, recursive, env);
+            apply_call_graph_state(&mut cons.car, current_groups, edges, recursive, env);
             if let Some(cdr) = &mut cons.cdr {
-                apply_call_graph_state(cdr, recursive, env);
+                apply_call_graph_state(cdr, current_groups, edges, recursive, env);
             }
         }
         NodeInner::Quant(qn) => {
-            if qn.upper == 0 && qn.body.as_deref().is_some_and(node_contains_call) {
+            if qn.upper == 0 && qn.body.as_deref().is_some_and(node_contains_called_group) {
                 qn.include_referred = 1;
             }
             if let Some(body) = &mut qn.body {
-                apply_call_graph_state(body, recursive, env);
+                apply_call_graph_state(body, current_groups, edges, recursive, env);
             }
         }
         NodeInner::Bag(bn) => {
-            if bn.bag_type == BagType::Memory {
+            let is_memory = bn.bag_type == BagType::Memory;
+            if is_memory {
                 let regnum = bn.regnum() as usize;
                 if recursive.get(regnum).copied().unwrap_or(false) {
                     recursive_group = Some(regnum);
                 }
+                current_groups.push(regnum);
             }
             if let Some(body) = &mut bn.body {
-                apply_call_graph_state(body, recursive, env);
+                apply_call_graph_state(body, current_groups, edges, recursive, env);
             }
             if let BagData::IfElse {
                 then_node,
@@ -5143,16 +5165,30 @@ fn apply_call_graph_state(node: &mut Node, recursive: &[bool], env: &mut ParseEn
             } = &mut bn.bag_data
             {
                 if let Some(then_node) = then_node {
-                    apply_call_graph_state(then_node, recursive, env);
+                    apply_call_graph_state(then_node, current_groups, edges, recursive, env);
                 }
                 if let Some(else_node) = else_node {
-                    apply_call_graph_state(else_node, recursive, env);
+                    apply_call_graph_state(else_node, current_groups, edges, recursive, env);
                 }
+            }
+            if is_memory {
+                current_groups.pop();
             }
         }
         NodeInner::Anchor(an) => {
             if let Some(body) = &mut an.body {
-                apply_call_graph_state(body, recursive, env);
+                apply_call_graph_state(body, current_groups, edges, recursive, env);
+            }
+        }
+        NodeInner::Call(call) => {
+            let target = call.called_gnum as usize;
+            if target < edges.len()
+                && current_groups.iter().copied().any(|group| {
+                    let mut seen = vec![false; edges.len()];
+                    reaches_group(edges, target, group, &mut seen)
+                })
+            {
+                node.status_add(ND_ST_RECURSION);
             }
         }
         _ => {}
@@ -5165,7 +5201,8 @@ fn apply_call_graph_state(node: &mut Node, recursive: &[bool], env: &mut ParseEn
 
 fn analyze_call_graph(root: &mut Node, env: &mut ParseEnv) -> Vec<bool> {
     let mut edges = vec![Vec::new(); env.num_mem.max(0) as usize + 1];
-    collect_call_edges(root, 0, &mut edges);
+    let mut current_groups = vec![0];
+    collect_call_edges(root, &mut current_groups, &mut edges);
     let recursive = (0..edges.len())
         .map(|group| {
             edges[group].iter().copied().any(|next| {
@@ -5174,16 +5211,16 @@ fn analyze_call_graph(root: &mut Node, env: &mut ParseEnv) -> Vec<bool> {
             })
         })
         .collect::<Vec<_>>();
-    apply_call_graph_state(root, &recursive, env);
+    apply_call_graph_state(root, &mut current_groups, &edges, &recursive, env);
     recursive
 }
 
-fn must_recurse_without_consuming(node: &Node, recursive: &[bool], env: &ParseEnv) -> bool {
+fn must_recurse_without_consuming(node: &Node, must_recurse: &[bool], env: &ParseEnv) -> bool {
     match &node.inner {
         NodeInner::List(cons) => {
             let mut cur = node;
             while let NodeInner::List(cons) = &cur.inner {
-                if must_recurse_without_consuming(&cons.car, recursive, env) {
+                if must_recurse_without_consuming(&cons.car, must_recurse, env) {
                     return true;
                 }
                 if node_min_byte_len(&cons.car, env) != 0 {
@@ -5199,7 +5236,7 @@ fn must_recurse_without_consuming(node: &Node, recursive: &[bool], env: &ParseEn
         NodeInner::Alt(cons) => {
             let mut cur = node;
             while let NodeInner::Alt(cons) = &cur.inner {
-                if !must_recurse_without_consuming(&cons.car, recursive, env) {
+                if !must_recurse_without_consuming(&cons.car, must_recurse, env) {
                     return false;
                 }
                 match &cons.cdr {
@@ -5214,11 +5251,11 @@ fn must_recurse_without_consuming(node: &Node, recursive: &[bool], env: &ParseEn
                 && qn
                     .body
                     .as_deref()
-                    .is_some_and(|body| must_recurse_without_consuming(body, recursive, env))
+                    .is_some_and(|body| must_recurse_without_consuming(body, must_recurse, env))
         }
         NodeInner::Bag(bn) => {
             if let Some(body) = &bn.body {
-                if must_recurse_without_consuming(body, recursive, env) {
+                if must_recurse_without_consuming(body, must_recurse, env) {
                     return true;
                 }
                 if node_min_byte_len(body, env) != 0 {
@@ -5231,9 +5268,9 @@ fn must_recurse_without_consuming(node: &Node, recursive: &[bool], env: &ParseEn
                     else_node,
                 } => {
                     then_node.as_deref().is_some_and(|then_node| {
-                        must_recurse_without_consuming(then_node, recursive, env)
+                        must_recurse_without_consuming(then_node, must_recurse, env)
                     }) && else_node.as_deref().map_or(true, |else_node| {
-                        must_recurse_without_consuming(else_node, recursive, env)
+                        must_recurse_without_consuming(else_node, must_recurse, env)
                     })
                 }
                 _ => false,
@@ -5242,8 +5279,8 @@ fn must_recurse_without_consuming(node: &Node, recursive: &[bool], env: &ParseEn
         NodeInner::Anchor(an) => an
             .body
             .as_deref()
-            .is_some_and(|body| must_recurse_without_consuming(body, recursive, env)),
-        NodeInner::Call(call) => recursive
+            .is_some_and(|body| must_recurse_without_consuming(body, must_recurse, env)),
+        NodeInner::Call(call) => must_recurse
             .get(call.called_gnum as usize)
             .copied()
             .unwrap_or(false),
@@ -5251,46 +5288,106 @@ fn must_recurse_without_consuming(node: &Node, recursive: &[bool], env: &ParseEn
     }
 }
 
-fn has_never_ending_recursion(node: &Node, recursive: &[bool], env: &ParseEnv) -> bool {
+fn update_must_recurse_groups(
+    node: &Node,
+    recursive: &[bool],
+    current: &[bool],
+    next: &mut [bool],
+    env: &ParseEnv,
+) {
     match &node.inner {
         NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            has_never_ending_recursion(&cons.car, recursive, env)
+            update_must_recurse_groups(&cons.car, recursive, current, next, env);
+            if let Some(cdr) = &cons.cdr {
+                update_must_recurse_groups(cdr, recursive, current, next, env);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &qn.body {
+                update_must_recurse_groups(body, recursive, current, next, env);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if bn.bag_type == BagType::Memory {
+                let regnum = bn.regnum() as usize;
+                if recursive.get(regnum).copied().unwrap_or(false) {
+                    next[regnum] = bn
+                        .body
+                        .as_deref()
+                        .is_some_and(|body| must_recurse_without_consuming(body, current, env));
+                }
+            }
+            if let Some(body) = &bn.body {
+                update_must_recurse_groups(body, recursive, current, next, env);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    update_must_recurse_groups(then_node, recursive, current, next, env);
+                }
+                if let Some(else_node) = else_node {
+                    update_must_recurse_groups(else_node, recursive, current, next, env);
+                }
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &an.body {
+                update_must_recurse_groups(body, recursive, current, next, env);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn analyze_must_recurse_groups(root: &Node, recursive: &[bool], env: &ParseEnv) -> Vec<bool> {
+    let mut current = recursive.to_vec();
+    loop {
+        let mut next = current.clone();
+        update_must_recurse_groups(root, recursive, &current, &mut next, env);
+        if next == current {
+            return current;
+        }
+        current = next;
+    }
+}
+
+fn has_never_ending_recursion(node: &Node, recursive: &[bool], must_recurse: &[bool]) -> bool {
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            has_never_ending_recursion(&cons.car, recursive, must_recurse)
                 || cons
                     .cdr
                     .as_deref()
-                    .is_some_and(|cdr| has_never_ending_recursion(cdr, recursive, env))
+                    .is_some_and(|cdr| has_never_ending_recursion(cdr, recursive, must_recurse))
         }
         NodeInner::Quant(qn) => qn
             .body
             .as_deref()
-            .is_some_and(|body| has_never_ending_recursion(body, recursive, env)),
+            .is_some_and(|body| has_never_ending_recursion(body, recursive, must_recurse)),
         NodeInner::Bag(bn) => {
+            let regnum = bn.regnum() as usize;
             let recursive_memory = bn.bag_type == BagType::Memory
-                && recursive
-                    .get(bn.regnum() as usize)
-                    .copied()
-                    .unwrap_or(false)
+                && recursive.get(regnum).copied().unwrap_or(false)
                 && node.has_status(ND_ST_CALLED)
-                && bn
-                    .body
-                    .as_deref()
-                    .is_some_and(|body| must_recurse_without_consuming(body, recursive, env));
+                && must_recurse.get(regnum).copied().unwrap_or(false);
             recursive_memory
                 || bn
                     .body
                     .as_deref()
-                    .is_some_and(|body| has_never_ending_recursion(body, recursive, env))
+                    .is_some_and(|body| has_never_ending_recursion(body, recursive, must_recurse))
                 || match &bn.bag_data {
                     BagData::IfElse {
                         then_node,
                         else_node,
                     } => {
-                        then_node
-                            .as_deref()
-                            .is_some_and(|node| has_never_ending_recursion(node, recursive, env))
-                            || else_node.as_deref().is_some_and(|node| {
-                                has_never_ending_recursion(node, recursive, env)
-                            })
+                        then_node.as_deref().is_some_and(|node| {
+                            has_never_ending_recursion(node, recursive, must_recurse)
+                        }) || else_node.as_deref().is_some_and(|node| {
+                            has_never_ending_recursion(node, recursive, must_recurse)
+                        })
                     }
                     _ => false,
                 }
@@ -5298,7 +5395,7 @@ fn has_never_ending_recursion(node: &Node, recursive: &[bool], env: &ParseEnv) -
         NodeInner::Anchor(an) => an
             .body
             .as_deref()
-            .is_some_and(|body| has_never_ending_recursion(body, recursive, env)),
+            .is_some_and(|body| has_never_ending_recursion(body, recursive, must_recurse)),
         _ => false,
     }
 }
@@ -9023,7 +9120,8 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         // A zero-length recursive group cannot make progress and would recurse
         // forever. This graph check avoids re-entering the AST through raw
         // self-references while preserving the compiler's rejection behavior.
-        if has_never_ending_recursion(&root, &recursive_groups, &env) {
+        let must_recurse_groups = analyze_must_recurse_groups(&root, &recursive_groups, &env);
+        if has_never_ending_recursion(&root, &recursive_groups, &must_recurse_groups) {
             return ONIGERR_NEVER_ENDING_RECURSION;
         }
         // Propagate state flags (IN_ALT, IN_REAL_REPEAT, etc.) through called groups
@@ -9644,6 +9742,29 @@ mod tests {
         let mut reg = make_test_context().0;
         let r = onig_compile(&mut reg, b"(?<n>|a\\g<n>)+");
         assert_eq!(r, ONIG_NORMAL);
+    }
+
+    #[test]
+    fn mutually_recursive_group_with_nullable_exit_is_valid() {
+        let mut reg = make_test_context().0;
+        let r = onig_compile(&mut reg, b"\\A(?<n>|a\\g<m>)\\z|\\zEND (?<m>\\g<n>)");
+        assert_eq!(r, ONIG_NORMAL);
+    }
+
+    #[test]
+    fn zero_repeat_called_group_keeps_callable_bytecode() {
+        let reg = onig_new(
+            b"(?P<name>abc){0}(?P>name)",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxPython,
+        )
+        .unwrap();
+
+        assert!(
+            reg.called_addrs.get(1).is_some_and(|addr| *addr > 0),
+            "a group referenced outside a zero repeat must still be emitted"
+        );
     }
 
     #[test]
