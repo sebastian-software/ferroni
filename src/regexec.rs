@@ -2984,22 +2984,16 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     let mut mem_start_stk = std::mem::take(&mut msa.mem_start_stk);
     if TRACK_CAPTURES {
         let need = num_mem + 1;
-        if mem_start_stk.len() != need {
-            mem_start_stk.resize(need, MemPtr::invalid());
-        } else {
-            mem_start_stk.fill(MemPtr::invalid());
-        }
+        mem_start_stk.resize(need, MemPtr::invalid());
+        mem_start_stk.fill(MemPtr::invalid());
     } else {
         mem_start_stk.clear();
     }
     let mut mem_end_stk = std::mem::take(&mut msa.mem_end_stk);
     if TRACK_CAPTURES {
         let need = num_mem + 1;
-        if mem_end_stk.len() != need {
-            mem_end_stk.resize(need, MemPtr::invalid());
-        } else {
-            mem_end_stk.fill(MemPtr::invalid());
-        }
+        mem_end_stk.resize(need, MemPtr::invalid());
+        mem_end_stk.fill(MemPtr::invalid());
     } else {
         mem_end_stk.clear();
     }
