@@ -10507,9 +10507,10 @@ fn cclass_mb_truncated_utf8_input_mismatch() {
 }
 
 #[test]
-fn cclass_mb_not_truncated_utf8_input_mismatch() {
-    // Truncated UTF-8 lead byte exercises CClassMbNot multibyte-length guard.
-    n("[^ぁ-ん]".as_bytes(), &[0xE3]);
+fn cclass_mb_not_truncated_utf8_input_matches() {
+    // Upstream consumes a character truncated at the logical end as a match
+    // for a negated multibyte class.
+    x2("[^ぁ-ん]".as_bytes(), &[0xE3], 0, 1);
 }
 
 // ============================================================================

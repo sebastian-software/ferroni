@@ -58,10 +58,11 @@ impl Encoding for Utf8Encoding {
         onigenc_is_mbc_newline_0x0a(p, end)
     }
 
-    fn mbc_to_code(&self, p: &[u8], _end: usize) -> OnigCodePoint {
+    fn mbc_to_code(&self, p: &[u8], end: usize) -> OnigCodePoint {
         let mut len = ENC_LEN_UTF8[p[0] as usize] as usize;
-        if len > p.len() {
-            len = p.len();
+        let available = end.min(p.len());
+        if len > available {
+            len = available;
         }
 
         let c = p[0] as u32;
@@ -225,5 +226,17 @@ impl Encoding for Utf8Encoding {
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn index(&self) -> i32 {
         0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mbc_to_code_respects_the_logical_end() {
+        let euro = [0xE2, 0x82, 0xAC];
+        assert_eq!(ONIG_ENCODING_UTF8.mbc_to_code(&euro, 2), 0x82);
+        assert_eq!(ONIG_ENCODING_UTF8.mbc_to_code(&euro, euro.len()), 0x20AC);
     }
 }
