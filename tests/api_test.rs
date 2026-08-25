@@ -84,6 +84,15 @@ fn find_as_bytes() {
     assert_eq!(m.as_bytes(), b"hello");
 }
 
+#[test]
+fn unset_backreference_does_not_reuse_prior_capture() {
+    let prior = Regex::new(r"(abc)(def)").unwrap();
+    assert!(prior.captures("abcdef").is_some());
+
+    let re = Regex::new(r"(?:(foo)|bar)\1").unwrap();
+    assert!(re.find("barbar").is_none());
+}
+
 // === Regex::captures ===
 
 #[test]
@@ -103,6 +112,18 @@ fn captures_optional_group() {
     assert_eq!(caps.get(0).unwrap().as_str(), "ac");
     assert_eq!(caps.get(1).unwrap().as_str(), "a");
     assert!(caps.get(2).is_none()); // group 2 didn't participate
+}
+
+#[test]
+fn captures_optional_group_is_not_reused_from_prior_regex() {
+    let prior = Regex::new(r"(aaa)(bbb)(ccc)").unwrap();
+    assert!(prior.captures("aaabbbccc").is_some());
+
+    let re = Regex::new(r"(x)?z").unwrap();
+    let caps = re.captures("z").unwrap();
+
+    // A stale range here used to make safe Match::as_str() panic when slicing "z".
+    assert!(caps.get(1).is_none());
 }
 
 #[test]
