@@ -5784,7 +5784,7 @@ fn can_use_two_pass_capture_fill(
     range: usize,
     msa: &MatchArg,
 ) -> bool {
-    start <= range
+    start < range
         && msa.region.is_some()
         && !opton_find_longest(msa.options)
         && !reg.needs_capture_tracking
@@ -5845,6 +5845,15 @@ fn onig_search_inner(
     range: usize,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
+    // The C API accepts an end pointer into the supplied buffer. Normalize
+    // Rust indices once at the public-search boundary so every optimizer sees
+    // a valid slice, and reject a start outside the logical string.
+    let end = end.min(str_data.len());
+    let range = range.min(end);
+    if start > end {
+        return (ONIG_MISMATCH, msa.region.take());
+    }
+
     if can_use_two_pass_capture_fill(reg, start, range, msa) {
         return onig_search_inner_two_pass(reg, str_data, end, start, range, msa);
     }
@@ -5872,6 +5881,23 @@ fn onig_search_inner_core(
     if let Some(ref mut r) = msa.region {
         r.resize(reg.num_mem + 1);
         r.clear();
+    }
+
+    // C treats start == range (before the logical end) as an anchored attempt
+    // at exactly start, whose match extent is one encoded character. It is
+    // neither a forward empty range nor a backward search.
+    if start == range && start < end {
+        msa.best_len = ONIG_MISMATCH;
+        msa.best_s = 0;
+        let data_range = (start + enclen(enc, str_data, start)).min(end);
+        let r = match_at(reg, str_data, end, data_range, start, msa);
+        if r < ONIG_MISMATCH {
+            return (r, msa.region.take());
+        }
+        if r != ONIG_MISMATCH {
+            return (start as i32, msa.region.take());
+        }
+        return (ONIG_MISMATCH, msa.region.take());
     }
 
     // Aho-Corasick fast path for literal alternations.
@@ -6452,6 +6478,63 @@ mod tests {
             std::str::from_utf8(pattern)
         );
         reg
+    }
+
+    #[test]
+    fn search_start_equal_range_is_a_bounded_anchored_attempt() {
+        let text = b"aaaa";
+        let reg = compile_regex(b"a");
+        let (position, region) = onig_search(
+            &reg,
+            text,
+            text.len(),
+            2,
+            2,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(position, 2);
+        assert_eq!(region.unwrap().end[0], 3);
+
+        let text = b"aab";
+        let reg = compile_regex(b"a*");
+        let (position, region) = onig_search(
+            &reg,
+            text,
+            text.len(),
+            0,
+            0,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(position, 0);
+        assert_eq!(region.unwrap().end[0], 1);
+    }
+
+    #[test]
+    fn search_normalizes_out_of_range_endpoints() {
+        let text = b"abc";
+        let reg = compile_regex(b"(?=b)");
+
+        for (end, start, range, expected) in [
+            (text.len(), 0, 100, 1),
+            (100, 0, 100, 1),
+            (text.len(), 100, 0, ONIG_MISMATCH),
+        ] {
+            let (position, _) = onig_search(
+                &reg,
+                text,
+                end,
+                start,
+                range,
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(
+                position, expected,
+                "end={end}, start={start}, range={range}"
+            );
+        }
     }
 
     fn has_opcode(reg: &RegexType, opcode: OpCode) -> bool {
