@@ -1447,7 +1447,7 @@ fn add_ctype_to_cc(cc: &mut CClassNode, ctype: i32, not: bool, env: &ParseEnv) -
 
 /// Adds code point to character class (bitset or mbuf)
 pub(crate) fn add_code_into_cc(cc: &mut CClassNode, code: OnigCodePoint, enc: OnigEncoding) {
-    if code < SINGLE_BYTE_SIZE as u32 {
+    if enc.code_to_mbclen(code) == 1 {
         bitset_set_bit(&mut cc.bs, code as usize);
     } else {
         add_code_range_to_buf(&mut cc.mbuf, code, code);

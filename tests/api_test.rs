@@ -464,6 +464,15 @@ fn case_insensitive_unicode_latin() {
 }
 
 #[test]
+fn case_insensitive_latin1_simple_fold_uses_multibyte_class() {
+    let re = Regex::new(r"(?i)ö").unwrap();
+
+    assert!(re.is_match("ö"));
+    assert!(re.is_match("Ö"));
+    assert!(!re.is_match_bytes(&[0xd6, 0x96])); // U+0596, not Ö
+}
+
+#[test]
 fn case_insensitive_unicode_greek() {
     let re = Regex::builder(r"σ").case_insensitive(true).build().unwrap();
     assert!(re.is_match("Σ")); // capital sigma
