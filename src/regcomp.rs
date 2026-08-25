@@ -5178,52 +5178,76 @@ fn analyze_call_graph(root: &mut Node, env: &mut ParseEnv) -> Vec<bool> {
     recursive
 }
 
-fn min_len_without_calls(node: &Node, env: &ParseEnv) -> OnigLen {
+fn must_recurse_without_consuming(node: &Node, recursive: &[bool], env: &ParseEnv) -> bool {
     match &node.inner {
-        NodeInner::String(sn) => sn.s.len() as OnigLen,
-        NodeInner::CType(_) | NodeInner::CClass(_) => env.enc.min_enc_len() as OnigLen,
         NodeInner::List(cons) => {
-            let mut len = min_len_without_calls(&cons.car, env);
-            if let Some(cdr) = &cons.cdr {
-                len = distance_add(len, min_len_without_calls(cdr, env));
+            let mut cur = node;
+            while let NodeInner::List(cons) = &cur.inner {
+                if must_recurse_without_consuming(&cons.car, recursive, env) {
+                    return true;
+                }
+                if node_min_byte_len(&cons.car, env) != 0 {
+                    return false;
+                }
+                match &cons.cdr {
+                    Some(cdr) => cur = cdr,
+                    None => break,
+                }
             }
-            len
+            false
         }
         NodeInner::Alt(cons) => {
-            let mut len = min_len_without_calls(&cons.car, env);
-            if let Some(cdr) = &cons.cdr {
-                len = len.min(min_len_without_calls(cdr, env));
+            let mut cur = node;
+            while let NodeInner::Alt(cons) = &cur.inner {
+                if !must_recurse_without_consuming(&cons.car, recursive, env) {
+                    return false;
+                }
+                match &cons.cdr {
+                    Some(cdr) => cur = cdr,
+                    None => break,
+                }
             }
-            len
+            true
         }
-        NodeInner::Quant(qn) => qn.body.as_deref().map_or(0, |body| {
-            distance_multiply(min_len_without_calls(body, env), qn.lower)
-        }),
+        NodeInner::Quant(qn) => {
+            qn.lower != 0
+                && qn
+                    .body
+                    .as_deref()
+                    .is_some_and(|body| must_recurse_without_consuming(body, recursive, env))
+        }
         NodeInner::Bag(bn) => {
-            let body_len = bn
-                .body
-                .as_deref()
-                .map_or(0, |body| min_len_without_calls(body, env));
+            if let Some(body) = &bn.body {
+                if must_recurse_without_consuming(body, recursive, env) {
+                    return true;
+                }
+                if node_min_byte_len(body, env) != 0 {
+                    return false;
+                }
+            }
             match &bn.bag_data {
                 BagData::IfElse {
                     then_node,
                     else_node,
                 } => {
-                    let then_len = then_node
-                        .as_deref()
-                        .map_or(0, |node| min_len_without_calls(node, env));
-                    let else_len = else_node
-                        .as_deref()
-                        .map_or(0, |node| min_len_without_calls(node, env));
-                    distance_add(body_len, then_len.min(else_len))
+                    then_node.as_deref().is_some_and(|then_node| {
+                        must_recurse_without_consuming(then_node, recursive, env)
+                    }) && else_node.as_deref().map_or(true, |else_node| {
+                        must_recurse_without_consuming(else_node, recursive, env)
+                    })
                 }
-                _ => body_len,
+                _ => false,
             }
         }
-        NodeInner::Anchor(_)
-        | NodeInner::BackRef(_)
-        | NodeInner::Call(_)
-        | NodeInner::Gimmick(_) => 0,
+        NodeInner::Anchor(an) => an
+            .body
+            .as_deref()
+            .is_some_and(|body| must_recurse_without_consuming(body, recursive, env)),
+        NodeInner::Call(call) => recursive
+            .get(call.called_gnum as usize)
+            .copied()
+            .unwrap_or(false),
+        _ => false,
     }
 }
 
@@ -5247,7 +5271,10 @@ fn has_never_ending_recursion(node: &Node, recursive: &[bool], env: &ParseEnv) -
                     .copied()
                     .unwrap_or(false)
                 && node.has_status(ND_ST_CALLED)
-                && min_len_without_calls(node, env) == 0;
+                && bn
+                    .body
+                    .as_deref()
+                    .is_some_and(|body| must_recurse_without_consuming(body, recursive, env));
             recursive_memory
                 || bn
                     .body
@@ -9610,6 +9637,13 @@ mod tests {
         let mut reg = make_test_context().0;
         let r = onig_compile(&mut reg, b"(()(?(2)\\g<1>))");
         assert_eq!(r, ONIGERR_NEVER_ENDING_RECURSION);
+    }
+
+    #[test]
+    fn nullable_terminating_recursive_alternative_is_valid() {
+        let mut reg = make_test_context().0;
+        let r = onig_compile(&mut reg, b"(?<n>|a\\g<n>)+");
+        assert_eq!(r, ONIG_NORMAL);
     }
 
     #[test]
