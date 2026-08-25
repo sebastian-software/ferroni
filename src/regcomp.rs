@@ -6922,7 +6922,7 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             // For lookbehind anchors, compute char lengths (may transform node into Alt)
             if at == ANCR_LOOK_BEHIND || at == ANCR_LOOK_BEHIND_NOT {
                 let enc = env.enc;
-                let r = tune_look_behind(node, enc, env.syntax);
+                let r = tune_look_behind(node, enc, &env.syntax);
                 if r != 0 {
                     return r;
                 }
@@ -8677,11 +8677,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         options: reg.options,
         case_fold_flag: reg.case_fold_flag,
         enc: reg.enc,
-        // SAFETY: `reg.syntax` is set by the safe constructors (api.rs) from a
-        // `&'static OnigSyntaxType`; FFI entry points require the caller to pass
-        // a valid syntax that outlives the regex. Either way the pointee is
-        // live, aligned, and not mutated for the whole compile.
-        syntax: unsafe { &*reg.syntax },
+        syntax: reg.syntax.clone(),
         cap_history: 0,
         backtrack_mem: 0,
         backrefed_mem: 0,
@@ -8713,7 +8709,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
 
     // CAPTURE_ONLY_NAMED_GROUP: when named groups exist, disable unnamed captures
     if env.num_named > 0
-        && is_syntax_bv(env.syntax, ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP)
+        && is_syntax_bv(&env.syntax, ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP)
         && !opton_capture_group(reg.options)
     {
         let r = if env.num_named != env.num_mem {
@@ -8953,7 +8949,7 @@ pub fn onig_new(
         repeat_range: Vec::new(),
         enc,
         options: effective_option,
-        syntax: syntax as *const OnigSyntaxType,
+        syntax: syntax.clone(),
         case_fold_flag,
         name_table: None,
         optimize: OptimizeType::None,
@@ -9013,7 +9009,7 @@ mod tests {
             repeat_range: Vec::new(),
             enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             options: ONIG_OPTION_NONE,
-            syntax: &OnigSyntaxOniguruma,
+            syntax: OnigSyntaxOniguruma.clone(),
             case_fold_flag: ONIGENC_CASE_FOLD_MIN,
             name_table: None,
             optimize: OptimizeType::None,
@@ -9043,7 +9039,7 @@ mod tests {
             options: OnigOptionType::empty(),
             case_fold_flag: 0,
             enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            syntax: &OnigSyntaxOniguruma,
+            syntax: OnigSyntaxOniguruma.clone(),
             cap_history: 0,
             backtrack_mem: 0,
             backrefed_mem: 0,
@@ -9078,6 +9074,24 @@ mod tests {
             return Err(r);
         }
         Ok(reg)
+    }
+
+    #[test]
+    fn compiled_regex_owns_caller_supplied_syntax() {
+        let mut reg = {
+            let mut syntax = OnigSyntaxOniguruma.clone();
+            syntax.op = 0;
+            onig_new(
+                b"literal",
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &syntax,
+            )
+            .unwrap()
+        };
+
+        assert_eq!(reg.syntax.op, 0);
+        assert_eq!(onig_compile(&mut reg, b"literal"), 0);
     }
 
     #[test]

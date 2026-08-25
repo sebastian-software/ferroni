@@ -213,11 +213,7 @@ pub fn onig_get_case_fold_flag(reg: &RegexType) -> OnigCaseFoldType {
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax(reg: &RegexType) -> &OnigSyntaxType {
-    // SAFETY: reg.syntax was set by onig_new (regcomp.rs) from the
-    // `&OnigSyntaxType` supplied at compile time -- in practice one of the
-    // `static OnigSyntax*` definitions in regsyntax.rs. The API requires
-    // that syntax to outlive the regex, so the pointer is valid and aligned.
-    unsafe { &*reg.syntax }
+    &reg.syntax
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -319,12 +315,7 @@ pub fn onig_noname_group_capture_is_active(reg: &RegexType) -> bool {
         return false;
     }
     if onig_number_of_names(reg) > 0 {
-        // SAFETY: reg.syntax was set by onig_new from the `&OnigSyntaxType`
-        // supplied at compile time (in practice a `static` from
-        // regsyntax.rs), which the API requires to outlive the regex, so the
-        // pointer is valid and aligned.
-        let syntax = unsafe { &*reg.syntax };
-        if is_syntax_bv(syntax, ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP)
+        if is_syntax_bv(&reg.syntax, ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP)
             && !opton_capture_group(reg.options)
         {
             return false;
@@ -6379,7 +6370,7 @@ mod tests {
             repeat_range: Vec::new(),
             enc,
             options: ONIG_OPTION_NONE,
-            syntax: &OnigSyntaxOniguruma,
+            syntax: OnigSyntaxOniguruma.clone(),
             case_fold_flag: ONIGENC_CASE_FOLD_MIN,
             name_table: None,
             optimize: OptimizeType::None,
@@ -6409,7 +6400,7 @@ mod tests {
             options: OnigOptionType::empty(),
             case_fold_flag: 0,
             enc,
-            syntax: &OnigSyntaxOniguruma,
+            syntax: OnigSyntaxOniguruma.clone(),
             cap_history: 0,
             backtrack_mem: 0,
             backrefed_mem: 0,

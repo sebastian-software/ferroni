@@ -487,6 +487,15 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
 mod tests {
     use super::*;
 
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    #[test]
+    fn compiled_regex_types_are_send_and_sync() {
+        assert_send_sync::<Regex>();
+        assert_send_sync::<crate::regset::OnigRegSet>();
+        assert_send_sync::<crate::scanner::Scanner>();
+    }
+
     #[test]
     fn regex_new_and_find() {
         let re = Regex::new(r"\d+").unwrap();

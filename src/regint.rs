@@ -585,7 +585,9 @@ pub struct RegexType {
     // metadata
     pub(crate) enc: OnigEncoding,
     pub(crate) options: OnigOptionType,
-    pub(crate) syntax: *const OnigSyntaxType,
+    /// Owned syntax configuration captured at compile time. Keeping a clone
+    /// avoids tying a compiled regex to the lifetime of its caller's syntax.
+    pub(crate) syntax: OnigSyntaxType,
     pub(crate) case_fold_flag: OnigCaseFoldType,
     pub(crate) name_table: Option<crate::regparse_types::NameTable>,
 
