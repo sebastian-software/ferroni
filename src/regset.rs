@@ -516,7 +516,9 @@ fn onig_regset_search_impl(
     }
     set.last_match_len = ONIG_MISMATCH;
 
-    if start > end || start > str_data.len() {
+    let end = end.min(str_data.len());
+    let range = range.min(end);
+    if start > end {
         return (ONIG_MISMATCH, 0);
     }
 
@@ -699,7 +701,9 @@ pub fn onig_regset_search_with_param(
         return (ONIGERR_INVALID_ARGUMENT, 0);
     }
 
-    if start > end || start > str_data.len() {
+    let end = end.min(str_data.len());
+    let range = range.min(end);
+    if start > end {
         return (ONIG_MISMATCH, 0);
     }
 
@@ -950,6 +954,34 @@ mod tests {
             ONIG_OPTION_NONE,
         );
         assert_eq!(idx, ONIG_MISMATCH);
+    }
+
+    #[test]
+    fn regset_search_normalizes_out_of_range_endpoints() {
+        let (set, r) = onig_regset_new(vec![compile(b"(?=b)")]);
+        assert_eq!(r, ONIG_NORMAL);
+        let mut set = set.unwrap();
+        let input = b"abc";
+
+        for (end, start, range, expected) in [
+            (input.len(), 0, 100, (0, 1)),
+            (100, 0, 100, (0, 1)),
+            (input.len(), 100, 0, (ONIG_MISMATCH, 0)),
+        ] {
+            assert_eq!(
+                onig_regset_search(
+                    &mut set,
+                    input,
+                    end,
+                    start,
+                    range,
+                    OnigRegSetLead::PositionLead,
+                    ONIG_OPTION_NONE,
+                ),
+                expected,
+                "end={end}, start={start}, range={range}"
+            );
+        }
     }
 
     #[test]
