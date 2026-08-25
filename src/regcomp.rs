@@ -6336,16 +6336,18 @@ fn try_trie_optimize_alt(
 
     // The trie returns the longest terminal. That is equivalent to ordered
     // alternation only when no two literals have a prefix relationship.
-    let literals: Vec<Vec<u8>> = branches
+    let mut literals: Vec<Vec<u8>> = branches
         .iter()
         .flat_map(|b| b.literals.iter().cloned())
         .collect();
-    if literals.iter().enumerate().any(|(i, literal)| {
-        literals
-            .iter()
-            .enumerate()
-            .any(|(j, other)| i != j && literal.starts_with(other))
-    }) {
+    // A lexicographic ordering places every possible extension immediately
+    // after its prefix. Checking adjacent pairs avoids a quadratic scan for
+    // large, generated literal alternations.
+    literals.sort_unstable();
+    if literals
+        .windows(2)
+        .any(|pair| pair[1].starts_with(pair[0].as_slice()))
+    {
         return false;
     }
 
@@ -9370,6 +9372,21 @@ mod tests {
             !has_push,
             "should not have Push opcode for trie-optimized alt"
         );
+    }
+
+    #[test]
+    fn literal_alt_trie_rejects_out_of_order_prefixes() {
+        // The prefix pair is intentionally non-adjacent in source order. The
+        // eligibility check must still leave this alternation on the ordered
+        // backtracking path.
+        let reg = onig_new(
+            b"foobarbaz|a1|a2|a3|a4|a5|a6|a7|a8|foo",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert!(reg.literal_tries.is_empty());
     }
 
     #[test]
