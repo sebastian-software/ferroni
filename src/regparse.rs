@@ -1019,7 +1019,7 @@ fn add_code_range(
     to: OnigCodePoint,
 ) -> i32 {
     if from > to {
-        if is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC) {
+        if is_syntax_bv(&env.syntax, ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC) {
             return 0;
         } else {
             return ONIGERR_EMPTY_RANGE_IN_CHAR_CLASS;
@@ -1514,7 +1514,7 @@ fn cc_char_next(
                         return ONIGERR_INVALID_CODE_POINT_VALUE;
                     }
                     if *from > to {
-                        if is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC) {
+                        if is_syntax_bv(&env.syntax, ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC) {
                             *state = CS_COMPLETE;
                             *from_raw = to_raw;
                             *from = to;
@@ -1533,7 +1533,7 @@ fn cc_char_next(
                 }
             } else {
                 if *from > to {
-                    if is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC) {
+                    if is_syntax_bv(&env.syntax, ONIG_SYN_ALLOW_EMPTY_RANGE_IN_CC) {
                         *state = CS_COMPLETE;
                         *from_raw = to_raw;
                         *from = to;
@@ -1622,7 +1622,7 @@ fn code_exist_check(
             if code == c {
                 return true;
             }
-            if code == mc_esc(env.syntax) {
+            if code == mc_esc(&env.syntax) {
                 in_esc = true;
             }
         }
@@ -1830,7 +1830,7 @@ fn is_posix_bracket_start(p: usize, end: usize, pattern: &[u8], enc: OnigEncodin
 // ============================================================================
 
 fn conv_backslash_value(c: OnigCodePoint, env: &ParseEnv) -> OnigCodePoint {
-    if is_syntax_op(env.syntax, ONIG_SYN_OP_ESC_CONTROL_CHARS) {
+    if is_syntax_op(&env.syntax, ONIG_SYN_OP_ESC_CONTROL_CHARS) {
         match c {
             0x6E => return '\n' as u32, // 'n'
             0x74 => return '\t' as u32, // 't'
@@ -1841,7 +1841,7 @@ fn conv_backslash_value(c: OnigCodePoint, env: &ParseEnv) -> OnigCodePoint {
             0x65 => return 0x1B,        // 'e' -> escape
             0x76 => {
                 // 'v'
-                if is_syntax_op2(env.syntax, ONIG_SYN_OP2_ESC_V_VTAB) {
+                if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ESC_V_VTAB) {
                     return 0x0B; // vertical tab
                 }
             }
@@ -1866,7 +1866,7 @@ fn fetch_escaped_value_raw(
     match c {
         0x4D => {
             // 'M'
-            if is_syntax_op2(env.syntax, ONIG_SYN_OP2_ESC_CAPITAL_M_BAR_META) {
+            if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ESC_CAPITAL_M_BAR_META) {
                 if p_end(*p, end) {
                     return Err(ONIGERR_END_PATTERN_AT_META);
                 }
@@ -1878,7 +1878,7 @@ fn fetch_escaped_value_raw(
                     return Err(ONIGERR_END_PATTERN_AT_META);
                 }
                 let c3 = pfetch_s(p, pattern, end, enc);
-                let val = if c3 == mc_esc(env.syntax) {
+                let val = if c3 == mc_esc(&env.syntax) {
                     fetch_escaped_value_raw(p, end, pattern, env)?
                 } else {
                     c3
@@ -1889,7 +1889,7 @@ fn fetch_escaped_value_raw(
         }
         0x43 => {
             // 'C'
-            if is_syntax_op2(env.syntax, ONIG_SYN_OP2_ESC_CAPITAL_C_BAR_CONTROL) {
+            if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ESC_CAPITAL_C_BAR_CONTROL) {
                 if p_end(*p, end) {
                     return Err(ONIGERR_END_PATTERN_AT_CONTROL);
                 }
@@ -1905,7 +1905,7 @@ fn fetch_escaped_value_raw(
                 if c3 == '?' as u32 {
                     return Ok(0x7F);
                 }
-                let val = if c3 == mc_esc(env.syntax) {
+                let val = if c3 == mc_esc(&env.syntax) {
                     fetch_escaped_value_raw(p, end, pattern, env)?
                 } else {
                     c3
@@ -1916,7 +1916,7 @@ fn fetch_escaped_value_raw(
         }
         0x63 => {
             // 'c'
-            if is_syntax_op(env.syntax, ONIG_SYN_OP_ESC_C_CONTROL) {
+            if is_syntax_op(&env.syntax, ONIG_SYN_OP_ESC_C_CONTROL) {
                 if p_end(*p, end) {
                     return Err(ONIGERR_END_PATTERN_AT_CONTROL);
                 }
@@ -1924,7 +1924,7 @@ fn fetch_escaped_value_raw(
                 if c2 == '?' as u32 {
                     return Ok(0x7F);
                 }
-                let val = if c2 == mc_esc(env.syntax) {
+                let val = if c2 == mc_esc(&env.syntax) {
                     fetch_escaped_value_raw(p, end, pattern, env)?
                 } else {
                     c2
@@ -2374,7 +2374,7 @@ fn fetch_interval(
     env: &ParseEnv,
 ) -> i32 {
     let enc = env.enc;
-    let syn = env.syntax;
+    let syn = &env.syntax;
     let mut pfetch_prev = *p;
     let mut non_low = false;
     let syn_allow = is_syntax_bv(syn, ONIG_SYN_ALLOW_INVALID_INTERVAL);
@@ -2534,11 +2534,11 @@ fn is_head_of_bre_subexp(
             if p1 > start {
                 let code1 = pattern[p1] as u32;
                 if code1 == '(' as u32
-                    || (code1 == '|' as u32 && is_syntax_op(env.syntax, ONIG_SYN_OP_ESC_VBAR_ALT))
+                    || (code1 == '|' as u32 && is_syntax_op(&env.syntax, ONIG_SYN_OP_ESC_VBAR_ALT))
                 {
                     if let Some(p2) = onigenc_get_prev_char_head(enc, start, p1, pattern) {
                         let code2 = pattern[p2] as u32;
-                        if is_mc_esc_code(code2, env.syntax) {
+                        if is_mc_esc_code(code2, &env.syntax) {
                             let mut count = 0;
                             let mut pp = p2;
                             while pp > start {
@@ -2547,7 +2547,7 @@ fn is_head_of_bre_subexp(
                                 {
                                     pp = prev;
                                     let cc = pattern[pp] as u32;
-                                    if !is_mc_esc_code(cc, env.syntax) {
+                                    if !is_mc_esc_code(cc, &env.syntax) {
                                         break;
                                     }
                                     count += 1;
@@ -2583,12 +2583,12 @@ fn is_end_of_bre_subexp(
         return true;
     }
     let code = pattern[pos] as u32;
-    if is_mc_esc_code(code, env.syntax) {
+    if is_mc_esc_code(code, &env.syntax) {
         let next = pos + enc.mbc_enc_len(&pattern[pos..]);
         if next < end {
             let code2 = pattern[next] as u32;
             if code2 == ')' as u32
-                || (code2 == '|' as u32 && is_syntax_op(env.syntax, ONIG_SYN_OP_ESC_VBAR_ALT))
+                || (code2 == '|' as u32 && is_syntax_op(&env.syntax, ONIG_SYN_OP_ESC_VBAR_ALT))
             {
                 return true;
             }
@@ -2603,7 +2603,7 @@ fn is_end_of_bre_subexp(
 
 fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env: &ParseEnv) -> i32 {
     let enc = env.enc;
-    let syn = env.syntax;
+    let syn = &env.syntax;
     let mut pfetch_prev = *p;
 
     if tok.code_point_continue {
@@ -3608,7 +3608,7 @@ fn fetch_token_cc(
     state: i32,
 ) -> i32 {
     let enc = env.enc;
-    let syn = env.syntax;
+    let syn = &env.syntax;
     let mut pfetch_prev = *p;
 
     if tok.code_point_continue {
@@ -4211,7 +4211,7 @@ fn prs_cc(
                         }
                     } else if curr_type == CV_CPROP {
                         if is_syntax_bv(
-                            env.syntax,
+                            &env.syntax,
                             ONIG_SYN_ALLOW_CHAR_TYPE_FOLLOWED_BY_MINUS_IN_CC,
                         ) {
                             // Treat dash as literal: [\w-%] -> [\w\-\%]
@@ -4326,7 +4326,7 @@ fn prs_cc(
                             env.parse_depth -= 1;
                             return Err(cr);
                         }
-                    } else if is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_DOUBLE_RANGE_OP_IN_CC) {
+                    } else if is_syntax_bv(&env.syntax, ONIG_SYN_ALLOW_DOUBLE_RANGE_OP_IN_CC) {
                         // [0-9-a] allowed
                         let cc = if use_work {
                             &mut work_cc
@@ -5163,7 +5163,7 @@ fn prs_conditional(
 ) -> Result<(Box<Node>, i32), i32> {
     let enc = env.enc;
 
-    if !is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LPAREN_IF_ELSE) {
+    if !is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_LPAREN_IF_ELSE) {
         return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
     }
 
@@ -5385,7 +5385,8 @@ fn prs_conditional(
         condition_is_checker = false;
 
         let cond_node;
-        if c == '?' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS) {
+        if c == '?' as u32 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS)
+        {
             // Condition is callout of contents: (?(?{...})THEN|ELSE)
             if !p_end(*p, end) && ppeek(*p, pattern, end, enc) == '{' as u32 {
                 pinc(p, pattern, enc); // consume '{'
@@ -5400,7 +5401,8 @@ fn prs_conditional(
                 let (cn, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
                 cond_node = cn;
             }
-        } else if c == '*' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME) {
+        } else if c == '*' as u32 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME)
+        {
             // Callout-of-name condition: (?(*FAIL)then|else), (?(*MAX{2})then|else)
             cond_node = prs_callout_of_name(p, end, pattern, env, ')' as u32)?;
         } else {
@@ -5844,7 +5846,7 @@ fn prs_bag(
     let c = ppeek(*p, pattern, end, enc);
     let option = env.options;
 
-    if c == '?' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_GROUP_EFFECT) {
+    if c == '?' as u32 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_GROUP_EFFECT) {
         pinc(p, pattern, enc); // skip '?'
         if p_end(*p, end) {
             return Err(ONIGERR_END_PATTERN_IN_GROUP);
@@ -5928,7 +5930,7 @@ fn prs_bag(
                         np.set_body(Some(target));
                         Ok((np, 0))
                     }
-                } else if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
+                } else if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
                     // Named group (?<name>...)
                     prs_named_group(
                         '<' as u32,
@@ -5947,7 +5949,7 @@ fn prs_bag(
                 }
             }
             '\'' => {
-                if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
+                if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP) {
                     prs_named_group(
                         '\'' as u32,
                         NamedGroupCtx {
@@ -5966,10 +5968,10 @@ fn prs_bag(
             }
             '@' => {
                 if USE_CAPTURE_HISTORY
-                    && is_syntax_op2(env.syntax, ONIG_SYN_OP2_ATMARK_CAPTURE_HISTORY)
+                    && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ATMARK_CAPTURE_HISTORY)
                 {
                     // (?@<name>...) or (?@'name'...) — named group with capture history
-                    if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP)
+                    if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_LT_NAMED_GROUP)
                         && !p_end(*p, end)
                     {
                         let c2 = ppeek(*p, pattern, end, enc);
@@ -6019,7 +6021,7 @@ fn prs_bag(
                 prs_conditional(tok, term, p, end, pattern, env)
             }
             'P' => {
-                if is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_CAPITAL_P_NAME) {
+                if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_CAPITAL_P_NAME) {
                     if !p_end(*p, end) {
                         let c2 = ppeek(*p, pattern, end, enc);
                         if c2 == '<' as u32 {
@@ -6111,7 +6113,7 @@ fn prs_bag(
                 }
             }
             '~' => {
-                if c < 128 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP) {
+                if c < 128 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP) {
                     if p_end(*p, end) {
                         return Err(ONIGERR_END_PATTERN_IN_GROUP);
                     }
@@ -6190,7 +6192,7 @@ fn prs_bag(
             }
             '{' => {
                 // Callout of contents: (?{...})
-                if !is_syntax_op2(env.syntax, ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS) {
+                if !is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS) {
                     return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
                 }
                 let node = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
@@ -6202,7 +6204,7 @@ fn prs_bag(
                 prs_options(tok, term, p, end, pattern, env)
             }
         }
-    } else if c == '*' as u32 && is_syntax_op2(env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME) {
+    } else if c == '*' as u32 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME) {
         // Callout of name: (*FAIL), (*MAX{2}), (*COUNT[AB]{X}), (*CMP{AB,<,CD})
         pinc(p, pattern, enc); // skip '*'
         let node = prs_callout_of_name(p, end, pattern, env, ')' as u32)?;
@@ -6260,7 +6262,7 @@ fn prs_named_group(
     // other reference to the regex.
     if let Some(ref mut nt) = unsafe { &mut *env.reg }.name_table {
         let name = &pattern[name_start..name_end];
-        let allow = is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME);
+        let allow = is_syntax_bv(&env.syntax, ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME);
         nt.add(name, num, allow)?;
     }
 
@@ -6324,7 +6326,7 @@ fn prs_options(
     env: &mut ParseEnv,
 ) -> Result<(Box<Node>, i32), i32> {
     let enc = env.enc;
-    let syn = env.syntax;
+    let syn = &env.syntax;
     let mut option = env.options;
     let mut neg = false;
     let mut whole_options = OnigOptionType::empty();
@@ -6618,7 +6620,7 @@ fn prs_exp(
                 if node.has_status(ND_ST_WHOLE_OPTIONS) && !group_head {
                     return Err(ONIGERR_INVALID_GROUP_OPTION);
                 }
-                if is_syntax_bv(env.syntax, ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH) {
+                if is_syntax_bv(&env.syntax, ONIG_SYN_ISOLATED_OPTION_CONTINUE_BRANCH) {
                     // Perl/Java: just set options and continue branch
                     env.options = bag_options;
                     let r = fetch_token(tok, p, end, pattern, env);
@@ -6668,7 +6670,7 @@ fn prs_exp(
             node
         }
         TokenType::SubexpClose => {
-            if !is_syntax_bv(env.syntax, ONIG_SYN_ALLOW_UNMATCHED_CLOSE_SUBEXP) {
+            if !is_syntax_bv(&env.syntax, ONIG_SYN_ALLOW_UNMATCHED_CLOSE_SUBEXP) {
                 return Err(ONIGERR_UNMATCHED_CLOSE_PARENTHESIS);
             }
             // Treat as literal byte
@@ -6897,7 +6899,7 @@ fn prs_exp(
             // Collect all chars until \E
             let qstart = *p;
             let mut qend = end;
-            let esc = mc_esc(env.syntax);
+            let esc = mc_esc(&env.syntax);
             while !p_end(*p, end) {
                 let save = *p;
                 let mut pfv = *p;
@@ -6918,14 +6920,14 @@ fn prs_exp(
             np
         }
         TokenType::Repeat | TokenType::Interval => {
-            if is_syntax_bv(env.syntax, ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS) {
-                if is_syntax_bv(env.syntax, ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS) {
+            if is_syntax_bv(&env.syntax, ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS) {
+                if is_syntax_bv(&env.syntax, ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS) {
                     return Err(ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
                 }
                 node_new_empty()
             } else {
                 if tok.token_type == TokenType::Interval
-                    && is_syntax_op(env.syntax, ONIG_SYN_OP_ESC_BRACE_INTERVAL)
+                    && is_syntax_op(&env.syntax, ONIG_SYN_OP_ESC_BRACE_INTERVAL)
                 {
                     // BRE \{n\} at start: strip backslashes to get literal {n}
                     let raw = &pattern[tok.backp..*p];
@@ -6977,8 +6979,8 @@ fn check_quantifier(
 
     if ctx.tok.token_type == TokenType::Repeat || ctx.tok.token_type == TokenType::Interval {
         if is_invalid_quantifier_target(&node)
-            && is_syntax_bv(ctx.env.syntax, ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS)
-            && is_syntax_bv(ctx.env.syntax, ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS)
+            && is_syntax_bv(&ctx.env.syntax, ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS)
+            && is_syntax_bv(&ctx.env.syntax, ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS)
         {
             return Err(ONIGERR_TARGET_OF_REPEAT_OPERATOR_INVALID);
         } else if is_invalid_quantifier_target(&node) {
@@ -7375,14 +7377,7 @@ pub fn onig_parse_tree(
     env.options = reg.options;
     env.case_fold_flag = reg.case_fold_flag;
     env.enc = reg.enc;
-    // SAFETY: `reg.syntax` is always set from a `&'static OnigSyntaxType`
-    // (the built-in `static` syntaxes in regsyntax.rs, or a caller-provided
-    // 'static syntax via the API builder), mirroring C Oniguruma where syntax
-    // definitions are global. It is therefore non-null, properly aligned, and
-    // valid for the 'static lifetime claimed by `env.syntax`. A caller that
-    // stored a dangling or non-'static pointer in `reg.syntax` would break
-    // this invariant.
-    env.syntax = unsafe { &*reg.syntax };
+    env.syntax = reg.syntax.clone();
     env.pattern = pattern.as_ptr();
     // SAFETY: offsetting the slice's base pointer by its own length yields
     // the one-past-the-end pointer of the same allocation, which `add`
@@ -7441,7 +7436,7 @@ mod tests {
             repeat_range: Vec::new(),
             enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
             options: ONIG_OPTION_NONE,
-            syntax: &OnigSyntaxOniguruma as *const OnigSyntaxType,
+            syntax: OnigSyntaxOniguruma.clone(),
             case_fold_flag: ONIGENC_CASE_FOLD_MIN,
             name_table: None,
             optimize: OptimizeType::None,
@@ -7471,7 +7466,7 @@ mod tests {
             options: OnigOptionType::empty(),
             case_fold_flag: 0,
             enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            syntax: &OnigSyntaxOniguruma,
+            syntax: OnigSyntaxOniguruma.clone(),
             cap_history: 0,
             backtrack_mem: 0,
             backrefed_mem: 0,

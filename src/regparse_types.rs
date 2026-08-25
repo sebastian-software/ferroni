@@ -823,7 +823,7 @@ pub struct ParseEnv {
     pub options: OnigOptionType,
     pub case_fold_flag: OnigCaseFoldType,
     pub enc: OnigEncoding,
-    pub syntax: &'static OnigSyntaxType,
+    pub syntax: OnigSyntaxType,
     pub cap_history: MemStatusType,
     pub backtrack_mem: MemStatusType,
     pub backrefed_mem: MemStatusType,
