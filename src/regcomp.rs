@@ -6206,16 +6206,10 @@ struct AltBranchInfo {
     literals: Vec<Vec<u8>>,
 }
 
-/// Walk the AST and detect alternation nodes where most branches are plain
-/// literal strings.  When found, build a `LiteralTrie`, store it in
-/// `reg.literal_tries`, and restructure the Alt to use a trie node for the
-/// literal branches.
-///
-/// If ALL branches are literals, the entire Alt is replaced with a single
-/// trie-backed String node.  If only some branches are literals (but enough
-/// to exceed the threshold), the literal branches are collected into a trie
-/// and the Alt is restructured to have the trie node as the first branch
-/// followed by the remaining non-literal branches.
+/// Walk the AST and detect semantically safe literal alternations. When found,
+/// build a `LiteralTrie` and replace the complete alternation with one trie
+/// node. Partial rewrites are intentionally excluded: moving literal branches
+/// ahead of non-literal ones changes ordered-alternation semantics.
 ///
 /// **Must be called before `tune_tree`** so that case-fold expansion has not
 /// yet rewritten the string nodes.
@@ -6285,6 +6279,7 @@ fn try_trie_optimize_alt(
     let mut branches: Vec<AltBranchInfo> = Vec::new();
     let mut case_insensitive = false;
     let mut literal_count = 0usize;
+    let mut all_plain_strings = true;
 
     {
         let mut cur: *const Node = node;
@@ -6297,6 +6292,8 @@ fn try_trie_optimize_alt(
                 let (car, cdr) = match &(*cur).inner {
                     NodeInner::Alt(ref cons) => (&*cons.car as *const Node, &cons.cdr),
                     _ => {
+                        all_plain_strings &=
+                            matches!(&(*cur).inner, NodeInner::String(sn) if !sn.is_crude());
                         let info = classify_branch(&*cur, backrefed_mem);
                         if info.is_literal && (*cur).has_status(ND_ST_IGNORECASE) {
                             case_insensitive = true;
@@ -6308,6 +6305,8 @@ fn try_trie_optimize_alt(
                         break;
                     }
                 };
+                all_plain_strings &=
+                    matches!(&(*car).inner, NodeInner::String(sn) if !sn.is_crude());
                 let info = classify_branch(&*car, backrefed_mem);
                 if info.is_literal && (*car).has_status(ND_ST_IGNORECASE) {
                     case_insensitive = true;
@@ -6325,71 +6324,41 @@ fn try_trie_optimize_alt(
         }
     }
 
-    if literal_count < LITERAL_ALT_THRESHOLD {
+    let all_literal = branches.iter().all(|b| b.is_literal);
+    if literal_count < LITERAL_ALT_THRESHOLD
+        || !all_literal
+        || !all_plain_strings
+        || case_insensitive
+        || reg.options.intersects(ONIG_OPTION_IGNORECASE)
+    {
         return false;
     }
 
-    // Build the trie from literal branches.
+    // The trie returns the longest terminal. That is equivalent to ordered
+    // alternation only when no two literals have a prefix relationship.
     let literals: Vec<Vec<u8>> = branches
         .iter()
-        .filter(|b| b.is_literal)
         .flat_map(|b| b.literals.iter().cloned())
         .collect();
+    if literals.iter().enumerate().any(|(i, literal)| {
+        literals
+            .iter()
+            .enumerate()
+            .any(|(j, other)| i != j && literal.starts_with(other))
+    }) {
+        return false;
+    }
+
     let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
-    let trie = crate::literal_trie::LiteralTrie::build(&literal_refs, case_insensitive);
+    let trie = crate::literal_trie::LiteralTrie::build(&literal_refs, false);
     let trie_idx = reg.literal_tries.len() as u32;
     reg.literal_tries.push(trie);
 
-    let all_literal = branches.iter().all(|b| b.is_literal);
-
-    if all_literal {
-        node.inner = NodeInner::String(StrNode {
-            s: trie_idx.to_le_bytes().to_vec(),
-            flag: 0,
-        });
-        node.status_add(ND_ST_LITERAL_ALT);
-    } else {
-        let non_literal_indices: Vec<usize> = branches
-            .iter()
-            .filter(|b| !b.is_literal)
-            .map(|b| b.index)
-            .collect();
-
-        let mut non_literal_nodes: Vec<Node> = Vec::new();
-        extract_alt_branches(node, &non_literal_indices, &mut non_literal_nodes);
-
-        let trie_node = Box::new(Node {
-            status: ND_ST_LITERAL_ALT,
-            parent: std::ptr::null_mut(),
-            inner: NodeInner::String(StrNode {
-                s: trie_idx.to_le_bytes().to_vec(),
-                flag: 0,
-            }),
-        });
-
-        let mut chain: Option<Box<Node>> = None;
-        for non_lit in non_literal_nodes.into_iter().rev() {
-            let mut non_lit = non_lit;
-            if let Some(tail) = chain.take() {
-                chain = Some(Box::new(Node {
-                    status: 0,
-                    parent: std::ptr::null_mut(),
-                    inner: NodeInner::Alt(ConsAltNode {
-                        car: Box::new(non_lit),
-                        cdr: Some(tail),
-                    }),
-                }));
-            } else {
-                chain = Some(Box::new(non_lit));
-            }
-        }
-
-        let cdr = chain;
-        node.inner = NodeInner::Alt(ConsAltNode {
-            car: trie_node,
-            cdr,
-        });
-    }
+    node.inner = NodeInner::String(StrNode {
+        s: trie_idx.to_le_bytes().to_vec(),
+        flag: 0,
+    });
+    node.status_add(ND_ST_LITERAL_ALT);
 
     true
 }
@@ -6408,9 +6377,7 @@ fn detect_literal_alternations_inner(
         && !in_anchor
         && try_trie_optimize_alt(node, reg, backrefed_mem)
     {
-        // Successfully trie-optimized this Alt.  Recurse into any
-        // remaining non-literal branches (for partial optimization,
-        // the Alt was restructured: trie_node | non_lit_0 | ...).
+        // Successfully trie-optimized this complete literal alternation.
         recurse_into_children(node, reg, in_anchor, backrefed_mem);
         return;
     }
@@ -9440,7 +9407,7 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_mixed_non_literal_no_trigger() {
-        // Only 8 literal + 1 non-literal = 8 literals, should trigger with partial
+        // Partial trie rewrites would reorder literal and non-literal branches.
         let reg = onig_new(
             b"a|bb|ccc|dd|eee|ff|ggg|hh|\\d+",
             ONIG_OPTION_NONE,
@@ -9448,11 +9415,7 @@ mod tests {
             &crate::regsyntax::OnigSyntaxOniguruma,
         )
         .unwrap();
-        assert_eq!(
-            reg.literal_tries.len(),
-            1,
-            "8 literal branches should trigger partial trie"
-        );
+        assert!(reg.literal_tries.is_empty());
         let has_push = reg.ops.iter().any(|op| op.opcode == OpCode::Push);
         assert!(
             has_push,
@@ -9462,10 +9425,10 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_partial_match() {
-        // Partial optimization: 9 literal + 1 non-literal ([xy])
+        // Mixed alternatives retain their original ordered branches.
         use crate::api::Regex;
         let re = Regex::new("alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|[xy]z").unwrap();
-        assert!(!re.as_raw().literal_tries.is_empty());
+        assert!(re.as_raw().literal_tries.is_empty());
         // Match a literal branch
         let m = re.find("the eta value").unwrap();
         assert_eq!(m.as_str(), "eta");
@@ -9507,7 +9470,7 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_case_insensitive() {
-        // Case-insensitive alternation
+        // Case-insensitive alternatives stay on the general case-folding path.
         let reg = onig_new(
             b"(?i)(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa)",
             ONIG_OPTION_NONE,
@@ -9515,12 +9478,7 @@ mod tests {
             &crate::regsyntax::OnigSyntaxOniguruma,
         )
         .unwrap();
-        assert_eq!(
-            reg.literal_tries.len(),
-            1,
-            "should detect case-insensitive alt, got {}",
-            reg.literal_tries.len()
-        );
+        assert!(reg.literal_tries.is_empty());
         // Verify case-insensitive matching
         use crate::api::Regex;
         let re =
@@ -9537,19 +9495,13 @@ mod tests {
             r"(?i)(?<![-\w])(?:color|content|cursor|display|direction|float|font|height|left|margin|padding|position|right|top|width|z-index)(?![-\w])",
         )
         .unwrap();
-        assert!(
-            !re.as_raw().literal_tries.is_empty(),
-            "CSS-like pattern should trigger trie optimization"
-        );
+        assert!(re.as_raw().literal_tries.is_empty());
         let has_alt_literals = re
             .as_raw()
             .ops
             .iter()
             .any(|op| op.opcode == OpCode::AltLiterals);
-        assert!(
-            has_alt_literals,
-            "should have AltLiterals opcode for CSS-like pattern"
-        );
+        assert!(!has_alt_literals);
         let m = re.find("  display: none").unwrap();
         assert_eq!(m.as_str(), "display");
         // Case insensitive
@@ -9579,14 +9531,10 @@ mod tests {
 
     #[test]
     fn nested_alt_trie_optional() {
-        // Top-level Alt where first branch has an optional (Quant 0,1).
-        // extract_literal_paths forks into "with" and "without" paths.
+        // Optional paths stay on the general Alt path to retain branch order.
         use crate::api::Regex;
         let re = Regex::new("ab(cd)?ef|abgh|abij|abkl|abmn").unwrap();
-        assert!(
-            !re.as_raw().literal_tries.is_empty(),
-            "nested alternation with optional should trigger trie"
-        );
+        assert!(re.as_raw().literal_tries.is_empty());
         // With optional present
         let m = re.find("xabcdefx").unwrap();
         assert_eq!(m.as_str(), "abcdef");
@@ -9693,9 +9641,8 @@ mod tests {
             !reg.literal_tries.is_empty(),
             "entity pattern should produce at least 1 trie"
         );
-        // With top-down nested extraction, the entire pure-literal entity
-        // pattern should collapse to a single trie with no Push ops.
-        assert_eq!(push_count, 0, "expected 0 Push ops but got {}", push_count);
+        // Nested branches keep their normal ordered backtracking operations.
+        assert!(push_count > 0, "expected ordered Alt operations");
     }
 
     #[test]
