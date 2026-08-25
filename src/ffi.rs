@@ -131,11 +131,41 @@ extern "C" {
 
 static C_INIT: Once = Once::new();
 
+/// Return C-compatible subject pointers after validating every caller-supplied
+/// offset. Slice-derived pointers are valid at the corresponding byte position
+/// (including the one-past-the-end position), without raw pointer arithmetic.
+fn text_pointers(
+    text: &[u8],
+    start: usize,
+    range: usize,
+) -> Option<(*const u8, *const u8, *const u8, *const u8)> {
+    if start > text.len() || range > text.len() {
+        return None;
+    }
+    Some((
+        text.as_ptr(),
+        text.as_ptr_range().end,
+        text[start..].as_ptr(),
+        text[range..].as_ptr(),
+    ))
+}
+
+/// Return a valid subject pointer for a caller-supplied match offset.
+fn text_pointer_at(text: &[u8], at: usize) -> Option<(*const u8, *const u8, *const u8)> {
+    if at > text.len() {
+        return None;
+    }
+    Some((text.as_ptr(), text.as_ptr_range().end, text[at..].as_ptr()))
+}
+
 /// One-time init/end lifecycle for C Oniguruma.
 pub struct COnigInstance;
 
 impl COnigInstance {
     pub fn new() -> Self {
+        // SAFETY: the imported encoding symbol and `onig_initialize` have the
+        // declared C ABI; `enc` points to the static encoding object for this
+        // one-time initialization call.
         C_INIT.call_once(|| unsafe {
             let enc = &OnigEncodingUTF8 as OnigEncoding;
             let r = onig_initialize(&enc as *const OnigEncoding, 1);
@@ -165,6 +195,9 @@ impl CRegex {
             par: ptr::null(),
             par_end: ptr::null(),
         };
+        // SAFETY: pattern is a live Rust slice, so its start and one-past-end
+        // pointers delimit a valid byte range for the duration of this call;
+        // all other pointers refer to initialized local storage or C statics.
         let r = unsafe {
             onig_new(
                 &mut reg,
@@ -190,11 +223,14 @@ impl CRegex {
         region: Option<&mut CRegion>,
         option: c_uint,
     ) -> c_int {
-        let str_ptr = text.as_ptr();
-        let end_ptr = unsafe { str_ptr.add(text.len()) };
-        let start_ptr = unsafe { str_ptr.add(start) };
-        let range_ptr = unsafe { str_ptr.add(range) };
+        let Some((str_ptr, end_ptr, start_ptr, range_ptr)) = text_pointers(text, start, range)
+        else {
+            return -1;
+        };
         let region_ptr = region.map_or(ptr::null_mut(), |r| r.raw);
+        // SAFETY: `self.raw` is owned by this wrapper, the subject pointers
+        // were derived from validated slice offsets, and `region_ptr` is null
+        // or an owned C region that outlives the call.
         unsafe {
             onig_search(
                 self.raw, str_ptr, end_ptr, start_ptr, range_ptr, region_ptr, option,
@@ -209,10 +245,13 @@ impl CRegex {
         region: Option<&mut CRegion>,
         option: c_uint,
     ) -> c_int {
-        let str_ptr = text.as_ptr();
-        let end_ptr = unsafe { str_ptr.add(text.len()) };
-        let at_ptr = unsafe { str_ptr.add(at) };
+        let Some((str_ptr, end_ptr, at_ptr)) = text_pointer_at(text, at) else {
+            return -1;
+        };
         let region_ptr = region.map_or(ptr::null_mut(), |r| r.raw);
+        // SAFETY: `self.raw` is owned by this wrapper, the subject pointers
+        // were derived from a validated slice offset, and `region_ptr` is null
+        // or an owned C region that outlives the call.
         unsafe { onig_match(self.raw, str_ptr, end_ptr, at_ptr, region_ptr, option) }
     }
 
@@ -223,6 +262,8 @@ impl CRegex {
 
 impl Drop for CRegex {
     fn drop(&mut self) {
+        // SAFETY: a successful `onig_new` returned this owned handle exactly
+        // once, and Drop is its sole release path.
         unsafe { onig_free(self.raw) }
     }
 }
@@ -234,12 +275,15 @@ pub struct CRegion {
 
 impl CRegion {
     pub fn new() -> Self {
+        // SAFETY: the C allocator returns an Oniguruma-owned region handle
+        // suitable for the matching free and clear functions below.
         CRegion {
             raw: unsafe { onig_region_new() },
         }
     }
 
     pub fn clear(&mut self) {
+        // SAFETY: `self.raw` is the live region allocated by `CRegion::new`.
         unsafe { onig_region_clear(self.raw) }
     }
 }
@@ -252,6 +296,7 @@ impl Default for CRegion {
 
 impl Drop for CRegion {
     fn drop(&mut self) {
+        // SAFETY: `self.raw` is released exactly once by this owning wrapper.
         unsafe { onig_region_free(self.raw, 1) }
     }
 }
@@ -265,10 +310,12 @@ impl CRegSet {
     /// Create a new RegSet from pre-compiled CRegex handles.
     /// IMPORTANT: The caller must keep the CRegex objects alive; the
     /// C library does NOT copy them. The CRegex objects must NOT be
-    /// freed before the RegSet. Use `into_raw()` on CRegex to transfer ownership.
+    /// freed before the RegSet.
     pub fn new(regs: &[OnigRegex]) -> Result<Self, c_int> {
         let _inst = COnigInstance::new();
         let mut set: *mut OnigRegSetType = ptr::null_mut();
+        // SAFETY: `regs` remains live for the call, and `set` is writable local
+        // storage for the C API to initialize.
         let r = unsafe { onig_regset_new(&mut set, regs.len() as c_int, regs.as_ptr()) };
         if r != 0 {
             return Err(r);
@@ -284,11 +331,13 @@ impl CRegSet {
         lead: c_int,
         option: c_uint,
     ) -> (c_int, c_int) {
-        let str_ptr = text.as_ptr();
-        let end_ptr = unsafe { str_ptr.add(text.len()) };
-        let start_ptr = unsafe { str_ptr.add(start) };
-        let range_ptr = unsafe { str_ptr.add(range) };
+        let Some((str_ptr, end_ptr, start_ptr, range_ptr)) = text_pointers(text, start, range)
+        else {
+            return (-1, -1);
+        };
         let mut match_pos: c_int = -1;
+        // SAFETY: `self.raw` is owned by this wrapper, subject pointers have
+        // validated offsets, and `match_pos` is writable local storage.
         let idx = unsafe {
             onig_regset_search(
                 self.raw,
@@ -307,6 +356,7 @@ impl CRegSet {
 
 impl Drop for CRegSet {
     fn drop(&mut self) {
+        // SAFETY: `self.raw` is released exactly once by this owning wrapper.
         unsafe { onig_regset_free(self.raw) }
     }
 }
@@ -357,6 +407,9 @@ impl CScanner {
         let ptrs: Vec<*mut u8> = owned.iter_mut().map(|v| v.as_mut_ptr()).collect();
         let lengths: Vec<c_int> = patterns.iter().map(|p| p.len() as c_int).collect();
 
+        // SAFETY: the pattern-pointer and length arrays reference owned local
+        // vectors that remain live for the constructor call; the syntax is a
+        // valid imported C static.
         let handle = unsafe {
             createOnigScanner(
                 ptrs.as_ptr(),
@@ -382,6 +435,8 @@ impl CScanner {
         str_cache_id: i32,
         position: usize,
     ) -> Option<(usize, Vec<(i32, i32)>)> {
+        // SAFETY: `self.handle` is owned by this wrapper and `text` remains
+        // live for the synchronous C call.
         let encoded = unsafe {
             findNextOnigScannerMatch(
                 self.handle,
@@ -396,6 +451,8 @@ impl CScanner {
             return None;
         }
         // Decode the encoded region: [index, num_regs, beg0, end0, beg1, end1, ...]
+        // SAFETY: a non-null result is the scanner's documented encoded region
+        // layout, containing `num_regs` begin/end pairs following its header.
         unsafe {
             let index = *encoded as usize;
             let num_regs = *encoded.add(1) as usize;
@@ -412,8 +469,25 @@ impl CScanner {
 
 impl Drop for CScanner {
     fn drop(&mut self) {
+        // SAFETY: `self.handle` is released exactly once by this owning wrapper.
         unsafe {
             freeOnigScanner(self.handle);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_pointers_reject_out_of_bounds_offsets() {
+        let text = b"abc";
+        assert!(text_pointers(text, 0, text.len()).is_some());
+        assert!(text_pointers(text, text.len(), 0).is_some());
+        assert!(text_pointers(text, text.len() + 1, 0).is_none());
+        assert!(text_pointers(text, 0, text.len() + 1).is_none());
+        assert!(text_pointer_at(text, text.len()).is_some());
+        assert!(text_pointer_at(text, text.len() + 1).is_none());
     }
 }
