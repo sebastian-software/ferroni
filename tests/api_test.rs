@@ -1409,6 +1409,23 @@ fn many_literal_alternatives_trigger_trie() {
 }
 
 #[test]
+fn literal_alternatives_preserve_ordered_backtracking() {
+    let re = Regex::new(r"(?:foo|foobar|a1|a2|a3|a4|a5|a6)bar").unwrap();
+    let matched = re.find("foobar").expect("shorter first branch matches");
+    assert_eq!(matched.as_str(), "foobar");
+
+    let ordered = Regex::new(r"foo|foobar|a1|a2|a3|a4|a5|a6").unwrap();
+    assert_eq!(ordered.find("foobar").unwrap().as_str(), "foo");
+}
+
+#[test]
+fn literal_alternatives_preserve_per_branch_case_options() {
+    let re = Regex::new(r"(?i)foo|bar|baz|(?-i:QUX)").unwrap();
+    assert!(!re.is_match("qux"));
+    assert!(re.is_match("QUX"));
+}
+
+#[test]
 fn case_insensitive_literal_alternatives() {
     // Case-insensitive alternations exercise literal path classification
     let re = Regex::builder("ABC|DEF|GHI|JKL")
