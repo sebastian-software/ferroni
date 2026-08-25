@@ -141,6 +141,60 @@ fn can_expand_finite_greedy_quantifier(body_len: i32, upper: i32) -> bool {
             ))
 }
 
+/// Whether a quantifier body contains a recursive subexpression call.
+///
+/// The REPEAT VM path is not yet equivalent for recursive calls, but an
+/// unrelated call elsewhere in the pattern must not disable the finite-range
+/// expansion limit. Recursion is annotated during the call-resolution pass
+/// before compilation starts.
+fn quantifier_body_contains_recursion(node: &Node) -> bool {
+    if node.has_status(ND_ST_RECURSION) {
+        return true;
+    }
+
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            quantifier_body_contains_recursion(&cons.car)
+                || cons
+                    .cdr
+                    .as_deref()
+                    .is_some_and(quantifier_body_contains_recursion)
+        }
+        NodeInner::Quant(qn) => qn
+            .body
+            .as_deref()
+            .is_some_and(quantifier_body_contains_recursion),
+        NodeInner::Anchor(an) => an
+            .body
+            .as_deref()
+            .is_some_and(quantifier_body_contains_recursion),
+        NodeInner::Call(cn) => cn
+            .body
+            .as_deref()
+            .is_some_and(quantifier_body_contains_recursion),
+        NodeInner::Bag(bag) => {
+            bag.body
+                .as_deref()
+                .is_some_and(quantifier_body_contains_recursion)
+                || match &bag.bag_data {
+                    BagData::IfElse {
+                        then_node,
+                        else_node,
+                    } => {
+                        then_node
+                            .as_deref()
+                            .is_some_and(quantifier_body_contains_recursion)
+                            || else_node
+                                .as_deref()
+                                .is_some_and(quantifier_body_contains_recursion)
+                    }
+                    _ => false,
+                }
+        }
+        _ => false,
+    }
+}
+
 /// Add two lengths safely, capping at INFINITE_LEN.
 pub fn distance_add(d1: OnigLen, d2: OnigLen) -> OnigLen {
     if d1 == INFINITE_LEN || d2 == INFINITE_LEN {
@@ -1215,7 +1269,8 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         && !is_infinite_repeat(qn.upper)
         // The REPEAT VM path has not yet reached parity for recursive calls.
         // Preserve the established expansion behavior for those expressions.
-        && (env.num_call > 0 || can_expand_finite_greedy_quantifier(body_len, qn.upper))
+        && (quantifier_body_contains_recursion(body)
+            || can_expand_finite_greedy_quantifier(body_len, qn.upper))
     {
         // Greedy expansion: lower*body + (upper-lower)*(PUSH+body)
         let n = qn.upper - qn.lower;
@@ -1635,7 +1690,8 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
     } else if qn.greedy
         && !is_infinite_repeat(qn.upper)
         // Keep this in sync with compile_length_quantifier_node above.
-        && (env.num_call > 0 || can_expand_finite_greedy_quantifier(body_len, qn.upper))
+        && (quantifier_body_contains_recursion(body)
+            || can_expand_finite_greedy_quantifier(body_len, qn.upper))
     {
         // Greedy expansion: body*lower + (upper-lower) * (PUSH + body)
         let r = compile_tree_n_times(body, qn.lower, reg, env);
@@ -9130,6 +9186,25 @@ mod tests {
         assert!(re.is_match("aaaaaa"));
         assert!(re.is_match("aaaaaaa"));
         assert!(!re.is_match("aaaaa"));
+    }
+
+    #[test]
+    fn compile_over_limit_interval_with_unrelated_call_uses_repeat_bytecode() {
+        let mut reg = make_test_context().0;
+        assert_eq!(onig_compile(&mut reg, b"(?<digit>\\d)\\g<digit>a{6,7}"), 0);
+
+        assert!(
+            reg.ops.iter().any(|op| op.opcode == OpCode::Repeat),
+            "an unrelated subexpression call must not bypass the expansion limit"
+        );
+        assert_eq!(reg.repeat_range.len(), 1);
+        assert_eq!(reg.repeat_range[0].lower, 6);
+        assert_eq!(reg.repeat_range[0].upper, 7);
+
+        let re = crate::api::Regex::new(r"(?<digit>\d)\g<digit>a{6,7}").unwrap();
+        assert!(re.is_match("11aaaaaa"));
+        assert!(re.is_match("11aaaaaaa"));
+        assert!(!re.is_match("11aaaaa"));
     }
 
     #[test]
