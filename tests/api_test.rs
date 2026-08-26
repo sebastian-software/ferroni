@@ -66,6 +66,21 @@ fn flat_patterns_exceeding_ast_depth_limit_fail_cleanly() {
 }
 
 #[test]
+fn nested_wide_patterns_exceeding_ast_depth_limit_fail_cleanly() {
+    const NESTED_GROUP_COUNT: usize = 20;
+    const WIDE_ALTERNATIVE_COUNT: usize = 4_000;
+    const LONG_CONCATENATION_COUNT: usize = 4_000;
+
+    let mut pattern = ".".repeat(LONG_CONCATENATION_COUNT);
+    for _ in 0..NESTED_GROUP_COUNT {
+        pattern = format!("(?:{}{})", "a|".repeat(WIDE_ALTERNATIVE_COUNT), pattern);
+    }
+
+    let err = Regex::new(&pattern).unwrap_err();
+    assert_eq!(err, RegexError::ParseDepthLimitOver);
+}
+
+#[test]
 fn long_literal_larger_than_ast_depth_limit_is_supported() {
     let pattern = "a".repeat(DEFAULT_PARSE_DEPTH_LIMIT as usize * 2);
     let re = Regex::new(&pattern).unwrap();

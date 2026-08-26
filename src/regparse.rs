@@ -182,13 +182,13 @@ pub fn onig_set_capture_num_limit(num: i32) -> i32 {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-/// Returns the shared limit for nested parsing and linked AST spines.
+/// Returns the shared limit for nested parsing and AST expressions.
 pub fn onig_get_parse_depth_limit() -> u32 {
     PARSE_DEPTH_LIMIT.load(Ordering::Relaxed)
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-/// Sets the shared limit for nested parsing and linked AST spines.
+/// Sets the shared limit for nested parsing and AST expressions.
 ///
 /// Passing zero restores the default limit.
 pub fn onig_set_parse_depth_limit(depth: u32) -> i32 {
@@ -206,6 +206,14 @@ pub fn onig_set_parse_depth_limit(depth: u32) -> i32 {
 
 fn ast_spine_limit_reached(env: &ParseEnv, spine_depth: u32) -> bool {
     env.parse_depth.saturating_add(spine_depth) >= PARSE_DEPTH_LIMIT.load(Ordering::Relaxed)
+}
+
+fn reserve_ast_node(env: &mut ParseEnv) -> Result<(), i32> {
+    if env.ast_node_count >= PARSE_DEPTH_LIMIT.load(Ordering::Relaxed) {
+        return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
+    }
+    env.ast_node_count += 1;
+    Ok(())
 }
 
 #[inline]
@@ -438,6 +446,7 @@ impl ParseEnv {
         self.mem_env_dynamic = None;
         self.mem_env_static = Default::default();
         self.parse_depth = 0;
+        self.ast_node_count = 0;
         self.backref_num = 0;
         self.keep_num = 0;
         self.id_num = 0;
@@ -6584,6 +6593,10 @@ fn prs_exp(
     env: &mut ParseEnv,
     group_head: bool,
 ) -> Result<(Box<Node>, i32), i32> {
+    // The recursive AST consumers follow both List/Alt cdr links and nested
+    // bodies. A per-spine check alone lets those paths accumulate, so every
+    // AST-producing expression consumes the same parse-wide budget.
+    reserve_ast_node(env)?;
     let mut group = 0;
 
     if tok.token_type as i32 == term {
@@ -7467,6 +7480,7 @@ mod tests {
             saves: None,
             unset_addr_list: None,
             parse_depth: 0,
+            ast_node_count: 0,
             flags: 0,
         };
         (reg, env)

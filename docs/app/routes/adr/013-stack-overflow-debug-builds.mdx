@@ -31,7 +31,7 @@ The parser depth limit also bounds the linked `List` and `Alt` AST spines used
 for flat concatenations and alternations. This deliberately differs from C:
 upstream `onig_node_free()` iterates the `cdr` links, while Rust's derived
 `Box` destruction otherwise recurses through them. A sequence or alternation
-spine that exhausts the remaining configured depth budget now fails with
+spine or nested body that exhausts the shared per-pattern AST-expression budget now fails with
 `ONIGERR_PARSE_DEPTH_LIMIT_OVER`; long literal strings remain unaffected because
 they occupy one AST node.
 
