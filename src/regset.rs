@@ -28,6 +28,16 @@ struct RegSetEntry {
     region: Option<OnigRegion>,
 }
 
+/// A variable-distance optimizer target that can produce candidate match
+/// starts. This is deliberately separate from first-byte dispatch: `min` and
+/// `max` describe where the optimizer target may occur after the match start.
+#[derive(Clone, Copy)]
+struct VariableDistanceCandidate {
+    index: u16,
+    min: u8,
+    max: u8,
+}
+
 /// Pre-computed memchr needle for SIMD-accelerated position skipping.
 ///
 /// When the dispatch table has only 1–3 non-empty byte slots, we can use
@@ -55,8 +65,14 @@ pub struct OnigRegSet {
     /// proves a fixed first byte and does not exclude that byte.
     first_byte_candidates: Box<[Vec<u16>; 256]>,
     /// Entries whose optimizer information is not fixed at the match start.
-    /// They are searched individually before the position-lead dispatch scan.
+    /// They have no bounded optimizer target and are checked directly.
     fallback_candidates: Vec<u16>,
+    /// Variable-distance optimizer targets, indexed by their observed input
+    /// byte. Hits yield candidate match starts instead of dispatching by the
+    /// match's first byte.
+    variable_distance_candidates: Box<[Vec<VariableDistanceCandidate>; 256]>,
+    variable_distance_max: usize,
+    variable_distance_seen: Vec<usize>,
     has_dispatch_candidates: bool,
     /// SIMD-accelerated skip needle derived from the dispatch table.
     skip_needle: SkipNeedle,
@@ -104,6 +120,48 @@ fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, i
     }
 }
 
+/// Index an optimizer target with a small, finite distance window. The caller
+/// still validates the regex VM at each derived match start.
+fn add_variable_distance_candidate(
+    table: &mut [Vec<VariableDistanceCandidate>; 256],
+    reg: &RegexType,
+    idx: u16,
+) -> Option<usize> {
+    const MAX_VARIABLE_DISTANCE_SPAN: usize = 8;
+
+    if reg.dist_min == INFINITE_LEN || reg.dist_max == INFINITE_LEN {
+        return None;
+    }
+    let min = reg.dist_min as usize;
+    let max = reg.dist_max as usize;
+    if max < min || max - min > MAX_VARIABLE_DISTANCE_SPAN || max > u8::MAX as usize {
+        return None;
+    }
+
+    let candidate = VariableDistanceCandidate {
+        index: idx,
+        min: min as u8,
+        max: max as u8,
+    };
+    match reg.optimize {
+        OptimizeType::Map => {
+            for (byte, slot) in table.iter_mut().enumerate() {
+                if reg.map[byte] != 0 {
+                    slot.push(candidate);
+                }
+            }
+        }
+        OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward
+            if !reg.exact.is_empty() =>
+        {
+            table[reg.exact[0] as usize].push(candidate);
+        }
+        _ => return None,
+    }
+
+    Some(max)
+}
+
 /// Derive the skip needle from a completed dispatch table.
 fn compute_skip_needle(table: &[Vec<u16>; 256]) -> SkipNeedle {
     let mut bytes: Vec<u8> = Vec::new();
@@ -127,15 +185,29 @@ fn compute_skip_needle(table: &[Vec<u16>; 256]) -> SkipNeedle {
 /// Build the first-byte dispatch table from scratch for all entries.
 fn build_first_byte_table(set: &mut OnigRegSet) {
     let mut table: Box<[Vec<u16>; 256]> = Box::new(std::array::from_fn(|_| Vec::new()));
+    let mut variable_distance_candidates: Box<[Vec<VariableDistanceCandidate>; 256]> =
+        Box::new(std::array::from_fn(|_| Vec::new()));
     let mut fallback_candidates = Vec::new();
+    let mut variable_distance_max = 0;
     for (i, entry) in set.entries.iter().enumerate() {
         if !add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16) {
-            fallback_candidates.push(i as u16);
+            if let Some(max) = add_variable_distance_candidate(
+                &mut variable_distance_candidates,
+                &entry.reg,
+                i as u16,
+            ) {
+                variable_distance_max = variable_distance_max.max(max);
+            } else {
+                fallback_candidates.push(i as u16);
+            }
         }
     }
     set.skip_needle = compute_skip_needle(&table);
     set.first_byte_candidates = table;
     set.fallback_candidates = fallback_candidates;
+    set.variable_distance_candidates = variable_distance_candidates;
+    set.variable_distance_max = variable_distance_max;
+    set.variable_distance_seen = vec![usize::MAX; set.entries.len()];
     set.has_dispatch_candidates = set
         .first_byte_candidates
         .iter()
@@ -155,6 +227,9 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         anychar_inf: false,
         first_byte_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
         fallback_candidates: Vec::new(),
+        variable_distance_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
+        variable_distance_max: 0,
+        variable_distance_seen: Vec::new(),
         has_dispatch_candidates: false,
         skip_needle: SkipNeedle::None,
         scratch_msa: None,
@@ -193,11 +268,20 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
         &set.entries[new_idx as usize].reg,
         new_idx,
     ) {
-        set.fallback_candidates.push(new_idx);
+        if let Some(max) = add_variable_distance_candidate(
+            &mut set.variable_distance_candidates,
+            &set.entries[new_idx as usize].reg,
+            new_idx,
+        ) {
+            set.variable_distance_max = set.variable_distance_max.max(max);
+        } else {
+            set.fallback_candidates.push(new_idx);
+        }
     } else {
         set.has_dispatch_candidates = true;
         set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
     }
+    set.variable_distance_seen.push(usize::MAX);
 
     // Recompute: pass field values to avoid borrow conflict
     let n = set.entries.len();
@@ -419,9 +503,61 @@ fn find_fallback_match(
             true
         };
         let remaining = end - s;
+        let mut match_index = ONIG_MISMATCH;
+
+        // A variable-distance optimizer target at s + d can only produce a
+        // match start at s when d is in the target's proven window. This
+        // avoids testing every fallback regex at every input position.
+        let max_distance = set
+            .variable_distance_max
+            .min(end.saturating_sub(s.saturating_add(1)));
+        for distance in 0..=max_distance {
+            let candidate_byte = str_data[s + distance] as usize;
+            let candidate_count = set.variable_distance_candidates[candidate_byte].len();
+            for candidate_pos in 0..candidate_count {
+                let candidate = set.variable_distance_candidates[candidate_byte][candidate_pos];
+                let index = candidate.index as usize;
+                if distance < candidate.min as usize
+                    || distance > candidate.max as usize
+                    || set.variable_distance_seen[index] == s
+                    || (match_index >= 0 && index >= match_index as usize)
+                {
+                    continue;
+                }
+                set.variable_distance_seen[index] = s;
+                if (set.entries[index].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
+                    continue;
+                }
+                if set.entries[index].reg.threshold_len > 0
+                    && remaining < set.entries[index].reg.threshold_len as usize
+                {
+                    continue;
+                }
+
+                let r = match_regset_entry(
+                    set,
+                    index,
+                    str_data,
+                    end,
+                    s,
+                    start,
+                    option,
+                    skip_region_for_nomem,
+                    msa,
+                );
+                if r >= 0 {
+                    match_index = index as i32;
+                } else if r != ONIG_MISMATCH {
+                    return (r, 0);
+                }
+            }
+        }
 
         for fallback_pos in 0..set.fallback_candidates.len() {
             let index = set.fallback_candidates[fallback_pos] as usize;
+            if match_index >= 0 && index >= match_index as usize {
+                continue;
+            }
             if (set.entries[index].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
                 continue;
             }
@@ -446,11 +582,14 @@ fn find_fallback_match(
                 msa,
             );
             if r >= 0 {
-                return (index as i32, s as i32);
-            }
-            if r != ONIG_MISMATCH {
+                match_index = index as i32;
+            } else if r != ONIG_MISMATCH {
                 return (r, 0);
             }
+        }
+
+        if match_index >= 0 {
+            return (match_index, s as i32);
         }
 
         s += enclen(enc, str_data, s);
