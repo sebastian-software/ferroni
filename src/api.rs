@@ -9,7 +9,7 @@ use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
-use crate::regexec::{onig_name_to_group_numbers, onig_search};
+use crate::regexec::{onig_name_to_backref_number, onig_search};
 use crate::regint::RegexType;
 use crate::regsyntax::OnigSyntaxOniguruma;
 
@@ -350,16 +350,12 @@ impl<'t> Captures<'t> {
         })
     }
 
-    /// Get the first capture group with the given name, or `None`.
+    /// Get the last capture group with the given name that participated, or `None`.
     pub fn name(&self, name: &str) -> Option<Match<'t>> {
-        let nums = onig_name_to_group_numbers(&self.regex.inner, name.as_bytes()).ok()?;
-        for &num in nums {
-            let m = self.get(num as usize);
-            if m.is_some() {
-                return m;
-            }
-        }
-        None
+        let num =
+            onig_name_to_backref_number(&self.regex.inner, name.as_bytes(), Some(&self.region))
+                .ok()?;
+        self.get(num as usize)
     }
 
     /// Number of capture groups (including group 0).

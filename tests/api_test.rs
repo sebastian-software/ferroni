@@ -173,6 +173,46 @@ fn captures_named() {
 }
 
 #[test]
+fn captures_multiplex_name_returns_last_participating_group() {
+    let re = Regex::new(r"(?<letter>a)(?<letter>b)").unwrap();
+    let caps = re.captures("ab").unwrap();
+
+    assert_eq!(caps.name("letter").unwrap().as_str(), "b");
+}
+
+#[test]
+fn captures_multiplex_name_returns_earlier_participating_group() {
+    let re = Regex::new(r"(?:(?<letter>a)|(?<letter>b))").unwrap();
+    let caps = re.captures("a").unwrap();
+
+    assert_eq!(caps.name("letter").unwrap().as_str(), "a");
+}
+
+#[test]
+fn captures_multiplex_name_returns_later_participating_group() {
+    let re = Regex::new(r"(?:(?<letter>a)|(?<letter>b))").unwrap();
+    let caps = re.captures("b").unwrap();
+
+    assert_eq!(caps.name("letter").unwrap().as_str(), "b");
+}
+
+#[test]
+fn captures_multiplex_name_returns_none_when_no_group_participates() {
+    let re = Regex::new(r"(?:(?<letter>a)|(?<letter>b))?").unwrap();
+    let caps = re.captures("").unwrap();
+
+    assert!(caps.name("letter").is_none());
+}
+
+#[test]
+fn captures_name_returns_unique_named_group() {
+    let re = Regex::new(r"(?<letter>a)").unwrap();
+    let caps = re.captures("a").unwrap();
+
+    assert_eq!(caps.name("letter").unwrap().as_str(), "a");
+}
+
+#[test]
 fn captures_no_match() {
     let re = Regex::new(r"(\d+)").unwrap();
     assert!(re.captures("no digits").is_none());
