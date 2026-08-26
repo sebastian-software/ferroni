@@ -8250,6 +8250,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         saves: None,
         unset_addr_list: None,
         parse_depth: 0,
+        ast_node_count: 0,
         flags: 0,
     };
 
@@ -8617,6 +8618,7 @@ mod tests {
             saves: None,
             unset_addr_list: None,
             parse_depth: 0,
+            ast_node_count: 0,
             flags: 0,
         };
         (reg, env)

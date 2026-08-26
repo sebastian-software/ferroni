@@ -27,7 +27,15 @@ The root cause is a stack overflow: The recursive tree traversal functions `tune
 
 ## Decision
 
-We do not introduce an artificial depth limit because:
+The parser depth limit also bounds the linked `List` and `Alt` AST spines used
+for flat concatenations and alternations. This deliberately differs from C:
+upstream `onig_node_free()` iterates the `cdr` links, while Rust's derived
+`Box` destruction otherwise recurses through them. A sequence or alternation
+spine or nested body that exhausts the shared per-pattern AST-expression budget now fails with
+`ONIGERR_PARSE_DEPTH_LIMIT_OVER`; long literal strings remain unaffected because
+they occupy one AST node.
+
+We do not introduce another artificial limit for nested ASTs because:
 
 1. The C original has none — feature parity takes precedence.
 2. Release builds are not affected.
@@ -40,4 +48,4 @@ We do not introduce an artificial depth limit because:
   RUST_MIN_STACK=268435456 cargo test --test compat_utf8
   ```
 - Alternatively: `--test-threads=2` or higher distributes the load across multiple threads (usually works but is not deterministic).
-- If a depth limit is desired in the future, it can be added analogous to `PARSE_DEPTH_LIMIT` in `tune_tree()` and `compile_tree()`.
+- The parse-depth limit now protects both nesting and flat linked AST spines.

@@ -375,3 +375,70 @@ fn regset_fixed_first_byte_pattern_wins_fallback_ties_by_order() {
     assert_eq!(region.beg[0], 0);
     assert_eq!(region.end[0], 1);
 }
+
+#[test]
+fn scanner_repeated_optional_prefix_match_agrees_across_routes() {
+    let mut scanner = Scanner::new(&["a?bc", "q"]).expect("scanner");
+    let input = "qabc";
+
+    for _ in 0..25 {
+        let matched = scanner
+            .find_next_match_with_id(input, 55, 1, ScannerFindOptions::NONE)
+            .expect("match");
+        assert_eq!(matched.index, 0);
+        assert_eq!(matched.capture_indices[0].start, 1);
+        assert_eq!(matched.capture_indices[0].end, 4);
+    }
+
+    let stats = scanner.stats();
+    assert!(stats.route_cache_regset_calls > 0, "{stats:?}");
+    assert!(stats.route_cache_per_regex_calls > 0, "{stats:?}");
+}
+
+#[test]
+fn large_regset_variable_map_finds_the_true_earliest_start() {
+    let mut patterns: Vec<&[u8]> = vec![b"a?[bcd]", b"x"];
+    for _ in 0..31 {
+        patterns.push(b"(?!)");
+    }
+    let mut set = make_regset(&patterns);
+    let input = b"qac";
+
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!((index, position), (0, 1));
+    let region = onig_regset_get_region(&set, index as usize).expect("winning region");
+    assert_eq!((region.beg[0], region.end[0]), (1, 3));
+}
+
+#[test]
+fn large_regset_merges_variable_and_table_ties_by_regex_order() {
+    let mut patterns: Vec<&[u8]> = vec![b"a", b"a?[bcd]"];
+    for _ in 0..31 {
+        patterns.push(b"(?!)");
+    }
+    let mut set = make_regset(&patterns);
+    let input = b"ab";
+
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!((index, position), (0, 0));
+    let region = onig_regset_get_region(&set, index as usize).expect("winning region");
+    assert_eq!((region.beg[0], region.end[0]), (0, 1));
+}

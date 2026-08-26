@@ -28,14 +28,22 @@ struct RegSetEntry {
     region: Option<OnigRegion>,
 }
 
+#[derive(Clone, Copy)]
+struct VariableOptimizerCandidate {
+    slot: u16,
+    index: u16,
+    dist_min: usize,
+    dist_max: usize,
+}
+
 /// Pre-computed memchr needle for SIMD-accelerated position skipping.
 ///
-/// When the dispatch table has only 1–3 non-empty byte slots, we can use
-/// `memchr` to jump directly to the next position where a fixed-first-byte
-/// pattern could match.
+/// When the dispatch table has only 1–3 non-empty byte slots (and zero
+/// always-candidate patterns), we can use `memchr` to jump directly to the
+/// next position where at least one table-dispatched pattern could match.
 #[derive(Clone, Copy)]
 enum SkipNeedle {
-    /// No skipping possible (>3 bytes, or no dispatch candidates).
+    /// No skipping possible (always-candidate patterns exist, or >3 bytes).
     None,
     One(u8),
     Two(u8, u8),
@@ -51,13 +59,19 @@ pub struct OnigRegSet {
     anc_dmax: OnigLen,
     all_low_high: bool,
     anychar_inf: bool,
-    /// For each byte value 0..255, the list of entry indices whose optimizer
-    /// proves a fixed first byte and does not exclude that byte.
+    /// For each byte value 0..255, the list of entry indices whose first-byte
+    /// pre-filter does not exclude that byte. Built at construction time.
     first_byte_candidates: Box<[Vec<u16>; 256]>,
-    /// Entries whose optimizer information is not fixed at the match start.
-    /// They are searched individually before the position-lead dispatch scan.
-    fallback_candidates: Vec<u16>,
-    has_dispatch_candidates: bool,
+    /// Entries whose finite-distance optimizer byte may occur after the match
+    /// start. They must use optimizer-event dispatch; treating that byte as
+    /// the first byte loses earlier matches.
+    variable_distance_candidates: Vec<u16>,
+    /// Reverse lookup from an optimizer byte to variable-distance entries.
+    variable_optimizer_candidates: Box<[Vec<VariableOptimizerCandidate>; 256]>,
+    max_variable_distance: usize,
+    /// Reused per-search state for de-duplicating candidate start positions.
+    variable_last_start_scratch: Vec<usize>,
+    variable_matched_scratch: Vec<bool>,
     /// SIMD-accelerated skip needle derived from the dispatch table.
     skip_needle: SkipNeedle,
     /// Reused MatchArg scratch space for position-lead searches.
@@ -77,30 +91,100 @@ fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
     enc.mbc_enc_len(&str_data[s..])
 }
 
-/// Add an entry to the first-byte table if its optimizer data is fixed at the match start.
-fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) -> bool {
-    if reg.optimize == OptimizeType::Map && reg.dist_max == 0 {
+#[inline]
+fn has_finite_variable_optimizer(reg: &RegexType) -> bool {
+    reg.dist_max != INFINITE_LEN
+        && reg.dist_max > 0
+        && match reg.optimize {
+            OptimizeType::Map => true,
+            OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward => {
+                !reg.exact.is_empty()
+            }
+            _ => false,
+        }
+}
+
+// Small start maps stay cheaper in the direct table. Broader maps fan out on
+// large TextMate sets and are handled by optimizer events instead.
+const MAX_SELECTIVE_START_BYTES: usize = 2;
+// For small sets, even a broad sound start map is cheaper than maintaining the
+// event path. The regression benchmark covers the boundary with 20 and 279
+// patterns.
+const SMALL_REGSET_START_MAP_LIMIT: usize = 32;
+
+fn has_selective_start_map(reg: &RegexType) -> bool {
+    if !reg.has_first_byte_map {
+        return false;
+    }
+    let byte_count = reg
+        .first_byte_map
+        .iter()
+        .filter(|&&value| value != 0)
+        .count();
+    byte_count > 0 && byte_count <= MAX_SELECTIVE_START_BYTES
+}
+
+fn should_dispatch_variable_by_start_map(reg: &RegexType, entry_count: usize) -> bool {
+    reg.has_first_byte_map
+        && (entry_count <= SMALL_REGSET_START_MAP_LIMIT || has_selective_start_map(reg))
+}
+
+fn add_entry_by_start_map(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) {
+    for (byte, entries) in table.iter_mut().enumerate() {
+        if reg.first_byte_map[byte] != 0 {
+            entries.push(idx);
+        }
+    }
+}
+
+/// Add a single non-variable entry to the appropriate first-byte slots.
+fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) {
+    if reg.optimize == OptimizeType::Map && reg.dist_min == 0 {
         // Map-filterable: only bytes where map[b] != 0
         for (b, slot) in table.iter_mut().enumerate() {
             if reg.map[b] != 0 {
                 slot.push(idx);
             }
         }
-        true
-    } else if reg.dist_max == 0 && !reg.exact.is_empty() {
+    } else if reg.dist_min == 0 && !reg.exact.is_empty() {
         // Exact-filterable: only the first byte of the exact string
         table[reg.exact[0] as usize].push(idx);
-        true
     } else if reg.has_first_byte_map {
-        // The map is recorded only when it is fixed at the match start.
+        // Fallback: use the first-byte prefilter map.
         for (b, slot) in table.iter_mut().enumerate() {
             if reg.first_byte_map[b] != 0 {
                 slot.push(idx);
             }
         }
-        true
     } else {
-        false
+        // Always-candidate: appears in all 256 slots.
+        for slot in table.iter_mut() {
+            slot.push(idx);
+        }
+    }
+}
+
+fn add_variable_optimizer_candidate(
+    table: &mut [Vec<VariableOptimizerCandidate>; 256],
+    reg: &RegexType,
+    index: u16,
+    slot: u16,
+) {
+    let candidate = VariableOptimizerCandidate {
+        slot,
+        index,
+        dist_min: reg.dist_min as usize,
+        dist_max: reg.dist_max as usize,
+    };
+
+    if reg.optimize == OptimizeType::Map {
+        for (byte, entries) in table.iter_mut().enumerate() {
+            if reg.map[byte] != 0 {
+                entries.push(candidate);
+            }
+        }
+    } else {
+        table[reg.exact[0] as usize].push(candidate);
     }
 }
 
@@ -127,19 +211,38 @@ fn compute_skip_needle(table: &[Vec<u16>; 256]) -> SkipNeedle {
 /// Build the first-byte dispatch table from scratch for all entries.
 fn build_first_byte_table(set: &mut OnigRegSet) {
     let mut table: Box<[Vec<u16>; 256]> = Box::new(std::array::from_fn(|_| Vec::new()));
-    let mut fallback_candidates = Vec::new();
+    let mut variable_distance_candidates = Vec::new();
+    let mut variable_optimizer_candidates: Box<[Vec<VariableOptimizerCandidate>; 256]> =
+        Box::new(std::array::from_fn(|_| Vec::new()));
+    let mut max_variable_distance = 0;
     for (i, entry) in set.entries.iter().enumerate() {
-        if !add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16) {
-            fallback_candidates.push(i as u16);
+        if has_finite_variable_optimizer(&entry.reg)
+            && !should_dispatch_variable_by_start_map(&entry.reg, set.entries.len())
+        {
+            let slot = variable_distance_candidates.len() as u16;
+            variable_distance_candidates.push(i as u16);
+            add_variable_optimizer_candidate(
+                &mut variable_optimizer_candidates,
+                &entry.reg,
+                i as u16,
+                slot,
+            );
+            max_variable_distance = max_variable_distance.max(entry.reg.dist_max as usize);
+        } else if has_finite_variable_optimizer(&entry.reg) {
+            add_entry_by_start_map(&mut table, &entry.reg, i as u16);
+        } else {
+            add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16);
         }
     }
     set.skip_needle = compute_skip_needle(&table);
     set.first_byte_candidates = table;
-    set.fallback_candidates = fallback_candidates;
-    set.has_dispatch_candidates = set
-        .first_byte_candidates
-        .iter()
-        .any(|slot| !slot.is_empty());
+    set.variable_distance_candidates = variable_distance_candidates;
+    set.variable_optimizer_candidates = variable_optimizer_candidates;
+    set.max_variable_distance = max_variable_distance;
+    set.variable_last_start_scratch
+        .resize(set.variable_distance_candidates.len(), 0);
+    set.variable_matched_scratch
+        .resize(set.variable_distance_candidates.len(), false);
 }
 
 /// Create a new regex set from an array of compiled regexes.
@@ -154,8 +257,11 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         all_low_high: false,
         anychar_inf: false,
         first_byte_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
-        fallback_candidates: Vec::new(),
-        has_dispatch_candidates: false,
+        variable_distance_candidates: Vec::new(),
+        variable_optimizer_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
+        max_variable_distance: 0,
+        variable_last_start_scratch: Vec::new(),
+        variable_matched_scratch: Vec::new(),
         skip_needle: SkipNeedle::None,
         scratch_msa: None,
         last_match_len: ONIG_MISMATCH,
@@ -188,15 +294,43 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
     // Add the new entry to the first-byte dispatch table
     let new_idx = (set.entries.len() - 1) as u16;
-    if !add_entry_to_first_byte_table(
-        &mut set.first_byte_candidates,
-        &set.entries[new_idx as usize].reg,
-        new_idx,
-    ) {
-        set.fallback_candidates.push(new_idx);
-    } else {
-        set.has_dispatch_candidates = true;
+    if has_finite_variable_optimizer(&set.entries[new_idx as usize].reg)
+        && !should_dispatch_variable_by_start_map(
+            &set.entries[new_idx as usize].reg,
+            set.entries.len(),
+        )
+    {
+        let slot = set.variable_distance_candidates.len() as u16;
+        set.variable_distance_candidates.push(new_idx);
+        add_variable_optimizer_candidate(
+            &mut set.variable_optimizer_candidates,
+            &set.entries[new_idx as usize].reg,
+            new_idx,
+            slot,
+        );
+        set.max_variable_distance = set
+            .max_variable_distance
+            .max(set.entries[new_idx as usize].reg.dist_max as usize);
+        set.variable_last_start_scratch.push(0);
+        set.variable_matched_scratch.push(false);
+    } else if has_finite_variable_optimizer(&set.entries[new_idx as usize].reg) {
+        add_entry_by_start_map(
+            &mut set.first_byte_candidates,
+            &set.entries[new_idx as usize].reg,
+            new_idx,
+        );
         set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
+    } else {
+        add_entry_to_first_byte_table(
+            &mut set.first_byte_candidates,
+            &set.entries[new_idx as usize].reg,
+            new_idx,
+        );
+        set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
+    }
+
+    if set.entries.len() == SMALL_REGSET_START_MAP_LIMIT + 1 {
+        build_first_byte_table(set);
     }
 
     // Recompute: pass field values to avoid borrow conflict
@@ -348,115 +482,22 @@ pub fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
     set.last_match_len
 }
 
-/// Whether an optimizer with a variable first-byte distance permits a match at
-/// `start`. This is only a fallback match gate: unlike the dispatch table, it
-/// checks every possible optimizer offset and therefore never treats the
-/// optimizer byte as the match's first byte.
-#[inline]
-fn fallback_optimizer_allows_start(
-    reg: &RegexType,
-    str_data: &[u8],
-    end: usize,
-    start: usize,
-) -> bool {
-    const MAX_FALLBACK_OPTIMIZER_SPAN: usize = 8;
-
-    let (map, exact) = match reg.optimize {
-        OptimizeType::Map => (Some(&reg.map), None),
-        OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward
-            if !reg.exact.is_empty() =>
-        {
-            (None, Some(reg.exact[0]))
-        }
-        _ => return true,
-    };
-
-    if reg.dist_min == INFINITE_LEN || reg.dist_max == INFINITE_LEN {
-        return true;
-    }
-    let min = reg.dist_min as usize;
-    let max = reg.dist_max as usize;
-    if max < min || max - min > MAX_FALLBACK_OPTIMIZER_SPAN {
-        return true;
-    }
-
-    let Some(first) = start.checked_add(min) else {
-        return false;
-    };
-    let Some(last) = start.checked_add(max) else {
-        return false;
-    };
-    if first >= end {
-        return false;
-    }
-
-    let last = last.min(end - 1);
-    (first..=last).any(|position| match map {
-        Some(map) => map[str_data[position] as usize] != 0,
-        None => str_data[position] == exact.expect("exact optimizer byte"),
-    })
+#[derive(Clone, Copy)]
+struct RegSetWinner {
+    index: i32,
+    position: i32,
+    match_len: i32,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn find_fallback_match(
-    set: &mut OnigRegSet,
-    str_data: &[u8],
-    end: usize,
-    start: usize,
-    limit: usize,
-    option: OnigOptionType,
-    skip_region_for_nomem: bool,
-    msa: &mut MatchArg,
-) -> (i32, i32) {
-    let enc = set.enc;
-    let prev_is_newline_check = set.anychar_inf;
-    let mut s = start;
-
-    while s < limit {
-        let prev_is_newline = if prev_is_newline_check && s > 0 {
-            str_data[s - 1] == b'\n'
-        } else {
-            true
-        };
-        let remaining = end - s;
-
-        for fallback_pos in 0..set.fallback_candidates.len() {
-            let index = set.fallback_candidates[fallback_pos] as usize;
-            if (set.entries[index].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
-                continue;
-            }
-            if set.entries[index].reg.threshold_len > 0
-                && remaining < set.entries[index].reg.threshold_len as usize
-            {
-                continue;
-            }
-            if !fallback_optimizer_allows_start(&set.entries[index].reg, str_data, end, s) {
-                continue;
-            }
-
-            let r = match_regset_entry(
-                set,
-                index,
-                str_data,
-                end,
-                s,
-                start,
-                option,
-                skip_region_for_nomem,
-                msa,
-            );
-            if r >= 0 {
-                return (index as i32, s as i32);
-            }
-            if r != ONIG_MISMATCH {
-                return (r, 0);
-            }
+#[inline]
+fn winner_is_better(candidate: RegSetWinner, current: Option<RegSetWinner>) -> bool {
+    match current {
+        None => true,
+        Some(current) => {
+            candidate.position < current.position
+                || (candidate.position == current.position && candidate.index < current.index)
         }
-
-        s += enclen(enc, str_data, s);
     }
-
-    (ONIG_MISMATCH, 0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -484,7 +525,7 @@ fn match_regset_entry(
         )
     } else {
         msa.region = set.entries[index].region.take();
-        let r = onig_match_with_msa_start(
+        let result = onig_match_with_msa_start(
             &set.entries[index].reg,
             str_data,
             end,
@@ -494,12 +535,12 @@ fn match_regset_entry(
             msa,
         );
         set.entries[index].region = msa.region.take();
-        r
+        result
     }
 }
 
 /// Position-lead search: iterate positions, try each regex at each position.
-fn regset_search_body_position_lead(
+fn regset_search_body_position_lead_table(
     set: &mut OnigRegSet,
     str_data: &[u8],
     end: usize,
@@ -524,127 +565,303 @@ fn regset_search_body_position_lead(
     let mut result: (i32, i32) = (ONIG_MISMATCH, 0);
     set.last_match_len = ONIG_MISMATCH;
 
-    if set.has_dispatch_candidates {
-        'search: loop {
-            if s >= range {
-                break;
-            }
+    'search: loop {
+        if s > range {
+            break;
+        }
 
-            // SIMD-accelerated position skip: jump to the next dispatch byte.
+        // SIMD-accelerated position skip: jump to next byte that could match.
+        // The range position itself must still be attempted (matching
+        // Oniguruma's do-while loop), so a failed skip lands on `range`.
+        if s < range {
             s = match set.skip_needle {
                 SkipNeedle::None => s,
-                SkipNeedle::One(b) => match memchr::memchr(b, &str_data[s..range]) {
-                    Some(off) => s + off,
-                    None => break,
-                },
-                SkipNeedle::Two(b1, b2) => match memchr::memchr2(b1, b2, &str_data[s..range]) {
-                    Some(off) => s + off,
-                    None => break,
-                },
+                SkipNeedle::One(b) => {
+                    memchr::memchr(b, &str_data[s..range]).map_or(range, |off| s + off)
+                }
+                SkipNeedle::Two(b1, b2) => {
+                    memchr::memchr2(b1, b2, &str_data[s..range]).map_or(range, |off| s + off)
+                }
                 SkipNeedle::Three(b1, b2, b3) => {
-                    match memchr::memchr3(b1, b2, b3, &str_data[s..range]) {
-                        Some(off) => s + off,
-                        None => break,
-                    }
+                    memchr::memchr3(b1, b2, b3, &str_data[s..range]).map_or(range, |off| s + off)
                 }
             };
+        }
 
-            let prev_is_newline = if prev_is_newline_check && s > 0 {
-                s > 0 && str_data[s - 1] == b'\n'
+        let prev_is_newline = if prev_is_newline_check && s > 0 {
+            // Check if previous character is newline
+            s > 0 && str_data[s - 1] == b'\n'
+        } else {
+            true // default: allow matching
+        };
+
+        let remaining = end - s;
+
+        // At the logical end there is no first byte to dispatch on. Try all
+        // entries there; the threshold check cheaply rejects non-empty ones.
+        let at_end = s == end;
+        let candidate_count = if at_end {
+            set.entries.len()
+        } else {
+            set.first_byte_candidates[str_data[s] as usize].len()
+        };
+
+        for candidate_at in 0..candidate_count {
+            let i = if at_end {
+                candidate_at
             } else {
-                true
+                set.first_byte_candidates[str_data[s] as usize][candidate_at] as usize
             };
-            let remaining = end - s;
+            // ANCR_ANYCHAR_INF optimization: skip if previous char is not newline
+            if (set.entries[i].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
+                continue;
+            }
 
-            let candidate_byte = str_data[s] as usize;
-            let candidate_count = set.first_byte_candidates[candidate_byte].len();
-            for candidate_pos in 0..candidate_count {
-                let i = set.first_byte_candidates[candidate_byte][candidate_pos] as usize;
-                if (set.entries[i].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
-                    continue;
-                }
-                if set.entries[i].reg.threshold_len > 0
-                    && remaining < set.entries[i].reg.threshold_len as usize
-                {
-                    continue;
-                }
+            // Pre-filter: remaining text too short for this pattern
+            if set.entries[i].reg.threshold_len > 0
+                && remaining < set.entries[i].reg.threshold_len as usize
+            {
+                continue;
+            }
 
-                let r = match_regset_entry(
-                    set,
-                    i,
+            let r = if skip_region_for_nomem && set.entries[i].reg.num_mem == 0 {
+                // No capture groups: scanner only needs full-match length, so avoid
+                // region take/clear/restore on this hot path.
+                msa.region = None;
+                onig_match_with_msa_start(
+                    &set.entries[i].reg,
                     str_data,
                     end,
                     s,
                     start,
                     option,
-                    skip_region_for_nomem,
+                    &mut msa,
+                )
+            } else {
+                // Swap region into msa for this match, then swap back.
+                msa.region = set.entries[i].region.take();
+                let r = onig_match_with_msa_start(
+                    &set.entries[i].reg,
+                    str_data,
+                    end,
+                    s,
+                    start,
+                    option,
                     &mut msa,
                 );
-                if r >= 0 {
-                    set.last_match_len = r;
-                    result = (i as i32, s as i32);
-                    break 'search;
-                }
-                if r != ONIG_MISMATCH {
-                    result = (r, 0);
-                    break 'search;
-                }
-            }
+                set.entries[i].region = msa.region.take();
+                r
+            };
 
-            s += enclen(enc, str_data, s);
+            if r >= 0 {
+                set.last_match_len = r;
+                result = (i as i32, s as i32);
+                break 'search;
+            }
+            if r != ONIG_MISMATCH {
+                result = (r, 0);
+                break 'search;
+            }
         }
+
+        if s >= range {
+            break;
+        }
+        s += enclen(enc, str_data, s);
     }
 
-    // Optimizer bytes with nonzero maximum distance are not first-byte data.
-    // Check them only up to the dispatch result, preserving position and index
-    // priority without turning them into candidates at every byte.
-    let fallback_limit = if result.0 >= 0 {
-        (result.1 as usize + 1).min(range)
-    } else {
-        range
-    };
-    let fallback_result = find_fallback_match(
+    set.scratch_msa = Some(msa);
+
+    result
+}
+
+/// Run the established table scan first, then check only variable-distance
+/// optimizer events that can still beat its winner. This keeps the common
+/// position-lead path byte-for-byte hot while preserving correct earlier
+/// starts for delayed optimizer bytes.
+fn regset_search_body_position_lead(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+    skip_region_for_nomem: bool,
+) -> (i32, i32) {
+    if set.variable_distance_candidates.is_empty() {
+        return regset_search_body_position_lead_table(
+            set,
+            str_data,
+            end,
+            start,
+            range,
+            option,
+            skip_region_for_nomem,
+        );
+    }
+
+    let fixed_result = regset_search_body_position_lead_table(
         set,
         str_data,
         end,
         start,
-        fallback_limit,
+        range,
         option,
         skip_region_for_nomem,
-        &mut msa,
     );
-    if fallback_result.0 != ONIG_MISMATCH && fallback_result.0 < 0 {
-        set.scratch_msa = Some(msa);
-        return fallback_result;
+    if fixed_result.0 < 0 && fixed_result.0 != ONIG_MISMATCH {
+        return fixed_result;
     }
 
-    if fallback_result.0 >= 0
-        && (result.0 == ONIG_MISMATCH
-            || fallback_result.1 < result.1
-            || (fallback_result.1 == result.1 && fallback_result.0 < result.0))
-    {
-        let index = fallback_result.0 as usize;
-        let r = match_regset_entry(
-            set,
-            index,
-            str_data,
-            end,
-            fallback_result.1 as usize,
-            start,
-            option,
-            skip_region_for_nomem,
-            &mut msa,
-        );
-        if r >= 0 {
-            set.last_match_len = r;
-            result = fallback_result;
-        } else if r != ONIG_MISMATCH {
-            result = (r, 0);
+    let fixed_match_len = set.last_match_len;
+    let mut winner = if fixed_result.0 >= 0 {
+        Some(RegSetWinner {
+            index: fixed_result.0,
+            position: fixed_result.1,
+            match_len: fixed_match_len,
+        })
+    } else {
+        None
+    };
+    if let Some(current) = winner {
+        if current.position == start as i32
+            && set.variable_distance_candidates[0] as i32 > current.index
+        {
+            return fixed_result;
         }
     }
 
+    set.variable_last_start_scratch.fill(0);
+    set.variable_matched_scratch.fill(false);
+    let mut msa = set
+        .scratch_msa
+        .take()
+        .unwrap_or_else(|| MatchArg::new(&set.entries[0].reg, option, None, start));
+    let last_relevant_start = winner.map_or(range, |current| current.position as usize);
+    let event_limit = if end == 0 {
+        0
+    } else {
+        last_relevant_start
+            .saturating_add(set.max_variable_distance)
+            .min(end - 1)
+    };
+
+    let mut cursor = start;
+    while cursor <= event_limit {
+        let event_count = set.variable_optimizer_candidates[str_data[cursor] as usize].len();
+        for event_at in 0..event_count {
+            let event = set.variable_optimizer_candidates[str_data[cursor] as usize][event_at];
+            let slot = event.slot as usize;
+            if set.variable_matched_scratch[slot] || cursor < event.dist_min {
+                continue;
+            }
+            if let Some(current) = winner {
+                if current.position == start as i32 && event.index as i32 >= current.index {
+                    continue;
+                }
+            }
+
+            let lower = start.max(cursor.saturating_sub(event.dist_max));
+            let upper = range.min(cursor - event.dist_min);
+            if lower > upper {
+                continue;
+            }
+
+            let mut candidate_start = lower.max(set.variable_last_start_scratch[slot]);
+            while candidate_start <= upper {
+                set.variable_last_start_scratch[slot] = candidate_start.saturating_add(1);
+                if let Some(current) = winner {
+                    if candidate_start > current.position as usize
+                        || (candidate_start == current.position as usize
+                            && event.index as i32 >= current.index)
+                    {
+                        candidate_start += 1;
+                        continue;
+                    }
+                }
+                if set
+                    .enc
+                    .left_adjust_char_head(start, candidate_start, str_data)
+                    != candidate_start
+                {
+                    candidate_start += 1;
+                    continue;
+                }
+
+                let index = event.index as usize;
+                if set.entries[index].reg.has_first_byte_map
+                    && set.entries[index].reg.first_byte_map[str_data[candidate_start] as usize]
+                        == 0
+                {
+                    candidate_start += 1;
+                    continue;
+                }
+                let prev_is_newline = if set.anychar_inf && candidate_start > 0 {
+                    str_data[candidate_start - 1] == b'\n'
+                } else {
+                    true
+                };
+                if (set.entries[index].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
+                    candidate_start += 1;
+                    continue;
+                }
+                if set.entries[index].reg.threshold_len > 0
+                    && end - candidate_start < set.entries[index].reg.threshold_len as usize
+                {
+                    candidate_start += 1;
+                    continue;
+                }
+
+                let result = match_regset_entry(
+                    set,
+                    index,
+                    str_data,
+                    end,
+                    candidate_start,
+                    start,
+                    option,
+                    skip_region_for_nomem,
+                    &mut msa,
+                );
+                if result >= 0 {
+                    set.variable_matched_scratch[slot] = true;
+                    let candidate = RegSetWinner {
+                        index: index as i32,
+                        position: candidate_start as i32,
+                        match_len: result,
+                    };
+                    if winner_is_better(candidate, winner) {
+                        winner = Some(candidate);
+                    }
+                    break;
+                }
+                if result != ONIG_MISMATCH {
+                    set.scratch_msa = Some(msa);
+                    return (result, 0);
+                }
+                candidate_start += 1;
+            }
+        }
+
+        if let Some(current) = winner {
+            if cursor >= (current.position as usize).saturating_add(set.max_variable_distance) {
+                break;
+            }
+        }
+        if cursor == event_limit {
+            break;
+        }
+        cursor += 1;
+    }
+
     set.scratch_msa = Some(msa);
-    result
+    if let Some(winner) = winner {
+        set.last_match_len = winner.match_len;
+        (winner.index, winner.position)
+    } else {
+        set.last_match_len = ONIG_MISMATCH;
+        (ONIG_MISMATCH, 0)
+    }
 }
 
 /// Regex-lead search: iterate regexes, find earliest match.
@@ -732,8 +949,9 @@ fn onig_regset_search_impl(
         }
     }
 
-    // Empty string handling
-    if start == end {
+    // Empty logical string handling. A non-empty string searched from its end
+    // must continue through the lead-specific path, matching upstream.
+    if end == 0 {
         for i in 0..n {
             if set.entries[i].reg.threshold_len == 0 {
                 let region = set.entries[i].region.take();
@@ -741,6 +959,7 @@ fn onig_regset_search_impl(
                     onig_match(&set.entries[i].reg, str_data, end, start, region, option);
                 set.entries[i].region = returned_region;
                 if r >= 0 {
+                    set.last_match_len = r;
                     return (i as i32, start as i32);
                 }
                 if r != ONIG_MISMATCH {
@@ -895,6 +1114,7 @@ pub fn onig_regset_search_with_param(
     if mps.len() < n {
         return (ONIGERR_INVALID_ARGUMENT, 0);
     }
+    set.last_match_len = ONIG_MISMATCH;
 
     let end = end.min(str_data.len());
     let range = range.min(end);
@@ -915,8 +1135,9 @@ pub fn onig_regset_search_with_param(
         }
     }
 
-    // Empty string handling
-    if start == end {
+    // Empty logical string handling. A non-empty string searched from its end
+    // must continue through the lead-specific path, matching upstream.
+    if end == 0 {
         for i in 0..n {
             if set.entries[i].reg.threshold_len == 0 {
                 let region = set.entries[i].region.take();
@@ -924,6 +1145,7 @@ pub fn onig_regset_search_with_param(
                     onig_match(&set.entries[i].reg, str_data, end, start, region, option);
                 set.entries[i].region = returned_region;
                 if r >= 0 {
+                    set.last_match_len = r;
                     return (i as i32, start as i32);
                 }
                 if r != ONIG_MISMATCH {
@@ -1130,6 +1352,89 @@ mod tests {
         );
         assert_eq!(idx, 0); // empty pattern matches empty string
         assert_eq!(pos, 0);
+    }
+
+    #[test]
+    fn regset_fast_empty_string_records_zero_match_length() {
+        let (set, r) = onig_regset_new(vec![compile(b"$")]);
+        assert_eq!(r, ONIG_NORMAL);
+        let mut set = set.unwrap();
+
+        assert_eq!(
+            onig_regset_search_fast(
+                &mut set,
+                b"",
+                0,
+                0,
+                0,
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            ),
+            (0, 0)
+        );
+        assert_eq!(onig_regset_last_match_len(&set), 0);
+    }
+
+    #[test]
+    fn regset_position_lead_attempts_the_range_position() {
+        let (set, r) = onig_regset_new(vec![compile(b"(?=b)")]);
+        assert_eq!(r, ONIG_NORMAL);
+        let mut set = set.unwrap();
+
+        assert_eq!(
+            onig_regset_search(
+                &mut set,
+                b"abc",
+                3,
+                0,
+                1,
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            ),
+            (0, 1)
+        );
+    }
+
+    #[test]
+    fn regset_position_lead_finds_zero_width_matches_at_end() {
+        for pattern in [b"$".as_slice(), b"\\z".as_slice(), b"a*".as_slice()] {
+            let (set, r) = onig_regset_new(vec![compile(pattern)]);
+            assert_eq!(r, ONIG_NORMAL);
+            let mut set = set.unwrap();
+
+            assert_eq!(
+                onig_regset_search(
+                    &mut set,
+                    b"abc",
+                    3,
+                    3,
+                    3,
+                    OnigRegSetLead::PositionLead,
+                    ONIG_OPTION_NONE,
+                ),
+                (0, 3),
+                "pattern {:?}",
+                std::str::from_utf8(pattern).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn regset_nonempty_eos_keeps_regex_lead_semantics() {
+        for lead in [
+            OnigRegSetLead::RegexLead,
+            OnigRegSetLead::PriorityToRegexOrder,
+        ] {
+            let (set, r) = onig_regset_new(vec![compile(b"a*")]);
+            assert_eq!(r, ONIG_NORMAL);
+            let mut set = set.unwrap();
+
+            assert_eq!(
+                onig_regset_search(&mut set, b"\na", 2, 2, 2, lead, ONIG_OPTION_NONE),
+                (ONIG_MISMATCH, 0),
+                "lead {lead:?}"
+            );
+        }
     }
 
     #[test]

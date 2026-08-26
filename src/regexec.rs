@@ -6422,6 +6422,7 @@ mod tests {
             saves: None,
             unset_addr_list: None,
             parse_depth: 0,
+            ast_node_count: 0,
             flags: 0,
         };
         (reg, env)
