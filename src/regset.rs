@@ -2,10 +2,12 @@
 // Multi-regex search for syntax highlighters and text editors.
 
 use crate::oniguruma::*;
-use crate::regenc::{onigenc_is_ascii_compatible_encoding, OnigEncoding};
+use crate::regenc::{
+    onigenc_get_prev_char_head, onigenc_is_ascii_compatible_encoding, OnigEncoding,
+};
 use crate::regexec::{
-    onig_match, onig_match_with_msa_start, onig_search, onig_search_with_param, MatchArg,
-    OnigMatchParam,
+    onig_match, onig_match_with_msa_start, onig_search, onig_search_with_msa_and_right_range,
+    onig_search_with_param, MatchArg, OnigMatchParam,
 };
 use crate::regint::*;
 
@@ -495,9 +497,11 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     let mut fallback_search_candidates = Vec::new();
     for (i, entry) in set.entries.iter().enumerate() {
         if has_variable_optimizer(&entry.reg) {
-            if let Some(start_map) = derive_start_byte_map(&entry.reg) {
-                add_entry_by_start_map(&mut table, &start_map, i as u16);
-                continue;
+            if entry.reg.dist_max != INFINITE_LEN {
+                if let Some(start_map) = derive_start_byte_map(&entry.reg) {
+                    add_entry_by_start_map(&mut table, &start_map, i as u16);
+                    continue;
+                }
             }
             fallback_search_candidates.push(i as u16);
         } else {
@@ -555,7 +559,10 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
     // Add the new entry to the first-byte dispatch table
     let new_idx = (set.entries.len() - 1) as u16;
     if has_variable_optimizer(&set.entries[new_idx as usize].reg) {
-        if let Some(start_map) = derive_start_byte_map(&set.entries[new_idx as usize].reg) {
+        let start_map = (set.entries[new_idx as usize].reg.dist_max != INFINITE_LEN)
+            .then(|| derive_start_byte_map(&set.entries[new_idx as usize].reg))
+            .flatten();
+        if let Some(start_map) = start_map {
             add_entry_by_start_map(&mut set.first_byte_candidates, &start_map, new_idx);
             set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
         } else {
@@ -726,20 +733,52 @@ struct RegSetWinner {
     match_len: i32,
 }
 
+#[derive(Clone, Copy)]
+struct RegSetError {
+    code: i32,
+    index: i32,
+    position: i32,
+}
+
+#[derive(Clone, Copy)]
+enum RegSetDecision {
+    Match(RegSetWinner),
+    Error(RegSetError),
+}
+
 #[inline]
-fn winner_is_better(candidate: RegSetWinner, current: Option<RegSetWinner>) -> bool {
-    match current {
-        None => true,
-        Some(current) => {
-            candidate.position < current.position
-                || (candidate.position == current.position && candidate.index < current.index)
-        }
+fn decision_position_and_index(decision: RegSetDecision) -> (i32, i32) {
+    match decision {
+        RegSetDecision::Match(candidate) => (candidate.position, candidate.index),
+        RegSetDecision::Error(error) => (error.position, error.index),
     }
+}
+
+#[inline]
+fn decision_is_better(candidate: RegSetDecision, current: Option<RegSetDecision>) -> bool {
+    current.map_or(true, |current| {
+        decision_position_and_index(candidate) < decision_position_and_index(current)
+    })
 }
 
 fn clear_regset_entry_region(set: &mut OnigRegSet, index: i32) {
     if let Some(region) = set.entries[index as usize].region.as_mut() {
         region.clear();
+    }
+}
+
+fn record_regset_decision(
+    set: &mut OnigRegSet,
+    current: &mut Option<RegSetDecision>,
+    candidate: RegSetDecision,
+) {
+    if decision_is_better(candidate, *current) {
+        if let Some(RegSetDecision::Match(previous)) = current {
+            clear_regset_entry_region(set, previous.index);
+        }
+        *current = Some(candidate);
+    } else if let RegSetDecision::Match(candidate) = candidate {
+        clear_regset_entry_region(set, candidate.index);
     }
 }
 
@@ -782,6 +821,83 @@ fn match_regset_entry(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn locate_regset_entry_decision(
+    set: &mut OnigRegSet,
+    index: usize,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+    skip_region_for_nomem: bool,
+    msa: &mut MatchArg,
+) -> Option<RegSetDecision> {
+    // Replay the search's cumulative retry budget from its first candidate
+    // position. `onig_match_with_msa_start` deliberately does not reset this
+    // counter because a position-lead caller reuses one MatchArg.
+    msa.retry_limit_in_search_counter = 0;
+    let mut position = start;
+    loop {
+        let result = match_regset_entry(
+            set,
+            index,
+            str_data,
+            end,
+            position,
+            start,
+            option,
+            skip_region_for_nomem,
+            msa,
+        );
+        if result >= 0 {
+            return Some(RegSetDecision::Match(RegSetWinner {
+                index: index as i32,
+                position: position as i32,
+                match_len: result,
+            }));
+        }
+        if result != ONIG_MISMATCH {
+            return Some(RegSetDecision::Error(RegSetError {
+                code: result,
+                index: index as i32,
+                position: position as i32,
+            }));
+        }
+        if msa.retry_limit_in_search != 0
+            && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+        {
+            return Some(RegSetDecision::Error(RegSetError {
+                code: ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER,
+                index: index as i32,
+                position: position as i32,
+            }));
+        }
+        if position >= range || position >= end {
+            return None;
+        }
+        position += enclen(set.enc, str_data, position);
+    }
+}
+
+#[inline]
+fn regset_decision_result(set: &mut OnigRegSet, decision: Option<RegSetDecision>) -> (i32, i32) {
+    match decision {
+        Some(RegSetDecision::Match(winner)) => {
+            set.last_match_len = winner.match_len;
+            (winner.index, winner.position)
+        }
+        Some(RegSetDecision::Error(error)) => {
+            set.last_match_len = ONIG_MISMATCH;
+            (error.code, 0)
+        }
+        None => {
+            set.last_match_len = ONIG_MISMATCH;
+            (ONIG_MISMATCH, 0)
+        }
+    }
+}
+
 /// Position-lead search: iterate positions, try each regex at each position.
 fn regset_search_body_position_lead_table(
     set: &mut OnigRegSet,
@@ -791,7 +907,7 @@ fn regset_search_body_position_lead_table(
     range: usize,
     option: OnigOptionType,
     skip_region_for_nomem: bool,
-) -> (i32, i32) {
+) -> Option<RegSetDecision> {
     // rmatch_pos, regex_index
     let enc = set.enc;
     let mut s = start;
@@ -805,8 +921,7 @@ fn regset_search_body_position_lead_table(
     };
 
     let prev_is_newline_check = set.anychar_inf;
-    let mut result: (i32, i32) = (ONIG_MISMATCH, 0);
-    set.last_match_len = ONIG_MISMATCH;
+    let mut result = None;
 
     'search: loop {
         if s > range {
@@ -897,12 +1012,19 @@ fn regset_search_body_position_lead_table(
             };
 
             if r >= 0 {
-                set.last_match_len = r;
-                result = (i as i32, s as i32);
+                result = Some(RegSetDecision::Match(RegSetWinner {
+                    index: i as i32,
+                    position: s as i32,
+                    match_len: r,
+                }));
                 break 'search;
             }
             if r != ONIG_MISMATCH {
-                result = (r, 0);
+                result = Some(RegSetDecision::Error(RegSetError {
+                    code: r,
+                    index: i as i32,
+                    position: s as i32,
+                }));
                 break 'search;
             }
         }
@@ -937,7 +1059,7 @@ fn regset_search_body_position_lead(
     skip_region_for_nomem: bool,
 ) -> (i32, i32) {
     if set.fallback_search_candidates.is_empty() {
-        return regset_search_body_position_lead_table(
+        let decision = regset_search_body_position_lead_table(
             set,
             str_data,
             end,
@@ -946,9 +1068,10 @@ fn regset_search_body_position_lead(
             option,
             skip_region_for_nomem,
         );
+        return regset_decision_result(set, decision);
     }
 
-    let fixed_result = regset_search_body_position_lead_table(
+    let mut decision = regset_search_body_position_lead_table(
         set,
         str_data,
         end,
@@ -957,27 +1080,13 @@ fn regset_search_body_position_lead(
         option,
         skip_region_for_nomem,
     );
-    if fixed_result.0 < 0 && fixed_result.0 != ONIG_MISMATCH {
-        return fixed_result;
-    }
-
-    let fixed_match_len = set.last_match_len;
-    let mut winner = if fixed_result.0 >= 0 {
-        Some(RegSetWinner {
-            index: fixed_result.0,
-            position: fixed_result.1,
-            match_len: fixed_match_len,
-        })
-    } else {
-        None
-    };
     let mut fallback_msa = None;
 
     for candidate_at in 0..set.fallback_search_candidates.len() {
         let index = set.fallback_search_candidates[candidate_at] as usize;
         if (set.entries[index].reg.anchor & ANCR_BEGIN_POSITION) != 0 {
-            if winner.is_some_and(|current| {
-                current.position == start as i32 && index as i32 >= current.index
+            if decision.is_some_and(|current| {
+                (start as i32, index as i32) >= decision_position_and_index(current)
             }) {
                 continue;
             }
@@ -987,7 +1096,7 @@ fn regset_search_body_position_lead(
                     .take()
                     .unwrap_or_else(|| MatchArg::new(&set.entries[0].reg, option, None, start))
             });
-            let match_len = match_regset_entry(
+            if let Some(candidate) = locate_regset_entry_decision(
                 set,
                 index,
                 str_data,
@@ -997,37 +1106,21 @@ fn regset_search_body_position_lead(
                 option,
                 skip_region_for_nomem,
                 msa,
-            );
-            if match_len >= 0 {
-                let candidate = RegSetWinner {
-                    index: index as i32,
-                    position: start as i32,
-                    match_len,
-                };
-                if winner_is_better(candidate, winner) {
-                    if let Some(current) = winner {
-                        clear_regset_entry_region(set, current.index);
-                    }
-                    winner = Some(candidate);
-                } else {
-                    clear_regset_entry_region(set, candidate.index);
-                }
-            } else if match_len != ONIG_MISMATCH {
-                if let Some(current) = winner {
-                    clear_regset_entry_region(set, current.index);
-                }
-                set.scratch_msa = fallback_msa;
-                return (match_len, 0);
+            ) {
+                record_regset_decision(set, &mut decision, candidate);
             }
             continue;
         }
 
-        let search_range = match winner {
-            Some(current) if current.position == start as i32 && index as i32 >= current.index => {
-                continue;
+        let search_range = match decision {
+            Some(current) if index as i32 >= decision_position_and_index(current).1 => {
+                let position = decision_position_and_index(current).0 as usize;
+                match onigenc_get_prev_char_head(set.enc, start, position, str_data) {
+                    Some(position) => position,
+                    None => continue,
+                }
             }
-            Some(current) if index as i32 >= current.index => current.position as usize,
-            Some(current) => (current.position as usize).saturating_add(1).min(range),
+            Some(current) => decision_position_and_index(current).0 as usize,
             None => range,
         };
         if search_range < start {
@@ -1035,14 +1128,20 @@ fn regset_search_body_position_lead(
         }
 
         let region = set.entries[index].region.take();
-        let (position, returned_region) = onig_search(
+        let msa = fallback_msa.get_or_insert_with(|| {
+            set.scratch_msa
+                .take()
+                .unwrap_or_else(|| MatchArg::new(&set.entries[0].reg, option, None, start))
+        });
+        msa.reset_for_search(&set.entries[index].reg, option, region, start);
+        let (position, returned_region) = onig_search_with_msa_and_right_range(
             &set.entries[index].reg,
             str_data,
             end,
             start,
             search_range,
-            region,
-            option,
+            end,
+            msa,
         );
         set.entries[index].region = returned_region;
 
@@ -1051,40 +1150,40 @@ fn regset_search_body_position_lead(
                 .region
                 .as_ref()
                 .expect("regset entries retain their match region");
-            let match_len = region.end[0].saturating_sub(region.beg[0]);
-            let candidate = RegSetWinner {
-                index: index as i32,
-                position,
-                match_len,
-            };
-            if winner_is_better(candidate, winner) {
-                if let Some(current) = winner {
-                    clear_regset_entry_region(set, current.index);
-                }
-                winner = Some(candidate);
-            } else {
-                clear_regset_entry_region(set, candidate.index);
-            }
+            record_regset_decision(
+                set,
+                &mut decision,
+                RegSetDecision::Match(RegSetWinner {
+                    index: index as i32,
+                    position,
+                    match_len: region.end[0].saturating_sub(region.beg[0]),
+                }),
+            );
         } else if position != ONIG_MISMATCH {
-            if let Some(current) = winner {
-                clear_regset_entry_region(set, current.index);
+            // `onig_search` reports the error code but not the start position
+            // that caused it. Only this exceptional path replays exact match
+            // attempts up to the current decision boundary, so an earlier
+            // fallback match (or error) wins with position-lead semantics.
+            if let Some(candidate) = locate_regset_entry_decision(
+                set,
+                index,
+                str_data,
+                end,
+                start,
+                search_range,
+                option,
+                skip_region_for_nomem,
+                msa,
+            ) {
+                record_regset_decision(set, &mut decision, candidate);
             }
-            set.scratch_msa = fallback_msa;
-            return (position, 0);
         }
     }
 
     if fallback_msa.is_some() {
         set.scratch_msa = fallback_msa;
     }
-
-    if let Some(winner) = winner {
-        set.last_match_len = winner.match_len;
-        (winner.index, winner.position)
-    } else {
-        set.last_match_len = ONIG_MISMATCH;
-        (ONIG_MISMATCH, 0)
-    }
+    regset_decision_result(set, decision)
 }
 
 /// Regex-lead search: iterate regexes, find earliest match.
@@ -1422,6 +1521,9 @@ mod tests {
     use super::*;
     use crate::encodings::utf8::ONIG_ENCODING_UTF8;
     use crate::regcomp::onig_new;
+    use crate::regexec::{
+        onig_get_retry_limit_in_match, onig_set_retry_limit_in_match, LIMIT_TEST_LOCK,
+    };
     use crate::regsyntax::OnigSyntaxOniguruma;
 
     fn compile(pattern: &[u8]) -> Box<RegexType> {
@@ -1615,11 +1717,132 @@ mod tests {
     }
 
     #[test]
+    fn unbounded_optimizer_stays_on_the_search_fallback() {
+        let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
+        assert_eq!(result, ONIG_NORMAL);
+        let set = set.expect("regset");
+
+        assert_eq!(set.fallback_search_candidates, vec![0]);
+    }
+
+    #[test]
+    fn fallback_does_not_probe_a_start_after_an_unbeatable_table_winner() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let old_limit = onig_get_retry_limit_in_match();
+        onig_set_retry_limit_in_match(100);
+
+        let (set, result) = onig_regset_new(vec![compile(br"(a*)\1b"), compile(b"x")]);
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        let input = format!("x{}b", "a".repeat(1_001));
+        let (index, position) = onig_regset_search(
+            &mut set,
+            input.as_bytes(),
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
+        );
+
+        onig_set_retry_limit_in_match(old_limit);
+        assert_eq!((index, position), (1, 0));
+    }
+
+    #[test]
+    fn fallback_match_precedes_a_later_table_retry_error() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let old_limit = onig_get_retry_limit_in_match();
+        onig_set_retry_limit_in_match(100);
+
+        let input = format!("bx{}c", "a".repeat(1_001));
+        for (patterns, expected_index) in [
+            ([br"x(a+)+b".as_slice(), br"(a*)\1b".as_slice()], 1),
+            ([br"(a*)\1b".as_slice(), br"x(a+)+b".as_slice()], 0),
+        ] {
+            let (set, result) = onig_regset_new(patterns.into_iter().map(compile).collect());
+            assert_eq!(result, ONIG_NORMAL);
+            let mut set = set.expect("regset");
+
+            let (index, position) = onig_regset_search(
+                &mut set,
+                input.as_bytes(),
+                input.len(),
+                0,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!((index, position), (expected_index, 0));
+            assert_eq!(onig_regset_last_match_len(&set), 1);
+        }
+
+        onig_set_retry_limit_in_match(old_limit);
+    }
+
+    #[test]
+    fn table_retry_error_wins_a_same_start_later_fallback_match() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let old_limit = onig_get_retry_limit_in_match();
+        onig_set_retry_limit_in_match(100);
+
+        let input = format!("x{}c", "a".repeat(1_001));
+        let (set, result) = onig_regset_new(vec![compile(br"x(a+)+b"), compile(br"(x*)\1?")]);
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+
+        let (index, position) = onig_regset_search(
+            &mut set,
+            input.as_bytes(),
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
+        );
+
+        onig_set_retry_limit_in_match(old_limit);
+        assert_eq!((index, position), (ONIGERR_RETRY_LIMIT_IN_MATCH_OVER, 0));
+    }
+
+    #[test]
+    fn fallback_error_clears_a_superseded_winner_and_match_length() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let old_limit = onig_get_retry_limit_in_match();
+        onig_set_retry_limit_in_match(100);
+
+        let input = format!("{}bx", "a".repeat(1_001));
+        let (set, result) = onig_regset_new(vec![compile(br"(a*)\1b"), compile(b"x")]);
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        let search_result = onig_regset_search(
+            &mut set,
+            input.as_bytes(),
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
+        );
+
+        onig_set_retry_limit_in_match(old_limit);
+        assert_eq!(search_result, (ONIGERR_RETRY_LIMIT_IN_MATCH_OVER, 0));
+        assert_eq!(onig_regset_last_match_len(&set), ONIG_MISMATCH);
+        for index in 0..2 {
+            let region = onig_regset_get_region(&set, index).expect("entry region");
+            assert_eq!(
+                (region.beg[0], region.end[0]),
+                (ONIG_REGION_NOTPOS, ONIG_REGION_NOTPOS)
+            );
+        }
+    }
+
+    #[test]
     fn fallback_search_preserves_g_anchor_and_beats_a_later_table_match() {
         let (set, result) = onig_regset_new(vec![compile(br"\["), compile(br"\G\s*\[")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert!(set.fallback_search_candidates.is_empty());
+        assert_eq!(set.fallback_search_candidates, vec![1]);
 
         let input = b"xx [";
         let (index, position) = onig_regset_search(

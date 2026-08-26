@@ -346,6 +346,41 @@ fn scanner_unbounded_prefix_matches_from_the_match_start() {
 }
 
 #[test]
+fn scanner_fallback_match_may_extend_past_a_later_table_winner() {
+    for (patterns, expected_index) in [(["bc", r"(a*)\1bc"], 1), ([r"(a*)\1bc", "bc"], 0)] {
+        let mut scanner = Scanner::new(&patterns).expect("scanner");
+
+        let matched = scanner
+            .find_next_match("aabc", 0, ScannerFindOptions::NONE)
+            .expect("match");
+
+        assert_eq!(matched.index, expected_index);
+        assert_eq!(matched.capture_indices[0].start, 0);
+        assert_eq!(matched.capture_indices[0].end, 4);
+    }
+}
+
+#[test]
+fn regset_find_longest_keeps_position_lead_earliest_start() {
+    let mut set = make_regset(&[br"(a*)\1b"]);
+    let input = b"bxxaaaab";
+
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_FIND_LONGEST,
+    );
+
+    assert_eq!((index, position), (0, 0));
+    let region = onig_regset_get_region(&set, index as usize).expect("winning region");
+    assert_eq!((region.beg[0], region.end[0]), (0, 1));
+}
+
+#[test]
 fn scanner_negated_multibyte_optional_prefix_includes_ascii_starts() {
     let mut scanner = Scanner::new(&["[^é]?x"]).expect("scanner");
 
