@@ -7149,45 +7149,23 @@ fn prs_branch(
         return Ok((node, r));
     }
 
-    let top = node_new_list(node, None);
-    let mut headp: *mut Option<Box<Node>>;
-    // We need to build a linked list. Use unsafe pointer to the cdr slot.
-    // SAFETY: `top` is a freshly created `Box<Node>` exclusively owned by this
-    // function; nothing else references it, so casting away constness and
-    // mutating through `top_ptr` cannot conflict with another borrow. `headp`
-    // is derived from the List cell's `cdr` field, which lives in `top`'s
-    // stable heap allocation (a `Box` never moves its contents).
-    unsafe {
-        let top_ptr = &*top as *const Node as *mut Node;
-        if let NodeInner::List(ref mut cons) = (*top_ptr).inner {
-            headp = &mut cons.cdr as *mut Option<Box<Node>>;
-        } else {
-            env.parse_depth -= 1;
-            return Ok((top, r));
-        }
-    }
+    let mut top = node_new_list(node, None);
+    let mut headp = match &mut top.inner {
+        NodeInner::List(cons) => &mut cons.cdr,
+        _ => unreachable!("node_new_list must create a List node"),
+    };
 
     while r != TokenType::Eot as i32 && r != term && r != TokenType::Alt as i32 {
         let (node2, r2) = prs_exp(tok, term, p, end, pattern, env, false)?;
         r = r2;
 
         let new_cell = node_new_list(node2, None);
-        // SAFETY: `headp` points at the `cdr` slot of the most recently
-        // appended List cell, which is owned by `top` and kept alive in its
-        // stable heap allocation until this function returns; `prs_exp` above
-        // does not touch `top`, so the slot is still valid. Writing the new
-        // cell and then re-deriving `headp` from it happens while no other
-        // reference into the list exists.
-        unsafe {
-            *headp = Some(new_cell);
-            // Advance headp to the new cell's cdr
-            if let Some(ref mut cell) = *headp {
-                let cell_ptr = cell.as_mut() as *mut Node;
-                if let NodeInner::List(ref mut cons) = (*cell_ptr).inner {
-                    headp = &mut cons.cdr as *mut Option<Box<Node>>;
-                }
-            }
-        }
+        *headp = Some(new_cell);
+        let cell = headp.as_mut().expect("newly appended list cell");
+        headp = match &mut cell.inner {
+            NodeInner::List(cons) => &mut cons.cdr,
+            _ => unreachable!("node_new_list must create a List node"),
+        };
     }
 
     env.parse_depth -= 1;
@@ -7218,23 +7196,11 @@ fn prs_alts(
         env.parse_depth -= 1;
         Ok((node, r))
     } else if r == TokenType::Alt as i32 {
-        let top = node_new_alt(node, None);
-        let mut headp: *mut Option<Box<Node>>;
-        // SAFETY: `top` is a freshly created `Box<Node>` exclusively owned by
-        // this function; nothing else references it, so casting away
-        // constness and mutating through `top_ptr` cannot conflict with
-        // another borrow. `headp` is derived from the Alt cell's `cdr` field,
-        // which lives in `top`'s stable heap allocation (a `Box` never moves
-        // its contents).
-        unsafe {
-            let top_ptr = &*top as *const Node as *mut Node;
-            if let NodeInner::Alt(ref mut cons) = (*top_ptr).inner {
-                headp = &mut cons.cdr as *mut Option<Box<Node>>;
-            } else {
-                env.parse_depth -= 1;
-                return Ok((top, r));
-            }
-        }
+        let mut top = node_new_alt(node, None);
+        let mut headp = match &mut top.inner {
+            NodeInner::Alt(cons) => &mut cons.cdr,
+            _ => unreachable!("node_new_alt must create an Alt node"),
+        };
 
         while r == TokenType::Alt as i32 {
             let r2 = fetch_token(tok, p, end, pattern, env);
@@ -7245,22 +7211,12 @@ fn prs_alts(
             r = r2;
 
             let new_cell = node_new_alt(node2, None);
-            // SAFETY: `headp` points at the `cdr` slot of the most recently
-            // appended Alt cell, which is owned by `top` and kept alive in
-            // its stable heap allocation until this function returns;
-            // `fetch_token`/`prs_branch` above do not touch `top`, so the
-            // slot is still valid. Writing the new cell and then re-deriving
-            // `headp` from it happens while no other reference into the list
-            // exists.
-            unsafe {
-                *headp = Some(new_cell);
-                if let Some(ref mut cell) = *headp {
-                    let cell_ptr = cell.as_mut() as *mut Node;
-                    if let NodeInner::Alt(ref mut cons) = (*cell_ptr).inner {
-                        headp = &mut cons.cdr as *mut Option<Box<Node>>;
-                    }
-                }
-            }
+            *headp = Some(new_cell);
+            let cell = headp.as_mut().expect("newly appended alt cell");
+            headp = match &mut cell.inner {
+                NodeInner::Alt(cons) => &mut cons.cdr,
+                _ => unreachable!("node_new_alt must create an Alt node"),
+            };
         }
 
         if tok.token_type as i32 != term {

@@ -550,90 +550,72 @@ fn is_mbc_word_ascii(_enc: OnigEncoding, buf: &[u8]) -> bool {
 /// Sets qn.next_head_exact for PushIfPeekNext optimization.
 /// Auto-possessifies when body and next are exclusive.
 fn tune_next(node: &mut Node, next_node: &Node, reg: &RegexType) -> i32 {
-    let mut cur = node as *mut Node;
-    let mut called = false;
+    tune_next_inner(node, next_node, reg, false)
+}
 
-    loop {
-        // SAFETY: `cur` starts as the exclusive `&mut node` argument and is only
-        // reassigned to the boxed body of the Memory bag it points to (below), so
-        // it always points to a live node inside the caller's exclusively borrowed
-        // tree, and no other reference to it exists while `n` is in use.
-        let n = unsafe { &mut *cur };
-        match &mut n.inner {
-            NodeInner::Quant(ref mut qn) => {
-                if qn.greedy && is_infinite_repeat(qn.upper) {
-                    // Set next_head_exact for PushIfPeekNext
-                    if !called {
-                        if let Some(byte) = get_head_literal_byte(next_node, true, reg) {
-                            qn.next_head_exact = Some(byte);
-                        }
-                    }
-
-                    // Automatic possessification: a*b → (?>a*)b when exclusive
-                    if qn.lower <= 1 {
-                        if let Some(ref body) = qn.body {
-                            if is_strict_real_node(body) {
-                                let x = get_tree_head_literal(body, false, reg);
-                                if let Some(x_node) = x {
-                                    let y = get_tree_head_literal(next_node, false, reg);
-                                    if let Some(y_node) = y {
-                                        if is_exclusive(x_node, y_node, reg) {
-                                            // Wrap in StopBacktrack bag
-                                            let body_taken = qn.body.take().unwrap();
-                                            // Create a new Quant node with the body
-                                            let quant_node = Node {
-                                                inner: NodeInner::Quant(QuantNode {
-                                                    body: Some(body_taken),
-                                                    lower: qn.lower,
-                                                    upper: qn.upper,
-                                                    greedy: qn.greedy,
-                                                    emptiness: qn.emptiness,
-                                                    head_exact: qn.head_exact.take(),
-                                                    next_head_exact: qn.next_head_exact.take(),
-                                                    include_referred: qn.include_referred,
-                                                    empty_status_mem: qn.empty_status_mem,
-                                                }),
-                                                status: n.status,
-                                                parent: std::ptr::null_mut(),
-                                            };
-                                            // Replace node with Bag(StopBacktrack) wrapping the quant
-                                            // C: node_swap(node, en); ND_BODY(node) = en;
-                                            n.inner = NodeInner::Bag(BagNode {
-                                                body: Some(Box::new(quant_node)),
-                                                bag_type: BagType::StopBacktrack,
-                                                bag_data: BagData::StopBacktrack,
-                                                min_len: 0,
-                                                max_len: INFINITE_LEN,
-                                                min_char_len: 0,
-                                                max_char_len: INFINITE_LEN,
-                                                opt_count: 0,
-                                            });
-                                            n.status |= ND_ST_STRICT_REAL_REPEAT;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+fn tune_next_inner(node: &mut Node, next_node: &Node, reg: &RegexType, called: bool) -> i32 {
+    let status = node.status;
+    match &mut node.inner {
+        NodeInner::Quant(qn) => {
+            let mut replacement = None;
+            if qn.greedy && is_infinite_repeat(qn.upper) {
+                if !called {
+                    if let Some(byte) = get_head_literal_byte(next_node, true, reg) {
+                        qn.next_head_exact = Some(byte);
                     }
                 }
-                return 0;
-            }
 
-            NodeInner::Bag(ref bn) => {
-                if bn.bag_type == BagType::Memory {
-                    if (n.status & ND_ST_CALLED) != 0 {
-                        called = true;
-                    }
-                    if let Some(ref body) = bn.body {
-                        cur = body.as_ref() as *const Node as *mut Node;
-                        continue;
+                if qn.lower <= 1 {
+                    let should_possessify = qn.body.as_ref().is_some_and(|body| {
+                        is_strict_real_node(body)
+                            && get_tree_head_literal(body, false, reg).is_some_and(|x| {
+                                get_tree_head_literal(next_node, false, reg)
+                                    .is_some_and(|y| is_exclusive(x, y, reg))
+                            })
+                    });
+                    if should_possessify {
+                        let body = qn.body.take().expect("quantifier body was checked above");
+                        replacement = Some(NodeInner::Bag(BagNode {
+                            body: Some(Box::new(Node {
+                                inner: NodeInner::Quant(QuantNode {
+                                    body: Some(body),
+                                    lower: qn.lower,
+                                    upper: qn.upper,
+                                    greedy: qn.greedy,
+                                    emptiness: qn.emptiness,
+                                    head_exact: qn.head_exact.take(),
+                                    next_head_exact: qn.next_head_exact.take(),
+                                    include_referred: qn.include_referred,
+                                    empty_status_mem: qn.empty_status_mem,
+                                }),
+                                status,
+                                parent: std::ptr::null_mut(),
+                            })),
+                            bag_type: BagType::StopBacktrack,
+                            bag_data: BagData::StopBacktrack,
+                            min_len: 0,
+                            max_len: INFINITE_LEN,
+                            min_char_len: 0,
+                            max_char_len: INFINITE_LEN,
+                            opt_count: 0,
+                        }));
                     }
                 }
-                return 0;
             }
-
-            _ => return 0,
+            if let Some(inner) = replacement {
+                node.inner = inner;
+                node.status |= ND_ST_STRICT_REAL_REPEAT;
+            }
+            0
         }
+        NodeInner::Bag(bn) if bn.bag_type == BagType::Memory => {
+            let called = called || (status & ND_ST_CALLED) != 0;
+            match bn.body.as_mut() {
+                Some(body) => tune_next_inner(body, next_node, reg, called),
+                None => 0,
+            }
+        }
+        _ => 0,
     }
 }
 
@@ -3352,33 +3334,13 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
                     }
                 }
                 BagType::Memory => {
-                    if node.has_status(ND_ST_FIXED_MIN) {
-                        bn.min_len
-                    } else if node.has_status(ND_ST_MARK1) {
-                        0 // recursive cycle
+                    // Do not cache through a shared node reference. Calls are
+                    // conservatively treated as empty below, so this ownership-tree
+                    // traversal cannot recurse through a self-reference.
+                    if let Some(body) = &bn.body {
+                        node_min_byte_len(body, env)
                     } else {
-                        // Set MARK1 for cycle detection, compute, cache with FIXED_MIN
-                        // SAFETY: this analysis runs single-threaded while onig_compile
-                        // holds the tree exclusively; `node` derives from that exclusive
-                        // borrow, so no other live reference observes the writes. Only
-                        // the `status` flags and the `min_len` cache are mutated, and
-                        // the MARK1 flag set here prevents re-entering this node
-                        // through a recursive call cycle.
-                        unsafe {
-                            let node_ptr = node as *const Node as *mut Node;
-                            (*node_ptr).status_add(ND_ST_MARK1);
-                            let len = if let Some(ref body) = bn.body {
-                                node_min_byte_len(body, env)
-                            } else {
-                                0
-                            };
-                            (*node_ptr).status_remove(ND_ST_MARK1);
-                            if let NodeInner::Bag(ref mut bn_mut) = (*node_ptr).inner {
-                                bn_mut.min_len = len;
-                            }
-                            (*node_ptr).status_add(ND_ST_FIXED_MIN);
-                            len
-                        }
+                        0
                     }
                 }
                 BagType::IfElse => {
@@ -3421,17 +3383,9 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
             }
         }
 
-        NodeInner::Call(ref cn) => {
-            if !cn.target_node.is_null() {
-                // SAFETY: `target_node` is non-null (checked above) and was set by
-                // resolve_call_references/refresh_call_targets to the called group's
-                // Bag node inside this same tree, which stays alive and unmoved for
-                // the duration of the analysis.
-                unsafe { node_min_byte_len(&*cn.target_node, env) }
-            } else {
-                0
-            }
-        }
+        // Following a call would re-enter a self-referential raw pointer. Zero is
+        // a conservative minimum and merely prevents unsound optimizations.
+        NodeInner::Call(_) => 0,
 
         NodeInner::Anchor(_) | NodeInner::Gimmick(_) => 0,
     }
@@ -4536,19 +4490,7 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
                 if gnum > env.num_mem || gnum < 0 {
                     return ONIGERR_UNDEFINED_GROUP_REFERENCE;
                 }
-                // Mark the target group as CALLED
                 mem_node_ptr = env.mem_env(gnum as usize).mem_node;
-                if !mem_node_ptr.is_null() {
-                    // SAFETY: `mem_node_ptr` is non-null (checked above) and was
-                    // recorded by the parser as group `gnum`'s Bag node in the tree
-                    // currently being resolved, so it is live. Only a `status` bit is
-                    // set; suspended traversal frames that borrow this node (when the
-                    // target encloses this call) do not read `status` until after
-                    // this write completes.
-                    unsafe {
-                        (*mem_node_ptr).status_add(ND_ST_CALLED);
-                    }
-                }
             } else {
                 // Named call - look up name
                 let name = call.name.clone();
@@ -4559,17 +4501,6 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
                         }
                         call.called_gnum = nums[0];
                         mem_node_ptr = env.mem_env(nums[0] as usize).mem_node;
-                        if !mem_node_ptr.is_null() {
-                            // SAFETY: `mem_node_ptr` is non-null (checked above) and
-                            // was recorded by the parser as the named group's Bag node
-                            // in the tree currently being resolved, so it is live.
-                            // Only a `status` bit is set; suspended traversal frames
-                            // that borrow this node (when the target encloses this
-                            // call) do not read `status` until after this write.
-                            unsafe {
-                                (*mem_node_ptr).status_add(ND_ST_CALLED);
-                            }
-                        }
                     } else {
                         return ONIGERR_UNDEFINED_NAME_REFERENCE;
                     }
@@ -4642,317 +4573,516 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
     }
 }
 
-/// Check if a node subtree contains any CALLED memory group.
-/// Returns true if a ND_ST_CALLED bag node is found.
-/// Inner recursive call check — detects if a call path leads back to a MARK1'd node.
-/// Mirrors C's recursive_call_check(). Returns nonzero if recursion found.
-/// Uses unsafe raw pointers to work around borrow checker limitations with
-/// node.status vs node.inner aliasing.
-fn recursive_call_check_inner(node: &mut Node) -> i32 {
-    let node_ptr = node as *mut Node;
-    let node_type = node.node_type();
-
-    match node_type {
-        NodeType::List | NodeType::Alt => {
-            let mut r = 0;
-            let mut cur: *mut Node = node;
-            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
-            // advances to the boxed cdr, so every deref is of a live node. `car`
-            // and `cdr` are disjoint fields of the cons, so recursing into car
-            // while keeping the cdr pointer creates no overlapping &mut; re-entry
-            // into this chain via call targets is cut off by the MARK1/MARK2
-            // guards on Bag Memory nodes.
-            unsafe {
-                while let NodeInner::List(cons) | NodeInner::Alt(cons) = &mut (*cur).inner {
-                    let car = &mut cons.car as *mut Box<Node>;
-                    let cdr = &mut cons.cdr as *mut Option<Box<Node>>;
-                    r |= recursive_call_check_inner(&mut (*car));
-                    if let Some(ref mut next) = &mut *cdr {
-                        cur = &mut **next;
-                    } else {
-                        break;
-                    }
-                }
-            }
-            r
-        }
-        NodeType::Anchor => {
-            if let NodeInner::Anchor(ref mut an) = node.inner {
-                if let Some(ref mut body) = an.body {
-                    recursive_call_check_inner(body)
-                } else {
-                    0
-                }
-            } else {
-                0
+fn collect_called_groups(node: &Node, groups: &mut Vec<i32>) {
+    match &node.inner {
+        NodeInner::Call(call) => groups.push(call.called_gnum),
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            collect_called_groups(&cons.car, groups);
+            if let Some(cdr) = &cons.cdr {
+                collect_called_groups(cdr, groups);
             }
         }
-        NodeType::Quant => {
-            if let NodeInner::Quant(ref mut qn) = node.inner {
-                if let Some(ref mut body) = qn.body {
-                    recursive_call_check_inner(body)
-                } else {
-                    0
-                }
-            } else {
-                0
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &qn.body {
+                collect_called_groups(body, groups);
             }
         }
-        NodeType::Call => {
-            // Follow the call target via raw pointer
-            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; `target`
-            // (when non-null) points to the called group's Bag node in this same
-            // tree, set by resolve_call_references. The MARK1/MARK2 guards in the
-            // Bag Memory arm stop the recursion before any node is entered twice
-            // on one path, so no overlapping &mut is created.
-            unsafe {
-                if let NodeInner::Call(ref cn) = (*node_ptr).inner {
-                    let target = cn.target_node;
-                    if !target.is_null() {
-                        let r = recursive_call_check_inner(&mut *target);
-                        if r != 0 && (*target).has_status(ND_ST_MARK1) {
-                            (*node_ptr).status_add(ND_ST_RECURSION);
-                        }
-                        r
-                    } else {
-                        0
-                    }
-                } else {
-                    0
+        NodeInner::Bag(bn) => {
+            if let Some(body) = &bn.body {
+                collect_called_groups(body, groups);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    collect_called_groups(then_node, groups);
+                }
+                if let Some(else_node) = else_node {
+                    collect_called_groups(else_node, groups);
                 }
             }
         }
-        NodeType::Bag => {
-            let is_memory = if let NodeInner::Bag(ref bn) = node.inner {
-                bn.bag_type == BagType::Memory
-            } else {
-                false
-            };
-
-            if is_memory {
-                // Use raw pointer to check/set status while inner is borrowed
-                // SAFETY: `node_ptr` is the exclusive `&mut node` argument, so it is
-                // valid and live; the raw pointer only lets the `status` flags be
-                // toggled around the borrow of `inner` (disjoint fields). The MARK2
-                // flag set here makes any re-entry through a call cycle return at
-                // the guards above before the body is borrowed a second time.
-                unsafe {
-                    if (*node_ptr).has_status(ND_ST_MARK2) {
-                        return 0;
-                    } else if (*node_ptr).has_status(ND_ST_MARK1) {
-                        return 1; // recursion found!
-                    }
-                    (*node_ptr).status_add(ND_ST_MARK2);
-                    let r = if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
-                        if let Some(ref mut body) = bn.body {
-                            recursive_call_check_inner(body)
-                        } else {
-                            0
-                        }
-                    } else {
-                        0
-                    };
-                    (*node_ptr).status_remove(ND_ST_MARK2);
-                    r
-                }
-            } else {
-                // SAFETY: `node_ptr` is the exclusive `&mut node` argument; this is
-                // a plain reborrow used to recurse into the bag's children.
-                unsafe {
-                    if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
-                        if let BagData::IfElse {
-                            ref mut then_node,
-                            ref mut else_node,
-                        } = bn.bag_data
-                        {
-                            let mut r = 0;
-                            if let Some(ref mut t) = then_node {
-                                r |= recursive_call_check_inner(t);
-                            }
-                            if let Some(ref mut e) = else_node {
-                                r |= recursive_call_check_inner(e);
-                            }
-                            if let Some(ref mut body) = bn.body {
-                                r |= recursive_call_check_inner(body);
-                            }
-                            r
-                        } else {
-                            if let Some(ref mut body) = bn.body {
-                                recursive_call_check_inner(body)
-                            } else {
-                                0
-                            }
-                        }
-                    } else {
-                        0
-                    }
-                }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &an.body {
+                collect_called_groups(body, groups);
             }
         }
-        _ => 0,
+        _ => {}
     }
 }
 
-const IN_RECURSION: i32 = 1;
-const FOUND_CALLED_NODE: i32 = 1;
-
-/// Outer traversal — walks tree, detects recursion in called groups, sets ND_ST_RECURSION.
-/// Mirrors C's recursive_call_check_trav().
-fn recursive_call_check_trav(node: &mut Node, env: &mut ParseEnv, state: i32) -> i32 {
-    let node_ptr = node as *mut Node;
-    let node_type = node.node_type();
-
-    match node_type {
-        NodeType::List | NodeType::Alt => {
-            let mut r = 0;
-            let mut cur: *mut Node = node;
-            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
-            // advances to the boxed cdr, so every deref is of a live node. `car`
-            // and `cdr` are disjoint fields of the cons, so recursing into car
-            // while keeping the cdr pointer creates no overlapping &mut.
-            unsafe {
-                while let NodeInner::List(cons) | NodeInner::Alt(cons) = &mut (*cur).inner {
-                    let car = &mut cons.car as *mut Box<Node>;
-                    let cdr = &mut cons.cdr as *mut Option<Box<Node>>;
-                    let ret = recursive_call_check_trav(&mut (*car), env, state);
-                    if ret == FOUND_CALLED_NODE {
-                        r = FOUND_CALLED_NODE;
-                    }
-                    if let Some(ref mut next) = &mut *cdr {
-                        cur = &mut **next;
-                    } else {
-                        break;
-                    }
-                }
-            }
-            r
+fn mark_called_groups(node: &mut Node, groups: &[i32]) {
+    if let NodeInner::Bag(bn) = &node.inner {
+        if bn.bag_type == BagType::Memory && groups.contains(&bn.regnum()) {
+            node.status_add(ND_ST_CALLED);
         }
-        // SAFETY: `node_ptr` is the exclusive `&mut node` argument; the two
-        // sequential borrows of `inner` through it never overlap.
-        NodeType::Quant => unsafe {
-            let upper = if let NodeInner::Quant(ref qn) = (*node_ptr).inner {
-                qn.upper
-            } else {
-                0
-            };
-            if let NodeInner::Quant(ref mut qn) = (*node_ptr).inner {
-                if let Some(ref mut body) = qn.body {
-                    let r = recursive_call_check_trav(body, env, state);
-                    if upper == 0 && r == FOUND_CALLED_NODE {
-                        qn.include_referred = 1;
-                    }
-                    r
-                } else {
-                    0
-                }
-            } else {
-                0
-            }
-        },
-        NodeType::Anchor => {
-            if let NodeInner::Anchor(ref mut an) = node.inner {
-                if let Some(ref mut body) = an.body {
-                    recursive_call_check_trav(body, env, state)
-                } else {
-                    0
-                }
-            } else {
-                0
+    }
+
+    match &mut node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            mark_called_groups(&mut cons.car, groups);
+            if let Some(cdr) = &mut cons.cdr {
+                mark_called_groups(cdr, groups);
             }
         }
-        NodeType::Bag => {
-            // Extract info before borrowing inner mutably
-            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; only shared
-            // reads of `inner` and `status` are performed here.
-            let (is_memory, is_if_else, is_called, regnum) = unsafe {
-                if let NodeInner::Bag(ref bn) = (*node_ptr).inner {
-                    let is_mem = bn.bag_type == BagType::Memory;
-                    let is_ie = matches!(bn.bag_data, BagData::IfElse { .. });
-                    let regnum = match bn.bag_data {
-                        BagData::Memory { regnum, .. } => regnum,
-                        _ => 0,
-                    };
-                    (is_mem, is_ie, (*node_ptr).has_status(ND_ST_CALLED), regnum)
-                } else {
-                    return 0;
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &mut qn.body {
+                mark_called_groups(body, groups);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(body) = &mut bn.body {
+                mark_called_groups(body, groups);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &mut bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    mark_called_groups(then_node, groups);
                 }
-            };
+                if let Some(else_node) = else_node {
+                    mark_called_groups(else_node, groups);
+                }
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &mut an.body {
+                mark_called_groups(body, groups);
+            }
+        }
+        _ => {}
+    }
+}
 
-            let mut r = 0;
+fn mark_called_groups_as_multi_entry(node: &mut Node) {
+    let is_called = node.has_status(ND_ST_CALLED);
+    match &mut node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            mark_called_groups_as_multi_entry(&mut cons.car);
+            if let Some(cdr) = &mut cons.cdr {
+                mark_called_groups_as_multi_entry(cdr);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &mut qn.body {
+                mark_called_groups_as_multi_entry(body);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if bn.bag_type == BagType::Memory && is_called {
+                if let BagData::Memory { entry_count, .. } = &mut bn.bag_data {
+                    // A call graph can enter a group through recursive paths that
+                    // are not representable as a single tree borrow. Treating every
+                    // called group as multi-entry is conservative: it only disables
+                    // single-entry optimizations while keeping traversal alias-free.
+                    *entry_count = (*entry_count).max(2);
+                }
+            }
+            if let Some(body) = &mut bn.body {
+                mark_called_groups_as_multi_entry(body);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &mut bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    mark_called_groups_as_multi_entry(then_node);
+                }
+                if let Some(else_node) = else_node {
+                    mark_called_groups_as_multi_entry(else_node);
+                }
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &mut an.body {
+                mark_called_groups_as_multi_entry(body);
+            }
+        }
+        _ => {}
+    }
+}
 
+fn collect_call_edges(node: &Node, current_groups: &mut Vec<usize>, edges: &mut [Vec<usize>]) {
+    match &node.inner {
+        NodeInner::Call(call) => {
+            let target = call.called_gnum as usize;
+            if target < edges.len() {
+                for &group in current_groups.iter() {
+                    edges[group].push(target);
+                }
+            }
+        }
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            collect_call_edges(&cons.car, current_groups, edges);
+            if let Some(cdr) = &cons.cdr {
+                collect_call_edges(cdr, current_groups, edges);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &qn.body {
+                collect_call_edges(body, current_groups, edges);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            let is_memory = bn.bag_type == BagType::Memory;
             if is_memory {
-                if is_called {
-                    r = FOUND_CALLED_NODE;
-                }
-                if is_called || (state & IN_RECURSION) != 0 {
-                    // SAFETY: `node_ptr` is the exclusive `&mut node` argument. The
-                    // MARK1 bit set here makes recursive_call_check_inner return at
-                    // its guard if a call cycle leads back to this node, so its body
-                    // is never mutably entered twice.
-                    unsafe {
-                        if !(*node_ptr).has_status(ND_ST_RECURSION) {
-                            (*node_ptr).status_add(ND_ST_MARK1);
-                            if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
-                                if let Some(ref mut body) = bn.body {
-                                    let ret = recursive_call_check_inner(body);
-                                    if ret != 0 {
-                                        (*node_ptr).status_add(ND_ST_RECURSION);
-                                        env.backtrack_mem |= 1u32 << (regnum as u32);
-                                    }
-                                }
-                            }
-                            (*node_ptr).status_remove(ND_ST_MARK1);
-                        }
+                let group = bn.regnum() as usize;
+                for &parent in current_groups.iter() {
+                    if parent != group {
+                        edges[parent].push(group);
                     }
                 }
+                current_groups.push(group);
             }
-
-            let mut state1 = state;
-            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; shared read
-            // of the `status` flags only.
-            unsafe {
-                if (*node_ptr).has_status(ND_ST_RECURSION) {
-                    state1 |= IN_RECURSION;
+            if let Some(body) = &bn.body {
+                collect_call_edges(body, current_groups, edges);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    collect_call_edges(then_node, current_groups, edges);
+                }
+                if let Some(else_node) = else_node {
+                    collect_call_edges(else_node, current_groups, edges);
                 }
             }
-
-            // SAFETY: `node_ptr` is the exclusive `&mut node` argument; plain
-            // reborrow used to recurse into the bag's children.
-            unsafe {
-                if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
-                    if let Some(ref mut body) = bn.body {
-                        let ret = recursive_call_check_trav(body, env, state1);
-                        if ret == FOUND_CALLED_NODE {
-                            r = FOUND_CALLED_NODE;
-                        }
-                    }
-
-                    if is_if_else {
-                        if let BagData::IfElse {
-                            ref mut then_node,
-                            ref mut else_node,
-                        } = bn.bag_data
-                        {
-                            if let Some(ref mut t) = then_node {
-                                let ret = recursive_call_check_trav(t, env, state1);
-                                if ret == FOUND_CALLED_NODE {
-                                    r = FOUND_CALLED_NODE;
-                                }
-                            }
-                            if let Some(ref mut e) = else_node {
-                                let ret = recursive_call_check_trav(e, env, state1);
-                                if ret == FOUND_CALLED_NODE {
-                                    r = FOUND_CALLED_NODE;
-                                }
-                            }
-                        }
-                    }
-                }
+            if is_memory {
+                current_groups.pop();
             }
-
-            r
         }
-        _ => 0,
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &an.body {
+                collect_call_edges(body, current_groups, edges);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn reaches_group(edges: &[Vec<usize>], from: usize, target: usize, seen: &mut [bool]) -> bool {
+    if from == target {
+        return true;
+    }
+    if seen[from] {
+        return false;
+    }
+    seen[from] = true;
+    edges[from]
+        .iter()
+        .copied()
+        .any(|next| reaches_group(edges, next, target, seen))
+}
+
+fn node_contains_called_group(node: &Node) -> bool {
+    if node.has_status(ND_ST_CALLED) {
+        return true;
+    }
+
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            node_contains_called_group(&cons.car)
+                || cons.cdr.as_deref().is_some_and(node_contains_called_group)
+        }
+        NodeInner::Quant(qn) => qn.body.as_deref().is_some_and(node_contains_called_group),
+        NodeInner::Bag(bn) => {
+            bn.body.as_deref().is_some_and(node_contains_called_group)
+                || match &bn.bag_data {
+                    BagData::IfElse {
+                        then_node,
+                        else_node,
+                    } => {
+                        then_node.as_deref().is_some_and(node_contains_called_group)
+                            || else_node.as_deref().is_some_and(node_contains_called_group)
+                    }
+                    _ => false,
+                }
+        }
+        NodeInner::Anchor(an) => an.body.as_deref().is_some_and(node_contains_called_group),
+        _ => false,
+    }
+}
+
+fn apply_call_graph_state(
+    node: &mut Node,
+    current_groups: &mut Vec<usize>,
+    edges: &[Vec<usize>],
+    recursive: &[bool],
+    env: &mut ParseEnv,
+) {
+    let mut recursive_group = None;
+    match &mut node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            apply_call_graph_state(&mut cons.car, current_groups, edges, recursive, env);
+            if let Some(cdr) = &mut cons.cdr {
+                apply_call_graph_state(cdr, current_groups, edges, recursive, env);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if qn.upper == 0 && qn.body.as_deref().is_some_and(node_contains_called_group) {
+                qn.include_referred = 1;
+            }
+            if let Some(body) = &mut qn.body {
+                apply_call_graph_state(body, current_groups, edges, recursive, env);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            let is_memory = bn.bag_type == BagType::Memory;
+            if is_memory {
+                let regnum = bn.regnum() as usize;
+                if recursive.get(regnum).copied().unwrap_or(false) {
+                    recursive_group = Some(regnum);
+                }
+                current_groups.push(regnum);
+            }
+            if let Some(body) = &mut bn.body {
+                apply_call_graph_state(body, current_groups, edges, recursive, env);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &mut bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    apply_call_graph_state(then_node, current_groups, edges, recursive, env);
+                }
+                if let Some(else_node) = else_node {
+                    apply_call_graph_state(else_node, current_groups, edges, recursive, env);
+                }
+            }
+            if is_memory {
+                current_groups.pop();
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &mut an.body {
+                apply_call_graph_state(body, current_groups, edges, recursive, env);
+            }
+        }
+        NodeInner::Call(call) => {
+            let target = call.called_gnum as usize;
+            if target < edges.len()
+                && current_groups.iter().copied().any(|group| {
+                    let mut seen = vec![false; edges.len()];
+                    reaches_group(edges, target, group, &mut seen)
+                })
+            {
+                node.status_add(ND_ST_RECURSION);
+            }
+        }
+        _ => {}
+    }
+    if let Some(regnum) = recursive_group {
+        node.status_add(ND_ST_RECURSION);
+        env.backtrack_mem |= 1u32 << regnum;
+    }
+}
+
+fn analyze_call_graph(root: &mut Node, env: &mut ParseEnv) -> Vec<bool> {
+    let mut edges = vec![Vec::new(); env.num_mem.max(0) as usize + 1];
+    let mut current_groups = vec![0];
+    collect_call_edges(root, &mut current_groups, &mut edges);
+    let recursive = (0..edges.len())
+        .map(|group| {
+            edges[group].iter().copied().any(|next| {
+                let mut seen = vec![false; edges.len()];
+                reaches_group(&edges, next, group, &mut seen)
+            })
+        })
+        .collect::<Vec<_>>();
+    apply_call_graph_state(root, &mut current_groups, &edges, &recursive, env);
+    recursive
+}
+
+fn must_recurse_without_consuming(node: &Node, must_recurse: &[bool], env: &ParseEnv) -> bool {
+    match &node.inner {
+        NodeInner::List(cons) => {
+            let mut cur = node;
+            while let NodeInner::List(cons) = &cur.inner {
+                if must_recurse_without_consuming(&cons.car, must_recurse, env) {
+                    return true;
+                }
+                if node_min_byte_len(&cons.car, env) != 0 {
+                    return false;
+                }
+                match &cons.cdr {
+                    Some(cdr) => cur = cdr,
+                    None => break,
+                }
+            }
+            false
+        }
+        NodeInner::Alt(cons) => {
+            let mut cur = node;
+            while let NodeInner::Alt(cons) = &cur.inner {
+                if !must_recurse_without_consuming(&cons.car, must_recurse, env) {
+                    return false;
+                }
+                match &cons.cdr {
+                    Some(cdr) => cur = cdr,
+                    None => break,
+                }
+            }
+            true
+        }
+        NodeInner::Quant(qn) => {
+            qn.lower != 0
+                && qn
+                    .body
+                    .as_deref()
+                    .is_some_and(|body| must_recurse_without_consuming(body, must_recurse, env))
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(body) = &bn.body {
+                if must_recurse_without_consuming(body, must_recurse, env) {
+                    return true;
+                }
+                if node_min_byte_len(body, env) != 0 {
+                    return false;
+                }
+            }
+            match &bn.bag_data {
+                BagData::IfElse {
+                    then_node,
+                    else_node,
+                } => {
+                    then_node.as_deref().is_some_and(|then_node| {
+                        must_recurse_without_consuming(then_node, must_recurse, env)
+                    }) && else_node.as_deref().map_or(true, |else_node| {
+                        must_recurse_without_consuming(else_node, must_recurse, env)
+                    })
+                }
+                _ => false,
+            }
+        }
+        NodeInner::Anchor(an) => an
+            .body
+            .as_deref()
+            .is_some_and(|body| must_recurse_without_consuming(body, must_recurse, env)),
+        NodeInner::Call(call) => must_recurse
+            .get(call.called_gnum as usize)
+            .copied()
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+fn update_must_recurse_groups(
+    node: &Node,
+    recursive: &[bool],
+    current: &[bool],
+    next: &mut [bool],
+    env: &ParseEnv,
+) {
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            update_must_recurse_groups(&cons.car, recursive, current, next, env);
+            if let Some(cdr) = &cons.cdr {
+                update_must_recurse_groups(cdr, recursive, current, next, env);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &qn.body {
+                update_must_recurse_groups(body, recursive, current, next, env);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if bn.bag_type == BagType::Memory {
+                let regnum = bn.regnum() as usize;
+                if recursive.get(regnum).copied().unwrap_or(false) {
+                    next[regnum] = bn
+                        .body
+                        .as_deref()
+                        .is_some_and(|body| must_recurse_without_consuming(body, current, env));
+                }
+            }
+            if let Some(body) = &bn.body {
+                update_must_recurse_groups(body, recursive, current, next, env);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    update_must_recurse_groups(then_node, recursive, current, next, env);
+                }
+                if let Some(else_node) = else_node {
+                    update_must_recurse_groups(else_node, recursive, current, next, env);
+                }
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &an.body {
+                update_must_recurse_groups(body, recursive, current, next, env);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn analyze_must_recurse_groups(root: &Node, recursive: &[bool], env: &ParseEnv) -> Vec<bool> {
+    let mut current = recursive.to_vec();
+    loop {
+        let mut next = current.clone();
+        update_must_recurse_groups(root, recursive, &current, &mut next, env);
+        if next == current {
+            return current;
+        }
+        current = next;
+    }
+}
+
+fn has_never_ending_recursion(node: &Node, recursive: &[bool], must_recurse: &[bool]) -> bool {
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            has_never_ending_recursion(&cons.car, recursive, must_recurse)
+                || cons
+                    .cdr
+                    .as_deref()
+                    .is_some_and(|cdr| has_never_ending_recursion(cdr, recursive, must_recurse))
+        }
+        NodeInner::Quant(qn) => qn
+            .body
+            .as_deref()
+            .is_some_and(|body| has_never_ending_recursion(body, recursive, must_recurse)),
+        NodeInner::Bag(bn) => {
+            let regnum = bn.regnum() as usize;
+            let recursive_memory = bn.bag_type == BagType::Memory
+                && recursive.get(regnum).copied().unwrap_or(false)
+                && node.has_status(ND_ST_CALLED)
+                && must_recurse.get(regnum).copied().unwrap_or(false);
+            recursive_memory
+                || bn
+                    .body
+                    .as_deref()
+                    .is_some_and(|body| has_never_ending_recursion(body, recursive, must_recurse))
+                || match &bn.bag_data {
+                    BagData::IfElse {
+                        then_node,
+                        else_node,
+                    } => {
+                        then_node.as_deref().is_some_and(|node| {
+                            has_never_ending_recursion(node, recursive, must_recurse)
+                        }) || else_node.as_deref().is_some_and(|node| {
+                            has_never_ending_recursion(node, recursive, must_recurse)
+                        })
+                    }
+                    _ => false,
+                }
+        }
+        NodeInner::Anchor(an) => an
+            .body
+            .as_deref()
+            .is_some_and(|body| has_never_ending_recursion(body, recursive, must_recurse)),
+        _ => false,
     }
 }
 
@@ -5373,317 +5503,7 @@ fn disable_noname_group_capture(root: &mut Node, reg: &mut RegexType, env: &mut 
 }
 
 // ============================================================================
-// infinite_recursive_call_check — detect never-ending recursion
-// Patterns like (?<abc>\g<abc>) or (()(?(2)\g<1>)) have no terminating path.
-// ============================================================================
-
-const RECURSION_EXIST: i32 = 1 << 0;
-const RECURSION_MUST: i32 = 1 << 1;
-const RECURSION_INFINITE: i32 = 1 << 2;
-
-/// Analyze a node tree for infinite recursion.
-/// `head` indicates whether we are still at the "head" position (no non-empty prefix consumed).
-fn infinite_recursive_call_check(node: &mut Node, env: &ParseEnv, head: i32) -> i32 {
-    let mut r: i32 = 0;
-    match node.node_type() {
-        NodeType::List => {
-            let mut head = head;
-            let cur = node as *mut Node;
-            // SAFETY: `p` starts as the exclusive `&mut node` argument and only
-            // advances to the boxed cdr, so every deref is of a live node. Cycles
-            // through call targets are cut by the MARK1/MARK2 guards on Bag
-            // Memory nodes before this chain could be re-entered.
-            unsafe {
-                let mut p = cur;
-                while let NodeInner::List(ref mut cons) = &mut (*p).inner {
-                    let ret = infinite_recursive_call_check(&mut cons.car, env, head);
-                    if ret < 0 || (ret & RECURSION_INFINITE) != 0 {
-                        return ret;
-                    }
-                    r |= ret;
-                    if head != 0 {
-                        let min = node_min_byte_len(&cons.car, env);
-                        if min != 0 {
-                            head = 0;
-                        }
-                    }
-                    match cons.cdr {
-                        Some(ref mut next) => p = &mut **next,
-                        None => break,
-                    }
-                }
-            }
-        }
-        NodeType::Alt => {
-            let mut must = RECURSION_MUST;
-            let cur = node as *mut Node;
-            // SAFETY: `p` starts as the exclusive `&mut node` argument and only
-            // advances to the boxed cdr, so every deref is of a live node. Cycles
-            // through call targets are cut by the MARK1/MARK2 guards on Bag
-            // Memory nodes before this chain could be re-entered.
-            unsafe {
-                let mut p = cur;
-                while let NodeInner::Alt(ref mut cons) = &mut (*p).inner {
-                    let ret = infinite_recursive_call_check(&mut cons.car, env, head);
-                    if ret < 0 || (ret & RECURSION_INFINITE) != 0 {
-                        return ret;
-                    }
-                    r |= ret & RECURSION_EXIST;
-                    must &= ret;
-                    match cons.cdr {
-                        Some(ref mut next) => p = &mut **next,
-                        None => break,
-                    }
-                }
-            }
-            r |= must;
-        }
-        NodeType::Quant => {
-            if let NodeInner::Quant(ref mut qn) = node.inner {
-                if qn.upper == 0 {
-                    return 0;
-                }
-                if let Some(ref mut body) = qn.body {
-                    r = infinite_recursive_call_check(body, env, head);
-                    if r < 0 {
-                        return r;
-                    }
-                    if (r & RECURSION_MUST) != 0 && qn.lower == 0 {
-                        r &= !RECURSION_MUST;
-                    }
-                }
-            }
-        }
-        NodeType::Anchor => {
-            if let NodeInner::Anchor(ref mut a) = node.inner {
-                if let Some(ref mut body) = a.body {
-                    r = infinite_recursive_call_check(body, env, head);
-                }
-            }
-        }
-        NodeType::Call => {
-            // Follow call to its target (the BAG_MEMORY node it references)
-            if let NodeInner::Call(ref cn) = node.inner {
-                if !cn.target_node.is_null() {
-                    // SAFETY: `target_node` is non-null (checked above) and points to
-                    // the called group's Bag Memory node in this same live tree. A
-                    // target already being visited has MARK1 or MARK2 set and returns
-                    // at the guards before touching its body, so no overlapping &mut
-                    // to a node's children is created.
-                    r = unsafe { infinite_recursive_call_check(&mut *cn.target_node, env, head) };
-                }
-            }
-        }
-        NodeType::Bag => {
-            let bag_type = if let NodeInner::Bag(ref bn) = node.inner {
-                bn.bag_type
-            } else {
-                BagType::Option
-            };
-            match bag_type {
-                BagType::Memory => {
-                    if node.has_status(ND_ST_MARK2) {
-                        return 0;
-                    } else if node.has_status(ND_ST_MARK1) {
-                        // Recursion back to a marked node
-                        return if head == 0 {
-                            RECURSION_EXIST | RECURSION_MUST
-                        } else {
-                            RECURSION_EXIST | RECURSION_MUST | RECURSION_INFINITE
-                        };
-                    } else {
-                        node.status_add(ND_ST_MARK2);
-                        if let NodeInner::Bag(ref mut bn) = node.inner {
-                            if let Some(ref mut body) = bn.body {
-                                r = infinite_recursive_call_check(body, env, head);
-                            }
-                        }
-                        node.status_remove(ND_ST_MARK2);
-                    }
-                }
-                BagType::IfElse => {
-                    // SAFETY: `node_ptr` is the exclusive `&mut node` argument; plain
-                    // reborrow used to recurse into the bag's children.
-                    unsafe {
-                        let node_ptr = node as *mut Node;
-                        if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
-                            // Check condition (body)
-                            if let Some(ref mut body) = bn.body {
-                                let ret = infinite_recursive_call_check(body, env, head);
-                                if ret < 0 || (ret & RECURSION_INFINITE) != 0 {
-                                    return ret;
-                                }
-                                r |= ret;
-                            }
-                            if let BagData::IfElse {
-                                ref mut then_node,
-                                ref mut else_node,
-                            } = bn.bag_data
-                            {
-                                // Check then branch
-                                if let Some(ref mut tn) = then_node {
-                                    let min = if head != 0 {
-                                        if let Some(ref body) = bn.body {
-                                            node_min_byte_len(body, env)
-                                        } else {
-                                            0
-                                        }
-                                    } else {
-                                        0
-                                    };
-                                    let ret = infinite_recursive_call_check(
-                                        tn,
-                                        env,
-                                        if min != 0 { 0 } else { head },
-                                    );
-                                    if ret < 0 || (ret & RECURSION_INFINITE) != 0 {
-                                        return ret;
-                                    }
-                                    r |= ret;
-                                }
-                                // Check else branch
-                                if let Some(ref mut en) = else_node {
-                                    let eret = infinite_recursive_call_check(en, env, head);
-                                    if eret < 0 || (eret & RECURSION_INFINITE) != 0 {
-                                        return eret;
-                                    }
-                                    r |= eret & RECURSION_EXIST;
-                                    if (eret & RECURSION_MUST) == 0 {
-                                        r &= !RECURSION_MUST;
-                                    }
-                                } else {
-                                    r &= !RECURSION_MUST;
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    if let NodeInner::Bag(ref mut bn) = node.inner {
-                        if let Some(ref mut body) = bn.body {
-                            r = infinite_recursive_call_check(body, env, head);
-                        }
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-    r
-}
-
-/// Traverse tree to find recursive call definitions, check each for infinite recursion.
-fn infinite_recursive_call_check_trav(node: &mut Node, env: &ParseEnv) -> i32 {
-    let r;
-    match node.node_type() {
-        NodeType::List | NodeType::Alt => {
-            let cur = node as *mut Node;
-            // SAFETY: `p` starts as the exclusive `&mut node` argument and only
-            // advances to the boxed cdr, so every deref is of a live node; the
-            // recursion into car borrows a field disjoint from the cdr link.
-            unsafe {
-                let mut p = cur;
-                while let NodeInner::List(cons) | NodeInner::Alt(cons) = &mut (*p).inner {
-                    let ret = infinite_recursive_call_check_trav(&mut cons.car, env);
-                    if ret != 0 {
-                        return ret;
-                    }
-                    match cons.cdr {
-                        Some(ref mut next) => p = &mut **next,
-                        None => break,
-                    }
-                }
-            }
-            r = 0;
-        }
-        NodeType::Anchor => {
-            if let NodeInner::Anchor(ref mut a) = node.inner {
-                if let Some(ref mut body) = a.body {
-                    return infinite_recursive_call_check_trav(body, env);
-                }
-            }
-            r = 0;
-        }
-        NodeType::Quant => {
-            if let NodeInner::Quant(ref mut qn) = node.inner {
-                if let Some(ref mut body) = qn.body {
-                    return infinite_recursive_call_check_trav(body, env);
-                }
-            }
-            r = 0;
-        }
-        NodeType::Bag => {
-            let bag_type = if let NodeInner::Bag(ref bn) = node.inner {
-                bn.bag_type
-            } else {
-                BagType::Option
-            };
-            if bag_type == BagType::Memory
-                && node.has_status(ND_ST_RECURSION)
-                && node.has_status(ND_ST_CALLED)
-            {
-                node.status_add(ND_ST_MARK1);
-                let ret = if let NodeInner::Bag(ref mut bn) = node.inner {
-                    if let Some(ref mut body) = bn.body {
-                        infinite_recursive_call_check(body, env, 1)
-                    } else {
-                        0
-                    }
-                } else {
-                    0
-                };
-                if ret < 0 {
-                    return ret;
-                }
-                if (ret & (RECURSION_MUST | RECURSION_INFINITE)) != 0 {
-                    return ONIGERR_NEVER_ENDING_RECURSION;
-                }
-                node.status_remove(ND_ST_MARK1);
-            }
-            if bag_type == BagType::IfElse {
-                // SAFETY: `node_ptr` is the exclusive `&mut node` argument; plain
-                // reborrow used to recurse into the if-else branches.
-                unsafe {
-                    let node_ptr = node as *mut Node;
-                    if let NodeInner::Bag(ref mut bn) = (*node_ptr).inner {
-                        if let BagData::IfElse {
-                            ref mut then_node,
-                            ref mut else_node,
-                        } = bn.bag_data
-                        {
-                            if let Some(ref mut tn) = then_node {
-                                let ret = infinite_recursive_call_check_trav(tn, env);
-                                if ret != 0 {
-                                    return ret;
-                                }
-                            }
-                            if let Some(ref mut en) = else_node {
-                                let ret = infinite_recursive_call_check_trav(en, env);
-                                if ret != 0 {
-                                    return ret;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // Also recurse into body for all bag types
-            if let NodeInner::Bag(ref mut bn) = node.inner {
-                if let Some(ref mut body) = bn.body {
-                    return infinite_recursive_call_check_trav(body, env);
-                }
-            }
-            r = 0;
-        }
-        _ => {
-            r = 0;
-        }
-    }
-    r
-}
-
-// ============================================================================
-// Call-Node-Tuning: tune_call2 + tune_called_state
+// Call-node tuning: tune_call + tune_called_state
 // ============================================================================
 
 /// C: tune_call — mark zero-repeat contexts and adjust entry counts.
@@ -5770,164 +5590,6 @@ fn tune_call(node: &mut Node, state: i32) {
             _ => {}
         }
     }
-}
-
-/// C: tune_call2_call — traverse from a Call node to count entries on called targets.
-fn tune_call2_call(node: &mut Node) {
-    let np = node as *mut Node;
-    // SAFETY: `np` is the exclusive `&mut node` argument; derefs are reborrows
-    // of it or of boxed cdr nodes. The Call arm also follows `target_node`,
-    // which points to the called group's Bag node in this same live tree; the
-    // MARK1 guards on both Call and Memory nodes stop call cycles before any
-    // node is mutably entered twice on one path.
-    unsafe {
-        match &mut (*np).inner {
-            NodeInner::List(_) | NodeInner::Alt(_) => {
-                let mut cur = np;
-                while let NodeInner::List(c) | NodeInner::Alt(c) = &mut (*cur).inner {
-                    tune_call2_call(&mut c.car);
-                    match &mut c.cdr {
-                        Some(ref mut next) => cur = next.as_mut() as *mut Node,
-                        None => break,
-                    }
-                }
-            }
-            NodeInner::Quant(qn) => {
-                if let Some(ref mut body) = qn.body {
-                    tune_call2_call(body);
-                }
-            }
-            NodeInner::Anchor(an) => {
-                if let Some(ref mut body) = an.body {
-                    tune_call2_call(body);
-                }
-            }
-            NodeInner::Bag(bn) => {
-                let bt = bn.bag_type;
-                if bt == BagType::Memory {
-                    if !(*np).has_status(ND_ST_MARK1) {
-                        (*np).status_add(ND_ST_MARK1);
-                        if let NodeInner::Bag(ref mut bn) = (*np).inner {
-                            if let Some(ref mut body) = bn.body {
-                                tune_call2_call(body);
-                            }
-                        }
-                        (*np).status_remove(ND_ST_MARK1);
-                    }
-                } else if bt == BagType::IfElse {
-                    if let Some(ref mut body) = bn.body {
-                        tune_call2_call(body);
-                    }
-                    if let BagData::IfElse {
-                        ref mut then_node,
-                        ref mut else_node,
-                    } = bn.bag_data
-                    {
-                        if let Some(ref mut t) = then_node {
-                            tune_call2_call(t);
-                        }
-                        if let Some(ref mut e) = else_node {
-                            tune_call2_call(e);
-                        }
-                    }
-                } else if let Some(ref mut body) = bn.body {
-                    tune_call2_call(body);
-                }
-            }
-            NodeInner::Call(cn) => {
-                if !(*np).has_status(ND_ST_MARK1) {
-                    (*np).status_add(ND_ST_MARK1);
-                    cn.entry_count += 1;
-                    let target = cn.target_node;
-                    if !target.is_null() {
-                        (*target).status_add(ND_ST_CALLED);
-                        if let NodeInner::Bag(ref mut tbn) = (*target).inner {
-                            if let BagData::Memory {
-                                ref mut entry_count,
-                                ..
-                            } = tbn.bag_data
-                            {
-                                *entry_count += 1;
-                            }
-                        }
-                        tune_call2_call(&mut *target);
-                    }
-                    (*np).status_remove(ND_ST_MARK1);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-/// C: tune_call2 — traverse tree, for each non-zero-repeat Call, invoke tune_call2_call.
-fn tune_call2(node: &mut Node) -> i32 {
-    let np = node as *mut Node;
-    // SAFETY: `np` is the exclusive `&mut node` argument; all derefs are
-    // reborrows of it or of boxed cdr nodes reached from it. Call targets are
-    // only entered via tune_call2_call, which guards cycles with MARK1.
-    unsafe {
-        match &mut (*np).inner {
-            NodeInner::List(_) | NodeInner::Alt(_) => {
-                let mut cur = np;
-                while let NodeInner::List(c) | NodeInner::Alt(c) = &mut (*cur).inner {
-                    let r = tune_call2(&mut c.car);
-                    if r != 0 {
-                        return r;
-                    }
-                    match &mut c.cdr {
-                        Some(ref mut next) => cur = next.as_mut() as *mut Node,
-                        None => break,
-                    }
-                }
-            }
-            NodeInner::Quant(qn) => {
-                if qn.upper != 0 {
-                    if let Some(ref mut body) = qn.body {
-                        return tune_call2(body);
-                    }
-                }
-            }
-            NodeInner::Anchor(an) => {
-                if let Some(ref mut body) = an.body {
-                    return tune_call2(body);
-                }
-            }
-            NodeInner::Bag(bn) => {
-                let in_zero = (*np).has_status(ND_ST_IN_ZERO_REPEAT);
-                if !in_zero {
-                    if let Some(ref mut body) = bn.body {
-                        let r = tune_call2(body);
-                        if r != 0 {
-                            return r;
-                        }
-                    }
-                }
-                if let BagData::IfElse {
-                    ref mut then_node,
-                    ref mut else_node,
-                } = bn.bag_data
-                {
-                    if let Some(ref mut t) = then_node {
-                        let r = tune_call2(t);
-                        if r != 0 {
-                            return r;
-                        }
-                    }
-                    if let Some(ref mut e) = else_node {
-                        return tune_call2(e);
-                    }
-                }
-            }
-            NodeInner::Call(_) => {
-                if !(*np).has_status(ND_ST_IN_ZERO_REPEAT) {
-                    tune_call2_call(&mut *np);
-                }
-            }
-            _ => {}
-        }
-    }
-    0
 }
 
 /// C: tune_called_state_call — propagate state flags through called nodes.
@@ -7990,47 +7652,19 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
         }
         NodeInner::String(sn) => sn.s.len() as OnigLen,
         NodeInner::CType(_) | NodeInner::CClass(_) => env.enc.max_enc_len() as OnigLen,
-        NodeInner::BackRef(br) => {
+        NodeInner::BackRef(_) => {
             if node.has_status(ND_ST_CHECKER) {
                 0
-            } else if node.has_status(ND_ST_RECURSION) {
-                if br.nest_level != 0 {
-                    INFINITE_LEN
-                } else {
-                    0
-                }
             } else {
-                let mut len: OnigLen = 0;
-                for &back in br.back_refs() {
-                    let me = env.mem_env(back as usize);
-                    if !me.mem_node.is_null() {
-                        // SAFETY: `mem_node` is non-null (checked above) and was set
-                        // by refresh_capture_nodes to the referenced group's Bag node
-                        // in this same tree, which stays alive and unmoved
-                        // throughout this analysis pass.
-                        let mem_node = unsafe { &*me.mem_node };
-                        let tmax = node_max_byte_len(mem_node, env);
-                        if len < tmax {
-                            len = tmax;
-                        }
-                    }
-                }
-                len
-            }
-        }
-        NodeInner::Call(cn) => {
-            if node.has_status(ND_ST_RECURSION) {
+                // Following a backreference would leave the ownership tree through
+                // a raw capture pointer. An unbounded maximum is conservative and
+                // only disables optimizations that require a finite upper bound.
                 INFINITE_LEN
-            } else if !cn.target_node.is_null() {
-                // SAFETY: `target_node` is non-null (checked above) and was set by
-                // resolve_call_references/refresh_call_targets to the called group's
-                // Bag node inside this same tree, which stays alive and unmoved for
-                // the duration of the analysis.
-                unsafe { node_max_byte_len(&*cn.target_node, env) }
-            } else {
-                0
             }
         }
+        // Calls are self-referential AST edges. Staying inside the ownership tree
+        // avoids aliasing their raw targets; an infinite maximum is conservative.
+        NodeInner::Call(_) => INFINITE_LEN,
         NodeInner::Quant(qn) => {
             if qn.upper == 0 {
                 0
@@ -8051,32 +7685,12 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
         }
         NodeInner::Bag(bn) => match bn.bag_type {
             BagType::Memory => {
-                if node.has_status(ND_ST_FIXED_MAX) {
-                    bn.max_len
-                } else if node.has_status(ND_ST_MARK1) {
-                    INFINITE_LEN
+                // Calls and backreferences above are conservative leaves, so this
+                // traversal cannot cycle and needs no mutation-based cache.
+                if let Some(ref body) = bn.body {
+                    node_max_byte_len(body, env)
                 } else {
-                    // SAFETY: this analysis runs single-threaded while onig_compile
-                    // holds the tree exclusively; `node` derives from that exclusive
-                    // borrow, so no other live reference observes the writes. Only
-                    // the `status` flags and the `max_len` cache are mutated, and
-                    // the MARK1 flag set here prevents re-entering this node through
-                    // a recursive call cycle.
-                    unsafe {
-                        let node_ptr = node as *const Node as *mut Node;
-                        (*node_ptr).status_add(ND_ST_MARK1);
-                        let len = if let Some(ref body) = bn.body {
-                            node_max_byte_len(body, env)
-                        } else {
-                            0
-                        };
-                        (*node_ptr).status_remove(ND_ST_MARK1);
-                        if let NodeInner::Bag(ref mut bm) = (*node_ptr).inner {
-                            bm.max_len = len;
-                        }
-                        (*node_ptr).status_add(ND_ST_FIXED_MAX);
-                        len
-                    }
+                    0
                 }
             }
             BagType::Option | BagType::StopBacktrack => {
@@ -8299,21 +7913,9 @@ fn optimize_nodes(
                 opt.len.set(min, max);
             }
         }
-        NodeInner::Call(cn) => {
-            if node.has_status(ND_ST_RECURSION) {
-                opt.len.set(0, INFINITE_LEN);
-            } else if !cn.target_node.is_null() {
-                // SAFETY: `target_node` is non-null (checked above) and was set by
-                // resolve_call_references/refresh_call_targets to the called group's
-                // Bag node inside this same live tree; recursion through the target
-                // is bounded by the `opt_count` counter in the Memory arm below.
-                let target = unsafe { &*cn.target_node };
-                let r = optimize_nodes(target, opt, enc, env_mm, scan_env);
-                if r != 0 {
-                    return r;
-                }
-            }
-        }
+        // Calls are self-referential AST edges. Use conservative optimization
+        // bounds instead of following their raw target pointers.
+        NodeInner::Call(_) => opt.len.set(0, INFINITE_LEN),
         NodeInner::Quant(qn) => {
             if qn.upper == 0 {
                 opt.len.set(0, 0);
@@ -8378,28 +7980,7 @@ fn optimize_nodes(
                 }
             }
             BagType::Memory => {
-                // SAFETY: the optimize pass runs single-threaded on a tree that
-                // onig_compile holds exclusively (demoted to shared references for
-                // this traversal), so no other reference observes the write; only
-                // the `opt_count` recursion-bound counter is mutated.
-                let opt_count = unsafe {
-                    let bn_ptr = bn as *const BagNode as *mut BagNode;
-                    (*bn_ptr).opt_count += 1;
-                    (*bn_ptr).opt_count
-                };
-                if opt_count > MAX_ND_OPT_INFO_REF_COUNT {
-                    let min = if node.has_status(ND_ST_FIXED_MIN) {
-                        bn.min_len
-                    } else {
-                        0
-                    };
-                    let max = if node.has_status(ND_ST_FIXED_MAX) {
-                        bn.max_len
-                    } else {
-                        INFINITE_LEN
-                    };
-                    opt.len.set(min, max);
-                } else if let Some(ref body) = bn.body {
+                if let Some(ref body) = bn.body {
                     let r = optimize_nodes(body, opt, enc, env_mm, scan_env);
                     if r != 0 {
                         return r;
@@ -8704,19 +8285,24 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         if r != 0 {
             return r;
         }
+        let mut called_groups = Vec::new();
+        collect_called_groups(&root, &mut called_groups);
+        mark_called_groups(&mut root, &called_groups);
         // Mark zero-repeat contexts and adjust entry counts
         tune_call(&mut root, 0);
-        // Count entries on called targets
-        let r = tune_call2(&mut root);
-        if r != 0 {
-            return r;
-        }
-        // Detect recursion and set ND_ST_RECURSION on recursive capture groups
-        recursive_call_check_trav(&mut root, &mut env, 0);
-        // Check for never-ending recursion (e.g. (?<abc>\g<abc>))
-        let r = infinite_recursive_call_check_trav(&mut root, &env);
-        if r != 0 {
-            return r;
+        // Conservatively avoid single-entry optimizations for called groups.
+        // The historical transitive traversal followed self-referential raw
+        // pointers and was not alias-safe under Miri.
+        mark_called_groups_as_multi_entry(&mut root);
+        // Analyze subroutine-call cycles without re-entering the AST through
+        // self-referential raw pointers.
+        let recursive_groups = analyze_call_graph(&mut root, &mut env);
+        // A zero-length recursive group cannot make progress and would recurse
+        // forever. This graph check avoids re-entering the AST through raw
+        // self-references while preserving the compiler's rejection behavior.
+        let must_recurse_groups = analyze_must_recurse_groups(&root, &recursive_groups, &env);
+        if has_never_ending_recursion(&root, &recursive_groups, &must_recurse_groups) {
+            return ONIGERR_NEVER_ENDING_RECURSION;
         }
         // Propagate state flags (IN_ALT, IN_REAL_REPEAT, etc.) through called groups
         tune_called_state(&mut root, 0);
@@ -9329,6 +8915,36 @@ mod tests {
         let mut reg = make_test_context().0;
         let r = onig_compile(&mut reg, b"(()(?(2)\\g<1>))");
         assert_eq!(r, ONIGERR_NEVER_ENDING_RECURSION);
+    }
+
+    #[test]
+    fn nullable_terminating_recursive_alternative_is_valid() {
+        let mut reg = make_test_context().0;
+        let r = onig_compile(&mut reg, b"(?<n>|a\\g<n>)+");
+        assert_eq!(r, ONIG_NORMAL);
+    }
+
+    #[test]
+    fn mutually_recursive_group_with_nullable_exit_is_valid() {
+        let mut reg = make_test_context().0;
+        let r = onig_compile(&mut reg, b"\\A(?<n>|a\\g<m>)\\z|\\zEND (?<m>\\g<n>)");
+        assert_eq!(r, ONIG_NORMAL);
+    }
+
+    #[test]
+    fn zero_repeat_called_group_keeps_callable_bytecode() {
+        let reg = onig_new(
+            b"(?P<name>abc){0}(?P>name)",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxPython,
+        )
+        .unwrap();
+
+        assert!(
+            reg.called_addrs.get(1).is_some_and(|addr| *addr > 0),
+            "a group referenced outside a zero repeat must still be emitted"
+        );
     }
 
     #[test]
