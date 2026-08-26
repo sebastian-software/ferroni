@@ -389,10 +389,6 @@ fn scanner_repeated_optional_prefix_match_agrees_across_routes() {
         assert_eq!(matched.capture_indices[0].start, 1);
         assert_eq!(matched.capture_indices[0].end, 4);
     }
-
-    let stats = scanner.stats();
-    assert!(stats.route_cache_regset_calls > 0, "{stats:?}");
-    assert!(stats.route_cache_per_regex_calls > 0, "{stats:?}");
 }
 
 #[test]

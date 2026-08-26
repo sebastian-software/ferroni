@@ -982,6 +982,24 @@ mod tests {
         assert!(stats.route_per_regex_calls > 0);
     }
 
+    #[test]
+    fn optional_prefix_match_agrees_after_cache_route_switches() {
+        let mut scanner = Scanner::new(&["a?bc", "q"]).unwrap();
+
+        for _ in 0..25 {
+            let matched = scanner
+                .find_next_match_with_id("qabc", 55, 1, ScannerFindOptions::NONE)
+                .expect("match");
+            assert_eq!(matched.index, 0);
+            assert_eq!(matched.capture_indices[0].start, 1);
+            assert_eq!(matched.capture_indices[0].end, 4);
+        }
+
+        let stats = scanner.stats();
+        assert!(stats.route_cache_regset_calls > 0, "{stats:?}");
+        assert!(stats.route_cache_per_regex_calls > 0, "{stats:?}");
+    }
+
     // =========================================================================
     // Tests ported from vscode-oniguruma (src/test/index.test.ts)
     // Positions adapted from UTF-16 code units to UTF-8 byte offsets.
