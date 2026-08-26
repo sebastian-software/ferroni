@@ -2058,6 +2058,48 @@ mod tests {
         assert_eq!(m2.index, 1); // "y" at position 2
     }
 
+    #[test]
+    fn zero_width_matches_at_end_are_reported() {
+        for pattern in ["$", r"\z", "a*"] {
+            let mut scanner = Scanner::new(&[pattern]).unwrap();
+            let found = scanner
+                .find_next_match("abc", 3, ScannerFindOptions::NONE)
+                .unwrap_or_else(|| panic!("missing end match for {pattern:?}"));
+
+            assert_eq!(found.index, 0);
+            assert_eq!(found.capture_indices[0].start, 3);
+            assert_eq!(found.capture_indices[0].end, 3);
+            assert_eq!(found.capture_indices[0].length, 0);
+        }
+    }
+
+    #[test]
+    fn zero_width_match_on_empty_input_is_reported() {
+        let mut scanner = Scanner::new(&["$"]).unwrap();
+        let found = scanner
+            .find_next_match("", 0, ScannerFindOptions::NONE)
+            .expect("empty input should match the end anchor");
+
+        assert_eq!(found.index, 0);
+        assert_eq!(found.capture_indices[0].start, 0);
+        assert_eq!(found.capture_indices[0].end, 0);
+        assert_eq!(found.capture_indices[0].length, 0);
+    }
+
+    #[test]
+    fn repeated_end_anchor_search_agrees_across_adaptive_routes() {
+        let mut scanner = Scanner::new(&[r"\z", "q"]).unwrap();
+
+        for call in 0..25 {
+            let found = scanner
+                .find_next_match_with_id("abcd", 7, 1, ScannerFindOptions::NONE)
+                .unwrap_or_else(|| panic!("missing end match on call {call}"));
+            assert_eq!(found.index, 0, "call {call}");
+            assert_eq!(found.capture_indices[0].start, 4, "call {call}");
+            assert_eq!(found.capture_indices[0].end, 4, "call {call}");
+        }
+    }
+
     // =================================================================
     // Coverage-targeted: route switching (RegSet ↔ PerRegex)
     // =================================================================
