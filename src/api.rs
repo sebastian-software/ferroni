@@ -217,11 +217,14 @@ impl RegexBuilder {
     }
 
     /// Enable or disable `^`/`$` matching at every line boundary.
+    ///
+    /// This behavior is enabled by default. When disabled, anchors match only
+    /// at input boundaries.
     pub fn multi_line_anchors(mut self, yes: bool) -> Self {
         if yes {
-            self.options |= ONIG_OPTION_SINGLELINE;
-        } else {
             self.options &= !ONIG_OPTION_SINGLELINE;
+        } else {
+            self.options |= ONIG_OPTION_SINGLELINE;
         }
         self
     }
