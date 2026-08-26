@@ -31,6 +31,12 @@ static RETRY_LIMIT_IN_MATCH: AtomicU64 = AtomicU64::new(DEFAULT_RETRY_LIMIT_IN_M
 static RETRY_LIMIT_IN_SEARCH: AtomicU64 = AtomicU64::new(DEFAULT_RETRY_LIMIT_IN_SEARCH);
 static MATCH_STACK_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_MATCH_STACK_LIMIT_SIZE);
 static TIME_LIMIT: AtomicU64 = AtomicU64::new(DEFAULT_TIME_LIMIT_MSEC);
+/// Monotonically changing revision for consumers that cache the four global
+/// limits. Setters publish their preceding relaxed limit stores with a Release
+/// RMW; an Acquire revision read that observes that change may then reload all
+/// four limits relaxed. This avoids four atomic loads on hot searches when no
+/// caller has changed a global limit.
+static GLOBAL_LIMIT_REVISION: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 pub(crate) static LIMIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -38,6 +44,7 @@ pub(crate) static LIMIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_match(n: u64) {
     RETRY_LIMIT_IN_MATCH.store(n, Ordering::Relaxed);
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
 }
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_retry_limit_in_match() -> u64 {
@@ -46,6 +53,7 @@ pub fn onig_get_retry_limit_in_match() -> u64 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_search(n: u64) {
     RETRY_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed);
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
 }
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_retry_limit_in_search() -> u64 {
@@ -54,6 +62,7 @@ pub fn onig_get_retry_limit_in_search() -> u64 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_match_stack_limit(n: u32) {
     MATCH_STACK_LIMIT.store(n, Ordering::Relaxed);
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
 }
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_match_stack_limit() -> u32 {
@@ -73,10 +82,21 @@ pub fn onig_get_match_stack_limit_size() -> u32 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_time_limit(n: u64) {
     TIME_LIMIT.store(n, Ordering::Relaxed);
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
 }
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_time_limit() -> u64 {
     TIME_LIMIT.load(Ordering::Relaxed)
+}
+
+/// Internal revision for caches of the process-global match limits.
+#[inline]
+pub(crate) fn onig_get_global_limit_revision() -> u64 {
+    // Paired with the setters' Release RMWs: if this observes a new
+    // revision, following relaxed limit loads see the limits published before
+    // it. u64 wrapping is intentionally left to atomic arithmetic; reaching
+    // it would require 2^64 process-global limit updates.
+    GLOBAL_LIMIT_REVISION.load(Ordering::Acquire)
 }
 
 // ============================================================================
@@ -7328,6 +7348,28 @@ mod tests {
 
     // Safety limit tests use a lock to avoid interfering with each other
     // (since limits are global statics).
+    #[test]
+    fn global_limit_setters_publish_a_new_revision() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let old_retry_match = onig_get_retry_limit_in_match();
+        let old_retry_search = onig_get_retry_limit_in_search();
+        let old_stack = onig_get_match_stack_limit();
+        let old_time = onig_get_time_limit();
+        let mut revision = onig_get_global_limit_revision();
+
+        onig_set_retry_limit_in_match(old_retry_match);
+        assert_ne!(onig_get_global_limit_revision(), revision);
+        revision = onig_get_global_limit_revision();
+        onig_set_retry_limit_in_search(old_retry_search);
+        assert_ne!(onig_get_global_limit_revision(), revision);
+        revision = onig_get_global_limit_revision();
+        onig_set_match_stack_limit(old_stack);
+        assert_ne!(onig_get_global_limit_revision(), revision);
+        revision = onig_get_global_limit_revision();
+        onig_set_time_limit(old_time);
+        assert_ne!(onig_get_global_limit_revision(), revision);
+    }
+
     #[test]
     fn retry_limit_in_match() {
         let _lock = LIMIT_TEST_LOCK.lock().unwrap();

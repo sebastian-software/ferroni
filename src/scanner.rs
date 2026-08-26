@@ -15,9 +15,13 @@ use crate::regcomp::onig_new;
 use crate::regexec::{onig_match_with_msa_start, onig_search_with_msa, MatchArg};
 use crate::regset::{
     onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new,
-    onig_regset_number_of_regex, onig_regset_search_fast, OnigRegSet, OnigRegSetLead,
+    onig_regset_number_of_regex, onig_regset_search_fast, onig_regset_search_fast_with_id,
+    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead,
 };
 use crate::regsyntax::*;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_ONIG_STRING_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Result of a capture group match.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +157,7 @@ impl Default for ScannerConfig {
 /// assert_eq!(s.content().len(), 6); // a(1) + 💻(4) + b(1) = 6 UTF-8 bytes
 /// ```
 pub struct OnigString {
+    cache_id: u64,
     content: String,
     is_ascii: bool,
     utf16_len: usize,
@@ -165,9 +170,11 @@ pub struct OnigString {
 impl OnigString {
     /// Create a new `OnigString` from a Rust string, building offset tables.
     pub fn new(content: &str) -> Self {
+        let cache_id = NEXT_ONIG_STRING_ID.fetch_add(1, Ordering::Relaxed);
         if content.is_ascii() {
             let len = content.len();
             return OnigString {
+                cache_id,
                 content: content.to_string(),
                 is_ascii: true,
                 utf16_len: len,
@@ -209,6 +216,7 @@ impl OnigString {
         utf8_to_utf16[utf8_pos] = utf16_len;
 
         OnigString {
+            cache_id,
             content: content.to_string(),
             is_ascii: false,
             utf16_len,
@@ -436,7 +444,7 @@ impl Scanner {
         start_position: usize,
         options: ScannerFindOptions,
     ) -> Option<ScannerMatch> {
-        self.find_next_match_inner(text, 0, start_position, options, false)
+        self.find_next_match_inner(text, 0, start_position, options, false, None)
     }
 
     /// Find the next match with a string ID for caching.
@@ -450,7 +458,14 @@ impl Scanner {
         start_position: usize,
         options: ScannerFindOptions,
     ) -> Option<ScannerMatch> {
-        self.find_next_match_inner(text, str_id, start_position, options, true)
+        self.find_next_match_inner(
+            text,
+            str_id,
+            start_position,
+            options,
+            true,
+            Some(FallbackMemoIdentity::Caller(str_id)),
+        )
     }
 
     /// Find the next match using UTF-16 positions (for vscode-textmate/Shiki compatibility).
@@ -478,10 +493,24 @@ impl Scanner {
     ) -> Option<ScannerMatch> {
         if string.is_ascii() {
             let start = start_position.min(string.content().len());
-            return self.find_next_match_inner(string.content(), 0, start, options, false);
+            return self.find_next_match_inner(
+                string.content(),
+                0,
+                start,
+                options,
+                false,
+                Some(FallbackMemoIdentity::OnigString(string.cache_id)),
+            );
         }
         let utf8_start = string.utf16_offset_to_utf8(start_position);
-        let m = self.find_next_match_inner(string.content(), 0, utf8_start, options, false)?;
+        let m = self.find_next_match_inner(
+            string.content(),
+            0,
+            utf8_start,
+            options,
+            false,
+            Some(FallbackMemoIdentity::OnigString(string.cache_id)),
+        )?;
         Some(convert_match_to_utf16(string, m))
     }
 
@@ -495,10 +524,24 @@ impl Scanner {
     ) -> Option<ScannerMatch> {
         if string.is_ascii() {
             let start = start_position.min(string.content().len());
-            return self.find_next_match_inner(string.content(), str_id, start, options, true);
+            return self.find_next_match_inner(
+                string.content(),
+                str_id,
+                start,
+                options,
+                true,
+                Some(FallbackMemoIdentity::Caller(str_id)),
+            );
         }
         let utf8_start = string.utf16_offset_to_utf8(start_position);
-        let m = self.find_next_match_inner(string.content(), str_id, utf8_start, options, true)?;
+        let m = self.find_next_match_inner(
+            string.content(),
+            str_id,
+            utf8_start,
+            options,
+            true,
+            Some(FallbackMemoIdentity::Caller(str_id)),
+        )?;
         Some(convert_match_to_utf16(string, m))
     }
 
@@ -509,6 +552,7 @@ impl Scanner {
         start_position: usize,
         options: ScannerFindOptions,
         use_cache: bool,
+        fallback_memo_id: Option<FallbackMemoIdentity>,
     ) -> Option<ScannerMatch> {
         let str_data = text.as_bytes();
         let end = str_data.len();
@@ -524,7 +568,7 @@ impl Scanner {
             if SCANNER_STATS_ENABLED {
                 self.stats.route_regset_calls += 1;
             }
-            return self.search_regset(str_data, end, start_position, onig_opts);
+            return self.search_regset(str_data, end, start_position, onig_opts, fallback_memo_id);
         }
 
         let use_regset = self.should_use_regset_for_cache(str_id, options.0, start_position);
@@ -533,7 +577,7 @@ impl Scanner {
                 self.stats.route_regset_calls += 1;
                 self.stats.route_cache_regset_calls += 1;
             }
-            self.search_regset(str_data, end, start_position, onig_opts)
+            self.search_regset(str_data, end, start_position, onig_opts, fallback_memo_id)
         } else {
             if SCANNER_STATS_ENABLED {
                 self.stats.route_per_regex_calls += 1;
@@ -663,16 +707,30 @@ impl Scanner {
         end: usize,
         start: usize,
         option: OnigOptionType,
+        fallback_memo_id: Option<FallbackMemoIdentity>,
     ) -> Option<ScannerMatch> {
-        let (idx, pos) = onig_regset_search_fast(
-            &mut self.regset,
-            str_data,
-            end,
-            start,
-            end,
-            OnigRegSetLead::PositionLead,
-            option,
-        );
+        let (idx, pos) = if let Some(identity) = fallback_memo_id {
+            onig_regset_search_fast_with_id(
+                &mut self.regset,
+                str_data,
+                end,
+                start,
+                end,
+                OnigRegSetLead::PositionLead,
+                option,
+                identity,
+            )
+        } else {
+            onig_regset_search_fast(
+                &mut self.regset,
+                str_data,
+                end,
+                start,
+                end,
+                OnigRegSetLead::PositionLead,
+                option,
+            )
+        };
 
         if idx < 0 {
             return None;
@@ -1728,6 +1786,24 @@ mod tests {
         assert_eq!(s.utf16_offset_to_utf8(5), 5);
         assert_eq!(s.utf8_offset_to_utf16(0), 0);
         assert_eq!(s.utf8_offset_to_utf16(5), 5);
+    }
+
+    #[test]
+    fn onig_string_instances_with_equal_contents_have_distinct_cache_ids() {
+        let first = OnigString::new("unchanged");
+        let second = OnigString::new("unchanged");
+
+        assert_ne!(first.cache_id, second.cache_id);
+
+        let mut scanner = Scanner::new(&["a*bc"]).expect("scanner");
+        assert_eq!(
+            scanner.find_next_match_utf16(&first, 0, ScannerFindOptions::NONE),
+            None
+        );
+        assert_eq!(
+            scanner.find_next_match_utf16(&second, 0, ScannerFindOptions::NONE),
+            None
+        );
     }
 
     #[test]
