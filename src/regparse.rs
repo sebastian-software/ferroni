@@ -182,11 +182,15 @@ pub fn onig_set_capture_num_limit(num: i32) -> i32 {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+/// Returns the shared limit for nested parsing and linked AST spines.
 pub fn onig_get_parse_depth_limit() -> u32 {
     PARSE_DEPTH_LIMIT.load(Ordering::Relaxed)
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+/// Sets the shared limit for nested parsing and linked AST spines.
+///
+/// Passing zero restores the default limit.
 pub fn onig_set_parse_depth_limit(depth: u32) -> i32 {
     if depth == 0 {
         PARSE_DEPTH_LIMIT.store(DEFAULT_PARSE_DEPTH_LIMIT, Ordering::Relaxed);
@@ -199,6 +203,10 @@ pub fn onig_set_parse_depth_limit(depth: u32) -> i32 {
 // ============================================================================
 // Syntax helper macros (matching C macros IS_SYNTAX_OP, etc.)
 // ============================================================================
+
+fn ast_spine_limit_reached(env: &ParseEnv, spine_depth: u32) -> bool {
+    env.parse_depth.saturating_add(spine_depth) >= PARSE_DEPTH_LIMIT.load(Ordering::Relaxed)
+}
 
 #[inline]
 fn is_syntax_op(syn: &OnigSyntaxType, opm: u32) -> bool {
@@ -7150,12 +7158,19 @@ fn prs_branch(
     }
 
     let mut top = node_new_list(node, None);
+    // `List` cells form a linked AST spine. Unlike parser call depth, a flat
+    // concatenation does not otherwise consume the configured depth budget,
+    // even though recursive compiler passes and destruction must traverse it.
+    let mut list_depth = 1;
     let mut headp = match &mut top.inner {
         NodeInner::List(cons) => &mut cons.cdr,
         _ => unreachable!("node_new_list must create a List node"),
     };
 
     while r != TokenType::Eot as i32 && r != term && r != TokenType::Alt as i32 {
+        if ast_spine_limit_reached(env, list_depth) {
+            return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
+        }
         let (node2, r2) = prs_exp(tok, term, p, end, pattern, env, false)?;
         r = r2;
 
@@ -7166,6 +7181,7 @@ fn prs_branch(
             NodeInner::List(cons) => &mut cons.cdr,
             _ => unreachable!("node_new_list must create a List node"),
         };
+        list_depth += 1;
     }
 
     env.parse_depth -= 1;
@@ -7197,12 +7213,18 @@ fn prs_alts(
         Ok((node, r))
     } else if r == TokenType::Alt as i32 {
         let mut top = node_new_alt(node, None);
+        // `Alt` cells use the same linked representation and therefore share
+        // the parse-depth budget with nested parser calls.
+        let mut alt_depth = 1;
         let mut headp = match &mut top.inner {
             NodeInner::Alt(cons) => &mut cons.cdr,
             _ => unreachable!("node_new_alt must create an Alt node"),
         };
 
         while r == TokenType::Alt as i32 {
+            if ast_spine_limit_reached(env, alt_depth) {
+                return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
+            }
             let r2 = fetch_token(tok, p, end, pattern, env);
             if r2 < 0 {
                 return Err(r2);
@@ -7217,6 +7239,7 @@ fn prs_alts(
                 NodeInner::Alt(cons) => &mut cons.cdr,
                 _ => unreachable!("node_new_alt must create an Alt node"),
             };
+            alt_depth += 1;
         }
 
         if tok.token_type as i32 != term {
