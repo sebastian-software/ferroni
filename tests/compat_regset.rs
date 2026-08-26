@@ -305,3 +305,51 @@ fn scanner_cache_id_small_input_no_match() {
     let m = scanner.find_next_match_with_id(input, 7, 0, ScannerFindOptions::NONE);
     assert!(m.is_none());
 }
+
+#[test]
+fn scanner_optional_prefix_exact_matches_from_the_match_start() {
+    let mut scanner = Scanner::new(&["a?bc"]).expect("scanner");
+
+    let m = scanner
+        .find_next_match("xabc", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(m.index, 0);
+    assert_eq!(m.capture_indices[0].start, 1);
+    assert_eq!(m.capture_indices[0].end, 4);
+}
+
+#[test]
+fn scanner_optional_prefix_map_matches_from_the_match_start() {
+    let mut scanner = Scanner::new(&["x?[abc]"]).expect("scanner");
+
+    let m = scanner
+        .find_next_match("qxa", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(m.index, 0);
+    assert_eq!(m.capture_indices[0].start, 1);
+    assert_eq!(m.capture_indices[0].end, 3);
+}
+
+#[test]
+fn regset_optional_prefix_wins_at_the_earliest_position() {
+    let mut set = make_regset(&[b"a?b", br"\s", b"[abc]", b"a|b"]);
+    let input = b"abc";
+
+    let (idx, pos) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!(idx, 0);
+    assert_eq!(pos, 0);
+    let region = onig_regset_get_region(&set, idx as usize).expect("winning region");
+    assert_eq!(region.beg[0], 0);
+    assert_eq!(region.end[0], 2);
+}

@@ -75,14 +75,14 @@ fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
 
 /// Add a single entry's index to the appropriate first-byte dispatch slots.
 fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) {
-    if reg.optimize == OptimizeType::Map && reg.dist_min == 0 {
+    if reg.optimize == OptimizeType::Map && reg.dist_max == 0 {
         // Map-filterable: only bytes where map[b] != 0
         for (b, slot) in table.iter_mut().enumerate() {
             if reg.map[b] != 0 {
                 slot.push(idx);
             }
         }
-    } else if reg.dist_min == 0 && !reg.exact.is_empty() {
+    } else if reg.dist_max == 0 && !reg.exact.is_empty() {
         // Exact-filterable: only the first byte of the exact string
         table[reg.exact[0] as usize].push(idx);
     } else if reg.has_first_byte_map {
