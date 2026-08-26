@@ -1451,17 +1451,80 @@ fn find_iter_bytes_method() {
 }
 
 #[test]
-fn builder_multi_line_anchors() {
-    // Exercises multi_line_anchors builder method
-    let re = Regex::builder(r".+")
+fn builder_multi_line_anchors_default_matches_each_line() {
+    let re = Regex::builder(r"^b$").build().unwrap();
+
+    assert_eq!(re.find("a\nb\nc").unwrap().as_str(), "b");
+}
+
+#[test]
+fn builder_multi_line_anchors_true_matches_each_line() {
+    let re = Regex::builder(r"^b$")
         .multi_line_anchors(true)
-        .dot_matches_newline(true)
         .build()
         .unwrap();
-    // With both options, dot matches newlines
-    let text = "first\nsecond";
-    let m = re.find(text).unwrap();
-    assert_eq!(m.as_str(), text);
+
+    assert_eq!(re.find("a\nb\nc").unwrap().as_str(), "b");
+}
+
+#[test]
+fn builder_multi_line_anchors_false_matches_only_input_boundaries() {
+    let re = Regex::builder(r"^b$")
+        .multi_line_anchors(false)
+        .build()
+        .unwrap();
+
+    assert!(re.find("a\nb\nc").is_none());
+}
+
+#[test]
+fn builder_multi_line_anchors_toggles_without_affecting_other_options() {
+    let re = Regex::builder(" ^ a . b $ ")
+        .case_insensitive(true)
+        .dot_matches_newline(true)
+        .extended(true)
+        .multi_line_anchors(false)
+        .multi_line_anchors(true)
+        .multi_line_anchors(true)
+        .build()
+        .unwrap();
+
+    assert_eq!(re.find("before\nA\nB\nafter").unwrap().as_str(), "A\nB");
+}
+
+#[test]
+fn builder_multi_line_anchors_overrides_syntax_defaults() {
+    use ferroni::regsyntax::{
+        OnigSyntaxJava, OnigSyntaxPerl, OnigSyntaxPosixBasic, OnigSyntaxPosixExtended,
+    };
+
+    for (name, syntax) in [
+        ("Java", &OnigSyntaxJava),
+        ("Perl", &OnigSyntaxPerl),
+        ("POSIX basic", &OnigSyntaxPosixBasic),
+        ("POSIX extended", &OnigSyntaxPosixExtended),
+    ] {
+        let default = Regex::builder(r"^b$").syntax(syntax).build().unwrap();
+        assert!(default.find("a\nb\nc").is_none(), "{name} default");
+
+        let enabled = Regex::builder(r"^b$")
+            .syntax(syntax)
+            .multi_line_anchors(true)
+            .build()
+            .unwrap();
+        assert_eq!(
+            enabled.find("a\nb\nc").unwrap().as_str(),
+            "b",
+            "{name} enabled"
+        );
+
+        let disabled = Regex::builder(r"^b$")
+            .syntax(syntax)
+            .multi_line_anchors(false)
+            .build()
+            .unwrap();
+        assert!(disabled.find("a\nb\nc").is_none(), "{name} disabled");
+    }
 }
 
 #[test]
