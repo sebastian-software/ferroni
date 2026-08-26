@@ -497,11 +497,13 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     let mut fallback_search_candidates = Vec::new();
     for (i, entry) in set.entries.iter().enumerate() {
         if has_variable_optimizer(&entry.reg) {
-            if entry.reg.dist_max != INFINITE_LEN {
-                if let Some(start_map) = derive_start_byte_map(&entry.reg) {
-                    add_entry_by_start_map(&mut table, &start_map, i as u16);
-                    continue;
-                }
+            // `dist_max` describes the optimizer's later search needle, not
+            // the beginning of a match. A byte map derived from the VM's
+            // first consuming instruction stays valid when that distance is
+            // unbounded, and table matching retains the full right range.
+            if let Some(start_map) = derive_start_byte_map(&entry.reg) {
+                add_entry_by_start_map(&mut table, &start_map, i as u16);
+                continue;
             }
             fallback_search_candidates.push(i as u16);
         } else {
@@ -559,10 +561,7 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
     // Add the new entry to the first-byte dispatch table
     let new_idx = (set.entries.len() - 1) as u16;
     if has_variable_optimizer(&set.entries[new_idx as usize].reg) {
-        let start_map = (set.entries[new_idx as usize].reg.dist_max != INFINITE_LEN)
-            .then(|| derive_start_byte_map(&set.entries[new_idx as usize].reg))
-            .flatten();
-        if let Some(start_map) = start_map {
+        if let Some(start_map) = derive_start_byte_map(&set.entries[new_idx as usize].reg) {
             add_entry_by_start_map(&mut set.first_byte_candidates, &start_map, new_idx);
             set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
         } else {
@@ -1124,6 +1123,32 @@ fn regset_search_body_position_lead(
             None => range,
         };
         if search_range < start {
+            continue;
+        }
+
+        // `onig_search` treats an equal start/range as exactly one direct
+        // match attempt. Avoid rebuilding its optimizer/search state for that
+        // case; the position-lead helper has identical `\G`, retry-limit and
+        // FIND_LONGEST-at-this-position semantics.
+        if search_range == start {
+            let msa = fallback_msa.get_or_insert_with(|| {
+                set.scratch_msa
+                    .take()
+                    .unwrap_or_else(|| MatchArg::new(&set.entries[0].reg, option, None, start))
+            });
+            if let Some(candidate) = locate_regset_entry_decision(
+                set,
+                index,
+                str_data,
+                end,
+                start,
+                start,
+                option,
+                skip_region_for_nomem,
+                msa,
+            ) {
+                record_regset_decision(set, &mut decision, candidate);
+            }
             continue;
         }
 
@@ -1717,12 +1742,14 @@ mod tests {
     }
 
     #[test]
-    fn unbounded_optimizer_stays_on_the_search_fallback() {
+    fn unbounded_optimizer_uses_a_proven_start_byte_map() {
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
         let set = set.expect("regset");
 
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert!(set.fallback_search_candidates.is_empty());
+        assert_eq!(set.first_byte_candidates[b'a' as usize], vec![0]);
+        assert_eq!(set.first_byte_candidates[b'b' as usize], vec![0]);
     }
 
     #[test]
@@ -1842,7 +1869,7 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(br"\["), compile(br"\G\s*\[")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![1]);
+        assert!(set.fallback_search_candidates.is_empty());
 
         let input = b"xx [";
         let (index, position) = onig_regset_search(
