@@ -3,6 +3,7 @@
 // Wraps the C-ported internals (onig_new, onig_search, etc.) with
 // Rust-native types: Regex, RegexBuilder, Match, Captures, FindIter.
 
+use std::cell::RefCell;
 use std::ops::Range;
 
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
@@ -12,6 +13,33 @@ use crate::regcomp::onig_new;
 use crate::regexec::{onig_name_to_backref_number, onig_search};
 use crate::regint::RegexType;
 use crate::regsyntax::OnigSyntaxOniguruma;
+
+thread_local! {
+    /// One reusable capture region per thread. Taking the value out keeps
+    /// nested and re-entrant searches independent; returning the larger region
+    /// retains the most useful allocation when result values overlap.
+    static CACHED_REGION: RefCell<Option<OnigRegion>> = const { RefCell::new(None) };
+}
+
+fn take_cached_region() -> OnigRegion {
+    CACHED_REGION
+        .with(|cached| cached.borrow_mut().take())
+        .unwrap_or_default()
+}
+
+fn cache_region(region: OnigRegion) {
+    CACHED_REGION.with(|cached| {
+        let mut cached = cached.borrow_mut();
+        let region_capacity = region.beg.capacity() + region.end.capacity();
+        let should_replace = match cached.as_ref() {
+            Some(current) => region_capacity > current.beg.capacity() + current.end.capacity(),
+            None => true,
+        };
+        if should_replace {
+            *cached = Some(region);
+        }
+    });
+}
 
 /// A compiled regular expression.
 ///
@@ -67,18 +95,21 @@ impl Regex {
             text.len(),
             0,
             text.len(),
-            Some(OnigRegion::new()),
+            Some(take_cached_region()),
             ONIG_OPTION_NONE,
         );
+        let region = region?;
         if result < 0 {
+            cache_region(region);
             return None;
         }
-        let region = region?;
         if region.num_regs < 1 {
+            cache_region(region);
             return None;
         }
         let start = region.beg[0] as usize;
         let end = region.end[0] as usize;
+        cache_region(region);
         Some(Match { text, start, end })
     }
 
@@ -114,13 +145,14 @@ impl Regex {
             text.len(),
             0,
             text.len(),
-            Some(OnigRegion::new()),
+            Some(take_cached_region()),
             ONIG_OPTION_NONE,
         );
+        let region = region?;
         if result < 0 {
+            cache_region(region);
             return None;
         }
-        let region = region?;
         Some(Captures {
             text,
             region,
@@ -135,6 +167,7 @@ impl Regex {
             text: text.as_bytes(),
             last_end: 0,
             last_was_empty: false,
+            region: take_cached_region(),
         }
     }
 
@@ -145,6 +178,7 @@ impl Regex {
             text,
             last_end: 0,
             last_was_empty: false,
+            region: take_cached_region(),
         }
     }
 
@@ -387,6 +421,12 @@ impl std::fmt::Debug for Captures<'_> {
     }
 }
 
+impl Drop for Captures<'_> {
+    fn drop(&mut self) {
+        cache_region(std::mem::take(&mut self.region));
+    }
+}
+
 // === CapturesIter ===
 
 /// Iterator over capture groups in a [`Captures`].
@@ -423,6 +463,7 @@ pub struct FindIter<'r, 't> {
     text: &'t [u8],
     last_end: usize,
     last_was_empty: bool,
+    region: OnigRegion,
 }
 
 impl<'r, 't> Iterator for FindIter<'r, 't> {
@@ -439,21 +480,20 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
             self.text.len(),
             self.last_end,
             self.text.len(),
-            Some(OnigRegion::new()),
+            Some(std::mem::take(&mut self.region)),
             ONIG_OPTION_NONE,
         );
+        self.region = region?;
 
         if result < 0 {
             return None;
         }
-
-        let region = region?;
-        if region.num_regs < 1 {
+        if self.region.num_regs < 1 {
             return None;
         }
 
-        let start = region.beg[0] as usize;
-        let end = region.end[0] as usize;
+        let start = self.region.beg[0] as usize;
+        let end = self.region.end[0] as usize;
 
         // Handle empty matches: advance by one byte to avoid infinite loop.
         if start == end {
@@ -485,17 +525,81 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
     }
 }
 
+impl Drop for FindIter<'_, '_> {
+    fn drop(&mut self) {
+        cache_region(std::mem::take(&mut self.region));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn assert_send_sync<T: Send + Sync>() {}
 
+    fn clear_cached_region() {
+        CACHED_REGION.with(|cached| *cached.borrow_mut() = None);
+    }
+
+    fn cached_region_buffer() -> Option<(*const i32, usize)> {
+        CACHED_REGION.with(|cached| {
+            cached
+                .borrow()
+                .as_ref()
+                .map(|region| (region.beg.as_ptr(), region.beg.capacity()))
+        })
+    }
+
     #[test]
     fn compiled_regex_types_are_send_and_sync() {
         assert_send_sync::<Regex>();
         assert_send_sync::<crate::regset::OnigRegSet>();
         assert_send_sync::<crate::scanner::Scanner>();
+    }
+
+    #[test]
+    fn find_reuses_the_thread_local_region_buffer() {
+        clear_cached_region();
+        let re = Regex::new(r"(a)(b)(c)").unwrap();
+
+        assert_eq!(re.find("abc").unwrap().as_str(), "abc");
+        let first = cached_region_buffer().expect("find should return its region to the cache");
+        assert!(first.1 >= 4);
+
+        assert_eq!(re.find("abc").unwrap().as_str(), "abc");
+        let second = cached_region_buffer().expect("find should preserve the cached region");
+        assert_eq!(second, first);
+    }
+
+    #[test]
+    fn captures_returns_its_region_buffer_when_dropped() {
+        clear_cached_region();
+        let re = Regex::new(r"(a)(b)(c)").unwrap();
+        let captures = re.captures("abc").unwrap();
+        let buffer = captures.region.beg.as_ptr();
+
+        assert!(cached_region_buffer().is_none());
+        drop(captures);
+
+        let cached = cached_region_buffer().expect("drop should return the captures region");
+        assert_eq!(cached.0, buffer);
+        assert!(cached.1 >= 4);
+    }
+
+    #[test]
+    fn find_iter_reuses_one_region_for_every_step() {
+        clear_cached_region();
+        let re = Regex::new(r"(\w+)").unwrap();
+        let mut matches = re.find_iter("one two");
+
+        assert_eq!(matches.next().unwrap().as_str(), "one");
+        let first = matches.region.beg.as_ptr();
+        assert_eq!(matches.next().unwrap().as_str(), "two");
+        assert_eq!(matches.region.beg.as_ptr(), first);
+        drop(matches);
+
+        let cached = cached_region_buffer().expect("iterator drop should return its region");
+        assert_eq!(cached.0, first);
     }
 
     #[test]

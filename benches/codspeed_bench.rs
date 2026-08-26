@@ -790,6 +790,18 @@ fn bench_regression_idiomatic_api(c: &mut Criterion) {
         });
     }
 
+    // find_iter: reuse one capture region across a high match-count scan
+    {
+        let re = Regex::new(r"\w+").unwrap();
+        let text = "token ".repeat(256);
+        group.bench_function("find_iter_256_matches", |b| {
+            b.iter(|| {
+                let count = re.find_iter(black_box(&text)).count();
+                black_box(count);
+            });
+        });
+    }
+
     group.finish();
 }
 
