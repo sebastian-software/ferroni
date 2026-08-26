@@ -359,28 +359,27 @@ fn regset_search_body_position_lead(
     set.last_match_len = ONIG_MISMATCH;
 
     'search: loop {
-        if s >= range {
+        if s > range {
             break;
         }
 
         // SIMD-accelerated position skip: jump to next byte that could match.
-        s = match set.skip_needle {
-            SkipNeedle::None => s,
-            SkipNeedle::One(b) => match memchr::memchr(b, &str_data[s..range]) {
-                Some(off) => s + off,
-                None => break,
-            },
-            SkipNeedle::Two(b1, b2) => match memchr::memchr2(b1, b2, &str_data[s..range]) {
-                Some(off) => s + off,
-                None => break,
-            },
-            SkipNeedle::Three(b1, b2, b3) => {
-                match memchr::memchr3(b1, b2, b3, &str_data[s..range]) {
-                    Some(off) => s + off,
-                    None => break,
+        // The range position itself must still be attempted (matching
+        // Oniguruma's do-while loop), so a failed skip lands on `range`.
+        if s < range {
+            s = match set.skip_needle {
+                SkipNeedle::None => s,
+                SkipNeedle::One(b) => {
+                    memchr::memchr(b, &str_data[s..range]).map_or(range, |off| s + off)
                 }
-            }
-        };
+                SkipNeedle::Two(b1, b2) => {
+                    memchr::memchr2(b1, b2, &str_data[s..range]).map_or(range, |off| s + off)
+                }
+                SkipNeedle::Three(b1, b2, b3) => {
+                    memchr::memchr3(b1, b2, b3, &str_data[s..range]).map_or(range, |off| s + off)
+                }
+            };
+        }
 
         let prev_is_newline = if prev_is_newline_check && s > 0 {
             // Check if previous character is newline
@@ -391,8 +390,21 @@ fn regset_search_body_position_lead(
 
         let remaining = end - s;
 
-        for &i in &set.first_byte_candidates[str_data[s] as usize] {
-            let i = i as usize;
+        // At the logical end there is no first byte to dispatch on. Try all
+        // entries there; the threshold check cheaply rejects non-empty ones.
+        let at_end = s == end;
+        let candidate_count = if at_end {
+            set.entries.len()
+        } else {
+            set.first_byte_candidates[str_data[s] as usize].len()
+        };
+
+        for candidate_at in 0..candidate_count {
+            let i = if at_end {
+                candidate_at
+            } else {
+                set.first_byte_candidates[str_data[s] as usize][candidate_at] as usize
+            };
             // ANCR_ANYCHAR_INF optimization: skip if previous char is not newline
             if (set.entries[i].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
                 continue;
@@ -445,6 +457,9 @@ fn regset_search_body_position_lead(
             }
         }
 
+        if s >= range {
+            break;
+        }
         s += enclen(enc, str_data, s);
     }
 
@@ -537,8 +552,9 @@ fn onig_regset_search_impl(
         }
     }
 
-    // Empty string handling
-    if start == end {
+    // Empty logical string handling. A non-empty string searched from its end
+    // must continue through the lead-specific path, matching upstream.
+    if end == 0 {
         for i in 0..n {
             if set.entries[i].reg.threshold_len == 0 {
                 let region = set.entries[i].region.take();
@@ -546,6 +562,7 @@ fn onig_regset_search_impl(
                     onig_match(&set.entries[i].reg, str_data, end, start, region, option);
                 set.entries[i].region = returned_region;
                 if r >= 0 {
+                    set.last_match_len = r;
                     return (i as i32, start as i32);
                 }
                 if r != ONIG_MISMATCH {
@@ -700,6 +717,7 @@ pub fn onig_regset_search_with_param(
     if mps.len() < n {
         return (ONIGERR_INVALID_ARGUMENT, 0);
     }
+    set.last_match_len = ONIG_MISMATCH;
 
     let end = end.min(str_data.len());
     let range = range.min(end);
@@ -720,8 +738,9 @@ pub fn onig_regset_search_with_param(
         }
     }
 
-    // Empty string handling
-    if start == end {
+    // Empty logical string handling. A non-empty string searched from its end
+    // must continue through the lead-specific path, matching upstream.
+    if end == 0 {
         for i in 0..n {
             if set.entries[i].reg.threshold_len == 0 {
                 let region = set.entries[i].region.take();
@@ -729,6 +748,7 @@ pub fn onig_regset_search_with_param(
                     onig_match(&set.entries[i].reg, str_data, end, start, region, option);
                 set.entries[i].region = returned_region;
                 if r >= 0 {
+                    set.last_match_len = r;
                     return (i as i32, start as i32);
                 }
                 if r != ONIG_MISMATCH {
@@ -935,6 +955,89 @@ mod tests {
         );
         assert_eq!(idx, 0); // empty pattern matches empty string
         assert_eq!(pos, 0);
+    }
+
+    #[test]
+    fn regset_fast_empty_string_records_zero_match_length() {
+        let (set, r) = onig_regset_new(vec![compile(b"$")]);
+        assert_eq!(r, ONIG_NORMAL);
+        let mut set = set.unwrap();
+
+        assert_eq!(
+            onig_regset_search_fast(
+                &mut set,
+                b"",
+                0,
+                0,
+                0,
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            ),
+            (0, 0)
+        );
+        assert_eq!(onig_regset_last_match_len(&set), 0);
+    }
+
+    #[test]
+    fn regset_position_lead_attempts_the_range_position() {
+        let (set, r) = onig_regset_new(vec![compile(b"(?=b)")]);
+        assert_eq!(r, ONIG_NORMAL);
+        let mut set = set.unwrap();
+
+        assert_eq!(
+            onig_regset_search(
+                &mut set,
+                b"abc",
+                3,
+                0,
+                1,
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            ),
+            (0, 1)
+        );
+    }
+
+    #[test]
+    fn regset_position_lead_finds_zero_width_matches_at_end() {
+        for pattern in [b"$".as_slice(), b"\\z".as_slice(), b"a*".as_slice()] {
+            let (set, r) = onig_regset_new(vec![compile(pattern)]);
+            assert_eq!(r, ONIG_NORMAL);
+            let mut set = set.unwrap();
+
+            assert_eq!(
+                onig_regset_search(
+                    &mut set,
+                    b"abc",
+                    3,
+                    3,
+                    3,
+                    OnigRegSetLead::PositionLead,
+                    ONIG_OPTION_NONE,
+                ),
+                (0, 3),
+                "pattern {:?}",
+                std::str::from_utf8(pattern).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn regset_nonempty_eos_keeps_regex_lead_semantics() {
+        for lead in [
+            OnigRegSetLead::RegexLead,
+            OnigRegSetLead::PriorityToRegexOrder,
+        ] {
+            let (set, r) = onig_regset_new(vec![compile(b"a*")]);
+            assert_eq!(r, ONIG_NORMAL);
+            let mut set = set.unwrap();
+
+            assert_eq!(
+                onig_regset_search(&mut set, b"\na", 2, 2, 2, lead, ONIG_OPTION_NONE),
+                (ONIG_MISMATCH, 0),
+                "lead {lead:?}"
+            );
+        }
     }
 
     #[test]
