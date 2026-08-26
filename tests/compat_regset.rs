@@ -333,6 +333,32 @@ fn scanner_optional_prefix_map_matches_from_the_match_start() {
 }
 
 #[test]
+fn scanner_unbounded_prefix_matches_from_the_match_start() {
+    let mut scanner = Scanner::new(&["a*bc"]).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("aabc", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(matched.index, 0);
+    assert_eq!(matched.capture_indices[0].start, 0);
+    assert_eq!(matched.capture_indices[0].end, 4);
+}
+
+#[test]
+fn scanner_negated_multibyte_optional_prefix_includes_ascii_starts() {
+    let mut scanner = Scanner::new(&["[^é]?x"]).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("ax", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(matched.index, 0);
+    assert_eq!(matched.capture_indices[0].start, 0);
+    assert_eq!(matched.capture_indices[0].end, 2);
+}
+
+#[test]
 fn regset_optional_prefix_wins_at_the_earliest_position() {
     let mut set = make_regset(&[b"a?b", br"\s", b"[abc]", b"a|b"]);
     let input = b"abc";
@@ -433,4 +459,25 @@ fn large_regset_merges_variable_and_table_ties_by_regex_order() {
     assert_eq!((index, position), (0, 0));
     let region = onig_regset_get_region(&set, index as usize).expect("winning region");
     assert_eq!((region.beg[0], region.end[0]), (0, 1));
+}
+
+#[test]
+fn regset_clears_the_superseded_table_winner_region() {
+    let mut set = make_regset(&[b"bc", b"(?<=x)a?bc"]);
+    let input = b"xabc";
+
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!((index, position), (1, 1));
+    let losing_region = onig_regset_get_region(&set, 0).expect("losing region");
+    assert_eq!(losing_region.beg[0], ONIG_REGION_NOTPOS);
+    assert_eq!(losing_region.end[0], ONIG_REGION_NOTPOS);
 }
