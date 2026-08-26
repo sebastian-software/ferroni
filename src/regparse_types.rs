@@ -845,6 +845,8 @@ pub struct ParseEnv {
     pub saves: Option<Vec<SaveItem>>,
     pub unset_addr_list: Option<Vec<UnsetAddr>>,
     pub parse_depth: u32,
+    /// Number of AST-producing expressions accepted in this parse.
+    pub ast_node_count: u32,
     pub flags: u32,
 }
 

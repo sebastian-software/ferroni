@@ -4,6 +4,7 @@ use ferroni::api::{Regex, RegexBuilder};
 use ferroni::error::RegexError;
 use ferroni::oniguruma::ONIGERR_INVALID_BACKREF;
 use ferroni::prelude::*;
+use ferroni::regint::DEFAULT_PARSE_DEPTH_LIMIT;
 
 // === Regex::new ===
 
@@ -49,6 +50,41 @@ fn invalid_pattern_syntax_error() {
 fn invalid_pattern_empty_char_class() {
     let err = Regex::new(r"[]").unwrap_err();
     assert!(matches!(err, RegexError::Syntax { .. }));
+}
+
+#[test]
+fn flat_patterns_exceeding_ast_depth_limit_fail_cleanly() {
+    const HUGE_FLAT_PATTERN_ELEMENT_COUNT: usize = 50_000;
+
+    let alternatives = format!("{}a", "a|".repeat(HUGE_FLAT_PATTERN_ELEMENT_COUNT - 1));
+    let concatenation = ".".repeat(HUGE_FLAT_PATTERN_ELEMENT_COUNT);
+
+    for pattern in [&alternatives, &concatenation] {
+        let err = Regex::new(pattern).unwrap_err();
+        assert_eq!(err, RegexError::ParseDepthLimitOver);
+    }
+}
+
+#[test]
+fn nested_wide_patterns_exceeding_ast_depth_limit_fail_cleanly() {
+    const NESTED_GROUP_COUNT: usize = 20;
+    const WIDE_ALTERNATIVE_COUNT: usize = 4_000;
+    const LONG_CONCATENATION_COUNT: usize = 4_000;
+
+    let mut pattern = ".".repeat(LONG_CONCATENATION_COUNT);
+    for _ in 0..NESTED_GROUP_COUNT {
+        pattern = format!("(?:{}{})", "a|".repeat(WIDE_ALTERNATIVE_COUNT), pattern);
+    }
+
+    let err = Regex::new(&pattern).unwrap_err();
+    assert_eq!(err, RegexError::ParseDepthLimitOver);
+}
+
+#[test]
+fn long_literal_larger_than_ast_depth_limit_is_supported() {
+    let pattern = "a".repeat(DEFAULT_PARSE_DEPTH_LIMIT as usize * 2);
+    let re = Regex::new(&pattern).unwrap();
+    assert!(re.is_match(&pattern));
 }
 
 // === Regex::is_match ===
