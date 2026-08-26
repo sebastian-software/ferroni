@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.3.2](https://github.com/sebastian-software/ferroni/compare/v1.3.1...v1.3.2) (2026-08-26)
+
+
+### Bug Fixes
+
+* **api:** honor multi-line anchor builder option ([#80](https://github.com/sebastian-software/ferroni/issues/80)) ([a5dea53](https://github.com/sebastian-software/ferroni/commit/a5dea532a24a72de4f874510488845e4899bd19b))
+* **api:** resolve multiplex capture names by participation ([#83](https://github.com/sebastian-software/ferroni/issues/83)) ([a0299f0](https://github.com/sebastian-software/ferroni/commit/a0299f009400c5cb7108f438a0618d23d8825e44))
+* **ffi:** validate subject offsets ([#77](https://github.com/sebastian-software/ferroni/issues/77)) ([f82bba7](https://github.com/sebastian-software/ferroni/commit/f82bba73be16f4e9feab641522d05ed285ea26c2))
+* own regex syntax configuration ([#78](https://github.com/sebastian-software/ferroni/issues/78)) ([27f8db6](https://github.com/sebastian-software/ferroni/commit/27f8db6aeae722fa4a3b255b2d11467ec07d3fb6))
+* **regcomp:** preserve literal alternation semantics ([#71](https://github.com/sebastian-software/ferroni/issues/71)) ([ec9251a](https://github.com/sebastian-software/ferroni/commit/ec9251a1526e11b384c7bf6eb4bf09d4e1d325bf))
+* **regexec:** normalize search bounds ([#75](https://github.com/sebastian-software/ferroni/issues/75)) ([168bea5](https://github.com/sebastian-software/ferroni/commit/168bea5ecdf94a6044cf511b6a5bb6e2f3fcc0c2))
+* **regexec:** respect logical UTF-8 end ([#76](https://github.com/sebastian-software/ferroni/issues/76)) ([d4dee63](https://github.com/sebastian-software/ferroni/commit/d4dee639916fcadd7b57a801dbd518094a8faae3))
+* **regparse:** bound flat AST spines ([#82](https://github.com/sebastian-software/ferroni/issues/82)) ([335dc0e](https://github.com/sebastian-software/ferroni/commit/335dc0ecb372cbfd2fd8d895ab1f55de46e8e5df))
+* **regparse:** bound group reference numbers ([#74](https://github.com/sebastian-software/ferroni/issues/74)) ([b89b833](https://github.com/sebastian-software/ferroni/commit/b89b8338f1af21743589ac7533a0745038880c60))
+* **regparse:** encode Latin-1 case folds as multibyte ([#72](https://github.com/sebastian-software/ferroni/issues/72)) ([8ca8efe](https://github.com/sebastian-software/ferroni/commit/8ca8efe699cfc77090337b634fe0c2212c0075e0))
+* **regset:** preserve variable-distance match starts ([#81](https://github.com/sebastian-software/ferroni/issues/81)) ([a41cffa](https://github.com/sebastian-software/ferroni/commit/a41cffad67984c141a5e85611a9c28d52da92cd9))
+* remove compile AST aliasing ([#79](https://github.com/sebastian-software/ferroni/issues/79)) ([09f0f35](https://github.com/sebastian-software/ferroni/commit/09f0f352fe6ecbdd93f048448472a14d824393c5))
+* **scanner:** report zero-width matches at end ([#85](https://github.com/sebastian-software/ferroni/issues/85)) ([38961b9](https://github.com/sebastian-software/ferroni/commit/38961b9ed8b0751e6250831626106d1a3c9233d5))
+
+
+### Performance Improvements
+
+* **api:** reuse capture regions ([#86](https://github.com/sebastian-software/ferroni/issues/86)) ([9582109](https://github.com/sebastian-software/ferroni/commit/9582109ec0b02a8eb23f2ab0cbcba0809bd73bdf))
+
 ## [1.3.1](https://github.com/sebastian-software/ferroni/compare/v1.3.0...v1.3.1) (2026-08-25)
 
 
