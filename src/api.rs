@@ -23,12 +23,16 @@ thread_local! {
 
 fn take_cached_region() -> OnigRegion {
     CACHED_REGION
-        .with(|cached| cached.borrow_mut().take())
+        .try_with(|cached| cached.borrow_mut().take())
+        .ok()
+        .flatten()
         .unwrap_or_default()
 }
 
 fn cache_region(region: OnigRegion) {
-    CACHED_REGION.with(|cached| {
+    // Drop can run after this thread-local's destructor during thread
+    // teardown. In that case, simply let the uncached region be freed.
+    let _ = CACHED_REGION.try_with(|cached| {
         let mut cached = cached.borrow_mut();
         let region_capacity = region.beg.capacity() + region.end.capacity();
         let should_replace = match cached.as_ref() {
@@ -584,6 +588,24 @@ mod tests {
         let cached = cached_region_buffer().expect("drop should return the captures region");
         assert_eq!(cached.0, buffer);
         assert!(cached.1 >= 4);
+    }
+
+    #[test]
+    fn result_drop_during_thread_local_teardown_does_not_panic() {
+        thread_local! {
+            static LATE_RESULT: RefCell<Option<Captures<'static>>> = const { RefCell::new(None) };
+        }
+
+        std::thread::spawn(|| {
+            // Initialize the result holder before CACHED_REGION so it is
+            // destroyed afterwards and drops Captures with the cache gone.
+            LATE_RESULT.with(|result| assert!(result.borrow().is_none()));
+            let regex = Box::leak(Box::new(Regex::new(r"(a)").unwrap()));
+            let captures = regex.captures("a").unwrap();
+            LATE_RESULT.with(|result| *result.borrow_mut() = Some(captures));
+        })
+        .join()
+        .expect("result drop during thread teardown must not panic");
     }
 
     #[test]
