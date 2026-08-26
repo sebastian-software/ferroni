@@ -218,12 +218,15 @@ impl RegexBuilder {
 
     /// Enable or disable `^`/`$` matching at every line boundary.
     ///
-    /// This behavior is enabled by default. When disabled, anchors match only
-    /// at input boundaries.
+    /// With the default Oniguruma syntax, this behavior is enabled by default.
+    /// When disabled, anchors match only at input boundaries. Calling this
+    /// method overrides the selected syntax's default anchor behavior.
     pub fn multi_line_anchors(mut self, yes: bool) -> Self {
         if yes {
+            self.options |= ONIG_OPTION_NEGATE_SINGLELINE;
             self.options &= !ONIG_OPTION_SINGLELINE;
         } else {
+            self.options &= !ONIG_OPTION_NEGATE_SINGLELINE;
             self.options |= ONIG_OPTION_SINGLELINE;
         }
         self

@@ -1493,6 +1493,41 @@ fn builder_multi_line_anchors_toggles_without_affecting_other_options() {
 }
 
 #[test]
+fn builder_multi_line_anchors_overrides_syntax_defaults() {
+    use ferroni::regsyntax::{
+        OnigSyntaxJava, OnigSyntaxPerl, OnigSyntaxPosixBasic, OnigSyntaxPosixExtended,
+    };
+
+    for (name, syntax) in [
+        ("Java", &OnigSyntaxJava),
+        ("Perl", &OnigSyntaxPerl),
+        ("POSIX basic", &OnigSyntaxPosixBasic),
+        ("POSIX extended", &OnigSyntaxPosixExtended),
+    ] {
+        let default = Regex::builder(r"^b$").syntax(syntax).build().unwrap();
+        assert!(default.find("a\nb\nc").is_none(), "{name} default");
+
+        let enabled = Regex::builder(r"^b$")
+            .syntax(syntax)
+            .multi_line_anchors(true)
+            .build()
+            .unwrap();
+        assert_eq!(
+            enabled.find("a\nb\nc").unwrap().as_str(),
+            "b",
+            "{name} enabled"
+        );
+
+        let disabled = Regex::builder(r"^b$")
+            .syntax(syntax)
+            .multi_line_anchors(false)
+            .build()
+            .unwrap();
+        assert!(disabled.find("a\nb\nc").is_none(), "{name} disabled");
+    }
+}
+
+#[test]
 fn captures_len_and_is_empty() {
     // Exercises Captures::len() and is_empty()
     let re = Regex::new(r"(a)(b)(c)").unwrap();
