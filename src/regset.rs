@@ -348,6 +348,55 @@ pub fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
     set.last_match_len
 }
 
+/// Whether an optimizer with a variable first-byte distance permits a match at
+/// `start`. This is only a fallback match gate: unlike the dispatch table, it
+/// checks every possible optimizer offset and therefore never treats the
+/// optimizer byte as the match's first byte.
+#[inline]
+fn fallback_optimizer_allows_start(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+) -> bool {
+    const MAX_FALLBACK_OPTIMIZER_SPAN: usize = 8;
+
+    let (map, exact) = match reg.optimize {
+        OptimizeType::Map => (Some(&reg.map), None),
+        OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward
+            if !reg.exact.is_empty() =>
+        {
+            (None, Some(reg.exact[0]))
+        }
+        _ => return true,
+    };
+
+    if reg.dist_min == INFINITE_LEN || reg.dist_max == INFINITE_LEN {
+        return true;
+    }
+    let min = reg.dist_min as usize;
+    let max = reg.dist_max as usize;
+    if max < min || max - min > MAX_FALLBACK_OPTIMIZER_SPAN {
+        return true;
+    }
+
+    let Some(first) = start.checked_add(min) else {
+        return false;
+    };
+    let Some(last) = start.checked_add(max) else {
+        return false;
+    };
+    if first >= end {
+        return false;
+    }
+
+    let last = last.min(end - 1);
+    (first..=last).any(|position| match map {
+        Some(map) => map[str_data[position] as usize] != 0,
+        None => str_data[position] == exact.expect("exact optimizer byte"),
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn find_fallback_match(
     set: &mut OnigRegSet,
@@ -379,6 +428,9 @@ fn find_fallback_match(
             if set.entries[index].reg.threshold_len > 0
                 && remaining < set.entries[index].reg.threshold_len as usize
             {
+                continue;
+            }
+            if !fallback_optimizer_allows_start(&set.entries[index].reg, str_data, end, s) {
                 continue;
             }
 
