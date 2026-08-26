@@ -354,65 +354,57 @@ fn find_fallback_match(
     str_data: &[u8],
     end: usize,
     start: usize,
-    range: usize,
+    limit: usize,
     option: OnigOptionType,
     skip_region_for_nomem: bool,
     msa: &mut MatchArg,
 ) -> (i32, i32) {
-    let mut match_index = ONIG_MISMATCH;
-    let mut match_pos = 0;
+    let enc = set.enc;
+    let prev_is_newline_check = set.anychar_inf;
+    let mut s = start;
 
-    for fallback_pos in 0..set.fallback_candidates.len() {
-        let index = set.fallback_candidates[fallback_pos];
-        let index = index as usize;
-        let (r, position) = if (set.entries[index].reg.anchor & ANCR_BEGIN_POSITION) != 0
-            || ((set.entries[index].reg.anchor & ANCR_BEGIN_BUF) != 0 && start == 0)
-        {
-            (
-                match_regset_entry(
-                    set,
-                    index,
-                    str_data,
-                    end,
-                    start,
-                    start,
-                    option,
-                    skip_region_for_nomem,
-                    msa,
-                ),
-                start as i32,
-            )
-        } else if (set.entries[index].reg.anchor & ANCR_BEGIN_BUF) != 0 && start != 0 {
-            (ONIG_MISMATCH, 0)
+    while s < limit {
+        let prev_is_newline = if prev_is_newline_check && s > 0 {
+            str_data[s - 1] == b'\n'
         } else {
-            let region = set.entries[index].region.take();
-            let (r, region) = onig_search(
-                &set.entries[index].reg,
+            true
+        };
+        let remaining = end - s;
+
+        for fallback_pos in 0..set.fallback_candidates.len() {
+            let index = set.fallback_candidates[fallback_pos] as usize;
+            if (set.entries[index].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
+                continue;
+            }
+            if set.entries[index].reg.threshold_len > 0
+                && remaining < set.entries[index].reg.threshold_len as usize
+            {
+                continue;
+            }
+
+            let r = match_regset_entry(
+                set,
+                index,
                 str_data,
                 end,
+                s,
                 start,
-                range,
-                region,
                 option,
+                skip_region_for_nomem,
+                msa,
             );
-            set.entries[index].region = region;
-            (r, r)
-        };
-
-        if r >= 0 {
-            if match_index == ONIG_MISMATCH
-                || position < match_pos
-                || (position == match_pos && index < match_index as usize)
-            {
-                match_index = index as i32;
-                match_pos = position;
+            if r >= 0 {
+                return (index as i32, s as i32);
             }
-        } else if r != ONIG_MISMATCH {
-            return (r, 0);
+            if r != ONIG_MISMATCH {
+                return (r, 0);
+            }
         }
+
+        s += enclen(enc, str_data, s);
     }
 
-    (match_index, match_pos)
+    (ONIG_MISMATCH, 0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -480,50 +472,25 @@ fn regset_search_body_position_lead(
     let mut result: (i32, i32) = (ONIG_MISMATCH, 0);
     set.last_match_len = ONIG_MISMATCH;
 
-    // Optimizer bytes with nonzero maximum distance are not first-byte data.
-    // Search those entries individually and use the earliest result to bound
-    // the fixed-first-byte dispatch scan.
-    let fallback_result = find_fallback_match(
-        set,
-        str_data,
-        end,
-        start,
-        range,
-        option,
-        skip_region_for_nomem,
-        &mut msa,
-    );
-    if fallback_result.0 != ONIG_MISMATCH && fallback_result.0 < 0 {
-        set.scratch_msa = Some(msa);
-        return fallback_result;
-    }
-    let dispatch_range = if fallback_result.0 >= 0 {
-        (fallback_result.1 as usize + 1).min(range)
-    } else {
-        range
-    };
-
     if set.has_dispatch_candidates {
         'search: loop {
-            if s >= dispatch_range {
+            if s >= range {
                 break;
             }
 
             // SIMD-accelerated position skip: jump to the next dispatch byte.
             s = match set.skip_needle {
                 SkipNeedle::None => s,
-                SkipNeedle::One(b) => match memchr::memchr(b, &str_data[s..dispatch_range]) {
+                SkipNeedle::One(b) => match memchr::memchr(b, &str_data[s..range]) {
                     Some(off) => s + off,
                     None => break,
                 },
-                SkipNeedle::Two(b1, b2) => {
-                    match memchr::memchr2(b1, b2, &str_data[s..dispatch_range]) {
-                        Some(off) => s + off,
-                        None => break,
-                    }
-                }
+                SkipNeedle::Two(b1, b2) => match memchr::memchr2(b1, b2, &str_data[s..range]) {
+                    Some(off) => s + off,
+                    None => break,
+                },
                 SkipNeedle::Three(b1, b2, b3) => {
-                    match memchr::memchr3(b1, b2, b3, &str_data[s..dispatch_range]) {
+                    match memchr::memchr3(b1, b2, b3, &str_data[s..range]) {
                         Some(off) => s + off,
                         None => break,
                     }
@@ -562,12 +529,6 @@ fn regset_search_body_position_lead(
                     &mut msa,
                 );
                 if r >= 0 {
-                    if fallback_result.0 >= 0
-                        && s == fallback_result.1 as usize
-                        && i > fallback_result.0 as usize
-                    {
-                        continue;
-                    }
                     set.last_match_len = r;
                     result = (i as i32, s as i32);
                     break 'search;
@@ -582,7 +543,34 @@ fn regset_search_body_position_lead(
         }
     }
 
-    if result.0 == ONIG_MISMATCH && fallback_result.0 >= 0 {
+    // Optimizer bytes with nonzero maximum distance are not first-byte data.
+    // Check them only up to the dispatch result, preserving position and index
+    // priority without turning them into candidates at every byte.
+    let fallback_limit = if result.0 >= 0 {
+        (result.1 as usize + 1).min(range)
+    } else {
+        range
+    };
+    let fallback_result = find_fallback_match(
+        set,
+        str_data,
+        end,
+        start,
+        fallback_limit,
+        option,
+        skip_region_for_nomem,
+        &mut msa,
+    );
+    if fallback_result.0 != ONIG_MISMATCH && fallback_result.0 < 0 {
+        set.scratch_msa = Some(msa);
+        return fallback_result;
+    }
+
+    if fallback_result.0 >= 0
+        && (result.0 == ONIG_MISMATCH
+            || fallback_result.1 < result.1
+            || (fallback_result.1 == result.1 && fallback_result.0 < result.0))
+    {
         let index = fallback_result.0 as usize;
         let r = match_regset_entry(
             set,
