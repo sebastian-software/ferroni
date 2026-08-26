@@ -398,9 +398,7 @@ fn scanner_repeated_optional_prefix_match_agrees_across_routes() {
 #[test]
 fn large_regset_variable_map_finds_the_true_earliest_start() {
     let mut patterns: Vec<&[u8]> = vec![b"a?[bcd]", b"x"];
-    for _ in 0..31 {
-        patterns.push(b"(?!)");
-    }
+    patterns.resize(33, b"(?!)");
     let mut set = make_regset(&patterns);
     let input = b"qac";
 
@@ -422,9 +420,7 @@ fn large_regset_variable_map_finds_the_true_earliest_start() {
 #[test]
 fn large_regset_merges_variable_and_table_ties_by_regex_order() {
     let mut patterns: Vec<&[u8]> = vec![b"a", b"a?[bcd]"];
-    for _ in 0..31 {
-        patterns.push(b"(?!)");
-    }
+    patterns.resize(33, b"(?!)");
     let mut set = make_regset(&patterns);
     let input = b"ab";
 

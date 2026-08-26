@@ -8184,10 +8184,9 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
         reg.anc_dist_max = opt.len.max;
     }
 
-    // Save a map for RegSet first-byte dispatch before the main optimization
-    // choice potentially overwrites reg.map with BMH skip table data. The map
-    // is a valid first-byte filter only when it is fixed at the match start.
-    if opt.map.value > 0 && opt.map.mm.max == 0 {
+    // Save first-byte map for regset dispatch before the main optimization
+    // choice potentially overwrites reg.map with BMH skip table data.
+    if opt.map.value > 0 && opt.map.mm.min == 0 {
         reg.first_byte_map = opt.map.map;
         reg.has_first_byte_map = true;
     }

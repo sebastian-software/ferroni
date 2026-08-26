@@ -609,7 +609,7 @@ pub struct RegexType {
     /// the caller does not request a region (e.g. backrefs, recursive mem ops).
     pub(crate) needs_capture_tracking: bool,
 
-    /// First-byte prefilter map for regset dispatch, when fixed at the match start.
+    /// First-byte prefilter map for regset dispatch.
     /// Unlike `map` (which may be repurposed as BMH skip table when optimize=StrFast),
     /// this always contains the character membership map for possible first bytes.
     /// Only valid when `has_first_byte_map` is true.

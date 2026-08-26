@@ -104,34 +104,196 @@ fn has_finite_variable_optimizer(reg: &RegexType) -> bool {
         }
 }
 
-// Small start maps stay cheaper in the direct table. Broader maps fan out on
-// large TextMate sets and are handled by optimizer events instead.
-const MAX_SELECTIVE_START_BYTES: usize = 2;
-// For small sets, even a broad sound start map is cheaper than maintaining the
-// event path. The regression benchmark covers the boundary with 20 and 279
-// patterns.
-const SMALL_REGSET_START_MAP_LIMIT: usize = 32;
-
-fn has_selective_start_map(reg: &RegexType) -> bool {
-    if !reg.has_first_byte_map {
-        return false;
+/// Derive a conservative byte map for the first consuming instruction from
+/// compiled bytecode. Returning `None` is deliberate: any control-flow shape
+/// we cannot prove safe stays on the optimizer-event fallback.
+fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
+    fn target(pc: usize, addr: RelAddrType, len: usize) -> Option<usize> {
+        let target = (pc as i64).checked_add(addr as i64)?;
+        (target >= 0 && (target as usize) < len).then_some(target as usize)
     }
-    let byte_count = reg
-        .first_byte_map
-        .iter()
-        .filter(|&&value| value != 0)
-        .count();
-    byte_count > 0 && byte_count <= MAX_SELECTIVE_START_BYTES
+
+    fn add_all(map: &mut [u8; CHAR_MAP_SIZE]) {
+        map.fill(1);
+    }
+
+    fn add_exact(map: &mut [u8; CHAR_MAP_SIZE], byte: u8) {
+        map[byte as usize] = 1;
+    }
+
+    fn add_bitset(map: &mut [u8; CHAR_MAP_SIZE], bitset: &BitSet, inverted: bool) {
+        for (byte, value) in map.iter_mut().enumerate() {
+            if bitset_at(bitset, byte) != inverted {
+                *value = 1;
+            }
+        }
+    }
+
+    let mut map = [0; CHAR_MAP_SIZE];
+    let mut pending = vec![0usize];
+    let mut visited = vec![false; reg.ops.len()];
+    let mut saw_consumer = false;
+
+    while let Some(pc) = pending.pop() {
+        if pc >= reg.ops.len() || visited[pc] {
+            continue;
+        }
+        visited[pc] = true;
+        let op = &reg.ops[pc];
+
+        match op.opcode {
+            OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5 => {
+                let OperationPayload::Exact { s } = &op.payload else {
+                    return None;
+                };
+                add_exact(&mut map, s[0]);
+                saw_consumer = true;
+            }
+            OpCode::StrN => {
+                let OperationPayload::ExactN { s, .. } = &op.payload else {
+                    return None;
+                };
+                add_exact(&mut map, *s.first()?);
+                saw_consumer = true;
+            }
+            OpCode::StrMb2n1
+            | OpCode::StrMb2n2
+            | OpCode::StrMb2n3
+            | OpCode::StrMb2n
+            | OpCode::StrMb3n
+            | OpCode::StrMbn => {
+                let OperationPayload::ExactLenN { s, .. } = &op.payload else {
+                    return None;
+                };
+                add_exact(&mut map, *s.first()?);
+                saw_consumer = true;
+            }
+            OpCode::CClass | OpCode::CClassNot => {
+                let OperationPayload::CClass { bsp, .. } = &op.payload else {
+                    return None;
+                };
+                add_bitset(&mut map, bsp, op.opcode == OpCode::CClassNot);
+                saw_consumer = true;
+            }
+            OpCode::CClassMb | OpCode::CClassMbNot => {
+                for value in &mut map[0x80..] {
+                    *value = 1;
+                }
+                saw_consumer = true;
+            }
+            OpCode::CClassMix | OpCode::CClassMixNot => {
+                let OperationPayload::CClassMix { bsp, .. } = &op.payload else {
+                    return None;
+                };
+                add_bitset(&mut map, bsp, op.opcode == OpCode::CClassMixNot);
+                for value in &mut map[0x80..] {
+                    *value = 1;
+                }
+                saw_consumer = true;
+            }
+            OpCode::Word | OpCode::NoWord | OpCode::AnyChar | OpCode::AnyCharMl => {
+                add_all(&mut map);
+                saw_consumer = true;
+            }
+            OpCode::WordAscii | OpCode::NoWordAscii => {
+                let inverted = op.opcode == OpCode::NoWordAscii;
+                for (byte, value) in map.iter_mut().enumerate() {
+                    let is_word = (byte as u8).is_ascii_alphanumeric() || byte == b'_' as usize;
+                    if is_word != inverted {
+                        *value = 1;
+                    }
+                }
+                saw_consumer = true;
+            }
+            OpCode::Jump => {
+                let OperationPayload::Jump { addr } = op.payload else {
+                    return None;
+                };
+                pending.push(target(pc, addr, reg.ops.len())?);
+            }
+            OpCode::Push | OpCode::PushSuper => {
+                let OperationPayload::Push { addr } = op.payload else {
+                    return None;
+                };
+                pending.push(pc + 1);
+                pending.push(target(pc, addr, reg.ops.len())?);
+            }
+            OpCode::PushOrJumpExact1 => {
+                let OperationPayload::PushOrJumpExact1 { addr, .. } = op.payload else {
+                    return None;
+                };
+                pending.push(pc + 1);
+                pending.push(target(pc, addr, reg.ops.len())?);
+            }
+            OpCode::PushIfPeekNext => {
+                let OperationPayload::PushIfPeekNext { addr, .. } = op.payload else {
+                    return None;
+                };
+                pending.push(pc + 1);
+                pending.push(target(pc, addr, reg.ops.len())?);
+            }
+            OpCode::Repeat | OpCode::RepeatNg => {
+                let OperationPayload::Repeat { id, addr } = op.payload else {
+                    return None;
+                };
+                let repeat = reg.repeat_range.get(id as usize)?;
+                pending.push(pc + 1);
+                if repeat.lower == 0 {
+                    pending.push(target(pc, addr, reg.ops.len())?);
+                }
+            }
+            OpCode::MemStart
+            | OpCode::MemStartPush
+            | OpCode::MemEnd
+            | OpCode::MemEndPush
+            | OpCode::MemEndRec
+            | OpCode::MemEndPushRec
+            | OpCode::WordBoundary
+            | OpCode::NoWordBoundary
+            | OpCode::WordBegin
+            | OpCode::WordEnd
+            | OpCode::TextSegmentBoundary
+            | OpCode::BeginBuf
+            | OpCode::EndBuf
+            | OpCode::BeginLine
+            | OpCode::EndLine
+            | OpCode::SemiEndBuf
+            | OpCode::CheckPosition
+            | OpCode::BackRefCheck
+            | OpCode::BackRefCheckWithLevel
+            | OpCode::EmptyCheckStart
+            | OpCode::EmptyCheckEnd
+            | OpCode::EmptyCheckEndMemst
+            | OpCode::EmptyCheckEndMemstPush
+            | OpCode::Pop
+            | OpCode::PopToMark
+            | OpCode::CutToMark
+            | OpCode::Mark
+            | OpCode::CalloutContents
+            | OpCode::CalloutName => pending.push(pc + 1),
+            OpCode::Fail => {}
+            OpCode::AnyCharStar
+            | OpCode::AnyCharMlStar
+            | OpCode::AnyCharStarPeekNext
+            | OpCode::AnyCharMlStarPeekNext => {
+                add_all(&mut map);
+                saw_consumer = true;
+            }
+            OpCode::Finish | OpCode::End => return None,
+            _ => return None,
+        }
+    }
+
+    saw_consumer.then_some(map)
 }
 
-fn should_dispatch_variable_by_start_map(reg: &RegexType, entry_count: usize) -> bool {
-    reg.has_first_byte_map
-        && (entry_count <= SMALL_REGSET_START_MAP_LIMIT || has_selective_start_map(reg))
-}
-
-fn add_entry_by_start_map(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) {
+fn add_entry_by_start_map(
+    table: &mut [Vec<u16>; CHAR_MAP_SIZE],
+    start_map: &[u8; CHAR_MAP_SIZE],
+    idx: u16,
+) {
     for (byte, entries) in table.iter_mut().enumerate() {
-        if reg.first_byte_map[byte] != 0 {
+        if start_map[byte] != 0 {
             entries.push(idx);
         }
     }
@@ -216,20 +378,20 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
         Box::new(std::array::from_fn(|_| Vec::new()));
     let mut max_variable_distance = 0;
     for (i, entry) in set.entries.iter().enumerate() {
-        if has_finite_variable_optimizer(&entry.reg)
-            && !should_dispatch_variable_by_start_map(&entry.reg, set.entries.len())
-        {
-            let slot = variable_distance_candidates.len() as u16;
-            variable_distance_candidates.push(i as u16);
-            add_variable_optimizer_candidate(
-                &mut variable_optimizer_candidates,
-                &entry.reg,
-                i as u16,
-                slot,
-            );
-            max_variable_distance = max_variable_distance.max(entry.reg.dist_max as usize);
-        } else if has_finite_variable_optimizer(&entry.reg) {
-            add_entry_by_start_map(&mut table, &entry.reg, i as u16);
+        if has_finite_variable_optimizer(&entry.reg) {
+            if let Some(start_map) = derive_start_byte_map(&entry.reg) {
+                add_entry_by_start_map(&mut table, &start_map, i as u16);
+            } else {
+                let slot = variable_distance_candidates.len() as u16;
+                variable_distance_candidates.push(i as u16);
+                add_variable_optimizer_candidate(
+                    &mut variable_optimizer_candidates,
+                    &entry.reg,
+                    i as u16,
+                    slot,
+                );
+                max_variable_distance = max_variable_distance.max(entry.reg.dist_max as usize);
+            }
         } else {
             add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16);
         }
@@ -294,32 +456,25 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
     // Add the new entry to the first-byte dispatch table
     let new_idx = (set.entries.len() - 1) as u16;
-    if has_finite_variable_optimizer(&set.entries[new_idx as usize].reg)
-        && !should_dispatch_variable_by_start_map(
-            &set.entries[new_idx as usize].reg,
-            set.entries.len(),
-        )
-    {
-        let slot = set.variable_distance_candidates.len() as u16;
-        set.variable_distance_candidates.push(new_idx);
-        add_variable_optimizer_candidate(
-            &mut set.variable_optimizer_candidates,
-            &set.entries[new_idx as usize].reg,
-            new_idx,
-            slot,
-        );
-        set.max_variable_distance = set
-            .max_variable_distance
-            .max(set.entries[new_idx as usize].reg.dist_max as usize);
-        set.variable_last_start_scratch.push(0);
-        set.variable_matched_scratch.push(false);
-    } else if has_finite_variable_optimizer(&set.entries[new_idx as usize].reg) {
-        add_entry_by_start_map(
-            &mut set.first_byte_candidates,
-            &set.entries[new_idx as usize].reg,
-            new_idx,
-        );
-        set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
+    if has_finite_variable_optimizer(&set.entries[new_idx as usize].reg) {
+        if let Some(start_map) = derive_start_byte_map(&set.entries[new_idx as usize].reg) {
+            add_entry_by_start_map(&mut set.first_byte_candidates, &start_map, new_idx);
+            set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
+        } else {
+            let slot = set.variable_distance_candidates.len() as u16;
+            set.variable_distance_candidates.push(new_idx);
+            add_variable_optimizer_candidate(
+                &mut set.variable_optimizer_candidates,
+                &set.entries[new_idx as usize].reg,
+                new_idx,
+                slot,
+            );
+            set.max_variable_distance = set
+                .max_variable_distance
+                .max(set.entries[new_idx as usize].reg.dist_max as usize);
+            set.variable_last_start_scratch.push(0);
+            set.variable_matched_scratch.push(false);
+        }
     } else {
         add_entry_to_first_byte_table(
             &mut set.first_byte_candidates,
@@ -327,10 +482,6 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
             new_idx,
         );
         set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
-    }
-
-    if set.entries.len() == SMALL_REGSET_START_MAP_LIMIT + 1 {
-        build_first_byte_table(set);
     }
 
     // Recompute: pass field values to avoid borrow conflict
@@ -723,6 +874,7 @@ fn regset_search_body_position_lead(
     } else {
         None
     };
+
     if let Some(current) = winner {
         if current.position == start as i32
             && set.variable_distance_candidates[0] as i32 > current.index
@@ -789,13 +941,6 @@ fn regset_search_body_position_lead(
                 }
 
                 let index = event.index as usize;
-                if set.entries[index].reg.has_first_byte_map
-                    && set.entries[index].reg.first_byte_map[str_data[candidate_start] as usize]
-                        == 0
-                {
-                    candidate_start += 1;
-                    continue;
-                }
                 let prev_is_newline = if set.anychar_inf && candidate_start > 0 {
                     str_data[candidate_start - 1] == b'\n'
                 } else {
@@ -1237,6 +1382,46 @@ mod tests {
         );
         assert_eq!(idx, 1); // "def" matched
         assert_eq!(pos, 3); // at position 3
+    }
+
+    #[test]
+    fn start_byte_map_includes_optional_prefix_and_required_byte() {
+        let reg = compile(b"a?[bcd]");
+        assert!(has_finite_variable_optimizer(&reg));
+
+        let map = derive_start_byte_map(&reg).expect("simple optional prefix is analyzable");
+        for byte in [b'a', b'b', b'c', b'd'] {
+            assert_ne!(map[byte as usize], 0, "missing byte {byte:?}");
+        }
+        assert_eq!(map[b'x' as usize], 0);
+    }
+
+    #[test]
+    fn lookbehind_uses_variable_optimizer_event_fallback() {
+        let reg = compile(b"(?<=x)a?bc");
+        assert!(has_finite_variable_optimizer(&reg));
+        assert!(
+            derive_start_byte_map(&reg).is_none(),
+            "opcodes: {:?}",
+            reg.ops.iter().map(|op| op.opcode).collect::<Vec<_>>()
+        );
+
+        let (set, result) = onig_regset_new(vec![reg]);
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        assert_eq!(set.variable_distance_candidates, vec![0]);
+
+        let input = b"xabc";
+        let (index, position) = onig_regset_search(
+            &mut set,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!((index, position), (0, 1));
     }
 
     #[test]
