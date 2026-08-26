@@ -71,7 +71,7 @@ jobs:
         run: cargo llvm-cov --no-report --release --lib
       - name: Generate coverage (API + non-stack-heavy suites)
         run: >
-          cargo llvm-cov --no-report --release
+          cargo llvm-cov --release --no-clean
           --test api_test
           --test compat_syntax
           --test compat_options
@@ -79,7 +79,7 @@ jobs:
       - name: Generate coverage (compat_utf8, skipping stack-heavy tests)
         run: >
           RUST_MIN_STACK=268435456
-          cargo llvm-cov --no-report --release
+          cargo llvm-cov --release --no-clean
           --test compat_utf8
           -- --test-threads=4
           --skip recursive_

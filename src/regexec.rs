@@ -31,10 +31,20 @@ static RETRY_LIMIT_IN_MATCH: AtomicU64 = AtomicU64::new(DEFAULT_RETRY_LIMIT_IN_M
 static RETRY_LIMIT_IN_SEARCH: AtomicU64 = AtomicU64::new(DEFAULT_RETRY_LIMIT_IN_SEARCH);
 static MATCH_STACK_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_MATCH_STACK_LIMIT_SIZE);
 static TIME_LIMIT: AtomicU64 = AtomicU64::new(DEFAULT_TIME_LIMIT_MSEC);
+/// Monotonically changing revision for consumers that cache the four global
+/// limits. Setters publish their preceding relaxed limit stores with a Release
+/// RMW; an Acquire revision read that observes that change may then reload all
+/// four limits relaxed. This avoids four atomic loads on hot searches when no
+/// caller has changed a global limit.
+static GLOBAL_LIMIT_REVISION: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+pub(crate) static LIMIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_match(n: u64) {
     RETRY_LIMIT_IN_MATCH.store(n, Ordering::Relaxed);
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
 }
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_retry_limit_in_match() -> u64 {
@@ -43,6 +53,7 @@ pub fn onig_get_retry_limit_in_match() -> u64 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_search(n: u64) {
     RETRY_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed);
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
 }
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_retry_limit_in_search() -> u64 {
@@ -51,6 +62,7 @@ pub fn onig_get_retry_limit_in_search() -> u64 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_match_stack_limit(n: u32) {
     MATCH_STACK_LIMIT.store(n, Ordering::Relaxed);
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
 }
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_match_stack_limit() -> u32 {
@@ -70,10 +82,21 @@ pub fn onig_get_match_stack_limit_size() -> u32 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_time_limit(n: u64) {
     TIME_LIMIT.store(n, Ordering::Relaxed);
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
 }
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_time_limit() -> u64 {
     TIME_LIMIT.load(Ordering::Relaxed)
+}
+
+/// Internal revision for caches of the process-global match limits.
+#[inline]
+pub(crate) fn onig_get_global_limit_revision() -> u64 {
+    // Paired with the setters' Release RMWs: if this observes a new
+    // revision, following relaxed limit loads see the limits published before
+    // it. u64 wrapping is intentionally left to atomic arithmetic; reaching
+    // it would require 2^64 process-global limit updates.
+    GLOBAL_LIMIT_REVISION.load(Ordering::Acquire)
 }
 
 // ============================================================================
@@ -5762,6 +5785,39 @@ pub(crate) fn onig_search_with_msa(
     onig_search_inner(reg, str_data, end, start, range, msa)
 }
 
+/// Search positions in `[start, range]` while allowing a match to consume up
+/// to `right_range`. RegSet uses this to stop considering candidate starts
+/// once they can no longer beat its current winner without truncating a match
+/// that begins before that winner.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn onig_search_with_msa_and_right_range(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    right_range: usize,
+    msa: &mut MatchArg,
+) -> (i32, Option<OnigRegion>) {
+    let end = end.min(str_data.len());
+    let range = range.min(end);
+    let right_range = right_range.min(end);
+    if start > end || right_range < start {
+        return (ONIG_MISMATCH, msa.region.take());
+    }
+
+    onig_search_inner_core_with_right_range(
+        reg,
+        str_data,
+        end,
+        start,
+        range,
+        right_range,
+        false,
+        msa,
+    )
+}
+
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[allow(clippy::too_many_arguments)]
 pub fn onig_search_with_param(
@@ -5869,8 +5925,41 @@ fn onig_search_inner_core(
     range: usize,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
+    let right_range = if start == range && start < end {
+        (start + enclen(reg.enc, str_data, start)).min(end)
+    } else if range > start {
+        range
+    } else {
+        end
+    };
+    onig_search_inner_core_with_right_range(
+        reg,
+        str_data,
+        end,
+        start,
+        range,
+        right_range,
+        true,
+        msa,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn onig_search_inner_core_with_right_range(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    right_range: usize,
+    find_longest_across_positions: bool,
+    msa: &mut MatchArg,
+) -> (i32, Option<OnigRegion>) {
     let enc = reg.enc;
-    let find_longest = opton_find_longest(msa.options);
+    // Position-led RegSet searches still honor FIND_LONGEST within each
+    // attempted position, but must return the earliest successful position.
+    // Public onig_search retains its historical global-longest behavior.
+    let find_longest = find_longest_across_positions && opton_find_longest(msa.options);
     let mut best_start: i32 = ONIG_MISMATCH;
     let mut best_len: i32 = ONIG_MISMATCH;
 
@@ -5890,8 +5979,7 @@ fn onig_search_inner_core(
     if start == range && start < end {
         msa.best_len = ONIG_MISMATCH;
         msa.best_s = 0;
-        let data_range = (start + enclen(enc, str_data, start)).min(end);
-        let r = match_at(reg, str_data, end, data_range, start, msa);
+        let r = match_at(reg, str_data, end, right_range, start, msa);
         if r < ONIG_MISMATCH {
             return (r, msa.region.take());
         }
@@ -6055,7 +6143,7 @@ fn onig_search_inner_core(
 
     let mut cur_start = start;
     let mut cur_range = range;
-    let data_range = if range > start { range } else { end };
+    let data_range = right_range;
 
     // === Anchor optimization: narrow search range ===
     if reg.anchor != 0 && start < end {
@@ -7260,8 +7348,27 @@ mod tests {
 
     // Safety limit tests use a lock to avoid interfering with each other
     // (since limits are global statics).
-    use std::sync::Mutex;
-    static LIMIT_TEST_LOCK: Mutex<()> = Mutex::new(());
+    #[test]
+    fn global_limit_setters_publish_a_new_revision() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let old_retry_match = onig_get_retry_limit_in_match();
+        let old_retry_search = onig_get_retry_limit_in_search();
+        let old_stack = onig_get_match_stack_limit();
+        let old_time = onig_get_time_limit();
+        let mut revision = onig_get_global_limit_revision();
+
+        onig_set_retry_limit_in_match(old_retry_match);
+        assert_ne!(onig_get_global_limit_revision(), revision);
+        revision = onig_get_global_limit_revision();
+        onig_set_retry_limit_in_search(old_retry_search);
+        assert_ne!(onig_get_global_limit_revision(), revision);
+        revision = onig_get_global_limit_revision();
+        onig_set_match_stack_limit(old_stack);
+        assert_ne!(onig_get_global_limit_revision(), revision);
+        revision = onig_get_global_limit_revision();
+        onig_set_time_limit(old_time);
+        assert_ne!(onig_get_global_limit_revision(), revision);
+    }
 
     #[test]
     fn retry_limit_in_match() {

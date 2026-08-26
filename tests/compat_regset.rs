@@ -305,3 +305,214 @@ fn scanner_cache_id_small_input_no_match() {
     let m = scanner.find_next_match_with_id(input, 7, 0, ScannerFindOptions::NONE);
     assert!(m.is_none());
 }
+
+#[test]
+fn scanner_optional_prefix_exact_matches_from_the_match_start() {
+    let mut scanner = Scanner::new(&["a?bc"]).expect("scanner");
+
+    let m = scanner
+        .find_next_match("xabc", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(m.index, 0);
+    assert_eq!(m.capture_indices[0].start, 1);
+    assert_eq!(m.capture_indices[0].end, 4);
+}
+
+#[test]
+fn scanner_optional_prefix_map_matches_from_the_match_start() {
+    let mut scanner = Scanner::new(&["x?[abc]"]).expect("scanner");
+
+    let m = scanner
+        .find_next_match("qxa", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(m.index, 0);
+    assert_eq!(m.capture_indices[0].start, 1);
+    assert_eq!(m.capture_indices[0].end, 3);
+}
+
+#[test]
+fn scanner_unbounded_prefix_matches_from_the_match_start() {
+    let mut scanner = Scanner::new(&["a*bc"]).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("aabc", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(matched.index, 0);
+    assert_eq!(matched.capture_indices[0].start, 0);
+    assert_eq!(matched.capture_indices[0].end, 4);
+}
+
+#[test]
+fn scanner_fallback_match_may_extend_past_a_later_table_winner() {
+    for (patterns, expected_index) in [(["bc", r"(a*)\1bc"], 1), ([r"(a*)\1bc", "bc"], 0)] {
+        let mut scanner = Scanner::new(&patterns).expect("scanner");
+
+        let matched = scanner
+            .find_next_match("aabc", 0, ScannerFindOptions::NONE)
+            .expect("match");
+
+        assert_eq!(matched.index, expected_index);
+        assert_eq!(matched.capture_indices[0].start, 0);
+        assert_eq!(matched.capture_indices[0].end, 4);
+    }
+}
+
+#[test]
+fn regset_find_longest_keeps_position_lead_earliest_start() {
+    let mut set = make_regset(&[br"(a*)\1b"]);
+    let input = b"bxxaaaab";
+
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_FIND_LONGEST,
+    );
+
+    assert_eq!((index, position), (0, 0));
+    let region = onig_regset_get_region(&set, index as usize).expect("winning region");
+    assert_eq!((region.beg[0], region.end[0]), (0, 1));
+}
+
+#[test]
+fn scanner_negated_multibyte_optional_prefix_includes_ascii_starts() {
+    let mut scanner = Scanner::new(&["[^é]?x"]).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("ax", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(matched.index, 0);
+    assert_eq!(matched.capture_indices[0].start, 0);
+    assert_eq!(matched.capture_indices[0].end, 2);
+}
+
+#[test]
+fn regset_optional_prefix_wins_at_the_earliest_position() {
+    let mut set = make_regset(&[b"a?b", br"\s", b"[abc]", b"a|b"]);
+    let input = b"abc";
+
+    let (idx, pos) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!(idx, 0);
+    assert_eq!(pos, 0);
+    let region = onig_regset_get_region(&set, idx as usize).expect("winning region");
+    assert_eq!(region.beg[0], 0);
+    assert_eq!(region.end[0], 2);
+}
+
+#[test]
+fn regset_fixed_first_byte_pattern_wins_fallback_ties_by_order() {
+    let mut set = make_regset(&[b"a", b"a?b"]);
+    let input = b"ab";
+
+    let (idx, pos) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!(idx, 0);
+    assert_eq!(pos, 0);
+    let region = onig_regset_get_region(&set, idx as usize).expect("winning region");
+    assert_eq!(region.beg[0], 0);
+    assert_eq!(region.end[0], 1);
+}
+
+#[test]
+fn scanner_repeated_optional_prefix_match_agrees_across_routes() {
+    let mut scanner = Scanner::new(&["a?bc", "q"]).expect("scanner");
+    let input = "qabc";
+
+    for _ in 0..25 {
+        let matched = scanner
+            .find_next_match_with_id(input, 55, 1, ScannerFindOptions::NONE)
+            .expect("match");
+        assert_eq!(matched.index, 0);
+        assert_eq!(matched.capture_indices[0].start, 1);
+        assert_eq!(matched.capture_indices[0].end, 4);
+    }
+}
+
+#[test]
+fn large_regset_variable_map_finds_the_true_earliest_start() {
+    let mut patterns: Vec<&[u8]> = vec![b"a?[bcd]", b"x"];
+    patterns.resize(33, b"(?!)");
+    let mut set = make_regset(&patterns);
+    let input = b"qac";
+
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!((index, position), (0, 1));
+    let region = onig_regset_get_region(&set, index as usize).expect("winning region");
+    assert_eq!((region.beg[0], region.end[0]), (1, 3));
+}
+
+#[test]
+fn large_regset_merges_variable_and_table_ties_by_regex_order() {
+    let mut patterns: Vec<&[u8]> = vec![b"a", b"a?[bcd]"];
+    patterns.resize(33, b"(?!)");
+    let mut set = make_regset(&patterns);
+    let input = b"ab";
+
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!((index, position), (0, 0));
+    let region = onig_regset_get_region(&set, index as usize).expect("winning region");
+    assert_eq!((region.beg[0], region.end[0]), (0, 1));
+}
+
+#[test]
+fn regset_clears_the_superseded_table_winner_region() {
+    let mut set = make_regset(&[b"bc", b"(?<=x)a?bc"]);
+    let input = b"xabc";
+
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!((index, position), (1, 1));
+    let losing_region = onig_regset_get_region(&set, 0).expect("losing region");
+    assert_eq!(losing_region.beg[0], ONIG_REGION_NOTPOS);
+    assert_eq!(losing_region.end[0], ONIG_REGION_NOTPOS);
+}
