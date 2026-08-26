@@ -353,3 +353,25 @@ fn regset_optional_prefix_wins_at_the_earliest_position() {
     assert_eq!(region.beg[0], 0);
     assert_eq!(region.end[0], 2);
 }
+
+#[test]
+fn regset_fixed_first_byte_pattern_wins_fallback_ties_by_order() {
+    let mut set = make_regset(&[b"a", b"a?b"]);
+    let input = b"ab";
+
+    let (idx, pos) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        0,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!(idx, 0);
+    assert_eq!(pos, 0);
+    let region = onig_regset_get_region(&set, idx as usize).expect("winning region");
+    assert_eq!(region.beg[0], 0);
+    assert_eq!(region.end[0], 1);
+}

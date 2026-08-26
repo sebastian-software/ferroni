@@ -30,12 +30,12 @@ struct RegSetEntry {
 
 /// Pre-computed memchr needle for SIMD-accelerated position skipping.
 ///
-/// When the dispatch table has only 1–3 non-empty byte slots (and zero
-/// always-candidate patterns), we can use `memchr` to jump directly to the
-/// next position where at least one pattern could match.
+/// When the dispatch table has only 1–3 non-empty byte slots, we can use
+/// `memchr` to jump directly to the next position where a fixed-first-byte
+/// pattern could match.
 #[derive(Clone, Copy)]
 enum SkipNeedle {
-    /// No skipping possible (always-candidate patterns exist, or >3 bytes).
+    /// No skipping possible (>3 bytes, or no dispatch candidates).
     None,
     One(u8),
     Two(u8, u8),
@@ -51,9 +51,13 @@ pub struct OnigRegSet {
     anc_dmax: OnigLen,
     all_low_high: bool,
     anychar_inf: bool,
-    /// For each byte value 0..255, the list of entry indices whose first-byte
-    /// pre-filter does not exclude that byte. Built at construction time.
+    /// For each byte value 0..255, the list of entry indices whose optimizer
+    /// proves a fixed first byte and does not exclude that byte.
     first_byte_candidates: Box<[Vec<u16>; 256]>,
+    /// Entries whose optimizer information is not fixed at the match start.
+    /// They are searched individually before the position-lead dispatch scan.
+    fallback_candidates: Vec<u16>,
+    has_dispatch_candidates: bool,
     /// SIMD-accelerated skip needle derived from the dispatch table.
     skip_needle: SkipNeedle,
     /// Reused MatchArg scratch space for position-lead searches.
@@ -73,8 +77,8 @@ fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
     enc.mbc_enc_len(&str_data[s..])
 }
 
-/// Add a single entry's index to the appropriate first-byte dispatch slots.
-fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) {
+/// Add an entry to the first-byte table if its optimizer data is fixed at the match start.
+fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) -> bool {
     if reg.optimize == OptimizeType::Map && reg.dist_max == 0 {
         // Map-filterable: only bytes where map[b] != 0
         for (b, slot) in table.iter_mut().enumerate() {
@@ -82,24 +86,21 @@ fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, i
                 slot.push(idx);
             }
         }
+        true
     } else if reg.dist_max == 0 && !reg.exact.is_empty() {
         // Exact-filterable: only the first byte of the exact string
         table[reg.exact[0] as usize].push(idx);
+        true
     } else if reg.has_first_byte_map {
-        // Fallback: use the first-byte prefilter map.
-        // This handles patterns where the main optimization chose StrFast at
-        // dist_min > 0 (e.g., lookbehind patterns) or OptimizeType::None
-        // (e.g., CClass with multi-byte ranges).
+        // The map is recorded only when it is fixed at the match start.
         for (b, slot) in table.iter_mut().enumerate() {
             if reg.first_byte_map[b] != 0 {
                 slot.push(idx);
             }
         }
+        true
     } else {
-        // Always-candidate: appears in all 256 slots
-        for slot in table.iter_mut() {
-            slot.push(idx);
-        }
+        false
     }
 }
 
@@ -126,11 +127,19 @@ fn compute_skip_needle(table: &[Vec<u16>; 256]) -> SkipNeedle {
 /// Build the first-byte dispatch table from scratch for all entries.
 fn build_first_byte_table(set: &mut OnigRegSet) {
     let mut table: Box<[Vec<u16>; 256]> = Box::new(std::array::from_fn(|_| Vec::new()));
+    let mut fallback_candidates = Vec::new();
     for (i, entry) in set.entries.iter().enumerate() {
-        add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16);
+        if !add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16) {
+            fallback_candidates.push(i as u16);
+        }
     }
     set.skip_needle = compute_skip_needle(&table);
     set.first_byte_candidates = table;
+    set.fallback_candidates = fallback_candidates;
+    set.has_dispatch_candidates = set
+        .first_byte_candidates
+        .iter()
+        .any(|slot| !slot.is_empty());
 }
 
 /// Create a new regex set from an array of compiled regexes.
@@ -145,6 +154,8 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         all_low_high: false,
         anychar_inf: false,
         first_byte_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
+        fallback_candidates: Vec::new(),
+        has_dispatch_candidates: false,
         skip_needle: SkipNeedle::None,
         scratch_msa: None,
         last_match_len: ONIG_MISMATCH,
@@ -177,11 +188,16 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
     // Add the new entry to the first-byte dispatch table
     let new_idx = (set.entries.len() - 1) as u16;
-    add_entry_to_first_byte_table(
+    if !add_entry_to_first_byte_table(
         &mut set.first_byte_candidates,
         &set.entries[new_idx as usize].reg,
         new_idx,
-    );
+    ) {
+        set.fallback_candidates.push(new_idx);
+    } else {
+        set.has_dispatch_candidates = true;
+        set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
+    }
 
     // Recompute: pass field values to avoid borrow conflict
     let n = set.entries.len();
@@ -332,6 +348,112 @@ pub fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
     set.last_match_len
 }
 
+#[allow(clippy::too_many_arguments)]
+fn find_fallback_match(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+    skip_region_for_nomem: bool,
+    msa: &mut MatchArg,
+) -> (i32, i32) {
+    let mut match_index = ONIG_MISMATCH;
+    let mut match_pos = 0;
+
+    for fallback_pos in 0..set.fallback_candidates.len() {
+        let index = set.fallback_candidates[fallback_pos];
+        let index = index as usize;
+        let (r, position) = if (set.entries[index].reg.anchor & ANCR_BEGIN_POSITION) != 0
+            || ((set.entries[index].reg.anchor & ANCR_BEGIN_BUF) != 0 && start == 0)
+        {
+            (
+                match_regset_entry(
+                    set,
+                    index,
+                    str_data,
+                    end,
+                    start,
+                    start,
+                    option,
+                    skip_region_for_nomem,
+                    msa,
+                ),
+                start as i32,
+            )
+        } else if (set.entries[index].reg.anchor & ANCR_BEGIN_BUF) != 0 && start != 0 {
+            (ONIG_MISMATCH, 0)
+        } else {
+            let region = set.entries[index].region.take();
+            let (r, region) = onig_search(
+                &set.entries[index].reg,
+                str_data,
+                end,
+                start,
+                range,
+                region,
+                option,
+            );
+            set.entries[index].region = region;
+            (r, r)
+        };
+
+        if r >= 0 {
+            if match_index == ONIG_MISMATCH
+                || position < match_pos
+                || (position == match_pos && index < match_index as usize)
+            {
+                match_index = index as i32;
+                match_pos = position;
+            }
+        } else if r != ONIG_MISMATCH {
+            return (r, 0);
+        }
+    }
+
+    (match_index, match_pos)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn match_regset_entry(
+    set: &mut OnigRegSet,
+    index: usize,
+    str_data: &[u8],
+    end: usize,
+    position: usize,
+    search_start: usize,
+    option: OnigOptionType,
+    skip_region_for_nomem: bool,
+    msa: &mut MatchArg,
+) -> i32 {
+    if skip_region_for_nomem && set.entries[index].reg.num_mem == 0 {
+        msa.region = None;
+        onig_match_with_msa_start(
+            &set.entries[index].reg,
+            str_data,
+            end,
+            position,
+            search_start,
+            option,
+            msa,
+        )
+    } else {
+        msa.region = set.entries[index].region.take();
+        let r = onig_match_with_msa_start(
+            &set.entries[index].reg,
+            str_data,
+            end,
+            position,
+            search_start,
+            option,
+            msa,
+        );
+        set.entries[index].region = msa.region.take();
+        r
+    }
+}
+
 /// Position-lead search: iterate positions, try each regex at each position.
 fn regset_search_body_position_lead(
     set: &mut OnigRegSet,
@@ -358,94 +480,127 @@ fn regset_search_body_position_lead(
     let mut result: (i32, i32) = (ONIG_MISMATCH, 0);
     set.last_match_len = ONIG_MISMATCH;
 
-    'search: loop {
-        if s >= range {
-            break;
-        }
+    // Optimizer bytes with nonzero maximum distance are not first-byte data.
+    // Search those entries individually and use the earliest result to bound
+    // the fixed-first-byte dispatch scan.
+    let fallback_result = find_fallback_match(
+        set,
+        str_data,
+        end,
+        start,
+        range,
+        option,
+        skip_region_for_nomem,
+        &mut msa,
+    );
+    if fallback_result.0 != ONIG_MISMATCH && fallback_result.0 < 0 {
+        set.scratch_msa = Some(msa);
+        return fallback_result;
+    }
+    let dispatch_range = if fallback_result.0 >= 0 {
+        (fallback_result.1 as usize + 1).min(range)
+    } else {
+        range
+    };
 
-        // SIMD-accelerated position skip: jump to next byte that could match.
-        s = match set.skip_needle {
-            SkipNeedle::None => s,
-            SkipNeedle::One(b) => match memchr::memchr(b, &str_data[s..range]) {
-                Some(off) => s + off,
-                None => break,
-            },
-            SkipNeedle::Two(b1, b2) => match memchr::memchr2(b1, b2, &str_data[s..range]) {
-                Some(off) => s + off,
-                None => break,
-            },
-            SkipNeedle::Three(b1, b2, b3) => {
-                match memchr::memchr3(b1, b2, b3, &str_data[s..range]) {
+    if set.has_dispatch_candidates {
+        'search: loop {
+            if s >= dispatch_range {
+                break;
+            }
+
+            // SIMD-accelerated position skip: jump to the next dispatch byte.
+            s = match set.skip_needle {
+                SkipNeedle::None => s,
+                SkipNeedle::One(b) => match memchr::memchr(b, &str_data[s..dispatch_range]) {
                     Some(off) => s + off,
                     None => break,
+                },
+                SkipNeedle::Two(b1, b2) => {
+                    match memchr::memchr2(b1, b2, &str_data[s..dispatch_range]) {
+                        Some(off) => s + off,
+                        None => break,
+                    }
                 }
-            }
-        };
-
-        let prev_is_newline = if prev_is_newline_check && s > 0 {
-            // Check if previous character is newline
-            s > 0 && str_data[s - 1] == b'\n'
-        } else {
-            true // default: allow matching
-        };
-
-        let remaining = end - s;
-
-        for &i in &set.first_byte_candidates[str_data[s] as usize] {
-            let i = i as usize;
-            // ANCR_ANYCHAR_INF optimization: skip if previous char is not newline
-            if (set.entries[i].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
-                continue;
-            }
-
-            // Pre-filter: remaining text too short for this pattern
-            if set.entries[i].reg.threshold_len > 0
-                && remaining < set.entries[i].reg.threshold_len as usize
-            {
-                continue;
-            }
-
-            let r = if skip_region_for_nomem && set.entries[i].reg.num_mem == 0 {
-                // No capture groups: scanner only needs full-match length, so avoid
-                // region take/clear/restore on this hot path.
-                msa.region = None;
-                onig_match_with_msa_start(
-                    &set.entries[i].reg,
-                    str_data,
-                    end,
-                    s,
-                    start,
-                    option,
-                    &mut msa,
-                )
-            } else {
-                // Swap region into msa for this match, then swap back.
-                msa.region = set.entries[i].region.take();
-                let r = onig_match_with_msa_start(
-                    &set.entries[i].reg,
-                    str_data,
-                    end,
-                    s,
-                    start,
-                    option,
-                    &mut msa,
-                );
-                set.entries[i].region = msa.region.take();
-                r
+                SkipNeedle::Three(b1, b2, b3) => {
+                    match memchr::memchr3(b1, b2, b3, &str_data[s..dispatch_range]) {
+                        Some(off) => s + off,
+                        None => break,
+                    }
+                }
             };
 
-            if r >= 0 {
-                set.last_match_len = r;
-                result = (i as i32, s as i32);
-                break 'search;
-            }
-            if r != ONIG_MISMATCH {
-                result = (r, 0);
-                break 'search;
-            }
-        }
+            let prev_is_newline = if prev_is_newline_check && s > 0 {
+                s > 0 && str_data[s - 1] == b'\n'
+            } else {
+                true
+            };
+            let remaining = end - s;
 
-        s += enclen(enc, str_data, s);
+            let candidate_byte = str_data[s] as usize;
+            let candidate_count = set.first_byte_candidates[candidate_byte].len();
+            for candidate_pos in 0..candidate_count {
+                let i = set.first_byte_candidates[candidate_byte][candidate_pos] as usize;
+                if (set.entries[i].reg.anchor & ANCR_ANYCHAR_INF) != 0 && !prev_is_newline {
+                    continue;
+                }
+                if set.entries[i].reg.threshold_len > 0
+                    && remaining < set.entries[i].reg.threshold_len as usize
+                {
+                    continue;
+                }
+
+                let r = match_regset_entry(
+                    set,
+                    i,
+                    str_data,
+                    end,
+                    s,
+                    start,
+                    option,
+                    skip_region_for_nomem,
+                    &mut msa,
+                );
+                if r >= 0 {
+                    if fallback_result.0 >= 0
+                        && s == fallback_result.1 as usize
+                        && i > fallback_result.0 as usize
+                    {
+                        continue;
+                    }
+                    set.last_match_len = r;
+                    result = (i as i32, s as i32);
+                    break 'search;
+                }
+                if r != ONIG_MISMATCH {
+                    result = (r, 0);
+                    break 'search;
+                }
+            }
+
+            s += enclen(enc, str_data, s);
+        }
+    }
+
+    if result.0 == ONIG_MISMATCH && fallback_result.0 >= 0 {
+        let index = fallback_result.0 as usize;
+        let r = match_regset_entry(
+            set,
+            index,
+            str_data,
+            end,
+            fallback_result.1 as usize,
+            start,
+            option,
+            skip_region_for_nomem,
+            &mut msa,
+        );
+        if r >= 0 {
+            set.last_match_len = r;
+            result = fallback_result;
+        } else if r != ONIG_MISMATCH {
+            result = (r, 0);
+        }
     }
 
     set.scratch_msa = Some(msa);
