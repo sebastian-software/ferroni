@@ -861,29 +861,6 @@ fn clear_regset_entry_region(set: &mut OnigRegSet, index: i32) {
     }
 }
 
-#[inline]
-fn optimizer_target_exists(reg: &RegexType, str_data: &[u8], start: usize, end: usize) -> bool {
-    let haystack = &str_data[start..end];
-    match reg.optimize {
-        OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward => {
-            memchr::memmem::find(haystack, &reg.exact).is_some()
-        }
-        OptimizeType::Map => match reg.map_byte_count {
-            1 => memchr::memchr(reg.map_bytes[0], haystack).is_some(),
-            2 => memchr::memchr2(reg.map_bytes[0], reg.map_bytes[1], haystack).is_some(),
-            3 => memchr::memchr3(
-                reg.map_bytes[0],
-                reg.map_bytes[1],
-                reg.map_bytes[2],
-                haystack,
-            )
-            .is_some(),
-            _ => haystack.iter().any(|&byte| reg.map[byte as usize] != 0),
-        },
-        OptimizeType::None => true,
-    }
-}
-
 /// Position-lead search: iterate positions, try each regex at each position.
 fn regset_search_body_position_lead_table(
     set: &mut OnigRegSet,
@@ -969,12 +946,6 @@ fn regset_search_body_position_lead_table(
             {
                 continue;
             }
-            if has_variable_optimizer(&set.entries[i].reg)
-                && !optimizer_target_exists(&set.entries[i].reg, str_data, s, end)
-            {
-                continue;
-            }
-
             let r = if skip_region_for_nomem && set.entries[i].reg.num_mem == 0 {
                 // No capture groups: scanner only needs full-match length, so avoid
                 // region take/clear/restore on this hot path.
