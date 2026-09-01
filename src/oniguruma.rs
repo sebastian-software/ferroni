@@ -254,6 +254,14 @@ pub const ONIG_SYN_PYTHON: u32 = 1 << 12;
 pub const ONIG_SYN_WHOLE_OPTIONS: u32 = 1 << 13;
 pub const ONIG_SYN_BRE_ANCHOR_AT_EDGE_OF_SUBEXP: u32 = 1 << 14;
 pub const ONIG_SYN_ESC_P_WITH_ONE_CHAR_PROP: u32 = 1 << 15;
+
+// PROTOTYPE: Ferroni-only behavior bits for the issue #44 research spike.
+// These intentionally occupy gaps in Oniguruma's behavior bitset and must not
+// become stable API without a compatibility and maintenance decision.
+pub(crate) const FERRONI_SYN_ALLOW_CAPTURE_IN_NEGATIVE_LOOK_BEHIND: u32 = 1 << 16;
+pub(crate) const FERRONI_SYN_ALLOW_LOOK_AHEAD_IN_NEGATIVE_LOOK_BEHIND: u32 = 1 << 17;
+pub(crate) const FERRONI_SYN_UNMATCHED_BACKREF_MATCHES_EMPTY: u32 = 1 << 18;
+
 // in char class [...]
 pub const ONIG_SYN_NOT_NEWLINE_IN_NEGATIVE_CC: u32 = 1 << 20;
 pub const ONIG_SYN_BACKSLASH_ESCAPE_IN_CC: u32 = 1 << 21;

@@ -4042,7 +4042,12 @@ fn check_called_node_in_look_behind(node: &Node, _not: bool) -> i32 {
 /// Full validation of nodes in lookbehind. Returns 0 = ok, 1 = forbidden.
 /// `not`: true for negative lookbehind.
 /// `used`: set to true if the body contains backrefs, called groups, or SAVE_KEEP.
-fn check_node_in_look_behind(node: &Node, not: bool, used: &mut bool) -> i32 {
+fn check_node_in_look_behind(
+    node: &Node,
+    not: bool,
+    used: &mut bool,
+    syntax: &OnigSyntaxType,
+) -> i32 {
     let type_bit = node.node_type_bit();
     if (type_bit & ALLOWED_TYPE_IN_LB) == 0 {
         return 1;
@@ -4050,34 +4055,37 @@ fn check_node_in_look_behind(node: &Node, not: bool, used: &mut bool) -> i32 {
 
     match &node.inner {
         NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            let mut r = check_node_in_look_behind(&cons.car, not, used);
+            let mut r = check_node_in_look_behind(&cons.car, not, used, syntax);
             if r == 0 {
                 if let Some(ref cdr) = cons.cdr {
-                    r = check_node_in_look_behind(cdr, not, used);
+                    r = check_node_in_look_behind(cdr, not, used, syntax);
                 }
             }
             r
         }
         NodeInner::Quant(qn) => {
             if let Some(ref body) = qn.body {
-                check_node_in_look_behind(body, not, used)
+                check_node_in_look_behind(body, not, used, syntax)
             } else {
                 0
             }
         }
         NodeInner::Bag(en) => {
-            let bag_mask = if not {
+            let mut bag_mask = if not {
                 ALLOWED_BAG_IN_LB_NOT
             } else {
                 ALLOWED_BAG_IN_LB
             };
+            if not && is_syntax_bv(syntax, FERRONI_SYN_ALLOW_CAPTURE_IN_NEGATIVE_LOOK_BEHIND) {
+                bag_mask |= 1 << BagType::Memory as u32;
+            }
             if ((1 << en.bag_type as u32) & bag_mask) == 0 {
                 return 1;
             }
 
             let mut r = 0;
             if let Some(ref body) = en.body {
-                r = check_node_in_look_behind(body, not, used);
+                r = check_node_in_look_behind(body, not, used, syntax);
                 if r != 0 {
                     return r;
                 }
@@ -4096,28 +4104,31 @@ fn check_node_in_look_behind(node: &Node, not: bool, used: &mut bool) -> i32 {
             } = en.bag_data
             {
                 if let Some(ref tn) = then_node {
-                    r = check_node_in_look_behind(tn, not, used);
+                    r = check_node_in_look_behind(tn, not, used, syntax);
                     if r != 0 {
                         return r;
                     }
                 }
                 if let Some(ref en) = else_node {
-                    r = check_node_in_look_behind(en, not, used);
+                    r = check_node_in_look_behind(en, not, used, syntax);
                 }
             }
             r
         }
         NodeInner::Anchor(an) => {
-            let anchor_mask = if not {
+            let mut anchor_mask = if not {
                 ALLOWED_ANCHOR_IN_LB_NOT
             } else {
                 ALLOWED_ANCHOR_IN_LB
             };
+            if not && is_syntax_bv(syntax, FERRONI_SYN_ALLOW_LOOK_AHEAD_IN_NEGATIVE_LOOK_BEHIND) {
+                anchor_mask |= ANCR_PREC_READ | ANCR_PREC_READ_NOT;
+            }
             if (an.anchor_type & anchor_mask) == 0 {
                 return 1;
             }
             if let Some(ref body) = an.body {
-                check_node_in_look_behind(body, not, used)
+                check_node_in_look_behind(body, not, used, syntax)
             } else {
                 0
             }
@@ -4388,7 +4399,7 @@ fn tune_look_behind(node: &mut Node, enc: OnigEncoding, syntax: &OnigSyntaxType)
         } else {
             return 0;
         };
-        let r = check_node_in_look_behind(body, is_not, &mut lb_used);
+        let r = check_node_in_look_behind(body, is_not, &mut lb_used, syntax);
         if r < 0 {
             return r;
         }

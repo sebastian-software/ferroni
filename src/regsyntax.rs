@@ -3,7 +3,7 @@
 
 #![allow(non_upper_case_globals)]
 
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 
 use crate::oniguruma::*;
 
@@ -312,6 +312,24 @@ pub static OnigSyntaxOniguruma: OnigSyntaxType = OnigSyntaxType {
     options: ONIG_OPTION_NONE,
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
+
+/// PROTOTYPE: opt-in syntax used only by the issue #44 research harness.
+///
+/// This preserves the normal Oniguruma syntax while allowing the two AST
+/// constructs whose ECMAScript semantics the spike is evaluating. It is
+/// deliberately hidden from generated public documentation and should be
+/// removed or replaced by a reviewed API when the spike concludes.
+#[doc(hidden)]
+pub fn prototype_ecmascript_lookbehind_syntax() -> &'static OnigSyntaxType {
+    static SYNTAX: OnceLock<OnigSyntaxType> = OnceLock::new();
+    SYNTAX.get_or_init(|| {
+        let mut syntax = OnigSyntaxOniguruma.clone();
+        syntax.behavior |= FERRONI_SYN_ALLOW_CAPTURE_IN_NEGATIVE_LOOK_BEHIND
+            | FERRONI_SYN_ALLOW_LOOK_AHEAD_IN_NEGATIVE_LOOK_BEHIND
+            | FERRONI_SYN_UNMATCHED_BACKREF_MATCHES_EMPTY;
+        syntax
+    })
+}
 
 // Ruby (from regparse.c)
 pub static OnigSyntaxRuby: OnigSyntaxType = OnigSyntaxType {
