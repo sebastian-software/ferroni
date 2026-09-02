@@ -323,6 +323,73 @@ fn builder_syntax() {
 }
 
 #[test]
+fn prototype_ecmascript_negative_lookbehind_is_opt_in() {
+    use ferroni::regsyntax::prototype_ecmascript_lookbehind_syntax;
+
+    assert!(Regex::new(r"(?<!(a))b").is_err());
+    assert!(Regex::new(r"(?<!a(?=b))b").is_err());
+
+    let capture = Regex::builder(r"(?<!(a+|bc))d")
+        .syntax(prototype_ecmascript_lookbehind_syntax())
+        .build()
+        .unwrap();
+    assert!(capture.is_match("d"));
+    assert!(!capture.is_match("ad"));
+    assert!(!capture.is_match("bcd"));
+
+    let positive = Regex::builder(r"(?<!a(?=b))b")
+        .syntax(prototype_ecmascript_lookbehind_syntax())
+        .build()
+        .unwrap();
+    assert!(positive.is_match("b"));
+    assert!(!positive.is_match("ab"));
+
+    let negative = Regex::builder(r"(?<!a(?!c))b")
+        .syntax(prototype_ecmascript_lookbehind_syntax())
+        .build()
+        .unwrap();
+    assert!(!negative.is_match("ab"));
+    assert!(negative.is_match("acb"));
+}
+
+#[test]
+fn prototype_ecmascript_unmatched_backreferences_are_empty() {
+    use ferroni::regsyntax::prototype_ecmascript_lookbehind_syntax;
+
+    for pattern in [r"(a)?b\1", r"(a)(b)?c\2", r"(a)(b)(c)?d\3"] {
+        let re = Regex::builder(pattern)
+            .syntax(prototype_ecmascript_lookbehind_syntax())
+            .build()
+            .unwrap();
+        assert!(re.is_match(match pattern {
+            r"(a)?b\1" => "b",
+            r"(a)(b)?c\2" => "ac",
+            _ => "abd",
+        }));
+    }
+
+    let insensitive = Regex::builder(r"(a)(b)(c)?d\3")
+        .syntax(prototype_ecmascript_lookbehind_syntax())
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+    assert!(insensitive.is_match("ABD"));
+
+    let named = Regex::builder(r"(?:(?<x>a)|(?<x>b))?c\k<x>")
+        .syntax(prototype_ecmascript_lookbehind_syntax())
+        .build()
+        .unwrap();
+    assert!(named.is_match("c"));
+
+    let named_insensitive = Regex::builder(r"(?:(?<x>a)|(?<x>b))?c\k<x>")
+        .syntax(prototype_ecmascript_lookbehind_syntax())
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+    assert!(named_insensitive.is_match("C"));
+}
+
+#[test]
 fn builder_chaining() {
     let re = Regex::builder(r"hello world")
         .case_insensitive(true)

@@ -4115,6 +4115,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         s += ref_len;
                         p += 1;
                     }
+                } else if (reg.syntax.behavior & FERRONI_SYN_UNMATCHED_BACKREF_MATCHES_EMPTY) != 0 {
+                    p += 1;
                 } else {
                     goto_fail = true; // group not yet matched
                 }
@@ -4136,6 +4138,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         s += ref_len;
                         p += 1;
                     }
+                } else if (reg.syntax.behavior & FERRONI_SYN_UNMATCHED_BACKREF_MATCHES_EMPTY) != 0 {
+                    p += 1;
                 } else {
                     goto_fail = true;
                 }
@@ -4159,6 +4163,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             s += ref_len;
                             p += 1;
                         }
+                    } else if (reg.syntax.behavior & FERRONI_SYN_UNMATCHED_BACKREF_MATCHES_EMPTY)
+                        != 0
+                    {
+                        p += 1;
                     } else {
                         goto_fail = true;
                     }
@@ -4192,6 +4200,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         } else {
                             p += 1;
                         }
+                    } else if (reg.syntax.behavior & FERRONI_SYN_UNMATCHED_BACKREF_MATCHES_EMPTY)
+                        != 0
+                    {
+                        p += 1;
                     } else {
                         goto_fail = true;
                     }
@@ -4204,6 +4216,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
                     let tlen = *num as usize;
                     let mut matched = false;
+                    let mut participated = false;
                     for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
                         if mem > num_mem {
                             continue;
@@ -4212,6 +4225,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             get_mem_start(reg, &stack, &mem_start_stk, mem),
                             get_mem_end(reg, &stack, &mem_end_stk, mem),
                         ) {
+                            participated = true;
                             let ref_len = me - ms;
                             if ref_len != 0 {
                                 if right_range.saturating_sub(s) < ref_len {
@@ -4225,6 +4239,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             matched = true;
                             break;
                         }
+                    }
+                    if !participated
+                        && (reg.syntax.behavior & FERRONI_SYN_UNMATCHED_BACKREF_MATCHES_EMPTY) != 0
+                    {
+                        matched = true;
                     }
                     if matched {
                         p += 1;
@@ -4240,6 +4259,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
                     let tlen = *num as usize;
                     let mut matched = false;
+                    let mut participated = false;
                     for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
                         if mem > num_mem {
                             continue;
@@ -4248,6 +4268,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             get_mem_start(reg, &stack, &mem_start_stk, mem),
                             get_mem_end(reg, &stack, &mem_end_stk, mem),
                         ) {
+                            participated = true;
                             let ref_len = me - ms;
                             if ref_len != 0 {
                                 if right_range.saturating_sub(s) < ref_len {
@@ -4269,6 +4290,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             matched = true;
                             break;
                         }
+                    }
+                    if !participated
+                        && (reg.syntax.behavior & FERRONI_SYN_UNMATCHED_BACKREF_MATCHES_EMPTY) != 0
+                    {
+                        matched = true;
                     }
                     if matched {
                         p += 1;
