@@ -9,20 +9,20 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ferramenta/ardo-config": "git+https://github.com/sebastian-software/ferramenta.git#ba3302fe1b374769bfd9b4113193848044a15362&path:packages/ardo-config",
-    "ardo": "^3.1.0",
-    "isbot": "*",
-    "lucide-react": "*",
-    "react": "*",
-    "react-dom": "*",
-    "react-router": "*"
+    "@ferramenta/ardo-config": "git+https://github.com/sebastian-software/ferramenta.git#1ca92b1f29c539ccf7471bf75eee987d2f1a3368&path:packages/ardo-config",
+    "ardo": "^4.2.0",
+    "isbot": "^5.2.2",
+    "lucide-react": "^1.40.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.3.1"
   },
   "devDependencies": {
-    "@react-router/dev": "*",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "typescript": "^5.9.3",
-    "vite": "^8.0.0-beta.0"
+    "@react-router/dev": "^8.3.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "typescript": "^6.0.3",
+    "vite": "^8.2.2"
   },
   "packageManager": "pnpm@10.30.3+sha512.c961d1e0a2d8e354ecaa5166b822516668b7f44cb5bd95122d590dd81922f606f5473b6d23ec4a5be05e7fcd18e8488d47d978bbe981872f1145d06e9a740017"
 }
