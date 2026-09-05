@@ -24,7 +24,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export default function Root() {
   return (
     <ArdoRoot config={config}>
-      <ArdoHeader title="Ferroni">
+      <ArdoHeader>
         <ArdoNav>
           <ArdoNavLink to="/guide/getting-started">Guide</ArdoNavLink>
           <ArdoNavLink to="/perf/benchmark-results">Performance</ArdoNavLink>
@@ -72,6 +72,7 @@ export default function Root() {
               month: "long",
               day: "numeric",
               year: "numeric",
+              timeZone: "UTC",
             })}
             {config.buildHash ? ` (${config.buildHash})` : ""}
           </p>
