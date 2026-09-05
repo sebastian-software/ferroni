@@ -8,11 +8,11 @@ mod grammar_loader;
 mod scanner_css_workload;
 
 use criterion::{
-    black_box, criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId,
-    Criterion,
+    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
 use regex::bytes::{Regex, RegexBuilder};
 use scanner_css_workload::CSS_INPUT;
+use std::hint::black_box;
 use std::os::raw::c_uint;
 use std::time::Duration;
 
