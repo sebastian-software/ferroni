@@ -48,13 +48,7 @@ jobs:
         env:
           RUST_MIN_STACK: "536870912"
       - name: Test compat_back
-        if: matrix.rust != '1.86'
         run: cargo test --test compat_back -- --test-threads=1
-        env:
-          RUST_MIN_STACK: "268435456"
-      - name: Test compat_back (MSRV, skip deep-recursion tests)
-        if: matrix.rust == '1.86'
-        run: cargo test --test compat_back -- --test-threads=1 --skip back_section_09a
         env:
           RUST_MIN_STACK: "268435456"
 
@@ -133,7 +127,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -- -D clippy::correctness -D clippy::suspicious
+      - run: cargo clippy --all-targets -- -D clippy::correctness -D clippy::suspicious
 
   fmt:
     name: Format
