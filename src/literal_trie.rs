@@ -1,9 +1,10 @@
-/// Compact trie for matching literal alternations.
-///
-/// When a regex alternation consists entirely of literal strings (e.g.
-/// `accent-color|additive-symbols|...|z-index`), we compile them into a trie
-/// for O(len) matching instead of O(n*len) backtracking.
+//! Compact trie for matching literal alternations.
+//!
+//! When a regex alternation consists entirely of literal strings (e.g.
+//! `accent-color|additive-symbols|...|z-index`), we compile them into a trie
+//! for O(len) matching instead of O(n*len) backtracking.
 
+/// Compact trie over the literal alternatives of one alternation.
 pub struct LiteralTrie {
     nodes: Vec<TrieNode>,
     case_insensitive: bool,

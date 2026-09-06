@@ -14,7 +14,7 @@ use std::process::Command;
 
 use ferroni::prelude::Regex;
 use ferroni::regsyntax::prototype_ecmascript_lookbehind_syntax;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 struct Case {
     label: &'static str,
