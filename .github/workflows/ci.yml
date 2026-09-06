@@ -241,5 +241,7 @@ jobs:
           toolchain: stable
           components: rustfmt
       - run: cargo fmt -- --check
+      # The fuzz harness is its own workspace, so it needs its own invocation.
+      - run: cargo fmt --manifest-path fuzz/Cargo.toml -- --check
       - name: Check that workflow actions are pinned by SHA
         run: ./scripts/check-workflow-pins.sh

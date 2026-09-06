@@ -1,3 +1,7 @@
 /target
 /.cache/
 *.orig
+/fuzz/artifacts
+/fuzz/corpus
+/fuzz/coverage
+/fuzz/target

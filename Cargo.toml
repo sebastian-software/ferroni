@@ -13,7 +13,7 @@ keywords = ["regex", "oniguruma", "unicode", "simd", "ferramenta"]
 categories = ["text-processing", "parsing"]
 rust-version = "1.94"
 autobenches = false
-exclude = [".cache/", "benches/", "docs/", "scripts/"]
+exclude = [".cache/", "benches/", "docs/", "fuzz/", "scripts/"]
 
 [package.metadata.docs.rs]
 # The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot

@@ -1,0 +1,40 @@
+[package]
+name = "ferroni-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+rust-version = "1.94"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.ferroni]
+path = ".."
+
+[[bin]]
+name = "pattern-compile"
+path = "fuzz_targets/pattern_compile.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pattern-match"
+path = "fuzz_targets/pattern_match.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "scanner-api"
+path = "fuzz_targets/scanner_api.rs"
+test = false
+doc = false
+bench = false
+
+# Keep this harness out of the published crate and its dependency graph.
+[workspace]
+members = ["."]
