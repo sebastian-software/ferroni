@@ -1913,3 +1913,44 @@ fn optimizer_retry_over_truncated_multibyte_lead_stays_inside_haystack() {
     );
     assert_eq!(position, ONIG_MISMATCH);
 }
+
+#[test]
+fn stacked_possessive_quantifiers_compile_and_match() {
+    use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
+    use ferroni::oniguruma::{ONIG_OPTION_NONE, OnigRegion};
+    use ferroni::regcomp::onig_new;
+    use ferroni::regexec::onig_search;
+    use ferroni::regsyntax::OnigSyntaxPerl_NG;
+
+    // In a syntax where `++` is possessive, every further `+` wraps the
+    // previous quantifier in an atomic group and quantifies it again. The
+    // compiler used to emit the body twice per level for the mandatory
+    // first pass, so 43 stacked `+` asked for gigabytes of bytecode. C jumps
+    // into the loop body once the body exceeds the expansion limit.
+    let mut pattern = b"un".to_vec();
+    pattern.extend(std::iter::repeat_n(b'+', 43));
+    pattern.extend_from_slice(b"ct?");
+
+    // The bytecode size itself is asserted by a unit test in regcomp.rs; this
+    // test pins the behavior of the compiled program.
+    let reg = onig_new(
+        &pattern,
+        ONIG_OPTION_NONE,
+        &ONIG_ENCODING_UTF8,
+        &OnigSyntaxPerl_NG,
+    )
+    .unwrap();
+
+    let haystack = b"xunnnct";
+    let (position, region) = onig_search(
+        &reg,
+        haystack,
+        haystack.len(),
+        0,
+        haystack.len(),
+        Some(OnigRegion::new()),
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(position, 1);
+    assert_eq!(region.unwrap().end[0], 7);
+}
