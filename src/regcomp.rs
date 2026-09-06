@@ -4999,6 +4999,107 @@ fn collect_memory_groups<'a>(node: &'a Node, groups: &mut Vec<Option<&'a Node>>)
     }
 }
 
+/// Mirrors C's node_min_byte_len for the infinite-recursion check. The
+/// general `node_min_byte_len` treats a call as empty because it cannot
+/// follow the call to its group; here the group is looked up by number and
+/// MARK1 cuts the recursion, as in C, so a consuming call clears `head`
+/// before a later recursive call is visited.
+fn min_byte_len_through_calls(
+    node: &Node,
+    env: &ParseEnv,
+    ctx: &mut InfiniteRecursionCheck<'_>,
+) -> OnigLen {
+    match &node.inner {
+        NodeInner::List(_) => {
+            let mut len: OnigLen = 0;
+            let mut cur = node;
+            while let NodeInner::List(cons) = &cur.inner {
+                let tmin = min_byte_len_through_calls(&cons.car, env, ctx);
+                len = distance_add(len, tmin);
+                match &cons.cdr {
+                    Some(next) => cur = next,
+                    None => break,
+                }
+            }
+            len
+        }
+        NodeInner::Alt(_) => {
+            let mut len: OnigLen = 0;
+            let mut first = true;
+            let mut cur = node;
+            while let NodeInner::Alt(cons) = &cur.inner {
+                let tmin = min_byte_len_through_calls(&cons.car, env, ctx);
+                if first {
+                    len = tmin;
+                    first = false;
+                } else if len > tmin {
+                    len = tmin;
+                }
+                match &cons.cdr {
+                    Some(next) => cur = next,
+                    None => break,
+                }
+            }
+            len
+        }
+        NodeInner::Quant(qn) => match (&qn.body, qn.lower > 0) {
+            (Some(body), true) => {
+                let len = min_byte_len_through_calls(body, env, ctx);
+                distance_multiply(len, qn.lower)
+            }
+            _ => 0,
+        },
+        NodeInner::Bag(bn) => match bn.bag_type {
+            BagType::Option | BagType::StopBacktrack => bn
+                .body
+                .as_deref()
+                .map_or(0, |body| min_byte_len_through_calls(body, env, ctx)),
+            BagType::Memory => {
+                let regnum = bn.regnum() as usize;
+                if ctx.mark1.get(regnum).copied().unwrap_or(false) {
+                    return 0;
+                }
+                if let Some(mark) = ctx.mark1.get_mut(regnum) {
+                    *mark = true;
+                }
+                let len = bn
+                    .body
+                    .as_deref()
+                    .map_or(0, |body| min_byte_len_through_calls(body, env, ctx));
+                if let Some(mark) = ctx.mark1.get_mut(regnum) {
+                    *mark = false;
+                }
+                len
+            }
+            BagType::IfElse => {
+                let BagData::IfElse {
+                    then_node,
+                    else_node,
+                } = &bn.bag_data
+                else {
+                    return 0;
+                };
+                let mut len = bn
+                    .body
+                    .as_deref()
+                    .map_or(0, |body| min_byte_len_through_calls(body, env, ctx));
+                if let Some(then_node) = then_node {
+                    len += min_byte_len_through_calls(then_node, env, ctx);
+                }
+                let elen = else_node.as_deref().map_or(0, |else_node| {
+                    min_byte_len_through_calls(else_node, env, ctx)
+                });
+                if elen < len { elen } else { len }
+            }
+        },
+        NodeInner::Call(cn) => match ctx.groups.get(cn.called_gnum as usize).copied().flatten() {
+            Some(target) => min_byte_len_through_calls(target, env, ctx),
+            None => 0,
+        },
+        _ => node_min_byte_len(node, env),
+    }
+}
+
 /// Mirrors C's infinite_recursive_call_check. `head` stays set while no
 /// node in the enclosing sequence has consumed input yet; reaching the
 /// group under check with `head` still set is infinite left recursion.
@@ -5018,7 +5119,7 @@ fn infinite_recursive_call_check(
                     return ret;
                 }
                 r |= ret;
-                if head && node_min_byte_len(&cons.car, env) != 0 {
+                if head && min_byte_len_through_calls(&cons.car, env, ctx) != 0 {
                     head = false;
                 }
                 match &cons.cdr {
@@ -5107,7 +5208,7 @@ fn infinite_recursive_call_check(
                 {
                     if let Some(then_node) = then_node {
                         let min = match (&bn.body, head) {
-                            (Some(body), true) => node_min_byte_len(body, env),
+                            (Some(body), true) => min_byte_len_through_calls(body, env, ctx),
                             _ => 0,
                         };
                         let ret = infinite_recursive_call_check(
@@ -9099,7 +9200,7 @@ mod tests {
     /// that follows consumed input is fine.
     #[test]
     fn left_recursive_calls_are_never_ending_recursion() {
-        let cases: [(&[u8], i32); 7] = [
+        let cases: [(&[u8], i32); 11] = [
             (b"\\g<0>\x04T|0h|", ONIGERR_NEVER_ENDING_RECURSION),
             (b"\\g<0>a|b|", ONIGERR_NEVER_ENDING_RECURSION),
             (b"\\g<0>a|b", ONIGERR_NEVER_ENDING_RECURSION),
@@ -9107,6 +9208,19 @@ mod tests {
             (b"\\g<0>|a", ONIGERR_NEVER_ENDING_RECURSION),
             (b"a\\g<0>|b", ONIG_NORMAL),
             (b"(?<n>a|b\\g<n>)", ONIG_NORMAL),
+            // Mutual recursion: the call to `m` consumes `a` or `b` before
+            // `n` is entered again (test_utf8.c `recursive_mutual`).
+            (
+                b"(?<n>|\\g<m>\\g<n>)\\z|\\zEND (?<m>a|(b)\\g<m>)",
+                ONIG_NORMAL,
+            ),
+            (b"(?<a>\\g<b>\\g<a>|x)(?<b>y)", ONIG_NORMAL),
+            (b"(?<a>\\g<b>|x)(?<b>y\\g<a>)", ONIG_NORMAL),
+            // Mutual left recursion: `b` calls back into `a` without consuming.
+            (
+                b"(?<a>\\g<b>|x)(?<b>\\g<a>)",
+                ONIGERR_NEVER_ENDING_RECURSION,
+            ),
         ];
         for (pattern, expected) in cases {
             let mut reg = make_test_context().0;
