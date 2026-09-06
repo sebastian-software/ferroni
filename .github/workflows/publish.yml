@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v1.4.0"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +31,7 @@ jobs:
       pull-requests: write
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Run release-please
         id: release
@@ -41,11 +47,11 @@ jobs:
     name: Publish to crates.io
     needs: release-please
     # A push publishes only when release-please cut a release; a manual run is
-    # the escape hatch for a release whose publish step failed.
+    # the escape hatch for a release whose publish step failed, and takes the
+    # tag to publish as an input.
     if: >-
       ${{
         always() &&
-        github.ref == 'refs/heads/main' &&
         (
           github.event_name == 'workflow_dispatch' ||
           needs.release-please.outputs.releases_created == 'true'
@@ -56,10 +62,44 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # Publish the released revision, never whatever main happens to be: a
+      # manual retry runs after the release commit, and main may have moved on.
+      - name: Resolve the release tag
+        id: release-tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$RELEASE_TAG"
+          fi
+          if [ -z "$tag" ]; then
+            echo "::error::No release tag to publish."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      # A tag that does not exist fails the checkout, so a typo cannot publish.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release-tag.outputs.tag }}
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
           toolchain: stable
+      - name: Verify the manifest version matches the tag
+        env:
+          TAG: ${{ steps.release-tag.outputs.tag }}
+        run: |
+          package_id="$(cargo pkgid)"
+          version="${package_id##*[#@]}"
+          expected="${TAG#v}"
+          if [ "$version" != "$expected" ]; then
+            echo "::error::Cargo.toml is at $version but the tag is $TAG."
+            exit 1
+          fi
+          echo "Publishing ferroni $version from $TAG."
       # Trusted Publishing is preferred. Until it is enabled for the crate on
       # crates.io the exchange fails, and the step below falls back to the
       # CARGO_REGISTRY_TOKEN secret.

@@ -79,13 +79,16 @@ rescue SystemCallError => error
 end
 
 invalid_entries = entries.reject do |_path, value|
-  value&.start_with?("./", "docker://") ||
+  value&.start_with?("./") ||
+    # A docker:// tag is mutable, so require an immutable image digest.
+    value&.match?(%r{\Adocker://[^[:space:]@]+@sha256:[0-9a-f]{64}\z}) ||
     value&.match?(/\A\$\/[^[:space:]@]+\z/) ||
     value&.match?(/\A[^[:space:]@]+@[0-9a-fA-F]{40}\z/)
 end
 
 unless invalid_entries.empty?
-  warn "Workflow actions must use full 40-character commit SHAs:"
+  warn "Workflow actions must use full 40-character commit SHAs " \
+       "(docker:// images: an @sha256: digest):"
   invalid_entries.each do |path, value|
     warn "#{path}: uses: #{value || "uses value is not a scalar"}"
   end
