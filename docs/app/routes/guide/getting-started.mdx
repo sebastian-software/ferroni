@@ -1,38 +1,301 @@
 ---
+order: 1
 title: Getting Started
 ---
 
 # Getting Started
 
-Welcome to your new documentation site!
+Ferroni is a pure-Rust port of [Oniguruma](https://github.com/kkos/oniguruma),
+the regex engine behind Ruby, PHP's `mbstring`, TextMate grammars, and jq. It
+keeps the C engine's feature set and its pattern semantics -- if a pattern
+works in Oniguruma, it works in Ferroni -- and adds a multi-pattern Scanner
+API for TextMate grammar tokenization. There is no C toolchain and no FFI
+involved: `cargo add ferroni` is the whole setup.
 
-## Development
+## Install
 
 ```bash
-# Start development server
-pnpm dev
-
-# Build for production
-pnpm build
-
-# Preview production build
-pnpm preview
+cargo add ferroni
 ```
 
-## Adding Content
+Or add it by hand:
 
-Create `.md` or `.mdx` files in the `app/routes/` directory. They will automatically become pages.
+```toml
+[dependencies]
+ferroni = "1"
+```
 
-## Configuration
+Ferroni's MSRV is Rust 1.86, enforced by a dedicated CI lane. The library has
+no build script and cross-compiles to `wasm32-unknown-unknown`. The optional
+`ffi` feature exists only for the in-repo C-versus-Rust benchmark harness; you
+never need it to use the crate.
 
-Edit `vite.config.ts` to customize your site:
+## Your first match
 
-- Navigation links
-- Sidebar structure
-- Site title and description
-- Theme options
+The idiomatic API lives behind one import.
 
-## Learn More
+```rust
+use ferroni::prelude::*;
 
-- [Ardo Documentation](https://ardo-docs.dev)
-- [GitHub Repository](https://github.com/sebastian-software/ardo)
+fn main() -> Result<(), RegexError> {
+    let re = Regex::new(r"\d{4}-\d{2}-\d{2}")?;
+
+    let m = re.find("Released on 2026-09-05.").expect("a date");
+    assert_eq!(m.as_str(), "2026-09-05");
+    assert_eq!(m.start(), 12);
+    assert_eq!(m.end(), 22);
+
+    assert!(re.is_match("2026-01-01"));
+    Ok(())
+}
+```
+
+`find` returns the leftmost match. Offsets are **byte** offsets into the
+input, which is what `&str` slicing expects: `&text[m.start()..m.end()]` is
+always valid.
+
+## Captures
+
+Oniguruma accepts three spellings for a named group -- `(?<name>...)`,
+`(?'name'...)` and `(?P<name>...)` -- and all of them resolve through
+`Captures::name`. Group 0 is the whole match.
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})").unwrap();
+let caps = re.captures("Released on 2026-09-05.").unwrap();
+
+assert_eq!(caps.get(0).unwrap().as_str(), "2026-09-05");
+assert_eq!(caps.name("year").unwrap().as_str(), "2026");
+assert_eq!(caps.name("month").unwrap().as_str(), "09");
+assert_eq!(caps.len(), 4); // whole match plus three groups
+```
+
+To walk every match in the input, use `find_iter`:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"\w+@\w+\.\w+").unwrap();
+let text = "write to ada@example.com or grace@example.org";
+
+let found: Vec<&str> = re.find_iter(text).map(|m| m.as_str()).collect();
+assert_eq!(found, ["ada@example.com", "grace@example.org"]);
+```
+
+## Compile-time options
+
+Inline flags such as `(?i)` work as they do in Oniguruma. For the options that
+have no inline spelling, or when you would rather not touch the pattern, use
+the builder:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::builder(r"hello")
+    .case_insensitive(true)
+    .build()
+    .unwrap();
+
+assert!(re.is_match("Hello World"));
+```
+
+`RegexBuilder` also exposes `dot_matches_newline`, `multi_line_anchors`,
+`extended`, a raw `option` escape hatch for any `ONIG_OPTION_*` flag, and
+`syntax` for selecting one of the twelve syntax modes (Oniguruma, Ruby, Perl,
+Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic, POSIX Extended, ASIS).
+
+## What the C engine buys you
+
+These are the features that make Oniguruma compatibility worth having; they
+are not available in most Rust regex crates.
+
+```rust
+use ferroni::prelude::*;
+
+// Backreference: the same word twice in a row.
+let doubled = Regex::new(r"\b(\w+) \1\b").unwrap();
+assert_eq!(doubled.find("this this is repeated").unwrap().as_str(), "this this");
+
+// Variable-length look-behind.
+let after_label = Regex::new(r"(?<=version:\s*)\d+\.\d+\.\d+").unwrap();
+assert_eq!(after_label.find("version:   1.3.3").unwrap().as_str(), "1.3.3");
+
+// Unicode properties -- 886 property names are supported.
+let greek = Regex::new(r"\p{Greek}+").unwrap();
+assert_eq!(greek.find("alpha: αβγ").unwrap().as_str(), "αβγ");
+
+// Grapheme clusters.
+let cluster = Regex::new(r"\X").unwrap();
+assert_eq!(cluster.find("é!").unwrap().as_str(), "é");
+```
+
+Conditionals `(?(cond)then|else)`, absent expressions `(?~...)`,
+subexpression calls `\g<name>`, callouts `(?{...})`, `(*FAIL)`, and the
+retry/time/stack safety limits are all supported as well.
+
+## The Scanner API
+
+Syntax highlighters do not match one pattern at a time. They compile a whole
+TextMate grammar -- hundreds of patterns -- and then ask, for each position in
+a line, which pattern matches next. That is what `Scanner` does, with the same
+shape as
+[vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma), so the
+loop below is the same loop vscode-textmate and Shiki run.
+
+```rust
+use ferroni::prelude::*;
+
+let mut scanner = Scanner::new(&[
+    r"\b(?:const|let|var|function|return)\b", // 0: keyword
+    r#""[^"]*""#,                             // 1: string
+    r"//.*$",                                 // 2: comment
+    r"\b\d+(?:\.\d+)?\b",                     // 3: number
+]).unwrap();
+
+let line = r#"const answer = 42 // the answer"#;
+
+let m = scanner
+    .find_next_match(line, 0, ScannerFindOptions::NONE)
+    .unwrap();
+
+assert_eq!(m.index, 0); // pattern 0, the keyword, matched first
+assert_eq!(m.capture_indices[0].start, 0);
+assert_eq!(m.capture_indices[0].end, 5);
+```
+
+`index` is the index of the pattern that matched; the leftmost match across
+all patterns wins. `capture_indices[0]` is the whole match, the rest are its
+capture groups, all in byte offsets. To tokenize a full line, keep calling
+`find_next_match` with `start_position` set to the end of the previous match.
+
+Watch for zero-width matches when you write that loop: if a pattern can match
+the empty string, advance the position by one byte instead of standing still.
+
+### UTF-16 positions
+
+vscode-textmate and Shiki address text in UTF-16 code units, not bytes. Wrap
+the line in an `OnigString` and both the input position and the returned
+offsets are in those units.
+
+```rust
+use ferroni::prelude::*;
+
+let mut scanner = Scanner::new(&["world"]).unwrap();
+let text = OnigString::new("hello 🌍 world");
+
+let m = scanner
+    .find_next_match_utf16(&text, 0, ScannerFindOptions::NONE)
+    .unwrap();
+
+// The emoji is two UTF-16 code units, so "world" starts at 9, not at byte 11.
+assert_eq!(m.capture_indices[0].start, 9);
+assert_eq!(m.capture_indices[0].end, 14);
+```
+
+### Scanning the same line repeatedly
+
+A tokenizer walks the same line many times. Pass a stable string id with
+`find_next_match_with_id` (or `find_next_match_utf16_with_id`) and the scanner
+reuses cached results instead of searching again from scratch.
+
+```rust
+use ferroni::prelude::*;
+
+let mut scanner = Scanner::new(&[r"\w+"]).unwrap();
+let line = "two words";
+let string_id = 1;
+
+let mut position = 0;
+let mut tokens = Vec::new();
+while let Some(m) =
+    scanner.find_next_match_with_id(line, string_id, position, ScannerFindOptions::NONE)
+{
+    let whole = &m.capture_indices[0];
+    tokens.push(&line[whole.start..whole.end]);
+    position = whole.end.max(whole.start + 1);
+}
+assert_eq!(tokens, ["two", "words"]);
+```
+
+### Other syntaxes and options
+
+`Scanner::with_config` takes a `ScannerConfig` with the compile-time options
+and the syntax variant, mirroring vscode-oniguruma's `IOnigScannerConfig`.
+
+```rust
+use ferroni::prelude::*;
+use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
+
+let config = ScannerConfig {
+    options: ONIG_OPTION_IGNORECASE,
+    syntax: ScannerSyntax::Ruby,
+};
+let mut scanner = Scanner::with_config(&[r"hello"], &config).unwrap();
+
+assert!(scanner
+    .find_next_match("Hello", 0, ScannerFindOptions::NONE)
+    .is_some());
+```
+
+## Handling errors
+
+Compilation returns `Result<_, RegexError>`. The error groups Oniguruma's
+roughly one hundred error codes into semantic variants, so you can react to a
+bad pattern differently than to an exhausted limit.
+
+```rust
+use ferroni::prelude::*;
+
+let err = Regex::new(r"(unclosed").unwrap_err();
+assert!(matches!(err, RegexError::Syntax { .. }));
+println!("{err}");
+```
+
+`RegexError::Syntax` and `RegexError::Encoding` carry the upstream code and
+message; `MatchStackLimitOver`, `RetryLimitInMatchOver`, `TimeLimitOver`,
+`SubexpCallLimitOver`, and `ParseDepthLimitOver` report the safety limits.
+
+## The low-level C API
+
+Every C entry point is ported under its original name, so upstream code and
+upstream documentation translate directly. Use it when you need something the
+idiomatic layer does not expose yet.
+
+```rust
+use ferroni::regcomp::onig_new;
+use ferroni::regexec::onig_search;
+use ferroni::oniguruma::*;
+use ferroni::regsyntax::OnigSyntaxOniguruma;
+
+let reg = onig_new(
+    b"\\d{4}-\\d{2}-\\d{2}",
+    ONIG_OPTION_NONE,
+    &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+    &OnigSyntaxOniguruma,
+).unwrap();
+
+let input = b"Date: 2026-02-12";
+let (result, _region) = onig_search(
+    &reg, input, input.len(), 0, input.len(),
+    Some(OnigRegion::new()), ONIG_OPTION_NONE,
+);
+
+assert_eq!(result, 6); // match starts at byte 6
+```
+
+Ferroni supports ASCII and UTF-8; the other 27 upstream encodings are out of
+scope (see [ADR-003](../adr/003-encoding-scope-ascii-and-utf8-only)).
+
+## Where to go next
+
+- [Benchmark Results](../perf/benchmark-results) -- the raw
+  Ferroni-versus-Oniguruma tables, with the measurement context.
+- [Memory Measurements](../perf/memory-measurements) -- peak RSS on a large
+  TypeScript scanner workload.
+- [ADR-001](../adr/001-one-to-one-parity-with-c-original) -- why the port is
+  structurally 1:1 with the C original, and what that means for contributions.
+- [ADR-006](../adr/006-scanner-api) -- the design of the Scanner API.
+- [The repository](https://github.com/sebastian-software/ferroni) and
+  [the crate](https://crates.io/crates/ferroni).
