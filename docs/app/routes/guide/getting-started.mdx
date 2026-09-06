@@ -171,7 +171,9 @@ capture groups, all in byte offsets. To tokenize a full line, keep calling
 `find_next_match` with `start_position` set to the end of the previous match.
 
 Watch for zero-width matches when you write that loop: if a pattern can match
-the empty string, advance the position by one byte instead of standing still.
+the empty string, advance to the next character boundary instead of standing
+still. Advancing by a single byte would split a multibyte character and panic
+the next time you slice the line.
 
 ### UTF-16 positions
 
@@ -214,7 +216,15 @@ while let Some(m) =
 {
     let whole = &m.capture_indices[0];
     tokens.push(&line[whole.start..whole.end]);
-    position = whole.end.max(whole.start + 1);
+
+    // On a zero-width match, step to the next character boundary -- stepping
+    // one byte could land inside a multibyte character.
+    let next_boundary = whole.start
+        + line[whole.start..]
+            .chars()
+            .next()
+            .map_or(1, char::len_utf8);
+    position = whole.end.max(next_boundary);
 }
 assert_eq!(tokens, ["two", "words"]);
 ```

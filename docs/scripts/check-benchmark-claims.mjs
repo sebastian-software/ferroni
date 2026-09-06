@@ -4,9 +4,11 @@
  *
  * The home page shows a speed factor per benchmark card. This script recomputes
  * every factor from the raw timings in `perf/benchmark-results.mdx` and fails
- * when a card drifts from its source row. It also verifies that the provenance
- * the home page prints (measurement date and commit) matches the measurement
- * context table on that page.
+ * when a card drifts from its source row. Each card is mapped to one explicit
+ * section and row, because row labels repeat across sections ("Tokenize full
+ * line" exists for both the TypeScript and the Rust grammar). It also verifies
+ * that the provenance the home page prints (measurement date and commit)
+ * matches the measurement context table on that page.
  *
  * Run with `pnpm check:numbers`; `pnpm build` runs it first.
  */
@@ -22,14 +24,39 @@ const benchPath = resolve(here, "../app/routes/perf/benchmark-results.mdx")
 const home = readFileSync(homePath, "utf8")
 const bench = readFileSync(benchPath, "utf8")
 
-/** Home page card label -> row label in benchmark-results.mdx. */
-const ROW_FOR_CARD = {
-  "Scanner First Match": "First match, short line",
-  "Full Line Tokenization": "Tokenize full line",
-  "CSS Tokenization": "Tokenize (multi-line)",
-  "Rejection Speed": "No match, 50 KB",
-  "RegSet Multi-Pattern": "RegSet multi-pattern (5)",
-  "Lookaround Combined": "Lookaround combined",
+/**
+ * Home page card label -> the one row it is derived from.
+ * `section` is the `###` heading, `group` the bold grammar row inside it
+ * (omitted where the table has no groups).
+ */
+const SOURCE_FOR_CARD = {
+  "Scanner First Match": {
+    section: "Scanner with full Shiki TextMate grammars",
+    group: "TypeScript (279 patterns)",
+    row: "First match, short line",
+  },
+  "Full Line Tokenization": {
+    section: "Scanner with full Shiki TextMate grammars",
+    group: "TypeScript (279 patterns)",
+    row: "Tokenize full line",
+  },
+  "CSS Tokenization": {
+    section: "Scanner with full Shiki TextMate grammars",
+    group: "CSS (117 patterns)",
+    row: "Tokenize (multi-line)",
+  },
+  "Rejection Speed": {
+    section: "Text search and log scanning",
+    row: "No match, 50 KB",
+  },
+  "RegSet Multi-Pattern": {
+    section: "Text search and log scanning",
+    row: "RegSet multi-pattern (5)",
+  },
+  "Lookaround Combined": {
+    section: "Pattern matching",
+    row: "Lookaround combined",
+  },
 }
 
 const UNITS = { ns: 1, "µs": 1e3, us: 1e3, ms: 1e6, s: 1e9 }
@@ -42,24 +69,59 @@ function toNanoseconds(value) {
   return Number(match[1]) * UNITS[match[2]]
 }
 
-/** Every `| label | ferroni | oniguruma | ... |` row of the benchmark page. */
+function key({ section, group, row }) {
+  return [section, group ?? "", row].join(" || ")
+}
+
+/**
+ * Every timing row of the benchmark page, keyed by section, group, and label.
+ * A duplicate key means the page itself is ambiguous, which is an error here.
+ */
 function benchmarkRows() {
   const rows = new Map()
+  const duplicates = []
+  let section = null
+  let group = null
+
   for (const line of bench.split("\n")) {
+    const heading = line.match(/^###\s+(.*)$/)
+    if (heading) {
+      section = heading[1].trim()
+      group = null
+      continue
+    }
     if (!line.startsWith("|")) continue
+
     const cells = line
       .split("|")
       .slice(1, -1)
-      .map((cell) => cell.trim().replace(/\*\*/g, ""))
+      .map((cell) => cell.trim())
+
+    // A group header: one bold label, every other cell empty.
+    if (
+      cells.length > 1 &&
+      /^\*\*.*\*\*$/.test(cells[0]) &&
+      cells.slice(1).every((cell) => cell === "")
+    ) {
+      group = cells[0].replace(/\*\*/g, "")
+      continue
+    }
+
     if (cells.length < 3) continue
-    const [label, ferroni, oniguruma] = cells
+    const [label, ferroni, oniguruma] = cells.map((cell) =>
+      cell.replace(/\*\*/g, ""),
+    )
     const a = toNanoseconds(ferroni)
     const b = toNanoseconds(oniguruma)
     if (a === null || b === null) continue
-    // A label may appear once per grammar section; keep every occurrence.
-    const list = rows.get(label) ?? []
-    list.push({ ferroni: a, oniguruma: b })
-    rows.set(label, list)
+
+    const id = key({ section, group, row: label })
+    if (rows.has(id)) duplicates.push(id)
+    rows.set(id, { ferroni: a, oniguruma: b })
+  }
+
+  for (const id of duplicates) {
+    errors.push(`perf/benchmark-results.mdx has two rows for "${id}".`)
   }
   return rows
 }
@@ -76,7 +138,9 @@ function homeCards() {
       entry.match(new RegExp(`${name}:\\s*"([^"]*)"`))?.[1] ?? null
     const label = field("label")
     const speedup = field("speedup")
-    if (label && speedup) cards.push({ label, speedup: Number(speedup.replace("x", "")) })
+    if (label && speedup) {
+      cards.push({ label, speedup: Number(speedup.replace("x", "")) })
+    }
   }
   return cards
 }
@@ -84,33 +148,35 @@ function homeCards() {
 const rows = benchmarkRows()
 const cards = homeCards()
 
-if (cards.length !== Object.keys(ROW_FOR_CARD).length) {
-  errors.push(
-    `home.tsx has ${cards.length} benchmark cards, the mapping in this script covers ` +
-      `${Object.keys(ROW_FOR_CARD).length}. Add the new card to ROW_FOR_CARD.`,
-  )
+for (const card of cards) {
+  const source = SOURCE_FOR_CARD[card.label]
+  if (!source) {
+    errors.push(
+      `The "${card.label}" card has no source row. Add it to SOURCE_FOR_CARD.`,
+    )
+    continue
+  }
+  const measured = rows.get(key(source))
+  if (!measured) {
+    errors.push(
+      `"${key(source)}" is not a row of perf/benchmark-results.mdx ` +
+        `(mapped from the "${card.label}" card).`,
+    )
+    continue
+  }
+  const factor = Math.round((measured.oniguruma / measured.ferroni) * 10) / 10
+  if (Math.abs(factor - card.speedup) > 0.05) {
+    errors.push(
+      `"${card.label}" claims ${card.speedup}x, but "${key(source)}" ` +
+        `measures ${factor}x.`,
+    )
+  }
 }
 
-for (const card of cards) {
-  const rowLabel = ROW_FOR_CARD[card.label]
-  if (!rowLabel) {
-    errors.push(`No source row mapped for the "${card.label}" card.`)
-    continue
-  }
-  const candidates = rows.get(rowLabel)
-  if (!candidates) {
-    errors.push(`"${rowLabel}" is not a row of perf/benchmark-results.mdx.`)
-    continue
-  }
-  // Pick the row whose factor is closest; several grammars share a label.
-  const factors = candidates.map((row) => row.oniguruma / row.ferroni)
-  const best = factors.reduce((a, b) =>
-    Math.abs(b - card.speedup) < Math.abs(a - card.speedup) ? b : a,
-  )
-  const rounded = Math.round(best * 10) / 10
-  if (Math.abs(rounded - card.speedup) > 0.05) {
+for (const label of Object.keys(SOURCE_FOR_CARD)) {
+  if (!cards.some((card) => card.label === label)) {
     errors.push(
-      `"${card.label}" claims ${card.speedup}x, but "${rowLabel}" measures ${rounded}x.`,
+      `SOURCE_FOR_CARD maps "${label}", which is no longer a card on the home page.`,
     )
   }
 }
