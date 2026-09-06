@@ -1134,7 +1134,7 @@ pub fn make_alt(a: Box<Node>, b: Box<Node>) -> Box<Node> {
     node_new_alt(a, Some(tail))
 }
 
-/// Create a right-linked List chain: List(ns[0], List(ns[1], ... List(ns[n-1], nil)))
+/// Create a right-linked List chain: `List(ns[0], List(ns[1], ... List(ns[n-1], nil)))`
 pub fn make_list_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
     assert!(!nodes.is_empty());
     let mut result = node_new_list(nodes.pop().unwrap(), None);
@@ -1144,7 +1144,7 @@ pub fn make_list_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
     result
 }
 
-/// Create a right-linked Alt chain: Alt(ns[0], Alt(ns[1], ... Alt(ns[n-1], nil)))
+/// Create a right-linked Alt chain: `Alt(ns[0], Alt(ns[1], ... Alt(ns[n-1], nil)))`
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn make_alt_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
     assert!(!nodes.is_empty());
