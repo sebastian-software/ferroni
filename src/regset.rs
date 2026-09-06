@@ -3,13 +3,13 @@
 
 use crate::oniguruma::*;
 use crate::regenc::{
-    onigenc_get_prev_char_head, onigenc_is_ascii_compatible_encoding, OnigEncoding,
+    OnigEncoding, onigenc_get_prev_char_head, onigenc_is_ascii_compatible_encoding,
 };
 use crate::regexec::{
-    onig_get_global_limit_revision, onig_get_match_stack_limit, onig_get_retry_limit_in_match,
-    onig_get_retry_limit_in_search, onig_get_time_limit, onig_match, onig_match_with_msa_start,
-    onig_search, onig_search_with_msa_and_right_range, onig_search_with_param, MatchArg,
-    OnigMatchParam,
+    MatchArg, OnigMatchParam, onig_get_global_limit_revision, onig_get_match_stack_limit,
+    onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit, onig_match,
+    onig_match_with_msa_start, onig_search, onig_search_with_msa_and_right_range,
+    onig_search_with_param,
 };
 use crate::regint::*;
 
@@ -146,7 +146,7 @@ const FALLBACK_MEMO_CAPACITY: usize = 8;
 
 #[inline]
 fn fallback_memo_is_safe(reg: &RegexType) -> bool {
-    reg.extp.as_ref().map_or(true, |ext| ext.callout_num == 0)
+    reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
         && !reg.ops.iter().any(|op| op.opcode == OpCode::CheckPosition)
 }
 
@@ -873,7 +873,7 @@ fn decision_position_and_index(decision: RegSetDecision) -> (i32, i32) {
 
 #[inline]
 fn decision_is_better(candidate: RegSetDecision, current: Option<RegSetDecision>) -> bool {
-    current.map_or(true, |current| {
+    current.is_none_or(|current| {
         decision_position_and_index(candidate) < decision_position_and_index(current)
     })
 }
@@ -1862,10 +1862,10 @@ mod tests {
     use crate::encodings::utf8::ONIG_ENCODING_UTF8;
     use crate::regcomp::onig_new;
     use crate::regexec::{
-        onig_get_global_limit_revision, onig_get_match_stack_limit, onig_get_retry_limit_in_match,
-        onig_get_retry_limit_in_search, onig_get_time_limit, onig_set_match_stack_limit,
-        onig_set_retry_limit_in_match, onig_set_retry_limit_in_search, onig_set_time_limit,
-        LIMIT_TEST_LOCK,
+        LIMIT_TEST_LOCK, onig_get_global_limit_revision, onig_get_match_stack_limit,
+        onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit,
+        onig_set_match_stack_limit, onig_set_retry_limit_in_match, onig_set_retry_limit_in_search,
+        onig_set_time_limit,
     };
     use crate::regsyntax::OnigSyntaxOniguruma;
 
@@ -1913,7 +1913,7 @@ mod tests {
         assert!(has_finite_variable_optimizer(&reg));
 
         let map = derive_start_byte_map(&reg).expect("simple optional prefix is analyzable");
-        for byte in [b'a', b'b', b'c', b'd'] {
+        for byte in *b"abcd" {
             assert_ne!(map[byte as usize], 0, "missing byte {byte:?}");
         }
         assert_eq!(map[b'x' as usize], 0);
@@ -1978,9 +1978,11 @@ mod tests {
             },
         ];
         for operation in consumer_cases {
-            assert!(map_for(vec![operation], Vec::new())
-                .iter()
-                .any(|&value| value != 0));
+            assert!(
+                map_for(vec![operation], Vec::new())
+                    .iter()
+                    .any(|&value| value != 0)
+            );
         }
 
         for opcode in [
@@ -2702,11 +2704,13 @@ mod tests {
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
         assert_eq!(set.fallback_search_candidates, vec![0]);
-        assert!(set.entries[0]
-            .reg
-            .ops
-            .iter()
-            .any(|op| op.opcode == OpCode::CheckPosition));
+        assert!(
+            set.entries[0]
+                .reg
+                .ops
+                .iter()
+                .any(|op| op.opcode == OpCode::CheckPosition)
+        );
 
         let input = b"axc";
         let identity = FallbackMemoIdentity::OnigString(8);
@@ -2810,9 +2814,11 @@ mod tests {
                 (1, 0)
             );
         }
-        assert!(set.fallback_memos[0]
-            .iter()
-            .any(|memo| matches!(memo, FallbackMemo::ExactStartMiss(0))));
+        assert!(
+            set.fallback_memos[0]
+                .iter()
+                .any(|memo| matches!(memo, FallbackMemo::ExactStartMiss(0)))
+        );
     }
 
     #[test]
@@ -2932,9 +2938,11 @@ mod tests {
             ),
             (1, 0)
         );
-        assert!(set.fallback_memos[0]
-            .iter()
-            .any(|memo| matches!(memo, FallbackMemo::ExactStartMiss(0))));
+        assert!(
+            set.fallback_memos[0]
+                .iter()
+                .any(|memo| matches!(memo, FallbackMemo::ExactStartMiss(0)))
+        );
     }
 
     #[test]
@@ -2984,11 +2992,13 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(br".*(?{x})a")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert!(set.entries[0]
-            .reg
-            .extp
-            .as_ref()
-            .is_some_and(|ext| ext.callout_num != 0));
+        assert!(
+            set.entries[0]
+                .reg
+                .extp
+                .as_ref()
+                .is_some_and(|ext| ext.callout_num != 0)
+        );
         assert_eq!(set.fallback_search_candidates, vec![0]);
 
         let input = b"x";

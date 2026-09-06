@@ -9,10 +9,10 @@ pub mod wb_data;
 
 use crate::oniguruma::*;
 use crate::regenc::*;
-use egcb_data::{EgcbType, EGCB_RANGES};
+use egcb_data::{EGCB_RANGES, EgcbType};
 use fold_data::*;
 use property_data::{CODE_RANGES, CODE_RANGES_NUM, PROPERTY_NAMES};
-use wb_data::{WbType, WB_RANGES};
+use wb_data::{WB_RANGES, WbType};
 
 // === Unicode ISO 8859-1 Ctype Table ===
 // From unicode.c: EncUNICODE_ISO_8859_1_CtypeTable[256]
@@ -1083,7 +1083,7 @@ pub fn onigenc_egcb_is_break_position(
                 n += 1;
             }
             // Even count of preceding RI = no break, odd = break
-            (n % 2) != 0
+            !n.is_multiple_of(2)
         }
     }
 }
@@ -1398,7 +1398,7 @@ pub fn onigenc_wb_is_break_position(
             }
             n += 1;
         }
-        if (n % 2) == 0 {
+        if n.is_multiple_of(2) {
             return false;
         }
     }

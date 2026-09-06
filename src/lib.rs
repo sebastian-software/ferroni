@@ -73,11 +73,8 @@
 //! | `regerror.c` | [`regerror`] | Error messages |
 //! | `regtrav.c` | [`regtrav`] | Capture tree traversal |
 
-// Allow patterns inherent to the C port.
-#![allow(dead_code)]
-#![allow(clippy::empty_line_after_doc_comments)]
-#![deny(unsafe_op_in_unsafe_fn)]
-#![warn(clippy::undocumented_unsafe_blocks)]
+// The lint policy for the C port lives in the `[lints]` table of Cargo.toml so
+// that it also covers tests, benches, and examples.
 // Enable #[coverage(off)] attribute when running under cargo-llvm-cov on nightly.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 

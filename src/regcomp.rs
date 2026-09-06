@@ -339,11 +339,7 @@ fn onig_is_code_in_cc(enc: OnigEncoding, code: OnigCodePoint, cc: &CClassNode) -
     };
 
     let result = in_bs || in_mbuf;
-    if cc.is_not() {
-        !result
-    } else {
-        result
-    }
+    if cc.is_not() { !result } else { result }
 }
 
 /// Check if code ranges in a BBuf contain a codepoint.
@@ -799,8 +795,10 @@ fn compile_length_cclass_node(cc: &CClassNode, reg: &RegexType) -> i32 {
 /// Convert a BBuf byte buffer to a Vec<u32> for direct indexing at execution time.
 /// BBuf stores code ranges as packed u32 values in native-endian bytes.
 fn bbuf_to_u32_vec(data: &[u8]) -> Vec<u32> {
-    data.chunks_exact(4)
-        .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    data.as_chunks::<4>()
+        .0
+        .iter()
+        .map(|chunk| u32::from_ne_bytes(*chunk))
         .collect()
 }
 
@@ -1821,7 +1819,7 @@ fn compile_length_bag_node(
                 ref else_node,
             } = bag.bag_data
             {
-                if let Some(ref then_n) = then_node {
+                if let Some(then_n) = then_node {
                     let tlen = compile_length_tree(then_n, reg, env);
                     if tlen < 0 {
                         return tlen;
@@ -1831,7 +1829,7 @@ fn compile_length_bag_node(
 
                 len += OPSIZE_JUMP + OPSIZE_CUT_TO_MARK;
 
-                if let Some(ref else_n) = else_node {
+                if let Some(else_n) = else_node {
                     let elen = compile_length_tree(else_n, reg, env);
                     if elen < 0 {
                         return elen;
@@ -2093,7 +2091,7 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
                 ref else_node,
             } = bag.bag_data
             {
-                if let Some(ref then_n) = then_node {
+                if let Some(then_n) = then_node {
                     let r = compile_tree(then_n, reg, env);
                     if r != 0 {
                         return r;
@@ -2101,7 +2099,7 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
                 }
 
                 // Calculate else length for JUMP
-                let else_len = if let Some(ref else_n) = else_node {
+                let else_len = if let Some(else_n) = else_node {
                     compile_length_tree(else_n, reg, env)
                 } else {
                     0
@@ -2130,7 +2128,7 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
                 );
 
                 // Emit else branch
-                if let Some(ref else_n) = else_node {
+                if let Some(else_n) = else_node {
                     let r = compile_tree(else_n, reg, env);
                     if r != 0 {
                         return r;
@@ -3354,19 +3352,15 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
                         } else {
                             0
                         };
-                        if let Some(ref then_n) = then_node {
+                        if let Some(then_n) = then_node {
                             len += node_min_byte_len(then_n, env);
                         }
-                        let elen = if let Some(ref else_n) = else_node {
+                        let elen = if let Some(else_n) = else_node {
                             node_min_byte_len(else_n, env)
                         } else {
                             0
                         };
-                        if elen < len {
-                            elen
-                        } else {
-                            len
-                        }
+                        if elen < len { elen } else { len }
                     } else {
                         0
                     }
@@ -3440,13 +3434,13 @@ fn quantifiers_memory_node_info(node: &Node) -> BodyEmptyType {
                     ref else_node,
                 } = bn.bag_data
                 {
-                    if let Some(ref then_n) = then_node {
+                    if let Some(then_n) = then_node {
                         let v = quantifiers_memory_node_info(then_n);
                         if v as i32 > r as i32 {
                             r = v;
                         }
                     }
-                    if let Some(ref else_n) = else_node {
+                    if let Some(else_n) = else_node {
                         let v = quantifiers_memory_node_info(else_n);
                         if v as i32 > r as i32 {
                             r = v;
@@ -3782,7 +3776,7 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
                 } else {
                     (0, 0)
                 };
-                let then_len = if let Some(ref n) = then_node {
+                let then_len = if let Some(n) = then_node {
                     match node_char_len(n, enc) {
                         CharLenResult::Fixed(n) => (n, n),
                         CharLenResult::Variable(mn, mx) => (mn, mx),
@@ -3790,7 +3784,7 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
                 } else {
                     (0, 0)
                 };
-                let else_len = if let Some(ref n) = else_node {
+                let else_len = if let Some(n) = else_node {
                     match node_char_len(n, enc) {
                         CharLenResult::Fixed(n) => (n, n),
                         CharLenResult::Variable(mn, mx) => (mn, mx),
@@ -3816,7 +3810,7 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
         }
         NodeInner::Anchor(_) => CharLenResult::Fixed(0),
         NodeInner::BackRef(_) => CharLenResult::Variable(0, INFINITE_LEN),
-        NodeInner::Call(ref cn) => {
+        NodeInner::Call(cn) => {
             // Follow the call target to compute the character length of the called group
             if !cn.target_node.is_null() {
                 // SAFETY: `target_node` is non-null (checked above) and was set by
@@ -4007,13 +4001,13 @@ fn check_called_node_in_look_behind(node: &Node, _not: bool) -> i32 {
                         ref else_node,
                     } = en.bag_data
                     {
-                        if let Some(ref tn) = then_node {
+                        if let Some(tn) = then_node {
                             r = check_called_node_in_look_behind(tn, _not);
                             if r != 0 {
                                 return r;
                             }
                         }
-                        if let Some(ref en) = else_node {
+                        if let Some(en) = else_node {
                             r = check_called_node_in_look_behind(en, _not);
                         }
                     }
@@ -4103,13 +4097,13 @@ fn check_node_in_look_behind(
                 ref else_node,
             } = en.bag_data
             {
-                if let Some(ref tn) = then_node {
+                if let Some(tn) = then_node {
                     r = check_node_in_look_behind(tn, not, used, syntax);
                     if r != 0 {
                         return r;
                     }
                 }
-                if let Some(ref en) = else_node {
+                if let Some(en) = else_node {
                     r = check_node_in_look_behind(en, not, used, syntax);
                 }
             }
@@ -4133,7 +4127,7 @@ fn check_node_in_look_behind(
                 0
             }
         }
-        NodeInner::Call(ref cn) => {
+        NodeInner::Call(cn) => {
             if node.has_status(ND_ST_RECURSION) {
                 *used = true;
                 0
@@ -4147,7 +4141,7 @@ fn check_node_in_look_behind(
                 0
             }
         }
-        NodeInner::Gimmick(ref gn) => {
+        NodeInner::Gimmick(gn) => {
             if node.has_status(ND_ST_ABSENT_WITH_SIDE_EFFECTS) {
                 return 1;
             }
@@ -4558,13 +4552,13 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
                 ref mut else_node,
             } = bn.bag_data
             {
-                if let Some(ref mut then_n) = then_node {
+                if let Some(then_n) = then_node {
                     let r = resolve_call_references(then_n, reg, env);
                     if r != 0 {
                         return r;
                     }
                 }
-                if let Some(ref mut else_n) = else_node {
+                if let Some(else_n) = else_node {
                     let r = resolve_call_references(else_n, reg, env);
                     if r != 0 {
                         return r;
@@ -4966,7 +4960,7 @@ fn must_recurse_without_consuming(node: &Node, must_recurse: &[bool], env: &Pars
                 } => {
                     then_node.as_deref().is_some_and(|then_node| {
                         must_recurse_without_consuming(then_node, must_recurse, env)
-                    }) && else_node.as_deref().map_or(true, |else_node| {
+                    }) && else_node.as_deref().is_none_or(|else_node| {
                         must_recurse_without_consuming(else_node, must_recurse, env)
                     })
                 }
@@ -5158,7 +5152,7 @@ fn make_named_capture_number_map(
         }
         NodeType::Bag => {
             let is_memory =
-                matches!(&node.inner, NodeInner::Bag(ref bn) if bn.bag_type == BagType::Memory);
+                matches!(&node.inner, NodeInner::Bag(bn) if bn.bag_type == BagType::Memory);
             let is_named = node.has_status(ND_ST_NAMED_GROUP);
 
             if is_memory && !is_named {
@@ -5220,13 +5214,13 @@ fn make_named_capture_number_map(
                             ref mut else_node,
                         } = bn.bag_data
                         {
-                            if let Some(ref mut tn) = then_node {
+                            if let Some(tn) = then_node {
                                 let r = make_named_capture_number_map(tn, map, counter);
                                 if r < 0 {
                                     return r;
                                 }
                             }
-                            if let Some(ref mut en) = else_node {
+                            if let Some(en) = else_node {
                                 let r = make_named_capture_number_map(en, map, counter);
                                 if r < 0 {
                                     return r;
@@ -5302,9 +5296,7 @@ fn renumber_backref_traverse(node: &mut Node, map: &[GroupNumMap]) -> i32 {
             // call targets).
             unsafe {
                 let mut p = cur;
-                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
-                    &mut (*p).inner
-                {
+                while let NodeInner::List(cons) | NodeInner::Alt(cons) = &mut (*p).inner {
                     let car_ptr = &mut *cons.car as *mut Node;
                     let cdr_opt = cons.cdr.as_mut().map(|c| &mut **c as *mut Node);
                     let r = renumber_backref_traverse(&mut *car_ptr, map);
@@ -5347,13 +5339,13 @@ fn renumber_backref_traverse(node: &mut Node, map: &[GroupNumMap]) -> i32 {
                             ref mut else_node,
                         } = bn.bag_data
                         {
-                            if let Some(ref mut tn) = then_node {
+                            if let Some(tn) = then_node {
                                 let r = renumber_backref_traverse(tn, map);
                                 if r != 0 {
                                     return r;
                                 }
                             }
-                            if let Some(ref mut en) = else_node {
+                            if let Some(en) = else_node {
                                 let r = renumber_backref_traverse(en, map);
                                 if r != 0 {
                                     return r;
@@ -5392,21 +5384,21 @@ fn numbered_ref_check(node: &Node) -> i32 {
             }
             0
         }
-        NodeInner::Quant(ref qn) => {
+        NodeInner::Quant(qn) => {
             if let Some(ref body) = qn.body {
                 numbered_ref_check(body)
             } else {
                 0
             }
         }
-        NodeInner::Anchor(ref a) => {
+        NodeInner::Anchor(a) => {
             if let Some(ref body) = a.body {
                 numbered_ref_check(body)
             } else {
                 0
             }
         }
-        NodeInner::Bag(ref bn) => {
+        NodeInner::Bag(bn) => {
             if let Some(ref body) = bn.body {
                 let r = numbered_ref_check(body);
                 if r != 0 {
@@ -5419,13 +5411,13 @@ fn numbered_ref_check(node: &Node) -> i32 {
                     ref else_node,
                 } = bn.bag_data
                 {
-                    if let Some(ref tn) = then_node {
+                    if let Some(tn) = then_node {
                         let r = numbered_ref_check(tn);
                         if r != 0 {
                             return r;
                         }
                     }
-                    if let Some(ref en) = else_node {
+                    if let Some(en) = else_node {
                         let r = numbered_ref_check(en);
                         if r != 0 {
                             return r;
@@ -5532,7 +5524,7 @@ fn tune_call(node: &mut Node, state: i32) {
                 while let NodeInner::List(c) | NodeInner::Alt(c) = &mut (*cur).inner {
                     tune_call(&mut c.car, state);
                     match &mut c.cdr {
-                        Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                        Some(next) => cur = next.as_mut() as *mut Node,
                         None => break,
                     }
                 }
@@ -5581,10 +5573,10 @@ fn tune_call(node: &mut Node, state: i32) {
                         ref mut else_node,
                     } = bn.bag_data
                     {
-                        if let Some(ref mut t) = then_node {
+                        if let Some(t) = then_node {
                             tune_call(t, state);
                         }
-                        if let Some(ref mut e) = else_node {
+                        if let Some(e) = else_node {
                             tune_call(e, state);
                         }
                     }
@@ -5624,7 +5616,7 @@ fn tune_called_state_call(node: &mut Node, state: i32) {
                 while let NodeInner::Alt(c) | NodeInner::List(c) = &mut (*cur).inner {
                     tune_called_state_call(&mut c.car, s);
                     match &mut c.cdr {
-                        Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                        Some(next) => cur = next.as_mut() as *mut Node,
                         None => break,
                     }
                 }
@@ -5634,7 +5626,7 @@ fn tune_called_state_call(node: &mut Node, state: i32) {
                 while let NodeInner::List(c) | NodeInner::Alt(c) = &mut (*cur).inner {
                     tune_called_state_call(&mut c.car, state);
                     match &mut c.cdr {
-                        Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                        Some(next) => cur = next.as_mut() as *mut Node,
                         None => break,
                     }
                 }
@@ -5711,10 +5703,10 @@ fn tune_called_state_call(node: &mut Node, state: i32) {
                         ref mut else_node,
                     } = bn.bag_data
                     {
-                        if let Some(ref mut t) = then_node {
+                        if let Some(t) = then_node {
                             tune_called_state_call(t, s);
                         }
-                        if let Some(ref mut e) = else_node {
+                        if let Some(e) = else_node {
                             tune_called_state_call(e, s);
                         }
                     }
@@ -5753,7 +5745,7 @@ fn tune_called_state(node: &mut Node, state: i32) {
                 while let NodeInner::Alt(c) | NodeInner::List(c) = &mut (*cur).inner {
                     tune_called_state(&mut c.car, s);
                     match &mut c.cdr {
-                        Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                        Some(next) => cur = next.as_mut() as *mut Node,
                         None => break,
                     }
                 }
@@ -5763,7 +5755,7 @@ fn tune_called_state(node: &mut Node, state: i32) {
                 while let NodeInner::List(c) | NodeInner::Alt(c) = &mut (*cur).inner {
                     tune_called_state(&mut c.car, state);
                     match &mut c.cdr {
-                        Some(ref mut next) => cur = next.as_mut() as *mut Node,
+                        Some(next) => cur = next.as_mut() as *mut Node,
                         None => break,
                     }
                 }
@@ -5812,10 +5804,10 @@ fn tune_called_state(node: &mut Node, state: i32) {
                             ref mut else_node,
                         } = bn.bag_data
                         {
-                            if let Some(ref mut t) = then_node {
+                            if let Some(t) = then_node {
                                 tune_called_state(t, s);
                             }
-                            if let Some(ref mut e) = else_node {
+                            if let Some(e) = else_node {
                                 tune_called_state(e, s);
                             }
                         }
@@ -5916,23 +5908,23 @@ fn recurse_into_children(
                     let cdr = &mut cons.cdr;
                     detect_literal_alternations_inner(&mut *car, reg, in_anchor, backrefed_mem);
                     match cdr {
-                        Some(ref mut next) => cur = &mut **next,
+                        Some(next) => cur = &mut **next,
                         None => break,
                     };
                 }
             }
         }
-        NodeInner::Quant(ref mut qn) => {
+        NodeInner::Quant(qn) => {
             if let Some(ref mut body) = qn.body {
                 detect_literal_alternations_inner(body, reg, in_anchor, backrefed_mem);
             }
         }
-        NodeInner::Bag(ref mut bn) => {
+        NodeInner::Bag(bn) => {
             if let Some(ref mut body) = bn.body {
                 detect_literal_alternations_inner(body, reg, in_anchor, backrefed_mem);
             }
         }
-        NodeInner::Anchor(ref mut an) => {
+        NodeInner::Anchor(an) => {
             if let Some(ref mut body) = an.body {
                 detect_literal_alternations_inner(body, reg, true, backrefed_mem);
             }
@@ -5963,7 +5955,7 @@ fn try_trie_optimize_alt(
         unsafe {
             loop {
                 let (car, cdr) = match &(*cur).inner {
-                    NodeInner::Alt(ref cons) => (&*cons.car as *const Node, &cons.cdr),
+                    NodeInner::Alt(cons) => (&*cons.car as *const Node, &cons.cdr),
                     _ => {
                         all_plain_strings &=
                             matches!(&(*cur).inner, NodeInner::String(sn) if !sn.is_crude());
@@ -5990,7 +5982,7 @@ fn try_trie_optimize_alt(
                 branches.push(AltBranchInfo { index: idx, ..info });
                 idx += 1;
                 match cdr {
-                    Some(ref next) => cur = &**next,
+                    Some(next) => cur = &**next,
                     None => break,
                 }
             }
@@ -6088,7 +6080,7 @@ fn extract_literal_paths(
     // only shared reads are performed.
     unsafe {
         match &(*node).inner {
-            NodeInner::String(ref sn) => {
+            NodeInner::String(sn) => {
                 if sn.is_crude() || (*node).has_status(ND_ST_LITERAL_ALT) {
                     return None;
                 }
@@ -6102,7 +6094,7 @@ fn extract_literal_paths(
                     .collect();
                 Some(result)
             }
-            NodeInner::List(ref cons) => {
+            NodeInner::List(cons) => {
                 // Sequence: walk car then cdr, threading prefixes through
                 let car: *const Node = &*cons.car;
                 let after_car = extract_literal_paths(car, current_prefixes, limit, backrefed_mem)?;
@@ -6110,20 +6102,20 @@ fn extract_literal_paths(
                     return None;
                 }
                 match &cons.cdr {
-                    Some(ref next) => {
+                    Some(next) => {
                         let cdr: *const Node = &**next;
                         extract_literal_paths(cdr, after_car, limit, backrefed_mem)
                     }
                     None => Some(after_car),
                 }
             }
-            NodeInner::Alt(ref cons) => {
+            NodeInner::Alt(cons) => {
                 // Fork: recurse into each branch, collect all resulting paths
                 let mut all_paths: Vec<Vec<u8>> = Vec::new();
                 let mut cur: *const Node = node;
                 loop {
                     let (car, cdr) = match &(*cur).inner {
-                        NodeInner::Alt(ref cons) => (&*cons.car as *const Node, &cons.cdr),
+                        NodeInner::Alt(cons) => (&*cons.car as *const Node, &cons.cdr),
                         _ => {
                             // Last node in the chain (not wrapped in Alt)
                             let branch_paths = extract_literal_paths(
@@ -6146,13 +6138,13 @@ fn extract_literal_paths(
                         return None;
                     }
                     match cdr {
-                        Some(ref next) => cur = &**next,
+                        Some(next) => cur = &**next,
                         None => break,
                     }
                 }
                 Some(all_paths)
             }
-            NodeInner::Bag(ref bn) => {
+            NodeInner::Bag(bn) => {
                 match bn.bag_type {
                     BagType::Memory => {
                         // Capturing group: only safe if not backreferenced
@@ -6160,7 +6152,7 @@ fn extract_literal_paths(
                             return None;
                         }
                         match &bn.body {
-                            Some(ref body) => {
+                            Some(body) => {
                                 let body_ptr: *const Node = &**body;
                                 extract_literal_paths(
                                     body_ptr,
@@ -6175,7 +6167,7 @@ fn extract_literal_paths(
                     BagType::Option => {
                         // Non-capturing group (?:...) or option group
                         match &bn.body {
-                            Some(ref body) => {
+                            Some(body) => {
                                 let body_ptr: *const Node = &**body;
                                 extract_literal_paths(
                                     body_ptr,
@@ -6190,11 +6182,11 @@ fn extract_literal_paths(
                     _ => None, // StopBacktrack, IfElse — not literal
                 }
             }
-            NodeInner::Quant(ref qn) => {
+            NodeInner::Quant(qn) => {
                 if qn.lower == 0 && qn.upper == 1 {
                     // Optional `?`: fork into "with" and "without" paths
                     match &qn.body {
-                        Some(ref body) => {
+                        Some(body) => {
                             let body_ptr: *const Node = &**body;
                             let with_paths = extract_literal_paths(
                                 body_ptr,
@@ -6283,7 +6275,7 @@ fn extract_alt_branches(alt_node: &mut Node, indices: &[usize], out: &mut Vec<No
     unsafe {
         loop {
             match &mut (*cur).inner {
-                NodeInner::Alt(ref mut cons) => {
+                NodeInner::Alt(cons) => {
                     if indices.contains(&idx) {
                         // Take the car node
                         let taken = std::mem::replace(
@@ -6401,7 +6393,7 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             0
         }
 
-        NodeInner::Quant(ref mut qn) => {
+        NodeInner::Quant(qn) => {
             // Propagate repeat status flags
             if (state & IN_REAL_REPEAT) != 0 {
                 node.status |= ND_ST_IN_REAL_REPEAT;
@@ -6487,7 +6479,7 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             0
         }
 
-        NodeInner::Bag(ref mut bn) => {
+        NodeInner::Bag(bn) => {
             match bn.bag_type {
                 BagType::Option => {
                     let saved_options = reg.options;
@@ -6541,13 +6533,13 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
                         ref mut else_node,
                     } = bn.bag_data
                     {
-                        if let Some(ref mut then_n) = then_node {
+                        if let Some(then_n) = then_node {
                             let r = tune_tree(then_n, reg, state | IN_ALT, env);
                             if r != 0 {
                                 return r;
                             }
                         }
-                        if let Some(ref mut else_n) = else_node {
+                        if let Some(else_n) = else_node {
                             let r = tune_tree(else_n, reg, state | IN_ALT, env);
                             if r != 0 {
                                 return r;
@@ -6559,7 +6551,7 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             }
         }
 
-        NodeInner::Anchor(ref mut an) => {
+        NodeInner::Anchor(an) => {
             let at = an.anchor_type;
             // For lookbehind anchors, compute char lengths (may transform node into Alt)
             if at == ANCR_LOOK_BEHIND || at == ANCR_LOOK_BEHIND_NOT {
@@ -6607,7 +6599,7 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             }
         }
 
-        NodeInner::BackRef(ref br) => {
+        &mut NodeInner::BackRef(ref br) => {
             // Set backrefed_mem for each referenced group
             for &back in br.back_refs() {
                 if back > 0 {
@@ -6635,7 +6627,7 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
 fn mark_empty_repeat_node(node: &mut Node, env: &mut ParseEnv) {
     let node_ptr = node as *mut Node;
     match &mut node.inner {
-        NodeInner::Quant(ref mut qn) => {
+        NodeInner::Quant(qn) => {
             let is_empty = qn.emptiness == BodyEmptyType::MayBeEmptyMem
                 || qn.emptiness == BodyEmptyType::MayBeEmptyRec;
             if is_empty {
@@ -6665,7 +6657,7 @@ fn mark_empty_repeat_node(node: &mut Node, env: &mut ParseEnv) {
                 }
             }
         }
-        NodeInner::Bag(ref mut bn) => {
+        NodeInner::Bag(bn) => {
             if let Some(ref mut body) = bn.body {
                 mark_empty_repeat_node(body, env);
             }
@@ -6674,15 +6666,15 @@ fn mark_empty_repeat_node(node: &mut Node, env: &mut ParseEnv) {
                 ref mut else_node,
             } = bn.bag_data
             {
-                if let Some(ref mut t) = then_node {
+                if let Some(t) = then_node {
                     mark_empty_repeat_node(t, env);
                 }
-                if let Some(ref mut e) = else_node {
+                if let Some(e) = else_node {
                     mark_empty_repeat_node(e, env);
                 }
             }
         }
-        NodeInner::Anchor(ref mut an) => {
+        NodeInner::Anchor(an) => {
             if let Some(ref mut body) = an.body {
                 mark_empty_repeat_node(body, env);
             }
@@ -6710,10 +6702,10 @@ fn set_empty_repeat_node_in_body(node: &Node, quant_ptr: *const Node, env: &mut 
                 ref else_node,
             } = bn.bag_data
             {
-                if let Some(ref t) = then_node {
+                if let Some(t) = then_node {
                     set_empty_repeat_node_in_body(t, quant_ptr, env);
                 }
-                if let Some(ref e) = else_node {
+                if let Some(e) = else_node {
                     set_empty_repeat_node_in_body(e, quant_ptr, env);
                 }
             }
@@ -6723,7 +6715,7 @@ fn set_empty_repeat_node_in_body(node: &Node, quant_ptr: *const Node, env: &mut 
             while let NodeInner::List(cons) | NodeInner::Alt(cons) = &cur.inner {
                 set_empty_repeat_node_in_body(&cons.car, quant_ptr, env);
                 match &cons.cdr {
-                    Some(ref next) => cur = next,
+                    Some(next) => cur = next,
                     None => break,
                 }
             }
@@ -6752,7 +6744,7 @@ fn resolve_empty_status_backrefs(
 ) {
     let node_ptr = node as *const Node;
     match &mut node.inner {
-        NodeInner::Quant(ref mut qn) => {
+        NodeInner::Quant(qn) => {
             let is_empty_quant = qn.emptiness == BodyEmptyType::MayBeEmptyMem
                 || qn.emptiness == BodyEmptyType::MayBeEmptyRec;
             if is_empty_quant {
@@ -6765,7 +6757,7 @@ fn resolve_empty_status_backrefs(
                 enclosing_quants.pop();
             }
         }
-        NodeInner::BackRef(ref br) => {
+        &mut NodeInner::BackRef(ref br) => {
             for &back in br.back_refs() {
                 if back <= 0 {
                     continue;
@@ -6811,7 +6803,7 @@ fn resolve_empty_status_backrefs(
                 }
             }
         }
-        NodeInner::Bag(ref mut bn) => {
+        NodeInner::Bag(bn) => {
             if let Some(ref mut body) = bn.body {
                 resolve_empty_status_backrefs(body, enclosing_quants, env);
             }
@@ -6820,15 +6812,15 @@ fn resolve_empty_status_backrefs(
                 ref mut else_node,
             } = bn.bag_data
             {
-                if let Some(ref mut t) = then_node {
+                if let Some(t) = then_node {
                     resolve_empty_status_backrefs(t, enclosing_quants, env);
                 }
-                if let Some(ref mut e) = else_node {
+                if let Some(e) = else_node {
                     resolve_empty_status_backrefs(e, enclosing_quants, env);
                 }
             }
         }
-        NodeInner::Anchor(ref mut an) => {
+        NodeInner::Anchor(an) => {
             if let Some(ref mut body) = an.body {
                 resolve_empty_status_backrefs(body, enclosing_quants, env);
             }
@@ -7168,7 +7160,7 @@ pub fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
             0
         }
 
-        NodeInner::Quant(ref mut q) => {
+        NodeInner::Quant(q) => {
             if let Some(ref mut body) = q.body {
                 reduce_string_list(body, _enc)
             } else {
@@ -7176,7 +7168,7 @@ pub fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
             }
         }
 
-        NodeInner::Anchor(ref mut a) => {
+        NodeInner::Anchor(a) => {
             if let Some(ref mut body) = a.body {
                 let r = reduce_string_list(body, _enc);
                 if r != 0 {
@@ -7186,7 +7178,7 @@ pub fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
             0
         }
 
-        NodeInner::Bag(ref mut b) => {
+        NodeInner::Bag(b) => {
             if let Some(ref mut body) = b.body {
                 let r = reduce_string_list(body, _enc);
                 if r != 0 {
@@ -7198,13 +7190,13 @@ pub fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
                 ref mut else_node,
             } = b.bag_data
             {
-                if let Some(ref mut then_n) = then_node {
+                if let Some(then_n) = then_node {
                     let r = reduce_string_list(then_n, _enc);
                     if r != 0 {
                         return r;
                     }
                 }
-                if let Some(ref mut else_n) = else_node {
+                if let Some(else_n) = else_node {
                     let r = reduce_string_list(else_n, _enc);
                     if r != 0 {
                         return r;
@@ -7722,20 +7714,16 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
                     } else {
                         0
                     };
-                    if let Some(ref then_n) = then_node {
+                    if let Some(then_n) = then_node {
                         let tlen = node_max_byte_len(then_n, env);
                         len = distance_add(len, tlen);
                     }
-                    let elen = if let Some(ref else_n) = else_node {
+                    let elen = if let Some(else_n) = else_node {
                         node_max_byte_len(else_n, env)
                     } else {
                         0
                     };
-                    if elen > len {
-                        elen
-                    } else {
-                        len
-                    }
+                    if elen > len { elen } else { len }
                 } else {
                     0
                 }
@@ -7969,11 +7957,7 @@ fn optimize_nodes(
                             add_opt_anc_info(&mut opt.anc, ANCR_ANYCHAR_INF);
                         }
                     }
-                    if xo.len.max > 0 {
-                        INFINITE_LEN
-                    } else {
-                        0
-                    }
+                    if xo.len.max > 0 { INFINITE_LEN } else { 0 }
                 } else {
                     distance_multiply(xo.len.max, qn.upper)
                 };
@@ -8020,7 +8004,7 @@ fn optimize_nodes(
                             nenv_mm.add(&xo.len);
                             concat_left_node_opt_info(enc, opt, &mut xo);
                         }
-                        if let Some(ref then_n) = then_node {
+                        if let Some(then_n) = then_node {
                             let mut xo = OptNode::new();
                             let r = optimize_nodes(then_n, &mut xo, enc, &mut nenv_mm, scan_env);
                             if r != 0 {
@@ -8028,7 +8012,7 @@ fn optimize_nodes(
                             }
                             concat_left_node_opt_info(enc, opt, &mut xo);
                         }
-                        if let Some(ref else_n) = else_node {
+                        if let Some(else_n) = else_node {
                             let mut xo = OptNode::new();
                             let r = optimize_nodes(else_n, &mut xo, enc, env_mm, scan_env);
                             if r != 0 {
@@ -8080,11 +8064,7 @@ fn set_sunday_quick_search_or_bmh_skip_table(
     while p < s.len() {
         let clen = {
             let l = enclen(enc, &s[p..], p);
-            if p + l > s.len() {
-                s.len() - p
-            } else {
-                l
-            }
+            if p + l > s.len() { s.len() - p } else { l }
         };
         let remaining = (s.len() - p) as i32;
         for j in 0..clen {
@@ -8449,16 +8429,18 @@ fn detect_ac_eligible(reg: &RegexType) -> Option<(usize, bool)> {
 
     let (alt_idx, has_capture) = match opcodes.as_slice() {
         [OpCode::AltLiterals, OpCode::End] if reg.num_mem == 0 => (0, false),
-        [OpCode::MemStart, OpCode::AltLiterals, OpCode::MemEnd, OpCode::End]
-            if reg.num_mem == 1 =>
-        {
-            (1, true)
-        }
-        [OpCode::MemStartPush, OpCode::AltLiterals, OpCode::MemEndPush, OpCode::End]
-            if reg.num_mem == 1 =>
-        {
-            (1, true)
-        }
+        [
+            OpCode::MemStart,
+            OpCode::AltLiterals,
+            OpCode::MemEnd,
+            OpCode::End,
+        ] if reg.num_mem == 1 => (1, true),
+        [
+            OpCode::MemStartPush,
+            OpCode::AltLiterals,
+            OpCode::MemEndPush,
+            OpCode::End,
+        ] if reg.num_mem == 1 => (1, true),
         _ => return None,
     };
 

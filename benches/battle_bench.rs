@@ -8,7 +8,7 @@ mod grammar_loader;
 mod scanner_css_workload;
 
 use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
+    BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
 use regex::bytes::{Regex, RegexBuilder};
 use scanner_css_workload::CSS_INPUT;
@@ -18,10 +18,10 @@ use std::time::Duration;
 
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
 use ferroni::ffi;
-use ferroni::oniguruma::{OnigOptionType, OnigRegion, ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE};
+use ferroni::oniguruma::{ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE, OnigOptionType, OnigRegion};
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::onig_search;
-use ferroni::regset::{onig_regset_new, onig_regset_search, OnigRegSetLead};
+use ferroni::regset::{OnigRegSetLead, onig_regset_new, onig_regset_search};
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions};
 
@@ -206,7 +206,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
                         ScannerFindOptions::NONE,
                     ) {
                         Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
+                            let end = m.capture_indices[0].end;
                             pos = if end > pos { end } else { pos + 1 };
                             count += 1;
                         }
@@ -275,7 +275,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
                         ScannerFindOptions::NONE,
                     ) {
                         Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
+                            let end = m.capture_indices[0].end;
                             pos = if end > pos { end } else { pos + 1 };
                             count += 1;
                         }
@@ -370,7 +370,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
                         ScannerFindOptions::NONE,
                     ) {
                         Some(m) => {
-                            let end = m.capture_indices[0].end as usize;
+                            let end = m.capture_indices[0].end;
                             pos = if end > pos { end } else { pos + 1 };
                             count += 1;
                         }
@@ -534,11 +534,21 @@ fn bench_text_scanning(c: &mut Criterion) {
     group.finish();
 }
 
+/// (label, pattern, haystack, ferroni options, Oniguruma options, expect match)
+type SinglePatternCase = (
+    &'static str,
+    &'static [u8],
+    &'static [u8],
+    OnigOptionType,
+    c_uint,
+    bool,
+);
+
 fn bench_single_pattern(c: &mut Criterion) {
     let mut group = c.benchmark_group("single_pattern");
     configure_battle_group(&mut group);
 
-    let cases: &[(&str, &[u8], &[u8], OnigOptionType, c_uint, bool)] = &[
+    let cases: &[SinglePatternCase] = &[
         (
             "literal_exact",
             b"lazy dog",
