@@ -220,7 +220,12 @@
 }
 
 .fh-headline-gradient {
-  background: linear-gradient(135deg, var(--f-grad-from) 0%, var(--f-grad-via) 40%, var(--f-grad-to) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--f-grad-from) 0%,
+    var(--f-grad-via) 40%,
+    var(--f-grad-to) 100%
+  );
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -353,7 +358,10 @@
   border-radius: 12px;
   padding: 2rem;
   box-shadow: var(--f-card-shadow);
-  transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+  transition:
+    border-color 0.3s,
+    box-shadow 0.3s,
+    transform 0.3s;
 }
 
 .fh-card:hover {
@@ -598,13 +606,28 @@
   white-space: pre;
 }
 
-.fh-code-block .kw { color: var(--f-code-kw); }
-.fh-code-block .ty { color: var(--f-code-ty); }
-.fh-code-block .str { color: var(--f-code-str); }
-.fh-code-block .fn { color: var(--f-code-fn); }
-.fh-code-block .cm { color: var(--f-code-cm); font-style: italic; }
-.fh-code-block .mc { color: var(--f-code-mc); }
-.fh-code-block .op { color: var(--f-code-op); }
+.fh-code-block .kw {
+  color: var(--f-code-kw);
+}
+.fh-code-block .ty {
+  color: var(--f-code-ty);
+}
+.fh-code-block .str {
+  color: var(--f-code-str);
+}
+.fh-code-block .fn {
+  color: var(--f-code-fn);
+}
+.fh-code-block .cm {
+  color: var(--f-code-cm);
+  font-style: italic;
+}
+.fh-code-block .mc {
+  color: var(--f-code-mc);
+}
+.fh-code-block .op {
+  color: var(--f-code-op);
+}
 
 .fh-install-line {
   display: flex;
@@ -782,8 +805,13 @@
 }
 
 @keyframes fh-spark-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .fh-spark-anim {

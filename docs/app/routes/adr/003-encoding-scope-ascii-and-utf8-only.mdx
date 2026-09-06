@@ -5,7 +5,6 @@ title: "Encoding Scope — ASCII and UTF-8 Only"
 
 # Encoding Scope — ASCII and UTF-8 Only
 
-
 ## Status
 
 Accepted
@@ -23,7 +22,7 @@ The Rust port supports **only ASCII and UTF-8**. No other encodings will be port
 ### What this means
 
 - `ONIG_ENCODING_ASCII` and `ONIG_ENCODING_UTF8` are the only two available encodings.
-- The `Encoding` trait and dispatch infrastructure exist and are fully functional — additional encodings *could* be added, but we choose not to.
+- The `Encoding` trait and dispatch infrastructure exist and are fully functional — additional encodings _could_ be added, but we choose not to.
 - The 27 missing encodings (~6,600 LOC of C code) are intentionally excluded.
 - Encoding-specific public API functions (`onigenc_set_default_encoding`, `onig_initialize_encoding`, `onigenc_strlen_null`, etc.) are not ported.
 - C test files that depend on other encodings (`testc.c` for EUC-JP, `testu.c` for UTF-16, `testp.c` for POSIX) are not ported.

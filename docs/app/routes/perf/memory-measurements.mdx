@@ -5,7 +5,6 @@ title: "Memory Measurement Method"
 
 # Memory Measurement Method
 
-
 Ferroni keeps memory comparison separate from the timing-oriented
 `battle_bench` suite.
 
@@ -54,12 +53,12 @@ for publication.
 Measured on 2026-03-06 on `arm64` macOS `26.3` with
 `rustc 1.95.0-nightly (842bd5be2 2026-01-29)`.
 
-| Engine | Phase | Peak RSS |
-|--------|-------|---------:|
-| Ferroni | Compile full TS grammar | 15,155,200 B |
-| Ferroni | Compile + line scan | 15,237,120 B |
+| Engine    | Phase                   |     Peak RSS |
+| --------- | ----------------------- | -----------: |
+| Ferroni   | Compile full TS grammar | 15,155,200 B |
+| Ferroni   | Compile + line scan     | 15,237,120 B |
 | Oniguruma | Compile full TS grammar | 14,761,984 B |
-| Oniguruma | Compile + line scan | 14,860,288 B |
+| Oniguruma | Compile + line scan     | 14,860,288 B |
 
 Rounded for README communication, both engines are effectively in the same
 memory range at about 15 MB peak RSS on this workload.

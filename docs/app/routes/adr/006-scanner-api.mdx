@@ -5,7 +5,6 @@ title: "Scanner API for Multi-Pattern TextMate Tokenization"
 
 # Scanner API for Multi-Pattern TextMate Tokenization
 
-
 ## Status
 
 Accepted
@@ -41,6 +40,7 @@ Add a `Scanner` API (`src/scanner.rs`) that wraps Ferroni's C-ported `RegSet` in
 ```
 
 The Scanner does **not** modify the C-ported internals. It is an additive layer that:
+
 - Delegates pattern compilation to `onig_new()` (same as `Regex`)
 - Delegates multi-pattern search to `onig_regset_search_fast()` (C-ported RegSet)
 - Adds result formatting, option translation, and scratch space management

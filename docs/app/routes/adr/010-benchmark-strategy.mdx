@@ -5,7 +5,6 @@ title: "Benchmark Strategy"
 
 # Benchmark Strategy
 
-
 ## Status
 
 Accepted
@@ -22,12 +21,12 @@ A two-suite benchmark architecture:
 
 Real-world scenarios that produce the numbers we publish. Always Ferroni vs Oniguruma at `-O3`.
 
-| Category | What is measured |
-|----------|-----------------|
+| Category            | What is measured                                                                                                                                                 |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Syntax highlighting | Full, unmodified Shiki grammars -- TypeScript (279 patterns), CSS (117 patterns), Rust (81 patterns). Compile time, first-match latency, full-line tokenization. |
-| Text search | Literal search, no-match rejection, field extraction, timestamp matching on 10-50 KB log inputs. |
-| Pattern matching | One representative pattern per regex feature (quantifiers, lookaround, Unicode, backreferences, alternation, named captures). |
-| Compilation | Simple to complex patterns, measuring compile latency. |
+| Text search         | Literal search, no-match rejection, field extraction, timestamp matching on 10-50 KB log inputs.                                                                 |
+| Pattern matching    | One representative pattern per regex feature (quantifiers, lookaround, Unicode, backreferences, alternation, named captures).                                    |
+| Compilation         | Simple to complex patterns, measuring compile latency.                                                                                                           |
 
 Key rule: **benchmark against complete, unmodified production grammars** -- no cherry-picked subsets. The Shiki grammars are committed as-is in `benches/grammars/`.
 

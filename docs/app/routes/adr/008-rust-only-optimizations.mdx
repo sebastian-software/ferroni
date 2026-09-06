@@ -5,14 +5,13 @@ title: "Rust-Only Optimizations and Performance Philosophy"
 
 # Rust-Only Optimizations and Performance Philosophy
 
-
 ## Status
 
 Accepted (amends ADR-001)
 
 ## Context
 
-ADR-001 states: *"New features or optimizations should first be contributed upstream to C Oniguruma, then ported — not invented in the Rust port."*
+ADR-001 states: _"New features or optimizations should first be contributed upstream to C Oniguruma, then ported — not invented in the Rust port."_
 
 This policy served the project well during the initial port: it ensured correctness and prevented accidental divergence. However, Ferroni's primary workload — TextMate grammar tokenization for Shiki — creates performance requirements that the upstream C engine does not face. C Oniguruma is used via WASM in the JavaScript ecosystem (vscode-oniguruma), where compilation and matching overhead is dominated by the WASM boundary, not by regex engine internals.
 

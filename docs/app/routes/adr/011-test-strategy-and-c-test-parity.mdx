@@ -5,7 +5,6 @@ title: "Test Strategy and C Test Suite Parity"
 
 # Test Strategy and C Test Suite Parity
 
-
 ## Status
 
 Accepted
@@ -20,23 +19,23 @@ The C Oniguruma test suite consists of 8 test files covering different encodings
 
 All C test files that exercise the engine with ASCII/UTF-8 are ported 1:1:
 
-| C Test File | Rust File | Tests | Content |
-|-------------|-----------|------:|---------|
-| `test_utf8.c` | `tests/compat_utf8.rs` | 1,554 | Core regex features with UTF-8 |
-| `test_back.c` | `tests/compat_back.rs` | 1,225 | Backward search tests (26 sections) |
-| `test_syntax.c` | `tests/compat_syntax.rs` | 43 | Syntax mode behavior |
-| `test_options.c` | `tests/compat_options.rs` | 47 | Option flag behavior |
-| `test_regset.c` | `tests/compat_regset.rs` | 13 | RegSet multi-pattern search |
+| C Test File      | Rust File                 | Tests | Content                             |
+| ---------------- | ------------------------- | ----: | ----------------------------------- |
+| `test_utf8.c`    | `tests/compat_utf8.rs`    | 1,554 | Core regex features with UTF-8      |
+| `test_back.c`    | `tests/compat_back.rs`    | 1,225 | Backward search tests (26 sections) |
+| `test_syntax.c`  | `tests/compat_syntax.rs`  |    43 | Syntax mode behavior                |
+| `test_options.c` | `tests/compat_options.rs` |    47 | Option flag behavior                |
+| `test_regset.c`  | `tests/compat_regset.rs`  |    13 | RegSet multi-pattern search         |
 
 **Total: 1,882 `#[test]` functions** (1,695 from the C test suite + 187 Rust-specific tests for edge cases, error paths, and Scanner API).
 
 ### Not Ported (3)
 
-| C Test File | Tests | Reason |
-|-------------|------:|--------|
-| `testc.c` | 658 | EUC-JP encoding (ADR-003) |
-| `testu.c` | 595 | UTF-16 encoding (ADR-003) |
-| `testp.c` | 421 | POSIX API (ADR-012) |
+| C Test File | Tests | Reason                    |
+| ----------- | ----: | ------------------------- |
+| `testc.c`   |   658 | EUC-JP encoding (ADR-003) |
+| `testu.c`   |   595 | UTF-16 encoding (ADR-003) |
+| `testp.c`   |   421 | POSIX API (ADR-012)       |
 
 ### Naming Convention
 

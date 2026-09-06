@@ -5,7 +5,6 @@ title: "HTML Entity Trie Optimization — Status & Next Steps"
 
 # HTML Entity Trie Optimization — Status & Next Steps
 
-
 ## Context
 
 HTML is the only language where Rust loses to JS in `codeToHtml` benchmarks.
@@ -42,6 +41,7 @@ Changed `detect_literal_alternations_inner` from **bottom-up** to **top-down**:
 - **After**: try `extract_literal_paths` on the current Alt first. If it succeeds, build one big trie covering many nested branches. Then recurse into remaining non-literal branches. Falls back to bottom-up for Alts where top-down extraction doesn't meet threshold.
 
 Refactored into:
+
 - `try_trie_optimize_alt()` — shared logic for branch classification + trie building
 - `recurse_into_children()` — extracted recursion helper
 - `classify_branch()` — tries fast path (`check_literal_branch`), then `extract_literal_paths`
@@ -62,6 +62,7 @@ Added `backrefed_mem: MemStatusType` parameter through the detection chain so `e
 ### 5. Benchmark update (ferriki)
 
 Updated `bench/engines/shiki-rust-napi.bench.ts`:
+
 - Replaced tiny HTML fallback sample with a realistic Wikipedia-style page full of HTML entities (`&pi;`, `&mdash;`, `&amp;`, `&hellip;`, `&sum;`, `&infin;`, etc.)
 - Added `createHtmlSample()` generator for ~100KB entity-heavy HTML
 - Added `large-html-entities-100kb` benchmark section
@@ -75,6 +76,7 @@ Entity-like pattern without CClass nodes → **1 trie, 1 AltLiterals op, 0 Push 
 ### Real HTML entity pattern: limited impact
 
 The actual entity regex has character classes scattered within nested branches:
+
 - `[dv]` (2 members) in `d(slope|[dv]|and)?`
 - `[a-h]` (8 members) in `msd(a([a-h]))?`
 - `[Ee]` (2 members) in `p(id|os|prox(eq)?|[Ee]|acir)?`
@@ -90,11 +92,11 @@ These make `extract_literal_paths` return `None` for the containing branch, prev
 
 ### E2E benchmark numbers
 
-| Benchmark | Before | After | Change |
-|-----------|--------|-------|--------|
-| codeToHtml > html (small sample) | JS 1.20x faster | — | — |
-| codeToHtml > html (entity-heavy) | — | JS 1.48x faster | Entities actively hurt Rust |
-| large-html-entities-100kb | — | JS ~1.19x faster | — |
+| Benchmark                        | Before          | After            | Change                      |
+| -------------------------------- | --------------- | ---------------- | --------------------------- |
+| codeToHtml > html (small sample) | JS 1.20x faster | —                | —                           |
+| codeToHtml > html (entity-heavy) | —               | JS 1.48x faster  | Entities actively hurt Rust |
+| large-html-entities-100kb        | —               | JS ~1.19x faster | —                           |
 
 The entity-heavy sample makes the gap **worse**, confirming that entity matching is a real bottleneck and the current partial optimization is insufficient.
 
@@ -105,6 +107,7 @@ ASAN detected a heap-use-after-free in `node_max_byte_len` for patterns with nam
 ## Assessment of current changes
 
 **Keep.** The changes are:
+
 - Correct (213/213 lib tests pass, 43/43 compat_syntax pass, compat_utf8 only has a pre-existing failure)
 - Non-regressive (no performance penalty for non-entity patterns)
 - Foundation for both next-step approaches below
@@ -119,6 +122,7 @@ ASAN detected a heap-use-after-free in `node_max_byte_len` for patterns with nam
 **Idea**: When `extract_literal_paths` encounters a `CClass` node containing only a small number of single-byte members, enumerate them and fork into one path per member — same as `Alt` forking but driven by the character class.
 
 **Example**: `d(slope|[dv]|and)?` currently fails because `[dv]` is a CClass. With expansion:
+
 - `[dv]` → fork into `d` and `v` paths
 - The whole branch extracts to: `["dslope", "dd", "dv", "dand", "d"]`
 
@@ -146,15 +150,17 @@ NodeInner::CClass(ref cc) => {
 ```
 
 The `enumerate_single_bytes()` helper on `CClassNode` would:
+
 1. Check that the class uses only single-byte (ASCII) ranges
 2. Return a `Vec<u8>` of all member bytes
 3. Return empty if the class contains multi-byte Unicode ranges, negation, or is too large
 
 **Risks**:
+
 - Path explosion: `[a-z]` has 26 members, `[A-Za-z]` has 52. Combined with optionals and nested alts, this could blow past `MAX_NESTED_TRIE_PATHS`. Mitigation: limit individual CClass expansion to e.g. 8 members.
 - The HTML entity regex has `[a-h]` (8 members) and `[dv]` (2 members) — both small. `[Ee]` is 2 members. So a limit of ~8-16 would cover all cases in the entity pattern.
 
-**Expected impact**: High. Most CClass nodes in the entity pattern are small (2-8 members). Full extraction would collapse the entity alternation into a single trie with ~2000 entries, reducing entity matching from O(1700 * len) to O(len).
+**Expected impact**: High. Most CClass nodes in the entity pattern are small (2-8 members). Full extraction would collapse the entity alternation into a single trie with ~2000 entries, reducing entity matching from O(1700 \* len) to O(len).
 
 **Effort**: Small. The internal representation is simple and well-suited for enumeration.
 
@@ -200,16 +206,16 @@ No complex parsing needed — just iterate 256 bits. The guard clauses (`is_not(
 
 Worst-case multiplicative effect of CClass expansion on the entity pattern:
 
-| CClass | Members | Context | Multiplier |
-|--------|---------|---------|------------|
-| `[dv]` | 2 | inside optional branch | ×2 |
-| `[Ee]` | 2 | inside optional branch | ×2 |
-| `[er]` | 2 | suffix variant | ×2 |
-| `[DUdu]` | 4 | directional | ×4 |
-| `[LRlr]` | 4 | directional | ×4 |
-| `[HLRhlr]` | 6 | multi-directional | ×6 |
-| `[a-h]` | 8 | inside optional+capture | ×8 |
-| `[0-9]` | 10 | numeric suffix | ×10 |
+| CClass     | Members | Context                 | Multiplier |
+| ---------- | ------- | ----------------------- | ---------- |
+| `[dv]`     | 2       | inside optional branch  | ×2         |
+| `[Ee]`     | 2       | inside optional branch  | ×2         |
+| `[er]`     | 2       | suffix variant          | ×2         |
+| `[DUdu]`   | 4       | directional             | ×4         |
+| `[LRlr]`   | 4       | directional             | ×4         |
+| `[HLRhlr]` | 6       | multi-directional       | ×6         |
+| `[a-h]`    | 8       | inside optional+capture | ×8         |
+| `[0-9]`    | 10      | numeric suffix          | ×10        |
 
 These CClass nodes appear in **separate top-level branches** of the entity trie (different initial letters), so their multipliers don't compound with each other. The base ~1,700 literal paths would grow to roughly **~2,000-2,200 paths** — well within the `MAX_NESTED_TRIE_PATHS = 8192` limit.
 
@@ -222,12 +228,14 @@ These CClass nodes appear in **separate top-level branches** of the entity trie 
 **Implementation sketch**:
 
 1. **Micro-benchmark the entity regex directly in ferroni**:
+
    ```rust
    // In ferroni/benches/codspeed_bench.rs: add a benchmark that compiles the
    // full entity regex and matches it against entity-heavy input
    let re = Regex::new(ENTITY_PATTERN).unwrap();
    b.iter(|| re.find("&pi; &mdash; &amp; &hellip; ..."));
    ```
+
    This isolates regex matching cost from tokenizer/rendering overhead.
 
 2. **Instrument ferriki's tokenizer loop**:
@@ -252,6 +260,7 @@ The two approaches are complementary: A is a concrete optimization, B is a diagn
 ### Decision gate
 
 After implementing Approach A, run the entity-heavy benchmark:
+
 - **If Rust closes the gap to ≤ 1.05x JS**: Entity trie was the bottleneck. Done.
 - **If gap remains > 1.10x JS**: Entity trie was only part of the problem. Proceed to Approach B.
 - **If gap is unchanged**: CClass branches were rarely hit in practice. Approach B becomes critical to find the real bottleneck.
