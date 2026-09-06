@@ -104,8 +104,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Prepare Oniguruma sources
         run: ./scripts/prepare-oniguruma-sources.sh
+      # --all-targets also compiles the Criterion benches that need the ffi
+      # feature (battle_bench, battle_mem_onig).
       - name: Check ffi feature
-        run: cargo check --features ffi
+        run: cargo check --features ffi --all-targets
       # The original breakage only showed in the published layout (benches/
       # and scripts/ are excluded from the crate), so also check the packaged
       # artifact with the sources supplied via FERRONI_ONIGURUMA_DIR.
