@@ -37,12 +37,12 @@ fn main() -> Result<(), RegexError> {
             &line[whole.start..whole.end],
         );
 
-        // Guard against zero-width matches, which would loop forever.
-        position = if whole.end > whole.start {
-            whole.end
-        } else {
-            whole.end + 1
-        };
+        // Guard against zero-width matches, which would loop forever. Step to
+        // the next character boundary: stepping one byte could land inside a
+        // multibyte character and panic on the next slice.
+        let next_boundary =
+            whole.start + line[whole.start..].chars().next().map_or(1, char::len_utf8);
+        position = whole.end.max(next_boundary);
     }
 
     // vscode-textmate and Shiki address text in UTF-16 code units. Wrap the
