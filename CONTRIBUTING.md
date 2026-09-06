@@ -12,7 +12,7 @@ cd ferroni
 cargo build
 ```
 
-Ferroni's MSRV is Rust 1.81, enforced by a dedicated CI lane.
+Ferroni's MSRV is Rust 1.86, enforced by a dedicated CI lane.
 
 ## Running Tests
 

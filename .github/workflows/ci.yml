@@ -17,16 +17,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable, nightly, "1.81"]
+        rust: [stable, nightly, "1.86"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      # The MSRV (1.81) lane keeps the committed Cargo.lock: fresh resolution
-      # pulls dependencies whose manifests cargo 1.81 cannot parse (e.g. clap
-      # 4.6 uses edition 2024), so only nightly tests an unpinned graph.
+      # The MSRV (1.86) lane keeps the committed Cargo.lock: fresh resolution
+      # may pull dependencies that declare a newer rust-version than the MSRV,
+      # so only nightly tests an unpinned graph.
       - name: Remove Cargo.lock for fresh resolution
         if: matrix.rust == 'nightly'
         shell: bash
@@ -48,12 +48,12 @@ jobs:
         env:
           RUST_MIN_STACK: "536870912"
       - name: Test compat_back
-        if: matrix.rust != '1.81'
+        if: matrix.rust != '1.86'
         run: cargo test --test compat_back -- --test-threads=1
         env:
           RUST_MIN_STACK: "268435456"
       - name: Test compat_back (MSRV, skip deep-recursion tests)
-        if: matrix.rust == '1.81'
+        if: matrix.rust == '1.86'
         run: cargo test --test compat_back -- --test-threads=1 --skip back_section_09a
         env:
           RUST_MIN_STACK: "268435456"

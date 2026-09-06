@@ -26,7 +26,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-codspeed
-        run: cargo install cargo-codspeed@^4 --locked
+        run: cargo install cargo-codspeed@^5 --locked
 
       - name: Build benchmarks
         run: cargo codspeed build -m simulation --bench codspeed_bench
