@@ -86,7 +86,7 @@ Add to your `Cargo.toml`:
 ferroni = "1"
 ```
 
-MSRV: Rust 1.81 (enforced in CI).
+MSRV: Rust 1.86 (enforced in CI).
 
 ### Regex
 
