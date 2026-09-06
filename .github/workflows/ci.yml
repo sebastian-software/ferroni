@@ -49,6 +49,32 @@ jobs:
         env:
           RUST_MIN_STACK: "268435456"
 
+  fresh-resolution:
+    name: Fresh dependency resolution
+    runs-on: ubuntu-latest
+    # Library consumers resolve the dependency graph themselves instead of
+    # using our committed Cargo.lock, so one lane drops the lockfile and lets
+    # Cargo pick the newest compatible versions. This is a resolution lane, not
+    # the old edition-2024 manifest workaround the MSRV bump removed: it exists
+    # so a dependency release that breaks a fresh build is caught here rather
+    # than downstream.
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Remove Cargo.lock for fresh resolution
+        run: rm -f Cargo.lock
+      - name: Build
+        run: cargo build --all-targets
+      - name: Test lib and api
+        run: cargo test --lib --test api_test
+      - name: Test doctests
+        run: cargo test --doc
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
