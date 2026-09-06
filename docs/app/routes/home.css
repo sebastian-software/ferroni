@@ -527,6 +527,11 @@
   text-decoration: underline;
 }
 
+.fh-perf-note code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.95em;
+}
+
 /* --- Code / Quick Start --- */
 .fh-code {
   padding-top: 6rem;
