@@ -1954,3 +1954,19 @@ fn stacked_possessive_quantifiers_compile_and_match() {
     assert_eq!(position, 1);
     assert_eq!(region.unwrap().end[0], 7);
 }
+
+#[test]
+fn left_recursive_subexpression_call_is_rejected_at_compile_time() {
+    use ferroni::scanner::Scanner;
+
+    // A whole-pattern call at the head of an alternative re-enters the
+    // pattern at the same position without end. C rejects it as never-ending
+    // recursion when compiling; the port used to accept it and the matcher
+    // then grew its stack until the process ran out of memory.
+    assert!(Scanner::new(&["\\g<0>a|b|"]).is_err());
+    assert!(Regex::new(r"\g<0>|a").is_err());
+
+    // Recursion after consumed input stays valid.
+    let re = Regex::new(r"a\g<0>|b").unwrap();
+    assert_eq!(re.find("aab").unwrap().as_str(), "aab");
+}
