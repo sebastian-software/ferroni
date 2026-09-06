@@ -232,9 +232,10 @@ mod tests {
             ONIGERR_INVALID_CHAR_PROPERTY_NAME
         );
         let mut sb_out: OnigCodePoint = 0;
-        assert!(enc
-            .get_ctype_code_range(ONIGENC_CTYPE_ALPHA, &mut sb_out)
-            .is_none());
+        assert!(
+            enc.get_ctype_code_range(ONIGENC_CTYPE_ALPHA, &mut sb_out)
+                .is_none()
+        );
     }
 
     #[test]
