@@ -17,7 +17,7 @@
 //! assert_eq!(m.start(), 6);
 //! ```
 //!
-//! For fine-grained control, use [`RegexBuilder`]:
+//! For fine-grained control, use [`RegexBuilder`](crate::api::RegexBuilder):
 //!
 //! ```rust
 //! use ferroni::prelude::*;

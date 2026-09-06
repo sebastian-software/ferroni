@@ -32,6 +32,22 @@ RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 > **Warning:** Never run `cargo test -- --ignored` -- the
 > `conditional_recursion_complex` test intentionally hangs.
 
+## Local Checks
+
+These are the exact commands CI runs; run them before opening a pull request:
+
+```bash
+cargo fmt -- --check
+cargo clippy --all-targets --all-features --locked -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked
+cargo deny --all-features --locked check
+./scripts/check-workflow-pins.sh
+```
+
+`--all-features` includes `ffi`, so run
+`./scripts/prepare-oniguruma-sources.sh` before the clippy command. Pull
+request titles must be Conventional Commits; a CI lane checks them.
+
 ## Running Benchmarks
 
 `battle_bench` requires a local Oniguruma source snapshot for comparison:

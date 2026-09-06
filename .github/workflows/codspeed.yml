@@ -18,12 +18,20 @@ jobs:
   benchmarks:
     name: Benchmarks
     runs-on: ubuntu-latest
+    # rust-toolchain.toml pins the local default toolchain; RUSTUP_TOOLCHAIN
+    # keeps the toolchain this job asks for in charge.
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@stable
+      # The SHA-pinned action cannot infer the toolchain from a branch name the
+      # way `@stable` did, so every use states it.
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install cargo-codspeed
         run: cargo install cargo-codspeed@^5 --locked
@@ -32,7 +40,7 @@ jobs:
         run: cargo codspeed build -m simulation --bench codspeed_bench
 
       - name: Run benchmarks
-        uses: CodSpeedHQ/action@v4
+        uses: CodSpeedHQ/action@f22792bfac16f3e14eb9fbea76f4a48e9cc22b93 # v4.19.1
         with:
           mode: simulation
           run: cargo codspeed run
