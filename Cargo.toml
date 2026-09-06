@@ -34,7 +34,6 @@ undocumented_unsafe_blocks = "warn"
 # lints that would restructure ported code are allowed on purpose.
 collapsible_if = "allow"
 collapsible_match = "allow"
-empty_line_after_doc_comments = "allow"
 
 [features]
 # Benchmark-comparison harness: links a local upstream Oniguruma checkout

@@ -5265,12 +5265,10 @@ pub fn onig_match_with_param(
 // onig_search - search for a match anywhere in the string
 // ============================================================================
 
-/// Search for the regex pattern in the string, trying each position from
-/// `start` to `range`.
-/// Returns the match position on success, ONIG_MISMATCH (-1) on failure.
-///
-/// Parameters:
-///     - `reg`: compiled regex
+// Search for the regex pattern in the string, trying each position from
+// `start` to `range`. Returns the match position on success, ONIG_MISMATCH
+// (-1) on failure, given a compiled regex `reg`. The entry points themselves
+// are `onig_search` and `onig_search_with_param` further down this file.
 // ============================================================================
 // Search optimization functions — mirrors C's regexec.c lines 5168-5645
 // ============================================================================

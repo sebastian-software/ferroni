@@ -5474,9 +5474,10 @@ fn prs_conditional(
     }
 }
 
-/// Split an Alt node into (first_alt, rest) for conditional then|else parsing.
-/// Given Alt(A, Alt(B, nil)) -> (A, Some(B))
-/// Given Alt(A, Alt(B, Alt(C, nil))) -> (A, Some(Alt(B, Alt(C, nil))))
+// `split_alt_for_conditional` below splits an Alt node into (first_alt, rest)
+// for conditional then|else parsing:
+//   Alt(A, Alt(B, nil))         -> (A, Some(B))
+//   Alt(A, Alt(B, Alt(C, nil))) -> (A, Some(Alt(B, Alt(C, nil))))
 // ============================================================================
 // Absent function (?~...) tree builders
 // ============================================================================

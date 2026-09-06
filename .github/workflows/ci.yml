@@ -156,7 +156,13 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets -- -D clippy::correctness -D clippy::suspicious
+      # --all-features includes ffi, which compiles the upstream C sources.
+      - name: Prepare Oniguruma sources
+        run: ./scripts/prepare-oniguruma-sources.sh
+      # The allowed lints live in the [lints] table of Cargo.toml, never on the
+      # command line: command-line flags outrank the manifest, so a lint denied
+      # here would silently override the table.
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
