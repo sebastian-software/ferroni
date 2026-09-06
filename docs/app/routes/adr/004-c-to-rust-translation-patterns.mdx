@@ -5,7 +5,6 @@ title: "C-to-Rust Translation Patterns"
 
 # C-to-Rust Translation Patterns
 
-
 ## Status
 
 Accepted
@@ -58,13 +57,13 @@ C uses unguarded mutable globals for configuration (match stack limit, retry lim
 
 ### Control Flow
 
-| C Pattern | Rust Equivalent |
-|-----------|-----------------|
-| `goto fail` | `loop { ... break }` or `return Err(...)` |
-| `switch (opcode)` | `match opcode { ... }` |
-| `for (p = start; p < end; p++)` | `while pos < end { ... pos += 1; }` |
-| `do { ... } while (0)` (macro) | inline block or function |
-| Fallthrough in `switch` | Explicit shared code or combined match arms |
+| C Pattern                       | Rust Equivalent                             |
+| ------------------------------- | ------------------------------------------- |
+| `goto fail`                     | `loop { ... break }` or `return Err(...)`   |
+| `switch (opcode)`               | `match opcode { ... }`                      |
+| `for (p = start; p < end; p++)` | `while pos < end { ... pos += 1; }`         |
+| `do { ... } while (0)` (macro)  | inline block or function                    |
+| Fallthrough in `switch`         | Explicit shared code or combined match arms |
 
 ## Consequences
 

@@ -5,7 +5,6 @@ title: "Unsafe Code Policy"
 
 # Unsafe Code Policy
 
-
 ## Status
 
 Accepted
@@ -23,6 +22,7 @@ The codebase permits `unsafe` blocks under two narrowly scoped patterns only:
 Call nodes (`Node::Call`) share references to their target group nodes. In C, this is a simple pointer assignment. In Rust, the borrow checker cannot express "multiple nodes referencing the same mutable tree node" without `Rc<RefCell<>>` or arena allocation -- both of which would require redesigning the entire AST.
 
 These raw pointers are:
+
 - Set once during parsing (`prs_call`)
 - Never freed independently (the AST owns all nodes)
 - Valid for the lifetime of the regex compilation
@@ -34,6 +34,7 @@ Global callout callbacks (progress, retraction) and warn functions are stored as
 ### What is NOT allowed
 
 No `unsafe` blocks for:
+
 - Buffer arithmetic or bounds-skipping
 - Memory allocation or deallocation
 - String processing or encoding conversion

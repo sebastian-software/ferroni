@@ -5,7 +5,6 @@ title: "SIMD-Accelerated Search via memchr"
 
 # SIMD-Accelerated Search via memchr
 
-
 ## Status
 
 Accepted
@@ -21,6 +20,7 @@ The question is whether to deviate from the C original's search implementation f
 Replace the hand-written byte scan loops in the search pipeline with the `memchr` crate, which provides SIMD-vectorized implementations of single-byte, two-byte, and three-byte search.
 
 Specifically:
+
 - **1-byte literal prefix:** `memchr::memchr` (replaces byte-by-byte scan)
 - **2-byte set:** `memchr::memchr2` (replaces manual two-candidate loop)
 - **3-byte set:** `memchr::memchr3` (replaces manual three-candidate loop)
@@ -54,6 +54,7 @@ The original `memchr` integration accelerates single-pattern forward search. For
 A `Box<[Vec<u16>; 256]>` lookup table built at RegSet construction time. For each byte value 0-255, it stores the indices of regexes whose first-byte pre-filter does not exclude that byte. At search time, instead of trying all N regexes at each position, only the candidates matching the current input byte are attempted.
 
 Sources for first-byte information (in priority order):
+
 1. **Exact prefix**: Only the first byte of the regex's exact literal prefix
 2. **First-byte map**: The regex's 256-entry first-byte prefilter bitmap (covers CClass, multi-byte ranges, etc.)
 3. **Fallback**: Regex is added to all 256 slots (no filtering possible)

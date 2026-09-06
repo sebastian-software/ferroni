@@ -1,14 +1,6 @@
-import "./home.css"
-import {
-  ArrowRight,
-  Github,
-  Zap,
-  ShieldCheck,
-  Package,
-  Layers,
-  ExternalLink,
-} from "ardo/icons"
-import { Link, type MetaFunction } from "react-router"
+import "./home.css";
+import { ArrowRight, Github, Zap, ShieldCheck, Package, Layers, ExternalLink } from "ardo/icons";
+import { Link, type MetaFunction } from "react-router";
 
 export const meta: MetaFunction = () => [
   { title: "Ferroni — Pure-Rust Oniguruma Engine" },
@@ -17,7 +9,7 @@ export const meta: MetaFunction = () => [
     content:
       "Ferroni is a pure-Rust port of the Oniguruma regex engine. Full feature parity with the C original, ahead of Oniguruma across the measured runtime cases. No C toolchain required.",
   },
-]
+];
 
 /* -------------------------------------------------- */
 /*  Logo                                              */
@@ -50,10 +42,7 @@ function FerroniLogo({ size = 80 }: { size?: number }) {
       </defs>
 
       {/* F body with angled right edges */}
-      <path
-        d="M 4 0 H 42 L 38 14 H 16 V 24 H 36 L 32 38 H 16 V 64 H 4 Z"
-        fill="url(#ferro-grad)"
-      />
+      <path d="M 4 0 H 42 L 38 14 H 16 V 24 H 36 L 32 38 H 16 V 64 H 4 Z" fill="url(#ferro-grad)" />
 
       {/* Sparks */}
       <path
@@ -68,15 +57,9 @@ function FerroniLogo({ size = 80 }: { size?: number }) {
         fill="var(--f-spark-fill-dim, #d97706)"
         className="fh-spark-anim-delayed"
       />
-      <circle
-        cx="44"
-        cy="19"
-        r="1.1"
-        fill="var(--f-spark-fill-dim, #d97706)"
-        opacity="0.5"
-      />
+      <circle cx="44" cy="19" r="1.1" fill="var(--f-spark-fill-dim, #d97706)" opacity="0.5" />
     </svg>
-  )
+  );
 }
 
 /* -------------------------------------------------- */
@@ -92,16 +75,13 @@ function HeroSection() {
         </div>
 
         <h1 className="fh-headline">
-          <span className="fh-headline-gradient">
-            Regex, forged in Rust.
-          </span>
+          <span className="fh-headline-gradient">Regex, forged in Rust.</span>
         </h1>
 
         <p className="fh-tagline">
-          Ferroni is a pure-Rust port of the Oniguruma regex engine &mdash; the
-          engine behind Ruby, PHP, and TextMate grammars. Full feature parity
-          with the C original, and ahead of Oniguruma across every measured
-          runtime case in the reference suite.
+          Ferroni is a pure-Rust port of the Oniguruma regex engine &mdash; the engine behind Ruby,
+          PHP, and TextMate grammars. Full feature parity with the C original, and ahead of
+          Oniguruma across every measured runtime case in the reference suite.
         </p>
 
         <div className="fh-cta-group">
@@ -119,7 +99,7 @@ function HeroSection() {
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 /* -------------------------------------------------- */
@@ -131,7 +111,7 @@ const stats = [
   { value: "100%", label: "C parity" },
   { value: "0.4%", label: "Unsafe code" },
   { value: "BSD-2", label: "License" },
-]
+];
 
 function StatsSection() {
   return (
@@ -145,7 +125,7 @@ function StatsSection() {
         ))}
       </div>
     </section>
-  )
+  );
 }
 
 /* -------------------------------------------------- */
@@ -173,7 +153,7 @@ const features = [
     title: "Built-in multi-pattern scanner",
     text: "Drop-in compatible with vscode-oniguruma. Regex engine and TextMate grammar scanner in a single dependency. Used by Shiki and VS Code.",
   },
-]
+];
 
 function WhySection() {
   return (
@@ -181,13 +161,10 @@ function WhySection() {
       <div className="fh-container">
         <div className="fh-why-header">
           <div className="fh-section-label">Why Ferroni</div>
-          <h2 className="fh-section-title">
-            Full compatibility. No compromises.
-          </h2>
+          <h2 className="fh-section-title">Full compatibility. No compromises.</h2>
           <p className="fh-section-subtitle">
-            Ferroni does not wrap Oniguruma. It ports the engine into Rust,
-            keeps the same structure and optimization pipeline, then tunes the
-            runtime path hard.
+            Ferroni does not wrap Oniguruma. It ports the engine into Rust, keeps the same structure
+            and optimization pipeline, then tunes the runtime path hard.
           </p>
         </div>
 
@@ -202,7 +179,7 @@ function WhySection() {
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 /* -------------------------------------------------- */
@@ -258,7 +235,7 @@ const benchmarks = [
     ferroni: "<80 ns",
     oniguruma: "~280 ns",
   },
-]
+];
 
 function PerfSection() {
   return (
@@ -268,9 +245,8 @@ function PerfSection() {
           <div className="fh-section-label">Performance</div>
           <h2 className="fh-section-title">Measured, not claimed.</h2>
           <p className="fh-section-subtitle">
-            Every number comes from battle_bench, a head-to-head benchmark suite
-            running Ferroni against Oniguruma on the same inputs. No
-            cherry-picked subsets.
+            Every number comes from battle_bench, a head-to-head benchmark suite running Ferroni
+            against Oniguruma on the same inputs. No cherry-picked subsets.
           </p>
         </div>
 
@@ -285,9 +261,7 @@ function PerfSection() {
               <div className="fh-perf-times">
                 <div className="fh-perf-time">
                   <span className="fh-perf-time-engine">Ferroni</span>
-                  <span className="fh-perf-time-value is-ferroni">
-                    {b.ferroni}
-                  </span>
+                  <span className="fh-perf-time-value is-ferroni">{b.ferroni}</span>
                 </div>
                 <div className="fh-perf-time">
                   <span className="fh-perf-time-engine">Oniguruma</span>
@@ -299,16 +273,14 @@ function PerfSection() {
         </div>
 
         <p className="fh-perf-note">
-          Measured on 2026-03-06 with the <code>battle_bench</code> reference
-          suite at commit <code>e8f120aa</code>, on a Mac13,2 (Apple M1 Ultra,
-          64&nbsp;GB) running macOS 26.3. Each factor is the ratio of the two
-          timings shown on its card. Full tables, raw values, and the
-          measurement context are in{" "}
-          <Link to="/perf/benchmark-results">Benchmark Results</Link>.
+          Measured on 2026-03-06 with the <code>battle_bench</code> reference suite at commit{" "}
+          <code>e8f120aa</code>, on a Mac13,2 (Apple M1 Ultra, 64&nbsp;GB) running macOS 26.3. Each
+          factor is the ratio of the two timings shown on its card. Full tables, raw values, and the
+          measurement context are in <Link to="/perf/benchmark-results">Benchmark Results</Link>.
         </p>
       </div>
     </section>
-  )
+  );
 }
 
 /* -------------------------------------------------- */
@@ -333,17 +305,14 @@ function CodeSection() {
           </div>
           <div className="fh-code-block">
             <pre>
-              <span className="kw">use</span>{" "}
-              <span className="ty">ferroni::prelude::*</span>;{"\n"}
+              <span className="kw">use</span> <span className="ty">ferroni::prelude::*</span>;{"\n"}
               {"\n"}
-              <span className="kw">fn</span>{" "}
-              <span className="fn">main</span>() -&gt;{" "}
-              <span className="ty">Result</span>&lt;(),{" "}
-              <span className="ty">RegexError</span>&gt; {"{"}
+              <span className="kw">fn</span> <span className="fn">main</span>() -&gt;{" "}
+              <span className="ty">Result</span>&lt;(), <span className="ty">RegexError</span>&gt;{" "}
+              {"{"}
               {"\n"}
               {"    "}
-              <span className="kw">let</span> re ={" "}
-              <span className="ty">Regex</span>::
+              <span className="kw">let</span> re = <span className="ty">Regex</span>::
               <span className="fn">new</span>(
               <span className="str">
                 r"(?&lt;year&gt;\d{"{4}"})-(?\u003cmonth\u003e\d{"{2}"})"
@@ -352,13 +321,11 @@ function CodeSection() {
               {"\n"}
               {"    "}
               <span className="kw">let</span> caps = re.
-              <span className="fn">captures</span>(
-              <span className="str">"Date: 2026-02-12"</span>
+              <span className="fn">captures</span>(<span className="str">"Date: 2026-02-12"</span>
               ).unwrap();{"\n"}
               {"    "}
               <span className="mc">assert_eq!</span>(caps.
-              <span className="fn">name</span>(
-              <span className="str">"year"</span>
+              <span className="fn">name</span>(<span className="str">"year"</span>
               ).unwrap().as_str(), <span className="str">"2026"</span>);{"\n"}
               {"    "}
               <span className="ty">Ok</span>(()){"\n"}
@@ -373,7 +340,7 @@ function CodeSection() {
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 /* -------------------------------------------------- */
@@ -387,7 +354,7 @@ const ecosystem = [
   { name: "jq", role: "Pattern matching" },
   { name: "Shiki", role: "Syntax highlighting" },
   { name: "VS Code", role: "Token engine" },
-]
+];
 
 function EcosystemSection() {
   return (
@@ -395,13 +362,10 @@ function EcosystemSection() {
       <div className="fh-container">
         <div className="fh-eco-header">
           <div className="fh-section-label">Ecosystem</div>
-          <h2 className="fh-section-title">
-            The Oniguruma ecosystem, unlocked
-          </h2>
+          <h2 className="fh-section-title">The Oniguruma ecosystem, unlocked</h2>
           <p className="fh-section-subtitle">
-            Ferroni works wherever Oniguruma does. These projects all depend on
-            Oniguruma&rsquo;s feature set &mdash; and Ferroni covers it
-            completely.
+            Ferroni works wherever Oniguruma does. These projects all depend on Oniguruma&rsquo;s
+            feature set &mdash; and Ferroni covers it completely.
           </p>
         </div>
 
@@ -415,7 +379,7 @@ function EcosystemSection() {
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 /* -------------------------------------------------- */
@@ -429,8 +393,8 @@ function CTASection() {
         <div className="fh-section-label">Get Started</div>
         <h2 className="fh-section-title">Start building with Ferroni</h2>
         <p className="fh-section-subtitle">
-          Full Oniguruma compatibility with dramatically better performance.
-          One dependency. Pure Rust.
+          Full Oniguruma compatibility with dramatically better performance. One dependency. Pure
+          Rust.
         </p>
 
         <div className="fh-cta-group">
@@ -471,17 +435,13 @@ function CTASection() {
 
         <div className="fh-footer-copy">
           Copyright 2026{" "}
-          <a
-            href="https://oss.sebastian-software.com"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a href="https://oss.sebastian-software.com" target="_blank" rel="noopener noreferrer">
             Sebastian Software GmbH
           </a>
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 /* -------------------------------------------------- */
@@ -499,5 +459,5 @@ export default function HomePage() {
       <EcosystemSection />
       <CTASection />
     </div>
-  )
+  );
 }

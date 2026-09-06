@@ -26,9 +26,7 @@ try {
           // Ferroni reports UTF-8 byte offsets while JavaScript reports UTF-16
           // code-unit offsets. Normalize Node to UTF-8 bytes for comparison.
           start: Buffer.byteLength(subject.slice(0, match.index)),
-          end:
-            Buffer.byteLength(subject.slice(0, match.index)) +
-            Buffer.byteLength(match[0]),
+          end: Buffer.byteLength(subject.slice(0, match.index)) + Buffer.byteLength(match[0]),
           captures: Array.from(match, (capture) => capture ?? null),
           named,
         },
