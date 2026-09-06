@@ -6318,7 +6318,11 @@ fn onig_search_inner_core_with_right_range(
                     {
                         return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
                     }
-                    s += enclen(enc, str_data, s);
+                    // A truncated multibyte lead byte reports a length past
+                    // `end`. C steps past the buffer here and its NUL
+                    // terminator hides that; Rust stays inside the haystack
+                    // and lets the next attempt run at the logical end.
+                    s = advance_char_to_end(enc, str_data, s, end);
                     if msa.skip_search > s {
                         s = msa.skip_search;
                     }
@@ -6366,14 +6370,14 @@ fn onig_search_inner_core_with_right_range(
                         return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
                     }
                     let prev = s;
-                    s += enclen(enc, str_data, s);
+                    s = advance_char_to_end(enc, str_data, s, end);
                     if msa.skip_search > s {
                         s = msa.skip_search;
                     }
                     // Skip past non-newline chars
                     while s < cur_range && !is_mbc_newline(enc, str_data, prev, end) {
                         let prev2 = s;
-                        s += enclen(enc, str_data, s);
+                        s = advance_char_to_end(enc, str_data, s, end);
                         if is_mbc_newline(enc, str_data, prev2, end) {
                             break;
                         }
@@ -6419,7 +6423,7 @@ fn onig_search_inner_core_with_right_range(
             if s >= end {
                 break;
             }
-            s += enclen(enc, str_data, s);
+            s = advance_char_to_end(enc, str_data, s, end);
             if msa.skip_search > s {
                 s = msa.skip_search;
             }

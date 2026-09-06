@@ -47,7 +47,7 @@ The structural shape of the search pipeline is unchanged -- the same functions e
 
 ## Extension: RegSet First-Byte Dispatch and Skip Needle
 
-The original `memchr` integration accelerates single-pattern forward search. For multi-pattern workloads (Scanner/RegSet — see [ADR-006](006-scanner-api.md)), two additional SIMD-assisted optimizations were added:
+The original `memchr` integration accelerates single-pattern forward search. For multi-pattern workloads (Scanner/RegSet — see [ADR-006](../006-scanner-api)), two additional SIMD-assisted optimizations were added:
 
 ### First-byte dispatch table (`first_byte_candidates`)
 

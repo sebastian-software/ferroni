@@ -61,4 +61,4 @@ Add an idiomatic Rust API layer on top of the C-ported internals:
 - The `bitflags` crate is added as a dependency.
 - `RegexType` fields are no longer directly accessible from outside the crate; use accessor functions or the `Regex` wrapper.
 - Future API additions should follow the idiomatic layer pattern: wrap C-ported internals, don't modify them.
-- The Scanner API ([ADR-006](006-scanner-api.md)) extends this layer with a domain-specific multi-pattern interface for TextMate grammar tokenization, following the same principle of wrapping C-ported internals without modification.
+- The Scanner API ([ADR-006](../006-scanner-api)) extends this layer with a domain-specific multi-pattern interface for TextMate grammar tokenization, following the same principle of wrapping C-ported internals without modification.

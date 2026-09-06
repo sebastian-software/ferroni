@@ -17,12 +17,19 @@ M1 Ultra.
 > to get current numbers on your hardware.
 
 The README intentionally rounds values for readability. This file keeps the
-raw numbers.
+raw numbers, and the home page derives its speed factors from the rows below
+(`pnpm check:numbers` in `docs/` enforces that).
+
+Every number on this page comes from the single run recorded in
+[Measurement context](#measurement-context). Releases after that commit include
+further performance work, so treat the tables as dated evidence: refresh them by
+re-running the suite on the reference machine and updating this page and the
+README together.
 
 ## Measurement context
 
 Exact external input revisions for the publishable battle suite are pinned in
-[`benches/battle_inputs.toml`](../../benches/battle_inputs.toml).
+[`benches/battle_inputs.toml`](https://github.com/sebastian-software/ferroni/blob/main/benches/battle_inputs.toml).
 
 | Field | Value |
 |-------|-------|
@@ -32,7 +39,7 @@ Exact external input revisions for the publishable battle suite are pinned in
 | macOS | `26.3` |
 | `rustc` | `rustc 1.95.0-nightly (842bd5be2 2026-01-29)` |
 | Command | `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench` |
-| Input pins | [`benches/battle_inputs.toml`](../../benches/battle_inputs.toml) |
+| Input pins | [`benches/battle_inputs.toml`](https://github.com/sebastian-software/ferroni/blob/main/benches/battle_inputs.toml) |
 
 ## Reference suite (`battle_bench`)
 

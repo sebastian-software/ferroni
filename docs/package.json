@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "react-router dev",
-    "build": "react-router build",
+    "build": "pnpm check:numbers && react-router build",
+    "check:numbers": "node scripts/check-benchmark-claims.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
