@@ -1,3 +1,7 @@
+//! Archived profiling harness for named-capture overhead, not built by cargo.
+//! To run it, copy this file into `examples/` and use:
+//! cargo run --release --example profile_named_capture
+
 use ferroni::encodings::ONIG_ENCODING_UTF8;
 use ferroni::oniguruma::*;
 use ferroni::regcomp::onig_new;

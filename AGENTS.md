@@ -27,17 +27,13 @@ English.
 
 ## Testing
 
-Run the full test suite with increased stack size (debug builds require it):
+[CONTRIBUTING.md](CONTRIBUTING.md#running-tests) carries the runnable command
+list. Debug builds need a larger thread stack; the required `RUST_MIN_STACK`
+values are stated once in ADR-013
+(`docs/app/routes/adr/013-stack-overflow-debug-builds.mdx`) and are reused by
+CONTRIBUTING.md and the CI workflow -- do not invent a third value.
 
-```bash
-RUST_MIN_STACK=268435456 cargo test --test compat_utf8 -- --test-threads=1
-```
-
-Or with multiple threads (lower stack needed):
-
-```bash
-RUST_MIN_STACK=67108864 cargo test --test compat_utf8 -- --test-threads=4
-```
+Test counts come from `./scripts/count-tests.sh`, not from memory.
 
 WARNING: Never run `cargo test -- --ignored` on the full suite -- the
 `conditional_recursion_complex` test hangs.

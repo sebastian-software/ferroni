@@ -8,7 +8,7 @@
   <a href="https://docs.rs/ferroni"><img src="https://img.shields.io/docsrs/ferroni?style=flat-square&logo=docsdotrs&label=docs.rs" alt="docs.rs"></a>
   <a href="https://github.com/sebastian-software/ferroni/actions"><img src="https://img.shields.io/github/actions/workflow/status/sebastian-software/ferroni/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI"></a>
   <a href="https://codecov.io/gh/sebastian-software/ferroni"><img src="https://img.shields.io/codecov/c/github/sebastian-software/ferroni?style=flat-square&logo=codecov&label=Coverage" alt="Coverage"></a>
-  <a href="CONTRIBUTING.md#getting-started"><img src="https://img.shields.io/badge/MSRV-1.86-blue?style=flat-square&logo=rust" alt="MSRV 1.86"></a>
+  <a href="CONTRIBUTING.md#getting-started"><img src="https://img.shields.io/badge/MSRV-1.94-blue?style=flat-square&logo=rust" alt="MSRV 1.94"></a>
   <a href="https://github.com/sebastian-software/ferroni/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square" alt="License"></a>
   <a href="https://codspeed.io/sebastian-software/ferroni?utm_source=badge"><img src="https://img.shields.io/badge/CodSpeed-measured-blue?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0yMy4zNSAxMi44NGEuODMuODMgMCAwIDAtLjE1LS42OWwtMS40LTEuNzdhLjgyLjgyIDAgMCAwLS42Ny0uMzJoLTEuNjFsLTEuNjQtMS44YS44My44MyAwIDAgMC0uNjItLjI3SDEwLjlhLjguOCAwIDAgMC0uNTguMjVsLTIuMiAyLjI1SDUuMzNhLjgzLjgzIDAgMCAwLS42LjI2TDIuMTYgMTMuNmEuODQuODQgMCAwIDAgLjYgMS40aDIuMjNsLTIuNjMgMi44YS44My44MyAwIDAgMCAuNjEgMS4zOWg0LjA1YS44My44MyAwIDAgMCAuNjEtLjI3bDMuMzMtMy42MWgyLjk2bC0zLjc5IDQuMDRhLjgyLjgyIDAgMCAwIC42MSAxLjM5aDQuMjRjLjIgMCAuNC0uMDguNTUtLjIybDMuNy0zLjZoMS4yN2wuOS43OGMuMi4yMy41Mi4zLjguMTdsMS44Mi0xLjE0YS44My44MyAwIDAgMCAuMzMtLjYxdi0xLjI3YS44My44MyAwIDAgMC0uMi0uNTN6Ii8+PC9zdmc+" alt="CodSpeed"></a>
   <a href="https://oss.sebastian-software.com"><img src="https://img.shields.io/badge/Powered%20by-Sebastian%20Software-00718d?style=flat-square" alt="Powered by Sebastian Software"></a>
@@ -63,9 +63,9 @@ in the same ~15 MB class as Oniguruma.
 look-behind, conditionals, absent expressions, Unicode properties,
 subexpression calls — everything the C engine supports, without linking
 against C. If your pattern works in Oniguruma, it works in Ferroni. Every
-opcode and optimization pass is ported 1:1 and verified by
-[2,083 tests](#test-parity) -- including every upstream UTF-8 test from both
-Oniguruma and vscode-oniguruma.
+opcode and optimization pass is ported 1:1 and verified by the
+[ported upstream test suite](#test-parity) -- including every upstream UTF-8
+test from both Oniguruma and vscode-oniguruma.
 
 **Rust improves the operational story.** Pure `cargo build`.
 Cross-compiles to `wasm32-unknown-unknown`. Easier to package in Rust-native
@@ -174,6 +174,13 @@ assert_eq!(result, 6); // match starts at byte 6
 ```
 
 </details>
+
+Both APIs have a runnable example in [`examples/`](examples):
+
+```bash
+cargo run --example basic_match       # matching, captures, iteration
+cargo run --example scanner_tokenize  # multi-pattern scanner, UTF-16 offsets
+```
 
 ## Supported features
 
@@ -394,6 +401,9 @@ Ferroni targets ASCII/UTF-8 workloads. The following are intentionally not inclu
 
 ## Running tests
 
+Debug builds need a larger thread stack; the required sizes are stated once in
+[ADR-013](https://sebastian-software.github.io/ferroni/adr/013-stack-overflow-debug-builds).
+
 ```bash
 # Full UTF-8 suite (requires increased stack for debug builds)
 
@@ -425,10 +435,13 @@ out of scope ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-enc
 | **C total (UTF-8)** | | **2,974** | **2,993** | **100%** |
 | [vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma) tests | UTF-16 | 15 | 25 | 100% |
 
-On top of the ported upstream cases, Ferroni adds 380 Rust-native tests
-for API integration, edge cases, error paths, and coverage gaps.
-`cargo test` runs **2,083 test functions** (some compat functions bundle
-multiple upstream cases).
+On top of the ported upstream cases, Ferroni adds Rust-native tests for
+API integration, edge cases, error paths, and coverage gaps. The tree holds
+**2,184 `#[test]` functions** in total (some compat functions bundle multiple
+upstream cases, so this is higher than the parity totals above). The count is
+derived from the tree by [`scripts/count-tests.sh`](scripts/count-tests.sh),
+which is the single source for the test counts quoted in this README and in
+CONTRIBUTING.
 
 C Oniguruma has no coverage reporting. Ferroni's test suite is a strict
 superset of the upstream tests.

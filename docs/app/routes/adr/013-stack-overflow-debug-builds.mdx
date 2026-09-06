@@ -44,9 +44,24 @@ We do not introduce another artificial limit for nested ASTs because:
 
 ## Consequences
 
-- Tests should be run with increased stack size:
+### Required stack sizes
+
+This table is the canonical reference for `RUST_MIN_STACK` in this
+repository. README, CONTRIBUTING, AGENTS, and the CI workflow link to or reuse
+these values in their runnable guidance.
+
+| Run | `RUST_MIN_STACK` | Note |
+|-----|-----------------:|------|
+| Debug, `--test-threads=1` | `268435456` (256 MiB) | Minimum for the stack-heavy suites (`compat_utf8`, `compat_back`) |
+| Debug, `--test-threads=2` or more | `67108864` (64 MiB) | The load is spread over several threads; works reliably but is not deterministic |
+| Release builds with coverage instrumentation | `268435456` (256 MiB) | Coverage bookkeeping adds frames; CI additionally skips the deepest recursive tests |
+| Unaffected | not needed | Release builds without coverage instrumentation, and any suite other than `compat_utf8` / `compat_back` |
+
+CI may run with more headroom than the minimum (the `compat_utf8` lane uses
+512 MiB) -- that is deliberate slack on the largest suite, not a second rule.
+
+- Tests should be run with the increased stack size:
   ```bash
-  RUST_MIN_STACK=268435456 cargo test --test compat_utf8
+  RUST_MIN_STACK=268435456 cargo test --test compat_utf8 -- --test-threads=1
   ```
-- Alternatively: `--test-threads=2` or higher distributes the load across multiple threads (usually works but is not deterministic).
 - The parse-depth limit now protects both nesting and flat linked AST spines.
