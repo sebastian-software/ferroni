@@ -12,7 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ferramenta/ardo-config": "git+https://github.com/sebastian-software/ferramenta.git#1ca92b1f29c539ccf7471bf75eee987d2f1a3368&path:packages/ardo-config",
+    "@ferramenta/family": "github:sebastian-software/ferramenta#5b84af1676b12b4b45661d5be4a42b11275a72da&path:/packages/family",
     "ardo": "^4.2.0",
     "isbot": "^5.2.2",
     "lucide-react": "^1.40.0",

@@ -12,8 +12,8 @@
 # registry source itself when it runs from node_modules).
 set -euo pipefail
 
-FERRAMENTA_PIN="d63a0b163ef3e5e68cd1c77e5c8871ac72c36b60"
-FERRAMENTA_SPEC="github:sebastian-software/ferramenta#${FERRAMENTA_PIN}&path:/packages/ardo-config"
+FERRAMENTA_PIN="5b84af1676b12b4b45661d5be4a42b11275a72da"
+FERRAMENTA_SPEC="github:sebastian-software/ferramenta#${FERRAMENTA_PIN}&path:/packages/family"
 
 mode=${1:-check}
 case "$mode" in
