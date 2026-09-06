@@ -57,9 +57,9 @@ in the same ~15 MB class as Oniguruma.
 look-behind, conditionals, absent expressions, Unicode properties,
 subexpression calls — everything the C engine supports, without linking
 against C. If your pattern works in Oniguruma, it works in Ferroni. Every
-opcode and optimization pass is ported 1:1 and verified by
-[2,083 tests](#test-parity) -- including every upstream UTF-8 test from both
-Oniguruma and vscode-oniguruma.
+opcode and optimization pass is ported 1:1 and verified by the
+[ported upstream test suite](#test-parity) -- including every upstream UTF-8
+test from both Oniguruma and vscode-oniguruma.
 
 **Rust improves the operational story.** Pure `cargo build`.
 Cross-compiles to `wasm32-unknown-unknown`. Easier to package in Rust-native
@@ -168,6 +168,13 @@ assert_eq!(result, 6); // match starts at byte 6
 ```
 
 </details>
+
+Both APIs have a runnable example in [`examples/`](examples):
+
+```bash
+cargo run --example basic_match       # matching, captures, iteration
+cargo run --example scanner_tokenize  # multi-pattern scanner, UTF-16 offsets
+```
 
 ## Supported features
 
@@ -388,6 +395,9 @@ Ferroni targets ASCII/UTF-8 workloads. The following are intentionally not inclu
 
 ## Running tests
 
+Debug builds need a larger thread stack; the required sizes are stated once in
+[ADR-013](https://sebastian-software.github.io/ferroni/adr/013-stack-overflow-debug-builds).
+
 ```bash
 # Full UTF-8 suite (requires increased stack for debug builds)
 
@@ -419,10 +429,13 @@ out of scope ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-enc
 | **C total (UTF-8)** | | **2,974** | **2,993** | **100%** |
 | [vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma) tests | UTF-16 | 15 | 25 | 100% |
 
-On top of the ported upstream cases, Ferroni adds 380 Rust-native tests
-for API integration, edge cases, error paths, and coverage gaps.
-`cargo test` runs **2,083 test functions** (some compat functions bundle
-multiple upstream cases).
+On top of the ported upstream cases, Ferroni adds Rust-native tests for
+API integration, edge cases, error paths, and coverage gaps. The tree holds
+**2,184 `#[test]` functions** in total (some compat functions bundle multiple
+upstream cases, so this is higher than the parity totals above). The count is
+derived from the tree by [`scripts/count-tests.sh`](scripts/count-tests.sh),
+which is the single source for the test counts quoted in this README and in
+CONTRIBUTING.
 
 C Oniguruma has no coverage reporting. Ferroni's test suite is a strict
 superset of the upstream tests.

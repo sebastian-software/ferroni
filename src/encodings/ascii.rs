@@ -131,3 +131,136 @@ impl Encoding for AsciiEncoding {
         0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::regcomp::onig_new;
+    use crate::regexec::onig_search;
+    use crate::regsyntax::OnigSyntaxOniguruma;
+
+    #[test]
+    fn reports_single_byte_metadata() {
+        let enc = &ONIG_ENCODING_ASCII;
+        assert_eq!(enc.name(), "US-ASCII");
+        assert_eq!(enc.max_enc_len(), 1);
+        assert_eq!(enc.min_enc_len(), 1);
+        assert_eq!(enc.mbc_enc_len(b"a"), 1);
+        assert_eq!(enc.index(), 0);
+        assert_eq!(enc.sb_range(), 0);
+        assert_eq!(
+            enc.flag(),
+            ENC_FLAG_ASCII_COMPATIBLE | ENC_FLAG_SKIP_OFFSET_1
+        );
+        assert_eq!(enc.init(), ONIG_NORMAL);
+        assert!(!enc.is_initialized());
+        assert!(enc.is_valid_mbc_string(b"plain ascii"));
+        assert!(enc.is_allowed_reverse_match(b"a"));
+    }
+
+    #[test]
+    fn converts_between_bytes_and_code_points() {
+        let enc = &ONIG_ENCODING_ASCII;
+        assert_eq!(enc.mbc_to_code(b"A", 1), 0x41);
+        assert_eq!(enc.code_to_mbclen(0x41), 1);
+
+        let mut buf = [0u8; 1];
+        assert_eq!(enc.code_to_mbc(0x41, &mut buf), 1);
+        assert_eq!(&buf, b"A");
+    }
+
+    #[test]
+    fn detects_newlines_and_adjusts_char_heads() {
+        let enc = &ONIG_ENCODING_ASCII;
+        assert!(enc.is_mbc_newline(b"\n", 1));
+        assert!(!enc.is_mbc_newline(b"a", 1));
+        // Every byte is a character head in a single-byte encoding.
+        assert_eq!(enc.left_adjust_char_head(0, 3, b"abcd"), 3);
+    }
+
+    #[test]
+    fn folds_ascii_case() {
+        let enc = &ONIG_ENCODING_ASCII;
+
+        let mut pos = 0usize;
+        let mut fold_buf = [0u8; 1];
+        assert_eq!(
+            enc.mbc_case_fold(ONIGENC_CASE_FOLD_MIN, &mut pos, 1, b"A", &mut fold_buf),
+            1
+        );
+        assert_eq!(pos, 1);
+        assert_eq!(&fold_buf, b"a");
+
+        let mut items = vec![
+            OnigCaseFoldCodeItem {
+                byte_len: 0,
+                code_len: 0,
+                code: [0; ONIGENC_MAX_COMP_CASE_FOLD_CODE_LEN],
+            };
+            4
+        ];
+        assert_eq!(
+            enc.get_case_fold_codes_by_str(ONIGENC_CASE_FOLD_MIN, b"a", 1, &mut items),
+            1
+        );
+        assert_eq!(items[0].code[0], 0x41);
+        assert_eq!(
+            enc.get_case_fold_codes_by_str(ONIGENC_CASE_FOLD_MIN, b"1", 1, &mut items),
+            0
+        );
+
+        let mut pairs = 0usize;
+        enc.apply_all_case_fold(ONIGENC_CASE_FOLD_MIN, &mut |_from, _to| {
+            pairs += 1;
+            0
+        });
+        assert_eq!(pairs, 52); // 26 letters, both directions
+    }
+
+    #[test]
+    fn classifies_only_ascii_code_points() {
+        let enc = &ONIG_ENCODING_ASCII;
+        assert!(enc.is_code_ctype(b'a' as OnigCodePoint, ONIGENC_CTYPE_ALPHA));
+        assert!(enc.is_code_ctype(b'7' as OnigCodePoint, ONIGENC_CTYPE_DIGIT));
+        assert!(!enc.is_code_ctype(b'7' as OnigCodePoint, ONIGENC_CTYPE_ALPHA));
+        // Non-ASCII code points and unknown ctypes never match.
+        assert!(!enc.is_code_ctype(0x00E4, ONIGENC_CTYPE_ALPHA));
+        assert!(!enc.is_code_ctype(b'a' as OnigCodePoint, ONIGENC_MAX_STD_CTYPE + 1));
+
+        assert_eq!(
+            enc.property_name_to_ctype(b"Greek"),
+            ONIGERR_INVALID_CHAR_PROPERTY_NAME
+        );
+        let mut sb_out: OnigCodePoint = 0;
+        assert!(enc
+            .get_ctype_code_range(ONIGENC_CTYPE_ALPHA, &mut sb_out)
+            .is_none());
+    }
+
+    #[test]
+    fn compiles_and_searches_ascii_patterns() {
+        let reg = onig_new(
+            b"(?i)ab+c",
+            ONIG_OPTION_NONE,
+            &ONIG_ENCODING_ASCII,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+
+        let input = b"xx ABBBc yy";
+        let (result, region) = onig_search(
+            &reg,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+
+        assert_eq!(result, 3);
+        let region = region.unwrap();
+        assert_eq!(region.beg[0], 3);
+        assert_eq!(region.end[0], 8);
+    }
+}

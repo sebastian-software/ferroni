@@ -16,10 +16,13 @@ Ferroni's MSRV is Rust 1.86, enforced by a dedicated CI lane.
 
 ## Running Tests
 
-Debug builds require increased stack size:
+Debug builds require an increased stack size. The required values are stated
+once in
+[ADR-013](https://sebastian-software.github.io/ferroni/adr/013-stack-overflow-debug-builds);
+the commands below use them.
 
 ```bash
-# Full UTF-8 test suite (1,568 tests)
+# Full UTF-8 compat suite
 RUST_MIN_STACK=268435456 cargo test --test compat_utf8 -- --test-threads=1
 
 # Other suites
@@ -31,6 +34,9 @@ RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 
 > **Warning:** Never run `cargo test -- --ignored` -- the
 > `conditional_recursion_complex` test intentionally hangs.
+
+Test counts are derived from the tree by `./scripts/count-tests.sh`; the
+README quotes the total in its [Test parity](README.md#test-parity) section.
 
 ## Running Benchmarks
 
@@ -71,8 +77,10 @@ change:
 
 ## Guidelines
 
-1. **Read the ADRs first.** The [`docs/adr/`](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original) directory documents
-   all major architectural decisions. In particular:
+1. **Read the ADRs first.** The ADRs live in `docs/app/routes/adr/` and are
+   published at
+   [sebastian-software.github.io/ferroni/adr](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original).
+   They document all major architectural decisions. In particular:
    - [ADR-001](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original): the 1:1
      parity goal -- same module mapping, same function names, same control flow.
    - [ADR-004](https://sebastian-software.github.io/ferroni/adr/004-c-to-rust-translation-patterns): the canonical

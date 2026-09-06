@@ -1,6 +1,8 @@
 // unicode/mod.rs - Port of unicode.c
 // Unicode character properties, case folding, and related functions.
-// Stub implementations for Phase 2; full data tables will be added later.
+// The data tables (case folding, code ranges, grapheme cluster and word
+// boundaries) are generated from upstream Oniguruma by the scripts in
+// scripts/ and live in the sibling *_data.rs modules.
 
 pub mod egcb_data;
 mod fold_data;

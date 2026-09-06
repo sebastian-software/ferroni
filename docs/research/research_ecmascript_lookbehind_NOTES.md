@@ -13,7 +13,8 @@ syntax. The default Oniguruma syntax is unchanged. A throwaway example runs the
 same patterns and subjects through Ferroni and Node, then compares compilation,
 first-match byte offsets, numbered captures, and selected named captures.
 
-Run the differential with:
+The spike is archived here and is not built by cargo. To run the differential,
+copy `research_ecmascript_lookbehind.rs` into `examples/` and use:
 
 ```shell
 cargo run --example research_ecmascript_lookbehind
