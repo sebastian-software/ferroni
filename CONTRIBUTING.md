@@ -55,6 +55,22 @@ cargo deny --all-features --locked check
 `./scripts/prepare-oniguruma-sources.sh` before the clippy command. Pull
 request titles must be Conventional Commits; a CI lane checks them.
 
+The documentation site in `docs/` is a Node workspace declared in
+`.repometa.json`. It carries the org formatter configuration, so format it from
+that directory:
+
+```bash
+cd docs
+pnpm install --frozen-lockfile
+pnpm format:check   # pnpm format rewrites
+```
+
+CI also runs a `standards drift` lane that executes
+`@sebastian-software/standards check`. Its version is pinned in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and raised by Renovate;
+run the same pinned command locally when you change repository-wide
+configuration.
+
 ## The README Family Block
 
 The "The Ferramenta family" section of [README.md](README.md) is generated. Its

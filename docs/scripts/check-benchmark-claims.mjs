@@ -182,8 +182,8 @@ for (const label of Object.keys(SOURCE_FOR_CARD)) {
 }
 
 const context = {
-  commit: bench.match(/Ferroni commit \| `([0-9a-f]+)`/)?.[1],
-  date: bench.match(/Measurement date \| `([\d-]+)/)?.[1],
+  commit: bench.match(/Ferroni commit\s*\| `([0-9a-f]+)`/)?.[1],
+  date: bench.match(/Measurement date\s*\| `([\d-]+)/)?.[1],
 }
 if (!context.commit || !context.date) {
   errors.push("perf/benchmark-results.mdx: measurement context table not found.")

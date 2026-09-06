@@ -7,6 +7,8 @@
     "dev": "react-router dev",
     "build": "pnpm check:numbers && react-router build",
     "check:numbers": "node scripts/check-benchmark-claims.mjs",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -22,6 +24,7 @@
     "@react-router/dev": "^8.3.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "oxfmt": "^0.66.0",
     "typescript": "^6.0.3",
     "vite": "^8.2.2"
   },
