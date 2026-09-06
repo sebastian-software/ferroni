@@ -1,0 +1,40 @@
+/*
+ * Site-level styles for the Ferroni documentation site.
+ *
+ * Load order (package README): tokens.css, fonts.css, theme.css, this file,
+ * then chrome.css last. Everything here is integration between Ardo's docs
+ * shell and the shared family chrome; the chrome's own look lives in
+ * `@ferramenta/family/chrome.css` and is never restated here.
+ *
+ * Ardo re-emits `ardo/ui/styles.css` in its own route chunk, which the browser
+ * loads after the root stylesheet, so "chrome.css last" does not settle ties
+ * with Ardo by order alone. The overrides below therefore carry one element
+ * selector more than the Ardo rule they replace.
+ */
+
+/*
+ * `ArdoRoot` only accepts an `ArdoFooter` element in its footer slot, so the
+ * family footer is rendered inside one. The Ardo footer keeps its default class
+ * -- that is what carries Ardo's full-bleed rules inside `main` -- and loses the
+ * band and the reading-width container it would otherwise wrap around the
+ * family footer's own iron band.
+ */
+footer.ardo-footer {
+  padding: 0;
+  background: none;
+  border-top: 0;
+}
+
+footer.ardo-footer > * {
+  max-width: none;
+}
+
+/*
+ * Ardo styles content links by class and leaves bare anchors to the site, so
+ * the family footer's links would fall back to the browser default. The chrome
+ * colors them from the inherited iron ink, and keeps its own hover and
+ * current-page colors.
+ */
+.site-footer a {
+  color: inherit;
+}

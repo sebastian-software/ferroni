@@ -8,9 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@ferramenta/ardo-config':
-        specifier: git+https://github.com/sebastian-software/ferramenta.git#1ca92b1f29c539ccf7471bf75eee987d2f1a3368&path:packages/ardo-config
-        version: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/1ca92b1f29c539ccf7471bf75eee987d2f1a3368#path:packages/ardo-config(react@19.2.8)
+      '@ferramenta/family':
+        specifier: github:sebastian-software/ferramenta#5b84af1676b12b4b45661d5be4a42b11275a72da&path:/packages/family
+        version: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/5b84af1676b12b4b45661d5be4a42b11275a72da#path:/packages/family(react@19.2.8)
       ardo:
         specifier: ^4.2.0
         version: 4.2.0(@react-router/dev@8.3.1(react-router@8.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(typescript@6.0.3)(vite@8.2.2(@types/node@25.3.5)(esbuild@0.27.3)(yaml@2.9.0)))(@types/node@25.3.5)(@types/react@19.2.18)(esbuild@0.27.3)(lightningcss@1.33.0)(lucide-react@1.40.0(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react-router@8.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(rollup@4.59.0)(typescript@6.0.3)(vite@8.2.2(@types/node@25.3.5)(esbuild@0.27.3)(yaml@2.9.0))
@@ -389,9 +389,10 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@ferramenta/ardo-config@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/1ca92b1f29c539ccf7471bf75eee987d2f1a3368#path:packages/ardo-config':
-    resolution: {path: packages/ardo-config, tarball: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/1ca92b1f29c539ccf7471bf75eee987d2f1a3368}
+  '@ferramenta/family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/5b84af1676b12b4b45661d5be4a42b11275a72da#path:/packages/family':
+    resolution: {path: /packages/family, tarball: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/5b84af1676b12b4b45661d5be4a42b11275a72da}
     version: 0.1.0
+    hasBin: true
     peerDependencies:
       react: '>=19.0.0 <20.0.0'
 
@@ -2503,7 +2504,7 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@ferramenta/ardo-config@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/1ca92b1f29c539ccf7471bf75eee987d2f1a3368#path:packages/ardo-config(react@19.2.8)':
+  '@ferramenta/family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/5b84af1676b12b4b45661d5be4a42b11275a72da#path:/packages/family(react@19.2.8)':
     dependencies:
       react: 19.2.8
 
