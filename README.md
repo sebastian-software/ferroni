@@ -1,18 +1,24 @@
 <p align="center">
   <strong>Ferroni</strong><br>
-  Pure-Rust Oniguruma-compatible engine. Faster in the hot path, same feature class, no C toolchain.<br>
-  Includes a multi-pattern scanner for TextMate grammar tokenization.
+  Pure-Rust Oniguruma-compatible regex engine &mdash; same feature class, no C toolchain.
 </p>
 
 <p align="center">
-  <a href="https://oss.sebastian-software.com"><img src="https://img.shields.io/badge/Powered%20by-Sebastian%20Software-00718d?style=flat-square" alt="Powered by Sebastian Software"></a>
+  <a href="https://crates.io/crates/ferroni"><img src="https://img.shields.io/crates/v/ferroni?style=flat-square&logo=rust&label=crates.io" alt="crates.io"></a>
+  <a href="https://docs.rs/ferroni"><img src="https://img.shields.io/docsrs/ferroni?style=flat-square&logo=docsdotrs&label=docs.rs" alt="docs.rs"></a>
   <a href="https://github.com/sebastian-software/ferroni/actions"><img src="https://img.shields.io/github/actions/workflow/status/sebastian-software/ferroni/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI"></a>
-  <a href="https://codspeed.io/sebastian-software/ferroni?utm_source=badge"><img src="https://img.shields.io/badge/CodSpeed-measured-blue?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0yMy4zNSAxMi44NGEuODMuODMgMCAwIDAtLjE1LS42OWwtMS40LTEuNzdhLjgyLjgyIDAgMCAwLS42Ny0uMzJoLTEuNjFsLTEuNjQtMS44YS44My44MyAwIDAgMC0uNjItLjI3SDEwLjlhLjguOCAwIDAgMC0uNTguMjVsLTIuMiAyLjI1SDUuMzNhLjgzLjgzIDAgMCAwLS42LjI2TDIuMTYgMTMuNmEuODQuODQgMCAwIDAgLjYgMS40aDIuMjNsLTIuNjMgMi44YS44My44MyAwIDAgMCAuNjEgMS4zOWg0LjA1YS44My44MyAwIDAgMCAuNjEtLjI3bDMuMzMtMy42MWgyLjk2bC0zLjc5IDQuMDRhLjgyLjgyIDAgMCAwIC42MSAxLjM5aDQuMjRjLjIgMCAuNC0uMDguNTUtLjIybDMuNy0zLjZoMS4yN2wuOS43OGMuMi4yMy41Mi4zLjguMTdsMS44Mi0xLjE0YS44My44MyAwIDAgMCAuMzMtLjYxdi0xLjI3YS44My44MyAwIDAgMC0uMi0uNTN6Ii8+PC9zdmc+" alt="CodSpeed"></a>
   <a href="https://codecov.io/gh/sebastian-software/ferroni"><img src="https://img.shields.io/codecov/c/github/sebastian-software/ferroni?style=flat-square&logo=codecov&label=Coverage" alt="Coverage"></a>
+  <a href="CONTRIBUTING.md#getting-started"><img src="https://img.shields.io/badge/MSRV-1.86-blue?style=flat-square&logo=rust" alt="MSRV 1.86"></a>
   <a href="https://github.com/sebastian-software/ferroni/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square" alt="License"></a>
-  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/unsafe-0.4%25-green?style=flat-square" alt="Unsafe"></a>
-  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/tests-2%2C083_passing-brightgreen?style=flat-square" alt="Tests"></a>
-  <a href="https://github.com/sebastian-software/ferroni"><img src="https://img.shields.io/badge/C_parity-100%25-brightgreen?style=flat-square" alt="C Parity"></a>
+  <a href="https://codspeed.io/sebastian-software/ferroni?utm_source=badge"><img src="https://img.shields.io/badge/CodSpeed-measured-blue?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0yMy4zNSAxMi44NGEuODMuODMgMCAwIDAtLjE1LS42OWwtMS40LTEuNzdhLjgyLjgyIDAgMCAwLS42Ny0uMzJoLTEuNjFsLTEuNjQtMS44YS44My44MyAwIDAgMC0uNjItLjI3SDEwLjlhLjguOCAwIDAgMC0uNTguMjVsLTIuMiAyLjI1SDUuMzNhLjgzLjgzIDAgMCAwLS42LjI2TDIuMTYgMTMuNmEuODQuODQgMCAwIDAgLjYgMS40aDIuMjNsLTIuNjMgMi44YS44My44MyAwIDAgMCAuNjEgMS4zOWg0LjA1YS44My44MyAwIDAgMCAuNjEtLjI3bDMuMzMtMy42MWgyLjk2bC0zLjc5IDQuMDRhLjgyLjgyIDAgMCAwIC42MSAxLjM5aDQuMjRjLjIgMCAuNC0uMDguNTUtLjIybDMuNy0zLjZoMS4yN2wuOS43OGMuMi4yMy41Mi4zLjguMTdsMS44Mi0xLjE0YS44My44MyAwIDAgMCAuMzMtLjYxdi0xLjI3YS44My44MyAwIDAgMC0uMi0uNTN6Ii8+PC9zdmc+" alt="CodSpeed"></a>
+  <a href="https://oss.sebastian-software.com"><img src="https://img.shields.io/badge/Powered%20by-Sebastian%20Software-00718d?style=flat-square" alt="Powered by Sebastian Software"></a>
+</p>
+
+<p align="center">
+  Evidence, not badges:
+  <a href="#test-parity">test parity with the C suite</a> &middot;
+  <a href="https://codecov.io/gh/sebastian-software/ferroni">coverage report</a> &middot;
+  <a href="https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy">unsafe code policy</a>
 </p>
 
 ---
@@ -39,7 +45,7 @@ TypeScript scanner workload.
 
 For syntax highlighting, Ferroni also includes a multi-pattern
 [Scanner API](#scanner-api) compatible with
-[vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma),
+[vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma),
 used by [Shiki](https://shiki.style/), VS Code, and other TextMate-based
 highlighters.
 
@@ -174,7 +180,7 @@ assert_eq!(result, 6); // match starts at byte 6
 **Scanner** -- multi-pattern matching with result caching, two search
 strategies (RegSet for short strings, per-regex for long strings), and
 automatic UTF-16 position mapping. API-compatible with
-[vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma).
+[vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma).
 
 **Full Oniguruma regex** -- every feature from the C engine:
 
@@ -464,9 +470,8 @@ the Oniguruma contributors. The C original powers regex in
 [Ruby](https://www.ruby-lang.org/), [PHP](https://www.php.net/),
 [TextMate](https://macromates.com/), [jq](https://jqlang.github.io/jq/),
 and many other projects. The Scanner API and its test suite are based on
-[vscode-oniguruma](https://github.com/nicolo-ribaudo/vscode-oniguruma)
-by [Nicol&ograve; Ribaudo](https://github.com/nicolo-ribaudo) and the
-VS Code team.
+[vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma)
+by Microsoft and the VS Code team.
 
 ## License
 
