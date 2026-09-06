@@ -48,11 +48,32 @@ cargo clippy --all-targets --all-features --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked
 cargo deny --all-features --locked check
 ./scripts/check-workflow-pins.sh
+./scripts/readme-family.sh check
 ```
 
 `--all-features` includes `ffi`, so run
 `./scripts/prepare-oniguruma-sources.sh` before the clippy command. Pull
 request titles must be Conventional Commits; a CI lane checks them.
+
+## The README Family Block
+
+The "The Ferramenta family" section of [README.md](README.md) is generated. Its
+source of truth is the family registry in
+[ferramenta](https://github.com/sebastian-software/ferramenta), so a new
+sibling, a renamed tool or a moved documentation URL is edited once there and
+every family repository follows. Never hand-edit the block between the
+`<!-- ferramenta-family:start -->` and `<!-- ferramenta-family:end -->` markers.
+
+```bash
+./scripts/readme-family.sh check   # what CI runs; exits 1 on drift
+./scripts/readme-family.sh write   # regenerate the block in place
+```
+
+Both modes need pnpm and Node >= 22.13. The script pins the generator to a
+commit of the ferramenta repository, so the check verifies the same registry
+today and next month. To pick up a registry change, bump `FERRAMENTA_PIN` in
+[`scripts/readme-family.sh`](scripts/readme-family.sh), run the `write` mode,
+and commit the regenerated block together with the new pin.
 
 ## Running Benchmarks
 
