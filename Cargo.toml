@@ -2,7 +2,7 @@
 name = "ferroni"
 version = "1.3.3"
 edition = "2024"
-description = "Pure-Rust Oniguruma regex engine with SIMD-accelerated search"
+description = "Pure-Rust Oniguruma-compatible regex engine — same feature class, no C toolchain."
 license = "BSD-2-Clause"
 authors = ["Sebastian Software GmbH"]
 repository = "https://github.com/sebastian-software/ferroni"
