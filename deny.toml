@@ -1,0 +1,39 @@
+# Dependency policy for ferroni. The allow-list is the Ferramenta family
+# baseline; widen it only with a reviewed exception below.
+
+[graph]
+# `ffi` is checked too: it pulls the `cc` build dependency.
+all-features = true
+
+[advisories]
+# A yanked package may still build from Cargo.lock, but must not ship unnoticed.
+yanked = "deny"
+ignore = []
+
+[licenses]
+allow = [
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "Unicode-3.0",
+  "Zlib",
+]
+exceptions = []
+confidence-threshold = 0.8
+
+[bans]
+# Duplicates are surfaced for maintenance review without blocking a safe build.
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

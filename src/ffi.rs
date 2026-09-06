@@ -64,7 +64,7 @@ pub const ONIG_REGSET_REGEX_LEAD: c_int = 1;
 
 // --- Extern functions ---
 
-extern "C" {
+unsafe extern "C" {
     pub static OnigEncodingUTF8: OnigEncodingType;
     pub static OnigSyntaxOniguruma: OnigSyntaxType;
 
@@ -275,9 +275,9 @@ pub struct CRegion {
 
 impl CRegion {
     pub fn new() -> Self {
-        // SAFETY: the C allocator returns an Oniguruma-owned region handle
-        // suitable for the matching free and clear functions below.
         CRegion {
+            // SAFETY: the C allocator returns an Oniguruma-owned region handle
+            // suitable for the matching free and clear functions below.
             raw: unsafe { onig_region_new() },
         }
     }
@@ -371,7 +371,7 @@ pub struct COnigScanner {
     _opaque: [u8; 0],
 }
 
-extern "C" {
+unsafe extern "C" {
     fn createOnigScanner(
         patterns: *const *mut u8,
         lengths: *const c_int,

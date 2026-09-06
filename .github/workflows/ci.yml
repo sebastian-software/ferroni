@@ -17,20 +17,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable, nightly, "1.86"]
+        rust: [stable, nightly, "1.94"]
+    # rust-toolchain.toml pins the local default toolchain; RUSTUP_TOOLCHAIN
+    # makes the matrix selection win over it.
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      # The MSRV (1.86) lane keeps the committed Cargo.lock: fresh resolution
-      # may pull dependencies that declare a newer rust-version than the MSRV,
-      # so only nightly tests an unpinned graph.
-      - name: Remove Cargo.lock for fresh resolution
-        if: matrix.rust == 'nightly'
-        shell: bash
-        run: rm -f Cargo.lock
       - name: Build
         run: cargo build
       - name: Test lib and api
@@ -52,9 +49,39 @@ jobs:
         env:
           RUST_MIN_STACK: "268435456"
 
+  fresh-resolution:
+    name: Fresh dependency resolution
+    runs-on: ubuntu-latest
+    # Library consumers resolve the dependency graph themselves instead of
+    # using our committed Cargo.lock, so one lane drops the lockfile and lets
+    # Cargo pick the newest compatible versions. This is a resolution lane, not
+    # the old edition-2024 manifest workaround the MSRV bump removed: it exists
+    # so a dependency release that breaks a fresh build is caught here rather
+    # than downstream.
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Remove Cargo.lock for fresh resolution
+        run: rm -f Cargo.lock
+      - name: Build
+        run: cargo build --all-targets
+      - name: Test lib and api
+        run: cargo test --lib --test api_test
+      - name: Test doctests
+        run: cargo test --doc
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+    # cargo-llvm-cov needs the nightly coverage attribute; override the
+    # rust-toolchain.toml default for this job.
+    env:
+      RUSTUP_TOOLCHAIN: nightly
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -129,7 +156,13 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets -- -D clippy::correctness -D clippy::suspicious
+      # --all-features includes ffi, which compiles the upstream C sources.
+      - name: Prepare Oniguruma sources
+        run: ./scripts/prepare-oniguruma-sources.sh
+      # The allowed lints live in the [lints] table of Cargo.toml, never on the
+      # command line: command-line flags outrank the manifest, so a lint denied
+      # here would silently override the table.
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format

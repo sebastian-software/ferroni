@@ -4213,7 +4213,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             OpCode::BackRefMulti => {
-                if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
                     let tlen = *num as usize;
                     let mut matched = false;
                     let mut participated = false;
@@ -4256,7 +4256,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             OpCode::BackRefMultiIc => {
-                if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
                     let tlen = *num as usize;
                     let mut matched = false;
                     let mut participated = false;
@@ -4307,7 +4307,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             OpCode::BackRefCheck => {
-                if let OperationPayload::BackRefGeneral { num, ref ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
                     let tlen = *num as usize;
                     let mut found = false;
                     for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
@@ -4334,7 +4334,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             OpCode::BackRefWithLevel | OpCode::BackRefWithLevelIc => {
                 if let OperationPayload::BackRefGeneral {
                     num,
-                    ref ns,
+                    ns,
                     nest_level,
                 } = &reg.ops[p].payload
                 {
@@ -4363,7 +4363,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             OpCode::BackRefCheckWithLevel => {
                 if let OperationPayload::BackRefGeneral {
                     num,
-                    ref ns,
+                    ns,
                     nest_level,
                 } = &reg.ops[p].payload
                 {
@@ -5083,7 +5083,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
             // Time limit check (every CHECK_TIME_INTERVAL retries)
             if time_limit_ms > 0
-                && (retry_in_match_counter % CHECK_TIME_INTERVAL) == 0
+                && retry_in_match_counter.is_multiple_of(CHECK_TIME_INTERVAL)
                 && msa.check_time_limit()
             {
                 best_len = ONIGERR_TIME_LIMIT_OVER;
@@ -5265,12 +5265,10 @@ pub fn onig_match_with_param(
 // onig_search - search for a match anywhere in the string
 // ============================================================================
 
-/// Search for the regex pattern in the string, trying each position from
-/// `start` to `range`.
-/// Returns the match position on success, ONIG_MISMATCH (-1) on failure.
-///
-/// Parameters:
-///     - `reg`: compiled regex
+// Search for the regex pattern in the string, trying each position from
+// `start` to `range`. Returns the match position on success, ONIG_MISMATCH
+// (-1) on failure, given a compiled regex `reg`. The entry points themselves
+// are `onig_search` and `onig_search_with_param` further down this file.
 // ============================================================================
 // Search optimization functions — mirrors C's regexec.c lines 5168-5645
 // ============================================================================
@@ -5619,11 +5617,7 @@ fn onigenc_get_right_adjust_char_head(
     s: usize,
 ) -> usize {
     let p = left_adjust_char_head(enc, text, start, s);
-    if p < s {
-        p + enclen(enc, text, p)
-    } else {
-        p
-    }
+    if p < s { p + enclen(enc, text, p) } else { p }
 }
 
 /// Forward search using optimization strategy.
@@ -5871,7 +5865,7 @@ fn can_use_two_pass_capture_fill(
         && msa.region.is_some()
         && !opton_find_longest(msa.options)
         && !reg.needs_capture_tracking
-        && reg.extp.as_ref().map_or(true, |ext| ext.callout_num == 0)
+        && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
         // Keep this off when wall-time limiting is active: second pass is extra work.
         && msa.time_limit == 0
 }
@@ -7527,7 +7521,7 @@ mod tests {
         assert_eq!(r, 0);
 
         let input = b"xxabxxabxx"; // "ab" at positions 2 and 6
-                                   // Backward search: start=10 (end), range=0 (beginning)
+        // Backward search: start=10 (end), range=0 (beginning)
         let (result, _) = onig_search(
             &reg,
             input,

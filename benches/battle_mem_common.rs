@@ -61,8 +61,11 @@ pub fn scan_rust_lines(scanner: &mut Scanner, source: &str) -> TokenizeStats {
 
 pub fn max_rss_bytes() -> u64 {
     let mut usage = MaybeUninit::<libc::rusage>::zeroed();
+    // SAFETY: `usage` is a live, zeroed `rusage` allocation, and `getrusage`
+    // only writes through the pointer it is given.
     let rc = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
     assert_eq!(rc, 0, "getrusage failed");
+    // SAFETY: the call above returned 0, so the kernel initialized `usage`.
     let usage = unsafe { usage.assume_init() };
 
     #[cfg(target_os = "macos")]
