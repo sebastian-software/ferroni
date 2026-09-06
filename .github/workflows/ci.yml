@@ -132,6 +132,10 @@ jobs:
   ffi-smoke:
     name: FFI feature smoke
     runs-on: ubuntu-latest
+    # rust-toolchain.toml pins the local default toolchain; RUSTUP_TOOLCHAIN
+    # keeps the toolchain this job asks for in charge.
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
@@ -159,6 +163,10 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    # rust-toolchain.toml pins the local default toolchain; RUSTUP_TOOLCHAIN
+    # keeps the toolchain this job asks for in charge.
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
@@ -177,6 +185,10 @@ jobs:
   docs:
     name: Rustdoc
     runs-on: ubuntu-latest
+    # rust-toolchain.toml pins the local default toolchain; RUSTUP_TOOLCHAIN
+    # keeps the toolchain this job asks for in charge.
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
@@ -200,6 +212,10 @@ jobs:
   fmt:
     name: Format
     runs-on: ubuntu-latest
+    # rust-toolchain.toml pins the local default toolchain; RUSTUP_TOOLCHAIN
+    # keeps the toolchain this job asks for in charge.
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master

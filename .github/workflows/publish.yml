@@ -61,6 +61,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # rust-toolchain.toml pins the local default toolchain; RUSTUP_TOOLCHAIN
+    # keeps the toolchain this job asks for in charge.
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
       # Publish the released revision, never whatever main happens to be: a
       # manual retry runs after the release commit, and main may have moved on.
