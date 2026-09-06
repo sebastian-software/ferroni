@@ -1,0 +1,4 @@
+# Default owners for everything in this repository.
+# GitHub applies the LAST matching pattern, so put more specific rules BELOW
+# this line, never above it — a rule above the catch-all would be overridden.
+* @sebastian-software/maintainers
