@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.0](https://github.com/sebastian-software/ferroni/compare/v1.3.3...v1.4.0) (2026-09-06)
+
+
+### Features
+
+* add a fuzz workspace for the parser, matcher, and scanner ([#108](https://github.com/sebastian-software/ferroni/issues/108)) ([29b40ab](https://github.com/sebastian-software/ferroni/commit/29b40ab74cc691cc6bf4b8978694116c2ee210f7))
+
+
+### Bug Fixes
+
+* bound optimizer retries and stop nested quantifiers doubling the bytecode ([#116](https://github.com/sebastian-software/ferroni/issues/116)) ([4d35b0a](https://github.com/sebastian-software/ferroni/commit/4d35b0abb72a9de9512080442dbfde3de4365cdd))
+* bump MSRV to Rust 1.86 and update benchmark dependencies ([#92](https://github.com/sebastian-software/ferroni/issues/92)) ([79205a0](https://github.com/sebastian-software/ferroni/commit/79205a039b329adf6810e463cc11a81371cd1935))
+* correct stale facts in docs, tests, and coverage config ([#103](https://github.com/sebastian-software/ferroni/issues/103)) ([4bb8703](https://github.com/sebastian-software/ferroni/commit/4bb8703c35c76329c0df532c93bec09e49c9d27c))
+* keep search positions inside the haystack ([#111](https://github.com/sebastian-software/ferroni/issues/111)) ([9cfff66](https://github.com/sebastian-software/ferroni/commit/9cfff66acb99a09963c01b22505161f3df2843f7))
+* reject left-recursive subexpression calls at compile time ([#119](https://github.com/sebastian-software/ferroni/issues/119)) ([d3521bf](https://github.com/sebastian-software/ferroni/commit/d3521bf520ff4708ae62a23b9f5a68f07d67c16b))
+* require Rust 1.94 and move to edition 2024 ([#104](https://github.com/sebastian-software/ferroni/issues/104)) ([578208c](https://github.com/sebastian-software/ferroni/commit/578208ce993296876bf51ec27a473bd2cabd0f73))
+
 ## [1.3.3](https://github.com/sebastian-software/ferroni/compare/v1.3.2...v1.3.3) (2026-09-05)
 
 
