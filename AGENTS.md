@@ -27,17 +27,13 @@ English.
 
 ## Testing
 
-Run the full test suite with increased stack size (debug builds require it):
+[CONTRIBUTING.md](CONTRIBUTING.md#running-tests) carries the runnable command
+list. Debug builds need a larger thread stack; the required `RUST_MIN_STACK`
+values are stated once in ADR-013
+(`docs/app/routes/adr/013-stack-overflow-debug-builds.mdx`) and are reused by
+CONTRIBUTING.md and the CI workflow -- do not invent a third value.
 
-```bash
-RUST_MIN_STACK=268435456 cargo test --test compat_utf8 -- --test-threads=1
-```
-
-Or with multiple threads (lower stack needed):
-
-```bash
-RUST_MIN_STACK=67108864 cargo test --test compat_utf8 -- --test-threads=4
-```
+Test counts come from `./scripts/count-tests.sh`, not from memory.
 
 WARNING: Never run `cargo test -- --ignored` on the full suite -- the
 `conditional_recursion_complex` test hangs.
@@ -50,9 +46,23 @@ WARNING: Never run `cargo test -- --ignored` on the full suite -- the
 
 - Do not hand-edit managed files or standards-owned marker sections.
 - If `standards check` reports drift, run `standards apply` or update standards.
-- `pnpm agent:check` may omit `standards check`; CI can still fail on drift.
+- The repository's own gate may omit `standards check`; CI can still fail on it.
+
+Node repositories:
+
 - Fix or format every file reported by `oxfmt` whenever practical.
 - For generated files, prefer formatting in the generator step.
 - If formatting is not viable, use repo-local `.prettierignore`.
 - Never add repo-specific ignores to managed `.oxfmtrc.json`.
+
+Rust repositories:
+
+- Keep `cargo fmt --all --check` and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings` green.
+- Lint levels belong in `[workspace.lints]`, never in managed `rustfmt.toml`.
+- `rust-version` in `Cargo.toml` is the only MSRV; every other mention is a
+  derived copy.
+- Record a cargo-deny finding as a narrow, commented exception in `deny.toml` —
+  never by widening the org allow-list.
+
 <!-- sebastian-software-consumer-agents:end -->

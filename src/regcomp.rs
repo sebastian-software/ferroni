@@ -1222,7 +1222,14 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
             } else {
                 OPSIZE_PUSH
             };
-            body_len * qn.lower + push_size + mod_tlen + OPSIZE_JUMP
+            // C: a `+` over a large body jumps into the loop body instead of
+            // emitting the body once more for the mandatory first pass.
+            let first_pass = if qn.lower == 1 && body_len > QUANTIFIER_EXPAND_LIMIT_SIZE as i32 {
+                OPSIZE_JUMP
+            } else {
+                body_len * qn.lower
+            };
+            first_pass + push_size + mod_tlen + OPSIZE_JUMP
         } else {
             // {n,} or {n,}?
             let n_body_len = compile_length_tree_n_times(body, qn.lower, reg, env);
@@ -1440,9 +1447,28 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
 
     if is_infinite_repeat(qn.upper) {
         if qn.lower <= 1 {
+            // C: a `+` over a body larger than QUANTIFIER_EXPAND_LIMIT_SIZE
+            // does not duplicate the body for the mandatory first pass. It
+            // jumps over the PUSH into the loop body instead, so nested
+            // quantifiers grow the bytecode linearly rather than doubling it
+            // at every level.
+            let jump_into_body = qn.lower == 1 && body_len > QUANTIFIER_EXPAND_LIMIT_SIZE as i32;
+            if jump_into_body {
+                let addr = if !qn.greedy {
+                    OPSIZE_JUMP + SIZE_INC
+                } else if qn.head_exact.is_some() {
+                    OPSIZE_PUSH_OR_JUMP_EXACT1 + SIZE_INC
+                } else if qn.next_head_exact.is_some() {
+                    OPSIZE_PUSH_IF_PEEK_NEXT + SIZE_INC
+                } else {
+                    OPSIZE_PUSH + SIZE_INC
+                };
+                add_op(reg, OpCode::Jump, OperationPayload::Jump { addr });
+            }
+
             if qn.greedy {
                 // a* or a+
-                if qn.lower == 1 {
+                if qn.lower == 1 && !jump_into_body {
                     // a+ : body first, then loop
                     compile_tree_n_times(body, 1, reg, env);
                 }
@@ -1515,7 +1541,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 add_op(reg, OpCode::Jump, OperationPayload::Jump { addr });
             } else {
                 // a*? or a+?
-                if qn.lower == 1 {
+                if qn.lower == 1 && !jump_into_body {
                     compile_tree_n_times(body, 1, reg, env);
                 }
                 // JUMP forward → body → PUSH back
@@ -8540,6 +8566,45 @@ pub fn onig_new(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// In a syntax where `++` is possessive, every further `+` wraps the
+    /// previous quantifier in an atomic group and quantifies it again. C
+    /// jumps into the loop body for a `+` whose body exceeds
+    /// `QUANTIFIER_EXPAND_LIMIT_SIZE`, so the bytecode grows by a constant
+    /// per level. Duplicating the body for the mandatory first pass instead
+    /// doubles it per level; 43 stacked `+` then ask for gigabytes.
+    #[test]
+    fn stacked_possessive_quantifiers_compile_to_linear_bytecode() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::ONIG_OPTION_NONE;
+        use crate::regsyntax::OnigSyntaxPerl_NG;
+
+        let ops_for = |stacked: usize| {
+            let mut pattern = b"un".to_vec();
+            pattern.extend(std::iter::repeat_n(b'+', stacked));
+            pattern.extend_from_slice(b"ct?");
+            onig_new(
+                &pattern,
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxPerl_NG,
+            )
+            .unwrap()
+            .ops
+            .len()
+        };
+
+        let small = ops_for(23);
+        let large = ops_for(43);
+        // Ten more levels add a fixed number of ops each, not a factor of
+        // two per level.
+        let per_level = (large - small) / 10;
+        assert!(
+            per_level <= 8,
+            "{per_level} ops per level ({small} -> {large})"
+        );
+        assert!(large < 256, "{large} ops for 43 stacked quantifiers");
+    }
     use crate::regparse;
     use crate::regsyntax::OnigSyntaxOniguruma;
 
