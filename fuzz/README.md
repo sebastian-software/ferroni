@@ -12,7 +12,7 @@ published `ferroni` package.
 | --- | --- |
 | `pattern-compile` | `onig_new` over arbitrary pattern bytes, with the first two bytes selecting one of six syntaxes and one of seven option sets. |
 | `pattern-match` | Compiling an arbitrary pattern and searching arbitrary bytes with `onig_search_with_param`, then checking that the reported match and every capture group stay inside the haystack. |
-| `scanner-api` | `Scanner::new` over arbitrary patterns, then walking `find_next_match` across arbitrary text, checking that every match is in range and on a character boundary. |
+| `scanner-api` | `Scanner::new` over arbitrary patterns, then walking `find_next_match` across arbitrary text from an input-chosen start position, checking that every match is in range and on a character boundary. |
 
 `pattern-match` sets a per-call step budget (`retry_limit_in_match`,
 `retry_limit_in_search`, `match_stack_limit`) through `OnigMatchParam`.
