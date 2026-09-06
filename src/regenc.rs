@@ -574,11 +574,7 @@ pub fn onigenc_step(
     for _ in 0..n {
         q += enc.mbc_enc_len(&data[q..]);
     }
-    if q <= end {
-        Some(q)
-    } else {
-        None
-    }
+    if q <= end { Some(q) } else { None }
 }
 
 /// Count characters in [p..end)

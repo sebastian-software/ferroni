@@ -86,7 +86,7 @@ Add to your `Cargo.toml`:
 ferroni = "1"
 ```
 
-MSRV: Rust 1.86 (enforced in CI).
+MSRV: Rust 1.94 (enforced in CI).
 
 ### Regex
 
@@ -484,6 +484,10 @@ VS Code team.
 ## License
 
 [BSD-2-Clause](LICENSE) (same as Oniguruma)
+
+Ferroni is the one Ferramenta tool that is not published under `MIT OR
+Apache-2.0`: it is a line-by-line port of Oniguruma's C source, so it stays
+under the BSD-2-Clause license of the code it is derived from.
 
 ---
 
