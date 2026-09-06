@@ -1866,3 +1866,50 @@ fn search_over_truncated_multibyte_lead_stays_inside_haystack() {
     );
     assert_eq!(position, ONIG_MISMATCH);
 }
+
+#[test]
+fn optimizer_retry_over_truncated_multibyte_lead_stays_inside_haystack() {
+    use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
+    use ferroni::oniguruma::{ONIG_MISMATCH, ONIG_OPTION_NONE};
+    use ferroni::regcomp::onig_new;
+    use ferroni::regexec::onig_search;
+    use ferroni::regsyntax::OnigSyntaxOniguruma;
+
+    // `^\s$` is a byte-map search with a begin-line sub-anchor. The map
+    // reports the 0xC8 lead byte as a candidate, the sub-anchor rejects it,
+    // and the retry used to step two bytes past a two-byte haystack before
+    // slicing it for the next map search.
+    let reg = onig_new(
+        br"^\s$",
+        ONIG_OPTION_NONE,
+        &ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma,
+    )
+    .unwrap();
+    let haystack: &[u8] = &[b'w', 0xC8];
+    let (position, _) = onig_search(
+        &reg,
+        haystack,
+        haystack.len(),
+        0,
+        haystack.len(),
+        None,
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(position, ONIG_MISMATCH);
+
+    // The same retry over valid UTF-8 with a search range that ends inside
+    // the haystack; the helpers must answer "not found" for a start past
+    // the range instead of slicing it.
+    let text = "w\u{3000}\u{3000}\n\u{3000}";
+    let (position, _) = onig_search(
+        &reg,
+        text.as_bytes(),
+        text.len(),
+        0,
+        2,
+        None,
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(position, ONIG_MISMATCH);
+}

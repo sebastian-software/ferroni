@@ -5332,6 +5332,10 @@ fn sunday_quick_search(
     } else {
         text_range + tlen
     };
+    // C: `while (s < end)`; a start at or past the range finds nothing.
+    if text_start >= search_end {
+        return None;
+    }
 
     let haystack = &text[text_start..search_end];
     if tlen == 1 {
@@ -5402,6 +5406,12 @@ fn map_search(
     text_start: usize,
     text_range: usize,
 ) -> Option<usize> {
+    // C: `while (s < text_range)`; a start at or past the range finds
+    // nothing. An optimizer retry can leave the start there after stepping
+    // over a multibyte character.
+    if text_start >= text_range {
+        return None;
+    }
     let haystack = &text[text_start..text_range];
     match reg.map_byte_count {
         1 => memchr::memchr(reg.map_bytes[0], haystack).map(|i| text_start + i),
@@ -5639,7 +5649,7 @@ fn forward_search(
         } else {
             let target = p + reg.dist_min as usize;
             while p < target && p < end {
-                p += enclen(reg.enc, str_data, p);
+                p = advance_char_to_end(reg.enc, str_data, p, end);
             }
         }
     }
@@ -5666,7 +5676,7 @@ fn forward_search(
 
         if p.saturating_sub(start) < reg.dist_min as usize {
             pprev = Some(p);
-            p += enclen(reg.enc, str_data, p);
+            p = advance_char_to_end(reg.enc, str_data, p, end);
             continue; // retry
         }
 
@@ -5688,8 +5698,10 @@ fn forward_search(
                 }
             }
             if retry {
+                // A truncated multibyte lead byte reports a length past
+                // `end`; stay inside the haystack as the outer loops do.
                 pprev = Some(p);
-                p += enclen(reg.enc, str_data, p);
+                p = advance_char_to_end(reg.enc, str_data, p, end);
                 continue; // retry
             }
         }
