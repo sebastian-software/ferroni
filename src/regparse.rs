@@ -10,8 +10,8 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
-use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::oniguruma::*;
 use crate::regenc::*;
@@ -410,22 +410,14 @@ fn backref_rel_to_abs(rel_no: i32, env: &ParseEnv) -> i32 {
 
 fn enc_sb_out(enc: OnigEncoding) -> OnigCodePoint {
     if (enc.flag() & ENC_FLAG_UNICODE) != 0 {
-        if enc.min_enc_len() == 1 {
-            128 + 1
-        } else {
-            0
-        }
+        if enc.min_enc_len() == 1 { 128 + 1 } else { 0 }
     } else {
         0x100
     }
 }
 
 fn mbcode_start_pos(enc: OnigEncoding) -> OnigCodePoint {
-    if enc.min_enc_len() > 1 {
-        0
-    } else {
-        0x80
-    }
+    if enc.min_enc_len() > 1 { 0 } else { 0x80 }
 }
 
 // ============================================================================
@@ -537,11 +529,7 @@ fn positive_int_multiply(x: i32, y: i32) -> i32 {
     if x == 0 || y == 0 {
         return 0;
     }
-    if x < i32::MAX / y {
-        x * y
-    } else {
-        -1
-    }
+    if x < i32::MAX / y { x * y } else { -1 }
 }
 
 fn scan_number(p: &mut usize, end: usize, pattern: &[u8], enc: OnigEncoding) -> i32 {
@@ -1138,7 +1126,7 @@ fn or_code_range_buf(
     };
 
     // Add all ranges from b1
-    if let Some(ref bb1) = b1 {
+    if let Some(bb1) = b1 {
         let nn = bbuf_read_code_point(bb1, 0) as usize;
         for i in 0..nn {
             let from = bbuf_read_code_point(bb1, SIZE_CODE_POINT * (1 + i * 2));
@@ -3305,7 +3293,7 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                         pinc(p, pattern, enc); // skip '?'
                         if !p_end(*p, end) && ppeek_is(*p, pattern, end, enc, '#' as u32) {
                             pfetch(p, &mut pfetch_prev, pattern, end, enc); // consume '#'
-                                                                            // Skip comment body until unescaped ')'
+                            // Skip comment body until unescaped ')'
                             loop {
                                 if p_end(*p, end) {
                                     return ONIGERR_END_PATTERN_IN_GROUP;

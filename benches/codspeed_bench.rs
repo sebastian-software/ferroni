@@ -6,14 +6,14 @@
 mod grammar_loader;
 mod scanner_css_workload;
 
-use criterion_codspeed::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion_codspeed::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use scanner_css_workload::{CSS_INPUT, CSS_PATTERNS};
 
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
-use ferroni::oniguruma::{OnigOptionType, OnigRegion, ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE};
+use ferroni::oniguruma::{ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE, OnigOptionType, OnigRegion};
 use ferroni::regcomp::onig_new;
 use ferroni::regexec::{onig_match, onig_region_new, onig_search};
-use ferroni::regset::{onig_regset_new, onig_regset_search, OnigRegSetLead};
+use ferroni::regset::{OnigRegSetLead, onig_regset_new, onig_regset_search};
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions};
 

@@ -17,20 +17,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable, nightly, "1.86"]
+        rust: [stable, nightly, "1.94"]
+    # rust-toolchain.toml pins the local default toolchain; RUSTUP_TOOLCHAIN
+    # makes the matrix selection win over it.
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      # The MSRV (1.86) lane keeps the committed Cargo.lock: fresh resolution
-      # may pull dependencies that declare a newer rust-version than the MSRV,
-      # so only nightly tests an unpinned graph.
-      - name: Remove Cargo.lock for fresh resolution
-        if: matrix.rust == 'nightly'
-        shell: bash
-        run: rm -f Cargo.lock
       - name: Build
         run: cargo build
       - name: Test lib and api
@@ -55,6 +52,10 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+    # cargo-llvm-cov needs the nightly coverage attribute; override the
+    # rust-toolchain.toml default for this job.
+    env:
+      RUSTUP_TOOLCHAIN: nightly
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

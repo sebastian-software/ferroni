@@ -1,7 +1,7 @@
 [package]
 name = "ferroni"
 version = "1.3.3"
-edition = "2021"
+edition = "2024"
 description = "Pure-Rust Oniguruma regex engine with SIMD-accelerated search"
 license = "BSD-2-Clause"
 authors = ["Sebastian Software GmbH"]
@@ -9,11 +9,32 @@ repository = "https://github.com/sebastian-software/ferroni"
 homepage = "https://sebastian-software.github.io/ferroni/"
 documentation = "https://docs.rs/ferroni"
 readme = "README.md"
-keywords = ["regex", "oniguruma", "unicode", "pattern-matching", "simd"]
+keywords = ["regex", "oniguruma", "unicode", "simd", "ferramenta"]
 categories = ["text-processing", "parsing"]
-rust-version = "1.86"
+rust-version = "1.94"
 autobenches = false
 exclude = [".cache/", "benches/", "docs/", "scripts/"]
+
+[package.metadata.docs.rs]
+# The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot
+# provide, so the documentation build stays on the default feature set.
+all-features = false
+rustdoc-args = ["--cfg", "docsrs"]
+
+# These mirror the crate-level attributes that used to live in `src/lib.rs`, so
+# the same policy applies to tests, benches, and examples as well as the lib.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+# The C port keeps items that upstream Oniguruma declares but does not use.
+dead_code = "allow"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "warn"
+# ADR-001 keeps the module and control-flow structure of the C original, so the
+# lints that would restructure ported code are allowed on purpose.
+collapsible_if = "allow"
+collapsible_match = "allow"
+empty_line_after_doc_comments = "allow"
 
 [features]
 # Benchmark-comparison harness: links a local upstream Oniguruma checkout

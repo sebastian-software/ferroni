@@ -12,11 +12,11 @@ use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
-use crate::regexec::{onig_match_with_msa_start, onig_search_with_msa, MatchArg};
+use crate::regexec::{MatchArg, onig_match_with_msa_start, onig_search_with_msa};
 use crate::regset::{
-    onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new,
-    onig_regset_number_of_regex, onig_regset_search_fast, onig_regset_search_fast_with_id,
-    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead,
+    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, onig_regset_get_regex,
+    onig_regset_last_match_len, onig_regset_new, onig_regset_number_of_regex,
+    onig_regset_search_fast, onig_regset_search_fast_with_id,
 };
 use crate::regsyntax::*;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1261,7 +1261,7 @@ mod tests {
     fn vscode_out_of_bounds() {
         let mut scanner = Scanner::new(&["X"]).unwrap();
         let s = "X\u{1F4BB}X"; // X(1) 💻(4) X(1) = 6 bytes
-                               // Start at 0: X at byte 0
+        // Start at 0: X at byte 0
         assert_eq!(
             scanner.find_next_match(s, 0, ScannerFindOptions::NONE),
             Some(ScannerMatch {
@@ -2208,14 +2208,12 @@ mod tests {
         let mut pos = 0;
         let mut matches = Vec::new();
         for _ in 0..20 {
-            if let Some(m) =
-                scanner.find_next_match_with_id(input, 99, pos, ScannerFindOptions::NONE)
-            {
-                pos = m.capture_indices[0].end;
-                matches.push(m.index);
-            } else {
+            let Some(m) = scanner.find_next_match_with_id(input, 99, pos, ScannerFindOptions::NONE)
+            else {
                 break;
-            }
+            };
+            pos = m.capture_indices[0].end;
+            matches.push(m.index);
         }
         assert_eq!(matches, vec![0, 1, 2]); // a+, b+, c+
         let stats = scanner.stats();

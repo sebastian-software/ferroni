@@ -5,7 +5,7 @@
 mod battle_mem_common;
 mod grammar_loader;
 
-use battle_mem_common::{load_typescript_workload, max_rss_bytes, print_result, TokenizeStats};
+use battle_mem_common::{TokenizeStats, load_typescript_workload, max_rss_bytes, print_result};
 use ferroni::ffi;
 
 fn main() {
