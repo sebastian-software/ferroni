@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/sebastian-software/ferroni/compare/v1.3.2...v1.3.3) (2026-09-05)
+
+
+### Bug Fixes
+
+* restore docs sidebar order and clean up after dependency update ([#89](https://github.com/sebastian-software/ferroni/issues/89)) ([30ef472](https://github.com/sebastian-software/ferroni/commit/30ef472cb0e32de67064e82ee6e64319dfa34744))
+
 ## [1.3.2](https://github.com/sebastian-software/ferroni/compare/v1.3.1...v1.3.2) (2026-08-26)
 
 

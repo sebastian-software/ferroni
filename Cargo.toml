@@ -1,6 +1,6 @@
 [package]
 name = "ferroni"
-version = "1.3.2"
+version = "1.3.3"
 edition = "2021"
 description = "Pure-Rust Oniguruma regex engine with SIMD-accelerated search"
 license = "BSD-2-Clause"
