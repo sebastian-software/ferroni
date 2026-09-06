@@ -1662,6 +1662,13 @@ fn onig_regset_search_impl(
         }
     }
 
+    // A begin-position anchor sets `cur_range = start + 1` even when `start`
+    // already sits at the logical end, so the range can point one past the
+    // haystack. C tolerates that because its buffer is NUL-terminated; the
+    // position loops below index the haystack up to `cur_range`, so keep it
+    // inside the string. The only attempt that survives is the one at `end`.
+    let cur_range = cur_range.min(end);
+
     let (result, match_pos) = if lead == OnigRegSetLead::PositionLead {
         regset_search_body_position_lead(
             set,

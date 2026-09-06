@@ -1779,3 +1779,90 @@ fn subroutine_in_negative_lookbehind_state() {
         let _ = re.is_match("ab1");
     }
 }
+
+// =========================================================================
+// Regression: positions must never leave the haystack (found by fuzzing)
+// =========================================================================
+
+#[test]
+fn scanner_begin_position_anchor_at_end_of_text_does_not_panic() {
+    use ferroni::scanner::{Scanner, ScannerFindOptions};
+    // A begin-position anchor narrows the search range to `start + 1`. With
+    // `start == text.len()` that range pointed one past the haystack and the
+    // position loop subtracted past zero. A TextMate host reaches this
+    // position on every line once it has consumed the last character.
+    let mut scanner = Scanner::new(&[r"^\G"]).unwrap();
+    assert!(
+        scanner
+            .find_next_match("h", 0, ScannerFindOptions::NONE)
+            .is_some()
+    );
+    assert!(
+        scanner
+            .find_next_match("h", 1, ScannerFindOptions::NONE)
+            .is_none()
+    );
+
+    // The same shape with a literal after the anchor exercises the skip
+    // needle, whose slice also ran up to the overshooting range.
+    let mut scanner = Scanner::new(&[r"^\Ga"]).unwrap();
+    assert!(
+        scanner
+            .find_next_match("a", 1, ScannerFindOptions::NONE)
+            .is_none()
+    );
+}
+
+#[test]
+fn search_over_truncated_multibyte_lead_stays_inside_haystack() {
+    use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
+    use ferroni::oniguruma::{ONIG_MISMATCH, ONIG_OPTION_NONE, OnigRegion};
+    use ferroni::regcomp::onig_new;
+    use ferroni::regexec::onig_search;
+    use ferroni::regsyntax::OnigSyntaxOniguruma;
+
+    // The byte API accepts arbitrary bytes. 0xE6 announces a three-byte
+    // sequence, so stepping over it from position 1 used to land on 4 in a
+    // three-byte haystack, and the next attempt indexed past the end.
+    let reg = onig_new(
+        b"$",
+        ONIG_OPTION_NONE,
+        &ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma,
+    )
+    .unwrap();
+    let haystack: &[u8] = &[0x00, 0xE6, 0xE6];
+    for region in [None, Some(OnigRegion::new())] {
+        let (position, _) = onig_search(
+            &reg,
+            haystack,
+            haystack.len(),
+            0,
+            haystack.len(),
+            region,
+            ONIG_OPTION_NONE,
+        );
+        // The truncated character is consumed up to the logical end, where `$`
+        // matches as it does for any other input.
+        assert_eq!(position, haystack.len() as i32);
+    }
+
+    // A pattern that cannot match reports a mismatch rather than a panic.
+    let reg = onig_new(
+        b"x$",
+        ONIG_OPTION_NONE,
+        &ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma,
+    )
+    .unwrap();
+    let (position, _) = onig_search(
+        &reg,
+        haystack,
+        haystack.len(),
+        0,
+        haystack.len(),
+        None,
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!(position, ONIG_MISMATCH);
+}
