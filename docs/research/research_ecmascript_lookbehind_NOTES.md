@@ -14,7 +14,8 @@ same patterns and subjects through Ferroni and Node, then compares compilation,
 first-match byte offsets, numbered captures, and selected named captures.
 
 The spike is archived here and is not built by cargo. To run the differential,
-copy `research_ecmascript_lookbehind.rs` into `examples/` and use:
+copy `research_ecmascript_lookbehind.rs` into `examples/` (the Node helper
+stays in `docs/research/`) and use:
 
 ```shell
 cargo run --example research_ecmascript_lookbehind

@@ -5,8 +5,9 @@
 //! positions and capture state when validation is enabled only for an
 //! experimental syntax?
 //!
-//! Archived spike, not built by cargo. To run it, copy this file and
-//! `research_ecmascript_lookbehind_node.js` into `examples/` and use:
+//! Archived spike, not built by cargo. To run it, copy this file into
+//! `examples/` and leave `research_ecmascript_lookbehind_node.js` here -- the
+//! harness loads the Node helper from `docs/research/`. Then use:
 //! cargo run --example research_ecmascript_lookbehind
 
 use std::collections::BTreeMap;

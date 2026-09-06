@@ -46,16 +46,16 @@ We do not introduce another artificial limit for nested ASTs because:
 
 ### Required stack sizes
 
-This table is the single source for `RUST_MIN_STACK` in this repository.
-README, CONTRIBUTING, AGENTS, and the CI workflow reference it instead of
-stating their own values.
+This table is the canonical reference for `RUST_MIN_STACK` in this
+repository. README, CONTRIBUTING, AGENTS, and the CI workflow link to or reuse
+these values in their runnable guidance.
 
 | Run | `RUST_MIN_STACK` | Note |
 |-----|-----------------:|------|
 | Debug, `--test-threads=1` | `268435456` (256 MiB) | Minimum for the stack-heavy suites (`compat_utf8`, `compat_back`) |
 | Debug, `--test-threads=2` or more | `67108864` (64 MiB) | The load is spread over several threads; works reliably but is not deterministic |
-| Release / coverage instrumentation | `268435456` (256 MiB) | Coverage bookkeeping adds frames; CI additionally skips the deepest recursive tests |
-| Unaffected | not needed | Release builds, and any suite other than `compat_utf8` / `compat_back` |
+| Release builds with coverage instrumentation | `268435456` (256 MiB) | Coverage bookkeeping adds frames; CI additionally skips the deepest recursive tests |
+| Unaffected | not needed | Release builds without coverage instrumentation, and any suite other than `compat_utf8` / `compat_back` |
 
 CI may run with more headroom than the minimum (the `compat_utf8` lane uses
 512 MiB) -- that is deliberate slack on the largest suite, not a second rule.

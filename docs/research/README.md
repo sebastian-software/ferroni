@@ -2,8 +2,9 @@
 
 Archived research spikes and profiling harnesses. Nothing in this directory is
 built by cargo: `examples/` is reserved for user-facing examples, and these
-files are experiment records, not API demonstrations. To run one, copy it into
-`examples/` first -- each file names its own command.
+files are experiment records, not API demonstrations. To run one, copy the
+`.rs` file into `examples/` and leave the rest here -- the look-behind harness
+loads its Node helper from this directory. Each file names its own command.
 
 | File | What it recorded |
 | --- | --- |
