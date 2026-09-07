@@ -18,11 +18,18 @@
 :root {
   /*
    * The family header bar is 4rem tall (`.bar` in chrome.css). Ardo derives
-   * its sticky offsets and the height of the table of contents from this
-   * variable, so the two have to agree now that the family header is the only
-   * header on the page.
+   * its sticky offsets, the height of the table of contents and the page's
+   * `scroll-padding-top` from this variable, so the two have to agree now that
+   * the family header is the only header on the page -- at every width, which
+   * is why the phone bar below restates it rather than growing behind its back.
+   *
+   * The second row is what the phone bar reserves for the search field: zero
+   * while the bar is one row, raised by the media query at the end of this
+   * file. The bar's own height is derived from the same two numbers, so the
+   * variable and the bar cannot drift apart.
    */
-  --ardo-layout-headerHeight: 4rem;
+  --ferroni-search-row: 0rem;
+  --ardo-layout-headerHeight: calc(4rem + var(--ferroni-search-row));
 }
 
 /*
@@ -78,10 +85,15 @@
   top: calc(var(--ardo-layout-headerHeight) + var(--ardo-space-xl));
 }
 
-/* Deep links land under the sticky bar without this. */
-.ferroni-shell :where([id]) {
-  scroll-margin-top: calc(var(--ardo-layout-headerHeight) + 1rem);
-}
+/*
+ * Deep links need no rule of their own here. Ardo sets
+ * `html { scroll-padding-top: calc(var(--ardo-layout-headerHeight) + 32px) }`,
+ * and the document is the scrolling box now, so that padding is exactly what a
+ * hash target clears -- but only while the variable above tells the truth about
+ * the bar, which is why the phone bar raises it instead of growing behind its
+ * back. A `scroll-margin-top` of our own would only add the header height a
+ * second time.
+ */
 
 /*
  * -- The documentation controls in the header slots --
@@ -204,10 +216,27 @@
  * footer both still carry it.
  */
 @media (max-width: 640px) {
+  :root {
+    /*
+     * The bar keeps its 4rem row and reserves this much below it for the
+     * search field, so the sticky header is that much taller. Raising the row
+     * raises `--ardo-layout-headerHeight` with it, which is what every offset
+     * derived from that variable reads -- Ardo's
+     * `html { scroll-padding-top: calc(var(--ardo-layout-headerHeight) + 32px) }`
+     * above all, so a deep link keeps the same cushion under the bar here as
+     * it has on a desktop.
+     */
+    --ferroni-search-row: 3.5rem;
+  }
+
+  /*
+   * Height from the variable, second row from the same custom property: the
+   * bar cannot grow without the offsets that clear it growing too.
+   */
   .site-header .bar {
-    height: auto;
+    height: var(--ardo-layout-headerHeight);
     gap: 0.5rem;
-    padding-block: 0.55rem 3.5rem;
+    padding-block: 0 var(--ferroni-search-row);
   }
 
   .site-header .lockup {
