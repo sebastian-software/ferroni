@@ -38,6 +38,33 @@ RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 Test counts are derived from the tree by `./scripts/count-tests.sh`; the
 README quotes the total in its [Test parity](README.md#test-parity) section.
 
+## Coverage
+
+CI measures line coverage on every pull request and fails the build below a
+hard threshold. [`scripts/coverage.sh`](scripts/coverage.sh) *is* that gate: the
+workflow runs it unchanged, so the same command reproduces CI locally.
+
+```bash
+rustup toolchain install nightly
+cargo install cargo-llvm-cov --locked
+./scripts/coverage.sh
+```
+
+The threshold, the files excluded from the measurement (generated Unicode
+tables, the FFI bindings, the test files themselves) and the stack-heavy tests
+that have to be skipped under LLVM instrumentation are defined once, in that
+script -- the workflow runs it rather than repeating any of it. Raising the
+threshold is a normal change; lowering it needs a reason in the pull request.
+The README badge quotes the number, so move it in the same change.
+
+The run prints `Line coverage: X% (gate: ≥ N%)` and repeats that line in the
+GitHub run summary, so a failing gate says how far off it was.
+
+The former per-change (patch) coverage target was retired together with
+Codecov: CI carries no diff-coverage tooling, so the aggregate gate above is
+the only automated coverage check. Whether a change brings its own tests is
+judged by reviewers, on the diff.
+
 ## Local Checks
 
 These are the exact commands CI runs; run them before opening a pull request:
