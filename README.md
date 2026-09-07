@@ -7,7 +7,7 @@
   <a href="https://crates.io/crates/ferroni"><img src="https://img.shields.io/crates/v/ferroni?style=flat-square&logo=rust&label=crates.io" alt="crates.io"></a>
   <a href="https://docs.rs/ferroni"><img src="https://img.shields.io/docsrs/ferroni?style=flat-square&logo=docsdotrs&label=docs.rs" alt="docs.rs"></a>
   <a href="https://github.com/sebastian-software/ferroni/actions"><img src="https://img.shields.io/github/actions/workflow/status/sebastian-software/ferroni/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI"></a>
-  <a href="https://codecov.io/gh/sebastian-software/ferroni"><img src="https://img.shields.io/codecov/c/github/sebastian-software/ferroni?style=flat-square&logo=codecov&label=Coverage" alt="Coverage"></a>
+  <a href="https://github.com/sebastian-software/ferroni/blob/main/.github/workflows/ci.yml"><img src="https://img.shields.io/badge/coverage%20gate-%E2%89%A5%2087%25-blue?style=flat-square" alt="Coverage gate at least 87 percent"></a>
   <a href="CONTRIBUTING.md#getting-started"><img src="https://img.shields.io/badge/MSRV-1.94-blue?style=flat-square&logo=rust" alt="MSRV 1.94"></a>
   <a href="https://github.com/sebastian-software/ferroni/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square" alt="License"></a>
   <a href="https://codspeed.io/sebastian-software/ferroni?utm_source=badge"><img src="https://img.shields.io/badge/CodSpeed-measured-blue?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0yMy4zNSAxMi44NGEuODMuODMgMCAwIDAtLjE1LS42OWwtMS40LTEuNzdhLjgyLjgyIDAgMCAwLS42Ny0uMzJoLTEuNjFsLTEuNjQtMS44YS44My44MyAwIDAgMC0uNjItLjI3SDEwLjlhLjguOCAwIDAgMC0uNTguMjVsLTIuMiAyLjI1SDUuMzNhLjgzLjgzIDAgMCAwLS42LjI2TDIuMTYgMTMuNmEuODQuODQgMCAwIDAgLjYgMS40aDIuMjNsLTIuNjMgMi44YS44My44MyAwIDAgMCAuNjEgMS4zOWg0LjA1YS44My44MyAwIDAgMCAuNjEtLjI3bDMuMzMtMy42MWgyLjk2bC0zLjc5IDQuMDRhLjgyLjgyIDAgMCAwIC42MSAxLjM5aDQuMjRjLjIgMCAuNC0uMDguNTUtLjIybDMuNy0zLjZoMS4yN2wuOS43OGMuMi4yMy41Mi4zLjguMTdsMS44Mi0xLjE0YS44My44MyAwIDAgMCAuMzMtLjYxdi0xLjI3YS44My44MyAwIDAgMC0uMi0uNTN6Ii8+PC9zdmc+" alt="CodSpeed"></a>
@@ -17,7 +17,7 @@
 <p align="center">
   Evidence, not badges:
   <a href="#test-parity">test parity with the C suite</a> &middot;
-  <a href="https://codecov.io/gh/sebastian-software/ferroni">coverage report</a> &middot;
+  <a href="https://github.com/sebastian-software/ferroni/blob/main/.github/workflows/ci.yml">coverage gate enforced in CI</a> &middot;
   <a href="https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy">unsafe code policy</a>
 </p>
 
@@ -446,11 +446,14 @@ CONTRIBUTING.
 C Oniguruma has no coverage reporting. Ferroni's test suite is a strict
 superset of the upstream tests.
 
-**Line coverage: 87%.** Measured with
-[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov), reported to
-[Codecov](https://codecov.io/gh/sebastian-software/ferroni). 42 deeply
-recursive tests are skipped under LLVM instrumentation (stack overflow from
-coverage bookkeeping) but pass in normal `cargo test`.
+**Line coverage: 87.7%, gated at 87%.** Measured with
+[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) by
+[`scripts/coverage.sh`](scripts/coverage.sh), which CI runs on every pull
+request and which fails the build below the gate -- the threshold is defined in
+that script. Generated Unicode tables, the FFI bindings and the test files
+themselves are excluded from the measurement. 42 deeply recursive tests are
+skipped under LLVM instrumentation (stack overflow from coverage bookkeeping)
+but pass in normal `cargo test`.
 
 ## Architecture decision records
 

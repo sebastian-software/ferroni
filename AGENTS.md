@@ -35,6 +35,10 @@ CONTRIBUTING.md and the CI workflow -- do not invent a third value.
 
 Test counts come from `./scripts/count-tests.sh`, not from memory.
 
+Coverage is gated in CI by `./scripts/coverage.sh`; the threshold is defined
+there and nowhere else. The README badge quotes the same number, so move both
+together.
+
 WARNING: Never run `cargo test -- --ignored` on the full suite -- the
 `conditional_recursion_complex` test hangs.
 
