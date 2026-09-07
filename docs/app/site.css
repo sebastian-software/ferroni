@@ -3,38 +3,255 @@
  *
  * Load order (package README): tokens.css, fonts.css, theme.css, this file,
  * then chrome.css last. Everything here is integration between Ardo's docs
- * shell and the shared family chrome; the chrome's own look lives in
- * `@ferramenta/family/chrome.css` and is never restated here.
+ * shell and the shared family chrome: the seam that lets the page scroll, and
+ * the documentation controls this site puts in the header's `nav` and
+ * `actions` slots. The chrome's own look lives in
+ * `@ferramenta/family/chrome.css` and is not restated here; where a rule below
+ * does touch it, it is to make room in the bar for what this site added.
  *
  * Ardo re-emits `ardo/ui/styles.css` in its own route chunk, which the browser
  * loads after the root stylesheet, so "chrome.css last" does not settle ties
  * with Ardo by order alone. The overrides below therefore carry one element
- * selector more than the Ardo rule they replace.
+ * selector more than the rule they replace.
  */
 
-/*
- * `ArdoRoot` only accepts an `ArdoFooter` element in its footer slot, so the
- * family footer is rendered inside one. The Ardo footer keeps its default class
- * -- that is what carries Ardo's full-bleed rules inside `main` -- and loses the
- * band and the reading-width container it would otherwise wrap around the
- * family footer's own iron band.
- */
-footer.ardo-footer {
-  padding: 0;
-  background: none;
-  border-top: 0;
-}
-
-footer.ardo-footer > * {
-  max-width: none;
+:root {
+  /*
+   * The family header bar is 4rem tall (`.bar` in chrome.css). Ardo derives
+   * its sticky offsets and the height of the table of contents from this
+   * variable, so the two have to agree now that the family header is the only
+   * header on the page.
+   */
+  --ardo-layout-headerHeight: 4rem;
 }
 
 /*
- * Ardo styles content links by class and leaves bare anchors to the site, so
- * the family footer's links would fall back to the browser default. The chrome
- * colors them from the inherited iron ink, and keeps its own hover and
- * current-page colors.
+ * -- The Ardo shell inside the family chrome --
+ *
+ * Ardo's docs layout is an application shell: a fixed header, a 100vh frame
+ * that never scrolls, and an inner <main> that does. The family footer sits
+ * below that frame, so the page -- not the article -- has to be what scrolls,
+ * or the footer is unreachable. These rules hand the scrolling back to the
+ * document and pin the two rails that relied on the inner scroll container.
+ * The wrapper class comes from app/root.tsx; the inner hooks are Ardo's stable
+ * ones (#main-content, .ardo-sidebar) or a direct-child path, because Ardo's
+ * own layout class names are hashed.
  */
-.site-footer a {
+
+.ferroni-shell > div {
+  height: auto;
+  min-height: 100vh;
+  overflow: visible;
+}
+
+/*
+ * The layout container reserves room for a fixed header; ours is sticky. The
+ * gradient continues the sidebar rail past the sticky column, which is one
+ * viewport tall: on a page that is longer than that, the rail would otherwise
+ * stop mid-page and leave a seam down the left edge.
+ */
+.ferroni-shell > div > div {
+  padding-top: 0;
+  background: linear-gradient(to right, var(--ardo-color-sidebarRailBg) 0 4rem, transparent 4rem);
+}
+
+/* Below 1024px Ardo hides the rail, so there is nothing to continue. */
+@media (max-width: 1024px) {
+  .ferroni-shell > div > div {
+    background: none;
+  }
+}
+
+.ferroni-shell #main-content {
+  overflow: visible;
+}
+
+.ferroni-shell .ardo-sidebar {
+  position: sticky;
+  top: var(--ardo-layout-headerHeight);
+  align-self: flex-start;
+  height: calc(100vh - var(--ardo-layout-headerHeight));
+}
+
+/* "On this page": its sticky offset assumed a scroll container, not the page. */
+.ferroni-shell #main-content > div > aside {
+  top: calc(var(--ardo-layout-headerHeight) + var(--ardo-space-xl));
+}
+
+/* Deep links land under the sticky bar without this. */
+.ferroni-shell :where([id]) {
+  scroll-margin-top: calc(var(--ardo-layout-headerHeight) + 1rem);
+}
+
+/*
+ * -- The documentation controls in the header slots --
+ *
+ * `chrome.css` claims the chrome's own anchors back from Ardo but deliberately
+ * leaves the `nav` and `actions` slots alone, so what this site puts there
+ * carries its own colors. Both slots sit on the iron band, so they take the
+ * ink of the band rather than the page's link color.
+ */
+
+.ferroni-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.ferroni-nav a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   color: inherit;
+  text-decoration: none;
+}
+
+.ferroni-nav a:hover,
+.ferroni-nav a[aria-current="page"] {
+  color: var(--ember);
+}
+
+/*
+ * Ardo colors the search field and its result popover from its own tokens; it
+ * keeps them here, so only the width is ours.
+ */
+.ferroni-search {
+  width: clamp(10rem, 18vw, 16rem);
+}
+
+.ferroni-search input {
+  width: 100%;
+}
+
+/*
+ * The section menu: hidden while the bar carries the links, and the way into
+ * the documentation once it does not -- below 1024px Ardo hides the sidebar
+ * rail as well, so without this menu a narrow viewport has no navigation left.
+ */
+
+.ferroni-sections {
+  position: relative;
+  display: none;
+}
+
+.ferroni-sections > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.4rem 0.45rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.ferroni-sections > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ferroni-sections-flyout {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.85rem);
+  z-index: 60;
+  display: grid;
+  min-width: 13rem;
+  padding: 0.5rem;
+  background: var(--iron);
+  border: 1px solid var(--iron-line);
+  border-top: 2px solid var(--rust);
+  box-shadow: 0 18px 44px -16px oklch(0.1 0.01 45 / 0.55);
+}
+
+.ferroni-sections-flyout a {
+  display: flex;
+  align-items: center;
+  padding: 0.55rem 0.6rem;
+  font-size: 0.95rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.ferroni-sections-flyout a:hover,
+.ferroni-sections-flyout a[aria-current="page"] {
+  background: var(--iron-2);
+  color: var(--ember);
+}
+
+/*
+ * Below 1024px the bar no longer holds the section links next to the switcher
+ * and the search field, and Ardo hides the sidebar rail at exactly that width:
+ * the menu takes both jobs over.
+ */
+@media (max-width: 1024px) {
+  .ferroni-nav {
+    display: none;
+  }
+
+  .ferroni-sections {
+    display: block;
+  }
+}
+
+/*
+ * On a phone the bar runs out of room. Search drops to a full-width second row
+ * rather than disappearing -- a documentation site without search is the worse
+ * trade -- and the GitHub link steps aside, since the tool switcher and the
+ * footer both still carry it.
+ */
+@media (max-width: 640px) {
+  .site-header .bar {
+    height: auto;
+    gap: 0.5rem;
+    padding-block: 0.55rem 3.5rem;
+  }
+
+  .site-header .lockup {
+    font-size: 1.25rem;
+  }
+
+  .site-header nav.site {
+    gap: 0.25rem;
+  }
+
+  .site-header .ghlink {
+    display: none;
+  }
+
+  .ferroni-search {
+    position: absolute;
+    right: 0;
+    bottom: 0.5rem;
+    left: 0;
+    width: auto;
+  }
+}
+
+/*
+ * The narrowest phones. The section menu is this site's own addition to the
+ * bar, and it is what tips the row past 320px, so this site pays for it: the
+ * bar's gutter, the lockup and the gaps give up the ~50px the menu takes.
+ * Two element selectors, one more than the chrome rule each replaces.
+ */
+@media (max-width: 400px) {
+  .site-header .wrap {
+    padding-inline: 0.7rem;
+  }
+
+  .site-header .lockup {
+    font-size: 1.05rem;
+  }
+
+  .site-header .lockup svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .site-header nav.site {
+    gap: 0.1rem;
+  }
 }

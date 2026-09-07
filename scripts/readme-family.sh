@@ -12,7 +12,7 @@
 # registry source itself when it runs from node_modules).
 set -euo pipefail
 
-FERRAMENTA_PIN="5b84af1676b12b4b45661d5be4a42b11275a72da"
+FERRAMENTA_PIN="3225743e20818805a27e3e1a77cf1726bfb6f939"
 FERRAMENTA_SPEC="github:sebastian-software/ferramenta#${FERRAMENTA_PIN}&path:/packages/family"
 
 mode=${1:-check}

@@ -91,6 +91,14 @@ today and next month. To pick up a registry change, bump `FERRAMENTA_PIN` in
 [`scripts/readme-family.sh`](scripts/readme-family.sh), run the `write` mode,
 and commit the regenerated block together with the new pin.
 
+The documentation site reads the same registry: `docs/app/root.tsx` renders the
+shared header and footer from `@ferramenta/family` and turns Ardo's own chrome
+off with `handle = { chrome: false }`, so tool names, jobs and links are never
+written down here. That package is pinned a second time, in
+`docs/package.json`. Move both pins in the same change, so the site and the
+README block describe one registry, and rerun `pnpm install` in `docs/` to
+update the lockfile.
+
 ## Running Benchmarks
 
 `battle_bench` requires a local Oniguruma source snapshot for comparison:
