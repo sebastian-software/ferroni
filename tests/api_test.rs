@@ -1970,3 +1970,81 @@ fn left_recursive_subexpression_call_is_rejected_at_compile_time() {
     let re = Regex::new(r"a\g<0>|b").unwrap();
     assert_eq!(re.find("aab").unwrap().as_str(), "aab");
 }
+
+#[test]
+fn scanner_reports_the_keep_adjusted_match() {
+    use ferroni::scanner::{Scanner, ScannerFindOptions};
+
+    // `\K` moves the match start to where it appears, so the whole match is
+    // the region and not the position the winning attempt began at plus the
+    // length that attempt reported. Without a capture group the scanner used
+    // the position and the length, and reported the attempt's span instead.
+    // Every expectation below is C Oniguruma's, taken from its own scanner
+    // through the `ffi` feature.
+    let spans = |patterns: &[&str], text: &str, position: usize| {
+        Scanner::new(patterns)
+            .unwrap()
+            .find_next_match(text, position, ScannerFindOptions::NONE)
+            .map(|m| {
+                (
+                    m.index,
+                    m.capture_indices[0].start,
+                    m.capture_indices[0].end,
+                )
+            })
+    };
+
+    assert_eq!(spans(&[r"a\Kb"], "xxabxx", 0), Some((0, 3, 4)));
+    // `\K` at the end of the pattern keeps a zero-width match there.
+    assert_eq!(spans(&[r"ab\K"], "xxabxx", 0), Some((0, 4, 4)));
+    // A capture group already took the region path and stays as it was.
+    assert_eq!(spans(&[r"a\K(b)"], "xxabxx", 0), Some((0, 3, 4)));
+    // `\K` before anything consumed leaves the match start alone.
+    assert_eq!(spans(&[r"\Kab"], "xxabxx", 0), Some((0, 2, 4)));
+    // A set of several patterns reports the winner's own kept match.
+    assert_eq!(spans(&[r"zz", r"a\Kb"], "xxabxx", 0), Some((1, 3, 4)));
+
+    // Repeated calls from one position hand the scanner over to its cached
+    // per-regex route after ROUTE_MIN_SAME_START_FOR_PROBE calls. Both routes
+    // report the same match.
+    let mut scanner = Scanner::new(&[r"a\Kb"]).unwrap();
+    for _ in 0..32 {
+        let m = scanner
+            .find_next_match_with_id("xxabxx", 1, 0, ScannerFindOptions::NONE)
+            .unwrap();
+        assert_eq!(
+            (m.capture_indices[0].start, m.capture_indices[0].end),
+            (3, 4)
+        );
+    }
+}
+
+#[test]
+fn scanner_keep_match_stays_on_character_boundaries() {
+    use ferroni::scanner::{Scanner, ScannerFindOptions};
+
+    // Minimized from the `scanner-api` fuzz target: the harness derives the
+    // pattern `.*\K\u{FFFD}` and the text below from the 11 input bytes
+    // `2e 2a 5c 4b b9 00 20 ff ff 61 ff`. `.*` consumes to the end of the
+    // line and backtracks, so the winning attempt begins before the match
+    // `\K` keeps. The scanner reported that attempt's span, 3..6, which ends
+    // inside the trailing replacement character.
+    let text = "\u{FFFD}a\u{FFFD}";
+    let pattern = format!(".*\\K{}", '\u{FFFD}');
+    let mut scanner = Scanner::new(&[pattern.as_str()]).unwrap();
+
+    for position in (0..=text.len()).filter(|p| text.is_char_boundary(*p)) {
+        let Some(m) = scanner.find_next_match(text, position, ScannerFindOptions::NONE) else {
+            // Only a start past the last replacement character has no match.
+            assert_eq!(position, text.len());
+            continue;
+        };
+        let whole = &m.capture_indices[0];
+        assert_eq!(
+            (whole.start, whole.end),
+            (4, 7),
+            "match from position {position}"
+        );
+        assert!(text.is_char_boundary(whole.start) && text.is_char_boundary(whole.end));
+    }
+}

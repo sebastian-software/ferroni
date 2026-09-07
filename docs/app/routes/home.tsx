@@ -107,7 +107,7 @@ function HeroSection() {
 /* -------------------------------------------------- */
 
 const stats = [
-  { value: "2,184", label: "Test functions" },
+  { value: "2,195", label: "Test functions" },
   { value: "100%", label: "C parity" },
   { value: "0.4%", label: "Unsafe code" },
   { value: "BSD-2", label: "License" },

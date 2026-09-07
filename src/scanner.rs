@@ -739,7 +739,11 @@ impl Scanner {
         let regex_idx = idx as usize;
         let match_start = if pos >= 0 { pos as usize } else { start };
         if let Some(reg) = onig_regset_get_regex(&self.regset, regex_idx) {
-            if reg.num_mem == 0 {
+            // `pos` is the position the winning attempt began at, as in C's
+            // `onig_regset_search`. Rebuilding the match from it is only valid
+            // while the match starts there; `\K` moves the start, and the
+            // region below is then the only record of it.
+            if reg.num_mem == 0 && !reg.keep_moves_match_start {
                 let len = onig_regset_last_match_len(&self.regset);
                 if len < 0 {
                     return None;

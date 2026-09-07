@@ -838,6 +838,12 @@ pub fn onig_regset_get_region(set: &OnigRegSet, at: usize) -> Option<&OnigRegion
 }
 
 /// Return the match length from the last successful position-lead search.
+///
+/// The length is measured from the position the winning attempt began at --
+/// the position the search itself returns. For a pattern that uses `\K` the
+/// match starts elsewhere, so the pair describes the match only while the
+/// winning regex has neither a capture group nor `\K`; every other caller
+/// reads that regex's region.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
     set.last_match_len
@@ -899,6 +905,18 @@ fn record_regset_decision(
     }
 }
 
+/// True when a match of `reg` is fully described by the position its attempt
+/// began at plus the length `onig_match` reports, so the position-lead search
+/// can skip populating a region.
+///
+/// Capture groups need the region for their own spans, and `\K` moves the
+/// whole match's start away from the attempt position, which neither the
+/// returned position nor the length carries.
+#[inline]
+fn region_is_redundant(reg: &RegexType) -> bool {
+    reg.num_mem == 0 && !reg.keep_moves_match_start
+}
+
 #[allow(clippy::too_many_arguments)]
 fn match_regset_entry(
     set: &mut OnigRegSet,
@@ -911,7 +929,7 @@ fn match_regset_entry(
     skip_region_for_nomem: bool,
     msa: &mut MatchArg,
 ) -> i32 {
-    if skip_region_for_nomem && set.entries[index].reg.num_mem == 0 {
+    if skip_region_for_nomem && region_is_redundant(&set.entries[index].reg) {
         msa.region = None;
         onig_match_with_msa_start(
             &set.entries[index].reg,
@@ -1121,9 +1139,10 @@ fn regset_search_body_position_lead_table(
             if track_search_retry_limit {
                 msa.retry_limit_in_search_counter = set.scratch_table_retry_counters[i];
             }
-            let r = if skip_region_for_nomem && set.entries[i].reg.num_mem == 0 {
-                // No capture groups: scanner only needs full-match length, so avoid
-                // region take/clear/restore on this hot path.
+            let r = if skip_region_for_nomem && region_is_redundant(&set.entries[i].reg) {
+                // No capture groups and no `\K`: the caller can rebuild the
+                // whole match from the attempt position and the match length,
+                // so avoid region take/clear/restore on this hot path.
                 msa.region = None;
                 onig_match_with_msa_start(
                     &set.entries[i].reg,
@@ -1462,7 +1481,9 @@ fn regset_search_body_position_lead(
                 RegSetDecision::Match(RegSetWinner {
                     index: index as i32,
                     position,
-                    match_len: region.end[0].saturating_sub(region.beg[0]),
+                    // Measured from the attempt position, as the table path
+                    // above measures `onig_match`'s return value.
+                    match_len: region.end[0].saturating_sub(position),
                 }),
             );
         } else if position == ONIG_MISMATCH {
@@ -3498,5 +3519,65 @@ mod tests {
         assert_eq!(region.end[1], 2);
         assert_eq!(region.beg[2], 2); // group 2 "e"
         assert_eq!(region.end[2], 3);
+    }
+
+    /// `\K` moves the match start, and C keeps reporting the position the
+    /// winning attempt began at. The length recorded next to it is measured
+    /// from that same position, so the two add up to the match end and not to
+    /// the kept start plus the kept length. Every number below is C
+    /// Oniguruma's, read through the `ffi` feature.
+    #[test]
+    fn keep_patterns_report_attempt_relative_positions_and_lengths() {
+        let input = b"xxabxx";
+
+        // `a\Kb` dispatches straight from the table route: its first byte is
+        // provable. `.*\Kb` delays the optimizer byte, so its entry takes the
+        // fallback route and runs its own search.
+        for (pattern, position, match_len, region) in [
+            (br"a\Kb".as_slice(), 2, 2, (3, 4)),
+            (br".*\Kb".as_slice(), 0, 4, (3, 4)),
+        ] {
+            for eager in [false, true] {
+                let (set, result) = onig_regset_new(vec![compile(pattern)]);
+                assert_eq!(result, ONIG_NORMAL);
+                let mut set = set.expect("regset");
+                let where_ = format!("{} eager={eager}", String::from_utf8_lossy(pattern));
+
+                let found = if eager {
+                    onig_regset_search(
+                        &mut set,
+                        input,
+                        input.len(),
+                        0,
+                        input.len(),
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                    )
+                } else {
+                    onig_regset_search_fast(
+                        &mut set,
+                        input,
+                        input.len(),
+                        0,
+                        input.len(),
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                    )
+                };
+                assert_eq!(found, (0, position), "{where_}");
+                assert_eq!(onig_regset_last_match_len(&set), match_len, "{where_}");
+
+                // A pattern that moves its match start keeps its region, so
+                // the caller that needs the kept span can read it.
+                let found_region = onig_regset_get_region(&set, 0).expect("region");
+                assert_eq!(
+                    (found_region.beg[0], found_region.end[0]),
+                    region,
+                    "{where_}"
+                );
+                assert_eq!(position + match_len, found_region.end[0], "{where_}");
+                assert_ne!(position, found_region.beg[0], "{where_}");
+            }
+        }
     }
 }

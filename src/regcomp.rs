@@ -8445,6 +8445,9 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
 pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     // Clear previous bytecode
     reg.ops.clear();
+    // Derived from the program emitted below, so it has to describe this
+    // compilation and not one a reused `reg` was carrying.
+    reg.keep_moves_match_start = false;
 
     // Parse the pattern into AST
     let mut env = ParseEnv {
@@ -8587,6 +8590,10 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
 
     // Emit UPDATE_VAR(KeepFromStackLast) before OP_END if \K was used
     if env.keep_num > 0 {
+        // This is the only op that moves the match start away from the
+        // position a match attempt began at, so record it for the callers
+        // that would otherwise reconstruct the match from that position.
+        reg.keep_moves_match_start = true;
         add_op(
             reg,
             OpCode::UpdateVar,
@@ -8752,6 +8759,7 @@ pub fn onig_new(
         dist_min: 0,
         dist_max: 0,
         needs_capture_tracking: false,
+        keep_moves_match_start: false,
         first_byte_map: [0u8; CHAR_MAP_SIZE],
         has_first_byte_map: false,
         called_addrs: vec![],
@@ -8851,6 +8859,7 @@ mod tests {
             dist_min: 0,
             dist_max: 0,
             needs_capture_tracking: false,
+            keep_moves_match_start: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
             called_addrs: vec![],
@@ -9662,5 +9671,28 @@ mod tests {
             .unwrap();
             std::mem::forget(reg);
         }
+    }
+
+    /// `keep_moves_match_start` describes the emitted program, so recompiling
+    /// a regex has to clear it again. A stale flag would keep the regset
+    /// populating a region the pattern no longer needs.
+    #[test]
+    fn recompiling_without_keep_clears_the_keep_flag() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+
+        let mut reg = onig_new(
+            br"a\Kb",
+            ONIG_OPTION_NONE,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert!(reg.keep_moves_match_start);
+
+        assert_eq!(onig_compile(&mut reg, br"ab"), 0);
+        assert!(!reg.keep_moves_match_start);
+
+        assert_eq!(onig_compile(&mut reg, br"a\Kb"), 0);
+        assert!(reg.keep_moves_match_start);
     }
 }

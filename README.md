@@ -437,7 +437,7 @@ out of scope ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-enc
 
 On top of the ported upstream cases, Ferroni adds Rust-native tests for
 API integration, edge cases, error paths, and coverage gaps. The tree holds
-**2,184 `#[test]` functions** in total (some compat functions bundle multiple
+**2,195 `#[test]` functions** in total (some compat functions bundle multiple
 upstream cases, so this is higher than the parity totals above). The count is
 derived from the tree by [`scripts/count-tests.sh`](scripts/count-tests.sh),
 which is the single source for the test counts quoted in this README and in
