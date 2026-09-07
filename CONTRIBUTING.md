@@ -60,6 +60,11 @@ The README badge quotes the number, so move it in the same change.
 The run prints `Line coverage: X% (gate: ≥ N%)` and repeats that line in the
 GitHub run summary, so a failing gate says how far off it was.
 
+The former per-change (patch) coverage target was retired together with
+Codecov: CI carries no diff-coverage tooling, so the aggregate gate above is
+the only automated coverage check. Whether a change brings its own tests is
+judged by reviewers, on the diff.
+
 ## Local Checks
 
 These are the exact commands CI runs; run them before opening a pull request:
