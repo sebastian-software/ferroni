@@ -838,6 +838,12 @@ pub fn onig_regset_get_region(set: &OnigRegSet, at: usize) -> Option<&OnigRegion
 }
 
 /// Return the match length from the last successful position-lead search.
+///
+/// The length is measured from the position the winning attempt began at --
+/// the position the search itself returns. For a pattern that uses `\K` the
+/// match starts elsewhere, so the pair describes the match only while the
+/// winning regex has neither a capture group nor `\K`; every other caller
+/// reads that regex's region.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
     set.last_match_len
@@ -899,6 +905,18 @@ fn record_regset_decision(
     }
 }
 
+/// True when a match of `reg` is fully described by the position its attempt
+/// began at plus the length `onig_match` reports, so the position-lead search
+/// can skip populating a region.
+///
+/// Capture groups need the region for their own spans, and `\K` moves the
+/// whole match's start away from the attempt position, which neither the
+/// returned position nor the length carries.
+#[inline]
+fn region_is_redundant(reg: &RegexType) -> bool {
+    reg.num_mem == 0 && !reg.keep_moves_match_start
+}
+
 #[allow(clippy::too_many_arguments)]
 fn match_regset_entry(
     set: &mut OnigRegSet,
@@ -911,7 +929,7 @@ fn match_regset_entry(
     skip_region_for_nomem: bool,
     msa: &mut MatchArg,
 ) -> i32 {
-    if skip_region_for_nomem && set.entries[index].reg.num_mem == 0 {
+    if skip_region_for_nomem && region_is_redundant(&set.entries[index].reg) {
         msa.region = None;
         onig_match_with_msa_start(
             &set.entries[index].reg,
@@ -1121,9 +1139,10 @@ fn regset_search_body_position_lead_table(
             if track_search_retry_limit {
                 msa.retry_limit_in_search_counter = set.scratch_table_retry_counters[i];
             }
-            let r = if skip_region_for_nomem && set.entries[i].reg.num_mem == 0 {
-                // No capture groups: scanner only needs full-match length, so avoid
-                // region take/clear/restore on this hot path.
+            let r = if skip_region_for_nomem && region_is_redundant(&set.entries[i].reg) {
+                // No capture groups and no `\K`: the caller can rebuild the
+                // whole match from the attempt position and the match length,
+                // so avoid region take/clear/restore on this hot path.
                 msa.region = None;
                 onig_match_with_msa_start(
                     &set.entries[i].reg,
@@ -1462,7 +1481,9 @@ fn regset_search_body_position_lead(
                 RegSetDecision::Match(RegSetWinner {
                     index: index as i32,
                     position,
-                    match_len: region.end[0].saturating_sub(region.beg[0]),
+                    // Measured from the attempt position, as the table path
+                    // above measures `onig_match`'s return value.
+                    match_len: region.end[0].saturating_sub(position),
                 }),
             );
         } else if position == ONIG_MISMATCH {

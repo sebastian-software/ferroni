@@ -609,6 +609,12 @@ pub struct RegexType {
     /// the caller does not request a region (e.g. backrefs, recursive mem ops).
     pub(crate) needs_capture_tracking: bool,
 
+    /// True when the pattern uses `\K`, so the match start can move away from
+    /// the position its attempt began at. The region is then the only place
+    /// that carries the whole match: `[attempt position, attempt position +
+    /// match length]` no longer describes it.
+    pub(crate) keep_moves_match_start: bool,
+
     /// First-byte prefilter map for regset dispatch.
     /// Unlike `map` (which may be repurposed as BMH skip table when optimize=StrFast),
     /// this always contains the character membership map for possible first bytes.

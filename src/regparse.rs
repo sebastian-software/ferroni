@@ -7434,6 +7434,7 @@ mod tests {
             dist_min: 0,
             dist_max: 0,
             needs_capture_tracking: false,
+            keep_moves_match_start: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
             called_addrs: vec![],

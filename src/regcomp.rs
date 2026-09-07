@@ -8587,6 +8587,10 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
 
     // Emit UPDATE_VAR(KeepFromStackLast) before OP_END if \K was used
     if env.keep_num > 0 {
+        // This is the only op that moves the match start away from the
+        // position a match attempt began at, so record it for the callers
+        // that would otherwise reconstruct the match from that position.
+        reg.keep_moves_match_start = true;
         add_op(
             reg,
             OpCode::UpdateVar,
@@ -8752,6 +8756,7 @@ pub fn onig_new(
         dist_min: 0,
         dist_max: 0,
         needs_capture_tracking: false,
+        keep_moves_match_start: false,
         first_byte_map: [0u8; CHAR_MAP_SIZE],
         has_first_byte_map: false,
         called_addrs: vec![],
@@ -8851,6 +8856,7 @@ mod tests {
             dist_min: 0,
             dist_max: 0,
             needs_capture_tracking: false,
+            keep_moves_match_start: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
             called_addrs: vec![],
