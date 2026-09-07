@@ -1,4 +1,4 @@
-import { MarkDefs, SiteFooter, SiteHeader } from "@ferramenta/family";
+import { MarkDefs, SiteFooter, SiteHeader } from "ferramenta-family";
 import {
   ArdoGeneratedSidebar,
   ArdoRoot,
@@ -12,13 +12,13 @@ import config from "virtual:ardo/config";
 import { useRef } from "react";
 import { NavLink, type MetaFunction } from "react-router";
 import "ardo/ui/styles.css";
-import "@ferramenta/family/tokens.css";
-import "@ferramenta/family/fonts.css";
-import "@ferramenta/family/theme.css";
+import "ferramenta-family/tokens.css";
+import "ferramenta-family/fonts.css";
+import "ferramenta-family/theme.css";
 import "./site.css";
 // Last on purpose (see the package README): the shared chrome has to win the
 // ties the Ardo and site styles around it would otherwise take.
-import "@ferramenta/family/chrome.css";
+import "ferramenta-family/chrome.css";
 
 export const meta: MetaFunction = () => [{ title: config.title }];
 

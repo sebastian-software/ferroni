@@ -6,7 +6,7 @@
  * shell and the shared family chrome: the seam that lets the page scroll, and
  * the documentation controls this site puts in the header's `nav` and
  * `actions` slots. The chrome's own look lives in
- * `@ferramenta/family/chrome.css` and is not restated here; where a rule below
+ * `ferramenta-family/chrome.css` and is not restated here; where a rule below
  * does touch it, it is to make room in the bar for what this site added.
  *
  * Ardo re-emits `ardo/ui/styles.css` in its own route chunk, which the browser
