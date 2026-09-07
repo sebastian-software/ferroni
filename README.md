@@ -1,7 +1,4 @@
-<p align="center">
-  <strong>Ferroni</strong><br>
-  Pure-Rust Oniguruma-compatible regex engine &mdash; same feature class, no C toolchain.
-</p>
+# Ferroni — Oniguruma-compatible regex engine
 
 <p align="center">
   <a href="https://crates.io/crates/ferroni"><img src="https://img.shields.io/crates/v/ferroni?style=flat-square&logo=rust&label=crates.io" alt="crates.io"></a>

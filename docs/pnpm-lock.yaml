@@ -12,8 +12,8 @@ importers:
         specifier: ^4.2.0
         version: 4.2.0(@react-router/dev@8.3.1(react-router@8.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(typescript@6.0.3)(vite@8.2.2(@types/node@25.3.5)(esbuild@0.27.3)(yaml@2.9.0)))(@types/node@25.3.5)(@types/react@19.2.18)(esbuild@0.27.3)(lightningcss@1.33.0)(lucide-react@1.40.0(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react-router@8.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(rollup@4.59.0)(typescript@6.0.3)(vite@8.2.2(@types/node@25.3.5)(esbuild@0.27.3)(yaml@2.9.0))
       ferramenta-family:
-        specifier: github:sebastian-software/ferramenta#f6de99cd094d0fabbf0be23a9c0b5c074ff89976&path:/packages/family
-        version: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/f6de99cd094d0fabbf0be23a9c0b5c074ff89976#path:/packages/family(react@19.2.8)
+        specifier: github:sebastian-software/ferramenta#e587388c4e61a11fe3c71180a91a55662370358d&path:/packages/family
+        version: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/e587388c4e61a11fe3c71180a91a55662370358d#path:/packages/family(react@19.2.8)
       isbot:
         specifier: ^5.2.2
         version: 5.2.2
@@ -1305,9 +1305,9 @@ packages:
       picomatch:
         optional: true
 
-  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/f6de99cd094d0fabbf0be23a9c0b5c074ff89976#path:/packages/family:
-    resolution: {path: /packages/family, tarball: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/f6de99cd094d0fabbf0be23a9c0b5c074ff89976}
-    version: 0.1.0
+  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/e587388c4e61a11fe3c71180a91a55662370358d#path:/packages/family:
+    resolution: {gitHosted: true, path: /packages/family, tarball: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/e587388c4e61a11fe3c71180a91a55662370358d}
+    version: 1.0.0
     hasBin: true
     peerDependencies:
       react: '>=19.0.0 <20.0.0'
@@ -3361,7 +3361,7 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.7
 
-  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/f6de99cd094d0fabbf0be23a9c0b5c074ff89976#path:/packages/family(react@19.2.8):
+  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/e587388c4e61a11fe3c71180a91a55662370358d#path:/packages/family(react@19.2.8):
     dependencies:
       react: 19.2.8
 

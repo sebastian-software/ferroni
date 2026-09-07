@@ -1,7 +1,4 @@
-//! # Ferroni
-//!
-//! Pure-Rust regex engine based on [Oniguruma](https://github.com/kkos/oniguruma),
-//! with SIMD-accelerated search via [`memchr`](https://crates.io/crates/memchr).
+//! # Ferroni — Oniguruma-compatible regex engine
 //!
 //! Ferroni is a line-by-line port of Oniguruma's C source into Rust -- same
 //! structure, same function names, same semantics. No bindings, no FFI.

@@ -12,7 +12,7 @@
 # registry source itself when it runs from node_modules).
 set -euo pipefail
 
-FERRAMENTA_PIN="f6de99cd094d0fabbf0be23a9c0b5c074ff89976"
+FERRAMENTA_PIN="e587388c4e61a11fe3c71180a91a55662370358d"
 FERRAMENTA_SPEC="github:sebastian-software/ferramenta#${FERRAMENTA_PIN}&path:/packages/family"
 
 mode=${1:-check}
@@ -27,8 +27,8 @@ esac
 
 repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
-# Ferroni ships a single crate, so the README crates.io renders is the root
-# README: the full `github` variant is the only block this repository carries.
+# Ferroni ships a single crate, so crates.io renders this root README. The
+# `github` variant is plain Markdown and therefore valid on both surfaces.
 exec pnpm dlx "$FERRAMENTA_SPEC" \
   --current ferroni \
   --variant github \

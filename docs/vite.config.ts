@@ -9,8 +9,7 @@ export default defineConfig({
   plugins: [
     ardo({
       title: "Ferroni",
-      description:
-        "Pure-Rust Oniguruma-compatible regex engine — same feature class, no C toolchain.",
+      description: "Oniguruma-compatible regex engine",
 
       project: { version },
     }),
