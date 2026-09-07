@@ -3520,4 +3520,64 @@ mod tests {
         assert_eq!(region.beg[2], 2); // group 2 "e"
         assert_eq!(region.end[2], 3);
     }
+
+    /// `\K` moves the match start, and C keeps reporting the position the
+    /// winning attempt began at. The length recorded next to it is measured
+    /// from that same position, so the two add up to the match end and not to
+    /// the kept start plus the kept length. Every number below is C
+    /// Oniguruma's, read through the `ffi` feature.
+    #[test]
+    fn keep_patterns_report_attempt_relative_positions_and_lengths() {
+        let input = b"xxabxx";
+
+        // `a\Kb` dispatches straight from the table route: its first byte is
+        // provable. `.*\Kb` delays the optimizer byte, so its entry takes the
+        // fallback route and runs its own search.
+        for (pattern, position, match_len, region) in [
+            (br"a\Kb".as_slice(), 2, 2, (3, 4)),
+            (br".*\Kb".as_slice(), 0, 4, (3, 4)),
+        ] {
+            for eager in [false, true] {
+                let (set, result) = onig_regset_new(vec![compile(pattern)]);
+                assert_eq!(result, ONIG_NORMAL);
+                let mut set = set.expect("regset");
+                let where_ = format!("{} eager={eager}", String::from_utf8_lossy(pattern));
+
+                let found = if eager {
+                    onig_regset_search(
+                        &mut set,
+                        input,
+                        input.len(),
+                        0,
+                        input.len(),
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                    )
+                } else {
+                    onig_regset_search_fast(
+                        &mut set,
+                        input,
+                        input.len(),
+                        0,
+                        input.len(),
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                    )
+                };
+                assert_eq!(found, (0, position), "{where_}");
+                assert_eq!(onig_regset_last_match_len(&set), match_len, "{where_}");
+
+                // A pattern that moves its match start keeps its region, so
+                // the caller that needs the kept span can read it.
+                let found_region = onig_regset_get_region(&set, 0).expect("region");
+                assert_eq!(
+                    (found_region.beg[0], found_region.end[0]),
+                    region,
+                    "{where_}"
+                );
+                assert_eq!(position + match_len, found_region.end[0], "{where_}");
+                assert_ne!(position, found_region.beg[0], "{where_}");
+            }
+        }
+    }
 }
