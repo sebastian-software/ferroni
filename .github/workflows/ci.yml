@@ -184,21 +184,16 @@ jobs:
           arguments: --all-features --locked
 
   readme-family:
-    name: README family block
+    name: README themes
     runs-on: ubuntu-latest
-    # The Ferramenta family block in README.md is generated from the registry
-    # in sebastian-software/ferramenta, so this lane fails when the checked-in
-    # block drifts from the pinned generator. Node only -- it never builds the
-    # crate, which is why it stays outside the Rust matrix.
+    # Native composition checks both shared frames and the project content.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
         with:
-          version: 10.30.3
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: '22'
-      - name: Check the README family block
+          version: 2026.9.5
+          install_args: --locked
+      - name: Check the generated README
         run: ./scripts/readme-family.sh check
 
   docs-format:
@@ -273,4 +268,4 @@ jobs:
       # minimum-release-age=0 stays: pnpm 11 defaults minimumReleaseAge to 1440
       # (24h), so without the bypass a pin that was raised on the day of a
       # standards release cannot resolve at all.
-      - run: pnpm --config.minimum-release-age=0 dlx @sebastian-software/standards@0.9.0 check
+      - run: pnpm --config.minimum-release-age=0 dlx @sebastian-software/standards@0.11.0 check

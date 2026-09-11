@@ -100,7 +100,7 @@ configuration.
 
 ## The README Family Block
 
-The "The Ferramenta family" section of [README.md](README.md) is generated. Its
+The "More from Ferramenta" section of [README.md](README.md) is generated. Its
 source of truth is the family registry in
 [ferramenta](https://github.com/sebastian-software/ferramenta), so a new
 sibling, a renamed tool or a moved documentation URL is edited once there and
@@ -200,3 +200,20 @@ Please open an issue on GitHub with:
 
 By contributing, you agree that your contributions will be licensed under the
 [BSD-2-Clause License](LICENSE).
+
+### Shared registry theme presentation
+
+The pinned Ferramenta generator supplies the compact family icon,
+“More from Ferramenta”, and visible descriptions for related tools. The current
+project is omitted from those links. Registry READMEs retain plain Markdown
+with descriptions; repository READMEs include the small icon.
+Keep theme branding subordinate to the project content. Regenerate through
+the existing family command after updating the pin, then run its check mode.
+
+The shared [living decision](https://github.com/sebastian-software/ferramenta/blob/main/docs/adr/0004-successor-copy-register.md)
+owns the family wording and hierarchy; the
+[composition decision](https://github.com/sebastian-software/ferramenta/blob/main/docs/adr/0001-decentralized-homepages-with-shared-family-package.md)
+owns membership and current-project exclusion.
+
+For the generated project README, see [README themes](docs/readme-theme.md).
+Edit `README.md.src`, then run `mise run readme:write`.
