@@ -191,49 +191,49 @@ const benchmarks = [
     category: "Syntax Highlighting",
     label: "Scanner First Match",
     desc: "TypeScript grammar, 279 patterns",
-    speedup: "58.9x",
-    ferroni: "~425 ns",
-    oniguruma: "~25 \u00B5s",
+    speedup: "80.4x",
+    ferroni: "~326 ns",
+    oniguruma: "~26.2 \u00B5s",
   },
   {
     category: "Syntax Highlighting",
     label: "Full Line Tokenization",
     desc: "TypeScript, end-to-end",
-    speedup: "31.6x",
-    ferroni: "~6.9 \u00B5s",
-    oniguruma: "~217 \u00B5s",
+    speedup: "27.7x",
+    ferroni: "~7.9 \u00B5s",
+    oniguruma: "~219 \u00B5s",
   },
   {
     category: "Syntax Highlighting",
     label: "CSS Tokenization",
     desc: "Multi-pattern scanner workload",
-    speedup: "11.3x",
-    ferroni: "~1.3 ms",
-    oniguruma: "~14.7 ms",
+    speedup: "10.1x",
+    ferroni: "~1.47 ms",
+    oniguruma: "~14.8 ms",
   },
   {
     category: "Text Search",
     label: "Rejection Speed",
     desc: "No match in 50 KB buffer",
-    speedup: "6.1x",
-    ferroni: "~1.5 \u00B5s",
-    oniguruma: "~9.2 \u00B5s",
+    speedup: "6.2x",
+    ferroni: "~1.54 \u00B5s",
+    oniguruma: "~9.59 \u00B5s",
   },
   {
     category: "Text Search",
     label: "RegSet Multi-Pattern",
     desc: "5 patterns, simultaneous search",
-    speedup: "3.9x",
-    ferroni: "<100 ns",
-    oniguruma: "~385 ns",
+    speedup: "3.8x",
+    ferroni: "~104 ns",
+    oniguruma: "~399 ns",
   },
   {
     category: "Pattern Matching",
     label: "Lookaround Combined",
     desc: "Feature most Rust engines skip",
-    speedup: "3.6x",
-    ferroni: "<80 ns",
-    oniguruma: "~280 ns",
+    speedup: "3.1x",
+    ferroni: "~81 ns",
+    oniguruma: "~254 ns",
   },
 ];
 
@@ -273,10 +273,11 @@ function PerfSection() {
         </div>
 
         <p className="fh-perf-note">
-          Measured on 2026-03-06 with the <code>battle_bench</code> reference suite at commit{" "}
-          <code>e8f120aa</code>, on a Mac13,2 (Apple M1 Ultra, 64&nbsp;GB) running macOS 26.3. Each
-          factor is the ratio of the two timings shown on its card. Full tables, raw values, and the
-          measurement context are in <Link to="/perf/benchmark-results">Benchmark Results</Link>.
+          Measured on 2026-09-07 with the <code>battle_bench</code> reference suite at commit{" "}
+          <code>962ef5a8</code>, on a Mac13,2 (Apple M1 Ultra, 64&nbsp;GB) running macOS 26.5.2.
+          Each factor is the ratio of the two timings shown on its card. Full tables, raw values,
+          and the measurement context are in{" "}
+          <Link to="/perf/benchmark-results">Benchmark Results</Link>.
         </p>
       </div>
     </section>
