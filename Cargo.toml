@@ -52,7 +52,6 @@ cc = { version = "1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
-criterion-codspeed = { version = "5", package = "codspeed-criterion-compat" }
 libc = "0.2"
 regex = "1"
 serde_json = "1"
@@ -69,7 +68,7 @@ harness = false
 required-features = ["ffi"]
 
 [[bench]]
-name = "codspeed_bench"
+name = "regression_bench"
 harness = false
 
 [[bench]]

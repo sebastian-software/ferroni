@@ -1,13 +1,13 @@
-// CodSpeed benchmark suite: internal Ferroni-only regression and optimization tracking.
+// Regression benchmark suite: internal Ferroni-only regression and optimization tracking.
 //
-// Run locally: cargo codspeed build -m simulation && cargo codspeed run
-// Or via codspeed CLI: codspeed run --mode simulation -- cargo codspeed run
+// Run locally: cargo bench --bench regression_bench
 
 mod grammar_loader;
 mod scanner_css_workload;
 
-use criterion_codspeed::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use scanner_css_workload::{CSS_INPUT, CSS_PATTERNS};
+use std::hint::black_box;
 
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
 use ferroni::oniguruma::{ONIG_OPTION_IGNORECASE, ONIG_OPTION_NONE, OnigOptionType, OnigRegion};
@@ -43,7 +43,7 @@ fn rust_search(
 }
 
 // ===========================================================================
-// Tier 2: Regression benchmarks (per-feature coverage, CodSpeed tracking)
+// Tier 2: Regression benchmarks (per-feature coverage)
 // ===========================================================================
 
 // ---------------------------------------------------------------------------

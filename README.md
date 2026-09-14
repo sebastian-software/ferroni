@@ -10,7 +10,6 @@ Part of [Ferramenta](https://ferramenta.dev), a family of Rust tools.
 [![Coverage gate at least 87 percent](https://img.shields.io/badge/coverage%20gate-%E2%89%A5%2087%25-blue?style=flat-square)](https://github.com/sebastian-software/ferroni/blob/main/.github/workflows/ci.yml)
 [![MSRV 1.94](https://img.shields.io/badge/MSRV-1.94-blue?style=flat-square&logo=rust)](CONTRIBUTING.md#getting-started)
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square)](https://github.com/sebastian-software/ferroni/blob/main/LICENSE)
-[![CodSpeed](https://img.shields.io/badge/CodSpeed-measured-blue?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0yMy4zNSAxMi44NGEuODMuODMgMCAwIDAtLjE1LS42OWwtMS40LTEuNzdhLjgyLjgyIDAgMCAwLS42Ny0uMzJoLTEuNjFsLTEuNjQtMS44YS44My44MyAwIDAgMC0uNjItLjI3SDEwLjlhLjguOCAwIDAgMC0uNTguMjVsLTIuMiAyLjI1SDUuMzNhLjgzLjgzIDAgMCAwLS42LjI2TDIuMTYgMTMuNmEuODQuODQgMCAwIDAgLjYgMS40aDIuMjNsLTIuNjMgMi44YS44My44MyAwIDAgMCAuNjEgMS4zOWg0LjA1YS44My44MyAwIDAgMCAuNjEtLjI3bDMuMzMtMy42MWgyLjk2bC0zLjc5IDQuMDRhLjgyLjgyIDAgMCAwIC42MSAxLjM5aDQuMjRjLjIgMCAuNC0uMDguNTUtLjIybDMuNy0zLjZoMS4yN2wuOS43OGMuMi4yMy41Mi4zLjguMTdsMS44Mi0xLjE0YS44My44MyAwIDAgMCAuMzMtLjYxdi0xLjI3YS44My44MyAwIDAgMC0uMi0uNTN6Ii8+PC9zdmc+)](https://codspeed.io/sebastian-software/ferroni?utm_source=badge)
 
 <p align="center">
   Evidence, not badges:
@@ -326,14 +325,15 @@ to revisit:
 
 Ferroni keeps benchmark suites separated by purpose:
 
-- **Internal suite (`codspeed_bench`, Rust-only, regression/optimization work):**
+- **Internal suite (`regression_bench`, Rust-only, regression/optimization work):**
   ```bash
   cargo bench
-  cargo bench --bench codspeed_bench
+  cargo bench --bench regression_bench
 
   # compare two local baselines
-  cargo bench --bench codspeed_bench -- --baseline main
-  cargo bench --bench codspeed_bench -- --baseline feature-branch
+  cargo bench --bench regression_bench -- --save-baseline main
+  # switch to the branch you want to compare
+  cargo bench --bench regression_bench -- --baseline main
   ```
 
 - **Reference suite (`battle_bench`, Ferroni vs Oniguruma for publishable numbers):**
