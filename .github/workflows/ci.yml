@@ -243,7 +243,7 @@ jobs:
         run: ./scripts/check-workflow-pins.sh
 
   standards:
-    name: standards drift
+    name: Standards / Consistency
     runs-on: ubuntu-latest
     # Reports drift from @sebastian-software/standards. Node only -- it never
     # builds the crate, which is why it stays outside the Rust matrix.
@@ -270,4 +270,4 @@ jobs:
       # minimum-release-age=0 stays: pnpm 11 defaults minimumReleaseAge to 1440
       # (24h), so without the bypass a pin that was raised on the day of a
       # standards release cannot resolve at all.
-      - run: pnpm --config.minimum-release-age=0 dlx @sebastian-software/standards@0.11.1 check
+      - run: pnpm --config.minimum-release-age=0 dlx @sebastian-software/standards@0.13.0 check

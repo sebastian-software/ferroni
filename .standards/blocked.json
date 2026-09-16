@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "blocking": false,
+  "reason": "Local automated checks did not complete cleanly in this environment.",
+  "detectedAt": "2026-09-16T16:34:46.826Z",
+  "expectedStandardsVersion": 15,
+  "observedStandardsVersion": 15,
+  "expectedCliVersion": null,
+  "observedCliVersion": null,
+  "failedChecks": [
+    "agent check"
+  ],
+  "retry": "Review the listed check output, provide any missing CI prerequisites if needed, rerun the repository gate, then delete this marker when the result is validated."
+}
