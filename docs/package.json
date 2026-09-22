@@ -7,9 +7,13 @@
     "dev": "react-router dev",
     "build": "pnpm check:numbers && react-router build",
     "check:numbers": "node scripts/check-benchmark-claims.mjs",
+    "lint": "pnpm lint:oxlint && pnpm lint:eslint",
+    "lint:eslint": "eslint .",
+    "lint:oxlint": "oxlint --config oxlint.config.ts .",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "ardo": "^4.2.0",
@@ -24,7 +28,11 @@
     "@react-router/dev": "^8.3.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "eslint": "^10.11.0",
+    "eslint-config-setup": "^0.5.2",
+    "jiti": "^2.7.0",
     "oxfmt": "^0.66.0",
+    "oxlint": "^1.85.0",
     "typescript": "^6.0.3",
     "vite": "^8.2.2"
   },

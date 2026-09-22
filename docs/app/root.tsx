@@ -1,4 +1,3 @@
-import { MarkDefs, SiteFooter, SiteHeader } from "ferramenta-family";
 import {
   ArdoGeneratedSidebar,
   ArdoRoot,
@@ -8,20 +7,26 @@ import {
   ArdoSidebarSection,
   ArdoThemeToggle,
 } from "ardo/ui";
-import config from "virtual:ardo/config";
+import { MarkDefs, SiteFooter, SiteHeader } from "ferramenta-family";
 import { useRef } from "react";
-import { NavLink, type MetaFunction } from "react-router";
+import { type MetaFunction, NavLink } from "react-router";
+import config from "virtual:ardo/config";
 import "ardo/ui/styles.css";
 import "ferramenta-family/tokens.css";
 import "ferramenta-family/fonts.css";
 import "ferramenta-family/theme.css";
+
 import "./site.css";
 // Last on purpose (see the package README): the shared chrome has to win the
 // ties the Ardo and site styles around it would otherwise take.
 import "ferramenta-family/chrome.css";
 
+// React Router requires `meta` as a named route export.
+// oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export const meta: MetaFunction = () => [{ title: config.title }];
 
+// React Router consumes `Layout` as a named route export.
+// oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export function Layout({ children }: { children: React.ReactNode }) {
   return <ArdoRootLayout>{children}</ArdoRootLayout>;
 }
@@ -32,6 +37,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
  * this one overrides it. The sidebar is not part of that switch -- the docs
  * rail and its generated navigation stay exactly as they were.
  */
+// oxlint-disable-next-line react/only-export-components -- Ardo reads this route handle.
 export const handle = { chrome: false };
 
 type DocsSection = {
@@ -81,11 +87,11 @@ function DocsNav() {
  * default labels, so it works outside `ArdoRoot`'s provider.
  */
 function DocsTools() {
-  const menu = useRef<HTMLDetailsElement>(null);
+  const menuRef = useRef<HTMLDetailsElement>(null);
 
   return (
     <>
-      <details className="ferroni-sections" ref={menu}>
+      <details className="ferroni-sections" ref={menuRef}>
         {/* No aria-label: the visible word is the accessible name, so a voice
             command for what is on screen reaches the control. */}
         <summary>Docs</summary>
@@ -98,7 +104,7 @@ function DocsTools() {
                * Client-side navigation keeps the page mounted, so the menu has
                * to close itself when one of its links is taken.
                */
-              onClick={() => menu.current?.removeAttribute("open")}
+              onClick={() => menuRef.current?.removeAttribute("open")}
             >
               {section.label}
             </NavLink>
@@ -119,9 +125,9 @@ function DocsTools() {
 function FooterLegal() {
   return (
     <>
-      ferroni{config.project?.version ? ` v${config.project.version}` : ""} · Released under the
+      ferroni{config.project?.version != null ? ` v${config.project.version}` : ""} · Released under
       BSD-2-Clause License · <a href="https://ardo-docs.dev">Built with Ardo</a>
-      {config.buildTime ? (
+      {config.buildTime != null ? (
         <>
           {" · Built on "}
           {new Date(config.buildTime).toLocaleDateString("en-US", {
@@ -130,7 +136,7 @@ function FooterLegal() {
             year: "numeric",
             timeZone: "UTC",
           })}
-          {config.buildHash ? ` (${config.buildHash})` : ""}
+          {config.buildHash != null ? ` (${config.buildHash})` : ""}
         </>
       ) : null}
     </>

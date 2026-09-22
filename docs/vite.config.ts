@@ -1,9 +1,9 @@
-import { defineConfig } from "vite";
 import { ardo } from "ardo/vite";
 import { readFileSync } from "node:fs";
+import { defineConfig } from "vite";
 
-const cargoToml = readFileSync("../Cargo.toml", "utf-8");
-const version = cargoToml.match(/^version\s*=\s*"(.+)"/m)?.[1] ?? "0.0.0";
+const cargoToml = readFileSync("../Cargo.toml", "utf8");
+const version = /^version\s*=\s*"(.+)"/m.exec(cargoToml)?.[1] ?? "0.0.0";
 
 export default defineConfig({
   plugins: [
