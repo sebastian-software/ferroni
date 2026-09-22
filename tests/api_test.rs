@@ -9,6 +9,14 @@ use ferroni::regint::DEFAULT_PARSE_DEPTH_LIMIT;
 // === Regex::new ===
 
 #[test]
+fn recursive_capture_above_bitset_width() {
+    let pattern = format!(r"{}(a\g<32>?b)", "()".repeat(31));
+    let regex = Regex::new(&pattern).unwrap();
+    assert_eq!(regex.find("aaabbb").unwrap().as_str(), "aaabbb");
+    assert!(!regex.is_match("aaa"));
+}
+
+#[test]
 fn simple_pattern() {
     let re = Regex::new(r"\d+").unwrap();
     let m = re.find("abc 123 def").unwrap();
