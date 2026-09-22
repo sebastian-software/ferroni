@@ -11,7 +11,7 @@ Ferroni (Rust) vs Oniguruma at `-O3`, with
 compatible.
 
 Measured with [Criterion](https://github.com/bheisler/criterion.rs) on Apple
-M1 Ultra.
+M1 Pro.
 
 > Re-run with `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench`
 > to get current numbers on your hardware.
@@ -33,12 +33,12 @@ Exact external input revisions for the publishable battle suite are pinned in
 
 | Field            | Value                                                                                                              |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Ferroni commit   | `e8f120aa64a122ebdfdda5d44ebcb7550235ea3f`                                                                         |
-| Measurement date | `2026-03-06 16:04 CET`                                                                                             |
-| Host             | `Mac13,2 (Apple M1 Ultra, 64 GB)`                                                                                  |
-| macOS            | `26.3`                                                                                                             |
-| `rustc`          | `rustc 1.95.0-nightly (842bd5be2 2026-01-29)`                                                                      |
-| Command          | `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench`                        |
+| Ferroni commit   | `eb617224cd3c3780efb66a024c839be1360aa02b`                                                                         |
+| Measurement date | `2026-09-23`                                                                                                       |
+| Host             | `MacBookPro18,1 (Apple M1 Pro, 32 GB)`                                                                             |
+| macOS            | `27.0 (26A428)`                                                                                                    |
+| `rustc`          | `rustc 1.98.1 (48a229cea 2026-09-01)`                                                                              |
+| Command          | `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench -- --noplot --quiet`    |
 | Input pins       | [`benches/battle_inputs.toml`](https://github.com/sebastian-software/ferroni/blob/main/benches/battle_inputs.toml) |
 
 ## Reference suite (`battle_bench`)
@@ -49,36 +49,36 @@ supported by the `regex` crate.
 
 ### Text search and log scanning
 
-| Scenario                 |       Ferroni |  Oniguruma |        `regex` |
-| ------------------------ | ------------: | ---------: | -------------: |
-| Literal in 50 KB         |     73.625 ns | 129.910 ns |  **10.238 ns** |
-| No match, 50 KB          |      1.500 us |   9.217 us |   **1.436 us** |
-| No match, 10 KB          |    369.519 ns |   1.918 us | **296.251 ns** |
-| Field extract, 50 KB     |    103.788 ns | 163.257 ns |  **54.746 ns** |
-| Timestamp, 50 KB         | **81.102 ns** | 159.923 ns |      96.311 ns |
-| RegSet multi-pattern (5) | **97.976 ns** | 385.195 ns |              — |
+| Scenario                 |        Ferroni |  Oniguruma |        `regex` |
+| ------------------------ | -------------: | ---------: | -------------: |
+| Literal in 50 KB         |      67.676 ns | 168.179 ns |  **16.682 ns** |
+| No match, 50 KB          |       1.666 us |   9.489 us |   **1.463 us** |
+| No match, 10 KB          |     354.913 ns |   1.894 us | **293.728 ns** |
+| Field extract, 50 KB     |      91.510 ns | 156.362 ns |  **55.419 ns** |
+| Timestamp, 50 KB         |      81.990 ns | 170.951 ns |  **53.103 ns** |
+| RegSet multi-pattern (5) | **104.636 ns** | 375.699 ns |              — |
 
 ### Pattern matching
 
 | Category                 |       Ferroni |  Oniguruma |       `regex` |
 | ------------------------ | ------------: | ---------: | ------------: |
-| Literal exact            |     94.558 ns | 135.280 ns | **11.077 ns** |
-| Quantifier greedy        |    152.132 ns | 239.941 ns | **63.088 ns** |
-| Lookaround combined      | **78.500 ns** | 279.991 ns |             — |
-| Unicode `\p{Greek}+`     |     96.288 ns | 236.438 ns | **57.992 ns** |
-| Backref `(\w+) \1`       | **79.834 ns** | 168.520 ns |             — |
-| Case-insensitive phrase  |     93.563 ns | 175.405 ns | **60.179 ns** |
-| Alternation, 2 branches  |     66.909 ns | 139.808 ns | **49.756 ns** |
-| Alternation, 10 branches |     52.273 ns | 232.464 ns | **21.315 ns** |
-| Named capture date       |    241.920 ns | 282.236 ns | **45.475 ns** |
+| Literal exact            |    100.879 ns | 145.791 ns | **10.751 ns** |
+| Quantifier greedy        |    149.587 ns | 173.777 ns | **64.606 ns** |
+| Lookaround combined      | **80.551 ns** | 253.316 ns |             — |
+| Unicode `\p{Greek}+`     |    183.353 ns | 376.148 ns | **61.867 ns** |
+| Backref `(\w+) \1`       | **78.759 ns** | 163.070 ns |             — |
+| Case-insensitive phrase  | **95.924 ns** | 189.468 ns |    120.279 ns |
+| Alternation, 2 branches  |     65.188 ns | 138.434 ns | **46.094 ns** |
+| Alternation, 10 branches |     49.603 ns | 205.233 ns | **19.942 ns** |
+| Named capture date       |    248.273 ns | 279.911 ns | **44.182 ns** |
 
 ### Compilation
 
-| Pattern       |        Ferroni |      Oniguruma |    `regex` |
-| ------------- | -------------: | -------------: | ---------: |
-| Literal       | **521.266 ns** |     533.510 ns |   2.966 us |
-| Named capture |   **6.243 us** |       6.431 us | 219.380 us |
-| Lookbehind    |       1.174 us | **643.704 ns** |          — |
+| Pattern       |    Ferroni |      Oniguruma |    `regex` |
+| ------------- | ---------: | -------------: | ---------: |
+| Literal       | 490.944 ns | **475.621 ns** |   2.743 us |
+| Named capture |   6.726 us |   **6.003 us** | 200.846 us |
+| Lookbehind    |   1.112 us | **591.932 ns** |          — |
 
 ### Scanner with full Shiki TextMate grammars
 
@@ -88,16 +88,16 @@ Full, unmodified grammars from
 | Scenario                      |        Ferroni |      Oniguruma |    Factor |
 | ----------------------------- | -------------: | -------------: | --------: |
 | **TypeScript (279 patterns)** |                |                |           |
-| Compile                       |  **11.986 ms** |      17.431 ms | **1.45x** |
-| First match, short line       | **423.541 ns** |      24.931 us | **58.9x** |
-| Tokenize full line            |   **6.860 us** |     217.101 us | **31.6x** |
+| Compile                       |  **11.377 ms** |      17.338 ms | **1.52x** |
+| First match, short line       | **314.178 ns** |      25.335 us | **80.6x** |
+| Tokenize full line            |   **7.634 us** |     218.313 us | **28.6x** |
 | **CSS (117 patterns)**        |                |                |           |
-| Compile                       |  **14.387 ms** |      19.967 ms | **1.39x** |
-| Tokenize (multi-line)         |   **1.305 ms** |      14.733 ms | **11.3x** |
+| Compile                       |      24.428 ms |  **19.599 ms** |     0.80x |
+| Tokenize (multi-line)         |   **1.459 ms** |      14.495 ms |  **9.9x** |
 | **Rust (81 patterns)**        |                |                |           |
-| Compile                       |     313.695 us | **196.406 us** |     0.63x |
-| First match                   | **163.055 ns** |       5.480 us | **33.6x** |
-| Tokenize full line            |   **8.263 us** |      78.471 us |  **9.5x** |
+| Compile                       |     319.918 us | **191.072 us** |     0.60x |
+| First match                   | **189.636 ns** |       5.501 us | **29.0x** |
+| Tokenize full line            |   **7.483 us** |      81.118 us | **10.8x** |
 
 ## Reproducing
 
