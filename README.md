@@ -220,13 +220,13 @@ No cherry-picked subsets.
 
 | Scenario | Why it matters | Ferroni | Oniguruma | Takeaway |
 |----------|----------------|--------:|------------:|----------|
-| TypeScript grammar compile | Startup cost for a full Shiki grammar | ~11.4 ms | ~17.3 ms | Ferroni starts faster even on a full production grammar |
-| TypeScript first match | Time to find the next token on a real grammar | ~314 ns | ~25.3 us | First-token latency is dramatically lower |
-| TypeScript tokenize full line | End-to-end line tokenization cost | ~7.6 us | ~218 us | Real scanner throughput is in a different class |
-| Rust grammar compile | Compile cost on a smaller, real grammar | ~320 us | ~191 us | One of the smaller-grammar startup cases that still favors Oniguruma |
+| TypeScript grammar compile | Startup cost for a full Shiki grammar | ~11 ms | ~17 ms | Ferroni starts faster even on a full production grammar |
+| TypeScript first match | Time to find the next token on a real grammar | ~300 ns | ~25 us | First-token latency is dramatically lower |
+| TypeScript tokenize full line | End-to-end line tokenization cost | ~7.6 us | ~220 us | Real scanner throughput is in a different class |
+| Rust grammar compile | Compile cost on a smaller, real grammar | ~320 us | ~190 us | One of the smaller-grammar startup cases that still favors Oniguruma |
 | Rust first match | First-token latency on another production grammar | ~190 ns | ~5.5 us | The scanner win is not TypeScript-only |
 | Rust tokenize full line | Whole-line scanner work on a real grammar | ~7.5 us | ~81 us | Whole-line scanner work still stays much faster |
-| CSS tokenize representative input | Heavier multi-pattern scanner workload | ~1.5 ms | ~14.5 ms | Even heavier scanner workloads stay about an order of magnitude faster |
+| CSS tokenize representative input | Heavier multi-pattern scanner workload | ~1.5 ms | ~14 ms | Even heavier scanner workloads stay about an order of magnitude faster |
 
 ### Text search and log scanning
 
@@ -234,12 +234,12 @@ First-match latency and rejection speed on log-sized inputs:
 
 | Scenario | Why it matters | Ferroni | Oniguruma | Takeaway |
 |----------|----------------|--------:|------------:|----------|
-| Literal in 50 KB | Plain substring-like scanning in a real log buffer | ~68 ns | ~168 ns | Both are instant; Ferroni is still ahead |
+| Literal in 50 KB | Plain substring-like scanning in a real log buffer | ~70 ns | ~170 ns | Both are instant; Ferroni is still ahead |
 | No match, 50 KB | Rejection cost when the pattern is absent | ~1.7 us | ~9.5 us | Rejection speed is a very strong Ferroni win |
-| No match, 10 KB | Same rejection story on smaller log chunks | ~355 ns | ~1.9 us | The no-match advantage also holds on smaller buffers |
-| Field extract, 50 KB | Practical capture-based scanning | ~92 ns | ~156 ns | Useful extraction stays cheap |
-| Timestamp, 50 KB | Structured log parsing | ~82 ns | ~171 ns | Everyday log parsing remains very fast |
-| RegSet multi-pattern (5) | Multi-pattern search, relevant for scanners | ~105 ns | ~376 ns | One of the clearest Ferroni-vs-Oniguruma wins |
+| No match, 10 KB | Same rejection story on smaller log chunks | ~350 ns | ~1.9 us | The no-match advantage also holds on smaller buffers |
+| Field extract, 50 KB | Practical capture-based scanning | ~90 ns | ~160 ns | Useful extraction stays cheap |
+| Timestamp, 50 KB | Structured log parsing | ~80 ns | ~170 ns | Everyday log parsing remains very fast |
+| RegSet multi-pattern (5) | Multi-pattern search, relevant for scanners | ~100 ns | ~380 ns | One of the clearest Ferroni-vs-Oniguruma wins |
 
 For plain-text workloads that fit Rust's
 [`regex`](https://crates.io/crates/regex) syntax, `regex` still wins on raw
@@ -252,13 +252,13 @@ One representative pattern per feature family:
 
 | Pattern | Why it matters | Ferroni | Oniguruma | Takeaway |
 |---------|----------------|--------:|------------:|----------|
-| Literal exact | Baseline single-pattern matching | ~101 ns | ~146 ns | Ferroni is ahead, but this is not the headline story |
-| Quantifier greedy | Classic backtracking-heavy pattern | ~150 ns | ~174 ns | Everyday regex engine work is also faster |
-| Lookaround combined | A feature many Rust regex engines do not support | ~81 ns | ~253 ns | Full features do not mean slow by default |
-| Unicode `\p{Greek}+` | Unicode-property support on real text | ~183 ns | ~376 ns | Unicode-property support stays fast |
-| Backref `(\w+) \1` | Backreferences are a real compatibility differentiator | ~79 ns | ~163 ns | A strong compatibility showcase without a speed penalty |
-| Alternation, 10 branches | Branch-heavy matching | ~50 ns | ~205 ns | Optimized search paths pay off strongly |
-| Named capture date | Practical extraction pattern | ~248 ns | ~280 ns | Still close, but Ferroni keeps a lead in this sample |
+| Literal exact | Baseline single-pattern matching | ~100 ns | ~150 ns | Ferroni is ahead, but this is not the headline story |
+| Quantifier greedy | Classic backtracking-heavy pattern | ~150 ns | ~170 ns | Everyday regex engine work is also faster |
+| Lookaround combined | A feature many Rust regex engines do not support | ~80 ns | ~250 ns | Full features do not mean slow by default |
+| Unicode `\p{Greek}+` | Unicode-property support on real text | ~180 ns | ~380 ns | Unicode-property support stays fast |
+| Backref `(\w+) \1` | Backreferences are a real compatibility differentiator | ~80 ns | ~160 ns | A strong compatibility showcase without a speed penalty |
+| Alternation, 10 branches | Branch-heavy matching | ~50 ns | ~200 ns | Optimized search paths pay off strongly |
+| Named capture date | Practical extraction pattern | ~250 ns | ~280 ns | Still close, but Ferroni keeps a lead in this sample |
 
 ### Compilation
 
@@ -267,9 +267,9 @@ reference points:
 
 | Pattern | Why it matters | Ferroni | Oniguruma | Takeaway |
 |---------|----------------|--------:|------------:|----------|
-| Literal | Smallest possible compile path | ~491 ns | ~476 ns | Effectively tied, with Oniguruma slightly ahead |
+| Literal | Smallest possible compile path | ~490 ns | ~480 ns | Effectively tied, with Oniguruma slightly ahead |
 | Named capture | More realistic structured pattern | ~6.7 us | ~6.0 us | Oniguruma compiles this pattern faster in this sample |
-| Lookbehind | Feature-heavy compile path | ~1.1 us | ~592 ns | One of the compile paths that still favors Oniguruma |
+| Lookbehind | Feature-heavy compile path | ~1.1 us | ~600 ns | One of the compile paths that still favors Oniguruma |
 
 ### Memory footprint
 
@@ -281,12 +281,10 @@ method and raw numbers live in
 
 | Scenario | Why it matters | Ferroni | Oniguruma | Takeaway |
 |---------|----------------|--------:|------------:|----------|
-| Full TS grammar compile | Memory cost before any scanning starts | ~15 MB | ~14.5 MB | Same ballpark; Rust is not paying a large memory tax |
-| Compile + scan large TS file | Practical peak RSS for a realistic scanner pass | ~15 MB | ~14.5 MB | Ferroni stays memory-competitive while being much faster on scanner workloads |
+| Full TS grammar compile | Memory cost before any scanning starts | ~15 MB | ~15 MB | Same ballpark; Rust is not paying a large memory tax |
+| Compile + scan large TS file | Practical peak RSS for a realistic scanner pass | ~15 MB | ~15 MB | Ferroni stays memory-competitive while being much faster on scanner workloads |
 
-Oniguruma is slightly lower in the current local sample, but the important
-point is that both engines land in the same range rather than a different
-memory class.
+Both engines land in the same range rather than a different memory class.
 
 ### Where Ferroni is slower
 
