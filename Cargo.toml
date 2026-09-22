@@ -1,6 +1,6 @@
 [package]
 name = "ferroni"
-version = "1.4.0"
+version = "1.4.1"
 edition = "2024"
 description = "Oniguruma-compatible regex engine"
 license = "BSD-2-Clause"

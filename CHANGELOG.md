@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1](https://github.com/sebastian-software/ferroni/compare/v1.4.0...v1.4.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* handle recursive captures beyond the bitset width ([9d72d4f](https://github.com/sebastian-software/ferroni/commit/9d72d4fc9b9ab35b42a262c8274ff6aa212701e5))
+* handle recursive captures beyond the bitset width ([#139](https://github.com/sebastian-software/ferroni/issues/139)) ([9d72d4f](https://github.com/sebastian-software/ferroni/commit/9d72d4fc9b9ab35b42a262c8274ff6aa212701e5))
+* remove redundant recursive capture cast ([31f2c93](https://github.com/sebastian-software/ferroni/commit/31f2c93f8f252d232cabed9b66ff64220dc571b5))
+
 ## [1.4.0](https://github.com/sebastian-software/ferroni/compare/v1.3.3...v1.4.0) (2026-09-14)
 
 
