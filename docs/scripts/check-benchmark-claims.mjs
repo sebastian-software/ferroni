@@ -14,10 +14,9 @@
  */
 
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
-const here = dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 const homePath = resolve(here, "../app/routes/home.tsx");
 const benchPath = resolve(here, "../app/routes/perf/benchmark-results.mdx");
 
@@ -60,17 +59,54 @@ const SOURCE_FOR_CARD = {
 };
 
 const UNITS = { ns: 1, µs: 1e3, us: 1e3, ms: 1e6, s: 1e9 };
+const UNIT_SUFFIXES = Object.keys(UNITS).sort((left, right) => right.length - left.length);
 
 const errors = [];
 
 function toNanoseconds(value) {
-  const match = value.match(/([\d.]+)\s*(ns|µs|us|ms|s)/);
-  if (!match) return null;
-  return Number(match[1]) * UNITS[match[2]];
+  const unit = UNIT_SUFFIXES.find((suffix) => value.endsWith(suffix));
+  if (unit === undefined) return null;
+  const number = Number(value.slice(0, -unit.length).trim());
+  return Number.isFinite(number) ? number * UNITS[unit] : null;
 }
 
 function key({ section, group, row }) {
   return [section, group ?? "", row].join(" || ");
+}
+
+function groupLabel(cells) {
+  if (cells.length < 2 || !cells.slice(1).every((cell) => cell === "")) return null;
+  return /^\*\*([^*]+)\*\*$/.exec(cells[0])?.[1] ?? null;
+}
+
+function timingRow(cells) {
+  if (cells.length < 3) return null;
+  const [label, ferroni, oniguruma] = cells.map((cell) => cell.replaceAll("**", ""));
+  const ferroniNs = toNanoseconds(ferroni);
+  const onigurumaNs = toNanoseconds(oniguruma);
+  if (ferroniNs === null || onigurumaNs === null) return null;
+  return { label, ferroni: ferroniNs, oniguruma: onigurumaNs };
+}
+
+function collectSectionRows({ section, body, rows, duplicates }) {
+  let group = null;
+  for (const line of body.split("\n")) {
+    if (!line.startsWith("|")) continue;
+    const cells = line
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+    const nextGroup = groupLabel(cells);
+    if (nextGroup !== null) {
+      group = nextGroup;
+      continue;
+    }
+    const timing = timingRow(cells);
+    if (timing === null) continue;
+    const id = key({ section, group, row: timing.label });
+    if (rows.has(id)) duplicates.push(id);
+    rows.set(id, { ferroni: timing.ferroni, oniguruma: timing.oniguruma });
+  }
 }
 
 /**
@@ -80,42 +116,15 @@ function key({ section, group, row }) {
 function benchmarkRows() {
   const rows = new Map();
   const duplicates = [];
-  let section = null;
-  let group = null;
-
-  for (const line of bench.split("\n")) {
-    const heading = line.match(/^###\s+(.*)$/);
-    if (heading) {
-      section = heading[1].trim();
-      group = null;
-      continue;
-    }
-    if (!line.startsWith("|")) continue;
-
-    const cells = line
-      .split("|")
-      .slice(1, -1)
-      .map((cell) => cell.trim());
-
-    // A group header: one bold label, every other cell empty.
-    if (
-      cells.length > 1 &&
-      /^\*\*.*\*\*$/.test(cells[0]) &&
-      cells.slice(1).every((cell) => cell === "")
-    ) {
-      group = cells[0].replace(/\*\*/g, "");
-      continue;
-    }
-
-    if (cells.length < 3) continue;
-    const [label, ferroni, oniguruma] = cells.map((cell) => cell.replace(/\*\*/g, ""));
-    const a = toNanoseconds(ferroni);
-    const b = toNanoseconds(oniguruma);
-    if (a === null || b === null) continue;
-
-    const id = key({ section, group, row: label });
-    if (rows.has(id)) duplicates.push(id);
-    rows.set(id, { ferroni: a, oniguruma: b });
+  const sections = bench.split("\n### ");
+  for (const block of sections.slice(1)) {
+    const headingEnd = block.indexOf("\n");
+    collectSectionRows({
+      section: block.slice(0, headingEnd).trim(),
+      body: block.slice(headingEnd + 1),
+      rows,
+      duplicates,
+    });
   }
 
   for (const id of duplicates) {
@@ -125,21 +134,30 @@ function benchmarkRows() {
 }
 
 /** The `benchmarks` array literal of the home page. */
+function cardField(entry, name) {
+  const line = entry.split("\n").find((candidate) => candidate.trimStart().startsWith(`${name}:`));
+  if (line === undefined) return null;
+  return line
+    .slice(line.indexOf(":") + 1)
+    .trim()
+    .replaceAll(/[",]/g, "");
+}
+
 function homeCards() {
   const start = home.indexOf("const benchmarks = [");
   if (start === -1) throw new Error("home.tsx: `benchmarks` array not found");
   const end = home.indexOf("\n]", start);
-  const block = home.slice(start, end);
-  const cards = [];
-  for (const entry of block.split(/\{\s*\n/).slice(1)) {
-    const field = (name) => entry.match(new RegExp(`${name}:\\s*"([^"]*)"`))?.[1] ?? null;
-    const label = field("label");
-    const speedup = field("speedup");
-    if (label && speedup) {
-      cards.push({ label, speedup: Number(speedup.replace("x", "")) });
-    }
-  }
-  return cards;
+  return home
+    .slice(start, end)
+    .split("\n  },")
+    .map((entry) => {
+      const label = cardField(entry, "label");
+      const speedup = cardField(entry, "speedup");
+      return label === null || speedup === null
+        ? null
+        : { label, speedup: Number(speedup.replace("x", "")) };
+    })
+    .filter((card) => card !== null);
 }
 
 const rows = benchmarkRows();
@@ -162,7 +180,7 @@ for (const card of cards) {
   const factor = Math.round((measured.oniguruma / measured.ferroni) * 10) / 10;
   if (Math.abs(factor - card.speedup) > 0.05) {
     errors.push(
-      `"${card.label}" claims ${card.speedup}x, but "${key(source)}" ` + `measures ${factor}x.`,
+      `"${card.label}" claims ${card.speedup}x, but "${key(source)}" measures ${factor}x.`,
     );
   }
 }

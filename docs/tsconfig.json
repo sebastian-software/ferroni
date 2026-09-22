@@ -6,6 +6,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
@@ -14,6 +15,6 @@
     "jsx": "react-jsx",
     "types": ["vite/client", "ardo/virtual"]
   },
-  "include": ["app/**/*", "*.ts", "*.config.ts"],
+  "include": ["app/**/*", "*.ts", "*.config.ts", "scripts/**/*.mjs", "research/**/*.js"],
   "exclude": ["node_modules", "build"]
 }

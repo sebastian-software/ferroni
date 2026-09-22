@@ -8,6 +8,8 @@ const subject = process.env.FERRONI_SPIKE_SUBJECT;
 const names = JSON.parse(process.env.FERRONI_SPIKE_NAMES || "[]");
 
 try {
+  // This research harness must compile the pattern it receives for differential testing.
+  // eslint-disable-next-line security/detect-non-literal-regexp
   const regex = new RegExp(pattern, "u");
   const match = regex.exec(subject);
 

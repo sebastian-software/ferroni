@@ -4912,7 +4912,7 @@ fn apply_call_graph_state(
     }
     if let Some(regnum) = recursive_group {
         node.status_add(ND_ST_RECURSION);
-        env.backtrack_mem |= 1u32 << regnum;
+        mem_status_on(&mut env.backtrack_mem, regnum);
     }
 }
 

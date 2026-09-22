@@ -10,7 +10,7 @@ loads its Node helper from this directory. Each file names its own command.
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | [`research_ecmascript_lookbehind_NOTES.md`](research_ecmascript_lookbehind_NOTES.md) | Findings of the issue #44 ECMAScript look-behind spike          |
 | [`research_ecmascript_lookbehind.rs`](research_ecmascript_lookbehind.rs)             | Differential driver: same patterns through Ferroni and Node     |
-| [`research_ecmascript_lookbehind_node.js`](research_ecmascript_lookbehind_node.js)   | Node helper for that differential                               |
+| [`research-ecmascript-lookbehind-node.js`](research-ecmascript-lookbehind-node.js)   | Node helper for that differential                               |
 | [`profile_named_capture.rs`](profile_named_capture.rs)                               | Hot-loop profiling of named-capture overhead vs. a bare pattern |
 
 These spikes describe the state of the engine at the time they were run. Treat

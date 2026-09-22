@@ -131,6 +131,19 @@ let cluster = Regex::new(r"\X").unwrap();
 assert_eq!(cluster.find("é!").unwrap().as_str(), "é");
 ```
 
+Lookbehind validation follows Oniguruma's parser, including its restrictions on
+nested lookbehind. For example, Oniguruma rejects the positive form below with
+an invalid-lookbehind syntax error, and Ferroni preserves that behavior:
+
+```rust
+use ferroni::prelude::*;
+
+assert!(Regex::new(r"(?<=(?<!a)b)c").is_err());
+```
+
+The superficially similar outer negative form `(?<!(?<!a)b)c` is accepted.
+Ferroni keeps this distinction for compatibility with the C engine.
+
 Conditionals `(?(cond)then|else)`, absent expressions `(?~...)`,
 subexpression calls `\g<name>`, callouts `(?{...})`, `(*FAIL)`, and the
 retry/time/stack safety limits are all supported as well.

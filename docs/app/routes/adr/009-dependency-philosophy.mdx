@@ -33,11 +33,11 @@ Each was selected because:
 
 ### Dev dependencies
 
-| Crate                                     | Purpose                                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------------------ |
-| `criterion` / `codspeed-criterion-compat` | Benchmark framework + CI regression tracking                                   |
-| `serde_json`                              | Parsing Shiki grammar JSON in benchmarks                                       |
-| `cc`                                      | Building C Oniguruma for benchmark comparison (optional, behind `ffi` feature) |
+| Crate        | Purpose                                                                        |
+| ------------ | ------------------------------------------------------------------------------ |
+| `criterion`  | Benchmark framework and local regression measurement                           |
+| `serde_json` | Parsing Shiki grammar JSON in benchmarks                                       |
+| `cc`         | Building C Oniguruma for benchmark comparison (optional, behind `ffi` feature) |
 
 The `cc` crate is gated behind the `ffi` feature and only used for benchmark comparisons -- it is never part of a normal `cargo build`.
 

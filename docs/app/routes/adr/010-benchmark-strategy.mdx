@@ -30,14 +30,13 @@ Real-world scenarios that produce the numbers we publish. Always Ferroni vs Onig
 
 Key rule: **benchmark against complete, unmodified production grammars** -- no cherry-picked subsets. The Shiki grammars are committed as-is in `benches/grammars/`.
 
-### Internal suite: `codspeed_bench`
+### Internal suite: `regression_bench`
 
-Ferroni-only micro-benchmarks tracked by [CodSpeed](https://codspeed.io/) in CI. These catch performance regressions before they reach `main`. They are intentionally internal-facing: useful for optimizing parser, executor, scanner, RegSet, and public API paths, but not meant for README marketing tables.
+Ferroni-only micro-benchmarks measured locally with Criterion. Compare saved baselines to check for performance regressions before merging changes. They are intentionally internal-facing: useful for optimizing parser, executor, scanner, RegSet, and public API paths, but not meant for README marketing tables.
 
 ### Tooling
 
 - **Criterion.rs** for local measurement and HTML reports (`target/criterion/report/index.html`).
-- **codspeed-criterion-compat** for CI integration -- same benchmark code, instrumented for CodSpeed's wall-time tracking.
 - **C comparison** via optional `ffi` feature. The `cc` crate builds Oniguruma from a pinned local source snapshot prepared on demand for head-to-head measurement.
 - **Pinned battle inputs** in `benches/battle_inputs.toml`. This records the exact external artifacts behind the publishable suite.
 
@@ -49,7 +48,7 @@ Both `release` and `bench` profiles use `lto = "thin"` to allow cross-crate inli
 
 - **Real grammars prevent overfitting.** Benchmarking against subsets risks optimizing for patterns that don't matter.
 - **C comparison keeps claims honest.** Every speedup number is relative to the same engine at `-O3`, not a strawman.
-- **Two suites separate concerns.** `battle_bench` is small, stable, and publishable; `codspeed_bench` is free to optimize for regression coverage and engineering feedback.
+- **Two suites separate concerns.** `battle_bench` is small, stable, and publishable; `regression_bench` is free to optimize for regression coverage and engineering feedback.
 - **Compilation is part of the workload.** Syntax highlighters compile grammars at startup. Ignoring compile time gives an incomplete picture.
 - **README numbers should stay human-scale.** The README intentionally rounds values; exact raw numbers live in `/perf/benchmark-results`.
 
