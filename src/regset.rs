@@ -68,11 +68,11 @@ pub struct OnigRegSet {
     /// Number of entries routed through `first_byte_candidates`. A pure
     /// fallback set has no table work at any position.
     table_entry_count: usize,
-    /// Entries whose start byte cannot be derived safely from bytecode. They
-    /// are searched independently with their own optimizer after the table
-    /// pass, rather than routing on an optimizer byte that can occur later
-    /// than the true match start.
-    fallback_search_candidates: Vec<u16>,
+    /// Entries whose start byte cannot be derived safely from bytecode, in
+    /// index order. They are searched independently with their own optimizer
+    /// after the table pass, rather than routing on an optimizer byte that
+    /// can occur later than the true match start.
+    fallback_search_candidates: Vec<FallbackCandidate>,
     /// Scanner-only memoization for optimizer-backed fallback searches. The
     /// caller supplies a stable immutable string identity, so a no-match or
     /// a later match can be reused as tokenization advances.
@@ -97,13 +97,42 @@ pub struct OnigRegSet {
     last_match_len: i32,
 }
 
+/// A fallback entry as the position-lead search walks it on every call.
+///
+/// A warm scanner call visits every fallback entry, and most of them hold a
+/// settled no-match result. Keeping the flags that decide a skip and that
+/// result in one contiguous array makes such an entry cost a few loads
+/// instead of dereferencing its regex and its memo vector.
+#[derive(Clone, Copy, Debug)]
+struct FallbackCandidate {
+    index: u16,
+    /// Copy of the entry's `fallback_memo_safe`.
+    memo_safe: bool,
+    /// The entry is anchored to the search start (`\G`).
+    begin_position: bool,
+    /// Memoized: a search from this position found no match up to the end
+    /// of the subject, so no later start can match either. `usize::MAX`
+    /// when unknown. Valid for the current `fallback_memo_key` only.
+    no_match_from: usize,
+}
+
+impl FallbackCandidate {
+    fn new(index: usize, entry: &RegSetEntry) -> Self {
+        Self {
+            index: index as u16,
+            memo_safe: entry.fallback_memo_safe,
+            begin_position: (entry.reg.anchor & ANCR_BEGIN_POSITION) != 0,
+            no_match_from: usize::MAX,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum FallbackMemo {
     /// A direct position-lead attempt failed at this exact start. It is safe
     /// to skip only an identical retry; a different start upgrades to an
     /// optimizer search so mixed table/fallback scans remain linear.
     ExactStartMiss(usize),
-    NoMatchFrom(usize),
     MatchAt {
         searched_from: usize,
         position: usize,
@@ -633,7 +662,7 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
                     continue;
                 }
             }
-            fallback_search_candidates.push(i as u16);
+            fallback_search_candidates.push(FallbackCandidate::new(i, entry));
         } else {
             add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16);
             table_entry_count += 1;
@@ -726,7 +755,9 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
             set.table_entry_count += 1;
             set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
         } else {
-            set.fallback_search_candidates.push(new_idx);
+            let candidate =
+                FallbackCandidate::new(new_idx as usize, &set.entries[new_idx as usize]);
+            set.fallback_search_candidates.push(candidate);
         }
     } else {
         add_entry_to_first_byte_table(
@@ -1325,6 +1356,9 @@ fn regset_search_body_position_lead(
             for memos in &mut set.fallback_memos {
                 memos.clear();
             }
+            for candidate in &mut set.fallback_search_candidates {
+                candidate.no_match_from = usize::MAX;
+            }
         }
     }
 
@@ -1338,16 +1372,30 @@ fn regset_search_body_position_lead(
         skip_region_for_nomem,
     );
     let mut fallback_msa = None;
+    // The character head before the current decision's position, which
+    // bounds every later-index entry. Cached per decision position.
+    let mut before_decision: Option<(usize, Option<usize>)> = None;
 
     for candidate_at in 0..set.fallback_search_candidates.len() {
-        let index = set.fallback_search_candidates[candidate_at] as usize;
+        let candidate = set.fallback_search_candidates[candidate_at];
+        let index = candidate.index as usize;
+        let bound = decision.map(decision_position_and_index);
+        // Candidates run in index order and a decision only moves to an
+        // earlier (position, index). Once it sits at `start` ahead of this
+        // index, no remaining entry can win: each would be skipped below.
+        if bound
+            .is_some_and(|(position, winner)| position as usize <= start && index as i32 >= winner)
+        {
+            break;
+        }
         // Callouts and position-sensitive bytecode can observe each attempt,
         // so replay those entries rather than reusing a cached result.
-        let memo_enabled = memo_enabled && set.entries[index].fallback_memo_safe;
-        if (set.entries[index].reg.anchor & ANCR_BEGIN_POSITION) != 0 {
-            if decision.is_some_and(|current| {
-                (start as i32, index as i32) >= decision_position_and_index(current)
-            }) {
+        let memo_enabled = memo_enabled && candidate.memo_safe;
+        if memo_enabled && start >= candidate.no_match_from {
+            continue;
+        }
+        if candidate.begin_position {
+            if bound.is_some_and(|bound| (start as i32, index as i32) >= bound) {
                 continue;
             }
 
@@ -1372,15 +1420,23 @@ fn regset_search_body_position_lead(
             continue;
         }
 
-        let search_range = match decision {
-            Some(current) if index as i32 >= decision_position_and_index(current).1 => {
-                let position = decision_position_and_index(current).0 as usize;
-                match onigenc_get_prev_char_head(set.enc, start, position, str_data) {
+        let search_range = match bound {
+            Some((position, winner)) if index as i32 >= winner => {
+                let position = position as usize;
+                let before = match before_decision {
+                    Some((cached, before)) if cached == position => before,
+                    _ => {
+                        let before = onigenc_get_prev_char_head(set.enc, start, position, str_data);
+                        before_decision = Some((position, before));
+                        before
+                    }
+                };
+                match before {
                     Some(position) => position,
                     None => continue,
                 }
             }
-            Some(current) => decision_position_and_index(current).0 as usize,
+            Some((position, _)) => position as usize,
             None => range,
         };
         if search_range < start {
@@ -1388,11 +1444,6 @@ fn regset_search_body_position_lead(
         }
 
         if memo_enabled {
-            if set.fallback_memos[index].iter().any(|memo| {
-                matches!(memo, FallbackMemo::NoMatchFrom(searched_from) if start >= *searched_from)
-            }) {
-                continue;
-            }
             if let Some((searched_from, position)) = set.fallback_memos[index]
                 .iter()
                 .filter_map(|memo| match *memo {
@@ -1445,7 +1496,7 @@ fn regset_search_body_position_lead(
                 }
                 // A different position cannot use an exact miss. Fall
                 // through to one optimizer search over the remaining text;
-                // its MatchAt/NoMatchFrom result is the advancing cursor.
+                // its MatchAt/no-match result is the advancing cursor.
             }
         }
 
@@ -1536,9 +1587,8 @@ fn regset_search_body_position_lead(
             );
         } else if position == ONIG_MISMATCH {
             if memo_enabled {
-                let memos = &mut set.fallback_memos[index];
-                memos.clear();
-                memos.push(FallbackMemo::NoMatchFrom(start));
+                set.fallback_memos[index].clear();
+                set.fallback_search_candidates[candidate_at].no_match_from = start;
             }
         } else {
             // `onig_search` reports the error code but not the start position
@@ -1935,6 +1985,20 @@ pub fn onig_regset_search_with_param(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fallback_indices(set: &OnigRegSet) -> Vec<u16> {
+        set.fallback_search_candidates
+            .iter()
+            .map(|candidate| candidate.index)
+            .collect()
+    }
+
+    /// The single fallback entry holds exactly a settled no-match result
+    /// from `start`.
+    fn assert_settled_from(set: &OnigRegSet, start: usize) {
+        assert_eq!(set.fallback_search_candidates[0].no_match_from, start);
+        assert!(set.fallback_memos[0].is_empty());
+    }
     use crate::encodings::utf8::ONIG_ENCODING_UTF8;
     use crate::regcomp::onig_new;
     use crate::regexec::{
@@ -2144,7 +2208,7 @@ mod tests {
         assert_eq!(result, ONIG_NORMAL);
         let set = set.expect("regset");
 
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         assert_eq!(set.table_entry_count, 0);
     }
 
@@ -2157,7 +2221,7 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(b"(?:(a)|b)*ab")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
 
         // (input, group 1 start, group 1 end)
         let cases: [(&[u8], i32, i32); 2] = [
@@ -2190,7 +2254,7 @@ mod tests {
         let (set, result) = onig_regset_new(patterns.iter().map(|p| compile(p)).collect());
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         let filter = set.entries[0].start_filter.as_deref().expect("filter");
         assert!(filter[b' ' as usize] != 0 && filter[b'[' as usize] != 0);
         assert_eq!(filter[b'a' as usize], 0);
@@ -2257,7 +2321,7 @@ mod tests {
 
         assert_eq!(onig_regset_add(&mut set, compile(b"a*bc")), ONIG_NORMAL);
         assert_eq!(set.table_entry_count, 1);
-        assert_eq!(set.fallback_search_candidates, vec![1]);
+        assert_eq!(fallback_indices(&set), [1]);
     }
 
     #[test]
@@ -2282,10 +2346,7 @@ mod tests {
             ),
             (ONIG_MISMATCH, 0)
         );
-        assert!(matches!(
-            set.fallback_memos[0].as_slice(),
-            [FallbackMemo::NoMatchFrom(0)]
-        ));
+        assert_settled_from(&set, 0);
 
         // A cached fallback miss needs neither a table MatchArg nor a
         // byte-by-byte table walk. Leaving this empty distinguishes the O(1)
@@ -2399,10 +2460,7 @@ mod tests {
             search(&mut set, FallbackMemoIdentity::Caller(42)),
             (ONIG_MISMATCH, 0)
         );
-        assert!(matches!(
-            set.fallback_memos[0].as_slice(),
-            [FallbackMemo::NoMatchFrom(0)]
-        ));
+        assert_settled_from(&set, 0);
         let first_key = set.fallback_memo_key.expect("memo key");
         let first_revision = set
             .scratch_limits_revision
@@ -2863,7 +2921,7 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(br"a*(?:\Gx|y)")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         assert!(
             set.entries[0]
                 .reg
@@ -3024,10 +3082,7 @@ mod tests {
             ),
             (1, 1)
         );
-        assert!(matches!(
-            set.fallback_memos[0].as_slice(),
-            [FallbackMemo::NoMatchFrom(1)]
-        ));
+        assert_settled_from(&set, 1);
         for start in [2, input.len() - 1] {
             assert_eq!(
                 onig_regset_search_fast_with_id(
@@ -3115,7 +3170,7 @@ mod tests {
             onig_regset_new(vec![compile(br"a*x(a+)+b"), compile(b"y"), compile(b"x")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         let input = format!("yx{}c", "a".repeat(1_001));
         let identity = FallbackMemoIdentity::OnigString(16);
 
@@ -3159,7 +3214,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|ext| ext.callout_num != 0)
         );
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
 
         let input = b"x";
         assert_eq!(
@@ -3184,7 +3239,7 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         assert!(set.first_byte_candidates[b'a' as usize].is_empty());
 
         let input = vec![b'a'; 80_000];
@@ -3203,10 +3258,7 @@ mod tests {
                 (ONIG_MISMATCH, 0)
             );
         }
-        assert!(matches!(
-            set.fallback_memos[0].as_slice(),
-            [FallbackMemo::NoMatchFrom(0)]
-        ));
+        assert_settled_from(&set, 0);
     }
 
     #[test]
@@ -3327,7 +3379,7 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(br"\["), compile(br"\G\s*\[")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![1]);
+        assert_eq!(fallback_indices(&set), [1]);
 
         let input = b"xx [";
         let (index, position) = onig_regset_search(
