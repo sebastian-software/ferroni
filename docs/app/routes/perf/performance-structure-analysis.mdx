@@ -5,10 +5,11 @@ title: "Performance and Structure Analysis (2026-09)"
 
 # Performance and Structure Analysis (2026-09)
 
-This page covers a profiling pass over grammar compilation and scanner
+This page covers two profiling passes over grammar compilation and scanner
 workloads with the full Shiki grammars. It records what the profiles showed
-and the changes that came out of it. It then lists the larger improvement
-ideas that did not fit into that change.
+and the changes that came out of them. It then lists the larger improvement
+ideas that did not fit into those changes. The [second pass](#second-pass)
+worked through the first pass's ideas.
 
 ## Method
 
@@ -156,7 +157,7 @@ With function alignment forced for both builds
 warm benchmarks therefore need instruction counts or aligned builds before
 a few-percent difference means anything.
 
-## Changes in this pass
+## Changes in the first pass
 
 - **Start-byte filter for fallback searches** (`regset.rs`, `regexec.rs`;
   finding 2). The search skips positions whose byte the bytecode-derived
@@ -219,10 +220,152 @@ baseline, with function alignment forced on both sides:
   (`lazy` -6%, `nested` -7.5%, `timestamp` -3%, `idiomatic find` -1%) except
   the Greek class above. This is finding 8 at work, not a regression.
 
+## Second pass
+
+The second pass took the ideas below in order of expected value, with the
+same method and the same equivalence checks. Every change keeps the search
+results of all grammar patterns and the scanner tokens byte-identical to
+`main`; compile-only changes were additionally checked with a dump of every
+grammar pattern's bytecode and optimizer state.
+
+### 9. Literal trie patterns lost their start map
+
+A literal alternation compiled to a trie became a node that told the
+optimizer nothing: no start bytes, a length of one to infinity. A pattern
+built around one fell from a byte-map optimizer to none (for example
+`\b(as|async|become|...)\b`) and was attempted at more positions than the
+alternation it replaced. The trie was faster than the alternation, but
+the pattern around it was slower.
+
+### 10. Two latent correctness bugs in the literal trie
+
+The trie node is kept in the tree as a string node whose bytes are the
+trie's index. Two passes read them as text:
+
+- the automatic possessification treated `a*` in `a*(?:abc|bcd|cde|def)`
+  as exclusive with the index bytes, so the pattern failed on `abc`;
+- the `{n}` string expansion repeated the index bytes, so
+  `(?:abc|bcd|cde|def){2}` no longer matched `abcbcd`.
+
+Neither case occurs in the three grammars' test inputs, and no test
+covered them.
+
+### 11. Warm first-match calls were mostly bookkeeping
+
+After a line's first call, most RegSet fallback entries hold a settled
+no-match result, yet every warm call still visited all of them: a regex
+dereference, a scan of the entry's memo vector, and one `prev_char_head`
+call per entry once a table match sat at the start position. That was
+about 4,100 of the 6,300 instructions of a warm TypeScript first-match
+call.
+
+### 12. `(?i)` classes carry hundreds of fold alternatives
+
+Under `(?i)`, Oniguruma adds a string alternative to a class for every
+member with a multi-character case fold (`ß` for `ss`, `ﬁ` for `fi`), and
+`tune_tree` expands each of those strings into its case variants. `[-\w]`
+thus compiles to 1,792 instructions: one class and 525 alternatives. It
+appears in most CSS patterns as `(?![-\w])`. The alternatives cost a lot at
+compile time (a pattern such as `(?i)(?<![-\w])(ltr|rtl)(?![-\w])` took
+about 430 us to compile) and almost nothing at run time: dropping them, as
+an experiment only, changed CSS tokenization by 0.5%.
+
+### 13. Per-bit loops in compilation
+
+Every letter of a `(?i)` literal compiles to its own class (`[aA]`), so
+the CSS keyword lists produce thousands of class nodes per compile. Each of
+them walked its 256-bit bitset bit by bit twice, and negated classes added
+about 250 bytes to the optimizer's byte map one at a time. POSIX brackets
+such as `[_$[:alpha:]]`, used hundreds of times by the TypeScript grammar,
+copied about 700 Unicode ranges per class through a temporary vector and a
+regrowing buffer.
+
+### 14. The big CSS keyword lists are not pure literals
+
+The four largest CSS alternations (property names, value keywords, HTML
+elements) are about half of the CSS grammar's compile time. Each contains
+a few branches that are not plain literals, such as `repeat-[xy]`,
+`larger??` and `h[1-6]`, and one such branch keeps the whole list off the
+trie. Expanding them is possible, but under `(?i)` the fold segmentation
+has to follow the original string nodes (see P8).
+
+### Changes in the second pass
+
+- **Settled fallback entries are cheap** (`regset.rs`; finding 11, P2).
+  Fallback candidates keep their skip flags and settled no-match position
+  in one contiguous array, the character head before a decision is
+  computed once, and the walk stops once a decision at the start position
+  precedes the remaining indices.
+- **Word-level bitset scans and streamed ctype ranges** (`regcomp.rs`,
+  `regparse.rs`, `unicode/mod.rs`; finding 13, P5). Class bitsets are
+  scanned by word; a multibyte class fills only the ASCII half of the byte
+  map before marking every high byte; fold groups in class ranges are
+  collected in a bitset instead of being sorted; Unicode ctype ranges are
+  counted and written into the class buffer in one pass.
+- **Trie index bytes are no longer read as text** (`regcomp.rs`;
+  finding 10). Both passes leave trie nodes alone.
+- **Literal tries for prefixes and case-insensitive lists** (`regcomp.rs`,
+  `literal_trie.rs`, `regexec.rs`; findings 9 and 12, P1):
+  - The trie node carries the alternation's length range and start bytes.
+  - Literals may be prefixes of one another. The match continues with the
+    literal that comes first in the alternation and pushes the others as
+    backtracking alternatives in alternation order, only where several
+    match.
+  - Case-insensitive ASCII lists in UTF-8 compile to a folded trie. It
+    accepts exactly what the unraveled alternation accepts: class members
+    such as the Kelvin sign (decoded like a class instruction, including
+    malformed sequences) and multi-character segments such as `ss` or `ffi`
+    with their exact alternatives. The data comes from the same case-fold
+    queries `unravel_case_fold_string` makes; anything outside the trie's
+    model keeps the regular path.
+- **Fast-path census** (`regset.rs`; structure observations). A unit test
+  compiles the three grammars as a scanner does and asserts how many
+  patterns reach each fast path. Dropping the trie start map, for example,
+  moves TypeScript's patterns without an optimizer from 3 to 11.
+
+Measured against `main` after the first pass (instruction counts; wall
+clock as the minimum of nine interleaved runs with function alignment
+forced on both sides):
+
+| Workload                                    | Instructions | Wall clock |
+| ------------------------------------------- | -----------: | ---------: |
+| TypeScript grammar, first match (warm)      |         -69% |       -71% |
+| TypeScript grammar, single line (warm)      |         -48% |       -49% |
+| Rust grammar, document line by line         |         -32% |       -31% |
+| Rust grammar, single line (warm)            |         -23% |       -26% |
+| CSS grammar, document line by line          |          -8% |        -8% |
+| CSS grammar, `battle_bench` tokenize        |          -4% |        -5% |
+| TypeScript grammar, document line by line   |          -4% |        -3% |
+| CSS grammar compile                         |         -35% |       -24% |
+| TypeScript grammar compile                  |         -17% |       -17% |
+| Rust grammar compile                        |         -11% |        -9% |
+| `\p{Greek}+`, timestamp, short scanner call |      neutral |    neutral |
+
+The `regression_scanner_documents` criterion group, with alignment forced on
+both sides, moved by -6% (TypeScript), -9% (CSS) and -31% (Rust).
+
+Attempts that were measured and dropped:
+
+- **Skipping the UTF-8 boundary check for `&str` input** (P6) saves 4% of
+  the instructions of a `\p{Greek}+` search and nothing for ASCII. Doing it
+  soundly needs an invariant threaded through every API: the subject is
+  valid UTF-8 and every start and range position is a character boundary.
+  Not worth it for that gain.
+- **A branch-free optimizer map merge** vectorized, but widening bytes cost
+  more than the branches it removed: +2% instructions for the CSS compile,
+  wall clock within noise.
+- **Reserving the bytecode vector** from `compile_length_tree` cost as much
+  as the regrowth it saved.
+- **Table routing for bounded fallback entries** (P7) has no target left in
+  the TypeScript document: an ablation spreads the remaining cold cost over
+  a dozen large look-ahead patterns at 2-7% each, and their start filters
+  already accept every identifier byte.
+
 ## Ideas for further improvements
 
 These are ordered by expected value. Each one is backed by a measurement
-above, and none is a micro-tuning of ported code.
+above, and none is a micro-tuning of ported code. P1-P7 come from the first
+pass; each carries its status after the second pass. P8-P10 are new.
 
 ### P1 - Case-insensitive literal alternations as a trie
 
@@ -248,6 +391,14 @@ Unicode semantics during the walk:
 This should remove most of the remaining CSS compile time. At run time, a
 trie walk replaces hundreds of branches.
 
+**Status: done, with two corrections.** Prefix-freedom is not needed: the
+trie now follows ordered alternation with backtracking alternatives, which
+also lifts the restriction for case-sensitive lists. And a folded walk is
+not enough on its own. The engine segments each literal greedily (`office`
+accepts `oﬃce` but not `oﬀice`), so the trie validates ligatures against
+the literal's segments. The four largest CSS lists still miss out
+(finding 14, P8).
+
 ### P2 - Settled fallback entries should cost nothing per call
 
 After a line's first call, most fallback entries hold a settled "no match
@@ -263,6 +414,9 @@ inlined into `onig_regset_search_impl`. Two options:
 
 Either makes a warm call proportional to the entries that can still match.
 Keep the loop out of line (finding 8) and verify with instruction counts.
+
+**Status: done** with the contiguous array, plus an early exit (finding
+11): warm first match -50% instructions.
 
 ### P3 - Keep cold opcode handlers out of the VM loop
 
@@ -301,6 +455,11 @@ Three independent, low-risk pieces address finding 6:
 3. Share identical class bitsets per regex instead of boxing one per class
    instruction; classes like `\w` repeat.
 
+**Status: partly done, differently.** The profile pointed at per-bit loops
+and range copies rather than allocation counts (finding 13); fixing those
+cut the CSS compile by a third. Item 1 did not pay (see the dropped
+attempts). Items 2 and 3 remain open.
+
 ### P6 - Skip malformed-input checks for `&str` input
 
 The star loops now verify every non-ASCII character boundary (finding 7).
@@ -309,6 +468,10 @@ Greek text. The scanner and the idiomatic `Regex` API receive `&str`, which
 is valid UTF-8 by construction. A flag on `MatchArg` set by those entry
 points would let the loops skip the check, leaving it only for raw-byte
 callers of the C-style API.
+
+**Status: dropped.** The check costs 4% of instructions on that search,
+nothing on ASCII, and skipping it soundly needs a boundary invariant
+through every API (see the dropped attempts).
 
 ### P7 - Table routing for bounded fallback entries
 
@@ -319,6 +482,45 @@ whitespace or identifier characters), routing the entry through the
 first-byte table would stop at the current decision instead. Decide per
 entry from the filter's population; the document benchmark shows whether it
 pays.
+
+**Status: not pursued.** The remaining cold cost has no selective entries to
+route (see the dropped attempts).
+
+### P8 - Literal tries for lists with a few non-literal branches
+
+The four largest CSS alternations are about half of the CSS grammar's
+compile time and stay off the trie because of a handful of branches
+(finding 14). Small ASCII classes (`[xy]`, `[1-6]`) and optional suffixes
+(`r?`, `r??`) can expand into literals in alternation order: a lazy
+optional contributes the shorter literal first, a greedy one the longer.
+Under `(?i)`, fold segments must be computed per original string node,
+because `unravel_case_fold_string` never forms a multi-character segment
+across two nodes (`(?i)clas[s]` does not accept `claß`). The existing
+differential tests extend directly to this case.
+
+### P9 - Compile `(?i)` class fold alternatives once
+
+`(?i)[-\w]` compiles to 525 string alternatives, and most CSS patterns
+contain it (finding 12). The expansion depends only on the class and the
+fold flag, so two options exist:
+
+- share the parsed expansion per compile, or process-wide, keyed by the
+  class's ranges and the fold flag;
+- match all multi-character fold alternatives of a class with one
+  instruction, like the folded trie. They are exact strings over a closed
+  set, mostly non-ASCII, so the trie would need non-ASCII literals.
+
+Either removes most of what remains of the CSS compile time. At run time the
+alternatives are rarely reached, so the second option is mainly a compile
+win too.
+
+### P10 - A dedicated node for literal tries
+
+A literal trie lives in the tree as a string node whose bytes encode its
+index and optimizer summary, marked by a status bit. Every pass that
+inspects strings has to remember to skip it, and two did not (finding 10).
+A `NodeInner::LiteralAlt` variant would make every `match` on node kinds
+handle it explicitly, turning that class of bug into a compile error.
 
 ## Structure observations
 
@@ -343,13 +545,18 @@ pays.
   pattern while every unit test passed. A test could compile the committed
   grammars and assert how many patterns reach each fast path: table vs.
   fallback routing, start filters, region-free eligibility, star opcodes and
-  literal tries. That would turn such regressions into failures.
+  literal tries. That would turn such regressions into failures. _Done in
+  the second pass as `grammar_fast_path_census` (routing, start filters,
+  capture tracking, optimizer, literal tries); finding 9 is the kind of
+  regression it now catches._
 - **Optimized loops need equivalence tests against the generic loop.**
   Finding 7 lived in three opcodes for a long time because nothing compared
   them with the unoptimized loop on malformed input. The new test
   (`star_opcodes_match_the_generic_loop_on_malformed_utf8`) compares every
   star opcode with the equivalent `{0,50}` loop; the same pattern fits other
-  Rust-only shortcuts.
+  Rust-only shortcuts. The second pass applied it to literal tries: each
+  trie is compared with an equivalent alternation that cannot use one, and
+  that comparison exposed finding 10 within minutes.
 - **Benchmarks lack attribution.** Findings 1, 2 and 4 each surfaced within
   minutes of per-pattern ablation: remove one pattern and re-run the
   document benchmark. A small profiling harness with document, ablation and

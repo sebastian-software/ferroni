@@ -39,10 +39,11 @@ An optimization may be implemented in Ferroni without upstream contribution when
 
 #### Literal trie (`src/literal_trie.rs`, `regcomp.rs`)
 
-Detects alternations consisting entirely of literal strings (flat: `word1|word2|...` or nested: `a(b|c)d|e(f|g)h`) and replaces them at compile time with a compact trie. The VM executes a single `OP_ANYCHAR_STAR`-like trie walk instead of backtracking through N branches.
+Detects alternations consisting entirely of literal strings and replaces them at compile time with a compact trie. The VM executes a single `AltLiterals` trie walk instead of backtracking through N branches.
 
-- **Trigger**: Alternation with ≥8 branches where all branches resolve to literal byte sequences
-- **Data structure**: `LiteralTrie` — sorted child arrays with binary search, longest-match semantics
+- **Trigger**: Alternation outside look-arounds with ≥4 literals where every branch is a plain string (the nested path extractor for `a(b|c)d|e(f|g)h` is not reached while plain strings are required). Case-sensitive, or case-insensitive ASCII literals in UTF-8 (folded trie).
+- **Data structure**: `LiteralTrie` — sorted child arrays with binary search. Ordered-alternation semantics: the match continues with the literal that comes first and pushes the other matching literals (prefixes) as backtracking alternatives. A folded trie also accepts what `unravel_case_fold_string` would (Kelvin sign, long s, `ß`/`ﬃ`-style segments), derived from the same case-fold queries.
+- **Optimizer**: the trie node carries the alternation's length range and start bytes.
 - **Impact**: CSS tokenization 35% faster (3.76x → 2.46x vs JS); CSS `codeToHtml` reaches JS parity (1.65x → 1.04x)
 - **Bounds**: `MAX_NESTED_TRIE_PATHS = 8192` caps path extraction; CClass expansion limited to ≤16 single-byte members per class
 - **Detailed analysis**: [`/perf/html-entity-trie-optimization`](/perf/html-entity-trie-optimization)
@@ -72,6 +73,15 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Range-driven case-fold expansion**: `(?i)` classes are expanded by walking their ranges through the sorted fold keys.
 - **Impact**: CSS tokenize -79%, TypeScript documents tokenized line by line -25%, CSS grammar compile -11% (wall clock).
 - **Detailed analysis**: [`/perf/performance-structure-analysis`](/perf/performance-structure-analysis)
+
+#### Second 2026-09 pass (`src/regset.rs`, `src/regcomp.rs`, `src/regparse.rs`, `src/literal_trie.rs`)
+
+- **Contiguous fallback candidates**: RegSet fallback entries keep their skip flags and settled no-match position in one array; the walk stops once a decision at the start position precedes the remaining entries.
+- **Literal trie extensions**: prefixes with ordered backtracking, case-insensitive folded tries, and optimizer information on the trie node (see the literal trie entry above).
+- **Word-level class scans and streamed ctype ranges** in compilation; the compiled output is unchanged.
+- **Fast-path census**: `grammar_fast_path_census` asserts how many grammar patterns reach each of these paths.
+- **Impact**: warm TypeScript line -49%, Rust document -31%, CSS grammar compile -24%, TypeScript compile -17% (wall clock).
+- **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](/perf/performance-structure-analysis#second-pass)
 
 ## Rationale
 
