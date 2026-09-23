@@ -1015,11 +1015,10 @@ fn add_sorted_code_ranges_to_buf(
         }
         bbuf.data.resize(SIZE_CODE_POINT * (1 + new_n * 2), 0);
         bbuf_write_code_point(bbuf, 0, new_n as OnigCodePoint);
-        let pairs = bbuf.data[SIZE_CODE_POINT..].chunks_exact_mut(SIZE_CODE_POINT * 2);
-        for (pair, (from, to)) in pairs.zip(ranges) {
-            let (from_bytes, to_bytes) = pair.split_at_mut(SIZE_CODE_POINT);
-            from_bytes.copy_from_slice(&from.to_ne_bytes());
-            to_bytes.copy_from_slice(&to.to_ne_bytes());
+        let (pairs, _) = bbuf.data[SIZE_CODE_POINT..].as_chunks_mut::<{ SIZE_CODE_POINT * 2 }>();
+        for (pair, (from, to)) in pairs.iter_mut().zip(ranges) {
+            pair[..SIZE_CODE_POINT].copy_from_slice(&from.to_ne_bytes());
+            pair[SIZE_CODE_POINT..].copy_from_slice(&to.to_ne_bytes());
         }
         return 0;
     }
