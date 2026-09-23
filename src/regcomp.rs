@@ -1069,22 +1069,20 @@ fn is_alt_cclass_first_infinite_greedy(qn: &QuantNode) -> Option<(&CClassNode, &
     let body = qn.body.as_ref()?;
     if let NodeInner::Alt(cons) = &body.inner {
         if let NodeInner::CClass(cc) = &cons.car.inner {
-            if !cc.is_not() {
-                if let Some(cdr) = &cons.cdr {
-                    return Some((cc, cdr));
-                }
+            if let Some(cdr) = &cons.cdr {
+                return Some((cc, cdr));
             }
         }
     }
     None
 }
 
-/// Compile a character class star node (CClassStar/CClassMixStar/CClassMbStar).
-/// Returns 0 on success, -1 if the class is negated (caller should fall through).
+/// Compile a character class star node (CClassStar/CClassMixStar/CClassMbStar,
+/// or their negated `*NotStar` forms). Mirrors the payload selection of
+/// `compile_cclass_node`, so each star opcode matches exactly the characters
+/// its single-character counterpart matches.
 fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
-    if cc.is_not() {
-        return -1;
-    }
+    let not = cc.is_not();
     let has_mb = cc.mbuf.is_some();
     let has_sb = !bitset_is_empty(&cc.bs);
 
@@ -1096,7 +1094,11 @@ fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
             .unwrap_or_default();
         add_op(
             reg,
-            OpCode::CClassMixStar,
+            if not {
+                OpCode::CClassMixNotStar
+            } else {
+                OpCode::CClassMixStar
+            },
             OperationPayload::CClassMix {
                 mb: mb_data,
                 bsp: Box::new(cc.bs),
@@ -1110,14 +1112,22 @@ fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
             .unwrap_or_default();
         add_op(
             reg,
-            OpCode::CClassMbStar,
+            if not {
+                OpCode::CClassMbNotStar
+            } else {
+                OpCode::CClassMbStar
+            },
             OperationPayload::CClassMb { mb: mb_data },
         );
     } else {
         let ascii_fast = detect_cclass_ascii_fast(&cc.bs);
         add_op(
             reg,
-            OpCode::CClassStar,
+            if not {
+                OpCode::CClassNotStar
+            } else {
+                OpCode::CClassStar
+            },
             OperationPayload::CClass {
                 bsp: Box::new(cc.bs),
                 ascii_fast,
@@ -1172,14 +1182,10 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         return SIZE_INC + tlen * qn.lower;
     }
 
-    // CClass star/plus optimization: [class]* or [class]+
-    if is_cclass_infinite_greedy(qn) {
-        if let Some(cc) = body.as_cclass() {
-            if !cc.is_not() {
-                let tlen = compile_length_tree(body, reg, env);
-                return SIZE_INC + tlen * qn.lower;
-            }
-        }
+    // CClass star/plus optimization: [class]* or [class]+ (negated too)
+    if is_cclass_infinite_greedy(qn) && body.as_cclass().is_some() {
+        let tlen = compile_length_tree(body, reg, env);
+        return SIZE_INC + tlen * qn.lower;
     }
 
     // Word ctype star/plus optimization: \w* or \w+
@@ -1336,33 +1342,31 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
         return 0;
     }
 
-    // CClass star/plus optimization: [class]* or [class]+
+    // CClass star/plus optimization: [class]* or [class]+ (negated too)
     if is_cclass_infinite_greedy(qn) {
         if let Some(cc) = body.as_cclass() {
-            if !cc.is_not() {
-                let r = compile_tree_n_times(body, qn.lower, reg, env);
-                if r != 0 {
-                    return r;
-                }
-                // Use PeekNext variant for ASCII-only classes when next byte is known
-                if let Some(c) = qn.next_head_exact {
-                    let has_mb = cc.mbuf.is_some();
-                    if !has_mb {
-                        // ASCII-only bitset: use CClassStarPeekNext
-                        add_op(
-                            reg,
-                            OpCode::CClassStarPeekNext,
-                            OperationPayload::CClassStarPeekNext {
-                                bsp: Box::new(cc.bs),
-                                c,
-                            },
-                        );
-                        return 0;
-                    }
-                }
-                compile_cclass_star_node(cc, reg);
-                return 0;
+            let r = compile_tree_n_times(body, qn.lower, reg, env);
+            if r != 0 {
+                return r;
             }
+            // Use PeekNext variant for ASCII-only classes when next byte is known
+            if let Some(c) = qn.next_head_exact {
+                let has_mb = cc.mbuf.is_some();
+                if !has_mb && !cc.is_not() {
+                    // ASCII-only bitset: use CClassStarPeekNext
+                    add_op(
+                        reg,
+                        OpCode::CClassStarPeekNext,
+                        OperationPayload::CClassStarPeekNext {
+                            bsp: Box::new(cc.bs),
+                            c,
+                        },
+                    );
+                    return 0;
+                }
+            }
+            compile_cclass_star_node(cc, reg);
+            return 0;
         }
     }
 

@@ -2957,6 +2957,73 @@ fn parse_cmp_op(s: &[u8]) -> i32 {
     }
 }
 
+/// Greedy run of a negated single-character loop (`[^class]*`) from `start`.
+///
+/// `member_end(x)` returns the position after the character at `x` when the
+/// loop's class opcode would match it there, so the run consumes exactly the
+/// characters the unoptimized `PUSH; CCLASS_NOT; JUMP` loop consumes. That
+/// loop leaves one backtrack point per character boundary in `start..end`;
+/// they are pushed as a single `AltLazy` range when stepping back from the
+/// end reproduces every boundary, and individually otherwise (malformed
+/// multibyte input, where `prev_char_head` can skip a boundary). Returns the
+/// end of the run.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn greedy_char_loop(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    enc: OnigEncoding,
+    str_data: &[u8],
+    start: usize,
+    right_range: usize,
+    member_end: impl Fn(usize) -> Option<usize>,
+) -> usize {
+    let mut s = start;
+    let mut single_byte = true;
+    let mut exact_heads = true;
+    while s < right_range {
+        let Some(next) = member_end(s) else {
+            break;
+        };
+        if str_data[s] >= 0x80 {
+            single_byte &= next == s + 1;
+            exact_heads &= prev_char_head(enc, start, next, str_data) == s;
+        }
+        s = next;
+    }
+    if s > start {
+        if single_byte {
+            stack.push(StackEntry::AltLazy {
+                pcode,
+                pstr: s - 1,
+                pstr_start: start,
+                ascii: true,
+                peek_byte: 0,
+            });
+        } else if exact_heads {
+            stack.push(StackEntry::AltLazy {
+                pcode,
+                pstr: prev_char_head(enc, start, s, str_data),
+                pstr_start: start,
+                ascii: false,
+                peek_byte: 0,
+            });
+        } else {
+            let mut x = start;
+            while x < s {
+                stack.push(StackEntry::Alt {
+                    pcode,
+                    pstr: x,
+                    zid: -1,
+                    is_super: false,
+                });
+                x = member_end(x).unwrap_or(s);
+            }
+        }
+    }
+    s
+}
+
 // ============================================================================
 // match_at - the core VM executor (port of C's match_at function)
 // ============================================================================
@@ -3748,6 +3815,84 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             peek_byte: 0,
                         });
                     }
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            // Negated class star opcodes: each mirrors its single-character
+            // opcode (CClassNot / CClassMbNot / CClassMixNot) per character.
+            OpCode::CClassNotStar => {
+                if let OperationPayload::CClass {
+                    ref bsp,
+                    ascii_fast,
+                } = reg.ops[p].payload
+                {
+                    s = greedy_char_loop(&mut stack, p + 1, enc, str_data, s, right_range, |x| {
+                        let b = str_data[x];
+                        let excluded = match ascii_fast {
+                            CClassAsciiFastKind::Eq(c) => b == c,
+                            CClassAsciiFastKind::EqFoldLower(lower) => {
+                                b < 0x80 && (b | 0x20) == lower
+                            }
+                            CClassAsciiFastKind::None => bitset_at(bsp, b as usize),
+                        };
+                        if excluded {
+                            None
+                        } else {
+                            Some(advance_char_to_end(enc, str_data, x, end))
+                        }
+                    });
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::CClassMbNotStar => {
+                if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                    s = greedy_char_loop(&mut stack, p + 1, enc, str_data, s, right_range, |x| {
+                        let b = str_data[x];
+                        if b < 0x80 {
+                            return (!is_in_code_range(mb, b as OnigCodePoint)).then_some(x + 1);
+                        }
+                        let mb_len = enclen(enc, str_data, x);
+                        if x + mb_len > right_range {
+                            // A truncated character matches a negated class.
+                            return Some(right_range);
+                        }
+                        let code = enc.mbc_to_code(&str_data[x..], end.saturating_sub(x));
+                        (!is_in_code_range(mb, code)).then_some(x + mb_len)
+                    });
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::CClassMixNotStar => {
+                if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
+                    s = greedy_char_loop(&mut stack, p + 1, enc, str_data, s, right_range, |x| {
+                        let b = str_data[x];
+                        if b < 0x80 {
+                            return (!bitset_at(bsp, b as usize)).then_some(x + 1);
+                        }
+                        let len = enclen(enc, str_data, x);
+                        if x + len > right_range {
+                            // A truncated character matches a negated class.
+                            return Some(right_range);
+                        }
+                        let in_class = if len == 1 {
+                            bitset_at(bsp, b as usize)
+                        } else {
+                            let code = enc.mbc_to_code(&str_data[x..], end.saturating_sub(x));
+                            is_in_code_range(mb, code)
+                                || ((code as usize) < SINGLE_BYTE_SIZE
+                                    && bitset_at(bsp, code as usize))
+                        };
+                        (!in_class).then_some(x + len)
+                    });
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -6951,6 +7096,68 @@ mod tests {
             saw_limit && saw_match,
             "the limit range must cover both outcomes"
         );
+    }
+
+    #[test]
+    fn negated_class_loops_compile_to_star_opcodes() {
+        for (pattern, opcode) in [
+            (&b"[^\"]+"[..], OpCode::CClassNotStar),
+            (b"[^\\x{100}]*x", OpCode::CClassMbNotStar),
+            (b"[^a\\x{100}]*x", OpCode::CClassMixNotStar),
+            // Alt-CClass fusion over a negated first branch.
+            (b"(?:[^\"\\\\]|\\\\.)*\"", OpCode::CClassNotStar),
+        ] {
+            let reg = compile_full(pattern);
+            assert!(
+                reg.ops.iter().any(|op| op.opcode == opcode),
+                "{:?} should use {opcode:?}",
+                std::str::from_utf8(pattern)
+            );
+        }
+    }
+
+    #[test]
+    fn negated_class_star_backtracks_through_every_character() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        // (pattern, input, expected match)
+        type Case = (&'static [u8], &'static [u8], (i32, i32));
+        let cases: [Case; 5] = [
+            (b"[^\"]*x", b"abxcdx\"x", (0, 6)),
+            (b"(?:[^\"\\\\]|\\\\.)+\"", b"a\\\"b\"c", (0, 5)),
+            (
+                b"[^\\x{100}]+\\x{e9}",
+                "d\u{e9}j\u{e0} \u{e9}t\u{e9}".as_bytes(),
+                (0, 12),
+            ),
+            (
+                b"[^a\\x{100}]*b",
+                "x\u{e9}b\u{e9}b\u{100}b".as_bytes(),
+                (0, 7),
+            ),
+            // A stray continuation byte after `\u{e9}` is a one-byte character
+            // at 3, the only boundary followed by `.b`. Stepping back from the
+            // end with prev_char_head would skip it (4 -> 1).
+            (b"[^\"]*(?=.b)", b"a\xc3\xa9\x80b", (0, 3)),
+        ];
+        for (pattern, input, expected) in cases {
+            let reg = compile_full(pattern);
+            let (pos, region) = onig_search(
+                &reg,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            let region = region.expect("region");
+            assert_eq!(
+                (pos, (region.beg[0], region.end[0])),
+                (expected.0, expected),
+                "{:?}",
+                std::str::from_utf8(pattern)
+            );
+        }
     }
 
     #[test]

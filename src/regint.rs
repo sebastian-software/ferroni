@@ -303,6 +303,9 @@ pub enum OpCode {
     CClassStarPeekNext = 89,
     WordAsciiStarPeekNext = 90,
     AltLiterals = 91,
+    CClassNotStar = 92,
+    CClassMbNotStar = 93,
+    CClassMixNotStar = 94,
 }
 
 // === SaveType ===

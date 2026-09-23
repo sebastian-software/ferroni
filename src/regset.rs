@@ -362,6 +362,30 @@ fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
                 pending.push(pc + 1);
                 saw_consumer = true;
             }
+            OpCode::CClassNotStar => {
+                let OperationPayload::CClass { bsp, .. } = &op.payload else {
+                    return None;
+                };
+                add_bitset(&mut map, bsp, true);
+                pending.push(pc + 1);
+                saw_consumer = true;
+            }
+            OpCode::CClassMbNotStar => {
+                add_all(&mut map);
+                pending.push(pc + 1);
+                saw_consumer = true;
+            }
+            OpCode::CClassMixNotStar => {
+                let OperationPayload::CClassMix { bsp, .. } = &op.payload else {
+                    return None;
+                };
+                add_bitset(&mut map, bsp, true);
+                for value in &mut map[0x80..] {
+                    *value = 1;
+                }
+                pending.push(pc + 1);
+                saw_consumer = true;
+            }
             OpCode::WordStar => {
                 add_all(&mut map);
                 pending.push(pc + 1);
