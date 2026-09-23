@@ -1,0 +1,374 @@
+---
+order: 5
+title: "Performance and Structure Analysis (2026-09)"
+---
+
+# Performance and Structure Analysis (2026-09)
+
+This page covers a profiling pass over grammar compilation and scanner
+workloads with the full Shiki grammars. It records what the profiles showed
+and the changes that came out of it. It then lists the larger improvement
+ideas that did not fit into that change.
+
+## Method
+
+- **Workloads.** The complete TypeScript (279 patterns), CSS (117) and Rust
+  (81) grammars from `benches/grammars/`. Measured: scanner construction,
+  `battle_bench`-style single-line tokenization, and whole documents
+  tokenized line by line (new `regression_scanner_documents` group).
+- **Instruction counts.** `valgrind --tool=callgrind` runs each workload at
+  two iteration counts, and the difference is divided by the extra
+  iterations, so setup cost cancels out. Instruction counts are
+  deterministic, which matters on the shared 4-vCPU Linux VM this analysis
+  ran on. They are the primary metric below.
+- **Wall clock.** The minimum of 7-9 interleaved runs per variant. Where
+  warm micro-workloads disagreed with instruction counts, both variants were
+  rebuilt with forced code alignment (see finding 8).
+- **Equivalence.** Beyond the test suites, the changed engine was compared
+  with `main` outside the repository:
+  - Every pattern of the three grammars, plus 33 hand-written class and
+    case-fold patterns, with and without `ONIG_OPTION_IGNORECASE`, against
+    seven inputs (Unicode case-fold edge cases and malformed UTF-8): 7,128
+    search results including capture regions, byte-identical.
+  - Three documents tokenized line by line with each full grammar, with and
+    without string IDs: 12,084 scanner tokens including capture indices,
+    byte-identical.
+
+Absolute numbers from this machine are not comparable with the Apple M1
+reference in [Benchmark Results](/perf/benchmark-results); the ratios are.
+The C comparison (`--features ffi`) could not run here: the upstream source
+archive was not reachable. Every comparison below is therefore Ferroni
+`main` against this change.
+
+## Findings
+
+### 1. The published scanner numbers measure a warm path
+
+`battle_bench` re-tokenizes the same `OnigString` in every iteration. The
+RegSet fallback memo is keyed by that string's identity. From the second
+iteration on, every fallback pattern that did not match is skipped outright.
+A real tokenizer (vscode-textmate, Shiki) hands each line to the scanner
+once.
+
+| TypeScript grammar | Same line repeated | Each line once |
+| ------------------ | -----------------: | -------------: |
+| Average per line   |             ~13 us |        ~178 us |
+
+Cold tokenization of a 28-line TypeScript file cost about 13x what the
+repeated-line numbers suggest (before this change). The new
+`regression_scanner_documents` group tokenizes whole documents line by line
+and makes this path measurable. The `battle_bench` scanner section should
+gain the same shape, with the C scanner driven the same way, before new
+scanner numbers are published.
+
+### 2. Cold tokenization was dominated by full-line fallback searches
+
+RegSet routes most patterns through a first-byte table. The rest are
+_fallback_ entries, searched with their own optimizer. In the TypeScript
+grammar that is 81 of 279 patterns. On the first call for a line, each of
+them searches to the end of the line, so the result can be memoized for
+later calls. 80 of the 81 are fallbacks because their optimizer string sits
+at an unbounded distance from the match start: a leading `\s*` or an
+optional group, often behind zero-width guards such as look-behinds (66 of
+them). For such patterns, Oniguruma's search checks the optimizer once and
+then runs the VM at every position of the line. Those searches were **about
+90%** of cold TypeScript tokenization; the table pass was about 6%.
+
+### 3. Region-free fast paths never engaged for grammar patterns
+
+`needs_capture_tracking` forces capture bookkeeping even when no region is
+requested. It was set by `MEM_START_PUSH` and `MEM_END_PUSH`. The compiler
+emits those for every capture inside an alternation or a variable repeat,
+which covers almost every capture in a TextMate grammar. Those opcodes only
+exist so backtracking can restore a capture for the final region. No
+matching decision reads them; backreferences, recursion and memory
+empty-checks are tracked separately. As a consequence:
+
+- the existing two-pass capture fill in `onig_search` was disabled for these
+  patterns;
+- RegSet fallback searches reset `2 x (num_mem + 1)` capture slots and
+  cleared the region at every candidate position. `memset` alone was 14-21%
+  of cold TypeScript tokenization.
+
+### 4. Negated character-class loops ran on the generic loop
+
+`[^"]*`, `[^;]+` and `(?:[^"\\]|\\.)*` are everywhere in TextMate grammars:
+strings, comments, "until" guards. The Rust-only star opcodes (`CClassStar`
+and friends) keep one lazy backtrack entry for a whole run, but they
+excluded negated classes. These loops therefore pushed one stack entry and
+dispatched four opcodes per character, and every enclosing look-ahead then
+had to void those entries one by one. The CSS `battle_bench` tokenize
+workload is a stark case. It feeds the whole 19-line stylesheet as one
+string, so three `(?:\G|^)(?=[^"]+$)`-style patterns scan to the end of the
+input on every call. Removing just those three patterns cut the workload by
+95%, which makes it a quadratic benchmark of this one loop shape.
+
+### 5. Case-insensitive classes dominated CSS grammar compilation
+
+The Rust-only case-fold expansion in `prs_cc` handled every class under
+`(?i)` the same way. It tested each of the 1,423 single-character fold
+groups against the class with a binary search over the byte-encoded range
+buffer, then rewrote that buffer once per added code point. With
+`[-\w]`-style classes (hundreds of ranges) under `(?i)`,
+`is_in_code_range_bytes` alone was **29%** of the CSS grammar's compile
+time.
+
+### 6. A fifth of compile time is allocator traffic
+
+`malloc`, `free` and `realloc` account for 20-30% of grammar compilation,
+for TypeScript, CSS and Rust alike. The main sources are:
+
+- one `Box<Node>` plus one `Vec<u8>` per string node;
+- the per-character nodes that `(?i)` string expansion creates in
+  `tune_tree` (about 51,000 allocations per CSS grammar compile);
+- a `Box<BitSet>` per class instruction;
+- `Vec<Operation>` growth while emitting bytecode.
+
+### 7. Star opcodes diverged from C on malformed UTF-8
+
+`CClassMbStar`, `CClassMixStar` and `WordStar` recorded a run as one lazy
+backtrack entry and stepped back with `prev_char_head`. On malformed UTF-8
+that does not retrace the forward scan in two ways. A stray continuation
+byte makes it skip a boundary. A truncated sequence that the scan consumed
+whole makes it land inside that sequence. For example,
+`[\x{80}-\x{10ffff}]*(?=.b)` on the bytes `x \xc3 a b` matched at a different
+position than the unoptimized loop, and hence C, produces.
+
+### 8. Wall clock on warm micro-workloads follows code placement
+
+`match_at_impl` is a single 2,200-line function, and several effects showed
+how sensitive the hot path is to code layout:
+
+- Inlining the loop body of three rarely used opcodes cost 5-7% wall clock
+  on unrelated workloads with unchanged instruction counts.
+- An unrelated change elsewhere in the crate shifted warm first-match cost
+  by 224 instructions per call, all inside `onig_regset_search_impl`, whose
+  source had not changed.
+- A 176-byte shift of an otherwise identical `match_at_impl` moved warm
+  Rust single-line tokenization between neutral and +7%.
+- Small inline ASCII loops added to six star-opcode handlers made a
+  timestamp search that uses no star opcode 10% slower in wall clock, with
+  fewer instructions. Bisecting pinned it to exactly that commit, and moving
+  the loops back out restored it.
+
+With function alignment forced for both builds
+(`-C llvm-args=-align-all-functions=6`), the last case was +0.6%. Short
+warm benchmarks therefore need instruction counts or aligned builds before
+a few-percent difference means anything.
+
+## Changes in this pass
+
+- **Start-byte filter for fallback searches** (`regset.rs`, `regexec.rs`;
+  finding 2). The search skips positions whose byte the bytecode-derived
+  start map excludes. It applies only where skipping a failed attempt is
+  unobservable: no callouts, no position checks, no search retry budget.
+- **Push captures without bookkeeping when untracked** (`regexec.rs`,
+  `regcomp.rs`; finding 3). Push-capture opcodes no longer force capture
+  tracking. With a match stack limit set, the bookkeeping stays, so the limit
+  trips exactly as before. RegSet fallback searches use the two-pass capture
+  fill.
+- **Negated class star opcodes** (`regcomp.rs`, `regexec.rs`, `regset.rs`;
+  finding 4). Negated class loops compile to `CClassNotStar`,
+  `CClassMbNotStar` and `CClassMixNotStar`, also through the Alt-CClass
+  fusion.
+- **Range-driven case-fold expansion** (`regparse.rs`, `unicode/mod.rs`;
+  finding 5). The class ranges are walked through the sorted fold keys, and
+  additions are merged in one pass.
+- **Boundary-checked star loops** (`regexec.rs`; findings 7 and 8). The
+  positive star opcodes keep `main`'s inline loops and add a UTF-8 boundary
+  check. The negated ones run in an out-of-line helper with its own tight
+  ASCII loop. When stepping back would diverge, both fall back to one
+  backtrack entry per character.
+- **Fallback search loop out of line** (`regset.rs`; finding 8). This
+  stabilizes code generation.
+- **Document-level scanner benchmark** (`benches/`; finding 1). Tokenizes
+  whole documents line by line.
+
+Measured against `main` (instruction counts per iteration; wall clock as the
+minimum of seven interleaved runs):
+
+| Workload                                                     |  Instructions | Wall clock |
+| ------------------------------------------------------------ | ------------: | ---------: |
+| CSS grammar, `battle_bench` tokenize (one multi-line string) |          -80% |       -81% |
+| CSS grammar, document line by line                           |          -36% |       -34% |
+| TypeScript grammar, document line by line                    |          -44% |       -28% |
+| TypeScript grammar, single line (warm)                       |           -7% |        -4% |
+| TypeScript grammar, first match (warm)                       |           -4% |    neutral |
+| Rust grammar, document line by line                          |           -5% |    neutral |
+| Rust grammar, single line (warm)                             |           -1% |    neutral |
+| CSS grammar compile                                          |          -19% |       -11% |
+| TypeScript / Rust grammar compile                            | +0.2% / +0.4% |    neutral |
+| `\p{Greek}+` over Greek text                                 |           +6% |        +6% |
+
+The Greek row is the price of finding 7's fix: every non-ASCII character in
+a star run now gets a boundary check (see P6 for how `&str` callers could
+skip it).
+
+The full `regression_bench` suite was run three times against a saved `main`
+baseline, with function alignment forced on both sides:
+
+- **Stable across all three runs.** The document benchmarks were -23% to
+  -25% (TypeScript) and -36% to -38% (CSS); Rust was -4% to -8%, within noise
+  in two runs. Positive look-ahead, nested and named backreference,
+  possessive quantifier and match-at-position benchmarks improved by 8-18%
+  in every run.
+- **Unstable.** About a dozen benchmarks of 100-200 ns flipped sign between
+  runs. For example, `quantifiers/lazy` measured -6% in one run and +9% in
+  the next, and `large_text/timestamp_10k` +17% and then -5%. Every such case
+  was re-measured with instruction counts, and all were neutral or lower
+  (`lazy` -6%, `nested` -7.5%, `timestamp` -3%, `idiomatic find` -1%) except
+  the Greek class above. This is finding 8 at work, not a regression.
+
+## Ideas for further improvements
+
+These are ordered by expected value. Each one is backed by a measurement
+above, and none is a micro-tuning of ported code.
+
+### P1 - Case-insensitive literal alternations as a trie
+
+The CSS grammar has 25 patterns of the form
+`(?i)(?<![-\w])(accent-color|additive-symbols|...)` with hundreds of words.
+The literal trie (ADR-008) refuses `(?i)`, so these patterns take a slow
+path twice:
+
+- **Compile:** they are expanded character by character into case-fold
+  nodes (the `tune_tree` allocations in finding 6).
+- **Run:** they execute as backtracking alternations.
+
+A trie over ASCII-folded literals is sound if the input is folded with
+Unicode semantics during the walk:
+
+- ASCII bytes lowercase directly.
+- The few non-ASCII characters whose case fold is ASCII are expanded before
+  the walk: `ſ`, the Kelvin sign, and the multi-character folds `ß`, `ﬀ`,
+  `ﬁ`, `ﬂ`, `ﬃ`, `ﬄ`, `ﬅ` and `ﬆ`.
+- A terminal counts only at an input character boundary.
+- Prefix-freedom has to be checked on the folded literals.
+
+This should remove most of the remaining CSS compile time. At run time, a
+trie walk replaces hundreds of branches.
+
+### P2 - Settled fallback entries should cost nothing per call
+
+After a line's first call, most fallback entries hold a settled "no match
+from here" memo. Each call still walks all of them: a `Box<RegexType>`
+dereference for the anchor flags, the decision bookkeeping and up to three
+scans of the memo vector. That is about 25 instructions per entry and 81
+entries per TypeScript call. The walk is about 4,300 of the 6,500
+instructions of a warm first-match call, measured while the loop was still
+inlined into `onig_regset_search_impl`. Two options:
+
+- keep an active list of unsettled entries per string identity;
+- store each entry's flags and settled position in one contiguous array.
+
+Either makes a warm call proportional to the entries that can still match.
+Keep the loop out of line (finding 8) and verify with instruction counts.
+
+### P3 - Keep cold opcode handlers out of the VM loop
+
+Finding 8 shows the dispatch loop pays for code it rarely runs. The
+candidates are large, rarely used handlers: callouts, backreferences with
+nest levels, memory empty-checks, text-segment boundaries and `StepBack*`.
+Each can move into an `#[inline(never)]` or `#[cold]` function that returns
+the next `(p, s, fail)` state. That shrinks the hot loop without touching
+control flow, fits ADR-001 (same opcode semantics, same order), and can be
+A/B-tested with instruction counts plus aligned wall-clock builds.
+
+### P4 - A smaller stack entry
+
+`StackEntry` is a Rust enum of 40 bytes. Its largest variants, `MemStart`
+and `MemEnd` (`zid`, `pstr` and two `MemPtr`), set the size of every `Alt`
+push, the most frequent operation in the VM. Two changes would shrink it to
+about 24 bytes and cut the memory traffic of every push and pop by roughly
+40%:
+
+- encode `pcode` and `zid` as `u32`;
+- move the previous-capture pair of `MemStart`/`MemEnd` into a side array
+  indexed by the entry.
+
+The change is contained in `regexec.rs`. The C original uses a union of
+similar size, so it stays within ADR-004's translation latitude.
+
+### P5 - Cut compile-time allocations
+
+Three independent, low-risk pieces address finding 6:
+
+1. Reserve `reg.ops` from `compile_length_tree` before emitting. That
+   removes `Vec<Operation>` growth and its copies; `Operation` is 48 bytes.
+2. Give string nodes inline storage for short strings (`SmallVec<[u8; 16]>`
+   in `StrNode`). After `(?i)` expansion, most string nodes are one to a few
+   bytes.
+3. Share identical class bitsets per regex instead of boxing one per class
+   instruction; classes like `\w` repeat.
+
+### P6 - Skip malformed-input checks for `&str` input
+
+The star loops now verify every non-ASCII character boundary (finding 7).
+That check costs about 6% of instructions on a `\p{Greek}+` search over
+Greek text. The scanner and the idiomatic `Regex` API receive `&str`, which
+is valid UTF-8 by construction. A flag on `MatchArg` set by those entry
+points would let the loops skip the check, leaving it only for raw-byte
+callers of the C-style API.
+
+### P7 - Table routing for bounded fallback entries
+
+A start-byte filter now makes fallback searches skip impossible positions.
+The entries still search the whole line on the first call so that the memo
+can serve later calls. Where the filter is selective (a few bytes, no
+whitespace or identifier characters), routing the entry through the
+first-byte table would stop at the current decision instead. Decide per
+entry from the filter's population; the document benchmark shows whether it
+pays.
+
+## Structure observations
+
+- **Rust-only optimizations are interleaved with ported code.** ADR-008
+  lists three, but the code carries far more:
+  - the star opcode family and `AltLazy`;
+  - `AltLiterals` and the Aho-Corasick alternation path;
+  - two-pass capture fill;
+  - the RegSet dispatch table, its fallback memo and start filter;
+  - the scanner's adaptive routing;
+  - the inverted case-fold expansion.
+
+  They live inside C-ported functions such as `prs_cc`,
+  `compile_quantifier_node` and `match_at_impl`. ADR-001's main argument is
+  that future upstream releases can be diffed against the port, and that
+  gets harder with every one of them. An inventory in ADR-008 plus a
+  greppable marker on each divergence (for example
+  `// Rust-only (ADR-008): ...`) would keep that diff tractable.
+
+- **Fast-path eligibility needs corpus tests.** Finding 3 was a conservative
+  predicate that silently disabled an optimization for nearly every real
+  pattern while every unit test passed. A test could compile the committed
+  grammars and assert how many patterns reach each fast path: table vs.
+  fallback routing, start filters, region-free eligibility, star opcodes and
+  literal tries. That would turn such regressions into failures.
+- **Optimized loops need equivalence tests against the generic loop.**
+  Finding 7 lived in three opcodes for a long time because nothing compared
+  them with the unoptimized loop on malformed input. The new test
+  (`star_opcodes_match_the_generic_loop_on_malformed_utf8`) compares every
+  star opcode with the equivalent `{0,50}` loop; the same pattern fits other
+  Rust-only shortcuts.
+- **Benchmarks lack attribution.** Findings 1, 2 and 4 each surfaced within
+  minutes of per-pattern ablation: remove one pattern and re-run the
+  document benchmark. A small profiling harness with document, ablation and
+  per-position cost modes would make this repeatable for contributors.
+
+## Reproducing
+
+```bash
+# Rust-only regression suite, including the new document benchmarks
+cargo bench --bench regression_bench -- scanner_documents
+
+# Compare a branch with main
+git switch main && cargo bench --bench regression_bench -- --save-baseline main
+git switch -  && cargo bench --bench regression_bench -- --baseline main
+
+# Reduce code-placement noise for small differences (both sides)
+RUSTFLAGS="-C llvm-args=-align-all-functions=6" cargo bench --bench regression_bench
+```
+
+For instruction counts, run a workload binary under
+`valgrind --tool=callgrind` at two iteration counts and divide the
+difference by the extra iterations.

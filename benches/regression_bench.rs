@@ -4,6 +4,7 @@
 
 mod grammar_loader;
 mod scanner_css_workload;
+mod scanner_documents;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use scanner_css_workload::{CSS_INPUT, CSS_PATTERNS};
@@ -738,6 +739,68 @@ fn bench_regression_scanner_textmate(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
+// regression: scanner_documents -- full grammars, documents tokenized per line
+// ---------------------------------------------------------------------------
+
+fn bench_regression_scanner_documents(c: &mut Criterion) {
+    let documents: [(&str, Vec<String>, &str); 3] = [
+        (
+            "typescript",
+            grammar_loader::typescript_patterns(),
+            scanner_documents::TYPESCRIPT_DOCUMENT,
+        ),
+        ("css", grammar_loader::css_patterns(), CSS_INPUT),
+        (
+            "rust",
+            grammar_loader::rust_patterns(),
+            scanner_documents::RUST_DOCUMENT,
+        ),
+    ];
+
+    let mut group = c.benchmark_group("regression_scanner_documents");
+    for (name, grammar, document) in &documents {
+        let patterns: Vec<&str> = grammar.iter().map(|s| s.as_str()).collect();
+        let mut scanner = Scanner::new(&patterns).unwrap();
+        // Each line once per iteration, with the trailing newline
+        // vscode-textmate appends.
+        let lines: Vec<(OnigString, usize)> = document
+            .lines()
+            .map(|line| {
+                let line = format!("{line}\n");
+                let utf16_len = line.encode_utf16().count();
+                (OnigString::new(&line), utf16_len)
+            })
+            .collect();
+
+        let label = format!("{name}_{}_patterns_{}_lines", patterns.len(), lines.len());
+        group.bench_function(&label, |b| {
+            b.iter(|| {
+                let mut count = 0u32;
+                for (onig_str, line_len) in &lines {
+                    let mut pos = 0usize;
+                    while pos < *line_len {
+                        match scanner.find_next_match_utf16(
+                            black_box(onig_str),
+                            pos,
+                            ScannerFindOptions::NONE,
+                        ) {
+                            Some(m) => {
+                                let end = m.capture_indices[0].end;
+                                pos = if end > pos { end } else { pos + 1 };
+                                count += 1;
+                            }
+                            None => break,
+                        }
+                    }
+                }
+                black_box(count);
+            });
+        });
+    }
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
 // regression: idiomatic API -- Regex::new / find / captures
 // ---------------------------------------------------------------------------
 
@@ -825,6 +888,7 @@ criterion_group!(
     bench_regression_match_at_position,
     bench_regression_scanner,
     bench_regression_scanner_textmate,
+    bench_regression_scanner_documents,
     bench_regression_idiomatic_api,
 );
 criterion_main!(benches);

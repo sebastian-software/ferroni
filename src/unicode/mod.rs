@@ -191,6 +191,40 @@ pub(crate) fn fold1_key_range(lo: OnigCodePoint, hi: OnigCodePoint) -> &'static 
     &FOLD1_KEY[start..end]
 }
 
+/// Call `f(fold_target, unfolds)` once for every single-char fold group with
+/// at least one member (target or unfold) inside `ranges`, which must be
+/// sorted and disjoint like a character class's code range buffer.
+///
+/// Every group member is indexed by exactly one of FOLD1_KEY (fold targets)
+/// and UNFOLD_KEY (unfolds with a single-char fold); both are sorted by code
+/// point and point at the member's group. A range therefore yields its
+/// members with two binary searches, instead of testing every group against
+/// the class as `for_each_folds1_group` would require.
+pub(crate) fn for_each_folds1_group_in_ranges(
+    ranges: &[(OnigCodePoint, OnigCodePoint)],
+    mut f: impl FnMut(OnigCodePoint, &[u32]),
+) {
+    let mut groups: Vec<usize> = Vec::new();
+    for &(lo, hi) in ranges {
+        groups.extend(
+            unfold_key_range(lo, hi)
+                .iter()
+                .filter(|&&(_, _, fold_len)| fold_len == 1)
+                .map(|&(_, index, _)| index as usize),
+        );
+        groups.extend(
+            fold1_key_range(lo, hi)
+                .iter()
+                .map(|&(_, index)| index as usize),
+        );
+    }
+    groups.sort_unstable();
+    groups.dedup();
+    for index in groups {
+        f(folds1_fold(index), folds1_unfolds(index));
+    }
+}
+
 /// Iterate all FOLDS1 entries, calling `f(fold_target, unfolds)` for each group.
 /// Respects the ascii_only flag by stopping early when fold >= 128.
 pub(crate) fn for_each_folds1_group(
@@ -1407,4 +1441,60 @@ pub fn onigenc_wb_is_break_position(
 
     // WB999: Any / Any
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn folds1_groups() -> Vec<usize> {
+        let mut groups = Vec::new();
+        let mut i = 0;
+        while i < FOLDS1_END_INDEX {
+            groups.push(i);
+            i = folds1_next(i);
+        }
+        groups
+    }
+
+    #[test]
+    fn fold_keys_index_every_folds1_group_member_exactly() {
+        // `for_each_folds1_group_in_ranges` relies on this table shape.
+        for index in folds1_groups() {
+            let fold = folds1_fold(index);
+            let found = FOLD1_KEY.binary_search_by_key(&fold, |&(code, _)| code);
+            assert_eq!(found.map(|k| FOLD1_KEY[k].1 as usize), Ok(index));
+            assert!(
+                unfold_key(fold).is_none(),
+                "fold target {fold:#x} is an unfold"
+            );
+            for &unfold in folds1_unfolds(index) {
+                assert_eq!(unfold_key(unfold), Some((index, 1)), "unfold {unfold:#x}");
+            }
+        }
+    }
+
+    #[test]
+    fn folds1_groups_in_ranges_match_a_full_scan() {
+        let range_sets: [&[(u32, u32)]; 4] = [
+            &[(0x41, 0x5A)],
+            &[(0x80, 0xFF), (0x100, 0x17F)],
+            &[(0x390, 0x3FF), (0x1E00, 0x1EFF), (0x10400, 0x1044F)],
+            &[(0, 0x10FFFF)],
+        ];
+        for ranges in range_sets {
+            let inside = |code: u32| ranges.iter().any(|&(lo, hi)| lo <= code && code <= hi);
+            let mut expected = Vec::new();
+            for_each_folds1_group(ONIGENC_CASE_FOLD_MIN, |fold, unfolds| {
+                if inside(fold) || unfolds.iter().any(|&u| inside(u)) {
+                    expected.push(fold);
+                }
+            });
+            let mut actual = Vec::new();
+            for_each_folds1_group_in_ranges(ranges, |fold, _| actual.push(fold));
+            expected.sort_unstable();
+            actual.sort_unstable();
+            assert_eq!(actual, expected, "ranges {ranges:x?}");
+        }
+    }
 }

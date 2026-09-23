@@ -845,6 +845,70 @@ fn new_code_range() -> BBuf {
     bbuf
 }
 
+/// Decode a code range buffer into its sorted, disjoint `(from, to)` pairs.
+fn code_ranges_of(bbuf: &BBuf) -> Vec<(OnigCodePoint, OnigCodePoint)> {
+    if bbuf.data.len() < SIZE_CODE_POINT {
+        return Vec::new();
+    }
+    let n = bbuf_read_code_point(bbuf, 0) as usize;
+    let available = (bbuf.data.len() / SIZE_CODE_POINT - 1) / 2;
+    (0..n.min(available))
+        .map(|i| {
+            let at = SIZE_CODE_POINT * (1 + i * 2);
+            (
+                bbuf_read_code_point(bbuf, at),
+                bbuf_read_code_point(bbuf, at + SIZE_CODE_POINT),
+            )
+        })
+        .collect()
+}
+
+/// Encode sorted, disjoint `(from, to)` pairs as a code range buffer.
+fn code_range_buf_of(ranges: &[(OnigCodePoint, OnigCodePoint)]) -> BBuf {
+    let mut bbuf = BBuf::with_capacity(SIZE_CODE_POINT * (1 + ranges.len() * 2));
+    bbuf.data
+        .extend_from_slice(&(ranges.len() as OnigCodePoint).to_ne_bytes());
+    for &(from, to) in ranges {
+        bbuf.data.extend_from_slice(&from.to_ne_bytes());
+        bbuf.data.extend_from_slice(&to.to_ne_bytes());
+    }
+    bbuf
+}
+
+/// Membership test on sorted, disjoint `(from, to)` pairs.
+#[inline]
+fn code_ranges_contain(ranges: &[(OnigCodePoint, OnigCodePoint)], code: OnigCodePoint) -> bool {
+    let i = ranges.partition_point(|&(_, to)| to < code);
+    i < ranges.len() && ranges[i].0 <= code
+}
+
+/// Union of sorted, disjoint ranges with sorted, unique code points.
+/// Overlapping and adjacent entries are coalesced.
+fn union_code_ranges_with_points(
+    ranges: &[(OnigCodePoint, OnigCodePoint)],
+    points: &[OnigCodePoint],
+) -> Vec<(OnigCodePoint, OnigCodePoint)> {
+    let mut out: Vec<(OnigCodePoint, OnigCodePoint)> =
+        Vec::with_capacity(ranges.len() + points.len());
+    let mut push = |(from, to): (OnigCodePoint, OnigCodePoint)| match out.last_mut() {
+        Some(last) if last.1 == OnigCodePoint::MAX || from <= last.1 + 1 => {
+            last.1 = last.1.max(to);
+        }
+        _ => out.push((from, to)),
+    };
+    let (mut r, mut p) = (0, 0);
+    while r < ranges.len() || p < points.len() {
+        if p == points.len() || (r < ranges.len() && ranges[r].0 <= points[p]) {
+            push(ranges[r]);
+            r += 1;
+        } else {
+            push((points[p], points[p]));
+            p += 1;
+        }
+    }
+    out
+}
+
 fn add_code_range_to_buf(pbuf: &mut Option<BBuf>, from: OnigCodePoint, to: OnigCodePoint) -> i32 {
     let mut from = from;
     let mut to = to;
@@ -4525,14 +4589,13 @@ fn prs_cc(
 
     // Case-fold expansion: add fold equivalents for all codes in the class.
     //
-    // Strategy: hybrid approach combining inverted iteration (for bitset) with
-    // direct fold-table iteration (for mbuf and multi-char folds). This avoids
-    // the costly `dyn FnMut` dynamic dispatch of apply_all_case_fold while also
-    // skipping unnecessary work for small character classes.
+    // Strategy: invert the iteration so the cost follows the class, not the
+    // fold tables, and avoid the `dyn FnMut` dispatch of apply_all_case_fold.
     //
-    // - Bitset (0-255): inverted — iterate set bits, look up fold groups
-    // - Mbuf (>= 256): direct — iterate fold table entries, check membership
-    //   (avoids per-entry callback overhead while keeping a single membership check)
+    // - Bitset (0-255): iterate set bits, look up their fold groups
+    // - Multi-byte ranges: walk the class's ranges through the sorted fold
+    //   keys (two binary searches per range), then merge the additions into
+    //   the ranges in one pass instead of one buffer rewrite per code point
     // - FOLDS2/FOLDS3 (~73 entries): direct iteration, no callback
     if opton_ignorecase(env.options) {
         let cc = node.as_cclass_mut().unwrap();
@@ -4540,6 +4603,8 @@ fn prs_cc(
         let flag = env.case_fold_flag;
         let mut codes_to_add: Vec<OnigCodePoint> = Vec::new();
         let mut multi_char_alts: Vec<Vec<u8>> = Vec::new();
+        // Decoded once; every membership test below is a binary search here.
+        let mb_ranges = cc.mbuf.as_ref().map_or_else(Vec::new, code_ranges_of);
 
         // --- Part 1: Single-char folds (FOLDS1) ---
 
@@ -4561,73 +4626,13 @@ fn prs_cc(
             }
         }
 
-        // Also check mbuf for codepoints < 256 (UTF-8 stores 0x80-0xFF in mbuf)
+        // 1b. Multi-byte ranges (UTF-8 also stores 0x80-0xFF there): every
+        // fold group with a member inside the ranges contributes all members.
         if !ascii_only {
-            if let Some(ref mbuf) = cc.mbuf {
-                // Check mbuf ranges that overlap with 0-255
-                for &(cp, _, fold_len) in crate::unicode::unfold_key_range(0, 0xFF) {
-                    if fold_len != 1 {
-                        continue;
-                    }
-                    if crate::regexec::is_in_code_range_bytes(&mbuf.data, cp) {
-                        if let Some((fold, unfolds)) = crate::unicode::case_fold_group_1(cp) {
-                            codes_to_add.push(fold);
-                            for &uf in unfolds {
-                                codes_to_add.push(uf);
-                            }
-                        }
-                    }
-                }
-                for &(cp, _) in crate::unicode::fold1_key_range(0, 0xFF) {
-                    if crate::regexec::is_in_code_range_bytes(&mbuf.data, cp) {
-                        if let Some((fold, unfolds)) = crate::unicode::case_fold_group_1(cp) {
-                            codes_to_add.push(fold);
-                            for &uf in unfolds {
-                                codes_to_add.push(uf);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 1b. Mbuf (>= 256): direct fold-table iteration without dyn callback.
-        // Iterate all FOLDS1 entries and check membership inline.
-        if !ascii_only {
-            if let Some(ref mbuf) = cc.mbuf {
-                crate::unicode::for_each_folds1_group(flag, |fold, unfolds| {
-                    // Only process groups with at least one member >= 256
-                    // (sub-256 members were already handled in 1a)
-                    let has_high = fold >= 256 || unfolds.iter().any(|&u| u >= 256);
-                    if !has_high {
-                        return;
-                    }
-
-                    // Check if fold target is in mbuf
-                    let fold_in = if fold >= 256 {
-                        crate::regexec::is_in_code_range_bytes(&mbuf.data, fold)
-                    } else {
-                        false
-                    };
-
-                    // Check each unfold in mbuf
-                    let mut any_uf_in = false;
-                    for &uf in unfolds {
-                        if uf >= 256 && crate::regexec::is_in_code_range_bytes(&mbuf.data, uf) {
-                            any_uf_in = true;
-                            break;
-                        }
-                    }
-
-                    if fold_in || any_uf_in {
-                        // Add all group members
-                        codes_to_add.push(fold);
-                        for &uf in unfolds {
-                            codes_to_add.push(uf);
-                        }
-                    }
-                });
-            }
+            crate::unicode::for_each_folds1_group_in_ranges(&mb_ranges, |fold, unfolds| {
+                codes_to_add.push(fold);
+                codes_to_add.extend_from_slice(unfolds);
+            });
         }
 
         // --- Part 2: Multi-char folds (FOLDS2/FOLDS3) ---
@@ -4643,12 +4648,7 @@ fn prs_cc(
             } else {
                 false
             };
-            let in_mb = if let Some(ref mbuf) = cc.mbuf {
-                crate::regexec::is_in_code_range_bytes(&mbuf.data, cp)
-            } else {
-                false
-            };
-            in_bs || in_mb
+            in_bs || code_ranges_contain(&mb_ranges, cp)
         };
 
         // FOLDS2
@@ -4693,21 +4693,27 @@ fn prs_cc(
             }
         });
 
-        // Add collected codes to the CClass, skipping those already present.
-        // The skip check avoids costly add_code_range_to_buf operations for
-        // codepoints that are already in the mbuf (O(n_ranges) per call).
+        // Add collected codes to the CClass. Bitset bits are O(1) and
+        // idempotent; multi-byte codes not yet present are merged into the
+        // ranges in one pass.
+        let mut mb_codes: Vec<OnigCodePoint> = Vec::new();
         for code in codes_to_add {
             if (code as usize) < SINGLE_BYTE_SIZE {
-                // Bitset: set_bit is O(1) and idempotent, no need to check
                 bitset_set_bit(&mut cc.bs, code as usize);
+            } else if !code_ranges_contain(&mb_ranges, code) {
+                mb_codes.push(code);
+            }
+        }
+        if !mb_codes.is_empty() {
+            mb_codes.sort_unstable();
+            mb_codes.dedup();
+            let merged = union_code_ranges_with_points(&mb_ranges, &mb_codes);
+            if merged.len() <= ONIG_MAX_MULTI_BYTE_RANGES_NUM as usize {
+                cc.mbuf = Some(code_range_buf_of(&merged));
             } else {
-                // Mbuf: check membership first to avoid expensive range merge
-                let already_in = if let Some(ref mbuf) = cc.mbuf {
-                    crate::regexec::is_in_code_range_bytes(&mbuf.data, code)
-                } else {
-                    false
-                };
-                if !already_in {
+                // Keep add_code_range_to_buf's behavior at the range limit:
+                // additions that would exceed it are dropped.
+                for code in mb_codes {
                     add_code_range_to_buf(&mut cc.mbuf, code, code);
                 }
             }
@@ -7400,6 +7406,46 @@ pub fn onig_parse_tree(
 mod tests {
     use super::*;
     use crate::regsyntax::OnigSyntaxOniguruma;
+
+    #[test]
+    fn code_range_helpers_round_trip_and_coalesce() {
+        let mut pbuf = None;
+        for (from, to) in [(0x400, 0x40F), (0x100, 0x10F), (0x200, 0x20F)] {
+            assert_eq!(add_code_range_to_buf(&mut pbuf, from, to), 0);
+        }
+        let ranges = code_ranges_of(pbuf.as_ref().unwrap());
+        assert_eq!(ranges, [(0x100, 0x10F), (0x200, 0x20F), (0x400, 0x40F)]);
+        assert_eq!(code_range_buf_of(&ranges).data, pbuf.as_ref().unwrap().data);
+        assert!(code_ranges_of(&BBuf::new()).is_empty());
+
+        for (code, inside) in [
+            (0xFF, false),
+            (0x100, true),
+            (0x10F, true),
+            (0x110, false),
+            (0x205, true),
+            (0x40F, true),
+            (0x410, false),
+        ] {
+            assert_eq!(code_ranges_contain(&ranges, code), inside, "{code:#x}");
+        }
+
+        // Points extend, bridge, and sit between ranges; adjacent ones merge.
+        let merged = union_code_ranges_with_points(&ranges, &[0xFF, 0x110, 0x300, 0x3FF]);
+        assert_eq!(
+            merged,
+            [
+                (0xFF, 0x110),
+                (0x200, 0x20F),
+                (0x300, 0x300),
+                (0x3FF, 0x40F)
+            ]
+        );
+        assert_eq!(
+            union_code_ranges_with_points(&[(0x10, u32::MAX)], &[0x5]),
+            [(0x5, 0x5), (0x10, u32::MAX)]
+        );
+    }
 
     /// Create a default RegexType + ParseEnv for testing with Oniguruma syntax and UTF-8.
     fn make_test_context() -> (RegexType, ParseEnv) {
