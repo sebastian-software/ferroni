@@ -5971,6 +5971,10 @@ pub(crate) fn onig_search_with_msa(
 /// once they can no longer beat its current winner without truncating a match
 /// that begins before that winner.
 #[allow(clippy::too_many_arguments)]
+///
+/// `start_filter`, when given, is a start-byte map proven from the bytecode:
+/// positions whose byte it excludes cannot start a match and are stepped over
+/// by the position-by-position loop (see `onig_search_inner_core_with_right_range`).
 pub(crate) fn onig_search_with_msa_and_right_range(
     reg: &RegexType,
     str_data: &[u8],
@@ -5978,6 +5982,7 @@ pub(crate) fn onig_search_with_msa_and_right_range(
     start: usize,
     range: usize,
     right_range: usize,
+    start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     let end = end.min(str_data.len());
@@ -5996,6 +6001,7 @@ pub(crate) fn onig_search_with_msa_and_right_range(
             range,
             right_range,
             false,
+            start_filter,
             msa,
         );
     }
@@ -6007,6 +6013,7 @@ pub(crate) fn onig_search_with_msa_and_right_range(
         range,
         right_range,
         false,
+        start_filter,
         msa,
     )
 }
@@ -6052,6 +6059,7 @@ fn onig_search_inner_two_pass(
     range: usize,
     right_range: usize,
     find_longest_across_positions: bool,
+    start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     let mut region = match msa.region.take() {
@@ -6065,6 +6073,7 @@ fn onig_search_inner_two_pass(
                 range,
                 right_range,
                 find_longest_across_positions,
+                start_filter,
                 msa,
             );
         }
@@ -6080,6 +6089,7 @@ fn onig_search_inner_two_pass(
         range,
         right_range,
         find_longest_across_positions,
+        start_filter,
         msa,
     );
     if match_start < 0 {
@@ -6113,6 +6123,7 @@ fn onig_search_inner_two_pass(
             range,
             right_range,
             find_longest_across_positions,
+            start_filter,
             msa,
         );
     }
@@ -6140,7 +6151,9 @@ fn onig_search_inner(
     if can_use_two_pass_capture_fill(reg, start, range, msa) {
         // A forward range bounds each attempt by the range itself; see
         // `onig_search_inner_core`.
-        return onig_search_inner_two_pass(reg, str_data, end, start, range, range, true, msa);
+        return onig_search_inner_two_pass(
+            reg, str_data, end, start, range, range, true, None, msa,
+        );
     }
     onig_search_inner_core(reg, str_data, end, start, range, msa)
 }
@@ -6168,6 +6181,7 @@ fn onig_search_inner_core(
         range,
         right_range,
         true,
+        None,
         msa,
     )
 }
@@ -6181,9 +6195,13 @@ fn onig_search_inner_core_with_right_range(
     range: usize,
     right_range: usize,
     find_longest_across_positions: bool,
+    start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     let enc = reg.enc;
+    // Skipping an attempt is unobservable except through the search retry
+    // budget, which counts every failed attempt.
+    let start_filter = start_filter.filter(|_| msa.retry_limit_in_search == 0);
     // Position-led RegSet searches still honor FIND_LONGEST within each
     // attempted position, but must return the earliest successful position.
     // Public onig_search retains its historical global-longest behavior.
@@ -6600,6 +6618,13 @@ fn onig_search_inner_core_with_right_range(
     // Normal position-by-position search (no optimization or fallthrough)
     if best_start == ONIG_MISMATCH {
         loop {
+            if let Some(filter) = start_filter {
+                // No match starts on an excluded byte. The range limit and the
+                // logical end are still attempted, as the loop below does.
+                while s < cur_range && s < end && filter[str_data[s] as usize] == 0 {
+                    s = advance_char_to_end(enc, str_data, s, end);
+                }
+            }
             if let Some(ref mut r) = msa.region {
                 r.clear();
             }

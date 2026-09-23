@@ -33,6 +33,10 @@ struct RegSetEntry {
     /// Caching a fallback search must not suppress observable callouts or
     /// position-sensitive bytecode such as partial `\G` anchors.
     fallback_memo_safe: bool,
+    /// Start-byte map of a fallback entry whose optimizer cannot bound the
+    /// match start (`dist_max` infinite). Its search would otherwise run the
+    /// VM at every position; see `fallback_start_filter`.
+    start_filter: Option<Box<[u8; CHAR_MAP_SIZE]>>,
 }
 
 /// Pre-computed memchr needle for SIMD-accelerated position skipping.
@@ -143,6 +147,21 @@ pub(crate) enum FallbackMemoIdentity {
 }
 
 const FALLBACK_MEMO_CAPACITY: usize = 8;
+
+/// Position filter for a fallback entry's search.
+///
+/// With an infinite `dist_max`, Oniguruma's search checks the optimizer once
+/// and then attempts a match at every position of the range. The bytecode's
+/// start-byte map (the same proof that routes table entries) excludes the
+/// positions where no match can start, so the search can step over them
+/// without running the VM. Only used where skipping a failed attempt is
+/// unobservable: no callouts or position checks (`fallback_memo_is_safe`).
+fn fallback_start_filter(reg: &RegexType) -> Option<Box<[u8; CHAR_MAP_SIZE]>> {
+    (has_variable_optimizer(reg) && reg.dist_max == INFINITE_LEN && fallback_memo_is_safe(reg))
+        .then(|| derive_start_byte_map(reg))
+        .flatten()
+        .map(Box::new)
+}
 
 #[inline]
 fn fallback_memo_is_safe(reg: &RegexType) -> bool {
@@ -680,10 +699,12 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
     let region = Some(OnigRegion::new());
     let fallback_memo_safe = fallback_memo_is_safe(&reg);
+    let start_filter = fallback_start_filter(&reg);
     set.entries.push(RegSetEntry {
         reg,
         region,
         fallback_memo_safe,
+        start_filter,
     });
     set.fallback_memo_key = None;
     set.fallback_memos.resize_with(set.entries.len(), Vec::new);
@@ -776,6 +797,7 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
                 return ONIGERR_INVALID_ARGUMENT;
             }
             set.entries[at].fallback_memo_safe = fallback_memo_is_safe(&reg);
+            set.entries[at].start_filter = fallback_start_filter(&reg);
             set.entries[at].reg = reg;
         }
     }
@@ -1477,6 +1499,7 @@ fn regset_search_body_position_lead(
             start,
             if memo_enabled { end } else { search_range },
             end,
+            set.entries[index].start_filter.as_deref(),
             msa,
         );
         set.entries[index].region = returned_region;
@@ -2155,6 +2178,57 @@ mod tests {
             let region = onig_regset_get_region(&set, 0).expect("region");
             assert_eq!((region.beg[0], region.end[0]), (1, 4));
             assert_eq!((region.beg[1], region.end[1]), (g1_beg, g1_end));
+        }
+    }
+
+    #[test]
+    fn fallback_start_filter_only_skips_impossible_starts() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        // `\s*` in front of `[` leaves the optimizer an unbounded distance,
+        // so the entry stays on the fallback search, filtered by start byte.
+        let patterns: [&[u8]; 2] = [b"\\s*(\\[)", b"x"];
+        let (set, result) = onig_regset_new(patterns.iter().map(|p| compile(p)).collect());
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        assert_eq!(set.fallback_search_candidates, vec![0]);
+        let filter = set.entries[0].start_filter.as_deref().expect("filter");
+        assert!(filter[b' ' as usize] != 0 && filter[b'[' as usize] != 0);
+        assert_eq!(filter[b'a' as usize], 0);
+
+        // Callouts observe every attempt, so they keep the unfiltered search.
+        assert!(fallback_start_filter(&compile(b"\\s*(*COUNT)\\[")).is_none());
+
+        let input = b"ab  [c \xc3\xa9[ x [";
+        for start in 0..=input.len() {
+            // Position-lead: earliest start, ties to the lower index.
+            let expected = patterns
+                .iter()
+                .enumerate()
+                .filter_map(|(index, pattern)| {
+                    let reg = compile(pattern);
+                    let (pos, _) = onig_search(
+                        &reg,
+                        input,
+                        input.len(),
+                        start,
+                        input.len(),
+                        None,
+                        ONIG_OPTION_NONE,
+                    );
+                    (pos >= 0).then_some((pos, index as i32))
+                })
+                .min()
+                .map_or((ONIG_MISMATCH, 0), |(pos, index)| (index, pos));
+            let found = onig_regset_search(
+                &mut set,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(found, expected, "start {start}");
         }
     }
 
