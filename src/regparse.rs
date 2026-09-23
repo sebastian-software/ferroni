@@ -990,14 +990,15 @@ fn add_code_range_to_buf(pbuf: &mut Option<BBuf>, from: OnigCodePoint, to: OnigC
     0
 }
 
-/// Batch-add a pre-sorted, non-overlapping slice of (from, to) ranges to a BBuf
-/// in a single O(n) or O(n+m) pass, avoiding the O(n²) cost of repeated
+/// Batch-add pre-sorted, non-overlapping (from, to) ranges to a BBuf in a
+/// single O(n) or O(n+m) pass, avoiding the O(n²) cost of repeated
 /// `add_code_range_to_buf` calls.
 fn add_sorted_code_ranges_to_buf(
     pbuf: &mut Option<BBuf>,
-    ranges: &[(OnigCodePoint, OnigCodePoint)],
+    ranges: impl Iterator<Item = (OnigCodePoint, OnigCodePoint)> + Clone,
 ) -> i32 {
-    if ranges.is_empty() {
+    let new_n = ranges.clone().count();
+    if new_n == 0 {
         return 0;
     }
 
@@ -1009,75 +1010,55 @@ fn add_sorted_code_ranges_to_buf(
 
     if existing_n == 0 {
         // Fast path: empty buffer — direct serialization
-        let new_n = ranges.len();
         if new_n as i32 > ONIG_MAX_MULTI_BYTE_RANGES_NUM {
             return ONIGERR_TOO_MANY_MULTI_BYTE_RANGES;
         }
-        let total_size = SIZE_CODE_POINT * (1 + new_n * 2);
-        bbuf.data.resize(total_size, 0);
+        bbuf.data.resize(SIZE_CODE_POINT * (1 + new_n * 2), 0);
         bbuf_write_code_point(bbuf, 0, new_n as OnigCodePoint);
-        for (i, &(from, to)) in ranges.iter().enumerate() {
-            bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2), from);
-            bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2 + 1), to);
+        let pairs = bbuf.data[SIZE_CODE_POINT..].chunks_exact_mut(SIZE_CODE_POINT * 2);
+        for (pair, (from, to)) in pairs.zip(ranges) {
+            let (from_bytes, to_bytes) = pair.split_at_mut(SIZE_CODE_POINT);
+            from_bytes.copy_from_slice(&from.to_ne_bytes());
+            to_bytes.copy_from_slice(&to.to_ne_bytes());
         }
         return 0;
     }
 
-    // Slow path: merge two sorted range lists
-    let mut existing = Vec::with_capacity(existing_n);
-    for i in 0..existing_n {
-        let from = bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2));
-        let to = bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2 + 1));
-        existing.push((from, to));
-    }
-
-    // Interleave both sorted lists into one sorted sequence, then merge overlapping
-    let mut all: Vec<(OnigCodePoint, OnigCodePoint)> =
-        Vec::with_capacity(existing_n + ranges.len());
-    let mut ei = 0;
-    let mut ri = 0;
-    while ei < existing.len() || ri < ranges.len() {
-        let take_existing = if ri >= ranges.len() {
-            true
-        } else if ei >= existing.len() {
-            false
-        } else {
-            existing[ei].0 <= ranges[ri].0
-        };
-
-        if take_existing {
-            ei += 1;
-            all.push(existing[ei - 1]);
-        } else {
-            ri += 1;
-            all.push(ranges[ri - 1]);
-        }
-    }
-
-    // Merge overlapping/adjacent ranges
-    let mut merged: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::with_capacity(all.len());
-    for &(from, to) in &all {
+    // Slow path: merge two sorted range lists. On equal starts the existing
+    // range goes first; overlapping and adjacent ranges are coalesced.
+    let existing = code_ranges_of(bbuf);
+    let mut merged: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::with_capacity(existing.len());
+    let mut push = |(from, to): (OnigCodePoint, OnigCodePoint)| {
         if let Some(last) = merged.last_mut() {
             if from <= last.1.saturating_add(1) {
                 last.1 = std::cmp::max(last.1, to);
-                continue;
+                return;
             }
         }
         merged.push((from, to));
+    };
+    let mut existing = existing.into_iter().peekable();
+    let mut ranges = ranges.peekable();
+    loop {
+        let take_existing = match (existing.peek(), ranges.peek()) {
+            (Some(e), Some(r)) => e.0 <= r.0,
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => break,
+        };
+        let next = if take_existing {
+            existing.next()
+        } else {
+            ranges.next()
+        };
+        push(next.expect("peeked"));
     }
 
     if merged.len() as i32 > ONIG_MAX_MULTI_BYTE_RANGES_NUM {
         return ONIGERR_TOO_MANY_MULTI_BYTE_RANGES;
     }
 
-    let total_size = SIZE_CODE_POINT * (1 + merged.len() * 2);
-    bbuf.data.resize(total_size, 0);
-    bbuf_write_code_point(bbuf, 0, merged.len() as OnigCodePoint);
-    for (i, &(from, to)) in merged.iter().enumerate() {
-        bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2), from);
-        bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i * 2 + 1), to);
-    }
-
+    *bbuf = code_range_buf_of(&merged);
     0
 }
 
@@ -1451,31 +1432,26 @@ fn add_ctype_to_cc_by_range(
         if prev < u32::MAX {
             mb_ranges.push((prev, u32::MAX));
         }
-        if !mb_ranges.is_empty() {
-            r = add_sorted_code_ranges_to_buf(&mut cc.mbuf, &mb_ranges);
-            if r != 0 {
-                return r;
-            }
+        r = add_sorted_code_ranges_to_buf(&mut cc.mbuf, mb_ranges.into_iter());
+        if r != 0 {
+            return r;
         }
     } else {
-        let mut mb_ranges: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::new();
-        for i in 0..n {
-            let from = range[i * 2];
-            let to = range[i * 2 + 1];
+        let pairs = range.as_chunks::<2>().0;
+        for &[from, to] in pairs {
             if from < sb_out {
                 let end = std::cmp::min(to, sb_out - 1);
                 bitset_set_range(&mut cc.bs, from as usize, end as usize);
             }
-            if to >= sb_out {
-                let start = std::cmp::max(from, sb_out);
-                mb_ranges.push((start, to));
-            }
         }
-        if !mb_ranges.is_empty() {
-            r = add_sorted_code_ranges_to_buf(&mut cc.mbuf, &mb_ranges);
-            if r != 0 {
-                return r;
-            }
+        // Streamed into the buffer: Unicode ctypes have hundreds of ranges.
+        let mb_ranges = pairs
+            .iter()
+            .filter(|&&[_, to]| to >= sb_out)
+            .map(|&[from, to]| (std::cmp::max(from, sb_out), to));
+        r = add_sorted_code_ranges_to_buf(&mut cc.mbuf, mb_ranges);
+        if r != 0 {
+            return r;
         }
     }
 
@@ -7444,6 +7420,52 @@ mod tests {
         assert_eq!(
             union_code_ranges_with_points(&[(0x10, u32::MAX)], &[0x5]),
             [(0x5, 0x5), (0x10, u32::MAX)]
+        );
+    }
+
+    #[test]
+    fn sorted_range_batches_match_single_range_inserts() {
+        type Ranges = &'static [(u32, u32)];
+        let cases: [(Ranges, Ranges); 5] = [
+            (&[], &[(0x100, 0x1FF), (0x300, 0x3FF)]),
+            (&[(0x100, 0x1FF)], &[(0x80, 0xFF), (0x200, 0x2FF)]),
+            (&[(0x100, 0x1FF), (0x400, 0x4FF)], &[(0x150, 0x450)]),
+            (
+                &[(0x100, 0x100), (0x300, 0x300)],
+                &[(0x100, 0x100), (0x200, 0x200)],
+            ),
+            (&[(0x80, 0x90)], &[(0x1000, u32::MAX)]),
+        ];
+        for (existing, added) in cases {
+            let mut reference = None;
+            for &(from, to) in existing {
+                assert_eq!(add_code_range_to_buf(&mut reference, from, to), 0);
+            }
+            let mut batched = reference.clone();
+            for &(from, to) in added {
+                assert_eq!(add_code_range_to_buf(&mut reference, from, to), 0);
+            }
+            assert_eq!(
+                add_sorted_code_ranges_to_buf(&mut batched, added.iter().copied()),
+                0
+            );
+            // Same code points; `add_code_range_to_buf` only merges a range
+            // adjacent on its right, so compare coalesced ranges.
+            let coalesced = |bbuf: &Option<BBuf>| {
+                union_code_ranges_with_points(&code_ranges_of(bbuf.as_ref().unwrap()), &[])
+            };
+            assert_eq!(
+                coalesced(&batched),
+                coalesced(&reference),
+                "{existing:x?} + {added:x?}"
+            );
+        }
+
+        let too_many = (0..=ONIG_MAX_MULTI_BYTE_RANGES_NUM as u32).map(|i| (i * 4, i * 4 + 1));
+        let mut pbuf = None;
+        assert_eq!(
+            add_sorted_code_ranges_to_buf(&mut pbuf, too_many),
+            ONIGERR_TOO_MANY_MULTI_BYTE_RANGES
         );
     }
 
