@@ -577,6 +577,8 @@ fn first_byte_map_from(
                     pending.push(pc + 1);
                 }
             }
+            // A look-behind consumes nothing; its body instruction follows.
+            OpCode::LookBehindOp => pending.push(pc + 2),
             OpCode::StepBackStart | OpCode::StepBackNext => {
                 // A negative lookbehind's successful continuation is already
                 // represented by its surrounding Push target. Stop the body

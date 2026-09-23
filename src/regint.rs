@@ -322,6 +322,9 @@ pub enum OpCode {
     CClassNotStar = 92,
     CClassMbNotStar = 93,
     CClassMixNotStar = 94,
+    /// Rust-only (ADR-008): a fixed-length look-behind whose body is the
+    /// single character or string instruction that follows it.
+    LookBehindOp = 95,
 }
 
 // === SaveType ===
@@ -528,6 +531,12 @@ pub enum OperationPayload {
     },
     AltLiterals {
         trie_idx: u32,
+    },
+    LookBehindOp {
+        /// Characters to step back, as `StepBackStart`.
+        char_len: u32,
+        /// `(?<!...)` rather than `(?<=...)`.
+        not: bool,
     },
 }
 

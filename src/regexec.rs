@@ -3051,6 +3051,114 @@ fn match_literal_trie(
     Some(len)
 }
 
+/// `LookBehindOp`: STEP_BACK_START by `char_len` characters from `s`, then
+/// the body instruction `body` at that position. Out of line: code added to
+/// `match_at_impl` shifts its layout (see the performance analysis).
+#[inline(never)]
+fn look_behind_body_matches(
+    body: &Operation,
+    char_len: u32,
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    end: usize,
+) -> bool {
+    onigenc_step_back(enc, 0, s, str_data, char_len as usize)
+        .is_some_and(|at| single_op_matches(body, enc, str_data, at, right_range, end))
+}
+
+/// Whether the single-character or string instruction `op` matches at `s`,
+/// exactly as the VM executes it. `LookBehindOp` checks its body with it at
+/// the position it stepped back to.
+#[inline]
+fn single_op_matches(
+    op: &Operation,
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    end: usize,
+) -> bool {
+    let available = right_range.saturating_sub(s);
+    match (op.opcode, &op.payload) {
+        (
+            OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,
+            OperationPayload::Exact { s: exact },
+        ) => {
+            let n = op.opcode as usize - OpCode::Str1 as usize + 1;
+            available >= n && exact[..n] == str_data[s..s + n]
+        }
+        (OpCode::StrN, OperationPayload::ExactN { s: exact, n }) => {
+            let n = *n as usize;
+            available >= n && exact_eq_at(str_data, s, exact, n)
+        }
+        (
+            OpCode::StrMb2n1
+            | OpCode::StrMb2n2
+            | OpCode::StrMb2n3
+            | OpCode::StrMb2n
+            | OpCode::StrMb3n
+            | OpCode::StrMbn,
+            OperationPayload::ExactLenN { s: exact, n, .. },
+        ) => {
+            let n = *n as usize;
+            available >= n && exact_eq_at(str_data, s, exact, n)
+        }
+        (OpCode::CClass | OpCode::CClassNot, OperationPayload::CClass { bsp, ascii_fast }) => {
+            if available == 0 {
+                return false;
+            }
+            let b = str_data[s];
+            let in_class = match *ascii_fast {
+                CClassAsciiFastKind::Eq(c) => b == c,
+                CClassAsciiFastKind::EqFoldLower(lower) => b < 0x80 && (b | 0x20) == lower,
+                CClassAsciiFastKind::None => bitset_at(bsp, b as usize),
+            };
+            in_class != (op.opcode == OpCode::CClassNot)
+        }
+        (OpCode::CClassMb | OpCode::CClassMbNot, OperationPayload::CClassMb { mb }) => {
+            let not = op.opcode == OpCode::CClassMbNot;
+            if available == 0 {
+                return false;
+            }
+            let b = str_data[s];
+            if b < 0x80 {
+                return is_in_code_range(mb, b as OnigCodePoint) != not;
+            }
+            if s + enclen(enc, str_data, s) > right_range {
+                // A truncated character matches only the negated class.
+                return not;
+            }
+            let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+            is_in_code_range(mb, code) != not
+        }
+        (OpCode::CClassMix | OpCode::CClassMixNot, OperationPayload::CClassMix { bsp, mb }) => {
+            let not = op.opcode == OpCode::CClassMixNot;
+            if available == 0 {
+                return false;
+            }
+            let b = str_data[s];
+            if b < 0x80 {
+                return bitset_at(bsp, b as usize) != not;
+            }
+            let len = enclen(enc, str_data, s);
+            if s + len > right_range {
+                return not;
+            }
+            let in_class = if len == 1 {
+                bitset_at(bsp, b as usize)
+            } else {
+                let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+                is_in_code_range(mb, code)
+                    || ((code as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, code as usize))
+            };
+            in_class != not
+        }
+        _ => unreachable!("look-behind body is a single character or string instruction"),
+    }
+}
+
 // ============================================================================
 // match_at - the core VM executor (port of C's match_at function)
 // ============================================================================
@@ -5009,6 +5117,27 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // ================================================================
             // OP_STEP_BACK_START / NEXT - lookbehind support
             // ================================================================
+            OpCode::LookBehindOp => {
+                if let OperationPayload::LookBehindOp { char_len, not } = reg.ops[p].payload {
+                    let matched = look_behind_body_matches(
+                        &reg.ops[p + 1],
+                        char_len,
+                        enc,
+                        str_data,
+                        s,
+                        right_range,
+                        end,
+                    );
+                    if matched != not {
+                        p += 2;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
             OpCode::StepBackStart => {
                 if let OperationPayload::StepBackStart {
                     initial,
