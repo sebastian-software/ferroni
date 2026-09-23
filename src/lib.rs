@@ -78,6 +78,7 @@
 pub mod api;
 pub mod encodings;
 pub mod error;
+mod first_bytes;
 pub mod literal_trie;
 pub mod oniguruma;
 pub mod prelude;
