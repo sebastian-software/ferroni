@@ -7,11 +7,11 @@ import { CodeSection, CTASection, EcosystemSection } from "./home-bottom-section
 // React Router requires `meta` as a named route export.
 // oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export const meta: MetaFunction = () => [
-  { title: "Ferroni — Pure-Rust Oniguruma Engine" },
+  { title: "Ferroni — Oniguruma, continued in Rust" },
   {
     name: "description",
     content:
-      "Ferroni is a pure-Rust port of the Oniguruma regex engine. Full feature parity with the C original, ahead of Oniguruma across the measured runtime cases. No C toolchain required.",
+      "Ferroni continues the Oniguruma regex engine in memory-safe Rust after the C project ended, with the vscode-oniguruma scanner built in. Verified against the upstream tests, and 2.5x to 33x faster at tokenizing real code.",
   },
 ];
 
@@ -79,13 +79,13 @@ function HeroSection() {
         </div>
 
         <h1 className="fh-headline">
-          <span className="fh-headline-gradient">Regex, forged in Rust.</span>
+          <span className="fh-headline-gradient">Oniguruma, forged in Rust.</span>
         </h1>
 
         <p className="fh-tagline">
-          Ferroni is a pure-Rust port of the Oniguruma regex engine &mdash; the engine behind Ruby,
-          PHP, and TextMate grammars. Full feature parity with the C original, and ahead of
-          Oniguruma across every measured runtime case in the reference suite.
+          The regex engine behind TextMate grammars, jq, and PHP&rsquo;s mbregex, continued in
+          memory-safe Rust after the C project ended &mdash; with the vscode-oniguruma scanner built
+          in. Verified against the upstream tests, and 2.5x to 33x faster at tokenizing real code.
         </p>
 
         <div className="fh-cta-group">
@@ -112,7 +112,7 @@ function HeroSection() {
 
 const stats = [
   { value: "2,195", label: "Test functions" },
-  { value: "100%", label: "C parity" },
+  { value: "100%", label: "Upstream UTF-8 tests" },
   { value: "0.4%", label: "Unsafe code" },
   { value: "BSD-2", label: "License" },
 ];
@@ -138,24 +138,24 @@ function StatsSection() {
 
 const features = [
   {
-    icon: <Zap size={22} strokeWidth={1.5} />,
-    title: "Built for scanner speed",
-    text: "Tuned for the hot path in syntax highlighters and text scanners: tokenizing real documents with complete TextMate grammars runs well ahead of Oniguruma. The measured factors are below.",
-  },
-  {
     icon: <ShieldCheck size={22} strokeWidth={1.5} />,
-    title: "Full Oniguruma compatibility",
-    text: "Named captures, variable-length lookbehind, conditionals, absent expressions, 886 Unicode properties, subexpression calls. If it works in Oniguruma, it works in Ferroni.",
+    title: "Same engine, verified",
+    text: "A line-by-line port, not a lookalike: named captures, variable-length look-behind, conditionals, absent expressions, 886 Unicode properties, 12 syntaxes. Every upstream UTF-8 test passes.",
   },
   {
     icon: <Package size={22} strokeWidth={1.5} />,
-    title: "Pure Rust, no C toolchain",
-    text: "cargo add ferroni and build. Cross-compiles to wasm32-unknown-unknown. No node-gyp, no local C compiler. Only 0.4% unsafe code, all documented.",
+    title: "Memory-safe, no C toolchain",
+    text: "cargo add ferroni and build. No bindgen, no C compiler, no node-gyp. 0.4% unsafe code, every block documented.",
+  },
+  {
+    icon: <Zap size={22} strokeWidth={1.5} />,
+    title: "Faster where highlighters work",
+    text: "Tokenizing real code with complete TextMate grammars runs 2.5x to 33x faster than the C original. The measured factors are below.",
   },
   {
     icon: <Layers size={22} strokeWidth={1.5} />,
-    title: "Built-in multi-pattern scanner",
-    text: "Drop-in compatible with vscode-oniguruma. Regex engine and TextMate grammar scanner in a single dependency. Used by Shiki and VS Code.",
+    title: "The vscode-oniguruma scanner, built in",
+    text: "vscode-textmate and Shiki tokenize through vscode-oniguruma\u2019s scanner. Ferroni ships a scanner of the same shape, UTF-16 offsets included, next to the regex engine.",
   },
 ];
 
@@ -165,10 +165,11 @@ function WhySection() {
       <div className="fh-container">
         <div className="fh-why-header">
           <div className="fh-section-label">Why Ferroni</div>
-          <h2 className="fh-section-title">Full compatibility. No compromises.</h2>
+          <h2 className="fh-section-title">Same engine. Carried forward.</h2>
           <p className="fh-section-subtitle">
-            Ferroni does not wrap Oniguruma. It ports the engine into Rust, keeps the same structure
-            and optimization pipeline, then tunes the runtime path hard.
+            Oniguruma&rsquo;s C project ended in April 2025. Ferroni does not wrap it: it ports the
+            engine into Rust, keeps the same structure and optimization pipeline, then tunes the
+            path highlighters take.
           </p>
         </div>
 

@@ -566,6 +566,10 @@
   gap: 0;
 }
 
+.fh-code-tabs-next {
+  margin-top: 1.5rem;
+}
+
 .fh-code-tab {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.78rem;
