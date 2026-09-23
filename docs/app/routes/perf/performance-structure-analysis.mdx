@@ -146,6 +146,10 @@ how sensitive the hot path is to code layout:
   source had not changed.
 - A 176-byte shift of an otherwise identical `match_at_impl` moved warm
   Rust single-line tokenization between neutral and +7%.
+- Small inline ASCII loops added to six star-opcode handlers made a
+  timestamp search that uses no star opcode 10% slower in wall clock, with
+  fewer instructions. Bisecting pinned it to exactly that commit, and moving
+  the loops back out restored it.
 
 With function alignment forced for both builds
 (`-C llvm-args=-align-all-functions=6`), the last case was +0.6%. Short
@@ -170,9 +174,11 @@ a few-percent difference means anything.
 - **Range-driven case-fold expansion** (`regparse.rs`, `unicode/mod.rs`;
   finding 5). The class ranges are walked through the sorted fold keys, and
   additions are merged in one pass.
-- **One boundary-checked star loop** (`regexec.rs`; findings 7 and 8). All six
-  star opcodes share it. It falls back to one backtrack entry per character
-  when stepping back would diverge, and ASCII runs keep an inline fast path.
+- **Boundary-checked star loops** (`regexec.rs`; findings 7 and 8). The
+  positive star opcodes keep `main`'s inline loops and add a UTF-8 boundary
+  check. The negated ones run in an out-of-line helper with its own tight
+  ASCII loop. When stepping back would diverge, both fall back to one
+  backtrack entry per character.
 - **Fallback search loop out of line** (`regset.rs`; finding 8). This
   stabilizes code generation.
 - **Document-level scanner benchmark** (`benches/`; finding 1). Tokenizes
@@ -273,7 +279,16 @@ Three independent, low-risk pieces address finding 6:
 3. Share identical class bitsets per regex instead of boxing one per class
    instruction; classes like `\w` repeat.
 
-### P6 - Table routing for bounded fallback entries
+### P6 - Skip malformed-input checks for `&str` input
+
+The star loops now verify every non-ASCII character boundary (finding 7).
+That check costs about 6% of instructions on a `\p{Greek}+` search over
+Greek text. The scanner and the idiomatic `Regex` API receive `&str`, which
+is valid UTF-8 by construction. A flag on `MatchArg` set by those entry
+points would let the loops skip the check, leaving it only for raw-byte
+callers of the C-style API.
+
+### P7 - Table routing for bounded fallback entries
 
 A start-byte filter now makes fallback searches skip impossible positions.
 The entries still search the whole line on the first call so that the memo
