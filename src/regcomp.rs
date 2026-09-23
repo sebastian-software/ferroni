@@ -9714,7 +9714,10 @@ mod tests {
     #[test]
     fn literal_tries_match_like_the_alternation_in_context() {
         use crate::oniguruma::OnigRegion;
-        use crate::regexec::onig_search;
+        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+
+        // Other tests lower the process-wide retry limits while holding it.
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
 
         let compile = |pattern: &str| {
             onig_new(
