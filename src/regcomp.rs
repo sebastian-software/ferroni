@@ -2167,9 +2167,50 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
 // Anchor compilation
 // ============================================================================
 
+#[cfg(test)]
+thread_local! {
+    /// Compiles look-behinds the upstream way, as the reference for
+    /// `LookBehindOp` in differential tests.
+    pub(crate) static FUSED_LOOK_BEHIND_DISABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// The body of a fixed-length look-behind that compiles to a single
+/// character-class or string instruction. Rust-only (ADR-008): such a
+/// look-behind compiles to `LookBehindOp` followed by that instruction,
+/// which the VM checks in place after stepping back. Upstream's
+/// MARK / PUSH / STEP_BACK_START / ... / CUT_TO_MARK sequence costs five to
+/// seven instructions and stack entries for what TextMate grammars mostly
+/// use as a one-character word-boundary test, `(?<![$_[:alnum:]])`.
+fn fused_look_behind_body<'a>(
+    an: &'a AnchorNode,
+    reg: &RegexType,
+    env: &ParseEnv,
+) -> Option<&'a Node> {
+    if (an.anchor_type != ANCR_LOOK_BEHIND && an.anchor_type != ANCR_LOOK_BEHIND_NOT)
+        || an.char_min_len != an.char_max_len
+        || an.char_min_len == 0
+    {
+        return None;
+    }
+    #[cfg(test)]
+    if FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.get()) {
+        return None;
+    }
+    let body = an.body.as_deref()?;
+    (matches!(body.inner, NodeInner::CClass(_) | NodeInner::String(_))
+        && !body.has_status(ND_ST_LITERAL_ALT)
+        && compile_length_tree(body, reg, env) == SIZE_INC)
+        .then_some(body)
+}
+
 /// Calculate bytecode length for an anchor node.
 fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) -> i32 {
     let at = an.anchor_type;
+
+    if fused_look_behind_body(an, reg, env).is_some() {
+        return SIZE_INC + SIZE_INC;
+    }
 
     if at == ANCR_PREC_READ {
         // (?=...) positive lookahead: MARK + body + CUT_TO_MARK
@@ -2286,6 +2327,18 @@ fn compile_anchor_node(
     env: &ParseEnv,
 ) -> i32 {
     let at = an.anchor_type;
+
+    if let Some(body) = fused_look_behind_body(an, reg, env) {
+        add_op(
+            reg,
+            OpCode::LookBehindOp,
+            OperationPayload::LookBehindOp {
+                char_len: an.char_min_len,
+                not: at == ANCR_LOOK_BEHIND_NOT,
+            },
+        );
+        return compile_tree(body, reg, env);
+    }
 
     if at == ANCR_PREC_READ {
         // (?=...) positive lookahead
@@ -10312,6 +10365,144 @@ mod tests {
             }
         }
         assert!(tries_used > 500, "only {tries_used} patterns used a trie");
+    }
+
+    /// A look-behind compiled to `LookBehindOp` must match exactly like the
+    /// upstream MARK / STEP_BACK_START sequence, for every body instruction
+    /// kind, in any context, and on malformed UTF-8.
+    #[test]
+    fn fused_look_behinds_match_the_upstream_sequence() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let compile = |pattern: &str, fused: bool| {
+            FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(!fused));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+        let search = |reg: &RegexType, input: &[u8], start: usize| {
+            let (r, region) = onig_search(
+                reg,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            let region = region.unwrap();
+            let spans: Vec<(i32, i32)> = region
+                .beg
+                .iter()
+                .zip(&region.end)
+                .take(region.num_regs as usize)
+                .map(|(&b, &e)| (b, e))
+                .collect();
+            (r, spans)
+        };
+
+        let bodies = [
+            "[a-c]",
+            "[^a]",
+            "a",
+            "ab",
+            "\\.",
+            "\\.\\.\\.",
+            "abcdef",
+            "\\x{e9}",
+            "[\\x{e9}-\\x{fc}]",
+            "[^\\x{e9}]",
+            "[\\x{100}-\\x{200}]",
+            "[^\\x{100}-\\x{200}]",
+            "[a\\x{100}]",
+            "[^a\\x{100}]",
+            "\\x{1F600}",
+            "[$_[:alnum:]]",
+            "(?i:k)",
+            "(?i:s)",
+            "\\x{100}b",
+        ];
+        let contexts = [
+            "{lb}x",
+            "{lb}",
+            "a{lb}b",
+            "(?:{lb}b)+",
+            "(?:{lb}a|b)c",
+            "\\b{lb}\\w+",
+            "({lb})",
+            "[a-c]*{lb}c",
+        ];
+        let pieces: [&[u8]; 15] = [
+            b"a",
+            b"b",
+            b"c",
+            b"x",
+            b".",
+            "\u{e9}".as_bytes(),
+            "\u{100}".as_bytes(),
+            "\u{1F600}".as_bytes(),
+            "\u{212A}".as_bytes(),
+            b"k",
+            b"\xC3",
+            b"\x80",
+            b"\xE2\x84",
+            b"\xE0\x81\xAB",
+            b"ab",
+        ];
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let inputs: Vec<Vec<u8>> = (0..80)
+            .map(|_| {
+                let mut next = |bound: u64| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    (state % bound) as usize
+                };
+                let len = next(7);
+                (0..len)
+                    .flat_map(|_| pieces[next(pieces.len() as u64)].to_vec())
+                    .collect()
+            })
+            .collect();
+
+        let mut fused_count = 0;
+        for body in bodies {
+            for lb in [format!("(?<={body})"), format!("(?<!{body})")] {
+                for context in contexts {
+                    let pattern = context.replace("{lb}", &lb);
+                    let fused = compile(&pattern, true);
+                    let reference = compile(&pattern, false);
+                    assert!(
+                        !reference
+                            .ops
+                            .iter()
+                            .any(|op| op.opcode == OpCode::LookBehindOp)
+                    );
+                    fused_count +=
+                        usize::from(fused.ops.iter().any(|op| op.opcode == OpCode::LookBehindOp));
+                    for input in &inputs {
+                        for start in [0, 1, input.len() / 2] {
+                            if start > input.len() {
+                                continue;
+                            }
+                            assert_eq!(
+                                search(&fused, input, start),
+                                search(&reference, input, start),
+                                "{pattern} on {input:x?} from {start}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert!(fused_count > 250, "only {fused_count} patterns fused");
     }
 
     /// Bitsets from empty to full, including word-boundary bits, plus
