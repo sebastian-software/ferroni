@@ -62,6 +62,16 @@ and makes this path measurable. The `battle_bench` scanner section should
 gain the same shape, with the C scanner driven the same way, before new
 scanner numbers are published.
 
+**Status: done.** `battle_bench` has a `scanner_documents` group that
+tokenizes the same three documents line by line: Ferroni with a distinct
+`OnigString` per line, the C scanner with a fresh `str_cache_id` per line.
+Wiring it up showed that the C side was never warm to begin with: the
+vscode-oniguruma wrapper only consults its per-pattern cache for strings of
+1000 bytes or more, and every scanner input in the suite is shorter. The warm
+rows therefore compare a memo-assisted Ferroni against an uncached Oniguruma;
+[Benchmark Results](/perf/benchmark-results) now publishes both shapes side by
+side.
+
 ### 2. Cold tokenization was dominated by full-line fallback searches
 
 RegSet routes most patterns through a first-byte table. The rest are

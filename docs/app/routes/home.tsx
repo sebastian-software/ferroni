@@ -195,49 +195,49 @@ const benchmarks = [
     category: "Syntax Highlighting",
     label: "Scanner First Match",
     desc: "TypeScript grammar, 279 patterns",
-    speedup: "80.6x",
-    ferroni: "~314 ns",
-    oniguruma: "~25.3 \u00B5s",
+    speedup: "290.6x",
+    ferroni: "~87 ns",
+    oniguruma: "~25.2 \u00B5s",
   },
   {
     category: "Syntax Highlighting",
     label: "Full Line Tokenization",
     desc: "TypeScript, end-to-end",
-    speedup: "28.6x",
-    ferroni: "~7.6 \u00B5s",
-    oniguruma: "~218 \u00B5s",
+    speedup: "74.3x",
+    ferroni: "~2.8 \u00B5s",
+    oniguruma: "~211 \u00B5s",
   },
   {
     category: "Syntax Highlighting",
     label: "CSS Tokenization",
     desc: "Multi-pattern scanner workload",
-    speedup: "9.9x",
-    ferroni: "~1.5 ms",
-    oniguruma: "~14.5 ms",
+    speedup: "64.5x",
+    ferroni: "~222 \u00B5s",
+    oniguruma: "~14.3 ms",
   },
   {
     category: "Text Search",
     label: "Rejection Speed",
     desc: "No match in 50 KB buffer",
-    speedup: "5.7x",
-    ferroni: "~1.7 \u00B5s",
-    oniguruma: "~9.5 \u00B5s",
+    speedup: "6.2x",
+    ferroni: "~1.5 \u00B5s",
+    oniguruma: "~9.3 \u00B5s",
   },
   {
     category: "Text Search",
     label: "RegSet Multi-Pattern",
     desc: "5 patterns, simultaneous search",
     speedup: "3.6x",
-    ferroni: "~105 ns",
-    oniguruma: "~376 ns",
+    ferroni: "~104 ns",
+    oniguruma: "~370 ns",
   },
   {
     category: "Pattern Matching",
     label: "Lookaround Combined",
     desc: "Feature most Rust engines skip",
     speedup: "3.1x",
-    ferroni: "~81 ns",
-    oniguruma: "~253 ns",
+    ferroni: "~79 ns",
+    oniguruma: "~247 ns",
   },
 ];
 
@@ -278,9 +278,11 @@ function PerfSection() {
 
         <p className="fh-perf-note">
           Measured on 2026-09-23 with the <code>battle_bench</code> reference suite at commit{" "}
-          <code>eb617224</code>, on a MacBookPro18,1 (Apple M1 Pro, 32&nbsp;GB) running macOS 27.0.
-          Each factor is the ratio of the two timings shown on its card. Full tables, raw values,
-          and the measurement context are in{" "}
+          <code>374e3fed</code>, on a MacBookPro18,1 (Apple M1 Pro, 32&nbsp;GB) running macOS 27.0.
+          Each factor is the ratio of the two timings shown on its card. The scanner cards
+          re-tokenize the same input, which Ferroni serves partly from its per-string memo;
+          tokenizing whole documents line by line, each line once, Ferroni is 2.5x (TypeScript) to
+          32.6x (CSS) faster. Full tables, raw values, and the measurement context are in{" "}
           <Link to="/perf/benchmark-results">Benchmark Results</Link>.
         </p>
       </div>
