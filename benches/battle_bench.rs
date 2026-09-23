@@ -6,6 +6,7 @@
 
 mod grammar_loader;
 mod scanner_css_workload;
+mod scanner_documents;
 
 use criterion::{
     BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime,
@@ -14,6 +15,7 @@ use regex::bytes::{Regex, RegexBuilder};
 use scanner_css_workload::CSS_INPUT;
 use std::hint::black_box;
 use std::os::raw::c_uint;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
 use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
@@ -406,6 +408,126 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
     group.finish();
 }
 
+/// Tokenize one line with the Ferroni scanner; returns the token count.
+fn tokenize_line_rust(scanner: &mut Scanner, line: &OnigString, line_len: usize) -> u32 {
+    let mut pos = 0usize;
+    let mut count = 0u32;
+    while pos < line_len {
+        match scanner.find_next_match_utf16(black_box(line), pos, ScannerFindOptions::NONE) {
+            Some(m) => {
+                let end = m.capture_indices[0].end;
+                pos = if end > pos { end } else { pos + 1 };
+                count += 1;
+            }
+            None => break,
+        }
+    }
+    count
+}
+
+/// Tokenize one line with the C scanner; returns the token count.
+fn tokenize_line_c(scanner: &ffi::CScanner, line: &[u8], str_cache_id: i32) -> u32 {
+    let mut pos = 0usize;
+    let mut count = 0u32;
+    while pos < line.len() {
+        match scanner.find_next_match(black_box(line), str_cache_id, pos) {
+            Some((_idx, captures)) => {
+                let end = captures[0].1 as usize;
+                pos = if end > pos { end } else { pos + 1 };
+                count += 1;
+            }
+            None => break,
+        }
+    }
+    count
+}
+
+/// Cache ids handed to the C scanner. Every line of every iteration gets a new
+/// one, so no pattern can answer from the result of a previous line.
+static NEXT_C_STR_CACHE_ID: AtomicI32 = AtomicI32::new(1);
+
+fn next_c_str_cache_id() -> i32 {
+    NEXT_C_STR_CACHE_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Cold path: whole documents tokenized line by line, each line handed to the
+/// scanner once, the way vscode-textmate and Shiki drive it. Ferroni sees a
+/// distinct `OnigString` per line, the C scanner a fresh `str_cache_id` per
+/// line, so neither engine serves a line from the previous line's memo.
+fn bench_scanner_documents(c: &mut Criterion) {
+    let documents: [(&str, Vec<String>, &str); 3] = [
+        (
+            "ts",
+            grammar_loader::typescript_patterns(),
+            scanner_documents::TYPESCRIPT_DOCUMENT,
+        ),
+        ("css", grammar_loader::css_patterns(), CSS_INPUT),
+        (
+            "rust",
+            grammar_loader::rust_patterns(),
+            scanner_documents::RUST_DOCUMENT,
+        ),
+    ];
+
+    let mut group = c.benchmark_group("scanner_documents");
+    configure_battle_group(&mut group);
+
+    for (name, grammar, document) in &documents {
+        let patterns: Vec<&str> = grammar.iter().map(|pattern| pattern.as_str()).collect();
+        let patterns_bytes = patterns_to_bytes(&patterns);
+        let patterns_byte_refs: Vec<&[u8]> = patterns_bytes
+            .iter()
+            .map(|pattern| pattern.as_slice())
+            .collect();
+
+        // Each line with the trailing newline vscode-textmate appends. The
+        // documents are ASCII, so UTF-16 and byte offsets coincide.
+        let lines: Vec<String> = document.lines().map(|line| format!("{line}\n")).collect();
+        assert!(document.is_ascii(), "{name}: document must be ASCII");
+        let rust_lines: Vec<(OnigString, usize)> = lines
+            .iter()
+            .map(|line| (OnigString::new(line), line.len()))
+            .collect();
+
+        let mut scanner = Scanner::new(&patterns).unwrap();
+        let c_scanner = ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
+
+        let rust_tokens: u32 = rust_lines
+            .iter()
+            .map(|(line, len)| tokenize_line_rust(&mut scanner, line, *len))
+            .sum();
+        let c_tokens: u32 = lines
+            .iter()
+            .map(|line| tokenize_line_c(&c_scanner, line.as_bytes(), next_c_str_cache_id()))
+            .sum();
+        assert_eq!(rust_tokens, c_tokens, "{name}: token counts differ");
+
+        let prefix = format!("{name}_{}_document_{}_lines", patterns.len(), lines.len());
+
+        group.bench_function(format!("{prefix}_rust"), |b| {
+            b.iter(|| {
+                let mut count = 0u32;
+                for (line, len) in &rust_lines {
+                    count += tokenize_line_rust(&mut scanner, line, *len);
+                }
+                black_box(count);
+            });
+        });
+
+        group.bench_function(format!("{prefix}_c"), |b| {
+            b.iter(|| {
+                let mut count = 0u32;
+                for line in &lines {
+                    count += tokenize_line_c(&c_scanner, line.as_bytes(), next_c_str_cache_id());
+                }
+                black_box(count);
+            });
+        });
+    }
+
+    group.finish();
+}
+
 fn bench_text_scanning(c: &mut Criterion) {
     let text_10k = make_log_text(100);
     let text_50k = make_log_text(500);
@@ -726,6 +848,7 @@ fn bench_compilation(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_scanner_highlighting,
+    bench_scanner_documents,
     bench_text_scanning,
     bench_single_pattern,
     bench_compilation,
