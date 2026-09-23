@@ -2980,7 +2980,13 @@ fn match_at(
     sstart: usize,
     msa: &mut MatchArg,
 ) -> i32 {
-    if msa.region.is_some() || reg.needs_capture_tracking {
+    // Untracked runs skip the MemStartPush/MemEndPush stack entries. With a
+    // match stack limit configured that would change when the limit trips,
+    // so such runs keep the bookkeeping to stay observably identical to C.
+    if msa.region.is_some()
+        || reg.needs_capture_tracking
+        || (msa.match_stack_limit != 0 && (reg.push_mem_start | reg.push_mem_end) != 0)
+    {
         match_at_impl::<true>(reg, str_data, end, in_right_range, sstart, msa)
     } else {
         match_at_impl::<false>(reg, str_data, end, in_right_range, sstart, msa)
@@ -4417,18 +4423,24 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
 
             OpCode::MemStartPush => {
                 if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
-                    let num = num as usize;
-                    let prev_start = mem_start_stk[num];
-                    let prev_end = mem_end_stk[num];
-                    let si = stack.len();
-                    stack.push(StackEntry::MemStart {
-                        zid: num,
-                        pstr: s,
-                        prev_start,
-                        prev_end,
-                    });
-                    mem_start_stk[num] = MemPtr::stack_idx(si);
-                    mem_end_stk[num] = MemPtr::invalid();
+                    // The pushed entry only restores this capture on
+                    // backtracking. Opcodes that read captures while matching
+                    // force TRACK_CAPTURES (see `needs_capture_tracking`), so
+                    // an untracked run can drop the bookkeeping.
+                    if TRACK_CAPTURES {
+                        let num = num as usize;
+                        let prev_start = mem_start_stk[num];
+                        let prev_end = mem_end_stk[num];
+                        let si = stack.len();
+                        stack.push(StackEntry::MemStart {
+                            zid: num,
+                            pstr: s,
+                            prev_start,
+                            prev_end,
+                        });
+                        mem_start_stk[num] = MemPtr::stack_idx(si);
+                        mem_end_stk[num] = MemPtr::invalid();
+                    }
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -4449,17 +4461,20 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
 
             OpCode::MemEndPush => {
                 if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
-                    let num = num as usize;
-                    let prev_start = mem_start_stk[num];
-                    let prev_end = mem_end_stk[num];
-                    let si = stack.len();
-                    stack.push(StackEntry::MemEnd {
-                        zid: num,
-                        pstr: s,
-                        prev_start,
-                        prev_end,
-                    });
-                    mem_end_stk[num] = MemPtr::stack_idx(si);
+                    // See OpCode::MemStartPush for why untracked runs skip this.
+                    if TRACK_CAPTURES {
+                        let num = num as usize;
+                        let prev_start = mem_start_stk[num];
+                        let prev_end = mem_end_stk[num];
+                        let si = stack.len();
+                        stack.push(StackEntry::MemEnd {
+                            zid: num,
+                            pstr: s,
+                            prev_start,
+                            prev_end,
+                        });
+                        mem_end_stk[num] = MemPtr::stack_idx(si);
+                    }
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -5838,6 +5853,18 @@ pub(crate) fn onig_search_with_msa_and_right_range(
         return (ONIG_MISMATCH, msa.region.take());
     }
 
+    if can_use_two_pass_capture_fill(reg, start, range, msa) {
+        return onig_search_inner_two_pass(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            false,
+            msa,
+        );
+    }
     onig_search_inner_core_with_right_range(
         reg,
         str_data,
@@ -5882,22 +5909,45 @@ fn can_use_two_pass_capture_fill(
         && msa.time_limit == 0
 }
 
+#[allow(clippy::too_many_arguments)]
 fn onig_search_inner_two_pass(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
     start: usize,
     range: usize,
+    right_range: usize,
+    find_longest_across_positions: bool,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     let mut region = match msa.region.take() {
         Some(r) => r,
-        None => return onig_search_inner_core(reg, str_data, end, start, range, msa),
+        None => {
+            return onig_search_inner_core_with_right_range(
+                reg,
+                str_data,
+                end,
+                start,
+                range,
+                right_range,
+                find_longest_across_positions,
+                msa,
+            );
+        }
     };
     region.resize(reg.num_mem + 1);
     region.clear();
 
-    let (match_start, _) = onig_search_inner_core(reg, str_data, end, start, range, msa);
+    let (match_start, _) = onig_search_inner_core_with_right_range(
+        reg,
+        str_data,
+        end,
+        start,
+        range,
+        right_range,
+        find_longest_across_positions,
+        msa,
+    );
     if match_start < 0 {
         msa.region = Some(region);
         return (match_start, msa.region.take());
@@ -5907,12 +5957,13 @@ fn onig_search_inner_two_pass(
     msa.best_len = ONIG_MISMATCH;
     msa.best_s = 0;
 
-    let data_range = if range > start { range } else { end };
     let retry_counter_before = msa.retry_limit_in_search_counter;
     let retry_limit_in_match_before = msa.retry_limit_in_match;
     // Second pass is implementation-only; avoid consuming retry budget.
     msa.retry_limit_in_match = 0;
-    let r = match_at(reg, str_data, end, data_range, match_start as usize, msa);
+    // Forward searches attempt every candidate with `right_range` as the
+    // match boundary, so the second pass uses the same one.
+    let r = match_at(reg, str_data, end, right_range, match_start as usize, msa);
     msa.retry_limit_in_match = retry_limit_in_match_before;
     msa.retry_limit_in_search_counter = retry_counter_before;
     if r < ONIG_MISMATCH {
@@ -5920,7 +5971,16 @@ fn onig_search_inner_two_pass(
     }
     if r == ONIG_MISMATCH {
         // Conservative fallback: preserve semantics if second pass diverges.
-        return onig_search_inner_core(reg, str_data, end, start, range, msa);
+        return onig_search_inner_core_with_right_range(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            find_longest_across_positions,
+            msa,
+        );
     }
 
     (match_start, msa.region.take())
@@ -5944,7 +6004,9 @@ fn onig_search_inner(
     }
 
     if can_use_two_pass_capture_fill(reg, start, range, msa) {
-        return onig_search_inner_two_pass(reg, str_data, end, start, range, msa);
+        // A forward range bounds each attempt by the range itself; see
+        // `onig_search_inner_core`.
+        return onig_search_inner_two_pass(reg, str_data, end, start, range, range, true, msa);
     }
     onig_search_inner_core(reg, str_data, end, start, range, msa)
 }
@@ -6787,6 +6849,108 @@ mod tests {
         );
         assert_eq!(pos, 0);
         assert!(region.is_none());
+    }
+
+    fn compile_full(pattern: &[u8]) -> RegexType {
+        crate::regcomp::onig_new(
+            pattern,
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .expect("pattern compiles")
+    }
+
+    #[test]
+    fn backtracked_push_captures_do_not_require_tracking() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        // A capture inside a repeat compiles to MEM_START_PUSH/MEM_END_PUSH so
+        // that backtracking can restore it. Only the region observes that, so
+        // a region-free search must not pay for the bookkeeping.
+        let reg = compile_full(b"(?:(a)|b)*ab");
+        assert_ne!(reg.push_mem_start | reg.push_mem_end, 0);
+        assert!(reg.ops.iter().any(|op| op.opcode == OpCode::MemStartPush));
+        assert!(!reg.needs_capture_tracking);
+
+        // (input, match start, match end, group 1 start, group 1 end)
+        type Case = (&'static [u8], i32, i32, i32, i32);
+        let cases: [Case; 2] = [
+            // The iteration that captured `a` is backtracked away, so its
+            // capture must be restored to unset.
+            (b"xbab", 1, 4, ONIG_REGION_NOTPOS, ONIG_REGION_NOTPOS),
+            (b"xaab", 1, 4, 1, 2),
+        ];
+        for (text, beg, end, g1_beg, g1_end) in cases {
+            let (pos, region) = onig_search(
+                &reg,
+                text,
+                text.len(),
+                0,
+                text.len(),
+                None,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(pos, beg);
+            assert!(region.is_none());
+
+            let (pos, region) = onig_search(
+                &reg,
+                text,
+                text.len(),
+                0,
+                text.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(pos, beg);
+            let region = region.expect("region");
+            assert_eq!((region.beg[0], region.end[0]), (beg, end));
+            assert_eq!((region.beg[1], region.end[1]), (g1_beg, g1_end));
+        }
+    }
+
+    #[test]
+    fn match_stack_limit_counts_push_captures_with_and_without_region() {
+        // Untracked runs drop the push-capture stack entries. A configured
+        // stack limit must still trip exactly where a region-tracking run
+        // (and C) trips it.
+        let reg = compile_full(b"(?:(a)|b)*c");
+        let mut text = vec![b'a'; 64];
+        text.push(b'c');
+
+        let mut saw_limit = false;
+        let mut saw_match = false;
+        for limit in 1..400 {
+            let mut mp = onig_new_match_param();
+            onig_set_match_stack_limit_size_of_match_param(&mut mp, limit);
+            let (without_region, _) = onig_search_with_param(
+                &reg,
+                &text,
+                text.len(),
+                0,
+                text.len(),
+                None,
+                ONIG_OPTION_NONE,
+                &mp,
+            );
+            let (with_region, _) = onig_search_with_param(
+                &reg,
+                &text,
+                text.len(),
+                0,
+                text.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+                &mp,
+            );
+            assert_eq!(without_region, with_region, "stack limit {limit}");
+            saw_limit |= with_region == ONIGERR_MATCH_STACK_LIMIT_OVER;
+            saw_match |= with_region == 0;
+        }
+        assert!(
+            saw_limit && saw_match,
+            "the limit range must cover both outcomes"
+        );
     }
 
     #[test]

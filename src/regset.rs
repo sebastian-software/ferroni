@@ -2101,6 +2101,39 @@ mod tests {
     }
 
     #[test]
+    fn fallback_search_fills_backtracked_push_captures() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        // The fallback search runs region-free and fills the region only for
+        // the winning position; captures restored by backtracking must still
+        // come out unset.
+        let (set, result) = onig_regset_new(vec![compile(b"(?:(a)|b)*ab")]);
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        assert_eq!(set.fallback_search_candidates, vec![0]);
+
+        // (input, group 1 start, group 1 end)
+        let cases: [(&[u8], i32, i32); 2] = [
+            (b"xbab", ONIG_REGION_NOTPOS, ONIG_REGION_NOTPOS),
+            (b"xaab", 1, 2),
+        ];
+        for (input, g1_beg, g1_end) in cases {
+            let (index, position) = onig_regset_search(
+                &mut set,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!((index, position), (0, 1));
+            let region = onig_regset_get_region(&set, 0).expect("region");
+            assert_eq!((region.beg[0], region.end[0]), (1, 4));
+            assert_eq!((region.beg[1], region.end[1]), (g1_beg, g1_end));
+        }
+    }
+
+    #[test]
     fn table_entry_count_tracks_mixed_add_remove_and_replace_sets() {
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);

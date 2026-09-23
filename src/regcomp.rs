@@ -7476,8 +7476,6 @@ fn opcode_requires_capture_tracking(opcode: OpCode) -> bool {
             | OpCode::BackRefWithLevelIc
             | OpCode::BackRefCheck
             | OpCode::BackRefCheckWithLevel
-            | OpCode::MemStartPush
-            | OpCode::MemEndPush
             | OpCode::MemEndPushRec
             | OpCode::MemEndRec
             | OpCode::EmptyCheckEndMemst
