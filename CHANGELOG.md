@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.2](https://github.com/sebastian-software/ferroni/compare/v1.4.1...v1.4.2) (2026-09-23)
+
+
+### Performance Improvements
+
+* **regcomp:** extend literal tries to prefixes and case-insensitive lists ([b9b70bc](https://github.com/sebastian-software/ferroni/commit/b9b70bca40727399dc1778c9a7d659d803a04de5))
+* **regcomp:** fill a multibyte class's byte map from its ASCII half ([91aadfc](https://github.com/sebastian-software/ferroni/commit/91aadfcbb5219ee84891255276c31ed981494124))
+* **regcomp:** scan class bitsets by word during compilation ([a7ed701](https://github.com/sebastian-software/ferroni/commit/a7ed70170855c37f19a2e15b59fbcbaf51468e57))
+* **regexec:** check one-instruction look-behinds in a single opcode ([e93b074](https://github.com/sebastian-software/ferroni/commit/e93b07417aecc726c295d300127a89f552f93e1b))
+* **regparse:** stream Unicode ctype ranges into class buffers ([0127f1a](https://github.com/sebastian-software/ferroni/commit/0127f1a83a779a0dcbf6b34b23d0841aa1804f20))
+* **regset:** derive start bytes through positive look-aheads ([a9a8212](https://github.com/sebastian-software/ferroni/commit/a9a821271ca38ec178ebb55dbda88d565fe2a9ae))
+* **regset:** make settled fallback entries cheap on warm calls ([556cb29](https://github.com/sebastian-software/ferroni/commit/556cb2987d72bf0ce12678f1a5b1be613074fa52))
+* speed up grammar tokenization and case-insensitive compilation ([#145](https://github.com/sebastian-software/ferroni/issues/145)) ([e5bb273](https://github.com/sebastian-software/ferroni/commit/e5bb2735572a9dc0c0d04e501bf55daf99349868))
+
 ## [1.4.1](https://github.com/sebastian-software/ferroni/compare/v1.4.0...v1.4.1) (2026-09-22)
 
 
