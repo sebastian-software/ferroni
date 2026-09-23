@@ -5,11 +5,12 @@ title: Getting Started
 
 # Getting Started
 
-Ferroni is a pure-Rust port of [Oniguruma](https://github.com/kkos/oniguruma),
-the regex engine behind Ruby, PHP's `mbstring`, TextMate grammars, and jq. It
-keeps the C engine's feature set and its pattern semantics -- if a pattern
-works in Oniguruma, it works in Ferroni -- and adds a multi-pattern Scanner
-API for TextMate grammar tokenization. There is no C toolchain and no FFI
+Ferroni continues [Oniguruma](https://github.com/kkos/oniguruma) in Rust. The
+C engine behind TextMate grammars, jq, and PHP's mbregex ended in April 2025;
+Ferroni is a line-by-line port of it. It keeps the C engine's feature set and
+its pattern semantics for ASCII and UTF-8 -- if a pattern works in Oniguruma,
+it works in Ferroni -- and ships a multi-pattern Scanner API of the same shape
+as vscode-oniguruma's for TextMate grammar tokenization. There is no C toolchain and no FFI
 involved: `cargo add ferroni` is the whole setup.
 
 ## Install
@@ -26,7 +27,7 @@ ferroni = "1"
 ```
 
 Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane. The library has
-no build script and cross-compiles to `wasm32-unknown-unknown`. The optional
+no build script. The optional
 `ffi` feature exists only for the in-repo C-versus-Rust benchmark harness; you
 never need it to use the crate.
 

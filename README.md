@@ -2,7 +2,7 @@
 
 Part of [Ferramenta](https://ferramenta.dev), a family of Rust tools.
 
-# Ferroni — Oniguruma-compatible regex engine
+# Ferroni — Oniguruma, continued in Rust
 
 [![Powered by Sebastian Software](https://img.shields.io/badge/Powered_by-Sebastian_Software-005164?style=flat)](https://oss.sebastian-software.com) [![crates.io](https://img.shields.io/crates/v/ferroni?style=flat-square&logo=rust&label=crates.io)](https://crates.io/crates/ferroni)
 [![docs.rs](https://img.shields.io/docsrs/ferroni?style=flat-square&logo=docsdotrs&label=docs.rs)](https://docs.rs/ferroni)
@@ -20,65 +20,52 @@ Part of [Ferramenta](https://ferramenta.dev), a family of Rust tools.
 
 ---
 
-[Oniguruma](https://github.com/kkos/oniguruma) is the regex engine behind
-[Ruby](https://www.ruby-lang.org/), [PHP](https://www.php.net/) (mbstring),
-[TextMate](https://macromates.com/) grammars, and tools like
-[jq](https://jqlang.github.io/jq/). It supports features that most regex
-libraries don't: named captures with multiple syntaxes, look-behind of
-variable length, conditional patterns, absent expressions, 886 Unicode
-properties, subexpression calls, and 12 syntax modes from Perl to POSIX.
+**The regex engine behind TextMate grammars, jq and PHP's mbregex, continued
+in memory-safe Rust, with the vscode-oniguruma scanner built in.**
 
-Ferroni started with a practical goal: build a fast Rust core for
-syntax-highlighting and other scanner-heavy workloads without falling back to
-C. That requirement led straight to Oniguruma compatibility, because the
-surrounding ecosystems depend on features most regex engines skip.
+[Oniguruma](https://github.com/kkos/oniguruma) sits underneath a large part of
+the text tooling world. TextMate grammars, and with them VS Code, Shiki and most
+syntax highlighters, are written in its syntax. jq and PHP's mbregex use it
+directly, and Ruby's engine, [Onigmo](https://github.com/k-takata/Onigmo),
+started as a fork of it. Its feature set goes well beyond most regex libraries:
+variable-length look-behind, conditionals, absent expressions, subexpression
+calls, 886 Unicode properties, and 12 syntax modes from Perl to POSIX.
 
-So Ferroni does not wrap Oniguruma. It ports the engine into Rust, keeps the
-same structure and optimization pipeline, and then tunes the runtime path
-hard with tools like [`memchr`](https://crates.io/crates/memchr). In the
-current reference suite, Ferroni is ahead of Oniguruma across the measured
-runtime cases while staying in the same peak-memory class on the large
-TypeScript scanner workload.
+The C project [ended on April 24, 2025](https://github.com/kkos/oniguruma#readme).
+Ferroni carries the engine forward in Rust:
 
-For syntax highlighting, Ferroni also includes a multi-pattern
-[Scanner API](#scanner-api) compatible with
-[vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma),
-used by [Shiki](https://shiki.style/), VS Code, and other TextMate-based
-highlighters.
+- **Same engine, verified.** A line-by-line port that keeps Oniguruma's module
+  structure and optimization pipeline, not a lookalike. Every upstream UTF-8
+  test passes ([test parity](#test-parity)).
+- **Memory-safe, no C toolchain.** `cargo add ferroni` and build: no bindgen,
+  no C compiler. C Oniguruma has a long history of memory-safety CVEs; Ferroni
+  keeps `unsafe` at 0.4%, every block documented in
+  [ADR-002](https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy).
+- **Faster where highlighters spend their time.** Tokenizing real code with
+  complete TextMate grammars is between 2x and 30x faster than the C original,
+  and text search is up to 6x faster ([Performance](#performance)).
+- **The vscode-oniguruma scanner, built in.** vscode-textmate and Shiki
+  tokenize through vscode-oniguruma's multi-pattern scanner. Ferroni ships a
+  [Scanner API](#scanner-api) of the same shape, UTF-16 offsets included, in the
+  same crate.
 
-## Why Ferroni?
+## Why Ferroni exists
 
-**Built for runtime performance.** Ferroni was driven by the need for a fast
-Rust core for syntax highlighting, not by a generic "rewrite C in Rust"
-exercise. In the current `battle_bench` reference suite it is ahead of
-Oniguruma across all measured runtime cases: scanner first-match, full-line
-tokenization, practical text scanning, and representative feature-heavy
-matching. On the measured large TypeScript scanner workload, peak RSS stays
-in the same ~15 MB class as Oniguruma.
+We build [Ferromark](https://ferromark.dev/), a Markdown engine in Rust, and
+[Ardo](https://www.ardo-docs.dev), a documentation framework, and we want the
+whole chain in Rust, including syntax highlighting on par with Shiki. Shiki
+highlights with TextMate grammars, and those grammars are written for
+Oniguruma: they rely on look-behind, `\G` anchors, backreferences and other
+features most regex engines skip.
 
-**Full Oniguruma compatibility.** Named captures, variable-length
-look-behind, conditionals, absent expressions, Unicode properties,
-subexpression calls — everything the C engine supports, without linking
-against C. If your pattern works in Oniguruma, it works in Ferroni. Every
-opcode and optimization pass is ported 1:1 and verified by the
-[ported upstream test suite](#test-parity) -- including every upstream UTF-8
-test from both Oniguruma and vscode-oniguruma.
+Bindings to the C library would have kept the C code, the C toolchain and its
+memory-safety record. A new engine would have broken the grammars in subtle
+ways. So we ported Oniguruma itself, line by line, verified the port against
+its own test suite, and then tuned the path that highlighters actually take.
 
-**Rust improves the operational story.** Pure `cargo build`.
-Cross-compiles to `wasm32-unknown-unknown`. Easier to package in Rust-native
-stacks and downstream bindings, including N-API modules, without `node-gyp`
-or a local C compiler.
-Only the optional `ffi` feature — the C-vs-Rust benchmark harness, not
-needed to use the library — requires a local Oniguruma source snapshot
-(`./scripts/prepare-oniguruma-sources.sh` or `FERRONI_ONIGURUMA_DIR`). Rust also removes whole classes of C
-memory bugs structurally; C Oniguruma has a long history of memory-safety
-CVEs, while Ferroni keeps `unsafe` at 0.4%, all documented in
-[ADR-002](https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy).
-
-**Built-in multi-pattern scanner.** For syntax highlighting with TextMate
-grammars, Ferroni includes a
-[vscode-oniguruma-compatible Scanner API](#scanner-api) — regex engine and
-scanner in a single dependency. `cargo add ferroni` and you're done.
+Ferroni is not a replacement for Rust's [`regex`](https://crates.io/crates/regex)
+crate. When a pattern fits `regex`'s narrower syntax, `regex` is usually
+faster. Ferroni is for workloads that need Oniguruma's features and behavior.
 
 ## Quick start
 
@@ -323,30 +310,19 @@ onig_new() -> onig_compile()
 
 Ferroni targets ASCII/UTF-8 workloads. The following are intentionally not included:
 
-- **27 of 29 encodings** -- only ASCII and UTF-8 ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-encoding-scope-ascii-and-utf8-only))
+- **27 of 29 encodings** -- only ASCII and UTF-8 ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-encoding-scope-ascii-and-utf8-only)).
+  UTF-16/32, Shift_JIS, EUC-JP/KR/TW/CN, Big5, GB18030, KOI8-R, CP1251, and
+  ISO-8859-1 to -16 are not ported. TextMate scanning (vscode-oniguruma
+  compiles every pattern as UTF-8) and jq are fully covered; PHP's mbregex in a
+  non-UTF-8 encoding is not.
 - **POSIX/GNU API** -- `regcomp`/`regexec`/`regfree` ([ADR-012](https://sebastian-software.github.io/ferroni/adr/012-posix-and-gnu-api-not-ported))
 - **C memory management** -- replaced by Rust's `Drop` trait
 - **`onig_new_deluxe`** -- C-specific allocation, use `onig_new()` instead
 
 ## Running tests
 
-Debug builds need a larger thread stack; the required sizes are stated once in
-[ADR-013](https://sebastian-software.github.io/ferroni/adr/013-stack-overflow-debug-builds).
-
-```bash
-# Full UTF-8 suite (requires increased stack for debug builds)
-
-RUST_MIN_STACK=268435456 cargo test --test compat_utf8 -- --test-threads=1
-
-# Other suites
-cargo test --test compat_syntax
-cargo test --test compat_options
-cargo test --test compat_regset
-RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
-```
-
-> **Warning:** Never run `cargo test -- --ignored` -- the
-> `conditional_recursion_complex` test intentionally hangs.
+The test suites, their stack requirements, and the coverage gate are described
+in [CONTRIBUTING.md](CONTRIBUTING.md#running-tests).
 
 ## Test parity
 
@@ -417,6 +393,10 @@ the Oniguruma contributors. The C original powers regex in
 and many other projects. The Scanner API and its test suite are based on
 [vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma)
 by Microsoft and the VS Code team.
+
+Oniguruma ended in April 2025. Ferroni is an independent continuation by
+Sebastian Software; it is not affiliated with or endorsed by the original
+author.
 
 ## License
 
