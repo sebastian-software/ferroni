@@ -7792,14 +7792,13 @@ fn alt_merge_opt_map(enc: OnigEncoding, to: &mut OptMap, add: &OptMap) {
     alt_merge_opt_anc_info(&mut to.anc, &add.anc);
 }
 
-/// `add_char_opt_map` for every byte the class's bitset accepts: its set
-/// bits, or the clear ones when the class is negated.
-fn add_cclass_bitset_opt_map(m: &mut OptMap, cc: &CClassNode, enc: OnigEncoding) {
-    let mut bs = cc.bs;
-    if cc.is_not() {
-        for word in &mut bs {
-            *word = !*word;
-        }
+/// `add_char_opt_map` for every byte below `limit` (a multiple of 32) that
+/// the class's bitset accepts: its set bits, or the clear ones when the
+/// class is negated.
+fn add_cclass_bitset_opt_map(m: &mut OptMap, cc: &CClassNode, enc: OnigEncoding, limit: usize) {
+    let mut bs = [0; BITSET_REAL_SIZE];
+    for (word, &class_word) in bs.iter_mut().zip(&cc.bs).take(limit / BITS_IN_ROOM) {
+        *word = if cc.is_not() { !class_word } else { class_word };
     }
     for pos in bitset_members(&bs) {
         add_char_opt_map(m, pos as u8, enc);
@@ -8055,14 +8054,14 @@ fn optimize_nodes(
                 // part of the map from the bitset. For non-ASCII lead bytes
                 // (0x80-0xFF), mark them all as possible since any multi-byte
                 // sequence could start there.
-                add_cclass_bitset_opt_map(&mut opt.map, cc, enc);
+                add_cclass_bitset_opt_map(&mut opt.map, cc, enc, 0x80);
                 // This branch is entered when cc.mbuf.is_some() || cc.is_not().
                 // In both cases, multi-byte characters may match, so mark all
                 // lead bytes >= 0x80 as possible.
                 add_high_bytes_opt_map(&mut opt.map, enc);
                 opt.len.set(min, max);
             } else {
-                add_cclass_bitset_opt_map(&mut opt.map, cc, enc);
+                add_cclass_bitset_opt_map(&mut opt.map, cc, enc, SINGLE_BYTE_SIZE);
                 opt.len.set(1, 1);
             }
         }
@@ -9759,21 +9758,24 @@ mod tests {
                     bs,
                     mbuf: None,
                 };
-                let mut fast = OptMap::new();
-                add_cclass_bitset_opt_map(&mut fast, &cc, &ONIG_ENCODING_UTF8);
                 let mut reference = OptMap::new();
                 for pos in 0..SINGLE_BYTE_SIZE {
                     if bitset_at(&bs, pos) != cc.is_not() {
                         add_char_opt_map(&mut reference, pos as u8, &ONIG_ENCODING_UTF8);
                     }
                 }
+                let mut fast = OptMap::new();
+                add_cclass_bitset_opt_map(&mut fast, &cc, &ONIG_ENCODING_UTF8, SINGLE_BYTE_SIZE);
                 assert_eq!(fast.map, reference.map);
                 assert_eq!(fast.value, reference.value);
 
-                add_high_bytes_opt_map(&mut fast, &ONIG_ENCODING_UTF8);
+                // The multibyte branch adds the ASCII half, then every high byte.
                 for pos in 0x80..SINGLE_BYTE_SIZE {
                     add_char_opt_map(&mut reference, pos as u8, &ONIG_ENCODING_UTF8);
                 }
+                let mut fast = OptMap::new();
+                add_cclass_bitset_opt_map(&mut fast, &cc, &ONIG_ENCODING_UTF8, 0x80);
+                add_high_bytes_opt_map(&mut fast, &ONIG_ENCODING_UTF8);
                 assert_eq!(fast.map, reference.map);
                 assert_eq!(fast.value, reference.value);
             }
