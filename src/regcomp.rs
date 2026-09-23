@@ -9049,8 +9049,76 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     }
 
     refresh_capture_tracking_requirement(reg);
+    guard_backtrack_pushes(reg);
 
     0
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Leaves every `Push` unguarded, as the reference for
+    /// `PushOrJumpByteSet` in differential tests.
+    pub(crate) static PUSH_GUARDS_DISABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Rust-only (ADR-008): turn a `Push` whose main path can only start with
+/// some bytes into `PushOrJumpByteSet`, upstream's `PUSH_OR_JUMP_EXACT1`
+/// generalized to a byte set. When the current byte cannot start the main
+/// path, the VM goes straight to the alternative instead of pushing it,
+/// failing into the main path and popping it again. TextMate grammars put
+/// optional prefix groups such as
+/// `(?:(?<![$_[:alnum:]])(public|private|protected)\s+)?` in front of
+/// most patterns, so that round trip ran at nearly every attempt.
+fn guard_backtrack_pushes(reg: &mut RegexType) {
+    #[cfg(test)]
+    if PUSH_GUARDS_DISABLED.with(|disabled| disabled.get()) {
+        return;
+    }
+    let mut walk = crate::first_bytes::GuardWalk::default();
+    for pc in 0..reg.ops.len() {
+        let (OpCode::Push, &OperationPayload::Push { addr }) =
+            (reg.ops[pc].opcode, &reg.ops[pc].payload)
+        else {
+            continue;
+        };
+        // Most branches start with a literal (only string instructions carry
+        // these payloads), whose first byte is the whole guard.
+        let head = match &reg.ops[pc + 1].payload {
+            OperationPayload::Exact { s } => Some(s[0]),
+            OperationPayload::ExactN { s, .. } | OperationPayload::ExactLenN { s, .. } => {
+                s.first().copied()
+            }
+            _ => None,
+        };
+        let bits = match head {
+            Some(c) => {
+                let mut bits = [0; BITSET_REAL_SIZE];
+                bitset_set_bit(&mut bits, c as usize);
+                bits
+            }
+            None => match crate::first_bytes::guard_byte_map(reg, pc + 1, &mut walk) {
+                Some(bits) => bits,
+                None => continue,
+            },
+        };
+        let mut members = bitset_members(&bits);
+        reg.ops[pc] = match (members.next(), members.next()) {
+            // A single byte is upstream's own instruction.
+            (Some(c), None) => Operation {
+                opcode: OpCode::PushOrJumpExact1,
+                payload: OperationPayload::PushOrJumpExact1 { addr, c: c as u8 },
+            },
+            _ if bits.iter().all(|&word| word == !0) => continue,
+            _ => Operation {
+                opcode: OpCode::PushOrJumpByteSet,
+                payload: OperationPayload::PushOrJumpByteSet {
+                    addr,
+                    bsp: Box::new(bits),
+                },
+            },
+        };
+    }
 }
 
 /// Detect if a compiled regex is eligible for Aho-Corasick fast path.
@@ -9784,7 +9852,12 @@ mod tests {
         )
         .unwrap();
         assert!(reg.literal_tries.is_empty());
-        let has_push = reg.ops.iter().any(|op| op.opcode == OpCode::Push);
+        let has_push = reg.ops.iter().any(|op| {
+            matches!(
+                op.opcode,
+                OpCode::Push | OpCode::PushOrJumpExact1 | OpCode::PushOrJumpByteSet
+            )
+        });
         assert!(
             has_push,
             "partial trie should still have Push for non-literal branch"
@@ -10003,7 +10076,12 @@ mod tests {
         let push_count = reg
             .ops
             .iter()
-            .filter(|op| op.opcode == OpCode::Push)
+            .filter(|op| {
+                matches!(
+                    op.opcode,
+                    OpCode::Push | OpCode::PushOrJumpExact1 | OpCode::PushOrJumpByteSet
+                )
+            })
             .count();
         assert!(
             !reg.literal_tries.is_empty(),
@@ -10503,6 +10581,171 @@ mod tests {
             }
         }
         assert!(fused_count > 250, "only {fused_count} patterns fused");
+    }
+
+    #[test]
+    fn guarded_pushes_match_unguarded_pushes() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let compile = |pattern: &str, guarded: bool| {
+            PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(!guarded));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+        let search = |reg: &RegexType, input: &[u8], start: usize| {
+            let (r, region) = onig_search(
+                reg,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            let region = region.unwrap();
+            let spans: Vec<(i32, i32)> = region
+                .beg
+                .iter()
+                .zip(&region.end)
+                .take(region.num_regs as usize)
+                .map(|(&b, &e)| (b, e))
+                .collect();
+            (r, spans)
+        };
+        let guards = |reg: &RegexType| {
+            reg.ops
+                .iter()
+                .filter(|op| {
+                    matches!(
+                        op.opcode,
+                        OpCode::PushOrJumpExact1 | OpCode::PushOrJumpByteSet
+                    )
+                })
+                .count()
+        };
+
+        // What the guarded branch starts with: consumers, loops that may
+        // consume nothing, fused look-behinds, look-arounds, captures and
+        // groups that the guard walk must pass or stop at.
+        let heads = [
+            "ab",
+            "[a-c]",
+            "[^a]",
+            "\\x{e9}",
+            "[\\x{100}-\\x{200}]",
+            "\\p{Greek}",
+            "(?i:k)",
+            "(?i:ss)",
+            "\\s*x",
+            "[ab]*c",
+            "\\w+",
+            "(?<![a-z])b",
+            "(?<=a)b",
+            "(?<!\\.)c",
+            "(?!a)b",
+            "(?!a?)b",
+            "(?!(a))b",
+            "(?![a-c]|x)\\w",
+            "(?=a)a",
+            // The inner push can reach the look-ahead's cut without
+            // consuming; the mark lies before it, so the walk must stop.
+            "(?=x(?:a?|c))x",
+            "(?>ab|a)",
+            "(?>a|)b",
+            "\\bab",
+            "^a",
+            "a|b",
+            "(a)b",
+            "(?:a|)b",
+            "(?:ab|ac|ad|ae)",
+            "(?i:ab|ac|ad|ae)",
+            "a{2}",
+            ".",
+        ];
+        let contexts = [
+            "(?:{h})?z",
+            "(?:{h})??z",
+            "(?:{h}|y)z",
+            "(?:{h})*z",
+            "(?:{h})+z",
+            "({h})?(\\w)",
+            "x(?:{h}|[yz])",
+            "(?:y|{h})$",
+        ];
+        let pieces: [&[u8]; 17] = [
+            b"a",
+            b"b",
+            b"c",
+            b"x",
+            b"y",
+            b"z",
+            b".",
+            b" ",
+            "\u{e9}".as_bytes(),
+            "\u{100}".as_bytes(),
+            "\u{3b1}".as_bytes(),
+            "\u{212A}".as_bytes(),
+            "\u{df}".as_bytes(),
+            b"k",
+            b"\xC3",
+            b"\x80",
+            b"\xE0\x81\xAB",
+        ];
+        let mut state = 0x9E6C_63D0_676A_9A99u64;
+        let inputs: Vec<Vec<u8>> = (0..60)
+            .map(|_| {
+                let mut next = |bound: u64| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    (state % bound) as usize
+                };
+                let len = next(7);
+                (0..len)
+                    .flat_map(|_| pieces[next(pieces.len() as u64)].to_vec())
+                    .collect()
+            })
+            .collect();
+
+        let mut guarded_patterns = 0;
+        for head in heads {
+            for context in contexts {
+                let pattern = context.replace("{h}", head);
+                let guarded = compile(&pattern, true);
+                let reference = compile(&pattern, false);
+                assert!(
+                    !reference
+                        .ops
+                        .iter()
+                        .any(|op| op.opcode == OpCode::PushOrJumpByteSet)
+                );
+                guarded_patterns += usize::from(guards(&guarded) > guards(&reference));
+                for input in &inputs {
+                    for start in [0, 1, input.len() / 2] {
+                        if start > input.len() {
+                            continue;
+                        }
+                        assert_eq!(
+                            search(&guarded, input, start),
+                            search(&reference, input, start),
+                            "{pattern} on {input:x?} from {start}"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            guarded_patterns > 170,
+            "only {guarded_patterns} patterns guarded"
+        );
     }
 
     /// Bitsets from empty to full, including word-boundary bits, plus

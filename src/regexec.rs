@@ -4906,6 +4906,27 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             // ================================================================
+            // Rust-only (ADR-008): PUSH_OR_JUMP_EXACT1 with a byte set
+            // ================================================================
+            OpCode::PushOrJumpByteSet => {
+                if let OperationPayload::PushOrJumpByteSet { addr, ref bsp } = reg.ops[p].payload {
+                    if s < right_range && bitset_at(bsp, str_data[s] as usize) {
+                        stack.push(StackEntry::Alt {
+                            pcode: (p as i32 + addr) as usize,
+                            pstr: s,
+                            zid: -1,
+                            is_super: false,
+                        });
+                        p += 1;
+                    } else {
+                        p = (p as i32 + addr) as usize;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            // ================================================================
             // OP_PUSH_IF_PEEK_NEXT - push only if next char matches
             // ================================================================
             OpCode::PushIfPeekNext => {

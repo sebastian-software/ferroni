@@ -192,6 +192,15 @@ impl LiteralTrie {
         &self.raw_literals
     }
 
+    /// The first byte of every literal, lowercased in a case-insensitive
+    /// trie. `None` when a literal is empty.
+    pub(crate) fn first_bytes(&self) -> Option<impl Iterator<Item = u8> + '_> {
+        let root = &self.nodes[0];
+        root.terminal
+            .is_none()
+            .then(|| root.children.iter().map(|&(byte, _)| byte))
+    }
+
     /// Returns whether this trie was built with case-insensitive matching.
     pub fn is_case_insensitive(&self) -> bool {
         self.case_insensitive
