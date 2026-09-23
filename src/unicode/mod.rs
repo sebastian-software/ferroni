@@ -1,8 +1,8 @@
 // unicode/mod.rs - Port of unicode.c
 // Unicode character properties, case folding, and related functions.
 // The data tables (case folding, code ranges, grapheme cluster and word
-// boundaries) are generated from upstream Oniguruma by the scripts in
-// scripts/ and live in the sibling *_data.rs modules.
+// boundaries) are generated from the pinned Unicode Character Database by
+// scripts/gen_unicode_tables.py and live in the sibling *_data.rs modules.
 
 pub mod egcb_data;
 mod fold_data;
@@ -13,7 +13,9 @@ use crate::oniguruma::*;
 use crate::regenc::*;
 use egcb_data::{EGCB_RANGES, EgcbType};
 use fold_data::*;
-use property_data::{CODE_RANGES, CODE_RANGES_NUM, PROPERTY_NAMES};
+use property_data::{
+    CODE_RANGES, CODE_RANGES_NUM, PROP_INDEX_EXTENDEDPICTOGRAPHIC, PROPERTY_NAMES,
+};
 use wb_data::{WB_RANGES, WbType};
 
 // === Unicode ISO 8859-1 Ctype Table ===
@@ -975,9 +977,6 @@ fn is_hangul(t: EgcbType) -> bool {
         EgcbType::L | EgcbType::LV | EgcbType::LVT | EgcbType::T | EgcbType::V
     )
 }
-
-/// PROP_INDEX_EXTENDEDPICTOGRAPHIC = 81 in property_data.rs
-const PROP_INDEX_EXTENDEDPICTOGRAPHIC: u32 = 81;
 
 /// GB1/GB2 are handled outside. This applies GB3-GB13 two-char rules.
 fn unicode_egcb_is_break_2code(from_code: u32, to_code: u32) -> EgcbBreakType {

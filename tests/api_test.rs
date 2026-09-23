@@ -1016,6 +1016,22 @@ fn unicode_named_property() {
 }
 
 #[test]
+fn unicode_17_script_properties_and_case_folding() {
+    for (property, character) in [
+        (r"\p{Sidetic}", '\u{10940}'),
+        (r"\p{Tolong_Siki}", '\u{11DB0}'),
+        (r"\p{Beria_Erfe}", '\u{16EA0}'),
+        (r"\p{Tai_Yo}", '\u{1E6C0}'),
+    ] {
+        let re = Regex::new(property).unwrap();
+        assert!(re.is_match(&character.to_string()), "{property}");
+    }
+
+    let uppercase = Regex::new(&format!("(?i){}", '\u{16EA0}')).unwrap();
+    assert!(uppercase.is_match("\u{16ebb}"));
+}
+
+#[test]
 fn absent_clear_expression() {
     // Exercises absent group range stop: (?~|pattern|absent)
     let re = Regex::new(r"(?~|abc|[a-z]+)");

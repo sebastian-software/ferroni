@@ -27,7 +27,7 @@ syntax highlighters, are written in its syntax. jq and PHP's mbregex use it
 directly, and Ruby's engine, [Onigmo](https://github.com/k-takata/Onigmo),
 started as a fork of it. Its feature set goes well beyond most regex libraries:
 variable-length look-behind, conditionals, absent expressions, subexpression
-calls, 886 Unicode properties, and 12 syntax modes from Perl to POSIX.
+calls, 902 Unicode properties, and 12 syntax modes from Perl to POSIX.
 
 The C project [ended on April 24, 2025](https://github.com/kkos/oniguruma#readme).
 Ferroni carries the engine forward in Rust:
@@ -179,7 +179,7 @@ automatic UTF-16 position mapping. API-compatible with
 - Backreferences -- `\k<name>`, `\g<name>`, relative `\g<-1>`
 - Conditionals -- `(?(cond)T|F)`
 - Absent expressions -- `(?~...)`
-- Unicode properties -- `\p{Script_Extensions=Greek}`, `\p{Lu}`, `\p{Emoji}` (886 names)
+- Unicode properties -- `\p{Script_Extensions=Greek}`, `\p{Lu}`, `\p{Emoji}` (902 names)
 - Grapheme clusters -- `\X`, text segment boundaries `\y`, `\Y`
 - Callouts -- `(?{...})`, `(*FAIL)`, `(*MAX{n})`, `(*COUNT)`, `(*CMP)`
 - 12 syntax modes -- Oniguruma, Ruby, Perl, Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic/Extended, ASIS
@@ -341,7 +341,7 @@ out of scope ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-enc
 
 On top of the ported upstream cases, Ferroni adds Rust-native tests for
 API integration, edge cases, error paths, and coverage gaps. The tree holds
-**2,195 `#[test]` functions** in total (some compat functions bundle multiple
+**2,215 `#[test]` functions** in total (some compat functions bundle multiple
 upstream cases, so this is higher than the parity totals above). The count is
 derived from the tree by [`scripts/count-tests.sh`](scripts/count-tests.sh),
 which is the single source for the test counts quoted in this README and in
@@ -377,6 +377,7 @@ but pass in normal `cargo test`.
 | [012](https://sebastian-software.github.io/ferroni/adr/012-posix-and-gnu-api-not-ported) | POSIX and GNU API not ported |
 | [013](https://sebastian-software.github.io/ferroni/adr/013-stack-overflow-debug-builds) | Stack overflow mitigation in debug builds |
 | [014](https://sebastian-software.github.io/ferroni/adr/014-porting-bugs-lessons-learned) | Porting bugs: lessons learned |
+| [015](https://sebastian-software.github.io/ferroni/adr/015-unicode-data-from-ucd) | Generate Unicode tables from the UCD |
 
 ## Contributing
 
