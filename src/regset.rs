@@ -2092,6 +2092,8 @@ mod tests {
             folded_literal_tries: usize,
             without_optimizer: usize,
             capture_tracking: usize,
+            fused_look_behinds: usize,
+            stepping_look_behinds: usize,
         }
         let census = |patterns: Vec<String>| {
             let regs: Vec<Box<RegexType>> =
@@ -2104,6 +2106,14 @@ mod tests {
                 .filter(|reg| reg.optimize == OptimizeType::None)
                 .count();
             let capture_tracking = regs.iter().filter(|reg| reg.needs_capture_tracking).count();
+            let ops = |opcode: OpCode| {
+                regs.iter()
+                    .flat_map(|reg| reg.ops.iter())
+                    .filter(|op| op.opcode == opcode)
+                    .count()
+            };
+            let fused_look_behinds = ops(OpCode::LookBehindOp);
+            let stepping_look_behinds = ops(OpCode::StepBackStart);
             let (set, r) = onig_regset_new(regs);
             assert_eq!(r, ONIG_NORMAL);
             let set = set.unwrap();
@@ -2120,6 +2130,8 @@ mod tests {
                 folded_literal_tries,
                 without_optimizer,
                 capture_tracking,
+                fused_look_behinds,
+                stepping_look_behinds,
             }
         };
         assert_eq!(
@@ -2133,6 +2145,8 @@ mod tests {
                 folded_literal_tries: 0,
                 without_optimizer: 3,
                 capture_tracking: 0,
+                fused_look_behinds: 443,
+                stepping_look_behinds: 50,
             }
         );
         assert_eq!(
@@ -2146,6 +2160,8 @@ mod tests {
                 folded_literal_tries: 18,
                 without_optimizer: 7,
                 capture_tracking: 0,
+                fused_look_behinds: 64,
+                stepping_look_behinds: 11,
             }
         );
         assert_eq!(
@@ -2159,6 +2175,8 @@ mod tests {
                 folded_literal_tries: 0,
                 without_optimizer: 0,
                 capture_tracking: 0,
+                fused_look_behinds: 6,
+                stepping_look_behinds: 2,
             }
         );
     }
