@@ -1,0 +1,207 @@
+---
+title: "Ruby's Onigmo vs Ferroni"
+---
+
+# Ruby's Onigmo vs Ferroni
+
+This page records the comparison requested in
+[issue #151](https://github.com/sebastian-software/ferroni/issues/151). It is an
+analysis, not an implementation decision. Any behavior change should be handled
+in a separate issue and must preserve the existing syntax definitions.
+
+## Scope and method
+
+The syntax probes below ran against Ferroni in this checkout and CRuby 2.6.10,
+the Ruby runtime available for this review. Ruby 2.6.10 is useful for checking
+long-standing Onigmo syntax, but it predates `Regexp.timeout` and match-cache
+optimization. Those runtime features are checked against the official Ruby 3.2
+and 4.0 documentation. The Unicode comparison calls out version differences
+explicitly.
+
+The probe used UTF-8 and `OnigSyntaxRuby`:
+
+```rust
+use ferroni::api::Regex;
+use ferroni::regsyntax::OnigSyntaxRuby;
+
+let re = Regex::builder(r"(?<word>\w+)\k<word>")
+    .syntax(&OnigSyntaxRuby)
+    .build()
+    .unwrap();
+assert!(re.is_match("wordword"));
+```
+
+Other encodings remain out of scope under
+[ADR-003](../adr/003-encoding-scope-ascii-and-utf8-only).
+
+## Syntax and matching behavior
+
+### Character-set modifiers `(?d)`, `(?a)`, and `(?u)`
+
+- **Ruby / Onigmo:** These modes compile in Ruby syntax. `d` is the Ruby 1.9.3
+  default: `\w`, `\d`, and `\s` are ASCII-only, while word boundaries and
+  POSIX classes follow the encoding. `a` makes those shorthands, POSIX classes,
+  and word boundaries ASCII-only. `u` makes them follow the encoding's Unicode
+  rules. They can be scoped to a group.
+- **Ferroni:** With `OnigSyntaxRuby`, all three forms fail compilation with
+  `ONIGERR_UNDEFINED_GROUP_OPTION` (`-119`). `ONIG_SYN_OP2_OPTION_RUBY` is set,
+  but `prs_options` does not implement `d`, `a`, or `u`.
+- **Verified repro:** Ruby 2.6.10 returns no match for `(?d:\w+)` or
+  `(?a:\w+)` on `é`, and matches `é` with `(?u:\w+)`. The scoped pattern
+  `(?a:\w+)(?u:\w+)` matches `aé`. Ferroni rejects each pattern at compile
+  time under `OnigSyntaxRuby`.
+- **Recommendation:** Implement these modifiers in the Ruby syntax parser
+  only. Keep `OnigSyntaxOniguruma` and the other syntax definitions unchanged.
+
+### Existing constructs checked
+
+- **Hexadecimal character type `\h` / `\H`:** Ruby and Ferroni both match
+  `aF19` with `\h+`.
+- **Grapheme cluster `\X`:** Ruby and Ferroni both return the whole `e` plus
+  combining acute accent sequence (`e\u0301`) for `\X`.
+- **Named group and backreference:** Ruby and Ferroni both match `aa` with
+  `(?<x>a)\k<x>`.
+- **Recommendation:** No gap found for these probes. Broader named-group
+  collision and property-alias behavior was not exhaustively tested.
+
+### Absent operator `(?~...)`
+
+- **Ruby / Onigmo:** The documentation defines `(?~subexp)` as the complement
+  of `.*subexp.*`. `^(?~abc)` on `aabc` returns `aab`.
+- **Ferroni:** It accepts the syntax but returns only `a` for the same pattern
+  and input.
+- **Verified repro:** `^(?~abc)` against `aabc`.
+- **Recommendation:** Track a separate parity bug for the absent-operator
+  execution path. This is a match-extent mismatch, not a missing syntax flag.
+
+### Unicode property data
+
+- **Ruby / Onigmo:** Property results depend on the Unicode version bundled
+  with Ruby. Ruby 3.2 uses Unicode 15; Ruby 4.0 updates to Unicode 17.
+- **Ferroni:** Its generated property table recognizes U+1C89 as `Lu`, so
+  `\p{Lu}` matches that character.
+- **Verified repro:** Locally, `\p{Lu}` matches U+1C89 in Ferroni but not in
+  Ruby 2.6.10. Ruby 3.2's Unicode 15 data also predates that character. A Ruby
+  4.0 runtime was not available for a direct probe.
+- **Recommendation:** Treat differences against Ruby 3.2 as Unicode-version
+  drift. Ruby 4.0's Unicode version matches Ferroni's current table generation;
+  keep the source Unicode version documented when updating tables.
+
+The modifier results were reproduced with Ruby 2.6.10 and Ferroni. The Ruby
+character-set option definitions are documented in
+[Onigmo's syntax reference](https://github.com/k-takata/Onigmo/blob/master/doc/RE);
+Ferroni's corresponding implementation is `OnigSyntaxRuby` in
+`src/regsyntax.rs` and option parsing in `src/regparse.rs`.
+
+The absent-operator result was reproduced with the same pattern and input on
+both runtimes. Onigmo documents `(?~subexp)` as the complement of
+`.*subexp.*` and gives the same non-greedy-quantifier distinction; see
+[Onigmo's reference](https://github.com/k-takata/Onigmo/blob/master/doc/RE).
+This is a behavior mismatch, not a missing syntax flag.
+
+For the Unicode example, Ruby 3.2's
+[release notes](https://docs.ruby-lang.org/en/3.2/NEWS_md.html) specify
+Unicode 15.0, while the
+[Ruby 4.0 release notes](https://www.ruby-lang.org/en/news/2025/12/25/ruby-4-0-0-released/)
+specify Unicode 17.0. Ferroni's U+1C89 result was checked locally. The local
+Ruby 2.6.10 runtime also does not classify U+1C89 as uppercase, which is
+consistent with its older Unicode tables; a Ruby 4.0 runtime was not available
+for a direct probe.
+
+## ReDoS protections and time limits
+
+Ruby 3.2 introduced two related protections; see the
+[Ruby 3.2 release notes](https://docs.ruby-lang.org/en/3.2/NEWS_md.html):
+
+- `Regexp.timeout` sets a process default, and `Regexp.new(..., timeout:)` sets
+  a per-regexp timeout. Both are disabled by default. An exceeded timeout
+  raises a Ruby exception. See the
+  [Ruby 3.2 Regexp documentation](https://docs.ruby-lang.org/en/3.2/Regexp.html).
+- A match-cache optimization memoizes eligible backtracking points. It can make
+  eligible matches linear-time; it is not available for every pattern. Ruby
+  exposes `Regexp.linear_time?` to report eligibility. The
+  [Ruby 4.0 Regexp documentation](https://docs.ruby-lang.org/en/4.0/Regexp.html)
+  lists restrictions, including backreferences, subexpression calls, nested
+  lookarounds or atomic groups, and nested counted quantifiers. It also warns
+  that the cache can use substantial memory.
+
+Ferroni has retry, stack, time, and subexpression-call depth limits in the
+low-level match API. The match retry limit defaults to 10,000,000; search retry,
+match stack, and time limits default to zero (unlimited). Call nesting defaults
+to 20. The time limit can be configured globally or through `OnigMatchParam`.
+The high-level `Regex` / `RegexBuilder` API does not expose a per-regexp timeout.
+Ferroni has no general match-cache optimization in `regexec.rs`. `regset.rs`
+contains memoization for scanner fallback searches, which is narrower and does
+not make a single regex match linear-time.
+
+**Recommendation:** expose an ergonomic per-match or per-regexp timeout in a
+separate API issue. Evaluate Ruby-style match memoization separately under
+[ADR-008](../adr/008-rust-only-optimizations), with a memory budget and
+adversarial tests before enabling it. Do not treat a linear-time eligibility
+check as a substitute for memory limits.
+
+## Ruby-side fixes and port candidates
+
+### Search range integer-overflow fixes
+
+In August 2025, Ruby imported Oniguruma fixes for integer overflow in optimized
+forward and backward search range calculations and `onig_search_gpos`. The
+source changes are [forward search](https://github.com/kkos/oniguruma/commit/db64ef3189f54917a5008a02bdb000adc514a90a),
+[backward search](https://github.com/kkos/oniguruma/commit/bfc36d3d8139b8be4d3df630d625c58687b0c7d4),
+and [search position handling](https://github.com/kkos/oniguruma/commit/778a43dd56925ed58bbe26e3a7bb8202d72c3f3f).
+
+- **Ferroni:** The corresponding Rust search paths already use `saturating_sub`
+  before distance subtraction and check the remaining range before adding
+  `dist_min` (`forward_search`, `backward_search`, and the optimized branch in
+  `onig_search`).
+- **Verified check:** Source-level comparison of those guards against the
+  upstream diffs. The C pointer reproducers do not transfer directly to
+  Ferroni's bounded slice API.
+- **Recommendation:** No additional patch identified. Preserve these guards
+  and add upstream regression cases that can be represented through Ferroni's
+  API.
+
+### Repeat and null-check ID overflow
+
+Ruby merged [PR #16801](https://github.com/ruby/ruby/pull/16801) in April 2026
+to reject overflowed repeat and null-check IDs while compiling very large
+generated patterns. Its regression tests repeat `(?:foobar){0,100}` 100,000
+times and expect a compile error.
+
+- **Ferroni:** It rejects that generated pattern at the default parse-depth
+  limit (4096), before reaching the repeat-ID counter. Its repeat IDs are
+  `i32`, so the Ruby limit and error mapping are not a drop-in translation.
+- **Verified repro:** Ferroni returned `ParseDepthLimitOver` for the 100,000
+  repetition pattern. The local Ruby 2.6.10 runtime accepted it; the expected
+  Ruby rejection is covered by the Ruby PR's regression test.
+- **Recommendation:** The known huge-pattern case is already rejected. Keep
+  the parse-depth limit covered; add explicit counter guards only if a pattern
+  below that limit can reach the counter boundary.
+
+### Memory leak on Ruby timeout exception
+
+Ruby [Bug #20228](https://bugs.ruby-lang.org/issues/20228) fixed a memory leak
+when a Ruby regexp timeout exception unwound the C match stack.
+
+- **Ferroni:** Time-limit errors return through Rust APIs and do not use Ruby's
+  exception callback path.
+- **Verified check:** This fix is in Ruby's exception/stack cleanup integration,
+  not in the shared Oniguruma match behavior.
+- **Recommendation:** No direct patch to port. Keep checking cleanup on
+  Ferroni's time-limit error path.
+
+The 2025 search fixes are also described in the
+[Ruby Onigmo maintainer's activity log](https://bugs.ruby-lang.org/users/9532).
+The Rust comparison above is source-level: Ferroni uses bounded slices rather
+than the C pointer ranges that triggered those overflow paths, so the C pointer
+reproducers do not transfer directly.
+
+## Summary
+
+The actionable parity gap is the missing `d` / `a` / `u` character-set
+modifiers in `OnigSyntaxRuby`. The absent operator is accepted but has a
+verified match-extent mismatch. The requested shorthand and named-reference
+probes matched. ReDoS cache optimization is a separate, opt-in design question;
+Ferroni already has low-level time, stack, and retry limits. The reviewed Ruby
+overflow fixes either have corresponding guards in Ferroni or are rejected
+earlier by Ferroni's parse-depth limit.
