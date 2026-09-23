@@ -803,21 +803,12 @@ fn bbuf_to_u32_vec(data: &[u8]) -> Vec<u32> {
 }
 
 fn detect_cclass_ascii_fast(bs: &BitSet) -> CClassAsciiFastKind {
-    let mut first: Option<u8> = None;
-    let mut second: Option<u8> = None;
-
-    for i in 0..SINGLE_BYTE_SIZE {
-        if bitset_at(bs, i) {
-            let b = i as u8;
-            if first.is_none() {
-                first = Some(b);
-            } else if second.is_none() {
-                second = Some(b);
-            } else {
-                return CClassAsciiFastKind::None;
-            }
-        }
+    if bs.iter().map(|word| word.count_ones()).sum::<u32>() > 2 {
+        return CClassAsciiFastKind::None;
     }
+    let mut members = bitset_members(bs).map(|pos| pos as u8);
+    let first = members.next();
+    let second = members.next();
 
     match (first, second) {
         (Some(a), None) if a < 0x80 => CClassAsciiFastKind::Eq(a),
@@ -7770,6 +7761,15 @@ fn comp_opt_exact_or_map(e: &OptStr, m: &OptMap) -> i32 {
     comp_distance_value(&e.mm, &m.mm, ae, am)
 }
 
+/// `add_char_opt_map` for every byte from 0x80 up, which all share one
+/// position value.
+fn add_high_bytes_opt_map(m: &mut OptMap, enc: OnigEncoding) {
+    let high = &mut m.map[0x80..];
+    let added = high.iter().filter(|&&set| set == 0).count() as i32;
+    high.fill(1);
+    m.value += added * map_position_value(enc, 0x80);
+}
+
 fn alt_merge_opt_map(enc: OnigEncoding, to: &mut OptMap, add: &OptMap) {
     if to.value == 0 {
         return;
@@ -7790,6 +7790,20 @@ fn alt_merge_opt_map(enc: OnigEncoding, to: &mut OptMap, add: &OptMap) {
     }
     to.value = val;
     alt_merge_opt_anc_info(&mut to.anc, &add.anc);
+}
+
+/// `add_char_opt_map` for every byte the class's bitset accepts: its set
+/// bits, or the clear ones when the class is negated.
+fn add_cclass_bitset_opt_map(m: &mut OptMap, cc: &CClassNode, enc: OnigEncoding) {
+    let mut bs = cc.bs;
+    if cc.is_not() {
+        for word in &mut bs {
+            *word = !*word;
+        }
+    }
+    for pos in bitset_members(&bs) {
+        add_char_opt_map(m, pos as u8, enc);
+    }
 }
 
 fn set_bound_node_opt_info(opt: &mut OptNode, plen: &MinMaxLen) {
@@ -8041,26 +8055,14 @@ fn optimize_nodes(
                 // part of the map from the bitset. For non-ASCII lead bytes
                 // (0x80-0xFF), mark them all as possible since any multi-byte
                 // sequence could start there.
-                for i in 0..SINGLE_BYTE_SIZE {
-                    let z = bitset_at(&cc.bs, i);
-                    if (z && !cc.is_not()) || (!z && cc.is_not()) {
-                        add_char_opt_map(&mut opt.map, i as u8, enc);
-                    }
-                }
+                add_cclass_bitset_opt_map(&mut opt.map, cc, enc);
                 // This branch is entered when cc.mbuf.is_some() || cc.is_not().
                 // In both cases, multi-byte characters may match, so mark all
                 // lead bytes >= 0x80 as possible.
-                for i in 0x80..SINGLE_BYTE_SIZE {
-                    add_char_opt_map(&mut opt.map, i as u8, enc);
-                }
+                add_high_bytes_opt_map(&mut opt.map, enc);
                 opt.len.set(min, max);
             } else {
-                for i in 0..SINGLE_BYTE_SIZE {
-                    let z = bitset_at(&cc.bs, i);
-                    if (z && !cc.is_not()) || (!z && cc.is_not()) {
-                        add_char_opt_map(&mut opt.map, i as u8, enc);
-                    }
-                }
+                add_cclass_bitset_opt_map(&mut opt.map, cc, enc);
                 opt.len.set(1, 1);
             }
         }
@@ -9696,5 +9698,85 @@ mod tests {
 
         assert_eq!(onig_compile(&mut reg, br"a\Kb"), 0);
         assert!(reg.keep_moves_match_start);
+    }
+
+    /// Bitsets from empty to full, including word-boundary bits, plus
+    /// pseudo-random ones of varying density.
+    fn sample_bitsets() -> Vec<BitSet> {
+        let mut sets = vec![[0; BITSET_REAL_SIZE], [u32::MAX; BITSET_REAL_SIZE]];
+        for pos in [0, 1, 31, 32, 63, 127, 128, 200, 255] {
+            let mut bs = [0; BITSET_REAL_SIZE];
+            bitset_set_bit(&mut bs, pos);
+            sets.push(bs);
+            bitset_set_bit(&mut bs, 255 - pos);
+            sets.push(bs);
+        }
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        for density in [1, 2, 4, 8] {
+            for _ in 0..50 {
+                let mut bs = [0; BITSET_REAL_SIZE];
+                for word in &mut bs {
+                    for _ in 0..density {
+                        state ^= state << 13;
+                        state ^= state >> 7;
+                        state ^= state << 17;
+                        *word |= 1 << (state % 32);
+                    }
+                }
+                sets.push(bs);
+            }
+        }
+        sets
+    }
+
+    #[test]
+    fn bitset_word_scans_match_per_bit_loops() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+
+        for bs in sample_bitsets() {
+            let per_bit: Vec<usize> = (0..SINGLE_BYTE_SIZE)
+                .filter(|&pos| bitset_at(&bs, pos))
+                .collect();
+            assert_eq!(bitset_members(&bs).collect::<Vec<_>>(), per_bit);
+
+            let expected_fast = match per_bit.as_slice() {
+                [a] if *a < 0x80 => CClassAsciiFastKind::Eq(*a as u8),
+                [a, b]
+                    if *b < 0x80
+                        && (*a as u8).is_ascii_alphabetic()
+                        && (*b as u8).is_ascii_alphabetic()
+                        && (a ^ b) == 0x20 =>
+                {
+                    CClassAsciiFastKind::EqFoldLower((*a as u8).to_ascii_lowercase())
+                }
+                _ => CClassAsciiFastKind::None,
+            };
+            assert_eq!(detect_cclass_ascii_fast(&bs), expected_fast);
+
+            for flags in [0, FLAG_NCCLASS_NOT] {
+                let cc = CClassNode {
+                    flags,
+                    bs,
+                    mbuf: None,
+                };
+                let mut fast = OptMap::new();
+                add_cclass_bitset_opt_map(&mut fast, &cc, &ONIG_ENCODING_UTF8);
+                let mut reference = OptMap::new();
+                for pos in 0..SINGLE_BYTE_SIZE {
+                    if bitset_at(&bs, pos) != cc.is_not() {
+                        add_char_opt_map(&mut reference, pos as u8, &ONIG_ENCODING_UTF8);
+                    }
+                }
+                assert_eq!(fast.map, reference.map);
+                assert_eq!(fast.value, reference.value);
+
+                add_high_bytes_opt_map(&mut fast, &ONIG_ENCODING_UTF8);
+                for pos in 0x80..SINGLE_BYTE_SIZE {
+                    add_char_opt_map(&mut reference, pos as u8, &ONIG_ENCODING_UTF8);
+                }
+                assert_eq!(fast.map, reference.map);
+                assert_eq!(fast.value, reference.value);
+            }
+        }
     }
 }

@@ -154,6 +154,22 @@ pub fn bitset_at(bs: &BitSet, pos: usize) -> bool {
     (bs[bs_room(pos)] & bs_bit(pos)) != 0
 }
 
+/// The positions of the set bits of `bs`, ascending. Visits whole words, so
+/// sparse sets cost their population rather than 256 bit tests.
+#[inline]
+pub fn bitset_members(bs: &BitSet) -> impl Iterator<Item = usize> + '_ {
+    bs.iter().enumerate().flat_map(|(room, &word)| {
+        let mut bits = word;
+        std::iter::from_fn(move || {
+            (bits != 0).then(|| {
+                let pos = room * BITS_IN_ROOM + bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                pos
+            })
+        })
+    })
+}
+
 #[inline]
 pub fn bitset_set_bit(bs: &mut BitSet, pos: usize) {
     bs[bs_room(pos)] |= bs_bit(pos);
