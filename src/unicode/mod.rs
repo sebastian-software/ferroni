@@ -204,24 +204,28 @@ pub(crate) fn for_each_folds1_group_in_ranges(
     ranges: &[(OnigCodePoint, OnigCodePoint)],
     mut f: impl FnMut(OnigCodePoint, &[u32]),
 ) {
-    let mut groups: Vec<usize> = Vec::new();
+    // Group indices are offsets below FOLDS1_END_INDEX. A bitset over them
+    // dedups and orders the groups without sorting what `\w`-sized classes
+    // collect (thousands of indices).
+    let mut groups = [0u64; FOLDS1_END_INDEX.div_ceil(64)];
+    let mut mark = |index: usize| groups[index / 64] |= 1 << (index % 64);
     for &(lo, hi) in ranges {
-        groups.extend(
-            unfold_key_range(lo, hi)
-                .iter()
-                .filter(|&&(_, _, fold_len)| fold_len == 1)
-                .map(|&(_, index, _)| index as usize),
-        );
-        groups.extend(
-            fold1_key_range(lo, hi)
-                .iter()
-                .map(|&(_, index)| index as usize),
-        );
+        for &(_, index, fold_len) in unfold_key_range(lo, hi) {
+            if fold_len == 1 {
+                mark(index as usize);
+            }
+        }
+        for &(_, index) in fold1_key_range(lo, hi) {
+            mark(index as usize);
+        }
     }
-    groups.sort_unstable();
-    groups.dedup();
-    for index in groups {
-        f(folds1_fold(index), folds1_unfolds(index));
+    for (word_at, &word) in groups.iter().enumerate() {
+        let mut bits = word;
+        while bits != 0 {
+            let index = word_at * 64 + bits.trailing_zeros() as usize;
+            bits &= bits - 1;
+            f(folds1_fold(index), folds1_unfolds(index));
+        }
     }
 }
 
