@@ -210,12 +210,16 @@ and measurement context are in
 ### Scanner workloads
 
 For syntax highlighting, Ferroni consistently spends less time finding the next
-match and tokenizing lines than Oniguruma. The advantage holds across all three
-production grammars, from roughly an order of magnitude to much larger wins on
-TypeScript first-match latency. Compiling the full TypeScript grammar is also
-faster in Ferroni, while Oniguruma still starts faster on the smaller Rust and
-CSS grammars. In practice, Ferroni's strongest fit is a scanner that compiles a
-grammar once and uses it repeatedly.
+match and tokenizing lines than Oniguruma, across all three production grammars.
+How large the lead is depends on the workload. Tokenizing whole documents line
+by line, each line handed to the scanner once as a real tokenizer does, Ferroni
+is about 2.5x faster on TypeScript, about 10x on Rust, and about 30x on CSS.
+Re-scanning the same line, where Ferroni can reuse what it learned about that
+string, the lead grows to between about 15x and about 290x.
+Compiling the full TypeScript and CSS grammars is also faster in Ferroni, while
+Oniguruma still starts faster on the smaller Rust grammar. In practice,
+Ferroni's strongest fit is a scanner that compiles a grammar once and uses it
+repeatedly.
 
 ### Search and matching
 
@@ -234,8 +238,8 @@ and practical scanner speed.
 
 ### Compilation and memory
 
-Compile-time results are mixed. Ferroni compiles the full TypeScript grammar
-faster, but Oniguruma has an edge on Rust and CSS grammar startup and on several
+Compile-time results are mixed. Ferroni compiles the full TypeScript and CSS
+grammars faster, but Oniguruma has an edge on Rust grammar startup and on some
 individual patterns. The `regex` crate can take longer to compile, especially
 for capture-heavy patterns. In a separate process-level memory measurement,
 Ferroni and Oniguruma peak in the same approximate range while compiling and
