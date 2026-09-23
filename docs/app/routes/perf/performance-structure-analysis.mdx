@@ -228,6 +228,12 @@ results of all grammar patterns and the scanner tokens byte-identical to
 `main`; compile-only changes were additionally checked with a dump of every
 grammar pattern's bytecode and optimizer state.
 
+Midway through, the priority was set explicitly: the matching time of
+compiled patterns matters more than compile time. A grammar compiles once
+per process but runs for every line of every document. The last two changes
+(findings 15 and 16) came out of profiling where the VM spends its time on
+cold documents, and the ideas list now ranks run-time work first.
+
 ### 9. Literal trie patterns lost their start map
 
 A literal alternation compiled to a trie became a node that told the
@@ -289,6 +295,31 @@ a few branches that are not plain literals, such as `repeat-[xy]`,
 trie. Expanding them is possible, but under `(?i)` the fold segmentation
 has to follow the original string nodes (see P8).
 
+### 15. Look-ahead-led patterns ran the VM at every position
+
+A quarter of the TypeScript grammar's fallback entries (25 of 80) had no
+start filter, and they included the most expensive patterns of cold
+tokenization. Each starts with, or consists of, look-arounds, as in
+`(?<=:)(?=\s*\{)` or `(?=[(<])`. The start-map derivation
+treated every positive look-ahead as transparent, reached the end of the
+pattern without finding a consuming instruction and gave up. Those entries
+ran the VM at every position of every line. A positive look-ahead whose
+body cannot match empty must still consume the byte at the start position,
+so its body's first bytes are a valid filter.
+
+### 16. One-character look-behinds cost a stack round trip
+
+TextMate grammars check word starts with look-behinds such as
+`(?<![$_[:alnum:]])`, `(?<!\.)` or `(?<=\.\.\.)`, often several per pattern,
+at every attempt. Upstream compiles each to `MARK`, `PUSH`,
+`STEP_BACK_START`, the body, and `POP_TO_MARK` plus `FAIL` (or
+`CUT_TO_MARK`). That pushes stack entries and fails into `stack_pop` just to
+look at the previous character. Look-arounds were about 30% of the
+instructions the VM executed for the TypeScript document. Of the grammar's
+493 look-behinds, 443 have a body that compiles to one class or string
+instruction. Most of the other 50 are branches of alternation look-behinds
+with two-instruction bodies, such as `^return` or `[^$._[:alnum:]]return`.
+
 ### Changes in the second pass
 
 - **Settled fallback entries are cheap** (`regset.rs`; finding 11, P2).
@@ -318,31 +349,54 @@ has to follow the original string nodes (see P8).
     with their exact alternatives. The data comes from the same case-fold
     queries `unravel_case_fold_string` makes; anything outside the trie's
     model keeps the regular path.
+- **Start bytes through positive look-aheads** (`regset.rs`; finding 15).
+  The start-map derivation walks the body of a positive look-ahead that
+  cannot match empty and uses the body's first bytes for that path, as it
+  would for a consuming instruction. It gives up where the body can end
+  without consuming. Look-behinds, atomic groups and nullable bodies keep
+  their previous handling. All 79 TypeScript fallback entries and 7 of 9 CSS
+  ones now have a start filter, and one entry of each moved to the table.
+  TypeScript document: -16% instructions, -13% wall clock.
+- **One-instruction look-behinds as one opcode** (`regcomp.rs`,
+  `regexec.rs`; finding 16). A fixed-length look-behind whose body compiles
+  to a single class or string instruction becomes `LookBehindOp` followed by
+  that instruction. The VM steps back with the same `onigenc_step_back`
+  call and evaluates the instruction in place, out of line, with the VM's
+  handling of truncated and malformed characters. It pushes nothing onto
+  the backtrack stack. Every other look-behind keeps the upstream
+  sequence. A differential test compiles each pattern both ways and
+  compares searches across 19 body kinds, both polarities and malformed
+  input. TypeScript document: -6.5% instructions, -6% wall clock. CSS: -1%
+  instructions, but +2% to +3% wall clock from code placement (finding 8).
 - **Fast-path census** (`regset.rs`; structure observations). A unit test
   compiles the three grammars as a scanner does and asserts how many
   patterns reach each fast path. Dropping the trie start map, for example,
-  moves TypeScript's patterns without an optimizer from 3 to 11.
+  moves TypeScript's patterns without an optimizer from 3 to 11. The census
+  also counts fused look-behinds (TypeScript 443, CSS 64, Rust 6) and the
+  ones that keep the upstream sequence (50, 11, 2).
 
 Measured against `main` after the first pass (instruction counts; wall
 clock as the minimum of nine interleaved runs with function alignment
-forced on both sides):
+forced on both sides, confirmed in both run orders):
 
 | Workload                                    | Instructions | Wall clock |
 | ------------------------------------------- | -----------: | ---------: |
-| TypeScript grammar, first match (warm)      |         -69% |       -71% |
-| TypeScript grammar, single line (warm)      |         -48% |       -49% |
-| Rust grammar, document line by line         |         -32% |       -31% |
-| Rust grammar, single line (warm)            |         -23% |       -26% |
-| CSS grammar, document line by line          |          -8% |        -8% |
-| CSS grammar, `battle_bench` tokenize        |          -4% |        -5% |
-| TypeScript grammar, document line by line   |          -4% |        -3% |
-| CSS grammar compile                         |         -35% |       -24% |
+| TypeScript grammar, first match (warm)      |         -68% |       -70% |
+| TypeScript grammar, single line (warm)      |         -51% |       -50% |
+| Rust grammar, document line by line         |         -33% |       -32% |
+| Rust grammar, single line (warm)            |         -26% |       -22% |
+| TypeScript grammar, document line by line   |         -25% |       -20% |
+| CSS grammar, document line by line          |          -8% |    -5%/-6% |
+| CSS grammar, `battle_bench` tokenize        |          -5% |    -3%/-4% |
+| CSS grammar compile                         |         -35% |       -26% |
 | TypeScript grammar compile                  |         -17% |       -17% |
-| Rust grammar compile                        |         -11% |        -9% |
+| Rust grammar compile                        |         -10% |       -10% |
 | `\p{Greek}+`, timestamp, short scanner call |      neutral |    neutral |
 
+The cold TypeScript document, the workload closest to a real tokenizer,
+moved from -3% to -20% with the two run-time changes (findings 15 and 16).
 The `regression_scanner_documents` criterion group, with alignment forced on
-both sides, moved by -6% (TypeScript), -9% (CSS) and -31% (Rust).
+both sides, moved by -24% (TypeScript), -10% (CSS) and -32% (Rust).
 
 Attempts that were measured and dropped:
 
@@ -360,12 +414,28 @@ Attempts that were measured and dropped:
   the TypeScript document: an ablation spreads the remaining cold cost over
   a dozen large look-ahead patterns at 2-7% each, and their start filters
   already accept every identifier byte.
+- **Popping backtrack entries inline.** `stack_pop` is about a fifth of the
+  cold TypeScript document's instructions, about eleven calls per attempt.
+  Two variants were tried: inlining it into the dispatch loop, and
+  resuming a plain `Alt` entry without the call. They cut instructions by
+  10-15% on the TypeScript document. With aligned builds, wall clock moved
+  between +0.5% and -5% for TypeScript and between +4% and -6% for CSS,
+  depending on the variant. The timestamp and nested-quantifier
+  microbenchmarks regressed by 7% to 26%. This is finding 8 again: code
+  added to `match_at_impl` costs more in placement than it saves (see P3
+  and P4).
 
 ## Ideas for further improvements
 
 These are ordered by expected value. Each one is backed by a measurement
 above, and none is a micro-tuning of ported code. P1-P7 come from the first
-pass; each carries its status after the second pass. P8-P10 are new.
+pass; each carries its status after the second pass. P8-P11 are new.
+
+**Priority for the next pass.** Matching time outranks compile time, so the
+run-time ideas come first: P11, then P4 and P3, all aimed at the backtracking
+stack that now dominates cold tokenization. P8 helps CSS matching as well as
+its compile time. P9 and the rest of P5 mainly save compile time, and P10 is
+structural.
 
 ### P1 - Case-insensitive literal alternations as a trie
 
@@ -521,6 +591,29 @@ index and optimizer summary, marked by a status bit. Every pass that
 inspects strings has to remember to skip it, and two did not (finding 10).
 A `NodeInner::LiteralAlt` variant would make every `match` on node kinds
 handle it explicitly, turning that class of bug into a compile error.
+
+### P11 - Push fewer backtrack entries
+
+After findings 15 and 16, `stack_pop` is about a fifth of the cold
+TypeScript document's instructions, at about eleven pops per attempt. Making
+pops cheaper inside `match_at_impl` did not survive wall-clock measurement
+(see the dropped attempts). Avoiding the pushes did not have that problem in
+this pass: the fused look-behind is exactly that.
+
+The hot patterns share one shape: an optional prefix group such as
+`(?:(?<![$_[:alnum:]])(?:(?<=\.\.\.)|(?<!\.))(public|private|protected|readonly)\s+)?`
+in front of the part that usually matches. At every attempt the VM pushes
+the "skip" alternative, fails in the group at its first consuming
+instruction, and pops the entry again. Upstream already avoids that for a
+literal next character (`PUSH_OR_JUMP_EXACT1`, `PUSH_IF_PEEK_NEXT`). A
+Rust-only variant guarded by a byte set would cover these groups. The set is
+the body's first bytes, derived with the same walk as the RegSet start map.
+That walk already reads through look-behinds and, since finding 15,
+through positive look-aheads. When the current
+byte cannot start the body, the VM jumps straight to the continuation and
+pushes nothing. First, count at the instruction level how many pushes such a
+guard would remove on the three documents. That count decides the
+investment.
 
 ## Structure observations
 
