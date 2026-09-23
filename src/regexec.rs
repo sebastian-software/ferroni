@@ -5136,7 +5136,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             }
 
             // ================================================================
-            // OP_STEP_BACK_START / NEXT - lookbehind support
+            // Rust-only (ADR-008): a look-behind with a one-instruction body
             // ================================================================
             OpCode::LookBehindOp => {
                 if let OperationPayload::LookBehindOp { char_len, not } = reg.ops[p].payload {
@@ -5159,6 +5159,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 }
             }
 
+            // ================================================================
+            // OP_STEP_BACK_START / NEXT - lookbehind support
+            // ================================================================
             OpCode::StepBackStart => {
                 if let OperationPayload::StepBackStart {
                     initial,
