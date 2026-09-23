@@ -2541,79 +2541,6 @@ pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
     low < n && code >= ranges[low * 2]
 }
 
-/// Check if a code point is in a multi-byte range table stored as raw bytes.
-/// Used at compile time (regparse) where data is still in BBuf byte format.
-pub(crate) fn is_in_code_range_bytes(mb: &[u8], code: OnigCodePoint) -> bool {
-    #[inline]
-    fn read_u32(mb: &[u8], off: usize) -> u32 {
-        u32::from_ne_bytes([mb[off], mb[off + 1], mb[off + 2], mb[off + 3]])
-    }
-
-    if mb.len() < 12 {
-        return false;
-    }
-    let n = read_u32(mb, 0) as usize;
-    if n == 0 {
-        return false;
-    }
-    let pair_bytes = n.saturating_mul(8);
-    let needed = 4usize.saturating_add(pair_bytes);
-    if mb.len() < needed {
-        return false;
-    }
-
-    let first_low = read_u32(mb, 4);
-    if code < first_low {
-        return false;
-    }
-    let last_high = read_u32(mb, 4 + (n - 1) * 8 + 4);
-    if code > last_high {
-        return false;
-    }
-
-    if n == 1 {
-        return true;
-    }
-
-    if n <= 4 {
-        let mut i = 0usize;
-        while i < n {
-            let off = 4 + i * 8;
-            let range_low = read_u32(mb, off);
-            let range_high = read_u32(mb, off + 4);
-            if code < range_low {
-                return false;
-            }
-            if code <= range_high {
-                return true;
-            }
-            i += 1;
-        }
-        return false;
-    }
-
-    let mut low: usize = 0;
-    let mut high: usize = n;
-    while low < high {
-        let x = (low + high) >> 1;
-        let off = 4 + x * 8;
-        let range_high = read_u32(mb, off + 4);
-        if code > range_high {
-            low = x + 1;
-        } else {
-            high = x;
-        }
-    }
-
-    if low < n {
-        let off = 4 + low * 8;
-        let range_low = read_u32(mb, off);
-        code >= range_low
-    } else {
-        false
-    }
-}
-
 /// Get the character length at position s for the given encoding.
 #[inline]
 fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
@@ -6893,16 +6820,6 @@ mod tests {
         out
     }
 
-    fn make_code_range_bytes(ranges: &[(u32, u32)]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(4 + ranges.len() * 8);
-        out.extend_from_slice(&(ranges.len() as u32).to_ne_bytes());
-        for (lo, hi) in ranges {
-            out.extend_from_slice(&lo.to_ne_bytes());
-            out.extend_from_slice(&hi.to_ne_bytes());
-        }
-        out
-    }
-
     #[test]
     fn named_capture_can_skip_tracking_when_region_is_none() {
         let reg = compile_regex(b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})");
@@ -7222,35 +7139,6 @@ mod tests {
         assert!(!is_in_code_range(&many, 0x00FF));
         assert!(is_in_code_range(&many, 0x0405));
         assert!(!is_in_code_range(&many, 0x0600));
-    }
-
-    #[test]
-    fn is_in_code_range_bytes_fast_paths() {
-        assert!(!is_in_code_range_bytes(&[], 0x41));
-        assert!(!is_in_code_range_bytes(&[0, 0, 0, 0], 0x41));
-
-        let single = make_code_range_bytes(&[(0x80, 0x10FFFF)]);
-        assert!(!is_in_code_range_bytes(&single, 0x7F));
-        assert!(is_in_code_range_bytes(&single, 0x80));
-        assert!(is_in_code_range_bytes(&single, 0x4E00));
-        assert!(!is_in_code_range_bytes(&single, 0x110000));
-
-        let small = make_code_range_bytes(&[(0x20, 0x2F), (0x40, 0x4F)]);
-        assert!(!is_in_code_range_bytes(&small, 0x10));
-        assert!(is_in_code_range_bytes(&small, 0x20));
-        assert!(!is_in_code_range_bytes(&small, 0x35));
-        assert!(is_in_code_range_bytes(&small, 0x45));
-
-        let many = make_code_range_bytes(&[
-            (0x0100, 0x010F),
-            (0x0200, 0x020F),
-            (0x0300, 0x030F),
-            (0x0400, 0x040F),
-            (0x0500, 0x050F),
-        ]);
-        assert!(!is_in_code_range_bytes(&many, 0x00FF));
-        assert!(is_in_code_range_bytes(&many, 0x0405));
-        assert!(!is_in_code_range_bytes(&many, 0x0600));
     }
 
     #[test]
