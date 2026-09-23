@@ -213,9 +213,12 @@ For syntax highlighting, Ferroni consistently spends less time finding the next
 match and tokenizing lines than Oniguruma, across all three production grammars.
 How large the lead is depends on the workload. Tokenizing whole documents line
 by line, each line handed to the scanner once as a real tokenizer does, Ferroni
-is about 2.5x faster on TypeScript, about 10x on Rust, and about 30x on CSS.
+is more than twice as fast on TypeScript, about 10x faster on Rust, and about
+30x faster on CSS
+([exact numbers](https://sebastian-software.github.io/ferroni/perf/benchmark-results#scanner-on-whole-documents-line-by-line)).
 Re-scanning the same line, where Ferroni can reuse what it learned about that
-string, the lead grows to between about 15x and about 290x.
+string, the lead grows to between about 15x and nearly 300x
+([exact numbers](https://sebastian-software.github.io/ferroni/perf/benchmark-results#scanner-with-full-shiki-textmate-grammars)).
 Compiling the full TypeScript and CSS grammars is also faster in Ferroni, while
 Oniguruma still starts faster on the smaller Rust grammar. In practice,
 Ferroni's strongest fit is a scanner that compiles a grammar once and uses it
