@@ -11,12 +11,13 @@ in a separate issue and must preserve the existing syntax definitions.
 
 ## Scope and method
 
-The syntax probes below ran against Ferroni in this checkout and CRuby 2.6.10,
-the Ruby runtime available for this review. Ruby 2.6.10 is useful for checking
+The syntax probes compare CRuby 2.6.10 (Onigmo), upstream C Oniguruma, and
+Ferroni. The C and Rust probes use the relevant Ruby, Oniguruma, or Python
+syntax definitions. The installed Ruby runtime was 2.6.10: it is useful for
 long-standing Onigmo syntax, but it predates `Regexp.timeout` and match-cache
 optimization. Those runtime features are checked against the official Ruby 3.2
-and 4.0 documentation. The Unicode comparison calls out version differences
-explicitly.
+and 4.0 documentation. The Unicode comparison calls out data-version
+differences explicitly.
 
 The probe used UTF-8 and `OnigSyntaxRuby`:
 
@@ -36,22 +37,29 @@ Other encodings remain out of scope under
 
 ## Syntax and matching behavior
 
-### Character-set modifiers `(?d)`, `(?a)`, and `(?u)`
+### Onigmo-only character-set modifiers `(?d)`, `(?a)`, and `(?u)`
 
 - **Ruby / Onigmo:** These modes compile in Ruby syntax. `d` is the Ruby 1.9.3
   default: `\w`, `\d`, and `\s` are ASCII-only, while word boundaries and
   POSIX classes follow the encoding. `a` makes those shorthands, POSIX classes,
   and word boundaries ASCII-only. `u` makes them follow the encoding's Unicode
   rules. They can be scoped to a group.
-- **Ferroni:** With `OnigSyntaxRuby`, all three forms fail compilation with
-  `ONIGERR_UNDEFINED_GROUP_OPTION` (`-119`). `ONIG_SYN_OP2_OPTION_RUBY` is set,
-  but `prs_options` does not implement `d`, `a`, or `u`.
-- **Verified repro:** Ruby 2.6.10 returns no match for `(?d:\w+)` or
-  `(?a:\w+)` on `é`, and matches `é` with `(?u:\w+)`. The scoped pattern
-  `(?a:\w+)(?u:\w+)` matches `aé`. Ferroni rejects each pattern at compile
-  time under `OnigSyntaxRuby`.
-- **Recommendation:** Implement these modifiers in the Ruby syntax parser
-  only. Keep `OnigSyntaxOniguruma` and the other syntax definitions unchanged.
+- **C Oniguruma and Ferroni:** Under `OnigSyntaxRuby`, all three forms fail
+  compilation with `ONIGERR_UNDEFINED_GROUP_OPTION` (`-119`). Upstream C
+  Oniguruma supports `(?a)` in Python syntax, where it selects ASCII character
+  classes; it does not implement `(?d)` or `(?u)`. Ferroni's existing
+  `python_option_ascii` compatibility test is for `OnigSyntaxPython`, not Ruby
+  syntax.
+- **Verified repro:** For Ruby syntax and input `é`, CRuby returns no match for
+  `(?d:\w+)` and `(?a:\w+)`, and matches with `(?u:\w+)`. C Oniguruma and
+  Ferroni both reject all three forms with `-119`. With Python syntax, C
+  Oniguruma and Ferroni both return no match for `(?a:\w+)` on `é`.
+- **Recommendation:** These are Onigmo extensions, not a Ferroni parity gap.
+  If Ferroni adopts them, add a separately named opt-in syntax such as
+  `OnigSyntaxOnigmo` and establish its own ADR; keep `OnigSyntaxRuby` aligned
+  with C Oniguruma. An implementation would need a distinct option bit for
+  `(?d)`: Onigmo leaves `\b` and POSIX classes Unicode in this mode, whereas
+  Ferroni's current `ONIG_OPTION_WORD_IS_ASCII` also affects `\b`.
 
 ### Existing constructs checked
 
@@ -64,49 +72,62 @@ Other encodings remain out of scope under
 - **Recommendation:** No gap found for these probes. Broader named-group
   collision and property-alias behavior was not exhaustively tested.
 
-### Absent operator `(?~...)`
+### Absent operator `(?~...)`: Onigmo divergence from C Oniguruma
 
 - **Ruby / Onigmo:** The documentation defines `(?~subexp)` as the complement
   of `.*subexp.*`. `^(?~abc)` on `aabc` returns `aab`.
-- **Ferroni:** It accepts the syntax but returns only `a` for the same pattern
-  and input.
-- **Verified repro:** `^(?~abc)` against `aabc`.
-- **Recommendation:** Track a separate parity bug for the absent-operator
-  execution path. This is a match-extent mismatch, not a missing syntax flag.
+- **C Oniguruma and Ferroni:** Oniguruma defines the absent repeater using an
+  absent range as `(?~|(?:absent)|\O*)`; it stops before the start of an
+  `absent` match. Ferroni ports this behavior. For `^(?~abc)` on `aabc`, both
+  return `a`; for `(?~abc)` on `abc`, both return an empty match.
+- **Verified repro:** The same two patterns and inputs were run against all
+  three engines. Upstream's UTF-8 compatibility test also expects an empty
+  match for `(?~abc)` on `abc` ([C test](https://github.com/kkos/oniguruma/blob/master/test/test_utf8.c#L838-L861),
+  ported in [Ferroni's compatibility test](https://github.com/sebastian-software/ferroni/blob/main/tests/compat_utf8.rs#L9068-L9100)).
+- **Recommendation:** This is a documented semantic difference between
+  Onigmo and C Oniguruma, not a Ferroni bug. Ferroni should keep the upstream
+  behavior. If Onigmo semantics are desired, support them only inside a future
+  opt-in Onigmo syntax definition, gated by an ADR.
 
 ### Unicode property data
 
 - **Ruby / Onigmo:** Property results depend on the Unicode version bundled
   with Ruby. Ruby 3.2 uses Unicode 15; Ruby 4.0 updates to Unicode 17.
-- **Ferroni:** Its generated property table recognizes U+1C89 as `Lu`, so
-  `\p{Lu}` matches that character.
+- **Ferroni:** The table on the base revision for this comparison uses Unicode
+  16.0. It recognizes U+1C89 as `Lu`, so `\p{Lu}` matches that character.
+  U+1C89 was added in Unicode 16.0 ([Cyrillic Extended-C chart](https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1C80.pdf));
+  the result therefore does not distinguish Unicode 16 from 17. [PR #154](https://github.com/sebastian-software/ferroni/pull/154)
+  tracks an update of Ferroni's tables to Unicode 17.0.
 - **Verified repro:** Locally, `\p{Lu}` matches U+1C89 in Ferroni but not in
   Ruby 2.6.10. Ruby 3.2's Unicode 15 data also predates that character. A Ruby
-  4.0 runtime was not available for a direct probe.
-- **Recommendation:** Treat differences against Ruby 3.2 as Unicode-version
-  drift. Ruby 4.0's Unicode version matches Ferroni's current table generation;
-  keep the source Unicode version documented when updating tables.
+  4.0 runtime was not available for a direct probe, so this is not evidence of
+  parity with Ruby 4.0.
+- **Recommendation:** Treat the observed result as Unicode-version drift, not
+  a verified engine gap. For a Ruby 4.0 comparison after the Unicode 17 table
+  update, use a character first assigned in Unicode 17 and record the exact
+  table version.
 
-The modifier results were reproduced with Ruby 2.6.10 and Ferroni. The Ruby
-character-set option definitions are documented in
-[Onigmo's syntax reference](https://github.com/k-takata/Onigmo/blob/master/doc/RE);
-Ferroni's corresponding implementation is `OnigSyntaxRuby` in
-`src/regsyntax.rs` and option parsing in `src/regparse.rs`.
+The modifier results were reproduced with CRuby 2.6.10, C Oniguruma, and
+Ferroni. Ruby's character-set option definitions are documented in
+[Onigmo's syntax reference](https://github.com/k-takata/Onigmo/blob/master/doc/RE).
+The upstream C parser gates `(?a)` on Python syntax and does not define `d` or
+`u` ([`regparse.c`](https://github.com/kkos/oniguruma/blob/master/src/regparse.c));
+Ferroni mirrors those syntax definitions in `src/regsyntax.rs` and
+`src/regparse.rs`. The Python `(?a)` compatibility check is
+[`python_option_ascii`](https://github.com/sebastian-software/ferroni/blob/main/tests/compat_syntax.rs#L466-L476).
 
-The absent-operator result was reproduced with the same pattern and input on
-both runtimes. Onigmo documents `(?~subexp)` as the complement of
-`.*subexp.*` and gives the same non-greedy-quantifier distinction; see
+Onigmo documents `(?~subexp)` as the complement of `.*subexp.*`; see
 [Onigmo's reference](https://github.com/k-takata/Onigmo/blob/master/doc/RE).
-This is a behavior mismatch, not a missing syntax flag.
+The upstream C compatibility expectations show the different Oniguruma
+semantics, which Ferroni ports.
 
 For the Unicode example, Ruby 3.2's
 [release notes](https://docs.ruby-lang.org/en/3.2/NEWS_md.html) specify
 Unicode 15.0, while the
 [Ruby 4.0 release notes](https://www.ruby-lang.org/en/news/2025/12/25/ruby-4-0-0-released/)
-specify Unicode 17.0. Ferroni's U+1C89 result was checked locally. The local
-Ruby 2.6.10 runtime also does not classify U+1C89 as uppercase, which is
-consistent with its older Unicode tables; a Ruby 4.0 runtime was not available
-for a direct probe.
+specify Unicode 17.0. Ferroni's U+1C89 result was checked locally; that
+character's Unicode 16 assignment means it cannot establish Unicode 17 parity.
+A Ruby 4.0 runtime was not available for a direct probe.
 
 ## ReDoS protections and time limits
 
@@ -198,10 +219,12 @@ reproducers do not transfer directly.
 
 ## Summary
 
-The actionable parity gap is the missing `d` / `a` / `u` character-set
-modifiers in `OnigSyntaxRuby`. The absent operator is accepted but has a
-verified match-extent mismatch. The requested shorthand and named-reference
-probes matched. ReDoS cache optimization is a separate, opt-in design question;
-Ferroni already has low-level time, stack, and retry limits. The reviewed Ruby
-overflow fixes either have corresponding guards in Ferroni or are rejected
-earlier by Ferroni's parse-depth limit.
+These probes found no verified Ferroni behavior gap against C Oniguruma. The
+`d` / `a` / `u` modifiers and Onigmo's absent-operator semantics are differences
+that could be adopted only in an opt-in Onigmo syntax definition with its own
+ADR. The requested shorthand and named-reference probes matched. An ergonomic
+high-level timeout is a separate API follow-up; match-cache optimization is a
+separate design question under ADR-008. Ferroni already has low-level time,
+stack, and retry limits. The reviewed Ruby overflow fixes either have
+corresponding guards in Ferroni or are rejected earlier by Ferroni's
+parse-depth limit.
