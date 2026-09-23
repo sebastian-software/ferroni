@@ -140,7 +140,7 @@ const features = [
   {
     icon: <Zap size={22} strokeWidth={1.5} />,
     title: "Built for scanner speed",
-    text: "Tuned for the hot path in syntax highlighters and text scanners: first-match latency and full-line tokenization on real TextMate grammars run far ahead of Oniguruma. The measured factors are below.",
+    text: "Tuned for the hot path in syntax highlighters and text scanners: tokenizing real documents with complete TextMate grammars runs well ahead of Oniguruma. The measured factors are below.",
   },
   {
     icon: <ShieldCheck size={22} strokeWidth={1.5} />,
@@ -193,27 +193,27 @@ function WhySection() {
 const benchmarks = [
   {
     category: "Syntax Highlighting",
-    label: "Scanner First Match",
-    desc: "TypeScript grammar, 279 patterns",
-    speedup: "290.6x",
-    ferroni: "~87 ns",
-    oniguruma: "~25.2 \u00B5s",
+    label: "TypeScript Document",
+    desc: "279 patterns, 28 lines, line by line",
+    speedup: "2.5x",
+    ferroni: "~1.26 ms",
+    oniguruma: "~3.13 ms",
   },
   {
     category: "Syntax Highlighting",
-    label: "Full Line Tokenization",
-    desc: "TypeScript, end-to-end",
-    speedup: "74.3x",
-    ferroni: "~2.8 \u00B5s",
-    oniguruma: "~211 \u00B5s",
+    label: "CSS Document",
+    desc: "117 patterns, 19 lines, line by line",
+    speedup: "32.6x",
+    ferroni: "~93 \u00B5s",
+    oniguruma: "~3.04 ms",
   },
   {
     category: "Syntax Highlighting",
-    label: "CSS Tokenization",
-    desc: "Multi-pattern scanner workload",
-    speedup: "64.5x",
-    ferroni: "~222 \u00B5s",
-    oniguruma: "~14.3 ms",
+    label: "Rust Document",
+    desc: "81 patterns, 31 lines, line by line",
+    speedup: "9.8x",
+    ferroni: "~108 \u00B5s",
+    oniguruma: "~1.06 ms",
   },
   {
     category: "Text Search",
@@ -279,11 +279,10 @@ function PerfSection() {
         <p className="fh-perf-note">
           Measured on 2026-09-23 with the <code>battle_bench</code> reference suite at commit{" "}
           <code>374e3fed</code>, on a MacBookPro18,1 (Apple M1 Pro, 32&nbsp;GB) running macOS 27.0.
-          Each factor is the ratio of the two timings shown on its card. The scanner cards
-          re-tokenize the same input, which Ferroni serves partly from its per-string memo;
-          tokenizing whole documents line by line, each line once, Ferroni is 2.5x (TypeScript) to
-          32.6x (CSS) faster. Full tables, raw values, and the measurement context are in{" "}
-          <Link to="/perf/benchmark-results">Benchmark Results</Link>.
+          Each factor is the ratio of the two timings shown on its card. The syntax highlighting
+          cards tokenize a whole document line by line, each line handed to the scanner once, the
+          way vscode-textmate and Shiki drive it. Full tables, raw values, and the measurement
+          context are in <Link to="/perf/benchmark-results">Benchmark Results</Link>.
         </p>
       </div>
     </section>

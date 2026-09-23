@@ -11,6 +11,7 @@
     "oxfmt",
     "oxlint",
     "pnpm",
-    "repometa"
+    "repometa",
+    "Shiki"
   ]
 }
