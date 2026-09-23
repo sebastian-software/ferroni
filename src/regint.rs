@@ -325,6 +325,9 @@ pub enum OpCode {
     /// Rust-only (ADR-008): a fixed-length look-behind whose body is the
     /// single character or string instruction that follows it.
     LookBehindOp = 95,
+    /// Rust-only (ADR-008): `PushOrJumpExact1` with a byte set. Pushes the
+    /// alternative only when the current byte can start the main path.
+    PushOrJumpByteSet = 96,
 }
 
 // === SaveType ===
@@ -537,6 +540,11 @@ pub enum OperationPayload {
         char_len: u32,
         /// `(?<!...)` rather than `(?<=...)`.
         not: bool,
+    },
+    PushOrJumpByteSet {
+        addr: RelAddrType,
+        /// The bytes the main path can consume first.
+        bsp: Box<BitSet>,
     },
 }
 

@@ -1682,10 +1682,24 @@ mod tests {
             capture_tracking: usize,
             fused_look_behinds: usize,
             stepping_look_behinds: usize,
+            byte_set_push_guards: usize,
+            unguarded_pushes: usize,
         }
         let census = |patterns: Vec<String>| {
             let regs: Vec<Box<RegexType>> =
                 patterns.iter().map(|p| compile(p.as_bytes())).collect();
+            // Push guards rewrite bytecode that the start maps read.
+            crate::regcomp::PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(true));
+            let unguarded: Vec<Box<RegexType>> =
+                patterns.iter().map(|p| compile(p.as_bytes())).collect();
+            crate::regcomp::PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(false));
+            for ((pattern, reg), reference) in patterns.iter().zip(&regs).zip(&unguarded) {
+                assert_eq!(
+                    derive_start_byte_map(reg),
+                    derive_start_byte_map(reference),
+                    "{pattern}"
+                );
+            }
             let tries = || regs.iter().flat_map(|reg| reg.literal_tries.iter());
             let literal_tries = tries().count();
             let folded_literal_tries = tries().filter(|trie| trie.is_case_insensitive()).count();
@@ -1702,6 +1716,8 @@ mod tests {
             };
             let fused_look_behinds = ops(OpCode::LookBehindOp);
             let stepping_look_behinds = ops(OpCode::StepBackStart);
+            let byte_set_push_guards = ops(OpCode::PushOrJumpByteSet);
+            let unguarded_pushes = ops(OpCode::Push);
             let (set, r) = onig_regset_new(regs);
             assert_eq!(r, ONIG_NORMAL);
             let set = set.unwrap();
@@ -1720,6 +1736,8 @@ mod tests {
                 capture_tracking,
                 fused_look_behinds,
                 stepping_look_behinds,
+                byte_set_push_guards,
+                unguarded_pushes,
             }
         };
         assert_eq!(
@@ -1735,6 +1753,8 @@ mod tests {
                 capture_tracking: 0,
                 fused_look_behinds: 443,
                 stepping_look_behinds: 50,
+                byte_set_push_guards: 2166,
+                unguarded_pushes: 161,
             }
         );
         assert_eq!(
@@ -1750,6 +1770,8 @@ mod tests {
                 capture_tracking: 0,
                 fused_look_behinds: 64,
                 stepping_look_behinds: 11,
+                byte_set_push_guards: 2764,
+                unguarded_pushes: 70,
             }
         );
         assert_eq!(
@@ -1765,6 +1787,8 @@ mod tests {
                 capture_tracking: 0,
                 fused_look_behinds: 6,
                 stepping_look_behinds: 2,
+                byte_set_push_guards: 28,
+                unguarded_pushes: 4,
             }
         );
     }
@@ -2074,6 +2098,8 @@ mod tests {
         assert_eq!(members(map_of(b"(?=(?=ab)a)").unwrap()), b"a");
         assert_eq!(members(map_of(b"(?=a?)x").unwrap()), b"x");
         assert_eq!(members(map_of(b"(?>ab)").unwrap()), b"a");
+        // The negative look-ahead's push is guarded by its body's first byte.
+        assert_eq!(members(map_of(b"(?!x)b").unwrap()), b"b");
         for zero_width in [
             &b"(?=a?)"[..],
             b"(?=)",
