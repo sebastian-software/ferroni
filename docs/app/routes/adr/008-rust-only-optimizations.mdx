@@ -64,6 +64,15 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Impact**: Low single-digit percentage gains; primarily reduces constant factors in tight loops
 - **Bounds**: Single `if` guard per call site; no additional memory
 
+#### Scanner fast paths from the 2026-09 profiling pass (`src/regexec.rs`, `src/regset.rs`, `src/regparse.rs`)
+
+- **Negated class star opcodes**: `[^...]*` / `[^...]+` loops, including the Alt-CClass fusion, run as `CClassNotStar` / `CClassMbNotStar` / `CClassMixNotStar` with one lazy backtrack entry per run. All star opcodes share one loop that verifies every character boundary and falls back to one backtrack entry per character on malformed UTF-8.
+- **Start-filtered fallback searches**: RegSet fallback entries with an unbounded optimizer distance skip positions whose byte the bytecode-derived start map excludes. Only used without callouts, position checks, or a search retry budget.
+- **Untracked push captures**: `MEM_START_PUSH` / `MEM_END_PUSH` skip their bookkeeping when no region is requested and captures cannot influence matching; kept when a match stack limit is set.
+- **Range-driven case-fold expansion**: `(?i)` classes are expanded by walking their ranges through the sorted fold keys.
+- **Impact**: CSS tokenize -79%, TypeScript documents tokenized line by line -25%, CSS grammar compile -11% (wall clock).
+- **Detailed analysis**: [`/perf/performance-structure-analysis`](/perf/performance-structure-analysis)
+
 ## Rationale
 
 - **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.
