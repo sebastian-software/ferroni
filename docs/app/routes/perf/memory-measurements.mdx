@@ -50,15 +50,20 @@ for publication.
 
 ## Latest local sample
 
-Measured on 2026-03-06 on `arm64` macOS `26.3` with
-`rustc 1.95.0-nightly (842bd5be2 2026-01-29)`.
+Measured on 2026-09-23 at commit `374e3fed` on a MacBookPro18,1 (Apple M1 Pro,
+32 GB) running macOS `27.0 (26A428)` with `rustc 1.98.1 (48a229cea 2026-09-01)`,
+against Oniguruma `f95747b4` built from a local checkout via
+`FERRONI_ONIGURUMA_DIR`. The two harnesses were built and run the way
+`./scripts/run-battle-memory.sh` does, without its source-download step. Each
+value is the median of three runs; the runs stayed within about 1% of each
+other.
 
 | Engine    | Phase                   |     Peak RSS |
 | --------- | ----------------------- | -----------: |
-| Ferroni   | Compile full TS grammar | 15,155,200 B |
-| Ferroni   | Compile + line scan     | 15,237,120 B |
-| Oniguruma | Compile full TS grammar | 14,761,984 B |
-| Oniguruma | Compile + line scan     | 14,860,288 B |
+| Ferroni   | Compile full TS grammar | 14,745,600 B |
+| Ferroni   | Compile + line scan     | 14,827,520 B |
+| Oniguruma | Compile full TS grammar | 14,893,056 B |
+| Oniguruma | Compile + line scan     | 15,089,664 B |
 
 Rounded for README communication, both engines are effectively in the same
 memory range at about 15 MB peak RSS on this workload.
