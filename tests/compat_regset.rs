@@ -516,3 +516,45 @@ fn regset_clears_the_superseded_table_winner_region() {
     assert_eq!(losing_region.beg[0], ONIG_REGION_NOTPOS);
     assert_eq!(losing_region.end[0], ONIG_REGION_NOTPOS);
 }
+
+// C Oniguruma's position-lead search starts with prev_is_newline = 1, so a
+// leading `.*` may match at the search start even in the middle of a line.
+// Values checked against C Oniguruma v6.9.10.
+#[test]
+fn regset_anychar_star_matches_at_a_mid_line_search_start() {
+    x_from_5(&[b".*"], b"<div class", 0, 5, 10);
+    x_from_5(&[b"--.*", b".*"], b"<div class", 1, 5, 10);
+    x_from_5(&[b".*"], b"<div class=\"x\">\n", 0, 5, 15);
+}
+
+/// Position-lead search from byte 5; expect regex `index` to match [from, to].
+fn x_from_5(patterns: &[&[u8]], input: &[u8], index: i32, from: i32, to: i32) {
+    let mut set = make_regset(patterns);
+
+    let (idx, pos) = onig_regset_search(
+        &mut set,
+        input,
+        input.len(),
+        5,
+        input.len(),
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+
+    assert_eq!((idx, pos), (index, from));
+    let region = onig_regset_get_region(&set, idx as usize).expect("winning region");
+    assert_eq!((region.beg[0], region.end[0]), (from, to));
+}
+
+#[test]
+fn scanner_anychar_star_matches_at_a_mid_line_start_position() {
+    let mut scanner = Scanner::new(&["--.*", ".*"]).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("<div class", 5, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(matched.index, 1);
+    assert_eq!(matched.capture_indices[0].start, 5);
+    assert_eq!(matched.capture_indices[0].end, 10);
+}
