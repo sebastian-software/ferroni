@@ -819,9 +819,10 @@ fn regset_search_body_position_lead_table(
             };
         }
 
-        let prev_is_newline = if prev_is_newline_check && s > 0 {
-            // Check if previous character is newline
-            s > 0 && str_data[s - 1] == b'\n'
+        // Oniguruma starts with prev_is_newline = 1: the first attempted
+        // position may always match, whatever precedes it in the subject.
+        let prev_is_newline = if prev_is_newline_check && s > start {
+            str_data[s - 1] == b'\n'
         } else {
             true // default: allow matching
         };
