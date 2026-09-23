@@ -29,20 +29,17 @@ const bench = readFileSync(benchPath, "utf8");
  * (omitted where the table has no groups).
  */
 const SOURCE_FOR_CARD = {
-  "Scanner First Match": {
-    section: "Scanner with full Shiki TextMate grammars",
-    group: "TypeScript (279 patterns)",
-    row: "First match, short line",
+  "TypeScript Document": {
+    section: "Scanner on whole documents, line by line",
+    row: "TypeScript (279 patterns), 28 lines",
   },
-  "Full Line Tokenization": {
-    section: "Scanner with full Shiki TextMate grammars",
-    group: "TypeScript (279 patterns)",
-    row: "Tokenize full line",
+  "CSS Document": {
+    section: "Scanner on whole documents, line by line",
+    row: "CSS (117 patterns), 19 lines",
   },
-  "CSS Tokenization": {
-    section: "Scanner with full Shiki TextMate grammars",
-    group: "CSS (117 patterns)",
-    row: "Tokenize (multi-line)",
+  "Rust Document": {
+    section: "Scanner on whole documents, line by line",
+    row: "Rust (81 patterns), 31 lines",
   },
   "Rejection Speed": {
     section: "Text search and log scanning",
