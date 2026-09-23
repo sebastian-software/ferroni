@@ -3008,7 +3008,7 @@ pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
     // Literal alternation trie: emit single AltLiterals opcode.
     if node.has_status(ND_ST_LITERAL_ALT) {
         if let NodeInner::String(ref sn) = node.inner {
-            let trie_idx = u32::from_le_bytes([sn.s[0], sn.s[1], sn.s[2], sn.s[3]]);
+            let trie_idx = LiteralAltSummary::decode(&sn.s).trie_idx;
             add_op(
                 reg,
                 OpCode::AltLiterals,
@@ -6175,6 +6175,7 @@ fn try_trie_optimize_alt(
     // Collect info about each branch.
     let mut branches: Vec<AltBranchInfo> = Vec::new();
     let mut case_insensitive = false;
+    let mut all_case_insensitive = true;
     let mut literal_count = 0usize;
     let mut all_plain_strings = true;
 
@@ -6194,6 +6195,8 @@ fn try_trie_optimize_alt(
                         let info = classify_branch(&*cur, backrefed_mem);
                         if info.is_literal && (*cur).has_status(ND_ST_IGNORECASE) {
                             case_insensitive = true;
+                        } else {
+                            all_case_insensitive = false;
                         }
                         if info.is_literal {
                             literal_count += info.literals.len();
@@ -6207,6 +6210,8 @@ fn try_trie_optimize_alt(
                 let info = classify_branch(&*car, backrefed_mem);
                 if info.is_literal && (*car).has_status(ND_ST_IGNORECASE) {
                     case_insensitive = true;
+                } else {
+                    all_case_insensitive = false;
                 }
                 if info.is_literal {
                     literal_count += info.literals.len();
@@ -6222,44 +6227,365 @@ fn try_trie_optimize_alt(
     }
 
     let all_literal = branches.iter().all(|b| b.is_literal);
-    if literal_count < LITERAL_ALT_THRESHOLD
-        || !all_literal
-        || !all_plain_strings
-        || case_insensitive
-        || reg.options.intersects(ONIG_OPTION_IGNORECASE)
-    {
+    if literal_count < LITERAL_ALT_THRESHOLD || !all_literal || !all_plain_strings {
+        return false;
+    }
+    if case_insensitive {
+        return all_case_insensitive && try_case_insensitive_trie(node, reg, &branches);
+    }
+    if reg.options.intersects(ONIG_OPTION_IGNORECASE) {
         return false;
     }
 
-    // The trie returns the longest terminal. That is equivalent to ordered
-    // alternation only when no two literals have a prefix relationship.
-    let mut literals: Vec<Vec<u8>> = branches
+    // In alternation order: when one literal is a prefix of another, the
+    // matching op continues with the earlier one and backtracks into the
+    // others in this order, as the alternation would.
+    let literal_refs: Vec<&[u8]> = branches
         .iter()
-        .flat_map(|b| b.literals.iter().cloned())
+        .flat_map(|b| b.literals.iter().map(Vec::as_slice))
         .collect();
-    // A lexicographic ordering places every possible extension immediately
-    // after its prefix. Checking adjacent pairs avoids a quadratic scan for
-    // large, generated literal alternations.
-    literals.sort_unstable();
-    if literals
-        .windows(2)
-        .any(|pair| pair[1].starts_with(pair[0].as_slice()))
-    {
+    // An empty literal matches anywhere; the start-byte summary cannot
+    // express that.
+    if literal_refs.iter().any(|literal| literal.is_empty()) {
         return false;
     }
-
-    let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
+    let mut start_bytes = [0; BITSET_REAL_SIZE];
+    for literal in &literal_refs {
+        bitset_set_bit(&mut start_bytes, literal[0] as usize);
+    }
+    let summary = LiteralAltSummary {
+        trie_idx: reg.literal_tries.len() as u32,
+        min_len: literal_refs.iter().map(|l| l.len()).min().unwrap_or(0) as OnigLen,
+        max_len: literal_refs.iter().map(|l| l.len()).max().unwrap_or(0) as OnigLen,
+        start_bytes,
+    };
     let trie = crate::literal_trie::LiteralTrie::build(&literal_refs, false);
-    let trie_idx = reg.literal_tries.len() as u32;
     reg.literal_tries.push(trie);
 
     node.inner = NodeInner::String(StrNode {
-        s: trie_idx.to_le_bytes().to_vec(),
+        s: summary.encode(),
         flag: 0,
     });
     node.status_add(ND_ST_LITERAL_ALT);
 
     true
+}
+
+/// Payload of the string node that stands for a literal alternation trie
+/// (`ND_ST_LITERAL_ALT`): the trie's index plus what the optimizer derives
+/// from the alternation it replaces, so a pattern keeps its start-byte map.
+struct LiteralAltSummary {
+    trie_idx: u32,
+    min_len: OnigLen,
+    max_len: OnigLen,
+    /// Bytes a match can start with.
+    start_bytes: BitSet,
+}
+
+impl LiteralAltSummary {
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(12 + SIZE_BITSET);
+        bytes.extend_from_slice(&self.trie_idx.to_le_bytes());
+        bytes.extend_from_slice(&self.min_len.to_le_bytes());
+        bytes.extend_from_slice(&self.max_len.to_le_bytes());
+        for word in self.start_bytes {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn decode(bytes: &[u8]) -> Self {
+        let word = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+        LiteralAltSummary {
+            trie_idx: word(0),
+            min_len: word(4),
+            max_len: word(8),
+            start_bytes: std::array::from_fn(|i| word(12 + 4 * i)),
+        }
+    }
+}
+
+/// Replace an alternation of case-insensitive ASCII literals with a folded
+/// trie. Rust-only (ADR-008): the trie must accept exactly what the
+/// alternation accepts once `unravel_case_fold_string` has expanded it,
+/// including the non-ASCII input Unicode case folding admits (`K` for `k`,
+/// `ß` for `ss`); `literal_trie_case_folds` derives that from the same
+/// case-fold queries and refuses anything outside the trie's model.
+fn try_case_insensitive_trie(
+    node: &mut Node,
+    reg: &mut RegexType,
+    branches: &[AltBranchInfo],
+) -> bool {
+    if !std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
+        return false;
+    }
+    let literals: Vec<&[u8]> = branches
+        .iter()
+        .flat_map(|b| b.literals.iter().map(Vec::as_slice))
+        .collect();
+    if literals
+        .iter()
+        .any(|literal| literal.is_empty() || !literal.is_ascii())
+    {
+        return false;
+    }
+    let Some(folds) = literal_trie_case_folds(reg, &literals) else {
+        return false;
+    };
+
+    // Case variants of the first letters, and any lead byte: non-ASCII
+    // input matches too. A single character reads as at least one byte and
+    // a multi-character segment as its shortest accepted string.
+    let mut start_bytes = [0; BITSET_REAL_SIZE];
+    for literal in &literals {
+        bitset_set_bit(&mut start_bytes, literal[0].to_ascii_lowercase() as usize);
+        bitset_set_bit(&mut start_bytes, literal[0].to_ascii_uppercase() as usize);
+    }
+    for byte in 0x80..SINGLE_BYTE_SIZE {
+        bitset_set_bit(&mut start_bytes, byte);
+    }
+    let min_len = literals
+        .iter()
+        .zip(&folds.segments)
+        .map(|(literal, segments)| {
+            segments
+                .iter()
+                .fold(literal.len(), |len, &(_, seg_len, accepted)| {
+                    let shortest = folds.accepted[accepted]
+                        .iter()
+                        .map(Vec::len)
+                        .min()
+                        .unwrap_or(0);
+                    len - seg_len + shortest
+                })
+        })
+        .min()
+        .unwrap_or(0);
+    let summary = LiteralAltSummary {
+        trie_idx: reg.literal_tries.len() as u32,
+        min_len: min_len as OnigLen,
+        max_len: INFINITE_LEN,
+        start_bytes,
+    };
+    let trie = crate::literal_trie::LiteralTrie::build_folded(&literals, folds);
+    reg.literal_tries.push(trie);
+    node.inner = NodeInner::String(StrNode {
+        s: summary.encode(),
+        flag: 0,
+    });
+    node.status_remove(ND_ST_IGNORECASE);
+    node.status_add(ND_ST_LITERAL_ALT);
+    true
+}
+
+/// Case-fold data for a trie over case-insensitive ASCII `literals`.
+///
+/// Mirrors `unravel_case_fold_string`: at each literal position it asks
+/// `get_case_fold_codes_by_str` what the engine would compile, a
+/// single-character class or an alternation of exact strings covering a
+/// multi-character segment. Returns `None` unless the result fits the
+/// folded trie: each letter's class holds its ASCII case pair plus
+/// non-ASCII members, every segment accepts all its ASCII case variants,
+/// and every non-ASCII character in a segment's strings reads either as a
+/// class member or as a ligature standing for the whole segment.
+fn literal_trie_case_folds(
+    reg: &RegexType,
+    literals: &[&[u8]],
+) -> Option<crate::literal_trie::CaseFolds> {
+    let enc = reg.enc;
+    let flag = reg.case_fold_flag;
+    let mut items = vec![
+        OnigCaseFoldCodeItem {
+            byte_len: 0,
+            code_len: 0,
+            code: [0; ONIGENC_MAX_COMP_CASE_FOLD_CODE_LEN]
+        };
+        ONIGENC_GET_CASE_FOLD_CODES_MAX_NUM
+    ];
+    let mut folds = crate::literal_trie::CaseFolds::default();
+
+    // The class unravel builds for an ASCII character whose folds are all
+    // single code points, as sorted code points.
+    let class_of = |c: u8, items: &[OnigCaseFoldCodeItem]| -> Option<Vec<OnigCodePoint>> {
+        if !items
+            .iter()
+            .all(|item| item.code_len == 1 && item.byte_len == 1)
+        {
+            return None;
+        }
+        let mut class: Vec<OnigCodePoint> = std::iter::once(c as OnigCodePoint)
+            .chain(items.iter().map(|item| item.code[0]))
+            .collect();
+        class.sort_unstable();
+        class.dedup();
+        Some(class)
+    };
+
+    let mut letter_classes: Vec<Vec<OnigCodePoint>> = Vec::with_capacity(26);
+    for letter in b'a'..=b'z' {
+        let mut classes: [Vec<OnigCodePoint>; 2] = Default::default();
+        for (class, c) in classes
+            .iter_mut()
+            .zip([letter, letter.to_ascii_uppercase()])
+        {
+            let n = enc.get_case_fold_codes_by_str(flag, &[c], 1, &mut items);
+            *class = class_of(c, &items[..usize::try_from(n).ok()?])?;
+        }
+        let [lower, upper] = classes;
+        let ascii: Vec<OnigCodePoint> = lower.iter().copied().filter(|&m| m < 0x80).collect();
+        if lower != upper
+            || ascii
+                != [
+                    letter.to_ascii_uppercase() as OnigCodePoint,
+                    letter as OnigCodePoint,
+                ]
+        {
+            return None;
+        }
+        // A class with multibyte members decodes non-ASCII input and also
+        // tests the code against its ASCII members; without them, such
+        // input never matches.
+        if lower.iter().any(|&m| m >= 0x80) {
+            folds
+                .class_members
+                .extend(lower.iter().map(|&m| (m, letter)));
+        }
+        letter_classes.push(lower);
+    }
+    folds.class_members.sort_unstable();
+    if folds
+        .class_members
+        .windows(2)
+        .any(|pair| pair[0].0 == pair[1].0)
+    {
+        return None;
+    }
+
+    let mut segment_sets: Vec<(Vec<u8>, usize)> = Vec::new();
+    for literal in literals {
+        let mut segments = Vec::new();
+        let mut pos = 0;
+        while pos < literal.len() {
+            let n =
+                enc.get_case_fold_codes_by_str(flag, &literal[pos..], literal.len(), &mut items);
+            let found = &items[..usize::try_from(n).ok()?];
+            let c = literal[pos];
+            if found.is_empty() || found.iter().all(|item| item.code_len == 1) {
+                // A plain byte, or a single-character class that must be
+                // the letter's class.
+                if !found.is_empty()
+                    && (!c.is_ascii_alphabetic()
+                        || class_of(c, found)?
+                            != letter_classes[(c.to_ascii_lowercase() - b'a') as usize])
+                {
+                    return None;
+                }
+                pos += 1;
+                continue;
+            }
+            let (min_len, max_len) = get_min_max_byte_len_case_fold_items(n, found);
+            let len = max_len as usize;
+            if min_len != max_len || len < 2 || pos + len > literal.len() {
+                return None;
+            }
+            let original = &literal[pos..pos + len];
+            let accepted = match segment_sets.iter().find(|(text, _)| text == original) {
+                Some(&(_, accepted)) => accepted,
+                None => {
+                    let mut strings = vec![original.to_vec()];
+                    for item in found {
+                        let mut bytes = Vec::new();
+                        let mut buf = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
+                        for &code in &item.code[..item.code_len as usize] {
+                            let written = enc.code_to_mbc(code, &mut buf);
+                            bytes.extend_from_slice(&buf[..written as usize]);
+                        }
+                        strings.push(bytes);
+                    }
+                    let text = original.to_ascii_lowercase();
+                    for string in &strings {
+                        segment_string_fits(enc, string, &text, &mut folds)?;
+                    }
+                    if !ascii_case_variants(&text).all(|variant| strings.contains(&variant)) {
+                        return None;
+                    }
+                    folds.accepted.push(strings);
+                    segment_sets.push((original.to_vec(), folds.accepted.len() - 1));
+                    folds.accepted.len() - 1
+                }
+            };
+            segments.push((pos, len, accepted));
+            pos += len;
+        }
+        folds.segments.push(segments);
+    }
+    Some(folds)
+}
+
+/// Check that the folded walk reads `string` as the segment text `text`:
+/// either one non-ASCII character, recorded as a ligature for `text`, or
+/// characters that each read as the letter at their offset.
+fn segment_string_fits(
+    enc: OnigEncoding,
+    string: &[u8],
+    text: &[u8],
+    folds: &mut crate::literal_trie::CaseFolds,
+) -> Option<()> {
+    let class_member = |code: OnigCodePoint| {
+        folds
+            .class_members
+            .binary_search_by_key(&code, |&(member, _)| member)
+            .ok()
+            .map(|at| folds.class_members[at].1)
+    };
+    let len = enc.mbc_enc_len(string);
+    if string[0] >= 0x80 && len == string.len() {
+        // A ligature. It must not also read as a class member, and one
+        // character stands for one text only.
+        if class_member(enc.mbc_to_code(string, len)).is_some() {
+            return None;
+        }
+        match folds.ligatures.iter().find(|(bytes, _)| bytes == string) {
+            Some((_, known)) if known != text => return None,
+            Some(_) => {}
+            None => folds.ligatures.push((string.to_vec(), text.to_vec())),
+        }
+        return Some(());
+    }
+    let mut at = 0;
+    for &expected in text {
+        let c = *string.get(at)?;
+        if c < 0x80 {
+            if c.to_ascii_lowercase() != expected {
+                return None;
+            }
+            at += 1;
+        } else {
+            let len = enc.mbc_enc_len(&string[at..]);
+            let code = enc.mbc_to_code(&string[at..], len);
+            if class_member(code) != Some(expected) {
+                return None;
+            }
+            at += len;
+        }
+    }
+    (at == string.len()).then_some(())
+}
+
+/// Every ASCII case variant of the lowercase `text`.
+fn ascii_case_variants(text: &[u8]) -> impl Iterator<Item = Vec<u8>> + '_ {
+    let letters: Vec<usize> = (0..text.len())
+        .filter(|&i| text[i].is_ascii_alphabetic())
+        .collect();
+    (0u32..1 << letters.len()).map(move |mask| {
+        let mut variant = text.to_vec();
+        for (bit, &i) in letters.iter().enumerate() {
+            if mask & (1 << bit) != 0 {
+                variant[i] = variant[i].to_ascii_uppercase();
+            }
+        }
+        variant
+    })
 }
 
 fn detect_literal_alternations_inner(
@@ -8000,10 +8326,17 @@ fn optimize_nodes(
     opt.clear();
     set_bound_node_opt_info(opt, env_mm);
 
-    // Literal alternation trie: we don't know the exact match length
-    // (it's variable), so just set min=1, max=large and skip detailed opts.
+    // Literal alternation trie: the length range and start bytes of the
+    // alternation it replaced, as an alternation of strings would merge
+    // them (no exact string).
     if node.has_status(ND_ST_LITERAL_ALT) {
-        opt.len.set(1, INFINITE_LEN);
+        if let NodeInner::String(sn) = &node.inner {
+            let summary = LiteralAltSummary::decode(&sn.s);
+            for byte in bitset_members(&summary.start_bytes) {
+                add_char_opt_map(&mut opt.map, byte as u8, enc);
+            }
+            opt.len.set(summary.min_len, summary.max_len);
+        }
         return 0;
     }
 
@@ -8700,6 +9033,11 @@ fn detect_ac_eligible(reg: &RegexType) -> Option<(usize, bool)> {
     };
 
     if let OperationPayload::AltLiterals { trie_idx } = ops[alt_idx].payload {
+        // Aho-Corasick folds ASCII only; a folded trie also matches
+        // non-ASCII input.
+        if reg.literal_tries[trie_idx as usize].is_case_insensitive() {
+            return None;
+        }
         Some((trie_idx as usize, has_capture))
     } else {
         None
@@ -9330,18 +9668,23 @@ mod tests {
     }
 
     #[test]
-    fn literal_alt_trie_rejects_out_of_order_prefixes() {
+    fn literal_alt_trie_keeps_alternation_order_for_prefixes() {
         // The prefix pair is intentionally non-adjacent in source order. The
-        // eligibility check must still leave this alternation on the ordered
-        // backtracking path.
-        let reg = onig_new(
-            b"foobarbaz|a1|a2|a3|a4|a5|a6|a7|a8|foo",
-            ONIG_OPTION_NONE,
-            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            &crate::regsyntax::OnigSyntaxOniguruma,
-        )
-        .unwrap();
-        assert!(reg.literal_tries.is_empty());
+        // trie must try `foobarbaz` before `foo` and backtrack into `foo`,
+        // as the ordered alternation does, rather than prefer either length.
+        use crate::api::Regex;
+        let re = Regex::new("(?:foobarbaz|a1|a2|a3|a4|a5|a6|a7|a8|foo)(.*)").unwrap();
+        assert_eq!(re.as_raw().literal_tries.len(), 1);
+        let caps = re.captures("foobarbazqux").unwrap();
+        assert_eq!(caps.get(1).unwrap().as_str(), "qux");
+        let re = Regex::new("(?:foo|a1|a2|a3|a4|a5|a6|a7|a8|foobarbaz)(.*)").unwrap();
+        assert_eq!(re.as_raw().literal_tries.len(), 1);
+        let caps = re.captures("foobarbazqux").unwrap();
+        assert_eq!(caps.get(1).unwrap().as_str(), "barbazqux");
+        // The shorter literal comes first but only the longer one lets the
+        // rest of the pattern match.
+        let re = Regex::new("(?:foo|a1|a2|a3|a4|a5|a6|a7|a8|foobarbaz)q").unwrap();
+        assert_eq!(re.find("foobarbazq").unwrap().as_str(), "foobarbazq");
     }
 
     #[test]
@@ -9442,7 +9785,7 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_case_insensitive() {
-        // Case-insensitive alternatives stay on the general case-folding path.
+        // Case-insensitive ASCII alternatives compile to a folded trie.
         let reg = onig_new(
             b"(?i)(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa)",
             ONIG_OPTION_NONE,
@@ -9450,7 +9793,8 @@ mod tests {
             &crate::regsyntax::OnigSyntaxOniguruma,
         )
         .unwrap();
-        assert!(reg.literal_tries.is_empty());
+        assert_eq!(reg.literal_tries.len(), 1);
+        assert!(reg.literal_tries[0].is_case_insensitive());
         // Verify case-insensitive matching
         use crate::api::Regex;
         let re =
@@ -9467,13 +9811,12 @@ mod tests {
             r"(?i)(?<![-\w])(?:color|content|cursor|display|direction|float|font|height|left|margin|padding|position|right|top|width|z-index)(?![-\w])",
         )
         .unwrap();
-        assert!(re.as_raw().literal_tries.is_empty());
         let has_alt_literals = re
             .as_raw()
             .ops
             .iter()
             .any(|op| op.opcode == OpCode::AltLiterals);
-        assert!(!has_alt_literals);
+        assert!(has_alt_literals);
         let m = re.find("  display: none").unwrap();
         assert_eq!(m.as_str(), "display");
         // Case insensitive
@@ -9749,11 +10092,17 @@ mod tests {
             (r, spans)
         };
 
-        let literal_sets: [&[&str]; 4] = [
+        let literal_sets: [&[&str]; 9] = [
             &["abc", "bcd", "cde", "xab"],
+            &["ab", "c", "", "xa"],
             &["a", "bc", "cx", "xb", "cc"],
             &["ab", "ba", "xx", "cab", "bcb"],
             &["abca", "b", "xcx", "ca"],
+            // Prefixes before and after their extensions, and a repeat.
+            &["ab", "abc", "a", "bca"],
+            &["abc", "ab", "b", "ca"],
+            &["a", "ab", "abc", "abcx", "x"],
+            &["ab", "c", "ab", "xa"],
         ];
         let heads = [
             "", "a*", "[a-c]*", "x*", "a+?", "(?:a|b)*", ".*", "(?<=a)", "a{2}", "\\b",
@@ -9812,6 +10161,157 @@ mod tests {
             }
         }
         assert!(tries_used > 1000, "only {tries_used} patterns used a trie");
+    }
+
+    /// A case-insensitive literal alternation compiled to a folded trie must
+    /// match exactly like the unraveled alternation, including the non-ASCII
+    /// input Unicode case folding admits and malformed sequences that a
+    /// class decodes. The reference appends an empty look-ahead to one
+    /// literal, which keeps its case folding but blocks the trie.
+    #[test]
+    fn folded_literal_tries_match_like_the_unraveled_alternation() {
+        use crate::oniguruma::{ONIG_OPTION_IGNORECASE, OnigRegion};
+        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let compile = |pattern: &str, option| {
+            onig_new(
+                pattern.as_bytes(),
+                option,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        let search = |reg: &RegexType, input: &[u8]| {
+            let (r, region) = onig_search(
+                reg,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            let region = region.unwrap();
+            let spans: Vec<(i32, i32)> = region
+                .beg
+                .iter()
+                .zip(&region.end)
+                .take(region.num_regs as usize)
+                .map(|(&b, &e)| (b, e))
+                .collect();
+            (r, spans)
+        };
+
+        let pieces: [&[u8]; 39] = [
+            b"s",
+            b"S",
+            "\u{17F}".as_bytes(),
+            b"t",
+            b"T",
+            b"f",
+            b"F",
+            b"i",
+            b"I",
+            b"l",
+            b"L",
+            b"k",
+            b"K",
+            "\u{212A}".as_bytes(),
+            "\u{DF}".as_bytes(),
+            "\u{1E9E}".as_bytes(),
+            "\u{FB00}".as_bytes(),
+            "\u{FB01}".as_bytes(),
+            "\u{FB02}".as_bytes(),
+            "\u{FB03}".as_bytes(),
+            "\u{FB04}".as_bytes(),
+            "\u{FB05}".as_bytes(),
+            "\u{FB06}".as_bytes(),
+            b"a",
+            b"A",
+            b"c",
+            b"-",
+            b"x",
+            // Overlong `k`, masked `\u{17F}` and `\u{212A}`, overlong
+            // 4-byte `\u{212A}`, a truncated sequence, a stray continuation.
+            b"\xC1\xAB",
+            b"\xC5\xFF",
+            b"\xE2\xC4\xAA",
+            b"\xF0\x82\x84\xAA",
+            b"\xE2\x84",
+            b"\x80",
+            b"\xC1\xA1",
+            b"ss",
+            // 3-byte overlong `k`, `s` and `K`, which decode to ASCII.
+            b"\xE0\x81\xAB",
+            b"\xE0\x81\xB3",
+            b"\xE0\x81\x8B",
+        ];
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % bound as u64) as usize
+        };
+        let inputs: Vec<Vec<u8>> = (0..160)
+            .map(|_| {
+                let len = next(7);
+                (0..len)
+                    .flat_map(|_| pieces[next(pieces.len())].to_vec())
+                    .collect()
+            })
+            .collect();
+
+        let literal_sets: [&[&str]; 9] = [
+            &["class", "offer", "first", "kind", "office", "stop", "staff"],
+            &["ss", "st", "ff", "fi", "fl", "k"],
+            &["ffi", "ffl", "sts", "ask", "Kit", "fLs"],
+            &["a-ss", "a-st", "a-fi", "a-k", "x"],
+            &["sss", "ssf", "tss", "lk"],
+            // Prefixes before and after their extensions, and repeats that
+            // differ only in case.
+            &["s", "ss", "st", "sts", "a"],
+            &["ffi", "ff", "f", "fl", "fi"],
+            &["k", "kk", "K", "ks", "kit"],
+            &["animation", "animation-delay", "anim", "a-s"],
+        ];
+        let heads = ["", "a*", "(?<=a)", "[a-z]*", "\\b", "x?"];
+        let quantifiers = ["", "{2}", "+", "?"];
+        let tails = ["", "x", "$", "(?![a-z])", "s", "k"];
+
+        let mut tries_used = 0;
+        for literals in literal_sets {
+            let alternation = literals.join("|");
+            let blocked = format!("{}(?=)|{}", literals[0], literals[1..].join("|"));
+            for head in heads {
+                for quantifier in quantifiers {
+                    for tail in tails {
+                        for (prefix, option) in
+                            [("(?i)", ONIG_OPTION_NONE), ("", ONIG_OPTION_IGNORECASE)]
+                        {
+                            let pattern =
+                                |alt: &str| format!("{prefix}{head}(?:{alt}){quantifier}{tail}");
+                            let with_trie = compile(&pattern(&alternation), option);
+                            let reference = compile(&pattern(&blocked), option);
+                            assert!(reference.literal_tries.is_empty());
+                            tries_used += usize::from(!with_trie.literal_tries.is_empty());
+                            for input in &inputs {
+                                assert_eq!(
+                                    search(&with_trie, input),
+                                    search(&reference, input),
+                                    "{} on {:x?}",
+                                    pattern(&alternation),
+                                    input
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(tries_used > 500, "only {tries_used} patterns used a trie");
     }
 
     /// Bitsets from empty to full, including word-boundary bits, plus

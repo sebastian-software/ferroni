@@ -478,6 +478,14 @@ fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
                         add_exact(&mut map, byte.to_ascii_uppercase());
                     }
                 }
+                if trie.is_case_insensitive() {
+                    // Case folding also admits non-ASCII input (`K` for `k`,
+                    // `ß` for `ss`), including malformed sequences a class
+                    // decodes; any lead byte may start a match.
+                    for byte in 0x80..=0xFF {
+                        add_exact(&mut map, byte);
+                    }
+                }
                 saw_consumer = true;
             }
             OpCode::Jump => {
