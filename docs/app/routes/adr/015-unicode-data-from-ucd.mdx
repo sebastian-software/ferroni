@@ -1,0 +1,56 @@
+---
+order: 15
+title: "Generate Unicode Tables from the UCD"
+---
+
+# Generate Unicode Tables from the UCD
+
+## Status
+
+Accepted
+
+## Context
+
+Ferroni originally generated its Unicode tables from Oniguruma's generated C
+data. Oniguruma's final source snapshot contains Unicode 16.0 data. Continuing
+to use that snapshot would leave Ferroni unable to adopt newer Unicode
+releases, even though the Unicode Character Database (UCD) continues to be
+published.
+
+The project still follows the structural parity goal in
+[ADR-001](./001-one-to-one-parity-with-c-original). Refreshing the Unicode
+inputs does not change the regex engine's control flow; it updates the
+versioned data used by the existing property, case-fold, grapheme-break, and
+word-break code.
+
+## Decision
+
+Generate the Rust tables directly from the official, versioned UCD archives.
+The source URLs and SHA-256 checksums are recorded in unicode_data.toml. The
+preparation script rejects archives whose checksum does not match the pin.
+The generator verifies that the UCD and emoji data versions agree before
+writing the four tables in src/unicode.
+
+The baseline migration was checked against Unicode 16.0. The generated
+property, case-fold, grapheme-break, and word-break data match the previously
+checked-in tables exactly. The generated provenance comments and the
+Extended_Pictographic ctype index declaration differ; the index is now emitted
+from the same property ordering as the tables instead of being hard-coded in
+the break algorithm. scripts/check_unicode_16.py preserves the table-body
+comparison with committed SHA-256 values and checks the old index value.
+
+Ferroni now uses Unicode 17.0.0 data. Its Unicode property lookup recognizes
+902 names, up from 886. This is an intentional data-level divergence from the
+frozen Oniguruma snapshot. The regex behavior and table layout continue to
+follow the existing port.
+
+## Consequences
+
+- Updating Unicode data no longer depends on an Oniguruma checkout.
+- The UCD archive is a reproducible input: its version, source URL, and checksum
+  are all pinned.
+- A Unicode release update regenerates the property, case-fold, grapheme-break,
+  and word-break tables together.
+- Table generation requires Python 3.11 or later and rustfmt.
+- Existing behavior for Unicode 16.0 data remains guarded by the baseline
+  verifier.
