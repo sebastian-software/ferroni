@@ -51,10 +51,11 @@ Ferroni carries the engine forward in Rust:
 
 We build [Ferromark](https://ferromark.dev/), a Markdown engine in Rust, and
 [Ardo](https://www.ardo-docs.dev), a documentation framework, and we want the
-whole chain in Rust, including syntax highlighting on par with Shiki. Shiki
-highlights with TextMate grammars, and those grammars are written for
-Oniguruma: they rely on look-behind, `\G` anchors, backreferences and other
-features most regex engines skip.
+whole chain in Rust, including syntax highlighting on par with Shiki. That
+highlighter is [Ferriki](https://github.com/sebastian-software/ferriki), a
+Shiki-compatible engine that tokenizes TextMate grammars with Ferroni's
+scanner. Those grammars are written for Oniguruma: they rely on look-behind,
+`\G` anchors, backreferences and other features most regex engines skip.
 
 Bindings to the C library would have kept the C code, the C toolchain and its
 memory-safety record. A new engine would have broken the grammars in subtle
