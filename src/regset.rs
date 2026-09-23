@@ -1244,6 +1244,7 @@ fn regset_search_body_position_lead_table(
 /// current table winner bounds each fallback search: a later-index entry only
 /// needs positions strictly before the winner, while an earlier-index entry
 /// also needs the winner's position to resolve a tie.
+#[inline(never)]
 #[allow(clippy::too_many_arguments)]
 fn regset_search_body_position_lead(
     set: &mut OnigRegSet,
