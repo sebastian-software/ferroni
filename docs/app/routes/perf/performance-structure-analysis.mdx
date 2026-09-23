@@ -184,18 +184,40 @@ a few-percent difference means anything.
 - **Document-level scanner benchmark** (`benches/`; finding 1). Tokenizes
   whole documents line by line.
 
-Measured against `main`:
+Measured against `main` (instruction counts per iteration; wall clock as the
+minimum of seven interleaved runs):
 
-| Workload                                                     |  Instructions |               Wall clock |
-| ------------------------------------------------------------ | ------------: | -----------------------: |
-| CSS grammar, `battle_bench` tokenize (one multi-line string) |          -80% |                     -79% |
-| CSS grammar, document line by line                           |          -37% |                     -32% |
-| TypeScript grammar, document line by line                    |          -45% |                     -25% |
-| TypeScript grammar, single line (warm)                       |           -7% |               -1% to -3% |
-| TypeScript grammar, first match (warm)                       |         -3.5% |                  neutral |
-| Rust grammar, document line by line / single line            |   -5% / -1.6% | neutral (aligned builds) |
-| CSS grammar compile                                          |          -19% |                     -11% |
-| TypeScript / Rust grammar compile                            | +0.1% / +0.4% |                  neutral |
+| Workload                                                     |  Instructions | Wall clock |
+| ------------------------------------------------------------ | ------------: | ---------: |
+| CSS grammar, `battle_bench` tokenize (one multi-line string) |          -80% |       -81% |
+| CSS grammar, document line by line                           |          -36% |       -34% |
+| TypeScript grammar, document line by line                    |          -44% |       -28% |
+| TypeScript grammar, single line (warm)                       |           -7% |        -4% |
+| TypeScript grammar, first match (warm)                       |           -4% |    neutral |
+| Rust grammar, document line by line                          |           -5% |    neutral |
+| Rust grammar, single line (warm)                             |           -1% |    neutral |
+| CSS grammar compile                                          |          -19% |       -11% |
+| TypeScript / Rust grammar compile                            | +0.2% / +0.4% |    neutral |
+| `\p{Greek}+` over Greek text                                 |           +6% |        +6% |
+
+The Greek row is the price of finding 7's fix: every non-ASCII character in
+a star run now gets a boundary check (see P6 for how `&str` callers could
+skip it).
+
+The full `regression_bench` suite was run three times against a saved `main`
+baseline, with function alignment forced on both sides:
+
+- **Stable across all three runs.** The document benchmarks were -23% to
+  -25% (TypeScript) and -36% to -38% (CSS); Rust was -4% to -8%, within noise
+  in two runs. Positive look-ahead, nested and named backreference,
+  possessive quantifier and match-at-position benchmarks improved by 8-18%
+  in every run.
+- **Unstable.** About a dozen benchmarks of 100-200 ns flipped sign between
+  runs. For example, `quantifiers/lazy` measured -6% in one run and +9% in
+  the next, and `large_text/timestamp_10k` +17% and then -5%. Every such case
+  was re-measured with instruction counts, and all were neutral or lower
+  (`lazy` -6%, `nested` -7.5%, `timestamp` -3%, `idiomatic find` -1%) except
+  the Greek class above. This is finding 8 at work, not a regression.
 
 ## Ideas for further improvements
 
