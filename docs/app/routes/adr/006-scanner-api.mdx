@@ -23,7 +23,7 @@ Add a `Scanner` API (`src/scanner.rs`) that wraps Ferroni's C-ported `RegSet` in
 
 ### API surface
 
-1. **`Scanner::new(patterns)`**: Compiles a set of regex patterns into a `RegSet` with pre-computed first-byte dispatch tables and SIMD skip needles.
+1. **`Scanner::new(patterns)`**: Compiles a set of regex patterns into a `RegSet` with pre-computed first-byte dispatch tables and SIMD skip needles. It uses vscode-oniguruma's defaults: Oniguruma syntax and `ONIG_OPTION_CAPTURE_GROUP`.
 
 2. **`Scanner::find_next_match(text, start_position)`**: Searches all patterns simultaneously and returns a `ScannerMatch` containing the winning pattern index and all capture group positions. Supports `ScannerFindOptions` for anchor control (`NOT_BEGIN_STRING`, `NOT_END_STRING`, `NOT_BEGIN_POSITION`), matching vscode-oniguruma's `FindOption` flags.
 
@@ -61,3 +61,4 @@ ADR-005 defines the idiomatic Rust API layer (`Regex`, `RegexBuilder`, `Match`, 
 - The `smallvec` crate is added as a dependency for `ScannerMatch::capture_indices`.
 - The Scanner API is Ferroni-specific — it does not exist in C Oniguruma. This is acceptable because it layers on top of (rather than modifying) the C-ported internals, consistent with ADR-001's parity goal.
 - Future Scanner changes should maintain vscode-oniguruma interface compatibility to avoid breaking downstream integrations (Shiki, ferriki).
+- The default capture behavior matches vscode-oniguruma: unnamed groups remain captures when a pattern also contains named groups, and numbered backreferences remain available. Callers can select different behavior with an explicit `ScannerConfig`.

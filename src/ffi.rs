@@ -58,6 +58,7 @@ pub struct OnigErrorInfo {
 
 pub const ONIG_OPTION_NONE: c_uint = 0;
 pub const ONIG_OPTION_IGNORECASE: c_uint = 1;
+pub const ONIG_OPTION_CAPTURE_GROUP: c_uint = 1 << 8;
 
 pub const ONIG_REGSET_POSITION_LEAD: c_int = 0;
 pub const ONIG_REGSET_REGEX_LEAD: c_int = 1;
@@ -415,7 +416,7 @@ impl CScanner {
                 ptrs.as_ptr(),
                 lengths.as_ptr(),
                 patterns.len() as c_int,
-                ONIG_OPTION_NONE as c_int,
+                ONIG_OPTION_CAPTURE_GROUP as c_int,
                 &OnigSyntaxOniguruma as *const OnigSyntaxType,
             )
         };

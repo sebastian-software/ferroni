@@ -123,9 +123,13 @@ impl ScannerSyntax {
 }
 
 /// Configuration for creating a `Scanner`, matching vscode-oniguruma's `IOnigScannerConfig`.
+///
+/// The default options enable unnamed captures when a pattern also contains
+/// named groups, matching vscode-oniguruma's default `CaptureGroup` option.
 #[derive(Debug, Clone)]
 pub struct ScannerConfig {
-    /// Compile-time options applied to all patterns.
+    /// Compile-time options applied to all patterns. Defaults to
+    /// [`ONIG_OPTION_CAPTURE_GROUP`].
     pub options: OnigOptionType,
     /// Regex syntax variant to use.
     pub syntax: ScannerSyntax,
@@ -134,7 +138,7 @@ pub struct ScannerConfig {
 impl Default for ScannerConfig {
     fn default() -> Self {
         ScannerConfig {
-            options: ONIG_OPTION_NONE,
+            options: ONIG_OPTION_CAPTURE_GROUP,
             syntax: ScannerSyntax::default(),
         }
     }
@@ -375,8 +379,12 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    /// Create a scanner from a list of pattern strings using default settings
-    /// (Oniguruma syntax, no special options).
+    /// Create a scanner from a list of pattern strings using the
+    /// vscode-oniguruma defaults (Oniguruma syntax and capture groups enabled).
+    ///
+    /// Enabling capture groups preserves unnamed captures and numbered
+    /// backreferences when a pattern also contains named groups. Pass an
+    /// explicit [`ScannerConfig`] to select different compile-time options.
     pub fn new(patterns: &[&str]) -> Result<Scanner, RegexError> {
         Self::with_config(patterns, &ScannerConfig::default())
     }
