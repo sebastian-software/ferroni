@@ -230,9 +230,9 @@ grammar pattern's bytecode and optimizer state.
 
 Midway through, the priority was set explicitly: the matching time of
 compiled patterns matters more than compile time. A grammar compiles once
-per process but runs for every line of every document. The last two changes
-(findings 15 and 16) came out of profiling where the VM spends its time on
-cold documents, and the ideas list now ranks run-time work first.
+per process but runs for every line of every document. The last three
+changes (findings 15 to 17) came out of profiling where the VM spends its
+time on cold documents, and the ideas list now ranks run-time work first.
 
 ### 9. Literal trie patterns lost their start map
 
@@ -320,6 +320,19 @@ instructions the VM executed for the TypeScript document. Of the grammar's
 instruction. Most of the other 50 are branches of alternation look-behinds
 with two-instruction bodies, such as `^return` or `[^$._[:alnum:]]return`.
 
+### 17. Optional prefixes pushed and popped at every attempt
+
+With look-arounds cheap, `stack_pop` was about a fifth of the cold
+TypeScript document's instructions, about eleven pops per attempt. Most of
+those entries were pushed in vain. TextMate patterns start with optional
+groups such as
+`(?:(?<![$_[:alnum:]])(public|private|protected|readonly)\s+)?` and
+alternate between branches with distinct first characters. At almost every
+position the VM pushed the alternative, failed at the main path's first
+character and popped the entry again. Upstream avoids this only where the
+main path starts with a literal character (`PUSH_OR_JUMP_EXACT1`), and in
+these grammars it rarely does.
+
 ### Changes in the second pass
 
 - **Settled fallback entries are cheap** (`regset.rs`; finding 11, P2).
@@ -368,12 +381,31 @@ with two-instruction bodies, such as `^return` or `[^$._[:alnum:]]return`.
   compares searches across 19 body kinds, both polarities and malformed
   input. TypeScript document: -6.5% instructions, -6% wall clock. CSS: -1%
   instructions, but +2% to +3% wall clock from code placement (finding 8).
+- **Guarded backtrack pushes** (`first_bytes.rs`, `regcomp.rs`,
+  `regexec.rs`; finding 17, P11). A post-compile pass derives, for each
+  `Push`, the bytes its main path can consume first. When the current byte
+  is not among them, the VM goes straight to the alternative without
+  pushing it. A single byte becomes upstream's own `PushOrJumpExact1`;
+  larger sets become the Rust-only `PushOrJumpByteSet`. The walk starts
+  inside the pattern, so it only passes what backtracking undoes: checks,
+  fused look-behinds, marks and cuts pushed on the walked path, capture
+  pushes, and negative look-arounds whose bodies leave no trace. Anything
+  else ends the walk, and so does a limit of 64 instructions. The
+  first-byte analysis moved into its own module, where the start-map walk
+  and the guard share it, and it now records bytes in a 256-bit set. A
+  differential test compiles 31 branch heads in 8 contexts with and without
+  guards. Five deliberate mistakes in the walk each make it fail. TypeScript
+  document: -36% instructions, -30% wall clock. CSS: -32% and -28%. Rust:
+  -9% and -9% to -11%. Compile time rises by 2-4% in instructions and stays
+  within noise in wall clock.
 - **Fast-path census** (`regset.rs`; structure observations). A unit test
   compiles the three grammars as a scanner does and asserts how many
   patterns reach each fast path. Dropping the trie start map, for example,
   moves TypeScript's patterns without an optimizer from 3 to 11. The census
   also counts fused look-behinds (TypeScript 443, CSS 64, Rust 6) and the
-  ones that keep the upstream sequence (50, 11, 2).
+  ones that keep the upstream sequence (50, 11, 2). For pushes it counts
+  byte-set guards (2,166, 2,764, 28) and pushes left unguarded (161, 70, 4),
+  and it asserts that guards never change a start map.
 
 Measured against `main` after the first pass (instruction counts; wall
 clock as the minimum of nine interleaved runs with function alignment
@@ -381,22 +413,22 @@ forced on both sides, confirmed in both run orders):
 
 | Workload                                    | Instructions | Wall clock |
 | ------------------------------------------- | -----------: | ---------: |
-| TypeScript grammar, first match (warm)      |         -68% |       -70% |
-| TypeScript grammar, single line (warm)      |         -51% |       -50% |
-| Rust grammar, document line by line         |         -33% |       -32% |
-| Rust grammar, single line (warm)            |         -26% |       -22% |
-| TypeScript grammar, document line by line   |         -25% |       -20% |
-| CSS grammar, document line by line          |          -8% |    -5%/-6% |
-| CSS grammar, `battle_bench` tokenize        |          -5% |    -3%/-4% |
-| CSS grammar compile                         |         -35% |       -26% |
-| TypeScript grammar compile                  |         -17% |       -17% |
-| Rust grammar compile                        |         -10% |       -10% |
+| TypeScript grammar, first match (warm)      |         -69% |       -71% |
+| TypeScript grammar, single line (warm)      |         -56% |       -57% |
+| TypeScript grammar, document line by line   |         -52% |       -44% |
+| Rust grammar, document line by line         |         -39% |       -37% |
+| CSS grammar, document line by line          |         -37% |       -33% |
+| Rust grammar, single line (warm)            |         -31% |       -29% |
+| CSS grammar, `battle_bench` tokenize        |         -21% |       -21% |
+| CSS grammar compile                         |         -32% |       -25% |
+| TypeScript grammar compile                  |         -15% |       -15% |
+| Rust grammar compile                        |          -9% |        -8% |
 | `\p{Greek}+`, timestamp, short scanner call |      neutral |    neutral |
 
 The cold TypeScript document, the workload closest to a real tokenizer,
-moved from -3% to -20% with the two run-time changes (findings 15 and 16).
+moved from -3% to -44% with the three run-time changes (findings 15 to 17).
 The `regression_scanner_documents` criterion group, with alignment forced on
-both sides, moved by -24% (TypeScript), -10% (CSS) and -32% (Rust).
+both sides, moved by -48% (TypeScript), -30% (CSS) and -38% (Rust).
 
 Attempts that were measured and dropped:
 
@@ -422,8 +454,8 @@ Attempts that were measured and dropped:
   between +0.5% and -5% for TypeScript and between +4% and -6% for CSS,
   depending on the variant. The timestamp and nested-quantifier
   microbenchmarks regressed by 7% to 26%. This is finding 8 again: code
-  added to `match_at_impl` costs more in placement than it saves (see P3
-  and P4).
+  added to `match_at_impl` costs more in placement than it saves. Avoiding
+  the pushes instead worked (finding 17).
 
 ## Ideas for further improvements
 
@@ -432,10 +464,14 @@ above, and none is a micro-tuning of ported code. P1-P7 come from the first
 pass; each carries its status after the second pass. P8-P11 are new.
 
 **Priority for the next pass.** Matching time outranks compile time, so the
-run-time ideas come first: P11, then P4 and P3, all aimed at the backtracking
-stack that now dominates cold tokenization. P8 helps CSS matching as well as
-its compile time. P9 and the rest of P5 mainly save compile time, and P10 is
-structural.
+run-time ideas come first. After P11, the dispatch loop itself is about 60%
+of the instructions spent matching the TypeScript document, and `stack_pop`
+about 14%. That puts P3 and P4 next, measured with aligned builds because of
+finding 8. The 161 TypeScript pushes still unguarded (the census counts
+them) show what the guard walk cannot pass yet: mostly captures without
+push and look-behinds that keep the upstream sequence. P8 helps CSS matching
+as well as its compile time. P9 and the rest of P5 mainly save compile time,
+and P10 is structural.
 
 ### P1 - Case-insensitive literal alternations as a trie
 
@@ -615,6 +651,9 @@ pushes nothing. First, count at the instruction level how many pushes such a
 guard would remove on the three documents. That count decides the
 investment.
 
+**Status: done** (finding 17), for every push rather than only optional
+groups: TypeScript document -36% instructions, -30% wall clock.
+
 ## Structure observations
 
 - **Rust-only optimizations are interleaved with ported code.** ADR-008
@@ -631,7 +670,10 @@ investment.
   that future upstream releases can be diffed against the port, and that
   gets harder with every one of them. An inventory in ADR-008 plus a
   greppable marker on each divergence (for example
-  `// Rust-only (ADR-008): ...`) would keep that diff tractable.
+  `// Rust-only (ADR-008): ...`) would keep that diff tractable. _The
+  second pass follows this for its own additions: the first-byte analysis
+  of compiled bytecode lives in `first_bytes.rs`, and the new opcodes,
+  their handlers and compile passes carry the marker._
 
 - **Fast-path eligibility needs corpus tests.** Finding 3 was a conservative
   predicate that silently disabled an optimization for nearly every real
