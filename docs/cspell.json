@@ -8,6 +8,7 @@
     "ferroni",
     "forgejo",
     "lockfile",
+    "mbregex",
     "oxfmt",
     "oxlint",
     "pnpm",

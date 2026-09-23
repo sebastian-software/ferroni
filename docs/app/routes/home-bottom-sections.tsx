@@ -12,9 +12,10 @@ export function CodeSection() {
       <div className="fh-container">
         <div className="fh-code-header">
           <div className="fh-section-label">Quick Start</div>
-          <h2 className="fh-section-title">Three lines to your first match</h2>
+          <h2 className="fh-section-title">Regex engine and scanner, one crate</h2>
           <p className="fh-section-subtitle">
-            Add Ferroni as a dependency. Write a pattern. Match.
+            Match with the idiomatic Regex API, or tokenize with the multi-pattern Scanner that
+            TextMate grammars need.
           </p>
         </div>
 
@@ -34,7 +35,7 @@ export function CodeSection() {
               <span className="kw">let</span> re = <span className="ty">Regex</span>::
               <span className="fn">new</span>(
               <span className="str">
-                r"(?&lt;year&gt;\d{"{4}"})-(?\u003cmonth\u003e\d{"{2}"})"
+                r"(?&lt;year&gt;\d{"{4}"})-(?&lt;month&gt;\d{"{2}"})"
               </span>
               )?;{"\n"}
               {"\n"}
@@ -49,6 +50,37 @@ export function CodeSection() {
               {"    "}
               <span className="ty">Ok</span>(()){"\n"}
               {"}"}
+            </pre>
+          </div>
+
+          <div className="fh-code-tabs fh-code-tabs-next">
+            <span className="fh-code-tab is-active">highlight.rs</span>
+          </div>
+          <div className="fh-code-block">
+            <pre>
+              <span className="kw">use</span>{" "}
+              <span className="ty">
+                ferroni::scanner::{"{"}Scanner, ScannerFindOptions{"}"}
+              </span>
+              ;{"\n"}
+              {"\n"}
+              <span className="kw">let mut</span> scanner = <span className="ty">Scanner</span>::
+              <span className="fn">new</span>(&amp;[{"\n"}
+              {"    "}
+              <span className="str">r"\b(function|const|let|var)\b"</span>,{"\n"}
+              {"    "}
+              <span className="str">r#""[^"]*""#</span>,{"\n"}
+              {"    "}
+              <span className="str">r"&#47;&#47;.*$"</span>,{"\n"}
+              ]).unwrap();{"\n"}
+              {"\n"}
+              <span className="kw">let</span> m = scanner{"\n"}
+              {"    "}.<span className="fn">find_next_match</span>(
+              <span className="str">r#"const x = "hello""#</span>, 0,{" "}
+              <span className="ty">ScannerFindOptions</span>::NONE){"\n"}
+              {"    "}.unwrap();{"\n"}
+              <span className="mc">assert_eq!</span>(m.index, 0);{" "}
+              <span className="cm">&#47;&#47; "const" matched first</span>
             </pre>
           </div>
 
@@ -67,12 +99,12 @@ export function CodeSection() {
 /* -------------------------------------------------- */
 
 const ecosystem = [
-  { name: "Ruby", role: "Core regex engine" },
-  { name: "PHP", role: "mbstring module" },
   { name: "TextMate", role: "Grammar syntax" },
-  { name: "jq", role: "Pattern matching" },
-  { name: "Shiki", role: "Syntax highlighting" },
-  { name: "VS Code", role: "Token engine" },
+  { name: "VS Code", role: "Scanner via vscode-oniguruma" },
+  { name: "Shiki", role: "Scanner via vscode-oniguruma" },
+  { name: "jq", role: "Regex engine" },
+  { name: "PHP", role: "mbregex (mb_ereg)" },
+  { name: "Ruby", role: "Via its fork, Onigmo" },
 ];
 
 export function EcosystemSection() {
@@ -81,10 +113,10 @@ export function EcosystemSection() {
       <div className="fh-container">
         <div className="fh-eco-header">
           <div className="fh-section-label">Ecosystem</div>
-          <h2 className="fh-section-title">The Oniguruma ecosystem, unlocked</h2>
+          <h2 className="fh-section-title">Built on Oniguruma&rsquo;s semantics</h2>
           <p className="fh-section-subtitle">
-            Ferroni works wherever Oniguruma does. These projects all depend on Oniguruma&rsquo;s
-            feature set &mdash; and Ferroni covers it completely.
+            These projects depend on Oniguruma&rsquo;s syntax and behavior. Ferroni brings them to
+            Rust for ASCII and UTF-8 text, the encoding TextMate scanning and jq run on.
           </p>
         </div>
 
@@ -114,8 +146,8 @@ export function CTASection() {
         <div className="fh-section-label">Get Started</div>
         <h2 className="fh-section-title">Start building with Ferroni</h2>
         <p className="fh-section-subtitle">
-          Full Oniguruma compatibility with dramatically better performance. One dependency. Pure
-          Rust.
+          Oniguruma&rsquo;s engine and the vscode-oniguruma scanner in one pure-Rust crate. Verified
+          against the upstream tests, measured against the C original.
         </p>
 
         <div className="fh-cta-group">
