@@ -3022,6 +3022,35 @@ fn push_char_boundaries(
     }
 }
 
+/// Match a literal alternation compiled to a trie at `s`, as the ordered
+/// alternation would: continue with the literal that comes first and, when
+/// several literals match (one is a prefix of another), leave the others as
+/// backtracking alternatives in alternation order, resuming at `next_pcode`
+/// after their end. Returns the length of the first match.
+#[inline(never)]
+fn match_literal_trie(
+    stack: &mut Vec<StackEntry>,
+    trie: &crate::literal_trie::LiteralTrie,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    next_pcode: usize,
+) -> Option<usize> {
+    let (len, others) = trie.first_match(str_data, s, right_range)?;
+    if others {
+        let matches = trie.matches_in_order(str_data, s, right_range);
+        for &(_, alternative) in matches[1..].iter().rev() {
+            stack.push(StackEntry::Alt {
+                pcode: next_pcode,
+                pstr: s + alternative,
+                zid: -1,
+                is_super: false,
+            });
+        }
+    }
+    Some(len)
+}
+
 // ============================================================================
 // match_at - the core VM executor (port of C's match_at function)
 // ============================================================================
@@ -5213,7 +5242,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             OpCode::AltLiterals => {
                 if let OperationPayload::AltLiterals { trie_idx } = reg.ops[p].payload {
                     let trie = &reg.literal_tries[trie_idx as usize];
-                    if let Some(match_len) = trie.find_match(str_data, s, right_range) {
+                    if let Some(match_len) =
+                        match_literal_trie(&mut stack, trie, str_data, s, right_range, p + 1)
+                    {
                         s += match_len;
                         p += 1;
                     } else {
