@@ -230,6 +230,23 @@ fn has_finite_variable_optimizer(reg: &RegexType) -> bool {
 /// compiled bytecode. Returning `None` is deliberate: any control-flow shape
 /// we cannot prove safe stays on the optimizer-event fallback.
 fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
+    first_byte_map_from(reg, 0, None, 0)
+}
+
+/// The bytes a match can start with when the VM starts at `entry`.
+///
+/// With `lookahead` set, `entry` is the body of that positive look-ahead and
+/// reaching its closing `CutToMark` means the body matched empty, so no byte
+/// is fixed. `None` whenever some path can match without consuming input.
+fn first_byte_map_from(
+    reg: &RegexType,
+    entry: usize,
+    lookahead: Option<MemNumType>,
+    depth: u32,
+) -> Option<[u8; CHAR_MAP_SIZE]> {
+    /// Nested look-aheads whose bodies are derived before giving up.
+    const MAX_LOOKAHEAD_DEPTH: u32 = 4;
+
     fn target(pc: usize, addr: RelAddrType, len: usize) -> Option<usize> {
         let target = (pc as i64).checked_add(addr as i64)?;
         (target >= 0 && (target as usize) < len).then_some(target as usize)
@@ -305,7 +322,7 @@ fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
     }
 
     let mut map = [0; CHAR_MAP_SIZE];
-    let mut pending = vec![0usize];
+    let mut pending = vec![entry];
     let mut visited = vec![false; reg.ops.len()];
     let mut saw_consumer = false;
 
@@ -537,7 +554,25 @@ fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
                     // position at its matching CutToMark. Non-restoring marks
                     // are VM bookkeeping (for example greedy star loops) and
                     // continue normally into their consuming instruction.
-                    pending.push(mark_continuation(reg, pc, id)?);
+                    let continuation = mark_continuation(reg, pc, id)?;
+                    let lookbehind =
+                        reg.ops.get(pc + 1).map(|op| op.opcode) == Some(OpCode::StepBackStart);
+                    // A positive look-ahead whose body cannot match empty must
+                    // consume the byte at the start position, so its body's
+                    // first bytes bound this path like a consuming instruction.
+                    let body =
+                        (continuation != pc + 1 && !lookbehind && depth < MAX_LOOKAHEAD_DEPTH)
+                            .then(|| first_byte_map_from(reg, pc + 1, Some(id), depth + 1))
+                            .flatten();
+                    match body {
+                        Some(body) => {
+                            for (value, &in_body) in map.iter_mut().zip(&body) {
+                                *value |= in_body;
+                            }
+                            saw_consumer = true;
+                        }
+                        None => pending.push(continuation),
+                    }
                 } else {
                     pending.push(pc + 1);
                 }
@@ -572,11 +607,20 @@ fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
             | OpCode::EmptyCheckEndMemstPush
             | OpCode::Pop
             | OpCode::PopToMark
-            | OpCode::CutToMark
             | OpCode::SaveVal
             | OpCode::UpdateVar
             | OpCode::CalloutContents
             | OpCode::CalloutName => pending.push(pc + 1),
+            OpCode::CutToMark => {
+                let OperationPayload::CutToMark { id, .. } = op.payload else {
+                    return None;
+                };
+                if lookahead == Some(id) {
+                    // The look-ahead body matched without consuming input.
+                    return None;
+                }
+                pending.push(pc + 1);
+            }
             OpCode::Fail => {}
             OpCode::AnyCharStar
             | OpCode::AnyCharMlStar
@@ -2080,9 +2124,9 @@ mod tests {
             census(grammar_loader::typescript_patterns()),
             Census {
                 patterns: 279,
-                table_entries: 199,
-                fallback_entries: 80,
-                fallback_start_filters: 55,
+                table_entries: 200,
+                fallback_entries: 79,
+                fallback_start_filters: 79,
                 literal_tries: 20,
                 folded_literal_tries: 0,
                 without_optimizer: 3,
@@ -2093,9 +2137,9 @@ mod tests {
             census(grammar_loader::css_patterns()),
             Census {
                 patterns: 117,
-                table_entries: 107,
-                fallback_entries: 10,
-                fallback_start_filters: 5,
+                table_entries: 108,
+                fallback_entries: 9,
+                fallback_start_filters: 7,
                 literal_tries: 18,
                 folded_literal_tries: 18,
                 without_optimizer: 7,
@@ -2373,6 +2417,87 @@ mod tests {
         let input = b"ab  [c \xc3\xa9[ x [";
         for start in 0..=input.len() {
             // Position-lead: earliest start, ties to the lower index.
+            let expected = patterns
+                .iter()
+                .enumerate()
+                .filter_map(|(index, pattern)| {
+                    let reg = compile(pattern);
+                    let (pos, _) = onig_search(
+                        &reg,
+                        input,
+                        input.len(),
+                        start,
+                        input.len(),
+                        None,
+                        ONIG_OPTION_NONE,
+                    );
+                    (pos >= 0).then_some((pos, index as i32))
+                })
+                .min()
+                .map_or((ONIG_MISMATCH, 0), |(pos, index)| (index, pos));
+            let found = onig_regset_search(
+                &mut set,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(found, expected, "start {start}");
+        }
+    }
+
+    /// A positive look-ahead whose body cannot match empty fixes the start
+    /// byte, so zero-width grammar patterns such as `(?<=:)(?=\s*\{)` get a
+    /// start filter. Nullable bodies and look-behinds fix nothing.
+    #[test]
+    fn start_map_reads_through_positive_lookaheads() {
+        let map_of = |pattern: &[u8]| derive_start_byte_map(&compile(pattern));
+        let members = |map: [u8; CHAR_MAP_SIZE]| -> Vec<u8> {
+            (0..=255u8).filter(|&b| map[b as usize] != 0).collect()
+        };
+
+        let map = map_of(b"(?<=:)(?=\\s*\\{)").expect("look-ahead fixes the start");
+        assert!(map[b' ' as usize] != 0 && map[b'\t' as usize] != 0 && map[b'{' as usize] != 0);
+        assert_eq!(map[b':' as usize], 0);
+        assert_eq!(map[b'a' as usize], 0);
+        assert_eq!(members(map_of(b"(?=a|b)").unwrap()), b"ab");
+        assert_eq!(members(map_of(b"(?=(?=ab)a)").unwrap()), b"a");
+        assert_eq!(members(map_of(b"(?=a?)x").unwrap()), b"x");
+        assert_eq!(members(map_of(b"(?>ab)").unwrap()), b"a");
+        for zero_width in [
+            &b"(?=a?)"[..],
+            b"(?=)",
+            b"(?<=ab)",
+            b"(?<=a|bc)",
+            b"(?!a)",
+            b"(?>a|)",
+        ] {
+            assert_eq!(
+                map_of(zero_width),
+                None,
+                "{:?}",
+                std::str::from_utf8(zero_width)
+            );
+        }
+    }
+
+    #[test]
+    fn lookahead_start_filters_keep_regset_results() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns: [&[u8]; 5] = [
+            b"(?<=:)(?=\\s*\\{)",
+            b"(?=(\\w+)\\s*<)",
+            b"(?=a?)b",
+            b"(?<![a-z])(?=[a-z]+\\()",
+            b"x",
+        ];
+        let (set, result) = onig_regset_new(patterns.iter().map(|p| compile(p)).collect());
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        let input = b"a: {b} f(x) :  {\xc3\xa9< ab <c> x:{";
+        for start in 0..=input.len() {
             let expected = patterns
                 .iter()
                 .enumerate()
