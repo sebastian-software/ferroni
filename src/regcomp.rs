@@ -263,7 +263,8 @@ fn get_tree_head_literal<'a>(node: &'a Node, exact: bool, _reg: &RegexType) -> O
         NodeInner::List(cons) => get_tree_head_literal(&cons.car, exact, _reg),
 
         NodeInner::String(sn) => {
-            if sn.s.is_empty() {
+            // A literal alternation trie stores its index, not its text.
+            if sn.s.is_empty() || node.has_status(ND_ST_LITERAL_ALT) {
                 return None;
             }
             // ND_IS_REAL_IGNORECASE = IGNORECASE && !CRUDE
@@ -3292,6 +3293,9 @@ const IN_PEEK: i32 = 1 << 8;
 /// Mirrors C's node_min_byte_len() from regcomp.c.
 fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
     match &node.inner {
+        // A literal alternation trie stores its index; its literals are
+        // never empty.
+        NodeInner::String(_) if node.has_status(ND_ST_LITERAL_ALT) => 1,
         NodeInner::String(sn) => sn.s.len() as OnigLen,
 
         NodeInner::CType(_) | NodeInner::CClass(_) => env.enc.min_enc_len() as OnigLen,
@@ -6661,7 +6665,9 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
             // Expand string: "abc"{3} => "abcabcabc"
             const EXPAND_STRING_MAX_LENGTH: i32 = 100;
             if let Some(ref body) = qn.body {
-                if let NodeInner::String(ref sn) = body.inner {
+                if let (NodeInner::String(sn), false) =
+                    (&body.inner, body.has_status(ND_ST_LITERAL_ALT))
+                {
                     if !is_infinite_repeat(qn.lower)
                         && qn.lower == qn.upper
                         && qn.lower > 1
@@ -7901,6 +7907,8 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
             }
             len
         }
+        // A literal alternation trie stores its index, not its text.
+        NodeInner::String(_) if node.has_status(ND_ST_LITERAL_ALT) => INFINITE_LEN,
         NodeInner::String(sn) => sn.s.len() as OnigLen,
         NodeInner::CType(_) | NodeInner::CClass(_) => env.enc.max_enc_len() as OnigLen,
         NodeInner::BackRef(_) => {
@@ -9697,6 +9705,110 @@ mod tests {
 
         assert_eq!(onig_compile(&mut reg, br"a\Kb"), 0);
         assert!(reg.keep_moves_match_start);
+    }
+
+    /// A literal alternation compiled to a trie must match exactly like the
+    /// same alternation compiled normally, in every surrounding context.
+    /// The reference variant writes one literal's last character as a class
+    /// (`ab[c]`), which keeps its meaning but blocks the trie.
+    #[test]
+    fn literal_tries_match_like_the_alternation_in_context() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::onig_search;
+
+        let compile = |pattern: &str| {
+            onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        let search = |reg: &RegexType, input: &[u8]| {
+            let (r, region) = onig_search(
+                reg,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            let region = region.unwrap();
+            let spans: Vec<(i32, i32)> = region
+                .beg
+                .iter()
+                .zip(&region.end)
+                .take(region.num_regs as usize)
+                .map(|(&b, &e)| (b, e))
+                .collect();
+            (r, spans)
+        };
+
+        let literal_sets: [&[&str]; 4] = [
+            &["abc", "bcd", "cde", "xab"],
+            &["a", "bc", "cx", "xb", "cc"],
+            &["ab", "ba", "xx", "cab", "bcb"],
+            &["abca", "b", "xcx", "ca"],
+        ];
+        let heads = [
+            "", "a*", "[a-c]*", "x*", "a+?", "(?:a|b)*", ".*", "(?<=a)", "a{2}", "\\b",
+        ];
+        let quantifiers = ["", "{2}", "*", "+", "?", "{1,2}", "*+", "{3}"];
+        let tails = ["", "x", "$", "a", "(?=c)", "(?!a)", "c*x"];
+        let inputs: Vec<Vec<u8>> = {
+            let mut state = 0x2545_F491_4F6C_DD1Du64;
+            (0..24)
+                .map(|i| {
+                    (0..(i % 9))
+                        .map(|_| {
+                            state ^= state << 13;
+                            state ^= state >> 7;
+                            state ^= state << 17;
+                            b"abcx"[(state % 4) as usize]
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+
+        let mut tries_used = 0;
+        for literals in literal_sets {
+            let alternation = literals.join("|");
+            let last = literals[0].len() - 1;
+            let blocked = format!(
+                "{}[{}]|{}",
+                &literals[0][..last],
+                &literals[0][last..],
+                literals[1..].join("|")
+            );
+            for head in heads {
+                for quantifier in quantifiers {
+                    for tail in tails {
+                        for group in ["(?:{})", "({})"] {
+                            let pattern = |alt: &str| {
+                                format!("{head}{}{quantifier}{tail}", group.replace("{}", alt))
+                            };
+                            let with_trie = compile(&pattern(&alternation));
+                            let reference = compile(&pattern(&blocked));
+                            assert!(reference.literal_tries.is_empty());
+                            tries_used += usize::from(!with_trie.literal_tries.is_empty());
+                            for input in &inputs {
+                                assert_eq!(
+                                    search(&with_trie, input),
+                                    search(&reference, input),
+                                    "{} on {:?}",
+                                    pattern(&alternation),
+                                    String::from_utf8_lossy(input)
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(tries_used > 1000, "only {tries_used} patterns used a trie");
     }
 
     /// Bitsets from empty to full, including word-boundary bits, plus
