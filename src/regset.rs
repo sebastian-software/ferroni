@@ -1993,6 +1993,25 @@ pub fn onig_regset_search_with_param(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+    use crate::regcomp::onig_new;
+    use crate::regexec::{
+        LIMIT_TEST_LOCK, onig_get_global_limit_revision, onig_get_match_stack_limit,
+        onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit,
+        onig_set_match_stack_limit, onig_set_retry_limit_in_match, onig_set_retry_limit_in_search,
+        onig_set_time_limit,
+    };
+    use crate::regsyntax::OnigSyntaxOniguruma;
+
+    /// The committed Shiki grammars, as the benchmarks load them.
+    #[allow(dead_code)]
+    mod grammar_loader {
+        use crate as ferroni;
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/grammar_loader.rs"
+        ));
+    }
 
     fn fallback_indices(set: &OnigRegSet) -> Vec<u16> {
         set.fallback_search_candidates
@@ -2007,15 +2026,96 @@ mod tests {
         assert_eq!(set.fallback_search_candidates[0].no_match_from, start);
         assert!(set.fallback_memos[0].is_empty());
     }
-    use crate::encodings::utf8::ONIG_ENCODING_UTF8;
-    use crate::regcomp::onig_new;
-    use crate::regexec::{
-        LIMIT_TEST_LOCK, onig_get_global_limit_revision, onig_get_match_stack_limit,
-        onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit,
-        onig_set_match_stack_limit, onig_set_retry_limit_in_match, onig_set_retry_limit_in_search,
-        onig_set_time_limit,
-    };
-    use crate::regsyntax::OnigSyntaxOniguruma;
+
+    /// Which fast paths the committed grammars reach, compiled as a scanner
+    /// compiles them. Eligibility checks fail quietly: an overly cautious
+    /// one passes every behavioral test while disabling its optimization
+    /// for real patterns (a literal trie once dropped its pattern's start
+    /// map; region-free matching once never applied to grammar captures).
+    /// When a change moves these numbers on purpose, update them and say
+    /// why in the commit.
+    #[test]
+    fn grammar_fast_path_census() {
+        #[derive(Debug, PartialEq)]
+        struct Census {
+            patterns: usize,
+            table_entries: usize,
+            fallback_entries: usize,
+            fallback_start_filters: usize,
+            literal_tries: usize,
+            folded_literal_tries: usize,
+            without_optimizer: usize,
+            capture_tracking: usize,
+        }
+        let census = |patterns: Vec<String>| {
+            let regs: Vec<Box<RegexType>> =
+                patterns.iter().map(|p| compile(p.as_bytes())).collect();
+            let tries = || regs.iter().flat_map(|reg| reg.literal_tries.iter());
+            let literal_tries = tries().count();
+            let folded_literal_tries = tries().filter(|trie| trie.is_case_insensitive()).count();
+            let without_optimizer = regs
+                .iter()
+                .filter(|reg| reg.optimize == OptimizeType::None)
+                .count();
+            let capture_tracking = regs.iter().filter(|reg| reg.needs_capture_tracking).count();
+            let (set, r) = onig_regset_new(regs);
+            assert_eq!(r, ONIG_NORMAL);
+            let set = set.unwrap();
+            Census {
+                patterns: patterns.len(),
+                table_entries: set.table_entry_count,
+                fallback_entries: set.fallback_search_candidates.len(),
+                fallback_start_filters: set
+                    .fallback_search_candidates
+                    .iter()
+                    .filter(|c| set.entries[c.index as usize].start_filter.is_some())
+                    .count(),
+                literal_tries,
+                folded_literal_tries,
+                without_optimizer,
+                capture_tracking,
+            }
+        };
+        assert_eq!(
+            census(grammar_loader::typescript_patterns()),
+            Census {
+                patterns: 279,
+                table_entries: 199,
+                fallback_entries: 80,
+                fallback_start_filters: 55,
+                literal_tries: 20,
+                folded_literal_tries: 0,
+                without_optimizer: 3,
+                capture_tracking: 0,
+            }
+        );
+        assert_eq!(
+            census(grammar_loader::css_patterns()),
+            Census {
+                patterns: 117,
+                table_entries: 107,
+                fallback_entries: 10,
+                fallback_start_filters: 5,
+                literal_tries: 18,
+                folded_literal_tries: 18,
+                without_optimizer: 7,
+                capture_tracking: 0,
+            }
+        );
+        assert_eq!(
+            census(grammar_loader::rust_patterns()),
+            Census {
+                patterns: 81,
+                table_entries: 78,
+                fallback_entries: 3,
+                fallback_start_filters: 2,
+                literal_tries: 8,
+                folded_literal_tries: 0,
+                without_optimizer: 0,
+                capture_tracking: 0,
+            }
+        );
+    }
 
     fn compile(pattern: &[u8]) -> Box<RegexType> {
         let reg = onig_new(
