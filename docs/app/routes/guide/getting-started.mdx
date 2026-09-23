@@ -184,6 +184,12 @@ all patterns wins. `capture_indices[0]` is the whole match, the rest are its
 capture groups, all in byte offsets. To tokenize a full line, keep calling
 `find_next_match` with `start_position` set to the end of the previous match.
 
+`Scanner::new` and the default `ScannerConfig` enable capture groups, matching
+vscode-oniguruma. When a pattern mixes named and unnamed groups, all groups
+are returned and numbered backreferences work. If you relied on the former
+Ferroni default, pass `ONIG_OPTION_NONE` explicitly; capture indices after a
+named group may shift when unnamed groups are captured.
+
 Watch for zero-width matches when you write that loop: if a pattern can match
 the empty string, advance to the next character boundary instead of standing
 still. Advancing by a single byte would split a multibyte character and panic
