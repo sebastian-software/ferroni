@@ -2925,6 +2925,19 @@ fn greedy_char_loop(
     right_range: usize,
     member_end: impl Fn(usize) -> Option<usize>,
 ) -> usize {
+    // In UTF-8, stepping back from `next` lands on `x` exactly when the bytes
+    // after `x` are continuation bytes and `x` itself is a lead byte (or the
+    // run's first byte, where `prev_char_head` stops anyway). Checking that
+    // directly avoids an encoding call per multibyte character.
+    let utf8 = std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8);
+    let steps_back_to = |x: usize, next: usize| {
+        if utf8 {
+            str_data[x + 1..next].iter().all(|&b| b & 0xC0 == 0x80)
+                && (x == start || str_data[x] & 0xC0 != 0x80)
+        } else {
+            prev_char_head(enc, start, next, str_data) == x
+        }
+    };
     let mut s = resume;
     let mut single_byte = true;
     let mut exact_heads = true;
@@ -2934,7 +2947,7 @@ fn greedy_char_loop(
         };
         if str_data[s] >= 0x80 {
             single_byte &= next == s + 1;
-            exact_heads &= prev_char_head(enc, start, next, str_data) == s;
+            exact_heads &= steps_back_to(s, next);
         }
         s = next;
     }
@@ -2956,19 +2969,40 @@ fn greedy_char_loop(
                 peek_byte: 0,
             });
         } else {
-            let mut x = start;
-            while x < s {
-                stack.push(StackEntry::Alt {
-                    pcode,
-                    pstr: x,
-                    zid: -1,
-                    is_super: false,
-                });
-                x = member_end(x).unwrap_or(s);
-            }
+            push_char_boundaries(stack, pcode, enc, str_data, start, s);
         }
     }
     s
+}
+
+/// Push one backtrack entry per character boundary of `start..run_end`, as
+/// the unoptimized loop does. Only reached for malformed multibyte input.
+///
+/// Every single-character opcode behind the star loops steps over an ASCII
+/// byte by one and over anything else by `enclen`, where a character cut by
+/// the range ends the run. Retracing that here, instead of calling the loop's
+/// character test again, leaves the test a single call site in
+/// `greedy_char_loop`, so it is inlined there.
+#[cold]
+#[inline(never)]
+fn push_char_boundaries(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    enc: OnigEncoding,
+    str_data: &[u8],
+    start: usize,
+    run_end: usize,
+) {
+    let mut x = start;
+    while x < run_end {
+        stack.push(StackEntry::Alt {
+            pcode,
+            pstr: x,
+            zid: -1,
+            is_super: false,
+        });
+        x = x.saturating_add(enclen(enc, str_data, x)).min(run_end);
+    }
 }
 
 // ============================================================================
