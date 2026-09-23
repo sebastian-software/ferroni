@@ -74,13 +74,15 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Impact**: CSS tokenize -79%, TypeScript documents tokenized line by line -25%, CSS grammar compile -11% (wall clock).
 - **Detailed analysis**: [`/perf/performance-structure-analysis`](/perf/performance-structure-analysis)
 
-#### Second 2026-09 pass (`src/regset.rs`, `src/regcomp.rs`, `src/regparse.rs`, `src/literal_trie.rs`)
+#### Second 2026-09 pass (`src/regset.rs`, `src/regcomp.rs`, `src/regexec.rs`, `src/regparse.rs`, `src/literal_trie.rs`)
 
 - **Contiguous fallback candidates**: RegSet fallback entries keep their skip flags and settled no-match position in one array; the walk stops once a decision at the start position precedes the remaining entries.
 - **Literal trie extensions**: prefixes with ordered backtracking, case-insensitive folded tries, and optimizer information on the trie node (see the literal trie entry above).
 - **Word-level class scans and streamed ctype ranges** in compilation; the compiled output is unchanged.
-- **Fast-path census**: `grammar_fast_path_census` asserts how many grammar patterns reach each of these paths.
-- **Impact**: warm TypeScript line -49%, Rust document -31%, CSS grammar compile -24%, TypeScript compile -17% (wall clock).
+- **Start bytes through positive look-aheads**: the RegSet start-map derivation reads the body of a positive look-ahead that cannot match empty, so look-ahead-led fallback entries get a start filter.
+- **Fused one-instruction look-behinds** (`src/regexec.rs`): a fixed-length look-behind whose body compiles to one class or string instruction runs as `LookBehindOp` plus that instruction, without backtracking entries. Every other look-behind keeps the upstream sequence.
+- **Fast-path census**: `grammar_fast_path_census` asserts how many grammar patterns reach each of these paths, fused look-behinds included.
+- **Impact**: warm TypeScript line -50%, Rust document -32%, TypeScript document -20%, CSS grammar compile -26%, TypeScript compile -17% (wall clock).
 - **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](/perf/performance-structure-analysis#second-pass)
 
 ## Rationale
