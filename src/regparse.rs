@@ -4964,6 +4964,19 @@ fn prs_callout_of_name(
         (None, 0, 0)
     };
 
+    if c == '{' as u32 {
+        if p_end(*p, end) {
+            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        }
+        // C's "read for single check only" pass: the argument list must be
+        // well-formed before the name is looked up.
+        let mut save = *p;
+        let r = prs_callout_args_skip('}' as u32, &mut save, end, pattern, env);
+        if r < 0 {
+            return Err(r);
+        }
+    }
+
     // Identify builtin
     let (builtin_id, callout_in) = if name == b"FAIL" {
         (CALLOUT_BUILTIN_FAIL, CALLOUT_IN_PROGRESS)
@@ -5100,6 +5113,64 @@ fn prs_callout_of_name(
         num,
         builtin_id,
     ))
+}
+
+/// Scan callout arguments up to `cterm` and count them - C's
+/// prs_callout_args() in skip mode, which only checks the argument syntax.
+/// Returns the number of arguments or an error; `*p` advances past `cterm`
+/// on success.
+fn prs_callout_args_skip(
+    cterm: OnigCodePoint,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &ParseEnv,
+) -> i32 {
+    let enc = env.enc;
+    let mut pp = *p;
+
+    if p_end(pp, end) {
+        return ONIGERR_INVALID_CALLOUT_PATTERN;
+    }
+
+    let mut c: OnigCodePoint = 0;
+    let mut n = 0;
+    while n < ONIG_CALLOUT_MAX_ARGS_NUM as i32 {
+        let mut cn = 0;
+        let mut esc = false;
+        loop {
+            if p_end(pp, end) {
+                return ONIGERR_INVALID_CALLOUT_PATTERN;
+            }
+
+            c = pfetch_s(&mut pp, pattern, end, enc);
+            if esc {
+                esc = false;
+                cn += 1;
+            } else if c == '\\' as u32 {
+                esc = true;
+            } else if c == cterm || c == ',' as u32 {
+                break;
+            } else {
+                cn += 1;
+            }
+        }
+
+        if cn != 0 {
+            n += 1;
+        }
+
+        if c == cterm {
+            break;
+        }
+    }
+
+    if c != cterm {
+        return ONIGERR_INVALID_CALLOUT_PATTERN;
+    }
+
+    *p = pp;
+    n
 }
 
 /// Read a callout tag after `[` up to `]` - the tag part of C's
