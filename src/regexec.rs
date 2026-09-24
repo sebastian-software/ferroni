@@ -6515,6 +6515,11 @@ fn onig_search_inner_core_with_right_range(
     // C treats start == range (before the logical end) as an anchored attempt
     // at exactly start, whose match extent is one encoded character. It is
     // neither a forward empty range nor a backward search.
+    //
+    // Deliberate divergence: C sends this case down its backward path, whose
+    // optimized loop (`while (PTR_GE(s, low))`) is not bounded by `range`
+    // and can return a match before `start` (`^.{2}c` on "abc\nabc\n" with
+    // start = range = 4 yields 0 in C). Ferroni only tries `start`.
     if start == range && start < end {
         msa.best_len = ONIG_MISMATCH;
         msa.best_s = 0;
