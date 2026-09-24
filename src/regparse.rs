@@ -2520,6 +2520,11 @@ fn extract_grandchild_body(pnode: &mut Box<Node>) -> Option<Box<Node>> {
 // Tokenizer: fetch_interval
 // ============================================================================
 
+/// Parse `{n,m}` after `{` - mirrors C's fetch_interval(). Returns 0 for
+/// `{n,m}`, 2 for a fixed `{n}`, 1 when the brace is an ordinary character
+/// (ONIG_SYN_ALLOW_INVALID_INTERVAL), or an error. As in C, `*p` only
+/// advances when an interval was read, so a literal `{` leaves the rest of
+/// the pattern to the tokenizer.
 fn fetch_interval(
     p: &mut usize,
     end: usize,
@@ -2529,143 +2534,120 @@ fn fetch_interval(
 ) -> i32 {
     let enc = env.enc;
     let syn = &env.syntax;
-    let mut pfetch_prev = *p;
+    let src = *p;
+    let mut pp = *p;
+    let mut pfetch_prev = pp;
+    let mut r = 0;
     let mut non_low = false;
     let syn_allow = is_syntax_bv(syn, ONIG_SYN_ALLOW_INVALID_INTERVAL);
-    let save_p = *p;
 
-    if p_end(*p, end) {
+    if p_end(pp, end) {
         return if syn_allow {
-            1
+            1 // "....{" : OK!
         } else {
-            ONIGERR_END_PATTERN_AT_LEFT_BRACE
+            ONIGERR_END_PATTERN_AT_LEFT_BRACE // "....{" syntax error
         };
     }
 
     if !syn_allow {
-        let c = ppeek(*p, pattern, end, enc);
+        let c = ppeek(pp, pattern, end, enc);
         if c == ')' as u32 || c == '(' as u32 || c == '|' as u32 {
             return ONIGERR_END_PATTERN_AT_LEFT_BRACE;
         }
     }
 
-    let mut low = scan_number(p, end, pattern, enc);
-    if low < 0 {
-        return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
-    }
-    if low > ONIG_MAX_REPEAT_NUM {
-        return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
-    }
+    // `break 'invalid` is C's `goto invalid`.
+    'invalid: {
+        let mut low = scan_number(&mut pp, end, pattern, enc);
+        if low < 0 {
+            return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
+        }
+        if low > ONIG_MAX_REPEAT_NUM {
+            return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
+        }
 
-    if *p == save_p {
-        // Can't read low
-        if is_syntax_bv(syn, ONIG_SYN_ALLOW_INTERVAL_LOW_ABBREV) {
-            low = 0;
-            non_low = true;
-        } else {
-            // invalid
-            return if syn_allow {
-                1
+        if pp == src {
+            // can't read low
+            if is_syntax_bv(syn, ONIG_SYN_ALLOW_INTERVAL_LOW_ABBREV) {
+                // allow {,n} as {0,n}
+                low = 0;
+                non_low = true;
             } else {
-                ONIGERR_INVALID_REPEAT_RANGE_PATTERN
-            };
-        }
-    }
-
-    if p_end(*p, end) {
-        return if syn_allow {
-            1
-        } else {
-            ONIGERR_INVALID_REPEAT_RANGE_PATTERN
-        };
-    }
-
-    let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
-    let mut up;
-    let mut r = 0; // 0: normal {n,m}, 2: fixed {n} (only set for no-comma form)
-    if c == ',' as u32 {
-        let prev_p = *p;
-        up = scan_number(p, end, pattern, enc);
-        if up < 0 {
-            return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
-        }
-        if up > ONIG_MAX_REPEAT_NUM {
-            return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
-        }
-        if *p == prev_p {
-            if non_low {
-                return if syn_allow {
-                    1
-                } else {
-                    ONIGERR_INVALID_REPEAT_RANGE_PATTERN
-                };
+                break 'invalid;
             }
-            up = INFINITE_REPEAT;
         }
-    } else {
-        if non_low {
-            return if syn_allow {
-                1
-            } else {
-                ONIGERR_INVALID_REPEAT_RANGE_PATTERN
-            };
-        }
-        *p = pfetch_prev; // PUNFETCH
-        up = low;
-        r = 2; // fixed {n}
-    }
 
-    if p_end(*p, end) {
-        return if syn_allow {
-            1
+        if p_end(pp, end) {
+            break 'invalid;
+        }
+        let mut c = pfetch(&mut pp, &mut pfetch_prev, pattern, end, enc);
+        let mut up;
+        if c == ',' as u32 {
+            let prev = pp;
+            up = scan_number(&mut pp, end, pattern, enc);
+            if up < 0 {
+                return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
+            }
+            if up > ONIG_MAX_REPEAT_NUM {
+                return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
+            }
+
+            if pp == prev {
+                if non_low {
+                    break 'invalid;
+                }
+                up = INFINITE_REPEAT; // {n,} : {n,infinite}
+            }
         } else {
-            ONIGERR_INVALID_REPEAT_RANGE_PATTERN
-        };
-    }
+            if non_low {
+                break 'invalid;
+            }
 
-    let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
-    if is_syntax_op(syn, ONIG_SYN_OP_ESC_BRACE_INTERVAL) {
-        if c != mc_esc(syn) || p_end(*p, end) {
-            return if syn_allow {
-                1
-            } else {
-                ONIGERR_INVALID_REPEAT_RANGE_PATTERN
-            };
+            pp = pfetch_prev; // PUNFETCH
+            up = low; // {n} : exact n times
+            r = 2; // fixed
         }
-        let c2 = pfetch(p, &mut pfetch_prev, pattern, end, enc);
-        if c2 != '}' as u32 {
-            return if syn_allow {
-                1
-            } else {
-                ONIGERR_INVALID_REPEAT_RANGE_PATTERN
-            };
+
+        if p_end(pp, end) {
+            break 'invalid;
         }
-    } else {
+        c = pfetch(&mut pp, &mut pfetch_prev, pattern, end, enc);
+        if is_syntax_op(syn, ONIG_SYN_OP_ESC_BRACE_INTERVAL) {
+            if c != mc_esc(syn) || p_end(pp, end) {
+                break 'invalid;
+            }
+            c = pfetch(&mut pp, &mut pfetch_prev, pattern, end, enc);
+        }
         if c != '}' as u32 {
-            return if syn_allow {
-                1
-            } else {
-                ONIGERR_INVALID_REPEAT_RANGE_PATTERN
-            };
+            break 'invalid;
         }
+
+        if up != INFINITE_REPEAT && low > up {
+            // {n,m}+ supported case
+            if is_syntax_op2(syn, ONIG_SYN_OP2_PLUS_POSSESSIVE_INTERVAL) {
+                return ONIGERR_UPPER_SMALLER_THAN_LOWER_IN_REPEAT_RANGE;
+            }
+
+            tok.repeat_possessive = true;
+            std::mem::swap(&mut low, &mut up);
+        } else {
+            tok.repeat_possessive = false;
+        }
+
+        tok.token_type = TokenType::Interval;
+        tok.repeat_lower = low;
+        tok.repeat_upper = up;
+        *p = pp;
+        return r; // 0: normal {n,m}, 2: fixed {n}
     }
 
-    if up != INFINITE_REPEAT && low > up {
-        // {n,m}+ supported case: return error
-        if is_syntax_op2(syn, ONIG_SYN_OP2_PLUS_POSSESSIVE_INTERVAL) {
-            return ONIGERR_UPPER_SMALLER_THAN_LOWER_IN_REPEAT_RANGE;
-        }
-        // Otherwise: swap bounds and make possessive
-        tok.repeat_possessive = true;
-        std::mem::swap(&mut low, &mut up);
+    // invalid:
+    if syn_allow {
+        // *p is left where it was, as in C.
+        1 // OK
     } else {
-        tok.repeat_possessive = false;
+        ONIGERR_INVALID_REPEAT_RANGE_PATTERN
     }
-    tok.token_type = TokenType::Interval;
-    tok.repeat_lower = low;
-    tok.repeat_upper = up;
-
-    r
 }
 
 /// Check if position is at the head of a BRE subexpression.
