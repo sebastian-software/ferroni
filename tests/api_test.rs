@@ -2,7 +2,9 @@
 
 use ferroni::api::{Regex, RegexBuilder};
 use ferroni::error::RegexError;
-use ferroni::oniguruma::{ONIGERR_INVALID_BACKREF, OnigSyntaxType};
+use ferroni::oniguruma::{
+    ONIGERR_INVALID_BACKREF, ONIGERR_UNDEFINED_GROUP_REFERENCE, OnigSyntaxType,
+};
 use ferroni::prelude::*;
 use ferroni::regint::DEFAULT_PARSE_DEPTH_LIMIT;
 use ferroni::regsyntax::{
@@ -626,6 +628,84 @@ fn error_message_names_invalid_char_in_group_name() {
             "{pattern}"
         );
     }
+}
+
+// Each case below is (syntax, pattern, what C's onig_new() reports): `None`
+// when it compiles, else the onig_error_code_to_str() message.
+
+fn assert_compiles_like_c(cases: &[(&'static OnigSyntaxType, &str, Option<&str>)]) {
+    for &(syntax, pattern, expected) in cases {
+        let got = Regex::builder(pattern)
+            .syntax(syntax)
+            .build()
+            .err()
+            .map(|e| e.to_string());
+        let expected = expected.map(|m| format!("syntax error: {m}"));
+        assert_eq!(got, expected, "{pattern}");
+    }
+}
+
+/// C's fetch_name() only honors an error inside the name when the closing
+/// delimiter is missing, and fetch_name_with_level() stops a name at `+`
+/// or `-` to read a level.
+#[test]
+fn group_names_parse_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    assert_compiles_like_c(&[
+        (onig, r"(?<a$b>x)", None),
+        (onig, r"(?'a-b'x)", None),
+        (&OnigSyntaxPython, r"(?P<a+1>x)", None),
+        (onig, r"(?<ab", Some("invalid group name <a>")),
+        (onig, r"(?<a$b)", Some("invalid group name <a$b>")),
+        (onig, r"\k<a", Some("invalid group name <a>")),
+        (onig, r"\k<a)", Some("invalid group name <a)>")),
+        (onig, r"\k<a+>", Some("invalid group name <a+>>")),
+        (onig, r"\k<1->", Some("invalid group name <1->>")),
+        (onig, r"\k<$a>", Some("invalid char in group name <$a>")),
+        (onig, r"\k<$a", Some("invalid char in group name <$>")),
+        (onig, r"\g<ab", Some("invalid group name <a>")),
+        (onig, r"\g<a)", Some("invalid group name <a>")),
+        (onig, r"\g<a-b", Some("invalid group name <a->")),
+        (onig, r"\g<1a>", Some("undefined name <1a> reference")),
+        (onig, r"\g<a+1>", Some("undefined name <a+1> reference")),
+        (onig, r"\g<a$b>", Some("undefined name <a$b> reference")),
+        (
+            &OnigSyntaxPerl_NG,
+            r"(?&a-1)",
+            Some("undefined name <a-1> reference"),
+        ),
+        (
+            &OnigSyntaxPerl_NG,
+            r"(?+0)",
+            Some("invalid group name <+0>"),
+        ),
+        (
+            onig,
+            r"(x)\k<+2147483647>",
+            Some("invalid backref number/name"),
+        ),
+    ]);
+}
+
+/// `(?P=name)` and `(?P>name)` are tokens that take no group number, as in
+/// C's fetch_token().
+#[test]
+fn python_named_backref_and_call_parse_like_c() {
+    let python = &OnigSyntaxPython;
+    assert_compiles_like_c(&[
+        (python, r"(?P=1)", Some("invalid backref number/name")),
+        (python, r"(?P=a-b)", Some("invalid group name <a-b)>")),
+        (python, r"(?P=1a)", Some("invalid group name <1a>")),
+        (python, r"(?P>1a)", Some("undefined name <1a> reference")),
+        (python, r"(?P>+0)", Some("invalid group name <+0>")),
+        (python, r"(?P<a>x)(?P=a)", None),
+        (python, r"(?P<a>x)(?P>a)", None),
+    ]);
+    let err = Regex::builder(r"(?P>1)")
+        .syntax(python)
+        .build()
+        .unwrap_err();
+    assert_eq!(err.code(), ONIGERR_UNDEFINED_GROUP_REFERENCE);
 }
 
 // === Prelude ===
