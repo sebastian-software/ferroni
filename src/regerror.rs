@@ -121,30 +121,59 @@ pub fn onig_is_error_code_needs_param(code: i32) -> bool {
     )
 }
 
+/// for ONIG_MAX_ERROR_MESSAGE_LEN
+const MAX_ERROR_PAR_LEN: usize = 30;
+
+/// Copy at most `buf_size` bytes of the error parameter and report whether it
+/// was cut - mirrors C's to_ascii(). Only its branch for encodings whose
+/// minimum character length is one is ported: those are the only encodings
+/// Ferroni supports (ADR-003).
+fn to_ascii(s: &[u8], buf_size: usize) -> (&[u8], bool) {
+    let len = s.len().min(buf_size);
+    (&s[..len], buf_size < s.len())
+}
+
 /// Convert an error code to a human-readable string.
-/// For parameterized errors, pass the parameter text in `param`.
+/// For parameterized errors, pass the parameter text (C's
+/// `einfo->par`..`einfo->par_end`) in `param`; `None` stands for C's NULL
+/// `par` and substitutes an empty name.
 /// Corresponds to C's onig_error_code_to_str().
-#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_error_code_to_str(code: i32, param: Option<&[u8]>) -> String {
     let fmt = onig_error_code_to_format(code);
 
-    if onig_is_error_code_needs_param(code) {
-        if let Some(par) = param {
-            // Replace %n with the parameter text (converted to ASCII-safe)
-            let par_str = par
-                .iter()
-                .map(|&b| {
-                    if b.is_ascii_graphic() || b == b' ' {
-                        (b as char).to_string()
-                    } else {
-                        format!("\\x{:02x}", b)
-                    }
-                })
-                .collect::<String>();
-            fmt.replace("%n", &par_str)
+    if !onig_is_error_code_needs_param(code) {
+        return fmt.to_string();
+    }
+
+    let (parbuf, is_over) = to_ascii(param.unwrap_or_default(), MAX_ERROR_PAR_LEN - 3);
+    let mut s: Vec<u8> = Vec::with_capacity(fmt.len() + parbuf.len() + 3);
+    let q = fmt.as_bytes();
+    let mut i = 0;
+    while i < q.len() {
+        if q[i] == b'%' && q.get(i + 1) == Some(&b'n') {
+            // '%n': name
+            s.extend_from_slice(parbuf);
+            if is_over {
+                s.extend_from_slice(b"...");
+            }
+            i += 2;
         } else {
-            fmt.replace("%n", "")
+            s.push(q[i]);
+            i += 1;
         }
+    }
+    // The name is copied byte for byte like C does; a cut through a
+    // multi-byte character becomes U+FFFD.
+    String::from_utf8_lossy(&s).into_owned()
+}
+
+/// Like `onig_error_code_to_str`, for when no parameter exists at all (a
+/// bare error code): the `%n` placeholder is dropped together with its
+/// brackets instead of printing an empty name.
+pub(crate) fn onig_error_code_to_str_without_param(code: i32) -> String {
+    let fmt = onig_error_code_to_format(code);
+    if onig_is_error_code_needs_param(code) {
+        fmt.replace(" <%n>", "").replace(" {%n}", "")
     } else {
         fmt.to_string()
     }
@@ -186,6 +215,39 @@ mod tests {
     fn test_parameterized_error_no_param() {
         let msg = onig_error_code_to_str(ONIGERR_UNDEFINED_NAME_REFERENCE, None);
         assert_eq!(msg, "undefined name <> reference");
+    }
+
+    /// C copies the name byte for byte and cuts it after 27 bytes.
+    #[test]
+    fn test_parameterized_error_copies_and_cuts_name() {
+        let msg =
+            onig_error_code_to_str(ONIGERR_INVALID_CHAR_PROPERTY_NAME, Some("Ñope".as_bytes()));
+        assert_eq!(msg, "invalid character property name {Ñope}");
+
+        let name = b"abcdefghijklmnopqrstuvwxyz0";
+        let msg = onig_error_code_to_str(ONIGERR_INVALID_GROUP_NAME, Some(name));
+        assert_eq!(msg, "invalid group name <abcdefghijklmnopqrstuvwxyz0>");
+        let msg = onig_error_code_to_str(
+            ONIGERR_INVALID_GROUP_NAME,
+            Some(b"abcdefghijklmnopqrstuvwxyz01"),
+        );
+        assert_eq!(msg, "invalid group name <abcdefghijklmnopqrstuvwxyz0...>");
+    }
+
+    #[test]
+    fn test_error_without_param() {
+        assert_eq!(
+            onig_error_code_to_str_without_param(ONIGERR_UNDEFINED_NAME_REFERENCE),
+            "undefined name reference"
+        );
+        assert_eq!(
+            onig_error_code_to_str_without_param(ONIGERR_INVALID_CHAR_PROPERTY_NAME),
+            "invalid character property name"
+        );
+        assert_eq!(
+            onig_error_code_to_str_without_param(ONIGERR_MEMORY),
+            "fail to memory allocation"
+        );
     }
 
     #[test]

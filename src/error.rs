@@ -6,7 +6,7 @@
 use std::fmt;
 
 use crate::oniguruma::*;
-use crate::regerror::onig_error_code_to_format;
+use crate::regerror::{onig_error_code_to_str, onig_error_code_to_str_without_param};
 
 /// Error type for regex compilation and matching operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +62,22 @@ impl fmt::Display for RegexError {
 impl std::error::Error for RegexError {}
 
 impl From<i32> for RegexError {
+    /// Builds the error from a bare code. A message that would name a group
+    /// or property drops the name placeholder, as there is no name to show.
     fn from(code: i32) -> Self {
+        RegexError::with_message(code, onig_error_code_to_str_without_param)
+    }
+}
+
+impl RegexError {
+    /// Builds the error `onig_new` reports, with the message C's
+    /// `onig_error_code_to_str(s, code, einfo)` prints: the name recorded in
+    /// `einfo` replaces the placeholder.
+    pub(crate) fn from_einfo(code: i32, einfo: &OnigErrorInfo) -> Self {
+        RegexError::with_message(code, |c| onig_error_code_to_str(c, Some(&einfo.par)))
+    }
+
+    fn with_message(code: i32, message: impl FnOnce(i32) -> String) -> Self {
         match code {
             ONIGERR_MEMORY => RegexError::Memory,
             ONIGERR_MATCH_STACK_LIMIT_OVER => RegexError::MatchStackLimitOver,
@@ -81,7 +96,7 @@ impl From<i32> for RegexError {
             | ONIGERR_UNDEFINED_BYTECODE
             | ONIGERR_UNEXPECTED_BYTECODE => RegexError::InternalBug {
                 code,
-                message: onig_error_code_to_format(code).to_string(),
+                message: message(code),
             },
 
             // Encoding errors
@@ -89,13 +104,13 @@ impl From<i32> for RegexError {
             | ONIGERR_SPECIFIED_ENCODING_CANT_CONVERT_TO_WIDE_CHAR
             | ONIGERR_NOT_SUPPORTED_ENCODING_COMBINATION => RegexError::Encoding {
                 code,
-                message: onig_error_code_to_format(code).to_string(),
+                message: message(code),
             },
 
             // Syntax / pattern errors (range -100..-999)
             c if onig_is_pattern_error(c) => RegexError::Syntax {
                 code: c,
-                message: onig_error_code_to_format(c).to_string(),
+                message: message(c),
             },
 
             _ => RegexError::Other(code),
@@ -142,6 +157,55 @@ mod tests {
         assert!(matches!(err, RegexError::Syntax { .. }));
         assert_eq!(err.code(), ONIGERR_PREMATURE_END_OF_CHAR_CLASS);
         assert!(err.to_string().contains("syntax error"));
+    }
+
+    #[test]
+    fn from_code_drops_name_placeholder() {
+        let cases = [
+            (ONIGERR_INVALID_GROUP_NAME, "invalid group name"),
+            (
+                ONIGERR_INVALID_CHAR_IN_GROUP_NAME,
+                "invalid char in group name",
+            ),
+            (ONIGERR_UNDEFINED_NAME_REFERENCE, "undefined name reference"),
+            (
+                ONIGERR_UNDEFINED_GROUP_REFERENCE,
+                "undefined group reference",
+            ),
+            (ONIGERR_MULTIPLEX_DEFINED_NAME, "multiplex defined name"),
+            (
+                ONIGERR_MULTIPLEX_DEFINITION_NAME_CALL,
+                "multiplex definition name call",
+            ),
+            (
+                ONIGERR_INVALID_CHAR_PROPERTY_NAME,
+                "invalid character property name",
+            ),
+        ];
+        for (code, message) in cases {
+            assert_eq!(
+                RegexError::from(code),
+                RegexError::Syntax {
+                    code,
+                    message: message.to_string()
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn from_einfo_substitutes_name() {
+        let einfo = OnigErrorInfo {
+            par: b"Nope".to_vec(),
+        };
+        let err = RegexError::from_einfo(ONIGERR_INVALID_CHAR_PROPERTY_NAME, &einfo);
+        assert_eq!(
+            err.to_string(),
+            "syntax error: invalid character property name {Nope}"
+        );
+        // Codes without a name ignore einfo.
+        let err = RegexError::from_einfo(ONIGERR_MEMORY, &einfo);
+        assert_eq!(err, RegexError::Memory);
     }
 
     #[test]

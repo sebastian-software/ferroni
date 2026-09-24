@@ -4864,33 +4864,40 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
             if call.by_number {
                 let gnum = call.called_gnum;
                 if gnum > env.num_mem || gnum < 0 {
+                    env.set_error_string(ONIGERR_UNDEFINED_GROUP_REFERENCE, &call.name);
                     return ONIGERR_UNDEFINED_GROUP_REFERENCE;
                 }
                 mem_node_ptr = env.mem_env(gnum as usize).mem_node;
             } else {
                 // Named call - look up name
-                let name = call.name.clone();
-                if let Some(ref nt) = reg.name_table {
-                    if let Some(nums) = nt.name_to_group_numbers(&name) {
-                        if nums.len() != 1 {
-                            return ONIGERR_MULTIPLEX_DEFINITION_NAME_CALL;
-                        }
+                let nums = reg
+                    .name_table
+                    .as_ref()
+                    .and_then(|nt| nt.name_to_group_numbers(&call.name));
+                match nums {
+                    Some(nums) if nums.len() == 1 => {
                         call.called_gnum = nums[0];
                         mem_node_ptr = env.mem_env(nums[0] as usize).mem_node;
-                    } else {
+                    }
+                    Some(nums) if nums.len() > 1 => {
+                        env.set_error_string(ONIGERR_MULTIPLEX_DEFINITION_NAME_CALL, &call.name);
+                        return ONIGERR_MULTIPLEX_DEFINITION_NAME_CALL;
+                    }
+                    _ => {
+                        env.set_error_string(ONIGERR_UNDEFINED_NAME_REFERENCE, &call.name);
                         return ONIGERR_UNDEFINED_NAME_REFERENCE;
                     }
-                } else {
-                    return ONIGERR_UNDEFINED_NAME_REFERENCE;
                 }
             }
             // Link the call node to its target (so recursive_call_check can follow calls)
             // Note: we store the raw pointer as a non-owning reference (the target node
             // is owned by the tree, not by this call). We wrap it in Box without ownership.
-            if !mem_node_ptr.is_null() {
-                // Store target pointer for recursion detection (not owning)
-                call.target_node = mem_node_ptr;
+            if mem_node_ptr.is_null() {
+                env.set_error_string(ONIGERR_UNDEFINED_NAME_REFERENCE, &call.name);
+                return ONIGERR_UNDEFINED_NAME_REFERENCE;
             }
+            // Store target pointer for recursion detection (not owning)
+            call.target_node = mem_node_ptr;
             0
         }
         NodeInner::List(cons) | NodeInner::Alt(cons) => {
@@ -9164,9 +9171,24 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
     0
 }
 
-/// Full compilation entry point - mirrors C's onig_compile().
-/// Parses pattern, compiles to bytecode, sets up mem status and stack_pop_level.
+/// Full compilation entry point - mirrors C's onig_compile() called with a
+/// NULL `einfo`. Parses pattern, compiles to bytecode, sets up mem status and
+/// stack_pop_level.
 pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
+    onig_compile_einfo(reg, pattern, None)
+}
+
+/// Mirrors C's onig_compile() including its `einfo` out-parameter: on a
+/// failure that names a group or property, `einfo.par` receives that name.
+pub fn onig_compile_einfo(
+    reg: &mut RegexType,
+    pattern: &[u8],
+    mut einfo: Option<&mut OnigErrorInfo>,
+) -> i32 {
+    if let Some(einfo) = einfo.as_deref_mut() {
+        einfo.par.clear();
+    }
+
     // Clear previous bytecode
     reg.ops.clear();
     // Derived from the program emitted below, so it has to describe this
@@ -9184,8 +9206,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         backrefed_mem: 0,
         pattern: std::ptr::null(),
         pattern_end: std::ptr::null(),
-        error: std::ptr::null(),
-        error_end: std::ptr::null(),
+        error: None,
         reg: reg as *mut RegexType,
         num_call: 0,
         num_mem: 0,
@@ -9204,7 +9225,20 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         flags: 0,
     };
 
-    let mut root = match crate::regparse::onig_parse_tree(pattern, reg, &mut env) {
+    let r = compile_parsed(reg, pattern, &mut env);
+    // C's parse_and_tune() `err:` label
+    if r != 0 {
+        if let (Some(par), Some(einfo)) = (env.error.take(), einfo) {
+            einfo.par = par;
+        }
+    }
+    r
+}
+
+/// The part of `onig_compile_einfo` that runs on the prepared `ParseEnv`:
+/// parse, tune, and emit the bytecode.
+fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i32 {
+    let mut root = match crate::regparse::onig_parse_tree(pattern, reg, env) {
         Ok(node) => node,
         Err(e) => return e,
     };
@@ -9215,7 +9249,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         && !opton_capture_group(reg.options)
     {
         let r = if env.num_named != env.num_mem {
-            disable_noname_group_capture(&mut root, reg, &mut env)
+            disable_noname_group_capture(&mut root, reg, env)
         } else {
             numbered_ref_check(&root)
         };
@@ -9229,13 +9263,13 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     if r != 0 {
         return r;
     }
-    refresh_node_references(&mut root, &mut env);
+    refresh_node_references(&mut root, env);
 
     check_backrefs(&mut root);
 
     // Resolve subroutine call references before tune_tree
     if env.num_call > 0 {
-        let r = resolve_call_references(&mut root, reg, &mut env);
+        let r = resolve_call_references(&mut root, reg, env);
         if r != 0 {
             return r;
         }
@@ -9250,7 +9284,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         mark_called_groups_as_multi_entry(&mut root);
         // Analyze subroutine-call cycles without re-entering the AST through
         // self-referential raw pointers.
-        let recursive_groups = analyze_call_graph(&mut root, &mut env);
+        let recursive_groups = analyze_call_graph(&mut root, env);
         // A zero-length recursive group cannot make progress and would recurse
         // forever. This graph check avoids re-entering the AST through raw
         // self-references while preserving the compiler's rejection behavior.
@@ -9258,7 +9292,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         // can reach itself again before consuming any input, or must recurse
         // on every path, never terminates in the matcher, so the compiler
         // rejects it.
-        let r = infinite_recursive_call_check_root(&root, &env, &recursive_groups);
+        let r = infinite_recursive_call_check_root(&root, env, &recursive_groups);
         if r != 0 {
             return r;
         }
@@ -9269,17 +9303,17 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     // Detect literal alternations and replace with trie (before tune_tree
     // so case-fold expansion hasn't rewritten the string nodes yet).
     detect_literal_alternations(&mut root, reg, env.backrefed_mem);
-    refresh_node_references(&mut root, &mut env);
+    refresh_node_references(&mut root, env);
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
-    let r = tune_tree(&mut root, reg, 0, &mut env);
+    let r = tune_tree(&mut root, reg, 0, env);
     if r != 0 {
         return r;
     }
-    refresh_node_references(&mut root, &mut env);
+    refresh_node_references(&mut root, env);
 
     // Compute empty_status_mem for quantifiers (determines EmptyCheckEnd vs EmptyCheckEndMemst)
-    setup_empty_status_mem(&mut root, &mut env);
+    setup_empty_status_mem(&mut root, env);
 
     // Set capture/mem tracking from parse env (mirrors C's onig_compile post-parse setup)
     reg.capture_history = env.cap_history;
@@ -9298,7 +9332,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     reg.num_call = env.id_num;
 
     // Compile the tree to bytecode
-    let r = compile_tree(&root, reg, &env);
+    let r = compile_tree(&root, reg, env);
     if r != 0 {
         return r;
     }
@@ -9361,7 +9395,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     }
 
     // Set optimization info (exact string, char map, anchors) from parse tree
-    let r = set_optimize_info_from_tree(&root, reg, &env);
+    let r = set_optimize_info_from_tree(&root, reg, env);
     if r != 0 {
         return r;
     }
@@ -9573,9 +9607,10 @@ pub fn onig_new(
         ac_alt_has_capture: false,
     };
 
-    let r = onig_compile(&mut reg, pattern);
+    let mut einfo = OnigErrorInfo { par: Vec::new() };
+    let r = onig_compile_einfo(&mut reg, pattern, Some(&mut einfo));
     if r != 0 {
-        return Err(r.into());
+        return Err(crate::error::RegexError::from_einfo(r, &einfo));
     }
 
     Ok(reg)
@@ -9796,8 +9831,7 @@ mod tests {
             backrefed_mem: 0,
             pattern: std::ptr::null(),
             pattern_end: std::ptr::null(),
-            error: std::ptr::null(),
-            error_end: std::ptr::null(),
+            error: None,
             reg: std::ptr::null_mut(),
             num_call: 0,
             num_mem: 0,
