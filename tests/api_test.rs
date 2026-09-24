@@ -814,6 +814,24 @@ fn invalid_interval_brace_is_a_literal_like_c() {
     assert!(re.is_match("aa") && !re.is_match("a{2}"));
 }
 
+/// C's prs_bag() switches on the whole code point, so a non-ASCII character
+/// whose low byte is `:`, `=`, `i`, ... is not a group option.
+#[test]
+fn non_ascii_after_qmark_is_not_an_option_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let undefined = Some("undefined group option");
+    assert_compiles_like_c(&[
+        (onig, "(?\u{013A}a)", undefined), // low byte ':'
+        (onig, "(?\u{013D}a)", undefined), // low byte '='
+        (onig, "(?\u{0121}a)", undefined), // low byte '!'
+        (onig, "(?\u{013E}a)", undefined), // low byte '>'
+        (onig, "(?\u{0169})a", undefined), // low byte 'i'
+        (onig, "(?i\u{0169})a", undefined),
+        (onig, "(?i\u{0178})a", undefined),   // low byte 'x'
+        (onig, "(?y{\u{0167}})a", undefined), // low byte 'g'
+    ]);
+}
+
 /// C scans a callout's argument list (prs_callout_args in skip mode) before
 /// it looks up the callout name.
 #[test]
