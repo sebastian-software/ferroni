@@ -3256,8 +3256,17 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     let mut best_len: i32 = ONIG_MISMATCH;
     let mut last_alt_zid: i32 = -1;
 
-    // Safety limits
-    let retry_limit_in_match = msa.retry_limit_in_match;
+    // Safety limits. As in C, the budget left in the search caps the retries
+    // of this match, so one start position cannot overrun the search limit.
+    let mut retry_limit_in_match = msa.retry_limit_in_match;
+    if msa.retry_limit_in_search != 0 {
+        let rem = msa
+            .retry_limit_in_search
+            .saturating_sub(msa.retry_limit_in_search_counter);
+        if rem < retry_limit_in_match || retry_limit_in_match == 0 {
+            retry_limit_in_match = rem;
+        }
+    }
     let mut retry_in_match_counter: u64 = 0;
     let match_stack_limit = msa.match_stack_limit;
     let time_limit_ms = msa.time_limit;
@@ -5457,7 +5466,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // Retry limit check
             retry_in_match_counter += 1;
             if retry_limit_in_match != 0 && retry_in_match_counter > retry_limit_in_match {
-                best_len = ONIGERR_RETRY_LIMIT_IN_MATCH_OVER;
+                best_len = if msa.retry_limit_in_match != 0
+                    && retry_in_match_counter > msa.retry_limit_in_match
+                {
+                    ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+                } else {
+                    ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER
+                };
                 break;
             }
             // Time limit check (every CHECK_TIME_INTERVAL retries of the search)
@@ -6330,12 +6345,15 @@ fn onig_search_inner_two_pass(
 
     let retry_counter_before = msa.retry_limit_in_search_counter;
     let retry_limit_in_match_before = msa.retry_limit_in_match;
+    let retry_limit_in_search_before = msa.retry_limit_in_search;
     // Second pass is implementation-only; avoid consuming retry budget.
     msa.retry_limit_in_match = 0;
+    msa.retry_limit_in_search = 0;
     // Forward searches attempt every candidate with `right_range` as the
     // match boundary, so the second pass uses the same one.
     let r = match_at(reg, str_data, end, right_range, match_start as usize, msa);
     msa.retry_limit_in_match = retry_limit_in_match_before;
+    msa.retry_limit_in_search = retry_limit_in_search_before;
     msa.retry_limit_in_search_counter = retry_counter_before;
     if r < ONIG_MISMATCH {
         return (r, msa.region.take());
@@ -8138,6 +8156,51 @@ mod tests {
         onig_set_retry_limit_in_match(old_retry);
         onig_set_match_stack_limit(old_stack);
         onig_set_time_limit(old_time);
+    }
+
+    #[test]
+    fn retry_limit_in_search_caps_the_first_match_attempt() {
+        // C caps retry_limit_in_match by the search budget still left, so the
+        // very first start position already stops at the search limit.
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"(a+)+b";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(r, 0);
+
+        let input = vec![b'a'; 40];
+        let mut mp = onig_new_match_param();
+        mp.retry_limit_in_match = 0;
+        mp.retry_limit_in_search = 1_000;
+        mp.time_limit = 0;
+
+        let started = Instant::now();
+        let (result, _) = onig_search_with_param(
+            &reg,
+            &input,
+            input.len(),
+            0,
+            input.len(),
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+            &mp,
+        );
+        assert_eq!(result, ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+
+        // A tighter per-match limit still reports itself.
+        mp.retry_limit_in_match = 100;
+        let (result, _) = onig_search_with_param(
+            &reg,
+            &input,
+            input.len(),
+            0,
+            input.len(),
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+            &mp,
+        );
+        assert_eq!(result, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER);
     }
 
     #[test]
