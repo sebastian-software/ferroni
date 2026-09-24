@@ -1759,6 +1759,11 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
 /// Both forms match the same strings unless the body may be empty: with
 /// REPEAT, the empty check also runs on the mandatory iterations. The port
 /// therefore keeps the inline form for bodies that cannot be empty.
+///
+/// The inline form is not faster for such bodies either: after an empty
+/// pass, every remaining mandatory copy retries paths that already failed.
+/// `(?:(ab|cd|ef|gh|ij)?){3,}z` over longer runs of pairs measured about
+/// six times slower inline than with REPEAT.
 fn expand_infinite_quantifier(qn: &QuantNode, body_len: i32) -> bool {
     qn.emptiness == BodyEmptyType::NotEmpty
         || !len_multiply_cmp(body_len as OnigLen, qn.lower, QUANTIFIER_EXPAND_LIMIT_SIZE)
@@ -7731,8 +7736,9 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
                     mem_status_on(&mut env.backrefed_mem, back as usize);
                     // C: "More precisely, it should be checked whether
                     // alt/repeat exists before the subject capture node ...";
-                    // C pushes the capture of every referenced group.
-                    mem_status_on(&mut env.backtrack_mem, back as usize);
+                    // C turns backtrack_mem on for every referenced group
+                    // here. The port makes that check after tune_tree, in
+                    // the Rust-only backref_groups_needing_push (ADR-008).
                 }
             }
             0
@@ -7745,6 +7751,226 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
         | NodeInner::Call(_)
         | NodeInner::Gimmick(_) => 0,
     }
+}
+
+// ============================================================================
+// Rust-only (ADR-008): back-referenced groups whose captures need a push
+// ============================================================================
+
+/// One step from a container node into one of its children. `container` is
+/// the node's address (for a `List` or `Alt` chain, its first cell's);
+/// `ordered` marks a `List`, whose children run one after the other.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct TreeStep {
+    container: usize,
+    child: u32,
+    ordered: bool,
+}
+
+#[derive(Default)]
+struct BackrefPushScan {
+    path: Vec<TreeStep>,
+    /// Containers on `path` that can run a child more than once, skip it,
+    /// or undo it (anything but a list, an option, a capture or an atomic
+    /// group).
+    non_linear: usize,
+    /// Per group number: the path to its capture node, and whether every
+    /// container on it is linear.
+    groups: Vec<Option<(Vec<TreeStep>, bool)>>,
+    /// Back references and conditions: group number and the path to them.
+    reads: Vec<(usize, Vec<TreeStep>)>,
+    /// Groups that need a push whatever their reads (capture seen twice,
+    /// read by a level back reference).
+    forced: MemStatusType,
+    /// The back-referenced groups (`ParseEnv::backrefed_mem`).
+    backrefed: MemStatusType,
+    /// A construct the analysis does not model was found.
+    give_up: bool,
+}
+
+impl BackrefPushScan {
+    fn enter(&mut self, container: usize, child: u32, ordered: bool, linear: bool) {
+        self.path.push(TreeStep {
+            container,
+            child,
+            ordered,
+        });
+        if !linear {
+            self.non_linear += 1;
+        }
+    }
+
+    fn leave(&mut self, linear: bool) {
+        self.path.pop();
+        if !linear {
+            self.non_linear -= 1;
+        }
+    }
+
+    fn child(&mut self, node: &Node, container: usize, child: u32, ordered: bool, linear: bool) {
+        self.enter(container, child, ordered, linear);
+        self.scan(node);
+        self.leave(linear);
+    }
+
+    fn scan(&mut self, node: &Node) {
+        if self.give_up {
+            return;
+        }
+        let addr = node as *const Node as usize;
+        match &node.inner {
+            NodeInner::List(_) | NodeInner::Alt(_) => {
+                let ordered = matches!(node.inner, NodeInner::List(_));
+                let mut cur = node;
+                let mut i = 0u32;
+                while let NodeInner::List(cons) | NodeInner::Alt(cons) = &cur.inner {
+                    self.child(&cons.car, addr, i, ordered, ordered);
+                    i += 1;
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                }
+            }
+            NodeInner::Quant(qn) => {
+                if let Some(body) = &qn.body {
+                    self.child(body, addr, 0, false, false);
+                }
+            }
+            NodeInner::Anchor(an) => {
+                if let Some(body) = &an.body {
+                    self.child(body, addr, 0, false, false);
+                }
+            }
+            NodeInner::Bag(bn) => {
+                if let BagData::Memory { regnum, .. } = bn.bag_data {
+                    let g = regnum as usize;
+                    // Only back-referenced groups matter (a reference to a
+                    // group past the status bits gives up at the reference).
+                    if g > 0 && g < MEM_STATUS_BITS_NUM && mem_status_at(self.backrefed, g) {
+                        if self.groups.len() <= g {
+                            self.groups.resize_with(g + 1, || None);
+                        }
+                        if self.groups[g].is_some() {
+                            mem_status_on(&mut self.forced, g);
+                        } else {
+                            self.groups[g] = Some((self.path.clone(), self.non_linear == 0));
+                        }
+                    }
+                }
+                let linear = bn.bag_type != BagType::IfElse;
+                if let Some(body) = &bn.body {
+                    self.child(body, addr, 0, false, linear);
+                }
+                if let BagData::IfElse {
+                    then_node,
+                    else_node,
+                } = &bn.bag_data
+                {
+                    if let Some(then_node) = then_node {
+                        self.child(then_node, addr, 1, false, false);
+                    }
+                    if let Some(else_node) = else_node {
+                        self.child(else_node, addr, 2, false, false);
+                    }
+                }
+            }
+            NodeInner::BackRef(br) => {
+                let level = node.has_status(ND_ST_NEST_LEVEL);
+                for &back in br.back_refs() {
+                    let g = back as usize;
+                    if back <= 0 || g >= MEM_STATUS_BITS_NUM {
+                        self.give_up = true;
+                        return;
+                    }
+                    if level {
+                        mem_status_on(&mut self.forced, g);
+                    }
+                    let mut path = self.path.clone();
+                    path.push(TreeStep {
+                        container: addr,
+                        child: 0,
+                        ordered: false,
+                    });
+                    self.reads.push((g, path));
+                }
+            }
+            NodeInner::Call(_) => self.give_up = true,
+            NodeInner::Gimmick(gn) => {
+                if gn.gimmick_type != GimmickType::Fail {
+                    self.give_up = true;
+                }
+            }
+            NodeInner::String(_) | NodeInner::CType(_) | NodeInner::CClass(_) => {}
+        }
+    }
+}
+
+/// Whether a read at `read` always sees a value of the group at `group`
+/// written on the current path: the read's node comes after the group's in
+/// a list that holds both, so every path to it passes the whole group.
+fn read_follows_group(group: &[TreeStep], read: &[TreeStep]) -> bool {
+    for (g, r) in group.iter().zip(read) {
+        if g != r {
+            return g.container == r.container && g.ordered && g.child < r.child;
+        }
+    }
+    // The group's path is a prefix of the read's: the read is inside it.
+    false
+}
+
+/// The back-referenced groups whose captures have to be pushed.
+///
+/// C (tune_tree, BACKREF) pushes every back-referenced group so that
+/// backtracking restores its captures, and notes that this is conservative:
+/// "More precisely, it should be checked whether alt/repeat exists before
+/// the subject capture node, and then this backreference position exists
+/// before (or in) the capture node." A capture without a push keeps the last
+/// value written, also one written on a path that later failed. A read can
+/// only see such a stale value if some path reaches it without passing the
+/// group again after the backtrack. That cannot happen when
+///
+/// - the group's capture node occurs once, and every node above it is a
+///   list, an option, a capture or an atomic group, so each attempt runs the
+///   group exactly once, start to end, and in its fixed place; and
+/// - every read of the group (back reference or condition, without a
+///   recursion level) sits in a later element of a list that also holds the
+///   group, so it runs only after the group has been written on the current
+///   path.
+///
+/// Such a group then holds the same value with or without the push whenever
+/// it is read, and at the end of a match. A back reference with a recursion
+/// level reads the match stack itself, so its groups stay pushed. The
+/// capture-aware empty checks only compare captures written inside the loop
+/// body; those groups have a quantifier above them and stay pushed as well.
+/// Subroutine calls, callouts, `\K` and absent operators are not modelled;
+/// with them every back-referenced group is pushed, as in C.
+fn backref_groups_needing_push(root: &Node, env: &ParseEnv) -> MemStatusType {
+    if env.backrefed_mem == 0 {
+        return 0;
+    }
+    if env.num_call > 0 {
+        return env.backrefed_mem;
+    }
+    let mut scan = BackrefPushScan {
+        backrefed: env.backrefed_mem,
+        ..BackrefPushScan::default()
+    };
+    scan.scan(root);
+    if scan.give_up {
+        return env.backrefed_mem;
+    }
+    let mut needed = scan.forced;
+    for (g, read) in &scan.reads {
+        let safe = match scan.groups.get(*g) {
+            Some(Some((group, true))) => read_follows_group(group, read),
+            _ => false,
+        };
+        if !safe {
+            mem_status_on(&mut needed, *g);
+        }
+    }
+    needed & env.backrefed_mem
 }
 
 // ============================================================================
@@ -9512,6 +9738,11 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
     // Compute empty_status_mem for quantifiers (determines EmptyCheckEnd vs EmptyCheckEndMemst)
     setup_empty_status_mem(&mut root, env);
 
+    // C's tune_tree pushes the captures of every back-referenced group
+    // (backtrack_mem). Rust-only (ADR-008): push only those whose restore a
+    // read can observe.
+    env.backtrack_mem |= backref_groups_needing_push(&root, env);
+
     // Set capture/mem tracking from parse env (mirrors C's onig_compile post-parse setup)
     reg.capture_history = env.cap_history;
     reg.push_mem_start = env.backtrack_mem | env.cap_history;
@@ -10362,6 +10593,51 @@ mod tests {
         )
         .unwrap();
         assert_eq!(reg.stack_pop_level, StackPopLevel::Free);
+    }
+
+    #[test]
+    fn backref_groups_push_only_when_a_restore_is_observable() {
+        let pushed = |pattern: &str| {
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+            reg.push_mem_start
+        };
+        // Every read follows the group in a list, above it only lists,
+        // options, captures and atomic groups: no push.
+        for pattern in [
+            r"(?i)(\w)\1",
+            r"\b(\w+)\s+\1\b",
+            r#"(["'])(?:\\.|(?!\1).)*\1"#,
+            r"x*c((d))\2(?=\1)",
+            r"(?>a*(b))\1",
+            r"(?i:(a))(?(1)b|c)",
+            r"(a)(?:b|\1)*",
+        ] {
+            assert_eq!(pushed(pattern) & !1, 0, "{pattern}");
+        }
+        // A read before or inside the group, a group under a quantifier,
+        // look-around, condition or alternation, a level back reference, a
+        // subroutine call or `\K`: pushed as in C.
+        for (pattern, group) in [
+            (r"\1(a)", 1),
+            (r"\k<1>{,2}?(?>(?=(a)\z))", 1),
+            (r"(a\1)", 1),
+            (r"((?(1)a|b?){,2}?)", 1),
+            (r"(?:(a)){2}\1", 1),
+            (r"(?=(a))\1", 1),
+            (r"(b)(?(1)(a)|c)\2", 2),
+            (r"(?:(a)|b)\1", 1),
+            (r"(a)\k<1+0>", 1),
+            (r"(a)\g<1>\1", 1),
+            (r"(a)\K\1", 1),
+        ] {
+            assert_ne!(pushed(pattern) & (1 << group), 0, "{pattern}");
+        }
     }
 
     #[test]
