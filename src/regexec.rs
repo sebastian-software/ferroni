@@ -804,8 +804,9 @@ pub fn onig_set_callout_data(
 // Callout Tag Query Functions
 // ============================================================================
 
-/// Get the callout number for a given tag in the regex.
-#[cfg_attr(coverage_nightly, coverage(off))]
+/// Get the callout number for a given tag in the regex - mirrors C's
+/// onig_get_callout_num_by_tag(), which reports an unknown tag as
+/// ONIGERR_INVALID_CALLOUT_TAG_NAME.
 pub fn onig_get_callout_num_by_tag(reg: &RegexType, tag: &[u8]) -> i32 {
     if let Some(ref ext) = reg.extp {
         if let Some(ref table) = ext.tag_table {
@@ -814,7 +815,7 @@ pub fn onig_get_callout_num_by_tag(reg: &RegexType, tag: &[u8]) -> i32 {
             }
         }
     }
-    ONIGERR_INVALID_ARGUMENT
+    ONIGERR_INVALID_CALLOUT_TAG_NAME
 }
 
 /// Check if a callout has a tag.
