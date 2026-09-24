@@ -1783,9 +1783,10 @@ fn stack_pop(
 }
 
 /// Pop stack entries until a Mark with matching zid is found (STACK_POP_TO_MARK).
-/// Removes ALL entries. Restores mem_start_stk/mem_end_stk along the way.
+/// Removes ALL entries. Restores mem_start_stk/mem_end_stk from every popped
+/// MemStart/MemEnd entry, so captures set inside a failed (?!..) or (?<!..)
+/// body are rolled back. Like C, callouts are not retracted here.
 /// Returns the saved position from the Mark entry (if any).
-#[cfg_attr(coverage_nightly, coverage(off))]
 fn stack_pop_to_mark(
     stack: &mut Vec<StackEntry>,
     mark_id: usize,
@@ -4895,16 +4896,12 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // ================================================================
             OpCode::PopToMark => {
                 if let OperationPayload::PopToMark { id } = reg.ops[p].payload {
-                    let id = id as usize;
-                    // Pop entries until we find the matching Mark, but don't
-                    // restore positions (unlike CutToMark)
-                    while let Some(entry) = stack.pop() {
-                        if let StackEntry::Mark { zid, .. } = &entry {
-                            if *zid == id {
-                                break;
-                            }
-                        }
-                    }
+                    stack_pop_to_mark(
+                        &mut stack,
+                        id as usize,
+                        &mut mem_start_stk,
+                        &mut mem_end_stk,
+                    );
                     p += 1;
                 } else {
                     goto_fail = true;
