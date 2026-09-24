@@ -5577,8 +5577,11 @@ fn prs_conditional(
         then_node = None;
         else_node = Some(target);
     } else {
-        // The then-branch runs to the first top-level `|`; the rest is the
-        // else-branch, as C splits the parsed alternation.
+        // C parses the body with prs_alts() and splits the alternation: the
+        // first alternative is the then-branch, the rest the else-branch.
+        // Ferroni has no node_new_group() wrapper for a `(?:...)` body, so it
+        // splits while parsing, and checks the closing parenthesis the way
+        // prs_alts() does.
         let (then_target, then_r) = prs_branch(tok, term, p, end, pattern, env, false)?;
         then_node = Some(then_target);
         if then_r == TokenType::Alt as i32 {
@@ -5589,6 +5592,13 @@ fn prs_conditional(
             let (else_target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
             else_node = Some(else_target);
         } else {
+            if then_r != term {
+                return Err(if term == TokenType::SubexpClose as i32 {
+                    ONIGERR_END_PATTERN_WITH_UNMATCHED_PARENTHESIS
+                } else {
+                    ONIGERR_PARSER_BUG
+                });
+            }
             else_node = None;
         }
     }
