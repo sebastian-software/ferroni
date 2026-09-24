@@ -1178,6 +1178,33 @@ pub fn node_new_true_anychar() -> Box<Node> {
     n
 }
 
+/// Copy a String, CClass or CType node (C: onig_node_copy).
+/// C returns ONIGERR_TYPE_BUG for the other node types, which have links
+/// that C leaves to the caller; here that is `None`. The copy keeps the
+/// status bits but has no parent, like a freshly allocated node.
+pub fn onig_node_copy(from: &Node) -> Option<Box<Node>> {
+    let inner = match &from.inner {
+        NodeInner::String(sn) => NodeInner::String(StrNode {
+            s: sn.s.clone(),
+            flag: sn.flag,
+        }),
+        NodeInner::CClass(cc) => NodeInner::CClass(CClassNode {
+            flags: cc.flags,
+            bs: cc.bs,
+            mbuf: cc.mbuf.clone(),
+        }),
+        NodeInner::CType(ct) => NodeInner::CType(CtypeNode {
+            ctype: ct.ctype,
+            not: ct.not,
+            ascii_mode: ct.ascii_mode,
+        }),
+        _ => return None,
+    };
+    let mut copy = node_new(inner);
+    copy.status = from.status;
+    Some(copy)
+}
+
 // === Bitset Utility Functions (from regparse.c) ===
 
 pub fn bitset_set_range(bs: &mut BitSet, from: usize, to: usize) {
