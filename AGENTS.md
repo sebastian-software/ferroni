@@ -39,9 +39,6 @@ Coverage is gated in CI by `./scripts/coverage.sh`; the threshold is defined
 there and nowhere else. The README badge quotes the same number, so move both
 together.
 
-WARNING: Never run `cargo test -- --ignored` on the full suite -- the
-`conditional_recursion_complex` test hangs.
-
 ---
 
 <!-- sebastian-software-consumer-agents:start -->

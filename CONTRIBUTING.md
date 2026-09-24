@@ -32,9 +32,6 @@ cargo test --test compat_regset
 RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 ```
 
-> **Warning:** Never run `cargo test -- --ignored` -- the
-> `conditional_recursion_complex` test intentionally hangs.
-
 Test counts are derived from the tree by `./scripts/count-tests.sh`; the
 README quotes the total in its [Test parity](README.md#test-parity) section.
 

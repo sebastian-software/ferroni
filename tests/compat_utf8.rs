@@ -5332,8 +5332,6 @@ fn japanese_multiline_dotstar_a() {
 // ============================================================================
 // C lines 1178-1201: Unicode general categories \p{Hiragana}, \p{Emoji},
 //                    \pC, \pL, \pM, \pN, \pP, \pS, \pZ, etc.
-// NOTE: \p{...} property lookup is not yet implemented (TODO in unicode/mod.rs)
-//       so all these tests are #[ignore] until property_name_to_ctype is ported.
 // ============================================================================
 
 #[test]
@@ -5460,7 +5458,6 @@ fn unicode_prop_not_pl_in_class_plus() {
 // ============================================================================
 // C lines 1203-1236: \p{Word}, \p{^Word}, \p{Cntrl} with char class
 //                    intersections and negations
-// NOTE: \p{...} property lookup not yet implemented - all #[ignore]
 // ============================================================================
 
 #[test]
@@ -5714,7 +5711,6 @@ fn unicode_prop_cntrl_or_not_hex_negated_no_match_ko() {
 
 // ============================================================================
 // C line 1275: \p{InBasicLatin} unicode block
-// NOTE: \p{...} property lookup not yet implemented - #[ignore]
 // ============================================================================
 
 #[test]
