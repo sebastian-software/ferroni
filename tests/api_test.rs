@@ -778,6 +778,42 @@ fn conditions_parse_like_c() {
     ]);
 }
 
+/// C's fetch_interval() leaves the position at the `{` when the brace is an
+/// ordinary character (ONIG_SYN_ALLOW_INVALID_INTERVAL), so what follows is
+/// tokenized normally.
+#[test]
+fn invalid_interval_brace_is_a_literal_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    assert_compiles_like_c(&[
+        (onig, r"{(", Some("end pattern with unmatched parenthesis")),
+        (onig, r"{)", Some("unmatched close parenthesis")),
+        (onig, r"{[", Some("premature end of char-class")),
+        (onig, r"a{(?", Some("end pattern in group")),
+        (
+            onig,
+            r"a{1,x}(",
+            Some("end pattern with unmatched parenthesis"),
+        ),
+        (
+            &OnigSyntaxRuby,
+            r"{(",
+            Some("end pattern with unmatched parenthesis"),
+        ),
+        (
+            &OnigSyntaxPython,
+            r"a{(",
+            Some("end pattern with unmatched parenthesis"),
+        ),
+        (onig, r"a{1,x}", None),
+        (onig, r"a{,2}", None),
+        (onig, r"a{", None),
+    ]);
+    let re = Regex::new(r"a{1,x}(b)").unwrap();
+    assert_eq!(re.find("xa{1,x}b").unwrap().as_str(), "a{1,x}b");
+    let re = Regex::new(r"a{2}").unwrap();
+    assert!(re.is_match("aa") && !re.is_match("a{2}"));
+}
+
 /// C parses a condition's body with prs_alts(), which requires the closing
 /// parenthesis even when the body has no `|`.
 #[test]
