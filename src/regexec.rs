@@ -4626,9 +4626,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     get_mem_start(reg, &stack, &mem_start_stk, 1),
                     get_mem_end(reg, &stack, &mem_end_stk, 1),
                 ) {
-                    let ref_len = me - ms;
+                    let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                     if right_range.saturating_sub(s) < ref_len
-                        || str_data[s..s + ref_len] != str_data[ms..me]
+                        || str_data[s..s + ref_len] != str_data[ms..ms + ref_len]
                     {
                         goto_fail = true;
                     } else {
@@ -4649,9 +4649,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     get_mem_start(reg, &stack, &mem_start_stk, 2),
                     get_mem_end(reg, &stack, &mem_end_stk, 2),
                 ) {
-                    let ref_len = me - ms;
+                    let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                     if right_range.saturating_sub(s) < ref_len
-                        || str_data[s..s + ref_len] != str_data[ms..me]
+                        || str_data[s..s + ref_len] != str_data[ms..ms + ref_len]
                     {
                         goto_fail = true;
                     } else {
@@ -4674,9 +4674,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         get_mem_start(reg, &stack, &mem_start_stk, n1),
                         get_mem_end(reg, &stack, &mem_end_stk, n1),
                     ) {
-                        let ref_len = me - ms;
+                        let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                         if right_range.saturating_sub(s) < ref_len
-                            || str_data[s..s + ref_len] != str_data[ms..me]
+                            || str_data[s..s + ref_len] != str_data[ms..ms + ref_len]
                         {
                             goto_fail = true;
                         } else {
@@ -4704,7 +4704,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         get_mem_start(reg, &stack, &mem_start_stk, n1),
                         get_mem_end(reg, &stack, &mem_end_stk, n1),
                     ) {
-                        let ref_len = me - ms;
+                        let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                         if ref_len != 0
                             && (right_range.saturating_sub(s) < ref_len
                                 || !string_cmp_ic(
@@ -4746,12 +4746,12 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             get_mem_end(reg, &stack, &mem_end_stk, mem),
                         ) {
                             participated = true;
-                            let ref_len = me - ms;
+                            let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                             if ref_len != 0 {
                                 if right_range.saturating_sub(s) < ref_len {
                                     continue;
                                 }
-                                if str_data[s..s + ref_len] != str_data[ms..me] {
+                                if str_data[s..s + ref_len] != str_data[ms..ms + ref_len] {
                                     continue;
                                 }
                                 s += ref_len;
@@ -4789,7 +4789,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             get_mem_end(reg, &stack, &mem_end_stk, mem),
                         ) {
                             participated = true;
-                            let ref_len = me - ms;
+                            let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                             if ref_len != 0 {
                                 if right_range.saturating_sub(s) < ref_len {
                                     continue;
@@ -4924,10 +4924,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // ================================================================
             OpCode::MemStart => {
                 if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
+                    // C sets only the start (regexec.c OP_MEM_START); the end
+                    // of an earlier pass stays in place until MEM_END, so a
+                    // capture can read as start > end if the pass fails.
                     if TRACK_CAPTURES {
-                        let num = num as usize;
-                        mem_start_stk[num] = MemPtr::pos(s);
-                        mem_end_stk[num] = MemPtr::invalid();
+                        mem_start_stk[num as usize] = MemPtr::pos(s);
                     }
                     p += 1;
                 } else {
