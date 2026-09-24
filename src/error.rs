@@ -70,11 +70,16 @@ impl From<i32> for RegexError {
 }
 
 impl RegexError {
-    /// Builds the error `onig_new` reports, with the message C's
-    /// `onig_error_code_to_str(s, code, einfo)` prints: the name recorded in
-    /// `einfo` replaces the placeholder.
-    pub(crate) fn from_einfo(code: i32, einfo: &OnigErrorInfo) -> Self {
-        RegexError::with_message(code, |c| onig_error_code_to_str(c, Some(&einfo.par)))
+    /// Builds the error `onig_new` reports. With the name the parser recorded
+    /// (C's `einfo->par`), the message is the one C's
+    /// `onig_error_code_to_str(s, code, einfo)` prints. Without one, where C
+    /// would print an empty `<>`, the placeholder is dropped as in
+    /// `RegexError::from(code)`.
+    pub(crate) fn from_error_name(code: i32, name: Option<&[u8]>) -> Self {
+        match name {
+            Some(name) => RegexError::with_message(code, |c| onig_error_code_to_str(c, Some(name))),
+            None => RegexError::from(code),
+        }
     }
 
     fn with_message(code: i32, message: impl FnOnce(i32) -> String) -> Self {
@@ -194,17 +199,27 @@ mod tests {
     }
 
     #[test]
-    fn from_einfo_substitutes_name() {
-        let einfo = OnigErrorInfo {
-            par: b"Nope".to_vec(),
-        };
-        let err = RegexError::from_einfo(ONIGERR_INVALID_CHAR_PROPERTY_NAME, &einfo);
+    fn from_error_name_substitutes_name() {
+        let code = ONIGERR_INVALID_CHAR_PROPERTY_NAME;
+        let err = RegexError::from_error_name(code, Some(b"Nope"));
         assert_eq!(
             err.to_string(),
             "syntax error: invalid character property name {Nope}"
         );
-        // Codes without a name ignore einfo.
-        let err = RegexError::from_einfo(ONIGERR_MEMORY, &einfo);
+        // A recorded empty name stays, as in C.
+        let err = RegexError::from_error_name(code, Some(b""));
+        assert_eq!(
+            err.to_string(),
+            "syntax error: invalid character property name {}"
+        );
+        // No recorded name: the placeholder goes, where C prints `{}`.
+        let err = RegexError::from_error_name(code, None);
+        assert_eq!(
+            err.to_string(),
+            "syntax error: invalid character property name"
+        );
+        // Codes without a name ignore it.
+        let err = RegexError::from_error_name(ONIGERR_MEMORY, Some(b"Nope"));
         assert_eq!(err, RegexError::Memory);
     }
 
