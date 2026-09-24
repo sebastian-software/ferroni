@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that direct UCD 16 generation reproduces the pre-migration tables."""
+"""Verify that direct UCD 16 generation reproduces the recorded baseline tables."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def main() -> int:
             )
         if failures:
             raise SystemExit("\n".join(failures))
-    print("All Unicode 16.0 table bodies match the pre-migration checked-in data.")
+    print("All Unicode 16.0 table bodies match the recorded baseline.")
     return 0
 
 

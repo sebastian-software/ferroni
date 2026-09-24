@@ -44,6 +44,18 @@ Ferroni now uses Unicode 17.0.0 data. Its Unicode property lookup recognizes
 frozen Oniguruma snapshot. The regex behavior and table layout continue to
 follow the existing port.
 
+The generator sorts each property's ranges before merging them. The
+DerivedCoreProperties.txt file lists Indic_Conjunct_Break (`InCB`) in three
+sections (Linker, Consonant, Extend) that are not in code point order. Merging
+them unsorted drops ranges: with Unicode 17.0, `\p{InCB}` covered only 720 of
+its 3148 code points. Oniguruma's own generator has the same defect, and its
+Unicode 16.0 table keeps 293 of 398 ranges (1717 of 2438 code points).
+Ferroni's complete `InCB` table is an intentional divergence from C
+Oniguruma. No other property changes, because every other property is listed
+in code point order. The Unicode 16.0 baseline hash for the property table was
+updated accordingly; the case-fold, grapheme-break, and word-break baselines
+are unchanged.
+
 ## Consequences
 
 - Updating Unicode data no longer depends on an Oniguruma checkout.
@@ -54,3 +66,5 @@ follow the existing port.
 - Table generation requires Python 3.11 or later and rustfmt.
 - Existing behavior for Unicode 16.0 data remains guarded by the baseline
   verifier.
+- `\p{InCB}` matches every Indic_Conjunct_Break code point, which C Oniguruma
+  does not; patterns relying on the C table's gaps behave differently.

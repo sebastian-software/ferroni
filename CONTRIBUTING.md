@@ -153,7 +153,9 @@ python3 scripts/prepare_unicode_data.py 17.0.0
 python3 scripts/gen_unicode_tables.py --version 17.0.0
 ```
 
-To verify that the new pipeline preserves the previous Unicode 16.0 tables:
+To verify that the pipeline still reproduces the recorded Unicode 16.0 baseline
+(the previous tables, except the intentionally completed `InCB` property; see
+ADR-015):
 
 ```bash
 python3 scripts/prepare_unicode_data.py 16.0.0
