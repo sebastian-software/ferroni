@@ -4965,14 +4965,26 @@ fn prs_callout_of_name(
     let name_end = *p - enc.mbc_enc_len(&pattern[(*p - 1)..end]); // back up past the delimiter
     let name = &pattern[name_start..name_end];
 
+    if !is_allowed_callout_name(enc, name) {
+        return Err(ONIGERR_INVALID_CALLOUT_NAME);
+    }
+
+    // Optional tag: [TAG]
+    let (tag, tag_start_pos, tag_end_pos_saved) = if c == '[' as u32 {
+        let (tag_start, tag_end) = fetch_callout_tag(p, end, pattern, enc)?;
+        c = pfetch_s(p, pattern, end, enc);
+        (
+            Some(pattern[tag_start..tag_end].to_vec()),
+            tag_start,
+            tag_end,
+        )
+    } else {
+        (None, 0, 0)
+    };
+
     // Identify builtin
     let (builtin_id, callout_in) = if name == b"FAIL" {
-        // Handle FAIL as before — just return node_new_fail directly
-        // (don't need a callout entry for this)
-        if c != cterm {
-            return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
-        }
-        return Ok(node_new_fail());
+        (CALLOUT_BUILTIN_FAIL, CALLOUT_IN_PROGRESS)
     } else if name == b"MAX" {
         (CALLOUT_BUILTIN_MAX, CALLOUT_IN_BOTH)
     } else if name == b"COUNT" {
@@ -4983,32 +4995,6 @@ fn prs_callout_of_name(
         (CALLOUT_BUILTIN_SKIP, CALLOUT_IN_PROGRESS)
     } else {
         return Err(ONIGERR_UNDEFINED_CALLOUT_NAME);
-    };
-
-    // Optional tag: [TAG]
-    let (tag, tag_start_pos, tag_end_pos_saved) = if c == '[' as u32 {
-        let tag_start = *p;
-        loop {
-            if p_end(*p, end) {
-                return Err(ONIGERR_END_PATTERN_IN_GROUP);
-            }
-            let tag_end_pos = *p;
-            c = pfetch_s(p, pattern, end, enc);
-            if c == ']' as u32 {
-                let tag_bytes = pattern[tag_start..tag_end_pos].to_vec();
-                if tag_bytes.is_empty() {
-                    return Err(ONIGERR_INVALID_CALLOUT_TAG_NAME);
-                }
-                // Read next char after ]
-                if p_end(*p, end) {
-                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
-                }
-                c = pfetch_s(p, pattern, end, enc);
-                break (Some(tag_bytes), tag_start, tag_end_pos);
-            }
-        }
-    } else {
-        (None, 0, 0)
     };
 
     // Parse args: {arg1,arg2,...}
@@ -5059,13 +5045,15 @@ fn prs_callout_of_name(
         Vec::new()
     };
 
-    if c != cterm {
-        return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
-    }
-
-    // Fill in default args for builtins that have optional args
+    // Fill in default args for builtins that have optional args. As in C,
+    // the argument count is checked before the closing character.
     let mut final_args = args;
     match builtin_id {
+        CALLOUT_BUILTIN_FAIL | CALLOUT_BUILTIN_SKIP => {
+            if !final_args.is_empty() {
+                return Err(ONIGERR_INVALID_CALLOUT_ARG);
+            }
+        }
         CALLOUT_BUILTIN_MAX => {
             // args: [TAG|LONG, CHAR]. Arg 0 is required, arg 1 defaults to 'X'
             if final_args.is_empty() {
@@ -5088,6 +5076,10 @@ fn prs_callout_of_name(
             }
         }
         _ => {}
+    }
+
+    if c != cterm {
+        return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
     }
 
     // Create callout list entry
@@ -5115,11 +5107,84 @@ fn prs_callout_of_name(
         }
     }
 
+    // C runs (*FAIL) as a builtin callout that always fails; Ferroni keeps
+    // its callout entry (numbering and tag) but compiles it to OP_FAIL.
+    if builtin_id == CALLOUT_BUILTIN_FAIL {
+        return Ok(node_new_fail());
+    }
+
     Ok(node_new_callout(
         OnigCalloutOf::Name as i32,
         num,
         builtin_id,
     ))
+}
+
+/// Read a callout tag after `[` up to `]` - the tag part of C's
+/// prs_callout_of_name() and prs_callout_of_contents(). Returns the tag
+/// range; `*p` is left after `]` and before the next character, which the
+/// caller fetches.
+fn fetch_callout_tag(
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    enc: OnigEncoding,
+) -> Result<(usize, usize), i32> {
+    if p_end(*p, end) {
+        return Err(ONIGERR_END_PATTERN_IN_GROUP);
+    }
+    let tag_start = *p;
+    let mut tag_end = *p;
+    while !p_end(*p, end) {
+        tag_end = *p;
+        let c = pfetch_s(p, pattern, end, enc);
+        if c == ']' as u32 {
+            break;
+        }
+    }
+    if !is_allowed_callout_tag_name(enc, &pattern[tag_start..tag_end]) {
+        return Err(ONIGERR_INVALID_CALLOUT_TAG_NAME);
+    }
+
+    if p_end(*p, end) {
+        return Err(ONIGERR_END_PATTERN_IN_GROUP);
+    }
+    Ok((tag_start, tag_end))
+}
+
+/// Mirrors C's is_allowed_callout_name().
+fn is_allowed_callout_name(enc: OnigEncoding, name: &[u8]) -> bool {
+    is_allowed_callout_ident(enc, name)
+}
+
+/// Mirrors C's is_allowed_callout_tag_name().
+fn is_allowed_callout_tag_name(enc: OnigEncoding, name: &[u8]) -> bool {
+    is_allowed_callout_ident(enc, name)
+}
+
+/// C's IS_ALLOWED_CODE_IN_CALLOUT_NAME and IS_ALLOWED_CODE_IN_CALLOUT_TAG_NAME
+/// admit the same characters: ASCII letters, digits and `_`, not starting
+/// with a digit, and at least one of them.
+fn is_allowed_callout_ident(enc: OnigEncoding, name: &[u8]) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let mut p = 0;
+    while p < name.len() {
+        let c = enc.mbc_to_code(&name[p..], name.len() - p);
+        let allowed = (c >= 'A' as u32 && c <= 'Z' as u32)
+            || (c >= 'a' as u32 && c <= 'z' as u32)
+            || (c >= '0' as u32 && c <= '9' as u32)
+            || c == '_' as u32;
+        if !allowed {
+            return false;
+        }
+        if p == 0 && c >= '0' as u32 && c <= '9' as u32 {
+            return false;
+        }
+        p += enc.mbc_enc_len(&name[p..]);
+    }
+    true
 }
 
 /// Parse one callout argument value: integer, single char (X, <, >), tag name, or string.
@@ -5248,9 +5313,19 @@ fn prs_callout_of_contents(
         return Err(ONIGERR_END_PATTERN_IN_GROUP);
     }
 
+    let mut c = pfetch_s(p, pattern, end, enc);
+
+    // Optional tag: [TAG]
+    let tag = if c == '[' as u32 {
+        let (tag_start, tag_end) = fetch_callout_tag(p, end, pattern, enc)?;
+        c = pfetch_s(p, pattern, end, enc);
+        Some((tag_start, tag_end))
+    } else {
+        None
+    };
+
     // Direction flag after the closing braces
     let mut callout_in = CALLOUT_IN_PROGRESS;
-    let mut c = pfetch_s(p, pattern, end, enc);
     if c == 'X' as u32 {
         callout_in = CALLOUT_IN_BOTH;
         if p_end(*p, end) {
@@ -5287,6 +5362,17 @@ fn prs_callout_of_contents(
     entry.of = OnigCalloutOf::Contents as i32;
     entry.callout_in = callout_in;
     entry.builtin_id = -1;
+
+    if let Some((tag_start, tag_end)) = tag {
+        let tag_bytes = &pattern[tag_start..tag_end];
+        entry.tag = Some(tag_bytes.to_vec());
+        entry.tag_start = tag_start;
+        entry.tag_end = tag_end;
+        let r = callout_tag_entry(env, tag_bytes, num);
+        if r != ONIG_NORMAL {
+            return Err(r);
+        }
+    }
 
     Ok(node_new_callout(
         OnigCalloutOf::Contents as i32,
