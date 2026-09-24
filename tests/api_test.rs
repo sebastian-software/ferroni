@@ -2758,10 +2758,27 @@ fn guarded_pushes_spend_the_retry_budget_like_c() {
 // limit in match and in search.
 #[test]
 fn retry_limits_stop_at_the_limit_like_c() {
-    for (pattern, subject, in_match, in_search) in [
+    assert_c_retry_budgets(&[
         (r"x(a*)*y", "xaaaaaa", 65, 65),
         (r"(?:a|ab)*c", "ababababxc", 11, 41),
-    ] {
+    ]);
+}
+
+// A guarded push whose main path forks (`a+|[ab]` below) skips several of
+// C's backtracks when it jumps, and counts all of them. Budgets from C, as
+// above.
+#[test]
+fn guarded_pushes_count_every_skipped_backtrack_like_c() {
+    assert_c_retry_budgets(&[
+        (r"(?:a+|[ab])*^", "aaaaa", 322, 322),
+        (r"(?:(?=[ab])a+|a)*$", "aaa!", 48, 78),
+    ]);
+}
+
+/// Each case is (pattern, subject, the smallest retry limit in match and in
+/// search under which C Oniguruma finishes the search).
+fn assert_c_retry_budgets(cases: &[(&str, &str, u64, u64)]) {
+    for &(pattern, subject, in_match, in_search) in cases {
         let re = Regex::new(pattern).unwrap();
         let by_match =
             |limit| re.find_with(subject, SearchOptions::new().retry_limit_in_match(limit));

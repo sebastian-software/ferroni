@@ -1501,7 +1501,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                         OperationPayload::PushOrJumpExact1 {
                             addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
                             c,
-                            guard: false,
+                            skipped_retries: 0,
                         },
                     );
                     let r = compile_quant_body_with_empty_check(
@@ -9867,10 +9867,12 @@ thread_local! {
 /// `(?:(?<![$_[:alnum:]])(public|private|protected)\s+)?` in front of
 /// most patterns, so that round trip ran at nearly every attempt.
 ///
-/// The jump still counts the backtrack C takes there against the retry and
-/// time limits. Those limits are what bounds a loop that grows the stack
-/// without consuming input, so a guard that skipped the count would let such
-/// a loop push several times as many entries as C before the limit trips.
+/// The jump still counts the backtracks the push would take against the
+/// retry and time limits (`guard_skipped_retries`); a push whose count
+/// depends on the position stays unguarded. Those limits are what bounds a
+/// loop that grows the stack without consuming input, so a guard that
+/// skipped the count would let such a loop push several times as many
+/// entries as C before the limit trips.
 fn guard_backtrack_pushes(reg: &mut RegexType) {
     #[cfg(test)]
     if PUSH_GUARDS_DISABLED.with(|disabled| disabled.get()) {
@@ -9892,14 +9894,19 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
             }
             _ => None,
         };
-        let bits = match head {
+        let (bits, skipped_retries) = match head {
+            // The string instruction fails: one backtrack.
             Some(c) => {
                 let mut bits = [0; BITSET_REAL_SIZE];
                 bitset_set_bit(&mut bits, c as usize);
-                bits
+                (bits, 1)
             }
             None => match crate::first_bytes::guard_byte_map(reg, pc + 1, &mut walk) {
-                Some(bits) => bits,
+                Some(bits) if bits.iter().all(|&word| word == !0) => continue,
+                Some(bits) => match crate::first_bytes::guard_skipped_retries(reg, pc + 1, &bits) {
+                    Some(retries) => (bits, retries),
+                    None => continue,
+                },
                 None => continue,
             },
         };
@@ -9911,15 +9918,15 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
                 payload: OperationPayload::PushOrJumpExact1 {
                     addr,
                     c: c as u8,
-                    guard: true,
+                    skipped_retries,
                 },
             },
-            _ if bits.iter().all(|&word| word == !0) => continue,
             _ => Operation {
                 opcode: OpCode::PushOrJumpByteSet,
                 payload: OperationPayload::PushOrJumpByteSet {
                     addr,
                     bsp: Box::new(bits),
+                    skipped_retries,
                 },
             },
         };
@@ -11728,18 +11735,11 @@ mod tests {
             "(?i:ab|ac|ad|ae)",
             "a{2}",
             ".",
-        ];
-        // Heads whose unguarded branch fails at its first string or class
-        // instruction, so C takes exactly one backtrack.
-        let single_step_heads = [
-            "ab",
-            "[a-c]",
-            "[^a]",
-            "\\x{e9}",
-            "[\\x{100}-\\x{200}]",
-            "(a)b",
-            "a{2}",
-            ".",
+            // Nested pushes: the unguarded branch fails once per path.
+            "a+|[ab]",
+            "(?:a|b)?c",
+            "(?:a|)(?:b|)c",
+            "(?:a|\\bb|c)",
         ];
         let contexts = [
             "(?:{h})?z",
@@ -11809,25 +11809,14 @@ mod tests {
                             search(&reference, input, start),
                             "{pattern} on {input:x?} from {start}"
                         );
-                        // A guard counts one backtrack where the unguarded
-                        // push fails back into the alternative: all of them
-                        // when the branch fails at its first instruction, a
-                        // lower bound when it fails after nested pushes.
-                        let (guarded_retries, reference_retries) = (
+                        // A guard that jumps counts the backtracks the
+                        // unguarded push takes, so the retry limits trip at
+                        // the same point.
+                        assert_eq!(
                             retries(&guarded, input, start),
                             retries(&reference, input, start),
+                            "{pattern} on {input:x?} from {start}: retries"
                         );
-                        assert!(
-                            guarded_retries <= reference_retries,
-                            "{pattern} on {input:x?} from {start}: \
-                             {guarded_retries} > {reference_retries} retries"
-                        );
-                        if single_step_heads.contains(&head) {
-                            assert_eq!(
-                                guarded_retries, reference_retries,
-                                "{pattern} on {input:x?} from {start}: retries"
-                            );
-                        }
                     }
                 }
             }
