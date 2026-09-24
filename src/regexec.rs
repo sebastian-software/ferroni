@@ -3379,7 +3379,9 @@ fn match_at(
     // Untracked runs skip the MemStartPush/MemEndPush stack entries. With a
     // match stack limit configured that would change when the limit trips,
     // so such runs keep the bookkeeping to stay observably identical to C.
-    if msa.region.is_some()
+    // A region without capture groups only needs the match bounds, which
+    // OP_END records either way.
+    if (msa.region.is_some() && reg.num_mem > 0)
         || reg.needs_capture_tracking
         || (msa.match_stack_limit != 0 && (reg.push_mem_start | reg.push_mem_end) != 0)
     {
@@ -3408,21 +3410,18 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     // Reuse stack and capture-group arrays from MatchArg (avoids heap alloc per call)
     let mut stack = std::mem::take(&mut msa.stack);
     stack.clear();
-    let mut mem_start_stk = std::mem::take(&mut msa.mem_start_stk);
+    // Untracked runs never touch the capture arrays; they stay empty and the
+    // buffers remain in `msa` for the next tracked run.
+    let mut mem_start_stk = Vec::new();
+    let mut mem_end_stk = Vec::new();
     if TRACK_CAPTURES {
         let need = num_mem + 1;
+        mem_start_stk = std::mem::take(&mut msa.mem_start_stk);
         mem_start_stk.resize(need, MemPtr::invalid());
         mem_start_stk.fill(MemPtr::invalid());
-    } else {
-        mem_start_stk.clear();
-    }
-    let mut mem_end_stk = std::mem::take(&mut msa.mem_end_stk);
-    if TRACK_CAPTURES {
-        let need = num_mem + 1;
+        mem_end_stk = std::mem::take(&mut msa.mem_end_stk);
         mem_end_stk.resize(need, MemPtr::invalid());
         mem_end_stk.fill(MemPtr::invalid());
-    } else {
-        mem_end_stk.clear();
     }
 
     let mut keep: usize = sstart;
@@ -3447,15 +3446,16 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     // Subexpression call limits (C: `subexp_call_nest_counter`,
     // `SubexpCallMaxNestLevel` and `SubexpCallLimitInSearch`). Like C, the
     // int nest level is compared as an unsigned long, so a negative level
-    // never trips.
+    // never trips. Like C, OP_CALL reads both limits where it checks them.
     let mut subexp_call_nest_counter: u64 = 0;
-    let subexp_call_max_nest_level = onig_get_subexp_call_max_nest_level() as i64 as u64;
-    let subexp_call_limit_in_search = onig_get_subexp_call_limit_in_search();
 
     // Callout data: per-callout mutable slots (indexed by callout num - 1)
     let callout_count = reg.extp.as_ref().map_or(0, |e| e.callout_num as usize);
-    let mut callout_data: Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]> =
-        vec![[0i64; ONIG_CALLOUT_DATA_SLOT_NUM]; callout_count];
+    let mut callout_data: Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]> = if callout_count == 0 {
+        Vec::new()
+    } else {
+        vec![[0i64; ONIG_CALLOUT_DATA_SLOT_NUM]; callout_count]
+    };
 
     // Push bottom sentinel (like C's STACK_PUSH_BOTTOM with FinishCode)
     stack.push(StackEntry::Alt {
@@ -3522,8 +3522,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         // For non-FIND_LONGEST, return immediately
                         if !opton_find_longest(options) {
                             msa.stack = stack;
-                            msa.mem_start_stk = mem_start_stk;
-                            msa.mem_end_stk = mem_end_stk;
+                            if TRACK_CAPTURES {
+                                msa.mem_start_stk = mem_start_stk;
+                                msa.mem_end_stk = mem_end_stk;
+                            }
                             return best_len;
                         }
 
@@ -5563,10 +5565,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // ================================================================
             OpCode::Call => {
                 if let OperationPayload::Call { addr } = reg.ops[p].payload {
-                    if subexp_call_nest_counter == subexp_call_max_nest_level {
+                    if subexp_call_nest_counter
+                        == onig_get_subexp_call_max_nest_level() as i64 as u64
+                    {
                         goto_fail = true;
                     } else {
                         subexp_call_nest_counter += 1;
+                        let subexp_call_limit_in_search = onig_get_subexp_call_limit_in_search();
                         if subexp_call_limit_in_search != 0 {
                             msa.subexp_call_in_search_counter += 1;
                             if msa.subexp_call_in_search_counter > subexp_call_limit_in_search {
@@ -5693,6 +5698,17 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 break;
             }
 
+            // Only the bottom sentinel is left, so STACK_POP would return
+            // FINISH_PCODE.
+            if let [
+                StackEntry::Alt {
+                    pcode: FINISH_PCODE,
+                    ..
+                },
+            ] = stack.as_slice()
+            {
+                break;
+            }
             let pop_result = stack_pop(
                 &mut stack,
                 pop_level,
@@ -5726,8 +5742,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
 
     // Return reusable buffers to MatchArg for next call
     msa.stack = stack;
-    msa.mem_start_stk = mem_start_stk;
-    msa.mem_end_stk = mem_end_stk;
+    if TRACK_CAPTURES {
+        msa.mem_start_stk = mem_start_stk;
+        msa.mem_end_stk = mem_end_stk;
+    }
 
     best_len
 }
@@ -6564,7 +6582,11 @@ fn can_use_two_pass_capture_fill(
     range: usize,
     msa: &MatchArg,
 ) -> bool {
+    // Without capture groups a single pass already runs untracked (see
+    // `match_at`) and records the region at OP_END; a second pass would only
+    // repeat the winning attempt.
     start < range
+        && reg.num_mem > 0
         && msa.region.is_some()
         && !opton_find_longest(msa.options)
         && !reg.needs_capture_tracking
@@ -6818,9 +6840,6 @@ fn onig_search_inner_core_with_right_range(
         // Macro-like helper for match_at + result handling in backward search
         macro_rules! backward_match_and_check {
             ($s:expr, $orig_start:expr) => {{
-                if let Some(ref mut r) = msa.region {
-                    r.clear();
-                }
                 msa.best_len = ONIG_MISMATCH;
                 msa.best_s = 0;
                 let r = match_at(reg, str_data, end, $orig_start, $s, msa);
@@ -7039,9 +7058,6 @@ fn onig_search_inner_core_with_right_range(
         // Empty string
         if reg.threshold_len == 0 {
             let mut s = start;
-            if let Some(ref mut r) = msa.region {
-                r.clear();
-            }
             msa.best_len = ONIG_MISMATCH;
             msa.best_s = 0;
             let r = match_at(reg, str_data, end, end, s, msa);
@@ -7084,9 +7100,6 @@ fn onig_search_inner_core_with_right_range(
                     s = low;
                 }
                 while s <= high {
-                    if let Some(ref mut r) = msa.region {
-                        r.clear();
-                    }
                     msa.best_len = ONIG_MISMATCH;
                     msa.best_s = 0;
                     let r = match_at(reg, str_data, end, data_range, s, msa);
@@ -7153,9 +7166,6 @@ fn onig_search_inner_core_with_right_range(
                 && (reg.anchor & (ANCR_LOOK_BEHIND | ANCR_PREC_READ_NOT)) == 0
             {
                 while s < cur_range {
-                    if let Some(ref mut r) = msa.region {
-                        r.clear();
-                    }
                     msa.best_len = ONIG_MISMATCH;
                     msa.best_s = 0;
                     let r = match_at(reg, str_data, end, data_range, s, msa);
@@ -7216,9 +7226,6 @@ fn onig_search_inner_core_with_right_range(
                 while s < cur_range && s < end && filter[str_data[s] as usize] == 0 {
                     s = advance_char_to_end(enc, str_data, s, end);
                 }
-            }
-            if let Some(ref mut r) = msa.region {
-                r.clear();
             }
             msa.best_len = ONIG_MISMATCH;
             msa.best_s = 0;
