@@ -4863,6 +4863,14 @@ fn resolve_call_references(node: &mut Node, reg: &mut RegexType, env: &mut Parse
             let mem_node_ptr;
             if call.by_number {
                 let gnum = call.called_gnum;
+
+                if env.num_named > 0
+                    && is_syntax_bv(&env.syntax, ONIG_SYN_CAPTURE_ONLY_NAMED_GROUP)
+                    && !opton_capture_group(env.options)
+                {
+                    return ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED;
+                }
+
                 if gnum > env.num_mem || gnum < 0 {
                     env.set_error_string(ONIGERR_UNDEFINED_GROUP_REFERENCE, &call.name);
                     return ONIGERR_UNDEFINED_GROUP_REFERENCE;
