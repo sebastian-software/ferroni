@@ -2696,3 +2696,26 @@ fn scanner_keep_match_stays_on_character_boundaries() {
         assert!(text.is_char_boundary(whole.start) && text.is_char_boundary(whole.end));
     }
 }
+
+// A capture can read as start > end: group 1 of `((?=(a|ab))a?){2}` on "a"
+// is 1..0 in C Oniguruma and in the region (the second pass restarts the
+// group and fails before closing it). The high-level API reports such a
+// capture as not participating instead of slicing.
+#[test]
+fn inverted_capture_is_not_participating() {
+    let re = Regex::new(r"((?=(a|ab))a?){2}").unwrap();
+    let caps = re.captures("a").unwrap();
+    assert_eq!(caps.get(0).unwrap().range(), 0..0);
+    assert!(caps.get(1).is_none());
+    let group2 = caps.get(2).unwrap();
+    assert_eq!(group2.range(), 1..1);
+    assert_eq!(group2.as_str(), "");
+    let listed: Vec<_> = caps.iter().map(|m| m.map(|m| m.range())).collect();
+    assert_eq!(listed, vec![Some(0..0), None, Some(1..1)]);
+    let _ = format!("{caps:?}");
+
+    let named = Regex::new(r"(?<g>(?=(?<h>a|ab))a?){2}").unwrap();
+    let caps = named.captures("a").unwrap();
+    assert!(caps.name("g").is_none());
+    assert_eq!(caps.name("h").unwrap().range(), 1..1);
+}
