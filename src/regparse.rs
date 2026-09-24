@@ -6031,7 +6031,7 @@ fn prs_bag(
             }
             '<' => {
                 if p_end(*p, end) {
-                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                    return Err(ONIGERR_END_PATTERN_WITH_UNMATCHED_PARENTHESIS);
                 }
                 let c2 = ppeek(*p, pattern, end, enc);
                 if c2 == '=' as u32 {
