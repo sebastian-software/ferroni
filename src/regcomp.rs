@@ -9183,12 +9183,18 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
 pub fn onig_compile_einfo(
     reg: &mut RegexType,
     pattern: &[u8],
-    mut einfo: Option<&mut OnigErrorInfo>,
+    einfo: Option<&mut OnigErrorInfo>,
 ) -> i32 {
-    if let Some(einfo) = einfo.as_deref_mut() {
-        einfo.par.clear();
+    let (r, par) = compile_recording_name(reg, pattern);
+    if let Some(einfo) = einfo {
+        einfo.par = par.unwrap_or_default();
     }
+    r
+}
 
+/// Compile `pattern` into `reg`. On failure, also returns the name the
+/// error refers to, or `None` when none was recorded (C's NULL `einfo->par`).
+fn compile_recording_name(reg: &mut RegexType, pattern: &[u8]) -> (i32, Option<Vec<u8>>) {
     // Clear previous bytecode
     reg.ops.clear();
     // Derived from the program emitted below, so it has to describe this
@@ -9227,15 +9233,11 @@ pub fn onig_compile_einfo(
 
     let r = compile_parsed(reg, pattern, &mut env);
     // C's parse_and_tune() `err:` label
-    if r != 0 {
-        if let (Some(par), Some(einfo)) = (env.error.take(), einfo) {
-            einfo.par = par;
-        }
-    }
-    r
+    let par = if r != 0 { env.error.take() } else { None };
+    (r, par)
 }
 
-/// The part of `onig_compile_einfo` that runs on the prepared `ParseEnv`:
+/// The part of `compile_recording_name` that runs on the prepared `ParseEnv`:
 /// parse, tune, and emit the bytecode.
 fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i32 {
     let mut root = match crate::regparse::onig_parse_tree(pattern, reg, env) {
@@ -9607,10 +9609,9 @@ pub fn onig_new(
         ac_alt_has_capture: false,
     };
 
-    let mut einfo = OnigErrorInfo { par: Vec::new() };
-    let r = onig_compile_einfo(&mut reg, pattern, Some(&mut einfo));
+    let (r, par) = compile_recording_name(&mut reg, pattern);
     if r != 0 {
-        return Err(crate::error::RegexError::from_einfo(r, &einfo));
+        return Err(crate::error::RegexError::from_error_name(r, par.as_deref()));
     }
 
     Ok(reg)
