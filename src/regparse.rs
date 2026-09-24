@@ -2007,6 +2007,13 @@ fn fetch_escaped_value(
 // Name parsing helpers
 // ============================================================================
 
+/// The character C's `switch (c)` compares against. A code point is matched
+/// whole, so a non-ASCII character never hits an ASCII case label (U+0149
+/// must not act as `I`); one that is not a `char` goes to `default`.
+fn switch_char(c: OnigCodePoint) -> char {
+    char::from_u32(c).unwrap_or(char::REPLACEMENT_CHARACTER)
+}
+
 fn get_name_end_code_point(start_code: OnigCodePoint) -> OnigCodePoint {
     match start_code {
         0x3C => 0x3E, // '<' -> '>'
@@ -6045,7 +6052,7 @@ fn prs_bag(
         let mut pfetch_prev = *p;
         let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
 
-        match c as u8 as char {
+        match switch_char(c) {
             ':' => {
                 // Non-capturing group (?:...)
                 let r = fetch_token(tok, p, end, pattern, env);
@@ -6245,7 +6252,7 @@ fn prs_bag(
                 }
             }
             '~' => {
-                if c < 128 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP) {
+                if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_TILDE_ABSENT_GROUP) {
                     if p_end(*p, end) {
                         return Err(ONIGERR_END_PATTERN_IN_GROUP);
                     }
@@ -6330,21 +6337,21 @@ fn prs_bag(
                 let node = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
                 Ok((node, 1))
             }
-            'C' | 'I' | 'L' if c < 0x80 => {
+            'C' | 'I' | 'L' => {
                 if !is_syntax_bv(&env.syntax, ONIG_SYN_WHOLE_OPTIONS) {
                     return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
                 }
                 *p = pfetch_prev; // PUNFETCH back to the option char
                 prs_options(tok, term, p, end, pattern, env)
             }
-            'W' | 'D' | 'S' | 'y' if c < 0x80 => {
+            'W' | 'D' | 'S' | 'y' => {
                 if !is_syntax_op2(&env.syntax, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
                     return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
                 }
                 *p = pfetch_prev; // PUNFETCH back to the option char
                 prs_options(tok, term, p, end, pattern, env)
             }
-            'a' | '-' | 'i' | 'm' | 's' | 'x' if c < 0x80 => {
+            'a' | '-' | 'i' | 'm' | 's' | 'x' => {
                 // Option flags: i, m, s, x, etc.
                 *p = pfetch_prev; // PUNFETCH back to the option char
                 prs_options(tok, term, p, end, pattern, env)
@@ -6494,7 +6501,7 @@ fn prs_options(
         pfetch_prev = *p;
         let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
 
-        match c as u8 as char {
+        match switch_char(c) {
             '-' => {
                 neg = true;
             }
@@ -6646,7 +6653,7 @@ fn prs_options(
                 }
                 pfetch_prev = *p;
                 let mode_char = pfetch(p, &mut pfetch_prev, pattern, end, enc);
-                match mode_char as u8 as char {
+                match switch_char(mode_char) {
                     'g' => {
                         if !onigenc_is_unicode_encoding(enc) {
                             return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
