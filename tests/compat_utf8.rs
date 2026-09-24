@@ -798,6 +798,29 @@ fn empty_loop_check_with_recursion() {
     x3(b"(?:a\\g<0>|(?!\\1)()|b)*", b"b", 0, 0, 1);
 }
 
+// A repeat range whose body recurses compiles to REPEAT like C; REPEAT_INC
+// reads its count past completed calls of the same repeat
+// (C: STACK_GET_REPEAT_COUNT_SEARCH). Expected regions were checked against
+// C Oniguruma.
+#[test]
+fn repeat_range_with_recursion() {
+    x2(b"((a\\g<0>+?|\\z\\k<1>+?)*){0,2}", b"aa", 0, 2);
+    x3(b"((a\\g<0>+?|\\z\\k<1>+?)*){0,2}", b"aa", 2, 2, 1);
+    x3(b"((a\\g<0>+?|\\z\\k<1>+?)*){0,2}", b"aa", 0, 2, 2);
+
+    x2(b"(a\\g<0>|\\z){0,2}", b"a", 0, 1);
+    x3(b"(a\\g<0>|\\z){0,2}", b"a", 0, 1, 1);
+
+    x2(b"((a\\g<0>+?|\\z)*){0,2}", b"aa", 0, 2);
+    x3(b"((a\\g<0>+?|\\z)*){0,2}", b"aa", 0, 2, 1);
+    x3(b"((a\\g<0>+?|\\z)*){0,2}", b"aa", 0, 2, 2);
+
+    x2(b"(b)(a\\g<0>{0,2}|()){0,2}|.", b"bab", 0, 3);
+    x3(b"(b)(a\\g<0>{0,2}|()){0,2}|.", b"bab", 1, 3, 2);
+
+    x2(b"(?<x>\\((?:x|\\g<x>){0,2}\\))", b"((x)(xx))", 0, 9);
+}
+
 // C decides whether a backref lies inside the empty loop of its group with
 // is_ancestor_node over links from set_parent_node_trav, which only links
 // the first cell of a list or alternation to its parent. A backref in any
