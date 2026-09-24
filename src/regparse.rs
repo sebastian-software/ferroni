@@ -5295,8 +5295,32 @@ fn prs_callout_of_contents(
     ))
 }
 
-/// Parse a conditional pattern: (?(condition)then|else)
-/// Called when we've already consumed '(?' and see '('.
+/// A backref checker node for a condition - mirrors C's
+/// node_new_backref_checker().
+fn node_new_backref_checker(
+    backrefs: &[i32],
+    by_name: bool,
+    exist_level: bool,
+    nest_level: i32,
+    env: &mut ParseEnv,
+) -> Box<Node> {
+    let mut node = node_new_backref(
+        backrefs.len() as i32,
+        backrefs,
+        by_name,
+        exist_level,
+        nest_level,
+    );
+    if opton_ignorecase(env.options) {
+        node.status_add(ND_ST_IGNORECASE);
+    }
+    env.backref_num += 1;
+    node.status_add(ND_ST_CHECKER);
+    node
+}
+
+/// Parse `(?(condition)then|else)` after `(?(` - mirrors the `case '(':`
+/// branch of C's prs_bag().
 fn prs_conditional(
     tok: &mut PToken,
     term: i32,
@@ -5314,308 +5338,176 @@ fn prs_conditional(
     if p_end(*p, end) {
         return Err(ONIGERR_END_PATTERN_IN_GROUP);
     }
+    let mut pfetch_prev = *p;
+    let mut c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+    if p_end(*p, end) {
+        return Err(ONIGERR_END_PATTERN_IN_GROUP);
+    }
 
-    let c = pfetch_s(p, pattern, end, enc);
-    let mut condition_is_checker;
+    let condition_is_checker;
+    let condition: Box<Node>;
 
-    let mut condition: Box<Node>;
+    // `break 'any_condition` is C's `goto any_condition`.
+    'end_condition: {
+        'any_condition: {
+            if is_code_digit_ascii(enc, c)
+                || c == '-' as u32
+                || c == '+' as u32
+                || c == '<' as u32
+                || c == '\'' as u32
+            {
+                let is_enclosed = c == '<' as u32 || c == '\'' as u32;
+                if !is_enclosed {
+                    *p = pfetch_prev; // PUNFETCH
+                }
+                let name = match fetch_name_with_level(
+                    if is_enclosed { c } else { '(' as u32 },
+                    p,
+                    end,
+                    pattern,
+                    env,
+                ) {
+                    Ok(name) => name,
+                    Err(r) => {
+                        if !is_enclosed {
+                            break 'any_condition;
+                        }
+                        return Err(r);
+                    }
+                };
 
-    if is_code_digit_ascii(enc, c)
-        || c == '-' as u32
-        || c == '+' as u32
-        || c == '<' as u32
-        || c == '\'' as u32
-    {
-        // Backref condition: (?(1)...), (?(-1)...), (?(<name>)...), (?('name')...)
-        condition_is_checker = true;
-
-        if c == '<' as u32 || c == '\'' as u32 {
-            // Named or numbered ref with delimiters: (?(<name>)...) or (?('name')...)
-            let start_code = c;
-            let NameWithLevel {
-                name_start,
-                name_end,
-                back_num,
-                num_type,
-                exist_level,
-                level,
-            } = fetch_name_with_level(start_code, p, end, pattern, env)?;
-
-            if num_type != IS_NOT_NUM {
-                // Numeric ref with delimiters
-                let mut num = back_num;
-                if num_type == IS_REL_NUM {
-                    num = backref_rel_to_abs(num, env);
-                    if num <= 0 {
+                condition_is_checker = true;
+                if name.num_type != IS_NOT_NUM {
+                    let mut back_num = name.back_num;
+                    if name.num_type == IS_REL_NUM {
+                        back_num = backref_rel_to_abs(back_num, env);
+                    }
+                    if back_num <= 0 {
                         return Err(ONIGERR_INVALID_BACKREF);
                     }
-                }
-                if num > env.num_mem || num < 1 {
-                    return Err(ONIGERR_INVALID_BACKREF);
-                }
-                let backrefs = [num];
-                condition = node_new_backref(1, &backrefs, false, exist_level, level);
-            } else {
-                // Named ref
-                let name = &pattern[name_start..name_end];
-                // SAFETY: `env.reg` was set by `onig_parse_tree` from the
-                // `&mut RegexType` borrowed for the entire parse, so it is
-                // non-null and live; no aliasing `&mut` to the regex exists
-                // while this shared reborrow is used.
-                let reg = unsafe { &*env.reg };
-                let group_nums = if let Some(ref nt) = reg.name_table {
-                    nt.name_to_group_numbers(name).map(|s| s.to_vec())
+
+                    if is_syntax_bv(&env.syntax, ONIG_SYN_STRICT_CHECK_BACKREF)
+                        && (back_num > env.num_mem
+                            || env.mem_env(back_num as usize).mem_node.is_null())
+                    {
+                        return Err(ONIGERR_INVALID_BACKREF);
+                    }
+
+                    condition = node_new_backref_checker(
+                        &[back_num],
+                        false,
+                        name.exist_level,
+                        name.level,
+                        env,
+                    );
                 } else {
-                    None
-                };
-                if let Some(nums) = group_nums {
+                    let backs =
+                        name_to_group_numbers(env, &pattern[name.name_start..name.name_end])?;
+                    if is_syntax_bv(&env.syntax, ONIG_SYN_STRICT_CHECK_BACKREF)
+                        && backs
+                            .iter()
+                            .any(|&b| b > env.num_mem || env.mem_env(b as usize).mem_node.is_null())
+                    {
+                        return Err(ONIGERR_INVALID_BACKREF);
+                    }
+
                     condition =
-                        node_new_backref(nums.len() as i32, &nums, true, exist_level, level);
-                } else {
-                    env.set_error_string(ONIGERR_UNDEFINED_NAME_REFERENCE, name);
-                    return Err(ONIGERR_UNDEFINED_NAME_REFERENCE);
+                        node_new_backref_checker(&backs, true, name.exist_level, name.level, env);
                 }
-            }
 
-            // Check and skip ')' after the condition
-            if p_end(*p, end) {
-                return Err(ONIGERR_END_PATTERN_IN_GROUP);
-            }
-            let close = pfetch_s(p, pattern, end, enc);
-            if close != ')' as u32 {
-                return Err(ONIGERR_INVALID_IF_ELSE_SYNTAX);
-            }
-        } else {
-            // Bare numeric ref: (?(1)...), (?(-1)...), (?(+2)...)
-            let save_p = *p;
-            let mut sign = 1i32;
-            let mut is_rel = false;
-            let mut start_pos = *p;
-
-            if c == '-' as u32 || c == '+' as u32 {
-                if c == '-' as u32 {
-                    sign = -1;
-                }
-                is_rel = true;
-                start_pos = *p;
-                // first digit char was already consumed, read digits
-            } else {
-                // c is a digit, go back to include it
-                start_pos = save_p - 1;
-            }
-
-            // Read digits
-            let mut num_val = if is_code_digit_ascii(enc, c) {
-                c as i32 - '0' as i32
-            } else {
-                0
-            };
-
-            // Parse remaining digits and find ')'
-            let mut found_level = false;
-            let mut level_val = 0i32;
-            let mut level_sign = 1i32;
-
-            while !p_end(*p, end) {
-                let d = pfetch_s(p, pattern, end, enc);
-                if d == ')' as u32 {
-                    break;
-                }
-                if d == '+' as u32 || d == '-' as u32 {
-                    // Level syntax: (?(1+0)...)
-                    level_sign = if d == '-' as u32 { -1 } else { 1 };
-                    while !p_end(*p, end) {
-                        let ld = pfetch_s(p, pattern, end, enc);
-                        if ld == ')' as u32 {
-                            found_level = true;
-                            break;
-                        }
-                        if is_code_digit_ascii(enc, ld) {
-                            if !append_decimal_digit(&mut level_val, ld) {
-                                return Err(ONIGERR_TOO_BIG_NUMBER);
-                            }
-                        } else {
-                            return Err(ONIGERR_INVALID_GROUP_NAME);
-                        }
+                if is_enclosed {
+                    if p_end(*p, end) {
+                        return Err(ONIGERR_END_PATTERN_IN_GROUP); // err_if_else
                     }
-                    break;
-                }
-                if is_code_digit_ascii(enc, d) {
-                    if !append_decimal_digit(&mut num_val, d) {
-                        return Err(ONIGERR_TOO_BIG_NUMBER);
+                    c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
+                    if c != ')' as u32 {
+                        return Err(ONIGERR_END_PATTERN_IN_GROUP); // err_if_else
                     }
-                } else {
-                    return Err(ONIGERR_INVALID_GROUP_NAME);
                 }
-            }
-
-            let mut back_num = num_val * sign;
-            if is_rel {
-                back_num = backref_rel_to_abs(back_num, env);
-                if back_num <= 0 {
-                    return Err(ONIGERR_INVALID_BACKREF);
+                break 'end_condition;
+            } else if c == '?' as u32 {
+                if is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS)
+                    && !p_end(*p, end)
+                    && ppeek_is(*p, pattern, end, enc, '{' as u32)
+                {
+                    // condition part is callouts of contents: (?(?{...})THEN|ELSE)
+                    condition_is_checker = false;
+                    pfetch(p, &mut pfetch_prev, pattern, end, enc);
+                    condition = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
+                    break 'end_condition;
                 }
+                break 'any_condition;
+            } else if c == '*' as u32
+                && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME)
+            {
+                condition_is_checker = false;
+                condition = prs_callout_of_name(p, end, pattern, env, ')' as u32)?;
+                break 'end_condition;
             }
-
-            if back_num > env.num_mem || back_num < 1 {
-                return Err(ONIGERR_INVALID_BACKREF);
-            }
-
-            let nest_level = if found_level {
-                level_val * level_sign
-            } else {
-                0
-            };
-            let backrefs = [back_num];
-            condition = node_new_backref(1, &backrefs, false, found_level, nest_level);
         }
 
-        // Mark condition as a checker
-        let mut cond = condition;
-        cond.status_add(ND_ST_CHECKER);
-        condition_is_checker = true;
-
-        // Now parse the body: then|else or just close
-        if p_end(*p, end) {
-            return Err(ONIGERR_END_PATTERN_IN_GROUP);
-        }
-
-        let peek_c = ppeek(*p, pattern, end, enc);
-        if peek_c == ')' as u32 {
-            // Empty body: (?(1)) - just a backref checker
-            pinc(p, pattern, enc);
-            return Ok((cond, 0));
-        }
-
-        // Parse then|else
-        let then_is_empty = if peek_c == '|' as u32 {
-            // (?(1)|else) - empty then
-            pinc(p, pattern, enc);
-            true
-        } else {
-            false
-        };
-
+        // any_condition:
+        *p = pfetch_prev; // PUNFETCH
+        condition_is_checker = false;
         let r = fetch_token(tok, p, end, pattern, env);
         if r < 0 {
             return Err(r);
         }
+        let (cn, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+        condition = cn;
+    }
 
-        let then_node;
-        let else_node;
+    // end_condition:
+    if p_end(*p, end) {
+        return Err(ONIGERR_END_PATTERN_IN_GROUP); // err_if_else
+    }
 
-        if then_is_empty {
-            let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-            then_node = None;
-            else_node = Some(target);
-        } else {
-            // Parse then-branch up to | or )
-            let (then_target, then_r) = prs_branch(tok, term, p, end, pattern, env, false)?;
-            if then_r == TokenType::Alt as i32 {
-                // Top-level | found: parse else-branch
-                then_node = Some(then_target);
-                let r2 = fetch_token(tok, p, end, pattern, env);
-                if r2 < 0 {
-                    return Err(r2);
-                }
-                let (else_target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                else_node = Some(else_target);
-            } else {
-                // No top-level | — entire body is then, no else
-                then_node = Some(then_target);
-                else_node = None;
-            }
-        }
-
-        let np = node_new_bag_if_else(cond, then_node, else_node);
-        Ok((np, 0))
-    } else {
-        // Non-backref condition: callout or general pattern
-        condition_is_checker = false;
-
-        let cond_node;
-        if c == '?' as u32 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_QMARK_BRACE_CALLOUT_CONTENTS)
-        {
-            // Condition is callout of contents: (?(?{...})THEN|ELSE)
-            if !p_end(*p, end) && ppeek(*p, pattern, end, enc) == '{' as u32 {
-                pinc(p, pattern, enc); // consume '{'
-                cond_node = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
-            } else {
-                // Fall through to general pattern condition
-                *p -= 1; // unfetch '?'
-                let r = fetch_token(tok, p, end, pattern, env);
-                if r < 0 {
-                    return Err(r);
-                }
-                let (cn, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                cond_node = cn;
-            }
-        } else if c == '*' as u32 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME)
-        {
-            // Callout-of-name condition: (?(*FAIL)then|else), (?(*MAX{2})then|else)
-            cond_node = prs_callout_of_name(p, end, pattern, env, ')' as u32)?;
-        } else {
-            // General pattern condition
-            *p -= 1; // unfetch the char we just read
-            let r = fetch_token(tok, p, end, pattern, env);
-            if r < 0 {
-                return Err(r);
-            }
-            let (cn, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-            cond_node = cn;
-        }
-
-        // Now parse then|else
-        if p_end(*p, end) {
-            return Err(ONIGERR_END_PATTERN_IN_GROUP);
-        }
-
-        let peek_c = ppeek(*p, pattern, end, enc);
-        if peek_c == ')' as u32 {
-            // No body after condition - this is an error for non-checker conditions
+    if ppeek_is(*p, pattern, end, enc, ')' as u32) {
+        // case: empty body: make backref checker
+        if !condition_is_checker {
             return Err(ONIGERR_INVALID_IF_ELSE_SYNTAX);
         }
-
-        let then_is_empty = peek_c == '|' as u32;
-        if then_is_empty {
-            pinc(p, pattern, enc);
-        }
-
-        let r = fetch_token(tok, p, end, pattern, env);
-        if r < 0 {
-            return Err(r);
-        }
-
-        let then_node;
-        let else_node;
-
-        if then_is_empty {
-            // (?(cond)|else) - empty then, parse else
-            let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-            then_node = None;
-            else_node = Some(target);
-        } else {
-            // Parse then-branch up to | or )
-            let (then_target, then_r) = prs_branch(tok, term, p, end, pattern, env, false)?;
-            if then_r == TokenType::Alt as i32 {
-                // Top-level | found: parse else-branch
-                then_node = Some(then_target);
-                let r2 = fetch_token(tok, p, end, pattern, env);
-                if r2 < 0 {
-                    return Err(r2);
-                }
-                let (else_target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
-                else_node = Some(else_target);
-            } else {
-                // No top-level | — entire body is then, no else
-                then_node = Some(then_target);
-                else_node = None;
-            }
-        }
-
-        let np = node_new_bag_if_else(cond_node, then_node, else_node);
-        Ok((np, 0))
+        pinc(p, pattern, enc);
+        return Ok((condition, 0));
     }
+
+    // if-else
+    let then_is_empty = if ppeek_is(*p, pattern, end, enc, '|' as u32) {
+        pinc(p, pattern, enc);
+        true
+    } else {
+        false
+    };
+
+    let r = fetch_token(tok, p, end, pattern, env);
+    if r < 0 {
+        return Err(r);
+    }
+
+    let then_node;
+    let else_node;
+    if then_is_empty {
+        let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+        then_node = None;
+        else_node = Some(target);
+    } else {
+        // The then-branch runs to the first top-level `|`; the rest is the
+        // else-branch, as C splits the parsed alternation.
+        let (then_target, then_r) = prs_branch(tok, term, p, end, pattern, env, false)?;
+        then_node = Some(then_target);
+        if then_r == TokenType::Alt as i32 {
+            let r2 = fetch_token(tok, p, end, pattern, env);
+            if r2 < 0 {
+                return Err(r2);
+            }
+            let (else_target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+            else_node = Some(else_target);
+        } else {
+            else_node = None;
+        }
+    }
+
+    Ok((node_new_bag_if_else(condition, then_node, else_node), 0))
 }
 
 // `split_alt_for_conditional` below splits an Alt node into (first_alt, rest)
