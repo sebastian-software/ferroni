@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.5.0](https://github.com/sebastian-software/ferroni/compare/v1.4.2...v1.5.0) (2026-09-24)
+
+
+### Features
+
+* **api:** take per-search limits as a SearchOptions value ([0c76667](https://github.com/sebastian-software/ferroni/commit/0c76667748fb7bebe4c079d6fa9c2a44432d247f))
+* **unicode:** generate tables from UCD 17.0 (C Oniguruma ships 16.0); some existing characters change properties, e.g. 672 leave Extended_Pictographic, U+0295 moves from Ll to Lo, and some \X boundaries move ([2402352](https://github.com/sebastian-software/ferroni/commit/2402352959f37cd6572a0126e8f8f6aadcc9ae66))
+
+
+### Bug Fixes
+
+* **api:** treat captures with start &gt; end as not participating ([1709775](https://github.com/sebastian-software/ferroni/commit/17097756e67abcd472098f8c8b18c5b68788901e))
+* **error:** drop the name placeholder when no name was recorded ([00b4cbb](https://github.com/sebastian-software/ferroni/commit/00b4cbb301a894dd8fd886d29eca51d87c006efa))
+* **regcomp:** check backref bounds after the named-group check like C ([2190510](https://github.com/sebastian-software/ferroni/commit/2190510cee76a7a2e33ed21c7cb58d9005d2f6db))
+* **regcomp:** compile crude strings through add_compile_string ([86ec38f](https://github.com/sebastian-software/ferroni/commit/86ec38ffccadba1209066a4c6097daaeca59443a))
+* **regcomp:** reject numbered calls next to named groups like C ([ee14a4b](https://github.com/sebastian-software/ferroni/commit/ee14a4b54b87bc2e4eb38ce630503924af5f0f26))
+* **regcomp:** reset look-behinds whose shortest body is empty, as C does ([5e05d76](https://github.com/sebastian-software/ferroni/commit/5e05d76dc5ece066fbc94b26b544ff5cf5fc2527))
+* **regexec:** bound the FIND_LONGEST winner by the search's upper range ([0521e1f](https://github.com/sebastian-software/ferroni/commit/0521e1f24a0fdca807434ad1656a76fe7e05692c))
+* **regexec:** cap match retries by the search's remaining retry budget ([528ccfa](https://github.com/sebastian-software/ferroni/commit/528ccfa7905cc10a64b3726a29a2c85c45f28de7))
+* **regexec:** count time-limit backtracks per search, not per position ([78dfb15](https://github.com/sebastian-software/ferroni/commit/78dfb15c20f5886b3b066b4d604684391ccdb297))
+* **regexec:** enforce the subexpression call limits like C ([07fdaaa](https://github.com/sebastian-software/ferroni/commit/07fdaaaf44d0e8c2a247f64de3314fb4d60fcd11))
+* **regexec:** keep BEGIN_LINE from matching at the end of the subject ([4790917](https://github.com/sebastian-software/ferroni/commit/479091777217507857b0bdd4a727500e323da2b3))
+* **regexec:** keep the previous capture end on OP_MEM_START ([3c0b8cf](https://github.com/sebastian-software/ferroni/commit/3c0b8cfa91ff1199ad0497270f348eced86d9d81))
+* **regexec:** port C's capture-aware empty-loop checks ([177327b](https://github.com/sebastian-software/ferroni/commit/177327b3d319e716851ea85186fd64a07561b9db))
+* **regexec:** report an unknown callout tag like C ([9ef8b3b](https://github.com/sebastian-software/ferroni/commit/9ef8b3b648b148003595e260d732e15a3f753db6))
+* **regexec:** restore captures when popping to a mark ([6dea02d](https://github.com/sebastian-software/ferroni/commit/6dea02d1c5a632aefb432f26e43b121a0d38e5c0))
+* **regexec:** scan backward searches like C inside multibyte characters ([b0242c0](https://github.com/sebastian-software/ferroni/commit/b0242c0c61cdc05633ec15636f6d1d64f1059103))
+* **regexec:** skip completed calls when reading a repeat count ([ca828a7](https://github.com/sebastian-software/ferroni/commit/ca828a75566839e958a2ad23592f3fadcdb1f237))
+* **regparse:** keep level backrefs whose level is zero ([363829b](https://github.com/sebastian-software/ferroni/commit/363829b6ec276ab5ca675dd384a6fd93ec3d3d82))
+* **regparse:** leave an invalid interval's brace as a literal like C ([1c123b2](https://github.com/sebastian-software/ferroni/commit/1c123b27bccc196235fe6271a6dc079c5f72c125))
+* **regparse:** parse callout names and tags like C ([3ce433c](https://github.com/sebastian-software/ferroni/commit/3ce433cd7f19d3694790ec0e7c8a78f9d11b0dbc))
+* **regparse:** parse group names like C's fetch_name and fetch_name_with_level ([dff9d33](https://github.com/sebastian-software/ferroni/commit/dff9d33e602d60c02e103087959c5bf97e4f0c6e))
+* **regparse:** reject unknown characters after (? like C ([eca9da9](https://github.com/sebastian-software/ferroni/commit/eca9da9e1c47363d11027a38d5147f48789638a7))
+* **regparse:** report a pattern ending after (?&lt; as an unclosed group ([a265350](https://github.com/sebastian-software/ferroni/commit/a2653509f1add1a9a34146f02ab51a7053b1fcec))
+* **regparse:** report the offending name in error messages ([4eeeda9](https://github.com/sebastian-software/ferroni/commit/4eeeda93a7c98ca77708d6f82c7bedd2216ad021))
+* **regparse:** require the closing parenthesis of a condition body ([c50412c](https://github.com/sebastian-software/ferroni/commit/c50412c84998895771e85da1fe594ebd6a7b217e))
+* **regparse:** switch on the whole code point after (? like C ([51f932b](https://github.com/sebastian-software/ferroni/commit/51f932b10c1e5e06a8896ae9da5c26207a04dbde))
+* **regparse:** switch on the whole escaped code point in a char class ([58fa71c](https://github.com/sebastian-software/ferroni/commit/58fa71c2d4dba848da8c4b36917c87424fa3f0a9))
+* **regparse:** treat \xNN escapes as ordinary literals like C ([e707bcd](https://github.com/sebastian-software/ferroni/commit/e707bcd22d9a40df7897fba74d12fadda4365a0c))
+* **regset:** let a leading .* match at a mid-line search start ([f9ca85f](https://github.com/sebastian-software/ferroni/commit/f9ca85f42d0f8182bb9b28cbd61640ff99c6bf48))
+* **regset:** let regex-lead matches run to the original range ([3ce3140](https://github.com/sebastian-software/ferroni/commit/3ce314001e67a2bfe8431e0bac87753305c75ff1))
+* **scanner:** compile Scanner patterns with CAPTURE_GROUP by default, like vscode-oniguruma; unnamed groups next to named groups now capture, so capture indices can shift (pass ONIG_OPTION_NONE to keep the old behavior) ([20fdc32](https://github.com/sebastian-software/ferroni/commit/20fdc32628cfdf2647a0fbbd09f8b4e507e30dd5))
+* **scanner:** keep per-regex route results equal to the RegSet search ([f72dd69](https://github.com/sebastian-software/ferroni/commit/f72dd691cf6c4ac84a465b667c4694fbb8ad5312))
+* **unicode:** bound case folding by the logical end like C ([220a9ee](https://github.com/sebastian-software/ferroni/commit/220a9ee6d19fffacd9c65f3cd781f8e33b400f0e))
+* **unicode:** decode text-segment neighbours against the logical end ([e4ee3d3](https://github.com/sebastian-software/ferroni/commit/e4ee3d3c9fe7fd81a5a7e2af948072d73e5cee50))
+* **unicode:** keep every InCB range when merging property sections ([b3cfb92](https://github.com/sebastian-software/ferroni/commit/b3cfb92a88632bdce58df2fbb020505576558d32))
+
+
+### Performance Improvements
+
+* **regcomp:** tune look-behinds in C order and check the tail literal first ([f0b1e42](https://github.com/sebastian-software/ferroni/commit/f0b1e4267ffb81061264bc500763c77369e41125))
+
 ## [1.4.2](https://github.com/sebastian-software/ferroni/compare/v1.4.1...v1.4.2) (2026-09-23)
 
 
