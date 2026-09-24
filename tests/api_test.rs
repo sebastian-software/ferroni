@@ -2719,3 +2719,35 @@ fn inverted_capture_is_not_participating() {
     assert!(caps.name("g").is_none());
     assert_eq!(caps.name("h").unwrap().range(), 1..1);
 }
+
+// `((?=a\g<0>)|(?:\k<1>*?(?=a)()))*` on "aa" loops without consuming input:
+// the capture-aware empty check never sees an empty iteration, so every cycle
+// grows the backtracking stack and only the retry limit ends the search. C
+// Oniguruma takes three backtracks per cycle and holds about 433k stack
+// entries after 100k retries. Two of those backtracks happen where Ferroni
+// guards the push (ADR-008); unless the guards count them like C, the same
+// retry budget lets the stack grow three times as large, which with the
+// default limit took the process past 4 GB. The stack limit keeps this test
+// bounded either way.
+#[test]
+fn guarded_pushes_spend_the_retry_budget_like_c() {
+    let re = Regex::new(r"((?=a\g<0>)|(?:\k<1>*?(?=a)()))*").unwrap();
+    let options = || {
+        SearchOptions::new()
+            .retry_limit_in_match(100_000)
+            .match_stack_limit(1_000_000)
+    };
+    let expected = RegexError::RetryLimitInMatchOver;
+    assert_eq!(re.find_with("aa", options()).err(), Some(expected.clone()));
+    assert_eq!(
+        re.is_match_with("aa", options()).err(),
+        Some(expected.clone())
+    );
+    assert_eq!(
+        re.captures_with("aa", options()).err(),
+        Some(expected.clone())
+    );
+    let mut matches = re.find_iter_with("aa", options());
+    assert_eq!(matches.next().and_then(Result::err), Some(expected));
+    assert!(matches.next().is_none());
+}

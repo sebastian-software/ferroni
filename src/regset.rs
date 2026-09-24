@@ -1929,7 +1929,11 @@ mod tests {
         ] {
             let payload = match opcode {
                 OpCode::Push => OperationPayload::Push { addr: 2 },
-                OpCode::PushOrJumpExact1 => OperationPayload::PushOrJumpExact1 { addr: 2, c: b'a' },
+                OpCode::PushOrJumpExact1 => OperationPayload::PushOrJumpExact1 {
+                    addr: 2,
+                    c: b'a',
+                    guard: false,
+                },
                 _ => OperationPayload::PushIfPeekNext { addr: 2, c: b'a' },
             };
             let map = map_for(

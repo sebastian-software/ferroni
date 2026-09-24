@@ -1501,6 +1501,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                         OperationPayload::PushOrJumpExact1 {
                             addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
                             c,
+                            guard: false,
                         },
                     );
                     let r = compile_quant_body_with_empty_check(
@@ -9865,6 +9866,11 @@ thread_local! {
 /// optional prefix groups such as
 /// `(?:(?<![$_[:alnum:]])(public|private|protected)\s+)?` in front of
 /// most patterns, so that round trip ran at nearly every attempt.
+///
+/// The jump still counts the backtrack C takes there against the retry and
+/// time limits. Those limits are what bounds a loop that grows the stack
+/// without consuming input, so a guard that skipped the count would let such
+/// a loop push several times as many entries as C before the limit trips.
 fn guard_backtrack_pushes(reg: &mut RegexType) {
     #[cfg(test)]
     if PUSH_GUARDS_DISABLED.with(|disabled| disabled.get()) {
@@ -9902,7 +9908,11 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
             // A single byte is upstream's own instruction.
             (Some(c), None) => Operation {
                 opcode: OpCode::PushOrJumpExact1,
-                payload: OperationPayload::PushOrJumpExact1 { addr, c: c as u8 },
+                payload: OperationPayload::PushOrJumpExact1 {
+                    addr,
+                    c: c as u8,
+                    guard: true,
+                },
             },
             _ if bits.iter().all(|&word| word == !0) => continue,
             _ => Operation {
@@ -11649,6 +11659,26 @@ mod tests {
                 .collect();
             (r, spans)
         };
+        // Backtracks the whole search counts against the retry limits.
+        let retries = |reg: &RegexType, input: &[u8], start: usize| {
+            let mut msa = crate::regexec::MatchArg::new(
+                reg,
+                ONIG_OPTION_NONE,
+                Some(OnigRegion::new()),
+                start,
+            );
+            msa.retry_limit_in_match = 0;
+            msa.retry_limit_in_search = 0;
+            crate::regexec::onig_search_with_msa(
+                reg,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                &mut msa,
+            );
+            msa.retry_limit_in_search_counter
+        };
         let guards = |reg: &RegexType| {
             reg.ops
                 .iter()
@@ -11696,6 +11726,18 @@ mod tests {
             "(?:a|)b",
             "(?:ab|ac|ad|ae)",
             "(?i:ab|ac|ad|ae)",
+            "a{2}",
+            ".",
+        ];
+        // Heads whose unguarded branch fails at its first string or class
+        // instruction, so C takes exactly one backtrack.
+        let single_step_heads = [
+            "ab",
+            "[a-c]",
+            "[^a]",
+            "\\x{e9}",
+            "[\\x{100}-\\x{200}]",
+            "(a)b",
             "a{2}",
             ".",
         ];
@@ -11767,6 +11809,25 @@ mod tests {
                             search(&reference, input, start),
                             "{pattern} on {input:x?} from {start}"
                         );
+                        // A guard counts one backtrack where the unguarded
+                        // push fails back into the alternative: all of them
+                        // when the branch fails at its first instruction, a
+                        // lower bound when it fails after nested pushes.
+                        let (guarded_retries, reference_retries) = (
+                            retries(&guarded, input, start),
+                            retries(&reference, input, start),
+                        );
+                        assert!(
+                            guarded_retries <= reference_retries,
+                            "{pattern} on {input:x?} from {start}: \
+                             {guarded_retries} > {reference_retries} retries"
+                        );
+                        if single_step_heads.contains(&head) {
+                            assert_eq!(
+                                guarded_retries, reference_retries,
+                                "{pattern} on {input:x?} from {start}: retries"
+                            );
+                        }
                     }
                 }
             }
