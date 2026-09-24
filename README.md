@@ -181,7 +181,9 @@ automatic UTF-16 position mapping. API-compatible with
 - Backreferences -- `\k<name>`, `\g<name>`, relative `\g<-1>`
 - Conditionals -- `(?(cond)T|F)`
 - Absent expressions -- `(?~...)`
-- Unicode properties -- `\p{Script_Extensions=Greek}`, `\p{Lu}`, `\p{Emoji}` (902 names)
+- Unicode properties -- `\p{Greek}`, `\p{Lu}`, `\p{Emoji}` (902 names) from
+  Unicode 17.0 data; C Oniguruma's last snapshot has Unicode 16.0
+  ([ADR-015](https://sebastian-software.github.io/ferroni/adr/015-unicode-data-from-ucd))
 - Grapheme clusters -- `\X`, text segment boundaries `\y`, `\Y`
 - Callouts -- `(?{...})`, `(*FAIL)`, `(*MAX{n})`, `(*COUNT)`, `(*CMP)`
 - 12 syntax modes -- Oniguruma, Ruby, Perl, Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic/Extended, ASIS
@@ -343,7 +345,7 @@ out of scope ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-enc
 
 On top of the ported upstream cases, Ferroni adds Rust-native tests for
 API integration, edge cases, error paths, and coverage gaps. The tree holds
-**2,215 `#[test]` functions** in total (some compat functions bundle multiple
+**2,227 `#[test]` functions** in total (some compat functions bundle multiple
 upstream cases, so this is higher than the parity totals above). The count is
 derived from the tree by [`scripts/count-tests.sh`](scripts/count-tests.sh),
 which is the single source for the test counts quoted in this README and in
