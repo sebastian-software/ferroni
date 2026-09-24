@@ -6174,6 +6174,9 @@ fn prs_bag(
                     }
                 } else {
                     // Fall through to option parsing ((?P:...) = POSIX is ASCII)
+                    if !is_syntax_op2(&env.syntax, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
+                        return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                    }
                     *p = pfetch_prev;
                     prs_options(tok, term, p, end, pattern, env)
                 }
@@ -6264,11 +6267,28 @@ fn prs_bag(
                 let node = prs_callout_of_contents(p, end, pattern, env, ')' as u32)?;
                 Ok((node, 1))
             }
-            _ => {
+            'C' | 'I' | 'L' if c < 0x80 => {
+                if !is_syntax_bv(&env.syntax, ONIG_SYN_WHOLE_OPTIONS) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                *p = pfetch_prev; // PUNFETCH back to the option char
+                prs_options(tok, term, p, end, pattern, env)
+            }
+            'W' | 'D' | 'S' | 'y' if c < 0x80 => {
+                if !is_syntax_op2(&env.syntax, ONIG_SYN_OP2_OPTION_ONIGURUMA) {
+                    return Err(ONIGERR_UNDEFINED_GROUP_OPTION);
+                }
+                *p = pfetch_prev; // PUNFETCH back to the option char
+                prs_options(tok, term, p, end, pattern, env)
+            }
+            'a' | '-' | 'i' | 'm' | 's' | 'x' if c < 0x80 => {
                 // Option flags: i, m, s, x, etc.
                 *p = pfetch_prev; // PUNFETCH back to the option char
                 prs_options(tok, term, p, end, pattern, env)
             }
+            // As in C, anything else after `(?` (such as `)` in `(?)`) is
+            // not a group option.
+            _ => Err(ONIGERR_UNDEFINED_GROUP_OPTION),
         }
     } else if c == '*' as u32 && is_syntax_op2(&env.syntax, ONIG_SYN_OP2_ASTERISK_CALLOUT_NAME) {
         // Callout of name: (*FAIL), (*MAX{2}), (*COUNT[AB]{X}), (*CMP{AB,<,CD})
