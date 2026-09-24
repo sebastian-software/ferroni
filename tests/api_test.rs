@@ -2751,3 +2751,39 @@ fn guarded_pushes_spend_the_retry_budget_like_c() {
     assert_eq!(matches.next().and_then(Result::err), Some(expected));
     assert!(matches.next().is_none());
 }
+
+// C Oniguruma stops a match once its retry count reaches the limit
+// (`++counter >= limit`), not when it exceeds it. The smallest limits under
+// which C finishes these searches without a limit error, for the retry
+// limit in match and in search.
+#[test]
+fn retry_limits_stop_at_the_limit_like_c() {
+    for (pattern, subject, in_match, in_search) in [
+        (r"x(a*)*y", "xaaaaaa", 65, 65),
+        (r"(?:a|ab)*c", "ababababxc", 11, 41),
+    ] {
+        let re = Regex::new(pattern).unwrap();
+        let by_match =
+            |limit| re.find_with(subject, SearchOptions::new().retry_limit_in_match(limit));
+        assert!(by_match(in_match).is_ok(), "{pattern}");
+        assert_eq!(
+            by_match(in_match - 1).err(),
+            Some(RegexError::RetryLimitInMatchOver),
+            "{pattern}"
+        );
+        let by_search = |limit| {
+            re.find_with(
+                subject,
+                SearchOptions::new()
+                    .retry_limit_in_match(0)
+                    .retry_limit_in_search(limit),
+            )
+        };
+        assert!(by_search(in_search).is_ok(), "{pattern}");
+        assert_eq!(
+            by_search(in_search - 1).err(),
+            Some(RegexError::RetryLimitInSearchOver),
+            "{pattern}"
+        );
+    }
+}
