@@ -306,7 +306,10 @@ pub fn onigenc_unicode_mbc_case_fold(
     data: &[u8],
     fold: &mut [u8],
 ) -> i32 {
-    let code = enc.mbc_to_code(&data[*pp..], end);
+    // `end` is absolute while `mbc_to_code` takes a limit relative to the
+    // slice start. C decodes against `end` here, so a character straddling it
+    // (e.g. at the end of a backreference span) is truncated, not read whole.
+    let code = enc.mbc_to_code(&data[*pp..], end.saturating_sub(*pp));
     let len = enc.mbc_enc_len(&data[*pp..]);
     let p_start = *pp;
     *pp += len;

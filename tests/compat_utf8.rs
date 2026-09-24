@@ -5850,6 +5850,38 @@ fn backref_casefold_az_no_match() {
     n(b"((?i:az))\\1", b"Azaz");
 }
 
+// Case-insensitive backreferences fold the subject only up to the captured
+// byte length (C: string_cmp_ic folds against end2 = s2 + mblen). A multibyte
+// character straddling that boundary is decoded truncated and cannot match,
+// so e.g. U+212A KELVIN SIGN (3 bytes) never stands in for a 1-byte "k".
+// Expectations checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8).
+#[test]
+fn backref_casefold_stops_at_captured_length() {
+    // "kkk" + U+212A: \1 would need "k\u{212A}" (4 bytes) for a 2-byte capture.
+    n(b"(?i)(kk)\\1", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(\\x{212A}k)\\1", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(kk)\\1", b"kkk\xe2\x84\xaax");
+    n(b"(?i)(k)\\1", b"k\xe2\x84\xaa");
+    n(b"(?i)(.+)\\1", b"k\xe2\x84\xaa");
+    n(b"(?i)(ss)\\1", b"ss\xe1\xba\x9e");
+    n(b"(?i)(\\x{DF})\\1", b"\xc3\x9f\xe1\xba\x9e");
+    n(b"(?i)(ff)\\1", b"ff\xef\xac\x80");
+    n(b"(?i)(?<n>kk)\\k<n>", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(kk)\\k<-1>", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(?:(?<n>kk)|(?<n>ss))\\k<n>", b"\xc3\x9f\xe1\xba\x9e");
+    n(b"(?i)(?<n>..)\\k<n+0>", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(kk)(?=\\1)", b"kkk\xe2\x84\xaa");
+
+    // Folds that fit inside the captured length still match.
+    x2(b"(?i)(kk)\\1", b"kKKk", 0, 4);
+    x2(b"(?i)(ss)\\1", b"ssSS", 0, 4);
+    x2(b"(?i)(\\x{DF})\\1", b"\xc3\x9f\xc3\x9f", 0, 4);
+    x2(b"(?i)(\\x{212A})\\1", b"\xe2\x84\xaa\xe2\x84\xaa", 0, 6);
+    x3(b"(?i)(\\x{212A})\\1", b"\xe2\x84\xaa\xe2\x84\xaa", 0, 3, 1);
+    x2(b"(?i)(?<n>..)\\k<n+0>", b"kkkK", 0, 4);
+    x2(b"(?i)(kk)(?=\\1)", b"kkKK", 0, 2);
+}
+
 // ============================================================================
 // Lookbehind (C lines 682-705)
 // ============================================================================
