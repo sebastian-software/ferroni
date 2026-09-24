@@ -3838,7 +3838,7 @@ fn fetch_token_cc(
         let c = pfetch(p, &mut pfetch_prev, pattern, end, enc);
         tok.escaped = true;
         tok.code = c;
-        match c as u8 as char {
+        match switch_char(c) {
             'w' => {
                 tok.token_type = TokenType::CharType;
                 tok.prop_ctype = ONIGENC_CTYPE_WORD as i32;
