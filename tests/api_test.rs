@@ -778,6 +778,40 @@ fn conditions_parse_like_c() {
     ]);
 }
 
+/// C's prs_callout_of_name() and prs_callout_of_contents() check the name
+/// and tag characters, accept a tag on every callout, and count the
+/// arguments before the closing parenthesis.
+#[test]
+fn callout_names_and_tags_parse_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let bad_tag = Some("invalid callout tag name");
+    assert_compiles_like_c(&[
+        (onig, r"(*FAIL[a])", None),
+        (onig, r"(*COUNT[_a]{X})", None),
+        (onig, r"(?{foo}[a])", None),
+        (onig, r"a|(*FAIL)", None),
+        (onig, r"(*FAIL[1])", bad_tag),
+        (onig, r"(*FAIL[])", bad_tag),
+        (onig, r"(*FAIL[a$b])", bad_tag),
+        (onig, r"(*MAX[1]{2})", bad_tag),
+        (onig, r"(?{foo}[1])", bad_tag),
+        (
+            onig,
+            r"(*FAIL[a])(*FAIL[a])",
+            Some("multiplex defined name <a>"),
+        ),
+        (
+            onig,
+            r"(?{foo}[a])(?{bar}[a])",
+            Some("multiplex defined name <a>"),
+        ),
+        (onig, r"(*FA-IL)", Some("invalid callout name")),
+        (onig, r"(*NOPE)", Some("undefined callout name")),
+        (onig, r"(*FAIL{1})", Some("invalid callout arg")),
+        (onig, r"(*FAIL[a]", Some("end pattern in group")),
+    ]);
+}
+
 /// Where C records no name, it prints an empty `<>`; the Rust message drops
 /// the placeholder instead.
 #[test]
