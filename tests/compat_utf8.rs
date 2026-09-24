@@ -798,6 +798,25 @@ fn empty_loop_check_with_recursion() {
     x3(b"(?:a\\g<0>|(?!\\1)()|b)*", b"b", 0, 0, 1);
 }
 
+// Every group named by a back reference or condition gets pushed capture
+// entries (C tune_tree, ND_BACKREF: MEM_STATUS_ON(env->backtrack_mem)), so
+// backtracking restores its start and end. Expected results were checked
+// against C Oniguruma.
+#[test]
+fn backref_target_capture_is_restored_on_backtrack() {
+    x2(b"((?=(a|ab))a?){2}\\k<1>", b"a", 0, 0);
+    x3(b"((?=(a|ab))a?){2}\\k<1>", b"a", 0, 0, 1);
+    x3(b"((?=(a|ab))a?){2}\\k<1>", b"a", 0, 1, 2);
+
+    x2(b"\\k<1>{,2}?(?>(?=(a)\\z))", b"aa", 1, 1);
+    x3(b"\\k<1>{,2}?(?>(?=(a)\\z))", b"aa", 1, 2, 1);
+
+    x2(b"((?(1)a|b?){,2}?)(?<=a)()*+", b"a", 1, 1);
+    x3(b"((?(1)a|b?){,2}?)(?<=a)()*+", b"a", 1, 1, 1);
+
+    n(b"(\\A|(b){1,3}(?(1)a|b?))(?<=a)()", b"ba");
+}
+
 // A numbered condition may name a group defined later in the pattern; only
 // the final group count bounds it (C: check_backrefs). Expected results were
 // checked against C Oniguruma.
