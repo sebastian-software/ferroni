@@ -1676,7 +1676,9 @@ fn check_stack_limit(stack_len: usize, limit: u32) -> Result<(), i32> {
 
 /// Count one backtrack against the retry and time limits (C's
 /// `CHECK_RETRY_LIMIT_IN_MATCH` and `CHECK_TIME_LIMIT_IN_MATCH`). Returns
-/// Err with the error code once a limit is exceeded.
+/// Err with the error code once a limit is reached: like C
+/// (`++counter >= limit`), the backtrack that brings the count to the limit
+/// already stops the match.
 #[inline]
 fn count_retry(
     retry_in_match_counter: &mut u64,
@@ -1685,9 +1687,10 @@ fn count_retry(
     msa: &mut MatchArg,
 ) -> Result<(), i32> {
     *retry_in_match_counter += 1;
-    if retry_limit_in_match != 0 && *retry_in_match_counter > retry_limit_in_match {
+    if retry_limit_in_match != 0 && *retry_in_match_counter >= retry_limit_in_match {
         return Err(
-            if msa.retry_limit_in_match != 0 && *retry_in_match_counter > msa.retry_limit_in_match {
+            if msa.retry_limit_in_match != 0 && *retry_in_match_counter >= msa.retry_limit_in_match
+            {
                 ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
             } else {
                 ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER
@@ -6922,7 +6925,7 @@ fn onig_search_inner_core_with_right_range(
                     }
                 }
                 if msa.retry_limit_in_search != 0
-                    && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+                    && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
                 {
                     return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
                 }
@@ -7182,7 +7185,7 @@ fn onig_search_inner_core_with_right_range(
                         }
                     }
                     if msa.retry_limit_in_search != 0
-                        && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+                        && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
                     {
                         return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
                     }
@@ -7248,7 +7251,7 @@ fn onig_search_inner_core_with_right_range(
                         }
                     }
                     if msa.retry_limit_in_search != 0
-                        && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+                        && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
                     {
                         return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
                     }
@@ -7309,7 +7312,7 @@ fn onig_search_inner_core_with_right_range(
                 }
             }
             if msa.retry_limit_in_search != 0
-                && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+                && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
             {
                 return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
             }

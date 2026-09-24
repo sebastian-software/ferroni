@@ -718,7 +718,7 @@ fn locate_regset_entry_decision(
             }));
         }
         if msa.retry_limit_in_search != 0
-            && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+            && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
         {
             return Some(RegSetDecision::Error(RegSetError {
                 code: ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER,
@@ -2700,7 +2700,9 @@ mod tests {
         let old_match = onig_get_retry_limit_in_match();
         let old_search = onig_get_retry_limit_in_search();
         onig_set_retry_limit_in_match(0);
-        onig_set_retry_limit_in_search(136);
+        // The smallest budget under which C's onig_search finishes this
+        // search: it stops once the count reaches the limit.
+        onig_set_retry_limit_in_search(137);
 
         let input = format!("{}c", "a".repeat(16));
         let upstream = compile(br"(a+)\1bc");
