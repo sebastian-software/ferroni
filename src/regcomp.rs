@@ -325,6 +325,93 @@ fn get_head_literal_byte(node: &Node, exact: bool, reg: &RegexType) -> Option<u8
     None
 }
 
+/// C: enum GetValue
+#[derive(Clone, Copy)]
+enum GetValue<'a> {
+    None,
+    Ignore,
+    Found(&'a Node),
+}
+
+/// C: MAX_NEST_LEVEL_GET_TREE_TAIL_LITERAL
+const MAX_NEST_LEVEL_GET_TREE_TAIL_LITERAL: i32 = 16;
+
+/// Walk the AST to find the trailing literal node (String, CClass or CType).
+/// C: get_tree_tail_literal — used by tune_look_behind() for `lead_node`.
+///
+/// C marks memory groups with MARK1 to stop at a recursive re-entry; here the
+/// tree is only borrowed shared, so a cycle through a call instead runs into
+/// the nest-level cap, which yields the same `None` result.
+fn get_tree_tail_literal(node: &Node, nest_level: i32) -> GetValue<'_> {
+    let nest_level = nest_level + 1;
+    if nest_level >= MAX_NEST_LEVEL_GET_TREE_TAIL_LITERAL {
+        return GetValue::None;
+    }
+
+    match &node.inner {
+        NodeInner::List(cons) => match cons.cdr {
+            None => get_tree_tail_literal(&cons.car, nest_level),
+            Some(ref cdr) => {
+                let r = get_tree_tail_literal(cdr, nest_level);
+                if matches!(r, GetValue::Ignore) {
+                    get_tree_tail_literal(&cons.car, nest_level)
+                } else {
+                    r
+                }
+            }
+        },
+
+        NodeInner::Call(cn) => {
+            if cn.target_node.is_null() {
+                GetValue::None
+            } else {
+                // SAFETY: `target_node` is non-null (checked above) and was set by
+                // resolve_call_references/refresh_call_targets to the called group's
+                // Bag node inside this same live tree; only shared reads follow.
+                get_tree_tail_literal(unsafe { &*cn.target_node }, nest_level)
+            }
+        }
+
+        NodeInner::CType(ct) => {
+            if ct.ctype == CTYPE_ANYCHAR {
+                GetValue::None
+            } else {
+                GetValue::Found(node)
+            }
+        }
+
+        NodeInner::CClass(_) => GetValue::Found(node),
+
+        NodeInner::String(sn) => {
+            if sn.s.is_empty() {
+                GetValue::Ignore
+            } else if (node.status & ND_ST_IGNORECASE) != 0 && !sn.is_crude() {
+                // ND_IS_REAL_IGNORECASE
+                GetValue::None
+            } else if node.has_status(ND_ST_LITERAL_ALT) {
+                // Rust-only: a literal alternation trie stores its index, not its text.
+                GetValue::None
+            } else {
+                GetValue::Found(node)
+            }
+        }
+
+        NodeInner::Quant(qn) => match qn.body {
+            Some(ref body) if qn.lower != 0 => get_tree_tail_literal(body, nest_level),
+            _ => GetValue::None,
+        },
+
+        NodeInner::Bag(bn) => match bn.body {
+            Some(ref body) => get_tree_tail_literal(body, nest_level),
+            None => GetValue::None,
+        },
+
+        NodeInner::Anchor(_) | NodeInner::Gimmick(_) => GetValue::Ignore,
+
+        NodeInner::Alt(_) | NodeInner::BackRef(_) => GetValue::None,
+    }
+}
+
 /// Check if a codepoint is in a character class.
 fn onig_is_code_in_cc(enc: OnigEncoding, code: OnigCodePoint, cc: &CClassNode) -> bool {
     let in_bs = if (code as usize) < SINGLE_BYTE_SIZE {
@@ -2251,6 +2338,13 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
                 + OPSIZE_CHECK_POSITION
                 + OPSIZE_CUT_TO_MARK
                 + OPSIZE_UPDATE_VAR;
+            if let Some(lead) = &an.lead_node {
+                let llen = compile_length_tree(lead, reg, env);
+                if llen < 0 {
+                    return llen;
+                }
+                len += OPSIZE_MOVE + llen;
+            }
             if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
                 len += OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR;
             }
@@ -2295,6 +2389,13 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
                 + OPSIZE_UPDATE_VAR
                 + OPSIZE_POP
                 + OPSIZE_POP;
+            if let Some(lead) = &an.lead_node {
+                let llen = compile_length_tree(lead, reg, env);
+                if llen < 0 {
+                    return llen;
+                }
+                len += OPSIZE_MOVE + llen;
+            }
             if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
                 len += OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR;
             }
@@ -2304,6 +2405,26 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
         // Simple anchors: ^, $, \b, \B, \A, \z, etc.
         SIZE_INC
     }
+}
+
+/// Emit the `lead_node` check of a variable-length look-behind: step back
+/// over the trailing literal's length and match it there, which leaves the
+/// position where it started.
+/// C: the `IS_NOT_NULL(node->lead_node)` blocks of
+/// compile_anchor_look_behind_node / compile_anchor_look_behind_not_node.
+fn compile_look_behind_lead_node(lead: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
+    let min = match node_char_len(lead, env.enc) {
+        CharLenResult::Fixed(n) => n,
+        CharLenResult::Variable(mn, _) => mn,
+    };
+    add_op(
+        reg,
+        OpCode::Move,
+        OperationPayload::Move {
+            n: -(min as RelPositionType),
+        },
+    );
+    compile_tree(lead, reg, env)
 }
 
 /// Compile an anchor node to bytecode.
@@ -2438,6 +2559,13 @@ fn compile_anchor_node(
             );
         } else {
             // (?<=...) positive lookbehind — variable-length
+            if let Some(lead) = &an.lead_node {
+                let r = compile_look_behind_lead_node(lead, reg, env);
+                if r != 0 {
+                    return r;
+                }
+            }
+
             let mid1 = reg.num_call;
             reg.num_call += 1;
             let mid2 = reg.num_call;
@@ -2689,11 +2817,28 @@ fn compile_anchor_node(
             if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
                 push_addr += OPSIZE_SAVE_VAL + OPSIZE_UPDATE_VAR;
             }
+            let lead_len = match &an.lead_node {
+                Some(lead) => compile_length_tree(lead, reg, env),
+                None => 0,
+            };
+            if lead_len < 0 {
+                return lead_len;
+            }
+            if an.lead_node.is_some() {
+                push_addr += OPSIZE_MOVE + lead_len;
+            }
             add_op(
                 reg,
                 OpCode::Push,
                 OperationPayload::Push { addr: push_addr },
             );
+
+            if let Some(lead) = &an.lead_node {
+                let r = compile_look_behind_lead_node(lead, reg, env);
+                if r != 0 {
+                    return r;
+                }
+            }
 
             // Absent stopper: save right-range before step-back
             let mid3 = if (env.flags & PE_FLAG_HAS_ABSENT_STOPPER) != 0 {
@@ -4423,8 +4568,11 @@ fn decode_last_codepoint(bytes: &[u8], enc: OnigEncoding) -> OnigCodePoint {
     enc.mbc_to_code(&bytes[last_pos..], bytes.len())
 }
 
-/// Tune a lookbehind anchor: compute char lengths and split variable-length alternatives.
-fn tune_look_behind(node: &mut Node, enc: OnigEncoding, syntax: &OnigSyntaxType) -> i32 {
+/// Tune a lookbehind anchor: tune its body, compute char lengths, split
+/// fixed-length alternatives and record the trailing literal.
+/// C: tune_look_behind
+fn tune_look_behind(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
+    let enc = env.enc;
     let (anchor_type, has_body) = if let NodeInner::Anchor(ref an) = node.inner {
         (an.anchor_type, an.body.is_some())
     } else {
@@ -4458,13 +4606,37 @@ fn tune_look_behind(node: &mut Node, enc: OnigEncoding, syntax: &OnigSyntaxType)
         } else {
             return 0;
         };
-        let r = check_node_in_look_behind(body, is_not, &mut lb_used, syntax);
+        let r = check_node_in_look_behind(body, is_not, &mut lb_used, &env.syntax);
         if r < 0 {
             return r;
         }
         if r > 0 {
             return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
         }
+    }
+
+    let state1 = if anchor_type == ANCR_LOOK_BEHIND_NOT {
+        state | IN_NOT | IN_LOOK_BEHIND
+    } else {
+        state | IN_LOOK_BEHIND
+    };
+
+    // C: "Execute tune_tree(body) before call node_char_len(). Because
+    // case-fold expansion must be done before node_char_len()." The
+    // quantifier reduction runs before node_char_len() as well, so a leading
+    // `x*` that it cuts to `x{0}` no longer makes the look-behind
+    // variable-length.
+    {
+        let body = if let NodeInner::Anchor(ref mut an) = node.inner {
+            an.body.as_mut().unwrap()
+        } else {
+            return 0;
+        };
+        let r = tune_tree(body, reg, state1, env);
+        if r != 0 {
+            return r;
+        }
+        alt_reduce_in_look_behind(body);
     }
 
     let body_char_len = {
@@ -4487,65 +4659,61 @@ fn tune_look_behind(node: &mut Node, enc: OnigEncoding, syntax: &OnigSyntaxType)
         return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
     }
 
-    match body_char_len {
-        CharLenResult::Fixed(len) => {
-            if let NodeInner::Anchor(ref mut an) = node.inner {
-                an.char_min_len = len;
-                an.char_max_len = len;
-            }
-            ONIG_NORMAL
-        }
-        CharLenResult::Variable(min, max) => {
-            // Check if body is Alt with all branches individually fixed-length
-            // (C's CHAR_LEN_TOP_ALT_FIXED case)
-            let top_alt_fixed = if let NodeInner::Anchor(ref an) = node.inner {
-                if let Some(ref body) = an.body {
-                    is_alt_all_branches_fixed(body, enc)
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
+    let different_len_alt = is_syntax_bv(&env.syntax, ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND);
+    let variable_len = is_syntax_bv(&env.syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND);
 
-            if top_alt_fixed {
-                // All alt branches are fixed-length, just different sizes
-                if is_syntax_bv(syntax, ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND) {
-                    let r = divide_look_behind_alt(node, anchor_type, enc);
-                    if r == ONIG_NORMAL {
-                        return r;
-                    }
-                    // Should not fail here since we checked all branches are fixed
+    if let CharLenResult::Variable(..) = body_char_len {
+        // Check if body is Alt with all branches individually fixed-length
+        // (C's CHAR_LEN_TOP_ALT_FIXED case)
+        let top_alt_fixed = if let NodeInner::Anchor(ref an) = node.inner {
+            an.body
+                .as_ref()
+                .is_some_and(|body| is_alt_all_branches_fixed(body, enc))
+        } else {
+            false
+        };
+
+        if top_alt_fixed {
+            if different_len_alt {
+                // C: divide_look_behind_alternatives() + tune_tree(node); the
+                // new anchors each go through tune_look_behind() again.
+                let r = divide_look_behind_alt(node, anchor_type, enc);
+                if r != ONIG_NORMAL {
+                    return r;
                 }
-                // Fall through to variable-length path
-                if is_syntax_bv(syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND) {
-                    if min == INFINITE_LEN {
-                        return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
-                    }
-                    if let NodeInner::Anchor(ref mut an) = node.inner {
-                        an.char_min_len = min;
-                        an.char_max_len = max;
-                    }
-                    ONIG_NORMAL
-                } else {
-                    ONIGERR_INVALID_LOOK_BEHIND_PATTERN
+                return tune_tree(node, reg, state, env);
+            }
+            if !variable_len {
+                return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+            }
+            // C: goto normal
+        } else if !variable_len {
+            return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+        }
+        if cmin == INFINITE_LEN {
+            return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+        }
+    }
+
+    // C: CHAR_LEN_NORMAL
+    if let NodeInner::Anchor(ref mut an) = node.inner {
+        // C: "check lead_node is already set by double call after
+        // divide_look_behind_alternatives()"
+        if an.lead_node.is_none() {
+            an.char_min_len = cmin;
+            an.char_max_len = cmax;
+            // A copy of the body's trailing literal. The variable-length
+            // look-behind code checks it right before the current position,
+            // ahead of the step-back loop, so a position that cannot end the
+            // body fails without scanning back over the subject.
+            if let Some(body) = an.body.as_ref() {
+                if let GetValue::Found(tail) = get_tree_tail_literal(body, 0) {
+                    an.lead_node = onig_node_copy(tail);
                 }
-            } else {
-                // Either non-alt body, or alt with variable-length branches
-                if !is_syntax_bv(syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND) {
-                    return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
-                }
-                if min == INFINITE_LEN {
-                    return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
-                }
-                if let NodeInner::Anchor(ref mut an) = node.inner {
-                    an.char_min_len = min;
-                    an.char_max_len = max;
-                }
-                ONIG_NORMAL
             }
         }
     }
+    ONIG_NORMAL
 }
 
 /// Resolve all \g<name>/\g<num> call references in the tree.
@@ -7153,20 +7321,10 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
 
         NodeInner::Anchor(an) => {
             let at = an.anchor_type;
-            // For lookbehind anchors, compute char lengths (may transform node into Alt)
+            // C: tune_anchor
             if at == ANCR_LOOK_BEHIND || at == ANCR_LOOK_BEHIND_NOT {
-                let enc = env.enc;
-                let r = tune_look_behind(node, enc, &env.syntax);
-                if r != 0 {
-                    return r;
-                }
-                // tune_look_behind may have transformed node into an Alt;
-                // if so, recurse on the new node structure
-                if !matches!(node.inner, NodeInner::Anchor(_)) {
-                    return tune_tree(node, reg, state, env);
-                }
+                return tune_look_behind(node, reg, state, env);
             }
-            // Now recurse into the body
             if let NodeInner::Anchor(ref mut an) = node.inner {
                 let anchor_type = an.anchor_type;
                 if let Some(ref mut body) = an.body {
@@ -7174,29 +7332,13 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
                         state | IN_PREC_READ
                     } else if anchor_type == ANCR_PREC_READ_NOT {
                         state | IN_PREC_READ | IN_NOT
-                    } else if anchor_type == ANCR_LOOK_BEHIND_NOT {
-                        state | IN_NOT | IN_LOOK_BEHIND
-                    } else if anchor_type == ANCR_LOOK_BEHIND {
-                        state | IN_LOOK_BEHIND
                     } else {
                         state
                     };
-                    let r = tune_tree(body, reg, new_state, env);
-                    if r != 0 {
-                        return r;
-                    }
-
-                    // Reduce quantifiers in lookbehind (upper = lower)
-                    if anchor_type == ANCR_LOOK_BEHIND || anchor_type == ANCR_LOOK_BEHIND_NOT {
-                        alt_reduce_in_look_behind(body);
-                    }
-                    0
-                } else {
-                    0
+                    return tune_tree(body, reg, new_state, env);
                 }
-            } else {
-                0
             }
+            0
         }
 
         &mut NodeInner::BackRef(ref br) => {
@@ -9280,6 +9422,100 @@ mod tests {
             "{per_level} ops per level ({small} -> {large})"
         );
         assert!(large < 256, "{large} ops for 43 stacked quantifiers");
+    }
+
+    fn compile_utf8(pattern: &[u8]) -> RegexType {
+        onig_new(
+            pattern,
+            crate::oniguruma::ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap()
+    }
+
+    /// C's tune_look_behind() copies the body's trailing literal into
+    /// `lead_node`, and a variable-length look-behind matches it right
+    /// before the current position (MOVE -len, literal) ahead of the
+    /// step-back loop.
+    #[test]
+    fn variable_look_behind_checks_trailing_literal_first() {
+        for pattern in [&b"(?<=a*b)"[..], b"(?<!a*b)"] {
+            let reg = compile_utf8(pattern);
+            let opcodes: Vec<OpCode> = reg.ops.iter().map(|op| op.opcode).collect();
+            let pattern = String::from_utf8_lossy(pattern);
+            let mv = opcodes
+                .iter()
+                .position(|&op| op == OpCode::Move)
+                .unwrap_or_else(|| panic!("{pattern}: no lead_node check in {opcodes:?}"));
+            assert!(
+                matches!(reg.ops[mv].payload, OperationPayload::Move { n: -1 }),
+                "{pattern}: {opcodes:?}"
+            );
+            assert_eq!(opcodes[mv + 1], OpCode::Str1, "{pattern}: {opcodes:?}");
+            let step_back = opcodes
+                .iter()
+                .position(|&op| op == OpCode::StepBackStart)
+                .unwrap();
+            assert!(mv < step_back, "{pattern}: {opcodes:?}");
+        }
+    }
+
+    /// C reduces quantifiers in a look-behind body before node_char_len(),
+    /// so `(?<=\w*b[a])` becomes the fixed-length `(?<=\w{0}b[a])`.
+    #[test]
+    fn look_behind_char_len_follows_quantifier_reduction() {
+        let reg = compile_utf8(br"(?<=\w*b[a])");
+        let step_back = reg.ops.iter().find_map(|op| match op.payload {
+            OperationPayload::StepBackStart {
+                initial, remaining, ..
+            } => Some((initial, remaining)),
+            _ => None,
+        });
+        assert_eq!(step_back, Some((2, 0)));
+    }
+
+    /// A variable-length look-behind that cannot end at a position must fail
+    /// there without stepping back over the subject: without the lead_node
+    /// check and the early quantifier reduction, each position scans back
+    /// over every earlier start and the search over "a" x n is O(n^3). The
+    /// retry limit turns that blowup into an error instead of a hang.
+    #[test]
+    fn variable_look_behind_search_stays_linear() {
+        use crate::regexec::{
+            onig_new_match_param, onig_search_with_param,
+            onig_set_retry_limit_in_search_of_match_param,
+        };
+        let n = 4000;
+        let mut mp = onig_new_match_param();
+        onig_set_retry_limit_in_search_of_match_param(&mut mp, 4 * n as u64);
+        let search = |reg: &RegexType, subject: &[u8]| {
+            onig_search_with_param(
+                reg,
+                subject,
+                subject.len(),
+                0,
+                subject.len(),
+                None,
+                crate::oniguruma::ONIG_OPTION_NONE,
+                &mp,
+            )
+            .0
+        };
+        for (pattern, tail) in [
+            (&br"(?<=a*b)"[..], &b"b"[..]),
+            (br"(?<=a+b)", b"b"),
+            (br"(?<=(?:ab)*c)", b"c"),
+            (br"(?<=\w*x)", b"x"),
+            (br"(?<=\w*b[a])", b"ba"),
+        ] {
+            let reg = compile_utf8(pattern);
+            let mut subject = vec![b'a'; n];
+            let name = String::from_utf8_lossy(pattern);
+            assert_eq!(search(&reg, &subject), ONIG_MISMATCH, "{name}");
+            subject.extend_from_slice(tail);
+            assert_eq!(search(&reg, &subject), subject.len() as i32, "{name}");
+        }
     }
     use crate::regparse;
     use crate::regsyntax::OnigSyntaxOniguruma;
