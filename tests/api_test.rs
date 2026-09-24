@@ -832,6 +832,19 @@ fn group_options_start_like_c() {
     ]);
 }
 
+/// C's prs_bag() reports a pattern ending right after `(?<` like any other
+/// unclosed group.
+#[test]
+fn pattern_ending_after_lt_is_reported_like_c() {
+    let unclosed = Some("end pattern with unmatched parenthesis");
+    assert_compiles_like_c(&[
+        (&OnigSyntaxOniguruma, r"(?<", unclosed),
+        (&OnigSyntaxOniguruma, r"(x)(?<", unclosed),
+        (&OnigSyntaxOniguruma, r"(?<=", unclosed),
+        (&OnigSyntaxPerl_NG, r"(?<", unclosed),
+    ]);
+}
+
 /// Where C records no name, it prints an empty `<>`; the Rust message drops
 /// the placeholder instead.
 #[test]
