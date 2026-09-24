@@ -10,7 +10,9 @@ use ferroni::regset::{
     OnigRegSet, OnigRegSetLead, onig_regset_get_region, onig_regset_new, onig_regset_search,
 };
 use ferroni::regsyntax::OnigSyntaxOniguruma;
-use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch, ScannerSyntax};
+use ferroni::scanner::{
+    OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch, ScannerSyntax,
+};
 
 fn compile(pattern: &[u8]) -> Box<RegexType> {
     let reg = onig_new(
@@ -357,6 +359,71 @@ fn scanner_fallback_match_may_extend_past_a_later_table_winner() {
         assert_eq!(matched.index, expected_index);
         assert_eq!(matched.capture_indices[0].start, 0);
         assert_eq!(matched.capture_indices[0].end, 4);
+    }
+}
+
+/// Repeat one `find_next_match_with_id` call often enough for the adaptive
+/// cache route to probe (and possibly switch to) the per-regex path, and
+/// require every result to equal a fresh uncached search.
+fn assert_with_id_stable(patterns: &[&str], input: &str, start: usize) -> Option<ScannerMatch> {
+    let expected = Scanner::new(patterns).expect("scanner").find_next_match(
+        input,
+        start,
+        ScannerFindOptions::NONE,
+    );
+    let mut scanner = Scanner::new(patterns).expect("scanner");
+    for call in 1..=40 {
+        let found = scanner.find_next_match_with_id(input, 1, start, ScannerFindOptions::NONE);
+        assert_eq!(
+            found, expected,
+            "{patterns:?} on {input:?} from {start}, call {call}"
+        );
+    }
+    expected
+}
+
+#[test]
+fn scanner_with_id_reports_zero_width_g_anchor_match_at_end_on_every_call() {
+    for pattern in [r"\G$", r"\G", r"\G\z"] {
+        let expected = assert_with_id_stable(&[pattern], "abc", 3).expect("end match");
+        assert_eq!(expected.index, 0);
+        assert_eq!(capture_spans(&expected), [(3, 3)]);
+        assert_with_id_stable(&[pattern], "", 0).expect("empty-input match");
+        assert_with_id_stable(&["q", pattern], "abc", 3).expect("end match");
+    }
+    // A `\G` alternation whose other branch only matches at the end.
+    let expected = assert_with_id_stable(&[r"\Ga|$"], "abc", 1).expect("end match");
+    assert_eq!(capture_spans(&expected), [(3, 3)]);
+    // Enough patterns for the route to settle on per-regex mode.
+    let expected =
+        assert_with_id_stable(&["a", "b", "c", "x", "y", r"\G$"], "abc", 3).expect("end match");
+    assert_eq!(expected.index, 5);
+}
+
+#[test]
+fn scanner_with_id_utf16_reports_zero_width_g_anchor_match_at_end_on_every_call() {
+    let mut scanner = Scanner::new(&[r"\G$"]).expect("scanner");
+    let string = OnigString::new("a💻b");
+    for call in 1..=40 {
+        let found = scanner
+            .find_next_match_utf16_with_id(&string, 1, 4, ScannerFindOptions::NONE)
+            .unwrap_or_else(|| panic!("missing end match on call {call}"));
+        assert_eq!(capture_spans(&found), [(4, 4)], "call {call}");
+    }
+}
+
+#[test]
+fn scanner_with_id_narrowed_range_keeps_matches_that_extend_past_an_earlier_winner() {
+    // `a.*b` wins at 6 first; `(?:foo|ba)*r` starts earlier at 5 but ends at
+    // 8, past that winner. Narrowing must bound start positions only.
+    let patterns = ["a.*b", r"\s*//", "(?:foo|ba)*r", "x?y?z"];
+    let expected = assert_with_id_stable(&patterns, "foo \"bar\" // 42 baz", 0).expect("match");
+    assert_eq!(expected.index, 2);
+    assert_eq!(capture_spans(&expected), [(5, 8)]);
+
+    let patterns = [r"\S*\z", r"(?<=b)\w*", "(?:ab|b)+", "k1", "k2", "k3", "k4"];
+    for start in 0..=5 {
+        assert_with_id_stable(&patterns, "abababc  xyz", start).expect("match");
     }
 }
 
