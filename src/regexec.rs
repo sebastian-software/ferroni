@@ -8196,4 +8196,63 @@ mod tests {
         );
         assert_eq!(result, ONIG_MISMATCH);
     }
+
+    #[test]
+    fn forward_search_rejects_min_distance_beyond_the_slice() {
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"a";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        assert_eq!(regcomp::compile_from_tree(&root, &mut reg, &env), 0);
+
+        // This models optimizer metadata whose minimum distance exceeds the
+        // available input, without constructing an invalid C pointer range.
+        reg.dist_min = OnigLen::MAX - 1;
+        assert_eq!(forward_search(&reg, b"a", 1, 0, 1), None);
+    }
+
+    #[test]
+    fn backward_search_saturates_distance_bounds_at_the_slice_start() {
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"ab";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        assert_eq!(regcomp::compile_from_tree(&root, &mut reg, &env), 0);
+
+        reg.optimize = OptimizeType::Str;
+        reg.exact = pattern.to_vec();
+        reg.dist_min = OnigLen::MAX - 1;
+        reg.dist_max = OnigLen::MAX - 1;
+        assert_eq!(backward_search(&reg, b"ab", 2, 0, 0, 0), Some((0, 0)));
+    }
+
+    #[test]
+    fn optimized_search_bounds_large_finite_distances_to_the_slice() {
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"a";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        assert_eq!(regcomp::compile_from_tree(&root, &mut reg, &env), 0);
+        reg.dist_max = OnigLen::MAX - 1;
+
+        let input = b"a";
+        let (forward, _) = onig_search(
+            &reg,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            None,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(forward, 0);
+
+        let (backward, _) = onig_search(
+            &reg,
+            input,
+            input.len(),
+            input.len(),
+            0,
+            None,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(backward, 0);
+    }
 }

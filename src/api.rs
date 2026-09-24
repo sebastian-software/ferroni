@@ -5,12 +5,15 @@
 
 use std::cell::RefCell;
 use std::ops::Range;
+use std::time::Duration;
 
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
-use crate::regexec::{onig_name_to_backref_number, onig_search};
+use crate::regexec::{
+    onig_name_to_backref_number, onig_new_match_param, onig_search, onig_search_with_param,
+};
 use crate::regint::RegexType;
 use crate::regsyntax::OnigSyntaxOniguruma;
 
@@ -43,6 +46,16 @@ fn cache_region(region: OnigRegion) {
             *cached = Some(region);
         }
     });
+}
+
+fn timeout_to_millis(timeout: Duration) -> u64 {
+    if timeout.is_zero() {
+        return 0;
+    }
+
+    let millis = timeout.as_millis();
+    let millis = millis + u128::from(!timeout.subsec_nanos().is_multiple_of(1_000_000));
+    millis.clamp(1, u64::MAX as u128) as u64
 }
 
 /// A compiled regular expression.
@@ -117,6 +130,41 @@ impl Regex {
         Some(Match { text, start, end })
     }
 
+    /// Return the first match within `timeout`, or `None` if there is no match.
+    ///
+    /// The timeout applies to this search only. A zero duration uses the
+    /// process-wide time limit, if one is configured. Other match limits keep
+    /// their current process-wide settings. The engine checks elapsed time at
+    /// backtracking intervals, so this is not a hard real-time deadline.
+    pub fn find_with_timeout<'t>(
+        &self,
+        text: &'t str,
+        timeout: Duration,
+    ) -> Result<Option<Match<'t>>, RegexError> {
+        self.find_bytes_with_timeout(text.as_bytes(), timeout)
+    }
+
+    /// Return the first match in `text` (as bytes) within `timeout`.
+    pub fn find_bytes_with_timeout<'t>(
+        &self,
+        text: &'t [u8],
+        timeout: Duration,
+    ) -> Result<Option<Match<'t>>, RegexError> {
+        let (result, region) =
+            self.search_with_timeout(text, 0, text.len(), Some(take_cached_region()), timeout)?;
+        let Some(region) = region else {
+            return Ok(None);
+        };
+        if result < 0 || region.num_regs < 1 {
+            cache_region(region);
+            return Ok(None);
+        }
+        let start = region.beg[0] as usize;
+        let end = region.end[0] as usize;
+        cache_region(region);
+        Ok(Some(Match { text, start, end }))
+    }
+
     /// Check whether `text` matches the pattern anywhere.
     pub fn is_match(&self, text: &str) -> bool {
         self.is_match_bytes(text.as_bytes())
@@ -134,6 +182,24 @@ impl Regex {
             ONIG_OPTION_NONE,
         );
         result >= 0
+    }
+
+    /// Check whether `text` matches within `timeout`.
+    ///
+    /// Returns [`RegexError::TimeLimitOver`] when the timeout expires. A zero
+    /// duration uses the process-wide time limit, if one is configured.
+    pub fn is_match_with_timeout(&self, text: &str, timeout: Duration) -> Result<bool, RegexError> {
+        self.is_match_bytes_with_timeout(text.as_bytes(), timeout)
+    }
+
+    /// Check whether byte string `text` matches within `timeout`.
+    pub fn is_match_bytes_with_timeout(
+        &self,
+        text: &[u8],
+        timeout: Duration,
+    ) -> Result<bool, RegexError> {
+        let (result, _) = self.search_with_timeout(text, 0, text.len(), None, timeout)?;
+        Ok(result >= 0)
     }
 
     /// Return the first match with all capture groups, or `None`.
@@ -164,6 +230,37 @@ impl Regex {
         })
     }
 
+    /// Return the first match and all capture groups within `timeout`.
+    pub fn captures_with_timeout<'t>(
+        &'t self,
+        text: &'t str,
+        timeout: Duration,
+    ) -> Result<Option<Captures<'t>>, RegexError> {
+        self.captures_bytes_with_timeout(text.as_bytes(), timeout)
+    }
+
+    /// Return the first match and all capture groups in bytes within `timeout`.
+    pub fn captures_bytes_with_timeout<'t>(
+        &'t self,
+        text: &'t [u8],
+        timeout: Duration,
+    ) -> Result<Option<Captures<'t>>, RegexError> {
+        let (result, region) =
+            self.search_with_timeout(text, 0, text.len(), Some(take_cached_region()), timeout)?;
+        let Some(region) = region else {
+            return Ok(None);
+        };
+        if result < 0 {
+            cache_region(region);
+            return Ok(None);
+        }
+        Ok(Some(Captures {
+            text,
+            region,
+            regex: self,
+        }))
+    }
+
     /// Iterate over all non-overlapping matches in `text`.
     pub fn find_iter<'r, 't>(&'r self, text: &'t str) -> FindIter<'r, 't> {
         FindIter {
@@ -184,6 +281,64 @@ impl Regex {
             last_was_empty: false,
             region: take_cached_region(),
         }
+    }
+
+    /// Iterate over matches, applying `timeout` to each search performed by
+    /// the iterator. A timeout is returned as an error item and ends iteration.
+    pub fn find_iter_with_timeout<'r, 't>(
+        &'r self,
+        text: &'t str,
+        timeout: Duration,
+    ) -> FindIterWithTimeout<'r, 't> {
+        self.find_iter_bytes_with_timeout(text.as_bytes(), timeout)
+    }
+
+    /// Iterate over matches in bytes, applying `timeout` to each search.
+    pub fn find_iter_bytes_with_timeout<'r, 't>(
+        &'r self,
+        text: &'t [u8],
+        timeout: Duration,
+    ) -> FindIterWithTimeout<'r, 't> {
+        FindIterWithTimeout {
+            regex: self,
+            text,
+            last_end: 0,
+            last_was_empty: false,
+            region: take_cached_region(),
+            timeout,
+            finished: false,
+        }
+    }
+
+    fn search_with_timeout(
+        &self,
+        text: &[u8],
+        start: usize,
+        range: usize,
+        region: Option<OnigRegion>,
+        timeout: Duration,
+    ) -> Result<(i32, Option<OnigRegion>), RegexError> {
+        let mut match_param = onig_new_match_param();
+        if !timeout.is_zero() {
+            match_param.time_limit = timeout_to_millis(timeout);
+        }
+        let (result, region) = onig_search_with_param(
+            &self.inner,
+            text,
+            text.len(),
+            start,
+            range,
+            region,
+            ONIG_OPTION_NONE,
+            &match_param,
+        );
+        if result < 0 && result != ONIG_MISMATCH {
+            if let Some(region) = region {
+                cache_region(region);
+            }
+            return Err(RegexError::from(result));
+        }
+        Ok((result, region))
     }
 
     /// Return the number of capture groups in the pattern (excluding group 0).
@@ -535,6 +690,97 @@ impl Drop for FindIter<'_, '_> {
     }
 }
 
+/// Iterator over matches that applies a timeout to each search operation.
+///
+/// A search error is yielded once as `Err` and ends the iterator. The duration
+/// applies separately to each search the iterator performs.
+pub struct FindIterWithTimeout<'r, 't> {
+    regex: &'r Regex,
+    text: &'t [u8],
+    last_end: usize,
+    last_was_empty: bool,
+    region: OnigRegion,
+    timeout: Duration,
+    finished: bool,
+}
+
+impl<'r, 't> Iterator for FindIterWithTimeout<'r, 't> {
+    type Item = Result<Match<'t>, RegexError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished || self.last_end > self.text.len() {
+            self.finished = true;
+            return None;
+        }
+
+        let search = self.regex.search_with_timeout(
+            self.text,
+            self.last_end,
+            self.text.len(),
+            Some(std::mem::take(&mut self.region)),
+            self.timeout,
+        );
+        let (result, region) = match search {
+            Ok(result) => result,
+            Err(error) => {
+                self.finished = true;
+                return Some(Err(error));
+            }
+        };
+        let Some(region) = region else {
+            self.finished = true;
+            return None;
+        };
+        self.region = region;
+
+        if result < 0 {
+            self.finished = true;
+            return None;
+        }
+        if self.region.num_regs < 1 {
+            self.finished = true;
+            return None;
+        }
+
+        let start = self.region.beg[0] as usize;
+        let end = self.region.end[0] as usize;
+
+        if start == end {
+            if self.last_was_empty {
+                if self.last_end >= self.text.len() {
+                    self.finished = true;
+                    return None;
+                }
+                self.last_end += self
+                    .regex
+                    .inner
+                    .enc
+                    .mbc_enc_len(&self.text[self.last_end..]);
+                self.last_was_empty = false;
+                return self.next();
+            }
+            self.last_was_empty = true;
+        } else {
+            self.last_was_empty = false;
+        }
+
+        self.last_end = end;
+        Some(Ok(Match {
+            text: self.text,
+            start,
+            end,
+        }))
+    }
+}
+
+impl std::iter::FusedIterator for FindIterWithTimeout<'_, '_> {}
+
+impl Drop for FindIterWithTimeout<'_, '_> {
+    fn drop(&mut self) {
+        cache_region(std::mem::take(&mut self.region));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -647,6 +893,88 @@ mod tests {
         let re = Regex::new(r"hello").unwrap();
         assert!(re.is_match("say hello"));
         assert!(!re.is_match("say goodbye"));
+    }
+
+    #[test]
+    fn timeout_methods_return_matches_and_captures() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"(\w+)").unwrap();
+        let timeout = Duration::from_secs(1);
+
+        assert_eq!(
+            re.find_with_timeout("hello 42", timeout)
+                .unwrap()
+                .unwrap()
+                .as_str(),
+            "hello"
+        );
+        assert!(re.is_match_with_timeout("hello", timeout).unwrap());
+        assert!(!re.is_match_with_timeout("!!!", timeout).unwrap());
+        assert_eq!(
+            re.captures_with_timeout("hello 42", timeout)
+                .unwrap()
+                .unwrap()
+                .get(1)
+                .unwrap()
+                .as_str(),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn timeout_methods_surface_time_limit_errors() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"(a+)+b").unwrap();
+        let text = "a".repeat(40);
+        let timeout = Duration::from_millis(1);
+
+        assert!(matches!(
+            re.find_with_timeout(&text, timeout),
+            Err(RegexError::TimeLimitOver)
+        ));
+        assert!(matches!(
+            re.is_match_with_timeout(&text, timeout),
+            Err(RegexError::TimeLimitOver)
+        ));
+        assert!(matches!(
+            re.captures_with_timeout(&text, timeout),
+            Err(RegexError::TimeLimitOver)
+        ));
+    }
+
+    #[test]
+    fn timeout_iterator_yields_matches_and_then_finishes() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"\w+").unwrap();
+        let mut matches = re.find_iter_with_timeout("one two", Duration::from_secs(1));
+
+        assert_eq!(matches.next().unwrap().unwrap().as_str(), "one");
+        assert_eq!(matches.next().unwrap().unwrap().as_str(), "two");
+        assert!(matches.next().is_none());
+        assert!(matches.next().is_none());
+    }
+
+    #[test]
+    fn timeout_iterators_surface_timeout_once() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"(a+)+b").unwrap();
+        let text = "a".repeat(40);
+        let mut matches = re.find_iter_with_timeout(&text, Duration::from_millis(1));
+
+        assert!(matches!(
+            matches.next().unwrap(),
+            Err(RegexError::TimeLimitOver)
+        ));
+        assert!(matches.next().is_none());
+    }
+
+    #[test]
+    fn timeout_is_rounded_up_to_milliseconds() {
+        assert_eq!(timeout_to_millis(Duration::ZERO), 0);
+        assert_eq!(timeout_to_millis(Duration::from_nanos(1)), 1);
+        assert_eq!(timeout_to_millis(Duration::from_millis(1)), 1);
+        assert_eq!(timeout_to_millis(Duration::from_nanos(1_000_001)), 2);
+        assert_eq!(timeout_to_millis(Duration::MAX), u64::MAX);
     }
 
     #[test]
