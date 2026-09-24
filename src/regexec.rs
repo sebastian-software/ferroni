@@ -1499,9 +1499,12 @@ pub struct MatchArg {
     pub retry_limit_in_search_counter: u64,
     pub match_stack_limit: u32,
     pub time_limit: u64, // milliseconds, 0 = unlimited
-    /// Lazily-initialized search start time for time-limit checking.
-    /// None until the first time check fires, then set to Instant::now().
-    time_start: Option<Box<Instant>>,
+    /// Backtracks since the last clock read (C: `msa->time_counter`). Shared by
+    /// every start position of one search, like C's per-search counter.
+    time_counter: u64,
+    /// Deadline fixed when the search starts (C: `TIME_LIMIT_INIT`). `None`
+    /// without a limit, or when the limit is too large to represent.
+    time_end: Option<Instant>,
     // Reusable VM state (avoids heap allocation per match_at call)
     stack: Vec<StackEntry>,
     mem_start_stk: Vec<MemPtr>,
@@ -1517,7 +1520,7 @@ impl MatchArg {
         region: Option<OnigRegion>,
         start: usize,
     ) -> Self {
-        MatchArg {
+        let mut msa = MatchArg {
             options: option | reg.options,
             region,
             start,
@@ -1529,11 +1532,14 @@ impl MatchArg {
             retry_limit_in_search_counter: 0,
             match_stack_limit: MATCH_STACK_LIMIT.load(Ordering::Relaxed),
             time_limit: TIME_LIMIT.load(Ordering::Relaxed),
-            time_start: None,
+            time_counter: 0,
+            time_end: None,
             stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
-        }
+        };
+        msa.start_time_limit();
+        msa
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
@@ -1544,7 +1550,7 @@ impl MatchArg {
         start: usize,
         mp: &OnigMatchParam,
     ) -> Self {
-        MatchArg {
+        let mut msa = MatchArg {
             options: option | reg.options,
             region,
             start,
@@ -1556,11 +1562,14 @@ impl MatchArg {
             retry_limit_in_search_counter: 0,
             match_stack_limit: mp.match_stack_limit,
             time_limit: mp.time_limit,
-            time_start: None,
+            time_counter: 0,
+            time_end: None,
             stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
-        }
+        };
+        msa.start_time_limit();
+        msa
     }
 
     /// Full reset for thread-local reuse: re-reads global limits, keeps allocated buffers.
@@ -1582,7 +1591,7 @@ impl MatchArg {
         self.retry_limit_in_search_counter = 0;
         self.match_stack_limit = MATCH_STACK_LIMIT.load(Ordering::Relaxed);
         self.time_limit = TIME_LIMIT.load(Ordering::Relaxed);
-        self.time_start = None;
+        self.start_time_limit();
     }
 
     /// Reset mutable state for a new search, keeping allocated buffers.
@@ -1600,6 +1609,7 @@ impl MatchArg {
         self.best_s = 0;
         self.skip_search = 0;
         self.retry_limit_in_search_counter = 0;
+        self.start_time_limit();
     }
 
     /// Light reset for reusing MatchArg across multiple onig_match calls
@@ -1616,18 +1626,29 @@ impl MatchArg {
         self.best_s = 0;
     }
 
-    /// Check if the time limit has been exceeded. Returns true if over limit.
-    /// On first call, initializes the start time.
+    /// Start the time limit for a new search (C: `TIME_LIMIT_INIT`).
+    #[inline]
+    fn start_time_limit(&mut self) {
+        self.time_counter = 0;
+        self.time_end = if self.time_limit == 0 {
+            None
+        } else {
+            Instant::now().checked_add(std::time::Duration::from_millis(self.time_limit))
+        };
+    }
+
+    /// Count one backtrack and read the clock every `CHECK_TIME_INTERVAL`
+    /// backtracks (C: `CHECK_TIME_LIMIT_IN_MATCH`). Returns true once the
+    /// deadline has passed.
     #[inline]
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn check_time_limit(&mut self) -> bool {
-        if self.time_limit == 0 {
+        self.time_counter += 1;
+        if self.time_counter < CHECK_TIME_INTERVAL {
             return false;
         }
-        let start = self
-            .time_start
-            .get_or_insert_with(|| Box::new(Instant::now()));
-        start.elapsed() >= std::time::Duration::from_millis(self.time_limit)
+        self.time_counter = 0;
+        self.time_end.is_some_and(|end| Instant::now() > end)
     }
 }
 
@@ -5439,11 +5460,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 best_len = ONIGERR_RETRY_LIMIT_IN_MATCH_OVER;
                 break;
             }
-            // Time limit check (every CHECK_TIME_INTERVAL retries)
-            if time_limit_ms > 0
-                && retry_in_match_counter.is_multiple_of(CHECK_TIME_INTERVAL)
-                && msa.check_time_limit()
-            {
+            // Time limit check (every CHECK_TIME_INTERVAL retries of the search)
+            if time_limit_ms > 0 && msa.check_time_limit() {
                 best_len = ONIGERR_TIME_LIMIT_OVER;
                 break;
             }
@@ -8120,6 +8138,39 @@ mod tests {
         onig_set_retry_limit_in_match(old_retry);
         onig_set_match_stack_limit(old_stack);
         onig_set_time_limit(old_time);
+    }
+
+    #[test]
+    fn time_limit_counts_backtracks_across_start_positions() {
+        // Each start position backtracks fewer than CHECK_TIME_INTERVAL times,
+        // so a per-position counter never reads the clock. C keeps the counter
+        // and the deadline per search (TIME_LIMIT_INIT, CHECK_TIME_LIMIT_IN_MATCH).
+        let (mut reg, mut env) = make_test_context();
+        let pattern = b"a{1,400}?(?=b)";
+        let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
+        let r = regcomp::compile_from_tree(&root, &mut reg, &env);
+        assert_eq!(r, 0);
+
+        let input = vec![b'a'; 500_000];
+        let mut mp = onig_new_match_param();
+        mp.retry_limit_in_match = 0;
+        mp.retry_limit_in_search = 0;
+        onig_set_time_limit_of_match_param(&mut mp, 10);
+
+        let started = Instant::now();
+        let (result, _) = onig_search_with_param(
+            &reg,
+            &input,
+            input.len(),
+            0,
+            input.len(),
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+            &mp,
+        );
+        assert_eq!(result, ONIGERR_TIME_LIMIT_OVER);
+        // Without the per-search counter this search runs for seconds.
+        assert!(started.elapsed() < std::time::Duration::from_millis(1000));
     }
 
     #[test]
