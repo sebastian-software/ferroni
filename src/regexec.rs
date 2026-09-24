@@ -8419,9 +8419,11 @@ mod tests {
     fn retry_limit_in_match() {
         let _lock = LIMIT_TEST_LOCK.lock().unwrap();
 
-        // (a*)*b against "aaa..." causes catastrophic backtracking
+        // (a+)*b against "aaa..." causes catastrophic backtracking. The tree
+        // is compiled without tuning, so the loop has no empty check and its
+        // body must consume.
         let (mut reg, mut env) = make_test_context();
-        let pattern = b"(a*)*b";
+        let pattern = b"(a+)*b";
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
         let r = regcomp::compile_from_tree(&root, &mut reg, &env);
         assert_eq!(r, 0);
@@ -8494,8 +8496,9 @@ mod tests {
     fn time_limit_over() {
         let _lock = LIMIT_TEST_LOCK.lock().unwrap();
 
+        // Untuned, so the loop body must consume (see retry_limit_in_match).
         let (mut reg, mut env) = make_test_context();
-        let pattern = b"(a*)*b";
+        let pattern = b"(a+)*b";
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
         let r = regcomp::compile_from_tree(&root, &mut reg, &env);
         assert_eq!(r, 0);

@@ -86,6 +86,13 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Impact**: warm TypeScript line -57%, TypeScript document -44%, Rust document -37%, CSS document -33%, CSS grammar compile -25%, TypeScript compile -15% (wall clock).
 - **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](/perf/performance-structure-analysis#second-pass)
 
+#### Single-byte star loops (`src/regcomp.rs`)
+
+- **Trigger**: a greedy `c*` / `c+` whose body is one ASCII byte, outside a literal trie. The body compiles to a single `Str1 c`, which matches what `[c]` matches, so the loop compiles to `CClassStar` (or `CClassStarPeekNext`) with a one-member set, like the class stars above.
+- **Why**: upstream's `PUSH_OR_JUMP_EXACT1; STR_1; JUMP` loop costs three dispatches and one backtrack entry per character. In a variable-length look-behind that loop runs once per step-back position, so it dominated `(?<=x|a*b)` and `(?<!x|a*b)c`.
+- **Impact**: `(?<=x|a*b)` over 1,000 characters 1.49 s → 96 ms (C: 583 ms); `(?<!x|a*b)c` 4.25 ms → 0.27 ms (C: 1.70 ms), measured after the matcher fixes of the same pass.
+- **Bounds**: one lazy backtrack entry per run, as for every star opcode, so a match stack limit counts the run once rather than per character; no extra memory.
+
 ## Rationale
 
 - **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.

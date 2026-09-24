@@ -1001,6 +1001,25 @@ fn is_cclass_infinite_greedy(qn: &QuantNode) -> bool {
             .is_some_and(|b| matches!(b.inner, NodeInner::CClass(_)))
 }
 
+/// Rust-only (ADR-008): the byte of a greedy `c*` / `c+` whose body is one
+/// ASCII byte. Such a body compiles to a single `Str1 c`, which matches
+/// exactly what the one-member class `[c]` matches, so the loop runs as the
+/// class star opcode (one lazy backtrack entry per run) instead of one
+/// `PUSH_OR_JUMP_EXACT1; STR_1; JUMP` round per character.
+fn single_ascii_byte_star(qn: &QuantNode) -> Option<u8> {
+    if !qn.greedy || !is_infinite_repeat(qn.upper) || qn.lower > 1 {
+        return None;
+    }
+    let body = qn.body.as_ref()?;
+    if body.has_status(ND_ST_LITERAL_ALT) {
+        return None;
+    }
+    match body.as_str()?.s.as_slice() {
+        [c] if *c < 0x80 => Some(*c),
+        _ => None,
+    }
+}
+
 /// Check if this is a greedy infinite repeat of \w or \W.
 /// Returns Some((not, ascii_mode)) if match.
 fn is_word_ctype_infinite_greedy(qn: &QuantNode) -> Option<(bool, bool)> {
@@ -1144,6 +1163,12 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
 
     // CClass star/plus optimization: [class]* or [class]+ (negated too)
     if is_cclass_infinite_greedy(qn) && body.as_cclass().is_some() {
+        let tlen = compile_length_tree(body, reg, env);
+        return SIZE_INC + tlen * qn.lower;
+    }
+
+    // Single ASCII byte star/plus: c* or c+ (runs as [c]*)
+    if single_ascii_byte_star(qn).is_some() {
         let tlen = compile_length_tree(body, reg, env);
         return SIZE_INC + tlen * qn.lower;
     }
@@ -1327,6 +1352,36 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             compile_cclass_star_node(cc, reg);
             return 0;
         }
+    }
+
+    // Single ASCII byte star/plus: c* or c+ (runs as [c]*)
+    if let Some(c) = single_ascii_byte_star(qn) {
+        let r = compile_tree_n_times(body, qn.lower, reg, env);
+        if r != 0 {
+            return r;
+        }
+        let mut bs: BitSet = [0; BITSET_REAL_SIZE];
+        bitset_set_bit(&mut bs, c as usize);
+        if let Some(next) = qn.next_head_exact {
+            add_op(
+                reg,
+                OpCode::CClassStarPeekNext,
+                OperationPayload::CClassStarPeekNext {
+                    bsp: Box::new(bs),
+                    c: next,
+                },
+            );
+        } else {
+            add_op(
+                reg,
+                OpCode::CClassStar,
+                OperationPayload::CClass {
+                    bsp: Box::new(bs),
+                    ascii_fast: CClassAsciiFastKind::Eq(c),
+                },
+            );
+        }
+        return 0;
     }
 
     // Word ctype star/plus optimization: \w* or \w+
@@ -10099,15 +10154,33 @@ mod tests {
 
     #[test]
     fn compile_star_quantifier() {
-        let reg = parse_and_compile(b"a*").unwrap();
-        // Should have PUSH + Str1 + JUMP + END
+        let reg = parse_and_compile(b"(?:ab)*").unwrap();
+        // Should have PUSH + Str2 + JUMP + END
         assert!(reg.ops.len() >= 3);
         assert_eq!(reg.ops.last().unwrap().opcode, OpCode::End);
         // Check that a PUSH and JUMP are present
         let has_push = reg.ops.iter().any(|op| op.opcode == OpCode::Push);
         let has_jump = reg.ops.iter().any(|op| op.opcode == OpCode::Jump);
-        assert!(has_push, "expected PUSH for a*");
-        assert!(has_jump, "expected JUMP for a*");
+        assert!(has_push, "expected PUSH for (?:ab)*");
+        assert!(has_jump, "expected JUMP for (?:ab)*");
+
+        // A star or plus over one ASCII byte runs as the class star opcode
+        // (Rust-only, ADR-008); other bodies keep the loop.
+        let opcodes = |pat: &[u8]| -> Vec<OpCode> {
+            let reg = parse_and_compile(pat).unwrap();
+            reg.ops.iter().map(|op| op.opcode).collect()
+        };
+        assert_eq!(opcodes(b"a*"), [OpCode::CClassStar, OpCode::End]);
+        assert_eq!(
+            opcodes(b"a+"),
+            [OpCode::Str1, OpCode::CClassStar, OpCode::End]
+        );
+        assert_eq!(
+            opcodes(b"a*b"),
+            [OpCode::CClassStar, OpCode::Str1, OpCode::End]
+        );
+        assert!(!opcodes(b"a*?").contains(&OpCode::CClassStar));
+        assert!(!opcodes("é*".as_bytes()).contains(&OpCode::CClassStar));
     }
 
     #[test]
