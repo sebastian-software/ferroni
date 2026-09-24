@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.1](https://github.com/sebastian-software/ferroni/compare/v1.5.0...v1.5.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **regcomp:** choose REPEAT over expansion by C's body length ([6e91bf5](https://github.com/sebastian-software/ferroni/commit/6e91bf5088a47dc0aa7a970b3d759801e20c2497))
+* **regcomp:** count every backtrack a guarded push skips ([e3ab278](https://github.com/sebastian-software/ferroni/commit/e3ab278ce8178c14d6c355f26b70985605c6d6dc))
+* **regexec:** stop at the retry limit like C, not one retry later ([20770b4](https://github.com/sebastian-software/ferroni/commit/20770b4e41d3392d2ad434f8bb988a2d93c1f63c))
+
+
+### Performance Improvements
+
+* **regcomp:** push back-referenced captures only where a restore is observable ([49b0eb9](https://github.com/sebastian-software/ferroni/commit/49b0eb928254c3e3f0f999757b543f51c4765e5c))
+* **regcomp:** run single-byte star loops as class stars ([cd0659d](https://github.com/sebastian-software/ferroni/commit/cd0659d7a3a2e36eb3460ba3d1baf0e05071b531))
+* **regexec:** cut per-attempt overhead in the matcher ([b2df0cc](https://github.com/sebastian-software/ferroni/commit/b2df0cc301fd48cf8355077d152619e11e40c895))
+* **regexec:** guard pushes whose skipped retries depend on checks ([4da116b](https://github.com/sebastian-software/ferroni/commit/4da116bb3c217dce7250c100d503199a169d515a))
+
 ## [1.5.0](https://github.com/sebastian-software/ferroni/compare/v1.4.2...v1.5.0) (2026-09-24)
 
 
