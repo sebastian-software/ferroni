@@ -3293,6 +3293,37 @@ fn look_behind_body_matches(
         .is_some_and(|at| single_op_matches(body, enc, str_data, at, right_range, end))
 }
 
+/// Whether a guarded push with `skipped_retries` may jump. One whose count
+/// depends on position checks (`GUARD_RETRIES_BY_CHECKS`) counts its largest
+/// count when it jumps, so it only jumps where that upper bound is good
+/// enough (`guards_may_count_upper_bounds`); otherwise it pushes like the
+/// unguarded instruction, which counts exactly.
+#[inline(always)]
+fn guard_may_jump(skipped_retries: u32, reg: &RegexType, msa: &MatchArg, exact: bool) -> bool {
+    skipped_retries & GUARD_RETRIES_BY_CHECKS == 0
+        || (!exact && guards_may_count_upper_bounds(reg, msa))
+}
+
+/// Whether guards may count an upper bound of their backtracks: only the
+/// retry limit in match reads the count (no search budget, time limit,
+/// callouts or counted subexpression calls), and FIND_LONGEST keeps no state
+/// across the attempt. If the upper bound trips the limit, `match_at_impl`
+/// starts the attempt over with exact counts.
+fn guards_may_count_upper_bounds(reg: &RegexType, msa: &MatchArg) -> bool {
+    msa.retry_limit_in_search == 0
+        && msa.time_limit == 0
+        && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
+        && onig_get_subexp_call_limit_in_search() == 0
+        && !opton_find_longest(msa.options)
+}
+
+/// The backtracks a guard counts when it jumps: its fixed count, or the
+/// largest count of one that depends on checks.
+#[inline(always)]
+fn guard_retries(skipped_retries: u32) -> u64 {
+    u64::from(skipped_retries & !GUARD_RETRIES_BY_CHECKS)
+}
+
 /// Whether the single-character or string instruction `op` matches at `s`,
 /// exactly as the VM executes it. `LookBehindOp` checks its body with it at
 /// the position it stepped back to.
@@ -3495,6 +3526,47 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
         zid: -1,
         is_super: false,
     });
+
+    // Set once the attempt starts over because guards counted an upper
+    // bound of their backtracks (see `guard_may_jump`).
+    let mut exact_guard_retries = false;
+    // Leaves the loop with a retry or time limit error. A retry limit that
+    // an upper bound of the guards' backtracks reached may not be reached by
+    // the exact count: the attempt then starts over from the same state with
+    // those guards pushing, which counts exactly.
+    macro_rules! stop_at_limit {
+        ($err:expr) => {{
+            let err = $err;
+            if err == ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+                && reg.check_dependent_guards
+                && !exact_guard_retries
+                && guards_may_count_upper_bounds(reg, msa)
+            {
+                exact_guard_retries = true;
+                p = 0;
+                s = sstart;
+                right_range = in_right_range;
+                keep = sstart;
+                last_alt_zid = -1;
+                retry_in_match_counter = 0;
+                subexp_call_nest_counter = 0;
+                stack.clear();
+                stack.push(StackEntry::Alt {
+                    pcode: FINISH_PCODE,
+                    pstr: 0,
+                    zid: -1,
+                    is_super: false,
+                });
+                if TRACK_CAPTURES {
+                    mem_start_stk.fill(MemPtr::invalid());
+                    mem_end_stk.fill(MemPtr::invalid());
+                }
+                continue;
+            }
+            best_len = err;
+            break;
+        }};
+    }
 
     // ---- Main dispatch loop ----
     loop {
@@ -5143,7 +5215,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     skipped_retries,
                 } = reg.ops[p].payload
                 {
-                    if s < right_range && str_data[s] == c {
+                    if (s < right_range && str_data[s] == c)
+                        || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
+                    {
                         // Character matches: push alternative and continue
                         let alt_target = (p as i32 + addr) as usize;
                         stack.push(StackEntry::Alt {
@@ -5160,14 +5234,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         // would take (see `guard_backtrack_pushes`).
                         if skipped_retries != 0 {
                             if let Err(err) = count_retry(
-                                u64::from(skipped_retries),
+                                guard_retries(skipped_retries),
                                 &mut retry_in_match_counter,
                                 retry_limit_in_match,
                                 time_limit_ms,
                                 msa,
                             ) {
-                                best_len = err;
-                                break;
+                                stop_at_limit!(err);
                             }
                         }
                     }
@@ -5186,7 +5259,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     skipped_retries,
                 } = reg.ops[p].payload
                 {
-                    if s < right_range && bitset_at(bsp, str_data[s] as usize) {
+                    if (s < right_range && bitset_at(bsp, str_data[s] as usize))
+                        || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
+                    {
                         stack.push(StackEntry::Alt {
                             pcode: (p as i32 + addr) as usize,
                             pstr: s,
@@ -5199,14 +5274,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         // Counts the backtracks the push would take (see
                         // `guard_backtrack_pushes`).
                         if let Err(err) = count_retry(
-                            u64::from(skipped_retries),
+                            guard_retries(skipped_retries),
                             &mut retry_in_match_counter,
                             retry_limit_in_match,
                             time_limit_ms,
                             msa,
                         ) {
-                            best_len = err;
-                            break;
+                            stop_at_limit!(err);
                         }
                     }
                 } else {
@@ -5757,8 +5831,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 time_limit_ms,
                 msa,
             ) {
-                best_len = err;
-                break;
+                stop_at_limit!(err);
             }
 
             // Only the bottom sentinel is left, so STACK_POP would return
@@ -7433,6 +7506,7 @@ mod tests {
             unset_call_addrs: vec![],
             extp: None,
             literal_tries: Vec::new(),
+            check_dependent_guards: false,
             ac_alt: None,
             ac_alt_has_capture: false,
         };

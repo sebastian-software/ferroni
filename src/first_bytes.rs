@@ -378,6 +378,16 @@ pub(crate) fn guard_byte_map(
     saw_consumer.then_some(map)
 }
 
+/// The backtracks a guarded push counts when it jumps (see
+/// [`guard_skipped_retries`]).
+pub(crate) enum GuardRetries {
+    /// The same count at every position.
+    Fixed(u32),
+    /// A count that depends on position checks on the main path, with its
+    /// largest value.
+    ByChecks(u32),
+}
+
 /// The backtracks an unguarded push takes when the current byte is outside
 /// `map`, the guard byte map of its main path starting at `entry`. Every path
 /// from `entry` then fails without consuming, and each failure is one
@@ -385,12 +395,19 @@ pub(crate) fn guard_byte_map(
 /// limits trip where they do without the guard (and in C).
 ///
 /// Runs the main path on a model of the backtracking stack: string and class
-/// instructions fail, pushes and marks stack up, cuts drop what their mark
-/// covers. Checks and fused look-behinds depend on the position, so every
-/// combination of their outcomes is run, and the count must not depend on
-/// them. `None` when it does, or for instructions the model does not cover;
-/// such a push stays unguarded.
-pub(crate) fn guard_skipped_retries(reg: &RegexType, entry: usize, map: &ByteMap) -> Option<u32> {
+/// instructions fail, pushes and marks stack up, cuts and a matched negative
+/// look-around's pops drop what they cover. Inside a negative look-around,
+/// which `map` leaves out, an instruction that could consume the current
+/// byte ends the model. Checks and fused look-behinds depend on the position,
+/// so every combination of their outcomes is run; when the count depends on
+/// them, the largest count is returned, for the guard to count where an
+/// upper bound is good enough. `None` for more than `MAX_CHECKS` checks or
+/// for instructions the model does not cover; such a push stays unguarded.
+pub(crate) fn guard_skipped_retries(
+    reg: &RegexType,
+    entry: usize,
+    map: &ByteMap,
+) -> Option<GuardRetries> {
     /// Instructions one run may execute.
     const MAX_RUN_STEPS: usize = 4096;
     /// Checks whose outcomes are combined.
@@ -414,19 +431,40 @@ pub(crate) fn guard_skipped_retries(reg: &RegexType, entry: usize, map: &ByteMap
         (index < MAX_CHECKS).then_some(passes & (1 << index) != 0)
     }
 
+    /// Whether every byte in `bytes` is in `map`.
+    fn within(bytes: &ByteMap, map: &ByteMap) -> bool {
+        bytes
+            .iter()
+            .zip(map)
+            .all(|(&bytes, &map)| bytes & !map == 0)
+    }
+
     // One run with the check outcomes in `passes`.
     let run = |passes: u32, checks: &mut Vec<usize>| -> Option<u32> {
         let mut stack: Vec<Entry> = Vec::new();
         let mut pc = entry;
         let mut failures = 0u32;
-        let mut scratch: ByteMap = [0; BITSET_REAL_SIZE];
         for _ in 0..MAX_RUN_STEPS {
             let op = reg.ops.get(pc)?;
+            let mut scratch: ByteMap = [0; BITSET_REAL_SIZE];
             let next = match record_first_bytes(reg, op, &mut scratch)? {
-                // Cannot consume the current byte.
-                FirstBytes::Consumes => None,
+                // Cannot consume the current byte, which is outside `map`.
+                // Inside a negative look-around the walk for `map` skipped,
+                // an instruction may consume other bytes: give up there, as
+                // for a loop below.
+                FirstBytes::Consumes => {
+                    if !within(&scratch, map) {
+                        return None;
+                    }
+                    None
+                }
                 // Consumes nothing and pushes nothing.
-                FirstBytes::ConsumesOrFallsThrough => Some(pc + 1),
+                FirstBytes::ConsumesOrFallsThrough => {
+                    if !within(&scratch, map) {
+                        return None;
+                    }
+                    Some(pc + 1)
+                }
                 FirstBytes::None => match (op.opcode, &op.payload) {
                     (OpCode::Jump, OperationPayload::Jump { addr }) => {
                         Some(target(pc, *addr, reg.ops.len())?)
@@ -461,11 +499,7 @@ pub(crate) fn guard_skipped_retries(reg: &RegexType, entry: usize, map: &ByteMap
                         | OperationPayload::PushOrJumpByteSet { addr, .. }
                         | OperationPayload::PushOrJumpExact1 { addr, .. },
                     ) => {
-                        let alt = target(pc, *addr, reg.ops.len())?;
-                        if skips_negative_look_around(reg, pc, op, alt) {
-                            return None;
-                        }
-                        stack.push(Entry::Alt(alt));
+                        stack.push(Entry::Alt(target(pc, *addr, reg.ops.len())?));
                         Some(pc + 1)
                     }
                     (OpCode::Mark, &OperationPayload::Mark { id, .. }) => {
@@ -482,6 +516,22 @@ pub(crate) fn guard_skipped_retries(reg: &RegexType, entry: usize, map: &ByteMap
                                 }
                             }
                         }
+                        Some(pc + 1)
+                    }
+                    // A negative look-around whose body matched: drop the
+                    // body's entries, then the look-around's own push.
+                    (OpCode::PopToMark, &OperationPayload::PopToMark { id }) => {
+                        loop {
+                            if let Entry::Mark(mark) = stack.pop()? {
+                                if mark == id {
+                                    break;
+                                }
+                            }
+                        }
+                        Some(pc + 1)
+                    }
+                    (OpCode::Pop, _) => {
+                        stack.pop()?;
                         Some(pc + 1)
                     }
                     (OpCode::MemStartPush | OpCode::MemEndPush | OpCode::EmptyCheckStart, _) => {
@@ -524,23 +574,27 @@ pub(crate) fn guard_skipped_retries(reg: &RegexType, entry: usize, map: &ByteMap
         None
     };
 
+    // Run `passes` = 0, 1, 2, ... until every combination of the checks
+    // found so far has run; a check first met in a later run failed in the
+    // earlier ones, which never reached it.
     let mut checks = Vec::new();
-    let mut count = None;
+    let mut counts = Vec::new();
     let mut passes = 0u32;
     loop {
-        let failures = run(passes, &mut checks)?;
-        if count.is_some_and(|count| count != failures) {
-            return None;
-        }
-        count = Some(failures);
+        counts.push(run(passes, &mut checks)?);
         passes += 1;
         if checks.len() > MAX_CHECKS {
             return None;
         }
         if passes >= 1 << checks.len() {
-            return count;
+            break;
         }
     }
+    Some(if counts.iter().all(|&count| count == counts[0]) {
+        GuardRetries::Fixed(counts[0])
+    } else {
+        GuardRetries::ByChecks(counts.iter().copied().max().unwrap_or(0))
+    })
 }
 
 /// Whether `op`, inside a negative look-around, leaves no trace once the

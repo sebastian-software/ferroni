@@ -7633,6 +7633,7 @@ mod tests {
             unset_call_addrs: vec![],
             extp: None,
             literal_tries: Vec::new(),
+            check_dependent_guards: false,
             ac_alt: None,
             ac_alt_has_capture: false,
         };

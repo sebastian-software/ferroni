@@ -675,12 +675,24 @@ pub struct RegexType {
     // literal alternation tries (for AltLiterals opcode)
     pub(crate) literal_tries: Vec<crate::literal_trie::LiteralTrie>,
 
+    /// Rust-only (ADR-008): some guarded push carries
+    /// `GUARD_RETRIES_BY_CHECKS`.
+    pub(crate) check_dependent_guards: bool,
+
     // Aho-Corasick automaton for pure literal alternation fast path.
     // `ac_alt_has_capture` is true when the alternation is wrapped in a single
     // capture group, so the fast path must also populate region[1].
     pub(crate) ac_alt: Option<aho_corasick::AhoCorasick>,
     pub(crate) ac_alt_has_capture: bool,
 }
+
+/// Set in a guard's `skipped_retries` when the backtracks it skips depend on
+/// position checks on its main path (anchors, word boundaries, fused
+/// look-behinds); the other bits then hold the largest count. Such a guard
+/// jumps only where an upper bound of the count is good enough (see
+/// `guard_may_jump` in `regexec.rs`), and pushes like the unguarded
+/// instruction otherwise.
+pub(crate) const GUARD_RETRIES_BY_CHECKS: u32 = 1 << 31;
 
 // === Optimization data structures ===
 pub const OPT_EXACT_MAXLEN: usize = 24;
