@@ -708,6 +708,23 @@ fn python_named_backref_and_call_parse_like_c() {
     assert_eq!(err.code(), ONIGERR_UNDEFINED_GROUP_REFERENCE);
 }
 
+/// C checks backref bounds (check_backrefs) after rejecting numbered
+/// backrefs next to named groups, and a backref may point forward.
+#[test]
+fn numbered_backrefs_are_checked_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let not_allowed = Some("numbered backref/call is not allowed. (use name)");
+    assert_compiles_like_c(&[
+        (onig, r"(?<a>x)\k<2>", not_allowed),
+        (onig, r"(?<a>x)\k<+1>", not_allowed),
+        (onig, r"(?<a>x)(y)\k<3>", not_allowed),
+        (&OnigSyntaxPerl_NG, r"(?<a>x)\k<2>", not_allowed),
+        (onig, r"\k<2>", Some("invalid backref number/name")),
+        (onig, r"(x)\k<2>", Some("invalid backref number/name")),
+        (onig, r"\k<1>(x)", None),
+    ]);
+}
+
 /// Where C records no name, it prints an empty `<>`; the Rust message drops
 /// the placeholder instead.
 #[test]
