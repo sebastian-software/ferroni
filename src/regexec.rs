@@ -1674,6 +1674,33 @@ fn check_stack_limit(stack_len: usize, limit: u32) -> Result<(), i32> {
     Ok(())
 }
 
+/// Count one backtrack against the retry and time limits (C's
+/// `CHECK_RETRY_LIMIT_IN_MATCH` and `CHECK_TIME_LIMIT_IN_MATCH`). Returns
+/// Err with the error code once a limit is exceeded.
+#[inline]
+fn count_retry(
+    retry_in_match_counter: &mut u64,
+    retry_limit_in_match: u64,
+    time_limit_ms: u64,
+    msa: &mut MatchArg,
+) -> Result<(), i32> {
+    *retry_in_match_counter += 1;
+    if retry_limit_in_match != 0 && *retry_in_match_counter > retry_limit_in_match {
+        return Err(
+            if msa.retry_limit_in_match != 0 && *retry_in_match_counter > msa.retry_limit_in_match {
+                ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+            } else {
+                ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER
+            },
+        );
+    }
+    // Time limit check (every CHECK_TIME_INTERVAL retries of the search)
+    if time_limit_ms > 0 && msa.check_time_limit() {
+        return Err(ONIGERR_TIME_LIMIT_OVER);
+    }
+    Ok(())
+}
+
 // ============================================================================
 // Stack operations (port of STACK_PUSH_* / STACK_POP macros)
 // ============================================================================
@@ -3521,6 +3548,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
 
                         // For non-FIND_LONGEST, return immediately
                         if !opton_find_longest(options) {
+                            // C leaves through match_at_end, which adds
+                            // this match's retries to the search's count.
+                            msa.retry_limit_in_search_counter += retry_in_match_counter;
                             msa.stack = stack;
                             if TRACK_CAPTURES {
                                 msa.mem_start_stk = mem_start_stk;
@@ -5103,7 +5133,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // OP_PUSH_OR_JUMP_EXACT1 - optimized push for exact char
             // ================================================================
             OpCode::PushOrJumpExact1 => {
-                if let OperationPayload::PushOrJumpExact1 { addr, c } = reg.ops[p].payload {
+                if let OperationPayload::PushOrJumpExact1 { addr, c, guard } = reg.ops[p].payload {
                     if s < right_range && str_data[s] == c {
                         // Character matches: push alternative and continue
                         let alt_target = (p as i32 + addr) as usize;
@@ -5117,6 +5147,19 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     } else {
                         // Character doesn't match: jump
                         p = (p as i32 + addr) as usize;
+                        // A guarded `Push` counts the backtrack C takes into
+                        // the alternative (see `guard_backtrack_pushes`).
+                        if guard {
+                            if let Err(err) = count_retry(
+                                &mut retry_in_match_counter,
+                                retry_limit_in_match,
+                                time_limit_ms,
+                                msa,
+                            ) {
+                                best_len = err;
+                                break;
+                            }
+                        }
                     }
                 } else {
                     goto_fail = true;
@@ -5138,6 +5181,17 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         p += 1;
                     } else {
                         p = (p as i32 + addr) as usize;
+                        // Counts the backtrack C takes into the alternative
+                        // (see `guard_backtrack_pushes`).
+                        if let Err(err) = count_retry(
+                            &mut retry_in_match_counter,
+                            retry_limit_in_match,
+                            time_limit_ms,
+                            msa,
+                        ) {
+                            best_len = err;
+                            break;
+                        }
                     }
                 } else {
                     goto_fail = true;
@@ -5680,21 +5734,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
 
         // Handle failure (backtracking)
         if goto_fail {
-            // Retry limit check
-            retry_in_match_counter += 1;
-            if retry_limit_in_match != 0 && retry_in_match_counter > retry_limit_in_match {
-                best_len = if msa.retry_limit_in_match != 0
-                    && retry_in_match_counter > msa.retry_limit_in_match
-                {
-                    ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
-                } else {
-                    ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER
-                };
-                break;
-            }
-            // Time limit check (every CHECK_TIME_INTERVAL retries of the search)
-            if time_limit_ms > 0 && msa.check_time_limit() {
-                best_len = ONIGERR_TIME_LIMIT_OVER;
+            if let Err(err) = count_retry(
+                &mut retry_in_match_counter,
+                retry_limit_in_match,
+                time_limit_ms,
+                msa,
+            ) {
+                best_len = err;
                 break;
             }
 
@@ -5748,6 +5794,22 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     }
 
     best_len
+}
+
+/// Stack entries a thread-cached `MatchArg` keeps allocated between searches.
+const MAX_CACHED_STACK_ENTRIES: usize = 1 << 16;
+
+/// Drop a match stack that grew past `MAX_CACHED_STACK_ENTRIES` before `msa`
+/// goes back into a thread-local cache. C allocates the match stack in each
+/// `match_at` and frees it on return; the port reuses it across start
+/// positions and searches, but once a search is over it does not keep a stack
+/// that ran into a limit (up to gigabytes under the default retry limit) for
+/// the rest of the thread.
+#[inline]
+fn release_oversized_stack(msa: &mut MatchArg) {
+    if msa.stack.capacity() > MAX_CACHED_STACK_ENTRIES {
+        msa.stack = Vec::with_capacity(INIT_MATCH_STACK_SIZE);
+    }
 }
 
 // ============================================================================
@@ -5810,6 +5872,7 @@ pub fn onig_match(
     };
 
     let region = msa.region.take();
+    release_oversized_stack(&mut msa);
     CACHED_MSA.with(|c| *c.borrow_mut() = Some(msa));
     (result, region)
 }
@@ -6477,6 +6540,7 @@ pub(crate) fn search_in_range(
     let result = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
 
     // Return the MSA to cache (region already taken out by inner).
+    release_oversized_stack(&mut msa);
     CACHED_MSA.with(|c| {
         *c.borrow_mut() = Some(msa);
     });
@@ -8450,6 +8514,48 @@ mod tests {
         assert_eq!(result, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER);
 
         // Restore
+        onig_set_retry_limit_in_match(old_retry);
+        onig_set_match_stack_limit(old_stack);
+        onig_set_time_limit(old_time);
+    }
+
+    /// The plain search path (process-wide limits, cached `MatchArg`) of the
+    /// runaway loop in `tests/api_test.rs`
+    /// (`guarded_pushes_spend_the_retry_budget_like_c`): C stops it with the
+    /// retry limit at about 433k stack entries per 100k retries. A guarded
+    /// push that skipped C's backtrack left three times as many.
+    #[test]
+    fn guarded_pushes_spend_the_retry_budget_on_the_plain_path() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let reg = crate::regcomp::onig_new(
+            br"((?=a\g<0>)|(?:\k<1>*?(?=a)()))*",
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        let input = b"aa";
+
+        let old_retry = onig_get_retry_limit_in_match();
+        let old_stack = onig_get_match_stack_limit();
+        let old_time = onig_get_time_limit();
+        onig_set_retry_limit_in_match(100_000);
+        onig_set_match_stack_limit(1_000_000);
+        onig_set_time_limit(0);
+
+        for region in [Some(OnigRegion::new()), None] {
+            let (result, _) = onig_search(
+                &reg,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                region,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(result, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER);
+        }
+
         onig_set_retry_limit_in_match(old_retry);
         onig_set_match_stack_limit(old_stack);
         onig_set_time_limit(old_time);

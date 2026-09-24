@@ -474,6 +474,10 @@ pub enum OperationPayload {
     PushOrJumpExact1 {
         addr: RelAddrType,
         c: u8,
+        /// Rust-only (ADR-008): set on a guarded `Push`, whose jump counts the
+        /// backtrack that C's `Push` would take (see `PushOrJumpByteSet`).
+        /// Upstream's own instruction leaves it unset.
+        guard: bool,
     },
     PushIfPeekNext {
         addr: RelAddrType,
