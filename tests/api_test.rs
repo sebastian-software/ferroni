@@ -725,6 +725,24 @@ fn numbered_backrefs_are_checked_like_c() {
     ]);
 }
 
+/// C's check_call_reference() rejects a call by number next to named groups.
+#[test]
+fn numbered_calls_are_checked_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let not_allowed = Some("numbered backref/call is not allowed. (use name)");
+    assert_compiles_like_c(&[
+        (onig, r"(?<a>x)\g<1>", not_allowed),
+        (onig, r"(?<a>x)\g<0>", not_allowed),
+        (onig, r"(?<a>x)\g<2>", not_allowed),
+        (onig, r"(?<a>x)\g<-1>", not_allowed),
+        (&OnigSyntaxRuby, r"(?<a>x)\g<1>", not_allowed),
+        (&OnigSyntaxPerl_NG, r"(?<a>x)(?1)", not_allowed),
+        (&OnigSyntaxPerl_NG, r"(?<a>x)\g<1>", not_allowed),
+        (onig, r"(x)\g<1>", None),
+        (onig, r"(?<a>x)\g<a>", None),
+    ]);
+}
+
 /// Where C records no name, it prints an empty `<>`; the Rust message drops
 /// the placeholder instead.
 #[test]
