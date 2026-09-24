@@ -814,6 +814,21 @@ fn invalid_interval_brace_is_a_literal_like_c() {
     assert!(re.is_match("aa") && !re.is_match("a{2}"));
 }
 
+/// C scans a callout's argument list (prs_callout_args in skip mode) before
+/// it looks up the callout name.
+#[test]
+fn callout_arguments_are_scanned_before_the_name_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let bad = Some("invalid callout pattern");
+    assert_compiles_like_c(&[
+        (onig, r"(*kx{|&", bad),
+        (onig, r"(*NOPE{1", bad),
+        (onig, r"(*MAX{2", bad),
+        (onig, r"(*NOPE{1})", Some("undefined callout name")),
+        (onig, r"(*MAX{2})", None),
+    ]);
+}
+
 /// C parses a condition's body with prs_alts(), which requires the closing
 /// parenthesis even when the body has no `|`.
 #[test]
