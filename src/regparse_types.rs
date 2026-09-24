@@ -884,11 +884,27 @@ pub fn node_new_str(s: &[u8]) -> Box<Node> {
     }))
 }
 
-pub fn node_new_str_crude(s: &[u8]) -> Box<Node> {
-    node_new(NodeInner::String(StrNode {
-        s: s.to_vec(),
-        flag: ND_STRING_CRUDE,
-    }))
+/// Port of node_new_str_with_options from regparse.c.
+pub fn node_new_str_with_options(s: &[u8], options: OnigOptionType) -> Box<Node> {
+    let mut node = node_new_str(s);
+    if opton_ignorecase(options) {
+        node.status_add(ND_ST_IGNORECASE);
+    }
+    node
+}
+
+/// Port of node_new_str_crude from regparse.c.
+pub fn node_new_str_crude(s: &[u8], options: OnigOptionType) -> Box<Node> {
+    let mut node = node_new_str_with_options(s, options);
+    if let Some(sn) = node.as_str_mut() {
+        sn.set_crude();
+    }
+    node
+}
+
+/// Port of node_new_str_crude_char from regparse.c.
+pub fn node_new_str_crude_char(c: u8, options: OnigOptionType) -> Box<Node> {
+    node_new_str_crude(&[c], options)
 }
 
 pub fn node_new_empty() -> Box<Node> {

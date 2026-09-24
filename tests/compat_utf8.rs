@@ -223,6 +223,55 @@ fn hex_escape_x1f() {
     x2(b"\\x1f", b"\x1f", 0, 1);
 }
 
+// --- Raw byte escapes (\xNN) become ordinary literals once a whole character
+// has been collected (C: tk_crude_byte clears ND_STRING_CRUDE). Expectations
+// checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8). ---
+
+#[test]
+fn hex_escape_ignorecase_folds() {
+    x2(b"(?i)\\x61", b"A", 0, 1);
+    x2(b"(?i)\\x41", b"a", 0, 1);
+    x2(b"(?i)\\x61b", b"AB", 0, 2);
+    x2(b"(?i)a\\x62c", b"ABC", 0, 3);
+    x2(b"(?i:\\x61\\x62)\\x63", b"ABc", 0, 3);
+    x2(b"(?i)\\x61*", b"AAAAAA", 0, 6);
+    x2(b"(?i)\\x61?b", b"AAAAAAB", 5, 7);
+    x2(b"(?i)\\xC3\\xA9", "É".as_bytes(), 0, 2);
+    x2(b"(?i)\\x73\\x73", "ß".as_bytes(), 0, 2);
+    n(b"\\x61", b"A");
+    n(b"(?i:\\x61)\\x62", b"AB");
+}
+
+#[test]
+fn hex_escape_runs_match_at_every_length() {
+    for len in 1..=40 {
+        let pattern = "\\x61".repeat(len);
+        let input = "a".repeat(len);
+        x2(pattern.as_bytes(), input.as_bytes(), 0, len as i32);
+        n(pattern.as_bytes(), &input.as_bytes()[1..]);
+    }
+}
+
+#[test]
+fn hex_escape_run_in_alternation_and_look_behind() {
+    x2(b"\\x61\\x61\\x61\\x61\\x61\\x61|b", b"aaaaaab", 0, 6);
+    x2(b"(?<=\\x61\\x61\\x61\\x61\\x61\\x61)b", b"aaaaaab", 6, 7);
+    x2(
+        b"\\x61\\x62\\x63\\x64\\x65\\x66\\x67\\x68\\x69\\x6A\\x6B\\x6C\\x6D\\x6E\\x6F\\x70",
+        b"xxabcdefghijklmnop",
+        2,
+        18,
+    );
+}
+
+#[test]
+fn error_utf8_invalid_continuation_byte() {
+    // A complete but invalid sequence is ONIGERR_INVALID_WIDE_CHAR_VALUE in C,
+    // a sequence cut short by a non-\x token is TOO_SHORT_MULTI_BYTE_STRING.
+    e(b"\\xC3\\x41", b"", ONIGERR_INVALID_WIDE_CHAR_VALUE);
+    e(b"\\xC3a", b"", ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
+}
+
 // ============================================================================
 // Anchors
 // ============================================================================
