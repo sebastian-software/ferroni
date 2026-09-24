@@ -1052,6 +1052,14 @@ fn unicode_egcb_is_break_2code(from_code: u32, to_code: u32) -> EgcbBreakType {
     EgcbBreakType::Break
 }
 
+/// Decode the character at `pos`, bounded by the logical `end` like C's
+/// `ONIGENC_MBC_TO_CODE(enc, p, end)`: a character straddling `end` is
+/// truncated. `mbc_to_code` takes the limit relative to the slice start.
+#[inline]
+fn code_at(enc: OnigEncoding, str_data: &[u8], pos: usize, end: usize) -> u32 {
+    enc.mbc_to_code(&str_data[pos..], end.saturating_sub(pos))
+}
+
 /// Full EGCB break position check.
 /// Port of onigenc_egcb_is_break_position from unicode.c:998.
 pub fn onigenc_egcb_is_break_position(
@@ -1065,8 +1073,11 @@ pub fn onigenc_egcb_is_break_position(
     if s <= start {
         return true;
     }
-    // GB2: Break at end of text
-    if s >= end {
+    // GB2: Break at end of text. C tests `p == end`: a backward search may try a
+    // position past a logical end that splits a character, and C then keeps
+    // classifying. Only the physical end of the data stops early here, where
+    // C would read past the buffer.
+    if s == end || s >= str_data.len() {
         return true;
     }
 
@@ -1075,8 +1086,8 @@ pub fn onigenc_egcb_is_break_position(
         return true;
     }
 
-    let from = enc.mbc_to_code(&str_data[prev..], end);
-    let to = enc.mbc_to_code(&str_data[s..], end);
+    let from = code_at(enc, str_data, prev, end);
+    let to = code_at(enc, str_data, s, end);
 
     let btype = unicode_egcb_is_break_2code(from, to);
     match btype {
@@ -1094,7 +1105,7 @@ pub fn onigenc_egcb_is_break_position(
                 if prev < start {
                     break;
                 }
-                let code = enc.mbc_to_code(&str_data[prev..], end);
+                let code = code_at(enc, str_data, prev, end);
                 if onigenc_unicode_is_code_ctype(code, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
                     return false; // Found ExtPict before ZWJ
                 }
@@ -1117,7 +1128,7 @@ pub fn onigenc_egcb_is_break_position(
                 if prev < start {
                     break;
                 }
-                let code = enc.mbc_to_code(&str_data[prev..], end);
+                let code = code_at(enc, str_data, prev, end);
                 let t = egcb_get_type(code);
                 if t != EgcbType::RegionalIndicator {
                     break;
@@ -1181,7 +1192,7 @@ fn wb_get_next_main_code(
         if pos >= end {
             break;
         }
-        let code = enc.mbc_to_code(&str_data[pos..], end);
+        let code = code_at(enc, str_data, pos, end);
         let t = wb_get_type(code);
         if !is_wb_ignore_tail(t) {
             return Some((code, t));
@@ -1203,8 +1214,11 @@ pub fn onigenc_wb_is_break_position(
     if s <= start {
         return true;
     }
-    // WB2: Any / eot
-    if s >= end {
+    // WB2: Any / eot. C tests `p == end`: a backward search may try a
+    // position past a logical end that splits a character, and C then keeps
+    // classifying. Only the physical end of the data stops early here, where
+    // C would read past the buffer.
+    if s == end || s >= str_data.len() {
         return true;
     }
 
@@ -1213,8 +1227,8 @@ pub fn onigenc_wb_is_break_position(
         return true;
     }
 
-    let cfrom = enc.mbc_to_code(&str_data[prev..], end);
-    let cto = enc.mbc_to_code(&str_data[s..], end);
+    let cfrom = code_at(enc, str_data, prev, end);
+    let cto = code_at(enc, str_data, s, end);
 
     let mut from = wb_get_type(cfrom);
     let to = wb_get_type(cto);
@@ -1263,7 +1277,7 @@ pub fn onigenc_wb_is_break_position(
                 break;
             }
             prev = pp;
-            let cf = enc.mbc_to_code(&str_data[prev..], end);
+            let cf = code_at(enc, str_data, prev, end);
             from = wb_get_type(cf);
             if !is_wb_ignore_tail(from) {
                 break;
@@ -1299,7 +1313,7 @@ pub fn onigenc_wb_is_break_position(
             if pp < start {
                 break;
             }
-            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            let cf2 = code_at(enc, str_data, pp, end);
             from2 = wb_get_type(cf2);
             if !is_wb_ignore_tail(from2) {
                 break;
@@ -1338,7 +1352,7 @@ pub fn onigenc_wb_is_break_position(
             if pp < start {
                 break;
             }
-            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            let cf2 = code_at(enc, str_data, pp, end);
             from2 = wb_get_type(cf2);
             if !is_wb_ignore_tail(from2) {
                 break;
@@ -1371,7 +1385,7 @@ pub fn onigenc_wb_is_break_position(
                 if pp < start {
                     break;
                 }
-                let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+                let cf2 = code_at(enc, str_data, pp, end);
                 from2 = wb_get_type(cf2);
                 if !is_wb_ignore_tail(from2) {
                     break;
@@ -1433,7 +1447,7 @@ pub fn onigenc_wb_is_break_position(
             if pp < start {
                 break;
             }
-            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            let cf2 = code_at(enc, str_data, pp, end);
             let from2 = wb_get_type(cf2);
             if from2 != WbType::RegionalIndicator {
                 break;
