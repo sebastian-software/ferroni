@@ -934,10 +934,13 @@ pub fn node_new_anychar() -> Box<Node> {
     node_new_ctype(CTYPE_ANYCHAR, false, false)
 }
 
+/// Port of C's `node_new_backref`. As in C, the NEST_LEVEL status follows
+/// whether a level was written (`\k<n+0>` included), not the level's value.
 pub fn node_new_backref(
     back_num: i32,
     backrefs: &[i32],
     by_name: bool,
+    exist_level: bool,
     nest_level: i32,
 ) -> Box<Node> {
     let mut back_static = [0i32; ND_BACKREFS_SIZE];
@@ -954,12 +957,12 @@ pub fn node_new_backref(
         back_num,
         back_static,
         back_dynamic,
-        nest_level,
+        nest_level: if exist_level { nest_level } else { 0 },
     }));
     if by_name {
         node.status_add(ND_ST_BY_NAME);
     }
-    if nest_level != 0 {
+    if exist_level {
         node.status_add(ND_ST_NEST_LEVEL);
     }
     node

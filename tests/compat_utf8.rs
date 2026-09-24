@@ -6314,6 +6314,47 @@ fn recursive_casefold_backref_level() {
     x2(b"(?i)\\A(a|b\\g<1>c)\\k<1+2>\\z", b"bBACcbac", 0, 8);
 }
 
+// A written level of zero (`\k<b+0>`, `(?(<b+0>)..)`) still makes a level
+// backref (C: node_new_backref keys ND_ST_NEST_LEVEL on exist_level, not on
+// the level value), so it reads the capture of the current recursion level.
+// Expectations checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8).
+#[test]
+fn recursive_backref_level_zero() {
+    // The palindrome example from Oniguruma's doc/RE.
+    let palindrome: &[u8] = b"\\A(?<a>|.|(?:(?<b>.)\\g<a>\\k<b+0>))\\z";
+    x2(palindrome, b"reer", 0, 4);
+    x3(palindrome, b"reer", 1, 2, 2);
+    x2(palindrome, b"abcba", 0, 5);
+    x2(palindrome, b"abccba", 0, 6);
+    x3(palindrome, b"abccba", 2, 3, 2);
+    n(palindrome, b"abca");
+    x2(
+        b"(?i)\\A(?<a>|.|(?:(?<b>.)\\g<a>\\k<b+0>))\\z",
+        b"abBA",
+        0,
+        4,
+    );
+
+    x2(b"\\A(?<a>(?<b>.)\\g<a>?\\k<b+0>)\\z", b"abcddcba", 0, 8);
+    x3(b"\\A(?<a>(?<b>.)\\g<a>?\\k<b+0>)\\z", b"abcddcba", 3, 4, 2);
+    n(b"\\A(?<a>(?<b>.)\\g<a>?\\k<b+0>)\\z", b"abcdcba");
+    x2(
+        b"\\A(?<a>(?:(?<n>a)|(?<n>b))\\g<a>?\\k<n+0>)\\z",
+        b"abba",
+        0,
+        4,
+    );
+    n(b"\\A(?<a>(?:(?<n>a)|(?<n>b))\\g<a>?\\k<n+0>)\\z", b"abab");
+
+    // Outside of any recursion level 0 is the plain capture.
+    x2(b"(?<n>..)\\k<n+0>", b"abab", 0, 4);
+    n(b"(?<n>..)\\k<n+0>", b"abba");
+
+    // Delimited conditions keep their level, too.
+    x2(b"(?<b>.)(?(<b+1>)a|b)", b"xb", 0, 2);
+    n(b"(?<b>.)(?(<b+1>)a|b)", b"xa");
+}
+
 #[test]
 fn casefold_named_dup_backref() {
     // C line 754: (?i)(?<X>aa)|(?<X>bb)\k<X> matches "BBbb" -> 0-4
