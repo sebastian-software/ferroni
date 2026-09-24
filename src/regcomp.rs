@@ -7533,9 +7533,17 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
 
         &mut NodeInner::BackRef(ref br) => {
             // Set backrefed_mem for each referenced group
+            let nest_level = (node.status & ND_ST_NEST_LEVEL) != 0;
             for &back in br.back_refs() {
                 if back > 0 {
                     mem_status_on(&mut env.backrefed_mem, back as usize);
+                    // A level backref reads the capture from the match stack
+                    // (backref_match_at_nested_level), so the group has to be
+                    // pushed. C turns backtrack_mem on for every backref
+                    // target; the level case is the one that depends on it.
+                    if nest_level {
+                        mem_status_on(&mut env.backtrack_mem, back as usize);
+                    }
                 }
             }
             0

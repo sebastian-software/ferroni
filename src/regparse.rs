@@ -5190,7 +5190,7 @@ fn prs_conditional(
                     return Err(ONIGERR_INVALID_BACKREF);
                 }
                 let backrefs = [num];
-                condition = node_new_backref(1, &backrefs, false, 0);
+                condition = node_new_backref(1, &backrefs, false, exist_level, level);
             } else {
                 // Named ref
                 let name = &pattern[name_start..name_end];
@@ -5205,7 +5205,8 @@ fn prs_conditional(
                     None
                 };
                 if let Some(nums) = group_nums {
-                    condition = node_new_backref(nums.len() as i32, &nums, true, 0);
+                    condition =
+                        node_new_backref(nums.len() as i32, &nums, true, exist_level, level);
                 } else {
                     return Err(ONIGERR_UNDEFINED_NAME_REFERENCE);
                 }
@@ -5301,10 +5302,7 @@ fn prs_conditional(
                 0
             };
             let backrefs = [back_num];
-            condition = node_new_backref(1, &backrefs, false, nest_level);
-            if found_level {
-                condition.status_add(ND_ST_NEST_LEVEL);
-            }
+            condition = node_new_backref(1, &backrefs, false, found_level, nest_level);
         }
 
         // Mark condition as a checker
@@ -6056,11 +6054,9 @@ fn prs_bag(
                                                 entry.back_num,
                                                 &refs,
                                                 true,
+                                                has_level,
                                                 level_val,
                                             );
-                                            if has_level {
-                                                // level-based backref (rare)
-                                            }
                                             if opton_ignorecase(env.options) {
                                                 np.status_add(ND_ST_IGNORECASE);
                                             }
@@ -6811,7 +6807,13 @@ fn prs_exp(
             } else {
                 tok.backref_refs.clone()
             };
-            let mut np = node_new_backref(back_num, &refs, tok.backref_by_name, tok.backref_level);
+            let mut np = node_new_backref(
+                back_num,
+                &refs,
+                tok.backref_by_name,
+                tok.backref_exist_level,
+                tok.backref_level,
+            );
             if opton_ignorecase(env.options) {
                 np.status_add(ND_ST_IGNORECASE);
             }
