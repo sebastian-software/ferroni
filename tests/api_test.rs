@@ -812,6 +812,26 @@ fn callout_names_and_tags_parse_like_c() {
     ]);
 }
 
+/// C's prs_bag() only reads group options after an option letter; any
+/// other character after `(?` is an undefined group option.
+#[test]
+fn group_options_start_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let undefined = Some("undefined group option");
+    assert_compiles_like_c(&[
+        (onig, r"(?)", undefined),
+        (onig, r"(?Q)", undefined),
+        (&OnigSyntaxRuby, r"(?)", undefined),
+        (&OnigSyntaxPerl_NG, r"(?)", undefined),
+        (&OnigSyntaxRuby, r"(?W)a", undefined),
+        (onig, r"(?i)a", None),
+        (onig, r"(?-i)a", None),
+        (onig, r"(?W)a", None),
+        (onig, r"(?C)a", None),
+        (onig, r"(?I)a", None),
+    ]);
+}
+
 /// Where C records no name, it prints an empty `<>`; the Rust message drops
 /// the placeholder instead.
 #[test]
