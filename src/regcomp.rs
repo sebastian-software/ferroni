@@ -982,47 +982,7 @@ fn entry_repeat_range(reg: &mut RegexType, lower: i32, upper: i32) -> Result<i32
 // ============================================================================
 
 /// Compile a quantifier body wrapped with empty-match check if needed.
-/// Collect a bitmask of capture group regnums present in a node tree.
-fn collect_mem_status(node: &Node) -> u32 {
-    let mut status: u32 = 0;
-    match &node.inner {
-        NodeInner::List(_) | NodeInner::Alt(_) => {
-            let mut cur = node;
-            loop {
-                let (car, cdr) = match &cur.inner {
-                    NodeInner::List(cons) => (&cons.car, &cons.cdr),
-                    NodeInner::Alt(cons) => (&cons.car, &cons.cdr),
-                    _ => break,
-                };
-                status |= collect_mem_status(car);
-                match cdr {
-                    Some(next) => cur = next,
-                    None => break,
-                }
-            }
-        }
-        NodeInner::Quant(qn) => {
-            if let Some(ref body) = qn.body {
-                status |= collect_mem_status(body);
-            }
-        }
-        NodeInner::Bag(bn) => {
-            if bn.bag_type == BagType::Memory {
-                if let BagData::Memory { regnum, .. } = bn.bag_data {
-                    if regnum > 0 && regnum < 31 {
-                        status |= 1u32 << regnum;
-                    }
-                }
-            }
-            if let Some(ref body) = bn.body {
-                status |= collect_mem_status(body);
-            }
-        }
-        _ => {}
-    }
-    status
-}
-
+/// Mirrors C's compile_quant_body_with_empty_check().
 fn compile_quant_body_with_empty_check(
     node: &Node,
     reg: &mut RegexType,
@@ -1049,28 +1009,16 @@ fn compile_quant_body_with_empty_check(
 
     if is_empty {
         let mem = saved_mem;
-        let empty_status_mem = if emptiness == BodyEmptyType::MayBeEmptyMem
-            || emptiness == BodyEmptyType::MayBeEmptyRec
-        {
-            if qn_empty_status_mem != 0 {
-                qn_empty_status_mem
-            } else {
-                collect_mem_status(node)
+        // C: EMPTY_CHECK_END_MEMST only when a backref outside the loop reads
+        // one of its captures (ND_IS_EMPTY_STATUS_CHECK, which is set exactly
+        // when a bit of empty_status_mem is), EMPTY_CHECK_END_MEMST_PUSH for
+        // a body that may recurse.
+        let (opcode, empty_status_mem) = match emptiness {
+            BodyEmptyType::MayBeEmptyMem if qn_empty_status_mem != 0 => {
+                (OpCode::EmptyCheckEndMemst, qn_empty_status_mem)
             }
-        } else {
-            0
-        };
-        let opcode = match emptiness {
-            BodyEmptyType::MayBeEmptyMem => {
-                if qn_empty_status_mem != 0 {
-                    OpCode::EmptyCheckEndMemst
-                } else {
-                    // No external backrefs to tracked captures → use plain empty check
-                    OpCode::EmptyCheckEnd
-                }
-            }
-            BodyEmptyType::MayBeEmptyRec => OpCode::EmptyCheckEndMemstPush,
-            _ => OpCode::EmptyCheckEnd,
+            BodyEmptyType::MayBeEmptyRec => (OpCode::EmptyCheckEndMemstPush, qn_empty_status_mem),
+            _ => (OpCode::EmptyCheckEnd, 0),
         };
         add_op(
             reg,
@@ -1302,10 +1250,12 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
                 body_len * qn.lower
             };
             first_pass + push_size + mod_tlen + OPSIZE_JUMP
-        } else {
+        } else if expand_infinite_quantifier(qn, body, body_len) {
             // {n,} or {n,}?
             let n_body_len = compile_length_tree_n_times(body, qn.lower, reg, env);
             n_body_len + OPSIZE_PUSH + mod_tlen + OPSIZE_JUMP
+        } else {
+            OPSIZE_REPEAT + mod_tlen + OPSIZE_REPEAT_INC
         }
     } else if qn.upper == 0 {
         0
@@ -1640,6 +1590,8 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                     OperationPayload::Push { addr: -mod_tlen },
                 );
             }
+        } else if !expand_infinite_quantifier(qn, body, body_len) {
+            return compile_range_repeat_node(qn, body, mod_tlen, reg, env);
         } else {
             // {n,} with n >= 2
             // Compile body n times, then loop
@@ -1796,43 +1748,69 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
         }
     } else {
         // {n,m} range repeat (lazy non-trivial)
-        let id = entry_repeat_range(reg, qn.lower, qn.upper);
-        if let Err(e) = id {
-            return e;
-        }
-        let id = id.unwrap();
-
-        let opcode = if qn.greedy {
-            OpCode::Repeat
-        } else {
-            OpCode::RepeatNg
-        };
-        add_op(
-            reg,
-            opcode,
-            OperationPayload::Repeat {
-                id,
-                addr: SIZE_INC + mod_tlen + OPSIZE_REPEAT_INC,
-            },
-        );
-        // Patch u_offset to point to the body start (op after REPEAT)
-        reg.repeat_range[id as usize].u_offset = reg.ops.len() as i32;
-        let r =
-            compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
-        if r != 0 {
-            return r;
-        }
-        add_op(
-            reg,
-            if qn.greedy {
-                OpCode::RepeatInc
-            } else {
-                OpCode::RepeatIncNg
-            },
-            OperationPayload::RepeatInc { id },
-        );
+        return compile_range_repeat_node(qn, body, mod_tlen, reg, env);
     }
 
+    0
+}
+
+/// Whether `{n,}` (n >= 2) repeats its body inline before the loop.
+/// C: compile_quantifier_node takes the loop form only while
+/// `len_multiply_cmp(tlen, lower, QUANTIFIER_EXPAND_LIMIT_SIZE) <= 0` and
+/// otherwise falls through to compile_range_repeat_node.
+///
+/// Both forms match the same strings unless the body may be empty: with
+/// REPEAT, the empty check also runs on the mandatory iterations. The port
+/// therefore keeps the inline form for bodies that cannot be empty. It also
+/// keeps it for bodies with recursive calls, whose REPEAT counter lookup has
+/// not yet reached parity (see quantifier_body_contains_recursion).
+fn expand_infinite_quantifier(qn: &QuantNode, body: &Node, body_len: i32) -> bool {
+    qn.emptiness == BodyEmptyType::NotEmpty
+        || quantifier_body_contains_recursion(body)
+        || !len_multiply_cmp(body_len as OnigLen, qn.lower, QUANTIFIER_EXPAND_LIMIT_SIZE)
+}
+
+/// C: compile_range_repeat_node.
+fn compile_range_repeat_node(
+    qn: &QuantNode,
+    body: &Node,
+    mod_tlen: i32,
+    reg: &mut RegexType,
+    env: &ParseEnv,
+) -> i32 {
+    let id = match entry_repeat_range(reg, qn.lower, qn.upper) {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
+
+    let opcode = if qn.greedy {
+        OpCode::Repeat
+    } else {
+        OpCode::RepeatNg
+    };
+    add_op(
+        reg,
+        opcode,
+        OperationPayload::Repeat {
+            id,
+            addr: SIZE_INC + mod_tlen + OPSIZE_REPEAT_INC,
+        },
+    );
+    // Patch u_offset to point to the body start (op after REPEAT)
+    reg.repeat_range[id as usize].u_offset = reg.ops.len() as i32;
+    let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
+    if r != 0 {
+        return r;
+    }
+    add_op(
+        reg,
+        if qn.greedy {
+            OpCode::RepeatInc
+        } else {
+            OpCode::RepeatIncNg
+        },
+        OperationPayload::RepeatInc { id },
+    );
     0
 }
 
@@ -3597,7 +3575,12 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
 
 /// Check if a quantifier body contains capture groups (Memory bags).
 /// Returns the appropriate emptiness type. Mirrors C's quantifiers_memory_node_info().
-fn quantifiers_memory_node_info(node: &Node) -> BodyEmptyType {
+///
+/// C follows a non-recursive call into its target group, which yields
+/// `BODY_MAY_BE_EMPTY_REC` when that group is recursive. The port reads the
+/// group's recursion from `env.recursive_mem` instead of dereferencing the
+/// call's raw target pointer, which may point at an ancestor of `node`.
+fn quantifiers_memory_node_info(node: &Node, env: &ParseEnv) -> BodyEmptyType {
     let mut r = BodyEmptyType::MayBeEmpty;
 
     match &node.inner {
@@ -3609,7 +3592,7 @@ fn quantifiers_memory_node_info(node: &Node) -> BodyEmptyType {
                     NodeInner::Alt(cons) => (&cons.car, &cons.cdr),
                     _ => break,
                 };
-                let v = quantifiers_memory_node_info(car);
+                let v = quantifiers_memory_node_info(car, env);
                 if v as i32 > r as i32 {
                     r = v;
                 }
@@ -3622,22 +3605,42 @@ fn quantifiers_memory_node_info(node: &Node) -> BodyEmptyType {
         NodeInner::Quant(qn) => {
             if qn.upper != 0 {
                 if let Some(ref body) = qn.body {
-                    r = quantifiers_memory_node_info(body);
+                    r = quantifiers_memory_node_info(body, env);
                 }
             }
         }
+        NodeInner::Call(cn) => {
+            if node.has_status(ND_ST_RECURSION) {
+                return BodyEmptyType::MayBeEmptyRec; /* tiny version */
+            }
+            // C: r = quantifiers_memory_node_info(ND_BODY(node)); the body is
+            // the called BAG_MEMORY node.
+            r = if env
+                .recursive_mem
+                .get(cn.called_gnum as usize)
+                .copied()
+                .unwrap_or(false)
+            {
+                BodyEmptyType::MayBeEmptyRec
+            } else {
+                BodyEmptyType::MayBeEmptyMem
+            };
+        }
         NodeInner::Bag(bn) => match bn.bag_type {
             BagType::Memory => {
+                if node.has_status(ND_ST_RECURSION) {
+                    return BodyEmptyType::MayBeEmptyRec;
+                }
                 return BodyEmptyType::MayBeEmptyMem;
             }
             BagType::Option | BagType::StopBacktrack => {
                 if let Some(ref body) = bn.body {
-                    r = quantifiers_memory_node_info(body);
+                    r = quantifiers_memory_node_info(body, env);
                 }
             }
             BagType::IfElse => {
                 if let Some(ref body) = bn.body {
-                    r = quantifiers_memory_node_info(body);
+                    r = quantifiers_memory_node_info(body, env);
                 }
                 if let BagData::IfElse {
                     ref then_node,
@@ -3645,13 +3648,13 @@ fn quantifiers_memory_node_info(node: &Node) -> BodyEmptyType {
                 } = bn.bag_data
                 {
                     if let Some(then_n) = then_node {
-                        let v = quantifiers_memory_node_info(then_n);
+                        let v = quantifiers_memory_node_info(then_n, env);
                         if v as i32 > r as i32 {
                             r = v;
                         }
                     }
                     if let Some(else_n) = else_node {
-                        let v = quantifiers_memory_node_info(else_n);
+                        let v = quantifiers_memory_node_info(else_n, env);
                         if v as i32 > r as i32 {
                             r = v;
                         }
@@ -7442,7 +7445,7 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
                     let d = node_min_byte_len(body, env);
                     if d == 0 {
                         // Use quantifiers_memory_node_info to detect captures in body
-                        qn.emptiness = quantifiers_memory_node_info(body);
+                        qn.emptiness = quantifiers_memory_node_info(body, env);
                     }
                 }
             }
@@ -7640,207 +7643,205 @@ pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut Par
 // setup_empty_status_mem: compute qn.empty_status_mem for quantifiers
 // ============================================================================
 
-/// Pass 1: For each quantifier with emptiness >= MayBeEmptyMem, set
-/// empty_repeat_node on all captures in its body.
-fn mark_empty_repeat_node(node: &mut Node, env: &mut ParseEnv) {
-    let node_ptr = node as *mut Node;
-    match &mut node.inner {
-        NodeInner::Quant(qn) => {
-            let is_empty = qn.emptiness == BodyEmptyType::MayBeEmptyMem
-                || qn.emptiness == BodyEmptyType::MayBeEmptyRec;
-            if is_empty {
-                if let Some(ref body) = qn.body {
-                    set_empty_repeat_node_in_body(body, node_ptr as *const Node, env);
-                }
-            }
-            if let Some(ref mut body) = qn.body {
-                mark_empty_repeat_node(body, env);
-            }
-        }
-        NodeInner::List(_) | NodeInner::Alt(_) => {
-            let mut cur: *mut Node = node;
-            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
-            // advances to boxed cdr nodes, so every deref is of a live,
-            // exclusively borrowed node; the recursion into car borrows a field
-            // disjoint from the cdr link.
-            unsafe {
-                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
-                    (*cur).inner
-                {
-                    mark_empty_repeat_node(cons.car.as_mut(), env);
-                    match cons.cdr {
-                        Some(ref mut next) => cur = &mut **next,
-                        None => break,
-                    }
-                }
-            }
-        }
-        NodeInner::Bag(bn) => {
-            if let Some(ref mut body) = bn.body {
-                mark_empty_repeat_node(body, env);
-            }
-            if let BagData::IfElse {
-                ref mut then_node,
-                ref mut else_node,
-            } = bn.bag_data
-            {
-                if let Some(t) = then_node {
-                    mark_empty_repeat_node(t, env);
-                }
-                if let Some(e) = else_node {
-                    mark_empty_repeat_node(e, env);
-                }
-            }
-        }
-        NodeInner::Anchor(an) => {
-            if let Some(ref mut body) = an.body {
-                mark_empty_repeat_node(body, env);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Helper: set empty_repeat_node for all BAG_MEMORY nodes in `node`.
-fn set_empty_repeat_node_in_body(node: &Node, quant_ptr: *const Node, env: &mut ParseEnv) {
+/// C: set_empty_repeat_node_trav. Records, for every capture group, the
+/// innermost may-be-empty quantifier around it. Look-ahead and look-behind
+/// bodies start without one. The quantifier is stored by address only; it is
+/// never dereferenced through `empty_repeat_node`.
+fn set_empty_repeat_node_trav(node: &Node, empty: *const Node, env: &mut ParseEnv) {
     match &node.inner {
-        NodeInner::Bag(bn) => {
-            if bn.bag_type == BagType::Memory {
-                if let BagData::Memory { regnum, .. } = bn.bag_data {
-                    let regnum = regnum as usize;
-                    let entry = env.mem_env_mut(regnum);
-                    entry.empty_repeat_node = quant_ptr as *mut Node;
-                }
-            }
-            if let Some(ref body) = bn.body {
-                set_empty_repeat_node_in_body(body, quant_ptr, env);
-            }
-            if let BagData::IfElse {
-                ref then_node,
-                ref else_node,
-            } = bn.bag_data
-            {
-                if let Some(t) = then_node {
-                    set_empty_repeat_node_in_body(t, quant_ptr, env);
-                }
-                if let Some(e) = else_node {
-                    set_empty_repeat_node_in_body(e, quant_ptr, env);
-                }
-            }
-        }
         NodeInner::List(_) | NodeInner::Alt(_) => {
-            let mut cur: &Node = node;
+            let mut cur = node;
             while let NodeInner::List(cons) | NodeInner::Alt(cons) = &cur.inner {
-                set_empty_repeat_node_in_body(&cons.car, quant_ptr, env);
+                set_empty_repeat_node_trav(&cons.car, empty, env);
                 match &cons.cdr {
                     Some(next) => cur = next,
                     None => break,
                 }
             }
         }
-        NodeInner::Quant(qn) => {
-            if let Some(ref body) = qn.body {
-                set_empty_repeat_node_in_body(body, quant_ptr, env);
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &an.body {
+                let empty =
+                    if an.anchor_type == ANCR_PREC_READ || an.anchor_type == ANCR_LOOK_BEHIND {
+                        std::ptr::null()
+                    } else {
+                        empty
+                    };
+                set_empty_repeat_node_trav(body, empty, env);
             }
         }
-        NodeInner::Anchor(an) => {
-            if let Some(ref body) = an.body {
-                set_empty_repeat_node_in_body(body, quant_ptr, env);
+        NodeInner::Quant(qn) => {
+            let empty = if qn.emptiness != BodyEmptyType::NotEmpty {
+                node as *const Node
+            } else {
+                empty
+            };
+            if let Some(body) = &qn.body {
+                set_empty_repeat_node_trav(body, empty, env);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(body) = &bn.body {
+                set_empty_repeat_node_trav(body, empty, env);
+            }
+            match &bn.bag_data {
+                // C also requires ND_IS_BACKREF(node); only groups that a
+                // backref names are ever looked up, so the filter is implied.
+                BagData::Memory { regnum, .. } => {
+                    if !empty.is_null() {
+                        env.mem_env_mut(*regnum as usize).empty_repeat_node = empty as *mut Node;
+                    }
+                }
+                BagData::IfElse {
+                    then_node,
+                    else_node,
+                } => {
+                    if let Some(t) = then_node {
+                        set_empty_repeat_node_trav(t, empty, env);
+                    }
+                    if let Some(e) = else_node {
+                        set_empty_repeat_node_trav(e, empty, env);
+                    }
+                }
+                _ => {}
             }
         }
         _ => {}
     }
 }
 
-/// Pass 2: Walk tree with a stack of enclosing empty-quantifier pointers.
-/// When a backref is found, check if its target's empty_repeat_node is NOT
-/// in the enclosing stack → set empty_status_mem on that quantifier.
-fn resolve_empty_status_backrefs(
-    node: &mut Node,
-    enclosing_quants: &mut Vec<*const Node>,
+/// C: set_empty_status_check_trav. A backref to a capture whose empty
+/// quantifier is not an ancestor of the backref makes that quantifier check
+/// the capture (EMPTY_CHECK_END_MEMST). Returns `(quantifier, group)` pairs;
+/// `setup_empty_status_mem` applies them.
+///
+/// C decides ancestry with is_ancestor_node over the parent links set by
+/// set_parent_node_trav. That pass links the element of each list or
+/// alternation cell to its cell, but only the first cell to the parent, so
+/// the chain from a node in any later element stops at its cell. `chain`
+/// holds the ancestors C can reach that way.
+fn set_empty_status_check_trav(
+    node: &Node,
+    chain: &mut Vec<*const Node>,
     env: &ParseEnv,
+    found: &mut Vec<(*const Node, usize)>,
 ) {
     let node_ptr = node as *const Node;
-    match &mut node.inner {
-        NodeInner::Quant(qn) => {
-            let is_empty_quant = qn.emptiness == BodyEmptyType::MayBeEmptyMem
-                || qn.emptiness == BodyEmptyType::MayBeEmptyRec;
-            if is_empty_quant {
-                enclosing_quants.push(node_ptr);
-            }
-            if let Some(ref mut body) = qn.body {
-                resolve_empty_status_backrefs(body, enclosing_quants, env);
-            }
-            if is_empty_quant {
-                enclosing_quants.pop();
+    match &node.inner {
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            chain.push(node_ptr);
+            set_empty_status_check_trav(&cons.car, chain, env, found);
+            chain.pop();
+            let mut next = cons.cdr.as_deref();
+            while let Some(cell) = next {
+                let (NodeInner::List(c) | NodeInner::Alt(c)) = &cell.inner else {
+                    break;
+                };
+                let mut cell_chain = vec![cell as *const Node];
+                set_empty_status_check_trav(&c.car, &mut cell_chain, env, found);
+                next = c.cdr.as_deref();
             }
         }
-        &mut NodeInner::BackRef(ref br) => {
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &an.body {
+                chain.push(node_ptr);
+                set_empty_status_check_trav(body, chain, env, found);
+                chain.pop();
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &qn.body {
+                chain.push(node_ptr);
+                set_empty_status_check_trav(body, chain, env, found);
+                chain.pop();
+            }
+        }
+        NodeInner::Bag(bn) => {
+            chain.push(node_ptr);
+            if let Some(body) = &bn.body {
+                set_empty_status_check_trav(body, chain, env, found);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &bn.bag_data
+            {
+                if let Some(t) = then_node {
+                    set_empty_status_check_trav(t, chain, env, found);
+                }
+                if let Some(e) = else_node {
+                    set_empty_status_check_trav(e, chain, env, found);
+                }
+            }
+            chain.pop();
+        }
+        NodeInner::BackRef(br) => {
             for &back in br.back_refs() {
                 if back <= 0 {
                     continue;
                 }
                 let back = back as usize;
-                let entry = env.mem_env(back);
-                let er_node = entry.empty_repeat_node;
-                if !er_node.is_null() {
-                    // Check if the backref is inside the quantifier
-                    if !enclosing_quants.contains(&(er_node as *const Node)) {
-                        // Backref is OUTSIDE the quantifier → set empty_status_mem
-                        // SAFETY: `er_node` was set by mark_empty_repeat_node (pass 1)
-                        // to a Quant node in this same tree, which has not been
-                        // restructured since, so it is live. Every empty quantifier
-                        // on the current traversal path is in `enclosing_quants`, so
-                        // the contains() check above guarantees `er_node` is not a
-                        // node this traversal currently borrows.
-                        unsafe {
-                            if let NodeInner::Quant(ref mut qn) = (*er_node).inner {
-                                qn.empty_status_mem |= 1u32 << back;
-                                (*er_node).status |= ND_ST_EMPTY_STATUS_CHECK;
-                            }
-                        }
-                    }
+                let ernode = env.mem_env(back).empty_repeat_node as *const Node;
+                if !ernode.is_null() && !chain.contains(&ernode) {
+                    found.push((ernode, back));
                 }
             }
         }
+        _ => {}
+    }
+}
+
+/// Apply the `(quantifier, group)` pairs found by set_empty_status_check_trav:
+/// C's MEM_STATUS_LIMIT_ON(empty_status_mem, group) and
+/// ND_STATUS_ADD(quantifier, EMPTY_STATUS_CHECK).
+fn apply_empty_status_check(node: &mut Node, found: &[(*const Node, usize)]) {
+    let node_ptr = node as *const Node;
+    match &mut node.inner {
         NodeInner::List(_) | NodeInner::Alt(_) => {
-            let mut cur: *mut Node = node;
-            // SAFETY: `cur` starts as the exclusive `&mut node` argument and only
-            // advances to boxed cdr nodes, so every deref is of a live,
-            // exclusively borrowed node; the recursion into car borrows a field
-            // disjoint from the cdr link.
-            unsafe {
-                while let NodeInner::List(ref mut cons) | NodeInner::Alt(ref mut cons) =
-                    (*cur).inner
-                {
-                    resolve_empty_status_backrefs(cons.car.as_mut(), enclosing_quants, env);
-                    match cons.cdr {
-                        Some(ref mut next) => cur = &mut **next,
-                        None => break,
-                    }
-                }
-            }
-        }
-        NodeInner::Bag(bn) => {
-            if let Some(ref mut body) = bn.body {
-                resolve_empty_status_backrefs(body, enclosing_quants, env);
-            }
-            if let BagData::IfElse {
-                ref mut then_node,
-                ref mut else_node,
-            } = bn.bag_data
-            {
-                if let Some(t) = then_node {
-                    resolve_empty_status_backrefs(t, enclosing_quants, env);
-                }
-                if let Some(e) = else_node {
-                    resolve_empty_status_backrefs(e, enclosing_quants, env);
+            let mut cur = node;
+            while let NodeInner::List(cons) | NodeInner::Alt(cons) = &mut cur.inner {
+                apply_empty_status_check(&mut cons.car, found);
+                match &mut cons.cdr {
+                    Some(next) => cur = next,
+                    None => break,
                 }
             }
         }
         NodeInner::Anchor(an) => {
-            if let Some(ref mut body) = an.body {
-                resolve_empty_status_backrefs(body, enclosing_quants, env);
+            if let Some(body) = &mut an.body {
+                apply_empty_status_check(body, found);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            let mut hit = false;
+            for &(ernode, back) in found {
+                if ernode == node_ptr {
+                    mem_status_limit_on(&mut qn.empty_status_mem, back);
+                    hit = true;
+                }
+            }
+            if let Some(body) = &mut qn.body {
+                apply_empty_status_check(body, found);
+            }
+            if hit {
+                node.status |= ND_ST_EMPTY_STATUS_CHECK;
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(body) = &mut bn.body {
+                apply_empty_status_check(body, found);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &mut bn.bag_data
+            {
+                if let Some(t) = then_node {
+                    apply_empty_status_check(t, found);
+                }
+                if let Some(e) = else_node {
+                    apply_empty_status_check(e, found);
+                }
             }
         }
         _ => {}
@@ -7849,11 +7850,14 @@ fn resolve_empty_status_backrefs(
 
 /// Compute qn.empty_status_mem for all quantifiers in the tree.
 fn setup_empty_status_mem(root: &mut Node, env: &mut ParseEnv) {
-    // Pass 1: mark empty_repeat_node on captures inside empty quantifiers
-    mark_empty_repeat_node(root, env);
-    // Pass 2: resolve backrefs to set empty_status_mem
-    let mut enclosing = Vec::new();
-    resolve_empty_status_backrefs(root, &mut enclosing, env);
+    // C runs this only when backref_num != 0; without backref nodes the
+    // check pass below finds nothing, so the port skips the gate.
+    set_empty_repeat_node_trav(root, std::ptr::null(), env);
+    let mut found = Vec::new();
+    set_empty_status_check_trav(root, &mut Vec::new(), env, &mut found);
+    if !found.is_empty() {
+        apply_empty_status_check(root, &found);
+    }
 }
 
 fn refresh_capture_nodes(node: &mut Node, env: &mut ParseEnv) {
@@ -9300,6 +9304,7 @@ fn compile_recording_name(reg: &mut RegexType, pattern: &[u8]) -> (i32, Option<V
         parse_depth: 0,
         ast_node_count: 0,
         flags: 0,
+        recursive_mem: Vec::new(),
     };
 
     let r = compile_parsed(reg, pattern, &mut env);
@@ -9372,6 +9377,7 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
         if r != 0 {
             return r;
         }
+        env.recursive_mem = recursive_groups;
         // Propagate state flags (IN_ALT, IN_REAL_REPEAT, etc.) through called groups
         tune_called_state(&mut root, 0);
     }
@@ -9923,6 +9929,7 @@ mod tests {
             parse_depth: 0,
             ast_node_count: 0,
             flags: 0,
+            recursive_mem: Vec::new(),
         };
         (reg, env)
     }
