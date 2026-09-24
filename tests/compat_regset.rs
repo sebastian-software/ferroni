@@ -698,3 +698,55 @@ fn scanner_config_without_capture_group_restores_named_group_rules() {
     assert_eq!(capture_spans(&matched), [(0, 3), (1, 2)]);
     assert!(Scanner::with_config(&[r"(?<n>a)(b)\2"], &config).is_err());
 }
+
+// `^` never matches at the very end of the subject, not even right after a
+// trailing newline. Expectations checked against C Oniguruma.
+
+#[test]
+fn regset_begin_line_does_not_match_at_end_after_trailing_newline() {
+    let input = b"a\n";
+    for lead in [OnigRegSetLead::PositionLead, OnigRegSetLead::RegexLead] {
+        let mut set = make_regset(&[b"x", b"^"]);
+        let (index, _) = onig_regset_search(&mut set, input, 2, 2, 2, lead, ONIG_OPTION_NONE);
+        assert_eq!(index, ONIG_MISMATCH, "lead {lead:?}");
+    }
+
+    // `$` still matches there. (Regex-lead rejects any match at the range
+    // end, so only position-lead reports it, as in C.)
+    let mut set = make_regset(&[b"^", b"$"]);
+    let (index, position) = onig_regset_search(
+        &mut set,
+        input,
+        2,
+        2,
+        2,
+        OnigRegSetLead::PositionLead,
+        ONIG_OPTION_NONE,
+    );
+    assert_eq!((index, position), (1, 2));
+}
+
+#[test]
+fn scanner_begin_line_does_not_match_at_end_after_trailing_newline() {
+    let mut scanner = Scanner::new(&["^"]).unwrap();
+    assert!(
+        scanner
+            .find_next_match("a\n", 2, ScannerFindOptions::NONE)
+            .is_none()
+    );
+    assert!(
+        scanner
+            .find_next_match_with_id("a\n", 7, 2, ScannerFindOptions::NONE)
+            .is_none()
+    );
+
+    let mut scanner = Scanner::new(&["^", "$"]).unwrap();
+    let m = scanner
+        .find_next_match("a\n", 2, ScannerFindOptions::NONE)
+        .unwrap();
+    assert_eq!(m.index, 1);
+    assert_eq!(
+        (m.capture_indices[0].start, m.capture_indices[0].end),
+        (2, 2)
+    );
+}

@@ -788,6 +788,83 @@ fn multiline_anchors() {
     assert_eq!(m.as_str(), "hello");
 }
 
+// `^` never matches at the very end of the subject, not even right after a
+// trailing newline (C: BEGIN_LINE requires `!ON_STR_END(s)`). Expectations
+// checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8).
+
+#[test]
+fn begin_line_does_not_match_at_end_after_trailing_newline() {
+    use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
+    use ferroni::oniguruma::{ONIG_MISMATCH, ONIG_OPTION_NONE, OnigRegion};
+    use ferroni::regcomp::onig_new;
+    use ferroni::regexec::{onig_match, onig_search};
+    use ferroni::regsyntax::OnigSyntaxOniguruma;
+
+    let compile = |pattern: &str| {
+        onig_new(
+            pattern.as_bytes(),
+            ONIG_OPTION_NONE,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap()
+    };
+
+    // (pattern, subject, start, range, expected position)
+    for (pattern, text, start, range, expected) in [
+        ("^", "a\n", 2, 2, ONIG_MISMATCH),
+        ("^", "a\n", 1, 2, ONIG_MISMATCH),
+        ("^", "\n", 1, 1, ONIG_MISMATCH),
+        ("^$", "a\n", 1, 2, ONIG_MISMATCH),
+        ("(?m)^.*", "a\n", 2, 2, ONIG_MISMATCH),
+        ("^", "a\nb\n", 3, 4, ONIG_MISMATCH),
+        // Backward search still finds the start of the subject.
+        ("^", "a\n", 2, 0, 0),
+        // An empty line before the final newline is still a line.
+        ("^", "a\n\n", 1, 3, 2),
+        ("^$", "a\n\n", 1, 3, 2),
+        // `$` keeps matching at the end after a trailing newline.
+        ("$", "a\n", 2, 2, 2),
+    ] {
+        let reg = compile(pattern);
+        let bytes = text.as_bytes();
+        let (position, _) = onig_search(
+            &reg,
+            bytes,
+            bytes.len(),
+            start,
+            range,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(
+            position, expected,
+            "{pattern:?} on {text:?} start={start} range={range}"
+        );
+    }
+
+    let reg = compile("^");
+    let (length, _) = onig_match(&reg, b"a\n", 2, 2, None, ONIG_OPTION_NONE);
+    assert_eq!(length, ONIG_MISMATCH);
+    let (length, _) = onig_match(&reg, b"\n\n", 2, 1, None, ONIG_OPTION_NONE);
+    assert_eq!(length, 0);
+}
+
+#[test]
+fn find_iter_begin_line_skips_end_after_trailing_newline() {
+    let starts = |pattern: &str, text: &str| -> Vec<usize> {
+        Regex::new(pattern)
+            .unwrap()
+            .find_iter(text)
+            .map(|m| m.start())
+            .collect()
+    };
+    assert_eq!(starts(r"(?m)^$", "a\nb\n"), Vec::<usize>::new());
+    assert_eq!(starts(r"^", "a\nb\n"), vec![0, 2]);
+    assert_eq!(starts(r"^$", "a\n\n"), vec![2]);
+    assert_eq!(starts(r"$", "a\nb\n"), vec![1, 3, 4]);
+}
+
 // =========================================================================
 // Coverage-targeted tests: Callout patterns (regexec.rs callout paths)
 // =========================================================================

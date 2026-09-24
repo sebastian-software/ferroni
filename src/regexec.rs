@@ -4375,8 +4375,15 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     } else {
                         p += 1;
                     }
-                } else if s > 0 && str_data[s - 1] == b'\n' {
-                    p += 1;
+                } else if s != end {
+                    // C: `else if (! ON_STR_END(s))` -- a newline at the very
+                    // end of the subject does not start another line.
+                    let sprev = onigenc_get_prev_char_head(enc, str_data, 0, s);
+                    if enc.is_mbc_newline(&str_data[sprev..], end) {
+                        p += 1;
+                    } else {
+                        goto_fail = true;
+                    }
                 } else {
                     goto_fail = true;
                 }
