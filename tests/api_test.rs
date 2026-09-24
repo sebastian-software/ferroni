@@ -832,6 +832,19 @@ fn non_ascii_after_qmark_is_not_an_option_like_c() {
     ]);
 }
 
+/// C's fetch_token_cc() switches on the whole escaped code point, so an
+/// escaped non-ASCII character in a class is that character, not the
+/// escape its low byte spells (U+0177 is not `\w`, U+0164 not `\d`).
+#[test]
+fn escaped_non_ascii_in_char_class_is_literal_like_c() {
+    let re = Regex::new("[\\\u{0177}]").unwrap();
+    assert!(re.is_match("\u{0177}"));
+    assert!(!re.is_match("a"));
+    let re = Regex::new("[\\\u{0164}]").unwrap();
+    assert!(re.is_match("\u{0164}"));
+    assert!(!re.is_match("1"));
+}
+
 /// C scans a callout's argument list (prs_callout_args in skip mode) before
 /// it looks up the callout name.
 #[test]
