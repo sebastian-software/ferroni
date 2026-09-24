@@ -449,6 +449,7 @@ impl ParseEnv {
         self.unset_addr_list = None;
         self.flags = 0;
         self.recursive_mem.clear();
+        self.group_min_len.clear();
     }
 
     pub fn add_mem_entry(&mut self) -> Result<i32, i32> {
@@ -7663,6 +7664,7 @@ mod tests {
             ast_node_count: 0,
             flags: 0,
             recursive_mem: Vec::new(),
+            group_min_len: Vec::new(),
         };
         (reg, env)
     }

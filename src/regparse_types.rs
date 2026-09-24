@@ -855,6 +855,10 @@ pub struct ParseEnv {
     /// C reads ND_IS_RECURSION on a call's target node; the port keeps it
     /// here so passes need not follow the call's raw target pointer.
     pub recursive_mem: Vec<bool>,
+    /// Minimum byte length of each group's body, by group number, filled
+    /// before tune_tree when the pattern has calls. C caches the same value
+    /// in BAG_(node)->min_len (ND_ST_FIXED_MIN) and reads it for a call.
+    pub group_min_len: Vec<OnigLen>,
 }
 
 // SAFETY: the raw pointers in ParseEnv point into data owned by the caller of

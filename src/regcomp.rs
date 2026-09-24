@@ -3504,12 +3504,130 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
             }
         }
 
-        // Following a call would re-enter a self-referential raw pointer. Zero is
-        // a conservative minimum and merely prevents unsound optimizations.
-        NodeInner::Call(_) => 0,
+        // C: the called group's cached min_len (or its computation). The
+        // port precomputes it per group in compute_group_min_lens instead of
+        // following the call's self-referential raw pointer; a group without
+        // an entry falls back to the conservative zero.
+        NodeInner::Call(cn) => env
+            .group_min_len
+            .get(cn.called_gnum as usize)
+            .copied()
+            .unwrap_or(0),
 
         NodeInner::Anchor(_) | NodeInner::Gimmick(_) => 0,
     }
+}
+
+/// C: the min_len that node_min_byte_len caches on each BAG_MEMORY node
+/// (ND_ST_FIXED_MIN) and returns for a call to the group. A group reached
+/// again while its own length is being computed counts as 0 (C: MARK1).
+///
+/// C fills the cache lazily, so a value computed inside a recursion cycle can
+/// depend on which group was asked first. Every such value is still a lower
+/// bound of the group's true minimum, so the choice only decides whether a
+/// loop over a body that cannot match empty gets an empty check, which then
+/// never fires.
+struct GroupMinLen<'a> {
+    groups: Vec<Option<&'a Node>>,
+    fixed: Vec<Option<OnigLen>>,
+    mark1: Vec<bool>,
+}
+
+impl GroupMinLen<'_> {
+    fn group(&mut self, regnum: usize, env: &ParseEnv) -> OnigLen {
+        if let Some(Some(len)) = self.fixed.get(regnum) {
+            return *len;
+        }
+        if self.mark1.get(regnum).copied().unwrap_or(true) {
+            return 0; /* recursive */
+        }
+        let Some(Some(node)) = self.groups.get(regnum).copied() else {
+            return 0;
+        };
+        self.mark1[regnum] = true;
+        let len = match &node.inner {
+            NodeInner::Bag(bn) => bn.body.as_deref().map_or(0, |body| self.len(body, env)),
+            _ => 0,
+        };
+        self.mark1[regnum] = false;
+        self.fixed[regnum] = Some(len);
+        len
+    }
+
+    /// node_min_byte_len with calls and groups resolved through the cache.
+    fn len(&mut self, node: &Node, env: &ParseEnv) -> OnigLen {
+        match &node.inner {
+            NodeInner::List(_) => {
+                let mut len: OnigLen = 0;
+                let mut cur = node;
+                while let NodeInner::List(cons) = &cur.inner {
+                    len = distance_add(len, self.len(&cons.car, env));
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                }
+                len
+            }
+            NodeInner::Alt(_) => {
+                let mut len: OnigLen = 0;
+                let mut first = true;
+                let mut cur = node;
+                while let NodeInner::Alt(cons) = &cur.inner {
+                    let tmin = self.len(&cons.car, env);
+                    if first || len > tmin {
+                        len = tmin;
+                        first = false;
+                    }
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                }
+                len
+            }
+            NodeInner::Quant(qn) => match (&qn.body, qn.lower > 0) {
+                (Some(body), true) => distance_multiply(self.len(body, env), qn.lower),
+                _ => 0,
+            },
+            NodeInner::Bag(bn) => match bn.bag_type {
+                BagType::Memory => self.group(bn.regnum() as usize, env),
+                BagType::Option | BagType::StopBacktrack => {
+                    bn.body.as_deref().map_or(0, |body| self.len(body, env))
+                }
+                BagType::IfElse => {
+                    let BagData::IfElse {
+                        then_node,
+                        else_node,
+                    } = &bn.bag_data
+                    else {
+                        return 0;
+                    };
+                    let mut len = bn.body.as_deref().map_or(0, |body| self.len(body, env));
+                    if let Some(then_node) = then_node {
+                        len += self.len(then_node, env);
+                    }
+                    let elen = else_node.as_deref().map_or(0, |e| self.len(e, env));
+                    if elen < len { elen } else { len }
+                }
+            },
+            NodeInner::Call(cn) => self.group(cn.called_gnum as usize, env),
+            _ => node_min_byte_len(node, env),
+        }
+    }
+}
+
+/// Fill `env.group_min_len` for every group of a pattern with calls.
+fn compute_group_min_lens(root: &Node, env: &ParseEnv) -> Vec<OnigLen> {
+    let n = env.num_mem.max(0) as usize + 1;
+    let mut groups = vec![None; n];
+    collect_memory_groups(root, &mut groups);
+    let mut cache = GroupMinLen {
+        groups,
+        fixed: vec![None; n],
+        mark1: vec![false; n],
+    };
+    (0..n).map(|regnum| cache.group(regnum, env)).collect()
 }
 
 /// Check if a quantifier body contains capture groups (Memory bags).
@@ -9240,6 +9358,7 @@ fn compile_recording_name(reg: &mut RegexType, pattern: &[u8]) -> (i32, Option<V
         ast_node_count: 0,
         flags: 0,
         recursive_mem: Vec::new(),
+        group_min_len: Vec::new(),
     };
 
     let r = compile_parsed(reg, pattern, &mut env);
@@ -9321,6 +9440,12 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
     // so case-fold expansion hasn't rewritten the string nodes yet).
     detect_literal_alternations(&mut root, reg, env.backrefed_mem);
     refresh_node_references(&mut root, env);
+
+    // Minimum lengths of called groups for node_min_byte_len (C caches them
+    // on the group nodes while tune_tree asks for them).
+    if env.num_call > 0 {
+        env.group_min_len = compute_group_min_lens(&root, env);
+    }
 
     // Tune tree: detect empty loops, propagate state (mirrors C's tune_tree)
     let r = tune_tree(&mut root, reg, 0, env);
@@ -9640,6 +9765,34 @@ pub fn onig_new(
 mod tests {
     use super::*;
 
+    /// A call contributes its group's minimum length, so a loop over a body
+    /// that always consumes gets no empty check, as in C (compared against
+    /// C's compiled byte code).
+    #[test]
+    fn call_min_length_decides_empty_check() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::ONIG_OPTION_NONE;
+        use crate::regsyntax::OnigSyntaxOniguruma;
+
+        let empty_checks = |pattern: &[u8]| {
+            onig_new(
+                pattern,
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+            .ops
+            .iter()
+            .filter(|op| op.opcode == OpCode::EmptyCheckStart)
+            .count()
+        };
+        assert_eq!(empty_checks(br"\A(?<e>\((?:[^()]|\g<e>)*\))*\z"), 0);
+        assert_eq!(empty_checks(br"(?<e>\((?:[^()]|\g<e>)*\))"), 0);
+        assert_eq!(empty_checks(br"(?:\g<x>|b)*(?<x>a)"), 0);
+        assert_eq!(empty_checks(br"(?:\g<x>|b)*(?<x>a?)"), 1);
+    }
+
     /// In a syntax where `++` is possessive, every further `+` wraps the
     /// previous quantifier in an atomic group and quantifies it again. C
     /// jumps into the loop body for a `+` whose body exceeds
@@ -9865,6 +10018,7 @@ mod tests {
             ast_node_count: 0,
             flags: 0,
             recursive_mem: Vec::new(),
+            group_min_len: Vec::new(),
         };
         (reg, env)
     }

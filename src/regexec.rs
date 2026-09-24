@@ -7376,6 +7376,7 @@ mod tests {
             ast_node_count: 0,
             flags: 0,
             recursive_mem: Vec::new(),
+            group_min_len: Vec::new(),
         };
         (reg, env)
     }
