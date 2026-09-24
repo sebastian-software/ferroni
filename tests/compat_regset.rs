@@ -750,3 +750,51 @@ fn scanner_begin_line_does_not_match_at_end_after_trailing_newline() {
         (2, 2)
     );
 }
+
+// Regex-lead narrows only the range of match starts to the current winner; a
+// later regex may still match past it (C: search_in_range(reg, str, end,
+// start, ep, orig_range, ...)). Expectations checked against C Oniguruma.
+
+#[test]
+fn reg_lead_match_may_extend_past_current_winner() {
+    use ferroni::regexec::onig_new_match_param;
+    use ferroni::regset::onig_regset_search_with_param;
+
+    // (patterns, subject, (index, position), winning match span)
+    type Case<'a> = (&'a [&'a [u8]], &'a [u8], (i32, i32), (i32, i32));
+    let cases: [Case; 3] = [
+        (&[b"b", b"^.*$"], b"ab", (1, 0), (0, 2)),
+        (&[b"b", b"(?:^|\\n)b"], b"a\nb", (1, 1), (1, 3)),
+        (&[b"b", b"abc|bca|nab|xyz"], b"abc\nabc\n", (1, 0), (0, 3)),
+    ];
+    for (patterns, input, expected, span) in cases {
+        let len = input.len();
+        let mut set = make_regset(patterns);
+        let found = onig_regset_search(
+            &mut set,
+            input,
+            len,
+            0,
+            len,
+            OnigRegSetLead::RegexLead,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(found, expected, "{patterns:?}");
+        let region = onig_regset_get_region(&set, found.0 as usize).unwrap();
+        assert_eq!((region.beg[0], region.end[0]), span, "{patterns:?}");
+
+        let mps: Vec<_> = patterns.iter().map(|_| onig_new_match_param()).collect();
+        let mut set = make_regset(patterns);
+        let found = onig_regset_search_with_param(
+            &mut set,
+            input,
+            len,
+            0,
+            len,
+            OnigRegSetLead::RegexLead,
+            ONIG_OPTION_NONE,
+            &mps,
+        );
+        assert_eq!(found, expected, "{patterns:?} with params");
+    }
+}
