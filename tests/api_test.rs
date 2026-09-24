@@ -845,6 +845,38 @@ fn escaped_non_ascii_in_char_class_is_literal_like_c() {
     assert!(!re.is_match("1"));
 }
 
+/// (*FAIL) takes a callout number as in C, and an unknown tag is
+/// ONIGERR_INVALID_CALLOUT_TAG_NAME (onig_get_callout_num_by_tag()).
+#[test]
+fn callout_numbers_by_tag_match_c() {
+    use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
+    use ferroni::oniguruma::{ONIG_OPTION_NONE, ONIGERR_INVALID_CALLOUT_TAG_NAME};
+    use ferroni::regcomp::onig_new;
+    use ferroni::regexec::onig_get_callout_num_by_tag;
+
+    for (pattern, tag, num) in [
+        (r"(*FAIL[t])|x", "t", 1),
+        (r"(*FAIL)(*COUNT[t]{X})|x", "t", 2),
+        (r"(*COUNT[a]{X})(*FAIL[t])|x", "t", 2),
+        (r"a(*FAIL[t])|(*MAX[u]{2})a", "u", 2),
+        (r"(*FAIL)|a", "t", ONIGERR_INVALID_CALLOUT_TAG_NAME),
+        (r"(*FAIL[t])|x", "u", ONIGERR_INVALID_CALLOUT_TAG_NAME),
+    ] {
+        let reg = onig_new(
+            pattern.as_bytes(),
+            ONIG_OPTION_NONE,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(
+            onig_get_callout_num_by_tag(&reg, tag.as_bytes()),
+            num,
+            "{pattern}"
+        );
+    }
+}
+
 /// C scans a callout's argument list (prs_callout_args in skip mode) before
 /// it looks up the callout name.
 #[test]
