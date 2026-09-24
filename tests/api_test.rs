@@ -778,6 +778,22 @@ fn conditions_parse_like_c() {
     ]);
 }
 
+/// C parses a condition's body with prs_alts(), which requires the closing
+/// parenthesis even when the body has no `|`.
+#[test]
+fn condition_bodies_must_be_closed_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let unclosed = Some("end pattern with unmatched parenthesis");
+    assert_compiles_like_c(&[
+        (onig, r"(?()1", unclosed),
+        (onig, r"(?(a)b", unclosed),
+        (onig, r"(a)(?(1)b", unclosed),
+        (onig, r"(a)(?(1)b|c", unclosed),
+        (onig, r"(?(a)(?:b|c))", None),
+        (onig, r"(a)(?(1)b|c|d)", None),
+    ]);
+}
+
 /// C's prs_callout_of_name() and prs_callout_of_contents() check the name
 /// and tag characters, accept a tag on every callout, and count the
 /// arguments before the closing parenthesis.
