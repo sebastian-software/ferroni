@@ -1032,6 +1032,28 @@ fn unicode_17_script_properties_and_case_folding() {
 }
 
 #[test]
+fn unicode_incb_covers_every_section() {
+    // DerivedCoreProperties.txt lists InCB as Linker, Consonant, and Extend
+    // sections out of code point order. C Oniguruma drops ranges when it merges
+    // them; Ferroni intentionally keeps all of them (ADR-015).
+    let re = Regex::new(r"\p{InCB}").unwrap();
+    for (section, character) in [
+        ("Linker", '\u{094D}'),
+        ("Consonant", '\u{0915}'),
+        ("Extend", '\u{0300}'),
+        ("Extend", '\u{200D}'),
+        ("Extend", '\u{0DCA}'),
+    ] {
+        assert!(
+            re.is_match(&character.to_string()),
+            "{section} U+{:04X}",
+            character as u32
+        );
+    }
+    assert!(!re.is_match("a"));
+}
+
+#[test]
 fn absent_clear_expression() {
     // Exercises absent group range stop: (?~|pattern|absent)
     let re = Regex::new(r"(?~|abc|[a-z]+)");

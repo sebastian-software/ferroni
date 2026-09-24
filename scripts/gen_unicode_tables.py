@@ -77,8 +77,12 @@ def add_range(data: dict[str, list[tuple[int, int]]], name: str, start: int, end
 
 
 def normalize_dictionary(data: dict[str, list[tuple[int, int]]]) -> None:
+    # A property may be spread over several sections that are not in code point
+    # order (InCB lists Linker, Consonant, and Extend separately), so sort
+    # before merging. Merging unsorted input drops ranges; C Oniguruma's
+    # generator has that bug and ships an incomplete InCB table.
     for name, ranges in data.items():
-        data[name] = normalize_ranges(ranges)
+        data[name] = normalize_ranges(ranges, sort=True)
 
 
 def parse_unicode_data(path: Path) -> tuple[dict[str, list[tuple[int, int]]], list[tuple[int, int]]]:

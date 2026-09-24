@@ -1478,6 +1478,28 @@ mod tests {
     }
 
     #[test]
+    fn code_ranges_are_sorted_and_disjoint() {
+        // The binary search in onigenc_unicode_is_code_ctype requires every
+        // generated property to be sorted, non-overlapping (start, end) pairs.
+        for (ctype, ranges) in CODE_RANGES.iter().enumerate() {
+            let (pairs, rest) = ranges.as_chunks::<2>();
+            assert!(rest.is_empty(), "ctype {ctype} has an odd length");
+            let mut previous_end: Option<u32> = None;
+            for &[start, end] in pairs {
+                assert!(start <= end, "ctype {ctype}: {start:#x} > {end:#x}");
+                assert!(end <= 0x10FFFF, "ctype {ctype}: {end:#x} out of range");
+                if let Some(previous_end) = previous_end {
+                    assert!(
+                        start > previous_end.saturating_add(1),
+                        "ctype {ctype}: {start:#x} follows {previous_end:#x} unmerged or out of order"
+                    );
+                }
+                previous_end = Some(end);
+            }
+        }
+    }
+
+    #[test]
     fn folds1_groups_in_ranges_match_a_full_scan() {
         let range_sets: [&[(u32, u32)]; 4] = [
             &[(0x41, 0x5A)],
