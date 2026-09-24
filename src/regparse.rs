@@ -429,8 +429,7 @@ impl ParseEnv {
         self.cap_history = 0;
         self.backtrack_mem = 0;
         self.backrefed_mem = 0;
-        self.error = std::ptr::null();
-        self.error_end = std::ptr::null();
+        self.error = None;
         self.num_call = 0;
         self.num_mem = 0;
         self.num_named = 0;
@@ -505,10 +504,10 @@ impl ParseEnv {
         }
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn set_error_string(&mut self, _ecode: i32, arg: *const u8, arg_end: *const u8) {
-        self.error = arg;
-        self.error_end = arg_end;
+    /// Record the name an error refers to - mirrors C's
+    /// onig_scan_env_set_error_string(env, ecode, arg, arg_end).
+    pub fn set_error_string(&mut self, _ecode: i32, arg: &[u8]) {
+        self.error = Some(arg.to_vec());
     }
 
     /// Allocate next id
@@ -1781,7 +1780,7 @@ fn fetch_char_property_to_ctype(
     end: usize,
     pattern: &[u8],
     braces: bool,
-    env: &ParseEnv,
+    env: &mut ParseEnv,
 ) -> i32 {
     let enc = env.enc;
     let start = *p;
@@ -1793,6 +1792,9 @@ fn fetch_char_property_to_ctype(
         }
         pfetch_s(p, pattern, end, enc);
         let r = enc.property_name_to_ctype(&pattern[start..*p]);
+        if r < 0 {
+            env.set_error_string(r, &pattern[start..*p]);
+        }
         return r;
     }
 
@@ -1802,6 +1804,9 @@ fn fetch_char_property_to_ctype(
         let c = pfetch_s(p, pattern, end, enc);
         if c == '}' as u32 {
             let r = enc.property_name_to_ctype(&pattern[start..prev]);
+            if r < 0 {
+                env.set_error_string(r, &pattern[start..prev]);
+            }
             return r;
         } else if c == '(' as u32 || c == ')' as u32 || c == '{' as u32 || c == '|' as u32 {
             break;
@@ -1817,7 +1822,7 @@ fn prs_char_property(
     p: &mut usize,
     end: usize,
     pattern: &[u8],
-    env: &ParseEnv,
+    env: &mut ParseEnv,
 ) -> Result<Box<Node>, i32> {
     let ctype = fetch_char_property_to_ctype(p, end, pattern, tok.prop_braces, env);
     if ctype < 0 {
@@ -2016,7 +2021,7 @@ fn fetch_name(
     p: &mut usize,
     end: usize,
     pattern: &[u8],
-    env: &ParseEnv,
+    env: &mut ParseEnv,
     is_ref: bool,
 ) -> Result<(usize, usize, i32, i32, bool, i32), i32> {
     // Returns: (name_start, name_end, back_num, num_type, exist_level, level)
@@ -2106,6 +2111,8 @@ fn fetch_name(
                                 return Err(ONIGERR_TOO_BIG_NUMBER);
                             }
                         } else {
+                            // C's fetch_name_with_level() `err:` label
+                            name_end = end;
                             r = ONIGERR_INVALID_GROUP_NAME;
                             break;
                         }
@@ -2143,6 +2150,8 @@ fn fetch_name(
                                 return Err(ONIGERR_TOO_BIG_NUMBER);
                             }
                         } else {
+                            // C's fetch_name_with_level() `err:` label
+                            name_end = end;
                             r = ONIGERR_INVALID_GROUP_NAME;
                             break;
                         }
@@ -2158,6 +2167,7 @@ fn fetch_name(
         }
 
         if r != 0 {
+            env.set_error_string(r, &pattern[name_start..name_end]);
             return Err(r);
         }
 
@@ -2172,7 +2182,9 @@ fn fetch_name(
                 return Err(ONIGERR_TOO_BIG_NUMBER);
             }
             if back_num == 0 && num_type == IS_REL_NUM {
-                return Err(ONIGERR_INVALID_GROUP_NAME);
+                r = ONIGERR_INVALID_GROUP_NAME;
+                env.set_error_string(r, &pattern[name_start..name_end]);
+                return Err(r);
             }
             back_num *= sign;
         }
@@ -2188,6 +2200,11 @@ fn fetch_name(
             break;
         }
     }
+    if p_end(*p, end) {
+        name_end = end;
+    }
+
+    env.set_error_string(r, &pattern[name_start..name_end]);
     Err(r)
 }
 
@@ -2645,7 +2662,13 @@ fn is_end_of_bre_subexp(
 // Tokenizer: fetch_token
 // ============================================================================
 
-fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env: &ParseEnv) -> i32 {
+fn fetch_token(
+    tok: &mut PToken,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+) -> i32 {
     let enc = env.enc;
     let syn = &env.syntax;
     let mut pfetch_prev = *p;
@@ -2893,9 +2916,17 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                                                     tok.backref_refs = entry.back_refs.clone();
                                                 }
                                             } else {
+                                                env.set_error_string(
+                                                    ONIGERR_UNDEFINED_NAME_REFERENCE,
+                                                    name,
+                                                );
                                                 return ONIGERR_UNDEFINED_NAME_REFERENCE;
                                             }
                                         } else {
+                                            env.set_error_string(
+                                                ONIGERR_UNDEFINED_NAME_REFERENCE,
+                                                name,
+                                            );
                                             return ONIGERR_UNDEFINED_NAME_REFERENCE;
                                         }
                                     }
@@ -2926,6 +2957,10 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                                         if num_type == IS_REL_NUM {
                                             gnum = backref_rel_to_abs(gnum, env);
                                             if gnum < 0 {
+                                                env.set_error_string(
+                                                    ONIGERR_UNDEFINED_NAME_REFERENCE,
+                                                    &pattern[name_start..name_end],
+                                                );
                                                 return ONIGERR_UNDEFINED_GROUP_REFERENCE;
                                             }
                                         }
@@ -3414,6 +3449,10 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                                                         if num_type == IS_REL_NUM {
                                                             gnum = backref_rel_to_abs(gnum, env);
                                                             if gnum < 0 {
+                                                                env.set_error_string(
+                                                                    ONIGERR_UNDEFINED_NAME_REFERENCE,
+                                                                    &pattern[name_start..name_end],
+                                                                );
                                                                 return ONIGERR_UNDEFINED_GROUP_REFERENCE;
                                                             }
                                                         }
@@ -3454,6 +3493,10 @@ fn fetch_token(tok: &mut PToken, p: &mut usize, end: usize, pattern: &[u8], env:
                                             if num_type == IS_REL_NUM {
                                                 gnum = backref_rel_to_abs(gnum, env);
                                                 if gnum < 0 {
+                                                    env.set_error_string(
+                                                        ONIGERR_UNDEFINED_NAME_REFERENCE,
+                                                        &pattern[name_start..name_end],
+                                                    );
                                                     return ONIGERR_UNDEFINED_GROUP_REFERENCE;
                                                 }
                                             }
@@ -4767,16 +4810,23 @@ fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
 }
 
 /// Register a tag name → callout num mapping.
-fn callout_tag_entry(env: &mut ParseEnv, tag: &[u8], num: i32) {
+fn callout_tag_entry(env: &mut ParseEnv, tag: &[u8], num: i32) -> i32 {
     // SAFETY: as in `reg_callout_list_entry` above — `env.reg` points to the
     // `RegexType` mutably borrowed by `onig_parse_tree` for the whole parse,
     // and no other reference to it is live during this exclusive reborrow.
     let reg = unsafe { &mut *env.reg };
     let ext = reg.extp.as_mut().unwrap();
-    if ext.tag_table.is_none() {
-        ext.tag_table = Some(std::collections::HashMap::new());
+    let t = ext
+        .tag_table
+        .get_or_insert_with(std::collections::HashMap::new);
+
+    // callout_tag_entry_raw()
+    if t.contains_key(tag) {
+        env.set_error_string(ONIGERR_MULTIPLEX_DEFINED_NAME, tag);
+        return ONIGERR_MULTIPLEX_DEFINED_NAME;
     }
-    ext.tag_table.as_mut().unwrap().insert(tag.to_vec(), num);
+    t.insert(tag.to_vec(), num);
+    ONIG_NORMAL
 }
 
 /// Parse `(*NAME[tag]{args})` callout-of-name.
@@ -4954,7 +5004,10 @@ fn prs_callout_of_name(
         entry.tag = Some(tag_bytes.clone());
         entry.tag_start = tag_start_pos;
         entry.tag_end = tag_end_pos_saved;
-        callout_tag_entry(env, tag_bytes, num);
+        let r = callout_tag_entry(env, tag_bytes, num);
+        if r != ONIG_NORMAL {
+            return Err(r);
+        }
     }
 
     Ok(node_new_callout(
@@ -5208,6 +5261,7 @@ fn prs_conditional(
                     condition =
                         node_new_backref(nums.len() as i32, &nums, true, exist_level, level);
                 } else {
+                    env.set_error_string(ONIGERR_UNDEFINED_NAME_REFERENCE, name);
                     return Err(ONIGERR_UNDEFINED_NAME_REFERENCE);
                 }
             }
@@ -6063,9 +6117,17 @@ fn prs_bag(
                                             env.backref_num += 1;
                                             Ok((np, 0))
                                         } else {
+                                            env.set_error_string(
+                                                ONIGERR_UNDEFINED_NAME_REFERENCE,
+                                                name,
+                                            );
                                             Err(ONIGERR_UNDEFINED_NAME_REFERENCE)
                                         }
                                     } else {
+                                        env.set_error_string(
+                                            ONIGERR_UNDEFINED_NAME_REFERENCE,
+                                            name,
+                                        );
                                         Err(ONIGERR_UNDEFINED_NAME_REFERENCE)
                                     }
                                 }
@@ -6246,7 +6308,13 @@ fn prs_named_group(
     if let Some(ref mut nt) = unsafe { &mut *env.reg }.name_table {
         let name = &pattern[name_start..name_end];
         let allow = is_syntax_bv(&env.syntax, ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME);
-        nt.add(name, num, allow)?;
+        if let Err(r) = nt.add(name, num, allow) {
+            // C's name_add() records the name for this code only.
+            if r == ONIGERR_MULTIPLEX_DEFINED_NAME {
+                env.set_error_string(r, name);
+            }
+            return Err(r);
+        }
     }
 
     let mut np = node_new_bag_memory(num);
@@ -7520,8 +7588,7 @@ mod tests {
             backrefed_mem: 0,
             pattern: std::ptr::null(),
             pattern_end: std::ptr::null(),
-            error: std::ptr::null(),
-            error_end: std::ptr::null(),
+            error: None,
             reg: std::ptr::null_mut(),
             num_call: 0,
             num_mem: 0,
