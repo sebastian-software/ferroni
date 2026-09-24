@@ -798,6 +798,27 @@ fn empty_loop_check_with_recursion() {
     x3(b"(?:a\\g<0>|(?!\\1)()|b)*", b"b", 0, 0, 1);
 }
 
+// A numbered condition may name a group defined later in the pattern; only
+// the final group count bounds it (C: check_backrefs). Expected results were
+// checked against C Oniguruma.
+#[test]
+fn condition_forward_group_reference() {
+    x2(b"(?(1)a|b)(c)", b"bc", 0, 2);
+    x2(b"(?(<1>)a|b)(c)", b"bc", 0, 2);
+    x2(b"(?(+1)a|b)(c)", b"bc", 0, 2);
+    x2(b"(?:(?(1)a|b)(c))+", b"bcac", 0, 4);
+    x3(b"(?:(?(1)a|b)(c))+", b"bcac", 3, 4, 1);
+    x2(b"((?:a\\g<1>|(?(2)(?!)|()))*)", b"", 0, 0);
+    x3(b"((?:a\\g<1>|(?(2)(?!)|()))*)", b"", 0, 0, 2);
+}
+
+#[test]
+fn condition_forward_group_reference_errors() {
+    e(b"(?(1)a|b)(c)(?(2)x|y)", b"", ONIGERR_INVALID_BACKREF);
+    e(b"(?(+2)a|b)(c)", b"", ONIGERR_INVALID_BACKREF);
+    e(b"(?(-1)a|b)(c)", b"", ONIGERR_INVALID_BACKREF);
+}
+
 // OP_MEM_START sets only the start of a capture (regexec.c). When a later
 // pass of the group fails before MEM_END, the region keeps the new start
 // and the old end, as in C. Expected regions were checked against C
