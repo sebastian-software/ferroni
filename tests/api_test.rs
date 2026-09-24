@@ -708,6 +708,27 @@ fn python_named_backref_and_call_parse_like_c() {
     assert_eq!(err.code(), ONIGERR_UNDEFINED_GROUP_REFERENCE);
 }
 
+/// Where C records no name, it prints an empty `<>`; the Rust message drops
+/// the placeholder instead.
+#[test]
+fn error_message_without_recorded_name_drops_placeholder() {
+    assert_compiles_like_c(&[
+        (
+            &OnigSyntaxPython,
+            r"(?P>1)",
+            Some("undefined group reference"),
+        ),
+        (&OnigSyntaxPerl_NG, r"(?1a)", Some("invalid group name")),
+        (&OnigSyntaxPerl_NG, r"(?1+x)", Some("invalid group name")),
+        // A recorded empty name is still shown.
+        (
+            &OnigSyntaxOniguruma,
+            r"\p{}",
+            Some("invalid character property name {}"),
+        ),
+    ]);
+}
+
 // === Prelude ===
 
 #[test]
