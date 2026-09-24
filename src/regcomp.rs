@@ -9913,12 +9913,14 @@ thread_local! {
 /// most patterns, so that round trip ran at nearly every attempt.
 ///
 /// The jump still counts the backtracks the push would take against the
-/// retry and time limits (`guard_skipped_retries`); a push whose count
-/// depends on the position stays unguarded. Those limits are what bounds a
-/// loop that grows the stack without consuming input, so a guard that
+/// retry and time limits (`guard_skipped_retries`); where that count depends
+/// on position checks, the guard counts the largest one, and only where that
+/// upper bound is good enough (see `guard_may_jump`). Those limits are what bounds
+/// a loop that grows the stack without consuming input, so a guard that
 /// skipped the count would let such a loop push several times as many
 /// entries as C before the limit trips.
 fn guard_backtrack_pushes(reg: &mut RegexType) {
+    use crate::first_bytes::GuardRetries;
     #[cfg(test)]
     if PUSH_GUARDS_DISABLED.with(|disabled| disabled.get()) {
         return;
@@ -9949,7 +9951,12 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
             None => match crate::first_bytes::guard_byte_map(reg, pc + 1, &mut walk) {
                 Some(bits) if bits.iter().all(|&word| word == !0) => continue,
                 Some(bits) => match crate::first_bytes::guard_skipped_retries(reg, pc + 1, &bits) {
-                    Some(retries) => (bits, retries),
+                    Some(GuardRetries::Fixed(retries)) => (bits, retries),
+                    Some(GuardRetries::ByChecks(max)) if max < GUARD_RETRIES_BY_CHECKS => {
+                        reg.check_dependent_guards = true;
+                        (bits, GUARD_RETRIES_BY_CHECKS | max)
+                    }
+                    Some(GuardRetries::ByChecks(_)) => continue,
                     None => continue,
                 },
                 None => continue,
@@ -10093,6 +10100,7 @@ pub fn onig_new(
         unset_call_addrs: vec![],
         extp: None,
         literal_tries: Vec::new(),
+        check_dependent_guards: false,
         ac_alt: None,
         ac_alt_has_capture: false,
     };
@@ -10335,6 +10343,7 @@ mod tests {
             unset_call_addrs: vec![],
             extp: None,
             literal_tries: Vec::new(),
+            check_dependent_guards: false,
             ac_alt: None,
             ac_alt_has_capture: false,
         };
@@ -11758,7 +11767,9 @@ mod tests {
                 .collect();
             (r, spans)
         };
-        // Backtracks the whole search counts against the retry limits.
+        // Backtracks the whole search counts against the retry limits. A
+        // search budget (never reached here) makes every guard count exactly:
+        // the guards whose count depends on checks push instead of jumping.
         let retries = |reg: &RegexType, input: &[u8], start: usize| {
             let mut msa = crate::regexec::MatchArg::new(
                 reg,
@@ -11767,7 +11778,7 @@ mod tests {
                 start,
             );
             msa.retry_limit_in_match = 0;
-            msa.retry_limit_in_search = 0;
+            msa.retry_limit_in_search = u64::MAX;
             crate::regexec::onig_search_with_msa(
                 reg,
                 input,
@@ -11777,6 +11788,28 @@ mod tests {
                 &mut msa,
             );
             msa.retry_limit_in_search_counter
+        };
+        // The result under a retry limit in match alone, where guards that
+        // depend on checks first count an upper bound and rerun exactly
+        // when it trips.
+        let limited = |reg: &RegexType, input: &[u8], start: usize, limit: u64| {
+            let mut msa = crate::regexec::MatchArg::new(
+                reg,
+                ONIG_OPTION_NONE,
+                Some(OnigRegion::new()),
+                start,
+            );
+            msa.retry_limit_in_match = limit;
+            msa.retry_limit_in_search = 0;
+            crate::regexec::onig_search_with_msa(
+                reg,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                &mut msa,
+            )
+            .0
         };
         let guards = |reg: &RegexType| {
             reg.ops
@@ -11832,6 +11865,15 @@ mod tests {
             "(?:a|b)?c",
             "(?:a|)(?:b|)c",
             "(?:a|\\bb|c)",
+            // Counts that depend on the checks the branch starts with: the
+            // TextMate keyword prefix, anchors and word boundaries in front
+            // of a fork.
+            "(?<![a-z])(?:(?<=\\.\\.)|(?<!\\.))(?:ab|ac)",
+            "(?<![a-z])(?:a|b)c",
+            "\\b(?:a|b|)c",
+            "(?:^|\\b)(?:a|bc)",
+            "\\G(?:a|b)c|\\Bab",
+            "$(?:a|b)?",
         ];
         let contexts = [
             "(?:{h})?z",
@@ -11879,11 +11921,21 @@ mod tests {
             .collect();
 
         let mut guarded_patterns = 0;
+        let mut check_dependent_guards = 0;
         for head in heads {
             for context in contexts {
                 let pattern = context.replace("{h}", head);
                 let guarded = compile(&pattern, true);
                 let reference = compile(&pattern, false);
+                let check_dependent = guarded.ops.iter().any(|op| {
+                    matches!(
+                        op.payload,
+                        OperationPayload::PushOrJumpExact1 { skipped_retries, .. }
+                            | OperationPayload::PushOrJumpByteSet { skipped_retries, .. }
+                            if skipped_retries & GUARD_RETRIES_BY_CHECKS != 0
+                    )
+                });
+                check_dependent_guards += usize::from(check_dependent);
                 assert!(
                     !reference
                         .ops
@@ -11909,6 +11961,15 @@ mod tests {
                             retries(&reference, input, start),
                             "{pattern} on {input:x?} from {start}: retries"
                         );
+                        if check_dependent {
+                            for limit in 1..=6 {
+                                assert_eq!(
+                                    limited(&guarded, input, start, limit),
+                                    limited(&reference, input, start, limit),
+                                    "{pattern} on {input:x?} from {start}: limit {limit}"
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -11916,6 +11977,10 @@ mod tests {
         assert!(
             guarded_patterns > 170,
             "only {guarded_patterns} patterns guarded"
+        );
+        assert!(
+            check_dependent_guards > 20,
+            "only {check_dependent_guards} guards count by their checks"
         );
     }
 

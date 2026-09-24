@@ -1766,8 +1766,8 @@ mod tests {
                 capture_tracking: 0,
                 fused_look_behinds: 443,
                 stepping_look_behinds: 50,
-                byte_set_push_guards: 2143,
-                unguarded_pushes: 188,
+                byte_set_push_guards: 2161,
+                unguarded_pushes: 166,
             }
         );
         assert_eq!(
@@ -1783,8 +1783,8 @@ mod tests {
                 capture_tracking: 0,
                 fused_look_behinds: 64,
                 stepping_look_behinds: 11,
-                byte_set_push_guards: 2756,
-                unguarded_pushes: 79,
+                byte_set_push_guards: 2764,
+                unguarded_pushes: 70,
             }
         );
         assert_eq!(
