@@ -1109,6 +1109,18 @@ pub fn node_new_fail() -> Box<Node> {
     }))
 }
 
+/// Turn `node` into an empty string node in place (C: onig_node_reset_empty).
+/// Like C, the status bits and the parent link stay.
+pub fn onig_node_reset_empty(node: &mut Node) {
+    node.inner = node_new_empty().inner;
+}
+
+/// Turn `node` into a FAIL gimmick in place (C: onig_node_reset_fail).
+/// Like C, the status bits and the parent link stay.
+pub fn onig_node_reset_fail(node: &mut Node) {
+    node.inner = node_new_fail().inner;
+}
+
 pub fn node_new_callout(of: i32, num: i32, id: i32) -> Box<Node> {
     node_new(NodeInner::Gimmick(GimmickNode {
         gimmick_type: GimmickType::Callout,

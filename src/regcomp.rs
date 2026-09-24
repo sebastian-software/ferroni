@@ -4036,6 +4036,117 @@ fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
     }
 }
 
+/// Minimum of node_char_len().
+fn node_char_len_min(node: &Node, enc: OnigEncoding) -> OnigLen {
+    match node_char_len(node, enc) {
+        CharLenResult::Fixed(n) => n,
+        CharLenResult::Variable(mn, _) => mn,
+    }
+}
+
+/// C: the `min_is_sure` flag of the MinMaxCharLen that node_char_len1()
+/// fills in. It turns false once the shortest match runs through a capture,
+/// an anchor, a back-reference or a call ("can't optimize look-behind if
+/// capture/anchor exists"); tune_look_behind() only drops a look-behind
+/// whose shortest body is empty while it stays true.
+fn node_char_len_min_is_sure(node: &Node, enc: OnigEncoding) -> bool {
+    // C: mmcl_alt_merge() for the flag, given both minimums.
+    fn alt_merge(to: &mut (OnigLen, bool), alt: (OnigLen, bool)) {
+        if to.0 > alt.0 {
+            *to = alt;
+        } else if to.0 == alt.0 && alt.1 {
+            to.1 = true;
+        }
+    }
+
+    match &node.inner {
+        NodeInner::String(_)
+        | NodeInner::CType(_)
+        | NodeInner::CClass(_)
+        | NodeInner::Gimmick(_) => true,
+        // C: mmcl_add() ands the flags.
+        NodeInner::List(_) => {
+            let mut cur = node;
+            while let NodeInner::List(cons) = &cur.inner {
+                if !node_char_len_min_is_sure(&cons.car, enc) {
+                    return false;
+                }
+                match &cons.cdr {
+                    Some(next) => cur = next,
+                    None => break,
+                }
+            }
+            true
+        }
+        NodeInner::Alt(_) => {
+            let mut merged: Option<(OnigLen, bool)> = None;
+            let mut cur = node;
+            while let NodeInner::Alt(cons) = &cur.inner {
+                let alt = (
+                    node_char_len_min(&cons.car, enc),
+                    node_char_len_min_is_sure(&cons.car, enc),
+                );
+                match merged.as_mut() {
+                    None => merged = Some(alt),
+                    Some(to) => alt_merge(to, alt),
+                }
+                match &cons.cdr {
+                    Some(next) => cur = next,
+                    None => break,
+                }
+            }
+            merged.is_none_or(|(_, sure)| sure)
+        }
+        NodeInner::Quant(qn) => {
+            if qn.lower == qn.upper && qn.upper == 0 {
+                true
+            } else {
+                qn.body
+                    .as_ref()
+                    .is_none_or(|body| node_char_len_min_is_sure(body, enc))
+            }
+        }
+        NodeInner::Bag(bn) => match &bn.bag_data {
+            // C: "can't optimize look-behind if capture exists."
+            BagData::Memory { .. } => false,
+            BagData::Option { .. } | BagData::StopBacktrack => bn
+                .body
+                .as_ref()
+                .is_none_or(|body| node_char_len_min_is_sure(body, enc)),
+            BagData::IfElse {
+                then_node,
+                else_node,
+            } => {
+                // Condition + then, merged with else (an empty else is sure).
+                let mut to = match bn.body.as_ref() {
+                    Some(cond) => (
+                        node_char_len_min(cond, enc),
+                        // A back-reference checker counts as an anchor.
+                        !cond.has_status(ND_ST_CHECKER) && node_char_len_min_is_sure(cond, enc),
+                    ),
+                    None => (0, true),
+                };
+                if let Some(then_n) = then_node {
+                    to.0 = distance_add(to.0, node_char_len_min(then_n, enc));
+                    to.1 = to.1 && node_char_len_min_is_sure(then_n, enc);
+                }
+                let else_ci = match else_node {
+                    Some(else_n) => (
+                        node_char_len_min(else_n, enc),
+                        node_char_len_min_is_sure(else_n, enc),
+                    ),
+                    None => (0, true),
+                };
+                alt_merge(&mut to, else_ci);
+                to.1
+            }
+        },
+        // Anchors and back-reference checkers; a back-reference takes its
+        // length from a capture, and a call's body is a capture.
+        NodeInner::Anchor(_) | NodeInner::BackRef(_) | NodeInner::Call(_) => false,
+    }
+}
+
 /// Divide variable-length lookbehind with Alt body into per-branch fixed-length lookbehinds.
 /// For positive: Alt(Anchor(LB,a), Anchor(LB,b)) — any branch must match (OR).
 /// For negative: List(Anchor(LB_NOT,a), Anchor(LB_NOT,b)) — all branches must pass (AND).
@@ -4659,6 +4770,28 @@ fn tune_look_behind(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut 
         return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
     }
 
+    // C: a body that can match the empty string, without a capture, anchor
+    // or back-reference on its shortest path and without a referenced
+    // capture, always matches right at the current position: the
+    // look-behind is then an empty node, and a negative one a FAIL.
+    if cmin == 0 && !lb_used {
+        let min_is_sure = if let NodeInner::Anchor(ref an) = node.inner {
+            an.body
+                .as_ref()
+                .is_some_and(|body| node_char_len_min_is_sure(body, enc))
+        } else {
+            false
+        };
+        if min_is_sure {
+            if anchor_type == ANCR_LOOK_BEHIND_NOT {
+                onig_node_reset_fail(node);
+            } else {
+                onig_node_reset_empty(node);
+            }
+            return ONIG_NORMAL;
+        }
+    }
+
     let different_len_alt = is_syntax_bv(&env.syntax, ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND);
     let variable_len = is_syntax_bv(&env.syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND);
 
@@ -4851,28 +4984,80 @@ fn collect_called_groups(node: &Node, groups: &mut Vec<i32>) {
     }
 }
 
-fn mark_called_groups(node: &mut Node, groups: &[i32]) {
+/// Group numbers named by back-references, checkers included.
+fn collect_backref_groups(node: &Node, groups: &mut Vec<i32>) {
+    match &node.inner {
+        NodeInner::BackRef(br) => groups.extend_from_slice(br.back_refs()),
+        NodeInner::List(cons) | NodeInner::Alt(cons) => {
+            collect_backref_groups(&cons.car, groups);
+            if let Some(cdr) = &cons.cdr {
+                collect_backref_groups(cdr, groups);
+            }
+        }
+        NodeInner::Quant(qn) => {
+            if let Some(body) = &qn.body {
+                collect_backref_groups(body, groups);
+            }
+        }
+        NodeInner::Bag(bn) => {
+            if let Some(body) = &bn.body {
+                collect_backref_groups(body, groups);
+            }
+            if let BagData::IfElse {
+                then_node,
+                else_node,
+            } = &bn.bag_data
+            {
+                if let Some(then_node) = then_node {
+                    collect_backref_groups(then_node, groups);
+                }
+                if let Some(else_node) = else_node {
+                    collect_backref_groups(else_node, groups);
+                }
+            }
+        }
+        NodeInner::Anchor(an) => {
+            if let Some(body) = &an.body {
+                collect_backref_groups(body, groups);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// C: check_backrefs — flags every capture that a back-reference names with
+/// ND_ST_BACKREF, which check_node_in_look_behind() reads. (The group
+/// numbers themselves are validated by the parser.)
+fn check_backrefs(root: &mut Node) {
+    let mut groups = Vec::new();
+    collect_backref_groups(root, &mut groups);
+    if !groups.is_empty() {
+        mark_groups_status(root, &groups, ND_ST_BACKREF);
+    }
+}
+
+fn mark_groups_status(node: &mut Node, groups: &[i32], status: u32) {
     if let NodeInner::Bag(bn) = &node.inner {
         if bn.bag_type == BagType::Memory && groups.contains(&bn.regnum()) {
-            node.status_add(ND_ST_CALLED);
+            node.status_add(status);
         }
     }
 
     match &mut node.inner {
         NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            mark_called_groups(&mut cons.car, groups);
+            mark_groups_status(&mut cons.car, groups, status);
             if let Some(cdr) = &mut cons.cdr {
-                mark_called_groups(cdr, groups);
+                mark_groups_status(cdr, groups, status);
             }
         }
         NodeInner::Quant(qn) => {
             if let Some(body) = &mut qn.body {
-                mark_called_groups(body, groups);
+                mark_groups_status(body, groups, status);
             }
         }
         NodeInner::Bag(bn) => {
             if let Some(body) = &mut bn.body {
-                mark_called_groups(body, groups);
+                mark_groups_status(body, groups, status);
             }
             if let BagData::IfElse {
                 then_node,
@@ -4880,16 +5065,16 @@ fn mark_called_groups(node: &mut Node, groups: &[i32]) {
             } = &mut bn.bag_data
             {
                 if let Some(then_node) = then_node {
-                    mark_called_groups(then_node, groups);
+                    mark_groups_status(then_node, groups, status);
                 }
                 if let Some(else_node) = else_node {
-                    mark_called_groups(else_node, groups);
+                    mark_groups_status(else_node, groups, status);
                 }
             }
         }
         NodeInner::Anchor(an) => {
             if let Some(body) = &mut an.body {
-                mark_called_groups(body, groups);
+                mark_groups_status(body, groups, status);
             }
         }
         _ => {}
@@ -9033,6 +9218,8 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     }
     refresh_node_references(&mut root, &mut env);
 
+    check_backrefs(&mut root);
+
     // Resolve subroutine call references before tune_tree
     if env.num_call > 0 {
         let r = resolve_call_references(&mut root, reg, &mut env);
@@ -9041,7 +9228,7 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         }
         let mut called_groups = Vec::new();
         collect_called_groups(&root, &mut called_groups);
-        mark_called_groups(&mut root, &called_groups);
+        mark_groups_status(&mut root, &called_groups, ND_ST_CALLED);
         // Mark zero-repeat contexts and adjust entry counts
         tune_call(&mut root, 0);
         // Conservatively avoid single-entry optimizations for called groups.
@@ -9473,6 +9660,26 @@ mod tests {
             _ => None,
         });
         assert_eq!(step_back, Some((2, 0)));
+    }
+
+    /// C's tune_look_behind() drops a look-behind whose body can match the
+    /// empty string with nothing on that shortest path that it cannot
+    /// optimize: `(?<=a*)` becomes an empty node and `(?<!a*)` a FAIL. A
+    /// capture on the shortest path keeps the look-behind.
+    #[test]
+    fn look_behind_with_empty_shortest_body_is_reset() {
+        let has = |pattern: &[u8], opcode: OpCode| {
+            compile_utf8(pattern)
+                .ops
+                .iter()
+                .any(|op| op.opcode == opcode)
+        };
+        assert!(!has(b"(?<=a*)b", OpCode::StepBackStart));
+        assert!(!has(b"(?<=a|)b", OpCode::StepBackStart));
+        assert!(!has(b"(?<!a*)b", OpCode::StepBackStart));
+        assert!(has(b"(?<!a*)b", OpCode::Fail));
+        assert!(has(b"(?<=(a)*)b", OpCode::StepBackStart));
+        assert!(has(b"(?<=\\ba*)b", OpCode::StepBackStart));
     }
 
     /// A variable-length look-behind that cannot end at a position must fail
