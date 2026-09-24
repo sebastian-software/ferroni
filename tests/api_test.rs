@@ -1032,16 +1032,22 @@ fn char_class_range_and_dash() {
 
 #[test]
 fn named_backref_with_level() {
-    // Exercises level syntax parsing in fetch_name: \k<name+1>
-    let re = Regex::new(r"(?<a>x)\g<a>\k<a+0>").unwrap();
+    // Exercises level syntax parsing in fetch_name: \k<name+1>. Both
+    // occurrences of the called group capture one call level below the top,
+    // so +1 finds them and +0 does not (checked against C Oniguruma).
+    let re = Regex::new(r"(?<a>x)\g<a>\k<a+1>").unwrap();
     assert!(re.is_match("xxx"));
+    let re = Regex::new(r"(?<a>x)\g<a>\k<a+0>").unwrap();
+    assert!(!re.is_match("xxx"));
 }
 
 #[test]
 fn numbered_backref_with_level() {
-    // Exercises numeric level backref parsing: \k<1+0>
-    let re = Regex::new(r"(x)\g<1>\k<1+0>").unwrap();
+    // Exercises numeric level backref parsing: \k<1+1> and \k<1+0>
+    let re = Regex::new(r"(x)\g<1>\k<1+1>").unwrap();
     assert!(re.is_match("xxx"));
+    let re = Regex::new(r"(x)\g<1>\k<1+0>").unwrap();
+    assert!(!re.is_match("xxx"));
 }
 
 #[test]
