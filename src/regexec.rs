@@ -1888,12 +1888,34 @@ fn stack_void_to_mark(stack: &mut [StackEntry], mark_id: usize) -> Option<usize>
 
 /// Search backwards through the stack for the most recent RepeatInc with matching zid.
 /// Returns the count from that entry.
+///
+/// C: STACK_GET_REPEAT_COUNT_SEARCH. The entries of a subexpression call
+/// that has already returned (from its STK_CALL_FRAME up to the matching
+/// STK_RETURN) belong to another run of the same repeat, so the scan skips
+/// them.
 fn stack_get_repeat_count(stack: &[StackEntry], zid: usize) -> i32 {
-    for entry in stack.iter().rev() {
-        if let StackEntry::RepeatInc { zid: id, count, .. } = entry {
-            if *id == zid {
-                return *count;
+    let mut k = stack.len();
+    while k > 0 {
+        k -= 1;
+        match &stack[k] {
+            StackEntry::RepeatInc { zid: id, count } if *id == zid => return *count,
+            StackEntry::Return => {
+                let mut level: i32 = -1;
+                while k > 0 {
+                    k -= 1;
+                    match &stack[k] {
+                        StackEntry::CallFrame { .. } => {
+                            level += 1;
+                            if level == 0 {
+                                break;
+                            }
+                        }
+                        StackEntry::Return => level -= 1,
+                        _ => {}
+                    }
+                }
             }
+            _ => {}
         }
     }
     0

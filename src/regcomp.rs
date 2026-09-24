@@ -141,60 +141,6 @@ fn can_expand_finite_greedy_quantifier(body_len: i32, upper: i32) -> bool {
             ))
 }
 
-/// Whether a quantifier body contains a recursive subexpression call.
-///
-/// The REPEAT VM path is not yet equivalent for recursive calls, but an
-/// unrelated call elsewhere in the pattern must not disable the finite-range
-/// expansion limit. Recursion is annotated during the call-resolution pass
-/// before compilation starts.
-fn quantifier_body_contains_recursion(node: &Node) -> bool {
-    if node.has_status(ND_ST_RECURSION) {
-        return true;
-    }
-
-    match &node.inner {
-        NodeInner::List(cons) | NodeInner::Alt(cons) => {
-            quantifier_body_contains_recursion(&cons.car)
-                || cons
-                    .cdr
-                    .as_deref()
-                    .is_some_and(quantifier_body_contains_recursion)
-        }
-        NodeInner::Quant(qn) => qn
-            .body
-            .as_deref()
-            .is_some_and(quantifier_body_contains_recursion),
-        NodeInner::Anchor(an) => an
-            .body
-            .as_deref()
-            .is_some_and(quantifier_body_contains_recursion),
-        NodeInner::Call(cn) => cn
-            .body
-            .as_deref()
-            .is_some_and(quantifier_body_contains_recursion),
-        NodeInner::Bag(bag) => {
-            bag.body
-                .as_deref()
-                .is_some_and(quantifier_body_contains_recursion)
-                || match &bag.bag_data {
-                    BagData::IfElse {
-                        then_node,
-                        else_node,
-                    } => {
-                        then_node
-                            .as_deref()
-                            .is_some_and(quantifier_body_contains_recursion)
-                            || else_node
-                                .as_deref()
-                                .is_some_and(quantifier_body_contains_recursion)
-                    }
-                    _ => false,
-                }
-        }
-        _ => false,
-    }
-}
-
 /// Add two lengths safely, capping at INFINITE_LEN.
 pub fn distance_add(d1: OnigLen, d2: OnigLen) -> OnigLen {
     if d1 == INFINITE_LEN || d2 == INFINITE_LEN {
@@ -1250,7 +1196,7 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
                 body_len * qn.lower
             };
             first_pass + push_size + mod_tlen + OPSIZE_JUMP
-        } else if expand_infinite_quantifier(qn, body, body_len) {
+        } else if expand_infinite_quantifier(qn, body_len) {
             // {n,} or {n,}?
             let n_body_len = compile_length_tree_n_times(body, qn.lower, reg, env);
             n_body_len + OPSIZE_PUSH + mod_tlen + OPSIZE_JUMP
@@ -1276,10 +1222,7 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         OPSIZE_PUSH + OPSIZE_JUMP + body_len
     } else if qn.greedy
         && !is_infinite_repeat(qn.upper)
-        // The REPEAT VM path has not yet reached parity for recursive calls.
-        // Preserve the established expansion behavior for those expressions.
-        && (quantifier_body_contains_recursion(body)
-            || can_expand_finite_greedy_quantifier(body_len, qn.upper))
+        && can_expand_finite_greedy_quantifier(body_len, qn.upper)
     {
         // Greedy expansion: lower*body + (upper-lower)*(PUSH+body)
         let n = qn.upper - qn.lower;
@@ -1590,7 +1533,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                     OperationPayload::Push { addr: -mod_tlen },
                 );
             }
-        } else if !expand_infinite_quantifier(qn, body, body_len) {
+        } else if !expand_infinite_quantifier(qn, body_len) {
             return compile_range_repeat_node(qn, body, mod_tlen, reg, env);
         } else {
             // {n,} with n >= 2
@@ -1718,8 +1661,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
     } else if qn.greedy
         && !is_infinite_repeat(qn.upper)
         // Keep this in sync with compile_length_quantifier_node above.
-        && (quantifier_body_contains_recursion(body)
-            || can_expand_finite_greedy_quantifier(body_len, qn.upper))
+        && can_expand_finite_greedy_quantifier(body_len, qn.upper)
     {
         // Greedy expansion: body*lower + (upper-lower) * (PUSH + body)
         let r = compile_tree_n_times(body, qn.lower, reg, env);
@@ -1761,12 +1703,9 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
 ///
 /// Both forms match the same strings unless the body may be empty: with
 /// REPEAT, the empty check also runs on the mandatory iterations. The port
-/// therefore keeps the inline form for bodies that cannot be empty. It also
-/// keeps it for bodies with recursive calls, whose REPEAT counter lookup has
-/// not yet reached parity (see quantifier_body_contains_recursion).
-fn expand_infinite_quantifier(qn: &QuantNode, body: &Node, body_len: i32) -> bool {
+/// therefore keeps the inline form for bodies that cannot be empty.
+fn expand_infinite_quantifier(qn: &QuantNode, body_len: i32) -> bool {
     qn.emptiness == BodyEmptyType::NotEmpty
-        || quantifier_body_contains_recursion(body)
         || !len_multiply_cmp(body_len as OnigLen, qn.lower, QUANTIFIER_EXPAND_LIMIT_SIZE)
 }
 
