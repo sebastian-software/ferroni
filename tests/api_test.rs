@@ -743,6 +743,41 @@ fn numbered_calls_are_checked_like_c() {
     ]);
 }
 
+/// C's prs_bag() reads a condition reference with fetch_name_with_level(),
+/// falls back to a pattern condition when a bare reference does not parse,
+/// and leaves the group bounds to check_backrefs().
+#[test]
+fn conditions_parse_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let not_allowed = Some("numbered backref/call is not allowed. (use name)");
+    assert_compiles_like_c(&[
+        (onig, r"(a)(?(1)a|b)", None),
+        (onig, r"(a)(?(1+0)a|b)", None),
+        (onig, r"(a)(?(<1>)a|b)", None),
+        (onig, r"(a)(?(1))", None),
+        (onig, r"(?(1a)a|b)", None),
+        (onig, r"(?(-0)a|b)", None),
+        (onig, r"(?(a)b)", None),
+        (
+            onig,
+            r"(?(+0)a|b)",
+            Some("target of repeat operator is not specified"),
+        ),
+        (onig, r"(?(1)a|b)", Some("invalid backref number/name")),
+        (
+            onig,
+            r"(?(<nope>)a|b)",
+            Some("undefined name <nope> reference"),
+        ),
+        (onig, r"(?(<1>a|b)", Some("end pattern in group")),
+        (onig, r"(?(1", Some("end pattern in group")),
+        (onig, r"(?(a", Some("end pattern in group")),
+        (onig, r"(?(a))", Some("invalid if-else syntax")),
+        (onig, r"(?<a>x)(?(<2>)a|b)", not_allowed),
+        (onig, r"(?<a>x)(?(2)a|b)", not_allowed),
+    ]);
+}
+
 /// Where C records no name, it prints an empty `<>`; the Rust message drops
 /// the placeholder instead.
 #[test]
@@ -821,10 +856,16 @@ fn numbered_backreferences_validate_capture_group_bounds() {
 
 #[test]
 fn group_reference_numbers_reject_overflow_and_missing_terminators() {
+    // As in C, a bare condition that is not a valid group reference is
+    // parsed as a pattern instead, so an overflowing number compiles.
     for pattern in [
-        br"(a)\k<a+999999999999999>".as_slice(),
         br"(?(9999999999999)a|b)".as_slice(),
         br"(a)(?(1+9999999999999)a|b)".as_slice(),
+    ] {
+        assert!(Regex::new_bytes(pattern).is_ok(), "{pattern:?}");
+    }
+    for pattern in [
+        br"(a)\k<a+999999999999999>".as_slice(),
         br"(a)\k<1".as_slice(),
         br"(a)\g<1".as_slice(),
         br"(a)\k'1".as_slice(),
