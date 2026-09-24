@@ -798,6 +798,21 @@ fn empty_loop_check_with_recursion() {
     x3(b"(?:a\\g<0>|(?!\\1)()|b)*", b"b", 0, 0, 1);
 }
 
+// OP_MEM_START sets only the start of a capture (regexec.c). When a later
+// pass of the group fails before MEM_END, the region keeps the new start
+// and the old end, as in C. Expected regions were checked against C
+// Oniguruma.
+#[test]
+fn mem_start_keeps_previous_end() {
+    x2(b"((?=(a|ab))a?){2}", b"a", 0, 0);
+    x3(b"((?=(a|ab))a?){2}", b"a", 1, 0, 1);
+    x3(b"((?=(a|ab))a?){2}", b"a", 1, 1, 2);
+
+    x2(b"(?:((?=(a|ab))a?)c?){3}", b"aac", 0, 1);
+    x3(b"(?:((?=(a|ab))a?)c?){3}", b"aac", 2, 1, 1);
+    x3(b"(?:((?=(a|ab))a?)c?){3}", b"aac", 2, 2, 2);
+}
+
 // A repeat range whose body recurses compiles to REPEAT like C; REPEAT_INC
 // reads its count past completed calls of the same repeat
 // (C: STACK_GET_REPEAT_COUNT_SEARCH). Expected regions were checked against
