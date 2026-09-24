@@ -4533,6 +4533,11 @@ fn list_reduce_in_look_behind(node: &mut Node) {
 }
 
 /// C: alt_reduce_in_look_behind
+///
+/// Intentionally returns nothing. C returns 1 when every element of a
+/// branch reduces to `{0}`, and tune_look_behind() passes that through as
+/// the compile result, so C's onig_new() gives up on `(?<=a*a*)` with the
+/// non-error code 1. Ferroni compiles such patterns instead.
 fn alt_reduce_in_look_behind(node: &mut Node) {
     match node.inner {
         NodeInner::Alt(_) => {
