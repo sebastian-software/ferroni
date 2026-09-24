@@ -851,6 +851,10 @@ pub struct ParseEnv {
     /// Number of AST-producing expressions accepted in this parse.
     pub ast_node_count: u32,
     pub flags: u32,
+    /// Recursive groups by group number, set after the call-graph analysis.
+    /// C reads ND_IS_RECURSION on a call's target node; the port keeps it
+    /// here so passes need not follow the call's raw target pointer.
+    pub recursive_mem: Vec<bool>,
 }
 
 // SAFETY: the raw pointers in ParseEnv point into data owned by the caller of

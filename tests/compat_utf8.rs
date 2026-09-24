@@ -779,6 +779,68 @@ fn lookahead_negative_restores_captures() {
     x3(b"((?!(a)b)|a)*b", b"aab", -1, -1, 2);
 }
 
+// A loop whose body may recurse compiles to EMPTY_CHECK_END_MEMST_PUSH: an
+// iteration that only changed a capture is not empty, and each non-empty
+// iteration pushes STK_EMPTY_CHECK_END (C: STACK_EMPTY_CHECK_MEM_REC).
+// Expected regions were checked against C Oniguruma.
+#[test]
+fn empty_loop_check_with_recursion() {
+    x2(b"((?:a\\g<1>|(?!\\2)()|b)*)", b"b", 0, 1);
+    x3(b"((?:a\\g<1>|(?!\\2)()|b)*)", b"b", 0, 0, 2);
+
+    x2(b"((?:a\\g<1>|(?!\\2)()|b)*)$", b"b", 0, 1);
+    x3(b"((?:a\\g<1>|(?!\\2)()|b)*)$", b"b", 0, 0, 2);
+
+    x2(b"((?:a\\g<1>|(?!\\3)(?!\\2)()|(?!\\3)())*)", b"", 0, 0);
+    x3(b"((?:a\\g<1>|(?!\\3)(?!\\2)()|(?!\\3)())*)", b"", 0, 0, 3);
+
+    x2(b"(?:a\\g<0>|(?!\\1)()|b)*", b"b", 0, 1);
+    x3(b"(?:a\\g<0>|(?!\\1)()|b)*", b"b", 0, 0, 1);
+}
+
+// C decides whether a backref lies inside the empty loop of its group with
+// is_ancestor_node over links from set_parent_node_trav, which only links
+// the first cell of a list or alternation to its parent. A backref in any
+// later element therefore turns on the capture check of the loop
+// (EMPTY_CHECK_END_MEMST). Expected regions were checked against C Oniguruma.
+#[test]
+fn empty_loop_check_backref_status() {
+    x2(b"(?:b|(?!\\1)()|(a?))*", b"b", 0, 1);
+    x3(b"(?:b|(?!\\1)()|(a?))*", b"b", 1, 1, 1);
+    x3(b"(?:b|(?!\\1)()|(a?))*", b"b", 1, 1, 2);
+
+    // In the first alternative the backref is inside the loop: plain check.
+    x2(b"(?:(?!\\1)()|b|(a?))*", b"b", 0, 0);
+    x3(b"(?:(?!\\1)()|b|(a?))*", b"b", -1, -1, 2);
+
+    x2(b"(?:(?:b|(?!\\1)())|(a?))*", b"", 0, 0);
+    x3(b"(?:(?:b|(?!\\1)())|(a?))*", b"", 0, 0, 2);
+
+    x2(b"(?:()|(a*)|(?:a|))*\\2", b"a", 0, 1);
+    x3(b"(?:()|(a*)|(?:a|))*\\2", b"a", 1, 1, 1);
+
+    x2(b"(?:()|(a*)|(b|)){2,}\\2", b"ab", 0, 1);
+    x3(b"(?:()|(a*)|(b|)){2,}\\2", b"ab", 1, 1, 1);
+}
+
+// `{n,}` with n >= 2 over a body that may be empty and exceeds the expansion
+// limit compiles to REPEAT like C, so the empty check also ends the loop in
+// a mandatory iteration. Expected regions were checked against C Oniguruma.
+#[test]
+fn empty_loop_check_in_range_repeat() {
+    x2(b"((?!\\2)()|$){2,}", b"a", 0, 0);
+    x3(b"((?!\\2)()|$){2,}", b"a", 0, 0, 1);
+    x3(b"((?!\\2)()|$){2,}", b"a", 0, 0, 2);
+
+    x2(b"(((?=(a))a?*)){2,}", b"a", 0, 0);
+    x3(b"(((?=(a))a?*)){2,}", b"a", 0, 0, 1);
+    x3(b"(((?=(a))a?*)){2,}", b"a", 0, 1, 3);
+
+    x2(b"(?:(?!\\1)(){1,3}|(b){,2}?b?){2,}\\z", b"b", 0, 1);
+    x3(b"(?:(?!\\1)(){1,3}|(b){,2}?b?){2,}\\z", b"b", 1, 1, 1);
+    x3(b"(?:(?!\\1)(){1,3}|(b){,2}?b?){2,}\\z", b"b", -1, -1, 2);
+}
+
 // ============================================================================
 // Non-capturing group
 // ============================================================================
