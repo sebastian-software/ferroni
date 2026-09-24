@@ -474,10 +474,10 @@ pub enum OperationPayload {
     PushOrJumpExact1 {
         addr: RelAddrType,
         c: u8,
-        /// Rust-only (ADR-008): set on a guarded `Push`, whose jump counts the
-        /// backtrack that C's `Push` would take (see `PushOrJumpByteSet`).
-        /// Upstream's own instruction leaves it unset.
-        guard: bool,
+        /// Rust-only (ADR-008): on a guarded `Push`, the backtracks its jump
+        /// counts for the push it skips (see `guard_skipped_retries`).
+        /// Upstream's own instruction counts none.
+        skipped_retries: u32,
     },
     PushIfPeekNext {
         addr: RelAddrType,
@@ -549,6 +549,9 @@ pub enum OperationPayload {
         addr: RelAddrType,
         /// The bytes the main path can consume first.
         bsp: Box<BitSet>,
+        /// The backtracks the jump counts for the push it skips (see
+        /// `guard_skipped_retries`).
+        skipped_retries: u32,
     },
 }
 

@@ -1650,8 +1650,8 @@ impl MatchArg {
     /// deadline has passed.
     #[inline]
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn check_time_limit(&mut self) -> bool {
-        self.time_counter += 1;
+    fn check_time_limit(&mut self, backtracks: u64) -> bool {
+        self.time_counter += backtracks;
         if self.time_counter < CHECK_TIME_INTERVAL {
             return false;
         }
@@ -1674,19 +1674,20 @@ fn check_stack_limit(stack_len: usize, limit: u32) -> Result<(), i32> {
     Ok(())
 }
 
-/// Count one backtrack against the retry and time limits (C's
+/// Count `backtracks` backtracks against the retry and time limits (C's
 /// `CHECK_RETRY_LIMIT_IN_MATCH` and `CHECK_TIME_LIMIT_IN_MATCH`). Returns
 /// Err with the error code once a limit is reached: like C
 /// (`++counter >= limit`), the backtrack that brings the count to the limit
 /// already stops the match.
 #[inline]
 fn count_retry(
+    backtracks: u64,
     retry_in_match_counter: &mut u64,
     retry_limit_in_match: u64,
     time_limit_ms: u64,
     msa: &mut MatchArg,
 ) -> Result<(), i32> {
-    *retry_in_match_counter += 1;
+    *retry_in_match_counter += backtracks;
     if retry_limit_in_match != 0 && *retry_in_match_counter >= retry_limit_in_match {
         return Err(
             if msa.retry_limit_in_match != 0 && *retry_in_match_counter >= msa.retry_limit_in_match
@@ -1698,7 +1699,7 @@ fn count_retry(
         );
     }
     // Time limit check (every CHECK_TIME_INTERVAL retries of the search)
-    if time_limit_ms > 0 && msa.check_time_limit() {
+    if time_limit_ms > 0 && msa.check_time_limit(backtracks) {
         return Err(ONIGERR_TIME_LIMIT_OVER);
     }
     Ok(())
@@ -5136,7 +5137,12 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // OP_PUSH_OR_JUMP_EXACT1 - optimized push for exact char
             // ================================================================
             OpCode::PushOrJumpExact1 => {
-                if let OperationPayload::PushOrJumpExact1 { addr, c, guard } = reg.ops[p].payload {
+                if let OperationPayload::PushOrJumpExact1 {
+                    addr,
+                    c,
+                    skipped_retries,
+                } = reg.ops[p].payload
+                {
                     if s < right_range && str_data[s] == c {
                         // Character matches: push alternative and continue
                         let alt_target = (p as i32 + addr) as usize;
@@ -5150,10 +5156,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     } else {
                         // Character doesn't match: jump
                         p = (p as i32 + addr) as usize;
-                        // A guarded `Push` counts the backtrack C takes into
-                        // the alternative (see `guard_backtrack_pushes`).
-                        if guard {
+                        // A guarded `Push` counts the backtracks the push
+                        // would take (see `guard_backtrack_pushes`).
+                        if skipped_retries != 0 {
                             if let Err(err) = count_retry(
+                                u64::from(skipped_retries),
                                 &mut retry_in_match_counter,
                                 retry_limit_in_match,
                                 time_limit_ms,
@@ -5173,7 +5180,12 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // Rust-only (ADR-008): PUSH_OR_JUMP_EXACT1 with a byte set
             // ================================================================
             OpCode::PushOrJumpByteSet => {
-                if let OperationPayload::PushOrJumpByteSet { addr, ref bsp } = reg.ops[p].payload {
+                if let OperationPayload::PushOrJumpByteSet {
+                    addr,
+                    ref bsp,
+                    skipped_retries,
+                } = reg.ops[p].payload
+                {
                     if s < right_range && bitset_at(bsp, str_data[s] as usize) {
                         stack.push(StackEntry::Alt {
                             pcode: (p as i32 + addr) as usize,
@@ -5184,9 +5196,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         p += 1;
                     } else {
                         p = (p as i32 + addr) as usize;
-                        // Counts the backtrack C takes into the alternative
-                        // (see `guard_backtrack_pushes`).
+                        // Counts the backtracks the push would take (see
+                        // `guard_backtrack_pushes`).
                         if let Err(err) = count_retry(
+                            u64::from(skipped_retries),
                             &mut retry_in_match_counter,
                             retry_limit_in_match,
                             time_limit_ms,
@@ -5738,6 +5751,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
         // Handle failure (backtracking)
         if goto_fail {
             if let Err(err) = count_retry(
+                1,
                 &mut retry_in_match_counter,
                 retry_limit_in_match,
                 time_limit_ms,

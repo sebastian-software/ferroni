@@ -242,6 +242,22 @@ fn is_negative_assertion_push(reg: &RegexType, pc: usize, alt: usize) -> bool {
     })
 }
 
+/// Instructions a guard walk visits before giving up; every push derives a
+/// guard, so the walk stays local.
+const MAX_STEPS: usize = 64;
+
+/// Whether the push-like `op` at `pc` opens a negative look-around the guard
+/// walk skips: it only decides whether the path goes on at `alt`, at the same
+/// position, and nothing in it outlives the look-around.
+fn skips_negative_look_around(reg: &RegexType, pc: usize, op: &Operation, alt: usize) -> bool {
+    op.opcode != OpCode::PushIfPeekNext
+        && (pc + 1..=pc + MAX_STEPS).contains(&alt)
+        && is_negative_assertion_push(reg, pc, alt)
+        && reg.ops[pc + 1..alt]
+            .iter()
+            .all(|op| ends_with_the_look_around(reg, op))
+}
+
 /// Scratch buffers for [`guard_byte_map`], reused across a pattern's pushes.
 #[derive(Default)]
 pub(crate) struct GuardWalk {
@@ -263,10 +279,6 @@ pub(crate) fn guard_byte_map(
     entry: usize,
     walk: &mut GuardWalk,
 ) -> Option<ByteMap> {
-    /// Instructions visited before giving up; every push derives a guard, so
-    /// the walk stays local.
-    const MAX_STEPS: usize = 64;
-
     let mut map: ByteMap = [0; BITSET_REAL_SIZE];
     let mut saw_consumer = false;
     walk.pending.clear();
@@ -316,13 +328,7 @@ pub(crate) fn guard_byte_map(
                 // on at `alt`, at the same position. Skipping it is exact if
                 // nothing in it outlives the look-around; otherwise its body
                 // is walked like any other branch, which only adds bytes.
-                let negative_look_around = op.opcode != OpCode::PushIfPeekNext
-                    && (pc + 1..=pc + MAX_STEPS).contains(&alt)
-                    && is_negative_assertion_push(reg, pc, alt)
-                    && reg.ops[pc + 1..alt]
-                        .iter()
-                        .all(|op| ends_with_the_look_around(reg, op));
-                if !negative_look_around {
+                if !skips_negative_look_around(reg, pc, op, alt) {
                     walk.pending.push(pc + 1);
                 }
             }
@@ -370,6 +376,171 @@ pub(crate) fn guard_byte_map(
     }
 
     saw_consumer.then_some(map)
+}
+
+/// The backtracks an unguarded push takes when the current byte is outside
+/// `map`, the guard byte map of its main path starting at `entry`. Every path
+/// from `entry` then fails without consuming, and each failure is one
+/// backtrack: a guard that jumps instead counts them itself, so that the retry
+/// limits trip where they do without the guard (and in C).
+///
+/// Runs the main path on a model of the backtracking stack: string and class
+/// instructions fail, pushes and marks stack up, cuts drop what their mark
+/// covers. Checks and fused look-behinds depend on the position, so every
+/// combination of their outcomes is run, and the count must not depend on
+/// them. `None` when it does, or for instructions the model does not cover;
+/// such a push stays unguarded.
+pub(crate) fn guard_skipped_retries(reg: &RegexType, entry: usize, map: &ByteMap) -> Option<u32> {
+    /// Instructions one run may execute.
+    const MAX_RUN_STEPS: usize = 4096;
+    /// Checks whose outcomes are combined.
+    const MAX_CHECKS: usize = 6;
+
+    enum Entry {
+        Alt(usize),
+        Mark(MemNumType),
+    }
+
+    /// The outcome of the check at `at` in the run `passes` (bit i for
+    /// `checks[i]`); `None` past `MAX_CHECKS`.
+    fn check(at: usize, passes: u32, checks: &mut Vec<usize>) -> Option<bool> {
+        let index = match checks.iter().position(|&c| c == at) {
+            Some(index) => index,
+            None => {
+                checks.push(at);
+                checks.len() - 1
+            }
+        };
+        (index < MAX_CHECKS).then_some(passes & (1 << index) != 0)
+    }
+
+    // One run with the check outcomes in `passes`.
+    let run = |passes: u32, checks: &mut Vec<usize>| -> Option<u32> {
+        let mut stack: Vec<Entry> = Vec::new();
+        let mut pc = entry;
+        let mut failures = 0u32;
+        let mut scratch: ByteMap = [0; BITSET_REAL_SIZE];
+        for _ in 0..MAX_RUN_STEPS {
+            let op = reg.ops.get(pc)?;
+            let next = match record_first_bytes(reg, op, &mut scratch)? {
+                // Cannot consume the current byte.
+                FirstBytes::Consumes => None,
+                // Consumes nothing and pushes nothing.
+                FirstBytes::ConsumesOrFallsThrough => Some(pc + 1),
+                FirstBytes::None => match (op.opcode, &op.payload) {
+                    (OpCode::Jump, OperationPayload::Jump { addr }) => {
+                        Some(target(pc, *addr, reg.ops.len())?)
+                    }
+                    // Upstream's instruction: the current byte is not `c`,
+                    // so it jumps without pushing.
+                    (
+                        OpCode::PushOrJumpExact1,
+                        &OperationPayload::PushOrJumpExact1 {
+                            addr,
+                            c,
+                            skipped_retries: 0,
+                        },
+                    ) => {
+                        if !bitset_at(map, c as usize) {
+                            return None;
+                        }
+                        Some(target(pc, addr, reg.ops.len())?)
+                    }
+                    // Pushes only when the current byte is `c`.
+                    (OpCode::PushIfPeekNext, &OperationPayload::PushIfPeekNext { c, .. }) => {
+                        if !bitset_at(map, c as usize) {
+                            return None;
+                        }
+                        Some(pc + 1)
+                    }
+                    // A plain push, or a guard that jumps and counts what
+                    // the push takes.
+                    (
+                        OpCode::Push | OpCode::PushOrJumpByteSet | OpCode::PushOrJumpExact1,
+                        OperationPayload::Push { addr }
+                        | OperationPayload::PushOrJumpByteSet { addr, .. }
+                        | OperationPayload::PushOrJumpExact1 { addr, .. },
+                    ) => {
+                        let alt = target(pc, *addr, reg.ops.len())?;
+                        if skips_negative_look_around(reg, pc, op, alt) {
+                            return None;
+                        }
+                        stack.push(Entry::Alt(alt));
+                        Some(pc + 1)
+                    }
+                    (OpCode::Mark, &OperationPayload::Mark { id, .. }) => {
+                        stack.push(Entry::Mark(id));
+                        Some(pc + 1)
+                    }
+                    // Drops what the path pushed since its mark; a mark from
+                    // before `entry` would drop the push itself.
+                    (OpCode::CutToMark, &OperationPayload::CutToMark { id, .. }) => {
+                        loop {
+                            if let Entry::Mark(mark) = stack.pop()? {
+                                if mark == id {
+                                    break;
+                                }
+                            }
+                        }
+                        Some(pc + 1)
+                    }
+                    (OpCode::MemStartPush | OpCode::MemEndPush | OpCode::EmptyCheckStart, _) => {
+                        Some(pc + 1)
+                    }
+                    (
+                        OpCode::WordBoundary
+                        | OpCode::NoWordBoundary
+                        | OpCode::WordBegin
+                        | OpCode::WordEnd
+                        | OpCode::TextSegmentBoundary
+                        | OpCode::BeginBuf
+                        | OpCode::EndBuf
+                        | OpCode::BeginLine
+                        | OpCode::EndLine
+                        | OpCode::SemiEndBuf
+                        | OpCode::CheckPosition,
+                        _,
+                    ) => check(pc, passes, checks)?.then_some(pc + 1),
+                    (OpCode::LookBehindOp, _) => check(pc, passes, checks)?.then_some(pc + 2),
+                    (OpCode::Fail, _) => None,
+                    _ => return None,
+                },
+            };
+            pc = match next {
+                Some(next) => next,
+                None => {
+                    failures = failures.checked_add(1)?;
+                    loop {
+                        match stack.pop() {
+                            // The push's own alternative: the main path is done.
+                            None => return Some(failures),
+                            Some(Entry::Alt(alt)) => break alt,
+                            Some(Entry::Mark(_)) => {}
+                        }
+                    }
+                }
+            };
+        }
+        None
+    };
+
+    let mut checks = Vec::new();
+    let mut count = None;
+    let mut passes = 0u32;
+    loop {
+        let failures = run(passes, &mut checks)?;
+        if count.is_some_and(|count| count != failures) {
+            return None;
+        }
+        count = Some(failures);
+        passes += 1;
+        if checks.len() > MAX_CHECKS {
+            return None;
+        }
+        if passes >= 1 << checks.len() {
+            return count;
+        }
+    }
 }
 
 /// Whether `op`, inside a negative look-around, leaves no trace once the
