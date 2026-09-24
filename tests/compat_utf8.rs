@@ -10793,6 +10793,38 @@ fn backward_search_multibyte() {
     assert_eq!(region.end[0], 5);
 }
 
+// Backward searches whose start or range lies inside a multibyte character.
+// C's map_search_backward / slow_search_backward scan from the start while
+// it is >= the lower bound, and the search loop stops once the previous
+// character head drops below `range` (it is not rounded down). Expectations
+// checked against C Oniguruma.
+#[test]
+fn backward_search_start_or_range_inside_character() {
+    // Map searches whose lower bound is above the start used to panic.
+    assert_eq!(
+        search_bounded("(?i)k", "あいあ", 3, 3, 2),
+        (ONIG_MISMATCH, None)
+    );
+    assert_eq!(
+        search_bounded("[aé]", "あいあ", 6, 6, 5),
+        (ONIG_MISMATCH, None)
+    );
+    assert_eq!(
+        search_bounded("[aé]", "aあいあ", 7, 7, 0),
+        (0, Some((0, 1)))
+    );
+
+    // A range inside "é" (bytes 1..3) excludes the character starting at 1.
+    assert_eq!(search_bounded(".", "aéa", 3, 3, 2), (ONIG_MISMATCH, None));
+    assert_eq!(search_bounded(".", "aéa", 3, 3, 1), (1, Some((1, 3))));
+    assert_eq!(search_bounded("a|é", "éaé", 5, 5, 4), (ONIG_MISMATCH, None));
+    assert_eq!(search_bounded("é", "aéaé", 5, 5, 3), (ONIG_MISMATCH, None));
+
+    // A start inside a character is scanned as is.
+    assert_eq!(search_bounded("é", "aéaé", 6, 5, 2), (4, Some((4, 6))));
+    assert_eq!(search_bounded("a", "éaéa", 6, 5, 2), (5, Some((5, 6))));
+}
+
 // ============================================================================
 // Phase 4: Capture history tree
 // ============================================================================

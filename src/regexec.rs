@@ -5880,8 +5880,25 @@ fn map_search(
     }
 }
 
-/// Backward naive string search. Mirrors C's slow_search_backward.
-/// Uses SIMD-accelerated memchr::memmem for the actual byte search.
+/// Whether C's backward scans (`s = onigenc_get_prev_char_head(enc,
+/// adjust_text, s)` starting at `first`) visit `pos`: the first position
+/// itself, even inside a character, and every character head below it.
+#[inline]
+fn backward_scan_visits(
+    enc: OnigEncoding,
+    text: &[u8],
+    adjust_text: usize,
+    first: usize,
+    pos: usize,
+) -> bool {
+    pos == first || left_adjust_char_head(enc, text, adjust_text, pos) == pos
+}
+
+/// Backward naive string search. Mirrors C's slow_search_backward: the scan
+/// starts at `search_start` (or at the last position where the target fits,
+/// left-adjusted) and steps back by characters while it is >= `text_start`.
+/// Uses SIMD-accelerated memchr::memmem for the byte search and skips hits
+/// that C's character stepping would not visit.
 fn slow_search_backward(
     enc: OnigEncoding,
     target: &[u8],
@@ -5895,76 +5912,86 @@ fn slow_search_backward(
     if tlen == 0 {
         return Some(search_start);
     }
-    // The rightmost possible match start is min(search_start, text_end - tlen).
-    let right = if text_end.saturating_sub(tlen) > search_start {
+    // C: s = text_end - tlen; s > text_start ? text_start : LEFT_ADJUST(s)
+    let last_fit = text_end.checked_sub(tlen)?;
+    let first = if last_fit > search_start {
         search_start
     } else {
-        text_end.saturating_sub(tlen)
+        left_adjust_char_head(enc, text, adjust_text, last_fit)
     };
-    if right < text_start {
-        return None;
-    }
-
-    // Search backward in text[text_start .. right + tlen]
-    let haystack = &text[text_start..right + tlen];
-    let found = if tlen == 1 {
-        memchr::memrchr(target[0], &haystack[..right - text_start + 1])
-    } else {
-        // rfind searches for last occurrence in haystack; we need to limit
-        // the starting position of the match to <= right.
-        memchr::memmem::rfind(&text[text_start..right + tlen], target)
-    };
-    if let Some(i) = found {
-        let pos = text_start + i;
-        // Ensure the found position is on a character boundary
-        let adjusted = left_adjust_char_head(enc, text, adjust_text, pos);
-        if adjusted == pos && pos >= text_start {
+    let mut right = first;
+    while right >= text_start {
+        let found = if tlen == 1 {
+            memchr::memrchr(target[0], &text[text_start..=right])
+        } else {
+            memchr::memmem::rfind(&text[text_start..right + tlen], target)
+        };
+        let pos = text_start + found?;
+        if backward_scan_visits(enc, text, adjust_text, first, pos) {
             return Some(pos);
         }
+        if pos == 0 {
+            break;
+        }
+        right = pos - 1;
     }
     None
 }
 
-/// Backward character map search. Mirrors C's map_search_backward.
-/// Uses SIMD-accelerated memrchr when the map has 1-3 distinct ASCII bytes.
+/// Backward character map search. Mirrors C's map_search_backward: the scan
+/// starts at `search_start` and steps back by characters while it is not
+/// below `text_start`, so a start below `text_start` finds nothing.
+/// Uses SIMD-accelerated memrchr when the map has 1-3 distinct ASCII bytes
+/// and skips hits that C's character stepping would not visit.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn map_search_backward(
     enc: OnigEncoding,
     reg: &RegexType,
     text: &[u8],
     text_start: usize,
-    _adjust_text: usize,
+    adjust_text: usize,
     search_start: usize,
 ) -> Option<usize> {
-    let haystack = &text[text_start..search_start + 1];
-    match reg.map_byte_count {
-        1 => memchr::memrchr(reg.map_bytes[0], haystack).map(|i| text_start + i),
-        2 => memchr::memrchr2(reg.map_bytes[0], reg.map_bytes[1], haystack).map(|i| text_start + i),
-        3 => memchr::memrchr3(
-            reg.map_bytes[0],
-            reg.map_bytes[1],
-            reg.map_bytes[2],
-            haystack,
-        )
-        .map(|i| text_start + i),
-        _ => {
-            let map = &reg.map;
-            let mut s = search_start;
-            loop {
-                if map[text[s] as usize] != 0 {
-                    return Some(s);
-                }
-                if s <= text_start {
-                    break;
-                }
-                s = onigenc_get_prev_char_head(enc, text, _adjust_text, s);
-                if s < text_start {
-                    break;
+    let first = search_start;
+    let mut right = search_start;
+    while right >= text_start {
+        let haystack = &text[text_start..=right];
+        let found = match reg.map_byte_count {
+            1 => memchr::memrchr(reg.map_bytes[0], haystack),
+            2 => memchr::memrchr2(reg.map_bytes[0], reg.map_bytes[1], haystack),
+            3 => memchr::memrchr3(
+                reg.map_bytes[0],
+                reg.map_bytes[1],
+                reg.map_bytes[2],
+                haystack,
+            ),
+            _ => {
+                // C's loop, one character at a time.
+                let mut s = right;
+                loop {
+                    if reg.map[text[s] as usize] != 0 {
+                        return Some(s);
+                    }
+                    if s <= adjust_text {
+                        return None;
+                    }
+                    s = left_adjust_char_head(enc, text, adjust_text, s - 1);
+                    if s < text_start {
+                        return None;
+                    }
                 }
             }
-            None
+        };
+        let pos = text_start + found?;
+        if backward_scan_visits(enc, text, adjust_text, first, pos) {
+            return Some(pos);
         }
+        if pos == 0 {
+            break;
+        }
+        right = pos - 1;
     }
+    None
 }
 
 /// Left-adjust char head (ONIGENC_LEFT_ADJUST_CHAR_HEAD).
@@ -6737,12 +6764,19 @@ fn onig_search_inner_core_with_right_range(
         }
 
         // Fallthrough: position-by-position loop (optimize == None or infinite dist_max gate passed)
+        // C: do { MATCH; s = onigenc_get_prev_char_head(enc, str, s); }
+        //    while (PTR_GE(s, range));
+        // A range inside a character is not rounded down: the head below it
+        // is not tried.
         loop {
             backward_match_and_check!(s, orig_start);
-            if s <= range {
-                break;
+            if s == 0 {
+                break; // C: prev_char_head returns NULL at str
             }
             s = onigenc_get_prev_char_head(enc, str_data, 0, s);
+            if s < range {
+                break;
+            }
         }
 
         return finish_search(
