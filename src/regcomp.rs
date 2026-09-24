@@ -9341,12 +9341,16 @@ pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
         }
     }
 
-    // Set stack pop level based on what captures/features are used
+    // Set stack pop level based on what captures/features are used.
+    // C tests scan_env.num_call here; reg.num_call is reused as the mark/save
+    // id counter in Ferroni, so it does not say whether the pattern calls.
+    // Calls need STACK_POP_LEVEL_ALL so backtracking over CallFrame/Return
+    // entries keeps the subexp call nest counter right (C: POP_CALL).
     let has_callouts = reg.extp.as_ref().is_some_and(|e| e.callout_num != 0);
     if reg.push_mem_end != 0
         || reg.num_repeat != 0
         || reg.num_empty_check != 0
-        || reg.num_call > 0
+        || env.num_call > 0
         || has_callouts
     {
         reg.stack_pop_level = StackPopLevel::All;

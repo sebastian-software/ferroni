@@ -1499,6 +1499,9 @@ pub struct MatchArg {
     pub retry_limit_in_search_counter: u64,
     pub match_stack_limit: u32,
     pub time_limit: u64, // milliseconds, 0 = unlimited
+    /// OP_CALLs made by this search (C: `msa->subexp_call_in_search_counter`),
+    /// counted only while `onig_set_subexp_call_limit_in_search` is non-zero.
+    subexp_call_in_search_counter: u64,
     /// Backtracks since the last clock read (C: `msa->time_counter`). Shared by
     /// every start position of one search, like C's per-search counter.
     time_counter: u64,
@@ -1534,6 +1537,7 @@ impl MatchArg {
             time_limit: TIME_LIMIT.load(Ordering::Relaxed),
             time_counter: 0,
             time_end: None,
+            subexp_call_in_search_counter: 0,
             stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
@@ -1564,6 +1568,7 @@ impl MatchArg {
             time_limit: mp.time_limit,
             time_counter: 0,
             time_end: None,
+            subexp_call_in_search_counter: 0,
             stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
@@ -1589,6 +1594,7 @@ impl MatchArg {
         self.retry_limit_in_match = RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed);
         self.retry_limit_in_search = RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed);
         self.retry_limit_in_search_counter = 0;
+        self.subexp_call_in_search_counter = 0;
         self.match_stack_limit = MATCH_STACK_LIMIT.load(Ordering::Relaxed);
         self.time_limit = TIME_LIMIT.load(Ordering::Relaxed);
         self.start_time_limit();
@@ -1609,6 +1615,7 @@ impl MatchArg {
         self.best_s = 0;
         self.skip_search = 0;
         self.retry_limit_in_search_counter = 0;
+        self.subexp_call_in_search_counter = 0;
         self.start_time_limit();
     }
 
@@ -1674,6 +1681,7 @@ fn check_stack_limit(stack_len: usize, limit: u32) -> Result<(), i32> {
 /// Restores mem_start_stk/mem_end_stk as needed based on pop_level.
 /// Handles callout retraction when reg/callout_data are provided.
 /// Returns Some((pcode, pstr, zid)) from the ALT entry, or None if stack is empty.
+#[allow(clippy::too_many_arguments)]
 fn stack_pop(
     stack: &mut Vec<StackEntry>,
     pop_level: StackPopLevel,
@@ -1682,6 +1690,7 @@ fn stack_pop(
     reg: &RegexType,
     callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
     str_data: &[u8],
+    subexp_call_nest_counter: &mut u64,
 ) -> Option<(usize, usize, i32)> {
     loop {
         let entry = stack.pop()?;
@@ -1772,8 +1781,15 @@ fn stack_pop(
                             // Retraction callback
                             run_builtin_callout_retraction(reg, *num, *id, callout_data);
                         }
-                        // RepeatInc, EmptyCheckStart, CallFrame, Return:
-                        // handled implicitly (popping removes them)
+                        // C: POP_CALL
+                        StackEntry::Return => {
+                            *subexp_call_nest_counter = subexp_call_nest_counter.wrapping_add(1);
+                        }
+                        StackEntry::CallFrame { .. } => {
+                            *subexp_call_nest_counter = subexp_call_nest_counter.wrapping_sub(1);
+                        }
+                        // RepeatInc, EmptyCheckStart: handled implicitly
+                        // (popping removes them)
                         _ => {}
                     }
                 }
@@ -1785,13 +1801,15 @@ fn stack_pop(
 /// Pop stack entries until a Mark with matching zid is found (STACK_POP_TO_MARK).
 /// Removes ALL entries. Restores mem_start_stk/mem_end_stk from every popped
 /// MemStart/MemEnd entry, so captures set inside a failed (?!..) or (?<!..)
-/// body are rolled back. Like C, callouts are not retracted here.
+/// body are rolled back, and popped CallFrame/Return entries adjust the call
+/// nest counter (C: POP_CALL). Like C, callouts are not retracted here.
 /// Returns the saved position from the Mark entry (if any).
 fn stack_pop_to_mark(
     stack: &mut Vec<StackEntry>,
     mark_id: usize,
     mem_start_stk: &mut [MemPtr],
     mem_end_stk: &mut [MemPtr],
+    subexp_call_nest_counter: &mut u64,
 ) -> Option<usize> {
     loop {
         let entry = stack.pop()?;
@@ -1816,6 +1834,13 @@ fn stack_pop_to_mark(
             } => {
                 mem_start_stk[*zid] = *prev_start;
                 mem_end_stk[*zid] = *prev_end;
+            }
+            // C: POP_CALL
+            StackEntry::Return => {
+                *subexp_call_nest_counter = subexp_call_nest_counter.wrapping_add(1);
+            }
+            StackEntry::CallFrame { .. } => {
+                *subexp_call_nest_counter = subexp_call_nest_counter.wrapping_sub(1);
             }
             _ => {}
         }
@@ -3271,6 +3296,14 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     let mut retry_in_match_counter: u64 = 0;
     let match_stack_limit = msa.match_stack_limit;
     let time_limit_ms = msa.time_limit;
+
+    // Subexpression call limits (C: `subexp_call_nest_counter`,
+    // `SubexpCallMaxNestLevel` and `SubexpCallLimitInSearch`). Like C, the
+    // int nest level is compared as an unsigned long, so a negative level
+    // never trips.
+    let mut subexp_call_nest_counter: u64 = 0;
+    let subexp_call_max_nest_level = onig_get_subexp_call_max_nest_level() as i64 as u64;
+    let subexp_call_limit_in_search = onig_get_subexp_call_limit_in_search();
 
     // Callout data: per-callout mutable slots (indexed by callout num - 1)
     let callout_count = reg.extp.as_ref().map_or(0, |e| e.callout_num as usize);
@@ -4908,6 +4941,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         id as usize,
                         &mut mem_start_stk,
                         &mut mem_end_stk,
+                        &mut subexp_call_nest_counter,
                     );
                     p += 1;
                 } else {
@@ -5368,9 +5402,21 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // ================================================================
             OpCode::Call => {
                 if let OperationPayload::Call { addr } = reg.ops[p].payload {
-                    let addr = addr as usize;
-                    stack.push(StackEntry::CallFrame { ret_addr: p + 1 });
-                    p = addr;
+                    if subexp_call_nest_counter == subexp_call_max_nest_level {
+                        goto_fail = true;
+                    } else {
+                        subexp_call_nest_counter += 1;
+                        if subexp_call_limit_in_search != 0 {
+                            msa.subexp_call_in_search_counter += 1;
+                            if msa.subexp_call_in_search_counter > subexp_call_limit_in_search {
+                                best_len = ONIGERR_SUBEXP_CALL_LIMIT_IN_SEARCH_OVER;
+                                break;
+                            }
+                        }
+                        let addr = addr as usize;
+                        stack.push(StackEntry::CallFrame { ret_addr: p + 1 });
+                        p = addr;
+                    }
                 } else {
                     goto_fail = true;
                 }
@@ -5398,6 +5444,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 }
                 if let Some(ra) = ret_addr {
                     stack.push(StackEntry::Return);
+                    subexp_call_nest_counter = subexp_call_nest_counter.wrapping_sub(1);
                     p = ra;
                 } else {
                     goto_fail = true;
@@ -5493,6 +5540,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 reg,
                 &mut callout_data,
                 str_data,
+                &mut subexp_call_nest_counter,
             );
             match pop_result {
                 Some((pcode, pstr, alt_zid)) => {
