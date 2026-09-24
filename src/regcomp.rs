@@ -721,7 +721,7 @@ fn compile_length_string_crude_node(node: &Node, reg: &RegexType) -> i32 {
     if sn.s.is_empty() {
         return 0;
     }
-    SIZE_INC
+    add_compile_string_length(&sn.s, 1 /* sb */, sn.s.len() as i32)
 }
 
 /// Compile a string node to bytecode.
@@ -768,20 +768,7 @@ fn compile_string_crude_node(node: &Node, reg: &mut RegexType) -> i32 {
         return 0;
     }
 
-    let byte_len = sn.s.len();
-    let payload = if byte_len <= 16 {
-        let mut buf = [0u8; 16];
-        buf[..byte_len].copy_from_slice(&sn.s[..byte_len]);
-        OperationPayload::Exact { s: buf }
-    } else {
-        OperationPayload::ExactN {
-            s: sn.s.clone(),
-            n: byte_len as i32,
-        }
-    };
-
-    add_op(reg, select_str_opcode(1, byte_len as i32), payload);
-    0
+    add_compile_string(reg, &sn.s, 1 /* sb */, sn.s.len() as i32)
 }
 
 // ============================================================================
@@ -9397,6 +9384,34 @@ mod tests {
 
         assert_eq!(reg.syntax.op, 0);
         assert_eq!(onig_compile(&mut reg, b"literal"), 0);
+    }
+
+    /// A crude string compiles through add_compile_string like in C, so
+    /// lengths 6..=16 get the `StrN` opcode with the `ExactN` payload the VM
+    /// expects, not a fixed-size `Exact` buffer that never matches.
+    #[test]
+    fn compile_crude_string_uses_str_n_payload() {
+        for len in 1..=20usize {
+            let (mut reg, env) = make_test_context();
+            let bytes = vec![b'a'; len];
+            let node = crate::regparse_types::node_new_str_crude(&bytes, ONIG_OPTION_NONE);
+            assert_eq!(compile_tree(&node, &mut reg, &env), 0);
+            assert_eq!(reg.ops.len(), 1);
+            let op = &reg.ops[0];
+            assert_eq!(op.opcode, select_str_opcode(1, len as i32));
+            match &op.payload {
+                OperationPayload::Exact { s } => {
+                    assert!(len <= 5, "len {len} compiled to Exact");
+                    assert_eq!(&s[..len], &bytes[..]);
+                }
+                OperationPayload::ExactN { s, n } => {
+                    assert!(len > 5, "len {len} compiled to ExactN");
+                    assert_eq!(*n as usize, len);
+                    assert_eq!(s, &bytes);
+                }
+                _ => panic!("len {len} compiled to an unexpected payload"),
+            }
+        }
     }
 
     #[test]
