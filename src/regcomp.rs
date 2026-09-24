@@ -45,6 +45,43 @@ const EXACT_REPEAT_UNROLL_THRESHOLD: i32 = 16;
 /// `{n,m}` ranges use the bounded REPEAT/REPEAT_INC bytecode instead.
 const QUANTIFIER_EXPAND_LIMIT_SIZE: OnigLen = 10;
 
+thread_local! {
+    /// Set while `upstream_body_len` measures a body the way C would.
+    static UPSTREAM_LENGTH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn upstream_length() -> bool {
+    UPSTREAM_LENGTH.with(|flag| flag.get())
+}
+
+/// The length C gives a quantifier body, for the decisions C bases on it:
+/// expanding `{n,}` / `{n,m}` or using REPEAT, and jumping into a large
+/// `+` body. For a body that can match empty they are observable, since
+/// only the REPEAT and jump forms run the first iterations through the
+/// empty check. The Rust-only star opcodes and fused look-behinds (ADR-008)
+/// compile shorter than C's code, so such a body is measured again without
+/// them. They only ever shorten the code, so a body already over the limit
+/// is not measured again.
+fn upstream_body_len(
+    body: &Node,
+    body_len: i32,
+    can_be_empty: bool,
+    reg: &RegexType,
+    env: &ParseEnv,
+) -> i32 {
+    if !can_be_empty
+        || body_len < 0
+        || body_len as OnigLen > QUANTIFIER_EXPAND_LIMIT_SIZE
+        || upstream_length()
+    {
+        return body_len;
+    }
+    UPSTREAM_LENGTH.with(|flag| flag.set(true));
+    let len = compile_length_tree(body, reg, env);
+    UPSTREAM_LENGTH.with(|flag| flag.set(false));
+    len
+}
+
 /// Get encoded character length from a byte slice (for optimization functions).
 fn enclen(enc: OnigEncoding, p: &[u8], _offset: usize) -> usize {
     if p.is_empty() {
@@ -1161,20 +1198,23 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         return SIZE_INC + tlen * qn.lower;
     }
 
+    // The Rust-only star forms below are skipped when measuring C's length.
+    let rust_only = !upstream_length();
+
     // CClass star/plus optimization: [class]* or [class]+ (negated too)
-    if is_cclass_infinite_greedy(qn) && body.as_cclass().is_some() {
+    if rust_only && is_cclass_infinite_greedy(qn) && body.as_cclass().is_some() {
         let tlen = compile_length_tree(body, reg, env);
         return SIZE_INC + tlen * qn.lower;
     }
 
     // Single ASCII byte star/plus: c* or c+ (runs as [c]*)
-    if single_ascii_byte_star(qn).is_some() {
+    if rust_only && single_ascii_byte_star(qn).is_some() {
         let tlen = compile_length_tree(body, reg, env);
         return SIZE_INC + tlen * qn.lower;
     }
 
     // Word ctype star/plus optimization: \w* or \w+
-    if let Some((not, _ascii_mode)) = is_word_ctype_infinite_greedy(qn) {
+    if let Some((not, _ascii_mode)) = is_word_ctype_infinite_greedy(qn).filter(|_| rust_only) {
         if !not {
             let tlen = compile_length_tree(body, reg, env);
             return SIZE_INC + tlen * qn.lower;
@@ -1182,7 +1222,7 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
     }
 
     // Alt-CClass fusion: (?:CClass|B)* or (?:CClass|B)+
-    if let Some((_cc, cdr)) = is_alt_cclass_first_infinite_greedy(qn) {
+    if let Some((_cc, cdr)) = is_alt_cclass_first_infinite_greedy(qn).filter(|_| rust_only) {
         let cdr_len = compile_length_tree(cdr, reg, env);
         let body_len = compile_length_tree(body, reg, env);
         // Layout: [body × lower] + CClassStar(1) + PUSH(1) + cdr + JUMP(1)
@@ -1201,6 +1241,7 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         0
     };
     let mod_tlen = body_len + empty_len;
+    let c_body_len = upstream_body_len(body, body_len, is_empty, reg, env);
 
     if is_infinite_repeat(qn.upper) {
         if qn.lower <= 1 {
@@ -1215,13 +1256,13 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
             };
             // C: a `+` over a large body jumps into the loop body instead of
             // emitting the body once more for the mandatory first pass.
-            let first_pass = if qn.lower == 1 && body_len > QUANTIFIER_EXPAND_LIMIT_SIZE as i32 {
+            let first_pass = if qn.lower == 1 && c_body_len > QUANTIFIER_EXPAND_LIMIT_SIZE as i32 {
                 OPSIZE_JUMP
             } else {
                 body_len * qn.lower
             };
             first_pass + push_size + mod_tlen + OPSIZE_JUMP
-        } else if expand_infinite_quantifier(qn, body_len) {
+        } else if expand_infinite_quantifier(qn, c_body_len) {
             // {n,} or {n,}?
             let n_body_len = compile_length_tree_n_times(body, qn.lower, reg, env);
             n_body_len + OPSIZE_PUSH + mod_tlen + OPSIZE_JUMP
@@ -1247,7 +1288,7 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         OPSIZE_PUSH + OPSIZE_JUMP + body_len
     } else if qn.greedy
         && !is_infinite_repeat(qn.upper)
-        && can_expand_finite_greedy_quantifier(body_len, qn.upper)
+        && can_expand_finite_greedy_quantifier(c_body_len, qn.upper)
     {
         // Greedy expansion: lower*body + (upper-lower)*(PUSH+body)
         let n = qn.upper - qn.lower;
@@ -1462,6 +1503,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
         0
     };
     let mod_tlen = body_len + empty_len;
+    let c_body_len = upstream_body_len(body, body_len, is_empty, reg, env);
 
     if is_infinite_repeat(qn.upper) {
         if qn.lower <= 1 {
@@ -1470,7 +1512,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             // jumps over the PUSH into the loop body instead, so nested
             // quantifiers grow the bytecode linearly rather than doubling it
             // at every level.
-            let jump_into_body = qn.lower == 1 && body_len > QUANTIFIER_EXPAND_LIMIT_SIZE as i32;
+            let jump_into_body = qn.lower == 1 && c_body_len > QUANTIFIER_EXPAND_LIMIT_SIZE as i32;
             if jump_into_body {
                 let addr = if !qn.greedy {
                     OPSIZE_JUMP + SIZE_INC
@@ -1589,7 +1631,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                     OperationPayload::Push { addr: -mod_tlen },
                 );
             }
-        } else if !expand_infinite_quantifier(qn, body_len) {
+        } else if !expand_infinite_quantifier(qn, c_body_len) {
             return compile_range_repeat_node(qn, body, mod_tlen, reg, env);
         } else {
             // {n,} with n >= 2
@@ -1717,7 +1759,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
     } else if qn.greedy
         && !is_infinite_repeat(qn.upper)
         // Keep this in sync with compile_length_quantifier_node above.
-        && can_expand_finite_greedy_quantifier(body_len, qn.upper)
+        && can_expand_finite_greedy_quantifier(c_body_len, qn.upper)
     {
         // Greedy expansion: body*lower + (upper-lower) * (PUSH + body)
         let r = compile_tree_n_times(body, qn.lower, reg, env);
@@ -2247,6 +2289,9 @@ fn fused_look_behind_body<'a>(
     }
     #[cfg(test)]
     if FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.get()) {
+        return None;
+    }
+    if upstream_length() {
         return None;
     }
     let body = an.body.as_deref()?;
@@ -10429,6 +10474,53 @@ mod tests {
         );
         assert!(!opcodes(b"a*?").contains(&OpCode::CClassStar));
         assert!(!opcodes("é*".as_bytes()).contains(&OpCode::CClassStar));
+    }
+
+    /// C decides between expanding `{n,}` and REPEAT by its own body
+    /// length, and only REPEAT sends the first iterations through the empty
+    /// check. The shorter Rust-only star opcodes must not change that
+    /// choice. Expected spans are C Oniguruma's.
+    #[test]
+    fn star_opcodes_keep_the_upstream_repeat_choice() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::onig_search;
+
+        type Case = (&'static str, &'static str, i32, &'static [(i32, i32)]);
+        let cases: &[Case] = &[
+            (r"(\Ab*){2,}", "b", 0, &[(0, 0), (0, 0)]),
+            (r"(\A[b]*){2,}", "bb", 0, &[(0, 0), (0, 0)]),
+            (r"(\A[b]*){2,}?", "bbc", 0, &[(0, 0), (0, 0)]),
+            (r"(\A\w*){2,}", "b", 0, &[(0, 0), (0, 0)]),
+            (r"(\A\w*){2,}c", "bbc", ONIG_MISMATCH, &[]),
+            (r"(\A\w*){2,}c", "cbb", 0, &[(0, 1), (0, 0)]),
+        ];
+        for &(pattern, input, want, spans) in cases {
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let input = input.as_bytes();
+            let (r, region) = onig_search(
+                &reg,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(r, want, "{pattern} on {input:?}");
+            if r >= 0 {
+                let region = region.unwrap();
+                let got: Vec<(i32, i32)> = (0..region.num_regs as usize)
+                    .map(|i| (region.beg[i], region.end[i]))
+                    .collect();
+                assert_eq!(got, spans, "{pattern} on {input:?}");
+            }
+        }
     }
 
     #[test]
