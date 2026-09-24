@@ -5037,17 +5037,6 @@ fn collect_backref_groups(node: &Node, groups: &mut Vec<i32>) {
     }
 }
 
-/// C: check_backrefs — flags every capture that a back-reference names with
-/// ND_ST_BACKREF, which check_node_in_look_behind() reads. (The group
-/// numbers themselves are validated by the parser.)
-fn check_backrefs(root: &mut Node) {
-    let mut groups = Vec::new();
-    collect_backref_groups(root, &mut groups);
-    if !groups.is_empty() {
-        mark_groups_status(root, &groups, ND_ST_BACKREF);
-    }
-}
-
 fn mark_groups_status(node: &mut Node, groups: &[i32], status: u32) {
     if let NodeInner::Bag(bn) = &node.inner {
         if bn.bag_type == BagType::Memory && groups.contains(&bn.regnum()) {
@@ -6000,6 +5989,80 @@ fn renumber_backref_traverse(node: &mut Node, map: &[GroupNumMap]) -> i32 {
                 if let Some(ref mut body) = a.body {
                     return renumber_backref_traverse(body, map);
                 }
+            }
+            0
+        }
+        _ => 0,
+    }
+}
+
+/// Mirrors C's check_backrefs(): reject a backref to a group the pattern does
+/// not have, and flag every referenced capture with ND_ST_BACKREF, which
+/// check_node_in_look_behind() reads. It runs after the
+/// CAPTURE_ONLY_NAMED_GROUP check, so a numbered backref there is reported as
+/// not allowed first. C sets the flag through mem_env; Ferroni marks the
+/// capture nodes in a second walk.
+fn check_backrefs(root: &mut Node, env: &ParseEnv) -> i32 {
+    let r = check_backrefs_bounds(root, env);
+    if r != 0 {
+        return r;
+    }
+    let mut groups = Vec::new();
+    collect_backref_groups(root, &mut groups);
+    if !groups.is_empty() {
+        mark_groups_status(root, &groups, ND_ST_BACKREF);
+    }
+    0
+}
+
+fn check_backrefs_bounds(node: &Node, env: &ParseEnv) -> i32 {
+    match &node.inner {
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            let mut cur = Some(node);
+            while let Some(n) = cur {
+                let (NodeInner::List(cons) | NodeInner::Alt(cons)) = &n.inner else {
+                    break;
+                };
+                let r = check_backrefs_bounds(&cons.car, env);
+                if r != 0 {
+                    return r;
+                }
+                cur = cons.cdr.as_deref();
+            }
+            0
+        }
+        NodeInner::Anchor(an) => match an.body {
+            Some(ref body) => check_backrefs_bounds(body, env),
+            None => 0,
+        },
+        NodeInner::Quant(qn) => match qn.body {
+            Some(ref body) => check_backrefs_bounds(body, env),
+            None => 0,
+        },
+        NodeInner::Bag(bn) => {
+            if let Some(ref body) = bn.body {
+                let r = check_backrefs_bounds(body, env);
+                if r != 0 {
+                    return r;
+                }
+            }
+            if let BagData::IfElse {
+                ref then_node,
+                ref else_node,
+            } = bn.bag_data
+            {
+                for branch in [then_node, else_node].into_iter().flatten() {
+                    let r = check_backrefs_bounds(branch, env);
+                    if r != 0 {
+                        return r;
+                    }
+                }
+            }
+            0
+        }
+        NodeInner::BackRef(br) => {
+            if br.back_refs().iter().any(|&b| b > env.num_mem) {
+                return ONIGERR_INVALID_BACKREF;
             }
             0
         }
@@ -9260,14 +9323,17 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
         }
     }
 
+    let r = check_backrefs(&mut root, env);
+    if r != 0 {
+        return r;
+    }
+
     // Optimize: consolidate adjacent string nodes (mirrors C's reduce_string_list)
     let r = reduce_string_list(&mut root, reg.enc);
     if r != 0 {
         return r;
     }
     refresh_node_references(&mut root, env);
-
-    check_backrefs(&mut root);
 
     // Resolve subroutine call references before tune_tree
     if env.num_call > 0 {
