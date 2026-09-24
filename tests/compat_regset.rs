@@ -10,7 +10,7 @@ use ferroni::regset::{
     OnigRegSet, OnigRegSetLead, onig_regset_get_region, onig_regset_new, onig_regset_search,
 };
 use ferroni::regsyntax::OnigSyntaxOniguruma;
-use ferroni::scanner::{Scanner, ScannerFindOptions};
+use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch, ScannerSyntax};
 
 fn compile(pattern: &[u8]) -> Box<RegexType> {
     let reg = onig_new(
@@ -557,4 +557,77 @@ fn scanner_anychar_star_matches_at_a_mid_line_start_position() {
     assert_eq!(matched.index, 1);
     assert_eq!(matched.capture_indices[0].start, 5);
     assert_eq!(matched.capture_indices[0].end, 10);
+}
+
+fn capture_spans(matched: &ScannerMatch) -> Vec<(usize, usize)> {
+    matched
+        .capture_indices
+        .iter()
+        .map(|capture| (capture.start, capture.end))
+        .collect()
+}
+
+fn config_without_capture_group() -> ScannerConfig {
+    ScannerConfig {
+        options: ONIG_OPTION_NONE,
+        syntax: ScannerSyntax::default(),
+    }
+}
+
+#[test]
+fn scanner_config_default_enables_capture_group() {
+    assert_eq!(ScannerConfig::default().options, ONIG_OPTION_CAPTURE_GROUP);
+}
+
+#[test]
+fn scanner_keeps_unnamed_captures_next_to_named_groups_by_default() {
+    let mut scanner = Scanner::new(&["(x)(?<n>y)(z)"]).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("xyz", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(matched.index, 0);
+    assert_eq!(capture_spans(&matched), [(0, 3), (0, 1), (1, 2), (2, 3)]);
+}
+
+#[test]
+fn scanner_keeps_captures_of_the_go_grammar_function_call_pattern() {
+    // From Go's TextMate grammar: a named recursive `brackets` group next to
+    // the unnamed groups that the grammar's `captures` refer to by number.
+    let pattern = r"(?:((?<=\.)\b\w+)|\b(\w+))(?<brackets>\[(?:[^]\[]|\g<brackets>)*])?(?=\()";
+    let mut scanner = Scanner::new(&[pattern]).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("\tfmt.Println(\"Hello\")", 5, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(matched.index, 0);
+    assert_eq!(matched.capture_indices.len(), 4);
+    assert_eq!(capture_spans(&matched)[..2], [(5, 12), (5, 12)]);
+}
+
+#[test]
+fn scanner_allows_numbered_backrefs_next_to_named_groups_by_default() {
+    let mut scanner = Scanner::new(&[r"(?<n>a)(b)\2"]).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("abb", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(matched.index, 0);
+    assert_eq!(capture_spans(&matched)[0], (0, 3));
+}
+
+#[test]
+fn scanner_config_without_capture_group_restores_named_group_rules() {
+    let config = config_without_capture_group();
+    let mut scanner = Scanner::with_config(&["(x)(?<n>y)(z)"], &config).expect("scanner");
+
+    let matched = scanner
+        .find_next_match("xyz", 0, ScannerFindOptions::NONE)
+        .expect("match");
+
+    assert_eq!(capture_spans(&matched), [(0, 3), (1, 2)]);
+    assert!(Scanner::with_config(&[r"(?<n>a)(b)\2"], &config).is_err());
 }
