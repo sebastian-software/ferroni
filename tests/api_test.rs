@@ -2,9 +2,12 @@
 
 use ferroni::api::{Regex, RegexBuilder};
 use ferroni::error::RegexError;
-use ferroni::oniguruma::ONIGERR_INVALID_BACKREF;
+use ferroni::oniguruma::{ONIGERR_INVALID_BACKREF, OnigSyntaxType};
 use ferroni::prelude::*;
 use ferroni::regint::DEFAULT_PARSE_DEPTH_LIMIT;
+use ferroni::regsyntax::{
+    OnigSyntaxOniguruma, OnigSyntaxPerl_NG, OnigSyntaxPython, OnigSyntaxRuby,
+};
 
 // === Regex::new ===
 
@@ -481,6 +484,148 @@ fn error_is_std_error() {
 fn error_code() {
     let err = Regex::new(r"(").unwrap_err();
     assert!(err.code() < 0);
+}
+
+// Messages naming a group or property carry the offending name. Every
+// expected string is what C's onig_error_code_to_str() prints for the same
+// pattern and syntax, prefixed with "syntax error: ".
+
+fn error_message(syntax: &'static OnigSyntaxType, pattern: &str) -> String {
+    Regex::builder(pattern)
+        .syntax(syntax)
+        .build()
+        .unwrap_err()
+        .to_string()
+}
+
+#[test]
+fn error_message_names_invalid_char_property() {
+    let cases = [
+        (r"\p{Nope}", "{Nope}"),
+        (r"\p{^Nope}", "{Nope}"),
+        (r"[\p{Nope}]", "{Nope}"),
+        (r"\pQ", "{Q}"),
+        (r"\p{}", "{}"),
+        (r"\p{Ñope}", "{Ñope}"),
+        // C cuts the name after 27 bytes.
+        (
+            r"\p{abcdefghijklmnopqrstuvwxyz0123456789}",
+            "{abcdefghijklmnopqrstuvwxyz0...}",
+        ),
+    ];
+    for (pattern, name) in cases {
+        assert_eq!(
+            Regex::new(pattern).unwrap_err().to_string(),
+            format!("syntax error: invalid character property name {name}"),
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_undefined_name_reference() {
+    let cases = [
+        (&OnigSyntaxOniguruma, r"\k<nope>"),
+        (&OnigSyntaxOniguruma, r"\g<nope>"),
+        (&OnigSyntaxOniguruma, r"(?(<nope>)a|b)"),
+        (&OnigSyntaxPerl_NG, r"(?&nope)"),
+        (&OnigSyntaxPython, r"(?P=nope)"),
+        (&OnigSyntaxPython, r"(?P>nope)"),
+    ];
+    for (syntax, pattern) in cases {
+        assert_eq!(
+            error_message(syntax, pattern),
+            "syntax error: undefined name <nope> reference",
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_undefined_group_reference() {
+    let cases = [
+        (&OnigSyntaxOniguruma, r"\g<5>", "<5>"),
+        (&OnigSyntaxOniguruma, r"\g<+1>", "<+1>"),
+        (&OnigSyntaxOniguruma, r"\g<-2>", "<-2>"),
+        (&OnigSyntaxPerl_NG, r"(?1)", "<1>"),
+        (&OnigSyntaxPerl_NG, r"(?-2)", "<-2>"),
+    ];
+    for (syntax, pattern, name) in cases {
+        assert_eq!(
+            error_message(syntax, pattern),
+            format!("syntax error: undefined group {name} reference"),
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_multiplex_defined_name() {
+    // Oniguruma, Ruby and Perl_NG set ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME;
+    // Python is a syntax with named groups that does not.
+    assert_eq!(
+        error_message(&OnigSyntaxPython, r"(?P<a>x)(?P<a>y)"),
+        "syntax error: multiplex defined name <a>"
+    );
+    // Callout tags are unique in every syntax.
+    for pattern in [
+        r"(*COUNT[AB]{X})(*COUNT[AB]{X})",
+        r"(*COUNT[AB]{X})a(*MAX[AB]{2})",
+    ] {
+        assert_eq!(
+            Regex::new(pattern).unwrap_err().to_string(),
+            "syntax error: multiplex defined name <AB>",
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_multiplex_definition_name_call() {
+    for syntax in [&OnigSyntaxOniguruma, &OnigSyntaxRuby] {
+        assert_eq!(
+            error_message(syntax, r"(?<a>x)(?<a>y)\g<a>"),
+            "syntax error: multiplex definition name <a> call"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_invalid_group_name() {
+    let cases = [
+        (r"(?<1a>x)", "<1a>"),
+        (r"\k<1a>", "<1a>"),
+        (r"\k<+0>", "<+0>"),
+        (r"\k<+>", "<+>"),
+        (r"\k<-x>", "<-x>"),
+        // A bad level runs the name to the end of the pattern, as in C.
+        (r"\k<a+1x>", "<a+1x>>"),
+        (r"\k<1+x>", "<1+x>>"),
+    ];
+    for (pattern, name) in cases {
+        assert_eq!(
+            Regex::new(pattern).unwrap_err().to_string(),
+            format!("syntax error: invalid group name {name}"),
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_invalid_char_in_group_name() {
+    let cases = [
+        (r"(?<$a>x)", "<$a>"),
+        (r"(?<$ab", "<$ab>"),
+        (r"\k<a$b>", "<a$b>"),
+        (r"\k<a$b", "<a$>"),
+    ];
+    for (pattern, name) in cases {
+        assert_eq!(
+            Regex::new(pattern).unwrap_err().to_string(),
+            format!("syntax error: invalid char in group name {name}"),
+            "{pattern}"
+        );
+    }
 }
 
 // === Prelude ===

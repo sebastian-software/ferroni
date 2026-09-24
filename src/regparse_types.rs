@@ -829,8 +829,11 @@ pub struct ParseEnv {
     pub backrefed_mem: MemStatusType,
     pub pattern: *const u8,
     pub pattern_end: *const u8,
-    pub error: *const u8,
-    pub error_end: *const u8,
+    /// The name an error refers to, recorded by `set_error_string` and
+    /// reported through `OnigErrorInfo`. C keeps it as the pointer pair
+    /// `error`/`error_end` into the pattern (or into a node's name); an owned
+    /// copy of the bytes serves both without borrowing from either.
+    pub error: Option<Vec<u8>>,
     pub reg: *mut RegexType,
     pub num_call: i32,
     pub num_mem: i32,
@@ -851,9 +854,9 @@ pub struct ParseEnv {
 }
 
 // SAFETY: the raw pointers in ParseEnv point into data owned by the caller of
-// `onig_parse_tree` for the whole compilation: `pattern`/`pattern_end` (and
-// `error`/`error_end`) into the pattern bytes, `reg` at the RegexType under
-// construction, and the MemEnv slots into the parse tree. A ParseEnv is
+// `onig_parse_tree` for the whole compilation: `pattern`/`pattern_end` into the
+// pattern bytes, `reg` at the RegexType under construction, and the MemEnv
+// slots into the parse tree. A ParseEnv is
 // created per compilation, used on that one thread, and discarded; moving it
 // to another thread is only sound while pattern, regex, and tree are moved or
 // kept alive with it. Sending a ParseEnv beyond the lifetime of those
