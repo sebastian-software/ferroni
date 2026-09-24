@@ -6655,6 +6655,7 @@ fn onig_search_inner_core_with_right_range(
                             reg,
                             str_data,
                             end,
+                            orig_start,
                             msa,
                         );
                     }
@@ -6663,7 +6664,16 @@ fn onig_search_inner_core_with_right_range(
                         break;
                     }
                 }
-                return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
+                return finish_search(
+                    find_longest,
+                    best_start,
+                    best_len,
+                    reg,
+                    str_data,
+                    end,
+                    orig_start,
+                    msa,
+                );
             } else {
                 // dist_max == INFINITE_LEN: single backward_search as gate
                 let sch_start = onigenc_get_prev_char_head(enc, str_data, 0, end);
@@ -6682,7 +6692,16 @@ fn onig_search_inner_core_with_right_range(
             s = onigenc_get_prev_char_head(enc, str_data, 0, s);
         }
 
-        return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
+        return finish_search(
+            find_longest,
+            best_start,
+            best_len,
+            reg,
+            str_data,
+            end,
+            orig_start,
+            msa,
+        );
     }
 
     let mut cur_start = start;
@@ -6857,11 +6876,29 @@ fn onig_search_inner_core_with_right_range(
             }
             // C: goto mismatch -- optimized search exhausted, do not fall
             // through to the byte-by-byte loop below.
-            return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
+            return finish_search(
+                find_longest,
+                best_start,
+                best_len,
+                reg,
+                str_data,
+                end,
+                data_range,
+                msa,
+            );
         } else {
             // Infinite dist_max: just check once, then fall through to normal loop
             if forward_search(reg, str_data, end, s, sch_range).is_none() {
-                return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
+                return finish_search(
+                    find_longest,
+                    best_start,
+                    best_len,
+                    reg,
+                    str_data,
+                    end,
+                    data_range,
+                    msa,
+                );
             }
             // ANCR_ANYCHAR_INF: skip past newlines
             if (reg.anchor & ANCR_ANYCHAR_INF) != 0
@@ -6907,7 +6944,16 @@ fn onig_search_inner_core_with_right_range(
                         }
                     }
                 }
-                return finish_search(find_longest, best_start, best_len, reg, str_data, end, msa);
+                return finish_search(
+                    find_longest,
+                    best_start,
+                    best_len,
+                    reg,
+                    str_data,
+                    end,
+                    data_range,
+                    msa,
+                );
             }
             // Fall through to normal position loop below
         }
@@ -6961,9 +7007,19 @@ fn onig_search_inner_core_with_right_range(
         }
     }
 
-    finish_search(find_longest, best_start, best_len, reg, str_data, end, msa)
+    finish_search(
+        find_longest,
+        best_start,
+        best_len,
+        reg,
+        str_data,
+        end,
+        data_range,
+        msa,
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_search(
     find_longest: bool,
     best_start: i32,
@@ -6971,6 +7027,7 @@ fn finish_search(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
+    upper_range: usize,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     if find_longest && best_start != ONIG_MISMATCH {
@@ -6979,7 +7036,10 @@ fn finish_search(
         }
         msa.best_len = ONIG_MISMATCH;
         msa.best_s = 0;
-        match_at(reg, str_data, end, end, best_start as usize, msa);
+        // Replay the winner with the upper range every attempt used (C:
+        // MATCH_AND_RETURN_CHECK(orig_start / data_range)); C keeps the
+        // region that attempt recorded.
+        match_at(reg, str_data, end, upper_range, best_start as usize, msa);
         return (best_start, msa.region.take());
     }
     (ONIG_MISMATCH, msa.region.take())

@@ -480,6 +480,43 @@ fn option_find_longest() {
     x2(ONIG_OPTION_FIND_LONGEST, b"\\w+", b"abc defg hij", 4, 8);
 }
 
+// The longest match is bounded by the same upper range as every attempt:
+// `range` for a forward search, one character past `start` for a backward
+// one. Expectations checked against C Oniguruma.
+#[test]
+fn option_find_longest_respects_search_upper_range() {
+    // (pattern, subject, start, range, expected span)
+    for (pattern, input, start, range, span) in [
+        (&b"(?m)^.*$"[..], &b"a\nb"[..], 1, 0, (0, 1)),
+        (b"^\\s*$", b"\n\n\n", 1, 0, (0, 2)),
+        (b"(?m).*$", b"a\nb", 0, 2, (0, 1)),
+    ] {
+        let reg = onig_new(
+            pattern,
+            ONIG_OPTION_FIND_LONGEST,
+            &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        let (result, region) = onig_search(
+            &reg,
+            input,
+            input.len(),
+            start,
+            range,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_FIND_LONGEST,
+        );
+        let region = region.unwrap();
+        assert_eq!(
+            (result, (region.beg[0], region.end[0])),
+            (span.0, span),
+            "{:?} on {input:?} start={start} range={range}",
+            std::str::from_utf8(pattern).unwrap()
+        );
+    }
+}
+
 #[test]
 fn option_find_not_empty() {
     x2(
