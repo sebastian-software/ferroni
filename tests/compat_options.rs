@@ -171,6 +171,22 @@ fn n(options: OnigOptionType, pattern: &[u8], input: &[u8]) {
 const OIA: OnigOptionType = ONIG_OPTION_IGNORECASE.union(ONIG_OPTION_IGNORECASE_IS_ASCII);
 
 #[test]
+fn option_ignorecase_hex_escape() {
+    // \xNN escapes fold like literals under the option (checked against C).
+    x2(ONIG_OPTION_IGNORECASE, b"\\x61", b"A", 0, 1);
+    x2(ONIG_OPTION_IGNORECASE, b"\\x61b", b"AB", 0, 2);
+    x2(
+        ONIG_OPTION_IGNORECASE,
+        b"\\x61\\x61\\x61\\x61\\x61\\x61",
+        b"xAaAaAa",
+        1,
+        7,
+    );
+    x2(ONIG_OPTION_IGNORECASE, b"\\xC3\\xA9", "É".as_bytes(), 0, 2);
+    n(ONIG_OPTION_IGNORECASE, b"(?-i)\\x61", b"A");
+}
+
+#[test]
 fn option_ignorecase_basic() {
     x2(ONIG_OPTION_IGNORECASE, b"a", b"A", 0, 1);
 }
