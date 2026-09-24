@@ -448,6 +448,7 @@ impl ParseEnv {
         self.saves = None;
         self.unset_addr_list = None;
         self.flags = 0;
+        self.recursive_mem.clear();
     }
 
     pub fn add_mem_entry(&mut self) -> Result<i32, i32> {
@@ -7661,6 +7662,7 @@ mod tests {
             parse_depth: 0,
             ast_node_count: 0,
             flags: 0,
+            recursive_mem: Vec::new(),
         };
         (reg, env)
     }

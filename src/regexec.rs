@@ -1849,11 +1849,10 @@ fn stack_pop_to_mark(
 }
 
 /// Void stack entries until a Mark with matching zid is found (STACK_TO_VOID_TO_MARK).
-/// Only voids "void targets" (regular Alt, EmptyCheckStart, Mark) by setting them to Void.
-/// Preserves non-void targets (SuperAlt, SaveVal, MemStart, MemEnd, RepeatInc, etc.) in place.
-/// Void stack entries from top to the Mark with matching id (C: STACK_TO_VOID_TO_MARK).
-/// Returns the mark's saved position. Voids regular Alt and EmptyCheckStart entries,
-/// but preserves Super Alt entries and Marks with different IDs.
+/// Only voids "void targets" (regular Alt, EmptyCheckStart, EmptyCheckEnd, Mark) by setting
+/// them to Void. Preserves non-void targets (SuperAlt, SaveVal, MemStart, MemEnd, RepeatInc,
+/// etc.) in place.
+/// Returns the mark's saved position. Preserves Super Alt entries and Marks with different IDs.
 fn stack_void_to_mark(stack: &mut [StackEntry], mark_id: usize) -> Option<usize> {
     let mut i = stack.len();
     while i > 0 {
@@ -1868,7 +1867,8 @@ fn stack_void_to_mark(stack: &mut [StackEntry], mark_id: usize) -> Option<usize>
             // Different id mark: don't void, just skip
             continue;
         }
-        // Void targets: regular Alt and EmptyCheckStart
+        // Void targets (C: STK_MASK_TO_VOID_TARGET): regular Alt,
+        // EmptyCheckStart and EmptyCheckEnd.
         // Super Alt (is_super=true) is NOT voided — it survives cuts
         let is_void_target = matches!(
             &stack[i],
@@ -1877,6 +1877,7 @@ fn stack_void_to_mark(stack: &mut [StackEntry], mark_id: usize) -> Option<usize>
                 ..
             } | StackEntry::AltLazy { .. }
                 | StackEntry::EmptyCheckStart { .. }
+                | StackEntry::EmptyCheckEnd { .. }
         );
         if is_void_target {
             stack[i] = StackEntry::Void;
@@ -1911,82 +1912,105 @@ fn stack_empty_check(stack: &[StackEntry], zid: usize, s: usize) -> bool {
     false
 }
 
-/// Memory-aware empty check. Returns true only if position is same AND no capture
-/// groups (indicated by empty_status_mem) have changed since the EmptyCheckStart.
-/// Mirrors C's STACK_EMPTY_CHECK_MEM.
-/// Check if a quantifier iteration was empty (position unchanged).
-/// Returns: false = not empty (position changed or captures changed),
-///          true = truly empty (pos same AND captures same)
+/// C: `STACK_AT(ptr.i)->u.mem.pstr` -- the string position of the capture
+/// start or end that a saved `mem_start_stk`/`mem_end_stk` value refers to.
+/// C only ever reads stack indices here; the port also accepts a plain
+/// position, which is what a non-push capture op stores.
+fn mem_ptr_pstr(stack: &[StackEntry], ptr: MemPtr) -> Option<usize> {
+    if let Some(pos) = ptr.as_pos() {
+        return Some(pos);
+    }
+    match stack.get(ptr.as_stack_idx()?)? {
+        StackEntry::MemStart { pstr, .. } | StackEntry::MemEnd { pstr, .. } => Some(*pstr),
+        _ => None,
+    }
+}
+
+/// The per-capture test of C's STACK_EMPTY_CHECK_MEM and
+/// STACK_EMPTY_CHECK_MEM_REC (USE_RIGID_CHECK_CAPTURES_IN_EMPTY_REPEAT).
+///
+/// `kk_*` are the saved start/end of the MEM_START pushed inside the
+/// iteration (the capture before the iteration), `k_*` the saved start and
+/// the position of the MEM_END that closed it (the capture after it). The
+/// iteration changed the capture unless both are the same range, or both are
+/// empty ranges.
+fn empty_check_mem_changed(
+    stack: &[StackEntry],
+    kk_prev_start: MemPtr,
+    kk_prev_end: MemPtr,
+    k_prev_start: MemPtr,
+    k_pstr: usize,
+) -> bool {
+    if kk_prev_end.is_invalid() {
+        return true;
+    }
+    let (Some(old_end), Some(old_start), Some(new_start)) = (
+        mem_ptr_pstr(stack, kk_prev_end),
+        mem_ptr_pstr(stack, kk_prev_start),
+        mem_ptr_pstr(stack, k_prev_start),
+    ) else {
+        // Unreachable when the saved indices are valid, as in C. Treat the
+        // capture as unchanged so the loop still terminates.
+        return false;
+    };
+    (old_end != k_pstr || old_start != new_start) && (new_start != k_pstr || old_start != old_end)
+}
+
+/// Memory-aware empty check (C: STACK_EMPTY_CHECK_MEM).
+///
+/// Returns true only if the string position has not advanced since the
+/// matching EMPTY_CHECK_START *and* no capture in `empty_status_mem` changed
+/// during the iteration.
 fn stack_empty_check_mem(
     stack: &[StackEntry],
     zid: usize,
     s: usize,
     empty_status_mem: u32,
-    _reg: &RegexType,
-    _mem_start_stk: &[MemPtr],
-    _mem_end_stk: &[MemPtr],
 ) -> bool {
-    // Find the EmptyCheckStart entry
-    let mut klow_idx = None;
-    for (i, entry) in stack.iter().enumerate().rev() {
-        if let StackEntry::EmptyCheckStart { zid: id, pstr } = entry {
-            if *id == zid {
-                if *pstr != s {
-                    return false; // position changed → not empty
-                }
-                klow_idx = Some(i);
-                break;
-            }
+    // GET_EMPTY_CHECK_START
+    let Some(klow) = stack
+        .iter()
+        .rposition(|e| matches!(e, StackEntry::EmptyCheckStart { zid: id, .. } if *id == zid))
+    else {
+        return false;
+    };
+    if let StackEntry::EmptyCheckStart { pstr, .. } = &stack[klow] {
+        if *pstr != s {
+            return false;
         }
     }
 
-    let klow_idx = match klow_idx {
-        Some(i) => i,
-        None => return false,
-    };
-
-    // Position is the same. Check if any capture groups changed.
     let mut ms = empty_status_mem;
-    for k_idx in (klow_idx + 1..stack.len()).rev() {
+    let mut k = stack.len();
+    while k > klow {
+        k -= 1;
         if let StackEntry::MemEnd {
-            zid: mem_zid,
-            pstr: end_pstr,
+            zid: mem,
+            pstr: k_pstr,
+            prev_start: k_prev_start,
             ..
-        } = &stack[k_idx]
+        } = &stack[k]
         {
-            if ms & (1u32 << *mem_zid) != 0 {
-                // Found a MemEnd for a tracked group. Check if its value differs
-                // from the previous iteration's value.
-                // Look for the corresponding MemStart between klow and this MemEnd.
-                for kk_idx in klow_idx + 1..k_idx {
+            if mem_status_limit_at(ms, *mem) {
+                for kk in klow..k {
                     if let StackEntry::MemStart {
-                        zid: start_zid,
+                        zid: kk_mem,
+                        prev_start,
                         prev_end,
                         ..
-                    } = &stack[kk_idx]
+                    } = &stack[kk]
                     {
-                        if *start_zid == *mem_zid {
-                            // Check if prev_end was invalid (group wasn't captured before)
-                            if prev_end.is_invalid() {
-                                // Previously not captured, now captured → not empty
+                        if kk_mem == mem {
+                            if empty_check_mem_changed(
+                                stack,
+                                *prev_start,
+                                *prev_end,
+                                *k_prev_start,
+                                *k_pstr,
+                            ) {
                                 return false;
-                            } else if let Some(prev_pos) = prev_end.as_pos() {
-                                if prev_pos != *end_pstr {
-                                    return false; // end position changed
-                                }
-                            } else if let Some(si) = prev_end.as_stack_idx() {
-                                if si >= stack.len() {
-                                    // stale ref after backtracking → treat as unchanged
-                                } else if let StackEntry::MemEnd {
-                                    pstr: prev_pstr, ..
-                                } = &stack[si]
-                                {
-                                    if *prev_pstr != *end_pstr {
-                                        return false;
-                                    }
-                                }
                             }
-                            ms &= !(1u32 << *mem_zid);
+                            ms &= !(1u32 << *mem);
                             break;
                         }
                     }
@@ -1997,8 +2021,108 @@ fn stack_empty_check_mem(
             }
         }
     }
+    true
+}
 
-    true // position same AND no captures changed → truly empty
+/// Memory-aware empty check for a loop whose body may recurse
+/// (C: STACK_EMPTY_CHECK_MEM_REC).
+///
+/// A recursive call can run the same loop again, so the stack may hold
+/// EMPTY_CHECK_START entries of nested runs. Every non-empty iteration of
+/// such a loop pushes an EMPTY_CHECK_END (see OP_EMPTY_CHECK_END_MEMST_PUSH),
+/// and `level` pairs them up so the scan skips completed iterations.
+fn stack_empty_check_mem_rec(
+    stack: &[StackEntry],
+    zid: usize,
+    s: usize,
+    empty_status_mem: u32,
+) -> bool {
+    let mut level: i32 = 0;
+    let mut klow = stack.len();
+    loop {
+        // STACK_BASE_CHECK
+        if klow == 0 {
+            return false;
+        }
+        klow -= 1;
+        match &stack[klow] {
+            StackEntry::EmptyCheckStart { zid: id, pstr } if *id == zid => {
+                if level != 0 {
+                    level -= 1;
+                    continue;
+                }
+                if *pstr != s {
+                    return false;
+                }
+                if empty_status_mem == 0 {
+                    return true;
+                }
+                let mut ms = empty_status_mem;
+                let mut k = stack.len();
+                while k > klow {
+                    k -= 1;
+                    match &stack[k] {
+                        StackEntry::MemEnd {
+                            zid: mem,
+                            pstr: k_pstr,
+                            prev_start: k_prev_start,
+                            ..
+                        } => {
+                            if level == 0 && mem_status_limit_at(ms, *mem) {
+                                for kk in klow + 1..k {
+                                    match &stack[kk] {
+                                        StackEntry::MemStart {
+                                            zid: kk_mem,
+                                            prev_start,
+                                            prev_end,
+                                            ..
+                                        } if kk_mem == mem => {
+                                            if empty_check_mem_changed(
+                                                stack,
+                                                *prev_start,
+                                                *prev_end,
+                                                *k_prev_start,
+                                                *k_pstr,
+                                            ) {
+                                                return false;
+                                            }
+                                            ms &= !(1u32 << *mem);
+                                            break;
+                                        }
+                                        StackEntry::EmptyCheckStart { zid: id, .. }
+                                            if *id == zid =>
+                                        {
+                                            level += 1;
+                                        }
+                                        StackEntry::EmptyCheckEnd { zid: id } if *id == zid => {
+                                            level -= 1;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                level = 0;
+                                if ms == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                        StackEntry::EmptyCheckStart { zid: id, .. } if *id == zid => {
+                            level += 1;
+                        }
+                        StackEntry::EmptyCheckEnd { zid: id } if *id == zid => {
+                            level -= 1;
+                        }
+                        _ => {}
+                    }
+                }
+                return true;
+            }
+            StackEntry::EmptyCheckEnd { zid: id } if *id == zid => {
+                level += 1;
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Get the saved value for a given save_type and zid from the stack.
@@ -5145,26 +5269,39 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 }
             }
 
-            OpCode::EmptyCheckEndMemst | OpCode::EmptyCheckEndMemstPush => {
+            OpCode::EmptyCheckEndMemst => {
+                if let OperationPayload::EmptyCheckEnd {
+                    mem,
+                    empty_status_mem,
+                } = reg.ops[p].payload
+                {
+                    let is_empty = stack_empty_check_mem(&stack, mem as usize, s, empty_status_mem);
+                    p += 1;
+                    if is_empty {
+                        // Truly empty → skip next op (JUMP back)
+                        p += 1;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
+            OpCode::EmptyCheckEndMemstPush => {
                 if let OperationPayload::EmptyCheckEnd {
                     mem,
                     empty_status_mem,
                 } = reg.ops[p].payload
                 {
                     let mem = mem as usize;
-                    let is_empty = stack_empty_check_mem(
-                        &stack,
-                        mem,
-                        s,
-                        empty_status_mem,
-                        reg,
-                        &mem_start_stk,
-                        &mem_end_stk,
-                    );
+                    let is_empty = stack_empty_check_mem_rec(&stack, mem, s, empty_status_mem);
                     p += 1;
                     if is_empty {
                         // Truly empty → skip next op (JUMP back)
                         p += 1;
+                    } else {
+                        // C: STACK_PUSH_EMPTY_CHECK_END -- marks the iteration
+                        // as complete for scans from recursive runs.
+                        stack.push(StackEntry::EmptyCheckEnd { zid: mem });
                     }
                 } else {
                     goto_fail = true;
@@ -7215,6 +7352,7 @@ mod tests {
             parse_depth: 0,
             ast_node_count: 0,
             flags: 0,
+            recursive_mem: Vec::new(),
         };
         (reg, env)
     }
