@@ -708,6 +708,28 @@ fn lookahead_negative_no_match() {
     n(b"(?!z)a", b"z");
 }
 
+// A capture set inside a (?!..) body whose match makes the lookahead fail
+// must be rolled back by OP_POP_TO_MARK (C: STACK_POP_TO_MARK restores
+// STK_MEM_START / STK_MEM_END). Expected regions were checked against
+// C Oniguruma.
+#[test]
+fn lookahead_negative_restores_captures() {
+    x2(b"(?!(a)b)|ab", b"ab", 0, 2);
+    x3(b"(?!(a)b)|ab", b"ab", -1, -1, 1);
+
+    x2(b"(?:(?!(a)b)|a)b", b"ab", 0, 2);
+    x3(b"(?:(?!(a)b)|a)b", b"ab", -1, -1, 1);
+
+    x2(b"(?!((a)b))|(a)b", b"ab", 0, 2);
+    x3(b"(?!((a)b))|(a)b", b"ab", -1, -1, 1);
+    x3(b"(?!((a)b))|(a)b", b"ab", -1, -1, 2);
+    x3(b"(?!((a)b))|(a)b", b"ab", 0, 1, 3);
+
+    x2(b"((?!(a)b)|a)*b", b"aab", 0, 3);
+    x3(b"((?!(a)b)|a)*b", b"aab", 2, 2, 1);
+    x3(b"((?!(a)b)|a)*b", b"aab", -1, -1, 2);
+}
+
 // ============================================================================
 // Non-capturing group
 // ============================================================================
