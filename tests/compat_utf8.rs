@@ -10653,6 +10653,87 @@ fn cclass_mb_not_truncated_utf8_input_matches() {
     x2("[^ぁ-ん]".as_bytes(), &[0xE3], 0, 1);
 }
 
+/// Search `input` with an explicit logical `end`, `start` and `range`;
+/// returns the result and the bounds of group 0.
+fn search_bounded(
+    pattern: &str,
+    input: &str,
+    end: usize,
+    start: usize,
+    range: usize,
+) -> (i32, Option<(i32, i32)>) {
+    use ferroni::regexec::onig_search;
+    let reg = onig_new(
+        pattern.as_bytes(),
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma,
+    )
+    .unwrap();
+    let (r, region) = onig_search(
+        &reg,
+        input.as_bytes(),
+        end,
+        start,
+        range,
+        Some(OnigRegion::new()),
+        ONIG_OPTION_NONE,
+    );
+    let bounds = (r >= 0).then(|| {
+        let region = region.unwrap();
+        (region.beg[0], region.end[0])
+    });
+    (r, bounds)
+}
+
+// Text-segment boundaries decode the characters around the position against
+// the logical end (C: ONIGENC_MBC_TO_CODE(enc, p, end) in
+// onigenc_egcb_is_break_position / onigenc_wb_is_break_position), so a
+// character cut by `end` is classified from its truncated code, not from the
+// bytes behind `end`. Expectations checked against C Oniguruma.
+#[test]
+fn text_segment_boundary_respects_logical_end_inside_character() {
+    // "e" + U+0301: the combining mark (bytes 1..3) is cut at end = 2.
+    let e_acute = "e\u{301}";
+    assert_eq!(search_bounded(r"\y", e_acute, 2, 1, 2), (1, Some((1, 1))));
+    assert_eq!(
+        search_bounded(r"\Y", e_acute, 2, 0, 2),
+        (ONIG_MISMATCH, None)
+    );
+    assert_eq!(search_bounded(r".\y", e_acute, 2, 0, 2), (0, Some((0, 1))));
+    assert_eq!(
+        search_bounded(r".\Y", e_acute, 2, 0, 2),
+        (ONIG_MISMATCH, None)
+    );
+    // Backward search: the upper range is start + enclen(start), as in C.
+    assert_eq!(
+        search_bounded(r"\X{2}", e_acute, 2, 1, 0),
+        (0, Some((0, 3)))
+    );
+
+    // Word mode: two regional indicators, the second one cut at end = 5.
+    let flags = "\u{1F1E9}\u{1F1EA}\u{1F1EB}\u{1F1F7}";
+    assert_eq!(
+        search_bounded(r"(?y{w})\y", flags, 5, 4, 5),
+        (4, Some((4, 4)))
+    );
+    assert_eq!(
+        search_bounded(r"(?y{w}).\y", flags, 5, 0, 5),
+        (0, Some((0, 4)))
+    );
+    // ZWJ + Extended_Pictographic (WB3c) no longer joins a cut emoji.
+    let family = "\u{1F468}\u{200D}\u{1F469}";
+    assert_eq!(
+        search_bounded(r"(?y{w})\Y", family, 6, 0, 6),
+        (ONIG_MISMATCH, None)
+    );
+    // Hebrew letter + '"' + Hebrew letter (WB7b/c) with the last letter cut.
+    assert_eq!(
+        search_bounded(r"(?y{w})\X", "\u{5D0}\"\u{5D0}", 4, 0, 4),
+        (0, Some((0, 2)))
+    );
+}
+
 // ============================================================================
 // Phase 3: Backward search optimization
 // ============================================================================
