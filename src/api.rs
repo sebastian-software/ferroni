@@ -222,10 +222,9 @@ impl Regex {
             cache_region(region);
             return None;
         }
-        let start = region.beg[0] as usize;
-        let end = region.end[0] as usize;
+        let m = Match::from_region(text, region.beg[0], region.end[0]);
         cache_region(region);
-        Some(Match { text, start, end })
+        m
     }
 
     /// Return the first match in `text` under per-search `options`.
@@ -261,10 +260,9 @@ impl Regex {
             cache_region(region);
             return Ok(None);
         }
-        let start = region.beg[0] as usize;
-        let end = region.end[0] as usize;
+        let m = Match::from_region(text, region.beg[0], region.end[0]);
         cache_region(region);
-        Ok(Some(Match { text, start, end }))
+        Ok(m)
     }
 
     /// Check whether `text` matches the pattern anywhere.
@@ -600,6 +598,17 @@ pub struct Match<'t> {
 }
 
 impl<'t> Match<'t> {
+    /// Build a match from one region entry, or `None` if the entry is not a
+    /// range of `text`: unset (negative), past the end, or with start > end.
+    /// Oniguruma can report start > end for a capture whose group started
+    /// again but failed before closing; every `Match` upholds
+    /// `start <= end <= text.len()`, so its accessors never panic on slicing.
+    fn from_region(text: &'t [u8], beg: i32, end: i32) -> Option<Self> {
+        let start = usize::try_from(beg).ok()?;
+        let end = usize::try_from(end).ok()?;
+        (start <= end && end <= text.len()).then_some(Match { text, start, end })
+    }
+
     /// Byte offset of the start of the match.
     pub fn start(&self) -> usize {
         self.start
@@ -655,20 +664,20 @@ impl<'t> Captures<'t> {
     /// Get capture group `i`, or `None` if the group did not participate.
     ///
     /// Group 0 is the entire match.
+    ///
+    /// Like Oniguruma, the engine can leave a capture with its start after
+    /// its end: a group that matched once, then started again and failed
+    /// before closing, keeps the new start and the old end (for example
+    /// group 1 of `((?=(a|ab))a?){2}` against `"a"` is `1..0`). Such a
+    /// capture is not a range of the text and is reported as not
+    /// participating (`None`), here and in [`Captures::iter`] and
+    /// [`Captures::name`]. The raw values stay available through the
+    /// low-level [`OnigRegion`].
     pub fn get(&self, i: usize) -> Option<Match<'t>> {
         if i >= self.region.num_regs as usize {
             return None;
         }
-        let beg = self.region.beg[i];
-        let end = self.region.end[i];
-        if beg == ONIG_REGION_NOTPOS {
-            return None;
-        }
-        Some(Match {
-            text: self.text,
-            start: beg as usize,
-            end: end as usize,
-        })
+        Match::from_region(self.text, self.region.beg[i], self.region.end[i])
     }
 
     /// Get the last capture group with the given name that participated, or `None`.
@@ -779,8 +788,8 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
             return None;
         }
 
-        let start = self.region.beg[0] as usize;
-        let end = self.region.end[0] as usize;
+        let m = Match::from_region(self.text, self.region.beg[0], self.region.end[0])?;
+        let (start, end) = (m.start, m.end);
 
         // Handle empty matches: advance by one byte to avoid infinite loop.
         if start == end {
@@ -804,11 +813,7 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
 
         self.last_end = end;
 
-        Some(Match {
-            text: self.text,
-            start,
-            end,
-        })
+        Some(m)
     }
 }
 
@@ -870,8 +875,11 @@ impl<'r, 't> Iterator for TryFindIter<'r, 't> {
             return None;
         }
 
-        let start = self.region.beg[0] as usize;
-        let end = self.region.end[0] as usize;
+        let Some(m) = Match::from_region(self.text, self.region.beg[0], self.region.end[0]) else {
+            self.finished = true;
+            return None;
+        };
+        let (start, end) = (m.start, m.end);
 
         if start == end {
             if self.last_was_empty {
@@ -893,11 +901,7 @@ impl<'r, 't> Iterator for TryFindIter<'r, 't> {
         }
 
         self.last_end = end;
-        Some(Ok(Match {
-            text: self.text,
-            start,
-            end,
-        }))
+        Some(Ok(m))
     }
 }
 

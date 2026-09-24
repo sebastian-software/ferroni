@@ -950,7 +950,10 @@ fn build_scanner_match(index: usize, region: &OnigRegion) -> ScannerMatch {
     for i in 0..num_regs {
         let beg = region.beg[i];
         let end = region.end[i];
-        if beg >= 0 && end >= 0 {
+        // A capture whose start lies after its end (a group that started
+        // again and failed before closing) is not a range of the string;
+        // report it like an unmatched group.
+        if beg >= 0 && end >= beg {
             let start = beg as usize;
             let end = end as usize;
             capture_indices.push(CaptureIndex {
@@ -998,6 +1001,23 @@ fn convert_match_to_utf16(string: &OnigString, m: ScannerMatch) -> ScannerMatch 
 mod tests {
     use super::*;
     use smallvec::smallvec;
+
+    /// Group 1 of `((?=(a|ab))a?){2}` on "a" ends before it starts (1..0, as
+    /// in C Oniguruma). The scanner reports it like an unmatched group
+    /// instead of underflowing `end - start`.
+    #[test]
+    fn inverted_capture_reads_as_unmatched() {
+        let mut scanner = Scanner::new(&[r"((?=(a|ab))a?){2}"]).unwrap();
+        let m = scanner
+            .find_next_match("a", 0, ScannerFindOptions::NONE)
+            .unwrap();
+        let spans: Vec<_> = m
+            .capture_indices
+            .iter()
+            .map(|c| (c.start, c.end, c.length))
+            .collect();
+        assert_eq!(spans, vec![(0, 0, 0), (0, 0, 0), (1, 1, 0)]);
+    }
 
     #[test]
     fn cache_miss_with_truncated_range_is_not_reused() {
