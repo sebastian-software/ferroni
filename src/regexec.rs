@@ -6176,6 +6176,36 @@ pub fn onig_search(
     region: Option<OnigRegion>,
     option: OnigOptionType,
 ) -> (i32, Option<OnigRegion>) {
+    // The following is an expanded code of onig_search_with_param() (C).
+    let data_range = if range > start { range } else { end };
+    search_in_range(
+        reg, str_data, end, start, range, data_range, region, option, None,
+    )
+}
+
+/// Port of C's `search_in_range()`: match starts are taken from
+/// `[start, range]`, while every attempt may consume the subject up to
+/// `data_range` (C: `MATCH_AND_RETURN_CHECK(data_range)`). `onig_search`
+/// passes `range` itself (or `end` for a backward search); a regex-lead
+/// RegSet search narrows `range` to its current winner but keeps the
+/// original range as `data_range`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn search_in_range(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    data_range: usize,
+    region: Option<OnigRegion>,
+    option: OnigOptionType,
+    mp: Option<&OnigMatchParam>,
+) -> (i32, Option<OnigRegion>) {
+    if let Some(mp) = mp {
+        let mut msa = MatchArg::from_param(reg, option, region, start, mp);
+        return search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
+    }
+
     thread_local! {
         static CACHED_MSA: RefCell<Option<MatchArg>> = const { RefCell::new(None) };
     }
@@ -6190,7 +6220,7 @@ pub fn onig_search(
         None => MatchArg::new(reg, option, region, start),
     };
 
-    let result = onig_search_inner(reg, str_data, end, start, range, &mut msa);
+    let result = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
 
     // Return the MSA to cache (region already taken out by inner).
     CACHED_MSA.with(|c| {
@@ -6209,7 +6239,8 @@ pub(crate) fn onig_search_with_msa(
     range: usize,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
-    onig_search_inner(reg, str_data, end, start, range, msa)
+    let data_range = if range > start { range } else { end };
+    search_in_range_inner(reg, str_data, end, start, range, data_range, msa)
 }
 
 /// Search positions in `[start, range]` while allowing a match to consume up
@@ -6276,8 +6307,18 @@ pub fn onig_search_with_param(
     option: OnigOptionType,
     mp: &OnigMatchParam,
 ) -> (i32, Option<OnigRegion>) {
-    let mut msa = MatchArg::from_param(reg, option, region, start, mp);
-    onig_search_inner(reg, str_data, end, start, range, &mut msa)
+    let data_range = if range > start { range } else { end };
+    search_in_range(
+        reg,
+        str_data,
+        end,
+        start,
+        range,
+        data_range,
+        region,
+        option,
+        Some(mp),
+    )
 }
 
 #[inline]
@@ -6380,12 +6421,13 @@ fn onig_search_inner_two_pass(
     (match_start, msa.region.take())
 }
 
-fn onig_search_inner(
+fn search_in_range_inner(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
     start: usize,
     range: usize,
+    data_range: usize,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     // The C API accepts an end pointer into the supplied buffer. Normalize
@@ -6393,18 +6435,19 @@ fn onig_search_inner(
     // a valid slice, and reject a start outside the logical string.
     let end = end.min(str_data.len());
     let range = range.min(end);
+    let data_range = data_range.min(end);
     if start > end {
         return (ONIG_MISMATCH, msa.region.take());
     }
 
     if can_use_two_pass_capture_fill(reg, start, range, msa) {
-        // A forward range bounds each attempt by the range itself; see
+        // A forward range bounds each attempt by `data_range`; see
         // `onig_search_inner_core`.
         return onig_search_inner_two_pass(
-            reg, str_data, end, start, range, range, true, None, msa,
+            reg, str_data, end, start, range, data_range, true, None, msa,
         );
     }
-    onig_search_inner_core(reg, str_data, end, start, range, msa)
+    onig_search_inner_core(reg, str_data, end, start, range, data_range, msa)
 }
 
 fn onig_search_inner_core(
@@ -6413,12 +6456,13 @@ fn onig_search_inner_core(
     end: usize,
     start: usize,
     range: usize,
+    data_range: usize,
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     let right_range = if start == range && start < end {
         (start + enclen(reg.enc, str_data, start)).min(end)
     } else if range > start {
-        range
+        data_range
     } else {
         end
     };
@@ -6489,8 +6533,13 @@ fn onig_search_inner_core_with_right_range(
     // Works for both bare `alpha|beta` and captured `(alpha|beta)`.
     if let Some(ref ac) = reg.ac_alt {
         if start <= range && !find_longest {
-            let search_end = range.min(end);
-            if let Some(mat) = ac.find(&str_data[start..search_end]) {
+            // Matches start in `[start, range]` and may extend to
+            // `right_range` (C's `data_range`).
+            let search_end = right_range.min(end);
+            if let Some(mat) = ac
+                .find(&str_data[start..search_end])
+                .filter(|mat| start + mat.start() <= range)
+            {
                 let match_start = start + mat.start();
                 let match_end = start + mat.end();
                 if let Some(ref mut r) = msa.region {

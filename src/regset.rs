@@ -9,8 +9,7 @@ use crate::regenc::{
 use crate::regexec::{
     MatchArg, OnigMatchParam, onig_get_global_limit_revision, onig_get_match_stack_limit,
     onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit, onig_match,
-    onig_match_with_msa_start, onig_search, onig_search_with_msa_and_right_range,
-    onig_search_with_param,
+    onig_match_with_msa_start, onig_search_with_msa_and_right_range, search_in_range,
 };
 use crate::regint::*;
 
@@ -1277,14 +1276,18 @@ fn regset_search_body_regex_lead(
 
     for i in 0..n {
         let region = set.entries[i].region.take();
-        let (r, returned_region) = onig_search(
+        // C: search_in_range(reg, str, end, start, ep, orig_range, ...) --
+        // only the start range narrows; a match may still run to orig_range.
+        let (r, returned_region) = search_in_range(
             &set.entries[i].reg,
             str_data,
             end,
             start,
             ep,
+            orig_range,
             region,
             option,
+            None,
         );
         set.entries[i].region = returned_region;
 
@@ -1596,8 +1599,16 @@ pub fn onig_regset_search_with_param(
 
         for (i, entry) in set.entries.iter_mut().take(n).enumerate() {
             let region = entry.region.take();
-            let (r, returned_region) = onig_search_with_param(
-                &entry.reg, str_data, end, start, ep, region, option, &mps[i],
+            let (r, returned_region) = search_in_range(
+                &entry.reg,
+                str_data,
+                end,
+                start,
+                ep,
+                orig_range,
+                region,
+                option,
+                Some(&mps[i]),
             );
             entry.region = returned_region;
 
@@ -1630,6 +1641,7 @@ mod tests {
     use super::*;
     use crate::encodings::utf8::ONIG_ENCODING_UTF8;
     use crate::regcomp::onig_new;
+    use crate::regexec::onig_search;
     use crate::regexec::{
         LIMIT_TEST_LOCK, onig_get_global_limit_revision, onig_get_match_stack_limit,
         onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit,
