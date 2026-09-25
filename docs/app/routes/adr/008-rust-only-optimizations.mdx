@@ -56,6 +56,8 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Data structure**: `first_byte_candidates: Box<[Vec<u16>; 256]>`, `SkipNeedle` (1-3 byte memchr)
 - **Impact**: 44% reduction in RegSet position-lead search overhead
 - **Extends**: ADR-007 (SIMD via memchr)
+- **C's optimizer still decides**: the table only narrows the positions an entry is attempted at. An entry whose optimizer has a distance is dispatched by its bytecode start bytes but attempted only where C's optimizer admits the position (`sr[i]`); the check runs after an attempt with a match or an error, or before every attempt where callouts or a search retry budget can observe it. The extra class and type byte maps (`optimize_nodes` with `start_maps`) serve only where C has no optimizer, and as a routing hint (`start_dispatch`).
+- **Windowed table scan**: with fallback entries in the set the table is scanned in windows (256 bytes, then four times as large), and the fallback entries are asked for an event inside each window, so an early fallback match ends the search as C's position-by-position search does.
 
 #### ASCII fast paths in VM execution (`src/regexec.rs`)
 
