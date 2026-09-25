@@ -2084,6 +2084,36 @@ mod tests {
         assert!(failures.is_empty(), "{failures:?}");
     }
 
+    /// C ranks a match by the position its attempt began at, not by the
+    /// start `\K` moves it to: `.+\K,` attempted at 1 beats `[^\s]` at 1 on
+    /// its lower index and reports 6..7. vscode-oniguruma's scanner over C
+    /// Oniguruma reports pattern 0 at 6..7 from starts 0, 1 and 2; every
+    /// route has to agree, whatever calls came before.
+    #[test]
+    fn keep_matches_rank_by_their_attempt_position_on_every_route() {
+        let patterns = [r".+\K,", r"[^\s]"];
+        let text = "\n!c1 1,é1";
+        let onig = OnigString::new(text);
+        let starts = [0, 1, 2, 2, 1, 0];
+        let mut scanners: [Scanner; 4] = std::array::from_fn(|_| Scanner::new(&patterns).unwrap());
+        for start in starts.into_iter().chain(std::iter::repeat_n(0, 20)) {
+            let none = ScannerFindOptions::NONE;
+            let found = [
+                scanners[0].find_next_match(text, start, none),
+                scanners[1].find_next_match_with_id(text, 3, start, none),
+                scanners[2].find_next_match_utf16(&onig, start, none),
+                scanners[3].find_next_match_utf16_with_id(&onig, 3, start, none),
+            ];
+            for (route, found) in found.iter().enumerate() {
+                let found = found.as_ref().map(|m| {
+                    let whole = &m.capture_indices[0];
+                    (m.index, whole.start, whole.end)
+                });
+                assert_eq!(found, Some((0, 6, 7)), "route {route}, start {start}");
+            }
+        }
+    }
+
     #[test]
     fn multi_pattern_earliest_wins() {
         let mut scanner = Scanner::new(&["world", "hello"]).unwrap();
