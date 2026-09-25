@@ -76,7 +76,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 
 #### Second 2026-09 pass (`src/regset.rs`, `src/first_bytes.rs`, `src/regcomp.rs`, `src/regexec.rs`, `src/regparse.rs`, `src/literal_trie.rs`)
 
-- **Contiguous fallback candidates**: RegSet fallback entries keep their skip flags and settled no-match position in one array; the walk stops once a decision at the start position precedes the remaining entries.
+- **Contiguous fallback candidates**: RegSet fallback entries keep their skip flags, settled no-match position and newest memo results in one array; the walk stops once a decision at the start position precedes the remaining entries.
 - **Literal trie extensions**: prefixes with ordered backtracking, case-insensitive folded tries, and optimizer information on the trie node (see the literal trie entry above).
 - **Word-level class scans and streamed ctype ranges** in compilation; the compiled output is unchanged.
 - **Start bytes through positive look-aheads**: the RegSet start-map derivation reads the body of a positive look-ahead that cannot match empty, so look-ahead-led fallback entries get a start filter.
@@ -113,6 +113,7 @@ C's `tune_tree` pushes the captures of every back-referenced group (`backtrack_m
 
 - Ferroni's compiled bytecode may differ from C Oniguruma for patterns that trigger the trie optimizer. Match results remain identical, but internal representations diverge.
 - Retry limits are the one place where the optimizations can show. A search prefilter that proves there is no match (a required byte or literal missing from the subject) reports "no match" without running the matcher, where C runs into the retry limit and reports `ONIGERR_RETRY_LIMIT_IN_MATCH_OVER`; for example `(?:a*a?)*\d` against sixteen `a`. This difference is deliberate. Rust-only instructions that replace a C sequence (literal tries, star loops) can also take fewer backtracks than C's sequence, so a search close to the limit may finish in Ferroni and stop in C. Guarded pushes count exactly the backtracks they save (see above).
+- The Scanner's memo and per-regex cache route never change a result, limit errors included: a fallback entry attempts exactly the positions C's `regset_search_body_position_lead` lets its optimizer admit (`forward_search`), the memo keeps only matches and no-match results, never errors, and the per-regex route combines the same per-entry searches. A search retry budget, which makes a result depend on where its search began, bypasses both.
 - Future C Oniguruma updates can still be applied by diffing against the C-ported baseline. Optimization passes are clearly separated in the compilation pipeline.
 - Each new optimization must document its trigger conditions, bounds, and benchmark results — either in this ADR (for significant changes) or in `/perf/` (for detailed analysis).
 - Performance documentation in `/perf/` serves as the detailed log; this ADR serves as the policy and index.

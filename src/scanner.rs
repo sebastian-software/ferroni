@@ -12,11 +12,13 @@ use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
-use crate::regexec::{MatchArg, onig_match_with_msa_start, onig_search_with_msa_and_right_range};
+use crate::regexec::{onig_get_global_limit_revision, onig_get_retry_limit_in_search};
+use crate::regint::ANCR_ANYCHAR_INF;
 use crate::regset::{
-    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, onig_regset_get_regex,
-    onig_regset_last_match_len, onig_regset_new, onig_regset_number_of_regex,
-    onig_regset_search_fast, onig_regset_search_fast_with_id,
+    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, onig_regset_entry_search,
+    onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new,
+    onig_regset_number_of_regex, onig_regset_search_fast, onig_regset_search_fast_with_id,
+    onig_regset_swap_region,
 };
 use crate::regsyntax::*;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -270,25 +272,57 @@ impl OnigString {
 /// Per-regex cache entry, mirroring vscode-oniguruma's caching strategy.
 struct CacheEntry {
     has_g_anchor: bool,
+    /// The regex starts with an any-char star (`ANCR_ANYCHAR_INF`).
+    after_newline_only: bool,
     last_str_id: u64,
     last_position: usize,
     last_options: u32,
+    /// `onig_get_global_limit_revision()` when the result was found.
+    last_limit_revision: u64,
     last_matched: bool,
     last_result: i32,
     last_region: Option<OnigRegion>,
 }
 
 impl CacheEntry {
-    fn new(pattern: &str) -> Self {
+    fn new(pattern: &str, anchor: i32) -> Self {
         CacheEntry {
             has_g_anchor: pattern.contains("\\G"),
+            after_newline_only: (anchor & ANCR_ANYCHAR_INF) != 0,
             last_str_id: 0,
             last_position: 0,
             last_options: u32::MAX, // invalid sentinel
+            last_limit_revision: 0,
             last_matched: false,
             last_result: ONIG_MISMATCH,
             last_region: None,
         }
+    }
+
+    /// Record the first match (or, with `None`, the absence of any match or
+    /// error) of a search over the whole rest of the subject from `start`.
+    fn remember(
+        &mut self,
+        str_id: u64,
+        start: usize,
+        options: u32,
+        limit_revision: u64,
+        found: Option<usize>,
+    ) {
+        self.last_str_id = str_id;
+        self.last_position = start;
+        self.last_options = options;
+        self.last_limit_revision = limit_revision;
+        self.last_matched = found.is_some();
+        self.last_result = found.map_or(ONIG_MISMATCH, |position| position as i32);
+    }
+
+    fn forget(&mut self) {
+        self.last_str_id = 0;
+        self.last_position = 0;
+        self.last_options = u32::MAX;
+        self.last_matched = false;
+        self.last_result = ONIG_MISMATCH;
     }
 }
 
@@ -376,6 +410,10 @@ pub struct Scanner {
     regset: Box<OnigRegSet>,
     stats: ScannerStats,
     cache_route: CacheRouteState,
+    /// `onig_get_global_limit_revision()` when `search_budget` was read.
+    limit_revision: Option<u64>,
+    /// A search retry budget is set (`onig_set_retry_limit_in_search`).
+    search_budget: bool,
 }
 
 impl Scanner {
@@ -414,8 +452,8 @@ impl Scanner {
 
         for pattern in patterns {
             let reg = onig_new(pattern.as_bytes(), options, &ONIG_ENCODING_UTF8, syntax)?;
+            caches.push(CacheEntry::new(pattern, reg.anchor));
             regset_regs.push(Box::new(reg));
-            caches.push(CacheEntry::new(pattern));
         }
 
         let (regset, r) = onig_regset_new(regset_regs);
@@ -428,6 +466,8 @@ impl Scanner {
             regset: regset.unwrap(),
             stats: ScannerStats::default(),
             cache_route: CacheRouteState::default(),
+            limit_revision: None,
+            search_budget: false,
         })
     }
 
@@ -580,7 +620,19 @@ impl Scanner {
         }
 
         let use_regset = self.should_use_regset_for_cache(str_id, options.0, start_position);
-        if use_regset {
+        // So does every call while a search retry budget makes a result
+        // depend on where its search began (see `search_per_regex`).
+        let limit_revision = if use_regset {
+            0
+        } else {
+            let revision = onig_get_global_limit_revision();
+            if self.limit_revision != Some(revision) {
+                self.limit_revision = Some(revision);
+                self.search_budget = onig_get_retry_limit_in_search() != 0;
+            }
+            revision
+        };
+        if use_regset || self.search_budget {
             if SCANNER_STATS_ENABLED {
                 self.stats.route_regset_calls += 1;
                 self.stats.route_cache_regset_calls += 1;
@@ -602,6 +654,7 @@ impl Scanner {
                 options.0,
                 onig_opts,
                 use_cache,
+                limit_revision,
             );
             self.observe_per_regex_outcome(run_stats);
             m
@@ -776,10 +829,16 @@ impl Scanner {
 
     /// Per-regex search with optional cache reuse.
     ///
-    /// Regions are reused from cache entries to avoid per-call allocation.
-    /// A single MatchArg is reused across all regex iterations to avoid
-    /// repeated heap allocations for the VM stack.
-    /// The best match is read directly from the cache at the end (no cloning).
+    /// Each regex is searched on its own exactly as the position-lead RegSet
+    /// search attempts it (`onig_regset_entry_search`), so combining the
+    /// first events -- earliest position, lower index on a tie, an error
+    /// counting like a match -- gives the RegSet route's result, limit errors
+    /// included. A regex's match or no-match from an earlier start stays
+    /// valid for later starts up to that match: the later search attempts a
+    /// subset of the same positions (the retry-in-search budget, which would
+    /// break that, keeps these calls on the RegSet route). Errors are not
+    /// cached, and regions move between the RegSet and the cache entries
+    /// without copies.
     #[allow(clippy::too_many_arguments)]
     fn search_per_regex(
         &mut self,
@@ -790,35 +849,42 @@ impl Scanner {
         options_raw: u32,
         onig_opts: OnigOptionType,
         use_cache: bool,
+        limit_revision: u64,
     ) -> (Option<ScannerMatch>, PerRegexCallStats) {
-        let mut best_index: Option<usize> = None;
-        let mut best_pos: usize = usize::MAX;
+        // (position, index, is_match) of the earliest event so far.
+        let mut best: Option<(usize, usize, bool)> = None;
         let mut run_stats = PerRegexCallStats::default();
+        // An any-char-star regex attempts the first position of a search even
+        // where it does not follow a newline, which a search from an earlier
+        // start skipped.
+        let mid_line = start > 0 && str_data[start - 1] != b'\n';
 
-        // Lazy MatchArg — only allocated on first cache miss (warm path: zero alloc)
-        let mut msa: Option<MatchArg> = None;
-
-        // Split borrows: regset (immutable) and caches (mutable) are disjoint fields.
-        let regset = &self.regset;
+        let regset = &mut self.regset;
         let caches = &mut self.caches;
         let n = onig_regset_number_of_regex(regset) as usize;
 
-        // Progressive range narrowing: once a match is found at position P,
-        // later regexes only need start positions in [start, P]. As in C's
-        // regex-lead `onig_regset_search` (`search_in_range(.., ep, orig_range)`),
-        // only the start positions are narrowed; a match that begins before P
-        // may still extend past it, so the subject stays `end`.
-        let mut ep = end;
-
         for (i, cache) in caches.iter_mut().enumerate().take(n) {
-            let has_g_anchor = cache.has_g_anchor;
+            // Regexes run in index order: a later one cannot beat an event at
+            // the start.
+            let stop = match best {
+                None => end,
+                Some((position, _, _)) if position <= start => break,
+                Some((position, _, _)) => {
+                    let mut before = position - 1;
+                    while before > start && (str_data[before] & 0xC0) == 0x80 {
+                        before -= 1;
+                    }
+                    before
+                }
+            };
 
-            // Check cache
             if use_cache
-                && !has_g_anchor
+                && !cache.has_g_anchor
                 && cache.last_str_id == str_id
                 && cache.last_options == options_raw
+                && cache.last_limit_revision == limit_revision
                 && cache.last_position <= start
+                && !(cache.after_newline_only && mid_line && cache.last_position != start)
             {
                 run_stats.cache_checks += 1;
                 if !cache.last_matched {
@@ -827,119 +893,48 @@ impl Scanner {
                 }
                 if cache.last_result >= 0 && (cache.last_result as usize) >= start {
                     run_stats.cache_hits += 1;
-                    let match_pos = cache.last_result as usize;
-                    if match_pos < best_pos {
-                        best_pos = match_pos;
-                        best_index = Some(i);
-                        ep = best_pos;
-                        if best_pos == start {
-                            break;
-                        }
+                    let position = cache.last_result as usize;
+                    if best.is_none_or(|(best_position, _, _)| position < best_position) {
+                        best = Some((position, i, true));
                     }
                     continue;
                 }
             }
 
-            let reg = onig_regset_get_regex(regset, i).unwrap();
             run_stats.vm_calls += 1;
-
-            // Reuse the cached region (avoids allocation after first call)
-            let region = cache.last_region.take().unwrap_or_default();
-
-            // Create MatchArg on first miss, reuse on subsequent misses
-            let msa = msa.get_or_insert_with(|| MatchArg::new(reg, onig_opts, None, start));
-            msa.reset_for_search(reg, onig_opts, Some(region), start);
-
-            let (r, returned_region) = if has_g_anchor {
-                search_g_anchor_with_msa(reg, str_data, end, start, ep, onig_opts, msa)
-            } else {
-                onig_search_with_msa_and_right_range(reg, str_data, end, start, ep, end, None, msa)
-            };
-
-            // Put region back in cache (no clone needed)
-            cache.last_region = returned_region;
-
-            if r >= 0 {
-                cache.last_str_id = str_id;
-                cache.last_position = start;
-                cache.last_options = options_raw;
-                cache.last_matched = true;
-                cache.last_result = r;
-
-                let match_pos = r as usize;
-                if match_pos < best_pos {
-                    best_pos = match_pos;
-                    best_index = Some(i);
-                    ep = best_pos;
-                    if best_pos == start {
-                        break;
+            let event = onig_regset_entry_search(regset, i, str_data, end, start, stop, onig_opts);
+            match event {
+                RegSetEntryEvent::Match { position } => {
+                    onig_regset_swap_region(regset, i, &mut cache.last_region);
+                    cache.remember(str_id, start, options_raw, limit_revision, Some(position));
+                    if best.is_none_or(|(best_position, _, _)| position < best_position) {
+                        best = Some((position, i, true));
                     }
                 }
-            } else {
-                // If search was truncated to [start, ep), a miss does not imply
-                // "no match at all" for later start positions, so don't cache it.
-                if ep == end {
-                    cache.last_str_id = str_id;
-                    cache.last_position = start;
-                    cache.last_options = options_raw;
-                    cache.last_matched = false;
-                    cache.last_result = r;
-                } else {
-                    cache.last_str_id = 0;
-                    cache.last_position = 0;
-                    cache.last_options = u32::MAX;
-                    cache.last_matched = false;
-                    cache.last_result = ONIG_MISMATCH;
+                RegSetEntryEvent::Error { position, .. } => {
+                    cache.forget();
+                    if best.is_none_or(|(best_position, _, _)| position < best_position) {
+                        best = Some((position, i, false));
+                    }
                 }
+                // A search cut short at an earlier regex's event says
+                // nothing about the rest of the subject.
+                RegSetEntryEvent::None if stop == end => {
+                    cache.remember(str_id, start, options_raw, limit_revision, None);
+                }
+                RegSetEntryEvent::None => cache.forget(),
             }
         }
 
-        let out = best_index.and_then(|idx| {
-            self.caches[idx]
+        let out = match best {
+            Some((_, index, true)) => self.caches[index]
                 .last_region
                 .as_ref()
-                .map(|region| build_scanner_match(idx, region))
-        });
+                .map(|region| build_scanner_match(index, region)),
+            _ => None,
+        };
         (out, run_stats)
     }
-}
-
-/// Search helper for patterns containing `\G` in per-regex mode.
-///
-/// Mirrors the RegSet position-lead loop for a single regex: every position
-/// from `start` up to and including `range` is attempted with `\G` pinned to
-/// the original search start. The `range` position itself must be tried, as
-/// in Oniguruma's do-while search loop, so zero-width matches at the end of
-/// the subject (`\G$`, `\G\z`) are found.
-///
-/// Only reached once the adaptive cache route probes or switches to
-/// per-regex mode (8+ same-position calls on one string id).
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn search_g_anchor_with_msa(
-    reg: &crate::regint::RegexType,
-    str_data: &[u8],
-    end: usize,
-    start: usize,
-    range: usize,
-    option: OnigOptionType,
-    msa: &mut MatchArg,
-) -> (i32, Option<OnigRegion>) {
-    let mut s = start;
-    let search_end = range.min(end);
-
-    while s <= search_end {
-        let r = onig_match_with_msa_start(reg, str_data, end, s, start, option, msa);
-        if r >= 0 {
-            return (s as i32, msa.region.take());
-        }
-        if s >= search_end {
-            break;
-        }
-        let step = reg.enc.mbc_enc_len(&str_data[s..]).max(1);
-        s = s.saturating_add(step);
-    }
-
-    (ONIG_MISMATCH, msa.region.take())
 }
 
 /// Build a `ScannerMatch` from a regex index and region.
@@ -2010,6 +2005,83 @@ mod tests {
         let onig = opts.to_onig_options();
         assert!(onig.contains(OnigOptionType::NOT_BEGIN_STRING));
         assert!(onig.contains(OnigOptionType::NOT_END_STRING));
+    }
+
+    type Found = Option<(usize, usize, usize)>;
+    type LimitCase = (&'static [&'static str], String, Vec<(usize, Found)>);
+
+    /// Every route answers like one fresh position-lead RegSet search, limit
+    /// errors included, whatever calls came before: in order, reversed, and
+    /// with each start repeated 20 times (which moves `with_id` calls onto
+    /// the per-regex cache route). The expected results are those of
+    /// vscode-oniguruma's scanner over C Oniguruma with a retry limit of
+    /// 10,000 (`None` where C stops at the limit, or finds nothing).
+    #[test]
+    fn limit_errors_match_c_on_every_route_and_call_history() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let old_limit = crate::regexec::onig_get_retry_limit_in_match();
+        crate::regexec::onig_set_retry_limit_in_match(10_000);
+
+        let cases: [LimitCase; 2] = [
+            // C's optimizer finds no `x`, so C never attempts `(\w+)+x`.
+            (
+                &[r"(\w+)+x", "a"],
+                "a".repeat(30),
+                vec![
+                    (0, Some((1, 0, 1))),
+                    (1, Some((1, 1, 2))),
+                    (5, Some((1, 5, 6))),
+                    (29, Some((1, 29, 30))),
+                    (30, None),
+                ],
+            ),
+            // `(a+)+b` stops at the limit from 0 and 10, which ends C's search.
+            (
+                &[r"(a+)+b", "c"],
+                format!("{}c b", "a".repeat(27)),
+                vec![
+                    (0, None),
+                    (10, None),
+                    (15, Some((1, 27, 28))),
+                    (20, Some((1, 27, 28))),
+                    (27, Some((1, 27, 28))),
+                ],
+            ),
+        ];
+        let mut failures = Vec::new();
+        for (patterns, text, expected) in &cases {
+            let onig = OnigString::new(text);
+            let reversed: Vec<_> = expected.iter().rev().copied().collect();
+            let repeated: Vec<_> = expected
+                .iter()
+                .flat_map(|&call| std::iter::repeat_n(call, 20))
+                .collect();
+            for order in [expected.clone(), reversed, repeated] {
+                let mut scanners: [Scanner; 4] =
+                    std::array::from_fn(|_| Scanner::new(patterns).unwrap());
+                for &(start, want) in &order {
+                    let none = ScannerFindOptions::NONE;
+                    let found = [
+                        scanners[0].find_next_match(text, start, none),
+                        scanners[1].find_next_match_with_id(text, 7, start, none),
+                        scanners[2].find_next_match_utf16(&onig, start, none),
+                        scanners[3].find_next_match_utf16_with_id(&onig, 7, start, none),
+                    ];
+                    for (route, found) in found.iter().enumerate() {
+                        let found = found.as_ref().map(|m| {
+                            let whole = &m.capture_indices[0];
+                            (m.index, whole.start, whole.end)
+                        });
+                        if found != want {
+                            failures.push((patterns.to_vec(), route, start, found, want));
+                        }
+                    }
+                }
+            }
+        }
+
+        crate::regexec::onig_set_retry_limit_in_match(old_limit);
+        assert!(failures.is_empty(), "{failures:?}");
     }
 
     #[test]

@@ -6434,7 +6434,7 @@ fn onigenc_get_right_adjust_char_head(
 
 /// Forward search using optimization strategy.
 /// Returns Some((low, high)) if a candidate was found, None otherwise.
-fn forward_search(
+pub(crate) fn forward_search(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
