@@ -10219,6 +10219,35 @@ mod tests {
     /// Where C finds an optimizer, Ferroni uses the same one; the extra class
     /// and type byte maps only fill in where C has none. Expected values are
     /// C's (`reg->optimize`, `dist_min`, `dist_max`, `map`).
+    /// C splices a list that a group or a split string yields into the
+    /// enclosing branch, so the optimizer joins the strings on both sides of
+    /// the group boundary. Expected exact strings and distances are C's.
+    #[test]
+    fn exact_strings_join_across_group_boundaries() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::ONIG_OPTION_NONE;
+        use crate::regsyntax::OnigSyntaxOniguruma;
+
+        let exact = |pattern: &[u8]| {
+            let reg = onig_new(
+                pattern,
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            (reg.exact.clone(), reg.dist_min, reg.dist_max)
+        };
+        assert_eq!(exact(b"k(?:b+c+)"), (b"kb".to_vec(), 0, 0));
+        assert_eq!(exact(br#" {2}"={2}"#), (br#"  "=="#.to_vec(), 0, 0));
+        assert_eq!(exact(br#"(?:s{0,2}")aa+"#), (br#""aa"#.to_vec(), 0, 2));
+        assert_eq!(exact(b"(?:,(?:s++a?k))+"), (b",s".to_vec(), 0, 0));
+        assert_eq!(
+            exact(b"(?:k(?:\xc3\xa9+?k+aa))+"),
+            (b"k\xc3\xa9".to_vec(), 0, 0)
+        );
+    }
+
     #[test]
     fn optimizer_is_c_s_wherever_c_has_one() {
         use crate::encodings::utf8::ONIG_ENCODING_UTF8;
