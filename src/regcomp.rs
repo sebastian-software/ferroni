@@ -8666,24 +8666,39 @@ fn refresh_capture_tracking_requirement(reg: &mut RegexType) {
 
 const MAX_ND_OPT_INFO_REF_COUNT: i32 = 5;
 
+const MAP_POSITION_VALS: [i16; 128] = [
+    5, 1, 1, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 12, 4, 7, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5,
+    5, 5, 5, 6, 6, 6, 6, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, 5,
+    5, 5, 5, 6, 6, 6, 6, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 5, 5,
+    5, 1,
+];
+
 fn map_position_value(enc: OnigEncoding, i: usize) -> i32 {
-    static VALS: [i16; 128] = [
-        5, 1, 1, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 12, 4, 7, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5,
-        5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-        6, 6, 5, 6, 5, 5, 5, 5, 6, 6, 6, 6, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-        6, 6, 6, 6, 5, 5, 5, 5, 1,
-    ];
-    if i < VALS.len() {
+    if i < MAP_POSITION_VALS.len() {
         if i == 0 && enc.min_enc_len() > 1 {
             20
         } else {
-            VALS[i] as i32
+            MAP_POSITION_VALS[i] as i32
         }
     } else {
         4
     }
 }
+
+/// Rust-only: `map_position_value` of every byte as one table, so that a
+/// loop over a whole map sums it without a call per byte. Byte 0 is the
+/// value for an encoding whose characters can be one byte long; the others
+/// correct it with `map_position_value(enc, 0)`.
+const MAP_POSITION_VALUES: [i32; CHAR_MAP_SIZE] = {
+    let mut values = [4; CHAR_MAP_SIZE];
+    let mut i = 0;
+    while i < MAP_POSITION_VALS.len() {
+        values[i] = MAP_POSITION_VALS[i] as i32;
+        i += 1;
+    }
+    values
+};
 
 fn distance_value(mm: &MinMaxLen) -> i32 {
     static DIST_VALS: [i16; 100] = [
@@ -8954,13 +8969,19 @@ fn alt_merge_opt_map(enc: OnigEncoding, to: &mut OptMap, add: &OptMap) {
     }
     to.mm.alt_merge(&add.mm);
     let mut val = 0;
-    for i in 0..CHAR_MAP_SIZE {
-        if add.map[i] != 0 {
-            to.map[i] = 1;
+    // One table lookup per byte instead of a `map_position_value` call keeps
+    // this loop branch-free; byte 0 is corrected for the encoding below.
+    for ((to_byte, &add_byte), &value) in to.map.iter_mut().zip(&add.map).zip(&MAP_POSITION_VALUES)
+    {
+        if add_byte != 0 {
+            *to_byte = 1;
         }
-        if to.map[i] != 0 {
-            val += map_position_value(enc, i);
+        if *to_byte != 0 {
+            val += value;
         }
+    }
+    if to.map[0] != 0 {
+        val += map_position_value(enc, 0) - MAP_POSITION_VALUES[0];
     }
     to.value = val;
     alt_merge_opt_anc_info(&mut to.anc, &add.anc);
@@ -8974,9 +8995,54 @@ fn add_cclass_bitset_opt_map(m: &mut OptMap, cc: &CClassNode, enc: OnigEncoding,
     for (word, &class_word) in bs.iter_mut().zip(&cc.bs).take(limit / BITS_IN_ROOM) {
         *word = if cc.is_not() { !class_word } else { class_word };
     }
-    for pos in bitset_members(&bs) {
-        add_char_opt_map(m, pos as u8, enc);
+    add_bitset_opt_map(m, &bs, enc);
+}
+
+/// `add_char_opt_map` for every member of `bs`, in one branch-free pass
+/// over the map with the position values from `MAP_POSITION_VALUES`: a
+/// negated class has a hundred members or more below 0x80 alone.
+fn add_bitset_opt_map(m: &mut OptMap, bs: &BitSet, enc: OnigEncoding) {
+    let first = m.map[0];
+    let mut value = 0;
+    for (i, (byte, &position_value)) in m.map.iter_mut().zip(&MAP_POSITION_VALUES).enumerate() {
+        let member = ((bs[i / BITS_IN_ROOM] >> (i % BITS_IN_ROOM)) & 1) as u8;
+        let added = member & u8::from(*byte == 0);
+        *byte |= added;
+        value += i32::from(added) * position_value;
     }
+    if first == 0 && m.map[0] != 0 {
+        value += map_position_value(enc, 0) - MAP_POSITION_VALUES[0];
+    }
+    m.value += value;
+}
+
+/// The codes below `range` (128 or 256) for which `enc.is_code_ctype` holds,
+/// as a bitset. Rust-only: `optimize_nodes` asks for the same few types
+/// (`\w`, `\s`, `\d`) in grammar after grammar, one `is_code_ctype` call per
+/// code each time, so the answers are kept per thread.
+fn code_ctype_bitset(enc: OnigEncoding, ctype: u32, range: usize) -> BitSet {
+    type Entry = (*const (), u32, usize, BitSet);
+    thread_local! {
+        static CACHE: std::cell::RefCell<Vec<Entry>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let enc_id = enc as *const dyn Encoding as *const ();
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(&(.., bits)) = cache
+            .iter()
+            .find(|&&(id, t, r, _)| id == enc_id && t == ctype && r == range)
+        {
+            return bits;
+        }
+        let mut bits: BitSet = [0; BITSET_REAL_SIZE];
+        for code in 0..range {
+            if enc.is_code_ctype(code as OnigCodePoint, ctype) {
+                bitset_set_bit(&mut bits, code);
+            }
+        }
+        cache.push((enc_id, ctype, range, bits));
+        bits
+    })
 }
 
 fn set_bound_node_opt_info(opt: &mut OptNode, plen: &MinMaxLen) {
@@ -9302,27 +9368,25 @@ fn optimize_nodes(
                     } else {
                         SINGLE_BYTE_SIZE
                     };
+                    let mut members = code_ctype_bitset(enc, ctype_u32, range);
                     if ct.not {
-                        for i in 0..range {
-                            if !enc.is_code_ctype(i as u32, ctype_u32) {
-                                add_char_opt_map(&mut opt.map, i as u8, enc);
-                            }
+                        for (word, room) in members.iter_mut().enumerate() {
+                            *room = if word * BITS_IN_ROOM < range {
+                                !*room
+                            } else {
+                                0
+                            };
                         }
-                        for i in range..SINGLE_BYTE_SIZE {
-                            add_char_opt_map(&mut opt.map, i as u8, enc);
+                        add_bitset_opt_map(&mut opt.map, &members, enc);
+                        if range < SINGLE_BYTE_SIZE {
+                            add_high_bytes_opt_map(&mut opt.map, enc);
                         }
                     } else {
-                        for i in 0..range {
-                            if enc.is_code_ctype(i as u32, ctype_u32) {
-                                add_char_opt_map(&mut opt.map, i as u8, enc);
-                            }
-                        }
+                        add_bitset_opt_map(&mut opt.map, &members, enc);
                         if max > 1 && !ct.ascii_mode {
                             // Non-ASCII-mode: Unicode spaces/words/digits may
                             // start with lead bytes >= 0x80
-                            for i in 0x80..SINGLE_BYTE_SIZE {
-                                add_char_opt_map(&mut opt.map, i as u8, enc);
-                            }
+                            add_high_bytes_opt_map(&mut opt.map, enc);
                         }
                     }
                 }
