@@ -9587,6 +9587,47 @@ fn set_optimize_map(reg: &mut RegexType, m: &OptMap) {
     reg.map_byte_count = count;
 }
 
+/// The bytes a match can start with, when the string or map
+/// `set_optimize_info_from_tree` would choose from `opt` sits at the match
+/// start.
+fn optimizer_start_bytes(enc: OnigEncoding, opt: &OptNode) -> Option<[u8; CHAR_MAP_SIZE]> {
+    if optimizer_distance_max(enc, opt) != Some(0) {
+        return None;
+    }
+    let mut sb = opt.sb;
+    let map_chosen = if opt.sb.len > 0 || opt.sm.len > 0 {
+        select_opt_exact(enc, &mut sb, &opt.sm);
+        opt.map.value > 0 && comp_opt_exact_or_map(&sb, &opt.map) > 0
+    } else {
+        true
+    };
+    if map_chosen {
+        Some(opt.map.map)
+    } else {
+        let mut bytes = [0; CHAR_MAP_SIZE];
+        bytes[sb.s[0] as usize] = 1;
+        Some(bytes)
+    }
+}
+
+/// The largest distance of the string or map `set_optimize_info_from_tree`
+/// would choose from `opt`, or `None` without one.
+fn optimizer_distance_max(enc: OnigEncoding, opt: &OptNode) -> Option<OnigLen> {
+    if opt.sb.len > 0 || opt.sm.len > 0 {
+        let mut sb = opt.sb;
+        select_opt_exact(enc, &mut sb, &opt.sm);
+        if opt.map.value > 0 && comp_opt_exact_or_map(&sb, &opt.map) > 0 {
+            Some(opt.map.mm.max)
+        } else {
+            Some(sb.mm.max)
+        }
+    } else if opt.map.value > 0 {
+        Some(opt.map.mm.max)
+    } else {
+        None
+    }
+}
+
 fn set_sub_anchor(reg: &mut RegexType, anc: &OptAnc) {
     reg.sub_anchor |= anc.left & ANCR_BEGIN_LINE;
     reg.sub_anchor |= anc.right & ANCR_END_LINE;
@@ -9604,11 +9645,22 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
     // extra class and type maps lets the search skip positions no match can
     // start at. Where C has an optimizer it stays C's, so the search attempts
     // exactly C's positions (which shows once an attempt hits a retry limit).
-    if opt.sb.len == 0 && opt.sm.len == 0 && opt.map.value == 0 {
+    // Where C's optimizer sits at a distance but the extra maps would give a
+    // map at the start, that only steers the RegSet (`start_dispatch`).
+    reg.start_dispatch = false;
+    let mut start_bytes = None;
+    let c_has_optimizer = opt.sb.len > 0 || opt.sm.len > 0 || opt.map.value > 0;
+    if !c_has_optimizer || optimizer_distance_max(reg.enc, &opt) != Some(0) {
         let mut start_mm = MinMaxLen::new();
         let mut start_opt = OptNode::new();
         if optimize_nodes(root, &mut start_opt, reg.enc, &mut start_mm, scan_env, true) == 0 {
-            opt.map = start_opt.map;
+            if !c_has_optimizer {
+                opt.map = start_opt.map;
+            } else {
+                start_bytes = optimizer_start_bytes(reg.enc, &start_opt);
+                reg.start_dispatch = optimizer_distance_max(reg.enc, &start_opt)
+                    .is_some_and(|dist_max| dist_max != INFINITE_LEN);
+            }
         }
     }
 
@@ -9632,8 +9684,14 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
 
     // Save first-byte map for regset dispatch before the main optimization
     // choice potentially overwrites reg.map with BMH skip table data.
-    if opt.map.value > 0 && opt.map.mm.min == 0 {
+    // Only a map at distance 0 holds every byte a match can start with.
+    if opt.map.value > 0 && opt.map.mm.max == 0 {
         reg.first_byte_map = opt.map.map;
+        reg.has_first_byte_map = true;
+    }
+    // A `start_dispatch` entry is dispatched by these bytes.
+    if let Some(start_bytes) = start_bytes {
+        reg.first_byte_map = start_bytes;
         reg.has_first_byte_map = true;
     }
 
@@ -10132,6 +10190,7 @@ pub fn onig_new(
         keep_moves_match_start: false,
         first_byte_map: [0u8; CHAR_MAP_SIZE],
         has_first_byte_map: false,
+        start_dispatch: false,
         called_addrs: vec![],
         unset_call_addrs: vec![],
         extp: None,
@@ -10418,6 +10477,7 @@ mod tests {
             keep_moves_match_start: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
+            start_dispatch: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,

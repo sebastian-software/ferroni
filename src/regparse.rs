@@ -7629,6 +7629,7 @@ mod tests {
             keep_moves_match_start: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
+            start_dispatch: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,

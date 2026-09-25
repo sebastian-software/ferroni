@@ -40,6 +40,12 @@ struct RegSetEntry {
     /// The entry is searched on its own after the table pass
     /// (`fallback_search_candidates`) rather than dispatched by the table.
     fallback: bool,
+    /// A table entry dispatched by its bytecode start bytes whose optimizer
+    /// has a distance: the table scan attempts it only where C's
+    /// optimizer admits the position (`table_gate_admits`).
+    gated: bool,
+    /// The regex has callouts, which observe every attempt.
+    has_callouts: bool,
 }
 
 /// Pre-computed memchr needle for SIMD-accelerated position skipping.
@@ -108,6 +114,18 @@ pub struct OnigRegSet {
     /// Positions the table scan has looked at, for tests of its cost.
     #[cfg(test)]
     table_positions_scanned: u64,
+    /// Per entry, the positions a gated table entry may attempt.
+    gates: Vec<EntryGate>,
+    /// Gates of another generation are stale. It changes with every search
+    /// except successive ones over the same identified subject
+    /// (`gate_subject`), where a gate searched from an earlier start can
+    /// still serve.
+    gate_generation: u32,
+    gate_subject: Option<(FallbackMemoIdentity, usize)>,
+    /// Some table entry is gated.
+    has_gated: bool,
+    /// Some gated table entry has callouts.
+    has_gated_callouts: bool,
 }
 
 /// A fallback entry as the position-lead search walks it on every call.
@@ -249,6 +267,26 @@ fn has_variable_optimizer(reg: &RegexType) -> bool {
         }
 }
 
+/// The bytes that dispatch a table entry with a variable optimizer: its
+/// bytecode start bytes, narrowed for a `start_dispatch` entry by the start
+/// bytes the Rust-only maps give.
+fn table_start_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
+    let mut start_map = derive_start_byte_map(reg)?;
+    if reg.start_dispatch && reg.has_first_byte_map {
+        for (byte, dispatch) in start_map.iter_mut().zip(&reg.first_byte_map) {
+            *byte &= *dispatch;
+        }
+    }
+    Some(start_map)
+}
+
+/// Whether an entry with a variable optimizer is dispatched by its
+/// bytecode start bytes rather than searched on its own.
+#[inline]
+fn table_routes_by_start_map(reg: &RegexType) -> bool {
+    reg.dist_max != INFINITE_LEN || reg.start_dispatch
+}
+
 #[inline]
 fn has_finite_variable_optimizer(reg: &RegexType) -> bool {
     reg.dist_max != INFINITE_LEN && has_variable_optimizer(reg)
@@ -320,15 +358,18 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     let mut table_entries = Vec::new();
     for (i, entry) in set.entries.iter_mut().enumerate() {
         entry.fallback = false;
+        entry.gated = false;
         if has_variable_optimizer(&entry.reg) {
             // A start-byte map proves semantic routing, but an unbounded
             // prefix could still re-run its VM at every matching byte. Keep
             // those entries on their optimizer-backed fallback; only a
-            // finite prefix has a bounded table-dispatch cost.
-            if entry.reg.dist_max != INFINITE_LEN {
-                if let Some(start_map) = derive_start_byte_map(&entry.reg) {
+            // finite prefix, or a match start the Rust-only maps pin down
+            // (`start_dispatch`), has a bounded table-dispatch cost.
+            if table_routes_by_start_map(&entry.reg) {
+                if let Some(start_map) = table_start_map(&entry.reg) {
                     add_entry_by_start_map(&mut table, &start_map, i as u16);
                     table_entries.push(i as u16);
+                    entry.gated = true;
                     continue;
                 }
             }
@@ -351,6 +392,14 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     set.scratch_table_retry_counters = vec![0; set.entries.len()];
     set.scratch_msa = None;
     set.table_start_bytes = None;
+    set.has_gated = set.entries.iter().any(|entry| entry.gated);
+    set.has_gated_callouts = set
+        .entries
+        .iter()
+        .any(|entry| entry.gated && entry.has_callouts);
+    set.gates = vec![EntryGate::STALE; set.entries.len()];
+    set.gate_generation = 0;
+    set.gate_subject = None;
 }
 
 /// Create a new regex set from an array of compiled regexes.
@@ -379,6 +428,11 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         table_start_bytes: None,
         #[cfg(test)]
         table_positions_scanned: 0,
+        gates: Vec::new(),
+        gate_generation: 0,
+        gate_subject: None,
+        has_gated: false,
+        has_gated_callouts: false,
     });
 
     for reg in regs {
@@ -412,7 +466,15 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
         fallback_memo_safe,
         start_filter,
         fallback: false,
+        gated: false,
+        has_callouts: false,
     });
+    let entry = set.entries.last_mut().expect("just pushed");
+    entry.has_callouts = entry
+        .reg
+        .extp
+        .as_ref()
+        .is_some_and(|ext| ext.callout_num != 0);
     set.table_start_bytes = None;
     set.fallback_memo_key = None;
     set.fallback_memos.resize_with(set.entries.len(), Vec::new);
@@ -426,13 +488,17 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
     // Add the new entry to the first-byte dispatch table
     let new_idx = (set.entries.len() - 1) as u16;
     if has_variable_optimizer(&set.entries[new_idx as usize].reg) {
-        let start_map = (set.entries[new_idx as usize].reg.dist_max != INFINITE_LEN)
-            .then(|| derive_start_byte_map(&set.entries[new_idx as usize].reg))
+        let start_map = table_routes_by_start_map(&set.entries[new_idx as usize].reg)
+            .then(|| table_start_map(&set.entries[new_idx as usize].reg))
             .flatten();
         if let Some(start_map) = start_map {
             add_entry_by_start_map(&mut set.first_byte_candidates, &start_map, new_idx);
             set.table_entry_count += 1;
             set.table_entries.push(new_idx);
+            set.entries[new_idx as usize].gated = true;
+            set.has_gated = true;
+            set.has_gated_callouts |= set.entries[new_idx as usize].has_callouts;
+            set.gates.resize(set.entries.len(), EntryGate::STALE);
             set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
         } else {
             set.entries[new_idx as usize].fallback = true;
@@ -510,6 +576,8 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
                 return ONIGERR_INVALID_ARGUMENT;
             }
             set.entries[at].fallback_memo_safe = fallback_memo_is_safe(&reg);
+            set.entries[at].has_callouts =
+                reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0);
             set.entries[at].start_filter = fallback_start_filter(&reg);
             set.entries[at].reg = reg;
         }
@@ -761,8 +829,9 @@ fn attempt_fallback_entry(
 /// (its `SearchRange`, without `SRS_DEAD`, which is `None` below).
 #[derive(Clone, Copy)]
 enum EntrySearchRange {
-    /// `SRS_ALL_RANGE`: every position.
-    AllRange,
+    /// `SRS_ALL_RANGE`: every position. A search from any start up to
+    /// `until` would find the same optimizer hit.
+    AllRange { until: usize },
     /// `SRS_LOW_HIGH`: positions from `low` on; a position at or past `high`
     /// runs the optimizer again from there.
     LowHigh {
@@ -783,7 +852,7 @@ fn entry_search_range(
     range: usize,
 ) -> Option<EntrySearchRange> {
     if reg.optimize == OptimizeType::None {
-        return Some(EntrySearchRange::AllRange);
+        return Some(EntrySearchRange::AllRange { until: usize::MAX });
     }
     if reg.dist_max != INFINITE_LEN {
         let sch_range = if end - range > reg.dist_max as usize {
@@ -798,8 +867,39 @@ fn entry_search_range(
             sch_range,
         })
     } else {
-        forward_search(reg, str_data, end, start, end)?;
-        Some(EntrySearchRange::AllRange)
+        let (_, until) = forward_search(reg, str_data, end, start, end)?;
+        Some(EntrySearchRange::AllRange { until })
+    }
+}
+
+/// A gated table entry's search range (`table_gate_admits`) as last
+/// searched from `from`.
+#[derive(Clone, Copy)]
+struct EntryGate {
+    generation: u32,
+    from: usize,
+    range: Option<EntrySearchRange>,
+}
+
+impl EntryGate {
+    const STALE: EntryGate = EntryGate {
+        generation: 0,
+        from: 0,
+        range: None,
+    };
+
+    /// Whether a search from `start` would find the same range: the
+    /// optimizer's next hit from `from` is also the next one from `start`.
+    #[inline]
+    fn serves(&self, generation: u32, start: usize) -> bool {
+        self.generation == generation
+            && self.from <= start
+            && start
+                <= match self.range {
+                    None => usize::MAX,
+                    Some(EntrySearchRange::AllRange { until }) => until,
+                    Some(EntrySearchRange::LowHigh { high, .. }) => high,
+                }
     }
 }
 
@@ -869,7 +969,7 @@ fn attempt_fallback_entry_at_start(
     let decision = fallback_attempt_decision(result, index, start, msa)?;
     let admitted = match entry_search_range(&entry.reg, str_data, end, start, range) {
         None => false,
-        Some(EntrySearchRange::AllRange) => true,
+        Some(EntrySearchRange::AllRange { .. }) => true,
         Some(EntrySearchRange::LowHigh { low, .. }) => start >= low,
     };
     if admitted {
@@ -967,7 +1067,7 @@ fn search_fallback_entry(
                 }
                 true
             }
-            EntrySearchRange::AllRange => {
+            EntrySearchRange::AllRange { .. } => {
                 !has_start_filter
                     || s >= end
                     || entry
@@ -1019,17 +1119,117 @@ fn regset_search_body_position_lead_table(
     option: OnigOptionType,
     skip_region_for_nomem: bool,
 ) -> Option<RegSetDecision> {
-    regset_table_scan(
-        set,
-        str_data,
-        end,
-        start,
-        start,
-        range,
-        option,
-        skip_region_for_nomem,
-    )
-    .0
+    if table_scan_gates_eagerly(set) {
+        regset_table_scan::<true>(
+            set,
+            str_data,
+            end,
+            start,
+            range,
+            start,
+            range,
+            option,
+            skip_region_for_nomem,
+        )
+        .0
+    } else {
+        regset_table_scan::<false>(
+            set,
+            str_data,
+            end,
+            start,
+            range,
+            start,
+            range,
+            option,
+            skip_region_for_nomem,
+        )
+        .0
+    }
+}
+
+/// Whether the table scan has to ask gated entries' optimizers before their
+/// attempts rather than after an event: a gated entry has callouts, or a
+/// search retry budget is set.
+#[inline]
+fn table_scan_gates_eagerly(set: &OnigRegSet) -> bool {
+    set.has_gated
+        && (set.has_gated_callouts
+            || set
+                .scratch_limits
+                .is_some_and(|limits| limits.retry_limit_in_search != 0))
+}
+
+/// Whether gated table entry `index` may attempt position `s` of the
+/// position-lead search from `start` with match start range `range`: C's
+/// `sr[i]` check in `regset_search_body_position_lead`, evaluated lazily
+/// and kept for the rest of the search (and for later searches of the same
+/// subject that it still serves).
+fn table_gate_admits(
+    set: &mut OnigRegSet,
+    index: usize,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    s: usize,
+) -> bool {
+    let reg = &*set.entries[index].reg;
+    let gate = &mut set.gates[index];
+    if !gate.serves(set.gate_generation, start) {
+        *gate = EntryGate {
+            generation: set.gate_generation,
+            from: start,
+            range: entry_search_range(reg, str_data, end, start, range),
+        };
+    }
+    entry_range_admits(reg, str_data, end, &mut gate.range, &mut gate.from, s)
+}
+
+/// Whether a regex whose search range (C: `sr[i]`) is `search_range` attempts
+/// position `s`, the positions being visited in increasing order. Moves the
+/// range on as C does: a position at or past `high` searches the optimizer
+/// again from there, and a failed search leaves nothing (`SRS_DEAD`).
+#[inline]
+fn entry_range_admits(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    search_range: &mut Option<EntrySearchRange>,
+    searched_from: &mut usize,
+    s: usize,
+) -> bool {
+    match *search_range {
+        None => false,
+        Some(EntrySearchRange::AllRange { .. }) => true,
+        Some(EntrySearchRange::LowHigh {
+            low,
+            high,
+            sch_range,
+        }) => {
+            if s < low {
+                return false;
+            }
+            if s < high {
+                return true;
+            }
+            *searched_from = s;
+            match forward_search(reg, str_data, end, s, sch_range) {
+                Some((low, high)) => {
+                    *search_range = Some(EntrySearchRange::LowHigh {
+                        low,
+                        high,
+                        sch_range,
+                    });
+                    s >= low
+                }
+                None => {
+                    *search_range = None;
+                    false
+                }
+            }
+        }
+    }
 }
 
 /// The table part of a position-lead search from `start`, over the
@@ -1037,12 +1237,17 @@ fn regset_search_body_position_lead_table(
 /// table entries there, and the position after the last one looked at. A
 /// search continues where the previous scan stopped by passing that
 /// position as the next `from`.
+/// `EAGER_GATES` asks a gated entry's optimizer before every attempt, which
+/// C's order requires where an attempt can be observed: through a callout,
+/// or through the search retry budget it consumes (`table_scan_gates_eagerly`).
 #[allow(clippy::too_many_arguments)]
-fn regset_table_scan(
+#[inline(always)]
+fn regset_table_scan<const EAGER_GATES: bool>(
     set: &mut OnigRegSet,
     str_data: &[u8],
     end: usize,
     start: usize,
+    search_range: usize,
     from: usize,
     to: usize,
     option: OnigOptionType,
@@ -1150,6 +1355,16 @@ fn regset_table_scan(
             {
                 continue;
             }
+            // A gated entry is attempted where C's optimizer admits the
+            // position. An attempt that finds nothing decides nothing either
+            // way, so the optimizer is asked only after an event -- unless
+            // the attempt itself can be observed (`EAGER_GATES`).
+            if EAGER_GATES
+                && set.entries[i].gated
+                && !table_gate_admits(set, i, str_data, end, start, search_range, s)
+            {
+                continue;
+            }
             if track_search_retry_limit {
                 msa.retry_limit_in_search_counter = set.scratch_table_retry_counters[i];
             }
@@ -1186,6 +1401,17 @@ fn regset_table_scan(
                 set.scratch_table_retry_counters[i] = msa.retry_limit_in_search_counter;
             }
 
+            if !EAGER_GATES
+                && r != ONIG_MISMATCH
+                && set.entries[i].gated
+                && !table_gate_admits(set, i, str_data, end, start, search_range, s)
+            {
+                // C never makes this attempt.
+                if r >= 0 {
+                    clear_regset_entry_region(set, i as i32);
+                }
+                continue;
+            }
             if r >= 0 {
                 result = Some(RegSetDecision::Match(RegSetWinner {
                     index: i as i32,
@@ -1279,16 +1505,27 @@ fn search_table_entry(
     let entry = &mut set.entries[index];
     let after_newline_only = (entry.reg.anchor & ANCR_ANYCHAR_INF) != 0;
     let threshold_len = entry.reg.threshold_len.max(0) as usize;
+    // The search range is the whole subject (`onig_regset_entry_search`).
+    // As in the table scan, the optimizer is asked only once an attempt has
+    // an event, unless the attempts themselves are observable.
+    let gate_first = entry.gated && (msa.retry_limit_in_search != 0 || entry.has_callouts);
+    let mut gate_from = start;
+    let mut gate: Option<Option<EntrySearchRange>> = None;
     msa.retry_limit_in_search_counter = 0;
     let mut s = start;
     loop {
-        let admitted = (s == end
+        let mut admitted = (s == end
             || (start_bytes[str_data[s] as usize / 64] >> (str_data[s] % 64)) & 1 != 0)
             && !(after_newline_only
                 && prev_is_newline_check
                 && s > start
                 && str_data[s - 1] != b'\n')
             && end - s >= threshold_len;
+        if admitted && gate_first {
+            let range = gate
+                .get_or_insert_with(|| entry_search_range(&entry.reg, str_data, end, start, end));
+            admitted = entry_range_admits(&entry.reg, str_data, end, range, &mut gate_from, s);
+        }
         if admitted {
             let result = attempt_fallback_entry(
                 entry,
@@ -1300,28 +1537,43 @@ fn search_table_entry(
                 EntryRegion::Fill,
                 msa,
             );
-            if result >= 0 {
-                return Some(RegSetDecision::Match(RegSetWinner {
+            let decision = if result >= 0 {
+                Some(RegSetDecision::Match(RegSetWinner {
                     index: index as i32,
                     position: s as i32,
                     match_len: result,
-                }));
-            }
-            if result != ONIG_MISMATCH {
-                return Some(RegSetDecision::Error(RegSetError {
+                }))
+            } else if result != ONIG_MISMATCH {
+                Some(RegSetDecision::Error(RegSetError {
                     code: result,
                     index: index as i32,
                     position: s as i32,
-                }));
-            }
-            if msa.retry_limit_in_search != 0
+                }))
+            } else if msa.retry_limit_in_search != 0
                 && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
             {
-                return Some(RegSetDecision::Error(RegSetError {
+                Some(RegSetDecision::Error(RegSetError {
                     code: ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER,
                     index: index as i32,
                     position: s as i32,
-                }));
+                }))
+            } else {
+                None
+            };
+            if let Some(decision) = decision {
+                let admits = !entry.gated || gate_first || {
+                    let range = gate.get_or_insert_with(|| {
+                        entry_search_range(&entry.reg, str_data, end, start, end)
+                    });
+                    entry_range_admits(&entry.reg, str_data, end, range, &mut gate_from, s)
+                };
+                if admits {
+                    return Some(decision);
+                }
+                // C never makes this attempt.
+                if let Some(region) = entry.region.as_mut() {
+                    region.clear();
+                }
             }
         }
         if s >= stop || s >= end {
@@ -1456,6 +1708,19 @@ fn regset_search_body_position_lead(
     fallback_memo_id: Option<FallbackMemoIdentity>,
 ) -> (i32, i32) {
     let limits = refresh_scratch_limits(set);
+    if set.has_gated {
+        let subject = fallback_memo_id
+            .filter(|_| range == end)
+            .map(|identity| (identity, end));
+        if subject.is_none() || subject != set.gate_subject {
+            set.gate_subject = subject;
+            set.gate_generation = set.gate_generation.wrapping_add(1);
+            if set.gate_generation == 0 {
+                set.gates.fill(EntryGate::STALE);
+                set.gate_generation = 1;
+            }
+        }
+    }
 
     if set.fallback_search_candidates.is_empty() {
         let decision = regset_search_body_position_lead_table(
@@ -1504,25 +1769,50 @@ fn regset_search_body_position_lead(
     // position by position. Scanning in growing windows, with the fallback
     // entries asked for events inside each window, keeps a search that
     // ends early short, like C's.
-    const FIRST_WINDOW: usize = 64;
+    const FIRST_WINDOW: usize = 256;
     let mut from = start;
     let mut to = if range - start > FIRST_WINDOW {
         start + FIRST_WINDOW
     } else {
         range
     };
+    // A fallback event found past the window (a memoized search covers the
+    // whole range) bounds the rest of the table scan; the final pass over
+    // the fallback entries starts from it.
+    let mut fallback_bound: Option<RegSetDecision> = None;
     let decision = loop {
-        let (table, next) = regset_table_scan(
-            set,
-            str_data,
-            end,
-            start,
-            from,
-            to,
-            option,
-            skip_region_for_nomem,
-        );
-        if table.is_some() || to >= range {
+        let bound_position =
+            fallback_bound.map(|found| decision_position_and_index(found).0 as usize);
+        let scan_to = bound_position.map_or(to, |position| to.min(position));
+        let (table, next) = if table_scan_gates_eagerly(set) {
+            regset_table_scan::<true>(
+                set,
+                str_data,
+                end,
+                start,
+                range,
+                from,
+                scan_to,
+                option,
+                skip_region_for_nomem,
+            )
+        } else {
+            regset_table_scan::<false>(
+                set,
+                str_data,
+                end,
+                start,
+                range,
+                from,
+                scan_to,
+                option,
+                skip_region_for_nomem,
+            )
+        };
+        if table.is_some()
+            || scan_to >= range
+            || bound_position.is_some_and(|position| next > position)
+        {
             break search_fallback_entries(
                 set,
                 str_data,
@@ -1532,29 +1822,27 @@ fn regset_search_body_position_lead(
                 range,
                 option,
                 memo_enabled,
-                table,
+                table.or(fallback_bound),
             );
         }
-        // No table entry has an event up to `to`, so a fallback event up to
-        // `to` decides the search.
-        if let Some(found) = search_fallback_entries(
-            set,
-            str_data,
-            end,
-            start,
-            range,
-            to,
-            option,
-            memo_enabled,
-            None,
-        ) {
-            if decision_position_and_index(found).0 as usize <= to {
-                break Some(found);
-            }
-            // A memoized search looks past the window; its event may still
-            // lose against a later table event.
-            if let RegSetDecision::Match(winner) = found {
-                clear_regset_entry_region(set, winner.index);
+        if fallback_bound.is_none() {
+            // No table entry has an event up to `to`, so a fallback event up
+            // to `to` decides the search.
+            fallback_bound = search_fallback_entries(
+                set,
+                str_data,
+                end,
+                start,
+                range,
+                to,
+                option,
+                memo_enabled,
+                None,
+            );
+            if let Some(found) = fallback_bound {
+                if decision_position_and_index(found).0 as usize <= to {
+                    break Some(found);
+                }
             }
         }
         from = next;
@@ -1570,6 +1858,7 @@ fn regset_search_body_position_lead(
 /// With `memo_enabled`, an entry's search runs over the whole range so its
 /// result can serve later starts; an event past `limit` may then come back.
 #[allow(clippy::too_many_arguments)]
+#[inline(always)]
 fn search_fallback_entries(
     set: &mut OnigRegSet,
     str_data: &[u8],
@@ -2310,9 +2599,9 @@ mod tests {
             census(grammar_loader::typescript_patterns()),
             Census {
                 patterns: 279,
-                table_entries: 187,
-                fallback_entries: 92,
-                fallback_start_filters: 92,
+                table_entries: 200,
+                fallback_entries: 79,
+                fallback_start_filters: 79,
                 literal_tries: 20,
                 folded_literal_tries: 0,
                 without_optimizer: 3,
@@ -2327,9 +2616,9 @@ mod tests {
             census(grammar_loader::css_patterns()),
             Census {
                 patterns: 117,
-                table_entries: 105,
-                fallback_entries: 12,
-                fallback_start_filters: 10,
+                table_entries: 108,
+                fallback_entries: 9,
+                fallback_start_filters: 7,
                 literal_tries: 18,
                 folded_literal_tries: 18,
                 without_optimizer: 7,
@@ -4075,11 +4364,75 @@ mod tests {
             }
             // One window per call, not the rest of the subject.
             assert!(
-                set.table_positions_scanned < 100 * (n as u64 + 2),
+                set.table_positions_scanned < 300 * (n as u64 + 2),
                 "{} positions",
                 set.table_positions_scanned
             );
         }
+    }
+
+    /// A table entry dispatched by its start bytes still attempts only the
+    /// positions C's optimizer admits. `(?:a|a){0,25}zzz` searches for `zzz`
+    /// within 25 bytes; without one in the subject C's regex is `SRS_DEAD`
+    /// and `a` wins at every start (checked against C's `onig_regset_search`
+    /// with a retry limit of 10,000). Dispatched on `a`, it stopped at the
+    /// retry limit instead. Every route agrees: the plain and memoized
+    /// searches and the per-regex search of the Scanner's cache route.
+    #[test]
+    fn start_byte_dispatch_keeps_c_s_optimizer_windows() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let old_limit = onig_get_retry_limit_in_match();
+        onig_set_retry_limit_in_match(10_000);
+
+        let input = "a".repeat(30);
+        let (set, result) = onig_regset_new(vec![compile(b"(?:a|a){0,25}zzz"), compile(b"a")]);
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        assert!(fallback_indices(&set).is_empty());
+        assert!(set.entries[0].gated);
+        let mut results = Vec::new();
+        for start in [0, 5, 29] {
+            results.push(onig_regset_search(
+                &mut set,
+                input.as_bytes(),
+                input.len(),
+                start,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            ));
+            results.push(onig_regset_search_fast_with_id(
+                &mut set,
+                input.as_bytes(),
+                input.len(),
+                start,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                FallbackMemoIdentity::Caller(20),
+            ));
+        }
+        let entry_events: Vec<_> = [0, 5]
+            .into_iter()
+            .map(|start| {
+                onig_regset_entry_search(
+                    &mut set,
+                    0,
+                    input.as_bytes(),
+                    input.len(),
+                    start,
+                    input.len(),
+                    ONIG_OPTION_NONE,
+                )
+            })
+            .collect();
+
+        onig_set_retry_limit_in_match(old_limit);
+        assert_eq!(results, [(1, 0), (1, 0), (1, 5), (1, 5), (1, 29), (1, 29)]);
+        assert_eq!(
+            entry_events,
+            [RegSetEntryEvent::None, RegSetEntryEvent::None]
+        );
     }
 
     #[test]

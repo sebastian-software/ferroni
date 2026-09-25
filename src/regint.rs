@@ -664,6 +664,13 @@ pub struct RegexType {
     /// Only valid when `has_first_byte_map` is true.
     pub(crate) first_byte_map: [u8; CHAR_MAP_SIZE],
     pub(crate) has_first_byte_map: bool,
+    /// Rust-only RegSet routing hint: the optimizer (C's) has an unbounded
+    /// distance, but the extra class and type maps would give one within a
+    /// bounded distance of the match start. Such an entry is dispatched by
+    /// its start bytes, with C's optimizer still deciding which positions it
+    /// attempts; `first_byte_map` holds those maps' start bytes where they
+    /// sit at the match start.
+    pub(crate) start_dispatch: bool,
 
     // subroutine call support
     pub(crate) called_addrs: Vec<i32>, // group_num -> called entry address
