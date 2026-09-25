@@ -6906,7 +6906,7 @@ fn onig_search_inner_core_with_right_range(
     let enc = reg.enc;
     // Skipping an attempt is unobservable except through the search retry
     // budget, which counts every failed attempt.
-    let start_filter = start_filter.filter(|_| msa.retry_limit_in_search == 0);
+    let mut start_filter = start_filter.filter(|_| msa.retry_limit_in_search == 0);
     // Position-led RegSet searches still honor FIND_LONGEST within each
     // attempted position, but must return the earliest successful position.
     // Public onig_search retains its historical global-longest behavior.
@@ -7367,7 +7367,11 @@ fn onig_search_inner_core_with_right_range(
                     msa,
                 );
             }
-            // Fall through to normal position loop below
+            // Fall through to normal position loop below. Only this path
+            // looks up the Rust-only filter, which keeps it off the others.
+            if msa.retry_limit_in_search == 0 {
+                start_filter = start_filter.or_else(|| unbounded_optimizer_start_bytes(reg));
+            }
         }
     }
 
@@ -7426,6 +7430,22 @@ fn onig_search_inner_core_with_right_range(
         data_range,
         msa,
     )
+}
+
+/// Rust-only start filter of a search whose optimizer (C's) sits at an
+/// unbounded distance, so that the search attempts every position after one
+/// successful optimizer check: the bytes a match can start with, where the
+/// extra byte maps pin them down (`first_byte_map`, set only for a map at
+/// distance 0). Skipping a position it excludes cannot lose a match; without
+/// callouts it is unobservable but for the search retry budget, which the
+/// caller checks.
+#[inline]
+fn unbounded_optimizer_start_bytes(reg: &RegexType) -> Option<&[u8; CHAR_MAP_SIZE]> {
+    (reg.has_first_byte_map
+        && reg.dist_max == INFINITE_LEN
+        && reg.optimize != OptimizeType::None
+        && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0))
+    .then_some(&reg.first_byte_map)
 }
 
 #[allow(clippy::too_many_arguments)]

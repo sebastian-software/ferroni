@@ -70,7 +70,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 #### Scanner fast paths from the 2026-09 profiling pass (`src/regexec.rs`, `src/regset.rs`, `src/regparse.rs`)
 
 - **Negated class star opcodes**: `[^...]*` / `[^...]+` loops, including the Alt-CClass fusion, run as `CClassNotStar` / `CClassMbNotStar` / `CClassMixNotStar` with one lazy backtrack entry per run. All star opcodes share one loop that verifies every character boundary and falls back to one backtrack entry per character on malformed UTF-8.
-- **Start-filtered fallback searches**: RegSet fallback entries with an unbounded optimizer distance skip positions whose byte the bytecode-derived start map excludes. Only used without callouts, position checks, or a search retry budget.
+- **Start-filtered fallback searches**: RegSet fallback entries with an unbounded optimizer distance skip positions whose byte the bytecode-derived start map excludes. Only used without callouts, position checks, or a search retry budget. `onig_search` skips the same way under an unbounded (C) optimizer where the extra byte maps pin the start bytes down.
 - **Untracked push captures**: `MEM_START_PUSH` / `MEM_END_PUSH` skip their bookkeeping when no region is requested and captures cannot influence matching; kept when a match stack limit is set.
 - **Range-driven case-fold expansion**: `(?i)` classes are expanded by walking their ranges through the sorted fold keys.
 - **Impact**: CSS tokenize -79%, TypeScript documents tokenized line by line -25%, CSS grammar compile -11% (wall clock).
