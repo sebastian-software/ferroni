@@ -105,6 +105,9 @@ pub struct OnigRegSet {
     /// it (`None` for a fallback entry). Built on first use by
     /// `onig_regset_entry_search`; cleared whenever the table changes.
     table_start_bytes: Option<Vec<Option<[u64; 4]>>>,
+    /// Positions the table scan has looked at, for tests of its cost.
+    #[cfg(test)]
+    table_positions_scanned: u64,
 }
 
 /// A fallback entry as the position-lead search walks it on every call.
@@ -374,6 +377,8 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         scratch_msa: None,
         last_match_len: ONIG_MISMATCH,
         table_start_bytes: None,
+        #[cfg(test)]
+        table_positions_scanned: 0,
     });
 
     for reg in regs {
@@ -1004,6 +1009,7 @@ fn regset_decision_result(set: &mut OnigRegSet, decision: Option<RegSetDecision>
 }
 
 /// Position-lead search: iterate positions, try each regex at each position.
+#[inline]
 fn regset_search_body_position_lead_table(
     set: &mut OnigRegSet,
     str_data: &[u8],
@@ -1013,16 +1019,46 @@ fn regset_search_body_position_lead_table(
     option: OnigOptionType,
     skip_region_for_nomem: bool,
 ) -> Option<RegSetDecision> {
+    regset_table_scan(
+        set,
+        str_data,
+        end,
+        start,
+        start,
+        range,
+        option,
+        skip_region_for_nomem,
+    )
+    .0
+}
+
+/// The table part of a position-lead search from `start`, over the
+/// positions from `from` up to `to`: the first match or error among the
+/// table entries there, and the position after the last one looked at. A
+/// search continues where the previous scan stopped by passing that
+/// position as the next `from`.
+#[allow(clippy::too_many_arguments)]
+fn regset_table_scan(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    from: usize,
+    to: usize,
+    option: OnigOptionType,
+    skip_region_for_nomem: bool,
+) -> (Option<RegSetDecision>, usize) {
     // All entries are optimizer-backed fallbacks. They are searched below in
     // one pass each; walking every byte here would add an otherwise empty
     // O(n) table pass to every cached no-match lookup.
     if set.table_entry_count == 0 {
-        return None;
+        return (None, to.saturating_add(1));
     }
 
     // rmatch_pos, regex_index
     let enc = set.enc;
-    let mut s = start;
+    let mut s = from;
+    let range = to;
 
     // Reuse a single MatchArg across patterns and across regset calls.
     let mut msa = if let Some(msa) = set.scratch_msa.take() {
@@ -1036,7 +1072,7 @@ fn regset_search_body_position_lead_table(
     // default global limit is zero, so avoid touching the per-entry scratch
     // vector on the table-only fast path where it cannot be observed.
     let track_search_retry_limit = msa.retry_limit_in_search != 0;
-    if track_search_retry_limit {
+    if track_search_retry_limit && from == start {
         if set.scratch_table_retry_counters.len() != set.entries.len() {
             set.scratch_table_retry_counters
                 .resize(set.entries.len(), 0);
@@ -1068,6 +1104,11 @@ fn regset_search_body_position_lead_table(
                     memchr::memchr3(b1, b2, b3, &str_data[s..range]).map_or(range, |off| s + off)
                 }
             };
+        }
+
+        #[cfg(test)]
+        {
+            set.table_positions_scanned += 1;
         }
 
         // Oniguruma starts with prev_is_newline = 1: the first attempted
@@ -1174,6 +1215,7 @@ fn regset_search_body_position_lead_table(
         }
 
         if s >= range {
+            s = s.saturating_add(enclen(enc, str_data, s));
             break;
         }
         s += enclen(enc, str_data, s);
@@ -1181,7 +1223,7 @@ fn regset_search_body_position_lead_table(
 
     set.scratch_msa = Some(msa);
 
-    result
+    (result, s)
 }
 
 /// The scratch `MatchArg`, or a new one.
@@ -1456,15 +1498,89 @@ fn regset_search_body_position_lead(
         }
     }
 
-    let mut decision = regset_search_body_position_lead_table(
-        set,
-        str_data,
-        end,
-        start,
-        range,
-        option,
-        skip_region_for_nomem,
-    );
+    // The table scan stops at its first event, but without one it would
+    // walk the rest of the subject before a fallback entry gets a say, even
+    // where a fallback entry matches at the start. C looks at every regex
+    // position by position. Scanning in growing windows, with the fallback
+    // entries asked for events inside each window, keeps a search that
+    // ends early short, like C's.
+    const FIRST_WINDOW: usize = 64;
+    let mut from = start;
+    let mut to = if range - start > FIRST_WINDOW {
+        start + FIRST_WINDOW
+    } else {
+        range
+    };
+    let decision = loop {
+        let (table, next) = regset_table_scan(
+            set,
+            str_data,
+            end,
+            start,
+            from,
+            to,
+            option,
+            skip_region_for_nomem,
+        );
+        if table.is_some() || to >= range {
+            break search_fallback_entries(
+                set,
+                str_data,
+                end,
+                start,
+                range,
+                range,
+                option,
+                memo_enabled,
+                table,
+            );
+        }
+        // No table entry has an event up to `to`, so a fallback event up to
+        // `to` decides the search.
+        if let Some(found) = search_fallback_entries(
+            set,
+            str_data,
+            end,
+            start,
+            range,
+            to,
+            option,
+            memo_enabled,
+            None,
+        ) {
+            if decision_position_and_index(found).0 as usize <= to {
+                break Some(found);
+            }
+            // A memoized search looks past the window; its event may still
+            // lose against a later table event.
+            if let RegSetDecision::Match(winner) = found {
+                clear_regset_entry_region(set, winner.index);
+            }
+        }
+        from = next;
+        to = range.min(start + (to - start).saturating_mul(4));
+    };
+    regset_decision_result(set, decision)
+}
+
+/// The fallback entries' part of a position-lead search from `start` whose
+/// match start range is `range`: each entry's first event, bounded by the
+/// current `decision` and by `limit`, merged into that decision.
+///
+/// With `memo_enabled`, an entry's search runs over the whole range so its
+/// result can serve later starts; an event past `limit` may then come back.
+#[allow(clippy::too_many_arguments)]
+fn search_fallback_entries(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    limit: usize,
+    option: OnigOptionType,
+    memo_enabled: bool,
+    mut decision: Option<RegSetDecision>,
+) -> Option<RegSetDecision> {
     let mut fallback_msa: Option<MatchArg> = None;
     // The character head before the current decision's position, which
     // bounds every later-index entry. Cached per decision position.
@@ -1532,7 +1648,7 @@ fn regset_search_body_position_lead(
                 }
             }
             Some((position, _)) => position as usize,
-            None => range,
+            None => limit,
         };
         if search_range < start {
             continue;
@@ -1562,9 +1678,11 @@ fn regset_search_body_position_lead(
             }) {
                 // The search from `searched_from` attempted every position
                 // this search attempts and found nothing before `position`.
-                if decision.is_some_and(|current| {
-                    (position as i32, index as i32) >= decision_position_and_index(current)
-                }) {
+                if position > search_range
+                    || decision.is_some_and(|current| {
+                        (position as i32, index as i32) >= decision_position_and_index(current)
+                    })
+                {
                     continue;
                 }
                 // Known to match: one pass that records the captures.
@@ -1691,7 +1809,7 @@ fn regset_search_body_position_lead(
     if fallback_msa.is_some() {
         set.scratch_msa = fallback_msa;
     }
-    regset_decision_result(set, decision)
+    decision
 }
 
 /// Regex-lead search: iterate regexes, find earliest match.
@@ -3909,6 +4027,61 @@ mod tests {
     /// and `a` wins at every start (checked against C's `onig_regset_search`
     /// with a retry limit of 10,000). A byte map taken from the negated
     /// class routed them to every position, where they stopped at the limit.
+    /// Tokenizing `[(?=\s*[^;{]), \s+]` over "a"×n + "(" finds the zero-width
+    /// look-ahead at every start (as vscode-oniguruma's scanner over C
+    /// does). The look-ahead is a fallback entry and `\s+` a table entry that
+    /// never matches; the table scan used to walk the rest of the subject on
+    /// every call before the fallback entry could decide, which made the
+    /// tokenization quadratic. It now scans in windows and stops at the
+    /// fallback entry's match, as C's position-by-position search does.
+    #[test]
+    fn a_fallback_match_at_the_start_ends_the_table_scan() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let n = 2_000;
+        let input = format!("{}(", "a".repeat(n));
+        for identity in [None, Some(FallbackMemoIdentity::Caller(19))] {
+            let (set, result) = onig_regset_new(vec![compile(br"(?=\s*[^;{])"), compile(br"\s+")]);
+            assert_eq!(result, ONIG_NORMAL);
+            let mut set = set.expect("regset");
+            assert_eq!(fallback_indices(&set), [0]);
+            for start in 0..=input.len() {
+                let found = match identity {
+                    None => onig_regset_search_fast(
+                        &mut set,
+                        input.as_bytes(),
+                        input.len(),
+                        start,
+                        input.len(),
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                    ),
+                    Some(identity) => onig_regset_search_fast_with_id(
+                        &mut set,
+                        input.as_bytes(),
+                        input.len(),
+                        start,
+                        input.len(),
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                        identity,
+                    ),
+                };
+                let expected = if start < input.len() {
+                    (0, start as i32)
+                } else {
+                    (ONIG_MISMATCH, 0)
+                };
+                assert_eq!(found, expected, "start {start}");
+            }
+            // One window per call, not the rest of the subject.
+            assert!(
+                set.table_positions_scanned < 100 * (n as u64 + 2),
+                "{} positions",
+                set.table_positions_scanned
+            );
+        }
+    }
+
     #[test]
     fn negated_class_maps_do_not_widen_c_s_optimizer() {
         let _lock = LIMIT_TEST_LOCK.lock().unwrap();
