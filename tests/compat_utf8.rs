@@ -11097,3 +11097,14 @@ fn capture_history_traverse() {
     );
     assert_eq!(visited, vec![0, 1, 2]);
 }
+
+// Inside an absent operator the right range can drop below the current
+// position; `.*` must then match nothing, as C's DATA_ENSURE_CHECK1 loop does.
+// Used to panic on an inverted slice. Expectations checked against C.
+#[test]
+fn absent_operator_with_any_char_star_body() {
+    x2(b"(?~[a-z]+.*)", b"ab", 0, 0);
+    x2(b"(?~a+.*)", b"ab", 0, 0);
+    x2(b"(?~b.*)", b"ab", 0, 1);
+    x2(b"a(?~[a-z]+.*)b", b"ab", 0, 2);
+}
