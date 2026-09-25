@@ -9157,12 +9157,19 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
     }
 }
 
+///
+/// `start_maps` adds the Rust-only byte maps C does not compute: the ASCII
+/// half of a class with multibyte members or a negated class, and the
+/// `\w` / `\s` / `\d` types in a multibyte encoding. Only
+/// `set_optimize_info_from_tree` asks for them, for a pattern C gives no
+/// optimizer at all.
 fn optimize_nodes(
     node: &Node,
     opt: &mut OptNode,
     env_enc: OnigEncoding,
     env_mm: &mut MinMaxLen,
     scan_env: &ParseEnv,
+    start_maps: bool,
 ) -> i32 {
     let enc = env_enc;
     opt.clear();
@@ -9188,7 +9195,7 @@ fn optimize_nodes(
             let mut cur = node;
             while let NodeInner::List(cons) = &cur.inner {
                 let mut xo = OptNode::new();
-                let r = optimize_nodes(&cons.car, &mut xo, enc, &mut nenv_mm, scan_env);
+                let r = optimize_nodes(&cons.car, &mut xo, enc, &mut nenv_mm, scan_env, start_maps);
                 if r != 0 {
                     return r;
                 }
@@ -9205,7 +9212,7 @@ fn optimize_nodes(
             let mut cur = node;
             while let NodeInner::Alt(cons) = &cur.inner {
                 let mut xo = OptNode::new();
-                let r = optimize_nodes(&cons.car, &mut xo, enc, env_mm, scan_env);
+                let r = optimize_nodes(&cons.car, &mut xo, enc, env_mm, scan_env, start_maps);
                 if r != 0 {
                     return r;
                 }
@@ -9233,15 +9240,12 @@ fn optimize_nodes(
             if cc.mbuf.is_some() || cc.is_not() {
                 let min = enc.min_enc_len() as OnigLen;
                 let max = enc.max_enc_len() as OnigLen;
-                // Even with multi-byte ranges or negation, compute the ASCII
-                // part of the map from the bitset. For non-ASCII lead bytes
-                // (0x80-0xFF), mark them all as possible since any multi-byte
-                // sequence could start there.
-                add_cclass_bitset_opt_map(&mut opt.map, cc, enc, 0x80);
-                // This branch is entered when cc.mbuf.is_some() || cc.is_not().
-                // In both cases, multi-byte characters may match, so mark all
-                // lead bytes >= 0x80 as possible.
-                add_high_bytes_opt_map(&mut opt.map, enc);
+                if start_maps {
+                    // The ASCII part of the map from the bitset; any lead
+                    // byte from 0x80 up may start a multibyte member.
+                    add_cclass_bitset_opt_map(&mut opt.map, cc, enc, 0x80);
+                    add_high_bytes_opt_map(&mut opt.map, enc);
+                }
                 opt.len.set(min, max);
             } else {
                 add_cclass_bitset_opt_map(&mut opt.map, cc, enc, SINGLE_BYTE_SIZE);
@@ -9258,12 +9262,17 @@ fn optimize_nodes(
             // Compute first-byte map for word, space, and digit types.
             // For multi-byte encodings (UTF-8), limit positive matches to ASCII
             // range (0-127) since those are the only single-byte characters.
+            // C maps `\w` in a single-byte encoding only.
+            let mapped = if start_maps {
+                ct.ctype == crate::oniguruma::ONIGENC_CTYPE_WORD as i32
+                    || ct.ctype == crate::oniguruma::ONIGENC_CTYPE_SPACE as i32
+                    || ct.ctype == crate::oniguruma::ONIGENC_CTYPE_DIGIT as i32
+            } else {
+                max == 1 && ct.ctype == crate::oniguruma::ONIGENC_CTYPE_WORD as i32
+            };
             match ct.ctype {
                 CTYPE_ANYCHAR => { /* nothing to add to map */ }
-                _ if ct.ctype == crate::oniguruma::ONIGENC_CTYPE_WORD as i32
-                    || ct.ctype == crate::oniguruma::ONIGENC_CTYPE_SPACE as i32
-                    || ct.ctype == crate::oniguruma::ONIGENC_CTYPE_DIGIT as i32 =>
-                {
+                _ if mapped => {
                     let ctype_u32 = ct.ctype as u32;
                     let range = if ct.ascii_mode || max > 1 {
                         128
@@ -9307,7 +9316,7 @@ fn optimize_nodes(
                 ANCR_PREC_READ => {
                     if let Some(ref body) = an.body {
                         let mut xo = OptNode::new();
-                        let r = optimize_nodes(body, &mut xo, enc, env_mm, scan_env);
+                        let r = optimize_nodes(body, &mut xo, enc, env_mm, scan_env, start_maps);
                         if r == 0 {
                             if xo.sb.len > 0 {
                                 opt.spr = xo.sb;
@@ -9339,7 +9348,7 @@ fn optimize_nodes(
                 opt.len.set(0, 0);
             } else if let Some(ref body) = qn.body {
                 let mut xo = OptNode::new();
-                let r = optimize_nodes(body, &mut xo, enc, env_mm, scan_env);
+                let r = optimize_nodes(body, &mut xo, enc, env_mm, scan_env, start_maps);
                 if r != 0 {
                     return r;
                 }
@@ -9387,7 +9396,7 @@ fn optimize_nodes(
         NodeInner::Bag(bn) => match bn.bag_type {
             BagType::StopBacktrack | BagType::Option => {
                 if let Some(ref body) = bn.body {
-                    let r = optimize_nodes(body, opt, enc, env_mm, scan_env);
+                    let r = optimize_nodes(body, opt, enc, env_mm, scan_env, start_maps);
                     if r != 0 {
                         return r;
                     }
@@ -9395,7 +9404,7 @@ fn optimize_nodes(
             }
             BagType::Memory => {
                 if let Some(ref body) = bn.body {
-                    let r = optimize_nodes(body, opt, enc, env_mm, scan_env);
+                    let r = optimize_nodes(body, opt, enc, env_mm, scan_env, start_maps);
                     if r != 0 {
                         return r;
                     }
@@ -9416,7 +9425,14 @@ fn optimize_nodes(
                         let mut nenv_mm = *env_mm;
                         if let Some(ref body) = bn.body {
                             let mut xo = OptNode::new();
-                            let r = optimize_nodes(body, &mut xo, enc, &mut nenv_mm, scan_env);
+                            let r = optimize_nodes(
+                                body,
+                                &mut xo,
+                                enc,
+                                &mut nenv_mm,
+                                scan_env,
+                                start_maps,
+                            );
                             if r != 0 {
                                 return r;
                             }
@@ -9425,7 +9441,14 @@ fn optimize_nodes(
                         }
                         if let Some(then_n) = then_node {
                             let mut xo = OptNode::new();
-                            let r = optimize_nodes(then_n, &mut xo, enc, &mut nenv_mm, scan_env);
+                            let r = optimize_nodes(
+                                then_n,
+                                &mut xo,
+                                enc,
+                                &mut nenv_mm,
+                                scan_env,
+                                start_maps,
+                            );
                             if r != 0 {
                                 return r;
                             }
@@ -9433,7 +9456,8 @@ fn optimize_nodes(
                         }
                         if let Some(else_n) = else_node {
                             let mut xo = OptNode::new();
-                            let r = optimize_nodes(else_n, &mut xo, enc, env_mm, scan_env);
+                            let r =
+                                optimize_nodes(else_n, &mut xo, enc, env_mm, scan_env, start_maps);
                             if r != 0 {
                                 return r;
                             }
@@ -9571,9 +9595,21 @@ fn set_sub_anchor(reg: &mut RegexType, anc: &OptAnc) {
 fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &ParseEnv) -> i32 {
     let mut env_mm = MinMaxLen::new();
     let mut opt = OptNode::new();
-    let r = optimize_nodes(root, &mut opt, reg.enc, &mut env_mm, scan_env);
+    let r = optimize_nodes(root, &mut opt, reg.enc, &mut env_mm, scan_env, false);
     if r != 0 {
         return r;
+    }
+    // Rust-only: where C finds neither a string nor a byte map, and so
+    // attempts a match at every position, a start map computed with the
+    // extra class and type maps lets the search skip positions no match can
+    // start at. Where C has an optimizer it stays C's, so the search attempts
+    // exactly C's positions (which shows once an attempt hits a retry limit).
+    if opt.sb.len == 0 && opt.sm.len == 0 && opt.map.value == 0 {
+        let mut start_mm = MinMaxLen::new();
+        let mut start_opt = OptNode::new();
+        if optimize_nodes(root, &mut start_opt, reg.enc, &mut start_mm, scan_env, true) == 0 {
+            opt.map = start_opt.map;
+        }
     }
 
     reg.anchor = opt.anc.left
@@ -10120,6 +10156,49 @@ pub fn onig_new(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Where C finds an optimizer, Ferroni uses the same one; the extra class
+    /// and type byte maps only fill in where C has none. Expected values are
+    /// C's (`reg->optimize`, `dist_min`, `dist_max`, `map`).
+    #[test]
+    fn optimizer_is_c_s_wherever_c_has_one() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::ONIG_OPTION_NONE;
+        use crate::regsyntax::OnigSyntaxOniguruma;
+
+        let optimizer = |pattern: &[u8]| {
+            let reg = onig_new(
+                pattern,
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let map: Vec<u8> = (0..=255u8)
+                .filter(|&b| reg.optimize == OptimizeType::Map && reg.map[b as usize] != 0)
+                .collect();
+            (reg.optimize, reg.dist_min, reg.dist_max, map)
+        };
+
+        // A negated class carries no map in C; the `x` after it decides.
+        assert_eq!(
+            optimizer(br"(?i)([^\s]+)+x"),
+            (OptimizeType::Map, 1, INFINITE_LEN, b"Xx".to_vec())
+        );
+        assert_eq!(
+            optimizer(br"(?:\d|.[ab]*)*[^\s]b+.|b*(?:=+) *"),
+            (OptimizeType::Map, 0, INFINITE_LEN, b"=b".to_vec())
+        );
+        // C has no optimizer for these: a Rust-only start map fills in.
+        for pattern in [&br"\s+"[..], br#"[^"]+"#, br"\d+"] {
+            let (optimize, dist_min, dist_max, _) = optimizer(pattern);
+            assert_eq!(
+                (optimize, dist_min, dist_max),
+                (OptimizeType::Map, 0, 0),
+                "{pattern:?}"
+            );
+        }
+    }
 
     /// A call contributes its group's minimum length, so a loop over a body
     /// that always consumes gets no empty check, as in C (compared against

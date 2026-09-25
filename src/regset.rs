@@ -2192,9 +2192,9 @@ mod tests {
             census(grammar_loader::typescript_patterns()),
             Census {
                 patterns: 279,
-                table_entries: 200,
-                fallback_entries: 79,
-                fallback_start_filters: 79,
+                table_entries: 187,
+                fallback_entries: 92,
+                fallback_start_filters: 92,
                 literal_tries: 20,
                 folded_literal_tries: 0,
                 without_optimizer: 3,
@@ -2209,9 +2209,9 @@ mod tests {
             census(grammar_loader::css_patterns()),
             Census {
                 patterns: 117,
-                table_entries: 108,
-                fallback_entries: 9,
-                fallback_start_filters: 7,
+                table_entries: 105,
+                fallback_entries: 12,
+                fallback_start_filters: 10,
                 literal_tries: 18,
                 folded_literal_tries: 18,
                 without_optimizer: 7,
@@ -3901,6 +3901,44 @@ mod tests {
 
         onig_set_retry_limit_in_match(old_limit);
         assert_eq!(results, [(1, 0), (1, 0), (1, 1), (1, 1), (1, 5), (1, 5)]);
+    }
+
+    /// C's optimizer for `(?i)([^\s]+)+x` looks for `x`/`X` (a negated class
+    /// has no byte map in C), and the one for the alternation below for `=`
+    /// or `b`; with neither in the subject C never attempts these regexes,
+    /// and `a` wins at every start (checked against C's `onig_regset_search`
+    /// with a retry limit of 10,000). A byte map taken from the negated
+    /// class routed them to every position, where they stopped at the limit.
+    #[test]
+    fn negated_class_maps_do_not_widen_c_s_optimizer() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let old_limit = onig_get_retry_limit_in_match();
+        onig_set_retry_limit_in_match(10_000);
+
+        let input = "a".repeat(30);
+        let mut results = Vec::new();
+        for pattern in [
+            &br"(?i)([^\s]+)+x"[..],
+            br"(?:\d|.[ab]*)*[^\s]b+.|b*(?:=+) *",
+        ] {
+            for start in [0, 5] {
+                let (set, result) = onig_regset_new(vec![compile(pattern), compile(b"a")]);
+                assert_eq!(result, ONIG_NORMAL);
+                let mut set = set.expect("regset");
+                results.push(onig_regset_search(
+                    &mut set,
+                    input.as_bytes(),
+                    input.len(),
+                    start,
+                    input.len(),
+                    OnigRegSetLead::PositionLead,
+                    ONIG_OPTION_NONE,
+                ));
+            }
+        }
+
+        onig_set_retry_limit_in_match(old_limit);
+        assert_eq!(results, [(1, 0), (1, 5), (1, 0), (1, 5)]);
     }
 
     /// C's position-lead search attempts an `ANCR_ANYCHAR_INF` regex only at
