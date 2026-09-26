@@ -310,7 +310,9 @@ pub fn onigenc_unicode_mbc_case_fold(
     // slice start. C decodes against `end` here, so a character straddling it
     // (e.g. at the end of a backreference span) is truncated, not read whole.
     let code = enc.mbc_to_code(&data[*pp..], end.saturating_sub(*pp));
-    let len = enc.mbc_enc_len(&data[*pp..]);
+    // C advances by the declared character length even when a truncated
+    // character ends the buffer, and then reads past it; stop at the buffer.
+    let len = enc.mbc_enc_len(&data[*pp..]).min(data.len() - *pp);
     let p_start = *pp;
     *pp += len;
 
