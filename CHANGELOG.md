@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/sebastian-software/ferroni/compare/v1.6.0...v1.6.1) (2026-09-26)
+
+
+### Performance Improvements
+
+* evaluate boxed match-state reuse ([#176](https://github.com/sebastian-software/ferroni/issues/176)) ([c422640](https://github.com/sebastian-software/ferroni/commit/c4226403fe38c31810c601e2ab384ecb9e929e57))
+
 ## [1.6.0](https://github.com/sebastian-software/ferroni/compare/v1.5.2...v1.6.0) (2026-09-26)
 
 
