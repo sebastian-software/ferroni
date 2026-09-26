@@ -1,0 +1,171 @@
+---
+order: 9
+title: "Short match overhead evaluation"
+---
+
+# Short match overhead evaluation
+
+**Status: performance remains inconclusive; this is an evaluation for review.**
+The first diagnostic pair suggested that moving less cached state helps short
+matches. Later repetitions became unstable, including compilation workloads
+whose implementation did not change. I would keep this change in draft until
+quiet measurements establish the benefit and exclude material regressions.
+The timings below are retained observations, not confirmed speedup claims.
+
+The experiment stores the existing thread-local `MatchArg` in a `Box`, so
+taking and returning ownership moves a pointer instead of the entire state.
+Both `onig_search` and `onig_match` use the same change. The VM, search
+optimizer, compiler, public API, and dependencies are unchanged.
+
+## Focused measurements
+
+The baseline is merged commit `fa3cc675ded31e3296d46c33db95a2e97044b462`,
+including the [ASCII class run optimization](/perf/ascii-class-runs).
+The candidate code is `e7e34de0440f9865f67946ca36b3506fcf2908fe`.
+The initial diagnostic pair is labeled `short-initial` / `short-box`.
+The planned repeat uses `short-before-1` / `short-after-1` /
+`short-after-2` / `short-before-2`. The first two also contain the broader
+cases below. Independent benchmark jobs ran between these processes. An exclusive lock
+kept other benchmark jobs and builds outside each timed process.
+
+| Workload            | Run              |       Mean | 95% confidence interval |
+| ------------------- | ---------------- | ---------: | ----------------------: |
+| `number_validation` | `short-initial`  |   7.830 µs |          7.812–7.852 µs |
+| `number_validation` | `short-box`      |   7.172 µs |          7.165–7.179 µs |
+| `number_validation` | `short-before-1` |   7.942 µs |          7.917–7.976 µs |
+| `number_validation` | `short-after-1`  |   7.408 µs |          7.387–7.429 µs |
+| `number_validation` | `short-after-2`  |  11.308 µs |        10.116–12.643 µs |
+| `number_validation` | `short-before-2` |   8.123 µs |          8.088–8.152 µs |
+| `literal_exact`     | `short-initial`  | 101.626 ns |      101.290–101.954 ns |
+| `literal_exact`     | `short-box`      |  85.224 ns |        85.120–85.340 ns |
+| `literal_exact`     | `short-before-1` | 102.675 ns |      102.294–103.048 ns |
+| `literal_exact`     | `short-after-1`  |  95.810 ns |       92.297–100.231 ns |
+| `literal_exact`     | `short-after-2`  | 118.498 ns |      106.905–132.817 ns |
+| `literal_exact`     | `short-before-2` | 103.343 ns |      103.104–103.593 ns |
+
+Number validation is a batch of 64 accepted/rejected inputs, with no capture
+output. The literal case searches for `lazy dog` in a 62-byte sentence, also
+without capture output. Compilation and first-use cache allocation are
+outside the timing.
+
+The confidence intervals describe each run. Results from different noise
+regimes are not averaged into one headline. Both patterns belong to the
+shared-syntax subset supported by Ferroni, Oniguruma, and Rust's `regex`.
+The shared comparator runs were also noisy, so no precise gap to `regex` is
+claimed here. These expressions cannot rank the engines' complete feature
+sets; lookarounds and backreferences remain outside `regex`'s scope.
+
+## Why try this change
+
+Eight-second baseline sampling profiles identified setup overhead before any
+code changed. In the literal case, `search_in_range` accounted for 22.5% of
+leaf samples and TLS access for 16.3%; the VM accounted for 14.7%.
+Number validation spent 10.4% in `search_in_range`, 58.9% in the VM, and 10.1%
+in backtracking stack pops. Sampling identifies a hypothesis, not a speedup.
+
+The previous cache already reused the match stack and capture buffers and
+kept its `RefCell` borrow outside matching. This change retains that ownership
+scheme. Taking the `Box` leaves `None` in the cache, so a nested call can own
+separate state; return and panic cleanup retain normal Rust ownership.
+Per-call match parameters still use the existing uncached path. Scanner
+entry points with caller-owned state are unchanged.
+
+On this compiler and target, `MatchArg` and `Option<MatchArg>` occupy 240 bytes
+with `ffi` and without `match-cache`; `Option<Box<MatchArg>>` occupies 8 bytes.
+With `match-cache`, the state occupies 248 bytes and the boxed option remains
+8 bytes. These sizes are observations, not layout guarantees. The tradeoff is
+one extra heap allocation for each initialized thread-local match/search
+cache (and for a nested call while its outer call owns the cached state),
+plus allocator overhead. The state moves from inline TLS storage to the
+heap. Warm reuse does not allocate another `Box`. Cold-start latency and
+allocator behavior on other platforms were not measured.
+
+## Broader observations and the noisy run
+
+The following is the complete first broad pair (`short-before-1` and
+`short-after-1`). The changes are arithmetic descriptions of these samples,
+not causal estimates. In particular, literal compilation rose from about
+505 ns to 870 ns despite unchanged compiler code; the candidate's individual
+samples ranged from about 537 ns to 3,439 ns, with a 703–1,096 ns mean
+confidence interval. Named-capture search also had large spikes. These
+observations motivated the bounded reverse-order follow-up below.
+
+| Workload                                           |      Before |   Candidate | Observed time change |
+| -------------------------------------------------- | ----------: | ----------: | -------------------: |
+| `compilation/rust/literal`                         |    0.505 µs |    0.870 µs |               +72.3% |
+| `compilation/rust/lookbehind`                      |    1.154 µs |    1.438 µs |               +24.7% |
+| `compilation/rust/named_capture`                   |    4.006 µs |    4.939 µs |               +23.3% |
+| `general_regex/rust/access_log_captures`           |   31.337 µs |   30.326 µs |                -3.2% |
+| `general_regex/rust/email_redaction`               |   78.589 µs |   80.116 µs |                +1.9% |
+| `general_regex/rust/email_validation`              |    6.625 µs |    5.917 µs |               -10.7% |
+| `general_regex/rust/number_validation`             |    7.942 µs |    7.408 µs |                -6.7% |
+| `general_regex/rust/unicode_words`                 |   64.590 µs |   56.279 µs |               -12.9% |
+| `general_regex/rust/url_extraction`                |   10.076 µs |    8.764 µs |               -13.0% |
+| `general_regex/rust/uuid_validation`               |    5.668 µs |    4.812 µs |               -15.1% |
+| `scanner_documents/css_117_document_19_lines_rust` |   91.133 µs |   93.232 µs |                +2.3% |
+| `scanner_documents/rust_81_document_31_lines_rust` |  105.473 µs |  104.181 µs |                -1.2% |
+| `scanner_documents/ts_279_document_28_lines_rust`  | 1053.182 µs | 1087.952 µs |                +3.3% |
+| `single_pattern/rust/alternation_10_branch`        |   61.052 ns |   60.901 ns |                -0.2% |
+| `single_pattern/rust/alternation_2_branch`         |   67.068 ns |   66.450 ns |                -0.9% |
+| `single_pattern/rust/backref_simple`               |  121.741 ns |   86.422 ns |               -29.0% |
+| `single_pattern/rust/case_insensitive_phrase`      |   96.502 ns |  107.046 ns |               +10.9% |
+| `single_pattern/rust/literal_exact`                |  102.675 ns |   95.810 ns |                -6.7% |
+| `single_pattern/rust/lookaround_combined`          |   86.571 ns |   89.188 ns |                +3.0% |
+| `single_pattern/rust/named_capture_date`           |  211.188 ns |  302.334 ns |               +43.2% |
+| `single_pattern/rust/quantifier_greedy`            |   60.869 ns |   56.381 ns |                -7.4% |
+| `single_pattern/rust/unicode_greek`                |  122.150 ns |  111.940 ns |                -8.4% |
+
+Only the five anomalous compilation/single-pattern cases were repeated,
+in candidate / baseline order. The files are `short-followup-after` and
+`short-followup-before`; their complete samples and confidence intervals
+are in the artifact. There was no unbounded search for a favorable result.
+
+| Workload                                      | Repeated baseline | Repeated candidate | Observed time change |
+| --------------------------------------------- | ----------------: | -----------------: | -------------------: |
+| `compilation/rust/literal`                    |          0.551 µs |           0.547 µs |                -0.6% |
+| `compilation/rust/lookbehind`                 |          1.171 µs |           1.170 µs |                -0.1% |
+| `compilation/rust/named_capture`              |          4.132 µs |           4.245 µs |                +2.7% |
+| `single_pattern/rust/case_insensitive_phrase` |         97.151 ns |         147.568 ns |               +51.9% |
+| `single_pattern/rust/named_capture_date`      |        214.887 ns |         421.913 ns |               +96.3% |
+
+## Method and retained evidence
+
+Measurements used an Apple M1 Ultra with 64 GiB RAM, macOS 27.0 (26A428),
+Rust 1.96.0 (`ac68faa20`, LLVM 22.1.2), Criterion 0.8.2, and the unchanged
+thin-LTO bench profile. `ffi` was enabled and `match-cache` was compiled out;
+there were no `RUSTFLAGS` overrides. Each case used 30 samples, a 500 ms warmup,
+and a four-second measurement window. An advisory lock excluded independent
+benchmark builds/tests from every timed process. Other machine activity was not
+controlled. A host load-average sample during the session was
+41.71 / 25.59 / 14.46; it identifies a variable environment, not the cause
+of any individual sample. No thermal warning was reported at that check.
+
+The existing harness validates output against the pinned C engine before
+timing; shared-syntax cases also validate against `regex`. Validation checks
+both positions and capture traces where requested. Input revisions are in
+`benches/battle_inputs.toml`.
+
+[Raw estimates, samples, profiling summaries, input hashes, and run provenance](https://github.com/sebastian-software/ferroni/blob/main/benches/results/short-match-overhead-2026-09-26.json)
+include every diagnostic, planned, and follow-up result. This was the only
+implementation tried; no unsuccessful optimization or noisy sample was
+omitted.
+
+The complete default and all-feature test suites, strict all-target clippy,
+formatting, rustdoc, and all 96 benchmark correctness smoke cases passed.
+The source change retains matching, options, limit checks, callouts, byte
+boundaries, capture output, and cache release rules. That correctness evidence
+does not resolve the performance uncertainty. Cross-platform speed and cold
+latency remain unmeasured.
+
+To reproduce the measured build and primary cases in each revision:
+
+```sh
+./scripts/prepare-oniguruma-sources.sh
+cargo bench --locked --features ffi --bench battle_bench -- \
+  'general_regex/rust/number_validation|single_pattern/rust/literal_exact'
+```
+
+Use the broader filter
+`general_regex/rust|single_pattern/rust|scanner_documents/.*_rust$|compilation/rust`
+for the accompanying observations. Retain separately named Criterion
+baselines when repeating the alternating order on a quiet host.
