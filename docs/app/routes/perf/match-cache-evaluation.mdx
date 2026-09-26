@@ -11,6 +11,11 @@ Ferroni 1.5.2 (`5fba613`). The historical prototype's review and measurements
 do not validate this implementation. Independent adversarial review and
 measured adoption in Ferriki remain open.
 
+The [full Oniguruma comparison for PR #173](/perf/pr-173-oniguruma-comparison)
+adds the complete reference suite, a three-way comparison on ordinary grammar
+documents, and process-isolated memory measurements. It measures the current
+overall engine separately from the pathological cache workloads below.
+
 The `match-cache` Cargo feature is off by default. Even with the feature
 compiled, a caller must configure `RegexBuilder::match_cache` or
 `Scanner::with_match_cache` explicitly. See

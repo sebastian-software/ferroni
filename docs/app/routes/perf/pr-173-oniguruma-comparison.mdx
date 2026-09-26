@@ -1,0 +1,229 @@
+---
+order: 7
+title: "PR 173: Full Oniguruma Comparison"
+---
+
+# PR 173: Full Oniguruma Comparison
+
+This snapshot evaluates the complete `battle_bench` reference suite for
+[PR #173](https://github.com/sebastian-software/ferroni/pull/173), the opt-in
+match-cache reconstruction. It covers 72 timings across 29 paired Ferroni/C
+scenarios, with the `regex` crate included in 14 compatible cases. A separate
+run adds the opt-in cache to the three document scenarios, and three isolated
+memory runs compare default Ferroni with C.
+
+On this machine, default Ferroni has a lower point estimate than C Oniguruma
+in all 23 search/scanner scenarios and in three of six compilation scenarios.
+Whole-document tokenization is approximately **3.0x (TypeScript), 31.7x (CSS),
+and 10.3x (Rust)** faster in the full run. CSS has a noisy initial sample;
+the targeted repeat and both sets of raw samples are retained below.
+These ratios describe this suite, not a universal speedup.
+
+Oniguruma still compiles the simple literal, lookbehind, and full Rust grammar
+faster. The `regex` crate is faster in 11 of the 12 compatible search cases;
+Ferroni leads the greedy-quantifier case. The two compatible compilation cases
+favor Ferroni and Oniguruma over `regex`.
+
+The new failed-state match cache is compiled **out** for the full reference
+run. Its benefit on pathological inputs and its independent review requirements
+are documented in the [match-cache evaluation](/perf/match-cache-evaluation).
+The separate three-way table below measures the cost of opting in on ordinary
+documents. It does not attribute existing Ferroni advantages to the new cache.
+
+## Measurement context
+
+| Field                  | Value                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| Date                   | 2026-09-26                                                                   |
+| Ferroni/harness commit | `719a51f9e0caba622e90470f493f5f5b89848d64`                                   |
+| Engine source commit   | `9f1879007d735e791fc33c69133920ff22fc1640` (unchanged by the harness update) |
+| Host                   | Mac13,2, Apple M1 Ultra, 64 GiB RAM                                          |
+| OS / target            | macOS 27.0 (26A428), `aarch64-apple-darwin`                                  |
+| Rust                   | rustc 1.96.0 (`ac68faa20`), LLVM 22.1.2                                      |
+| C compiler             | Apple clang 21.0.0 (`clang-2100.3.34.2`)                                     |
+| Profiles               | Optimized Rust bench profile, thin LTO; C Oniguruma at `-O3`                 |
+| Dependencies           | Criterion 0.8.2; `regex` 1.13.1; checked-in `Cargo.lock`                     |
+| Criterion              | 30 samples, 500 ms warmup, 4 s measurement per case                          |
+| Oniguruma              | `f95747b462de672b6f8dbdeb478245ddf061ca53`                                   |
+| Full grammars          | TypeScript: 279 patterns; CSS: 117; Rust: 81                                 |
+
+Criterion extends slow cases when four seconds would not collect 30 samples.
+Tables report the slope estimate when available, otherwise the mean. The
+[raw artifact](https://github.com/sebastian-software/ferroni/blob/main/benches/results/pr173-oniguruma-2026-09-26.json)
+contains all 83 timing measurements (72 reference, two CSS repeat, nine cache
+comparison), 95% confidence intervals, individual sample durations/iteration
+counts, all three memory runs, source hashes, and the input pins from
+[`battle_inputs.toml`](https://github.com/sebastian-software/ferroni/blob/main/benches/battle_inputs.toml).
+
+The full run, repeat, cache comparison, and memory processes ran sequentially.
+This is a developer-workstation measurement with a fixed engine order, not a
+cross-platform or randomized campaign. Small percentage differences require
+repetition before becoming release criteria.
+
+## Equivalent work and correctness checks
+
+The harness previously requested capture output from C in timed text and
+single-pattern searches while Ferroni received no output region. This run
+requests no capture output from either engine. Separate, untimed assertions
+compare exact match positions and raw capture bounds. Scanner timings include
+captures for both engines; their preflight compares pattern indices and every
+capture boundary along the complete fixture trace. These checks run in
+optimized builds too, including the cache-enabled lane.
+
+The scanner fixtures are ASCII, so their byte and UTF-16 offsets coincide.
+This validates these benchmark inputs; it does not replace the broader Unicode,
+differential, and fuzz evidence in the cache evaluation. `regex` is syntax-limited
+context, and its `find` API returns both start and end positions.
+
+The older [published benchmark tables](/perf/benchmark-results) remain a dated
+snapshot on a different machine and toolchain, with the previous harness.
+Do not calculate a version-to-version regression from the two pages.
+
+## Full reference suite
+
+**Bold** marks the lowest point estimate, not statistical significance. A dash
+means the benchmark does not include that engine. Scanner factors are C time
+divided by Ferroni time; values above one favor Ferroni.
+
+### Text search and log scanning
+
+| Scenario                 |        Ferroni |  Oniguruma |        `regex` |
+| ------------------------ | -------------: | ---------: | -------------: |
+| Literal in 50 KB         |      70.279 ns | 162.110 ns |   **9.757 ns** |
+| No match, 50 KB          |       1.554 us |   9.434 us |   **1.459 us** |
+| No match, 10 KB          |     361.350 ns |   1.881 us | **296.226 ns** |
+| Field extract, 50 KB     |      94.270 ns | 172.352 ns |  **54.945 ns** |
+| Timestamp, 50 KB         |      95.618 ns | 192.295 ns |  **63.992 ns** |
+| RegSet multi-pattern (5) | **100.562 ns** | 399.525 ns |              — |
+
+### Pattern matching
+
+| Category                 |       Ferroni |  Oniguruma |       `regex` |
+| ------------------------ | ------------: | ---------: | ------------: |
+| Literal exact            |    102.612 ns | 157.929 ns | **11.091 ns** |
+| Quantifier greedy        | **62.308 ns** | 200.063 ns |     64.364 ns |
+| Lookaround combined      | **87.678 ns** | 248.714 ns |             — |
+| Unicode `\p{Greek}+`     |    103.399 ns | 213.873 ns | **58.792 ns** |
+| Backref `(\w+) \1`       | **84.129 ns** | 174.816 ns |             — |
+| Case-insensitive phrase  |    104.720 ns | 185.957 ns | **60.377 ns** |
+| Alternation, 2 branches  |     66.211 ns | 160.676 ns | **45.972 ns** |
+| Alternation, 10 branches |     55.980 ns | 242.930 ns | **20.073 ns** |
+| Named capture date       |    221.172 ns | 260.521 ns | **44.633 ns** |
+
+### Compilation
+
+| Pattern       |      Ferroni |      Oniguruma |    `regex` |
+| ------------- | -----------: | -------------: | ---------: |
+| Literal       |   507.053 ns | **493.223 ns** |   2.896 us |
+| Named capture | **4.113 us** |       6.337 us | 208.787 us |
+| Lookbehind    |     1.161 us | **611.973 ns** |          — |
+
+### Scanner with full Shiki TextMate grammars
+
+| Scenario                      |        Ferroni |      Oniguruma |     Factor |
+| ----------------------------- | -------------: | -------------: | ---------: |
+| **TypeScript (279 patterns)** |                |                |            |
+| Compile                       |  **11.088 ms** |      17.454 ms |  **1.57x** |
+| First match, short line       |  **85.084 ns** |      25.569 us | **300.5x** |
+| Tokenize full line            |   **2.707 us** |     204.592 us |  **75.6x** |
+| **CSS (117 patterns)**        |                |                |            |
+| Compile                       |  **14.870 ms** |      18.541 ms |  **1.25x** |
+| Tokenize (multi-line)         | **221.197 us** |      14.712 ms |  **66.5x** |
+| **Rust (81 patterns)**        |                |                |            |
+| Compile                       |     319.448 us | **195.092 us** |      0.61x |
+| First match                   | **172.934 ns** |       5.505 us |  **31.8x** |
+| Tokenize full line            |   **4.930 us** |      80.209 us |  **16.3x** |
+
+### Scanner on whole documents, line by line
+
+| Document                            |        Ferroni | Oniguruma |    Factor |
+| ----------------------------------- | -------------: | --------: | --------: |
+| TypeScript (279 patterns), 28 lines |   **1.035 ms** |  3.129 ms |  **3.0x** |
+| CSS (117 patterns), 19 lines        | **100.494 us** |  3.190 ms | **31.7x** |
+| Rust (81 patterns), 31 lines        | **105.659 us** |  1.086 ms | **10.3x** |
+
+The scanner-highlighting rows reuse the same `OnigString`. Ferroni's existing
+per-string memo avoids repeated fallback work, while the C scanner wrapper
+consults its per-pattern cache only at 1,000 bytes or more. All those fixtures
+are shorter. The large warm-path ratios therefore describe these two wrapper
+policies as well as the engines.
+
+The whole-document rows tokenize each fixture line by line, preserving trailing
+newlines and changing string identity per line. Compilation is excluded, and
+the per-line strings are prepared before timing. These are scanner workloads
+over full grammar pattern sets, not end-to-end Shiki/TextMate rendering with
+grammar-state transitions.
+
+The initial CSS Ferroni estimate was 100.494 us, with a 95% confidence interval
+of 90.240–115.971 us. A targeted repeat with the same settings measured
+**89.059 us** for Ferroni and **3.126 ms** for C
+(35.1x), with a much narrower Ferroni interval of
+88.933–89.158 us. The main table deliberately retains the complete run instead
+of substituting the faster repeat. No single aggregate combines cold, warm,
+search, and compilation ratios.
+
+## Opt-in cache on ordinary documents
+
+This separate `ffi,match-cache` build measures runtime cache off, runtime cache
+on (default 16 MiB budget and adaptive activation), and C in the same executable.
+The inputs, trace validation, and timing settings match the document rows above.
+Opt-in cost is `(cache on / cache off - 1)` within this feature-enabled build;
+do not calculate that cost across different executables.
+
+| Document   |  Cache off |   Cache on | Oniguruma | Opt-in cost |
+| ---------- | ---------: | ---------: | --------: | ----------: |
+| TypeScript |   1.126 ms |   1.141 ms |  3.162 ms |      +1.38% |
+| CSS        |  99.183 us | 102.197 us |  3.288 ms |      +3.04% |
+| Rust       | 120.742 us | 128.018 us |  1.113 ms |      +6.03% |
+
+The cache protects eligible expensive failures; ordinary grammar documents
+still pay bookkeeping costs. This run does not justify default enablement.
+The feature-disabled release comparison and pathological cases remain in the
+[separate evaluation](/perf/match-cache-evaluation).
+
+## Process memory
+
+The memory harness compiles the same full TypeScript grammar and scans a
+deterministic 1,204,992-byte source containing 16,002 lines. It requests
+the first match from each line, not complete tokenization. Both engines reported
+16,002 scanned and matched lines in each of three runs. Each engine runs in its
+own process; Ferroni uses the default build without `match-cache`.
+
+| Engine    | Phase               | Median peak RSS |      Range (three runs) |
+| --------- | ------------------- | --------------: | ----------------------: |
+| Ferroni   | Compile             |    15,106,048 B | 15,089,664–15,122,432 B |
+| Ferroni   | Compile + line scan |    15,204,352 B | 15,187,968–15,220,736 B |
+| Oniguruma | Compile             |    15,728,640 B | 15,482,880–15,990,784 B |
+| Oniguruma | Compile + line scan |    15,876,096 B | 15,679,488–16,187,392 B |
+
+These are process high-water RSS values from `getrusage`, including the driver,
+input, grammar storage, allocator, and compiled engine. The scan value includes
+the preceding compile phase. They are not engine heap sizes, incremental scan
+allocations, or measurements of the opt-in cache's 16 MiB budget. See the
+[memory methodology](/perf/memory-measurements) for the harness boundaries.
+
+## Reproducing this snapshot
+
+Run each timing command to completion before starting the next one. The group
+configuration in `battle_bench.rs` fixes the Criterion settings listed above.
+
+```sh
+./scripts/prepare-oniguruma-sources.sh
+cargo bench --locked --features ffi --bench battle_bench -- \
+  --noplot --save-baseline pr173-reference
+# Render before the filtered runs overwrite Criterion's `new` directories.
+python3 scripts/gen_battle_tables.py
+
+cargo bench --locked --features ffi --bench battle_bench -- \
+  scanner_documents/css_117 --noplot --save-baseline pr173-css-repeat
+cargo bench --locked --features ffi,match-cache --bench battle_bench -- \
+  scanner_documents --noplot --save-baseline pr173-cache-documents
+
+# Three sequential invocations, one process per engine in each invocation.
+./scripts/run-battle-memory.sh
+./scripts/run-battle-memory.sh
+./scripts/run-battle-memory.sh
+
+# Untimed validation of every reference and cache-enabled benchmark case.
+cargo bench --locked --features ffi,match-cache --bench battle_bench -- --test
+```
