@@ -9,6 +9,7 @@ Criterion has one, otherwise the mean.
 
 Usage:
     ./scripts/gen_battle_tables.py [--criterion-dir target/criterion]
+    ./scripts/gen_battle_tables.py --general-only
 
 The script fails when an expected benchmark has no result, so a partial run
 cannot produce a partial table.
@@ -20,6 +21,16 @@ import sys
 from pathlib import Path
 
 ENGINES = ("rust", "c", "regex")
+
+GENERAL_REGEX_ROWS = [
+    ("Email shape, 64 inputs", "email_validation"),
+    ("UUID shape, 64 inputs", "uuid_validation"),
+    ("Number syntax, 64 inputs", "number_validation"),
+    ("Access log, 64 records / 6 fields", "access_log_captures"),
+    ("Extract 64 URLs", "url_extraction"),
+    ("Extract 384 Unicode words", "unicode_words"),
+    ("Redact 128 email addresses", "email_redaction"),
+]
 
 TEXT_SCANNING_ROWS = [
     ("Literal in 50 KB", "literal_50k"),
@@ -220,9 +231,27 @@ def document_table(results):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--criterion-dir", type=Path, default=Path("target/criterion"))
+    parser.add_argument(
+        "--general-only", action="store_true",
+        help="Render only general_regex after a filtered run",
+    )
     args = parser.parse_args()
 
     results = Results(load_results(args.criterion_dir))
+
+    general_table = engine_table(
+        "Task (whole batch/text)",
+        engine_rows(results, "general_regex", GENERAL_REGEX_ROWS, regex_optional=False),
+    )
+    if args.general_only:
+        if results.missing:
+            print(
+                "Missing general_regex results: " + ", ".join(results.missing),
+                file=sys.stderr,
+            )
+            return 1
+        print(general_table)
+        return 0
 
     text_rows = engine_rows(results, "text_scanning", TEXT_SCANNING_ROWS, regex_optional=False)
     text_rows.append(
@@ -237,6 +266,7 @@ def main():
     )
 
     sections = [
+        ("Everyday regex tasks", general_table),
         ("Text search and log scanning", engine_table("Scenario", text_rows)),
         (
             "Pattern matching",

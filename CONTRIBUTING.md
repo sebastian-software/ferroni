@@ -141,6 +141,9 @@ treated as equivalent work. See [`fuzz/README.md`](fuzz/README.md).
 ```bash
 ./scripts/prepare-oniguruma-sources.sh
 cargo bench --features ffi --bench battle_bench
+# General-purpose validation, extraction, Unicode, and redaction tasks
+cargo bench --features ffi --bench battle_bench -- general_regex
+python3 scripts/gen_battle_tables.py --general-only
 # Same document workloads with the opt-in cache included as a third lane
 cargo bench --features ffi,match-cache --bench battle_bench -- scanner_documents
 ```
@@ -148,6 +151,9 @@ cargo bench --features ffi,match-cache --bench battle_bench -- scanner_documents
 The reference suite validates match positions, capture bounds, and scanner
 token traces before timing. Text-search and single-pattern timings request
 no capture output from either Ferroni or C; scanner timings include captures.
+The `general_regex` group validates mixed accepted/rejected batches and full
+capture traces against both C and the `regex` crate. Extraction materializes
+all matches; redaction uses an identical output builder for each engine.
 
 Exact external input revisions for the publishable battle suite are pinned in
 [`benches/battle_inputs.toml`](benches/battle_inputs.toml).
