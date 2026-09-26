@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.0](https://github.com/sebastian-software/ferroni/compare/v1.5.2...v1.6.0) (2026-09-26)
+
+
+### Features
+
+* add opt-in failed-state match caching ([2bb39aa](https://github.com/sebastian-software/ferroni/commit/2bb39aaa2f2d602948934a7ee3cd19cacf6b0f56))
+
+
+### Bug Fixes
+
+* preserve logical end bounds in class runs ([2eba6f4](https://github.com/sebastian-software/ferroni/commit/2eba6f4515f9f4964870fe6e20af3ed75a1b70e1))
+
+
+### Performance Improvements
+
+* batch adjacent ASCII character classes ([2f5d58f](https://github.com/sebastian-software/ferroni/commit/2f5d58fc0adee9247716649a66a5d66827c954fe))
+* skip impossible atomic ASCII class prefixes ([aa3daa4](https://github.com/sebastian-software/ferroni/commit/aa3daa46bf3c2d3368a84ae17f54be32e7f2b97a))
+
 ## [1.5.2](https://github.com/sebastian-software/ferroni/compare/v1.5.1...v1.5.2) (2026-09-26)
 
 
