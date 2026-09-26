@@ -154,6 +154,10 @@ no capture output from either Ferroni or C; scanner timings include captures.
 The `general_regex` group validates mixed accepted/rejected batches and full
 capture traces against both C and the `regex` crate. Extraction materializes
 all matches; redaction uses an identical output builder for each engine.
+Generated tables use Ferroni versus Oniguruma as the primary comparison.
+They retain `regex` results in a separate shared-syntax appendix: `regex` does
+not support lookarounds or backreferences, so those timings cannot rank the
+engines by their complete feature sets.
 
 Exact external input revisions for the publishable battle suite are pinned in
 [`benches/battle_inputs.toml`](benches/battle_inputs.toml).

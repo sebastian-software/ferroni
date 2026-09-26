@@ -6,9 +6,9 @@ title: "Benchmark Results"
 # Benchmark Results
 
 Raw benchmark tables for the `battle_bench` reference suite:
-Ferroni (Rust) vs Oniguruma at `-O3`, with
-[`regex`](https://crates.io/crates/regex) included where the syntax is
-compatible.
+Ferroni (Rust) vs Oniguruma at `-O3`. This is the primary comparison for an
+Oniguruma-compatible engine. Measurements for Rust's `regex` crate are retained
+in a [separate shared-syntax appendix](#shared-syntax-context-only-regex).
 
 Measured with [Criterion](https://github.com/bheisler/criterion.rs) on Apple
 M1 Pro.
@@ -52,42 +52,48 @@ Exact external input revisions for the publishable battle suite are pinned in
 
 ## Reference suite (`battle_bench`)
 
-Where the pattern is compatible with the `regex` crate syntax, we include it
-for comparison. **Bold** = fastest engine. A dash means the feature is not
-supported by the `regex` crate.
+The main tables compare Ferroni and Oniguruma. **Bold** marks the lower time
+between those two engines; the factor is C time divided by Ferroni time.
+[`regex` does not support lookarounds or backreferences](https://docs.rs/regex/1.13.1/regex/),
+so its shared-syntax results cannot establish Oniguruma compatibility or an
+overall engine ranking. They remain available in the appendix. The RegSet and
+scanner paths have no equivalent `regex` measurement in this harness; that is
+distinct from unsupported syntax. See the
+[benchmark scope map](/perf/pr-173-oniguruma-comparison#what-the-comparison-covers)
+for the features exercised by the current suite.
 
 ### Text search and log scanning
 
-| Scenario                 |        Ferroni |  Oniguruma |        `regex` |
-| ------------------------ | -------------: | ---------: | -------------: |
-| Literal in 50 KB         |      67.919 ns | 130.060 ns |   **9.181 ns** |
-| No match, 50 KB          |       1.505 us |   9.301 us |   **1.474 us** |
-| No match, 10 KB          |     463.016 ns |   1.907 us | **296.820 ns** |
-| Field extract, 50 KB     |      93.838 ns | 155.274 ns |  **54.981 ns** |
-| Timestamp, 50 KB         |     100.001 ns | 156.689 ns |  **52.430 ns** |
-| RegSet multi-pattern (5) | **103.530 ns** | 370.259 ns |              — |
+| Scenario                 |        Ferroni |  Oniguruma | C / Ferroni |
+| ------------------------ | -------------: | ---------: | ----------: |
+| Literal in 50 KB         |  **67.919 ns** | 130.060 ns |   **1.91x** |
+| No match, 50 KB          |   **1.505 us** |   9.301 us |    **6.2x** |
+| No match, 10 KB          | **463.016 ns** |   1.907 us |    **4.1x** |
+| Field extract, 50 KB     |  **93.838 ns** | 155.274 ns |   **1.65x** |
+| Timestamp, 50 KB         | **100.001 ns** | 156.689 ns |   **1.57x** |
+| RegSet multi-pattern (5) | **103.530 ns** | 370.259 ns |    **3.6x** |
 
 ### Pattern matching
 
-| Category                 |       Ferroni |  Oniguruma |       `regex` |
-| ------------------------ | ------------: | ---------: | ------------: |
-| Literal exact            |     98.051 ns | 138.579 ns | **10.105 ns** |
-| Quantifier greedy        |    158.797 ns | 170.604 ns | **62.337 ns** |
-| Lookaround combined      | **78.848 ns** | 247.484 ns |             — |
-| Unicode `\p{Greek}+`     |     99.956 ns | 272.779 ns | **59.750 ns** |
-| Backref `(\w+) \1`       | **80.731 ns** | 154.555 ns |             — |
-| Case-insensitive phrase  |     95.805 ns | 177.897 ns | **59.175 ns** |
-| Alternation, 2 branches  |     64.687 ns | 142.427 ns | **44.859 ns** |
-| Alternation, 10 branches |     50.650 ns | 212.268 ns | **19.579 ns** |
-| Named capture date       |    244.451 ns | 262.994 ns | **43.230 ns** |
+| Category                 |        Ferroni |  Oniguruma | C / Ferroni |
+| ------------------------ | -------------: | ---------: | ----------: |
+| Literal exact            |  **98.051 ns** | 138.579 ns |   **1.41x** |
+| Quantifier greedy        | **158.797 ns** | 170.604 ns |   **1.07x** |
+| Lookaround combined      |  **78.848 ns** | 247.484 ns |    **3.1x** |
+| Unicode `\p{Greek}+`     |  **99.956 ns** | 272.779 ns |    **2.7x** |
+| Backref `(\w+) \1`       |  **80.731 ns** | 154.555 ns |   **1.91x** |
+| Case-insensitive phrase  |  **95.805 ns** | 177.897 ns |   **1.86x** |
+| Alternation, 2 branches  |  **64.687 ns** | 142.427 ns |    **2.2x** |
+| Alternation, 10 branches |  **50.650 ns** | 212.268 ns |    **4.2x** |
+| Named capture date       | **244.451 ns** | 262.994 ns |   **1.08x** |
 
 ### Compilation
 
-| Pattern       |      Ferroni |      Oniguruma |    `regex` |
-| ------------- | -----------: | -------------: | ---------: |
-| Literal       |   494.262 ns | **469.539 ns** |   2.693 us |
-| Named capture | **3.680 us** |       5.941 us | 209.521 us |
-| Lookbehind    |     1.104 us | **591.766 ns** |          — |
+| Pattern       |      Ferroni |      Oniguruma | C / Ferroni |
+| ------------- | -----------: | -------------: | ----------: |
+| Literal       |   494.262 ns | **469.539 ns** |       0.95x |
+| Named capture | **3.680 us** |       5.941 us |   **1.61x** |
+| Lookbehind    |     1.104 us | **591.766 ns** |       0.54x |
 
 ### Scanner with full Shiki TextMate grammars
 
@@ -134,6 +140,51 @@ the same number of tokens.
 | TypeScript (279 patterns), 28 lines |   **1.261 ms** |  3.126 ms |  **2.5x** |
 | CSS (117 patterns), 19 lines        |  **93.244 us** |  3.039 ms | **32.6x** |
 | Rust (81 patterns), 31 lines        | **108.126 us** |  1.058 ms |  **9.8x** |
+
+## Shared-syntax context only: regex
+
+These measurements answer a narrower question: how quickly each engine runs
+the particular patterns supported by all three. They do not compare the full
+Oniguruma feature set or establish whether `regex` can replace Ferroni.
+[`regex` excludes lookarounds and backreferences](https://docs.rs/regex/1.13.1/regex/)
+as part of its design. Its timings remain useful when an application's
+patterns fit that subset. Capture groups and Unicode are supported; those
+features alone do not require an Oniguruma-compatible engine.
+
+The original measurements are retained below without winner counts or an
+overall ranking. Only measured shared-syntax cases appear here. Lookarounds,
+backreferences, and the unmeasured RegSet/scanner path are excluded explicitly,
+not assigned a slow or zero result. Times and measurement conditions are
+unchanged from their corresponding main tables.
+
+### Shared syntax: text search and log scanning
+
+| Scenario             |    Ferroni |  Oniguruma | `regex` (shared syntax only) |
+| -------------------- | ---------: | ---------: | ---------------------------: |
+| Literal in 50 KB     |  67.919 ns | 130.060 ns |                     9.181 ns |
+| No match, 50 KB      |   1.505 us |   9.301 us |                     1.474 us |
+| No match, 10 KB      | 463.016 ns |   1.907 us |                   296.820 ns |
+| Field extract, 50 KB |  93.838 ns | 155.274 ns |                    54.981 ns |
+| Timestamp, 50 KB     | 100.001 ns | 156.689 ns |                    52.430 ns |
+
+### Shared syntax: pattern matching
+
+| Category                 |    Ferroni |  Oniguruma | `regex` (shared syntax only) |
+| ------------------------ | ---------: | ---------: | ---------------------------: |
+| Literal exact            |  98.051 ns | 138.579 ns |                    10.105 ns |
+| Quantifier greedy        | 158.797 ns | 170.604 ns |                    62.337 ns |
+| Unicode `\p{Greek}+`     |  99.956 ns | 272.779 ns |                    59.750 ns |
+| Case-insensitive phrase  |  95.805 ns | 177.897 ns |                    59.175 ns |
+| Alternation, 2 branches  |  64.687 ns | 142.427 ns |                    44.859 ns |
+| Alternation, 10 branches |  50.650 ns | 212.268 ns |                    19.579 ns |
+| Named capture date       | 244.451 ns | 262.994 ns |                    43.230 ns |
+
+### Shared syntax: compilation
+
+| Pattern       |    Ferroni |  Oniguruma | `regex` (shared syntax only) |
+| ------------- | ---------: | ---------: | ---------------------------: |
+| Literal       | 494.262 ns | 469.539 ns |                     2.693 us |
+| Named capture |   3.680 us |   5.941 us |                   209.521 us |
 
 ## Reproducing
 

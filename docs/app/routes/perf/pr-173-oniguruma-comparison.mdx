@@ -20,27 +20,51 @@ are documented in the [match-cache evaluation](/perf/match-cache-evaluation).
 The separate cache-on/off document table measures the cost of opting in on ordinary
 documents. It does not attribute existing Ferroni advantages to the new cache.
 
-## Everyday regex tasks
+## What the comparison covers
+
+The primary question is how Ferroni performs against the C engine whose
+behavior it ports: Oniguruma. The main tables compare those two engines,
+including patterns that use Oniguruma features unavailable in `regex`.
+
+| Capability exercised here                      | Ferroni                | Oniguruma              | Rust `regex`                |
+| ---------------------------------------------- | ---------------------- | ---------------------- | --------------------------- |
+| Literals, classes, quantifiers, alternation    | Supported              | Supported              | Supported                   |
+| Capture groups and the tested Unicode patterns | Supported              | Supported              | Supported                   |
+| Lookahead and lookbehind                       | Supported and measured | Supported and measured | Not supported               |
+| Backreferences                                 | Supported and measured | Supported and measured | Not supported               |
+| RegSet/scanner workload in this harness        | Measured               | Measured               | No equivalent path measured |
+
+This is a scope map for the benchmarks, not a complete compatibility matrix.
+[`regex` deliberately excludes lookarounds and backreferences](https://docs.rs/regex/1.13.1/regex/).
+The seven everyday tasks below all use shared syntax; they do not exercise
+those differences. A result on that subset cannot establish interchangeability
+for an existing Oniguruma pattern set.
+
+The [shared-syntax appendix](#shared-syntax-context-only-regex) retains every
+`regex` measurement as context for applications whose patterns fit that subset.
+Unsupported syntax and an unmeasured API path are separate limitations; neither
+is a timing result. There is no winner count across engines with different
+feature coverage.
+
+## Everyday regex tasks: Ferroni vs Oniguruma
 
 This follow-up focuses on the general engine: three validation batches and four
 complete text-processing tasks, with no TextMate scanner. Ferroni has the lower
-point estimate than C in all seven cases, by **1.08–1.98x**. The `regex` crate
-wins five of seven; Ferroni leads the access-log capture and URL extraction
-cases in this shared driver. The scanner speedups are not a useful estimate
-for ordinary regex work.
+point estimate than C in all seven cases, by **1.08–1.98x**. The scanner
+speedups are not a useful estimate for ordinary regex work.
 
-| Task (whole batch/text)           |       Ferroni | Oniguruma |       `regex` |
-| --------------------------------- | ------------: | --------: | ------------: |
-| Email shape, 64 inputs            |      6.722 us | 12.843 us |  **1.522 us** |
-| UUID shape, 64 inputs             |     11.079 us | 15.773 us |  **1.769 us** |
-| Number syntax, 64 inputs          |      8.034 us | 14.401 us |  **1.033 us** |
-| Access log, 64 records / 6 fields | **32.410 us** | 34.866 us |     35.726 us |
-| Extract 64 URLs                   |  **9.871 us** | 19.546 us |     13.364 us |
-| Extract 384 Unicode words         |     63.527 us | 81.591 us | **32.798 us** |
-| Redact 128 email addresses        |     78.465 us | 87.898 us | **13.915 us** |
+| Task (whole batch/text)           |       Ferroni | Oniguruma | C / Ferroni |
+| --------------------------------- | ------------: | --------: | ----------: |
+| Email shape, 64 inputs            |  **6.722 us** | 12.843 us |   **1.91x** |
+| UUID shape, 64 inputs             | **11.079 us** | 15.773 us |   **1.42x** |
+| Number syntax, 64 inputs          |  **8.034 us** | 14.401 us |   **1.79x** |
+| Access log, 64 records / 6 fields | **32.410 us** | 34.866 us |   **1.08x** |
+| Extract 64 URLs                   |  **9.871 us** | 19.546 us |   **1.98x** |
+| Extract 384 Unicode words         | **63.527 us** | 81.591 us |   **1.28x** |
+| Redact 128 email addresses        | **78.465 us** | 87.898 us |   **1.12x** |
 
 Times cover the **whole batch or text**, not one match. Bold marks the lowest
-point estimate, not statistical significance. The validators repeat eight
+point estimate between Ferroni and C, not statistical significance. The validators repeat eight
 labeled inputs eight times: 32 accepted and 32 rejected, including early
 rejections and failures near the end. They measure boolean results without
 capture output. Email and UUID are simplified shape checks, not complete RFC
@@ -72,13 +96,14 @@ every extracted match/capture boundary. The preflight also checks expected
 match counts, concrete log-field values, and the exact redacted output.
 The benchmark smoke run covers all 96 cases with `ffi,match-cache` enabled.
 
-The two cases where Ferroni also leads `regex` were repeated separately with
-the same configuration. The ordering remained the same:
+Access-log capture and URL extraction were repeated separately with the same
+configuration. Ferroni remained faster than C on these two inputs. The
+appendix retains the third engine's repeat timings as shared-syntax context.
 
-| Repeat (whole text) |   Ferroni | Oniguruma |   `regex` |
-| ------------------- | --------: | --------: | --------: |
-| Access log          | 31.591 us | 33.240 us | 35.684 us |
-| URL extraction      | 10.080 us | 19.530 us | 13.377 us |
+| Repeat (whole text) |       Ferroni | Oniguruma | C / Ferroni |
+| ------------------- | ------------: | --------: | ----------: |
+| Access log          | **31.591 us** | 33.240 us |   **1.05x** |
+| URL extraction      | **10.080 us** | 19.530 us |   **1.94x** |
 
 The main table retains the original run. These are a few representative tasks,
 not an application-traffic distribution or a cross-platform engine ranking.
@@ -169,46 +194,44 @@ the targeted repeat and both sets of raw samples are retained below.
 These ratios describe this suite, not a universal speedup.
 
 Oniguruma still compiles the simple literal, lookbehind, and full Rust grammar
-faster. In that initial run, `regex` is faster in 11 of the 12 compatible search cases;
-Ferroni leads the greedy-quantifier case. The two compatible compilation cases
-favor Ferroni and Oniguruma over `regex`.
+faster. Shared-syntax timings for `regex` are retained in the appendix rather
+than treated as a ranking of engines with equivalent capabilities.
 
-**Bold** marks the lowest point estimate, not statistical significance. A dash
-means the benchmark does not include that engine. Scanner factors are C time
-divided by Ferroni time; values above one favor Ferroni.
+**Bold** marks the lower Ferroni/C point estimate, not statistical significance.
+Factors are C time divided by Ferroni time; values above one favor Ferroni.
 
 ### Text search and log scanning
 
-| Scenario                 |        Ferroni |  Oniguruma |        `regex` |
-| ------------------------ | -------------: | ---------: | -------------: |
-| Literal in 50 KB         |      70.279 ns | 162.110 ns |   **9.757 ns** |
-| No match, 50 KB          |       1.554 us |   9.434 us |   **1.459 us** |
-| No match, 10 KB          |     361.350 ns |   1.881 us | **296.226 ns** |
-| Field extract, 50 KB     |      94.270 ns | 172.352 ns |  **54.945 ns** |
-| Timestamp, 50 KB         |      95.618 ns | 192.295 ns |  **63.992 ns** |
-| RegSet multi-pattern (5) | **100.562 ns** | 399.525 ns |              — |
+| Scenario                 |        Ferroni |  Oniguruma | C / Ferroni |
+| ------------------------ | -------------: | ---------: | ----------: |
+| Literal in 50 KB         |  **70.279 ns** | 162.110 ns |    **2.3x** |
+| No match, 50 KB          |   **1.554 us** |   9.434 us |    **6.1x** |
+| No match, 10 KB          | **361.350 ns** |   1.881 us |    **5.2x** |
+| Field extract, 50 KB     |  **94.270 ns** | 172.352 ns |   **1.83x** |
+| Timestamp, 50 KB         |  **95.618 ns** | 192.295 ns |    **2.0x** |
+| RegSet multi-pattern (5) | **100.562 ns** | 399.525 ns |    **4.0x** |
 
 ### Pattern matching
 
-| Category                 |       Ferroni |  Oniguruma |       `regex` |
-| ------------------------ | ------------: | ---------: | ------------: |
-| Literal exact            |    102.612 ns | 157.929 ns | **11.091 ns** |
-| Quantifier greedy        | **62.308 ns** | 200.063 ns |     64.364 ns |
-| Lookaround combined      | **87.678 ns** | 248.714 ns |             — |
-| Unicode `\p{Greek}+`     |    103.399 ns | 213.873 ns | **58.792 ns** |
-| Backref `(\w+) \1`       | **84.129 ns** | 174.816 ns |             — |
-| Case-insensitive phrase  |    104.720 ns | 185.957 ns | **60.377 ns** |
-| Alternation, 2 branches  |     66.211 ns | 160.676 ns | **45.972 ns** |
-| Alternation, 10 branches |     55.980 ns | 242.930 ns | **20.073 ns** |
-| Named capture date       |    221.172 ns | 260.521 ns | **44.633 ns** |
+| Category                 |        Ferroni |  Oniguruma | C / Ferroni |
+| ------------------------ | -------------: | ---------: | ----------: |
+| Literal exact            | **102.612 ns** | 157.929 ns |   **1.54x** |
+| Quantifier greedy        |  **62.308 ns** | 200.063 ns |    **3.2x** |
+| Lookaround combined      |  **87.678 ns** | 248.714 ns |    **2.8x** |
+| Unicode `\p{Greek}+`     | **103.399 ns** | 213.873 ns |    **2.1x** |
+| Backref `(\w+) \1`       |  **84.129 ns** | 174.816 ns |    **2.1x** |
+| Case-insensitive phrase  | **104.720 ns** | 185.957 ns |   **1.78x** |
+| Alternation, 2 branches  |  **66.211 ns** | 160.676 ns |    **2.4x** |
+| Alternation, 10 branches |  **55.980 ns** | 242.930 ns |    **4.3x** |
+| Named capture date       | **221.172 ns** | 260.521 ns |   **1.18x** |
 
 ### Compilation
 
-| Pattern       |      Ferroni |      Oniguruma |    `regex` |
-| ------------- | -----------: | -------------: | ---------: |
-| Literal       |   507.053 ns | **493.223 ns** |   2.896 us |
-| Named capture | **4.113 us** |       6.337 us | 208.787 us |
-| Lookbehind    |     1.161 us | **611.973 ns** |          — |
+| Pattern       |      Ferroni |      Oniguruma | C / Ferroni |
+| ------------- | -----------: | -------------: | ----------: |
+| Literal       |   507.053 ns | **493.223 ns** |       0.97x |
+| Named capture | **4.113 us** |       6.337 us |   **1.54x** |
+| Lookbehind    |     1.161 us | **611.973 ns** |       0.53x |
 
 ### Scanner with full Shiki TextMate grammars
 
@@ -293,6 +316,70 @@ input, grammar storage, allocator, and compiled engine. The scan value includes
 the preceding compile phase. They are not engine heap sizes, incremental scan
 allocations, or measurements of the opt-in cache's 16 MiB budget. See the
 [memory methodology](/perf/memory-measurements) for the harness boundaries.
+
+## Shared-syntax context only: regex
+
+These measurements answer a narrower question: how quickly each engine runs
+the particular patterns supported by all three. They do not compare the full
+Oniguruma feature set or establish whether `regex` can replace Ferroni.
+[`regex` excludes lookarounds and backreferences](https://docs.rs/regex/1.13.1/regex/)
+as part of its design. Its timings remain useful when an application's
+patterns fit that subset. Capture groups and Unicode are supported; those
+features alone do not require an Oniguruma-compatible engine.
+
+The original measurements are retained below without winner counts or an
+overall ranking. Only measured shared-syntax cases appear here. Lookarounds,
+backreferences, and the unmeasured RegSet/scanner path are excluded explicitly,
+not assigned a slow or zero result. Times and measurement conditions are
+unchanged from their corresponding main tables.
+
+### Shared syntax: everyday regex tasks
+
+| Task (whole batch/text)           |   Ferroni | Oniguruma | `regex` (shared syntax only) |
+| --------------------------------- | --------: | --------: | ---------------------------: |
+| Email shape, 64 inputs            |  6.722 us | 12.843 us |                     1.522 us |
+| UUID shape, 64 inputs             | 11.079 us | 15.773 us |                     1.769 us |
+| Number syntax, 64 inputs          |  8.034 us | 14.401 us |                     1.033 us |
+| Access log, 64 records / 6 fields | 32.410 us | 34.866 us |                    35.726 us |
+| Extract 64 URLs                   |  9.871 us | 19.546 us |                    13.364 us |
+| Extract 384 Unicode words         | 63.527 us | 81.591 us |                    32.798 us |
+| Redact 128 email addresses        | 78.465 us | 87.898 us |                    13.915 us |
+
+### Shared syntax: everyday task repeats
+
+| Repeat (whole text) |   Ferroni | Oniguruma | `regex` (shared syntax only) |
+| ------------------- | --------: | --------: | ---------------------------: |
+| Access log          | 31.591 us | 33.240 us |                    35.684 us |
+| URL extraction      | 10.080 us | 19.530 us |                    13.377 us |
+
+### Shared syntax: text search and log scanning
+
+| Scenario             |    Ferroni |  Oniguruma | `regex` (shared syntax only) |
+| -------------------- | ---------: | ---------: | ---------------------------: |
+| Literal in 50 KB     |  70.279 ns | 162.110 ns |                     9.757 ns |
+| No match, 50 KB      |   1.554 us |   9.434 us |                     1.459 us |
+| No match, 10 KB      | 361.350 ns |   1.881 us |                   296.226 ns |
+| Field extract, 50 KB |  94.270 ns | 172.352 ns |                    54.945 ns |
+| Timestamp, 50 KB     |  95.618 ns | 192.295 ns |                    63.992 ns |
+
+### Shared syntax: pattern matching
+
+| Category                 |    Ferroni |  Oniguruma | `regex` (shared syntax only) |
+| ------------------------ | ---------: | ---------: | ---------------------------: |
+| Literal exact            | 102.612 ns | 157.929 ns |                    11.091 ns |
+| Quantifier greedy        |  62.308 ns | 200.063 ns |                    64.364 ns |
+| Unicode `\p{Greek}+`     | 103.399 ns | 213.873 ns |                    58.792 ns |
+| Case-insensitive phrase  | 104.720 ns | 185.957 ns |                    60.377 ns |
+| Alternation, 2 branches  |  66.211 ns | 160.676 ns |                    45.972 ns |
+| Alternation, 10 branches |  55.980 ns | 242.930 ns |                    20.073 ns |
+| Named capture date       | 221.172 ns | 260.521 ns |                    44.633 ns |
+
+### Shared syntax: compilation
+
+| Pattern       |    Ferroni |  Oniguruma | `regex` (shared syntax only) |
+| ------------- | ---------: | ---------: | ---------------------------: |
+| Literal       | 507.053 ns | 493.223 ns |                     2.896 us |
+| Named capture |   4.113 us |   6.337 us |                   208.787 us |
 
 ## Reproducing this snapshot
 
