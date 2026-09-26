@@ -5,32 +5,112 @@ title: "PR 173: Full Oniguruma Comparison"
 
 # PR 173: Full Oniguruma Comparison
 
-This snapshot evaluates the complete `battle_bench` reference suite for
+This report evaluates general regex tasks and scanner workloads for
 [PR #173](https://github.com/sebastian-software/ferroni/pull/173), the opt-in
-match-cache reconstruction. It covers 72 timings across 29 paired Ferroni/C
-scenarios, with the `regex` crate included in 14 compatible cases. A separate
-run adds the opt-in cache to the three document scenarios, and three isolated
-memory runs compare default Ferroni with C.
+match-cache reconstruction. The initial reference run covers 72 timings across
+29 paired Ferroni/C scenarios, with the `regex` crate in 14 compatible cases.
+A follow-up adds seven everyday regex tasks measured with all three engines.
+Separate runs measure the opt-in cache on three documents and compare process
+memory. Syntax highlighting is one integration workload; it does not stand in
+for the general engine.
 
-On this machine, default Ferroni has a lower point estimate than C Oniguruma
-in all 23 search/scanner scenarios and in three of six compilation scenarios.
-Whole-document tokenization is approximately **3.0x (TypeScript), 31.7x (CSS),
-and 10.3x (Rust)** faster in the full run. CSS has a noisy initial sample;
-the targeted repeat and both sets of raw samples are retained below.
-These ratios describe this suite, not a universal speedup.
-
-Oniguruma still compiles the simple literal, lookbehind, and full Rust grammar
-faster. The `regex` crate is faster in 11 of the 12 compatible search cases;
-Ferroni leads the greedy-quantifier case. The two compatible compilation cases
-favor Ferroni and Oniguruma over `regex`.
-
-The new failed-state match cache is compiled **out** for the full reference
-run. Its benefit on pathological inputs and its independent review requirements
+The general-regex follow-up and initial reference run both compile the new
+failed-state match cache **out**. Its benefit on pathological inputs and review requirements
 are documented in the [match-cache evaluation](/perf/match-cache-evaluation).
-The separate three-way table below measures the cost of opting in on ordinary
+The separate cache-on/off document table measures the cost of opting in on ordinary
 documents. It does not attribute existing Ferroni advantages to the new cache.
 
-## Measurement context
+## Everyday regex tasks
+
+This follow-up focuses on the general engine: three validation batches and four
+complete text-processing tasks, with no TextMate scanner. Ferroni has the lower
+point estimate than C in all seven cases, by **1.08–1.98x**. The `regex` crate
+wins five of seven; Ferroni leads the access-log capture and URL extraction
+cases in this shared driver. The scanner speedups are not a useful estimate
+for ordinary regex work.
+
+| Task (whole batch/text)           |       Ferroni | Oniguruma |       `regex` |
+| --------------------------------- | ------------: | --------: | ------------: |
+| Email shape, 64 inputs            |      6.722 us | 12.843 us |  **1.522 us** |
+| UUID shape, 64 inputs             |     11.079 us | 15.773 us |  **1.769 us** |
+| Number syntax, 64 inputs          |      8.034 us | 14.401 us |  **1.033 us** |
+| Access log, 64 records / 6 fields | **32.410 us** | 34.866 us |     35.726 us |
+| Extract 64 URLs                   |  **9.871 us** | 19.546 us |     13.364 us |
+| Extract 384 Unicode words         |     63.527 us | 81.591 us | **32.798 us** |
+| Redact 128 email addresses        |     78.465 us | 87.898 us | **13.915 us** |
+
+Times cover the **whole batch or text**, not one match. Bold marks the lowest
+point estimate, not statistical significance. The validators repeat eight
+labeled inputs eight times: 32 accepted and 32 rejected, including early
+rejections and failures near the end. They measure boolean results without
+capture output. Email and UUID are simplified shape checks, not complete RFC
+or UUID-version validation; the number case checks signed decimal/exponent
+syntax without numeric conversion.
+
+The text tasks use deterministic synthetic inputs from
+[`general_regex.rs`](https://github.com/sebastian-software/ferroni/blob/03a6ba69c5be294e77ca20ce9f0a08db4973f0a4/benches/general_regex.rs):
+
+- Access log: 5,964 bytes, 64 matching records, six captured fields each, plus
+  16 nonmatching messages.
+- URL extraction: 5,196 bytes and 64 HTTP/HTTPS links amid plain text.
+- Unicode words: 3,648 bytes and 384 words using Latin, Greek, Cyrillic, Arabic,
+  Han characters, and a decomposed accent. The pattern is
+  `\p{L}[\p{L}\p{M}]*`.
+- Email redaction: 5,218 bytes, 128 addresses, and similar-looking nonmatches.
+  Every match becomes `[email]` through the same output builder for all engines.
+
+Each text operation collects **every match and capture** into byte-offset
+vectors. Capture scratch and result allocation are inside timing; the region
+or capture-location storage is reused between searches within one operation.
+The redaction row includes the common output builder and is not a comparison
+of native replacement APIs. Compilation, input generation, and correctness
+checks are outside timing. Patterns are compiled once and reused. These inputs
+contain no empty matches; empty-match iteration policy is outside this scope.
+
+Before timing, all three engines agree on each labeled validation result and
+every extracted match/capture boundary. The preflight also checks expected
+match counts, concrete log-field values, and the exact redacted output.
+The benchmark smoke run covers all 96 cases with `ffi,match-cache` enabled.
+
+The two cases where Ferroni also leads `regex` were repeated separately with
+the same configuration. The ordering remained the same:
+
+| Repeat (whole text) |   Ferroni | Oniguruma |   `regex` |
+| ------------------- | --------: | --------: | --------: |
+| Access log          | 31.591 us | 33.240 us | 35.684 us |
+| URL extraction      | 10.080 us | 19.530 us | 13.377 us |
+
+The main table retains the original run. These are a few representative tasks,
+not an application-traffic distribution or a cross-platform engine ranking.
+Backreferences, lookarounds, single-pattern compilation, and long no-match
+searches remain in the initial reference tables below; syntax highlighting
+remains a separate integration workload.
+
+The follow-up was measured on 2026-09-26 at harness commit
+`03a6ba69c5be294e77ca20ce9f0a08db4973f0a4`, with the same machine, compilers,
+dependencies, input pins, and 30-sample / 500 ms warmup / 4 s measurement
+settings listed below. Engine sources are unchanged from `9f18790`.
+It uses `--features ffi`, so the opt-in match cache is compiled out. Each case
+runs Ferroni, then C, then `regex`; the repeats retain that fixed order.
+This is a separate run from the original scanner/feature suite.
+
+The [follow-up raw artifact](https://github.com/sebastian-software/ferroni/blob/main/benches/results/pr173-general-regex-2026-09-26.json)
+contains all 21 initial measurements and six repeat measurements, 95% confidence
+intervals, individual samples, exact patterns, workload sizes, and source hashes.
+
+```sh
+cargo bench --locked --features ffi --bench battle_bench -- \
+  general_regex --noplot --save-baseline pr173-general-regex
+# Render before repeats overwrite Criterion's `new` directories.
+python3 scripts/gen_battle_tables.py --general-only
+
+cargo bench --locked --features ffi --bench battle_bench -- \
+  access_log_captures --noplot --save-baseline pr173-general-log-repeat
+cargo bench --locked --features ffi --bench battle_bench -- \
+  url_extraction --noplot --save-baseline pr173-general-url-repeat
+```
+
+## Initial reference-run measurement context
 
 | Field                  | Value                                                                        |
 | ---------------------- | ---------------------------------------------------------------------------- |
@@ -79,7 +159,19 @@ The older [published benchmark tables](/perf/benchmark-results) remain a dated
 snapshot on a different machine and toolchain, with the previous harness.
 Do not calculate a version-to-version regression from the two pages.
 
-## Full reference suite
+## Initial reference suite
+
+In the initial run, default Ferroni has a lower point estimate than C Oniguruma
+in all 23 search/scanner scenarios and in three of six compilation scenarios.
+Whole-document tokenization is approximately **3.0x (TypeScript), 31.7x (CSS),
+and 10.3x (Rust)** faster in the full run. CSS has a noisy initial sample;
+the targeted repeat and both sets of raw samples are retained below.
+These ratios describe this suite, not a universal speedup.
+
+Oniguruma still compiles the simple literal, lookbehind, and full Rust grammar
+faster. In that initial run, `regex` is faster in 11 of the 12 compatible search cases;
+Ferroni leads the greedy-quantifier case. The two compatible compilation cases
+favor Ferroni and Oniguruma over `regex`.
 
 **Bold** marks the lowest point estimate, not statistical significance. A dash
 means the benchmark does not include that engine. Scanner factors are C time
@@ -204,8 +296,11 @@ allocations, or measurements of the opt-in cache's 16 MiB budget. See the
 
 ## Reproducing this snapshot
 
-Run each timing command to completion before starting the next one. The group
-configuration in `battle_bench.rs` fixes the Criterion settings listed above.
+To reproduce the original 72-measurement suite exactly, use harness commit
+`719a51f`. The current full suite also includes `general_regex`; the follow-up
+commands above isolate that addition. Run each timing command to completion
+before starting the next one. Group configuration in `battle_bench.rs` fixes
+the Criterion settings listed above.
 
 ```sh
 ./scripts/prepare-oniguruma-sources.sh
