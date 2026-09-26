@@ -70,7 +70,7 @@ function HeroSection() {
 const pillars = [
   {
     heading: "Same engine, verified",
-    text: "A line-by-line port that keeps Oniguruma's module structure and optimization pipeline, not a lookalike. Every upstream UTF-8 test passes, alongside 2,317 test functions in total.",
+    text: "A line-by-line port that keeps Oniguruma's module structure and optimization pipeline, not a lookalike. Every upstream UTF-8 test passes, alongside 2,327 test functions in total.",
   },
   {
     heading: "Memory-safe, no C toolchain",

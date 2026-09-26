@@ -31,11 +31,22 @@ An optimization may be implemented in Ferroni without upstream contribution when
 
 3. **Measurable**: The optimization produces a demonstrated improvement on a real-world workload (benchmark numbers required in the commit or PR).
 
-4. **Non-regressive**: The full C-parity test suite (1,695 tests) passes without modification. No existing pattern produces different match results.
+4. **Non-regressive**: The full C-parity test suite passes without modification. No existing pattern produces different match results. Current test counts come from `scripts/count-tests.sh`.
 
 5. **Bounded complexity**: The optimization has clear worst-case bounds (e.g., `MAX_NESTED_TRIE_PATHS = 8192`) and does not introduce unbounded memory or time growth.
 
 ### Current Rust-only optimizations
+
+#### Opt-in failed-state cache (`src/match_cache.rs`, `regexec.rs`, `regset.rs`)
+
+- **Trigger**: the `match-cache` Cargo feature and an explicit `MatchCacheConfig` on a regex or scanner. A work counter includes forward bytes since the last backtrack, as well as failures; ordinary short searches keep the fast loops.
+- **Eligibility**: exhaustive bytecode classification admits regular control flow and captures that matching does not read. Backreferences, look-arounds, subroutine calls, callouts, counted or empty-check repeats, and general atomic groups remain on the original path. A straight-line atomic character run is supported because it has one possible successful exit; the compiler introduces these runs automatically before disjoint literals.
+- **Failure invariant**: a bit for `(instruction, subject position)` is committed only after backtracking leaves that state's complete subtree. A successful return or limit error never commits pending states. Active character stars expose each character as a cache point, including low-backtrack loops that would otherwise rescan each suffix.
+- **Bounds**: the default 16 MiB budget includes failure bits and pending failure records. All patterns in one scanner share it. Compiled metadata and the existing VM stack are outside that cache budget. Budget or allocation failure releases the cache and resumes plain backtracking; existing retry and time limits still apply.
+- **Lifetime**: standalone searches start fresh and release cache allocations before returning their scratch state to thread-local storage. A scanner keeps failures only for the same immutable `OnigString`, logical end, options, and global-limit revision. New subjects release old allocations. Caller-supplied string IDs alone do not authorize failure-cache reuse.
+- **Fallbacks**: backward search, invalid UTF-8, FIND_LONGEST, FIND_NOT_EMPTY, and a nonzero match-stack limit do not use memoization. `Regex::is_linear_time()` reports pattern eligibility; it is not a guarantee for these modes or after memory-budget fallback. Opted-in searches may finish where uncached execution exhausts a retry limit because they perform less work.
+- **Validation**: deterministic cache/plain/C comparisons, linear work and retry bounds, shared-budget and invalidation tests, and the `match-cache` fuzz target. `benches/match_cache_bench.rs` validates token/capture traces before measuring TypeScript, CSS, Rust, and a pathological grammar expression. The rebuilt implementation still requires an independent review and measured Ferriki adoption before closing #163.
+- **Measurements**: [match cache evaluation](/perf/match-cache-evaluation), including normal-document overhead, pathological inputs, and the feature-disabled baseline comparison.
 
 #### Literal trie (`src/literal_trie.rs`, `regcomp.rs`)
 

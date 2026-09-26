@@ -10260,6 +10260,8 @@ pub fn onig_new(
     }
 
     let mut reg = RegexType {
+        #[cfg(feature = "match-cache")]
+        match_cache: None,
         ops: Vec::new(),
         string_pool: Vec::new(),
         num_mem: 0,
@@ -10576,6 +10578,8 @@ mod tests {
 
     fn make_test_context() -> (RegexType, ParseEnv) {
         let reg = RegexType {
+            #[cfg(feature = "match-cache")]
+            match_cache: None,
             ops: Vec::new(),
             string_pool: Vec::new(),
             num_mem: 0,

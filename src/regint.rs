@@ -610,6 +610,8 @@ pub struct RegexExt {
 
 // === regex_t (re_pattern_buffer) ===
 pub struct RegexType {
+    #[cfg(feature = "match-cache")]
+    pub(crate) match_cache: Option<crate::match_cache::Plan>,
     // bytecode
     pub(crate) ops: Vec<Operation>,
     pub(crate) string_pool: Vec<u8>,

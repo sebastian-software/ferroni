@@ -1486,6 +1486,12 @@ const FINISH_PCODE: usize = usize::MAX;
 // ============================================================================
 
 pub struct MatchArg {
+    #[cfg(feature = "match-cache")]
+    pub(crate) match_cache: Option<Box<crate::match_cache::MatchCache>>,
+    #[cfg(feature = "match-cache")]
+    pub(crate) preserve_match_cache: bool,
+    #[cfg(feature = "match-cache")]
+    cache_suspended: bool,
     pub options: OnigOptionType,
     pub region: Option<OnigRegion>,
     pub start: usize, // search start position (for \G anchor)
@@ -1525,6 +1531,12 @@ impl MatchArg {
         start: usize,
     ) -> Self {
         let mut msa = MatchArg {
+            #[cfg(feature = "match-cache")]
+            match_cache: crate::match_cache::MatchCache::for_regex(reg),
+            #[cfg(feature = "match-cache")]
+            preserve_match_cache: false,
+            #[cfg(feature = "match-cache")]
+            cache_suspended: false,
             options: option | reg.options,
             region,
             start,
@@ -1556,6 +1568,12 @@ impl MatchArg {
         mp: &OnigMatchParam,
     ) -> Self {
         let mut msa = MatchArg {
+            #[cfg(feature = "match-cache")]
+            match_cache: crate::match_cache::MatchCache::for_regex(reg),
+            #[cfg(feature = "match-cache")]
+            preserve_match_cache: false,
+            #[cfg(feature = "match-cache")]
+            cache_suspended: false,
             options: option | reg.options,
             region,
             start,
@@ -1586,6 +1604,11 @@ impl MatchArg {
         region: Option<OnigRegion>,
         start: usize,
     ) {
+        #[cfg(feature = "match-cache")]
+        if !self.preserve_match_cache {
+            self.match_cache = crate::match_cache::MatchCache::for_regex(reg);
+            self.cache_suspended = false;
+        }
         self.options = option | reg.options;
         self.region = region;
         self.start = start;
@@ -1609,6 +1632,11 @@ impl MatchArg {
         region: Option<OnigRegion>,
         start: usize,
     ) {
+        #[cfg(feature = "match-cache")]
+        if !self.preserve_match_cache {
+            self.match_cache = crate::match_cache::MatchCache::for_regex(reg);
+            self.cache_suspended = false;
+        }
         self.options = option | reg.options;
         self.region = region;
         self.start = start;
@@ -1628,6 +1656,11 @@ impl MatchArg {
         option: OnigOptionType,
         start: usize,
     ) {
+        #[cfg(feature = "match-cache")]
+        if !self.preserve_match_cache {
+            self.match_cache = crate::match_cache::MatchCache::for_regex(reg);
+            self.cache_suspended = false;
+        }
         self.options = option | reg.options;
         self.start = start;
         self.best_len = ONIG_MISMATCH;
@@ -1714,7 +1747,7 @@ fn count_retry(
 /// Handles callout retraction when reg/callout_data are provided.
 /// Returns Some((pcode, pstr, zid)) from the ALT entry, or None if stack is empty.
 #[allow(clippy::too_many_arguments)]
-fn stack_pop(
+fn stack_pop<const CACHE: bool>(
     stack: &mut Vec<StackEntry>,
     pop_level: StackPopLevel,
     mem_start_stk: &mut [MemPtr],
@@ -1723,9 +1756,14 @@ fn stack_pop(
     callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
     str_data: &[u8],
     subexp_call_nest_counter: &mut u64,
+    #[cfg(feature = "match-cache")] cache: &mut Option<Box<crate::match_cache::MatchCache>>,
 ) -> Option<(usize, usize, i32)> {
     loop {
         let entry = stack.pop()?;
+        #[cfg(feature = "match-cache")]
+        if CACHE {
+            cache.as_mut().unwrap().unwind(stack.len());
+        }
         match entry {
             StackEntry::Alt {
                 pcode, pstr, zid, ..
@@ -3458,7 +3496,116 @@ fn match_at(
     }
 }
 
+/// While memoizing, expose each character of a fused star as a branch state.
+/// Otherwise a single opcode can rescan a suffix at every attempted start.
+/// The ordinary fast loops remain unchanged when the cache is inactive.
+#[cfg(feature = "match-cache")]
+fn cached_star_step(
+    reg: &RegexType,
+    pc: usize,
+    text: &[u8],
+    end: usize,
+    right: usize,
+    s: usize,
+) -> Option<Option<usize>> {
+    use OpCode::*;
+    let op = &reg.ops[pc];
+    if !matches!(
+        op.opcode,
+        AnyCharStar
+            | AnyCharMlStar
+            | AnyCharStarPeekNext
+            | AnyCharMlStarPeekNext
+            | CClassStar
+            | CClassMixStar
+            | CClassMbStar
+            | WordStar
+            | WordAsciiStar
+            | CClassStarPeekNext
+            | WordAsciiStarPeekNext
+            | CClassNotStar
+            | CClassMbNotStar
+            | CClassMixNotStar
+    ) {
+        return None;
+    }
+    if s >= right {
+        return Some(None);
+    }
+    let byte = text[s];
+    let len = enclen(reg.enc, text, s);
+    let next = s + len;
+    let code = || reg.enc.mbc_to_code(&text[s..], end.saturating_sub(s));
+    let member = match &op.payload {
+        OperationPayload::CClass { bsp, .. } | OperationPayload::CClassStarPeekNext { bsp, .. } => {
+            bitset_at(bsp, byte as usize)
+        }
+        OperationPayload::CClassMb { mb } => is_in_code_range(mb, code()),
+        OperationPayload::CClassMix { bsp, mb } => {
+            if byte < 0x80 || len == 1 {
+                bitset_at(bsp, byte as usize)
+            } else {
+                let c = code();
+                is_in_code_range(mb, c) || (c < 256 && bitset_at(bsp, c as usize))
+            }
+        }
+        _ => false,
+    };
+    let consumed = match op.opcode {
+        AnyCharStar | AnyCharStarPeekNext => {
+            (next <= right && !reg.enc.is_mbc_newline(&text[s..], end)).then_some(next)
+        }
+        AnyCharMlStar | AnyCharMlStarPeekNext => (next <= right).then_some(next),
+        CClassStar | CClassStarPeekNext => member.then_some(s + 1),
+        CClassNotStar => (!member).then_some(if byte < 0x80 { s + 1 } else { next.min(end) }),
+        CClassMixStar | CClassMbStar => (member && next <= right).then_some(next),
+        CClassMbNotStar | CClassMixNotStar => {
+            if next > right {
+                Some(right)
+            } else {
+                (!member).then_some(next)
+            }
+        }
+        WordStar => is_word_char_at(reg.enc, text, s, end).then_some(next.min(end)),
+        WordAsciiStar | WordAsciiStarPeekNext => is_word_ascii(byte).then_some(s + 1),
+        _ => unreachable!(),
+    };
+    Some(consumed)
+}
+
 fn match_at_impl<const TRACK_CAPTURES: bool>(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    in_right_range: usize,
+    sstart: usize,
+    msa: &mut MatchArg,
+) -> i32 {
+    #[cfg(feature = "match-cache")]
+    if let Some(plan) = &reg.match_cache {
+        if !msa.cache_suspended
+            && msa.match_stack_limit == 0
+            && crate::match_cache::allowed_options(msa.options)
+        {
+            msa.match_cache
+                .as_mut()
+                .unwrap()
+                .prepare(str_data, end, in_right_range, plan.count);
+            msa.match_cache.as_mut().unwrap().add_work(0);
+            return match_at_vm::<TRACK_CAPTURES, true>(
+                reg,
+                str_data,
+                end,
+                in_right_range,
+                sstart,
+                msa,
+            );
+        }
+    }
+    match_at_vm::<TRACK_CAPTURES, false>(reg, str_data, end, in_right_range, sstart, msa)
+}
+
+fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
@@ -3573,6 +3720,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
         }};
     }
 
+    #[cfg(feature = "match-cache")]
+    let mut cache_previous_position = s;
+
     // ---- Main dispatch loop ----
     loop {
         if p >= reg.ops.len() {
@@ -3588,7 +3738,50 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
         let opcode = reg.ops[p].opcode;
         let mut goto_fail = false;
 
+        #[cfg(feature = "match-cache")]
+        if CACHE && msa.match_cache.as_ref().unwrap().active() {
+            if let Some(point) = reg.match_cache.as_ref().unwrap().points[p] {
+                if time_limit_ms != 0 && msa.check_time_limit(1) {
+                    best_len = ONIGERR_TIME_LIMIT_OVER;
+                    break;
+                }
+                goto_fail = msa
+                    .match_cache
+                    .as_mut()
+                    .unwrap()
+                    .enter(point, s, stack.len());
+                if !goto_fail && msa.match_cache.as_ref().unwrap().active() {
+                    if let Some(next) = cached_star_step(reg, p, str_data, end, right_range, s) {
+                        if let Some(next) = next {
+                            // Preserve the fused star's peek guard. An exit
+                            // whose next literal cannot match must not spend
+                            // retries merely because memoization is active.
+                            let can_exit = match reg.ops[p].payload {
+                                OperationPayload::AnyCharStarPeekNext { c }
+                                | OperationPayload::CClassStarPeekNext { c, .. }
+                                | OperationPayload::WordAsciiStarPeekNext { c } => str_data[s] == c,
+                                _ => true,
+                            };
+                            if can_exit && !reg.match_cache.as_ref().unwrap().atomic_stars[p] {
+                                stack.push(StackEntry::Alt {
+                                    pcode: p + 1,
+                                    pstr: s,
+                                    zid: -1,
+                                    is_super: false,
+                                });
+                            }
+                            s = next;
+                        } else {
+                            p += 1;
+                        }
+                        continue;
+                    }
+                }
+            }
+        }
+
         match opcode {
+            _ if goto_fail => {}
             // ================================================================
             // OP_FINISH - reached bottom sentinel, return result
             // ================================================================
@@ -5839,6 +6032,14 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
 
         // Handle failure (backtracking)
         if goto_fail {
+            #[cfg(feature = "match-cache")]
+            if CACHE {
+                msa.match_cache
+                    .as_mut()
+                    .unwrap()
+                    .add_work(1 + s.saturating_sub(cache_previous_position));
+                cache_previous_position = s;
+            }
             if let Err(err) = count_retry(
                 1,
                 &mut retry_in_match_counter,
@@ -5860,7 +6061,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             {
                 break;
             }
-            let pop_result = stack_pop(
+            let pop_result = stack_pop::<CACHE>(
                 &mut stack,
                 pop_level,
                 &mut mem_start_stk,
@@ -5869,6 +6070,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 &mut callout_data,
                 str_data,
                 &mut subexp_call_nest_counter,
+                #[cfg(feature = "match-cache")]
+                &mut msa.match_cache,
             );
             match pop_result {
                 Some((pcode, pstr, alt_zid)) => {
@@ -5879,6 +6082,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     p = pcode;
                     s = pstr;
                     last_alt_zid = alt_zid;
+                    #[cfg(feature = "match-cache")]
+                    if CACHE {
+                        cache_previous_position = s;
+                    }
                 }
                 None => {
                     // Stack empty - match failed
@@ -5886,6 +6093,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 }
             }
         }
+    }
+
+    #[cfg(feature = "match-cache")]
+    if CACHE && best_len == ONIG_MISMATCH {
+        msa.match_cache.as_mut().unwrap().unwind(0);
     }
 
     // Accumulate retry counter into search counter
@@ -5912,6 +6124,10 @@ const MAX_CACHED_STACK_ENTRIES: usize = 1 << 16;
 /// the rest of the thread.
 #[inline]
 fn release_oversized_stack(msa: &mut MatchArg) {
+    #[cfg(feature = "match-cache")]
+    {
+        msa.match_cache = None;
+    }
     if msa.stack.capacity() > MAX_CACHED_STACK_ENTRIES {
         msa.stack = Vec::with_capacity(INIT_MATCH_STACK_SIZE);
     }
@@ -6873,6 +7089,11 @@ fn search_in_range_inner(
         return (ONIG_MISMATCH, msa.region.take());
     }
 
+    #[cfg(feature = "match-cache")]
+    {
+        msa.cache_suspended = start >= range;
+    }
+
     if can_use_two_pass_capture_fill(reg, start, range, msa) {
         // A forward range bounds each attempt by `data_range`; see
         // `onig_search_inner_core`.
@@ -7514,6 +7735,8 @@ mod tests {
         use crate::regsyntax::OnigSyntaxOniguruma;
         let enc: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
         let reg = RegexType {
+            #[cfg(feature = "match-cache")]
+            match_cache: None,
             ops: Vec::new(),
             string_pool: Vec::new(),
             num_mem: 0,

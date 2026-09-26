@@ -80,6 +80,8 @@ pub mod encodings;
 pub mod error;
 mod first_bytes;
 pub mod literal_trie;
+#[cfg(feature = "match-cache")]
+pub mod match_cache;
 pub mod oniguruma;
 pub mod prelude;
 pub mod regcomp;

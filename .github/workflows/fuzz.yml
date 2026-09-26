@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [pattern-compile, pattern-match, scanner-api]
+        target: [pattern-compile, pattern-match, scanner-api, match-cache]
     # cargo-fuzz needs nightly; rust-toolchain.toml pins the local default to
     # stable, so RUSTUP_TOOLCHAIN keeps this job on the toolchain it asked for.
     env:
