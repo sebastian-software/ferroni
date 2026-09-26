@@ -1061,6 +1061,8 @@ mod tests {
 
     #[test]
     fn cache_mode_regset_probe_is_counted() {
+        // A search retry budget disables this route; exclude global-limit tests.
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
         let mut scanner = Scanner::new(&["a"]).unwrap();
         for _ in 0..20 {
             let _ = scanner.find_next_match_with_id("ba", 1, 0, ScannerFindOptions::NONE);
@@ -1073,6 +1075,8 @@ mod tests {
 
     #[test]
     fn optional_prefix_match_agrees_after_cache_route_switches() {
+        // A search retry budget disables this route; exclude global-limit tests.
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
         let mut scanner = Scanner::new(&["a?bc", "q"]).unwrap();
 
         for _ in 0..25 {
@@ -2152,6 +2156,8 @@ mod tests {
 
     #[test]
     fn cache_hit_on_repeated_search_same_string() {
+        // A search retry budget disables this route; exclude global-limit tests.
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
         // Exercises per-regex cache reuse: need ≥8 same-start calls to trigger probe
         let mut scanner = Scanner::new(&["foo", "bar", "baz"]).unwrap();
         let input = "xxfooxxbarxxbaz";
@@ -2175,6 +2181,8 @@ mod tests {
 
     #[test]
     fn cache_no_match_reused() {
+        // A search retry budget disables this route; exclude global-limit tests.
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
         // Exercises cache path where a pattern previously found no match
         // Need repeated same-start calls to trigger per-regex mode
         let mut scanner = Scanner::new(&["zzz", "a"]).unwrap();
