@@ -12,7 +12,8 @@ Usage:
     ./scripts/gen_battle_tables.py --general-only
 
 The script fails when an expected benchmark has no result, so a partial run
-cannot produce a partial table.
+cannot produce a partial table. Primary tables compare Ferroni with Oniguruma.
+The separate regex appendix only covers measured shared-syntax cases.
 """
 
 import argparse
@@ -21,6 +22,14 @@ import sys
 from pathlib import Path
 
 ENGINES = ("rust", "c", "regex")
+
+SUBSET_NOTE = (
+    "Context only: these patterns use syntax shared by all three engines. "
+    "The regex crate does not support lookarounds or backreferences; these "
+    "timings do not establish Oniguruma compatibility or an overall engine ranking. "
+    "See https://docs.rs/regex/1.13.1/regex/. Unsupported or unmeasured cases "
+    "are omitted from this appendix, not counted as performance results."
+)
 
 GENERAL_REGEX_ROWS = [
     ("Email shape, 64 inputs", "email_validation"),
@@ -157,8 +166,25 @@ def bold_fastest(values):
 
 
 def engine_table(first_header, rows):
-    header = [first_header, "Ferroni", "Oniguruma", "`regex`"]
-    body = [[label, *bold_fastest(values)] for label, values in rows]
+    """The primary comparison targets Oniguruma compatibility."""
+    header = [first_header, "Ferroni", "Oniguruma", "C / Ferroni"]
+    body = []
+    for label, values in rows:
+        rust_ns, c_ns = values[:2]
+        if rust_ns is None or c_ns is None:
+            body.append([label, fmt_time(rust_ns), fmt_time(c_ns), "—"])
+        else:
+            body.append(scanner_row(label, rust_ns, c_ns))
+    return table(header, "lrrr", body)
+
+
+def subset_table(first_header, rows):
+    """Keep shared-syntax context without presenting a feature-equivalent ranking."""
+    header = [first_header, "Ferroni", "Oniguruma", "`regex` (shared syntax only)"]
+    body = [
+        [label, *(fmt_time(value) for value in values)]
+        for label, values in rows if values[2] is not None
+    ]
     return table(header, "lrrr", body)
 
 
@@ -239,10 +265,8 @@ def main():
 
     results = Results(load_results(args.criterion_dir))
 
-    general_table = engine_table(
-        "Task (whole batch/text)",
-        engine_rows(results, "general_regex", GENERAL_REGEX_ROWS, regex_optional=False),
-    )
+    general_rows = engine_rows(results, "general_regex", GENERAL_REGEX_ROWS, regex_optional=False)
+    general_table = engine_table("Task (whole batch/text)", general_rows)
     if args.general_only:
         if results.missing:
             print(
@@ -251,6 +275,8 @@ def main():
             )
             return 1
         print(general_table)
+        print("\n### Shared-syntax context only: regex\n\n" + SUBSET_NOTE + "\n")
+        print(subset_table("Task (whole batch/text)", general_rows))
         return 0
 
     text_rows = engine_rows(results, "text_scanning", TEXT_SCANNING_ROWS, regex_optional=False)
@@ -265,19 +291,26 @@ def main():
         )
     )
 
+    pattern_rows = engine_rows(results, "single_pattern", PATTERN_ROWS)
+    compilation_rows = engine_rows(results, "compilation", COMPILATION_ROWS)
     sections = [
         ("Everyday regex tasks", general_table),
         ("Text search and log scanning", engine_table("Scenario", text_rows)),
         (
             "Pattern matching",
-            engine_table("Category", engine_rows(results, "single_pattern", PATTERN_ROWS)),
+            engine_table("Category", pattern_rows),
         ),
         (
             "Compilation",
-            engine_table("Pattern", engine_rows(results, "compilation", COMPILATION_ROWS)),
+            engine_table("Pattern", compilation_rows),
         ),
         ("Scanner with full Shiki TextMate grammars", scanner_table(results)),
         ("Scanner on whole documents, line by line", document_table(results)),
+        ("Shared-syntax context only: regex", SUBSET_NOTE),
+        ("Shared syntax: everyday tasks", subset_table("Task (whole batch/text)", general_rows)),
+        ("Shared syntax: text search", subset_table("Scenario", text_rows)),
+        ("Shared syntax: pattern matching", subset_table("Category", pattern_rows)),
+        ("Shared syntax: compilation", subset_table("Pattern", compilation_rows)),
     ]
 
     if results.missing:
