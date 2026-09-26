@@ -11097,3 +11097,58 @@ fn capture_history_traverse() {
     );
     assert_eq!(visited, vec![0, 1, 2]);
 }
+
+// A truncated multibyte character at the end of the subject, or a logical end
+// that cuts one, used to panic: a backward search set its upper range past the
+// subject, and case-insensitive backref folding copied the character's full
+// declared length. C reads past the buffer in both places; Ferroni stops at it.
+#[test]
+fn searches_around_a_truncated_character_do_not_panic() {
+    let subjects: [&[u8]; 3] = [b"\xc3\x9fb\xc3", b"\na\xe3\x81", b"\xe3\x81\x82\xf0\x9f"];
+    for pattern in [
+        &br"(?i)(?:[[:alpha:]]*a)*s"[..],
+        br"[[:alpha:]]*",
+        br"[^x]*",
+        br"\w*",
+        br".",
+        br"(?i)(.)\1",
+    ] {
+        let reg = onig_new(
+            pattern,
+            ONIG_OPTION_NONE,
+            &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        for subject in subjects {
+            for end in 0..=subject.len() {
+                for start in 0..=end {
+                    for range in 0..=end {
+                        // Must not panic; results are not compared with C,
+                        // which reads past the subject here.
+                        let _ = onig_search(
+                            &reg,
+                            subject,
+                            end,
+                            start,
+                            range,
+                            Some(OnigRegion::new()),
+                            ONIG_OPTION_NONE,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Inside an absent operator the right range can drop below the current
+// position; `.*` must then match nothing, as C's DATA_ENSURE_CHECK1 loop does.
+// Used to panic on an inverted slice. Expectations checked against C.
+#[test]
+fn absent_operator_with_any_char_star_body() {
+    x2(b"(?~[a-z]+.*)", b"ab", 0, 0);
+    x2(b"(?~a+.*)", b"ab", 0, 0);
+    x2(b"(?~b.*)", b"ab", 0, 1);
+    x2(b"a(?~[a-z]+.*)b", b"ab", 0, 2);
+}

@@ -3201,6 +3201,11 @@ fn greedy_char_loop(
         let Some(next) = member_end(s) else {
             break;
         };
+        // A backward search can run the loop past the logical end, where
+        // `member_end` decodes nothing and cannot advance.
+        if next <= s {
+            break;
+        }
         single_byte &= next == s + 1;
         exact_heads &= steps_back_to(enc, str_data, start, s, next);
         s = next;
@@ -4020,8 +4025,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 // Use SIMD to find newline boundary, then push Alt entries up to that point.
                 // In UTF-8/ASCII, 0x0a can only appear as a complete single-byte character,
                 // so memchr finds the exact newline position.
-                let nl_limit =
-                    memchr::memchr(b'\n', &str_data[s..right_range]).map_or(right_range, |i| s + i);
+                // An absent operator can lower right_range below s; C's loop
+                // (DATA_ENSURE_CHECK1) then simply does not run.
+                let nl_limit = if s < right_range {
+                    memchr::memchr(b'\n', &str_data[s..right_range]).map_or(right_range, |i| s + i)
+                } else {
+                    s
+                };
                 while s < nl_limit {
                     let n = enclen(enc, str_data, s);
                     if s + n > nl_limit {
@@ -4058,8 +4068,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             OpCode::AnyCharStarPeekNext => {
                 if let OperationPayload::AnyCharStarPeekNext { c } = reg.ops[p].payload {
                     // Find newline boundary with SIMD
-                    let nl_limit = memchr::memchr(b'\n', &str_data[s..right_range])
-                        .map_or(right_range, |i| s + i);
+                    // See AnyCharStar: right_range can be below s here.
+                    let nl_limit = if s < right_range {
+                        memchr::memchr(b'\n', &str_data[s..right_range])
+                            .map_or(right_range, |i| s + i)
+                    } else {
+                        s
+                    };
                     if c < 0x80 {
                         // ASCII peek byte: use SIMD to find all occurrences directly.
                         // In UTF-8, bytes < 0x80 can only be leading (single-byte) characters,
@@ -6429,7 +6444,13 @@ fn onigenc_get_right_adjust_char_head(
     s: usize,
 ) -> usize {
     let p = left_adjust_char_head(enc, text, start, s);
-    if p < s { p + enclen(enc, text, p) } else { p }
+    // Clamped: a truncated character at the end would otherwise point past
+    // the subject (C returns that out-of-range pointer).
+    if p < s {
+        (p + enclen(enc, text, p)).min(text.len())
+    } else {
+        p
+    }
 }
 
 /// Forward search using optimization strategy.
@@ -6980,10 +7001,14 @@ fn onig_search_inner_core_with_right_range(
             return (ONIG_MISMATCH, msa.region.take());
         }
 
-        // orig_start is the right boundary for matching (upper range)
+        // orig_start is the right boundary for matching (upper range). As in
+        // C it may run past the logical end into the rest of the buffer, but
+        // C adds the character length unclamped (`orig_start += enclen(...)`)
+        // and reads past the buffer when a truncated character ends it;
+        // Ferroni stops at the buffer.
         let orig_start = if start < end {
             let elen = enclen(enc, str_data, start);
-            start + elen
+            (start + elen).min(str_data.len())
         } else {
             end
         };
