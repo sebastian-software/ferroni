@@ -70,6 +70,10 @@ fn seeded_cache_plain_and_c_comparison() {
             r"([ab]{2})+[ab]{2}x",
             r"([ab]{3}|a)[ab]{2}",
             r"(?<=[ab])[ab]{3}",
+            r"[ab]+c",
+            r"[ab]+,(a?)",
+            r"[ab]+,\K(a?)",
+            r"[ab]+c(?<!ac)",
         ]
         .map(str::to_owned),
     );
