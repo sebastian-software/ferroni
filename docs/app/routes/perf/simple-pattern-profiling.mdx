@@ -167,6 +167,32 @@ Both series remain visible; the available data do not establish a stable loss
 or a stable improvement for this control. The smaller 1–2% costs in greedy
 quantifiers, lookarounds, and some compilation cases are also retained above.
 
+### Case-insensitive search against C
+
+On this specific fixture the candidate remains faster than the pinned C
+engine. I measured the unchanged saved baseline and candidate binaries again,
+including C from the same candidate executable, in baseline/candidate/C/C/
+candidate/baseline order. Each run uses the same 30 samples, 500 ms warmup,
+and four-second measurement window. Both executables pass all 121 smoke cases
+before timing; the benchmark checks matching and capture parity outside timing.
+
+| Short case-insensitive phrase | Mean search time | Individual run means |
+| ----------------------------- | ---------------: | -------------------: |
+| Ferroni before this change    |         96.49 ns |     96.69 / 96.29 ns |
+| Ferroni with this change      |        103.94 ns |   104.54 / 103.34 ns |
+| C Oniguruma                   |        185.01 ns |   186.50 / 183.52 ns |
+
+The candidate takes **7.7% more time than the Ferroni baseline**, but still
+**43.8% less time than C** (C takes 1.78 times as long). These are search-only
+timings with compilation outside the measured region. They establish the
+comparison for this pattern and input on this machine, not for every
+case-insensitive expression.
+
+The [C comparison artifact](https://github.com/sebastian-software/ferroni/blob/main/benches/results/simple-pattern-ignorecase-c-2026-09-26.json)
+retains all six runs and 180 samples, estimates, binary/source hashes, exact
+commands and runner, and platform metadata. The saved binary hashes match the
+independent confirmation above; no code was changed for this follow-up.
+
 ### Compilation and memory cost
 
 The `hello world` compile-and-drop fixture rises from **515 to 579 ns (+12.3%)**.
