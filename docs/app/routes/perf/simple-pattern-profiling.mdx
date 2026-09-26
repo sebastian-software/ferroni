@@ -8,6 +8,11 @@ title: "Simple-Pattern Profiling (2026-09)"
 I profiled common validation, extraction, and literal-search workloads after
 merging the ASCII-class, atomic-prefix, and Unicode-range optimizations.
 The baseline is main `405e2835915dceae1a7ba9a431af7d516bf5322f`.
+Reusing a compiled substring finder reduces the measured short-literal search
+time by **45%**, URL extraction by **11%**, and the first field-search result
+by **24%**. It also costs **7–8%** on the short case-insensitive phrase and
+**12%** on simple-literal compilation. This is a tradeoff for reusing eligible
+compiled expressions, not a universal speedup.
 
 ## What the profiles show
 
@@ -40,6 +45,12 @@ each search reconstructed its search plan. Compilation now stores an owned
 exact string longer than one byte. Forward searches reuse it over the same
 slice. Candidate positions, distance bounds, and VM attempts stay unchanged.
 Single-byte, backward, and encoding-step searches retain their existing paths.
+
+For haystacks shorter than 64 bytes, `memchr` 2.8.3's convenience `find` function
+chooses Rabin–Karp. A reused `Finder` uses its compiled search strategy instead;
+the short-literal gain therefore also includes this algorithm-selection change.
+The candidate's ARM64 profile shows the NEON searcher. The gain cannot be
+explained simply by subtracting the baseline construction sample share.
 
 This is a prefilter change; it does not replace the VM or restrict regex syntax.
 Lookarounds, backreferences, captures, and retry limits continue through the
@@ -76,6 +87,147 @@ artifacts retain all runs, raw samples, estimates, patches, binary hashes,
 commands, and the exact runner. These are selection measurements, not the
 independent confirmation of the final implementation.
 
+## Independent confirmation
+
+I rebuilt clean committed candidate `1298cbbf31d172e1a57c9da1e9437db513c35e47`
+and compared it with the saved clean-main binary. The benchmark source, inputs,
+dependencies, and compiler settings are identical. Both binaries pass all 121
+benchmark smoke cases before timing, including C capture/token traces and the
+shared-syntax `regex` task checks.
+
+The 31-case matrix contains 156 runs and 4,680 samples. Each case has two runs
+per variant. Baseline/candidate order alternates ABBA/BAAB; the eight shared
+comparison cases rotate baseline, candidate, C, and `regex`, then reverse the
+order. Each run uses 30 samples, 500 ms warmup, and four seconds of measurement.
+The machine is an M1 Ultra with 64 GiB RAM, macOS 27.0, and Rust 1.96.0. Builds
+use `ffi`, thin LTO, portable ARM64 flags, and the pinned Oniguruma
+`f95747b462de672b6f8dbdeb478245ddf061ca53`; the opt-in match cache is disabled.
+An exclusive local CPU gate excludes concurrent task builds, tests, and other
+benchmarks. Desktop activity, core assignment, and power state are uncontrolled.
+These results do not establish performance on another CPU or an application mix.
+
+Times below are arithmetic means of the two run means. Negative change means
+less time. “Both faster/slower” means that all candidate 95% bootstrap mean
+intervals are below/above all baseline intervals within this series; “overlap”
+means that strict separation is absent. This is a description of the observed
+repetitions, not a corrected significance test across 31 comparisons.
+
+| Case                                          | Main (µs) | Candidate (µs) | Time change | Repetitions |
+| --------------------------------------------- | --------: | -------------: | ----------: | ----------- |
+| `general_regex/email_validation`              |     6.684 |          6.724 |       +0.6% | overlap     |
+| `general_regex/uuid_validation`               |     5.721 |          5.731 |       +0.2% | overlap     |
+| `general_regex/number_validation`             |     7.860 |          7.874 |       +0.2% | overlap     |
+| `general_regex/access_log_captures`           |    31.422 |         31.651 |       +0.7% | overlap     |
+| `general_regex/url_extraction`                |     9.875 |          8.779 |      -11.1% | both faster |
+| `general_regex/unicode_words`                 |    53.479 |         54.844 |       +2.6% | both slower |
+| `general_regex/email_redaction`               |    25.984 |         25.897 |       -0.3% | overlap     |
+| `scanner_highlighting/ts_279_compile`         | 10905.367 |      10999.259 |       +0.9% | overlap     |
+| `scanner_highlighting/css_117_compile`        | 15849.223 |      15907.603 |       +0.4% | overlap     |
+| `scanner_highlighting/rust_81_compile`        |   307.086 |        312.834 |       +1.9% | both slower |
+| `scanner_documents/ts_279_document_28_lines`  |  1023.312 |       1025.167 |       +0.2% | overlap     |
+| `scanner_documents/css_117_document_19_lines` |    89.254 |         89.511 |       +0.3% | overlap     |
+| `scanner_documents/rust_81_document_31_lines` |   101.767 |        101.546 |       -0.2% | overlap     |
+| `text_scanning/literal_50k`                   |     0.070 |          0.057 |      -19.1% | both faster |
+| `text_scanning/no_match_50k`                  |     1.509 |          1.479 |       -2.0% | both faster |
+| `text_scanning/no_match_10k`                  |     0.357 |          0.322 |       -9.7% | both faster |
+| `text_scanning/field_extract_50k`             |     0.093 |          0.071 |      -23.9% | both faster |
+| `text_scanning/timestamp_50k`                 |     0.087 |          0.087 |       +0.3% | overlap     |
+| `text_scanning/regset_position_lead`          |     0.099 |          0.101 |       +1.9% | overlap     |
+| `single_pattern/literal_exact`                |     0.101 |          0.056 |      -45.0% | both faster |
+| `single_pattern/quantifier_greedy`            |     0.060 |          0.061 |       +1.8% | both slower |
+| `single_pattern/lookaround_combined`          |     0.087 |          0.089 |       +1.7% | both slower |
+| `single_pattern/unicode_greek`                |     0.093 |          0.094 |       +0.8% | overlap     |
+| `single_pattern/backref_simple`               |     0.085 |          0.084 |       -0.4% | overlap     |
+| `single_pattern/case_insensitive_phrase`      |     0.096 |          0.103 |       +7.3% | both slower |
+| `single_pattern/alternation_2_branch`         |     0.065 |          0.065 |       +0.6% | overlap     |
+| `single_pattern/alternation_10_branch`        |     0.055 |          0.055 |       -1.3% | both faster |
+| `single_pattern/named_capture_date`           |     0.212 |          0.214 |       +1.0% | overlap     |
+| `compilation/literal`                         |     0.515 |          0.579 |      +12.3% | both slower |
+| `compilation/named_capture`                   |     4.023 |          4.065 |       +1.1% | both slower |
+| `compilation/lookbehind`                      |     1.133 |          1.137 |       +0.4% | overlap     |
+
+The text-scanning cases time one search without capture output. `literal_50k`
+and `field_extract_50k` have early matches, so they do not measure traversal
+of the complete haystack. The miss cases do scan the input. General extraction
+and document cases materialize the complete capture or token trace. Compilation
+includes destruction of each compiled result, as in the existing harness.
+
+### Regression follow-up
+
+I repeated the two notable search regressions separately with the same binaries:
+eight additional runs and 240 samples, with all results retained. The
+case-insensitive phrase remains slower: **97.49 → 105.26 ns (+8.0%)**, compared
+with **95.83 → 102.85 ns (+7.3%)** in the full matrix. Its cause has not been
+isolated; no case-folding specialization was changed. This is a real cost to
+weigh against the literal and URL gains.
+
+The Unicode-word result does not repeat: **54.676 → 54.658 µs (−0.03%)**, after
+**53.479 → 54.844 µs (+2.6%)** in the matrix. The baseline moved between series.
+Both series remain visible; the available data do not establish a stable loss
+or a stable improvement for this control. The smaller 1–2% costs in greedy
+quantifiers, lookarounds, and some compilation cases are also retained above.
+
+### Compilation and memory cost
+
+The `hello world` compile-and-drop fixture rises from **515 to 579 ns (+12.3%)**.
+This is a different pattern from the `lazy dog` search fixture, so subtracting
+those two measurements would not establish an exact reuse break-even count.
+The complete grammar compilation fixtures change by **+0.4% to +1.9%**;
+document tokenization changes by **−0.2% to +0.3%**, with overlapping intervals.
+Applications that compile once and search many times can amortize setup;
+compile-per-search workloads need their own end-to-end measurement.
+
+On this ARM64 `ffi` build, `size_of::<RegexType>()` changes from **1,000 to
+1,008 bytes**. In addition, each eligible regex requests **144 bytes** for its
+boxed finder and **2–24 bytes** for the owned exact string, in two allocations.
+These are measured type sizes plus allocation sizes derived from the locked
+`memchr` implementation, not RSS measurements; allocator metadata and rounding
+are excluded. Ineligible patterns add no finder allocation. The rejected inline
+representation grew every regex to 1,152 bytes instead.
+
+### Shared-syntax comparison
+
+These eight fixtures perform the same checked task across all three engines.
+They measure only the common syntax subset. `regex` does not implement Ferroni's
+lookarounds or backreferences, so the table does not rank complete feature sets.
+Validation is a batch of 64 mixed accepted/rejected inputs; extraction and
+redaction include complete output production. The literal row is one search.
+
+| Shared-syntax workload | Main (µs) | Candidate (µs) | Oniguruma (µs) | `regex` (µs) |
+| ---------------------- | --------: | -------------: | -------------: | -----------: |
+| `email_validation`     |     6.684 |          6.724 |         13.011 |        1.522 |
+| `uuid_validation`      |     5.721 |          5.731 |         15.717 |        1.756 |
+| `number_validation`    |     7.860 |          7.874 |         12.890 |        0.982 |
+| `access_log_captures`  |    31.422 |         31.651 |         34.720 |       35.618 |
+| `url_extraction`       |     9.875 |          8.779 |         19.644 |       13.384 |
+| `unicode_words`        |    53.479 |         54.844 |         79.976 |       32.805 |
+| `email_redaction`      |    25.984 |         25.897 |         87.558 |       13.795 |
+| `literal_exact`        |     0.101 |          0.056 |          0.142 |        0.011 |
+
+Ferroni beats Oniguruma on these eight supplied fixtures. It also beats `regex`
+on access-log capture extraction and URL extraction, but trails it on the other
+six. The literal gap to `regex` falls from 9.4× to 5.2×; number validation still
+has an approximately 8× gap. A single engine with advanced features is useful,
+but these measurements do not show parity with `regex` across simple patterns.
+
+### Evidence and validation
+
+The [confirmation artifact](https://github.com/sebastian-software/ferroni/blob/main/benches/results/simple-pattern-confirmation-2026-09-26.json)
+contains all 156 matrix runs, all eight follow-up runs, raw samples and estimates,
+binary/source hashes, the exact runner and independent raw-mean recomputation,
+memory-layout evidence, local validation logs, and the two post-change profiles.
+All 164 run means were independently recomputed from the 4,920 raw samples
+using elapsed time divided by iteration count. The URL profile contains no
+finder-construction samples inside the measured loop; the short-literal profile uses the prepared searcher.
+Profile shares are relative, so their before/after percentages are not latency
+ratios.
+
+The full default and all-feature tests, cache/plain/C differential suite,
+Clippy with warnings denied, rustdoc with warnings denied, Cargo Deny, workflow
+pin check, README regeneration, documentation formatting, type checking, and the documentation build
+pass locally. The tests preserve advanced syntax and deterministic limit
+results; performance was measured only on this ARM64 machine.
+
 ## Correctness boundary
 
 A focused test makes 696,320 comparisons between the compiled finder and the
@@ -84,7 +236,8 @@ It compares raw results and capture bounds across logical input ends, forward,
 backward and equal endpoints, malformed UTF-8, ASCII and UTF-8 encodings,
 lookarounds, backreferences, `\K`, and deterministic retry and stack limits.
 The cache/plain/C differential fixture also includes literal prefixes, Unicode
-literals, a prefix longer than the optimizer's 24-byte cap, and advanced syntax.
+literals, and advanced syntax. The focused test covers successful searches with
+a literal longer than the optimizer's 24-byte cap.
 
 ## Further candidates
 
