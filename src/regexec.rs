@@ -2790,18 +2790,11 @@ pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
         return false;
     }
 
-    let mut low: usize = 0;
-    let mut high: usize = n;
-    while low < high {
-        let x = (low + high) >> 1;
-        if code > ranges[x * 2 + 1] {
-            low = x + 1;
-        } else {
-            high = x;
-        }
-    }
-
-    low < n && code >= ranges[low * 2]
+    // Search whole pairs so the library's binary search can select the next
+    // interval without a data-dependent branch or repeated pair indexing.
+    let (pairs, _) = ranges.as_chunks::<2>();
+    let low = pairs.partition_point(|range| range[1] < code);
+    low < n && code >= pairs[low][0]
 }
 
 /// Get the character length at position s for the given encoding.
@@ -8543,6 +8536,67 @@ mod tests {
         assert!(!is_in_code_range(&many, 0x00FF));
         assert!(is_in_code_range(&many, 0x0405));
         assert!(!is_in_code_range(&many, 0x0600));
+    }
+
+    #[test]
+    fn code_range_lookup_preserves_intervals_and_table_bounds() {
+        // Sweep independently through compiled intervals, including surrogate
+        // code points: raw encodings are not restricted to Rust `char` values.
+        for pattern in [r"\p{L}", r"\p{M}", r"[\p{L}\p{M}]", r"\p{Greek}"] {
+            let reg = compile_regex(pattern.as_bytes());
+            let table =
+                reg.ops
+                    .iter()
+                    .find_map(|op| match &op.payload {
+                        OperationPayload::CClassMb { mb }
+                        | OperationPayload::CClassMix { mb, .. } => Some(mb.as_slice()),
+                        _ => None,
+                    })
+                    .expect("property must compile to a multibyte class");
+            let n = table[0] as usize;
+            let mut interval = 0;
+            for code in 0..=0x110000 {
+                while interval < n && table[interval * 2 + 2] < code {
+                    interval += 1;
+                }
+                let expected = interval < n && table[interval * 2 + 1] <= code;
+                assert_eq!(
+                    is_in_code_range(table, code),
+                    expected,
+                    "{pattern}, {code:#x}"
+                );
+            }
+            assert!(!is_in_code_range(table, u32::MAX));
+        }
+
+        // The declared count, not spare trailing words, bounds the table.
+        // Exercise both sides of the small-table / binary-search boundary.
+        for n in 0..=64 {
+            let pairs: Vec<_> = (0..n).map(|i| (i * 7 + 2, i * 7 + 4)).collect();
+            let table = make_code_range_table(&pairs);
+            let mut extra = table.clone();
+            extra.extend([0, u32::MAX]);
+            for code in 0..=n * 7 + 7 {
+                let expected = pairs.iter().any(|&(lo, hi)| lo <= code && code <= hi);
+                assert_eq!(is_in_code_range(&table, code), expected);
+                assert_eq!(is_in_code_range(&extra, code), expected);
+            }
+            for len in 0..table.len() {
+                assert!(!is_in_code_range(&table[..len], 2));
+            }
+        }
+        for table in [&[][..], &[0], &[0, 0, u32::MAX], &[u32::MAX, 0, u32::MAX]] {
+            for code in [0, 1, 0x10FFFF, u32::MAX] {
+                assert!(!is_in_code_range(table, code));
+            }
+        }
+        let edge = make_code_range_table(&[(0, 0), (2, 2), (4, 4), (6, 6), (u32::MAX, u32::MAX)]);
+        for code in [0, 2, 4, 6, u32::MAX] {
+            assert!(is_in_code_range(&edge, code));
+        }
+        for code in [1, 3, 5, 7, u32::MAX - 1] {
+            assert!(!is_in_code_range(&edge, code));
+        }
     }
 
     #[test]
