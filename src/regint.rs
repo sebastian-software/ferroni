@@ -328,6 +328,8 @@ pub enum OpCode {
     /// Rust-only (ADR-008): `PushOrJumpExact1` with a byte set. Pushes the
     /// alternative only when the current byte can start the main path.
     PushOrJumpByteSet = 96,
+    /// A bounded run of identical ASCII character classes.
+    CClassRun = 97,
 }
 
 // === SaveType ===
@@ -423,6 +425,10 @@ pub enum OperationPayload {
     CClass {
         bsp: Box<BitSet>,
         ascii_fast: CClassAsciiFastKind,
+    },
+    CClassRun {
+        bsp: Box<BitSet>,
+        len: u8,
     },
     CClassMb {
         mb: Vec<u32>,

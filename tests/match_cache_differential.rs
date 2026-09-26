@@ -66,6 +66,10 @@ fn seeded_cache_plain_and_c_comparison() {
             r"(?>a*b*)c",
             r"(?>a*)b|a*",
             r"(?<=a)b",
+            r"[ab]?[ab]{3}",
+            r"([ab]{2})+[ab]{2}x",
+            r"([ab]{3}|a)[ab]{2}",
+            r"(?<=[ab])[ab]{3}",
         ]
         .map(str::to_owned),
     );

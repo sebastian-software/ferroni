@@ -84,8 +84,10 @@ fn record_first_bytes(reg: &RegexType, op: &Operation, map: &mut ByteMap) -> Opt
             add_exact(map, *s.first()?);
             FirstBytes::Consumes
         }
-        OpCode::CClass | OpCode::CClassNot => {
-            let OperationPayload::CClass { bsp, .. } = &op.payload else {
+        OpCode::CClass | OpCode::CClassNot | OpCode::CClassRun => {
+            let (OperationPayload::CClass { bsp, .. } | OperationPayload::CClassRun { bsp, .. }) =
+                &op.payload
+            else {
                 return None;
             };
             add_bitset(map, bsp, op.opcode == OpCode::CClassNot);

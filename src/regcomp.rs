@@ -10088,8 +10088,48 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
 
     refresh_capture_tracking_requirement(reg);
     guard_backtrack_pushes(reg);
+    fuse_ascii_class_runs(reg);
 
     0
+}
+
+/// Rust-only (ADR-008): execute adjacent identical ASCII classes in one VM
+/// dispatch. Keep every original instruction and address: a branch into the
+/// middle still executes the corresponding suffix. Classes cannot capture,
+/// backtrack, or change the match stack, so this only batches byte checks.
+/// One byte of run metadata caps each dispatch at 255 checks; longer runs
+/// continue at the original suffix instruction.
+fn fuse_ascii_class_runs(reg: &mut RegexType) {
+    if !onigenc_is_ascii_compatible_encoding(reg.enc) {
+        return;
+    }
+    for pc in (0..reg.ops.len().saturating_sub(1)).rev() {
+        let (head, tail) = reg.ops.split_at_mut(pc + 1);
+        let op = &mut head[pc];
+        let next = &tail[0];
+        if op.opcode != OpCode::CClass {
+            continue;
+        }
+        let (next_bsp, next_len) = match (&next.opcode, &next.payload) {
+            (OpCode::CClass, OperationPayload::CClass { bsp, .. }) => (bsp, 1),
+            (OpCode::CClassRun, OperationPayload::CClassRun { bsp, len }) => (bsp, *len),
+            _ => continue,
+        };
+        if let OperationPayload::CClass { bsp, .. } = &mut op.payload {
+            if bsp[128 / BITS_IN_ROOM..].iter().all(|&bits| bits == 0) && bsp == next_bsp {
+                let OperationPayload::CClass { bsp, .. } =
+                    std::mem::replace(&mut op.payload, OperationPayload::None)
+                else {
+                    unreachable!("class payload checked above");
+                };
+                op.opcode = OpCode::CClassRun;
+                op.payload = OperationPayload::CClassRun {
+                    bsp,
+                    len: next_len.saturating_add(1),
+                };
+            }
+        }
+    }
 }
 
 #[cfg(test)]

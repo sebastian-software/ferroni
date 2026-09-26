@@ -121,6 +121,7 @@ pub(crate) fn points(reg: &RegexType) -> Option<(Vec<Option<usize>>, usize, Vec<
                     | StrMb3n
                     | StrMbn
                     | CClass
+                    | CClassRun
                     | CClassMb
                     | CClassMix
                     | CClassNot
@@ -164,11 +165,11 @@ pub(crate) fn points(reg: &RegexType) -> Option<(Vec<Option<usize>>, usize, Vec<
             | CClassMbNotStar
             | CClassMixNotStar => true,
             Finish | End | Str1 | Str2 | Str3 | Str4 | Str5 | StrN | StrMb2n1 | StrMb2n2
-            | StrMb2n3 | StrMb2n | StrMb3n | StrMbn | CClass | CClassMb | CClassMix | CClassNot
-            | CClassMbNot | CClassMixNot | AnyChar | AnyCharMl | Word | WordAscii | NoWord
-            | NoWordAscii | WordBoundary | NoWordBoundary | WordBegin | WordEnd | BeginBuf
-            | EndBuf | BeginLine | EndLine | SemiEndBuf | MemStart | MemStartPush | MemEndPush
-            | MemEnd | Fail | Jump => false,
+            | StrMb2n3 | StrMb2n | StrMb3n | StrMbn | CClass | CClassRun | CClassMb | CClassMix
+            | CClassNot | CClassMbNot | CClassMixNot | AnyChar | AnyCharMl | Word | WordAscii
+            | NoWord | NoWordAscii | WordBoundary | NoWordBoundary | WordBegin | WordEnd
+            | BeginBuf | EndBuf | BeginLine | EndLine | SemiEndBuf | MemStart | MemStartPush
+            | MemEndPush | MemEnd | Fail | Jump => false,
             Mark | CutToMark => {
                 if !atomic_boundaries[pc] {
                     return None;
