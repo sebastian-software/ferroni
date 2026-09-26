@@ -1,0 +1,171 @@
+---
+order: 11
+title: "Unicode Range Lookup Evaluation (2026-09)"
+---
+
+# Unicode Range Lookup Evaluation
+
+Using Rust's slice partition search for multibyte character-class intervals
+changes the 384-word extraction workload from **64.47 to 62.18 us**, a
+**3.6% reduction** on this machine. This is a small optimization of
+one helper. It does not remove the broader cost of materializing matches or
+entering the VM for each word.
+
+The Greek-only search becomes **4.8% slower** (about 103 to 108 ns). Both
+repetitions show this tradeoff, so this remains a draft evaluation rather than
+a clear recommendation to merge. The broader single-pair results also include
+small slowdowns; they do not establish that unaffected workloads stay flat.
+
+The [raw artifact](https://github.com/sebastian-software/ferroni/blob/main/benches/results/unicode-range-lookup-2026-09-26.json)
+contains 52 measurements, including the initial diagnostic
+pair, every Criterion sample, confidence intervals, source/input hashes,
+binary hashes, and execution order. Existing published comparisons remain
+historical measurements. This experiment starts after the ASCII class-run
+optimization merged.
+
+## Evidence and implementation
+
+An eight-second samply profile of `general_regex/rust/unicode_words` collected
+8,089 samples in the measured workload. The VM accounts for 38.7% of leaf
+samples, `search_in_range` for 10.9%, allocator functions for 9.8%,
+`is_in_code_range` for 5.9%, and UTF-8 decoding for 3.8%. These are sampled
+on-CPU shares, not additive predictions of available speedup.
+
+`is_in_code_range` receives a count followed by sorted, inclusive pairs of
+code-point bounds. For more than four pairs, it now views the same words as
+`[[u32; 2]]` and calls `partition_point` to find the first upper bound greater
+than or equal to the code point. Checking that pair's lower bound yields the
+same membership test as C's `onig_is_in_code_range`. ARM64 disassembly of the
+measured candidate uses a conditional select inside the binary-search loop.
+
+The existing count/length checks, first/last endpoint rejection, single-range
+shortcut, and small-table scan remain. The change adds no allocation, metadata,
+dependency, generated Unicode table changes, or unsafe code. It keeps
+logarithmic search and constant auxiliary space. Encoding selection, malformed
+UTF-8 handling, byte consumption, VM dispatch, backtracking, captures, and
+limit accounting are unchanged.
+
+The one tested implementation was retained after a diagnostic pair. The
+initial diagnostic showed approximately 3% improvement for Unicode words and
+a small slowdown for the Greek microbenchmark. The final table below uses a
+fresh candidate build at the recorded commit and repeats both cases in reverse
+order; it does not substitute the most favorable diagnostic measurement.
+
+## Repeated results
+
+Times are microseconds for the **entire workload**, including result vector
+materialization for word extraction. Each version's value is the arithmetic
+mean of its two independent run means. The execution order is baseline,
+candidate, candidate, baseline. Small differences on this interactive desktop
+are not portable speed guarantees.
+
+| Benchmark                           | Before (us) | After (us) | Time change |
+| ----------------------------------- | ----------: | ---------: | ----------: |
+| `general_regex/rust/unicode_words`  |      64.472 |     62.179 |       -3.6% |
+| `single_pattern/rust/unicode_greek` |       0.103 |      0.108 |       +4.8% |
+
+The word extraction expression is `\p{L}[\p{L}\p{M}]*`, applied to
+64 repetitions of a multilingual line with Latin, Greek, Cyrillic, Arabic,
+CJK, and a combining accent. All 384 matches and capture bounds are materialized
+and validated against C and Rust `regex` outside timing. This is shared syntax;
+`regex` does not implement Ferroni's complete Oniguruma feature set, so it is
+not an overall engine ranking.
+
+Individual Unicode-word means and 95% confidence intervals:
+
+| Run      | Mean (us) | 95% interval (us) |
+| -------- | --------: | ----------------: |
+| before-1 |    63.437 |     63.275–63.614 |
+| after-1  |    61.987 |     61.790–62.187 |
+| after-2  |    62.372 |     62.045–62.731 |
+| before-2 |    65.508 |     65.194–65.827 |
+
+A separate comparator check provides context for the same shared expression.
+Its first run was noisy during a period of high host load; one bounded repeat
+was more stable. Both are retained below and in the raw artifact. They are not
+part of the paired Ferroni change estimate, and their variability rules out a
+precise portable gap claim.
+
+| Comparator run | Benchmark                           | Mean (us) | 95% interval (us) |
+| -------------- | ----------------------------------- | --------: | ----------------: |
+| 1              | `general_regex/c/unicode_words`     |   113.683 |    99.474–130.967 |
+| 1              | `general_regex/regex/unicode_words` |    43.815 |     38.055–51.950 |
+| 2              | `general_regex/c/unicode_words`     |    82.668 |     82.376–82.944 |
+| 2              | `general_regex/regex/unicode_words` |    33.906 |     33.726–34.091 |
+
+## Broader checks
+
+The first before/after pair also measures these 20 existing cases. They provide
+a broader regression check with one pair per case; they have less repetition
+than the two Unicode rows and do not establish small gains or regressions.
+All values are microseconds, including single-pattern and compilation rows.
+The second baseline word-extraction run was 3.3% slower than the first, which
+shows drift between runs. It can contribute to the small broad differences, but
+it does not prove that those differences are entirely noise.
+
+| Benchmark                                          | Before (us) | After (us) | Time change |
+| -------------------------------------------------- | ----------: | ---------: | ----------: |
+| `compilation/rust/literal`                         |       0.509 |      0.518 |       +1.9% |
+| `compilation/rust/lookbehind`                      |       1.156 |      1.170 |       +1.2% |
+| `compilation/rust/named_capture`                   |       4.035 |      4.162 |       +3.1% |
+| `general_regex/rust/access_log_captures`           |      31.281 |     32.070 |       +2.5% |
+| `general_regex/rust/email_redaction`               |      77.341 |     79.682 |       +3.0% |
+| `general_regex/rust/email_validation`              |       6.705 |      6.809 |       +1.6% |
+| `general_regex/rust/number_validation`             |       7.869 |      8.046 |       +2.3% |
+| `general_regex/rust/url_extraction`                |       9.955 |     10.179 |       +2.2% |
+| `general_regex/rust/uuid_validation`               |       5.662 |      5.762 |       +1.8% |
+| `scanner_documents/css_117_document_19_lines_rust` |      89.196 |     91.467 |       +2.5% |
+| `scanner_documents/rust_81_document_31_lines_rust` |     102.823 |    106.135 |       +3.2% |
+| `scanner_documents/ts_279_document_28_lines_rust`  |    1030.845 |   1057.888 |       +2.6% |
+| `single_pattern/rust/alternation_10_branch`        |       0.056 |      0.056 |       +0.1% |
+| `single_pattern/rust/alternation_2_branch`         |       0.068 |      0.067 |       -1.2% |
+| `single_pattern/rust/backref_simple`               |       0.086 |      0.085 |       -1.2% |
+| `single_pattern/rust/case_insensitive_phrase`      |       0.098 |      0.097 |       -0.5% |
+| `single_pattern/rust/literal_exact`                |       0.100 |      0.103 |       +2.2% |
+| `single_pattern/rust/lookaround_combined`          |       0.086 |      0.089 |       +2.9% |
+| `single_pattern/rust/named_capture_date`           |       0.215 |      0.215 |       +0.1% |
+| `single_pattern/rust/quantifier_greedy`            |       0.063 |      0.061 |       -2.2% |
+
+## Reproduction and limits
+
+- Baseline: `fa3cc675ded31e3296d46c33db95a2e97044b462`.
+- Candidate: `c6f7c567df5986878e6a3f33b8989f330580b870`.
+- Apple M1 Ultra, 64 GiB RAM, macOS 27.0 (26A428).
+- Rust 1.96.0 (`ac68faa20`), LLVM 22.1.2, Criterion 0.8.2.
+- Portable target, thin LTO, `--features ffi`; opt-in match cache compiled out.
+- 30 samples, 500 ms warmup, four-second measurement window per case.
+- Oniguruma and grammar revisions pinned in `benches/battle_inputs.toml`.
+- Profiling and timings ran with an exclusive host lock. Parallel builds/tests
+  used the corresponding shared lock. Desktop background work was not controlled.
+- No cold-start, allocation, binary-size, or cross-platform performance claim.
+
+Build each revision in its own checkout and retain both executables to reverse
+the run order without rebuilding. The existing harness performs semantic
+validation before each timed lane:
+
+```sh
+./scripts/prepare-oniguruma-sources.sh
+cargo bench --locked --features ffi --bench battle_bench -- \
+  'general_regex/rust|single_pattern/rust|scanner_documents/.*_rust$|compilation/rust' \
+  --save-baseline before
+# Run the candidate with --save-baseline after, then repeat these two rows
+# in candidate-then-baseline order with distinct baseline names:
+# general_regex/rust/unicode_words|single_pattern/rust/unicode_greek
+```
+
+## Correctness evidence
+
+The focused test sweeps every integer code point through `0x110000` for the
+compiled Letter, Mark, Letter-or-Mark, and Greek tables: more than 4.45 million
+membership checks against an independent forward interval sweep, including
+surrogate values. It also checks 0–64 synthetic interval counts, every truncated
+table length, declared counts with spare trailing words, and both `u32`
+endpoints. A mutation that excluded inclusive upper bounds failed immediately at
+Letter U+00AA; restoring the comparison made the test pass. The existing ASCII,
+single-range, and small-table checks remain.
+
+The cache/plain/C differential suite adds Unicode positive and negated classes,
+quantifiers, captures, and look-behind patterns. Full default and all-feature
+tests pass, including raw malformed/truncated UTF-8, backward search, logical
+bounds, retry limits, and stack limits already covered by the suite. Formatting,
+clippy, rustdoc, and all 96 benchmark smoke cases pass.
