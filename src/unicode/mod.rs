@@ -1,8 +1,8 @@
 // unicode/mod.rs - Port of unicode.c
 // Unicode character properties, case folding, and related functions.
 // The data tables (case folding, code ranges, grapheme cluster and word
-// boundaries) are generated from upstream Oniguruma by the scripts in
-// scripts/ and live in the sibling *_data.rs modules.
+// boundaries) are generated from the pinned Unicode Character Database by
+// scripts/gen_unicode_tables.py and live in the sibling *_data.rs modules.
 
 pub mod egcb_data;
 mod fold_data;
@@ -13,7 +13,9 @@ use crate::oniguruma::*;
 use crate::regenc::*;
 use egcb_data::{EGCB_RANGES, EgcbType};
 use fold_data::*;
-use property_data::{CODE_RANGES, CODE_RANGES_NUM, PROPERTY_NAMES};
+use property_data::{
+    CODE_RANGES, CODE_RANGES_NUM, PROP_INDEX_EXTENDEDPICTOGRAPHIC, PROPERTY_NAMES,
+};
 use wb_data::{WB_RANGES, WbType};
 
 // === Unicode ISO 8859-1 Ctype Table ===
@@ -191,6 +193,44 @@ pub(crate) fn fold1_key_range(lo: OnigCodePoint, hi: OnigCodePoint) -> &'static 
     &FOLD1_KEY[start..end]
 }
 
+/// Call `f(fold_target, unfolds)` once for every single-char fold group with
+/// at least one member (target or unfold) inside `ranges`, which must be
+/// sorted and disjoint like a character class's code range buffer.
+///
+/// Every group member is indexed by exactly one of FOLD1_KEY (fold targets)
+/// and UNFOLD_KEY (unfolds with a single-char fold); both are sorted by code
+/// point and point at the member's group. A range therefore yields its
+/// members with two binary searches, instead of testing every group against
+/// the class as `for_each_folds1_group` would require.
+pub(crate) fn for_each_folds1_group_in_ranges(
+    ranges: &[(OnigCodePoint, OnigCodePoint)],
+    mut f: impl FnMut(OnigCodePoint, &[u32]),
+) {
+    // Group indices are offsets below FOLDS1_END_INDEX. A bitset over them
+    // dedups and orders the groups without sorting what `\w`-sized classes
+    // collect (thousands of indices).
+    let mut groups = [0u64; FOLDS1_END_INDEX.div_ceil(64)];
+    let mut mark = |index: usize| groups[index / 64] |= 1 << (index % 64);
+    for &(lo, hi) in ranges {
+        for &(_, index, fold_len) in unfold_key_range(lo, hi) {
+            if fold_len == 1 {
+                mark(index as usize);
+            }
+        }
+        for &(_, index) in fold1_key_range(lo, hi) {
+            mark(index as usize);
+        }
+    }
+    for (word_at, &word) in groups.iter().enumerate() {
+        let mut bits = word;
+        while bits != 0 {
+            let index = word_at * 64 + bits.trailing_zeros() as usize;
+            bits &= bits - 1;
+            f(folds1_fold(index), folds1_unfolds(index));
+        }
+    }
+}
+
 /// Iterate all FOLDS1 entries, calling `f(fold_target, unfolds)` for each group.
 /// Respects the ascii_only flag by stopping early when fold >= 128.
 pub(crate) fn for_each_folds1_group(
@@ -266,8 +306,13 @@ pub fn onigenc_unicode_mbc_case_fold(
     data: &[u8],
     fold: &mut [u8],
 ) -> i32 {
-    let code = enc.mbc_to_code(&data[*pp..], end);
-    let len = enc.mbc_enc_len(&data[*pp..]);
+    // `end` is absolute while `mbc_to_code` takes a limit relative to the
+    // slice start. C decodes against `end` here, so a character straddling it
+    // (e.g. at the end of a backreference span) is truncated, not read whole.
+    let code = enc.mbc_to_code(&data[*pp..], end.saturating_sub(*pp));
+    // C advances by the declared character length even when a truncated
+    // character ends the buffer, and then reads past it; stop at the buffer.
+    let len = enc.mbc_enc_len(&data[*pp..]).min(data.len() - *pp);
     let p_start = *pp;
     *pp += len;
 
@@ -938,9 +983,6 @@ fn is_hangul(t: EgcbType) -> bool {
     )
 }
 
-/// PROP_INDEX_EXTENDEDPICTOGRAPHIC = 81 in property_data.rs
-const PROP_INDEX_EXTENDEDPICTOGRAPHIC: u32 = 81;
-
 /// GB1/GB2 are handled outside. This applies GB3-GB13 two-char rules.
 fn unicode_egcb_is_break_2code(from_code: u32, to_code: u32) -> EgcbBreakType {
     let from = egcb_get_type(from_code);
@@ -1012,6 +1054,14 @@ fn unicode_egcb_is_break_2code(from_code: u32, to_code: u32) -> EgcbBreakType {
     EgcbBreakType::Break
 }
 
+/// Decode the character at `pos`, bounded by the logical `end` like C's
+/// `ONIGENC_MBC_TO_CODE(enc, p, end)`: a character straddling `end` is
+/// truncated. `mbc_to_code` takes the limit relative to the slice start.
+#[inline]
+fn code_at(enc: OnigEncoding, str_data: &[u8], pos: usize, end: usize) -> u32 {
+    enc.mbc_to_code(&str_data[pos..], end.saturating_sub(pos))
+}
+
 /// Full EGCB break position check.
 /// Port of onigenc_egcb_is_break_position from unicode.c:998.
 pub fn onigenc_egcb_is_break_position(
@@ -1025,8 +1075,11 @@ pub fn onigenc_egcb_is_break_position(
     if s <= start {
         return true;
     }
-    // GB2: Break at end of text
-    if s >= end {
+    // GB2: Break at end of text. C tests `p == end`: a backward search may try a
+    // position past a logical end that splits a character, and C then keeps
+    // classifying. Only the physical end of the data stops early here, where
+    // C would read past the buffer.
+    if s == end || s >= str_data.len() {
         return true;
     }
 
@@ -1035,8 +1088,8 @@ pub fn onigenc_egcb_is_break_position(
         return true;
     }
 
-    let from = enc.mbc_to_code(&str_data[prev..], end);
-    let to = enc.mbc_to_code(&str_data[s..], end);
+    let from = code_at(enc, str_data, prev, end);
+    let to = code_at(enc, str_data, s, end);
 
     let btype = unicode_egcb_is_break_2code(from, to);
     match btype {
@@ -1054,7 +1107,7 @@ pub fn onigenc_egcb_is_break_position(
                 if prev < start {
                     break;
                 }
-                let code = enc.mbc_to_code(&str_data[prev..], end);
+                let code = code_at(enc, str_data, prev, end);
                 if onigenc_unicode_is_code_ctype(code, PROP_INDEX_EXTENDEDPICTOGRAPHIC) {
                     return false; // Found ExtPict before ZWJ
                 }
@@ -1077,7 +1130,7 @@ pub fn onigenc_egcb_is_break_position(
                 if prev < start {
                     break;
                 }
-                let code = enc.mbc_to_code(&str_data[prev..], end);
+                let code = code_at(enc, str_data, prev, end);
                 let t = egcb_get_type(code);
                 if t != EgcbType::RegionalIndicator {
                     break;
@@ -1141,7 +1194,7 @@ fn wb_get_next_main_code(
         if pos >= end {
             break;
         }
-        let code = enc.mbc_to_code(&str_data[pos..], end);
+        let code = code_at(enc, str_data, pos, end);
         let t = wb_get_type(code);
         if !is_wb_ignore_tail(t) {
             return Some((code, t));
@@ -1163,8 +1216,11 @@ pub fn onigenc_wb_is_break_position(
     if s <= start {
         return true;
     }
-    // WB2: Any / eot
-    if s >= end {
+    // WB2: Any / eot. C tests `p == end`: a backward search may try a
+    // position past a logical end that splits a character, and C then keeps
+    // classifying. Only the physical end of the data stops early here, where
+    // C would read past the buffer.
+    if s == end || s >= str_data.len() {
         return true;
     }
 
@@ -1173,8 +1229,8 @@ pub fn onigenc_wb_is_break_position(
         return true;
     }
 
-    let cfrom = enc.mbc_to_code(&str_data[prev..], end);
-    let cto = enc.mbc_to_code(&str_data[s..], end);
+    let cfrom = code_at(enc, str_data, prev, end);
+    let cto = code_at(enc, str_data, s, end);
 
     let mut from = wb_get_type(cfrom);
     let to = wb_get_type(cto);
@@ -1223,7 +1279,7 @@ pub fn onigenc_wb_is_break_position(
                 break;
             }
             prev = pp;
-            let cf = enc.mbc_to_code(&str_data[prev..], end);
+            let cf = code_at(enc, str_data, prev, end);
             from = wb_get_type(cf);
             if !is_wb_ignore_tail(from) {
                 break;
@@ -1259,7 +1315,7 @@ pub fn onigenc_wb_is_break_position(
             if pp < start {
                 break;
             }
-            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            let cf2 = code_at(enc, str_data, pp, end);
             from2 = wb_get_type(cf2);
             if !is_wb_ignore_tail(from2) {
                 break;
@@ -1298,7 +1354,7 @@ pub fn onigenc_wb_is_break_position(
             if pp < start {
                 break;
             }
-            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            let cf2 = code_at(enc, str_data, pp, end);
             from2 = wb_get_type(cf2);
             if !is_wb_ignore_tail(from2) {
                 break;
@@ -1331,7 +1387,7 @@ pub fn onigenc_wb_is_break_position(
                 if pp < start {
                     break;
                 }
-                let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+                let cf2 = code_at(enc, str_data, pp, end);
                 from2 = wb_get_type(cf2);
                 if !is_wb_ignore_tail(from2) {
                     break;
@@ -1393,7 +1449,7 @@ pub fn onigenc_wb_is_break_position(
             if pp < start {
                 break;
             }
-            let cf2 = enc.mbc_to_code(&str_data[pp..], end);
+            let cf2 = code_at(enc, str_data, pp, end);
             let from2 = wb_get_type(cf2);
             if from2 != WbType::RegionalIndicator {
                 break;
@@ -1407,4 +1463,82 @@ pub fn onigenc_wb_is_break_position(
 
     // WB999: Any / Any
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn folds1_groups() -> Vec<usize> {
+        let mut groups = Vec::new();
+        let mut i = 0;
+        while i < FOLDS1_END_INDEX {
+            groups.push(i);
+            i = folds1_next(i);
+        }
+        groups
+    }
+
+    #[test]
+    fn fold_keys_index_every_folds1_group_member_exactly() {
+        // `for_each_folds1_group_in_ranges` relies on this table shape.
+        for index in folds1_groups() {
+            let fold = folds1_fold(index);
+            let found = FOLD1_KEY.binary_search_by_key(&fold, |&(code, _)| code);
+            assert_eq!(found.map(|k| FOLD1_KEY[k].1 as usize), Ok(index));
+            assert!(
+                unfold_key(fold).is_none(),
+                "fold target {fold:#x} is an unfold"
+            );
+            for &unfold in folds1_unfolds(index) {
+                assert_eq!(unfold_key(unfold), Some((index, 1)), "unfold {unfold:#x}");
+            }
+        }
+    }
+
+    #[test]
+    fn code_ranges_are_sorted_and_disjoint() {
+        // The binary search in onigenc_unicode_is_code_ctype requires every
+        // generated property to be sorted, non-overlapping (start, end) pairs.
+        for (ctype, ranges) in CODE_RANGES.iter().enumerate() {
+            let (pairs, rest) = ranges.as_chunks::<2>();
+            assert!(rest.is_empty(), "ctype {ctype} has an odd length");
+            let mut previous_end: Option<u32> = None;
+            for &[start, end] in pairs {
+                assert!(start <= end, "ctype {ctype}: {start:#x} > {end:#x}");
+                assert!(end <= 0x10FFFF, "ctype {ctype}: {end:#x} out of range");
+                if let Some(previous_end) = previous_end {
+                    assert!(
+                        start > previous_end.saturating_add(1),
+                        "ctype {ctype}: {start:#x} follows {previous_end:#x} unmerged or out of order"
+                    );
+                }
+                previous_end = Some(end);
+            }
+        }
+    }
+
+    #[test]
+    fn folds1_groups_in_ranges_match_a_full_scan() {
+        let range_sets: [&[(u32, u32)]; 4] = [
+            &[(0x41, 0x5A)],
+            &[(0x80, 0xFF), (0x100, 0x17F)],
+            &[(0x390, 0x3FF), (0x1E00, 0x1EFF), (0x10400, 0x1044F)],
+            &[(0, 0x10FFFF)],
+        ];
+        for ranges in range_sets {
+            let inside = |code: u32| ranges.iter().any(|&(lo, hi)| lo <= code && code <= hi);
+            let mut expected = Vec::new();
+            for_each_folds1_group(ONIGENC_CASE_FOLD_MIN, |fold, unfolds| {
+                if inside(fold) || unfolds.iter().any(|&u| inside(u)) {
+                    expected.push(fold);
+                }
+            });
+            let mut actual = Vec::new();
+            for_each_folds1_group_in_ranges(ranges, |fold, _| actual.push(fold));
+            expected.sort_unstable();
+            actual.sort_unstable();
+            assert_eq!(actual, expected, "ranges {ranges:x?}");
+        }
+    }
 }

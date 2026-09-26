@@ -829,8 +829,11 @@ pub struct ParseEnv {
     pub backrefed_mem: MemStatusType,
     pub pattern: *const u8,
     pub pattern_end: *const u8,
-    pub error: *const u8,
-    pub error_end: *const u8,
+    /// The name an error refers to, recorded by `set_error_string` and
+    /// reported through `OnigErrorInfo`. C keeps it as the pointer pair
+    /// `error`/`error_end` into the pattern (or into a node's name); an owned
+    /// copy of the bytes serves both without borrowing from either.
+    pub error: Option<Vec<u8>>,
     pub reg: *mut RegexType,
     pub num_call: i32,
     pub num_mem: i32,
@@ -848,12 +851,20 @@ pub struct ParseEnv {
     /// Number of AST-producing expressions accepted in this parse.
     pub ast_node_count: u32,
     pub flags: u32,
+    /// Recursive groups by group number, set after the call-graph analysis.
+    /// C reads ND_IS_RECURSION on a call's target node; the port keeps it
+    /// here so passes need not follow the call's raw target pointer.
+    pub recursive_mem: Vec<bool>,
+    /// Minimum byte length of each group's body, by group number, filled
+    /// before tune_tree when the pattern has calls. C caches the same value
+    /// in BAG_(node)->min_len (ND_ST_FIXED_MIN) and reads it for a call.
+    pub group_min_len: Vec<OnigLen>,
 }
 
 // SAFETY: the raw pointers in ParseEnv point into data owned by the caller of
-// `onig_parse_tree` for the whole compilation: `pattern`/`pattern_end` (and
-// `error`/`error_end`) into the pattern bytes, `reg` at the RegexType under
-// construction, and the MemEnv slots into the parse tree. A ParseEnv is
+// `onig_parse_tree` for the whole compilation: `pattern`/`pattern_end` into the
+// pattern bytes, `reg` at the RegexType under construction, and the MemEnv
+// slots into the parse tree. A ParseEnv is
 // created per compilation, used on that one thread, and discarded; moving it
 // to another thread is only sound while pattern, regex, and tree are moved or
 // kept alive with it. Sending a ParseEnv beyond the lifetime of those
@@ -884,11 +895,27 @@ pub fn node_new_str(s: &[u8]) -> Box<Node> {
     }))
 }
 
-pub fn node_new_str_crude(s: &[u8]) -> Box<Node> {
-    node_new(NodeInner::String(StrNode {
-        s: s.to_vec(),
-        flag: ND_STRING_CRUDE,
-    }))
+/// Port of node_new_str_with_options from regparse.c.
+pub fn node_new_str_with_options(s: &[u8], options: OnigOptionType) -> Box<Node> {
+    let mut node = node_new_str(s);
+    if opton_ignorecase(options) {
+        node.status_add(ND_ST_IGNORECASE);
+    }
+    node
+}
+
+/// Port of node_new_str_crude from regparse.c.
+pub fn node_new_str_crude(s: &[u8], options: OnigOptionType) -> Box<Node> {
+    let mut node = node_new_str_with_options(s, options);
+    if let Some(sn) = node.as_str_mut() {
+        sn.set_crude();
+    }
+    node
+}
+
+/// Port of node_new_str_crude_char from regparse.c.
+pub fn node_new_str_crude_char(c: u8, options: OnigOptionType) -> Box<Node> {
+    node_new_str_crude(&[c], options)
 }
 
 pub fn node_new_empty() -> Box<Node> {
@@ -918,10 +945,13 @@ pub fn node_new_anychar() -> Box<Node> {
     node_new_ctype(CTYPE_ANYCHAR, false, false)
 }
 
+/// Port of C's `node_new_backref`. As in C, the NEST_LEVEL status follows
+/// whether a level was written (`\k<n+0>` included), not the level's value.
 pub fn node_new_backref(
     back_num: i32,
     backrefs: &[i32],
     by_name: bool,
+    exist_level: bool,
     nest_level: i32,
 ) -> Box<Node> {
     let mut back_static = [0i32; ND_BACKREFS_SIZE];
@@ -938,12 +968,12 @@ pub fn node_new_backref(
         back_num,
         back_static,
         back_dynamic,
-        nest_level,
+        nest_level: if exist_level { nest_level } else { 0 },
     }));
     if by_name {
         node.status_add(ND_ST_BY_NAME);
     }
-    if nest_level != 0 {
+    if exist_level {
         node.status_add(ND_ST_NEST_LEVEL);
     }
     node
@@ -1093,6 +1123,18 @@ pub fn node_new_fail() -> Box<Node> {
     }))
 }
 
+/// Turn `node` into an empty string node in place (C: onig_node_reset_empty).
+/// Like C, the status bits and the parent link stay.
+pub fn onig_node_reset_empty(node: &mut Node) {
+    node.inner = node_new_empty().inner;
+}
+
+/// Turn `node` into a FAIL gimmick in place (C: onig_node_reset_fail).
+/// Like C, the status bits and the parent link stay.
+pub fn onig_node_reset_fail(node: &mut Node) {
+    node.inner = node_new_fail().inner;
+}
+
 pub fn node_new_callout(of: i32, num: i32, id: i32) -> Box<Node> {
     node_new(NodeInner::Gimmick(GimmickNode {
         gimmick_type: GimmickType::Callout,
@@ -1160,6 +1202,33 @@ pub fn node_new_true_anychar() -> Box<Node> {
     let mut n = node_new_anychar();
     n.status_add(ND_ST_MULTILINE);
     n
+}
+
+/// Copy a String, CClass or CType node (C: onig_node_copy).
+/// C returns ONIGERR_TYPE_BUG for the other node types, which have links
+/// that C leaves to the caller; here that is `None`. The copy keeps the
+/// status bits but has no parent, like a freshly allocated node.
+pub fn onig_node_copy(from: &Node) -> Option<Box<Node>> {
+    let inner = match &from.inner {
+        NodeInner::String(sn) => NodeInner::String(StrNode {
+            s: sn.s.clone(),
+            flag: sn.flag,
+        }),
+        NodeInner::CClass(cc) => NodeInner::CClass(CClassNode {
+            flags: cc.flags,
+            bs: cc.bs,
+            mbuf: cc.mbuf.clone(),
+        }),
+        NodeInner::CType(ct) => NodeInner::CType(CtypeNode {
+            ctype: ct.ctype,
+            not: ct.not,
+            ascii_mode: ct.ascii_mode,
+        }),
+        _ => return None,
+    };
+    let mut copy = node_new(inner);
+    copy.status = from.status;
+    Some(copy)
 }
 
 // === Bitset Utility Functions (from regparse.c) ===

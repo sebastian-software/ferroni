@@ -39,10 +39,11 @@ An optimization may be implemented in Ferroni without upstream contribution when
 
 #### Literal trie (`src/literal_trie.rs`, `regcomp.rs`)
 
-Detects alternations consisting entirely of literal strings (flat: `word1|word2|...` or nested: `a(b|c)d|e(f|g)h`) and replaces them at compile time with a compact trie. The VM executes a single `OP_ANYCHAR_STAR`-like trie walk instead of backtracking through N branches.
+Detects alternations consisting entirely of literal strings and replaces them at compile time with a compact trie. The VM executes a single `AltLiterals` trie walk instead of backtracking through N branches.
 
-- **Trigger**: Alternation with ≥8 branches where all branches resolve to literal byte sequences
-- **Data structure**: `LiteralTrie` — sorted child arrays with binary search, longest-match semantics
+- **Trigger**: Alternation outside look-arounds with ≥4 literals where every branch is a plain string (the nested path extractor for `a(b|c)d|e(f|g)h` is not reached while plain strings are required). Case-sensitive, or case-insensitive ASCII literals in UTF-8 (folded trie).
+- **Data structure**: `LiteralTrie` — sorted child arrays with binary search. Ordered-alternation semantics: the match continues with the literal that comes first and pushes the other matching literals (prefixes) as backtracking alternatives. A folded trie also accepts what `unravel_case_fold_string` would (Kelvin sign, long s, `ß`/`ﬃ`-style segments), derived from the same case-fold queries.
+- **Optimizer**: the trie node carries the alternation's length range and start bytes.
 - **Impact**: CSS tokenization 35% faster (3.76x → 2.46x vs JS); CSS `codeToHtml` reaches JS parity (1.65x → 1.04x)
 - **Bounds**: `MAX_NESTED_TRIE_PATHS = 8192` caps path extraction; CClass expansion limited to ≤16 single-byte members per class
 - **Detailed analysis**: [`/perf/html-entity-trie-optimization`](/perf/html-entity-trie-optimization)
@@ -64,6 +65,44 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Impact**: Low single-digit percentage gains; primarily reduces constant factors in tight loops
 - **Bounds**: Single `if` guard per call site; no additional memory
 
+#### Scanner fast paths from the 2026-09 profiling pass (`src/regexec.rs`, `src/regset.rs`, `src/regparse.rs`)
+
+- **Negated class star opcodes**: `[^...]*` / `[^...]+` loops, including the Alt-CClass fusion, run as `CClassNotStar` / `CClassMbNotStar` / `CClassMixNotStar` with one lazy backtrack entry per run. All star opcodes share one loop that verifies every character boundary and falls back to one backtrack entry per character on malformed UTF-8.
+- **Start-filtered fallback searches**: RegSet fallback entries with an unbounded optimizer distance skip positions whose byte the bytecode-derived start map excludes. Only used without callouts, position checks, or a search retry budget.
+- **Untracked push captures**: `MEM_START_PUSH` / `MEM_END_PUSH` skip their bookkeeping when no region is requested and captures cannot influence matching; kept when a match stack limit is set.
+- **Range-driven case-fold expansion**: `(?i)` classes are expanded by walking their ranges through the sorted fold keys.
+- **Impact**: CSS tokenize -79%, TypeScript documents tokenized line by line -25%, CSS grammar compile -11% (wall clock).
+- **Detailed analysis**: [`/perf/performance-structure-analysis`](/perf/performance-structure-analysis)
+
+#### Second 2026-09 pass (`src/regset.rs`, `src/first_bytes.rs`, `src/regcomp.rs`, `src/regexec.rs`, `src/regparse.rs`, `src/literal_trie.rs`)
+
+- **Contiguous fallback candidates**: RegSet fallback entries keep their skip flags and settled no-match position in one array; the walk stops once a decision at the start position precedes the remaining entries.
+- **Literal trie extensions**: prefixes with ordered backtracking, case-insensitive folded tries, and optimizer information on the trie node (see the literal trie entry above).
+- **Word-level class scans and streamed ctype ranges** in compilation; the compiled output is unchanged.
+- **Start bytes through positive look-aheads**: the RegSet start-map derivation reads the body of a positive look-ahead that cannot match empty, so look-ahead-led fallback entries get a start filter.
+- **Fused one-instruction look-behinds** (`src/regexec.rs`): a fixed-length look-behind whose body compiles to one class or string instruction runs as `LookBehindOp` plus that instruction, without backtracking entries. Every other look-behind keeps the upstream sequence.
+- **Guarded backtrack pushes** (`src/first_bytes.rs`): a post-compile pass turns a `Push` whose main path can only start with some bytes into `PushOrJumpExact1` (one byte, upstream's instruction) or the Rust-only `PushOrJumpByteSet`, so the VM skips the push when the current byte rules the main path out. The derivation only passes instructions whose effects backtracking undoes and gives up after 64 instructions. The skipped push still counts the backtracks the push would take against the retry and time limits: a loop that grows the stack without consuming input is bounded only by those limits, and without the count it pushed three times as many entries as C before the limit tripped. The count is derived at compile time by running the main path on a model of the backtracking stack; the model follows negative look-arounds whose body cannot consume the current byte. Where the count depends on the position (a look-behind or check in front of nested pushes; at most six checks), the guard counts the largest count, but only while nothing but the retry limit in match reads the count; if that upper bound trips the limit, the attempt starts over with those guards pushing, which counts exactly. With a search budget, a time limit, callouts or FIND_LONGEST such guards always push.
+- **Fast-path census**: `grammar_fast_path_census` asserts how many grammar patterns reach each of these paths, fused look-behinds and push guards included.
+- **Impact**: warm TypeScript line -57%, TypeScript document -44%, Rust document -37%, CSS document -33%, CSS grammar compile -25%, TypeScript compile -15% (wall clock).
+- **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](/perf/performance-structure-analysis#second-pass)
+
+#### Single-byte star loops (`src/regcomp.rs`)
+
+- **Trigger**: a greedy `c*` / `c+` whose body is one ASCII byte, outside a literal trie. The body compiles to a single `Str1 c`, which matches what `[c]` matches, so the loop compiles to `CClassStar` (or `CClassStarPeekNext`) with a one-member set, like the class stars above.
+- **Why**: upstream's `PUSH_OR_JUMP_EXACT1; STR_1; JUMP` loop costs three dispatches and one backtrack entry per character. In a variable-length look-behind that loop runs once per step-back position, so it dominated `(?<=x|a*b)` and `(?<!x|a*b)c`.
+- **Impact**: `(?<=x|a*b)` over 1,000 characters 1.49 s → 96 ms (C: 583 ms); `(?<!x|a*b)c` 4.25 ms → 0.27 ms (C: 1.70 ms), measured after the matcher fixes of the same pass.
+- **Bounds**: one lazy backtrack entry per run, as for every star opcode, so a match stack limit counts the run once rather than per character; no extra memory.
+
+#### Capture pushes for back-referenced groups (`src/regcomp.rs`)
+
+C's `tune_tree` pushes the captures of every back-referenced group (`backtrack_mem`), and its own comment calls that conservative. After `tune_tree`, `backref_groups_needing_push` pushes such a group only where a restore can be observed.
+
+- **Trigger**: a back-referenced group keeps plain `MEM_START` / `MEM_END` when its capture node occurs once, every node above it is a list, an option, a capture or an atomic group, and every back reference or condition that reads it sits in a later element of a list that also holds the group. Such a group runs exactly once per attempt, and every path to a read passes the whole group again after any backtrack, so the stale value a missing push could leave is never read. It is not in a loop body either, so the capture-aware empty checks never compare it.
+- **Falls back to C**: a read before or inside the group; a group under a quantifier, alternation, look-around or condition; a level back reference (`\k<n+0>`); subroutine calls, callouts, `\K` or absent operators anywhere in the pattern; groups past the 31 status bits.
+- **Impact** (release search, best of three interleaved runs): `(?i)(\w)\1` -10%, `\b(\w+)\s+\1\b` -7%, `(["'])(?:\\.|(?!\1).)*\1` -10%, heredoc openers and bodies -5% to -9%, `<(\w+)[^>]*>.*?</\1>` -5%; patterns without back references unchanged.
+- **Bounds**: one tree walk that stores the path to each back-referenced group and each read; comparing a read costs its depth.
+- **Not applied**: `{n,}` over a body that may be empty keeps C's `REPEAT`. Unrolling even a body whose only empty pass is its last alternative makes every later mandatory copy retry paths that already failed; `(?:(ab|cd|ef|gh|ij)?){3,}z` got about six times slower.
+
 ## Rationale
 
 - **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.
@@ -73,6 +112,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 ## Consequences
 
 - Ferroni's compiled bytecode may differ from C Oniguruma for patterns that trigger the trie optimizer. Match results remain identical, but internal representations diverge.
+- Retry limits are the one place where the optimizations can show. A search prefilter that proves there is no match (a required byte or literal missing from the subject) reports "no match" without running the matcher, where C runs into the retry limit and reports `ONIGERR_RETRY_LIMIT_IN_MATCH_OVER`; for example `(?:a*a?)*\d` against sixteen `a`. This difference is deliberate. Rust-only instructions that replace a C sequence (literal tries, star loops) can also take fewer backtracks than C's sequence, so a search close to the limit may finish in Ferroni and stop in C. Guarded pushes count exactly the backtracks they save (see above).
 - Future C Oniguruma updates can still be applied by diffing against the C-ported baseline. Optimization passes are clearly separated in the compilation pipeline.
 - Each new optimization must document its trigger conditions, bounds, and benchmark results — either in this ADR (for significant changes) or in `/perf/` (for detailed analysis).
 - Performance documentation in `/perf/` serves as the detailed log; this ADR serves as the policy and index.

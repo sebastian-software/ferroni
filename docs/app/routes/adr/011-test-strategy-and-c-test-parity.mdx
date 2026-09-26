@@ -48,6 +48,10 @@ All ported test files use the `compat_` prefix to indicate they are direct trans
 
 ### The `conditional_recursion_complex` Test
 
+> **Update:** this test is no longer ignored. It now finishes like any other
+> test, and the tree has no `#[ignore]` tests left, so `cargo test -- --ignored`
+> runs nothing. The original decision is kept below for the record.
+
 One test is marked `#[ignore]` and must never be run in the full suite:
 
 ```rust

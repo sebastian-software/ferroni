@@ -1,179 +1,105 @@
 import "./home.css";
-import { ArrowRight, Github, Zap, ShieldCheck, Package, Layers, ExternalLink } from "ardo/icons";
+import { familyGroups, isEngine, Mark } from "ferramenta-family";
+import { Fragment } from "react";
 import { Link, type MetaFunction } from "react-router";
+import config from "virtual:ardo/config";
 
+import { ClosingSection, CodeSection, CoverageSection } from "./home-bottom-sections";
+
+// React Router requires `meta` as a named route export.
+// oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export const meta: MetaFunction = () => [
-  { title: "Ferroni — Pure-Rust Oniguruma Engine" },
+  { title: "Ferroni — Oniguruma, continued in Rust" },
   {
     name: "description",
     content:
-      "Ferroni is a pure-Rust port of the Oniguruma regex engine. Full feature parity with the C original, ahead of Oniguruma across the measured runtime cases. No C toolchain required.",
+      "Ferroni continues the Oniguruma regex engine in memory-safe Rust after the C project ended, with the vscode-oniguruma scanner built in. Verified against the upstream tests, and 2.5x to 33x faster at tokenizing real code.",
   },
 ];
 
-/* -------------------------------------------------- */
-/*  Logo                                              */
-/* -------------------------------------------------- */
-
-function FerroniLogo({ size = 80 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size * (64 / 52)}
-      viewBox="0 0 52 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-label="Ferroni"
-      role="img"
-    >
-      <defs>
-        <linearGradient
-          id="ferro-grad"
-          x1="0"
-          y1="0"
-          x2="52"
-          y2="64"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset="0%" stopColor="var(--f-logo-from, #fbbf24)" />
-          <stop offset="40%" stopColor="var(--f-logo-via, #f59e0b)" />
-          <stop offset="100%" stopColor="var(--f-logo-to, #92400e)" />
-        </linearGradient>
-      </defs>
-
-      {/* F body with angled right edges */}
-      <path d="M 4 0 H 42 L 38 14 H 16 V 24 H 36 L 32 38 H 16 V 64 H 4 Z" fill="url(#ferro-grad)" />
-
-      {/* Sparks */}
-      <path
-        d="M 46 0 L 49 4 L 46 8 L 43 4 Z"
-        fill="var(--f-spark-fill, #f59e0b)"
-        className="fh-spark-anim"
-      />
-      <circle
-        cx="48"
-        cy="14"
-        r="1.8"
-        fill="var(--f-spark-fill-dim, #d97706)"
-        className="fh-spark-anim-delayed"
-      />
-      <circle cx="44" cy="19" r="1.1" fill="var(--f-spark-fill-dim, #d97706)" opacity="0.5" />
-    </svg>
-  );
-}
+/*
+ * The page follows the Ferramenta design system (ferramenta/DESIGN.md): the
+ * shared tokens, display face and marks come from `ferramenta-family`; the
+ * section patterns below (hero, iron band, pipeline assembly, evidence,
+ * ledger) mirror ferramenta.dev and are candidates for the shared package.
+ */
 
 /* -------------------------------------------------- */
 /*  Hero                                              */
 /* -------------------------------------------------- */
 
 function HeroSection() {
+  const version = config.project?.version;
   return (
-    <section className="fh-hero">
-      <div className="fh-hero-inner">
-        <div className="fh-logo-wrap">
-          <FerroniLogo size={80} />
-        </div>
-
-        <h1 className="fh-headline">
-          <span className="fh-headline-gradient">Regex, forged in Rust.</span>
-        </h1>
-
-        <p className="fh-tagline">
-          Ferroni is a pure-Rust port of the Oniguruma regex engine &mdash; the engine behind Ruby,
-          PHP, and TextMate grammars. Full feature parity with the C original, and ahead of
-          Oniguruma across every measured runtime case in the reference suite.
-        </p>
-
-        <div className="fh-cta-group">
-          <Link to="/guide/getting-started" className="fh-cta fh-cta-primary">
-            Get Started <ArrowRight size={16} />
-          </Link>
-          <a
-            href="https://github.com/sebastian-software/ferroni"
-            className="fh-cta fh-cta-secondary"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Github size={16} /> GitHub
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* -------------------------------------------------- */
-/*  Stats                                             */
-/* -------------------------------------------------- */
-
-const stats = [
-  { value: "2,195", label: "Test functions" },
-  { value: "100%", label: "C parity" },
-  { value: "0.4%", label: "Unsafe code" },
-  { value: "BSD-2", label: "License" },
-];
-
-function StatsSection() {
-  return (
-    <section className="fh-stats">
-      <div className="fh-stats-grid">
-        {stats.map((s) => (
-          <div key={s.label} className="fh-stat">
-            <div className="fh-stat-value">{s.value}</div>
-            <div className="fh-stat-label">{s.label}</div>
+    <section className="fr-hero" aria-labelledby="fr-title">
+      <div className="wrap">
+        <div>
+          <h1 id="fr-title">
+            Oniguruma, <em>forged in Rust.</em>
+          </h1>
+          <p className="fr-lede">
+            The regex engine behind TextMate grammars, jq and PHP&rsquo;s mbregex, continued in
+            memory-safe Rust after the C project ended, with the vscode-oniguruma scanner built in.
+            Verified against the upstream tests, and 2.5x to 33x faster at tokenizing real code.
+          </p>
+          <div className="fr-cta-row">
+            <Link to="/guide/getting-started" className="fr-btn fr-btn-primary fr-chamfer">
+              Get started <Mark name="arrow" className="icon" size={18} />
+            </Link>
+            <a href="https://github.com/sebastian-software/ferroni" className="fr-btn fr-btn-ghost">
+              <Mark name="github" className="icon" size={18} /> GitHub
+            </a>
           </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* -------------------------------------------------- */
-/*  Why Ferroni                                       */
-/* -------------------------------------------------- */
-
-const features = [
-  {
-    icon: <Zap size={22} strokeWidth={1.5} />,
-    title: "Built for scanner speed",
-    text: "Tuned for the hot path in syntax highlighters and text scanners: first-match latency and full-line tokenization on real TextMate grammars run far ahead of Oniguruma. The measured factors are below.",
-  },
-  {
-    icon: <ShieldCheck size={22} strokeWidth={1.5} />,
-    title: "Full Oniguruma compatibility",
-    text: "Named captures, variable-length lookbehind, conditionals, absent expressions, 886 Unicode properties, subexpression calls. If it works in Oniguruma, it works in Ferroni.",
-  },
-  {
-    icon: <Package size={22} strokeWidth={1.5} />,
-    title: "Pure Rust, no C toolchain",
-    text: "cargo add ferroni and build. Cross-compiles to wasm32-unknown-unknown. No node-gyp, no local C compiler. Only 0.4% unsafe code, all documented.",
-  },
-  {
-    icon: <Layers size={22} strokeWidth={1.5} />,
-    title: "Built-in multi-pattern scanner",
-    text: "Drop-in compatible with vscode-oniguruma. Regex engine and TextMate grammar scanner in a single dependency. Used by Shiki and VS Code.",
-  },
-];
-
-function WhySection() {
-  return (
-    <section className="fh-section fh-why">
-      <div className="fh-container">
-        <div className="fh-why-header">
-          <div className="fh-section-label">Why Ferroni</div>
-          <h2 className="fh-section-title">Full compatibility. No compromises.</h2>
-          <p className="fh-section-subtitle">
-            Ferroni does not wrap Oniguruma. It ports the engine into Rust, keeps the same structure
-            and optimization pipeline, then tunes the runtime path hard.
+          <p className="fr-install">
+            <code>cargo add ferroni</code>
+            {version == null ? null : <span>v{version} on crates.io</span>}
           </p>
         </div>
+        <span className="markplate fr-hero-plate" aria-hidden="true">
+          <Mark name="ferroni" />
+        </span>
+      </div>
+    </section>
+  );
+}
 
-        <div className="fh-cards">
-          {features.map((f) => (
-            <div key={f.title} className="fh-card">
-              <div className="fh-card-icon">{f.icon}</div>
-              <h3 className="fh-card-title">{f.title}</h3>
-              <p className="fh-card-text">{f.text}</p>
+/* -------------------------------------------------- */
+/*  Carried forward (iron band)                       */
+/* -------------------------------------------------- */
+
+const pillars = [
+  {
+    heading: "Same engine, verified",
+    text: "A line-by-line port that keeps Oniguruma's module structure and optimization pipeline, not a lookalike. Every upstream UTF-8 test passes, alongside 2,307 test functions in total.",
+  },
+  {
+    heading: "Memory-safe, no C toolchain",
+    text: "cargo add ferroni and build: no bindgen, no C compiler, no node-gyp. Unsafe code stays at 0.4%, and every block is documented in ADR-002.",
+  },
+  {
+    heading: "Faster where highlighters work",
+    text: "Tokenizing real code with complete TextMate grammars runs 2.5x to 33x faster than the C original, and text search up to 6x.",
+  },
+  {
+    heading: "The scanner, built in",
+    text: "vscode-textmate and Shiki tokenize through vscode-oniguruma's scanner. Ferroni ships a scanner of the same shape, UTF-16 offsets included, next to the regex engine.",
+  },
+];
+
+function CarriedForwardSection() {
+  return (
+    <section className="fr-ironband" aria-labelledby="fr-forward">
+      <div className="wrap">
+        <h2 id="fr-forward">Oniguruma ended. The engine goes on.</h2>
+        <p className="fr-intro">
+          Oniguruma&rsquo;s C project closed on April 24, 2025, after more than twenty years as the
+          regex engine that TextMate grammars are written for. Ferroni carries it forward.
+        </p>
+        <div className="fr-pillars">
+          {pillars.map((pillar) => (
+            <div key={pillar.heading}>
+              <h3>{pillar.heading}</h3>
+              <p>{pillar.text}</p>
             </div>
           ))}
         </div>
@@ -183,262 +109,162 @@ function WhySection() {
 }
 
 /* -------------------------------------------------- */
-/*  Performance                                       */
+/*  Pipeline                                          */
+/* -------------------------------------------------- */
+
+const fastenerPositions = ["tl", "tr", "br", "bl"] as const;
+
+/** The content pipeline as a chamfered steel chassis, Ferroni marked as current. */
+function PipelineAssembly() {
+  const tools = familyGroups().pipeline.filter(isEngine);
+  return (
+    <figure
+      className="fr-assembly"
+      aria-label="Ferroni provides the regex engine for Ferriki, and Ferriki feeds highlighting into Ferromark."
+    >
+      {fastenerPositions.map((position) => (
+        <span key={position} className="fastener" data-position={position} aria-hidden="true" />
+      ))}
+      <div className="fr-assembly-flow">
+        <span className="fr-assembly-terminal">
+          <small>Input</small>
+          <b>TextMate grammars</b>
+        </span>
+        <Mark name="arrow" className="fr-assembly-connector icon" />
+        {tools.map((tool, index) => (
+          <Fragment key={tool.name}>
+            <a
+              className={
+                tool.name === "ferroni" ? "fr-assembly-stage is-current" : "fr-assembly-stage"
+              }
+              href={tool.docs ?? tool.repo}
+              aria-current={tool.name === "ferroni" ? "page" : undefined}
+            >
+              <span className="fr-assembly-step">{String(index + 1).padStart(2, "0")}</span>
+              <span className="markplate">
+                <Mark name={tool.name} />
+              </span>
+              <span className="fr-assembly-copy">
+                <b>{tool.name}</b>
+                <small>{tool.shortJob}</small>
+              </span>
+            </a>
+            <Mark name="arrow" className="fr-assembly-connector icon" />
+          </Fragment>
+        ))}
+        <span className="fr-assembly-terminal fr-assembly-output">
+          <small>Output</small>
+          <b>Markdown → highlighted HTML</b>
+        </span>
+      </div>
+    </figure>
+  );
+}
+
+function PipelineSection() {
+  return (
+    <section className="fr-section" aria-labelledby="fr-pipeline">
+      <div className="wrap">
+        <h2 id="fr-pipeline">Where Ferroni sits</h2>
+        <p className="fr-intro">
+          Ferroni is the foundation of the Ferramenta content pipeline. Ferriki, our
+          Shiki-compatible highlighter, tokenizes TextMate grammars with Ferroni&rsquo;s scanner and
+          hands highlighted code to Ferromark, our Markdown engine. We wanted that chain in Rust end
+          to end, and it starts with the regex engine.
+        </p>
+        <PipelineAssembly />
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------- */
+/*  Evidence                                          */
 /* -------------------------------------------------- */
 
 const benchmarks = [
   {
     category: "Syntax Highlighting",
-    label: "Scanner First Match",
-    desc: "TypeScript grammar, 279 patterns",
-    speedup: "58.9x",
-    ferroni: "~425 ns",
-    oniguruma: "~25 \u00B5s",
+    label: "TypeScript Document",
+    desc: "279 patterns, 28 lines, line by line",
+    speedup: "2.5x",
+    ferroni: "~1.26 ms",
+    oniguruma: "~3.13 ms",
   },
   {
     category: "Syntax Highlighting",
-    label: "Full Line Tokenization",
-    desc: "TypeScript, end-to-end",
-    speedup: "31.6x",
-    ferroni: "~6.9 \u00B5s",
-    oniguruma: "~217 \u00B5s",
+    label: "CSS Document",
+    desc: "117 patterns, 19 lines, line by line",
+    speedup: "32.6x",
+    ferroni: "~93 µs",
+    oniguruma: "~3.04 ms",
   },
   {
     category: "Syntax Highlighting",
-    label: "CSS Tokenization",
-    desc: "Multi-pattern scanner workload",
-    speedup: "11.3x",
-    ferroni: "~1.3 ms",
-    oniguruma: "~14.7 ms",
+    label: "Rust Document",
+    desc: "81 patterns, 31 lines, line by line",
+    speedup: "9.8x",
+    ferroni: "~108 µs",
+    oniguruma: "~1.06 ms",
   },
   {
     category: "Text Search",
     label: "Rejection Speed",
     desc: "No match in 50 KB buffer",
-    speedup: "6.1x",
-    ferroni: "~1.5 \u00B5s",
-    oniguruma: "~9.2 \u00B5s",
+    speedup: "6.2x",
+    ferroni: "~1.5 µs",
+    oniguruma: "~9.3 µs",
   },
   {
     category: "Text Search",
     label: "RegSet Multi-Pattern",
     desc: "5 patterns, simultaneous search",
-    speedup: "3.9x",
-    ferroni: "<100 ns",
-    oniguruma: "~385 ns",
+    speedup: "3.6x",
+    ferroni: "~104 ns",
+    oniguruma: "~370 ns",
   },
   {
     category: "Pattern Matching",
     label: "Lookaround Combined",
     desc: "Feature most Rust engines skip",
-    speedup: "3.6x",
-    ferroni: "<80 ns",
-    oniguruma: "~280 ns",
+    speedup: "3.1x",
+    ferroni: "~79 ns",
+    oniguruma: "~247 ns",
   },
 ];
 
-function PerfSection() {
+function EvidenceSection() {
   return (
-    <section className="fh-section fh-perf">
-      <div className="fh-container">
-        <div className="fh-perf-header">
-          <div className="fh-section-label">Performance</div>
-          <h2 className="fh-section-title">Measured, not claimed.</h2>
-          <p className="fh-section-subtitle">
-            Every number comes from battle_bench, a head-to-head benchmark suite running Ferroni
-            against Oniguruma on the same inputs. No cherry-picked subsets.
+    <section className="fr-section" aria-labelledby="fr-evidence">
+      <div className="wrap fr-evidence">
+        <div className="fr-evidence-head">
+          <h2 id="fr-evidence">Faster on real code</h2>
+          <p className="fr-intro">
+            Each factor is Oniguruma&rsquo;s time divided by Ferroni&rsquo;s on the same input,
+            higher is faster. The highlighting rows tokenize whole documents line by line, each line
+            handed to the scanner once, the way vscode-textmate and Shiki drive it.
+          </p>
+          <p className="fr-aside">
+            Measured on 2026-09-23 with the <code>battle_bench</code> reference suite at commit{" "}
+            <code>2f109a75</code>, on a MacBookPro18,1 (Apple M1 Pro, 32&nbsp;GB) running macOS
+            27.0. Full tables, raw values, and reproduction:{" "}
+            <Link to="/perf/benchmark-results">Benchmark Results →</Link>
           </p>
         </div>
-
-        <div className="fh-perf-grid">
+        <dl className="fr-figures">
           {benchmarks.map((b) => (
-            <div key={b.label} className="fh-perf-card">
-              <div className="fh-perf-category">{b.category}</div>
-              <div className="fh-perf-label">{b.label}</div>
-              <div className="fh-perf-desc">{b.desc}</div>
-              <div className="fh-perf-speedup">{b.speedup}</div>
-              <div className="fh-perf-speedup-label">faster</div>
-              <div className="fh-perf-times">
-                <div className="fh-perf-time">
-                  <span className="fh-perf-time-engine">Ferroni</span>
-                  <span className="fh-perf-time-value is-ferroni">{b.ferroni}</span>
-                </div>
-                <div className="fh-perf-time">
-                  <span className="fh-perf-time-engine">Oniguruma</span>
-                  <span className="fh-perf-time-value">{b.oniguruma}</span>
-                </div>
-              </div>
+            <div key={b.label}>
+              <dt>{b.label}</dt>
+              <dd className="fr-figure">{b.speedup.replace("x", "×")}</dd>
+              <dd className="fr-figure-detail">
+                {b.desc}
+                <span>
+                  {b.ferroni} vs {b.oniguruma}
+                </span>
+              </dd>
             </div>
           ))}
-        </div>
-
-        <p className="fh-perf-note">
-          Measured on 2026-03-06 with the <code>battle_bench</code> reference suite at commit{" "}
-          <code>e8f120aa</code>, on a Mac13,2 (Apple M1 Ultra, 64&nbsp;GB) running macOS 26.3. Each
-          factor is the ratio of the two timings shown on its card. Full tables, raw values, and the
-          measurement context are in <Link to="/perf/benchmark-results">Benchmark Results</Link>.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-/* -------------------------------------------------- */
-/*  Quick Start                                       */
-/* -------------------------------------------------- */
-
-function CodeSection() {
-  return (
-    <section className="fh-section fh-code">
-      <div className="fh-container">
-        <div className="fh-code-header">
-          <div className="fh-section-label">Quick Start</div>
-          <h2 className="fh-section-title">Three lines to your first match</h2>
-          <p className="fh-section-subtitle">
-            Add Ferroni as a dependency. Write a pattern. Match.
-          </p>
-        </div>
-
-        <div className="fh-code-wrapper">
-          <div className="fh-code-tabs">
-            <span className="fh-code-tab is-active">main.rs</span>
-          </div>
-          <div className="fh-code-block">
-            <pre>
-              <span className="kw">use</span> <span className="ty">ferroni::prelude::*</span>;{"\n"}
-              {"\n"}
-              <span className="kw">fn</span> <span className="fn">main</span>() -&gt;{" "}
-              <span className="ty">Result</span>&lt;(), <span className="ty">RegexError</span>&gt;{" "}
-              {"{"}
-              {"\n"}
-              {"    "}
-              <span className="kw">let</span> re = <span className="ty">Regex</span>::
-              <span className="fn">new</span>(
-              <span className="str">
-                r"(?&lt;year&gt;\d{"{4}"})-(?\u003cmonth\u003e\d{"{2}"})"
-              </span>
-              )?;{"\n"}
-              {"\n"}
-              {"    "}
-              <span className="kw">let</span> caps = re.
-              <span className="fn">captures</span>(<span className="str">"Date: 2026-02-12"</span>
-              ).unwrap();{"\n"}
-              {"    "}
-              <span className="mc">assert_eq!</span>(caps.
-              <span className="fn">name</span>(<span className="str">"year"</span>
-              ).unwrap().as_str(), <span className="str">"2026"</span>);{"\n"}
-              {"    "}
-              <span className="ty">Ok</span>(()){"\n"}
-              {"}"}
-            </pre>
-          </div>
-
-          <div className="fh-install-line">
-            <span className="prompt">$</span>
-            cargo add ferroni
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* -------------------------------------------------- */
-/*  Ecosystem                                         */
-/* -------------------------------------------------- */
-
-const ecosystem = [
-  { name: "Ruby", role: "Core regex engine" },
-  { name: "PHP", role: "mbstring module" },
-  { name: "TextMate", role: "Grammar syntax" },
-  { name: "jq", role: "Pattern matching" },
-  { name: "Shiki", role: "Syntax highlighting" },
-  { name: "VS Code", role: "Token engine" },
-];
-
-function EcosystemSection() {
-  return (
-    <section className="fh-section fh-eco">
-      <div className="fh-container">
-        <div className="fh-eco-header">
-          <div className="fh-section-label">Ecosystem</div>
-          <h2 className="fh-section-title">The Oniguruma ecosystem, unlocked</h2>
-          <p className="fh-section-subtitle">
-            Ferroni works wherever Oniguruma does. These projects all depend on Oniguruma&rsquo;s
-            feature set &mdash; and Ferroni covers it completely.
-          </p>
-        </div>
-
-        <div className="fh-eco-grid">
-          {ecosystem.map((e) => (
-            <div key={e.name} className="fh-eco-item">
-              <div className="fh-eco-name">{e.name}</div>
-              <div className="fh-eco-role">{e.role}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* -------------------------------------------------- */
-/*  Final CTA                                         */
-/* -------------------------------------------------- */
-
-function CTASection() {
-  return (
-    <section className="fh-section fh-final">
-      <div className="fh-container fh-final-inner">
-        <div className="fh-section-label">Get Started</div>
-        <h2 className="fh-section-title">Start building with Ferroni</h2>
-        <p className="fh-section-subtitle">
-          Full Oniguruma compatibility with dramatically better performance. One dependency. Pure
-          Rust.
-        </p>
-
-        <div className="fh-cta-group">
-          <Link to="/guide/getting-started" className="fh-cta fh-cta-primary">
-            Read the Docs <ArrowRight size={16} />
-          </Link>
-          <a
-            href="https://crates.io/crates/ferroni"
-            className="fh-cta fh-cta-secondary"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Package size={16} /> crates.io
-          </a>
-        </div>
-
-        <div className="fh-final-links">
-          <a
-            href="https://github.com/sebastian-software/ferroni"
-            className="fh-final-link"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Github size={14} /> GitHub
-          </a>
-          <Link to="/perf/benchmark-results" className="fh-final-link">
-            <ExternalLink size={14} /> Benchmarks
-          </Link>
-          <a
-            href="https://github.com/sebastian-software/ferroni/blob/main/LICENSE"
-            className="fh-final-link"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <ExternalLink size={14} /> BSD-2-Clause
-          </a>
-        </div>
-
-        <div className="fh-footer-copy">
-          Copyright 2026{" "}
-          <a href="https://oss.sebastian-software.com" target="_blank" rel="noopener noreferrer">
-            Sebastian Software GmbH
-          </a>
-        </div>
+        </dl>
       </div>
     </section>
   );
@@ -452,12 +278,12 @@ export default function HomePage() {
   return (
     <div className="ferroni-home">
       <HeroSection />
-      <StatsSection />
-      <WhySection />
-      <PerfSection />
+      <CarriedForwardSection />
+      <PipelineSection />
+      <EvidenceSection />
       <CodeSection />
-      <EcosystemSection />
-      <CTASection />
+      <CoverageSection />
+      <ClosingSection />
     </div>
   );
 }

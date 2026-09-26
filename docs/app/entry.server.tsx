@@ -1,8 +1,11 @@
 import type { EntryContext } from "react-router";
-import { ServerRouter } from "react-router";
-import { renderToReadableStream } from "react-dom/server";
-import { isbot } from "isbot";
 
+import { isbot } from "isbot";
+import { renderToReadableStream } from "react-dom/server";
+import { ServerRouter } from "react-router";
+
+// React Router's server entry point fixes this four-argument signature.
+// eslint-disable-next-line max-params
 export default async function handleRequest(
   request: Request,
   responseStatusCode: number,
@@ -21,7 +24,7 @@ export default async function handleRequest(
     },
   );
 
-  if (userAgent && isbot(userAgent)) {
+  if (userAgent !== null && userAgent.length > 0 && isbot(userAgent)) {
     await stream.allReady;
   }
 

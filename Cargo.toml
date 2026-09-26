@@ -1,15 +1,15 @@
 [package]
 name = "ferroni"
-version = "1.3.3"
+version = "1.5.1"
 edition = "2024"
-description = "Oniguruma-compatible regex engine"
+description = "Oniguruma, continued in pure Rust, with a vscode-oniguruma-compatible TextMate scanner"
 license = "BSD-2-Clause"
 authors = ["Sebastian Software GmbH"]
 repository = "https://github.com/sebastian-software/ferroni"
 homepage = "https://sebastian-software.github.io/ferroni/"
 documentation = "https://docs.rs/ferroni"
 readme = "README.md"
-keywords = ["regex", "oniguruma", "unicode", "simd", "ferramenta"]
+keywords = ["regex", "oniguruma", "textmate", "syntax-highlighting", "ferramenta"]
 categories = ["text-processing", "parsing"]
 rust-version = "1.94"
 autobenches = false

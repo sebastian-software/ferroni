@@ -10,7 +10,9 @@
 //! assert_eq!(m.as_str(), "42");
 //! ```
 
-pub use crate::api::{Captures, CapturesIter, FindIter, Match, Regex, RegexBuilder};
+pub use crate::api::{
+    Captures, CapturesIter, FindIter, Match, Regex, RegexBuilder, SearchOptions, TryFindIter,
+};
 pub use crate::error::RegexError;
 pub use crate::scanner::{
     CaptureIndex, OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch,

@@ -6,7 +6,7 @@
 //! experimental syntax?
 //!
 //! Archived spike, not built by cargo. To run it, copy this file into
-//! `examples/` and leave `research_ecmascript_lookbehind_node.js` here -- the
+//! `examples/` and leave `research-ecmascript-lookbehind-node.js` here -- the
 //! harness loads the Node helper from `docs/research/`. Then use:
 //! cargo run --example research_ecmascript_lookbehind
 
@@ -255,7 +255,7 @@ fn ferroni_outcome(case: &Case) -> (Value, Option<String>) {
 
 fn node_outcome(case: &Case) -> Value {
     let helper = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("docs/research/research_ecmascript_lookbehind_node.js");
+        .join("docs/research/research-ecmascript-lookbehind-node.js");
     let output = Command::new("node")
         .arg(helper)
         .env("FERRONI_SPIKE_PATTERN", case.pattern)

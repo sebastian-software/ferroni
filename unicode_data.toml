@@ -1,0 +1,24 @@
+# Unicode Character Database source archives for Ferroni's generated tables.
+# Each SHA-256 covers the complete UCD ZIP; every input file is extracted from
+# that archive, including emoji/emoji-data.txt.
+
+[unicode."16.0.0"]
+url = "https://www.unicode.org/Public/zipped/16.0.0/UCD.zip"
+sha256 = "c86dd81f2b14a43b0cc064aa5f89aa7241386801e35c59c7984e579832634eb2"
+
+[unicode."17.0.0"]
+url = "https://www.unicode.org/Public/17.0.0/ucd/UCD.zip"
+sha256 = "2066d1909b2ea93916ce092da1c0ee4808ea3ef8407c94b4f14f5b7eb263d28e"
+
+# SHA-256 of each Unicode 16-generated Rust table after removing its leading
+# provenance comments and the generated Extended_Pictographic index constant.
+# These are the pre-migration checked-in table bodies, except property_data:
+# its hash was updated when the generator stopped dropping InCB ranges while
+# merging unsorted sections (see ADR-015). The pre-migration hash was
+# c78a38c97b6788391a9be620d802ed9c34c6b3865ed1cd0c455818840cf2f271.
+[baseline."16.0.0"]
+property_data = "ff78a1f28b179df1082aead93756c7a75cfaa6e1e4faefff20c3dae4bba03c66"
+fold_data = "cc26811747a58298a1919312c5aee9fb864dc33a20b93de1a7e37c6a2e903e60"
+egcb_data = "2d467db9eb90b3004a31808ea0f23484832c7856f79c904872a831e958418864"
+wb_data = "17604b1fc36a623db5f47b3f1424d31425467d1086919e2828d021f89414e959"
+property_index_extended_pictographic = 81

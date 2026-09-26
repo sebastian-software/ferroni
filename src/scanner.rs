@@ -12,7 +12,7 @@ use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
-use crate::regexec::{MatchArg, onig_match_with_msa_start, onig_search_with_msa};
+use crate::regexec::{MatchArg, onig_match_with_msa_start, onig_search_with_msa_and_right_range};
 use crate::regset::{
     FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, onig_regset_get_regex,
     onig_regset_last_match_len, onig_regset_new, onig_regset_number_of_regex,
@@ -123,9 +123,13 @@ impl ScannerSyntax {
 }
 
 /// Configuration for creating a `Scanner`, matching vscode-oniguruma's `IOnigScannerConfig`.
+///
+/// The default options enable unnamed captures when a pattern also contains
+/// named groups, matching vscode-oniguruma's default `CaptureGroup` option.
 #[derive(Debug, Clone)]
 pub struct ScannerConfig {
-    /// Compile-time options applied to all patterns.
+    /// Compile-time options applied to all patterns. Defaults to
+    /// [`ONIG_OPTION_CAPTURE_GROUP`].
     pub options: OnigOptionType,
     /// Regex syntax variant to use.
     pub syntax: ScannerSyntax,
@@ -134,7 +138,7 @@ pub struct ScannerConfig {
 impl Default for ScannerConfig {
     fn default() -> Self {
         ScannerConfig {
-            options: ONIG_OPTION_NONE,
+            options: ONIG_OPTION_CAPTURE_GROUP,
             syntax: ScannerSyntax::default(),
         }
     }
@@ -375,8 +379,12 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    /// Create a scanner from a list of pattern strings using default settings
-    /// (Oniguruma syntax, no special options).
+    /// Create a scanner from a list of pattern strings using the
+    /// vscode-oniguruma defaults (Oniguruma syntax and capture groups enabled).
+    ///
+    /// Enabling capture groups preserves unnamed captures and numbered
+    /// backreferences when a pattern also contains named groups. Pass an
+    /// explicit [`ScannerConfig`] to select different compile-time options.
     pub fn new(patterns: &[&str]) -> Result<Scanner, RegexError> {
         Self::with_config(patterns, &ScannerConfig::default())
     }
@@ -796,7 +804,10 @@ impl Scanner {
         let n = onig_regset_number_of_regex(regset) as usize;
 
         // Progressive range narrowing: once a match is found at position P,
-        // narrow subsequent searches to [start, P) since we only need earlier matches.
+        // later regexes only need start positions in [start, P]. As in C's
+        // regex-lead `onig_regset_search` (`search_in_range(.., ep, orig_range)`),
+        // only the start positions are narrowed; a match that begins before P
+        // may still extend past it, so the subject stays `end`.
         let mut ep = end;
 
         for (i, cache) in caches.iter_mut().enumerate().take(n) {
@@ -842,7 +853,7 @@ impl Scanner {
             let (r, returned_region) = if has_g_anchor {
                 search_g_anchor_with_msa(reg, str_data, end, start, ep, onig_opts, msa)
             } else {
-                onig_search_with_msa(reg, str_data, end, start, ep, msa)
+                onig_search_with_msa_and_right_range(reg, str_data, end, start, ep, end, None, msa)
             };
 
             // Put region back in cache (no clone needed)
@@ -895,13 +906,14 @@ impl Scanner {
 
 /// Search helper for patterns containing `\G` in per-regex mode.
 ///
-/// `onig_search` keeps `msa.start` fixed to the original search start, while
-/// the scanner's position-lead behavior checks each candidate position with
-/// that position as start. For `\G` patterns this changes match semantics.
-/// This helper mirrors position-lead behavior for a single regex.
+/// Mirrors the RegSet position-lead loop for a single regex: every position
+/// from `start` up to and including `range` is attempted with `\G` pinned to
+/// the original search start. The `range` position itself must be tried, as
+/// in Oniguruma's do-while search loop, so zero-width matches at the end of
+/// the subject (`\G$`, `\G\z`) are found.
 ///
-/// Only activated when a `\G`-containing regex triggers 8+ same-position
-/// calls in per-regex mode — a very narrow edge case tested indirectly.
+/// Only reached once the adaptive cache route probes or switches to
+/// per-regex mode (8+ same-position calls on one string id).
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn search_g_anchor_with_msa(
     reg: &crate::regint::RegexType,
@@ -915,12 +927,12 @@ fn search_g_anchor_with_msa(
     let mut s = start;
     let search_end = range.min(end);
 
-    while s < search_end {
+    while s <= search_end {
         let r = onig_match_with_msa_start(reg, str_data, end, s, start, option, msa);
         if r >= 0 {
             return (s as i32, msa.region.take());
         }
-        if s >= end {
+        if s >= search_end {
             break;
         }
         let step = reg.enc.mbc_enc_len(&str_data[s..]).max(1);
@@ -938,7 +950,10 @@ fn build_scanner_match(index: usize, region: &OnigRegion) -> ScannerMatch {
     for i in 0..num_regs {
         let beg = region.beg[i];
         let end = region.end[i];
-        if beg >= 0 && end >= 0 {
+        // A capture whose start lies after its end (a group that started
+        // again and failed before closing) is not a range of the string;
+        // report it like an unmatched group.
+        if beg >= 0 && end >= beg {
             let start = beg as usize;
             let end = end as usize;
             capture_indices.push(CaptureIndex {
@@ -986,6 +1001,23 @@ fn convert_match_to_utf16(string: &OnigString, m: ScannerMatch) -> ScannerMatch 
 mod tests {
     use super::*;
     use smallvec::smallvec;
+
+    /// Group 1 of `((?=(a|ab))a?){2}` on "a" ends before it starts (1..0, as
+    /// in C Oniguruma). The scanner reports it like an unmatched group
+    /// instead of underflowing `end - start`.
+    #[test]
+    fn inverted_capture_reads_as_unmatched() {
+        let mut scanner = Scanner::new(&[r"((?=(a|ab))a?){2}"]).unwrap();
+        let m = scanner
+            .find_next_match("a", 0, ScannerFindOptions::NONE)
+            .unwrap();
+        let spans: Vec<_> = m
+            .capture_indices
+            .iter()
+            .map(|c| (c.start, c.end, c.length))
+            .collect();
+        assert_eq!(spans, vec![(0, 0, 0), (0, 0, 0), (1, 1, 0)]);
+    }
 
     #[test]
     fn cache_miss_with_truncated_range_is_not_reused() {

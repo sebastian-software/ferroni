@@ -1,6 +1,7 @@
 // regset.rs - Port of USE_REGSET section from regexec.c
 // Multi-regex search for syntax highlighters and text editors.
 
+use crate::first_bytes::derive_start_byte_map;
 use crate::oniguruma::*;
 use crate::regenc::{
     OnigEncoding, onigenc_get_prev_char_head, onigenc_is_ascii_compatible_encoding,
@@ -8,8 +9,7 @@ use crate::regenc::{
 use crate::regexec::{
     MatchArg, OnigMatchParam, onig_get_global_limit_revision, onig_get_match_stack_limit,
     onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit, onig_match,
-    onig_match_with_msa_start, onig_search, onig_search_with_msa_and_right_range,
-    onig_search_with_param,
+    onig_match_with_msa_start, onig_search_with_msa_and_right_range, search_in_range,
 };
 use crate::regint::*;
 
@@ -33,6 +33,10 @@ struct RegSetEntry {
     /// Caching a fallback search must not suppress observable callouts or
     /// position-sensitive bytecode such as partial `\G` anchors.
     fallback_memo_safe: bool,
+    /// Start-byte map of a fallback entry whose optimizer cannot bound the
+    /// match start (`dist_max` infinite). Its search would otherwise run the
+    /// VM at every position; see `fallback_start_filter`.
+    start_filter: Option<Box<[u8; CHAR_MAP_SIZE]>>,
 }
 
 /// Pre-computed memchr needle for SIMD-accelerated position skipping.
@@ -64,11 +68,11 @@ pub struct OnigRegSet {
     /// Number of entries routed through `first_byte_candidates`. A pure
     /// fallback set has no table work at any position.
     table_entry_count: usize,
-    /// Entries whose start byte cannot be derived safely from bytecode. They
-    /// are searched independently with their own optimizer after the table
-    /// pass, rather than routing on an optimizer byte that can occur later
-    /// than the true match start.
-    fallback_search_candidates: Vec<u16>,
+    /// Entries whose start byte cannot be derived safely from bytecode, in
+    /// index order. They are searched independently with their own optimizer
+    /// after the table pass, rather than routing on an optimizer byte that
+    /// can occur later than the true match start.
+    fallback_search_candidates: Vec<FallbackCandidate>,
     /// Scanner-only memoization for optimizer-backed fallback searches. The
     /// caller supplies a stable immutable string identity, so a no-match or
     /// a later match can be reused as tokenization advances.
@@ -93,13 +97,42 @@ pub struct OnigRegSet {
     last_match_len: i32,
 }
 
+/// A fallback entry as the position-lead search walks it on every call.
+///
+/// A warm scanner call visits every fallback entry, and most of them hold a
+/// settled no-match result. Keeping the flags that decide a skip and that
+/// result in one contiguous array makes such an entry cost a few loads
+/// instead of dereferencing its regex and its memo vector.
+#[derive(Clone, Copy, Debug)]
+struct FallbackCandidate {
+    index: u16,
+    /// Copy of the entry's `fallback_memo_safe`.
+    memo_safe: bool,
+    /// The entry is anchored to the search start (`\G`).
+    begin_position: bool,
+    /// Memoized: a search from this position found no match up to the end
+    /// of the subject, so no later start can match either. `usize::MAX`
+    /// when unknown. Valid for the current `fallback_memo_key` only.
+    no_match_from: usize,
+}
+
+impl FallbackCandidate {
+    fn new(index: usize, entry: &RegSetEntry) -> Self {
+        Self {
+            index: index as u16,
+            memo_safe: entry.fallback_memo_safe,
+            begin_position: (entry.reg.anchor & ANCR_BEGIN_POSITION) != 0,
+            no_match_from: usize::MAX,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum FallbackMemo {
     /// A direct position-lead attempt failed at this exact start. It is safe
     /// to skip only an identical retry; a different start upgrades to an
     /// optimizer search so mixed table/fallback scans remain linear.
     ExactStartMiss(usize),
-    NoMatchFrom(usize),
     MatchAt {
         searched_from: usize,
         position: usize,
@@ -144,6 +177,21 @@ pub(crate) enum FallbackMemoIdentity {
 
 const FALLBACK_MEMO_CAPACITY: usize = 8;
 
+/// Position filter for a fallback entry's search.
+///
+/// With an infinite `dist_max`, Oniguruma's search checks the optimizer once
+/// and then attempts a match at every position of the range. The bytecode's
+/// start-byte map (the same proof that routes table entries) excludes the
+/// positions where no match can start, so the search can step over them
+/// without running the VM. Only used where skipping a failed attempt is
+/// unobservable: no callouts or position checks (`fallback_memo_is_safe`).
+fn fallback_start_filter(reg: &RegexType) -> Option<Box<[u8; CHAR_MAP_SIZE]>> {
+    (has_variable_optimizer(reg) && reg.dist_max == INFINITE_LEN && fallback_memo_is_safe(reg))
+        .then(|| derive_start_byte_map(reg))
+        .flatten()
+        .map(Box::new)
+}
+
 #[inline]
 fn fallback_memo_is_safe(reg: &RegexType) -> bool {
     reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
@@ -176,341 +224,6 @@ fn has_variable_optimizer(reg: &RegexType) -> bool {
 #[inline]
 fn has_finite_variable_optimizer(reg: &RegexType) -> bool {
     reg.dist_max != INFINITE_LEN && has_variable_optimizer(reg)
-}
-
-/// Derive a conservative byte map for the first consuming instruction from
-/// compiled bytecode. Returning `None` is deliberate: any control-flow shape
-/// we cannot prove safe stays on the optimizer-event fallback.
-fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
-    fn target(pc: usize, addr: RelAddrType, len: usize) -> Option<usize> {
-        let target = (pc as i64).checked_add(addr as i64)?;
-        (target >= 0 && (target as usize) < len).then_some(target as usize)
-    }
-
-    fn add_all(map: &mut [u8; CHAR_MAP_SIZE]) {
-        map.fill(1);
-    }
-
-    fn add_exact(map: &mut [u8; CHAR_MAP_SIZE], byte: u8) {
-        map[byte as usize] = 1;
-    }
-
-    fn add_bitset(map: &mut [u8; CHAR_MAP_SIZE], bitset: &BitSet, inverted: bool) {
-        for (byte, value) in map.iter_mut().enumerate() {
-            if bitset_at(bitset, byte) != inverted {
-                *value = 1;
-            }
-        }
-    }
-
-    fn mark_continuation(reg: &RegexType, pc: usize, id: MemNumType) -> Option<usize> {
-        reg.ops
-            .iter()
-            .enumerate()
-            .skip(pc + 1)
-            .find_map(|(at, op)| match op.payload {
-                OperationPayload::CutToMark {
-                    id: cut_id,
-                    restore_pos,
-                } if cut_id == id => Some(if restore_pos { at + 1 } else { pc + 1 }),
-                _ => None,
-            })
-    }
-
-    fn is_negative_assertion_push(reg: &RegexType, pc: usize, alt: usize) -> bool {
-        if alt <= pc + 1
-            || reg.ops.get(alt.wrapping_sub(1)).map(|op| op.opcode) != Some(OpCode::Fail)
-        {
-            return false;
-        }
-
-        let lookahead_id = reg.ops.get(pc + 1).and_then(|op| match op.payload {
-            OperationPayload::Mark {
-                id,
-                save_pos: false,
-            } => Some(id),
-            _ => None,
-        });
-        let lookbehind_id = pc.checked_sub(1).and_then(|at| match reg.ops[at].payload {
-            OperationPayload::Mark {
-                id,
-                save_pos: false,
-            } => Some(id),
-            _ => None,
-        });
-
-        let has_matching_pop = |id| {
-            reg.ops[pc + 1..alt].iter().any(|op| {
-                matches!(op.payload, OperationPayload::PopToMark { id: pop_id } if pop_id == id)
-            })
-        };
-        if lookahead_id.is_some_and(has_matching_pop) {
-            return true;
-        }
-
-        lookbehind_id.is_some_and(|id| {
-            has_matching_pop(id)
-                && reg.ops[pc + 1..alt]
-                    .iter()
-                    .any(|op| op.opcode == OpCode::StepBackStart)
-        })
-    }
-
-    let mut map = [0; CHAR_MAP_SIZE];
-    let mut pending = vec![0usize];
-    let mut visited = vec![false; reg.ops.len()];
-    let mut saw_consumer = false;
-
-    while let Some(pc) = pending.pop() {
-        if pc >= reg.ops.len() || visited[pc] {
-            continue;
-        }
-        visited[pc] = true;
-        let op = &reg.ops[pc];
-
-        match op.opcode {
-            OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5 => {
-                let OperationPayload::Exact { s } = &op.payload else {
-                    return None;
-                };
-                add_exact(&mut map, s[0]);
-                saw_consumer = true;
-            }
-            OpCode::StrN => {
-                let OperationPayload::ExactN { s, .. } = &op.payload else {
-                    return None;
-                };
-                add_exact(&mut map, *s.first()?);
-                saw_consumer = true;
-            }
-            OpCode::StrMb2n1
-            | OpCode::StrMb2n2
-            | OpCode::StrMb2n3
-            | OpCode::StrMb2n
-            | OpCode::StrMb3n
-            | OpCode::StrMbn => {
-                let OperationPayload::ExactLenN { s, .. } = &op.payload else {
-                    return None;
-                };
-                add_exact(&mut map, *s.first()?);
-                saw_consumer = true;
-            }
-            OpCode::CClass | OpCode::CClassNot => {
-                let OperationPayload::CClass { bsp, .. } = &op.payload else {
-                    return None;
-                };
-                add_bitset(&mut map, bsp, op.opcode == OpCode::CClassNot);
-                saw_consumer = true;
-            }
-            OpCode::CClassMb => {
-                for value in &mut map[0x80..] {
-                    *value = 1;
-                }
-                saw_consumer = true;
-            }
-            OpCode::CClassMbNot => {
-                add_all(&mut map);
-                saw_consumer = true;
-            }
-            OpCode::CClassMix | OpCode::CClassMixNot => {
-                let OperationPayload::CClassMix { bsp, .. } = &op.payload else {
-                    return None;
-                };
-                add_bitset(&mut map, bsp, op.opcode == OpCode::CClassMixNot);
-                for value in &mut map[0x80..] {
-                    *value = 1;
-                }
-                saw_consumer = true;
-            }
-            OpCode::Word | OpCode::NoWord | OpCode::AnyChar | OpCode::AnyCharMl => {
-                add_all(&mut map);
-                saw_consumer = true;
-            }
-            OpCode::WordAscii | OpCode::NoWordAscii => {
-                let inverted = op.opcode == OpCode::NoWordAscii;
-                for (byte, value) in map.iter_mut().enumerate() {
-                    let is_word = (byte as u8).is_ascii_alphanumeric() || byte == b'_' as usize;
-                    if is_word != inverted {
-                        *value = 1;
-                    }
-                }
-                saw_consumer = true;
-            }
-            OpCode::CClassStar => {
-                let OperationPayload::CClass { bsp, .. } = &op.payload else {
-                    return None;
-                };
-                add_bitset(&mut map, bsp, false);
-                pending.push(pc + 1);
-                saw_consumer = true;
-            }
-            OpCode::CClassMixStar => {
-                let OperationPayload::CClassMix { bsp, .. } = &op.payload else {
-                    return None;
-                };
-                add_bitset(&mut map, bsp, false);
-                for value in &mut map[0x80..] {
-                    *value = 1;
-                }
-                pending.push(pc + 1);
-                saw_consumer = true;
-            }
-            OpCode::CClassMbStar => {
-                for value in &mut map[0x80..] {
-                    *value = 1;
-                }
-                pending.push(pc + 1);
-                saw_consumer = true;
-            }
-            OpCode::WordStar => {
-                add_all(&mut map);
-                pending.push(pc + 1);
-                saw_consumer = true;
-            }
-            OpCode::WordAsciiStar => {
-                for (byte, value) in map.iter_mut().enumerate() {
-                    if (byte as u8).is_ascii_alphanumeric() || byte == b'_' as usize {
-                        *value = 1;
-                    }
-                }
-                pending.push(pc + 1);
-                saw_consumer = true;
-            }
-            OpCode::CClassStarPeekNext => {
-                let OperationPayload::CClassStarPeekNext { bsp, .. } = &op.payload else {
-                    return None;
-                };
-                add_bitset(&mut map, bsp, false);
-                pending.push(pc + 1);
-                saw_consumer = true;
-            }
-            OpCode::WordAsciiStarPeekNext => {
-                for (byte, value) in map.iter_mut().enumerate() {
-                    if (byte as u8).is_ascii_alphanumeric() || byte == b'_' as usize {
-                        *value = 1;
-                    }
-                }
-                pending.push(pc + 1);
-                saw_consumer = true;
-            }
-            OpCode::AltLiterals => {
-                let OperationPayload::AltLiterals { trie_idx } = op.payload else {
-                    return None;
-                };
-                let trie = reg.literal_tries.get(trie_idx as usize)?;
-                for literal in trie.literals() {
-                    let byte = *literal.first()?;
-                    add_exact(&mut map, byte);
-                    if trie.is_case_insensitive() && byte.is_ascii_alphabetic() {
-                        add_exact(&mut map, byte.to_ascii_lowercase());
-                        add_exact(&mut map, byte.to_ascii_uppercase());
-                    }
-                }
-                saw_consumer = true;
-            }
-            OpCode::Jump => {
-                let OperationPayload::Jump { addr } = op.payload else {
-                    return None;
-                };
-                pending.push(target(pc, addr, reg.ops.len())?);
-            }
-            OpCode::Push | OpCode::PushSuper => {
-                let OperationPayload::Push { addr } = op.payload else {
-                    return None;
-                };
-                let alt = target(pc, addr, reg.ops.len())?;
-                pending.push(alt);
-                if !is_negative_assertion_push(reg, pc, alt) {
-                    pending.push(pc + 1);
-                }
-            }
-            OpCode::PushOrJumpExact1 => {
-                let OperationPayload::PushOrJumpExact1 { addr, .. } = op.payload else {
-                    return None;
-                };
-                pending.push(pc + 1);
-                pending.push(target(pc, addr, reg.ops.len())?);
-            }
-            OpCode::PushIfPeekNext => {
-                let OperationPayload::PushIfPeekNext { addr, .. } = op.payload else {
-                    return None;
-                };
-                pending.push(pc + 1);
-                pending.push(target(pc, addr, reg.ops.len())?);
-            }
-            OpCode::Repeat | OpCode::RepeatNg => {
-                let OperationPayload::Repeat { id, addr } = op.payload else {
-                    return None;
-                };
-                let repeat = reg.repeat_range.get(id as usize)?;
-                pending.push(pc + 1);
-                if repeat.lower == 0 {
-                    pending.push(target(pc, addr, reg.ops.len())?);
-                }
-            }
-            OpCode::Mark => {
-                let OperationPayload::Mark { id, save_pos } = op.payload else {
-                    return None;
-                };
-                if save_pos {
-                    // Positive lookahead/lookbehind restores the original input
-                    // position at its matching CutToMark. Non-restoring marks
-                    // are VM bookkeeping (for example greedy star loops) and
-                    // continue normally into their consuming instruction.
-                    pending.push(mark_continuation(reg, pc, id)?);
-                } else {
-                    pending.push(pc + 1);
-                }
-            }
-            OpCode::StepBackStart | OpCode::StepBackNext => {
-                // A negative lookbehind's successful continuation is already
-                // represented by its surrounding Push target. Stop the body
-                // path here so bytes before the match start never enter the map.
-            }
-            OpCode::MemStart
-            | OpCode::MemStartPush
-            | OpCode::MemEnd
-            | OpCode::MemEndPush
-            | OpCode::MemEndRec
-            | OpCode::MemEndPushRec
-            | OpCode::WordBoundary
-            | OpCode::NoWordBoundary
-            | OpCode::WordBegin
-            | OpCode::WordEnd
-            | OpCode::TextSegmentBoundary
-            | OpCode::BeginBuf
-            | OpCode::EndBuf
-            | OpCode::BeginLine
-            | OpCode::EndLine
-            | OpCode::SemiEndBuf
-            | OpCode::CheckPosition
-            | OpCode::BackRefCheck
-            | OpCode::BackRefCheckWithLevel
-            | OpCode::EmptyCheckStart
-            | OpCode::EmptyCheckEnd
-            | OpCode::EmptyCheckEndMemst
-            | OpCode::EmptyCheckEndMemstPush
-            | OpCode::Pop
-            | OpCode::PopToMark
-            | OpCode::CutToMark
-            | OpCode::SaveVal
-            | OpCode::UpdateVar
-            | OpCode::CalloutContents
-            | OpCode::CalloutName => pending.push(pc + 1),
-            OpCode::Fail => {}
-            OpCode::AnyCharStar
-            | OpCode::AnyCharMlStar
-            | OpCode::AnyCharStarPeekNext
-            | OpCode::AnyCharMlStarPeekNext => {
-                add_all(&mut map);
-                saw_consumer = true;
-            }
-            OpCode::Finish | OpCode::End => return None,
-            _ => return None,
-        }
-    }
-
-    saw_consumer.then_some(map)
 }
 
 fn add_entry_by_start_map(
@@ -590,7 +303,7 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
                     continue;
                 }
             }
-            fallback_search_candidates.push(i as u16);
+            fallback_search_candidates.push(FallbackCandidate::new(i, entry));
         } else {
             add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16);
             table_entry_count += 1;
@@ -656,10 +369,12 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
     let region = Some(OnigRegion::new());
     let fallback_memo_safe = fallback_memo_is_safe(&reg);
+    let start_filter = fallback_start_filter(&reg);
     set.entries.push(RegSetEntry {
         reg,
         region,
         fallback_memo_safe,
+        start_filter,
     });
     set.fallback_memo_key = None;
     set.fallback_memos.resize_with(set.entries.len(), Vec::new);
@@ -681,7 +396,9 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
             set.table_entry_count += 1;
             set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
         } else {
-            set.fallback_search_candidates.push(new_idx);
+            let candidate =
+                FallbackCandidate::new(new_idx as usize, &set.entries[new_idx as usize]);
+            set.fallback_search_candidates.push(candidate);
         }
     } else {
         add_entry_to_first_byte_table(
@@ -752,6 +469,7 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
                 return ONIGERR_INVALID_ARGUMENT;
             }
             set.entries[at].fallback_memo_safe = fallback_memo_is_safe(&reg);
+            set.entries[at].start_filter = fallback_start_filter(&reg);
             set.entries[at].reg = reg;
         }
     }
@@ -1000,7 +718,7 @@ fn locate_regset_entry_decision(
             }));
         }
         if msa.retry_limit_in_search != 0
-            && msa.retry_limit_in_search_counter > msa.retry_limit_in_search
+            && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
         {
             return Some(RegSetDecision::Error(RegSetError {
                 code: ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER,
@@ -1100,9 +818,10 @@ fn regset_search_body_position_lead_table(
             };
         }
 
-        let prev_is_newline = if prev_is_newline_check && s > 0 {
-            // Check if previous character is newline
-            s > 0 && str_data[s - 1] == b'\n'
+        // Oniguruma starts with prev_is_newline = 1: the first attempted
+        // position may always match, whatever precedes it in the subject.
+        let prev_is_newline = if prev_is_newline_check && s > start {
+            str_data[s - 1] == b'\n'
         } else {
             true // default: allow matching
         };
@@ -1220,6 +939,7 @@ fn regset_search_body_position_lead_table(
 /// current table winner bounds each fallback search: a later-index entry only
 /// needs positions strictly before the winner, while an earlier-index entry
 /// also needs the winner's position to resolve a tie.
+#[inline(never)]
 #[allow(clippy::too_many_arguments)]
 fn regset_search_body_position_lead(
     set: &mut OnigRegSet,
@@ -1278,6 +998,9 @@ fn regset_search_body_position_lead(
             for memos in &mut set.fallback_memos {
                 memos.clear();
             }
+            for candidate in &mut set.fallback_search_candidates {
+                candidate.no_match_from = usize::MAX;
+            }
         }
     }
 
@@ -1291,16 +1014,30 @@ fn regset_search_body_position_lead(
         skip_region_for_nomem,
     );
     let mut fallback_msa = None;
+    // The character head before the current decision's position, which
+    // bounds every later-index entry. Cached per decision position.
+    let mut before_decision: Option<(usize, Option<usize>)> = None;
 
     for candidate_at in 0..set.fallback_search_candidates.len() {
-        let index = set.fallback_search_candidates[candidate_at] as usize;
+        let candidate = set.fallback_search_candidates[candidate_at];
+        let index = candidate.index as usize;
+        let bound = decision.map(decision_position_and_index);
+        // Candidates run in index order and a decision only moves to an
+        // earlier (position, index). Once it sits at `start` ahead of this
+        // index, no remaining entry can win: each would be skipped below.
+        if bound
+            .is_some_and(|(position, winner)| position as usize <= start && index as i32 >= winner)
+        {
+            break;
+        }
         // Callouts and position-sensitive bytecode can observe each attempt,
         // so replay those entries rather than reusing a cached result.
-        let memo_enabled = memo_enabled && set.entries[index].fallback_memo_safe;
-        if (set.entries[index].reg.anchor & ANCR_BEGIN_POSITION) != 0 {
-            if decision.is_some_and(|current| {
-                (start as i32, index as i32) >= decision_position_and_index(current)
-            }) {
+        let memo_enabled = memo_enabled && candidate.memo_safe;
+        if memo_enabled && start >= candidate.no_match_from {
+            continue;
+        }
+        if candidate.begin_position {
+            if bound.is_some_and(|bound| (start as i32, index as i32) >= bound) {
                 continue;
             }
 
@@ -1325,15 +1062,23 @@ fn regset_search_body_position_lead(
             continue;
         }
 
-        let search_range = match decision {
-            Some(current) if index as i32 >= decision_position_and_index(current).1 => {
-                let position = decision_position_and_index(current).0 as usize;
-                match onigenc_get_prev_char_head(set.enc, start, position, str_data) {
+        let search_range = match bound {
+            Some((position, winner)) if index as i32 >= winner => {
+                let position = position as usize;
+                let before = match before_decision {
+                    Some((cached, before)) if cached == position => before,
+                    _ => {
+                        let before = onigenc_get_prev_char_head(set.enc, start, position, str_data);
+                        before_decision = Some((position, before));
+                        before
+                    }
+                };
+                match before {
                     Some(position) => position,
                     None => continue,
                 }
             }
-            Some(current) => decision_position_and_index(current).0 as usize,
+            Some((position, _)) => position as usize,
             None => range,
         };
         if search_range < start {
@@ -1341,11 +1086,6 @@ fn regset_search_body_position_lead(
         }
 
         if memo_enabled {
-            if set.fallback_memos[index].iter().any(|memo| {
-                matches!(memo, FallbackMemo::NoMatchFrom(searched_from) if start >= *searched_from)
-            }) {
-                continue;
-            }
             if let Some((searched_from, position)) = set.fallback_memos[index]
                 .iter()
                 .filter_map(|memo| match *memo {
@@ -1398,7 +1138,7 @@ fn regset_search_body_position_lead(
                 }
                 // A different position cannot use an exact miss. Fall
                 // through to one optimizer search over the remaining text;
-                // its MatchAt/NoMatchFrom result is the advancing cursor.
+                // its MatchAt/no-match result is the advancing cursor.
             }
         }
 
@@ -1452,6 +1192,7 @@ fn regset_search_body_position_lead(
             start,
             if memo_enabled { end } else { search_range },
             end,
+            set.entries[index].start_filter.as_deref(),
             msa,
         );
         set.entries[index].region = returned_region;
@@ -1488,9 +1229,8 @@ fn regset_search_body_position_lead(
             );
         } else if position == ONIG_MISMATCH {
             if memo_enabled {
-                let memos = &mut set.fallback_memos[index];
-                memos.clear();
-                memos.push(FallbackMemo::NoMatchFrom(start));
+                set.fallback_memos[index].clear();
+                set.fallback_search_candidates[candidate_at].no_match_from = start;
             }
         } else {
             // `onig_search` reports the error code but not the start position
@@ -1536,14 +1276,18 @@ fn regset_search_body_regex_lead(
 
     for i in 0..n {
         let region = set.entries[i].region.take();
-        let (r, returned_region) = onig_search(
+        // C: search_in_range(reg, str, end, start, ep, orig_range, ...) --
+        // only the start range narrows; a match may still run to orig_range.
+        let (r, returned_region) = search_in_range(
             &set.entries[i].reg,
             str_data,
             end,
             start,
             ep,
+            orig_range,
             region,
             option,
+            None,
         );
         set.entries[i].region = returned_region;
 
@@ -1855,8 +1599,16 @@ pub fn onig_regset_search_with_param(
 
         for (i, entry) in set.entries.iter_mut().take(n).enumerate() {
             let region = entry.region.take();
-            let (r, returned_region) = onig_search_with_param(
-                &entry.reg, str_data, end, start, ep, region, option, &mps[i],
+            let (r, returned_region) = search_in_range(
+                &entry.reg,
+                str_data,
+                end,
+                start,
+                ep,
+                orig_range,
+                region,
+                option,
+                Some(&mps[i]),
             );
             entry.region = returned_region;
 
@@ -1889,6 +1641,7 @@ mod tests {
     use super::*;
     use crate::encodings::utf8::ONIG_ENCODING_UTF8;
     use crate::regcomp::onig_new;
+    use crate::regexec::onig_search;
     use crate::regexec::{
         LIMIT_TEST_LOCK, onig_get_global_limit_revision, onig_get_match_stack_limit,
         onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit,
@@ -1896,6 +1649,162 @@ mod tests {
         onig_set_time_limit,
     };
     use crate::regsyntax::OnigSyntaxOniguruma;
+
+    /// The committed Shiki grammars, as the benchmarks load them.
+    #[allow(dead_code)]
+    mod grammar_loader {
+        use crate as ferroni;
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/grammar_loader.rs"
+        ));
+    }
+
+    fn fallback_indices(set: &OnigRegSet) -> Vec<u16> {
+        set.fallback_search_candidates
+            .iter()
+            .map(|candidate| candidate.index)
+            .collect()
+    }
+
+    /// The single fallback entry holds exactly a settled no-match result
+    /// from `start`.
+    fn assert_settled_from(set: &OnigRegSet, start: usize) {
+        assert_eq!(set.fallback_search_candidates[0].no_match_from, start);
+        assert!(set.fallback_memos[0].is_empty());
+    }
+
+    /// Which fast paths the committed grammars reach, compiled as a scanner
+    /// compiles them. Eligibility checks fail quietly: an overly cautious
+    /// one passes every behavioral test while disabling its optimization
+    /// for real patterns (a literal trie once dropped its pattern's start
+    /// map; region-free matching once never applied to grammar captures).
+    /// When a change moves these numbers on purpose, update them and say
+    /// why in the commit.
+    #[test]
+    fn grammar_fast_path_census() {
+        #[derive(Debug, PartialEq)]
+        struct Census {
+            patterns: usize,
+            table_entries: usize,
+            fallback_entries: usize,
+            fallback_start_filters: usize,
+            literal_tries: usize,
+            folded_literal_tries: usize,
+            without_optimizer: usize,
+            capture_tracking: usize,
+            fused_look_behinds: usize,
+            stepping_look_behinds: usize,
+            byte_set_push_guards: usize,
+            unguarded_pushes: usize,
+        }
+        let census = |patterns: Vec<String>| {
+            let regs: Vec<Box<RegexType>> =
+                patterns.iter().map(|p| compile(p.as_bytes())).collect();
+            // Push guards rewrite bytecode that the start maps read.
+            crate::regcomp::PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(true));
+            let unguarded: Vec<Box<RegexType>> =
+                patterns.iter().map(|p| compile(p.as_bytes())).collect();
+            crate::regcomp::PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(false));
+            for ((pattern, reg), reference) in patterns.iter().zip(&regs).zip(&unguarded) {
+                assert_eq!(
+                    derive_start_byte_map(reg),
+                    derive_start_byte_map(reference),
+                    "{pattern}"
+                );
+            }
+            let tries = || regs.iter().flat_map(|reg| reg.literal_tries.iter());
+            let literal_tries = tries().count();
+            let folded_literal_tries = tries().filter(|trie| trie.is_case_insensitive()).count();
+            let without_optimizer = regs
+                .iter()
+                .filter(|reg| reg.optimize == OptimizeType::None)
+                .count();
+            let capture_tracking = regs.iter().filter(|reg| reg.needs_capture_tracking).count();
+            let ops = |opcode: OpCode| {
+                regs.iter()
+                    .flat_map(|reg| reg.ops.iter())
+                    .filter(|op| op.opcode == opcode)
+                    .count()
+            };
+            let fused_look_behinds = ops(OpCode::LookBehindOp);
+            let stepping_look_behinds = ops(OpCode::StepBackStart);
+            let byte_set_push_guards = ops(OpCode::PushOrJumpByteSet);
+            let unguarded_pushes = ops(OpCode::Push);
+            let (set, r) = onig_regset_new(regs);
+            assert_eq!(r, ONIG_NORMAL);
+            let set = set.unwrap();
+            Census {
+                patterns: patterns.len(),
+                table_entries: set.table_entry_count,
+                fallback_entries: set.fallback_search_candidates.len(),
+                fallback_start_filters: set
+                    .fallback_search_candidates
+                    .iter()
+                    .filter(|c| set.entries[c.index as usize].start_filter.is_some())
+                    .count(),
+                literal_tries,
+                folded_literal_tries,
+                without_optimizer,
+                capture_tracking,
+                fused_look_behinds,
+                stepping_look_behinds,
+                byte_set_push_guards,
+                unguarded_pushes,
+            }
+        };
+        assert_eq!(
+            census(grammar_loader::typescript_patterns()),
+            Census {
+                patterns: 279,
+                table_entries: 200,
+                fallback_entries: 79,
+                fallback_start_filters: 79,
+                literal_tries: 20,
+                folded_literal_tries: 0,
+                without_optimizer: 3,
+                capture_tracking: 0,
+                fused_look_behinds: 443,
+                stepping_look_behinds: 50,
+                byte_set_push_guards: 2161,
+                unguarded_pushes: 166,
+            }
+        );
+        assert_eq!(
+            census(grammar_loader::css_patterns()),
+            Census {
+                patterns: 117,
+                table_entries: 108,
+                fallback_entries: 9,
+                fallback_start_filters: 7,
+                literal_tries: 18,
+                folded_literal_tries: 18,
+                without_optimizer: 7,
+                capture_tracking: 0,
+                fused_look_behinds: 64,
+                stepping_look_behinds: 11,
+                byte_set_push_guards: 2764,
+                unguarded_pushes: 70,
+            }
+        );
+        assert_eq!(
+            census(grammar_loader::rust_patterns()),
+            Census {
+                patterns: 81,
+                table_entries: 78,
+                fallback_entries: 3,
+                fallback_start_filters: 2,
+                literal_tries: 8,
+                folded_literal_tries: 0,
+                without_optimizer: 0,
+                capture_tracking: 0,
+                fused_look_behinds: 6,
+                stepping_look_behinds: 2,
+                byte_set_push_guards: 28,
+                unguarded_pushes: 4,
+            }
+        );
+    }
 
     fn compile(pattern: &[u8]) -> Box<RegexType> {
         let reg = onig_new(
@@ -2020,7 +1929,11 @@ mod tests {
         ] {
             let payload = match opcode {
                 OpCode::Push => OperationPayload::Push { addr: 2 },
-                OpCode::PushOrJumpExact1 => OperationPayload::PushOrJumpExact1 { addr: 2, c: b'a' },
+                OpCode::PushOrJumpExact1 => OperationPayload::PushOrJumpExact1 {
+                    addr: 2,
+                    c: b'a',
+                    skipped_retries: 0,
+                },
                 _ => OperationPayload::PushIfPeekNext { addr: 2, c: b'a' },
             };
             let map = map_for(
@@ -2096,8 +2009,175 @@ mod tests {
         assert_eq!(result, ONIG_NORMAL);
         let set = set.expect("regset");
 
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         assert_eq!(set.table_entry_count, 0);
+    }
+
+    #[test]
+    fn fallback_search_fills_backtracked_push_captures() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        // The fallback search runs region-free and fills the region only for
+        // the winning position; captures restored by backtracking must still
+        // come out unset.
+        let (set, result) = onig_regset_new(vec![compile(b"(?:(a)|b)*ab")]);
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        assert_eq!(fallback_indices(&set), [0]);
+
+        // (input, group 1 start, group 1 end)
+        let cases: [(&[u8], i32, i32); 2] = [
+            (b"xbab", ONIG_REGION_NOTPOS, ONIG_REGION_NOTPOS),
+            (b"xaab", 1, 2),
+        ];
+        for (input, g1_beg, g1_end) in cases {
+            let (index, position) = onig_regset_search(
+                &mut set,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!((index, position), (0, 1));
+            let region = onig_regset_get_region(&set, 0).expect("region");
+            assert_eq!((region.beg[0], region.end[0]), (1, 4));
+            assert_eq!((region.beg[1], region.end[1]), (g1_beg, g1_end));
+        }
+    }
+
+    #[test]
+    fn fallback_start_filter_only_skips_impossible_starts() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        // `\s*` in front of `[` leaves the optimizer an unbounded distance,
+        // so the entry stays on the fallback search, filtered by start byte.
+        let patterns: [&[u8]; 2] = [b"\\s*(\\[)", b"x"];
+        let (set, result) = onig_regset_new(patterns.iter().map(|p| compile(p)).collect());
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        assert_eq!(fallback_indices(&set), [0]);
+        let filter = set.entries[0].start_filter.as_deref().expect("filter");
+        assert!(filter[b' ' as usize] != 0 && filter[b'[' as usize] != 0);
+        assert_eq!(filter[b'a' as usize], 0);
+
+        // Callouts observe every attempt, so they keep the unfiltered search.
+        assert!(fallback_start_filter(&compile(b"\\s*(*COUNT)\\[")).is_none());
+
+        let input = b"ab  [c \xc3\xa9[ x [";
+        for start in 0..=input.len() {
+            // Position-lead: earliest start, ties to the lower index.
+            let expected = patterns
+                .iter()
+                .enumerate()
+                .filter_map(|(index, pattern)| {
+                    let reg = compile(pattern);
+                    let (pos, _) = onig_search(
+                        &reg,
+                        input,
+                        input.len(),
+                        start,
+                        input.len(),
+                        None,
+                        ONIG_OPTION_NONE,
+                    );
+                    (pos >= 0).then_some((pos, index as i32))
+                })
+                .min()
+                .map_or((ONIG_MISMATCH, 0), |(pos, index)| (index, pos));
+            let found = onig_regset_search(
+                &mut set,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(found, expected, "start {start}");
+        }
+    }
+
+    /// A positive look-ahead whose body cannot match empty fixes the start
+    /// byte, so zero-width grammar patterns such as `(?<=:)(?=\s*\{)` get a
+    /// start filter. Nullable bodies and look-behinds fix nothing.
+    #[test]
+    fn start_map_reads_through_positive_lookaheads() {
+        let map_of = |pattern: &[u8]| derive_start_byte_map(&compile(pattern));
+        let members = |map: [u8; CHAR_MAP_SIZE]| -> Vec<u8> {
+            (0..=255u8).filter(|&b| map[b as usize] != 0).collect()
+        };
+
+        let map = map_of(b"(?<=:)(?=\\s*\\{)").expect("look-ahead fixes the start");
+        assert!(map[b' ' as usize] != 0 && map[b'\t' as usize] != 0 && map[b'{' as usize] != 0);
+        assert_eq!(map[b':' as usize], 0);
+        assert_eq!(map[b'a' as usize], 0);
+        assert_eq!(members(map_of(b"(?=a|b)").unwrap()), b"ab");
+        assert_eq!(members(map_of(b"(?=(?=ab)a)").unwrap()), b"a");
+        assert_eq!(members(map_of(b"(?=a?)x").unwrap()), b"x");
+        assert_eq!(members(map_of(b"(?>ab)").unwrap()), b"a");
+        // The negative look-ahead's push is guarded by its body's first byte.
+        assert_eq!(members(map_of(b"(?!x)b").unwrap()), b"b");
+        for zero_width in [
+            &b"(?=a?)"[..],
+            b"(?=)",
+            b"(?<=ab)",
+            b"(?<=a|bc)",
+            b"(?!a)",
+            b"(?>a|)",
+        ] {
+            assert_eq!(
+                map_of(zero_width),
+                None,
+                "{:?}",
+                std::str::from_utf8(zero_width)
+            );
+        }
+    }
+
+    #[test]
+    fn lookahead_start_filters_keep_regset_results() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns: [&[u8]; 5] = [
+            b"(?<=:)(?=\\s*\\{)",
+            b"(?=(\\w+)\\s*<)",
+            b"(?=a?)b",
+            b"(?<![a-z])(?=[a-z]+\\()",
+            b"x",
+        ];
+        let (set, result) = onig_regset_new(patterns.iter().map(|p| compile(p)).collect());
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        let input = b"a: {b} f(x) :  {\xc3\xa9< ab <c> x:{";
+        for start in 0..=input.len() {
+            let expected = patterns
+                .iter()
+                .enumerate()
+                .filter_map(|(index, pattern)| {
+                    let reg = compile(pattern);
+                    let (pos, _) = onig_search(
+                        &reg,
+                        input,
+                        input.len(),
+                        start,
+                        input.len(),
+                        None,
+                        ONIG_OPTION_NONE,
+                    );
+                    (pos >= 0).then_some((pos, index as i32))
+                })
+                .min()
+                .map_or((ONIG_MISMATCH, 0), |(pos, index)| (index, pos));
+            let found = onig_regset_search(
+                &mut set,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(found, expected, "start {start}");
+        }
     }
 
     #[test]
@@ -2125,7 +2205,7 @@ mod tests {
 
         assert_eq!(onig_regset_add(&mut set, compile(b"a*bc")), ONIG_NORMAL);
         assert_eq!(set.table_entry_count, 1);
-        assert_eq!(set.fallback_search_candidates, vec![1]);
+        assert_eq!(fallback_indices(&set), [1]);
     }
 
     #[test]
@@ -2150,10 +2230,7 @@ mod tests {
             ),
             (ONIG_MISMATCH, 0)
         );
-        assert!(matches!(
-            set.fallback_memos[0].as_slice(),
-            [FallbackMemo::NoMatchFrom(0)]
-        ));
+        assert_settled_from(&set, 0);
 
         // A cached fallback miss needs neither a table MatchArg nor a
         // byte-by-byte table walk. Leaving this empty distinguishes the O(1)
@@ -2267,10 +2344,7 @@ mod tests {
             search(&mut set, FallbackMemoIdentity::Caller(42)),
             (ONIG_MISMATCH, 0)
         );
-        assert!(matches!(
-            set.fallback_memos[0].as_slice(),
-            [FallbackMemo::NoMatchFrom(0)]
-        ));
+        assert_settled_from(&set, 0);
         let first_key = set.fallback_memo_key.expect("memo key");
         let first_revision = set
             .scratch_limits_revision
@@ -2626,7 +2700,9 @@ mod tests {
         let old_match = onig_get_retry_limit_in_match();
         let old_search = onig_get_retry_limit_in_search();
         onig_set_retry_limit_in_match(0);
-        onig_set_retry_limit_in_search(136);
+        // The smallest budget under which C's onig_search finishes this
+        // search: it stops once the count reaches the limit.
+        onig_set_retry_limit_in_search(137);
 
         let input = format!("{}c", "a".repeat(16));
         let upstream = compile(br"(a+)\1bc");
@@ -2731,7 +2807,7 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(br"a*(?:\Gx|y)")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         assert!(
             set.entries[0]
                 .reg
@@ -2892,10 +2968,7 @@ mod tests {
             ),
             (1, 1)
         );
-        assert!(matches!(
-            set.fallback_memos[0].as_slice(),
-            [FallbackMemo::NoMatchFrom(1)]
-        ));
+        assert_settled_from(&set, 1);
         for start in [2, input.len() - 1] {
             assert_eq!(
                 onig_regset_search_fast_with_id(
@@ -2983,7 +3056,7 @@ mod tests {
             onig_regset_new(vec![compile(br"a*x(a+)+b"), compile(b"y"), compile(b"x")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         let input = format!("yx{}c", "a".repeat(1_001));
         let identity = FallbackMemoIdentity::OnigString(16);
 
@@ -3027,7 +3100,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|ext| ext.callout_num != 0)
         );
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
 
         let input = b"x";
         assert_eq!(
@@ -3052,7 +3125,7 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![0]);
+        assert_eq!(fallback_indices(&set), [0]);
         assert!(set.first_byte_candidates[b'a' as usize].is_empty());
 
         let input = vec![b'a'; 80_000];
@@ -3071,10 +3144,7 @@ mod tests {
                 (ONIG_MISMATCH, 0)
             );
         }
-        assert!(matches!(
-            set.fallback_memos[0].as_slice(),
-            [FallbackMemo::NoMatchFrom(0)]
-        ));
+        assert_settled_from(&set, 0);
     }
 
     #[test]
@@ -3195,7 +3265,7 @@ mod tests {
         let (set, result) = onig_regset_new(vec![compile(br"\["), compile(br"\G\s*\[")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
-        assert_eq!(set.fallback_search_candidates, vec![1]);
+        assert_eq!(fallback_indices(&set), [1]);
 
         let input = b"xx [";
         let (index, position) = onig_regset_search(

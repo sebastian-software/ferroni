@@ -1,4 +1,4 @@
-//! # Ferroni — Oniguruma-compatible regex engine
+//! # Ferroni — Oniguruma, continued in Rust
 //!
 //! Ferroni is a line-by-line port of Oniguruma's C source into Rust -- same
 //! structure, same function names, same semantics. No bindings, no FFI.
@@ -78,6 +78,7 @@
 pub mod api;
 pub mod encodings;
 pub mod error;
+mod first_bytes;
 pub mod literal_trie;
 pub mod oniguruma;
 pub mod prelude;

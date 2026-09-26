@@ -512,6 +512,10 @@ pub const ONIG_TRAVERSE_CALLBACK_AT_BOTH: i32 =
 pub const ONIG_REGION_NOTPOS: i32 = -1;
 
 // === Error Info ===
+/// Mirrors C's OnigErrorInfo. `par` holds the bytes C points at with
+/// `par`..`par_end` (the name an error refers to); empty stands for C's NULL
+/// `par`. C's `enc` is not kept: every supported encoding is ASCII-compatible
+/// (ADR-003), so the message never depends on it.
 pub struct OnigErrorInfo {
     pub par: Vec<u8>,
 }

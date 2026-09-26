@@ -223,6 +223,55 @@ fn hex_escape_x1f() {
     x2(b"\\x1f", b"\x1f", 0, 1);
 }
 
+// --- Raw byte escapes (\xNN) become ordinary literals once a whole character
+// has been collected (C: tk_crude_byte clears ND_STRING_CRUDE). Expectations
+// checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8). ---
+
+#[test]
+fn hex_escape_ignorecase_folds() {
+    x2(b"(?i)\\x61", b"A", 0, 1);
+    x2(b"(?i)\\x41", b"a", 0, 1);
+    x2(b"(?i)\\x61b", b"AB", 0, 2);
+    x2(b"(?i)a\\x62c", b"ABC", 0, 3);
+    x2(b"(?i:\\x61\\x62)\\x63", b"ABc", 0, 3);
+    x2(b"(?i)\\x61*", b"AAAAAA", 0, 6);
+    x2(b"(?i)\\x61?b", b"AAAAAAB", 5, 7);
+    x2(b"(?i)\\xC3\\xA9", "É".as_bytes(), 0, 2);
+    x2(b"(?i)\\x73\\x73", "ß".as_bytes(), 0, 2);
+    n(b"\\x61", b"A");
+    n(b"(?i:\\x61)\\x62", b"AB");
+}
+
+#[test]
+fn hex_escape_runs_match_at_every_length() {
+    for len in 1..=40 {
+        let pattern = "\\x61".repeat(len);
+        let input = "a".repeat(len);
+        x2(pattern.as_bytes(), input.as_bytes(), 0, len as i32);
+        n(pattern.as_bytes(), &input.as_bytes()[1..]);
+    }
+}
+
+#[test]
+fn hex_escape_run_in_alternation_and_look_behind() {
+    x2(b"\\x61\\x61\\x61\\x61\\x61\\x61|b", b"aaaaaab", 0, 6);
+    x2(b"(?<=\\x61\\x61\\x61\\x61\\x61\\x61)b", b"aaaaaab", 6, 7);
+    x2(
+        b"\\x61\\x62\\x63\\x64\\x65\\x66\\x67\\x68\\x69\\x6A\\x6B\\x6C\\x6D\\x6E\\x6F\\x70",
+        b"xxabcdefghijklmnop",
+        2,
+        18,
+    );
+}
+
+#[test]
+fn error_utf8_invalid_continuation_byte() {
+    // A complete but invalid sequence is ONIGERR_INVALID_WIDE_CHAR_VALUE in C,
+    // a sequence cut short by a non-\x token is TOO_SHORT_MULTI_BYTE_STRING.
+    e(b"\\xC3\\x41", b"", ONIGERR_INVALID_WIDE_CHAR_VALUE);
+    e(b"\\xC3a", b"", ONIGERR_TOO_SHORT_MULTI_BYTE_STRING);
+}
+
 // ============================================================================
 // Anchors
 // ============================================================================
@@ -706,6 +755,168 @@ fn lookahead_negative() {
 #[test]
 fn lookahead_negative_no_match() {
     n(b"(?!z)a", b"z");
+}
+
+// A capture set inside a (?!..) body whose match makes the lookahead fail
+// must be rolled back by OP_POP_TO_MARK (C: STACK_POP_TO_MARK restores
+// STK_MEM_START / STK_MEM_END). Expected regions were checked against
+// C Oniguruma.
+#[test]
+fn lookahead_negative_restores_captures() {
+    x2(b"(?!(a)b)|ab", b"ab", 0, 2);
+    x3(b"(?!(a)b)|ab", b"ab", -1, -1, 1);
+
+    x2(b"(?:(?!(a)b)|a)b", b"ab", 0, 2);
+    x3(b"(?:(?!(a)b)|a)b", b"ab", -1, -1, 1);
+
+    x2(b"(?!((a)b))|(a)b", b"ab", 0, 2);
+    x3(b"(?!((a)b))|(a)b", b"ab", -1, -1, 1);
+    x3(b"(?!((a)b))|(a)b", b"ab", -1, -1, 2);
+    x3(b"(?!((a)b))|(a)b", b"ab", 0, 1, 3);
+
+    x2(b"((?!(a)b)|a)*b", b"aab", 0, 3);
+    x3(b"((?!(a)b)|a)*b", b"aab", 2, 2, 1);
+    x3(b"((?!(a)b)|a)*b", b"aab", -1, -1, 2);
+}
+
+// A loop whose body may recurse compiles to EMPTY_CHECK_END_MEMST_PUSH: an
+// iteration that only changed a capture is not empty, and each non-empty
+// iteration pushes STK_EMPTY_CHECK_END (C: STACK_EMPTY_CHECK_MEM_REC).
+// Expected regions were checked against C Oniguruma.
+#[test]
+fn empty_loop_check_with_recursion() {
+    x2(b"((?:a\\g<1>|(?!\\2)()|b)*)", b"b", 0, 1);
+    x3(b"((?:a\\g<1>|(?!\\2)()|b)*)", b"b", 0, 0, 2);
+
+    x2(b"((?:a\\g<1>|(?!\\2)()|b)*)$", b"b", 0, 1);
+    x3(b"((?:a\\g<1>|(?!\\2)()|b)*)$", b"b", 0, 0, 2);
+
+    x2(b"((?:a\\g<1>|(?!\\3)(?!\\2)()|(?!\\3)())*)", b"", 0, 0);
+    x3(b"((?:a\\g<1>|(?!\\3)(?!\\2)()|(?!\\3)())*)", b"", 0, 0, 3);
+
+    x2(b"(?:a\\g<0>|(?!\\1)()|b)*", b"b", 0, 1);
+    x3(b"(?:a\\g<0>|(?!\\1)()|b)*", b"b", 0, 0, 1);
+}
+
+// Every group named by a back reference or condition gets pushed capture
+// entries (C tune_tree, ND_BACKREF: MEM_STATUS_ON(env->backtrack_mem)), so
+// backtracking restores its start and end. Expected results were checked
+// against C Oniguruma.
+#[test]
+fn backref_target_capture_is_restored_on_backtrack() {
+    x2(b"((?=(a|ab))a?){2}\\k<1>", b"a", 0, 0);
+    x3(b"((?=(a|ab))a?){2}\\k<1>", b"a", 0, 0, 1);
+    x3(b"((?=(a|ab))a?){2}\\k<1>", b"a", 0, 1, 2);
+
+    x2(b"\\k<1>{,2}?(?>(?=(a)\\z))", b"aa", 1, 1);
+    x3(b"\\k<1>{,2}?(?>(?=(a)\\z))", b"aa", 1, 2, 1);
+
+    x2(b"((?(1)a|b?){,2}?)(?<=a)()*+", b"a", 1, 1);
+    x3(b"((?(1)a|b?){,2}?)(?<=a)()*+", b"a", 1, 1, 1);
+
+    n(b"(\\A|(b){1,3}(?(1)a|b?))(?<=a)()", b"ba");
+}
+
+// A numbered condition may name a group defined later in the pattern; only
+// the final group count bounds it (C: check_backrefs). Expected results were
+// checked against C Oniguruma.
+#[test]
+fn condition_forward_group_reference() {
+    x2(b"(?(1)a|b)(c)", b"bc", 0, 2);
+    x2(b"(?(<1>)a|b)(c)", b"bc", 0, 2);
+    x2(b"(?(+1)a|b)(c)", b"bc", 0, 2);
+    x2(b"(?:(?(1)a|b)(c))+", b"bcac", 0, 4);
+    x3(b"(?:(?(1)a|b)(c))+", b"bcac", 3, 4, 1);
+    x2(b"((?:a\\g<1>|(?(2)(?!)|()))*)", b"", 0, 0);
+    x3(b"((?:a\\g<1>|(?(2)(?!)|()))*)", b"", 0, 0, 2);
+}
+
+#[test]
+fn condition_forward_group_reference_errors() {
+    e(b"(?(1)a|b)(c)(?(2)x|y)", b"", ONIGERR_INVALID_BACKREF);
+    e(b"(?(+2)a|b)(c)", b"", ONIGERR_INVALID_BACKREF);
+    e(b"(?(-1)a|b)(c)", b"", ONIGERR_INVALID_BACKREF);
+}
+
+// OP_MEM_START sets only the start of a capture (regexec.c). When a later
+// pass of the group fails before MEM_END, the region keeps the new start
+// and the old end, as in C. Expected regions were checked against C
+// Oniguruma.
+#[test]
+fn mem_start_keeps_previous_end() {
+    x2(b"((?=(a|ab))a?){2}", b"a", 0, 0);
+    x3(b"((?=(a|ab))a?){2}", b"a", 1, 0, 1);
+    x3(b"((?=(a|ab))a?){2}", b"a", 1, 1, 2);
+
+    x2(b"(?:((?=(a|ab))a?)c?){3}", b"aac", 0, 1);
+    x3(b"(?:((?=(a|ab))a?)c?){3}", b"aac", 2, 1, 1);
+    x3(b"(?:((?=(a|ab))a?)c?){3}", b"aac", 2, 2, 2);
+}
+
+// A repeat range whose body recurses compiles to REPEAT like C; REPEAT_INC
+// reads its count past completed calls of the same repeat
+// (C: STACK_GET_REPEAT_COUNT_SEARCH). Expected regions were checked against
+// C Oniguruma.
+#[test]
+fn repeat_range_with_recursion() {
+    x2(b"((a\\g<0>+?|\\z\\k<1>+?)*){0,2}", b"aa", 0, 2);
+    x3(b"((a\\g<0>+?|\\z\\k<1>+?)*){0,2}", b"aa", 2, 2, 1);
+    x3(b"((a\\g<0>+?|\\z\\k<1>+?)*){0,2}", b"aa", 0, 2, 2);
+
+    x2(b"(a\\g<0>|\\z){0,2}", b"a", 0, 1);
+    x3(b"(a\\g<0>|\\z){0,2}", b"a", 0, 1, 1);
+
+    x2(b"((a\\g<0>+?|\\z)*){0,2}", b"aa", 0, 2);
+    x3(b"((a\\g<0>+?|\\z)*){0,2}", b"aa", 0, 2, 1);
+    x3(b"((a\\g<0>+?|\\z)*){0,2}", b"aa", 0, 2, 2);
+
+    x2(b"(b)(a\\g<0>{0,2}|()){0,2}|.", b"bab", 0, 3);
+    x3(b"(b)(a\\g<0>{0,2}|()){0,2}|.", b"bab", 1, 3, 2);
+
+    x2(b"(?<x>\\((?:x|\\g<x>){0,2}\\))", b"((x)(xx))", 0, 9);
+}
+
+// C decides whether a backref lies inside the empty loop of its group with
+// is_ancestor_node over links from set_parent_node_trav, which only links
+// the first cell of a list or alternation to its parent. A backref in any
+// later element therefore turns on the capture check of the loop
+// (EMPTY_CHECK_END_MEMST). Expected regions were checked against C Oniguruma.
+#[test]
+fn empty_loop_check_backref_status() {
+    x2(b"(?:b|(?!\\1)()|(a?))*", b"b", 0, 1);
+    x3(b"(?:b|(?!\\1)()|(a?))*", b"b", 1, 1, 1);
+    x3(b"(?:b|(?!\\1)()|(a?))*", b"b", 1, 1, 2);
+
+    // In the first alternative the backref is inside the loop: plain check.
+    x2(b"(?:(?!\\1)()|b|(a?))*", b"b", 0, 0);
+    x3(b"(?:(?!\\1)()|b|(a?))*", b"b", -1, -1, 2);
+
+    x2(b"(?:(?:b|(?!\\1)())|(a?))*", b"", 0, 0);
+    x3(b"(?:(?:b|(?!\\1)())|(a?))*", b"", 0, 0, 2);
+
+    x2(b"(?:()|(a*)|(?:a|))*\\2", b"a", 0, 1);
+    x3(b"(?:()|(a*)|(?:a|))*\\2", b"a", 1, 1, 1);
+
+    x2(b"(?:()|(a*)|(b|)){2,}\\2", b"ab", 0, 1);
+    x3(b"(?:()|(a*)|(b|)){2,}\\2", b"ab", 1, 1, 1);
+}
+
+// `{n,}` with n >= 2 over a body that may be empty and exceeds the expansion
+// limit compiles to REPEAT like C, so the empty check also ends the loop in
+// a mandatory iteration. Expected regions were checked against C Oniguruma.
+#[test]
+fn empty_loop_check_in_range_repeat() {
+    x2(b"((?!\\2)()|$){2,}", b"a", 0, 0);
+    x3(b"((?!\\2)()|$){2,}", b"a", 0, 0, 1);
+    x3(b"((?!\\2)()|$){2,}", b"a", 0, 0, 2);
+
+    x2(b"(((?=(a))a?*)){2,}", b"a", 0, 0);
+    x3(b"(((?=(a))a?*)){2,}", b"a", 0, 0, 1);
+    x3(b"(((?=(a))a?*)){2,}", b"a", 0, 1, 3);
+
+    x2(b"(?:(?!\\1)(){1,3}|(b){,2}?b?){2,}\\z", b"b", 0, 1);
+    x3(b"(?:(?!\\1)(){1,3}|(b){,2}?b?){2,}\\z", b"b", 1, 1, 1);
+    x3(b"(?:(?!\\1)(){1,3}|(b){,2}?b?){2,}\\z", b"b", -1, -1, 2);
 }
 
 // ============================================================================
@@ -5261,8 +5472,6 @@ fn japanese_multiline_dotstar_a() {
 // ============================================================================
 // C lines 1178-1201: Unicode general categories \p{Hiragana}, \p{Emoji},
 //                    \pC, \pL, \pM, \pN, \pP, \pS, \pZ, etc.
-// NOTE: \p{...} property lookup is not yet implemented (TODO in unicode/mod.rs)
-//       so all these tests are #[ignore] until property_name_to_ctype is ported.
 // ============================================================================
 
 #[test]
@@ -5389,7 +5598,6 @@ fn unicode_prop_not_pl_in_class_plus() {
 // ============================================================================
 // C lines 1203-1236: \p{Word}, \p{^Word}, \p{Cntrl} with char class
 //                    intersections and negations
-// NOTE: \p{...} property lookup not yet implemented - all #[ignore]
 // ============================================================================
 
 #[test]
@@ -5643,7 +5851,6 @@ fn unicode_prop_cntrl_or_not_hex_negated_no_match_ko() {
 
 // ============================================================================
 // C line 1275: \p{InBasicLatin} unicode block
-// NOTE: \p{...} property lookup not yet implemented - #[ignore]
 // ============================================================================
 
 #[test]
@@ -5781,6 +5988,38 @@ fn backref_casefold_az() {
 fn backref_casefold_az_no_match() {
     // C line 681: ((?i:az))\1 no match for "Azaz" (\1 is literal backref, must match case)
     n(b"((?i:az))\\1", b"Azaz");
+}
+
+// Case-insensitive backreferences fold the subject only up to the captured
+// byte length (C: string_cmp_ic folds against end2 = s2 + mblen). A multibyte
+// character straddling that boundary is decoded truncated and cannot match,
+// so e.g. U+212A KELVIN SIGN (3 bytes) never stands in for a 1-byte "k".
+// Expectations checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8).
+#[test]
+fn backref_casefold_stops_at_captured_length() {
+    // "kkk" + U+212A: \1 would need "k\u{212A}" (4 bytes) for a 2-byte capture.
+    n(b"(?i)(kk)\\1", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(\\x{212A}k)\\1", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(kk)\\1", b"kkk\xe2\x84\xaax");
+    n(b"(?i)(k)\\1", b"k\xe2\x84\xaa");
+    n(b"(?i)(.+)\\1", b"k\xe2\x84\xaa");
+    n(b"(?i)(ss)\\1", b"ss\xe1\xba\x9e");
+    n(b"(?i)(\\x{DF})\\1", b"\xc3\x9f\xe1\xba\x9e");
+    n(b"(?i)(ff)\\1", b"ff\xef\xac\x80");
+    n(b"(?i)(?<n>kk)\\k<n>", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(kk)\\k<-1>", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(?:(?<n>kk)|(?<n>ss))\\k<n>", b"\xc3\x9f\xe1\xba\x9e");
+    n(b"(?i)(?<n>..)\\k<n+0>", b"kkk\xe2\x84\xaa");
+    n(b"(?i)(kk)(?=\\1)", b"kkk\xe2\x84\xaa");
+
+    // Folds that fit inside the captured length still match.
+    x2(b"(?i)(kk)\\1", b"kKKk", 0, 4);
+    x2(b"(?i)(ss)\\1", b"ssSS", 0, 4);
+    x2(b"(?i)(\\x{DF})\\1", b"\xc3\x9f\xc3\x9f", 0, 4);
+    x2(b"(?i)(\\x{212A})\\1", b"\xe2\x84\xaa\xe2\x84\xaa", 0, 6);
+    x3(b"(?i)(\\x{212A})\\1", b"\xe2\x84\xaa\xe2\x84\xaa", 0, 3, 1);
+    x2(b"(?i)(?<n>..)\\k<n+0>", b"kkkK", 0, 4);
+    x2(b"(?i)(kk)(?=\\1)", b"kkKK", 0, 2);
 }
 
 // ============================================================================
@@ -6213,6 +6452,47 @@ fn recursive_backref_level_k1p3_no_match() {
 fn recursive_casefold_backref_level() {
     // C line 753: (?i)\A(a|b\g<1>c)\k<1+2>\z matches "bBACcbac" -> 0-8
     x2(b"(?i)\\A(a|b\\g<1>c)\\k<1+2>\\z", b"bBACcbac", 0, 8);
+}
+
+// A written level of zero (`\k<b+0>`, `(?(<b+0>)..)`) still makes a level
+// backref (C: node_new_backref keys ND_ST_NEST_LEVEL on exist_level, not on
+// the level value), so it reads the capture of the current recursion level.
+// Expectations checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8).
+#[test]
+fn recursive_backref_level_zero() {
+    // The palindrome example from Oniguruma's doc/RE.
+    let palindrome: &[u8] = b"\\A(?<a>|.|(?:(?<b>.)\\g<a>\\k<b+0>))\\z";
+    x2(palindrome, b"reer", 0, 4);
+    x3(palindrome, b"reer", 1, 2, 2);
+    x2(palindrome, b"abcba", 0, 5);
+    x2(palindrome, b"abccba", 0, 6);
+    x3(palindrome, b"abccba", 2, 3, 2);
+    n(palindrome, b"abca");
+    x2(
+        b"(?i)\\A(?<a>|.|(?:(?<b>.)\\g<a>\\k<b+0>))\\z",
+        b"abBA",
+        0,
+        4,
+    );
+
+    x2(b"\\A(?<a>(?<b>.)\\g<a>?\\k<b+0>)\\z", b"abcddcba", 0, 8);
+    x3(b"\\A(?<a>(?<b>.)\\g<a>?\\k<b+0>)\\z", b"abcddcba", 3, 4, 2);
+    n(b"\\A(?<a>(?<b>.)\\g<a>?\\k<b+0>)\\z", b"abcdcba");
+    x2(
+        b"\\A(?<a>(?:(?<n>a)|(?<n>b))\\g<a>?\\k<n+0>)\\z",
+        b"abba",
+        0,
+        4,
+    );
+    n(b"\\A(?<a>(?:(?<n>a)|(?<n>b))\\g<a>?\\k<n+0>)\\z", b"abab");
+
+    // Outside of any recursion level 0 is the plain capture.
+    x2(b"(?<n>..)\\k<n+0>", b"abab", 0, 4);
+    n(b"(?<n>..)\\k<n+0>", b"abba");
+
+    // Delimited conditions keep their level, too.
+    x2(b"(?<b>.)(?(<b+1>)a|b)", b"xb", 0, 2);
+    n(b"(?<b>.)(?(<b+1>)a|b)", b"xa");
 }
 
 #[test]
@@ -10513,6 +10793,87 @@ fn cclass_mb_not_truncated_utf8_input_matches() {
     x2("[^ぁ-ん]".as_bytes(), &[0xE3], 0, 1);
 }
 
+/// Search `input` with an explicit logical `end`, `start` and `range`;
+/// returns the result and the bounds of group 0.
+fn search_bounded(
+    pattern: &str,
+    input: &str,
+    end: usize,
+    start: usize,
+    range: usize,
+) -> (i32, Option<(i32, i32)>) {
+    use ferroni::regexec::onig_search;
+    let reg = onig_new(
+        pattern.as_bytes(),
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &OnigSyntaxOniguruma,
+    )
+    .unwrap();
+    let (r, region) = onig_search(
+        &reg,
+        input.as_bytes(),
+        end,
+        start,
+        range,
+        Some(OnigRegion::new()),
+        ONIG_OPTION_NONE,
+    );
+    let bounds = (r >= 0).then(|| {
+        let region = region.unwrap();
+        (region.beg[0], region.end[0])
+    });
+    (r, bounds)
+}
+
+// Text-segment boundaries decode the characters around the position against
+// the logical end (C: ONIGENC_MBC_TO_CODE(enc, p, end) in
+// onigenc_egcb_is_break_position / onigenc_wb_is_break_position), so a
+// character cut by `end` is classified from its truncated code, not from the
+// bytes behind `end`. Expectations checked against C Oniguruma.
+#[test]
+fn text_segment_boundary_respects_logical_end_inside_character() {
+    // "e" + U+0301: the combining mark (bytes 1..3) is cut at end = 2.
+    let e_acute = "e\u{301}";
+    assert_eq!(search_bounded(r"\y", e_acute, 2, 1, 2), (1, Some((1, 1))));
+    assert_eq!(
+        search_bounded(r"\Y", e_acute, 2, 0, 2),
+        (ONIG_MISMATCH, None)
+    );
+    assert_eq!(search_bounded(r".\y", e_acute, 2, 0, 2), (0, Some((0, 1))));
+    assert_eq!(
+        search_bounded(r".\Y", e_acute, 2, 0, 2),
+        (ONIG_MISMATCH, None)
+    );
+    // Backward search: the upper range is start + enclen(start), as in C.
+    assert_eq!(
+        search_bounded(r"\X{2}", e_acute, 2, 1, 0),
+        (0, Some((0, 3)))
+    );
+
+    // Word mode: two regional indicators, the second one cut at end = 5.
+    let flags = "\u{1F1E9}\u{1F1EA}\u{1F1EB}\u{1F1F7}";
+    assert_eq!(
+        search_bounded(r"(?y{w})\y", flags, 5, 4, 5),
+        (4, Some((4, 4)))
+    );
+    assert_eq!(
+        search_bounded(r"(?y{w}).\y", flags, 5, 0, 5),
+        (0, Some((0, 4)))
+    );
+    // ZWJ + Extended_Pictographic (WB3c) no longer joins a cut emoji.
+    let family = "\u{1F468}\u{200D}\u{1F469}";
+    assert_eq!(
+        search_bounded(r"(?y{w})\Y", family, 6, 0, 6),
+        (ONIG_MISMATCH, None)
+    );
+    // Hebrew letter + '"' + Hebrew letter (WB7b/c) with the last letter cut.
+    assert_eq!(
+        search_bounded(r"(?y{w})\X", "\u{5D0}\"\u{5D0}", 4, 0, 4),
+        (0, Some((0, 2)))
+    );
+}
+
 // ============================================================================
 // Phase 3: Backward search optimization
 // ============================================================================
@@ -10570,6 +10931,38 @@ fn backward_search_multibyte() {
     let region = region.unwrap();
     assert_eq!(region.beg[0], 2);
     assert_eq!(region.end[0], 5);
+}
+
+// Backward searches whose start or range lies inside a multibyte character.
+// C's map_search_backward / slow_search_backward scan from the start while
+// it is >= the lower bound, and the search loop stops once the previous
+// character head drops below `range` (it is not rounded down). Expectations
+// checked against C Oniguruma.
+#[test]
+fn backward_search_start_or_range_inside_character() {
+    // Map searches whose lower bound is above the start used to panic.
+    assert_eq!(
+        search_bounded("(?i)k", "あいあ", 3, 3, 2),
+        (ONIG_MISMATCH, None)
+    );
+    assert_eq!(
+        search_bounded("[aé]", "あいあ", 6, 6, 5),
+        (ONIG_MISMATCH, None)
+    );
+    assert_eq!(
+        search_bounded("[aé]", "aあいあ", 7, 7, 0),
+        (0, Some((0, 1)))
+    );
+
+    // A range inside "é" (bytes 1..3) excludes the character starting at 1.
+    assert_eq!(search_bounded(".", "aéa", 3, 3, 2), (ONIG_MISMATCH, None));
+    assert_eq!(search_bounded(".", "aéa", 3, 3, 1), (1, Some((1, 3))));
+    assert_eq!(search_bounded("a|é", "éaé", 5, 5, 4), (ONIG_MISMATCH, None));
+    assert_eq!(search_bounded("é", "aéaé", 5, 5, 3), (ONIG_MISMATCH, None));
+
+    // A start inside a character is scanned as is.
+    assert_eq!(search_bounded("é", "aéaé", 6, 5, 2), (4, Some((4, 6))));
+    assert_eq!(search_bounded("a", "éaéa", 6, 5, 2), (5, Some((5, 6))));
 }
 
 // ============================================================================
@@ -10703,4 +11096,48 @@ fn capture_history_traverse() {
         },
     );
     assert_eq!(visited, vec![0, 1, 2]);
+}
+
+// A truncated multibyte character at the end of the subject, or a logical end
+// that cuts one, used to panic: a backward search set its upper range past the
+// subject, and case-insensitive backref folding copied the character's full
+// declared length. C reads past the buffer in both places; Ferroni stops at it.
+#[test]
+fn searches_around_a_truncated_character_do_not_panic() {
+    let subjects: [&[u8]; 3] = [b"\xc3\x9fb\xc3", b"\na\xe3\x81", b"\xe3\x81\x82\xf0\x9f"];
+    for pattern in [
+        &br"(?i)(?:[[:alpha:]]*a)*s"[..],
+        br"[[:alpha:]]*",
+        br"[^x]*",
+        br"\w*",
+        br".",
+        br"(?i)(.)\1",
+    ] {
+        let reg = onig_new(
+            pattern,
+            ONIG_OPTION_NONE,
+            &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        for subject in subjects {
+            for end in 0..=subject.len() {
+                for start in 0..=end {
+                    for range in 0..=end {
+                        // Must not panic; results are not compared with C,
+                        // which reads past the subject here.
+                        let _ = onig_search(
+                            &reg,
+                            subject,
+                            end,
+                            start,
+                            range,
+                            Some(OnigRegion::new()),
+                            ONIG_OPTION_NONE,
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

@@ -2,11 +2,24 @@
 
 use ferroni::api::{Regex, RegexBuilder};
 use ferroni::error::RegexError;
-use ferroni::oniguruma::ONIGERR_INVALID_BACKREF;
+use ferroni::oniguruma::{
+    ONIGERR_INVALID_BACKREF, ONIGERR_UNDEFINED_GROUP_REFERENCE, OnigSyntaxType,
+};
 use ferroni::prelude::*;
 use ferroni::regint::DEFAULT_PARSE_DEPTH_LIMIT;
+use ferroni::regsyntax::{
+    OnigSyntaxOniguruma, OnigSyntaxPerl_NG, OnigSyntaxPython, OnigSyntaxRuby,
+};
 
 // === Regex::new ===
+
+#[test]
+fn recursive_capture_above_bitset_width() {
+    let pattern = format!(r"{}(a\g<32>?b)", "()".repeat(31));
+    let regex = Regex::new(&pattern).unwrap();
+    assert_eq!(regex.find("aaabbb").unwrap().as_str(), "aaabbb");
+    assert!(!regex.is_match("aaa"));
+}
 
 #[test]
 fn simple_pattern() {
@@ -475,6 +488,514 @@ fn error_code() {
     assert!(err.code() < 0);
 }
 
+// Messages naming a group or property carry the offending name. Every
+// expected string is what C's onig_error_code_to_str() prints for the same
+// pattern and syntax, prefixed with "syntax error: ".
+
+fn error_message(syntax: &'static OnigSyntaxType, pattern: &str) -> String {
+    Regex::builder(pattern)
+        .syntax(syntax)
+        .build()
+        .unwrap_err()
+        .to_string()
+}
+
+#[test]
+fn error_message_names_invalid_char_property() {
+    let cases = [
+        (r"\p{Nope}", "{Nope}"),
+        (r"\p{^Nope}", "{Nope}"),
+        (r"[\p{Nope}]", "{Nope}"),
+        (r"\pQ", "{Q}"),
+        (r"\p{}", "{}"),
+        (r"\p{Ñope}", "{Ñope}"),
+        // C cuts the name after 27 bytes.
+        (
+            r"\p{abcdefghijklmnopqrstuvwxyz0123456789}",
+            "{abcdefghijklmnopqrstuvwxyz0...}",
+        ),
+    ];
+    for (pattern, name) in cases {
+        assert_eq!(
+            Regex::new(pattern).unwrap_err().to_string(),
+            format!("syntax error: invalid character property name {name}"),
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_undefined_name_reference() {
+    let cases = [
+        (&OnigSyntaxOniguruma, r"\k<nope>"),
+        (&OnigSyntaxOniguruma, r"\g<nope>"),
+        (&OnigSyntaxOniguruma, r"(?(<nope>)a|b)"),
+        (&OnigSyntaxPerl_NG, r"(?&nope)"),
+        (&OnigSyntaxPython, r"(?P=nope)"),
+        (&OnigSyntaxPython, r"(?P>nope)"),
+    ];
+    for (syntax, pattern) in cases {
+        assert_eq!(
+            error_message(syntax, pattern),
+            "syntax error: undefined name <nope> reference",
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_undefined_group_reference() {
+    let cases = [
+        (&OnigSyntaxOniguruma, r"\g<5>", "<5>"),
+        (&OnigSyntaxOniguruma, r"\g<+1>", "<+1>"),
+        (&OnigSyntaxOniguruma, r"\g<-2>", "<-2>"),
+        (&OnigSyntaxPerl_NG, r"(?1)", "<1>"),
+        (&OnigSyntaxPerl_NG, r"(?-2)", "<-2>"),
+    ];
+    for (syntax, pattern, name) in cases {
+        assert_eq!(
+            error_message(syntax, pattern),
+            format!("syntax error: undefined group {name} reference"),
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_multiplex_defined_name() {
+    // Oniguruma, Ruby and Perl_NG set ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME;
+    // Python is a syntax with named groups that does not.
+    assert_eq!(
+        error_message(&OnigSyntaxPython, r"(?P<a>x)(?P<a>y)"),
+        "syntax error: multiplex defined name <a>"
+    );
+    // Callout tags are unique in every syntax.
+    for pattern in [
+        r"(*COUNT[AB]{X})(*COUNT[AB]{X})",
+        r"(*COUNT[AB]{X})a(*MAX[AB]{2})",
+    ] {
+        assert_eq!(
+            Regex::new(pattern).unwrap_err().to_string(),
+            "syntax error: multiplex defined name <AB>",
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_multiplex_definition_name_call() {
+    for syntax in [&OnigSyntaxOniguruma, &OnigSyntaxRuby] {
+        assert_eq!(
+            error_message(syntax, r"(?<a>x)(?<a>y)\g<a>"),
+            "syntax error: multiplex definition name <a> call"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_invalid_group_name() {
+    let cases = [
+        (r"(?<1a>x)", "<1a>"),
+        (r"\k<1a>", "<1a>"),
+        (r"\k<+0>", "<+0>"),
+        (r"\k<+>", "<+>"),
+        (r"\k<-x>", "<-x>"),
+        // A bad level runs the name to the end of the pattern, as in C.
+        (r"\k<a+1x>", "<a+1x>>"),
+        (r"\k<1+x>", "<1+x>>"),
+    ];
+    for (pattern, name) in cases {
+        assert_eq!(
+            Regex::new(pattern).unwrap_err().to_string(),
+            format!("syntax error: invalid group name {name}"),
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn error_message_names_invalid_char_in_group_name() {
+    let cases = [
+        (r"(?<$a>x)", "<$a>"),
+        (r"(?<$ab", "<$ab>"),
+        (r"\k<a$b>", "<a$b>"),
+        (r"\k<a$b", "<a$>"),
+    ];
+    for (pattern, name) in cases {
+        assert_eq!(
+            Regex::new(pattern).unwrap_err().to_string(),
+            format!("syntax error: invalid char in group name {name}"),
+            "{pattern}"
+        );
+    }
+}
+
+// Each case below is (syntax, pattern, what C's onig_new() reports): `None`
+// when it compiles, else the onig_error_code_to_str() message.
+
+fn assert_compiles_like_c(cases: &[(&'static OnigSyntaxType, &str, Option<&str>)]) {
+    for &(syntax, pattern, expected) in cases {
+        let got = Regex::builder(pattern)
+            .syntax(syntax)
+            .build()
+            .err()
+            .map(|e| e.to_string());
+        let expected = expected.map(|m| format!("syntax error: {m}"));
+        assert_eq!(got, expected, "{pattern}");
+    }
+}
+
+/// C's fetch_name() only honors an error inside the name when the closing
+/// delimiter is missing, and fetch_name_with_level() stops a name at `+`
+/// or `-` to read a level.
+#[test]
+fn group_names_parse_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    assert_compiles_like_c(&[
+        (onig, r"(?<a$b>x)", None),
+        (onig, r"(?'a-b'x)", None),
+        (&OnigSyntaxPython, r"(?P<a+1>x)", None),
+        (onig, r"(?<ab", Some("invalid group name <a>")),
+        (onig, r"(?<a$b)", Some("invalid group name <a$b>")),
+        (onig, r"\k<a", Some("invalid group name <a>")),
+        (onig, r"\k<a)", Some("invalid group name <a)>")),
+        (onig, r"\k<a+>", Some("invalid group name <a+>>")),
+        (onig, r"\k<1->", Some("invalid group name <1->>")),
+        (onig, r"\k<$a>", Some("invalid char in group name <$a>")),
+        (onig, r"\k<$a", Some("invalid char in group name <$>")),
+        (onig, r"\g<ab", Some("invalid group name <a>")),
+        (onig, r"\g<a)", Some("invalid group name <a>")),
+        (onig, r"\g<a-b", Some("invalid group name <a->")),
+        (onig, r"\g<1a>", Some("undefined name <1a> reference")),
+        (onig, r"\g<a+1>", Some("undefined name <a+1> reference")),
+        (onig, r"\g<a$b>", Some("undefined name <a$b> reference")),
+        (
+            &OnigSyntaxPerl_NG,
+            r"(?&a-1)",
+            Some("undefined name <a-1> reference"),
+        ),
+        (
+            &OnigSyntaxPerl_NG,
+            r"(?+0)",
+            Some("invalid group name <+0>"),
+        ),
+        (
+            onig,
+            r"(x)\k<+2147483647>",
+            Some("invalid backref number/name"),
+        ),
+    ]);
+}
+
+/// `(?P=name)` and `(?P>name)` are tokens that take no group number, as in
+/// C's fetch_token().
+#[test]
+fn python_named_backref_and_call_parse_like_c() {
+    let python = &OnigSyntaxPython;
+    assert_compiles_like_c(&[
+        (python, r"(?P=1)", Some("invalid backref number/name")),
+        (python, r"(?P=a-b)", Some("invalid group name <a-b)>")),
+        (python, r"(?P=1a)", Some("invalid group name <1a>")),
+        (python, r"(?P>1a)", Some("undefined name <1a> reference")),
+        (python, r"(?P>+0)", Some("invalid group name <+0>")),
+        (python, r"(?P<a>x)(?P=a)", None),
+        (python, r"(?P<a>x)(?P>a)", None),
+    ]);
+    let err = Regex::builder(r"(?P>1)")
+        .syntax(python)
+        .build()
+        .unwrap_err();
+    assert_eq!(err.code(), ONIGERR_UNDEFINED_GROUP_REFERENCE);
+}
+
+/// C checks backref bounds (check_backrefs) after rejecting numbered
+/// backrefs next to named groups, and a backref may point forward.
+#[test]
+fn numbered_backrefs_are_checked_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let not_allowed = Some("numbered backref/call is not allowed. (use name)");
+    assert_compiles_like_c(&[
+        (onig, r"(?<a>x)\k<2>", not_allowed),
+        (onig, r"(?<a>x)\k<+1>", not_allowed),
+        (onig, r"(?<a>x)(y)\k<3>", not_allowed),
+        (&OnigSyntaxPerl_NG, r"(?<a>x)\k<2>", not_allowed),
+        (onig, r"\k<2>", Some("invalid backref number/name")),
+        (onig, r"(x)\k<2>", Some("invalid backref number/name")),
+        (onig, r"\k<1>(x)", None),
+    ]);
+}
+
+/// C's check_call_reference() rejects a call by number next to named groups.
+#[test]
+fn numbered_calls_are_checked_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let not_allowed = Some("numbered backref/call is not allowed. (use name)");
+    assert_compiles_like_c(&[
+        (onig, r"(?<a>x)\g<1>", not_allowed),
+        (onig, r"(?<a>x)\g<0>", not_allowed),
+        (onig, r"(?<a>x)\g<2>", not_allowed),
+        (onig, r"(?<a>x)\g<-1>", not_allowed),
+        (&OnigSyntaxRuby, r"(?<a>x)\g<1>", not_allowed),
+        (&OnigSyntaxPerl_NG, r"(?<a>x)(?1)", not_allowed),
+        (&OnigSyntaxPerl_NG, r"(?<a>x)\g<1>", not_allowed),
+        (onig, r"(x)\g<1>", None),
+        (onig, r"(?<a>x)\g<a>", None),
+    ]);
+}
+
+/// C's prs_bag() reads a condition reference with fetch_name_with_level(),
+/// falls back to a pattern condition when a bare reference does not parse,
+/// and leaves the group bounds to check_backrefs().
+#[test]
+fn conditions_parse_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let not_allowed = Some("numbered backref/call is not allowed. (use name)");
+    assert_compiles_like_c(&[
+        (onig, r"(a)(?(1)a|b)", None),
+        (onig, r"(a)(?(1+0)a|b)", None),
+        (onig, r"(a)(?(<1>)a|b)", None),
+        (onig, r"(a)(?(1))", None),
+        (onig, r"(?(1a)a|b)", None),
+        (onig, r"(?(-0)a|b)", None),
+        (onig, r"(?(a)b)", None),
+        (
+            onig,
+            r"(?(+0)a|b)",
+            Some("target of repeat operator is not specified"),
+        ),
+        (onig, r"(?(1)a|b)", Some("invalid backref number/name")),
+        (
+            onig,
+            r"(?(<nope>)a|b)",
+            Some("undefined name <nope> reference"),
+        ),
+        (onig, r"(?(<1>a|b)", Some("end pattern in group")),
+        (onig, r"(?(1", Some("end pattern in group")),
+        (onig, r"(?(a", Some("end pattern in group")),
+        (onig, r"(?(a))", Some("invalid if-else syntax")),
+        (onig, r"(?<a>x)(?(<2>)a|b)", not_allowed),
+        (onig, r"(?<a>x)(?(2)a|b)", not_allowed),
+    ]);
+}
+
+/// C's fetch_interval() leaves the position at the `{` when the brace is an
+/// ordinary character (ONIG_SYN_ALLOW_INVALID_INTERVAL), so what follows is
+/// tokenized normally.
+#[test]
+fn invalid_interval_brace_is_a_literal_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    assert_compiles_like_c(&[
+        (onig, r"{(", Some("end pattern with unmatched parenthesis")),
+        (onig, r"{)", Some("unmatched close parenthesis")),
+        (onig, r"{[", Some("premature end of char-class")),
+        (onig, r"a{(?", Some("end pattern in group")),
+        (
+            onig,
+            r"a{1,x}(",
+            Some("end pattern with unmatched parenthesis"),
+        ),
+        (
+            &OnigSyntaxRuby,
+            r"{(",
+            Some("end pattern with unmatched parenthesis"),
+        ),
+        (
+            &OnigSyntaxPython,
+            r"a{(",
+            Some("end pattern with unmatched parenthesis"),
+        ),
+        (onig, r"a{1,x}", None),
+        (onig, r"a{,2}", None),
+        (onig, r"a{", None),
+    ]);
+    let re = Regex::new(r"a{1,x}(b)").unwrap();
+    assert_eq!(re.find("xa{1,x}b").unwrap().as_str(), "a{1,x}b");
+    let re = Regex::new(r"a{2}").unwrap();
+    assert!(re.is_match("aa") && !re.is_match("a{2}"));
+}
+
+/// C's prs_bag() switches on the whole code point, so a non-ASCII character
+/// whose low byte is `:`, `=`, `i`, ... is not a group option.
+#[test]
+fn non_ascii_after_qmark_is_not_an_option_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let undefined = Some("undefined group option");
+    assert_compiles_like_c(&[
+        (onig, "(?\u{013A}a)", undefined), // low byte ':'
+        (onig, "(?\u{013D}a)", undefined), // low byte '='
+        (onig, "(?\u{0121}a)", undefined), // low byte '!'
+        (onig, "(?\u{013E}a)", undefined), // low byte '>'
+        (onig, "(?\u{0169})a", undefined), // low byte 'i'
+        (onig, "(?i\u{0169})a", undefined),
+        (onig, "(?i\u{0178})a", undefined),   // low byte 'x'
+        (onig, "(?y{\u{0167}})a", undefined), // low byte 'g'
+    ]);
+}
+
+/// C's fetch_token_cc() switches on the whole escaped code point, so an
+/// escaped non-ASCII character in a class is that character, not the
+/// escape its low byte spells (U+0177 is not `\w`, U+0164 not `\d`).
+#[test]
+fn escaped_non_ascii_in_char_class_is_literal_like_c() {
+    let re = Regex::new("[\\\u{0177}]").unwrap();
+    assert!(re.is_match("\u{0177}"));
+    assert!(!re.is_match("a"));
+    let re = Regex::new("[\\\u{0164}]").unwrap();
+    assert!(re.is_match("\u{0164}"));
+    assert!(!re.is_match("1"));
+}
+
+/// (*FAIL) takes a callout number as in C, and an unknown tag is
+/// ONIGERR_INVALID_CALLOUT_TAG_NAME (onig_get_callout_num_by_tag()).
+#[test]
+fn callout_numbers_by_tag_match_c() {
+    use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
+    use ferroni::oniguruma::{ONIG_OPTION_NONE, ONIGERR_INVALID_CALLOUT_TAG_NAME};
+    use ferroni::regcomp::onig_new;
+    use ferroni::regexec::onig_get_callout_num_by_tag;
+
+    for (pattern, tag, num) in [
+        (r"(*FAIL[t])|x", "t", 1),
+        (r"(*FAIL)(*COUNT[t]{X})|x", "t", 2),
+        (r"(*COUNT[a]{X})(*FAIL[t])|x", "t", 2),
+        (r"a(*FAIL[t])|(*MAX[u]{2})a", "u", 2),
+        (r"(*FAIL)|a", "t", ONIGERR_INVALID_CALLOUT_TAG_NAME),
+        (r"(*FAIL[t])|x", "u", ONIGERR_INVALID_CALLOUT_TAG_NAME),
+    ] {
+        let reg = onig_new(
+            pattern.as_bytes(),
+            ONIG_OPTION_NONE,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(
+            onig_get_callout_num_by_tag(&reg, tag.as_bytes()),
+            num,
+            "{pattern}"
+        );
+    }
+}
+
+/// C scans a callout's argument list (prs_callout_args in skip mode) before
+/// it looks up the callout name.
+#[test]
+fn callout_arguments_are_scanned_before_the_name_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let bad = Some("invalid callout pattern");
+    assert_compiles_like_c(&[
+        (onig, r"(*kx{|&", bad),
+        (onig, r"(*NOPE{1", bad),
+        (onig, r"(*MAX{2", bad),
+        (onig, r"(*NOPE{1})", Some("undefined callout name")),
+        (onig, r"(*MAX{2})", None),
+    ]);
+}
+
+/// C parses a condition's body with prs_alts(), which requires the closing
+/// parenthesis even when the body has no `|`.
+#[test]
+fn condition_bodies_must_be_closed_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let unclosed = Some("end pattern with unmatched parenthesis");
+    assert_compiles_like_c(&[
+        (onig, r"(?()1", unclosed),
+        (onig, r"(?(a)b", unclosed),
+        (onig, r"(a)(?(1)b", unclosed),
+        (onig, r"(a)(?(1)b|c", unclosed),
+        (onig, r"(?(a)(?:b|c))", None),
+        (onig, r"(a)(?(1)b|c|d)", None),
+    ]);
+}
+
+/// C's prs_callout_of_name() and prs_callout_of_contents() check the name
+/// and tag characters, accept a tag on every callout, and count the
+/// arguments before the closing parenthesis.
+#[test]
+fn callout_names_and_tags_parse_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let bad_tag = Some("invalid callout tag name");
+    assert_compiles_like_c(&[
+        (onig, r"(*FAIL[a])", None),
+        (onig, r"(*COUNT[_a]{X})", None),
+        (onig, r"(?{foo}[a])", None),
+        (onig, r"a|(*FAIL)", None),
+        (onig, r"(*FAIL[1])", bad_tag),
+        (onig, r"(*FAIL[])", bad_tag),
+        (onig, r"(*FAIL[a$b])", bad_tag),
+        (onig, r"(*MAX[1]{2})", bad_tag),
+        (onig, r"(?{foo}[1])", bad_tag),
+        (
+            onig,
+            r"(*FAIL[a])(*FAIL[a])",
+            Some("multiplex defined name <a>"),
+        ),
+        (
+            onig,
+            r"(?{foo}[a])(?{bar}[a])",
+            Some("multiplex defined name <a>"),
+        ),
+        (onig, r"(*FA-IL)", Some("invalid callout name")),
+        (onig, r"(*NOPE)", Some("undefined callout name")),
+        (onig, r"(*FAIL{1})", Some("invalid callout arg")),
+        (onig, r"(*FAIL[a]", Some("end pattern in group")),
+    ]);
+}
+
+/// C's prs_bag() only reads group options after an option letter; any
+/// other character after `(?` is an undefined group option.
+#[test]
+fn group_options_start_like_c() {
+    let onig = &OnigSyntaxOniguruma;
+    let undefined = Some("undefined group option");
+    assert_compiles_like_c(&[
+        (onig, r"(?)", undefined),
+        (onig, r"(?Q)", undefined),
+        (&OnigSyntaxRuby, r"(?)", undefined),
+        (&OnigSyntaxPerl_NG, r"(?)", undefined),
+        (&OnigSyntaxRuby, r"(?W)a", undefined),
+        (onig, r"(?i)a", None),
+        (onig, r"(?-i)a", None),
+        (onig, r"(?W)a", None),
+        (onig, r"(?C)a", None),
+        (onig, r"(?I)a", None),
+    ]);
+}
+
+/// C's prs_bag() reports a pattern ending right after `(?<` like any other
+/// unclosed group.
+#[test]
+fn pattern_ending_after_lt_is_reported_like_c() {
+    let unclosed = Some("end pattern with unmatched parenthesis");
+    assert_compiles_like_c(&[
+        (&OnigSyntaxOniguruma, r"(?<", unclosed),
+        (&OnigSyntaxOniguruma, r"(x)(?<", unclosed),
+        (&OnigSyntaxOniguruma, r"(?<=", unclosed),
+        (&OnigSyntaxPerl_NG, r"(?<", unclosed),
+    ]);
+}
+
+/// Where C records no name, it prints an empty `<>`; the Rust message drops
+/// the placeholder instead.
+#[test]
+fn error_message_without_recorded_name_drops_placeholder() {
+    assert_compiles_like_c(&[
+        (
+            &OnigSyntaxPython,
+            r"(?P>1)",
+            Some("undefined group reference"),
+        ),
+        (&OnigSyntaxPerl_NG, r"(?1a)", Some("invalid group name")),
+        (&OnigSyntaxPerl_NG, r"(?1+x)", Some("invalid group name")),
+        // A recorded empty name is still shown.
+        (
+            &OnigSyntaxOniguruma,
+            r"\p{}",
+            Some("invalid character property name {}"),
+        ),
+    ]);
+}
+
 // === Prelude ===
 
 #[test]
@@ -532,10 +1053,16 @@ fn numbered_backreferences_validate_capture_group_bounds() {
 
 #[test]
 fn group_reference_numbers_reject_overflow_and_missing_terminators() {
+    // As in C, a bare condition that is not a valid group reference is
+    // parsed as a pattern instead, so an overflowing number compiles.
     for pattern in [
-        br"(a)\k<a+999999999999999>".as_slice(),
         br"(?(9999999999999)a|b)".as_slice(),
         br"(a)(?(1+9999999999999)a|b)".as_slice(),
+    ] {
+        assert!(Regex::new_bytes(pattern).is_ok(), "{pattern:?}");
+    }
+    for pattern in [
+        br"(a)\k<a+999999999999999>".as_slice(),
         br"(a)\k<1".as_slice(),
         br"(a)\g<1".as_slice(),
         br"(a)\k'1".as_slice(),
@@ -780,6 +1307,83 @@ fn multiline_anchors() {
     assert_eq!(m.as_str(), "hello");
 }
 
+// `^` never matches at the very end of the subject, not even right after a
+// trailing newline (C: BEGIN_LINE requires `!ON_STR_END(s)`). Expectations
+// checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8).
+
+#[test]
+fn begin_line_does_not_match_at_end_after_trailing_newline() {
+    use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
+    use ferroni::oniguruma::{ONIG_MISMATCH, ONIG_OPTION_NONE, OnigRegion};
+    use ferroni::regcomp::onig_new;
+    use ferroni::regexec::{onig_match, onig_search};
+    use ferroni::regsyntax::OnigSyntaxOniguruma;
+
+    let compile = |pattern: &str| {
+        onig_new(
+            pattern.as_bytes(),
+            ONIG_OPTION_NONE,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap()
+    };
+
+    // (pattern, subject, start, range, expected position)
+    for (pattern, text, start, range, expected) in [
+        ("^", "a\n", 2, 2, ONIG_MISMATCH),
+        ("^", "a\n", 1, 2, ONIG_MISMATCH),
+        ("^", "\n", 1, 1, ONIG_MISMATCH),
+        ("^$", "a\n", 1, 2, ONIG_MISMATCH),
+        ("(?m)^.*", "a\n", 2, 2, ONIG_MISMATCH),
+        ("^", "a\nb\n", 3, 4, ONIG_MISMATCH),
+        // Backward search still finds the start of the subject.
+        ("^", "a\n", 2, 0, 0),
+        // An empty line before the final newline is still a line.
+        ("^", "a\n\n", 1, 3, 2),
+        ("^$", "a\n\n", 1, 3, 2),
+        // `$` keeps matching at the end after a trailing newline.
+        ("$", "a\n", 2, 2, 2),
+    ] {
+        let reg = compile(pattern);
+        let bytes = text.as_bytes();
+        let (position, _) = onig_search(
+            &reg,
+            bytes,
+            bytes.len(),
+            start,
+            range,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(
+            position, expected,
+            "{pattern:?} on {text:?} start={start} range={range}"
+        );
+    }
+
+    let reg = compile("^");
+    let (length, _) = onig_match(&reg, b"a\n", 2, 2, None, ONIG_OPTION_NONE);
+    assert_eq!(length, ONIG_MISMATCH);
+    let (length, _) = onig_match(&reg, b"\n\n", 2, 1, None, ONIG_OPTION_NONE);
+    assert_eq!(length, 0);
+}
+
+#[test]
+fn find_iter_begin_line_skips_end_after_trailing_newline() {
+    let starts = |pattern: &str, text: &str| -> Vec<usize> {
+        Regex::new(pattern)
+            .unwrap()
+            .find_iter(text)
+            .map(|m| m.start())
+            .collect()
+    };
+    assert_eq!(starts(r"(?m)^$", "a\nb\n"), Vec::<usize>::new());
+    assert_eq!(starts(r"^", "a\nb\n"), vec![0, 2]);
+    assert_eq!(starts(r"^$", "a\n\n"), vec![2]);
+    assert_eq!(starts(r"$", "a\nb\n"), vec![1, 3, 4]);
+}
+
 // =========================================================================
 // Coverage-targeted tests: Callout patterns (regexec.rs callout paths)
 // =========================================================================
@@ -947,16 +1551,22 @@ fn char_class_range_and_dash() {
 
 #[test]
 fn named_backref_with_level() {
-    // Exercises level syntax parsing in fetch_name: \k<name+1>
-    let re = Regex::new(r"(?<a>x)\g<a>\k<a+0>").unwrap();
+    // Exercises level syntax parsing in fetch_name: \k<name+1>. Both
+    // occurrences of the called group capture one call level below the top,
+    // so +1 finds them and +0 does not (checked against C Oniguruma).
+    let re = Regex::new(r"(?<a>x)\g<a>\k<a+1>").unwrap();
     assert!(re.is_match("xxx"));
+    let re = Regex::new(r"(?<a>x)\g<a>\k<a+0>").unwrap();
+    assert!(!re.is_match("xxx"));
 }
 
 #[test]
 fn numbered_backref_with_level() {
-    // Exercises numeric level backref parsing: \k<1+0>
-    let re = Regex::new(r"(x)\g<1>\k<1+0>").unwrap();
+    // Exercises numeric level backref parsing: \k<1+1> and \k<1+0>
+    let re = Regex::new(r"(x)\g<1>\k<1+1>").unwrap();
     assert!(re.is_match("xxx"));
+    let re = Regex::new(r"(x)\g<1>\k<1+0>").unwrap();
+    assert!(!re.is_match("xxx"));
 }
 
 #[test]
@@ -1005,6 +1615,44 @@ fn unicode_named_property() {
 
     let re = Regex::new(r"\p{Han}+").unwrap();
     assert!(re.is_match("漢字"));
+}
+
+#[test]
+fn unicode_17_script_properties_and_case_folding() {
+    for (property, character) in [
+        (r"\p{Sidetic}", '\u{10940}'),
+        (r"\p{Tolong_Siki}", '\u{11DB0}'),
+        (r"\p{Beria_Erfe}", '\u{16EA0}'),
+        (r"\p{Tai_Yo}", '\u{1E6C0}'),
+    ] {
+        let re = Regex::new(property).unwrap();
+        assert!(re.is_match(&character.to_string()), "{property}");
+    }
+
+    let uppercase = Regex::new(&format!("(?i){}", '\u{16EA0}')).unwrap();
+    assert!(uppercase.is_match("\u{16ebb}"));
+}
+
+#[test]
+fn unicode_incb_covers_every_section() {
+    // DerivedCoreProperties.txt lists InCB as Linker, Consonant, and Extend
+    // sections out of code point order. C Oniguruma drops ranges when it merges
+    // them; Ferroni intentionally keeps all of them (ADR-015).
+    let re = Regex::new(r"\p{InCB}").unwrap();
+    for (section, character) in [
+        ("Linker", '\u{094D}'),
+        ("Consonant", '\u{0915}'),
+        ("Extend", '\u{0300}'),
+        ("Extend", '\u{200D}'),
+        ("Extend", '\u{0DCA}'),
+    ] {
+        assert!(
+            re.is_match(&character.to_string()),
+            "{section} U+{:04X}",
+            character as u32
+        );
+    }
+    assert!(!re.is_match("a"));
 }
 
 #[test]
@@ -2046,5 +2694,113 @@ fn scanner_keep_match_stays_on_character_boundaries() {
             "match from position {position}"
         );
         assert!(text.is_char_boundary(whole.start) && text.is_char_boundary(whole.end));
+    }
+}
+
+// A capture can read as start > end: group 1 of `((?=(a|ab))a?){2}` on "a"
+// is 1..0 in C Oniguruma and in the region (the second pass restarts the
+// group and fails before closing it). The high-level API reports such a
+// capture as not participating instead of slicing.
+#[test]
+fn inverted_capture_is_not_participating() {
+    let re = Regex::new(r"((?=(a|ab))a?){2}").unwrap();
+    let caps = re.captures("a").unwrap();
+    assert_eq!(caps.get(0).unwrap().range(), 0..0);
+    assert!(caps.get(1).is_none());
+    let group2 = caps.get(2).unwrap();
+    assert_eq!(group2.range(), 1..1);
+    assert_eq!(group2.as_str(), "");
+    let listed: Vec<_> = caps.iter().map(|m| m.map(|m| m.range())).collect();
+    assert_eq!(listed, vec![Some(0..0), None, Some(1..1)]);
+    let _ = format!("{caps:?}");
+
+    let named = Regex::new(r"(?<g>(?=(?<h>a|ab))a?){2}").unwrap();
+    let caps = named.captures("a").unwrap();
+    assert!(caps.name("g").is_none());
+    assert_eq!(caps.name("h").unwrap().range(), 1..1);
+}
+
+// `((?=a\g<0>)|(?:\k<1>*?(?=a)()))*` on "aa" loops without consuming input:
+// the capture-aware empty check never sees an empty iteration, so every cycle
+// grows the backtracking stack and only the retry limit ends the search. C
+// Oniguruma takes three backtracks per cycle and holds about 433k stack
+// entries after 100k retries. Two of those backtracks happen where Ferroni
+// guards the push (ADR-008); unless the guards count them like C, the same
+// retry budget lets the stack grow three times as large, which with the
+// default limit took the process past 4 GB. The stack limit keeps this test
+// bounded either way.
+#[test]
+fn guarded_pushes_spend_the_retry_budget_like_c() {
+    let re = Regex::new(r"((?=a\g<0>)|(?:\k<1>*?(?=a)()))*").unwrap();
+    let options = || {
+        SearchOptions::new()
+            .retry_limit_in_match(100_000)
+            .match_stack_limit(1_000_000)
+    };
+    let expected = RegexError::RetryLimitInMatchOver;
+    assert_eq!(re.find_with("aa", options()).err(), Some(expected.clone()));
+    assert_eq!(
+        re.is_match_with("aa", options()).err(),
+        Some(expected.clone())
+    );
+    assert_eq!(
+        re.captures_with("aa", options()).err(),
+        Some(expected.clone())
+    );
+    let mut matches = re.find_iter_with("aa", options());
+    assert_eq!(matches.next().and_then(Result::err), Some(expected));
+    assert!(matches.next().is_none());
+}
+
+// C Oniguruma stops a match once its retry count reaches the limit
+// (`++counter >= limit`), not when it exceeds it. The smallest limits under
+// which C finishes these searches without a limit error, for the retry
+// limit in match and in search.
+#[test]
+fn retry_limits_stop_at_the_limit_like_c() {
+    assert_c_retry_budgets(&[
+        (r"x(a*)*y", "xaaaaaa", 65, 65),
+        (r"(?:a|ab)*c", "ababababxc", 11, 41),
+    ]);
+}
+
+// A guarded push whose main path forks (`a+|[ab]` below) skips several of
+// C's backtracks when it jumps, and counts all of them. Budgets from C, as
+// above.
+#[test]
+fn guarded_pushes_count_every_skipped_backtrack_like_c() {
+    assert_c_retry_budgets(&[
+        (r"(?:a+|[ab])*^", "aaaaa", 322, 322),
+        (r"(?:(?=[ab])a+|a)*$", "aaa!", 48, 78),
+    ]);
+}
+
+/// Each case is (pattern, subject, the smallest retry limit in match and in
+/// search under which C Oniguruma finishes the search).
+fn assert_c_retry_budgets(cases: &[(&str, &str, u64, u64)]) {
+    for &(pattern, subject, in_match, in_search) in cases {
+        let re = Regex::new(pattern).unwrap();
+        let by_match =
+            |limit| re.find_with(subject, SearchOptions::new().retry_limit_in_match(limit));
+        assert!(by_match(in_match).is_ok(), "{pattern}");
+        assert_eq!(
+            by_match(in_match - 1).err(),
+            Some(RegexError::RetryLimitInMatchOver),
+            "{pattern}"
+        );
+        let by_search = |limit| {
+            re.find_with(
+                subject,
+                SearchOptions::new()
+                    .retry_limit_in_match(0)
+                    .retry_limit_in_search(limit),
+            )
+        };
+        assert!(by_search(in_search).is_ok(), "{pattern}");
+        assert_eq!(
+            by_search(in_search - 1).err(),
+            Some(RegexError::RetryLimitInSearchOver),
+            "{pattern}"
+        );
     }
 }

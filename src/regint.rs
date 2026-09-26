@@ -154,6 +154,22 @@ pub fn bitset_at(bs: &BitSet, pos: usize) -> bool {
     (bs[bs_room(pos)] & bs_bit(pos)) != 0
 }
 
+/// The positions of the set bits of `bs`, ascending. Visits whole words, so
+/// sparse sets cost their population rather than 256 bit tests.
+#[inline]
+pub fn bitset_members(bs: &BitSet) -> impl Iterator<Item = usize> + '_ {
+    bs.iter().enumerate().flat_map(|(room, &word)| {
+        let mut bits = word;
+        std::iter::from_fn(move || {
+            (bits != 0).then(|| {
+                let pos = room * BITS_IN_ROOM + bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                pos
+            })
+        })
+    })
+}
+
 #[inline]
 pub fn bitset_set_bit(bs: &mut BitSet, pos: usize) {
     bs[bs_room(pos)] |= bs_bit(pos);
@@ -303,6 +319,15 @@ pub enum OpCode {
     CClassStarPeekNext = 89,
     WordAsciiStarPeekNext = 90,
     AltLiterals = 91,
+    CClassNotStar = 92,
+    CClassMbNotStar = 93,
+    CClassMixNotStar = 94,
+    /// Rust-only (ADR-008): a fixed-length look-behind whose body is the
+    /// single character or string instruction that follows it.
+    LookBehindOp = 95,
+    /// Rust-only (ADR-008): `PushOrJumpExact1` with a byte set. Pushes the
+    /// alternative only when the current byte can start the main path.
+    PushOrJumpByteSet = 96,
 }
 
 // === SaveType ===
@@ -449,6 +474,10 @@ pub enum OperationPayload {
     PushOrJumpExact1 {
         addr: RelAddrType,
         c: u8,
+        /// Rust-only (ADR-008): on a guarded `Push`, the backtracks its jump
+        /// counts for the push it skips (see `guard_skipped_retries`).
+        /// Upstream's own instruction counts none.
+        skipped_retries: u32,
     },
     PushIfPeekNext {
         addr: RelAddrType,
@@ -509,6 +538,20 @@ pub enum OperationPayload {
     },
     AltLiterals {
         trie_idx: u32,
+    },
+    LookBehindOp {
+        /// Characters to step back, as `StepBackStart`.
+        char_len: u32,
+        /// `(?<!...)` rather than `(?<=...)`.
+        not: bool,
+    },
+    PushOrJumpByteSet {
+        addr: RelAddrType,
+        /// The bytes the main path can consume first.
+        bsp: Box<BitSet>,
+        /// The backtracks the jump counts for the push it skips (see
+        /// `guard_skipped_retries`).
+        skipped_retries: u32,
     },
 }
 
@@ -632,12 +675,24 @@ pub struct RegexType {
     // literal alternation tries (for AltLiterals opcode)
     pub(crate) literal_tries: Vec<crate::literal_trie::LiteralTrie>,
 
+    /// Rust-only (ADR-008): some guarded push carries
+    /// `GUARD_RETRIES_BY_CHECKS`.
+    pub(crate) check_dependent_guards: bool,
+
     // Aho-Corasick automaton for pure literal alternation fast path.
     // `ac_alt_has_capture` is true when the alternation is wrapped in a single
     // capture group, so the fast path must also populate region[1].
     pub(crate) ac_alt: Option<aho_corasick::AhoCorasick>,
     pub(crate) ac_alt_has_capture: bool,
 }
+
+/// Set in a guard's `skipped_retries` when the backtracks it skips depend on
+/// position checks on its main path (anchors, word boundaries, fused
+/// look-behinds); the other bits then hold the largest count. Such a guard
+/// jumps only where an upper bound of the count is good enough (see
+/// `guard_may_jump` in `regexec.rs`), and pushes like the unguarded
+/// instruction otherwise.
+pub(crate) const GUARD_RETRIES_BY_CHECKS: u32 = 1 << 31;
 
 // === Optimization data structures ===
 pub const OPT_EXACT_MAXLEN: usize = 24;

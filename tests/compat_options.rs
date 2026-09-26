@@ -171,6 +171,22 @@ fn n(options: OnigOptionType, pattern: &[u8], input: &[u8]) {
 const OIA: OnigOptionType = ONIG_OPTION_IGNORECASE.union(ONIG_OPTION_IGNORECASE_IS_ASCII);
 
 #[test]
+fn option_ignorecase_hex_escape() {
+    // \xNN escapes fold like literals under the option (checked against C).
+    x2(ONIG_OPTION_IGNORECASE, b"\\x61", b"A", 0, 1);
+    x2(ONIG_OPTION_IGNORECASE, b"\\x61b", b"AB", 0, 2);
+    x2(
+        ONIG_OPTION_IGNORECASE,
+        b"\\x61\\x61\\x61\\x61\\x61\\x61",
+        b"xAaAaAa",
+        1,
+        7,
+    );
+    x2(ONIG_OPTION_IGNORECASE, b"\\xC3\\xA9", "É".as_bytes(), 0, 2);
+    n(ONIG_OPTION_IGNORECASE, b"(?-i)\\x61", b"A");
+}
+
+#[test]
 fn option_ignorecase_basic() {
     x2(ONIG_OPTION_IGNORECASE, b"a", b"A", 0, 1);
 }
@@ -462,6 +478,43 @@ fn option_extend_whitespace_ignored() {
 #[test]
 fn option_find_longest() {
     x2(ONIG_OPTION_FIND_LONGEST, b"\\w+", b"abc defg hij", 4, 8);
+}
+
+// The longest match is bounded by the same upper range as every attempt:
+// `range` for a forward search, one character past `start` for a backward
+// one. Expectations checked against C Oniguruma.
+#[test]
+fn option_find_longest_respects_search_upper_range() {
+    // (pattern, subject, start, range, expected span)
+    for (pattern, input, start, range, span) in [
+        (&b"(?m)^.*$"[..], &b"a\nb"[..], 1, 0, (0, 1)),
+        (b"^\\s*$", b"\n\n\n", 1, 0, (0, 2)),
+        (b"(?m).*$", b"a\nb", 0, 2, (0, 1)),
+    ] {
+        let reg = onig_new(
+            pattern,
+            ONIG_OPTION_FIND_LONGEST,
+            &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        let (result, region) = onig_search(
+            &reg,
+            input,
+            input.len(),
+            start,
+            range,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_FIND_LONGEST,
+        );
+        let region = region.unwrap();
+        assert_eq!(
+            (result, (region.beg[0], region.end[0])),
+            (span.0, span),
+            "{:?} on {input:?} start={start} range={range}",
+            std::str::from_utf8(pattern).unwrap()
+        );
+    }
 }
 
 #[test]

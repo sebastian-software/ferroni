@@ -5,12 +5,16 @@
 
 use std::cell::RefCell;
 use std::ops::Range;
+use std::time::Duration;
 
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
-use crate::regexec::{onig_name_to_backref_number, onig_search};
+use crate::regexec::{
+    OnigMatchParam, onig_name_to_backref_number, onig_new_match_param, onig_search,
+    onig_search_with_param,
+};
 use crate::regint::RegexType;
 use crate::regsyntax::OnigSyntaxOniguruma;
 
@@ -43,6 +47,109 @@ fn cache_region(region: OnigRegion) {
             *cached = Some(region);
         }
     });
+}
+
+fn timeout_to_millis(timeout: Duration) -> u64 {
+    if timeout.is_zero() {
+        return 0;
+    }
+
+    let millis = timeout.as_millis();
+    let millis = millis + u128::from(!timeout.subsec_nanos().is_multiple_of(1_000_000));
+    millis.clamp(1, u64::MAX as u128) as u64
+}
+
+/// Limits for a single search.
+///
+/// Every limit left unset keeps its process-wide setting (for example from
+/// [`onig_set_time_limit`](crate::regexec::onig_set_time_limit)). A limit set
+/// to zero turns that limit off for this search, as in Oniguruma.
+///
+/// Pass the options to the `*_with` search methods of [`Regex`], such as
+/// [`Regex::find_with`]. Unlike the plain methods, they report a search that
+/// stopped at a limit as an error instead of as "no match".
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+/// use ferroni::prelude::*;
+///
+/// let re = Regex::new(r"(a+)+b").unwrap();
+/// let options = SearchOptions::new().timeout(Duration::from_millis(50));
+///
+/// assert_eq!(re.find_with("aab", options).unwrap().unwrap().as_str(), "aab");
+///
+/// let hostile = "a".repeat(40);
+/// assert!(re.find_with(&hostile, options).is_err());
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SearchOptions {
+    timeout: Option<Duration>,
+    retry_limit_in_match: Option<u64>,
+    retry_limit_in_search: Option<u64>,
+    match_stack_limit: Option<u32>,
+}
+
+impl SearchOptions {
+    /// Options that keep every process-wide limit.
+    pub const fn new() -> Self {
+        SearchOptions {
+            timeout: None,
+            retry_limit_in_match: None,
+            retry_limit_in_search: None,
+            match_stack_limit: None,
+        }
+    }
+
+    /// Stop the search with [`RegexError::TimeLimitOver`] once `timeout` has
+    /// passed. `Duration::ZERO` removes the time limit for this search.
+    ///
+    /// The engine reads the clock every 512 backtracks, so the search can run
+    /// slightly past the deadline. Durations are rounded up to whole
+    /// milliseconds.
+    pub const fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Stop the search with [`RegexError::RetryLimitInMatchOver`] after `limit`
+    /// backtracks at one start position. Zero removes the limit.
+    pub const fn retry_limit_in_match(mut self, limit: u64) -> Self {
+        self.retry_limit_in_match = Some(limit);
+        self
+    }
+
+    /// Stop the search with [`RegexError::RetryLimitInSearchOver`] after `limit`
+    /// backtracks in total. Zero removes the limit.
+    pub const fn retry_limit_in_search(mut self, limit: u64) -> Self {
+        self.retry_limit_in_search = Some(limit);
+        self
+    }
+
+    /// Stop the search with [`RegexError::MatchStackLimitOver`] once the
+    /// backtracking stack holds `limit` entries. Zero removes the limit.
+    pub const fn match_stack_limit(mut self, limit: u32) -> Self {
+        self.match_stack_limit = Some(limit);
+        self
+    }
+
+    fn match_param(self) -> OnigMatchParam {
+        let mut match_param = onig_new_match_param();
+        if let Some(timeout) = self.timeout {
+            match_param.time_limit = timeout_to_millis(timeout);
+        }
+        if let Some(limit) = self.retry_limit_in_match {
+            match_param.retry_limit_in_match = limit;
+        }
+        if let Some(limit) = self.retry_limit_in_search {
+            match_param.retry_limit_in_search = limit;
+        }
+        if let Some(limit) = self.match_stack_limit {
+            match_param.match_stack_limit = limit;
+        }
+        match_param
+    }
 }
 
 /// A compiled regular expression.
@@ -87,6 +194,10 @@ impl Regex {
     }
 
     /// Return the first match in `text`, or `None` if no match.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack) is
+    /// reported as no match. Use [`Regex::find_with`] with [`SearchOptions`] to tell
+    /// the two apart.
     pub fn find<'t>(&self, text: &'t str) -> Option<Match<'t>> {
         self.find_bytes(text.as_bytes())
     }
@@ -111,13 +222,54 @@ impl Regex {
             cache_region(region);
             return None;
         }
-        let start = region.beg[0] as usize;
-        let end = region.end[0] as usize;
+        let m = Match::from_region(text, region.beg[0], region.end[0]);
         cache_region(region);
-        Some(Match { text, start, end })
+        m
+    }
+
+    /// Return the first match in `text` under per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached, such as
+    /// [`RegexError::TimeLimitOver`], instead of treating it as "no match".
+    pub fn find_with<'t>(
+        &self,
+        text: &'t str,
+        options: SearchOptions,
+    ) -> Result<Option<Match<'t>>, RegexError> {
+        self.find_bytes_with(text.as_bytes(), options)
+    }
+
+    /// Return the first match in `text` (as bytes) under per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    pub fn find_bytes_with<'t>(
+        &self,
+        text: &'t [u8],
+        options: SearchOptions,
+    ) -> Result<Option<Match<'t>>, RegexError> {
+        let (result, region) =
+            self.search_with(text, 0, text.len(), Some(take_cached_region()), options)?;
+        let Some(region) = region else {
+            return Ok(None);
+        };
+        if result < 0 || region.num_regs < 1 {
+            cache_region(region);
+            return Ok(None);
+        }
+        let m = Match::from_region(text, region.beg[0], region.end[0]);
+        cache_region(region);
+        Ok(m)
     }
 
     /// Check whether `text` matches the pattern anywhere.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack) is
+    /// reported as no match. Use [`Regex::is_match_with`] with [`SearchOptions`] to tell
+    /// the two apart.
     pub fn is_match(&self, text: &str) -> bool {
         self.is_match_bytes(text.as_bytes())
     }
@@ -136,7 +288,34 @@ impl Regex {
         result >= 0
     }
 
+    /// Check whether `text` matches under per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    pub fn is_match_with(&self, text: &str, options: SearchOptions) -> Result<bool, RegexError> {
+        self.is_match_bytes_with(text.as_bytes(), options)
+    }
+
+    /// Check whether `text` (as bytes) matches under per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    pub fn is_match_bytes_with(
+        &self,
+        text: &[u8],
+        options: SearchOptions,
+    ) -> Result<bool, RegexError> {
+        let (result, _) = self.search_with(text, 0, text.len(), None, options)?;
+        Ok(result >= 0)
+    }
+
     /// Return the first match with all capture groups, or `None`.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack) is
+    /// reported as no match. Use [`Regex::captures_with`] with [`SearchOptions`] to tell
+    /// the two apart.
     pub fn captures<'t>(&'t self, text: &'t str) -> Option<Captures<'t>> {
         self.captures_bytes(text.as_bytes())
     }
@@ -164,7 +343,51 @@ impl Regex {
         })
     }
 
+    /// Return the first match with all capture groups under per-search
+    /// `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    pub fn captures_with<'t>(
+        &'t self,
+        text: &'t str,
+        options: SearchOptions,
+    ) -> Result<Option<Captures<'t>>, RegexError> {
+        self.captures_bytes_with(text.as_bytes(), options)
+    }
+
+    /// Return the first match with all capture groups (bytes) under
+    /// per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    pub fn captures_bytes_with<'t>(
+        &'t self,
+        text: &'t [u8],
+        options: SearchOptions,
+    ) -> Result<Option<Captures<'t>>, RegexError> {
+        let (result, region) =
+            self.search_with(text, 0, text.len(), Some(take_cached_region()), options)?;
+        let Some(region) = region else {
+            return Ok(None);
+        };
+        if result < 0 {
+            cache_region(region);
+            return Ok(None);
+        }
+        Ok(Some(Captures {
+            text,
+            region,
+            regex: self,
+        }))
+    }
+
     /// Iterate over all non-overlapping matches in `text`.
+    ///
+    /// Iteration ends early when a search stops at a process-wide limit. Use
+    /// [`Regex::find_iter_with`] with [`SearchOptions`] to see that error.
     pub fn find_iter<'r, 't>(&'r self, text: &'t str) -> FindIter<'r, 't> {
         FindIter {
             regex: self,
@@ -184,6 +407,64 @@ impl Regex {
             last_was_empty: false,
             region: take_cached_region(),
         }
+    }
+
+    /// Iterate over all non-overlapping matches in `text` under per-search
+    /// `options`.
+    ///
+    /// The options apply to each search the iterator runs. A search that
+    /// reaches a limit yields its error once and ends the iteration.
+    pub fn find_iter_with<'r, 't>(
+        &'r self,
+        text: &'t str,
+        options: SearchOptions,
+    ) -> TryFindIter<'r, 't> {
+        self.find_iter_bytes_with(text.as_bytes(), options)
+    }
+
+    /// Iterate over all non-overlapping matches in `text` (as bytes) under
+    /// per-search `options`.
+    pub fn find_iter_bytes_with<'r, 't>(
+        &'r self,
+        text: &'t [u8],
+        options: SearchOptions,
+    ) -> TryFindIter<'r, 't> {
+        TryFindIter {
+            regex: self,
+            text,
+            last_end: 0,
+            last_was_empty: false,
+            region: take_cached_region(),
+            options,
+            finished: false,
+        }
+    }
+
+    fn search_with(
+        &self,
+        text: &[u8],
+        start: usize,
+        range: usize,
+        region: Option<OnigRegion>,
+        options: SearchOptions,
+    ) -> Result<(i32, Option<OnigRegion>), RegexError> {
+        let (result, region) = onig_search_with_param(
+            &self.inner,
+            text,
+            text.len(),
+            start,
+            range,
+            region,
+            ONIG_OPTION_NONE,
+            &options.match_param(),
+        );
+        if result < 0 && result != ONIG_MISMATCH {
+            if let Some(region) = region {
+                cache_region(region);
+            }
+            return Err(RegexError::from(result));
+        }
+        Ok((result, region))
     }
 
     /// Return the number of capture groups in the pattern (excluding group 0).
@@ -317,6 +598,17 @@ pub struct Match<'t> {
 }
 
 impl<'t> Match<'t> {
+    /// Build a match from one region entry, or `None` if the entry is not a
+    /// range of `text`: unset (negative), past the end, or with start > end.
+    /// Oniguruma can report start > end for a capture whose group started
+    /// again but failed before closing; every `Match` upholds
+    /// `start <= end <= text.len()`, so its accessors never panic on slicing.
+    fn from_region(text: &'t [u8], beg: i32, end: i32) -> Option<Self> {
+        let start = usize::try_from(beg).ok()?;
+        let end = usize::try_from(end).ok()?;
+        (start <= end && end <= text.len()).then_some(Match { text, start, end })
+    }
+
     /// Byte offset of the start of the match.
     pub fn start(&self) -> usize {
         self.start
@@ -372,20 +664,20 @@ impl<'t> Captures<'t> {
     /// Get capture group `i`, or `None` if the group did not participate.
     ///
     /// Group 0 is the entire match.
+    ///
+    /// Like Oniguruma, the engine can leave a capture with its start after
+    /// its end: a group that matched once, then started again and failed
+    /// before closing, keeps the new start and the old end (for example
+    /// group 1 of `((?=(a|ab))a?){2}` against `"a"` is `1..0`). Such a
+    /// capture is not a range of the text and is reported as not
+    /// participating (`None`), here and in [`Captures::iter`] and
+    /// [`Captures::name`]. The raw values stay available through the
+    /// low-level [`OnigRegion`].
     pub fn get(&self, i: usize) -> Option<Match<'t>> {
         if i >= self.region.num_regs as usize {
             return None;
         }
-        let beg = self.region.beg[i];
-        let end = self.region.end[i];
-        if beg == ONIG_REGION_NOTPOS {
-            return None;
-        }
-        Some(Match {
-            text: self.text,
-            start: beg as usize,
-            end: end as usize,
-        })
+        Match::from_region(self.text, self.region.beg[i], self.region.end[i])
     }
 
     /// Get the last capture group with the given name that participated, or `None`.
@@ -496,8 +788,8 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
             return None;
         }
 
-        let start = self.region.beg[0] as usize;
-        let end = self.region.end[0] as usize;
+        let m = Match::from_region(self.text, self.region.beg[0], self.region.end[0])?;
+        let (start, end) = (m.start, m.end);
 
         // Handle empty matches: advance by one byte to avoid infinite loop.
         if start == end {
@@ -521,15 +813,101 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
 
         self.last_end = end;
 
-        Some(Match {
-            text: self.text,
-            start,
-            end,
-        })
+        Some(m)
     }
 }
 
 impl Drop for FindIter<'_, '_> {
+    fn drop(&mut self) {
+        cache_region(std::mem::take(&mut self.region));
+    }
+}
+
+/// Iterator over matches that applies [`SearchOptions`] to each search.
+///
+/// Created by [`Regex::find_iter_with`]. A search that reaches a limit is
+/// yielded once as `Err` and ends the iterator.
+pub struct TryFindIter<'r, 't> {
+    regex: &'r Regex,
+    text: &'t [u8],
+    last_end: usize,
+    last_was_empty: bool,
+    region: OnigRegion,
+    options: SearchOptions,
+    finished: bool,
+}
+
+impl<'r, 't> Iterator for TryFindIter<'r, 't> {
+    type Item = Result<Match<'t>, RegexError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished || self.last_end > self.text.len() {
+            self.finished = true;
+            return None;
+        }
+
+        let search = self.regex.search_with(
+            self.text,
+            self.last_end,
+            self.text.len(),
+            Some(std::mem::take(&mut self.region)),
+            self.options,
+        );
+        let (result, region) = match search {
+            Ok(result) => result,
+            Err(error) => {
+                self.finished = true;
+                return Some(Err(error));
+            }
+        };
+        let Some(region) = region else {
+            self.finished = true;
+            return None;
+        };
+        self.region = region;
+
+        if result < 0 {
+            self.finished = true;
+            return None;
+        }
+        if self.region.num_regs < 1 {
+            self.finished = true;
+            return None;
+        }
+
+        let Some(m) = Match::from_region(self.text, self.region.beg[0], self.region.end[0]) else {
+            self.finished = true;
+            return None;
+        };
+        let (start, end) = (m.start, m.end);
+
+        if start == end {
+            if self.last_was_empty {
+                if self.last_end >= self.text.len() {
+                    self.finished = true;
+                    return None;
+                }
+                self.last_end += self
+                    .regex
+                    .inner
+                    .enc
+                    .mbc_enc_len(&self.text[self.last_end..]);
+                self.last_was_empty = false;
+                return self.next();
+            }
+            self.last_was_empty = true;
+        } else {
+            self.last_was_empty = false;
+        }
+
+        self.last_end = end;
+        Some(Ok(m))
+    }
+}
+
+impl std::iter::FusedIterator for TryFindIter<'_, '_> {}
+
+impl Drop for TryFindIter<'_, '_> {
     fn drop(&mut self) {
         cache_region(std::mem::take(&mut self.region));
     }
@@ -647,6 +1025,173 @@ mod tests {
         let re = Regex::new(r"hello").unwrap();
         assert!(re.is_match("say hello"));
         assert!(!re.is_match("say goodbye"));
+    }
+
+    #[test]
+    fn search_options_methods_return_matches_and_captures() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"(\w+)").unwrap();
+        let options = SearchOptions::new().timeout(Duration::from_secs(1));
+
+        assert_eq!(
+            re.find_with("hello 42", options).unwrap().unwrap().as_str(),
+            "hello"
+        );
+        assert_eq!(
+            re.find_bytes_with(b"hello 42", options)
+                .unwrap()
+                .unwrap()
+                .as_str(),
+            "hello"
+        );
+        assert!(re.is_match_with("hello", options).unwrap());
+        assert!(!re.is_match_bytes_with(b"!!!", options).unwrap());
+        assert_eq!(
+            re.captures_with("hello 42", options)
+                .unwrap()
+                .unwrap()
+                .get(1)
+                .unwrap()
+                .as_str(),
+            "hello"
+        );
+        assert!(re.captures_bytes_with(b"!!!", options).unwrap().is_none());
+    }
+
+    #[test]
+    fn search_options_surface_time_limit_errors() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"(a+)+b").unwrap();
+        let text = "a".repeat(40);
+        let options = SearchOptions::new()
+            .timeout(Duration::from_millis(1))
+            .retry_limit_in_match(0)
+            .retry_limit_in_search(0);
+
+        assert!(matches!(
+            re.find_with(&text, options),
+            Err(RegexError::TimeLimitOver)
+        ));
+        assert!(matches!(
+            re.is_match_with(&text, options),
+            Err(RegexError::TimeLimitOver)
+        ));
+        assert!(matches!(
+            re.captures_with(&text, options),
+            Err(RegexError::TimeLimitOver)
+        ));
+    }
+
+    #[test]
+    fn search_options_timeout_spans_every_start_position() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        // Each start position backtracks only ~400 times; the limit must still
+        // fire for the search as a whole.
+        let re = Regex::new(r"a{1,400}?(?=b)").unwrap();
+        let text = "a".repeat(500_000);
+        let options = SearchOptions::new().timeout(Duration::from_millis(10));
+
+        let started = std::time::Instant::now();
+        assert!(matches!(
+            re.find_with(&text, options),
+            Err(RegexError::TimeLimitOver)
+        ));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn search_options_surface_retry_limit_errors() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"(a+)+b").unwrap();
+        let text = "a".repeat(30);
+
+        assert!(matches!(
+            re.find_with(&text, SearchOptions::new().retry_limit_in_match(1_000)),
+            Err(RegexError::RetryLimitInMatchOver)
+        ));
+        assert!(matches!(
+            re.find_with(
+                &text,
+                SearchOptions::new()
+                    .retry_limit_in_match(0)
+                    .retry_limit_in_search(1_000)
+            ),
+            Err(RegexError::RetryLimitInSearchOver)
+        ));
+    }
+
+    #[test]
+    fn search_options_leave_unset_limits_process_wide() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let old_retry = crate::regexec::onig_get_retry_limit_in_match();
+        crate::regexec::onig_set_retry_limit_in_match(1_000);
+        let re = Regex::new(r"(a+)+b").unwrap();
+        let text = "a".repeat(30);
+
+        let unset = re.find_with(&text, SearchOptions::new());
+        let disabled = re.find_with(
+            &text,
+            SearchOptions::new()
+                .retry_limit_in_match(0)
+                .retry_limit_in_search(0)
+                .timeout(Duration::from_millis(50)),
+        );
+        crate::regexec::onig_set_retry_limit_in_match(old_retry);
+
+        assert!(matches!(unset, Err(RegexError::RetryLimitInMatchOver)));
+        assert!(matches!(disabled, Err(RegexError::TimeLimitOver)));
+    }
+
+    #[test]
+    fn search_options_iterator_yields_matches_and_then_finishes() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"\w+").unwrap();
+        let options = SearchOptions::new().timeout(Duration::from_secs(1));
+        let mut matches = re.find_iter_with("one two", options);
+
+        assert_eq!(matches.next().unwrap().unwrap().as_str(), "one");
+        assert_eq!(matches.next().unwrap().unwrap().as_str(), "two");
+        assert!(matches.next().is_none());
+        assert!(matches.next().is_none());
+        let bytes: Vec<_> = re
+            .find_iter_bytes_with(b"a b", options)
+            .map(|m| m.unwrap().as_bytes().to_vec())
+            .collect();
+        assert_eq!(bytes, vec![b"a".to_vec(), b"b".to_vec()]);
+    }
+
+    #[test]
+    fn search_options_iterator_surfaces_an_error_once() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let re = Regex::new(r"(a+)+b").unwrap();
+        let text = "a".repeat(40);
+        let options = SearchOptions::new()
+            .timeout(Duration::from_millis(1))
+            .retry_limit_in_match(0)
+            .retry_limit_in_search(0);
+        let mut matches = re.find_iter_with(&text, options);
+
+        assert!(matches!(
+            matches.next().unwrap(),
+            Err(RegexError::TimeLimitOver)
+        ));
+        assert!(matches.next().is_none());
+    }
+
+    #[test]
+    fn search_options_default_keeps_every_limit_unset() {
+        assert_eq!(SearchOptions::default(), SearchOptions::new());
+        assert_send_sync::<SearchOptions>();
+        assert_send_sync::<TryFindIter<'static, 'static>>();
+    }
+
+    #[test]
+    fn timeout_is_rounded_up_to_milliseconds() {
+        assert_eq!(timeout_to_millis(Duration::ZERO), 0);
+        assert_eq!(timeout_to_millis(Duration::from_nanos(1)), 1);
+        assert_eq!(timeout_to_millis(Duration::from_millis(1)), 1);
+        assert_eq!(timeout_to_millis(Duration::from_nanos(1_000_001)), 2);
+        assert_eq!(timeout_to_millis(Duration::MAX), u64::MAX);
     }
 
     #[test]

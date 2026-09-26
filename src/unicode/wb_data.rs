@@ -1,5 +1,4 @@
-// wb_data.rs - Word Break data table
-// Ported from unicode_wb_data.c
+// Auto-generated Word Break data from Unicode 17.0.0 (see unicode_data.toml).
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -31,7 +30,7 @@ pub struct WbRange {
     pub prop: WbType,
 }
 
-pub static WB_RANGES: [WbRange; 1085] = [
+pub static WB_RANGES: [WbRange; 1100] = [
     WbRange {
         start: 0x00000A,
         end: 0x00000A,
@@ -126,6 +125,11 @@ pub static WB_RANGES: [WbRange; 1085] = [
         start: 0x0000B7,
         end: 0x0000B7,
         prop: WbType::MidLetter,
+    },
+    WbRange {
+        start: 0x0000B8,
+        end: 0x0000B8,
+        prop: WbType::ALetter,
     },
     WbRange {
         start: 0x0000BA,
@@ -554,7 +558,7 @@ pub static WB_RANGES: [WbRange; 1085] = [
     },
     WbRange {
         start: 0x000889,
-        end: 0x00088E,
+        end: 0x00088F,
         prop: WbType::ALetter,
     },
     WbRange {
@@ -1163,7 +1167,7 @@ pub static WB_RANGES: [WbRange; 1085] = [
         prop: WbType::ALetter,
     },
     WbRange {
-        start: 0x000C5D,
+        start: 0x000C5C,
         end: 0x000C5D,
         prop: WbType::ALetter,
     },
@@ -1248,7 +1252,7 @@ pub static WB_RANGES: [WbRange; 1085] = [
         prop: WbType::Extend,
     },
     WbRange {
-        start: 0x000CDD,
+        start: 0x000CDC,
         end: 0x000CDE,
         prop: WbType::ALetter,
     },
@@ -1914,7 +1918,12 @@ pub static WB_RANGES: [WbRange; 1085] = [
     },
     WbRange {
         start: 0x001AB0,
-        end: 0x001ACE,
+        end: 0x001ADD,
+        prop: WbType::Extend,
+    },
+    WbRange {
+        start: 0x001AE0,
+        end: 0x001AEB,
         prop: WbType::Extend,
     },
     WbRange {
@@ -2604,26 +2613,11 @@ pub static WB_RANGES: [WbRange; 1085] = [
     },
     WbRange {
         start: 0x00A708,
-        end: 0x00A7CD,
-        prop: WbType::ALetter,
-    },
-    WbRange {
-        start: 0x00A7D0,
-        end: 0x00A7D1,
-        prop: WbType::ALetter,
-    },
-    WbRange {
-        start: 0x00A7D3,
-        end: 0x00A7D3,
-        prop: WbType::ALetter,
-    },
-    WbRange {
-        start: 0x00A7D5,
         end: 0x00A7DC,
         prop: WbType::ALetter,
     },
     WbRange {
-        start: 0x00A7F2,
+        start: 0x00A7F1,
         end: 0x00A801,
         prop: WbType::ALetter,
     },
@@ -3423,6 +3417,11 @@ pub static WB_RANGES: [WbRange; 1085] = [
         prop: WbType::ALetter,
     },
     WbRange {
+        start: 0x010940,
+        end: 0x010959,
+        prop: WbType::ALetter,
+    },
+    WbRange {
         start: 0x010980,
         end: 0x0109B7,
         prop: WbType::ALetter,
@@ -3589,11 +3588,11 @@ pub static WB_RANGES: [WbRange; 1085] = [
     },
     WbRange {
         start: 0x010EC2,
-        end: 0x010EC4,
+        end: 0x010EC7,
         prop: WbType::ALetter,
     },
     WbRange {
-        start: 0x010EFC,
+        start: 0x010EFA,
         end: 0x010EFF,
         prop: WbType::Extend,
     },
@@ -4363,6 +4362,11 @@ pub static WB_RANGES: [WbRange; 1085] = [
         prop: WbType::ALetter,
     },
     WbRange {
+        start: 0x011B60,
+        end: 0x011B67,
+        prop: WbType::Extend,
+    },
+    WbRange {
         start: 0x011BC0,
         end: 0x011BE0,
         prop: WbType::ALetter,
@@ -4505,6 +4509,16 @@ pub static WB_RANGES: [WbRange; 1085] = [
     WbRange {
         start: 0x011DA0,
         end: 0x011DA9,
+        prop: WbType::Numeric,
+    },
+    WbRange {
+        start: 0x011DB0,
+        end: 0x011DDB,
+        prop: WbType::ALetter,
+    },
+    WbRange {
+        start: 0x011DE0,
+        end: 0x011DE9,
         prop: WbType::Numeric,
     },
     WbRange {
@@ -4715,6 +4729,16 @@ pub static WB_RANGES: [WbRange; 1085] = [
     WbRange {
         start: 0x016E40,
         end: 0x016E7F,
+        prop: WbType::ALetter,
+    },
+    WbRange {
+        start: 0x016EA0,
+        end: 0x016EB8,
+        prop: WbType::ALetter,
+    },
+    WbRange {
+        start: 0x016EBB,
+        end: 0x016ED3,
         prop: WbType::ALetter,
     },
     WbRange {
@@ -5196,6 +5220,56 @@ pub static WB_RANGES: [WbRange; 1085] = [
         start: 0x01E5F1,
         end: 0x01E5FA,
         prop: WbType::Numeric,
+    },
+    WbRange {
+        start: 0x01E6C0,
+        end: 0x01E6DE,
+        prop: WbType::ALetter,
+    },
+    WbRange {
+        start: 0x01E6E0,
+        end: 0x01E6E2,
+        prop: WbType::ALetter,
+    },
+    WbRange {
+        start: 0x01E6E3,
+        end: 0x01E6E3,
+        prop: WbType::Extend,
+    },
+    WbRange {
+        start: 0x01E6E4,
+        end: 0x01E6E5,
+        prop: WbType::ALetter,
+    },
+    WbRange {
+        start: 0x01E6E6,
+        end: 0x01E6E6,
+        prop: WbType::Extend,
+    },
+    WbRange {
+        start: 0x01E6E7,
+        end: 0x01E6ED,
+        prop: WbType::ALetter,
+    },
+    WbRange {
+        start: 0x01E6EE,
+        end: 0x01E6EF,
+        prop: WbType::Extend,
+    },
+    WbRange {
+        start: 0x01E6F0,
+        end: 0x01E6F4,
+        prop: WbType::ALetter,
+    },
+    WbRange {
+        start: 0x01E6F5,
+        end: 0x01E6F5,
+        prop: WbType::Extend,
+    },
+    WbRange {
+        start: 0x01E6FE,
+        end: 0x01E6FF,
+        prop: WbType::ALetter,
     },
     WbRange {
         start: 0x01E7E0,

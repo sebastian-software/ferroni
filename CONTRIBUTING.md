@@ -32,9 +32,6 @@ cargo test --test compat_regset
 RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 ```
 
-> **Warning:** Never run `cargo test -- --ignored` -- the
-> `conditional_recursion_complex` test intentionally hangs.
-
 Test counts are derived from the tree by `./scripts/count-tests.sh`; the
 README quotes the total in its [Test parity](README.md#test-parity) section.
 
@@ -143,21 +140,31 @@ workload, use:
 
 ## Regenerating Unicode Tables
 
-The checked-in Unicode tables are generated from upstream Oniguruma sources.
+The checked-in Unicode tables are generated directly from the versioned
+Unicode Character Database (UCD), pinned in [unicode_data.toml](unicode_data.toml).
 These scripts are maintainer tools; normal `cargo build`, tests, and CI do not
-run them automatically.
+run them automatically. Python 3.11+ and rustfmt are required.
 
 ```bash
-./scripts/prepare-oniguruma-sources.sh
-python3 scripts/gen_unicode_property_data.py
-python3 scripts/gen_unicode_fold_data.py
+python3 scripts/prepare_unicode_data.py 17.0.0
+python3 scripts/gen_unicode_tables.py --version 17.0.0
 ```
 
-If you regenerate them, commit the generated files together with the source
-change:
+To verify that the pipeline still reproduces the recorded Unicode 16.0 baseline
+(the previous tables, except the intentionally completed `InCB` property; see
+ADR-015):
+
+```bash
+python3 scripts/prepare_unicode_data.py 16.0.0
+python3 scripts/check_unicode_16.py
+```
+
+Commit all four generated files together with the source change:
 
 - `src/unicode/property_data.rs`
 - `src/unicode/fold_data.rs`
+- `src/unicode/egcb_data.rs`
+- `src/unicode/wb_data.rs`
 
 ## Guidelines
 

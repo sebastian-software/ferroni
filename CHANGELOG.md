@@ -1,5 +1,115 @@
 # Changelog
 
+## [1.5.1](https://github.com/sebastian-software/ferroni/compare/v1.5.0...v1.5.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **regcomp:** choose REPEAT over expansion by C's body length ([6e91bf5](https://github.com/sebastian-software/ferroni/commit/6e91bf5088a47dc0aa7a970b3d759801e20c2497))
+* **regcomp:** count every backtrack a guarded push skips ([e3ab278](https://github.com/sebastian-software/ferroni/commit/e3ab278ce8178c14d6c355f26b70985605c6d6dc))
+* **regexec:** stop at the retry limit like C, not one retry later ([20770b4](https://github.com/sebastian-software/ferroni/commit/20770b4e41d3392d2ad434f8bb988a2d93c1f63c))
+
+
+### Performance Improvements
+
+* **regcomp:** push back-referenced captures only where a restore is observable ([49b0eb9](https://github.com/sebastian-software/ferroni/commit/49b0eb928254c3e3f0f999757b543f51c4765e5c))
+* **regcomp:** run single-byte star loops as class stars ([cd0659d](https://github.com/sebastian-software/ferroni/commit/cd0659d7a3a2e36eb3460ba3d1baf0e05071b531))
+* **regexec:** cut per-attempt overhead in the matcher ([b2df0cc](https://github.com/sebastian-software/ferroni/commit/b2df0cc301fd48cf8355077d152619e11e40c895))
+* **regexec:** guard pushes whose skipped retries depend on checks ([4da116b](https://github.com/sebastian-software/ferroni/commit/4da116bb3c217dce7250c100d503199a169d515a))
+
+## [1.5.0](https://github.com/sebastian-software/ferroni/compare/v1.4.2...v1.5.0) (2026-09-24)
+
+
+### Features
+
+* **api:** take per-search limits as a SearchOptions value ([0c76667](https://github.com/sebastian-software/ferroni/commit/0c76667748fb7bebe4c079d6fa9c2a44432d247f))
+* **unicode:** generate tables from UCD 17.0 (C Oniguruma ships 16.0); some existing characters change properties, e.g. 672 leave Extended_Pictographic, U+0295 moves from Ll to Lo, and some \X boundaries move ([2402352](https://github.com/sebastian-software/ferroni/commit/2402352959f37cd6572a0126e8f8f6aadcc9ae66))
+
+
+### Bug Fixes
+
+* **api:** treat captures with start &gt; end as not participating ([1709775](https://github.com/sebastian-software/ferroni/commit/17097756e67abcd472098f8c8b18c5b68788901e))
+* **error:** drop the name placeholder when no name was recorded ([00b4cbb](https://github.com/sebastian-software/ferroni/commit/00b4cbb301a894dd8fd886d29eca51d87c006efa))
+* **regcomp:** check backref bounds after the named-group check like C ([2190510](https://github.com/sebastian-software/ferroni/commit/2190510cee76a7a2e33ed21c7cb58d9005d2f6db))
+* **regcomp:** compile crude strings through add_compile_string ([86ec38f](https://github.com/sebastian-software/ferroni/commit/86ec38ffccadba1209066a4c6097daaeca59443a))
+* **regcomp:** reject numbered calls next to named groups like C ([ee14a4b](https://github.com/sebastian-software/ferroni/commit/ee14a4b54b87bc2e4eb38ce630503924af5f0f26))
+* **regcomp:** reset look-behinds whose shortest body is empty, as C does ([5e05d76](https://github.com/sebastian-software/ferroni/commit/5e05d76dc5ece066fbc94b26b544ff5cf5fc2527))
+* **regexec:** bound the FIND_LONGEST winner by the search's upper range ([0521e1f](https://github.com/sebastian-software/ferroni/commit/0521e1f24a0fdca807434ad1656a76fe7e05692c))
+* **regexec:** cap match retries by the search's remaining retry budget ([528ccfa](https://github.com/sebastian-software/ferroni/commit/528ccfa7905cc10a64b3726a29a2c85c45f28de7))
+* **regexec:** count time-limit backtracks per search, not per position ([78dfb15](https://github.com/sebastian-software/ferroni/commit/78dfb15c20f5886b3b066b4d604684391ccdb297))
+* **regexec:** enforce the subexpression call limits like C ([07fdaaa](https://github.com/sebastian-software/ferroni/commit/07fdaaaf44d0e8c2a247f64de3314fb4d60fcd11))
+* **regexec:** keep BEGIN_LINE from matching at the end of the subject ([4790917](https://github.com/sebastian-software/ferroni/commit/479091777217507857b0bdd4a727500e323da2b3))
+* **regexec:** keep the previous capture end on OP_MEM_START ([3c0b8cf](https://github.com/sebastian-software/ferroni/commit/3c0b8cfa91ff1199ad0497270f348eced86d9d81))
+* **regexec:** port C's capture-aware empty-loop checks ([177327b](https://github.com/sebastian-software/ferroni/commit/177327b3d319e716851ea85186fd64a07561b9db))
+* **regexec:** report an unknown callout tag like C ([9ef8b3b](https://github.com/sebastian-software/ferroni/commit/9ef8b3b648b148003595e260d732e15a3f753db6))
+* **regexec:** restore captures when popping to a mark ([6dea02d](https://github.com/sebastian-software/ferroni/commit/6dea02d1c5a632aefb432f26e43b121a0d38e5c0))
+* **regexec:** scan backward searches like C inside multibyte characters ([b0242c0](https://github.com/sebastian-software/ferroni/commit/b0242c0c61cdc05633ec15636f6d1d64f1059103))
+* **regexec:** skip completed calls when reading a repeat count ([ca828a7](https://github.com/sebastian-software/ferroni/commit/ca828a75566839e958a2ad23592f3fadcdb1f237))
+* **regparse:** keep level backrefs whose level is zero ([363829b](https://github.com/sebastian-software/ferroni/commit/363829b6ec276ab5ca675dd384a6fd93ec3d3d82))
+* **regparse:** leave an invalid interval's brace as a literal like C ([1c123b2](https://github.com/sebastian-software/ferroni/commit/1c123b27bccc196235fe6271a6dc079c5f72c125))
+* **regparse:** parse callout names and tags like C ([3ce433c](https://github.com/sebastian-software/ferroni/commit/3ce433cd7f19d3694790ec0e7c8a78f9d11b0dbc))
+* **regparse:** parse group names like C's fetch_name and fetch_name_with_level ([dff9d33](https://github.com/sebastian-software/ferroni/commit/dff9d33e602d60c02e103087959c5bf97e4f0c6e))
+* **regparse:** reject unknown characters after (? like C ([eca9da9](https://github.com/sebastian-software/ferroni/commit/eca9da9e1c47363d11027a38d5147f48789638a7))
+* **regparse:** report a pattern ending after (?&lt; as an unclosed group ([a265350](https://github.com/sebastian-software/ferroni/commit/a2653509f1add1a9a34146f02ab51a7053b1fcec))
+* **regparse:** report the offending name in error messages ([4eeeda9](https://github.com/sebastian-software/ferroni/commit/4eeeda93a7c98ca77708d6f82c7bedd2216ad021))
+* **regparse:** require the closing parenthesis of a condition body ([c50412c](https://github.com/sebastian-software/ferroni/commit/c50412c84998895771e85da1fe594ebd6a7b217e))
+* **regparse:** switch on the whole code point after (? like C ([51f932b](https://github.com/sebastian-software/ferroni/commit/51f932b10c1e5e06a8896ae9da5c26207a04dbde))
+* **regparse:** switch on the whole escaped code point in a char class ([58fa71c](https://github.com/sebastian-software/ferroni/commit/58fa71c2d4dba848da8c4b36917c87424fa3f0a9))
+* **regparse:** treat \xNN escapes as ordinary literals like C ([e707bcd](https://github.com/sebastian-software/ferroni/commit/e707bcd22d9a40df7897fba74d12fadda4365a0c))
+* **regset:** let a leading .* match at a mid-line search start ([f9ca85f](https://github.com/sebastian-software/ferroni/commit/f9ca85f42d0f8182bb9b28cbd61640ff99c6bf48))
+* **regset:** let regex-lead matches run to the original range ([3ce3140](https://github.com/sebastian-software/ferroni/commit/3ce314001e67a2bfe8431e0bac87753305c75ff1))
+* **scanner:** compile Scanner patterns with CAPTURE_GROUP by default, like vscode-oniguruma; unnamed groups next to named groups now capture, so capture indices can shift (pass ONIG_OPTION_NONE to keep the old behavior) ([20fdc32](https://github.com/sebastian-software/ferroni/commit/20fdc32628cfdf2647a0fbbd09f8b4e507e30dd5))
+* **scanner:** keep per-regex route results equal to the RegSet search ([f72dd69](https://github.com/sebastian-software/ferroni/commit/f72dd691cf6c4ac84a465b667c4694fbb8ad5312))
+* **unicode:** bound case folding by the logical end like C ([220a9ee](https://github.com/sebastian-software/ferroni/commit/220a9ee6d19fffacd9c65f3cd781f8e33b400f0e))
+* **unicode:** decode text-segment neighbours against the logical end ([e4ee3d3](https://github.com/sebastian-software/ferroni/commit/e4ee3d3c9fe7fd81a5a7e2af948072d73e5cee50))
+* **unicode:** keep every InCB range when merging property sections ([b3cfb92](https://github.com/sebastian-software/ferroni/commit/b3cfb92a88632bdce58df2fbb020505576558d32))
+
+
+### Performance Improvements
+
+* **regcomp:** tune look-behinds in C order and check the tail literal first ([f0b1e42](https://github.com/sebastian-software/ferroni/commit/f0b1e4267ffb81061264bc500763c77369e41125))
+
+## [1.4.2](https://github.com/sebastian-software/ferroni/compare/v1.4.1...v1.4.2) (2026-09-23)
+
+
+### Performance Improvements
+
+* **regcomp:** extend literal tries to prefixes and case-insensitive lists ([b9b70bc](https://github.com/sebastian-software/ferroni/commit/b9b70bca40727399dc1778c9a7d659d803a04de5))
+* **regcomp:** fill a multibyte class's byte map from its ASCII half ([91aadfc](https://github.com/sebastian-software/ferroni/commit/91aadfcbb5219ee84891255276c31ed981494124))
+* **regcomp:** scan class bitsets by word during compilation ([a7ed701](https://github.com/sebastian-software/ferroni/commit/a7ed70170855c37f19a2e15b59fbcbaf51468e57))
+* **regexec:** check one-instruction look-behinds in a single opcode ([e93b074](https://github.com/sebastian-software/ferroni/commit/e93b07417aecc726c295d300127a89f552f93e1b))
+* **regparse:** stream Unicode ctype ranges into class buffers ([0127f1a](https://github.com/sebastian-software/ferroni/commit/0127f1a83a779a0dcbf6b34b23d0841aa1804f20))
+* **regset:** derive start bytes through positive look-aheads ([a9a8212](https://github.com/sebastian-software/ferroni/commit/a9a821271ca38ec178ebb55dbda88d565fe2a9ae))
+* **regset:** make settled fallback entries cheap on warm calls ([556cb29](https://github.com/sebastian-software/ferroni/commit/556cb2987d72bf0ce12678f1a5b1be613074fa52))
+* speed up grammar tokenization and case-insensitive compilation ([#145](https://github.com/sebastian-software/ferroni/issues/145)) ([e5bb273](https://github.com/sebastian-software/ferroni/commit/e5bb2735572a9dc0c0d04e501bf55daf99349868))
+
+## [1.4.1](https://github.com/sebastian-software/ferroni/compare/v1.4.0...v1.4.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* handle recursive captures beyond the bitset width ([9d72d4f](https://github.com/sebastian-software/ferroni/commit/9d72d4fc9b9ab35b42a262c8274ff6aa212701e5))
+* handle recursive captures beyond the bitset width ([#139](https://github.com/sebastian-software/ferroni/issues/139)) ([9d72d4f](https://github.com/sebastian-software/ferroni/commit/9d72d4fc9b9ab35b42a262c8274ff6aa212701e5))
+* remove redundant recursive capture cast ([31f2c93](https://github.com/sebastian-software/ferroni/commit/31f2c93f8f252d232cabed9b66ff64220dc571b5))
+
+## [1.4.0](https://github.com/sebastian-software/ferroni/compare/v1.3.3...v1.4.0) (2026-09-14)
+
+
+### Features
+
+* add a fuzz workspace for the parser, matcher, and scanner ([#108](https://github.com/sebastian-software/ferroni/issues/108)) ([29b40ab](https://github.com/sebastian-software/ferroni/commit/29b40ab74cc691cc6bf4b8978694116c2ee210f7))
+
+
+### Bug Fixes
+
+* bound optimizer retries and stop nested quantifiers doubling the bytecode ([#116](https://github.com/sebastian-software/ferroni/issues/116)) ([4d35b0a](https://github.com/sebastian-software/ferroni/commit/4d35b0abb72a9de9512080442dbfde3de4365cdd))
+* bump MSRV to Rust 1.86 and update benchmark dependencies ([#92](https://github.com/sebastian-software/ferroni/issues/92)) ([79205a0](https://github.com/sebastian-software/ferroni/commit/79205a039b329adf6810e463cc11a81371cd1935))
+* correct stale facts in docs, tests, and coverage config ([#103](https://github.com/sebastian-software/ferroni/issues/103)) ([4bb8703](https://github.com/sebastian-software/ferroni/commit/4bb8703c35c76329c0df532c93bec09e49c9d27c))
+* keep search positions inside the haystack ([#111](https://github.com/sebastian-software/ferroni/issues/111)) ([9cfff66](https://github.com/sebastian-software/ferroni/commit/9cfff66acb99a09963c01b22505161f3df2843f7))
+* reject left-recursive subexpression calls at compile time ([#119](https://github.com/sebastian-software/ferroni/issues/119)) ([d3521bf](https://github.com/sebastian-software/ferroni/commit/d3521bf520ff4708ae62a23b9f5a68f07d67c16b))
+* report the kept match start from the scanner ([#127](https://github.com/sebastian-software/ferroni/issues/127)) ([450f24f](https://github.com/sebastian-software/ferroni/commit/450f24f121acb604c7d120a929816c15c6e2b3e3))
+* require Rust 1.94 and move to edition 2024 ([#104](https://github.com/sebastian-software/ferroni/issues/104)) ([578208c](https://github.com/sebastian-software/ferroni/commit/578208ce993296876bf51ec27a473bd2cabd0f73))
+
 ## [1.3.3](https://github.com/sebastian-software/ferroni/compare/v1.3.2...v1.3.3) (2026-09-05)
 
 
