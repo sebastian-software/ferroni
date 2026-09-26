@@ -5,6 +5,10 @@ title: "Unicode Range Lookup Evaluation (2026-09)"
 
 # Unicode Range Lookup Evaluation
 
+This is the initial, pre-#178 evaluation. The
+[expanded Unicode evaluation](/perf/unicode-range-lookup-expanded) repeats
+41 workloads on the newer base and supersedes this report's merge assessment.
+
 Using Rust's slice partition search for multibyte character-class intervals
 changes the 384-word extraction workload from **64.47 to 62.18 us**, a
 **3.6% reduction** on this machine. This is a small optimization of
