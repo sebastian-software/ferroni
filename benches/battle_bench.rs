@@ -1,6 +1,8 @@
 // Criterion benchmark suite: README-facing Ferroni vs Oniguruma reference numbers.
 //
 // Run: cargo bench --features ffi --bench battle_bench
+// Cache-enabled document comparison:
+// cargo bench --features ffi,match-cache --bench battle_bench -- scanner_documents
 // HTML report: target/criterion/report/index.html
 // Pinned external inputs: benches/battle_inputs.toml
 
@@ -67,12 +69,84 @@ fn regex_compile(pattern: &[u8], case_insensitive: bool) -> Regex {
         .expect("regex compile failed")
 }
 
-fn assert_same_result(rust_pos: i32, c_pos: i32, label: &str) {
-    debug_assert_eq!(
-        rust_pos >= 0,
-        c_pos >= 0,
-        "{label}: match/mismatch disagree (rust={rust_pos}, c={c_pos})"
+fn assert_same_match(
+    rust_reg: &ferroni::regint::RegexType,
+    c_reg: &ffi::CRegex,
+    text: &[u8],
+    label: &str,
+) {
+    // Validate captures outside timing. Timed searches request no region from
+    // either engine, so C does not perform extra capture-output work.
+    let (rust_pos, region) = rust_search(rust_reg, text, Some(OnigRegion::new()));
+    let mut c_region = ffi::CRegion::new();
+    let c_pos = c_reg.search(
+        text,
+        0,
+        text.len(),
+        Some(&mut c_region),
+        ffi::ONIG_OPTION_NONE,
     );
+    assert_eq!(rust_pos, c_pos, "{label}: match positions differ");
+    if rust_pos >= 0 {
+        let region = region.unwrap();
+        let captures: Vec<_> = region
+            .beg
+            .into_iter()
+            .zip(region.end)
+            .take(region.num_regs as usize)
+            .collect();
+        assert_eq!(
+            captures,
+            c_region.capture_ranges(),
+            "{label}: captures differ"
+        );
+    }
+}
+
+fn assert_same_scanner_trace(scanner: &mut Scanner, c_scanner: &ffi::CScanner, text: &str) {
+    assert!(
+        text.is_ascii(),
+        "trace comparison uses coinciding byte/UTF-16 offsets"
+    );
+    let line = OnigString::new(text);
+    let id = next_c_str_cache_id();
+    let mut position = 0;
+    while position < text.len() {
+        let rust_match = scanner
+            .find_next_match_utf16(&line, position, ScannerFindOptions::NONE)
+            .map(|m| {
+                (
+                    m.index,
+                    m.capture_indices
+                        .iter()
+                        .map(|c| (c.start, c.end))
+                        .collect::<Vec<_>>(),
+                )
+            });
+        let c_match = c_scanner
+            .find_next_match(text.as_bytes(), id, position)
+            .map(|(index, captures)| {
+                (
+                    index,
+                    captures
+                        .into_iter()
+                        .map(|(beg, end)| {
+                            // Scanner's public API represents unmatched groups as 0..0.
+                            if beg >= 0 && end >= beg {
+                                (beg as usize, end as usize)
+                            } else {
+                                (0, 0)
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            });
+        assert_eq!(rust_match, c_match, "scanner trace at {position}: {text:?}");
+        let Some((_, captures)) = rust_match else {
+            break;
+        };
+        position = captures[0].1.max(position + 1);
+    }
 }
 
 fn make_log_line(i: usize) -> String {
@@ -172,6 +246,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         let mut scanner = Scanner::new(&ts_patterns).unwrap();
         let c_scanner =
             ffi::CScanner::new(&ts_patterns_byte_refs).expect("C scanner create failed");
+        assert_same_scanner_trace(&mut scanner, &c_scanner, ts_line);
 
         let label = format!("ts_{ts_count}_first_match_rust");
         group.bench_function(&label, |b| {
@@ -195,6 +270,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         let mut scanner = Scanner::new(&ts_patterns).unwrap();
         let c_scanner =
             ffi::CScanner::new(&ts_patterns_byte_refs).expect("C scanner create failed");
+        assert_same_scanner_trace(&mut scanner, &c_scanner, ts_line);
 
         let label = format!("ts_{ts_count}_tokenize_rust");
         group.bench_function(&label, |b| {
@@ -264,6 +340,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         let mut scanner = Scanner::new(&css_patterns).unwrap();
         let c_scanner =
             ffi::CScanner::new(&css_patterns_byte_refs).expect("C scanner create failed");
+        assert_same_scanner_trace(&mut scanner, &c_scanner, CSS_INPUT);
 
         let label = format!("css_{css_count}_tokenize_rust");
         group.bench_function(&label, |b| {
@@ -333,6 +410,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         let mut scanner = Scanner::new(&rust_patterns).unwrap();
         let c_scanner =
             ffi::CScanner::new(&rust_patterns_byte_refs).expect("C scanner create failed");
+        assert_same_scanner_trace(&mut scanner, &c_scanner, rust_line);
 
         let label = format!("rust_{rust_count}_first_match_rust");
         group.bench_function(&label, |b| {
@@ -359,6 +437,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
         let mut scanner = Scanner::new(&rust_patterns).unwrap();
         let c_scanner =
             ffi::CScanner::new(&rust_patterns_byte_refs).expect("C scanner create failed");
+        assert_same_scanner_trace(&mut scanner, &c_scanner, rust_line);
 
         let label = format!("rust_{rust_count}_tokenize_rust");
         group.bench_function(&label, |b| {
@@ -491,6 +570,9 @@ fn bench_scanner_documents(c: &mut Criterion) {
 
         let mut scanner = Scanner::new(&patterns).unwrap();
         let c_scanner = ffi::CScanner::new(&patterns_byte_refs).expect("C scanner create failed");
+        for line in &lines {
+            assert_same_scanner_trace(&mut scanner, &c_scanner, line);
+        }
 
         let rust_tokens: u32 = rust_lines
             .iter()
@@ -523,6 +605,28 @@ fn bench_scanner_documents(c: &mut Criterion) {
                 black_box(count);
             });
         });
+
+        #[cfg(feature = "match-cache")]
+        {
+            let mut cached = Scanner::with_match_cache(
+                &patterns,
+                &ferroni::scanner::ScannerConfig::default(),
+                ferroni::match_cache::MatchCacheConfig::new(),
+            )
+            .unwrap();
+            for line in &lines {
+                assert_same_scanner_trace(&mut cached, &c_scanner, line);
+            }
+            group.bench_function(format!("{prefix}_rust_cached"), |b| {
+                b.iter(|| {
+                    let mut count = 0u32;
+                    for (line, len) in &rust_lines {
+                        count += tokenize_line_rust(&mut cached, line, *len);
+                    }
+                    black_box(count);
+                });
+            });
+        }
     }
 
     group.finish();
@@ -556,9 +660,7 @@ fn bench_text_scanning(c: &mut Criterion) {
         let c_reg = c_compile(pattern, ffi::ONIG_OPTION_NONE);
         let regex = regex_compile(pattern, false);
 
-        let (rust_pos, _) = rust_search(&rust_reg, text.as_slice(), None);
-        let c_pos = c_reg.search(text.as_slice(), 0, text.len(), None, ffi::ONIG_OPTION_NONE);
-        assert_same_result(rust_pos, c_pos, name);
+        assert_same_match(&rust_reg, &c_reg, text.as_slice(), name);
 
         group.bench_with_input(
             BenchmarkId::new("rust", name),
@@ -571,16 +673,8 @@ fn bench_text_scanning(c: &mut Criterion) {
             },
         );
         group.bench_with_input(BenchmarkId::new("c", name), &text.as_slice(), |b, text| {
-            let mut region = ffi::CRegion::new();
             b.iter(|| {
-                region.clear();
-                let pos = c_reg.search(
-                    black_box(text),
-                    0,
-                    text.len(),
-                    Some(&mut region),
-                    ffi::ONIG_OPTION_NONE,
-                );
+                let pos = c_reg.search(black_box(text), 0, text.len(), None, ffi::ONIG_OPTION_NONE);
                 black_box(pos);
             });
         });
@@ -623,6 +717,25 @@ fn bench_text_scanning(c: &mut Criterion) {
             std::mem::forget(regex);
         }
         let mut c_set = ffi::CRegSet::new(&c_raw_ptrs).expect("C regset_new failed");
+        assert_eq!(
+            onig_regset_search(
+                &mut rust_set,
+                text,
+                text.len(),
+                0,
+                text.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE
+            ),
+            c_set.search(
+                text,
+                0,
+                text.len(),
+                ffi::ONIG_REGSET_POSITION_LEAD,
+                ffi::ONIG_OPTION_NONE
+            ),
+            "regset selection and position differ"
+        );
 
         group.bench_function("regset_position_lead_rust", |b| {
             b.iter(|| {
@@ -656,7 +769,7 @@ fn bench_text_scanning(c: &mut Criterion) {
     group.finish();
 }
 
-/// (label, pattern, haystack, ferroni options, Oniguruma options, expect match)
+/// (label, pattern, haystack, Ferroni options, Oniguruma options, regex-compatible)
 type SinglePatternCase = (
     &'static str,
     &'static [u8],
@@ -749,17 +862,7 @@ fn bench_single_pattern(c: &mut Criterion) {
         let rust_reg = rust_compile(pattern, *rust_option);
         let c_reg = c_compile(pattern, *c_option);
 
-        let (rust_pos, _) = onig_search(
-            &rust_reg,
-            text,
-            text.len(),
-            0,
-            text.len(),
-            None,
-            ONIG_OPTION_NONE,
-        );
-        let c_pos = c_reg.search(text, 0, text.len(), None, ffi::ONIG_OPTION_NONE);
-        assert_same_result(rust_pos, c_pos, name);
+        assert_same_match(&rust_reg, &c_reg, text, name);
 
         group.bench_with_input(BenchmarkId::new("rust", name), &text[..], |b, text| {
             b.iter(|| {
@@ -776,16 +879,8 @@ fn bench_single_pattern(c: &mut Criterion) {
             });
         });
         group.bench_with_input(BenchmarkId::new("c", name), &text[..], |b, text| {
-            let mut region = ffi::CRegion::new();
             b.iter(|| {
-                region.clear();
-                let pos = c_reg.search(
-                    black_box(text),
-                    0,
-                    text.len(),
-                    Some(&mut region),
-                    ffi::ONIG_OPTION_NONE,
-                );
+                let pos = c_reg.search(black_box(text), 0, text.len(), None, ffi::ONIG_OPTION_NONE);
                 black_box(pos);
             });
         });
