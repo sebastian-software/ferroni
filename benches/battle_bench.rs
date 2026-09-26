@@ -6,6 +6,7 @@
 // HTML report: target/criterion/report/index.html
 // Pinned external inputs: benches/battle_inputs.toml
 
+mod general_regex;
 mod grammar_loader;
 mod scanner_css_workload;
 mod scanner_documents;
@@ -942,6 +943,7 @@ fn bench_compilation(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    general_regex::bench_general_regex,
     bench_scanner_highlighting,
     bench_scanner_documents,
     bench_text_scanning,
