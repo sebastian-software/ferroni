@@ -4,5 +4,5 @@ themes:
     ref: ebc83455a1be4c231dd4c503e23ddbb19cba74bc
     path: markdown
   - git: https://github.com/sebastian-software/ferramenta.git
-    ref: 05fadd21d86b69bb15179ef4461bef6b3b531f88
+    ref: cbbae2ff9b676e59c9cf764d3aacb1164f4881c2
     path: packages/family/markdown/ferroni

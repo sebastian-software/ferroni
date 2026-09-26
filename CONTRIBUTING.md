@@ -87,7 +87,14 @@ that directory:
 cd docs
 pnpm install --frozen-lockfile
 pnpm format:check   # pnpm format rewrites
+pnpm verify         # lint, typecheck, format, benchmark claims, and production build
 ```
+
+The home page's run sample is generated from `examples/website_sample.rs`.
+After changing the example, run `pnpm sample:write` from `docs/` and commit
+`docs/app/data/regex-sample.json`. `pnpm sample:check` runs the example again
+and compares its source and actual stdout with the committed artifact. The
+output caption retains the Ferroni version that originally generated it.
 
 CI also runs a `standards drift` lane that executes
 `@sebastian-software/standards check`. Its version is pinned in

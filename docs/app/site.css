@@ -1,7 +1,7 @@
 /*
  * Site-level styles for the Ferroni documentation site.
  *
- * Load order (package README): tokens.css, fonts.css, theme.css, this file,
+ * Load order (package README): tokens.css, fonts.css, theme.css, landing.css, site styles,
  * then chrome.css last. Everything here is integration between Ardo's docs
  * shell and the shared family chrome: the seam that lets the page scroll, and
  * the documentation controls this site puts in the header's `nav` and
@@ -243,7 +243,7 @@
     font-size: 1.25rem;
   }
 
-  .site-header nav.site {
+  .site-header .site-nav {
     gap: 0.25rem;
   }
 
@@ -280,7 +280,12 @@
     height: 20px;
   }
 
-  .site-header nav.site {
+  /* Keep the home link's visible and accessible name on the narrow docs bar. */
+  .site-header a.lockup span {
+    display: inline;
+  }
+
+  .site-header .site-nav {
     gap: 0.1rem;
   }
 }

@@ -9,14 +9,16 @@ import {
 } from "ardo/ui";
 import { MarkDefs, SiteFooter, SiteHeader } from "ferramenta-family";
 import { useRef } from "react";
-import { type MetaFunction, NavLink } from "react-router";
+import { type MetaFunction, NavLink, useHref } from "react-router";
 import config from "virtual:ardo/config";
 import "ardo/ui/styles.css";
 import "ferramenta-family/tokens.css";
 import "ferramenta-family/fonts.css";
 import "ferramenta-family/theme.css";
+import "ferramenta-family/landing.css";
 
 import "./site.css";
+import "./routes/home.css";
 // Last on purpose (see the package README): the shared chrome has to win the
 // ties the Ardo and site styles around it would otherwise take.
 import "ferramenta-family/chrome.css";
@@ -144,11 +146,14 @@ function FooterLegal() {
 }
 
 export default function Root() {
+  const home = useHref("/");
   return (
     <>
       <MarkDefs />
       <SiteHeader
         current="ferroni"
+        lockup="project"
+        home={home}
         nav={<DocsNav />}
         actions={<DocsTools />}
         themeToggle={<ArdoThemeToggle />}

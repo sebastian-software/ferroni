@@ -431,7 +431,7 @@ under the BSD-2-Clause license of the code it is derived from.
 | Tool | Job |
 | --- | --- |
 | [ferriki](https://github.com/sebastian-software/ferriki) | Shiki-compatible syntax highlighting |
-| [ferromark](https://sebastian-software.github.io/ferromark/) | Markdown to HTML with a secure default and every GFM extension included. |
+| [ferromark](https://sebastian-software.github.io/ferromark/) | Markdown to HTML, sanitized by default |
 
 **The language workshop**
 
@@ -445,9 +445,10 @@ under the BSD-2-Clause license of the code it is derived from.
 
 | Tool | Job |
 | --- | --- |
-| [ferrovia](https://github.com/sebastian-software/ferrovia) | SVGO-compatible SVG optimizer |
 | [ferralk](https://github.com/sebastian-software/ferralk) | Glob matching and parallel filesystem walking |
 | [ferrugo](https://github.com/sebastian-software/ferrugo) | PDF previews for untrusted files |
+| [dalo](https://dalo.sh) | Team agent skills, versioned and synced as code |
+| [cuttledoc](https://github.com/sebastian-software/cuttledoc) | Local-first speech transcription |
 
 ---
 

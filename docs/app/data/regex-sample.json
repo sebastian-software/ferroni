@@ -1,0 +1,6 @@
+{
+  "version": "1.6.0",
+  "input": "use ferroni::prelude::*;\n\nfn main() -> Result<(), RegexError> {\n    let regex = Regex::new(r\"(?<=Date: )(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})\")?;\n    let text = \"Date: 2026-09-26\";\n    let captures = regex.captures(text).expect(\"the sample date matches\");\n\n    println!(\"input: {text}\");\n    for name in [\"year\", \"month\", \"day\"] {\n        let value = captures.name(name).expect(\"the named group exists\");\n        println!(\"{name}: {}\", value.as_str());\n    }\n    Ok(())\n}\n",
+  "stdout": "input: Date: 2026-09-26\nyear: 2026\nmonth: 09\nday: 26\n",
+  "output": "<pre><code>input: Date: 2026-09-26\nyear: 2026\nmonth: 09\nday: 26\n</code></pre>"
+}

@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "react-router dev",
+    "verify": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm build",
+    "sample:write": "node scripts/render-regex-sample.mjs",
+    "sample:check": "node scripts/render-regex-sample.mjs --check",
     "build": "pnpm check:numbers && react-router build",
     "check:numbers": "node scripts/check-benchmark-claims.mjs",
     "lint": "pnpm lint:oxlint && pnpm lint:eslint",
@@ -17,7 +20,7 @@
   },
   "dependencies": {
     "ardo": "^4.2.0",
-    "ferramenta-family": "github:sebastian-software/ferramenta#05fadd21d86b69bb15179ef4461bef6b3b531f88&path:/packages/family",
+    "ferramenta-family": "github:sebastian-software/ferramenta#cbbae2ff9b676e59c9cf764d3aacb1164f4881c2&path:/packages/family",
     "isbot": "^5.2.2",
     "lucide-react": "^1.47.0",
     "react": "^19.3.0",
