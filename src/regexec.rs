@@ -3404,6 +3404,11 @@ fn single_op_matches(
             let n = *n as usize;
             available >= n && exact_eq_at(str_data, s, exact, n)
         }
+        (OpCode::CClassRun, OperationPayload::CClassRun { bsp, .. }) => {
+            // A fused look-behind evaluates just its original single class;
+            // the adjacent forward classes remain at their original addresses.
+            available > 0 && bitset_at(bsp, str_data[s] as usize)
+        }
         (OpCode::CClass | OpCode::CClassNot, OperationPayload::CClass { bsp, ascii_fast }) => {
             if available == 0 {
                 return false;
@@ -3977,6 +3982,25 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
             // ================================================================
             // OP_CCLASS / OP_CCLASS_NOT - character class matching
             // ================================================================
+            OpCode::CClassRun => {
+                if let OperationPayload::CClassRun { ref bsp, len } = reg.ops[p].payload {
+                    let len = usize::from(len);
+                    let stop = s.saturating_add(len).min(right_range);
+                    let mut remaining = len;
+                    while s < stop && bitset_at(bsp, str_data[s] as usize) {
+                        s += 1;
+                        remaining -= 1;
+                    }
+                    if remaining == 0 {
+                        p += len;
+                    } else {
+                        goto_fail = true;
+                    }
+                } else {
+                    goto_fail = true;
+                }
+            }
+
             OpCode::CClass => {
                 if s >= right_range {
                     goto_fail = true;
@@ -7864,6 +7888,192 @@ mod tests {
             std::str::from_utf8(pattern)
         );
         reg
+    }
+
+    /// Class runs must preserve entry into a suffix (the optional prefix),
+    /// partial-failure positions, captures, and match/retry limit outcomes.
+    #[test]
+    fn ascii_class_runs_match_unbatched_instructions() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns = [
+            r"[ab]{4}",
+            r"[ab]?[ab]{3}",
+            r"[ab]{2,4}b",
+            r"([ab]{2}){2}\1",
+            r"([ab]{2}|a)[ab]{2}",
+            r"(?<=[ab])[ab]{3}",
+            r"(?<=[ab]{2,3})[ab]{2}",
+            r"(?<![ab]{2})[ab]{2}",
+            r"(?=[ab]{4})([ab]{2})",
+            r"(?>[ab]{2})[ab]{2}",
+            r"(?:[ab]{2})+b",
+            r"([ab]{2})?([ab]{2})",
+            r"\A[0-9]{3}-[0-9]{2}\z",
+            r"[ab]{2}\K[ab]{2}",
+            r"(?i)[ab]{4}",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"a",
+            b"ab",
+            b"aba",
+            b"abba",
+            b"aababb",
+            b"aaaaab!",
+            b"!aababb",
+            b"abababab",
+            b"AbAB",
+            b"123-45",
+            b"12x-45",
+            b"ab\xffab",
+            b"ab\xc2\xa1ab",
+            b"\xc2",
+            b"\xe2\x82",
+        ];
+        let mut comparisons = 0;
+        for pattern in patterns {
+            let optimized = regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let mut reference = regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let mut runs = 0;
+            for op in &mut reference.ops {
+                if let OperationPayload::CClassRun { bsp, .. } = &op.payload {
+                    op.payload = OperationPayload::CClass {
+                        bsp: bsp.clone(),
+                        ascii_fast: CClassAsciiFastKind::None,
+                    };
+                    op.opcode = OpCode::CClass;
+                    runs += 1;
+                }
+            }
+            assert!(runs > 0, "{pattern}: no class run exercised");
+            for &input in inputs {
+                for end in 0..=input.len() {
+                    for start in 0..=end {
+                        for range in [0, start, end] {
+                            for option in [
+                                ONIG_OPTION_NONE,
+                                ONIG_OPTION_FIND_LONGEST,
+                                ONIG_OPTION_FIND_NOT_EMPTY,
+                                ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                            ] {
+                                for (retry, stack) in [(0, 0), (1, 0), (3, 0), (0, 1), (0, 3)] {
+                                    let mut mp = onig_new_match_param();
+                                    mp.retry_limit_in_match = retry;
+                                    mp.retry_limit_in_search = retry;
+                                    mp.match_stack_limit = stack;
+                                    mp.time_limit = 0;
+                                    let search = |reg| {
+                                        let (result, region) = onig_search_with_param(
+                                            reg,
+                                            input,
+                                            end,
+                                            start,
+                                            range,
+                                            Some(OnigRegion::new()),
+                                            option,
+                                            &mp,
+                                        );
+                                        let region = region.unwrap();
+                                        (result, region.beg, region.end)
+                                    };
+                                    assert_eq!(
+                                        search(&optimized),
+                                        search(&reference),
+                                        "{pattern:?} {input:?} end={end} start={start} range={range} {option:?} retry={retry} stack={stack}",
+                                    );
+                                    comparisons += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("{comparisons} class-run/unbatched comparisons");
+    }
+
+    #[test]
+    fn ascii_class_runs_split_at_the_metadata_bound() {
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for count in [254, 255, 256, 300] {
+                let pattern = format!(r"\A{}\z", "[ab]".repeat(count));
+                let reg = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                let longest = reg
+                    .ops
+                    .iter()
+                    .filter_map(|op| match op.payload {
+                        OperationPayload::CClassRun { len: n, .. } => Some(n),
+                        _ => None,
+                    })
+                    .max()
+                    .unwrap();
+                assert_eq!(usize::from(longest), count.min(usize::from(u8::MAX)));
+                for (len, last, expected) in [
+                    (count, b'b', 0),
+                    (count - 1, b'b', ONIG_MISMATCH),
+                    (count + 1, b'b', ONIG_MISMATCH),
+                    (count, b'!', ONIG_MISMATCH),
+                    (count, 0xff, ONIG_MISMATCH),
+                ] {
+                    let mut text = vec![b'a'; len];
+                    text[len - 1] = last;
+                    let (result, region) = onig_search(
+                        &reg,
+                        &text,
+                        len,
+                        0,
+                        len,
+                        Some(OnigRegion::new()),
+                        ONIG_OPTION_NONE,
+                    );
+                    assert_eq!(result, expected, "{} {count} {len} {last}", enc.name());
+                    if result >= 0 {
+                        let region = region.unwrap();
+                        assert_eq!((region.beg[0], region.end[0]), (0, count as i32));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ascii_class_runs_leave_multibyte_and_negated_classes_unbatched() {
+        for pattern in [r"[^ab]{4}", r"[aé]{4}", r"(?i)[k]{4}", r"[\p{L}]{4}"] {
+            let reg = regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            assert!(
+                reg.ops
+                    .iter()
+                    .all(|op| !matches!(op.payload, OperationPayload::CClassRun { .. })),
+                "{pattern}"
+            );
+        }
     }
 
     #[test]
