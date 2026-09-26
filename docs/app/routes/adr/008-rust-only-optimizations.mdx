@@ -70,12 +70,34 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **C's optimizer still decides**: the table only narrows the positions an entry is attempted at. An entry whose optimizer has a distance is dispatched by its bytecode start bytes but attempted only where C's optimizer admits the position (`sr[i]`); the check runs after an attempt with a match or an error, or before every attempt where callouts or a search retry budget can observe it. The extra class and type byte maps (`optimize_nodes` with `start_maps`) serve only where C has no optimizer, and as a routing hint (`start_dispatch`).
 - **Windowed table scan**: with fallback entries in the set the table is scanned in windows (256 bytes, then four times as large), and the fallback entries are asked for an event inside each window, so an early fallback match ends the search as C's position-by-position search does.
 
+#### Compiled forward literal finder (`src/regcomp.rs`, `src/regexec.rs`)
+
+- **Trigger**: the existing optimizer selects `StrFast` with an exact string longer than one byte.
+- **Execution**: compilation creates an owned `memchr::memmem::Finder`, reused by forward literal searches. The optimizer's string, distance bounds, search slice, candidate positions, and VM attempts remain unchanged. Single-byte searches still use `memchr`; backward and encoding-step searches keep their existing paths.
+- **Bounds**: one optional pointer per compiled regex; eligible expressions additionally own a boxed finder and a copy of the exact string, bounded by `OPT_EXACT_MAXLEN` (24 bytes). Search adds no allocation or shared mutable state. No new dependency or unsafe code.
+- **Validation and measurements**: [simple-pattern profiling](/perf/simple-pattern-profiling), including bounded-search and limit comparisons against the previous search path, cache/C parity, compilation costs, memory layout, and repeated workload measurements.
+
+#### Unicode class range lookup (`src/regexec.rs`)
+
+- **Trigger**: multibyte character classes with more than four sorted intervals.
+- **Execution**: after the existing table-length and endpoint checks, `is_in_code_range` views the range words as pairs and searches for the containing interval. It returns immediately for an inclusive hit; otherwise it searches the left or right subslice, excluding the tested midpoint. Each iteration strictly shrinks the slice. This preserves C's membership result for sorted, disjoint intervals without requiring its lower-bound search to finish at a leaf. Small-table fast paths remain unchanged.
+- **Bounds**: logarithmic search, constant auxiliary space, no allocations, new metadata, generated-table changes, dependencies, or unsafe code. Encoding, byte consumption, backtracking, and limits keep their existing paths.
+- **Validation and measurements**: [Unicode interval search refinement](/perf/unicode-range-lookup-refinement), including an exhaustive Unicode-range sweep, malformed table bounds, cache/plain/C checks, rejected alternatives, and a repeated 41-case before/after matrix. The earlier partition-search evaluations remain linked as historical evidence.
+
 #### Adjacent ASCII class runs (`src/regcomp.rs`, `src/regexec.rs`)
 
 - **Trigger**: consecutive identical, non-negated `CClass` instructions whose bitsets contain only ASCII bytes, with an ASCII-compatible encoding. Existing equality/case-pair fast paths remain unchanged.
 - **Execution**: a post-compile pass marks each eligible prefix with `CClassRun`. All instruction addresses remain valid, including branches into a suffix. Each dispatch checks at most 255 bytes and preserves the failure position. Fused one-instruction look-behinds still evaluate only their original class. Backward searches whose matching range extends past the logical end execute classes one at a time to preserve the existing clamp.
 - **Bounds**: one linear pass over bytecode, existing bitsets reused, no extra heap allocation, dependency, or unsafe code. Longer runs continue at their remaining suffix.
 - **Validation and measurements**: [ASCII class run evaluation](/perf/ascii-class-runs). Tests compare raw results, captures, and deterministic limit outcomes against unbatched instructions, including malformed UTF-8 and backward or bounded searches. The opt-in cache and C differential suite also exercise the new opcode.
+
+#### Leading atomic ASCII class search filter (`src/regexec.rs`)
+
+- **Trigger**: the forward position loop sees exactly the compiler's leading atomic `[class]+literal` bytecode, with identical positive ASCII class bitsets and a disjoint one-byte literal. Capturing, anchored, alternating, and multibyte prefixes stay on the original path.
+- **Execution**: a class run ending at the wrong delimiter cannot match from any suffix, so the filter skips that run. A run ending at the right delimiter still enters the VM, including every interior start if the tail fails. The run end is remembered to avoid repeating the prefix scan.
+- **Fallbacks**: a per-match retry limit of one, any search retry budget, stack or time limit, callouts, or a configured match cache disables the filter. Every skipped prefix would consume exactly one retry and cannot enter its tail; higher per-match limits therefore keep their original outcomes.
+- **Bounds**: constant scratch space, linear prefix scanning, no new compiled metadata, opcode, allocation, dependency, or unsafe code. Backward and equal-endpoint searches retain their existing paths.
+- **Validation and measurements**: [atomic class prefix evaluation](/perf/atomic-class-prefix), including 500,736 exact original-path comparisons, C/cache differential cases, repeated general workloads, and broader scanner/search/compilation checks.
 
 #### ASCII fast paths in VM execution (`src/regexec.rs`)
 

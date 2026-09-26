@@ -2741,7 +2741,7 @@ fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: M
 
 /// Check if a code point is in a multi-byte range table.
 /// The table format is: data[0] = n (range count), followed by n pairs of (from, to).
-/// Binary search, matching C's onig_is_in_code_range exactly.
+/// Binary search with C's inclusive membership semantics for sorted intervals.
 #[inline]
 pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
     if data.len() < 3 {
@@ -2790,18 +2790,22 @@ pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
         return false;
     }
 
-    let mut low: usize = 0;
-    let mut high: usize = n;
-    while low < high {
-        let x = (low + high) >> 1;
-        if code > ranges[x * 2 + 1] {
-            low = x + 1;
+    // Search complete intervals so a hit can return before reaching a leaf.
+    // Slicing keeps midpoint and tail accesses bounded without unchecked reads.
+    let (mut pairs, _) = ranges.as_chunks::<2>();
+    while !pairs.is_empty() {
+        let (left, right) = pairs.split_at(pairs.len() / 2);
+        // The midpoint of a nonempty slice is strictly below its length.
+        let (range, tail) = right.split_first().unwrap();
+        if code > range[1] {
+            pairs = tail;
+        } else if code < range[0] {
+            pairs = left;
         } else {
-            high = x;
+            return true;
         }
     }
-
-    low < n && code >= ranges[low * 2]
+    false
 }
 
 /// Get the character length at position s for the given encoding.
@@ -6354,7 +6358,7 @@ fn slow_search(
 /// Sunday quick search (BMH variant). Mirrors C's sunday_quick_search.
 /// Uses SIMD-accelerated memchr::memmem for the actual byte search.
 fn sunday_quick_search(
-    _reg: &RegexType,
+    reg: &RegexType,
     target: &[u8],
     text: &[u8],
     text_start: usize,
@@ -6384,6 +6388,8 @@ fn sunday_quick_search(
     let haystack = &text[text_start..search_end];
     if tlen == 1 {
         memchr::memchr(target[0], haystack).map(|i| text_start + i)
+    } else if let Some(finder) = &reg.exact_finder {
+        finder.find(haystack).map(|i| text_start + i)
     } else {
         memchr::memmem::find(haystack, target).map(|i| text_start + i)
     }
@@ -7661,9 +7667,19 @@ fn onig_search_inner_core_with_right_range(
         }
     }
 
+    let class_prefix = atomic_ascii_class_prefix(reg, msa);
+    let mut class_prefix_end = s;
+
     // Normal position-by-position search (no optimization or fallthrough)
     if best_start == ONIG_MISMATCH {
         loop {
+            if let Some((bsp, delimiter)) = class_prefix {
+                if s >= class_prefix_end {
+                    (s, class_prefix_end) = skip_nonmatching_class_prefix(
+                        reg.enc, str_data, end, cur_range, s, bsp, delimiter,
+                    );
+                }
+            }
             if let Some(filter) = start_filter {
                 // No match starts on an excluded byte. The range limit and the
                 // logical end are still attempted, as the loop below does.
@@ -7716,6 +7732,96 @@ fn onig_search_inner_core_with_right_range(
         data_range,
         msa,
     )
+}
+
+/// A leading atomic `[class]+literal` has only one possible exit from its
+/// ASCII run. A run ending at a different byte cannot match from any suffix.
+/// Recognize the exact auto-possessive sequence, leaving captures, anchors,
+/// alternations, and every other prefix on the ordinary VM path.
+fn atomic_ascii_class_prefix<'a>(reg: &'a RegexType, msa: &MatchArg) -> Option<(&'a BitSet, u8)> {
+    let [mark, head, star, cut, literal, ..] = reg.ops.as_slice() else {
+        return None;
+    };
+    let (
+        OpCode::Mark,
+        OperationPayload::Mark { id, save_pos: true },
+        OpCode::CClass,
+        OperationPayload::CClass { bsp, .. },
+        OpCode::CClassStarPeekNext,
+        OperationPayload::CClassStarPeekNext { bsp: tail, c },
+        OpCode::CutToMark,
+        OperationPayload::CutToMark {
+            id: cut_id,
+            restore_pos: false,
+        },
+        OpCode::Str1,
+        OperationPayload::Exact { s },
+    ) = (
+        mark.opcode,
+        &mark.payload,
+        head.opcode,
+        &head.payload,
+        star.opcode,
+        &star.payload,
+        cut.opcode,
+        &cut.payload,
+        literal.opcode,
+        &literal.payload,
+    )
+    else {
+        return None;
+    };
+    // Every rejected prefix fails before reaching the tail and pops only the
+    // bottom sentinel: the atomic cut removes its lazy star choice. That costs
+    // one retry per attempt. A per-match limit of one or an accumulating search
+    // budget can therefore observe the attempts; so can stack/time limits.
+    if msa.retry_limit_in_search != 0
+        || msa.retry_limit_in_match == 1
+        || msa.match_stack_limit != 0
+        || msa.time_limit != 0
+        || reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0)
+        || !onigenc_is_ascii_compatible_encoding(reg.enc)
+    {
+        return None;
+    }
+    #[cfg(feature = "match-cache")]
+    if msa.match_cache.is_some() {
+        return None;
+    }
+    (*id == *cut_id
+        && bsp == tail
+        && s[0] == *c
+        && !bitset_at(bsp, *c as usize)
+        && bsp[128 / BITS_IN_ROOM..].iter().all(|&bits| bits == 0))
+    .then_some((bsp, *c))
+}
+
+fn skip_nonmatching_class_prefix(
+    enc: OnigEncoding,
+    text: &[u8],
+    end: usize,
+    range: usize,
+    mut start: usize,
+    bsp: &BitSet,
+    delimiter: u8,
+) -> (usize, usize) {
+    while start < range && start < end {
+        let mut run_end = start;
+        while run_end < end && bitset_at(bsp, text[run_end] as usize) {
+            run_end += 1;
+        }
+        if run_end > start {
+            if run_end < end && text[run_end] == delimiter {
+                // If the tail fails, the remaining starts in this same run
+                // already satisfy the prefix. Do not scan it again per suffix.
+                return (start, run_end);
+            }
+            start = run_end.min(range);
+        } else {
+            start = advance_char_to_end(enc, text, start, end);
+        }
+    }
+    (start, start)
 }
 
 /// Rust-only start filter of a search whose optimizer (C's) sits at an
@@ -7800,6 +7906,7 @@ mod tests {
             anc_dist_max: 0,
             sub_anchor: 0,
             exact: Vec::new(),
+            exact_finder: None,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],
@@ -7904,6 +8011,267 @@ mod tests {
             std::str::from_utf8(pattern)
         );
         reg
+    }
+
+    #[test]
+    fn compiled_literal_finder_preserves_bounded_searches_and_limits() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns = [
+            r"ab",
+            r"(ab)(c?)",
+            r"ab(?:c|d)",
+            r"(ab)c\1",
+            r"(?<=x)ab",
+            r"ab\K(c?)",
+            r".*ab",
+            r"ab(?=c)",
+            r"\Aab",
+            r"abcdefghijklmnopqrstuvwxyz",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"a",
+            b"ab",
+            b"xab",
+            b"abcab",
+            b"abdab",
+            b"ab\0ab",
+            b"\xc2ab",
+            b"a\xffab",
+            b"ab\xe2\x82",
+            b"\xc2\xa1ab",
+            b"abcdefghijklmnopqrstuvwxyz!",
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let compile = || {
+                    regcomp::onig_new(
+                        pattern.as_bytes(),
+                        ONIG_OPTION_NONE,
+                        enc,
+                        &crate::regsyntax::OnigSyntaxOniguruma,
+                    )
+                    .unwrap()
+                };
+                let optimized = compile();
+                let mut reference = compile();
+                // Retain the same optimizer and bytecode; only rebuild the
+                // substring search plan on each search, as before this change.
+                assert!(reference.exact_finder.take().is_some(), "{pattern}");
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack) in
+                                        [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)]
+                                    {
+                                        let mut mp = onig_new_match_param();
+                                        mp.retry_limit_in_match = retry;
+                                        mp.retry_limit_in_search = search_retry;
+                                        mp.match_stack_limit = stack;
+                                        mp.time_limit = 0;
+                                        let search = |reg| {
+                                            let (result, region) = onig_search_with_param(
+                                                reg,
+                                                input,
+                                                end,
+                                                start,
+                                                range,
+                                                Some(OnigRegion::new()),
+                                                option,
+                                                &mp,
+                                            );
+                                            let region = region.unwrap();
+                                            (result, region.beg, region.end)
+                                        };
+                                        assert_eq!(
+                                            search(&optimized),
+                                            search(&reference),
+                                            "{} {pattern:?} {input:?} end={end} start={start} range={range} {option:?} retry={retry} search_retry={search_retry} stack={stack}",
+                                            enc.name()
+                                        );
+                                        comparisons += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("{comparisons} compiled/rebuilt literal finder comparisons");
+    }
+
+    #[test]
+    fn atomic_class_prefix_filter_falls_back_for_observable_modes() {
+        let compile = |pattern: &str| {
+            regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        for pattern in [
+            r"([ab]+):",
+            r"[ab]*:",
+            r"[ab]+a",
+            r"[^x]+:",
+            r"\p{L}+:",
+            r"\A[ab]+:",
+            r"[ab]+:(?{x})",
+            r"[ab]+:\x00",
+            r"[ab]+\x00",
+            r"[ab]+:|other",
+        ] {
+            let reg = compile(pattern);
+            let msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, 0);
+            assert!(atomic_ascii_class_prefix(&reg, &msa).is_none(), "{pattern}");
+        }
+        let reg = compile(r"[ab]+:");
+        for (retry, search_retry, stack, time) in
+            [(1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)]
+        {
+            let mut msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, 0);
+            msa.retry_limit_in_match = retry;
+            msa.retry_limit_in_search = search_retry;
+            msa.match_stack_limit = stack;
+            msa.time_limit = time;
+            assert!(atomic_ascii_class_prefix(&reg, &msa).is_none());
+        }
+    }
+
+    #[test]
+    fn atomic_class_prefix_filter_preserves_search_results_and_limits() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns = [
+            r"[ab]+:",
+            r"[ab]+:(a+)\1",
+            r"[ab]+:(?<!a:)(c?)",
+            r"[ab]+:\K(c?)",
+            r"[ab]+:(?:c|cc)",
+            r"[ab]+:\G",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"a",
+            b"ab",
+            b"ab:",
+            b"aab!ab:cc",
+            b"a:aaa ab:aa",
+            b"ba:ccab:c",
+            b"!b:\0",
+            b"ab\0",
+            b"\xc2ab:",
+            b"a\xffab:",
+            b"ab\xe2\x82",
+            b"\xc2\xa1ab:",
+            b"aaaa!",
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let compile = || {
+                    regcomp::onig_new(
+                        pattern.as_bytes(),
+                        ONIG_OPTION_NONE,
+                        enc,
+                        &crate::regsyntax::OnigSyntaxOniguruma,
+                    )
+                    .unwrap()
+                };
+                let optimized = compile();
+                let mut reference = compile();
+                assert!(
+                    atomic_ascii_class_prefix(
+                        &optimized,
+                        &MatchArg::new(&optimized, ONIG_OPTION_NONE, None, 0),
+                    )
+                    .is_some(),
+                    "{pattern}"
+                );
+                // CUT_TO_MARK has restore_pos=false. Omitting the unused position
+                // preserves the original bytecode's behavior but disables the filter.
+                let OperationPayload::Mark { save_pos, .. } = &mut reference.ops[0].payload else {
+                    panic!("expected the compiler's atomic prefix");
+                };
+                *save_pos = false;
+                assert!(
+                    atomic_ascii_class_prefix(
+                        &reference,
+                        &MatchArg::new(&reference, ONIG_OPTION_NONE, None, 0),
+                    )
+                    .is_none()
+                );
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack) in [
+                                        (0, 0, 0),
+                                        (1, 0, 0),
+                                        (2, 0, 0),
+                                        (3, 0, 0),
+                                        (0, 1, 0),
+                                        (0, 3, 0),
+                                        (0, 0, 1),
+                                        (0, 0, 3),
+                                    ] {
+                                        let mut mp = onig_new_match_param();
+                                        mp.retry_limit_in_match = retry;
+                                        mp.retry_limit_in_search = search_retry;
+                                        mp.match_stack_limit = stack;
+                                        mp.time_limit = 0;
+                                        let search = |reg| {
+                                            let (result, region) = onig_search_with_param(
+                                                reg,
+                                                input,
+                                                end,
+                                                start,
+                                                range,
+                                                Some(OnigRegion::new()),
+                                                option,
+                                                &mp,
+                                            );
+                                            let region = region.unwrap();
+                                            (result, region.beg, region.end)
+                                        };
+                                        assert_eq!(
+                                            search(&optimized),
+                                            search(&reference),
+                                            "{} {pattern:?} {input:?} end={end} start={start} range={range} {option:?} retry={retry} search_retry={search_retry} stack={stack}",
+                                            enc.name()
+                                        );
+                                        comparisons += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("{comparisons} prefix-filter/original comparisons");
     }
 
     /// Class runs must preserve entry into a suffix (the optional prefix),
@@ -8547,6 +8915,67 @@ mod tests {
         assert!(!is_in_code_range(&many, 0x00FF));
         assert!(is_in_code_range(&many, 0x0405));
         assert!(!is_in_code_range(&many, 0x0600));
+    }
+
+    #[test]
+    fn code_range_lookup_preserves_intervals_and_table_bounds() {
+        // Sweep independently through compiled intervals, including surrogate
+        // code points: raw encodings are not restricted to Rust `char` values.
+        for pattern in [r"\p{L}", r"\p{M}", r"[\p{L}\p{M}]", r"\p{Greek}"] {
+            let reg = compile_regex(pattern.as_bytes());
+            let table =
+                reg.ops
+                    .iter()
+                    .find_map(|op| match &op.payload {
+                        OperationPayload::CClassMb { mb }
+                        | OperationPayload::CClassMix { mb, .. } => Some(mb.as_slice()),
+                        _ => None,
+                    })
+                    .expect("property must compile to a multibyte class");
+            let n = table[0] as usize;
+            let mut interval = 0;
+            for code in 0..=0x110000 {
+                while interval < n && table[interval * 2 + 2] < code {
+                    interval += 1;
+                }
+                let expected = interval < n && table[interval * 2 + 1] <= code;
+                assert_eq!(
+                    is_in_code_range(table, code),
+                    expected,
+                    "{pattern}, {code:#x}"
+                );
+            }
+            assert!(!is_in_code_range(table, u32::MAX));
+        }
+
+        // The declared count, not spare trailing words, bounds the table.
+        // Exercise both sides of the small-table / binary-search boundary.
+        for n in 0..=64 {
+            let pairs: Vec<_> = (0..n).map(|i| (i * 7 + 2, i * 7 + 4)).collect();
+            let table = make_code_range_table(&pairs);
+            let mut extra = table.clone();
+            extra.extend([0, u32::MAX]);
+            for code in 0..=n * 7 + 7 {
+                let expected = pairs.iter().any(|&(lo, hi)| lo <= code && code <= hi);
+                assert_eq!(is_in_code_range(&table, code), expected);
+                assert_eq!(is_in_code_range(&extra, code), expected);
+            }
+            for len in 0..table.len() {
+                assert!(!is_in_code_range(&table[..len], 2));
+            }
+        }
+        for table in [&[][..], &[0], &[0, 0, u32::MAX], &[u32::MAX, 0, u32::MAX]] {
+            for code in [0, 1, 0x10FFFF, u32::MAX] {
+                assert!(!is_in_code_range(table, code));
+            }
+        }
+        let edge = make_code_range_table(&[(0, 0), (2, 2), (4, 4), (6, 6), (u32::MAX, u32::MAX)]);
+        for code in [0, 2, 4, 6, u32::MAX] {
+            assert!(is_in_code_range(&edge, code));
+        }
+        for code in [1, 3, 5, 7, u32::MAX - 1] {
+            assert!(!is_in_code_range(&edge, code));
+        }
     }
 
     #[test]

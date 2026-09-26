@@ -1,0 +1,59 @@
+---
+order: 16
+title: "Compilation and Search-Time Tradeoffs"
+---
+
+# Compilation and Search-Time Tradeoffs
+
+## Status
+
+Accepted. Supplements [ADR-008](/adr/008-rust-only-optimizations) and
+[ADR-010](/adr/010-benchmark-strategy).
+
+## Context
+
+A compiled Ferroni regex can serve many searches. Preparing a search plan once
+during compilation can avoid repeating that work for every subject. Optimizing
+only compilation latency can therefore leave useful execution gains unrealized.
+This applies to ordinary regex use as well as syntax highlighting.
+
+The [compiled literal finder evaluation](/perf/simple-pattern-profiling)
+demonstrates the tradeoff: repeated literal and URL searches improve, while
+compilation and memory costs increase. A separate case-insensitive execution
+regression also remains. These costs need distinct treatment.
+
+## Decision
+
+Prefer measured gains in repeated search execution over minimizing one-time
+compilation latency. Increased compilation time is an acceptable tradeoff when
+representative reused-regex workloads benefit and the added memory and
+complexity remain bounded. The feature and correctness requirements of
+ADR-008 continue to apply.
+
+Evaluate each optimization using these distinctions:
+
+- Report compilation, execution, and memory costs separately. Measure
+  compile-per-search workloads separately when making claims about them.
+- Treat slower execution on another workload as its own cost. Such a regression
+  can be accepted when the documented gains justify it for the intended use;
+  it is not automatically covered by accepting slower compilation.
+- Retain counterexamples and repeated measurements. Report absolute times as
+  well as relative changes, and name the workloads that benefit or lose.
+- Do not add unrelated benchmark percentages into a claimed overall gain.
+  Weight workloads only with evidence about their actual usage. Derive a reuse
+  break-even point only from compilation and execution of the same pattern.
+- Use C Oniguruma as a useful reference alongside the previous Ferroni version.
+  Remaining faster than C does not by itself justify a regression against
+  Ferroni's own baseline.
+
+## Consequences
+
+Ferroni may spend more time compiling and retain additional bounded metadata
+to accelerate subsequent searches. This is an intentional project preference;
+each optimization still needs evidence for its particular workload and costs.
+No requirement is introduced to improve every microbenchmark.
+
+Revisit an individual tradeoff if representative usage shows that one-shot
+compilation, startup latency, memory pressure, or a slower execution case
+dominates the intended application. Keep the detailed measurements in the
+performance reports so that this judgment can be reassessed.

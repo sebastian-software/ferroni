@@ -1,0 +1,172 @@
+---
+order: 12
+title: "Expanded Unicode Lookup Evaluation (2026-09)"
+---
+
+# Expanded Unicode Lookup Evaluation
+
+This report evaluates the original `partition_point` implementation. The
+[direct interval search refinement](/perf/unicode-range-lookup-refinement)
+supersedes its implementation and merge assessment; the original measurements
+below remain unchanged.
+
+The broader evaluation confirms a workload-dependent tradeoff in PR #177.
+Multilingual word extraction improves, but the regressions extend beyond the
+Greek microbenchmark to letter-class misses, combining marks, and negated
+letter classes. I would keep the implementation in draft: these results do
+not support a general claim that common cases improve while only rare ones
+become slower.
+
+The new experiment compares the same range-lookup change on main after
+[#178](https://github.com/sebastian-software/ferroni/pull/178). There is no new
+runtime optimization in this round. The harness adds 28 synthetic Unicode
+extraction cases and repeats 13 existing general, scanner, literal-search,
+and compilation cases. These fixtures characterize behavior; they do not
+measure how often applications use each case.
+
+## Workloads and meaning
+
+The expanded matrix covers `\p{L}`, `\w`, mixed Unicode identifiers, combining
+marks, decimal digits, whitespace, Greek, Cyrillic, Han, negated letter classes,
+and searches with no match. Each Unicode case uses one short record or 64
+repetitions of that record. Record boundaries prevent adjacent matches from
+joining. The timed operation extracts all nonempty matches and materializes
+their raw capture bounds, using the same helper as the existing general cases.
+
+The no-letter input contains ASCII and non-ASCII digits, emoji, and punctuation.
+It tests the ordinary outcome of a letter search finding nothing. It is not a
+Greek-specific path. Conversely, the existing `unicode_words` expression is
+`\p{L}[\p{L}\p{M}]*`; its improvement must not be generalized to every expression
+containing `\p{L}`. The simpler `\p{L}+` has separate rows below.
+
+Oniguruma validates every expected match count and complete capture trace before
+timing. The new group compares two Ferroni revisions; it does not add an
+engine-wide ranking against C or `regex`.
+
+## Results
+
+The 41 cases contain **164 timed runs and 4,920 samples**. The repeated original
+word-extraction task improves by **3.9%**, and mixed Unicode identifiers by
+**1.9–2.7%**. However, matching Latin letters with `\p{L}+` slows by **2.8–3.4%**;
+letter-class misses slow by **13.0–14.5%**. Combining-mark extraction slows by
+**3.1–4.8%**, and negated-letter extraction by **4.0–5.4%**. These latter effects
+have the same direction and disjoint individual mean intervals in both pairs.
+The Greek class is therefore one example of the cost, not its whole scope.
+
+The TypeScript document workload improves by 2.4%; CSS and Rust documents change
+by approximately 0.0% and +0.2%. The old broad pattern of small slowdowns does
+not recur in the controls. Some unchanged paths move slightly in either
+direction. Code placement and uncontrolled desktop activity remain possible
+contributors; small changes should not be treated as isolated helper costs.
+
+All times below are **microseconds for the whole workload**. Before/after values
+are the arithmetic means of two independent run means. Negative change means
+less time. The last column retains each paired percentage instead of concealing
+between-run variation. Individual 95% intervals and all samples are in the raw
+artifact. These are descriptive per-case results, not a pooled significance test.
+
+### Expanded Unicode cases
+
+| Case                      | Before (µs) | After (µs) | Time change | Pair 1 / Pair 2 |
+| ------------------------- | ----------: | ---------: | ----------: | --------------: |
+| `combining_marks_long`    |      35.947 |     37.661 |       +4.8% |   +5.8% / +3.8% |
+| `combining_marks_short`   |       0.679 |      0.700 |       +3.1% |   +1.4% / +4.7% |
+| `cyrillic_long`           |      30.705 |     30.490 |       -0.7% |   -0.6% / -0.8% |
+| `cyrillic_short`          |       0.596 |      0.598 |       +0.2% |   -0.7% / +1.1% |
+| `decimal_digits_long`     |      25.873 |     25.930 |       +0.2% |   +0.1% / +0.3% |
+| `decimal_digits_short`    |       0.548 |      0.540 |       -1.5% |   -0.7% / -2.2% |
+| `greek_long`              |      38.479 |     41.407 |       +7.6% |   +7.5% / +7.7% |
+| `greek_no_match_long`     |      34.400 |     38.570 |      +12.1% | +11.8% / +12.4% |
+| `greek_no_match_short`    |       0.636 |      0.712 |      +11.9% | +13.5% / +10.3% |
+| `greek_short`             |       0.706 |      0.746 |       +5.7% |   +5.9% / +5.5% |
+| `han_long`                |      34.466 |     34.152 |       -0.9% |   -0.8% / -1.0% |
+| `han_short`               |       0.679 |      0.688 |       +1.4% |   +1.2% / +1.6% |
+| `identifiers_mixed_long`  |      66.036 |     64.802 |       -1.9% |   -1.9% / -1.8% |
+| `identifiers_mixed_short` |       1.254 |      1.220 |       -2.7% |   -2.2% / -3.1% |
+| `letters_ascii_long`      |      39.250 |     39.107 |       -0.4% |   -0.2% / -0.5% |
+| `letters_ascii_short`     |       0.815 |      0.807 |       -0.9% |   -0.2% / -1.6% |
+| `letters_latin_long`      |      42.108 |     43.520 |       +3.4% |   +3.8% / +2.9% |
+| `letters_latin_short`     |       0.841 |      0.865 |       +2.8% |   +3.3% / +2.3% |
+| `letters_mixed_long`      |      71.351 |     73.299 |       +2.7% |   +1.0% / +4.4% |
+| `letters_mixed_short`     |       1.282 |      1.282 |       -0.0% |   +0.5% / -0.5% |
+| `letters_no_match_long`   |      29.180 |     33.425 |      +14.5% | +15.2% / +13.9% |
+| `letters_no_match_short`  |       0.555 |      0.627 |      +13.0% | +12.3% / +13.7% |
+| `negated_letters_long`    |      70.444 |     74.213 |       +5.4% |   +5.5% / +5.2% |
+| `negated_letters_short`   |       1.286 |      1.337 |       +4.0% |   +3.5% / +4.5% |
+| `unicode_spaces_long`     |      39.803 |     39.522 |       -0.7% |   -1.1% / -0.3% |
+| `unicode_spaces_short`    |       0.737 |      0.726 |       -1.4% |   -0.6% / -2.3% |
+| `words_mixed_long`        |      74.589 |     74.493 |       -0.1% |   -1.0% / +0.7% |
+| `words_mixed_short`       |       1.303 |      1.298 |       -0.4% |   -0.6% / -0.2% |
+
+### Existing workloads and controls
+
+| Case                                               | Before (µs) | After (µs) | Time change | Pair 1 / Pair 2 |
+| -------------------------------------------------- | ----------: | ---------: | ----------: | --------------: |
+| `compilation/rust/literal`                         |       0.517 |      0.517 |       -0.1% |   -0.6% / +0.5% |
+| `general_regex/rust/access_log_captures`           |      30.991 |     31.026 |       +0.1% |   -0.1% / +0.3% |
+| `general_regex/rust/email_redaction`               |      26.364 |     25.972 |       -1.5% |   -0.6% / -2.4% |
+| `general_regex/rust/email_validation`              |       6.791 |      6.664 |       -1.9% |   -1.7% / -2.0% |
+| `general_regex/rust/number_validation`             |       8.085 |      7.959 |       -1.6% |   -1.5% / -1.6% |
+| `general_regex/rust/unicode_words`                 |      64.873 |     62.349 |       -3.9% |   -4.3% / -3.5% |
+| `general_regex/rust/url_extraction`                |      10.114 |     10.147 |       +0.3% |   +0.4% / +0.3% |
+| `general_regex/rust/uuid_validation`               |       5.826 |      5.819 |       -0.1% |   -0.0% / -0.2% |
+| `scanner_documents/css_117_document_19_lines_rust` |      90.531 |     90.530 |       -0.0% |   +0.3% / -0.3% |
+| `scanner_documents/rust_81_document_31_lines_rust` |     103.598 |    103.847 |       +0.2% |   +0.6% / -0.1% |
+| `scanner_documents/ts_279_document_28_lines_rust`  |    1058.711 |   1033.129 |       -2.4% |   -2.2% / -2.7% |
+| `single_pattern/rust/literal_exact`                |       0.101 |      0.101 |       -0.5% |   +0.0% / -1.0% |
+| `single_pattern/rust/unicode_greek`                |       0.102 |      0.106 |       +3.6% |   +2.7% / +4.5% |
+
+## Method and reproduction
+
+The main base is `486126c6861a115619ce569cf3bdc333a4ebf0aa`, after #178.
+The measured candidate is `5450952d821ccd007e465a4a86c665995e715082`.
+The clean local reference commit is `c6a47b9c49c62a7a4115b8da3b5fa1dd277d8ff2`:
+main plus the identical benchmark-only patch from candidate commit `5450952`.
+The benchmark files are byte-identical; the only production-code difference
+is the range-lookup helper already evaluated in #177.
+
+Both executables use Rust 1.96.0, LLVM 22.1.2, Criterion 0.8.2, the portable
+target, thin LTO, and `--features ffi`. The opt-in match cache is compiled out.
+The host is the same Apple M1 Ultra with 64 GiB RAM and macOS 27.0 (26A428).
+There are no compiler or benchmark-profile overrides.
+
+Each case has four separate timed processes: baseline/candidate/candidate/baseline
+or the reverse, alternating by case index. Case order is shuffled with seed
+`17720260926`. Each process uses 30 samples, a 500 ms warmup, and four seconds
+of measurement. Close per-case pairing reduces the drift possible when two
+entire suites run far apart. An exclusive advisory lock excludes local task
+builds, tests, and other benchmarks throughout the experiment. Desktop work
+and CPU placement are not controlled.
+
+[Raw measurements, per-run confidence intervals, fixture hashes, binary hashes,
+commands, and the exact runner](https://github.com/sebastian-software/ferroni/blob/main/benches/results/unicode-range-lookup-expanded-2026-09-26.json)
+retain all timed runs. The artifact includes the complete synthetic records,
+repeat counts, and expected match counts. The earlier report and its noisy
+measurements remain available as a separate historical experiment.
+
+Build main and the candidate in separate checkouts, applying the benchmark-only
+commit to main, and save both executables before changing revisions:
+
+```sh
+./scripts/prepare-oniguruma-sources.sh
+cargo bench --locked --features ffi --bench battle_bench --no-run
+# The new Unicode group can also be run on its own:
+cargo bench --locked --features ffi --bench battle_bench -- unicode_classes
+# For paired measurement, invoke saved binaries with an exact case filter:
+./baseline-bench '^unicode_classes/rust/letters_no_match_long$' \
+  --bench --noplot --save-baseline baseline-1
+./candidate-bench '^unicode_classes/rust/letters_no_match_long$' \
+  --bench --noplot --save-baseline candidate-1
+# Repeat in candidate/baseline order with separate candidate-2/baseline-2 names.
+```
+
+Both measured executables pass all 121 non-cache benchmark smoke cases,
+including the 28 additions. The updated candidate also passes the full default
+and all-feature test suites, strict all-target Clippy, and formatting.
+The integrated tests preserve both the Unicode membership checks and #178's
+prefix-filter cases; the generated README count is derived from the combined
+tree.
+
+These are warm local timings. There is no cross-platform, cold-start, memory,
+or traffic-weighted performance claim. The measurements give a concrete basis
+for choosing a workload-specific tradeoff, not a universal overall score.

@@ -9637,6 +9637,9 @@ fn set_optimize_exact(reg: &mut RegexType, e: &OptStr) -> i32 {
         reg.optimize = OptimizeType::Str;
     }
 
+    reg.exact_finder = (reg.optimize == OptimizeType::StrFast && reg.exact.len() > 1)
+        .then(|| Box::new(memchr::memmem::Finder::new(&reg.exact).into_owned()));
+
     reg.dist_min = e.mm.min;
     reg.dist_max = e.mm.max;
 
@@ -10331,6 +10334,7 @@ pub fn onig_new(
         anc_dist_max: 0,
         sub_anchor: 0,
         exact: Vec::new(),
+        exact_finder: None,
         map: [0u8; CHAR_MAP_SIZE],
         map_offset: 0,
         map_bytes: [0u8; 3],
@@ -10649,6 +10653,7 @@ mod tests {
             anc_dist_max: 0,
             sub_anchor: 0,
             exact: Vec::new(),
+            exact_finder: None,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],

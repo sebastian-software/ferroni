@@ -70,6 +70,19 @@ fn seeded_cache_plain_and_c_comparison() {
             r"([ab]{2})+[ab]{2}x",
             r"([ab]{3}|a)[ab]{2}",
             r"(?<=[ab])[ab]{3}",
+            r"(\p{L}[\p{L}\p{M}]*)+!",
+            r"([^\p{L}]+)(\p{L}*)",
+            r"(?<=\p{L})([a\p{M}]*)",
+            r"[ab]+c",
+            r"[ab]+,(a?)",
+            r"[ab]+,\K(a?)",
+            r"[ab]+c(?<!ac)",
+            r"abc",
+            r"(ab)c\1",
+            r"(?<=x)ab",
+            r"ab\K(c?)",
+            r"éé",
+            r"abcdefghijklmnopqrstuvwxyz",
         ]
         .map(str::to_owned),
     );
@@ -80,6 +93,8 @@ fn seeded_cache_plain_and_c_comparison() {
         "aaaaa!".into(),
         "aaabaaab".into(),
         "é😀é".into(),
+        "abcabc xab".into(),
+        "éé abcc".into(),
     ];
     for _ in 0..192 {
         seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
