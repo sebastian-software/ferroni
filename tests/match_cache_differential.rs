@@ -73,6 +73,10 @@ fn seeded_cache_plain_and_c_comparison() {
             r"(\p{L}[\p{L}\p{M}]*)+!",
             r"([^\p{L}]+)(\p{L}*)",
             r"(?<=\p{L})([a\p{M}]*)",
+            r"[ab]+c",
+            r"[ab]+,(a?)",
+            r"[ab]+,\K(a?)",
+            r"[ab]+c(?<!ac)",
         ]
         .map(str::to_owned),
     );

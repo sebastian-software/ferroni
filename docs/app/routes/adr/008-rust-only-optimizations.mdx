@@ -84,6 +84,14 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Bounds**: one linear pass over bytecode, existing bitsets reused, no extra heap allocation, dependency, or unsafe code. Longer runs continue at their remaining suffix.
 - **Validation and measurements**: [ASCII class run evaluation](/perf/ascii-class-runs). Tests compare raw results, captures, and deterministic limit outcomes against unbatched instructions, including malformed UTF-8 and backward or bounded searches. The opt-in cache and C differential suite also exercise the new opcode.
 
+#### Leading atomic ASCII class search filter (`src/regexec.rs`)
+
+- **Trigger**: the forward position loop sees exactly the compiler's leading atomic `[class]+literal` bytecode, with identical positive ASCII class bitsets and a disjoint one-byte literal. Capturing, anchored, alternating, and multibyte prefixes stay on the original path.
+- **Execution**: a class run ending at the wrong delimiter cannot match from any suffix, so the filter skips that run. A run ending at the right delimiter still enters the VM, including every interior start if the tail fails. The run end is remembered to avoid repeating the prefix scan.
+- **Fallbacks**: a per-match retry limit of one, any search retry budget, stack or time limit, callouts, or a configured match cache disables the filter. Every skipped prefix would consume exactly one retry and cannot enter its tail; higher per-match limits therefore keep their original outcomes.
+- **Bounds**: constant scratch space, linear prefix scanning, no new compiled metadata, opcode, allocation, dependency, or unsafe code. Backward and equal-endpoint searches retain their existing paths.
+- **Validation and measurements**: [atomic class prefix evaluation](/perf/atomic-class-prefix), including 500,736 exact original-path comparisons, C/cache differential cases, repeated general workloads, and broader scanner/search/compilation checks.
+
 #### ASCII fast paths in VM execution (`src/regexec.rs`)
 
 Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` traversal) for ASCII bytes, avoiding full UTF-8 decode on the hot path.
