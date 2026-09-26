@@ -144,6 +144,8 @@ cargo bench --features ffi --bench battle_bench
 # General-purpose validation, extraction, Unicode, and redaction tasks
 cargo bench --features ffi --bench battle_bench -- general_regex
 python3 scripts/gen_battle_tables.py --general-only
+# Short and long Unicode class workloads, with C-validated capture traces
+cargo bench --locked --features ffi --bench battle_bench -- unicode_classes
 # Same document workloads with the opt-in cache included as a third lane
 cargo bench --features ffi,match-cache --bench battle_bench -- scanner_documents
 ```

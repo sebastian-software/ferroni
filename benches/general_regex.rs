@@ -137,6 +137,135 @@ fn c_trace(regex: &CRegex, text: &[u8]) -> Trace {
     })
 }
 
+/// A bounded characterization matrix for Unicode range lookup changes.
+/// These are synthetic workloads, not a claim about application frequencies.
+/// Record boundaries keep adjacent matches from joining when repeated.
+pub fn bench_unicode_classes(c: &mut Criterion) {
+    let cases = [
+        (
+            "letters_ascii",
+            r"\p{L}+",
+            "The quick brown fox jumps over 123!\n",
+            6,
+        ),
+        (
+            "letters_latin",
+            r"\p{L}+",
+            "café résumé naïve Ångström Straße 123!\n",
+            5,
+        ),
+        (
+            "letters_mixed",
+            r"\p{L}+",
+            "Hello Κόσμε Привет 世界 مرحبا café e\u{301}!\n",
+            7,
+        ),
+        (
+            "words_mixed",
+            r"\w+",
+            "café_42 κόσμος Привет_7 世界 مرحبا e\u{301} 123!\n",
+            7,
+        ),
+        (
+            "identifiers_mixed",
+            r"[\p{L}_][\p{L}\p{M}\p{N}_]*",
+            "_name café42 κόσμος_7 имя_2 变量 مرحبا e\u{301} 123!\n",
+            7,
+        ),
+        (
+            "combining_marks",
+            r"\p{M}+",
+            "cafe\u{301} a\u{308}\u{301} क\u{93f} س\u{64e}!\n",
+            4,
+        ),
+        (
+            "decimal_digits",
+            r"\p{Nd}+",
+            "id=123٤٥٦ ७८९ ０１２ and text\n",
+            3,
+        ),
+        (
+            "unicode_spaces",
+            r"\p{White_Space}+",
+            "one two\tthree\u{a0}four\u{2003}five\u{3000}six\n",
+            6,
+        ),
+        (
+            "greek",
+            r"\p{Greek}+",
+            "Hello Κόσμε Προβολή Привет 世界 café!\n",
+            2,
+        ),
+        (
+            "cyrillic",
+            r"\p{Cyrillic}+",
+            "Hello Привет мир Κόσμε 世界 café!\n",
+            2,
+        ),
+        (
+            "han",
+            r"\p{Han}+",
+            "Hello 世界 中文 Κόσμε Привет café!\n",
+            2,
+        ),
+        (
+            "greek_no_match",
+            r"\p{Greek}+",
+            "Hello Привет мир 世界 مرحبا café 123!\n",
+            0,
+        ),
+        (
+            "letters_no_match",
+            r"\p{L}+",
+            "123 ٤٥٦ ७८९ ０１２ 😀 🎉 +-=!?\n",
+            0,
+        ),
+        (
+            "negated_letters",
+            r"[^\p{L}\p{M}\s]+",
+            "café42, Κόσμε!? 世界99 / مرحبا_7\n",
+            5,
+        ),
+    ];
+    let mut group = c.benchmark_group("unicode_classes");
+    configure_battle_group(&mut group);
+    for (name, pattern, record, matches_per_record) in cases {
+        let rust = rust_compile(pattern.as_bytes(), ONIG_OPTION_NONE);
+        let c_regex = c_compile(pattern.as_bytes(), ffi::ONIG_OPTION_NONE);
+        for (size, repeats) in [("short", 1), ("long", TEXT_RECORDS)] {
+            let text = record.repeat(repeats);
+            let expected = c_trace(&c_regex, text.as_bytes());
+            assert_eq!(
+                expected.len(),
+                matches_per_record * repeats,
+                "{name}/{size}"
+            );
+            assert_eq!(
+                rust_trace(&rust, text.as_bytes()),
+                expected,
+                "{name}/{size}"
+            );
+            eprintln!(
+                "WORKLOAD {}",
+                serde_json::json!({
+                    "name": format!("{name}_{size}"),
+                    "pattern": pattern,
+                    "record": record,
+                    "records": repeats,
+                    "bytes": text.len(),
+                    "matches": expected.len(),
+                    "boundary": "all matches and raw capture bounds; materialized result vectors",
+                })
+            );
+            group.throughput(Throughput::Bytes(text.len() as u64));
+            group.bench_function(BenchmarkId::new("rust", format!("{name}_{size}")), |b| {
+                b.iter(|| black_box(rust_trace(&rust, black_box(text.as_bytes()))));
+            });
+        }
+    }
+    group.finish();
+}
+
 fn regex_trace(regex: &Regex, text: &[u8]) -> Trace {
     let mut locations = regex.capture_locations();
     collect_matches(text.len(), |start| {

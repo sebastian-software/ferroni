@@ -1,0 +1,219 @@
+---
+order: 13
+title: "Unicode Interval Search Refinement (2026-09)"
+---
+
+# Unicode Interval Search Refinement
+
+I replaced PR #177's `partition_point` lookup with a binary search that tests
+complete intervals and returns immediately on an inclusive hit. This removes
+the substantial regressions found in the [earlier expanded evaluation](/perf/unicode-range-lookup-expanded)
+for the measured workloads, while improving multilingual word extraction further.
+
+The independent confirmation reduces multilingual word-extraction time by
+**14.6%**, mixed Unicode identifier extraction by **11–12%**, and letter-class
+searches without a match by **15.8–18.9%**. Negated-letter extraction improves
+by **16.6–17.0%**, combining-mark extraction by approximately **6.8–6.9%**, and
+Greek extraction by **7.5–9.4%**. Both repetitions show the same direction with
+disjoint individual mean intervals for these cases. The earlier regressions in
+letter-class misses, negated letters, combining marks, and Greek extraction
+have become gains; small costs in other cases are still reported below.
+
+These are whole-workload times against main after #178, not timings of the
+helper alone. They characterize the supplied fixtures on one M1 Ultra; they
+neither measure application frequencies nor establish a cross-platform gain.
+
+## Bounded alternatives
+
+The diagnostic compared main, the original partition search, a manual
+lower-bound loop over pairs, and direct interval membership. Each of six cases
+ran all four variants in a rotating order and then the reverse order: 48 runs,
+1,440 samples. All four executables passed the 121 benchmark smoke cases,
+including expected counts and full raw capture-trace comparison against pinned
+Oniguruma before timing.
+
+Simply retaining paired indexing with the old lower-bound loop did not help.
+It regressed all six diagnostic cases. Direct membership improved all six, so
+I selected it for a separate, fresh build and full-matrix confirmation. I did
+not tune table-size thresholds, specialize individual scripts, or change inputs
+between variants.
+
+The following diagnostic percentages are relative to main. Negative means
+less time. These are selection data; the independent confirmation below is
+the evidence for the final implementation.
+
+| Case                    | Original partition search | Paired lower-bound loop | Direct interval membership |
+| ----------------------- | ------------------------: | ----------------------: | -------------------------: |
+| `unicode_words`         |                     -4.5% |                   +5.3% |                     -15.9% |
+| `letters_latin_long`    |                     +3.2% |                   +5.1% |                      -8.5% |
+| `letters_no_match_long` |                    +13.4% |                  +12.8% |                     -18.7% |
+| `greek_long`            |                     +7.7% |                   +4.7% |                      -8.6% |
+| `combining_marks_long`  |                     +5.6% |                   +5.3% |                      -5.9% |
+| `negated_letters_long`  |                     +5.3% |                   +7.5% |                     -16.3% |
+
+[The diagnostic artifact](https://github.com/sebastian-software/ferroni/blob/main/benches/results/unicode-range-lookup-refinement-diagnostic-2026-09-26.json)
+retains every attempted variant, both patches, binary hashes, all samples,
+the exact runner, and disassembly of all four range-lookup helpers.
+
+## Why the implementation differs
+
+Both C's original loop and `partition_point` find the first interval whose
+upper bound is not below the code point, then test its lower bound. The new
+loop compares the midpoint's complete interval. A code point above it selects
+the right subslice; one below it selects the left subslice; an inclusive hit
+returns immediately. Excluding the midpoint strictly shrinks the remaining
+slice on every miss, retaining logarithmic worst-case search and constant
+auxiliary space.
+
+The input is still the existing counted array of sorted, disjoint inclusive
+ranges. The length checks, first/last endpoint checks, one-range shortcut, and
+up-to-four-range scan remain unchanged. There is no extra allocation, compiled
+metadata, generated table, dependency, unsafe code, or character-class dispatch
+rule. The midpoint of a nonempty slice is below its length, so the right slice
+always has a first interval; the `unwrap` follows that local invariant.
+
+In the inspected ARM64 build, the larger-table loop contains no bounds-panic
+calls. It can stop at an interval hit and uses data-dependent branches. The
+original flat-array loop and `partition_point` both use conditional selects,
+so the earlier losses cannot simply be attributed to removing branches from
+the C-style loop. These code-generation differences help explain the design;
+the measurements, not assembly alone, establish the observed performance.
+
+## Independent confirmation
+
+I rebuilt committed candidate `4317cc2e4a37483fc5a5ba1b27464d231db0700a` and
+compared it with the same clean main reference used previously:
+`c6a47b9c49c62a7a4115b8da3b5fa1dd277d8ff2`, which is main
+`486126c6861a115619ce569cf3bdc333a4ebf0aa` plus the benchmark-only additions
+from `5450952`. Both initial source states were clean. The benchmark code and
+inputs are byte-identical; only the range lookup differs in production code.
+
+The full matrix has 41 cases and 164 original timed runs. Each case runs
+baseline/candidate/candidate/baseline or the reverse, alternating by case
+index after a seeded shuffle (`17720260926`). Every process uses 30 samples,
+a 500 ms warmup, and four seconds of measurement. All original measurements
+are retained.
+
+A pre-push hook briefly ran `cargo fmt -- --check` while the second original
+baseline measurement of `letters_ascii_long` was in progress, around
+16:43:20 UTC. The hook performs formatting validation only. I repeated that
+entire control in a fresh ABBA sequence after the matrix completed and used
+the clean repetition in the table. The original four runs remain in the
+artifact, alongside all four recovery runs; this repetition was prompted by
+known interference, not by the measured result. No other timing was replaced.
+
+That gives **168 confirmation runs and 5,040 samples**, plus the separate
+48-run diagnostic. All 216 reported mean estimates were independently
+recomputed from retained sample times and iteration counts.
+
+All values below are microseconds for the whole workload. Each before/after
+value averages two process means. The last column shows both paired changes;
+individual 95% intervals remain in the raw data. There is no pooled significance
+test or traffic-weighted overall score.
+
+### Unicode workloads
+
+| Case                      | Before (µs) | After (µs) | Time change | Pair 1 / Pair 2 |
+| ------------------------- | ----------: | ---------: | ----------: | --------------: |
+| `combining_marks_long`    |      35.026 |     32.641 |       -6.8% |   -6.8% / -6.8% |
+| `combining_marks_short`   |       0.673 |      0.627 |       -6.9% |   -7.2% / -6.6% |
+| `cyrillic_long`           |      30.725 |     29.927 |       -2.6% |   -2.2% / -3.0% |
+| `cyrillic_short`          |       0.594 |      0.581 |       -2.2% |   -2.4% / -2.1% |
+| `decimal_digits_long`     |      25.778 |     25.504 |       -1.1% |   -2.1% / -0.1% |
+| `decimal_digits_short`    |       0.546 |      0.521 |       -4.6% |   -4.1% / -5.1% |
+| `greek_long`              |      38.452 |     34.839 |       -9.4% |   -9.4% / -9.4% |
+| `greek_no_match_long`     |      34.560 |     32.797 |       -5.1% |   -5.4% / -4.8% |
+| `greek_no_match_short`    |       0.636 |      0.608 |       -4.5% |   -4.6% / -4.3% |
+| `greek_short`             |       0.705 |      0.652 |       -7.5% |   -7.3% / -7.8% |
+| `han_long`                |      34.358 |     33.659 |       -2.0% |   -1.6% / -2.5% |
+| `han_short`               |       0.692 |      0.669 |       -3.5% |   -2.1% / -4.7% |
+| `identifiers_mixed_long`  |      65.757 |     58.227 |      -11.5% | -11.9% / -11.0% |
+| `identifiers_mixed_short` |       1.216 |      1.071 |      -12.0% | -12.8% / -11.2% |
+| `letters_ascii_long`      |      40.352 |     40.182 |       -0.4% |   -0.9% / +0.0% |
+| `letters_ascii_short`     |       0.818 |      0.788 |       -3.6% |   -3.2% / -4.0% |
+| `letters_latin_long`      |      42.897 |     39.335 |       -8.3% |   -9.2% / -7.4% |
+| `letters_latin_short`     |       0.850 |      0.773 |       -9.0% |   -9.1% / -8.9% |
+| `letters_mixed_long`      |      71.882 |     62.797 |      -12.6% | -12.9% / -12.4% |
+| `letters_mixed_short`     |       1.274 |      1.116 |      -12.4% | -13.0% / -11.8% |
+| `letters_no_match_long`   |      29.215 |     23.690 |      -18.9% | -18.7% / -19.1% |
+| `letters_no_match_short`  |       0.558 |      0.470 |      -15.8% | -15.8% / -15.8% |
+| `negated_letters_long`    |      71.158 |     59.351 |      -16.6% | -16.2% / -17.0% |
+| `negated_letters_short`   |       1.280 |      1.063 |      -17.0% | -17.2% / -16.7% |
+| `unicode_spaces_long`     |      39.502 |     40.114 |       +1.5% |   +1.1% / +2.0% |
+| `unicode_spaces_short`    |       0.762 |      0.749 |       -1.7% |   -2.8% / -0.6% |
+| `words_mixed_long`        |      74.052 |     73.766 |       -0.4% |   -0.5% / -0.2% |
+| `words_mixed_short`       |       1.353 |      1.327 |       -1.9% |   -3.5% / -0.2% |
+
+### Existing workloads and controls
+
+| Case                                               | Before (µs) | After (µs) | Time change | Pair 1 / Pair 2 |
+| -------------------------------------------------- | ----------: | ---------: | ----------: | --------------: |
+| `compilation/rust/literal`                         |       0.494 |      0.489 |       -1.0% |   -0.0% / -2.0% |
+| `general_regex/rust/access_log_captures`           |      30.941 |     31.165 |       +0.7% |   +0.4% / +1.0% |
+| `general_regex/rust/email_redaction`               |      26.023 |     25.910 |       -0.4% |   -1.1% / +0.3% |
+| `general_regex/rust/email_validation`              |       6.779 |      6.661 |       -1.7% |   -1.4% / -2.1% |
+| `general_regex/rust/number_validation`             |       8.267 |      8.116 |       -1.8% |   -1.7% / -2.0% |
+| `general_regex/rust/unicode_words`                 |      63.653 |     54.382 |      -14.6% | -15.4% / -13.8% |
+| `general_regex/rust/url_extraction`                |      10.271 |     10.181 |       -0.9% |   -0.9% / -0.9% |
+| `general_regex/rust/uuid_validation`               |       5.840 |      5.802 |       -0.6% |   -0.9% / -0.4% |
+| `scanner_documents/css_117_document_19_lines_rust` |      91.310 |     91.829 |       +0.6% |   +1.6% / -0.5% |
+| `scanner_documents/rust_81_document_31_lines_rust` |     106.395 |    106.006 |       -0.4% |   +0.1% / -0.9% |
+| `scanner_documents/ts_279_document_28_lines_rust`  |    1032.123 |   1021.486 |       -1.0% |   -1.7% / -0.4% |
+| `single_pattern/rust/literal_exact`                |       0.100 |      0.101 |       +0.2% |   +0.1% / +0.2% |
+| `single_pattern/rust/unicode_greek`                |       0.102 |      0.093 |       -8.9% |   -9.5% / -8.2% |
+
+The largest remaining mean increase is the long Unicode-whitespace workload
+at **+1.5%**; access-log captures increase by **+0.7%**. Both are slower in both
+paired measurements with disjoint individual mean intervals, so I retain them
+as costs. CSS document tokenization averages **+0.6%**, but its pairs disagree
+(+1.6% and -0.5%). Literal search is approximately flat (+0.2%). TypeScript and
+Rust document tokenization average -1.0% and -0.4%; the TypeScript result is
+smaller and less consistently separated than its earlier measurement.
+
+The large Unicode gains repeat in both orders. Small movements in unrelated
+controls can include code-placement effects and desktop drift; I do not
+attribute every change to the lookup helper or average these unlike workloads
+into a universal speedup. The remaining measured costs are substantially
+smaller than the original partition-search regressions.
+
+## Environment, validation, and reproduction
+
+The host is an Apple M1 Ultra, 64 GiB, macOS 27.0 (26A428). Both binaries use
+Rust 1.96.0 / LLVM 22.1.2, Criterion 0.8.2, portable code generation, thin LTO,
+and `--features ffi`; the opt-in match cache is compiled out. No compiler or
+profile overrides are set. The pinned C source is
+`f95747b462de672b6f8dbdeb478245ddf061ca53`.
+
+An exclusive advisory CPU lock excludes cooperating task builds, tests, and
+benchmarks, with the formatting-hook exception recorded above. Desktop
+background activity and CPU placement remain uncontrolled. These are warm
+measurements; there is no cold-start, memory, or cross-platform performance
+claim.
+
+[All confirmation and recovery measurements](https://github.com/sebastian-software/ferroni/blob/main/benches/results/unicode-range-lookup-refined-2026-09-26.json)
+include raw samples and intervals, complete synthetic inputs, expected counts,
+source and binary hashes, commands, UTC order, and both exact runners. The
+[original expanded results](/perf/unicode-range-lookup-expanded) and the
+[initial evaluation](/perf/unicode-range-lookup) remain available unchanged
+apart from links to this refinement.
+
+Build the baseline and candidate in separate checkouts with identical benchmark
+files and save the binaries before changing revisions:
+
+```sh
+./scripts/prepare-oniguruma-sources.sh
+cargo bench --locked --features ffi --bench battle_bench --no-run
+./baseline-bench '^unicode_classes/rust/letters_no_match_long$' \
+  --bench --noplot --save-baseline baseline-1
+./candidate-bench '^unicode_classes/rust/letters_no_match_long$' \
+  --bench --noplot --save-baseline candidate-1
+# Repeat in candidate/baseline order with distinct candidate-2/baseline-2 names.
+```
+
+The refined code passes the full default and all-feature suites, including the
+exhaustive sweep of more than 4.45 million membership results, synthetic tables
+with zero through 64 intervals, malformed lengths/counts, trailing words, and
+`u32` boundaries. The cache/plain/C differential suite, strict all-target Clippy,
+and Rust formatting pass. Both final measured binaries pass all 121 non-cache
+benchmark smoke cases. The source change and its termination/safety argument
+are recorded in [ADR-008](/adr/008-rust-only-optimizations).

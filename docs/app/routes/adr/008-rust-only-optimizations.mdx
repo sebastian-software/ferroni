@@ -70,6 +70,13 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **C's optimizer still decides**: the table only narrows the positions an entry is attempted at. An entry whose optimizer has a distance is dispatched by its bytecode start bytes but attempted only where C's optimizer admits the position (`sr[i]`); the check runs after an attempt with a match or an error, or before every attempt where callouts or a search retry budget can observe it. The extra class and type byte maps (`optimize_nodes` with `start_maps`) serve only where C has no optimizer, and as a routing hint (`start_dispatch`).
 - **Windowed table scan**: with fallback entries in the set the table is scanned in windows (256 bytes, then four times as large), and the fallback entries are asked for an event inside each window, so an early fallback match ends the search as C's position-by-position search does.
 
+#### Unicode class range lookup (`src/regexec.rs`)
+
+- **Trigger**: multibyte character classes with more than four sorted intervals.
+- **Execution**: after the existing table-length and endpoint checks, `is_in_code_range` views the range words as pairs and searches for the containing interval. It returns immediately for an inclusive hit; otherwise it searches the left or right subslice, excluding the tested midpoint. Each iteration strictly shrinks the slice. This preserves C's membership result for sorted, disjoint intervals without requiring its lower-bound search to finish at a leaf. Small-table fast paths remain unchanged.
+- **Bounds**: logarithmic search, constant auxiliary space, no allocations, new metadata, generated-table changes, dependencies, or unsafe code. Encoding, byte consumption, backtracking, and limits keep their existing paths.
+- **Validation and measurements**: [Unicode interval search refinement](/perf/unicode-range-lookup-refinement), including an exhaustive Unicode-range sweep, malformed table bounds, cache/plain/C checks, rejected alternatives, and a repeated 41-case before/after matrix. The earlier partition-search evaluations remain linked as historical evidence.
+
 #### Adjacent ASCII class runs (`src/regcomp.rs`, `src/regexec.rs`)
 
 - **Trigger**: consecutive identical, non-negated `CClass` instructions whose bitsets contain only ASCII bytes, with an ASCII-compatible encoding. Existing equality/case-pair fast paths remain unchanged.
