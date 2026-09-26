@@ -3984,17 +3984,29 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
             // ================================================================
             OpCode::CClassRun => {
                 if let OperationPayload::CClassRun { ref bsp, len } = reg.ops[p].payload {
-                    let len = usize::from(len);
-                    let stop = s.saturating_add(len).min(right_range);
-                    let mut remaining = len;
-                    while s < stop && bitset_at(bsp, str_data[s] as usize) {
-                        s += 1;
-                        remaining -= 1;
-                    }
-                    if remaining == 0 {
-                        p += len;
+                    // A backward search can extend past the logical end
+                    // when its start is a truncated multibyte character.
+                    // Keep the original per-instruction clamp in that mode.
+                    if right_range > end {
+                        if s < right_range && bitset_at(bsp, str_data[s] as usize) {
+                            s = s.saturating_add(1).min(end);
+                            p += 1;
+                        } else {
+                            goto_fail = true;
+                        }
                     } else {
-                        goto_fail = true;
+                        let len = usize::from(len);
+                        let stop = s.saturating_add(len).min(right_range);
+                        let mut remaining = len;
+                        while s < stop && bitset_at(bsp, str_data[s] as usize) {
+                            s += 1;
+                            remaining -= 1;
+                        }
+                        if remaining == 0 {
+                            p += len;
+                        } else {
+                            goto_fail = true;
+                        }
                     }
                 } else {
                     goto_fail = true;
@@ -7911,6 +7923,7 @@ mod tests {
             r"\A[0-9]{3}-[0-9]{2}\z",
             r"[ab]{2}\K[ab]{2}",
             r"(?i)[ab]{4}",
+            r"(?:[^x][ab]{2}|)",
         ];
         let inputs: &[&[u8]] = &[
             b"",
@@ -7929,6 +7942,7 @@ mod tests {
             b"ab\xc2\xa1ab",
             b"\xc2",
             b"\xe2\x82",
+            b"xx\xc2aa",
         ];
         let mut comparisons = 0;
         for pattern in patterns {
@@ -8059,7 +8073,14 @@ mod tests {
 
     #[test]
     fn ascii_class_runs_leave_multibyte_and_negated_classes_unbatched() {
-        for pattern in [r"[^ab]{4}", r"[aé]{4}", r"(?i)[k]{4}", r"[\p{L}]{4}"] {
+        for pattern in [
+            r"[^ab]{4}",
+            r"[aé]{4}",
+            r"(?i)[k]{4}",
+            r"[\p{L}]{4}",
+            r"[a]{4}",
+            r"[aA]{4}",
+        ] {
             let reg = regcomp::onig_new(
                 pattern.as_bytes(),
                 ONIG_OPTION_NONE,

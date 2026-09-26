@@ -10115,7 +10115,13 @@ fn fuse_ascii_class_runs(reg: &mut RegexType) {
             (OpCode::CClassRun, OperationPayload::CClassRun { bsp, len }) => (bsp, *len),
             _ => continue,
         };
-        if let OperationPayload::CClass { bsp, .. } = &mut op.payload {
+        // Equality/case-pair instructions already have their own byte path.
+        // Keeping them unchanged also preserves their raw-boundary behavior.
+        if let OperationPayload::CClass {
+            bsp,
+            ascii_fast: CClassAsciiFastKind::None,
+        } = &mut op.payload
+        {
             if bsp[128 / BITS_IN_ROOM..].iter().all(|&bits| bits == 0) && bsp == next_bsp {
                 let OperationPayload::CClass { bsp, .. } =
                     std::mem::replace(&mut op.payload, OperationPayload::None)
