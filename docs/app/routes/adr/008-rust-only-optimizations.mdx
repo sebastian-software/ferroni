@@ -73,7 +73,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 #### Unicode class range lookup (`src/regexec.rs`)
 
 - **Trigger**: multibyte character classes with more than four sorted intervals.
-- **Execution**: after the existing table-length and endpoint checks, `is_in_code_range` views the range words as pairs and uses `partition_point` to find the first upper bound at or beyond the code point. The lower-bound check retains C's inclusive interval semantics. Small-table fast paths remain unchanged.
+- **Execution**: after the existing table-length and endpoint checks, `is_in_code_range` views the range words as pairs and searches for the containing interval. It returns immediately for an inclusive hit; otherwise it searches the left or right subslice, excluding the tested midpoint. Each iteration strictly shrinks the slice. This preserves C's membership result for sorted, disjoint intervals without requiring its lower-bound search to finish at a leaf. Small-table fast paths remain unchanged.
 - **Bounds**: logarithmic search, constant auxiliary space, no allocations, new metadata, generated-table changes, dependencies, or unsafe code. Encoding, byte consumption, backtracking, and limits keep their existing paths.
 - **Validation and measurements**: [Unicode range lookup evaluation](/perf/unicode-range-lookup), including an exhaustive Unicode-range sweep, malformed table bounds, cache/plain/C checks, and repeated before/after workloads.
 

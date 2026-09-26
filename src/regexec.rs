@@ -2741,7 +2741,7 @@ fn is_word_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize, mode: M
 
 /// Check if a code point is in a multi-byte range table.
 /// The table format is: data[0] = n (range count), followed by n pairs of (from, to).
-/// Binary search, matching C's onig_is_in_code_range exactly.
+/// Binary search with C's inclusive membership semantics for sorted intervals.
 #[inline]
 pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
     if data.len() < 3 {
@@ -2790,11 +2790,22 @@ pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
         return false;
     }
 
-    // Search whole pairs so the library's binary search can select the next
-    // interval without a data-dependent branch or repeated pair indexing.
-    let (pairs, _) = ranges.as_chunks::<2>();
-    let low = pairs.partition_point(|range| range[1] < code);
-    low < n && code >= pairs[low][0]
+    // Search complete intervals so a hit can return before reaching a leaf.
+    // Slicing keeps midpoint and tail accesses bounded without unchecked reads.
+    let (mut pairs, _) = ranges.as_chunks::<2>();
+    while !pairs.is_empty() {
+        let (left, right) = pairs.split_at(pairs.len() / 2);
+        // The midpoint of a nonempty slice is strictly below its length.
+        let (range, tail) = right.split_first().unwrap();
+        if code > range[1] {
+            pairs = tail;
+        } else if code < range[0] {
+            pairs = left;
+        } else {
+            return true;
+        }
+    }
+    false
 }
 
 /// Get the character length at position s for the given encoding.
