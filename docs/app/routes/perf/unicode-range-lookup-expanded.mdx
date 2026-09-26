@@ -5,6 +5,11 @@ title: "Expanded Unicode Lookup Evaluation (2026-09)"
 
 # Expanded Unicode Lookup Evaluation
 
+This report evaluates the original `partition_point` implementation. The
+[direct interval search refinement](/perf/unicode-range-lookup-refinement)
+supersedes its implementation and merge assessment; the original measurements
+below remain unchanged.
+
 The broader evaluation confirms a workload-dependent tradeoff in PR #177.
 Multilingual word extraction improves, but the regressions extend beyond the
 Greek microbenchmark to letter-class misses, combining marks, and negated
