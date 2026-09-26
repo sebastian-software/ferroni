@@ -42,15 +42,15 @@ function HeroSection() {
     <ProjectHero
       mark="ferroni"
       title={
-        <span id="fr-title">
-          Oniguruma, <em>forged in Rust.</em>
+        <span id="fr-title" translate="no">
+          Ferroni
         </span>
       }
       lede={
         <>
-          The regex engine behind TextMate grammars, jq and PHP&rsquo;s mbregex, continued in
-          memory-safe Rust after the C project ended, with the vscode-oniguruma scanner built in.
-          Verified against the upstream tests and measured against the C original.
+          <strong>Oniguruma, continued in Rust.</strong> A regex engine in memory-safe Rust, with
+          the vscode-oniguruma scanner built in for TextMate grammars. Verified against the upstream
+          tests and measured against the C original.
         </>
       }
       actions={

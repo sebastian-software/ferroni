@@ -122,8 +122,9 @@ The CLI pin is in `mise.toml`; the two Git theme revisions are in
 `mdtheme.yaml`. These commands require mise, Git, and network access.
 
 The React documentation site uses `ferramenta-family` from `docs/package.json`.
-Keep its Git revision aligned with the Ferramenta theme in `mdtheme.yaml`,
-update the lockfile, and run the site's build. The shared header and footer
+Pin the published npm version and keep the Ferramenta theme in `mdtheme.yaml`
+at that release's source revision. Update the lockfile and run `pnpm verify`
+from `docs/`. The shared header and footer
 exclude this project from sibling links and include sibling descriptions.
 
 ## Running Benchmarks

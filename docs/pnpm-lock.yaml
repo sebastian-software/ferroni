@@ -12,8 +12,8 @@ importers:
         specifier: ^4.2.0
         version: 4.2.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@6.0.3)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.47.0(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(rollup@4.59.0)(typescript@6.0.3)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
       ferramenta-family:
-        specifier: github:sebastian-software/ferramenta#cbbae2ff9b676e59c9cf764d3aacb1164f4881c2&path:/packages/family
-        version: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/cbbae2ff9b676e59c9cf764d3aacb1164f4881c2#path:/packages/family(react@19.3.0)
+        specifier: 1.2.0
+        version: 1.2.0(react@19.3.0)
       isbot:
         specifier: ^5.2.2
         version: 5.2.2
@@ -2749,9 +2749,8 @@ packages:
       picomatch:
         optional: true
 
-  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/cbbae2ff9b676e59c9cf764d3aacb1164f4881c2#path:/packages/family:
-    resolution: {gitHosted: true, integrity: sha512-pTrXAGu1xjyWiv42kZtRDqwEaYp+wIz85+4XD7bWMkyPlwaAI2EFBal8LjT7X+EgPmdev9QdkA/1DAu3j9bYAw==, tarball: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/cbbae2ff9b676e59c9cf764d3aacb1164f4881c2}
-    version: 1.2.0
+  ferramenta-family@1.2.0:
+    resolution: {integrity: sha512-hlue4jj4pJqUuw1iU0SOq/iZPrZajEjqE9KgKiBcn8K09ZBldfpY7h8CCgXV6cJ5KbPv/QmLBw3Ep8/mKjw2Xw==}
     engines: {node: '>=20.11.0'}
     hasBin: true
     peerDependencies:
@@ -7435,7 +7434,7 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.7
 
-  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/cbbae2ff9b676e59c9cf764d3aacb1164f4881c2#path:/packages/family(react@19.3.0):
+  ferramenta-family@1.2.0(react@19.3.0):
     dependencies:
       react: 19.3.0
 

@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "ardo": "^4.2.0",
-    "ferramenta-family": "github:sebastian-software/ferramenta#cbbae2ff9b676e59c9cf764d3aacb1164f4881c2&path:/packages/family",
+    "ferramenta-family": "1.2.0",
     "isbot": "^5.2.2",
     "lucide-react": "^1.47.0",
     "react": "^19.3.0",
