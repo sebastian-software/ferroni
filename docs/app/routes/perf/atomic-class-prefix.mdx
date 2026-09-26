@@ -1,0 +1,176 @@
+---
+order: 10
+title: "Atomic ASCII Class Prefix Evaluation (2026-09)"
+---
+
+# Atomic ASCII Class Prefix Evaluation
+
+A search prefilter for a leading atomic ASCII class repetition reduces email
+redaction from **79.33 to 26.76 µs** per document in this local evaluation,
+a **66.3% reduction** (2.96× throughput). The expression and output builder
+are unchanged. This is an optimization of candidate selection; the VM still
+matches every surviving candidate.
+
+The benchmark processes 5,218 bytes, finds 128 matches, materializes their raw
+capture bounds, and builds the redacted output. It uses a simplified ASCII email
+shape expression, not an RFC email validator.
+
+[Raw samples, estimates, environment, and run provenance](https://github.com/sebastian-software/ferroni/blob/main/benches/results/atomic-class-prefix-2026-09-26.json)
+
+## Why this path
+
+An eight-second samply profile of the baseline attributed 65.95% of 7,583 sampled
+leaf frames to the VM, 10.19% to the search core, and 7.17% to stack popping.
+Allocator frames accounted for 2.72%. The unanchored expression retries many
+suffixes of ordinary words even when the character run does not end with `@`.
+
+The compiler already emits an atomic class-plus sequence before a disjoint
+literal. For example, `[ab]+:` can match `aab:` but cannot match any suffix of
+`aab!`. The filter recognizes exactly these five leading instructions:
+
+```text
+Mark(save_pos=true)
+CClass
+CClassStarPeekNext (same positive ASCII bitset)
+CutToMark (same mark, restore_pos=false)
+Str1 (the peek byte, outside the class)
+```
+
+The filter skips runs ending at the wrong delimiter. A run ending at the correct
+delimiter stays on the VM path. If its tail fails, every interior start is still
+eligible; the filter remembers the run end to avoid rescanning that prefix.
+This matters for captures, lookbehind, backreferences, `\G`, and `\K` in the tail.
+
+The recognizer adds no opcode, compiled metadata, heap allocation, dependency,
+or unsafe code. Rejected runs take linear scanning work with constant scratch
+space. Valid runs require one additional prefix scan per search; dense valid
+input can therefore benefit less than text containing many nonmatching words.
+
+## Limits and fallback
+
+The optimization only reaches the forward position loop. Backward and
+equal-endpoint searches retain their existing paths. Byte stepping outside ASCII
+class runs uses the existing encoding helper, and the logical end and range
+remain bounded.
+
+Every rejected prefix would fail before entering the tail and pop only the bottom
+sentinel: the atomic cut removes its lazy star choice. That costs one retry per
+attempt. A per-match retry limit of one therefore disables the filter, as do any
+search retry budget, match stack limit, time limit, callout, or configured match
+cache. Larger per-match limits preserve the same outcomes because they reset
+for each attempted start.
+
+Prefixes containing captures, anchors, alternatives, negation, Unicode classes,
+star quantifiers, or combined literals do not qualify. The existing VM remains
+the fallback. In particular, **these measurements do not claim a speedup with
+the opt-in match cache enabled**.
+
+## Measurements
+
+Baseline: `fa3cc675ded31e3296d46c33db95a2e97044b462`. Candidate engine:
+`e46a8cb5951180f4a76a4e504f6e35b182f86777`. Both use the same benchmark harness
+and pinned inputs, with `--features ffi` and match-cache compiled out.
+
+Apple M1 Ultra, 64 GiB RAM, macOS 27.0 (26A428), Rust 1.96.0
+(`ac68faa20`, LLVM 22.1.2), thin LTO, portable target, no `RUSTFLAGS` or bench
+profile overrides. Criterion 0.8.2 uses 30 samples, 500 ms warmup, and four
+seconds of measurement per case.
+
+Measurements ran in baseline/candidate/candidate/baseline order. Each timing
+run held an exclusive file lock, excluding concurrent local builds and tests.
+Other desktop activity, CPU placement, and power management were uncontrolled.
+The initial active prototype was visibly noisy; it is retained in the raw artifact
+but excluded from the final estimates.
+
+General task values below are the mean of the two run means, in microseconds.
+Validation cases contain 64 inputs; extraction and redaction cases process one
+document. The other six general tasks measure 0.1% to 2.5% slower on average.
+That is a possible small cost outside the target workload, even though code
+placement and desktop noise can contribute. The measured benefit is specific
+to the qualifying search workload.
+
+| Task                  | Before |  After | Change |
+| --------------------- | -----: | -----: | -----: |
+| `email_validation`    |  6.755 |  6.862 |  +1.6% |
+| `uuid_validation`     |  5.801 |  5.948 |  +2.5% |
+| `number_validation`   |  7.967 |  8.067 |  +1.3% |
+| `access_log_captures` | 31.657 | 32.214 |  +1.8% |
+| `url_extraction`      | 10.188 | 10.288 |  +1.0% |
+| `unicode_words`       | 64.664 | 64.705 |  +0.1% |
+| `email_redaction`     | 79.331 | 26.758 | -66.3% |
+
+Email redaction run means and their individual 95% confidence intervals:
+
+| Run      | Mean (µs) |   95% CI (µs) |
+| -------- | --------: | ------------: |
+| before-1 |    79.589 | 79.392–79.821 |
+| after-1  |    26.820 | 26.667–26.974 |
+| after-2  |    26.696 | 26.617–26.784 |
+| before-2 |    79.073 | 78.743–79.446 |
+
+The broader cases below have one baseline/candidate pair. They detect large
+surprises in the measured corpus but do not establish portable non-regression.
+Small changes, especially on paths that do not qualify, need repeat measurements
+on a quiet machine before attributing them to this filter. All times are µs.
+
+| Workload                                           |   Before |    After | Change |
+| -------------------------------------------------- | -------: | -------: | -----: |
+| `compilation/rust/literal`                         |    0.511 |    0.513 |  +0.5% |
+| `compilation/rust/lookbehind`                      |    1.166 |    1.160 |  -0.5% |
+| `compilation/rust/named_capture`                   |    4.130 |    4.035 |  -2.3% |
+| `scanner_documents/css_117_document_19_lines_rust` |   91.306 |   89.971 |  -1.5% |
+| `scanner_documents/rust_81_document_31_lines_rust` |  105.932 |  105.252 |  -0.6% |
+| `scanner_documents/ts_279_document_28_lines_rust`  | 1061.863 | 1051.718 |  -1.0% |
+| `single_pattern/rust/alternation_10_branch`        |    0.056 |    0.055 |  -1.7% |
+| `single_pattern/rust/alternation_2_branch`         |    0.066 |    0.066 |  +0.7% |
+| `single_pattern/rust/backref_simple`               |    0.084 |    0.085 |  +1.3% |
+| `single_pattern/rust/case_insensitive_phrase`      |    0.097 |    0.097 |  -0.1% |
+| `single_pattern/rust/literal_exact`                |    0.113 |    0.102 |  -9.4% |
+| `single_pattern/rust/lookaround_combined`          |    0.088 |    0.089 |  +1.2% |
+| `single_pattern/rust/named_capture_date`           |    0.214 |    0.212 |  -0.7% |
+| `single_pattern/rust/quantifier_greedy`            |    0.061 |    0.061 |  -0.4% |
+| `single_pattern/rust/unicode_greek`                |    0.104 |    0.103 |  -0.7% |
+
+## Comparator scope
+
+The artifact retains fresh Oniguruma and `regex` reference measurements for
+shared syntax. Oniguruma remains the compatibility reference. `regex` does not
+implement lookaround or backreferences; these workloads do not rank the complete
+feature sets of the engines. Reference runs also had desktop variability, so a
+precise new engine-wide speed ratio is not a conclusion of this evaluation.
+
+Email-redaction reference means (µs), including the noisy first run:
+
+| Engine    | First reference | Repeat |
+| --------- | --------------: | -----: |
+| Oniguruma |         111.044 | 89.851 |
+| `regex`   |          18.519 | 14.192 |
+
+## Correctness and reproduction
+
+The new differential test makes 500,736 exact comparisons against the same
+bytecode with the filter disabled. It covers UTF-8 and ASCII, malformed bytes,
+every logical end and start in its fixtures, forward/bounded/backward/equal ranges,
+raw captures, longest/nonempty/validity options, and independent retry and stack
+limits. A separate table checks non-qualifying prefixes and observable modes.
+Four added patterns extend the cached/plain/C differential suite.
+
+Full default and all-feature tests, the 96-case battle benchmark smoke test,
+Clippy, formatting, and rustdoc checks pass. The report preserves two discarded
+diagnostics: an inactive recognizer and the noisy first active run.
+
+Build both commits in separate worktrees, save each benchmark executable, and
+run the same selection against the same Criterion output directory:
+
+```sh
+./scripts/prepare-oniguruma-sources.sh
+cargo bench --locked --features ffi --bench battle_bench --no-run
+# Run each saved executable in baseline/candidate/candidate/baseline order.
+./baseline-battle-bench general_regex/rust --bench --save-baseline before-1
+./candidate-battle-bench general_regex/rust --bench --save-baseline after-1
+./candidate-battle-bench general_regex/rust --bench --save-baseline after-2
+./baseline-battle-bench general_regex/rust --bench --save-baseline before-2
+```
+
+The artifact records the exact additional scanner, single-pattern, and
+compilation filter used for the first baseline/candidate pair.
