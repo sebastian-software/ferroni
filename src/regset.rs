@@ -28,6 +28,8 @@ pub enum OnigRegSetLead {
 }
 
 struct RegSetEntry {
+    #[cfg(feature = "match-cache")]
+    match_cache: Option<Box<crate::match_cache::MatchCache>>,
     reg: Box<RegexType>,
     region: Option<OnigRegion>,
     /// Caching a fallback search must not suppress observable callouts or
@@ -64,6 +66,10 @@ enum SkipNeedle {
 
 /// A set of compiled regexes that can be searched simultaneously.
 pub struct OnigRegSet {
+    #[cfg(feature = "match-cache")]
+    match_cache_budget: Option<std::sync::Arc<crate::match_cache::Budget>>,
+    #[cfg(feature = "match-cache")]
+    match_cache_subject: Option<(u64, usize, OnigOptionType, u64)>,
     entries: Vec<RegSetEntry>,
     enc: OnigEncoding,
     anchor: i32,
@@ -406,6 +412,10 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
 /// Returns (Some(set), ONIG_NORMAL) on success, (None, error_code) on failure.
 pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i32) {
     let mut set = Box::new(OnigRegSet {
+        #[cfg(feature = "match-cache")]
+        match_cache_budget: None,
+        #[cfg(feature = "match-cache")]
+        match_cache_subject: None,
         entries: Vec::new(),
         enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
         anchor: 0,
@@ -461,6 +471,8 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
     let fallback_memo_safe = fallback_memo_is_safe(&reg);
     let start_filter = fallback_start_filter(&reg);
     set.entries.push(RegSetEntry {
+        #[cfg(feature = "match-cache")]
+        match_cache: None,
         reg,
         region,
         fallback_memo_safe,
@@ -771,6 +783,86 @@ impl EntryRegion {
     }
 }
 
+#[cfg(feature = "match-cache")]
+pub(crate) fn enable_match_cache(
+    set: &mut OnigRegSet,
+    config: crate::match_cache::MatchCacheConfig,
+) {
+    let budget = crate::match_cache::Budget::new(config.memory_budget);
+    for entry in &mut set.entries {
+        entry.reg.match_cache = crate::match_cache::Plan::new(&entry.reg, config);
+        entry.match_cache = entry
+            .reg
+            .match_cache
+            .as_ref()
+            .map(|_| Box::new(crate::match_cache::MatchCache::new(config, budget.clone())));
+    }
+    set.match_cache_budget = Some(budget);
+    set.match_cache_subject = None;
+}
+
+#[cfg(feature = "match-cache")]
+pub(crate) fn has_match_cache(set: &OnigRegSet) -> bool {
+    set.match_cache_budget.is_some()
+}
+
+#[cfg(feature = "match-cache")]
+pub(crate) fn match_cache_bytes(set: &OnigRegSet) -> usize {
+    set.match_cache_budget
+        .as_ref()
+        .map_or(0, |budget| budget.used())
+}
+
+#[cfg(feature = "match-cache")]
+fn prepare_match_cache(
+    set: &mut OnigRegSet,
+    identity: Option<FallbackMemoIdentity>,
+    end: usize,
+    options: OnigOptionType,
+) {
+    let Some(_) = &set.match_cache_budget else {
+        return;
+    };
+    // Only OnigString owns an immutable, non-address-based identity. Unidentified
+    // input and caller-supplied IDs start a fresh cache for every public search.
+    let subject = match identity {
+        Some(FallbackMemoIdentity::OnigString(id)) => {
+            Some((id, end, options, onig_get_global_limit_revision()))
+        }
+        _ => None,
+    };
+    if subject.is_none() || subject != set.match_cache_subject {
+        for entry in &mut set.entries {
+            if let Some(cache) = &mut entry.match_cache {
+                cache.reset_subject();
+            }
+        }
+        set.match_cache_subject = subject;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn attempt_entry_match(
+    entry: &mut RegSetEntry,
+    text: &[u8],
+    end: usize,
+    at: usize,
+    start: usize,
+    option: OnigOptionType,
+    msa: &mut MatchArg,
+) -> i32 {
+    #[cfg(feature = "match-cache")]
+    if entry.match_cache.is_some() {
+        std::mem::swap(&mut entry.match_cache, &mut msa.match_cache);
+        msa.preserve_match_cache = true;
+        let result = onig_match_with_msa_start(&entry.reg, text, end, at, start, option, msa);
+        msa.preserve_match_cache = false;
+        std::mem::swap(&mut entry.match_cache, &mut msa.match_cache);
+        return result;
+    }
+    onig_match_with_msa_start(&entry.reg, text, end, at, start, option, msa)
+}
+
 /// One `match_at` of a fallback entry at `position` of a search that began
 /// at `search_start` (C: `REGSET_MATCH_AND_RETURN_CHECK`).
 #[allow(clippy::too_many_arguments)]
@@ -784,16 +876,14 @@ fn attempt_fallback_entry(
     fill: EntryRegion,
     msa: &mut MatchArg,
 ) -> i32 {
-    let reg = &*entry.reg;
     if fill == EntryRegion::Fill {
         msa.region = entry.region.take();
-        let result =
-            onig_match_with_msa_start(reg, str_data, end, position, search_start, option, msa);
+        let result = attempt_entry_match(entry, str_data, end, position, search_start, option, msa);
         entry.region = msa.region.take();
         return result;
     }
     msa.region = None;
-    let result = onig_match_with_msa_start(reg, str_data, end, position, search_start, option, msa);
+    let result = attempt_entry_match(entry, str_data, end, position, search_start, option, msa);
     if result < 0 {
         return result;
     }
@@ -807,8 +897,7 @@ fn attempt_fallback_entry(
     msa.retry_limit_in_match = 0;
     msa.retry_limit_in_search = 0;
     msa.region = entry.region.take();
-    let captured =
-        onig_match_with_msa_start(reg, str_data, end, position, search_start, option, msa);
+    let captured = attempt_entry_match(entry, str_data, end, position, search_start, option, msa);
     entry.region = msa.region.take();
     (
         msa.retry_limit_in_match,
@@ -820,7 +909,7 @@ fn attempt_fallback_entry(
     }
     // Keep the result exact should the passes ever disagree.
     msa.region = entry.region.take();
-    let result = onig_match_with_msa_start(reg, str_data, end, position, search_start, option, msa);
+    let result = attempt_entry_match(entry, str_data, end, position, search_start, option, msa);
     entry.region = msa.region.take();
     result
 }
@@ -1373,8 +1462,8 @@ fn regset_table_scan<const EAGER_GATES: bool>(
                 // whole match from the attempt position and the match length,
                 // so avoid region take/clear/restore on this hot path.
                 msa.region = None;
-                onig_match_with_msa_start(
-                    &set.entries[i].reg,
+                attempt_entry_match(
+                    &mut set.entries[i],
                     str_data,
                     end,
                     s,
@@ -1385,8 +1474,8 @@ fn regset_table_scan<const EAGER_GATES: bool>(
             } else {
                 // Swap region into msa for this match, then swap back.
                 msa.region = set.entries[i].region.take();
-                let r = onig_match_with_msa_start(
-                    &set.entries[i].reg,
+                let r = attempt_entry_match(
+                    &mut set.entries[i],
                     str_data,
                     end,
                     s,
@@ -2180,6 +2269,9 @@ fn onig_regset_search_impl(
     if !str_data.is_empty() && range < start {
         return (ONIGERR_INVALID_ARGUMENT, 0);
     }
+
+    #[cfg(feature = "match-cache")]
+    prepare_match_cache(set, fallback_memo_id, end, option);
 
     if eager_region_reset {
         // Preserve classic regset behavior: all regions are reset on each call.

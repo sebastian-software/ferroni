@@ -503,6 +503,8 @@ pub struct RegexBuilder {
     pattern: Vec<u8>,
     options: OnigOptionType,
     syntax: &'static OnigSyntaxType,
+    #[cfg(feature = "match-cache")]
+    match_cache: Option<crate::match_cache::MatchCacheConfig>,
 }
 
 impl RegexBuilder {
@@ -512,6 +514,8 @@ impl RegexBuilder {
             pattern: pattern.as_bytes().to_vec(),
             options: ONIG_OPTION_NONE,
             syntax: &OnigSyntaxOniguruma,
+            #[cfg(feature = "match-cache")]
+            match_cache: None,
         }
     }
 
@@ -583,7 +587,38 @@ impl RegexBuilder {
             &ONIG_ENCODING_UTF8,
             self.syntax,
         )?;
+        #[cfg(feature = "match-cache")]
+        let inner = {
+            let mut inner = inner;
+            if let Some(config) = self.match_cache {
+                inner.match_cache = crate::match_cache::Plan::new(&inner, config);
+            }
+            inner
+        };
         Ok(Regex { inner })
+    }
+
+    /// Enable failed-state memoization for eligible patterns. Requires the
+    /// `match-cache` Cargo feature; ordinary builders remain uncached.
+    #[cfg(feature = "match-cache")]
+    pub fn match_cache(mut self, config: crate::match_cache::MatchCacheConfig) -> Self {
+        self.match_cache = Some(config);
+        self
+    }
+}
+
+#[cfg(feature = "match-cache")]
+impl Regex {
+    /// Whether this pattern qualifies for linear-time cached forward matching.
+    ///
+    /// This reports eligibility, not an unconditional complexity guarantee.
+    /// The cache must be enabled, its memory budget must suffice, and the search
+    /// must use the supported mode. Backward searches, FIND_LONGEST,
+    /// FIND_NOT_EMPTY, and searches with a match-stack limit use ordinary
+    /// backtracking. Backreferences, look-arounds, counted/empty repeats,
+    /// callouts, general atomic groups and other stateful bytecode are ineligible.
+    pub fn is_linear_time(&self) -> bool {
+        crate::match_cache::points(&self.inner).is_some()
     }
 }
 

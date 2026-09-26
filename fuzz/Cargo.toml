@@ -13,6 +13,14 @@ libfuzzer-sys = "0.4"
 
 [dependencies.ferroni]
 path = ".."
+features = ["match-cache"]
+
+[[bin]]
+name = "match-cache"
+path = "fuzz_targets/match_cache.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "pattern-compile"

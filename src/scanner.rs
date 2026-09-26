@@ -417,6 +417,43 @@ pub struct Scanner {
 }
 
 impl Scanner {
+    /// Create a scanner with opt-in failed-state memoization and one shared
+    /// cache budget. `ScannerConfig` remains source-compatible with existing
+    /// struct literals. Ineligible patterns use the ordinary matcher.
+    ///
+    /// Failed states survive advancing searches on the same [`OnigString`].
+    /// Other input APIs start fresh on every call. This scanner uses the RegSet
+    /// route so its per-pattern caches share the same subject lifecycle.
+    ///
+    /// ```
+    /// use ferroni::match_cache::MatchCacheConfig;
+    /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions, OnigString};
+    ///
+    /// let mut scanner = Scanner::with_match_cache(
+    ///     &[r"(a+)+$", "!"], &ScannerConfig::default(), MatchCacheConfig::new(),
+    /// )?;
+    /// let line = OnigString::new("aaaa!");
+    /// assert_eq!(scanner.find_next_match_utf16(&line, 0, ScannerFindOptions::NONE).unwrap().index, 1);
+    /// # Ok::<(), ferroni::error::RegexError>(())
+    /// ```
+    #[cfg(feature = "match-cache")]
+    pub fn with_match_cache(
+        patterns: &[&str],
+        config: &ScannerConfig,
+        cache: crate::match_cache::MatchCacheConfig,
+    ) -> Result<Self, RegexError> {
+        let mut scanner = Self::with_config(patterns, config)?;
+        crate::regset::enable_match_cache(&mut scanner.regset, cache);
+        Ok(scanner)
+    }
+
+    /// Bytes currently allocated for failure bits and pending failure records
+    /// across all patterns. The ordinary VM stack is not included.
+    #[cfg(feature = "match-cache")]
+    pub fn match_cache_bytes(&self) -> usize {
+        crate::regset::match_cache_bytes(&self.regset)
+    }
+
     /// Create a scanner from a list of pattern strings using the
     /// vscode-oniguruma defaults (Oniguruma syntax and capture groups enabled).
     ///
@@ -612,6 +649,8 @@ impl Scanner {
         let onig_opts = options.to_onig_options();
 
         // One-off calls always use RegSet.
+        #[cfg(feature = "match-cache")]
+        let use_cache = use_cache && !crate::regset::has_match_cache(&self.regset);
         if !use_cache {
             if SCANNER_STATS_ENABLED {
                 self.stats.route_regset_calls += 1;

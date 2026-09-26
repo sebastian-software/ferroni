@@ -1,0 +1,153 @@
+---
+order: 6
+title: "Opt-in Match Cache Evaluation"
+---
+
+# Opt-in Match Cache Evaluation
+
+This is the reconstruction of the implementation described in
+[#163](https://github.com/sebastian-software/ferroni/issues/163), based on
+Ferroni 1.5.2 (`5fba613`). The historical prototype's review and measurements
+do not validate this implementation. Independent adversarial review and
+measured adoption in Ferriki remain open.
+
+The `match-cache` Cargo feature is off by default. Even with the feature
+compiled, a caller must configure `RegexBuilder::match_cache` or
+`Scanner::with_match_cache` explicitly. See
+[ADR-008](/adr/008-rust-only-optimizations) for eligibility, lifetime,
+memory accounting, and fallback rules.
+
+## Design basis
+
+[Ruby's proposal](https://bugs.ruby-lang.org/issues/19104) and its
+[3.2 implementation](https://github.com/ruby/ruby/blob/v3_2_0/regexec.c)
+use selective memoization at branch points and a bit table proportional to
+subject length and cache points. Their restrictions on stateful instructions
+are also relevant here. Ferroni conservatively rejects repeat counters,
+empty-check loops, look-arounds, and capture-dependent matching. It supports
+only the narrow atomic character runs that its compiler introduces before
+disjoint literals.
+
+Failure bits are committed after all alternatives of a state fail. Pending
+records remain separate from the ported VM stack and count against the same
+budget as the bit table. Activation counts forward bytes as well as failures;
+a backtrack-only threshold misses repeated long scans. Acyclic bytecode needs
+no cache bookkeeping. Active fused character stars expose each character to
+the cache so those loops cannot repeatedly rescan an uncached suffix.
+
+## Measurement setup
+
+Measured locally on 2026-09-26: Apple M1 Ultra, 64 GiB RAM, Darwin 27.0.0,
+`aarch64-apple-darwin`, rustc 1.96.0 (`ac68faa20`), LLVM 22.1.2. Criterion used
+the optimized bench profile, one second of warmup and three seconds of
+measurement, with 20 document samples and 10 pathological samples. Tables
+report Criterion's slope estimate. The default cache policy was used:
+16 MiB per scanner and adaptive activation.
+
+The [raw estimates, samples, and engine source hashes](https://github.com/sebastian-software/ferroni/blob/main/benches/results/match-cache-2026-09-26.json)
+are checked in. These are local observations, not platform-independent bounds.
+
+```sh
+cargo bench --locked --features match-cache --bench match_cache_bench -- \
+  --warm-up-time 1 --measurement-time 3 --sample-size 20 --noplot
+```
+
+## Ordinary grammar documents
+
+The benchmark validates the complete token index and capture-bound trace
+before timing the same TypeScript, CSS, and Rust fixtures with the cache
+configured off and on in one feature-enabled binary. Compilation is excluded.
+
+| Document   |   Cache off |    Cache on | Difference |
+| ---------- | ----------: | ----------: | ---------: |
+| TypeScript | 1,126.07 µs | 1,161.74 µs |     +3.17% |
+| CSS        |   103.92 µs |   104.24 µs |     +0.30% |
+| Rust       |   117.72 µs |   123.69 µs |     +5.07% |
+
+Normal inputs pay a small cost when explicitly opted in. The cache is intended
+to bound expensive eligible searches; these measurements do not justify
+enabling it by default.
+
+## Pathological regex and scanner inputs
+
+The standalone pattern is `(?:\w+\s*,\s*)*\w+\s*$`, searched over `a` repeated
+N times followed by `!`. Both modes return no match. Retry limits are disabled
+for this bounded benchmark so they do not truncate its work.
+
+| N     |    Cache off |  Cache on |
+| ----- | -----------: | --------: |
+| 256   |    774.17 µs | 116.90 µs |
+| 1,024 | 12,086.92 µs | 470.91 µs |
+| 2,048 | 47,855.70 µs | 942.44 µs |
+
+The scanner benchmark prepends `(a+)+$` to the full TypeScript grammar and
+tokenizes `a` repeated N times followed by `!`. This triggers expensive failure
+at the first position before the ordinary identifier rule wins. Every timed
+iteration creates a new immutable `OnigString`; it includes the initial search
+instead of measuring an already cached line. Both modes produce identical
+token and capture traces, below the plain scanner's retry limit.
+
+| N   |    Cache off | Cache on | Retained cache buffers |
+| --- | -----------: | -------: | ---------------------: |
+| 12  |     95.16 µs | 53.61 µs |                1,032 B |
+| 16  |  1,508.48 µs | 53.08 µs |                1,040 B |
+| 20  | 24,381.36 µs | 53.85 µs |                1,040 B |
+
+The buffer column measures failure bits and pending records after tokenization,
+not peak process memory. Compiled metadata and the ordinary VM stack are outside
+this budget. The longer word-list pattern above does not reproduce the same
+scanner slowdown on these fixtures: the grammar's identifier rule wins early.
+
+## Cargo feature disabled
+
+The existing `regression_scanner_documents` benchmark was run on unchanged
+1.5.2 and on the reconstruction without `--features match-cache`. Each used
+the same target directory, toolchain, fixtures, and Criterion settings.
+
+| Document   |       1.5.2 | Reconstruction | Difference |
+| ---------- | ----------: | -------------: | ---------: |
+| TypeScript | 1,028.84 µs |    1,047.74 µs |     +1.84% |
+| CSS        |    89.65 µs |       89.40 µs |     −0.27% |
+| Rust       |   104.89 µs |      104.75 µs |     −0.13% |
+
+All cache fields and bookkeeping are conditionally compiled. The initial
+TypeScript result was outside #163's ±1% target. A repeat with 30 samples and
+five seconds of measurement gave 1,022.39 µs on 1.5.2 and 1,022.00 µs on the
+reconstruction (−0.04%); Criterion detected no performance change. Both runs
+are retained in the raw artifact. They do not establish binary identity or
+performance on other machines. The existing regression
+harness differs from the new harness; compare rows within a table, not across
+the two document tables.
+
+To reproduce the comparison, first save the baseline from a clean checkout
+at `5fba613`, then run the reconstruction with the same `CARGO_TARGET_DIR`:
+
+```sh
+cargo bench --locked --bench regression_bench -- regression_scanner_documents \
+  --warm-up-time 1 --measurement-time 3 --sample-size 20 --noplot \
+  --save-baseline issue163-main
+# In the reconstruction checkout, replace --save-baseline with:
+# --baseline issue163-main
+```
+
+## Correctness evidence and remaining work
+
+- Full default and `match-cache` test suites pass, including doctests.
+- The deterministic differential test completes 1,846,320 cache/plain
+  comparisons and 391,244 full-range forward comparisons with C Oniguruma,
+  comparing raw capture bounds. All agree within that scope.
+- Backward and equal-endpoint searches require cache/plain equality. They
+  are excluded from the C oracle because the baseline already has a documented
+  equal-endpoint divergence; this feature does not change that behavior.
+- The final AddressSanitizer fuzz run completed 440,147 inputs in 121 seconds
+  without a failure. It compares raw cached and uncached results when both
+  searches finish within their retry budgets. This is bounded local evidence,
+  not the independent fuzz review required by #163.
+- Unit tests cover work-based activation on 20k, 40k, and 80k subjects,
+  retry limits, capture fidelity, shared memory accounting, subject changes,
+  address reuse, unsupported modes, and budget fallback.
+
+The next steps are independent review, performance verification on another
+machine, and an opt-in Ferriki trial on actual grammar sets.
+Keep search limits enabled: unsupported patterns, search modes, and budget
+exhaustion still fall back to backtracking.

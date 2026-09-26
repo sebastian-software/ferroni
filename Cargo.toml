@@ -17,8 +17,9 @@ exclude = [".cache/", "benches/", "docs/", "fuzz/", "scripts/"]
 
 [package.metadata.docs.rs]
 # The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot
-# provide, so the documentation build stays on the default feature set.
+# provide, so document the pure-Rust features explicitly.
 all-features = false
+features = ["match-cache"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 # These mirror the crate-level attributes that used to live in `src/lib.rs`, so
@@ -36,6 +37,8 @@ collapsible_if = "allow"
 collapsible_match = "allow"
 
 [features]
+# Opt-in failed-state memoization for eligible regular expressions.
+match-cache = []
 # Benchmark-comparison harness: links a local upstream Oniguruma checkout
 # (scripts/prepare-oniguruma-sources.sh or FERRONI_ONIGURUMA_DIR) for the
 # in-repo C-vs-Rust benches. Not needed to use the library.
@@ -70,6 +73,11 @@ required-features = ["ffi"]
 [[bench]]
 name = "regression_bench"
 harness = false
+
+[[bench]]
+name = "match_cache_bench"
+harness = false
+required-features = ["match-cache"]
 
 [[bench]]
 name = "battle_mem_rust"

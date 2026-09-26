@@ -13,6 +13,7 @@ published `ferroni` package.
 | `pattern-compile` | `onig_new` over arbitrary pattern bytes, with the first two bytes selecting one of six syntaxes and one of seven option sets. |
 | `pattern-match` | Compiling an arbitrary pattern and searching arbitrary bytes with `onig_search_with_param`, then checking that the reported match and every capture group stay inside the haystack. |
 | `scanner-api` | `Scanner::new` over arbitrary patterns, then walking `find_next_match` across arbitrary text from an input-chosen start position, checking that every match is in range and on a character boundary. |
+| `match-cache` | Compare captures from the opt-in cache with the ordinary matcher on arbitrary UTF-8 patterns and subject bytes. Both searches have retry limits; completed answers must agree. |
 
 `pattern-match` sets a per-call step budget (`retry_limit_in_match`,
 `retry_limit_in_search`, `match_stack_limit`) through `OnigMatchParam`.
@@ -30,6 +31,7 @@ with nightly Rust:
 cargo +nightly fuzz run pattern-compile -- -dict=fuzz/ferroni.dict -max_len=16384
 cargo +nightly fuzz run pattern-match   -- -dict=fuzz/ferroni.dict -max_len=16384
 cargo +nightly fuzz run scanner-api     -- -dict=fuzz/ferroni.dict -max_len=16384
+cargo +nightly fuzz run match-cache     -- -dict=fuzz/ferroni.dict -max_len=514
 ```
 
 Every target rejects oversized input on its own, and the workflow adds
