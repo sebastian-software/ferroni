@@ -4782,6 +4782,8 @@ mod tests {
     /// Oniguruma's, read through the `ffi` feature.
     #[test]
     fn keep_patterns_report_attempt_relative_positions_and_lengths() {
+        // Regset searches inherit global limits changed by other tests.
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
         let input = b"xxabxx";
 
         // `a\Kb` dispatches straight from the table route: its first byte is

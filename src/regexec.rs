@@ -9239,6 +9239,8 @@ mod tests {
 
         let input = vec![b'a'; 40];
         let mut mp = onig_new_match_param();
+        // Other tests can change the global default while these params are created.
+        mp.match_stack_limit = 0;
         mp.retry_limit_in_match = 0;
         mp.retry_limit_in_search = 1_000;
         mp.time_limit = 0;
@@ -9285,6 +9287,8 @@ mod tests {
 
         let input = vec![b'a'; 500_000];
         let mut mp = onig_new_match_param();
+        // Isolate the timeout from stack limits changed by parallel tests.
+        mp.match_stack_limit = 0;
         mp.retry_limit_in_match = 0;
         mp.retry_limit_in_search = 0;
         onig_set_time_limit_of_match_param(&mut mp, 10);
