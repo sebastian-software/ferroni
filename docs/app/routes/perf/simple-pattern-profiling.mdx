@@ -1,0 +1,95 @@
+---
+order: 14
+title: "Simple-Pattern Profiling (2026-09)"
+---
+
+# Simple-Pattern Profiling
+
+I profiled common validation, extraction, and literal-search workloads after
+merging the ASCII-class, atomic-prefix, and Unicode-range optimizations.
+The baseline is main `405e2835915dceae1a7ba9a431af7d516bf5322f`.
+
+## What the profiles show
+
+Seven eight-second profiles use the production bench profile on an Apple M1
+Ultra, with portable ARM64 code and thin LTO. Samply samples the main thread
+at 1,000 Hz; the figures below include only stacks inside Criterion's profiling
+routine. They describe sampled CPU share, not potential end-to-end speedups.
+
+| Workload            | Main observed costs                                                             |
+| ------------------- | ------------------------------------------------------------------------------- |
+| Number validation   | VM 56.8%, backtrack-stack popping 15.7%                                         |
+| UUID validation     | VM 43.4%, forward search 16.5%                                                  |
+| Email validation    | VM 52.2%, backtrack-stack popping 6.7%                                          |
+| Access-log captures | VM 55.2%, greedy character loop 16.7%                                           |
+| URL extraction      | VM 30.9%, allocation 11.8%, substring finder construction 6.3%                  |
+| Short literal       | search wrapper 24.2%, `memmem::find` 19.0%, VM 15.8%, thread-local access 13.4% |
+| Greedy quantifiers  | VM 39.1%, search wrapper 20.8%                                                  |
+
+The [profile artifact](https://github.com/sebastian-software/ferroni/blob/main/benches/results/simple-pattern-profiles-2026-09-26.json)
+retains every symbolicated benchmark stack and its sample count, source and
+binary hashes, commands, platform metadata, and the summarization code.
+Unresolved system frames retain their library names. No line-level attribution
+is inferred from these function-symbol profiles.
+
+## Reuse the forward literal finder
+
+Ferroni already uses `memchr` for the optimizer's substring search. Previously,
+each search reconstructed its search plan. Compilation now stores an owned
+`memchr::memmem::Finder` when the existing optimizer selects `StrFast` with an
+exact string longer than one byte. Forward searches reuse it over the same
+slice. Candidate positions, distance bounds, and VM attempts stay unchanged.
+Single-byte, backward, and encoding-step searches retain their existing paths.
+
+This is a prefilter change; it does not replace the VM or restrict regex syntax.
+Lookarounds, backreferences, captures, and retry limits continue through the
+same engine. The finder owns a copy of at most 24 bytes (`OPT_EXACT_MAXLEN`),
+so no self-reference or unsafe lifetime extension is needed. Searches share no
+mutable finder state and allocate no additional memory.
+
+## Bounded diagnostic alternatives
+
+I compared an inline finder and a boxed finder against the baseline, using
+six unchanged fixtures, two runs per variant and fixture, and per-fixture
+ABBA/BAAB ordering. Each run has 30 samples, 500 ms warmup, and four seconds
+of measurement. All 121 smoke cases pass in each binary before timing.
+
+| Case                | Inline finder, time change | Boxed finder, time change |
+| ------------------- | -------------------------: | ------------------------: |
+| Short literal       |                     -44.8% |                    -45.2% |
+| URL extraction      |                      -9.4% |                    -10.7% |
+| UUID validation     |                      -2.2% |                     +0.7% |
+| Access-log captures |                     +0.02% |                     +0.6% |
+| Literal compilation |                      +5.3% |                    +12.6% |
+| TypeScript document |                      +5.5% |                     -0.4% |
+
+The TypeScript and UUID inline runs show substantial between-run variation;
+these small averages are not stable claims. The literal and URL gains repeat.
+The inline field increases `RegexType` from 1,000 to 1,152 bytes on this build,
+even for expressions that cannot use it. I selected the boxed variant to avoid
+that cost for every regex, accepting a second allocation when compiling an
+eligible expression.
+
+Both [inline diagnostic](https://github.com/sebastian-software/ferroni/blob/main/benches/results/simple-pattern-finder-diagnostic-2026-09-26.json)
+and [boxed diagnostic](https://github.com/sebastian-software/ferroni/blob/main/benches/results/simple-pattern-boxed-diagnostic-2026-09-26.json)
+artifacts retain all runs, raw samples, estimates, patches, binary hashes,
+commands, and the exact runner. These are selection measurements, not the
+independent confirmation of the final implementation.
+
+## Correctness boundary
+
+A focused test makes 696,320 comparisons between the compiled finder and the
+previous per-search construction path, using the same optimizer and bytecode.
+It compares raw results and capture bounds across logical input ends, forward,
+backward and equal endpoints, malformed UTF-8, ASCII and UTF-8 encodings,
+lookarounds, backreferences, `\K`, and deterministic retry and stack limits.
+The cache/plain/C differential fixture also includes literal prefixes, Unicode
+literals, a prefix longer than the optimizer's 24-byte cap, and advanced syntax.
+
+## Further candidates
+
+Number validation still spends a substantial share in VM execution and
+backtrack-stack popping. A separate experiment could target the common stack
+entry while preserving capture restoration, callouts, and cache unwinding.
+UUID validation still spends time in forward search. Neither observation by
+itself establishes a safe optimization or a likely application-wide gain.

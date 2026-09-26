@@ -6356,7 +6356,7 @@ fn slow_search(
 /// Sunday quick search (BMH variant). Mirrors C's sunday_quick_search.
 /// Uses SIMD-accelerated memchr::memmem for the actual byte search.
 fn sunday_quick_search(
-    _reg: &RegexType,
+    reg: &RegexType,
     target: &[u8],
     text: &[u8],
     text_start: usize,
@@ -6386,6 +6386,8 @@ fn sunday_quick_search(
     let haystack = &text[text_start..search_end];
     if tlen == 1 {
         memchr::memchr(target[0], haystack).map(|i| text_start + i)
+    } else if let Some(finder) = &reg.exact_finder {
+        finder.find(haystack).map(|i| text_start + i)
     } else {
         memchr::memmem::find(haystack, target).map(|i| text_start + i)
     }
@@ -7900,6 +7902,7 @@ mod tests {
             anc_dist_max: 0,
             sub_anchor: 0,
             exact: Vec::new(),
+            exact_finder: None,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],
@@ -8004,6 +8007,105 @@ mod tests {
             std::str::from_utf8(pattern)
         );
         reg
+    }
+
+    #[test]
+    fn compiled_literal_finder_preserves_bounded_searches_and_limits() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns = [
+            r"ab",
+            r"(ab)(c?)",
+            r"ab(?:c|d)",
+            r"(ab)c\1",
+            r"(?<=x)ab",
+            r"ab\K(c?)",
+            r".*ab",
+            r"ab(?=c)",
+            r"\Aab",
+            r"abcdefghijklmnopqrstuvwxyz",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"a",
+            b"ab",
+            b"xab",
+            b"abcab",
+            b"abdab",
+            b"ab\0ab",
+            b"\xc2ab",
+            b"a\xffab",
+            b"ab\xe2\x82",
+            b"\xc2\xa1ab",
+            b"abcdefghijklmnopqrstuvwxyz!",
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let compile = || {
+                    regcomp::onig_new(
+                        pattern.as_bytes(),
+                        ONIG_OPTION_NONE,
+                        enc,
+                        &crate::regsyntax::OnigSyntaxOniguruma,
+                    )
+                    .unwrap()
+                };
+                let optimized = compile();
+                let mut reference = compile();
+                // Retain the same optimizer and bytecode; only rebuild the
+                // substring search plan on each search, as before this change.
+                assert!(reference.exact_finder.take().is_some(), "{pattern}");
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack) in
+                                        [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)]
+                                    {
+                                        let mut mp = onig_new_match_param();
+                                        mp.retry_limit_in_match = retry;
+                                        mp.retry_limit_in_search = search_retry;
+                                        mp.match_stack_limit = stack;
+                                        mp.time_limit = 0;
+                                        let search = |reg| {
+                                            let (result, region) = onig_search_with_param(
+                                                reg,
+                                                input,
+                                                end,
+                                                start,
+                                                range,
+                                                Some(OnigRegion::new()),
+                                                option,
+                                                &mp,
+                                            );
+                                            let region = region.unwrap();
+                                            (result, region.beg, region.end)
+                                        };
+                                        assert_eq!(
+                                            search(&optimized),
+                                            search(&reference),
+                                            "{} {pattern:?} {input:?} end={end} start={start} range={range} {option:?} retry={retry} search_retry={search_retry} stack={stack}",
+                                            enc.name()
+                                        );
+                                        comparisons += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("{comparisons} compiled/rebuilt literal finder comparisons");
     }
 
     #[test]

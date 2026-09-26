@@ -1,0 +1,3621 @@
+{
+  "question": "Does compiling the forward substring finder once reduce literal and URL search cost without large control regressions?",
+  "stage": "diagnostic selection",
+  "base": "405e2835915dceae1a7ba9a431af7d516bf5322f",
+  "candidate_patch": "diff --git a/src/regcomp.rs b/src/regcomp.rs\nindex e29728b..022eb0c 100644\n--- a/src/regcomp.rs\n+++ b/src/regcomp.rs\n@@ -9637,6 +9637,10 @@ fn set_optimize_exact(reg: &mut RegexType, e: &OptStr) -> i32 {\n         reg.optimize = OptimizeType::Str;\n     }\n \n+    if reg.optimize == OptimizeType::StrFast && reg.exact.len() > 1 {\n+        reg.exact_finder = Some(memchr::memmem::Finder::new(&reg.exact).into_owned());\n+    }\n+\n     reg.dist_min = e.mm.min;\n     reg.dist_max = e.mm.max;\n \n@@ -10331,6 +10335,7 @@ pub fn onig_new(\n         anc_dist_max: 0,\n         sub_anchor: 0,\n         exact: Vec::new(),\n+        exact_finder: None,\n         map: [0u8; CHAR_MAP_SIZE],\n         map_offset: 0,\n         map_bytes: [0u8; 3],\n@@ -10649,6 +10654,7 @@ mod tests {\n             anc_dist_max: 0,\n             sub_anchor: 0,\n             exact: Vec::new(),\n+            exact_finder: None,\n             map: [0u8; CHAR_MAP_SIZE],\n             map_offset: 0,\n             map_bytes: [0u8; 3],\ndiff --git a/src/regexec.rs b/src/regexec.rs\nindex 41fb1d3..41d5f83 100644\n--- a/src/regexec.rs\n+++ b/src/regexec.rs\n@@ -6356,7 +6356,7 @@ fn slow_search(\n /// Sunday quick search (BMH variant). Mirrors C's sunday_quick_search.\n /// Uses SIMD-accelerated memchr::memmem for the actual byte search.\n fn sunday_quick_search(\n-    _reg: &RegexType,\n+    reg: &RegexType,\n     target: &[u8],\n     text: &[u8],\n     text_start: usize,\n@@ -6386,6 +6386,8 @@ fn sunday_quick_search(\n     let haystack = &text[text_start..search_end];\n     if tlen == 1 {\n         memchr::memchr(target[0], haystack).map(|i| text_start + i)\n+    } else if let Some(finder) = &reg.exact_finder {\n+        finder.find(haystack).map(|i| text_start + i)\n     } else {\n         memchr::memmem::find(haystack, target).map(|i| text_start + i)\n     }\n@@ -7900,6 +7902,7 @@ mod tests {\n             anc_dist_max: 0,\n             sub_anchor: 0,\n             exact: Vec::new(),\n+            exact_finder: None,\n             map: [0u8; CHAR_MAP_SIZE],\n             map_offset: 0,\n             map_bytes: [0u8; 3],\ndiff --git a/src/regint.rs b/src/regint.rs\nindex 8c455d1..d30bd42 100644\n--- a/src/regint.rs\n+++ b/src/regint.rs\n@@ -650,6 +650,8 @@ pub struct RegexType {\n     pub(crate) anc_dist_max: OnigLen,\n     pub(crate) sub_anchor: i32,\n     pub(crate) exact: Vec<u8>,\n+    /// Reuse the forward literal search plan across haystacks (ADR-008).\n+    pub(crate) exact_finder: Option<memchr::memmem::Finder<'static>>,\n     pub(crate) map: [u8; CHAR_MAP_SIZE],\n     pub(crate) map_offset: i32,\n     pub(crate) map_bytes: [u8; 3],\ndiff --git a/src/regparse.rs b/src/regparse.rs\nindex c789597..889268e 100644\n--- a/src/regparse.rs\n+++ b/src/regparse.rs\n@@ -7650,6 +7650,7 @@ mod tests {\n             anc_dist_max: 0,\n             sub_anchor: 0,\n             exact: Vec::new(),\n+            exact_finder: None,\n             map: [0u8; CHAR_MAP_SIZE],\n             map_offset: 0,\n             map_bytes: [0u8; 3],\n",
+  "start_utc": "2026-09-26T19:19:52.105068+00:00",
+  "binary_sha256": {
+    "baseline": "6d1f8d5acc21adb6392da194d354f5fe524c0425f1fa3f723b23ed7365045462",
+    "finder": "c28e5dfb2e0ab8586c56b6dd9c23e82dcb9c0512c73c8ca35809393684676e6a"
+  },
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+  "hardware": "machdep.cpu.brand_string: Apple M1 Ultra\nhw.memsize: 68719476736\nhw.ncpu: 20",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0\nBuildVersion:\t\t26A428",
+  "sampling": {
+    "samples": 30,
+    "warmup_ms": 500,
+    "measurement_seconds": 4,
+    "features": [
+      "ffi"
+    ],
+    "lto": "thin",
+    "target": "portable",
+    "match_cache": false
+  },
+  "coordination": "Exclusive CPU gate, no concurrent task build or test. Desktop activity uncontrolled.",
+  "order": "Per case ABBA/BAAB alternating; all runs retained.",
+  "runner_source": "import pathlib,subprocess,os,json,datetime,re,statistics,hashlib,time\nROOT=pathlib.Path('/private/tmp/ferroni-perf-simple-patterns-profile'); OUT=pathlib.Path('/tmp/ferroni-round2-finder-diagnostic'); OUT.mkdir(exist_ok=False)\nBINS={v:pathlib.Path('/tmp/ferroni-round2-'+v+'.bench') for v in ['baseline','finder']}; ENV=dict(os.environ,CRITERION_HOME=str(OUT/'criterion'))\ndef utc():return datetime.datetime.now(datetime.timezone.utc).isoformat()\ndef cap(c):return subprocess.check_output(c,cwd=ROOT,text=True).strip()\ndef sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()\nd={'question':'Does compiling the forward substring finder once reduce literal and URL search cost without large control regressions?', 'stage':'diagnostic selection','base':'405e2835915dceae1a7ba9a431af7d516bf5322f','candidate_patch':pathlib.Path('/tmp/ferroni-round2-finder.patch').read_text(),'start_utc':utc(),'binary_sha256':{v:sha(p) for v,p in BINS.items()},'rustc':cap(['rustc','-vV']),'hardware':cap(['sysctl','machdep.cpu.brand_string','hw.memsize','hw.ncpu']),'os':cap(['sw_vers']),'sampling':{'samples':30,'warmup_ms':500,'measurement_seconds':4,'features':['ffi'],'lto':'thin','target':'portable','match_cache':False},'coordination':'Exclusive CPU gate, no concurrent task build or test. Desktop activity uncontrolled.','order':'Per case ABBA/BAAB alternating; all runs retained.','runner_source':pathlib.Path(__file__).read_text(),'validation':[],'measurements':[],'summaries':[]}\ndef save():(OUT/'artifact.json').write_text(json.dumps(d,indent=2)+'\\n')\nfor v,p in BINS.items():\n r=subprocess.run([str(p),'--test'],cwd=OUT,env=ENV,capture_output=True,text=True,timeout=60);(OUT/(v+'-smoke.log')).write_text(r.stdout+r.stderr);d['validation'].append({'variant':v,'exit':r.returncode,'successful_cases':r.stdout.count('\\nSuccess')});save();assert r.returncode==0,r.stderr[-3000:]\ncases=['single_pattern/rust/literal_exact','general_regex/rust/url_extraction','general_regex/rust/uuid_validation','general_regex/rust/access_log_captures','compilation/rust/literal','scanner_documents/ts_279_document_28_lines_rust']\nfor i,case in enumerate(cases):\n order=['baseline','finder','finder','baseline'] if i%2==0 else ['finder','baseline','baseline','finder']; counts={v:0 for v in BINS}; rows=[]\n for v in order:\n  counts[v]+=1;label=f'diagnostic-{v}-{counts[v]}';cmd=[str(BINS[v]),'^'+re.escape(case)+'$','--bench','--noplot','--save-baseline',label];start=time.monotonic()\n  row={'case':case,'variant':v,'label':label,'command':cmd,'start_utc':utc(),'load_average':os.getloadavg()};r=subprocess.run(cmd,cwd=OUT,env=ENV,capture_output=True,text=True,timeout=60); (OUT/f'{i}-{label}.log').write_text(r.stdout+r.stderr);row.update(exit=r.returncode,elapsed_seconds=time.monotonic()-start);assert r.returncode==0,r.stderr[-3000:]\n  for k,f in [('estimates','estimates.json'),('samples','sample.json'),('benchmark','benchmark.json')]:row[k]=json.loads((OUT/'criterion'/case/label/f).read_text())\n  d['measurements'].append(row);rows.append(row);save()\n means={v:[r['estimates']['mean']['point_estimate'] for r in rows if r['variant']==v] for v in BINS}; avg={v:statistics.mean(vals) for v,vals in means.items()};s={'case':case,'run_means_ns':means,'baseline_ns':avg['baseline'],'candidate_ns':avg['finder'],'time_change_percent':(avg['finder']/avg['baseline']-1)*100};d['summaries'].append(s);save();print(json.dumps(s),flush=True)\nd['end_utc']=utc();save();print('COMPLETE',OUT,flush=True)\n",
+  "validation": [
+    {
+      "variant": "baseline",
+      "exit": 0,
+      "successful_cases": 121
+    },
+    {
+      "variant": "finder",
+      "exit": 0,
+      "successful_cases": 121
+    }
+  ],
+  "measurements": [
+    {
+      "case": "single_pattern/rust/literal_exact",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-1",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^single_pattern/rust/literal_exact$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-1"
+      ],
+      "start_utc": "2026-09-26T19:19:53.208019+00:00",
+      "load_average": [
+        4.67333984375,
+        6.22509765625,
+        5.4140625
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.155956459,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 101.27120656729939,
+            "upper_bound": 102.04097138879311
+          },
+          "point_estimate": 101.62825243470232,
+          "standard_error": 0.1944969894461549
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 100.89761203890478,
+            "upper_bound": 101.79043036856343
+          },
+          "point_estimate": 101.19024648754515,
+          "standard_error": 0.28592682081027143
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 0.2720467036364572,
+            "upper_bound": 1.3315116836730714
+          },
+          "point_estimate": 0.707853767338798,
+          "standard_error": 0.2957836228627858
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 101.01602088457498,
+            "upper_bound": 101.6607170064809
+          },
+          "point_estimate": 101.26108806359801,
+          "standard_error": 0.1658502786177309
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 0.7027066673950795,
+            "upper_bound": 1.3936721603306763
+          },
+          "point_estimate": 1.0716302473831987,
+          "standard_error": 0.18118824015009202
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          85268.0,
+          170536.0,
+          255804.0,
+          341072.0,
+          426340.0,
+          511608.0,
+          596876.0,
+          682144.0,
+          767412.0,
+          852680.0,
+          937948.0,
+          1023216.0,
+          1108484.0,
+          1193752.0,
+          1279020.0,
+          1364288.0,
+          1449556.0,
+          1534824.0,
+          1620092.0,
+          1705360.0,
+          1790628.0,
+          1875896.0,
+          1961164.0,
+          2046432.0,
+          2131700.0,
+          2216968.0,
+          2302236.0,
+          2387504.0,
+          2472772.0,
+          2558040.0
+        ],
+        "times": [
+          8575500.0,
+          17349125.0,
+          25997500.0,
+          34343833.0,
+          44137000.0,
+          51615667.0,
+          60950000.0,
+          70523459.0,
+          78159333.0,
+          86673791.0,
+          96214541.0,
+          104630250.0,
+          112583000.0,
+          122560042.0,
+          131022667.0,
+          140321375.0,
+          152198791.0,
+          154003833.0,
+          163732167.0,
+          171988542.0,
+          180401292.0,
+          188775541.0,
+          197978500.0,
+          206923917.0,
+          215014125.0,
+          223601042.0,
+          233138250.0,
+          240913792.0,
+          249407125.0,
+          258344500.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "single_pattern",
+        "function_id": "rust",
+        "value_str": "literal_exact",
+        "throughput": null,
+        "full_id": "single_pattern/rust/literal_exact",
+        "directory_name": "single_pattern/rust/literal_exact",
+        "title": "single_pattern/rust/literal_exact"
+      }
+    },
+    {
+      "case": "single_pattern/rust/literal_exact",
+      "variant": "finder",
+      "label": "diagnostic-finder-1",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^single_pattern/rust/literal_exact$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-1"
+      ],
+      "start_utc": "2026-09-26T19:19:58.364800+00:00",
+      "load_average": [
+        4.69921875,
+        6.20458984375,
+        5.41162109375
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.221509209000001,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 55.74353807501714,
+            "upper_bound": 55.973237319371705
+          },
+          "point_estimate": 55.851631639029925,
+          "standard_error": 0.057958418903768294
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 55.7896184291845,
+            "upper_bound": 55.859917616955265
+          },
+          "point_estimate": 55.80444270615145,
+          "standard_error": 0.021208543756572683
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 0.05160406428490319,
+            "upper_bound": 0.16576168678878705
+          },
+          "point_estimate": 0.111259379004443,
+          "standard_error": 0.030319746766237603
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 55.78360510251812,
+            "upper_bound": 55.87437089408705
+          },
+          "point_estimate": 55.82505820409269,
+          "standard_error": 0.023239184450936298
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 0.10291687078648477,
+            "upper_bound": 0.4877022994058605
+          },
+          "point_estimate": 0.32304870898847077,
+          "standard_error": 0.09936409758226601
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          153896.0,
+          307792.0,
+          461688.0,
+          615584.0,
+          769480.0,
+          923376.0,
+          1077272.0,
+          1231168.0,
+          1385064.0,
+          1538960.0,
+          1692856.0,
+          1846752.0,
+          2000648.0,
+          2154544.0,
+          2308440.0,
+          2462336.0,
+          2616232.0,
+          2770128.0,
+          2924024.0,
+          3077920.0,
+          3231816.0,
+          3385712.0,
+          3539608.0,
+          3693504.0,
+          3847400.0,
+          4001296.0,
+          4155192.0,
+          4309088.0,
+          4462984.0,
+          4616880.0
+        ],
+        "times": [
+          8441875.0,
+          17574542.0,
+          25977541.0,
+          34352958.0,
+          43028667.0,
+          51554625.0,
+          60114500.0,
+          68501083.0,
+          77565916.0,
+          85941833.0,
+          94658291.0,
+          103037375.0,
+          111439625.0,
+          120021625.0,
+          128951042.0,
+          137179709.0,
+          145994666.0,
+          154539208.0,
+          163415167.0,
+          172766583.0,
+          180833167.0,
+          189049375.0,
+          197695500.0,
+          206096500.0,
+          214652167.0,
+          222960041.0,
+          231752041.0,
+          240174958.0,
+          249716292.0,
+          257458334.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "single_pattern",
+        "function_id": "rust",
+        "value_str": "literal_exact",
+        "throughput": null,
+        "full_id": "single_pattern/rust/literal_exact",
+        "directory_name": "single_pattern/rust/literal_exact",
+        "title": "single_pattern/rust/literal_exact"
+      }
+    },
+    {
+      "case": "single_pattern/rust/literal_exact",
+      "variant": "finder",
+      "label": "diagnostic-finder-2",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^single_pattern/rust/literal_exact$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-2"
+      ],
+      "start_utc": "2026-09-26T19:20:03.587370+00:00",
+      "load_average": [
+        4.56298828125,
+        6.1513671875,
+        5.3974609375
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.229433916,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 55.80430164666602,
+            "upper_bound": 55.94016484621344
+          },
+          "point_estimate": 55.868092137467436,
+          "standard_error": 0.03473086865799515
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 55.8127104832506,
+            "upper_bound": 55.913856822294136
+          },
+          "point_estimate": 55.88762432660502,
+          "standard_error": 0.02497605365405797
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 0.0416339126032238,
+            "upper_bound": 0.20662288582734506
+          },
+          "point_estimate": 0.1429508062215929,
+          "standard_error": 0.04719373871868503
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 55.87140437395685,
+            "upper_bound": 55.929188067263354
+          },
+          "point_estimate": 55.90131532088616,
+          "standard_error": 0.014614526474001263
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 0.11091620927556546,
+            "upper_bound": 0.27653833584484144
+          },
+          "point_estimate": 0.19301828395423315,
+          "standard_error": 0.04680719601364144
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          154193.0,
+          308386.0,
+          462579.0,
+          616772.0,
+          770965.0,
+          925158.0,
+          1079351.0,
+          1233544.0,
+          1387737.0,
+          1541930.0,
+          1696123.0,
+          1850316.0,
+          2004509.0,
+          2158702.0,
+          2312895.0,
+          2467088.0,
+          2621281.0,
+          2775474.0,
+          2929667.0,
+          3083860.0,
+          3238053.0,
+          3392246.0,
+          3546439.0,
+          3700632.0,
+          3854825.0,
+          4009018.0,
+          4163211.0,
+          4317404.0,
+          4471597.0,
+          4625790.0
+        ],
+        "times": [
+          8728542.0,
+          17157667.0,
+          25696125.0,
+          34343292.0,
+          42936708.0,
+          51451042.0,
+          60368792.0,
+          68696167.0,
+          77359625.0,
+          86190250.0,
+          94849542.0,
+          103196750.0,
+          111520875.0,
+          120929958.0,
+          129334041.0,
+          137852000.0,
+          146774209.0,
+          155542458.0,
+          163630458.0,
+          172755584.0,
+          180593250.0,
+          189566625.0,
+          198249834.0,
+          206898750.0,
+          215409125.0,
+          224369416.0,
+          233034791.0,
+          241312292.0,
+          249785917.0,
+          258611625.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "single_pattern",
+        "function_id": "rust",
+        "value_str": "literal_exact",
+        "throughput": null,
+        "full_id": "single_pattern/rust/literal_exact",
+        "directory_name": "single_pattern/rust/literal_exact",
+        "title": "single_pattern/rust/literal_exact"
+      }
+    },
+    {
+      "case": "single_pattern/rust/literal_exact",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-2",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^single_pattern/rust/literal_exact$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-2"
+      ],
+      "start_utc": "2026-09-26T19:20:08.817828+00:00",
+      "load_average": [
+        4.517578125,
+        6.115234375,
+        5.38916015625
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.127135792000001,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 100.65835579923132,
+            "upper_bound": 101.00351805108225
+          },
+          "point_estimate": 100.83838871614704,
+          "standard_error": 0.0886526680714303
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 100.73801248452655,
+            "upper_bound": 100.93343662839436
+          },
+          "point_estimate": 100.84314656222355,
+          "standard_error": 0.051851865584895525
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 0.13898213186952954,
+            "upper_bound": 0.3997733640773276
+          },
+          "point_estimate": 0.25975912248607697,
+          "standard_error": 0.06619273295232174
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 100.70961689933982,
+            "upper_bound": 100.84495089031205
+          },
+          "point_estimate": 100.77192270298016,
+          "standard_error": 0.0345984822459746
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 0.20680368081073794,
+            "upper_bound": 0.7341995884505816
+          },
+          "point_estimate": 0.4925592471285244,
+          "standard_error": 0.1377791097462116
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          85092.0,
+          170184.0,
+          255276.0,
+          340368.0,
+          425460.0,
+          510552.0,
+          595644.0,
+          680736.0,
+          765828.0,
+          850920.0,
+          936012.0,
+          1021104.0,
+          1106196.0,
+          1191288.0,
+          1276380.0,
+          1361472.0,
+          1446564.0,
+          1531656.0,
+          1616748.0,
+          1701840.0,
+          1786932.0,
+          1872024.0,
+          1957116.0,
+          2042208.0,
+          2127300.0,
+          2212392.0,
+          2297484.0,
+          2382576.0,
+          2467668.0,
+          2552760.0
+        ],
+        "times": [
+          8419459.0,
+          17398917.0,
+          25801625.0,
+          34366792.0,
+          42897083.0,
+          51765041.0,
+          59850083.0,
+          68473875.0,
+          77485875.0,
+          86104500.0,
+          94781875.0,
+          103039166.0,
+          111819875.0,
+          120175209.0,
+          128671542.0,
+          137450541.0,
+          145962334.0,
+          154019833.0,
+          163138417.0,
+          171412875.0,
+          179581292.0,
+          188814416.0,
+          197056625.0,
+          206312250.0,
+          214163166.0,
+          222980584.0,
+          231047292.0,
+          240166125.0,
+          248334416.0,
+          257200625.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "single_pattern",
+        "function_id": "rust",
+        "value_str": "literal_exact",
+        "throughput": null,
+        "full_id": "single_pattern/rust/literal_exact",
+        "directory_name": "single_pattern/rust/literal_exact",
+        "title": "single_pattern/rust/literal_exact"
+      }
+    },
+    {
+      "case": "general_regex/rust/url_extraction",
+      "variant": "finder",
+      "label": "diagnostic-finder-1",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^general_regex/rust/url_extraction$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-1"
+      ],
+      "start_utc": "2026-09-26T19:20:13.947140+00:00",
+      "load_average": [
+        4.31591796875,
+        6.046875,
+        5.369140625
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.900064874999998,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 8915.597511702657,
+            "upper_bound": 9003.68612361767
+          },
+          "point_estimate": 8949.315104726655,
+          "standard_error": 24.043563999427416
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 8907.678147136954,
+            "upper_bound": 8938.631635410045
+          },
+          "point_estimate": 8927.493951915852,
+          "standard_error": 8.33361869652293
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 18.248891708558695,
+            "upper_bound": 51.40063061901579
+          },
+          "point_estimate": 35.95963316410242,
+          "standard_error": 8.164609221305275
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 8898.935693165276,
+            "upper_bound": 9044.502596063088
+          },
+          "point_estimate": 8948.50461931463,
+          "standard_error": 40.32338315118858
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 25.79806897516207,
+            "upper_bound": 217.31223442146776
+          },
+          "point_estimate": 132.77490323246818,
+          "standard_error": 63.17699482220442
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          968.0,
+          1936.0,
+          2904.0,
+          3872.0,
+          4840.0,
+          5808.0,
+          6776.0,
+          7744.0,
+          8712.0,
+          9680.0,
+          10648.0,
+          11616.0,
+          12584.0,
+          13552.0,
+          14520.0,
+          15488.0,
+          16456.0,
+          17424.0,
+          18392.0,
+          19360.0,
+          20328.0,
+          21296.0,
+          22264.0,
+          23232.0,
+          24200.0,
+          25168.0,
+          26136.0,
+          27104.0,
+          28072.0,
+          29040.0
+        ],
+        "times": [
+          8785708.0,
+          17200750.0,
+          25941125.0,
+          34609584.0,
+          43377083.0,
+          51879625.0,
+          60464458.0,
+          69396000.0,
+          77531875.0,
+          86608834.0,
+          95048042.0,
+          103685958.0,
+          112486333.0,
+          120724250.0,
+          129643458.0,
+          138585750.0,
+          146998083.0,
+          155019875.0,
+          163515625.0,
+          173128666.0,
+          182067167.0,
+          191193333.0,
+          214182542.0,
+          206977375.0,
+          215114459.0,
+          223260333.0,
+          231956791.0,
+          241418917.0,
+          249632125.0,
+          257998667.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "url_extraction",
+        "throughput": {
+          "Bytes": 5196
+        },
+        "full_id": "general_regex/rust/url_extraction",
+        "directory_name": "general_regex/rust/url_extraction",
+        "title": "general_regex/rust/url_extraction"
+      }
+    },
+    {
+      "case": "general_regex/rust/url_extraction",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-1",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^general_regex/rust/url_extraction$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-1"
+      ],
+      "start_utc": "2026-09-26T19:20:18.849091+00:00",
+      "load_average": [
+        4.13037109375,
+        5.9794921875,
+        5.34912109375
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.939979291,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 9824.463029807832,
+            "upper_bound": 9873.23782677268
+          },
+          "point_estimate": 9847.533276818704,
+          "standard_error": 12.464291979553257
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 9814.032142857144,
+            "upper_bound": 9845.040789115646
+          },
+          "point_estimate": 9832.16786554622,
+          "standard_error": 8.444390863367992
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 21.880452468688926,
+            "upper_bound": 65.65942848431223
+          },
+          "point_estimate": 39.455981167231066,
+          "standard_error": 11.773979603038647
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 9833.012697398251,
+            "upper_bound": 9875.500768086447
+          },
+          "point_estimate": 9852.357963163859,
+          "standard_error": 10.854128736196612
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 41.60436522761732,
+            "upper_bound": 90.42818827540856
+          },
+          "point_estimate": 69.26606207381774,
+          "standard_error": 12.557223669433457
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          875.0,
+          1750.0,
+          2625.0,
+          3500.0,
+          4375.0,
+          5250.0,
+          6125.0,
+          7000.0,
+          7875.0,
+          8750.0,
+          9625.0,
+          10500.0,
+          11375.0,
+          12250.0,
+          13125.0,
+          14000.0,
+          14875.0,
+          15750.0,
+          16625.0,
+          17500.0,
+          18375.0,
+          19250.0,
+          20125.0,
+          21000.0,
+          21875.0,
+          22750.0,
+          23625.0,
+          24500.0,
+          25375.0,
+          26250.0
+        ],
+        "times": [
+          8702875.0,
+          17045500.0,
+          25914166.0,
+          34294500.0,
+          42942000.0,
+          51621042.0,
+          59665458.0,
+          68689250.0,
+          77611917.0,
+          85688375.0,
+          96796583.0,
+          103002792.0,
+          111779500.0,
+          120082875.0,
+          128686541.0,
+          137114167.0,
+          146247375.0,
+          157641084.0,
+          165103166.0,
+          172122333.0,
+          180937667.0,
+          189400000.0,
+          199132833.0,
+          207531291.0,
+          217045083.0,
+          223931292.0,
+          231676708.0,
+          240730083.0,
+          249696042.0,
+          257672417.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "url_extraction",
+        "throughput": {
+          "Bytes": 5196
+        },
+        "full_id": "general_regex/rust/url_extraction",
+        "directory_name": "general_regex/rust/url_extraction",
+        "title": "general_regex/rust/url_extraction"
+      }
+    },
+    {
+      "case": "general_regex/rust/url_extraction",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-2",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^general_regex/rust/url_extraction$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-2"
+      ],
+      "start_utc": "2026-09-26T19:20:23.790793+00:00",
+      "load_average": [
+        4.35986328125,
+        5.99609375,
+        5.3583984375
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.954578667,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 9832.779270622672,
+            "upper_bound": 9895.675980611772
+          },
+          "point_estimate": 9861.42168698193,
+          "standard_error": 16.15917646819039
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 9823.177337514253,
+            "upper_bound": 9861.49356833251
+          },
+          "point_estimate": 9842.322773842758,
+          "standard_error": 9.394362899373036
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 24.50675085910248,
+            "upper_bound": 72.07320563451165
+          },
+          "point_estimate": 47.056471029873414,
+          "standard_error": 11.817100920238607
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 9849.308208070313,
+            "upper_bound": 9905.50962500761
+          },
+          "point_estimate": 9871.500293594998,
+          "standard_error": 14.49238074310617
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 42.62162349388219,
+            "upper_bound": 127.03471057711114
+          },
+          "point_estimate": 90.33401435012527,
+          "standard_error": 22.139507300984622
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          877.0,
+          1754.0,
+          2631.0,
+          3508.0,
+          4385.0,
+          5262.0,
+          6139.0,
+          7016.0,
+          7893.0,
+          8770.0,
+          9647.0,
+          10524.0,
+          11401.0,
+          12278.0,
+          13155.0,
+          14032.0,
+          14909.0,
+          15786.0,
+          16663.0,
+          17540.0,
+          18417.0,
+          19294.0,
+          20171.0,
+          21048.0,
+          21925.0,
+          22802.0,
+          23679.0,
+          24556.0,
+          25433.0,
+          26310.0
+        ],
+        "times": [
+          8728708.0,
+          16994208.0,
+          25805666.0,
+          34347083.0,
+          43009375.0,
+          51571375.0,
+          60241125.0,
+          68949458.0,
+          77398042.0,
+          86111708.0,
+          95558709.0,
+          104602917.0,
+          111814458.0,
+          120826541.0,
+          129020458.0,
+          139363167.0,
+          150135625.0,
+          160900125.0,
+          164131166.0,
+          172391166.0,
+          181893916.0,
+          190198375.0,
+          199080667.0,
+          207303167.0,
+          215696625.0,
+          224257333.0,
+          233595334.0,
+          241924583.0,
+          250356041.0,
+          259590083.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "url_extraction",
+        "throughput": {
+          "Bytes": 5196
+        },
+        "full_id": "general_regex/rust/url_extraction",
+        "directory_name": "general_regex/rust/url_extraction",
+        "title": "general_regex/rust/url_extraction"
+      }
+    },
+    {
+      "case": "general_regex/rust/url_extraction",
+      "variant": "finder",
+      "label": "diagnostic-finder-2",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^general_regex/rust/url_extraction$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-2"
+      ],
+      "start_utc": "2026-09-26T19:20:28.747335+00:00",
+      "load_average": [
+        4.17041015625,
+        5.9296875,
+        5.33837890625
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.873999665999996,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 8884.946799639532,
+            "upper_bound": 8921.508461842659
+          },
+          "point_estimate": 8902.109154291462,
+          "standard_error": 9.413846028330118
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 8871.873913799096,
+            "upper_bound": 8899.155761209593
+          },
+          "point_estimate": 8882.05935708548,
+          "standard_error": 6.8440890295491075
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 16.804871322091753,
+            "upper_bound": 55.87174236888887
+          },
+          "point_estimate": 28.989351492636125,
+          "standard_error": 9.519461060972386
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 8873.606880201876,
+            "upper_bound": 8920.718418781718
+          },
+          "point_estimate": 8894.117951837059,
+          "standard_error": 12.292670481976328
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 33.38210191977625,
+            "upper_bound": 65.59085641375505
+          },
+          "point_estimate": 52.48109302453188,
+          "standard_error": 8.26670092677499
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          959.0,
+          1918.0,
+          2877.0,
+          3836.0,
+          4795.0,
+          5754.0,
+          6713.0,
+          7672.0,
+          8631.0,
+          9590.0,
+          10549.0,
+          11508.0,
+          12467.0,
+          13426.0,
+          14385.0,
+          15344.0,
+          16303.0,
+          17262.0,
+          18221.0,
+          19180.0,
+          20139.0,
+          21098.0,
+          22057.0,
+          23016.0,
+          23975.0,
+          24934.0,
+          25893.0,
+          26852.0,
+          27811.0,
+          28770.0
+        ],
+        "times": [
+          8668833.0,
+          16995833.0,
+          25518125.0,
+          34064291.0,
+          42742250.0,
+          51156875.0,
+          59511666.0,
+          68265292.0,
+          77133250.0,
+          85997666.0,
+          93693541.0,
+          102266500.0,
+          110853042.0,
+          120546500.0,
+          129912125.0,
+          136566708.0,
+          145257500.0,
+          152953875.0,
+          161845709.0,
+          170204250.0,
+          178241125.0,
+          188760500.0,
+          195314708.0,
+          203780250.0,
+          212511708.0,
+          220691917.0,
+          229634250.0,
+          238419417.0,
+          246910834.0,
+          258839667.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "url_extraction",
+        "throughput": {
+          "Bytes": 5196
+        },
+        "full_id": "general_regex/rust/url_extraction",
+        "directory_name": "general_regex/rust/url_extraction",
+        "title": "general_regex/rust/url_extraction"
+      }
+    },
+    {
+      "case": "general_regex/rust/uuid_validation",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-1",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^general_regex/rust/uuid_validation$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-1"
+      ],
+      "start_utc": "2026-09-26T19:20:33.624719+00:00",
+      "load_average": [
+        4.07666015625,
+        5.880859375,
+        5.32421875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.976667207999995,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 6076.084162530887,
+            "upper_bound": 6883.2920413466945
+          },
+          "point_estimate": 6422.367655073383,
+          "standard_error": 207.796330758858
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5931.713328369322,
+            "upper_bound": 6058.63119785402
+          },
+          "point_estimate": 5984.142887362079,
+          "standard_error": 51.290451598215846
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 61.00219462876578,
+            "upper_bound": 345.6573970670511
+          },
+          "point_estimate": 127.39677268361132,
+          "standard_error": 88.01048897917292
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5914.295930169535,
+            "upper_bound": 6329.523547961293
+          },
+          "point_estimate": 6086.841700605564,
+          "standard_error": 107.95886558786178
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 345.2610521219215,
+            "upper_bound": 1679.5458106340134
+          },
+          "point_estimate": 1142.0390965227525,
+          "standard_error": 352.7031864519093
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          1343.0,
+          2686.0,
+          4029.0,
+          5372.0,
+          6715.0,
+          8058.0,
+          9401.0,
+          10744.0,
+          12087.0,
+          13430.0,
+          14773.0,
+          16116.0,
+          17459.0,
+          18802.0,
+          20145.0,
+          21488.0,
+          22831.0,
+          24174.0,
+          25517.0,
+          26860.0,
+          28203.0,
+          29546.0,
+          30889.0,
+          32232.0,
+          33575.0,
+          34918.0,
+          36261.0,
+          37604.0,
+          38947.0,
+          40290.0
+        ],
+        "times": [
+          9618459.0,
+          16710208.0,
+          43556167.0,
+          52870875.0,
+          45212916.0,
+          47814417.0,
+          55811625.0,
+          69828250.0,
+          79487333.0,
+          79635125.0,
+          87792416.0,
+          97299416.0,
+          105184000.0,
+          112651708.0,
+          119393000.0,
+          127631292.0,
+          135353417.0,
+          141051458.0,
+          150839834.0,
+          160823875.0,
+          169140125.0,
+          176708709.0,
+          182190250.0,
+          223681625.0,
+          244743417.0,
+          212295167.0,
+          213874833.0,
+          218709958.0,
+          225914167.0,
+          233739875.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "uuid_validation",
+        "throughput": {
+          "Elements": 64
+        },
+        "full_id": "general_regex/rust/uuid_validation",
+        "directory_name": "general_regex/rust/uuid_validation",
+        "title": "general_regex/rust/uuid_validation"
+      }
+    },
+    {
+      "case": "general_regex/rust/uuid_validation",
+      "variant": "finder",
+      "label": "diagnostic-finder-1",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^general_regex/rust/uuid_validation$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-1"
+      ],
+      "start_utc": "2026-09-26T19:20:38.603524+00:00",
+      "load_average": [
+        5.03125,
+        6.048828125,
+        5.38671875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.063264832999998,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5954.942171410089,
+            "upper_bound": 6017.087374524526
+          },
+          "point_estimate": 5984.5509762186675,
+          "standard_error": 15.983207025184505
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5914.670068368354,
+            "upper_bound": 6020.580968858132
+          },
+          "point_estimate": 5954.114737867465,
+          "standard_error": 34.2650926629035
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 21.356879751907776,
+            "upper_bound": 135.62865600041474
+          },
+          "point_estimate": 79.18433976807651,
+          "standard_error": 32.9818010523952
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5916.022246197212,
+            "upper_bound": 5949.224322951687
+          },
+          "point_estimate": 5928.296206800012,
+          "standard_error": 8.605305156007711
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 62.434290614209495,
+            "upper_bound": 109.05404258753681
+          },
+          "point_estimate": 88.68231845528139,
+          "standard_error": 11.950357783496665
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          1445.0,
+          2890.0,
+          4335.0,
+          5780.0,
+          7225.0,
+          8670.0,
+          10115.0,
+          11560.0,
+          13005.0,
+          14450.0,
+          15895.0,
+          17340.0,
+          18785.0,
+          20230.0,
+          21675.0,
+          23120.0,
+          24565.0,
+          26010.0,
+          27455.0,
+          28900.0,
+          30345.0,
+          31790.0,
+          33235.0,
+          34680.0,
+          36125.0,
+          37570.0,
+          39015.0,
+          40460.0,
+          41905.0,
+          43350.0
+        ],
+        "times": [
+          8918250.0,
+          17419708.0,
+          26258625.0,
+          35161667.0,
+          43549833.0,
+          52137750.0,
+          61511167.0,
+          70650791.0,
+          78847292.0,
+          87116583.0,
+          95444459.0,
+          103940542.0,
+          116880125.0,
+          120408125.0,
+          128652583.0,
+          138920500.0,
+          146315791.0,
+          153315125.0,
+          162512375.0,
+          170311875.0,
+          179048416.0,
+          187592333.0,
+          196559417.0,
+          204989625.0,
+          213614500.0,
+          222141083.0,
+          230778042.0,
+          238977000.0,
+          247883541.0,
+          255810792.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "uuid_validation",
+        "throughput": {
+          "Elements": 64
+        },
+        "full_id": "general_regex/rust/uuid_validation",
+        "directory_name": "general_regex/rust/uuid_validation",
+        "title": "general_regex/rust/uuid_validation"
+      }
+    },
+    {
+      "case": "general_regex/rust/uuid_validation",
+      "variant": "finder",
+      "label": "diagnostic-finder-2",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^general_regex/rust/uuid_validation$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-2"
+      ],
+      "start_utc": "2026-09-26T19:20:43.668935+00:00",
+      "load_average": [
+        4.7880859375,
+        5.9814453125,
+        5.36669921875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.05819975,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5901.631626503681,
+            "upper_bound": 5912.416368478095
+          },
+          "point_estimate": 5906.724021895833,
+          "standard_error": 2.7258589289429502
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5899.897840674466,
+            "upper_bound": 5909.337203387295
+          },
+          "point_estimate": 5905.252138432799,
+          "standard_error": 2.32235985689825
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5.635012502290522,
+            "upper_bound": 18.36240231983407
+          },
+          "point_estimate": 10.950564525134402,
+          "standard_error": 3.090875588002985
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5902.837077428956,
+            "upper_bound": 5920.5914454008725
+          },
+          "point_estimate": 5911.266803633541,
+          "standard_error": 4.544221715085133
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 9.461715708217621,
+            "upper_bound": 20.18597246818698
+          },
+          "point_estimate": 15.268246615632737,
+          "standard_error": 2.7773961000686276
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          1453.0,
+          2906.0,
+          4359.0,
+          5812.0,
+          7265.0,
+          8718.0,
+          10171.0,
+          11624.0,
+          13077.0,
+          14530.0,
+          15983.0,
+          17436.0,
+          18889.0,
+          20342.0,
+          21795.0,
+          23248.0,
+          24701.0,
+          26154.0,
+          27607.0,
+          29060.0,
+          30513.0,
+          31966.0,
+          33419.0,
+          34872.0,
+          36325.0,
+          37778.0,
+          39231.0,
+          40684.0,
+          42137.0,
+          43590.0
+        ],
+        "times": [
+          8587667.0,
+          17183209.0,
+          25756542.0,
+          34260792.0,
+          42837833.0,
+          51293083.0,
+          59847958.0,
+          68561125.0,
+          77088041.0,
+          85750667.0,
+          94349292.0,
+          103056833.0,
+          111597375.0,
+          120672250.0,
+          129209750.0,
+          137291083.0,
+          145617208.0,
+          154446750.0,
+          162775834.0,
+          171499250.0,
+          180186042.0,
+          188729084.0,
+          197501458.0,
+          205358417.0,
+          214581750.0,
+          224088417.0,
+          233643541.0,
+          240502625.0,
+          249517917.0,
+          256918875.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "uuid_validation",
+        "throughput": {
+          "Elements": 64
+        },
+        "full_id": "general_regex/rust/uuid_validation",
+        "directory_name": "general_regex/rust/uuid_validation",
+        "title": "general_regex/rust/uuid_validation"
+      }
+    },
+    {
+      "case": "general_regex/rust/uuid_validation",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-2",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^general_regex/rust/uuid_validation$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-2"
+      ],
+      "start_utc": "2026-09-26T19:20:48.729277+00:00",
+      "load_average": [
+        4.564453125,
+        5.9150390625,
+        5.3466796875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.047547666,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5723.576328953491,
+            "upper_bound": 5753.64565602708
+          },
+          "point_estimate": 5738.235067351181,
+          "standard_error": 7.693407762599637
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5725.82301481552,
+            "upper_bound": 5735.566057360362
+          },
+          "point_estimate": 5731.477386172472,
+          "standard_error": 2.6899388900332
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 6.337716625042533,
+            "upper_bound": 37.51119795988704
+          },
+          "point_estimate": 19.714203110495212,
+          "standard_error": 9.035718858832263
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5731.329320892295,
+            "upper_bound": 5752.348699082955
+          },
+          "point_estimate": 5740.067246126415,
+          "standard_error": 5.389811820212624
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 27.678659713358986,
+            "upper_bound": 54.82439454308961
+          },
+          "point_estimate": 42.86962910765394,
+          "standard_error": 6.86644978579524
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          1501.0,
+          3002.0,
+          4503.0,
+          6004.0,
+          7505.0,
+          9006.0,
+          10507.0,
+          12008.0,
+          13509.0,
+          15010.0,
+          16511.0,
+          18012.0,
+          19513.0,
+          21014.0,
+          22515.0,
+          24016.0,
+          25517.0,
+          27018.0,
+          28519.0,
+          30020.0,
+          31521.0,
+          33022.0,
+          34523.0,
+          36024.0,
+          37525.0,
+          39026.0,
+          40527.0,
+          42028.0,
+          43529.0,
+          45030.0
+        ],
+        "times": [
+          8456667.0,
+          17275292.0,
+          25557291.0,
+          34329708.0,
+          42869834.0,
+          51584417.0,
+          61286833.0,
+          69447583.0,
+          77544250.0,
+          85730666.0,
+          93935708.0,
+          102820625.0,
+          111862625.0,
+          121429875.0,
+          130909959.0,
+          137389167.0,
+          146257166.0,
+          157795167.0,
+          165107750.0,
+          172008541.0,
+          180421875.0,
+          189374542.0,
+          198618334.0,
+          206005209.0,
+          215100042.0,
+          223866125.0,
+          232268375.0,
+          240954291.0,
+          249367667.0,
+          257996083.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "uuid_validation",
+        "throughput": {
+          "Elements": 64
+        },
+        "full_id": "general_regex/rust/uuid_validation",
+        "directory_name": "general_regex/rust/uuid_validation",
+        "title": "general_regex/rust/uuid_validation"
+      }
+    },
+    {
+      "case": "general_regex/rust/access_log_captures",
+      "variant": "finder",
+      "label": "diagnostic-finder-1",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^general_regex/rust/access_log_captures$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-1"
+      ],
+      "start_utc": "2026-09-26T19:20:53.780754+00:00",
+      "load_average": [
+        4.51904296875,
+        5.8828125,
+        5.33837890625
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.803962792,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31233.19495166994,
+            "upper_bound": 31330.435290190642
+          },
+          "point_estimate": 31283.801528244785,
+          "standard_error": 24.8579223028875
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31245.608484848482,
+            "upper_bound": 31322.06611570248
+          },
+          "point_estimate": 31277.334276094276,
+          "standard_error": 21.578079534553883
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 54.67271604754549,
+            "upper_bound": 155.46393566420377
+          },
+          "point_estimate": 94.86462565017361,
+          "standard_error": 24.26567723634984
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31261.655286183537,
+            "upper_bound": 31333.052515059888
+          },
+          "point_estimate": 31295.53631613865,
+          "standard_error": 18.198946827354515
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 78.0272828424917,
+            "upper_bound": 195.1929007237698
+          },
+          "point_estimate": 137.8784037669018,
+          "standard_error": 32.43023115919931
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          275.0,
+          550.0,
+          825.0,
+          1100.0,
+          1375.0,
+          1650.0,
+          1925.0,
+          2200.0,
+          2475.0,
+          2750.0,
+          3025.0,
+          3300.0,
+          3575.0,
+          3850.0,
+          4125.0,
+          4400.0,
+          4675.0,
+          4950.0,
+          5225.0,
+          5500.0,
+          5775.0,
+          6050.0,
+          6325.0,
+          6600.0,
+          6875.0,
+          7150.0,
+          7425.0,
+          7700.0,
+          7975.0,
+          8250.0
+        ],
+        "times": [
+          8460875.0,
+          17332667.0,
+          25838792.0,
+          34291250.0,
+          42810583.0,
+          51752625.0,
+          60342333.0,
+          69180458.0,
+          77404666.0,
+          85984042.0,
+          94749250.0,
+          103302542.0,
+          111515250.0,
+          120115000.0,
+          130048250.0,
+          137449791.0,
+          146505417.0,
+          154449542.0,
+          163638208.0,
+          171814166.0,
+          180573250.0,
+          190205375.0,
+          197505834.0,
+          206644500.0,
+          216173750.0,
+          223023791.0,
+          232254416.0,
+          240777375.0,
+          249973042.0,
+          257831291.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "access_log_captures",
+        "throughput": {
+          "Bytes": 5964
+        },
+        "full_id": "general_regex/rust/access_log_captures",
+        "directory_name": "general_regex/rust/access_log_captures",
+        "title": "general_regex/rust/access_log_captures"
+      }
+    },
+    {
+      "case": "general_regex/rust/access_log_captures",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-1",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^general_regex/rust/access_log_captures$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-1"
+      ],
+      "start_utc": "2026-09-26T19:20:58.587097+00:00",
+      "load_average": [
+        4.23681640625,
+        5.80126953125,
+        5.3125
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.811540041000001,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31204.17962019834,
+            "upper_bound": 31285.021693235714
+          },
+          "point_estimate": 31245.006072321263,
+          "standard_error": 20.596836538161046
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31201.024508579045,
+            "upper_bound": 31296.016774891774
+          },
+          "point_estimate": 31241.046206435472,
+          "standard_error": 31.276012638883937
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 73.36155092714226,
+            "upper_bound": 179.10190188882336
+          },
+          "point_estimate": 115.75882732200101,
+          "standard_error": 27.75907457498912
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31222.287931014722,
+            "upper_bound": 31284.702341846376
+          },
+          "point_estimate": 31253.937059986663,
+          "standard_error": 15.804459297988492
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 87.83474348835232,
+            "upper_bound": 133.87508696959006
+          },
+          "point_estimate": 113.93697205565456,
+          "standard_error": 11.70017041612087
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          276.0,
+          552.0,
+          828.0,
+          1104.0,
+          1380.0,
+          1656.0,
+          1932.0,
+          2208.0,
+          2484.0,
+          2760.0,
+          3036.0,
+          3312.0,
+          3588.0,
+          3864.0,
+          4140.0,
+          4416.0,
+          4692.0,
+          4968.0,
+          5244.0,
+          5520.0,
+          5796.0,
+          6072.0,
+          6348.0,
+          6624.0,
+          6900.0,
+          7176.0,
+          7452.0,
+          7728.0,
+          8004.0,
+          8280.0
+        ],
+        "times": [
+          8574667.0,
+          17319958.0,
+          25833125.0,
+          34245250.0,
+          43347917.0,
+          51659709.0,
+          60363833.0,
+          69297291.0,
+          77131000.0,
+          86756542.0,
+          94576084.0,
+          103713792.0,
+          111578583.0,
+          120918584.0,
+          130084084.0,
+          137749167.0,
+          146970792.0,
+          154622333.0,
+          163665625.0,
+          171584375.0,
+          181372625.0,
+          190031667.0,
+          198978583.0,
+          206919667.0,
+          216303708.0,
+          224497500.0,
+          232687625.0,
+          241852750.0,
+          249745792.0,
+          258543833.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "access_log_captures",
+        "throughput": {
+          "Bytes": 5964
+        },
+        "full_id": "general_regex/rust/access_log_captures",
+        "directory_name": "general_regex/rust/access_log_captures",
+        "title": "general_regex/rust/access_log_captures"
+      }
+    },
+    {
+      "case": "general_regex/rust/access_log_captures",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-2",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^general_regex/rust/access_log_captures$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-2"
+      ],
+      "start_utc": "2026-09-26T19:21:03.402113+00:00",
+      "load_average": [
+        4.1376953125,
+        5.75439453125,
+        5.298828125
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.80904000000001,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31259.16370903306,
+            "upper_bound": 31409.976451214498
+          },
+          "point_estimate": 31326.30163653761,
+          "standard_error": 38.55557152179175
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31257.60344251337,
+            "upper_bound": 31308.191018181817
+          },
+          "point_estimate": 31300.55896103896,
+          "standard_error": 14.590001164262496
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 35.04465361874277,
+            "upper_bound": 139.97961768153002
+          },
+          "point_estimate": 88.65796723592183,
+          "standard_error": 26.7358522239107
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31248.545693901975,
+            "upper_bound": 31500.36883836407
+          },
+          "point_estimate": 31361.170897937598,
+          "standard_error": 64.53543288561453
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 81.95466072298993,
+            "upper_bound": 300.89082046034775
+          },
+          "point_estimate": 213.54356404834144,
+          "standard_error": 57.19670437198262
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          275.0,
+          550.0,
+          825.0,
+          1100.0,
+          1375.0,
+          1650.0,
+          1925.0,
+          2200.0,
+          2475.0,
+          2750.0,
+          3025.0,
+          3300.0,
+          3575.0,
+          3850.0,
+          4125.0,
+          4400.0,
+          4675.0,
+          4950.0,
+          5225.0,
+          5500.0,
+          5775.0,
+          6050.0,
+          6325.0,
+          6600.0,
+          6875.0,
+          7150.0,
+          7425.0,
+          7700.0,
+          7975.0,
+          8250.0
+        ],
+        "times": [
+          8527167.0,
+          17216834.0,
+          25823958.0,
+          34499917.0,
+          42893333.0,
+          51748291.0,
+          60251250.0,
+          68812417.0,
+          77683209.0,
+          86100917.0,
+          94510083.0,
+          103555875.0,
+          111703584.0,
+          120485333.0,
+          129156292.0,
+          137553459.0,
+          146108042.0,
+          154230917.0,
+          163123916.0,
+          171996666.0,
+          180790791.0,
+          190622791.0,
+          202537333.0,
+          211409583.0,
+          215235334.0,
+          222394334.0,
+          231602208.0,
+          239829500.0,
+          250549583.0,
+          258280000.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "access_log_captures",
+        "throughput": {
+          "Bytes": 5964
+        },
+        "full_id": "general_regex/rust/access_log_captures",
+        "directory_name": "general_regex/rust/access_log_captures",
+        "title": "general_regex/rust/access_log_captures"
+      }
+    },
+    {
+      "case": "general_regex/rust/access_log_captures",
+      "variant": "finder",
+      "label": "diagnostic-finder-2",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^general_regex/rust/access_log_captures$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-2"
+      ],
+      "start_utc": "2026-09-26T19:21:08.214002+00:00",
+      "load_average": [
+        5.24755859375,
+        5.95751953125,
+        5.373046875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.815551584000005,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31227.330801021235,
+            "upper_bound": 31375.77204008857
+          },
+          "point_estimate": 31302.3170355843,
+          "standard_error": 37.85715519079923
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31251.918293706294,
+            "upper_bound": 31320.986014354068
+          },
+          "point_estimate": 31285.407839433294,
+          "standard_error": 17.653065418627556
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 47.79539144796549,
+            "upper_bound": 176.26651054741055
+          },
+          "point_estimate": 84.58230867750892,
+          "standard_error": 35.85891809739074
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 31314.467266603508,
+            "upper_bound": 31508.299551765307
+          },
+          "point_estimate": 31407.712625739146,
+          "standard_error": 50.34547158396042
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 116.16977717359617,
+            "upper_bound": 286.8588628788569
+          },
+          "point_estimate": 210.1885097559261,
+          "standard_error": 43.55566810594674
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          275.0,
+          550.0,
+          825.0,
+          1100.0,
+          1375.0,
+          1650.0,
+          1925.0,
+          2200.0,
+          2475.0,
+          2750.0,
+          3025.0,
+          3300.0,
+          3575.0,
+          3850.0,
+          4125.0,
+          4400.0,
+          4675.0,
+          4950.0,
+          5225.0,
+          5500.0,
+          5775.0,
+          6050.0,
+          6325.0,
+          6600.0,
+          6875.0,
+          7150.0,
+          7425.0,
+          7700.0,
+          7975.0,
+          8250.0
+        ],
+        "times": [
+          8425959.0,
+          17114625.0,
+          25642000.0,
+          34261084.0,
+          42961958.0,
+          51586625.0,
+          60222000.0,
+          68700333.0,
+          77781167.0,
+          85775583.0,
+          94709416.0,
+          103090959.0,
+          111750125.0,
+          120015833.0,
+          130799125.0,
+          137674000.0,
+          146521625.0,
+          154780833.0,
+          163614000.0,
+          172305583.0,
+          180810750.0,
+          189284292.0,
+          197858916.0,
+          205929541.0,
+          216097459.0,
+          226931291.0,
+          233224625.0,
+          241840333.0,
+          249857292.0,
+          262476375.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "general_regex",
+        "function_id": "rust",
+        "value_str": "access_log_captures",
+        "throughput": {
+          "Bytes": 5964
+        },
+        "full_id": "general_regex/rust/access_log_captures",
+        "directory_name": "general_regex/rust/access_log_captures",
+        "title": "general_regex/rust/access_log_captures"
+      }
+    },
+    {
+      "case": "compilation/rust/literal",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-1",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^compilation/rust/literal$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-1"
+      ],
+      "start_utc": "2026-09-26T19:21:13.034257+00:00",
+      "load_average": [
+        4.9072265625,
+        5.875,
+        5.34716796875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.843145250000006,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 502.1379031925051,
+            "upper_bound": 507.2644796648485
+          },
+          "point_estimate": 504.4881292543581,
+          "standard_error": 1.297915904554305
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 501.4835542719585,
+            "upper_bound": 505.0166841982235
+          },
+          "point_estimate": 502.5397731950119,
+          "standard_error": 1.2133818675382846
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1.482565626729689,
+            "upper_bound": 5.643876531986139
+          },
+          "point_estimate": 3.5799143482029168,
+          "standard_error": 1.0358515620402857
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 503.3558792901399,
+            "upper_bound": 511.756460578924
+          },
+          "point_estimate": 507.20105361782356,
+          "standard_error": 2.1720860568347593
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 3.383697687708703,
+            "upper_bound": 10.409915495205729
+          },
+          "point_estimate": 7.220353227395677,
+          "standard_error": 1.8786201155729567
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          17112.0,
+          34224.0,
+          51336.0,
+          68448.0,
+          85560.0,
+          102672.0,
+          119784.0,
+          136896.0,
+          154008.0,
+          171120.0,
+          188232.0,
+          205344.0,
+          222456.0,
+          239568.0,
+          256680.0,
+          273792.0,
+          290904.0,
+          308016.0,
+          325128.0,
+          342240.0,
+          359352.0,
+          376464.0,
+          393576.0,
+          410688.0,
+          427800.0,
+          444912.0,
+          462024.0,
+          479136.0,
+          496248.0,
+          513360.0
+        ],
+        "times": [
+          8365166.0,
+          17515458.0,
+          25920792.0,
+          34506667.0,
+          42672791.0,
+          51423209.0,
+          59919667.0,
+          69139167.0,
+          77887209.0,
+          85567708.0,
+          95557000.0,
+          103047042.0,
+          111599333.0,
+          120061167.0,
+          128642208.0,
+          136580208.0,
+          147219583.0,
+          154567500.0,
+          163082375.0,
+          172200417.0,
+          181133500.0,
+          188699708.0,
+          197544708.0,
+          207391083.0,
+          218006375.0,
+          236715250.0,
+          239441333.0,
+          243959959.0,
+          251440875.0,
+          257384708.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "compilation",
+        "function_id": "rust",
+        "value_str": "literal",
+        "throughput": null,
+        "full_id": "compilation/rust/literal",
+        "directory_name": "compilation/rust/literal",
+        "title": "compilation/rust/literal"
+      }
+    },
+    {
+      "case": "compilation/rust/literal",
+      "variant": "finder",
+      "label": "diagnostic-finder-1",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^compilation/rust/literal$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-1"
+      ],
+      "start_utc": "2026-09-26T19:21:17.880208+00:00",
+      "load_average": [
+        4.91455078125,
+        5.8603515625,
+        5.3447265625
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.861982749999996,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 534.6709822856068,
+            "upper_bound": 537.6333805724945
+          },
+          "point_estimate": 536.085596783252,
+          "standard_error": 0.752375508915695
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 534.0126522939158,
+            "upper_bound": 536.8072746914822
+          },
+          "point_estimate": 534.7530781667807,
+          "standard_error": 0.8442657984518394
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1.4340345716988077,
+            "upper_bound": 4.907272843666462
+          },
+          "point_estimate": 2.8380554125831816,
+          "standard_error": 0.9148777053583853
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 535.1881037741629,
+            "upper_bound": 539.6166087993203
+          },
+          "point_estimate": 537.2220916315016,
+          "standard_error": 1.1452274868480399
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 2.7083302665914557,
+            "upper_bound": 5.375429342812853
+          },
+          "point_estimate": 4.164542820918921,
+          "standard_error": 0.6921759409539213
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          16081.0,
+          32162.0,
+          48243.0,
+          64324.0,
+          80405.0,
+          96486.0,
+          112567.0,
+          128648.0,
+          144729.0,
+          160810.0,
+          176891.0,
+          192972.0,
+          209053.0,
+          225134.0,
+          241215.0,
+          257296.0,
+          273377.0,
+          289458.0,
+          305539.0,
+          321620.0,
+          337701.0,
+          353782.0,
+          369863.0,
+          385944.0,
+          402025.0,
+          418106.0,
+          434187.0,
+          450268.0,
+          466349.0,
+          482430.0
+        ],
+        "times": [
+          8593791.0,
+          17177958.0,
+          25867417.0,
+          33976250.0,
+          42812333.0,
+          51541333.0,
+          60017917.0,
+          69255542.0,
+          78211625.0,
+          86641458.0,
+          94513917.0,
+          102978209.0,
+          111617167.0,
+          120520584.0,
+          128664000.0,
+          137010792.0,
+          146897208.0,
+          154373958.0,
+          166255167.0,
+          174272333.0,
+          179778125.0,
+          190569917.0,
+          199856542.0,
+          205105542.0,
+          216925250.0,
+          223728375.0,
+          238237792.0,
+          241279000.0,
+          249144958.0,
+          258713500.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "compilation",
+        "function_id": "rust",
+        "value_str": "literal",
+        "throughput": null,
+        "full_id": "compilation/rust/literal",
+        "directory_name": "compilation/rust/literal",
+        "title": "compilation/rust/literal"
+      }
+    },
+    {
+      "case": "compilation/rust/literal",
+      "variant": "finder",
+      "label": "diagnostic-finder-2",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^compilation/rust/literal$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-2"
+      ],
+      "start_utc": "2026-09-26T19:21:22.745722+00:00",
+      "load_average": [
+        4.92138671875,
+        5.845703125,
+        5.34228515625
+      ],
+      "exit": 0,
+      "elapsed_seconds": 4.828354708000006,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 535.9812555556163,
+            "upper_bound": 539.8254342773115
+          },
+          "point_estimate": 537.8627765363167,
+          "standard_error": 0.9782798204427896
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 534.3413744296538,
+            "upper_bound": 538.8670900014015
+          },
+          "point_estimate": 535.8958869668048,
+          "standard_error": 1.047393793177611
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 2.022148988737251,
+            "upper_bound": 6.848427170551325
+          },
+          "point_estimate": 3.8745639271941923,
+          "standard_error": 1.285494274218636
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 534.6715522149626,
+            "upper_bound": 538.211655406254
+          },
+          "point_estimate": 536.2285822723327,
+          "standard_error": 0.9126755527237556
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 3.790305948349157,
+            "upper_bound": 6.558144048990593
+          },
+          "point_estimate": 5.476260780905423,
+          "standard_error": 0.7024150814136172
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          15926.0,
+          31852.0,
+          47778.0,
+          63704.0,
+          79630.0,
+          95556.0,
+          111482.0,
+          127408.0,
+          143334.0,
+          159260.0,
+          175186.0,
+          191112.0,
+          207038.0,
+          222964.0,
+          238890.0,
+          254816.0,
+          270742.0,
+          286668.0,
+          302594.0,
+          318520.0,
+          334446.0,
+          350372.0,
+          366298.0,
+          382224.0,
+          398150.0,
+          414076.0,
+          430002.0,
+          445928.0,
+          461854.0,
+          477780.0
+        ],
+        "times": [
+          8461292.0,
+          17548291.0,
+          26188584.0,
+          34931083.0,
+          43139791.0,
+          51192916.0,
+          59791167.0,
+          68297625.0,
+          76443459.0,
+          86417125.0,
+          95049333.0,
+          102640542.0,
+          111021292.0,
+          119391750.0,
+          127465625.0,
+          135506250.0,
+          144223209.0,
+          153398458.0,
+          161962375.0,
+          173038834.0,
+          183215167.0,
+          189429792.0,
+          197501833.0,
+          204123875.0,
+          212867000.0,
+          220983833.0,
+          231577875.0,
+          237977084.0,
+          246019750.0,
+          254877000.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "compilation",
+        "function_id": "rust",
+        "value_str": "literal",
+        "throughput": null,
+        "full_id": "compilation/rust/literal",
+        "directory_name": "compilation/rust/literal",
+        "title": "compilation/rust/literal"
+      }
+    },
+    {
+      "case": "compilation/rust/literal",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-2",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^compilation/rust/literal$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-2"
+      ],
+      "start_utc": "2026-09-26T19:21:27.576598+00:00",
+      "load_average": [
+        5.16748046875,
+        5.88134765625,
+        5.357421875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.026795833999998,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 510.3447938804988,
+            "upper_bound": 520.9277887972655
+          },
+          "point_estimate": 515.596694388774,
+          "standard_error": 2.7210181359679786
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 511.3752987418816,
+            "upper_bound": 520.3045039429867
+          },
+          "point_estimate": 516.2717752716858,
+          "standard_error": 2.361714736734613
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 6.079856369385363,
+            "upper_bound": 19.74900778931878
+          },
+          "point_estimate": 10.953969530972527,
+          "standard_error": 3.353114030614566
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 514.9390826185024,
+            "upper_bound": 526.4499163681994
+          },
+          "point_estimate": 519.8809422790995,
+          "standard_error": 2.9670378057715996
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 10.455275137162468,
+            "upper_bound": 18.843643843109994
+          },
+          "point_estimate": 15.073377192622292,
+          "standard_error": 2.148646396889547
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          17494.0,
+          34988.0,
+          52482.0,
+          69976.0,
+          87470.0,
+          104964.0,
+          122458.0,
+          139952.0,
+          157446.0,
+          174940.0,
+          192434.0,
+          209928.0,
+          227422.0,
+          244916.0,
+          262410.0,
+          279904.0,
+          297398.0,
+          314892.0,
+          332386.0,
+          349880.0,
+          367374.0,
+          384868.0,
+          402362.0,
+          419856.0,
+          437350.0,
+          454844.0,
+          472338.0,
+          489832.0,
+          507326.0,
+          524820.0
+        ],
+        "times": [
+          8492916.0,
+          17161042.0,
+          26084667.0,
+          34422708.0,
+          43139166.0,
+          53640958.0,
+          62662875.0,
+          70883333.0,
+          84769041.0,
+          91438708.0,
+          100227792.0,
+          110409916.0,
+          119966542.0,
+          128364750.0,
+          134599000.0,
+          142777958.0,
+          154577541.0,
+          162615583.0,
+          171578792.0,
+          184510042.0,
+          194531292.0,
+          198722791.0,
+          216592167.0,
+          233061916.0,
+          227156875.0,
+          231670584.0,
+          242988042.0,
+          248271042.0,
+          260071958.0,
+          271016375.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "compilation",
+        "function_id": "rust",
+        "value_str": "literal",
+        "throughput": null,
+        "full_id": "compilation/rust/literal",
+        "directory_name": "compilation/rust/literal",
+        "title": "compilation/rust/literal"
+      }
+    },
+    {
+      "case": "scanner_documents/ts_279_document_28_lines_rust",
+      "variant": "finder",
+      "label": "diagnostic-finder-1",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^scanner_documents/ts_279_document_28_lines_rust$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-1"
+      ],
+      "start_utc": "2026-09-26T19:21:32.608725+00:00",
+      "load_average": [
+        5.39404296875,
+        5.91650390625,
+        5.37255859375
+      ],
+      "exit": 0,
+      "elapsed_seconds": 6.031218291999991,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1136003.6860028463,
+            "upper_bound": 1332999.1985971665
+          },
+          "point_estimate": 1227733.517109187,
+          "standard_error": 50953.48060019831
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1060485.861111111,
+            "upper_bound": 1124377.3181818181
+          },
+          "point_estimate": 1075763.3101851852,
+          "standard_error": 27577.54634728119
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 20933.95998604013,
+            "upper_bound": 119957.46477212492
+          },
+          "point_estimate": 44118.84648641989,
+          "standard_error": 39740.52033417239
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1120238.4207018102,
+            "upper_bound": 1353454.089888207
+          },
+          "point_estimate": 1216265.9107938188,
+          "standard_error": 59501.41471907534
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 176323.6213032251,
+            "upper_bound": 350736.85458405974
+          },
+          "point_estimate": 281067.1566640175,
+          "standard_error": 44619.21550035411
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          9.0,
+          18.0,
+          27.0,
+          36.0,
+          45.0,
+          54.0,
+          63.0,
+          72.0,
+          81.0,
+          90.0,
+          99.0,
+          108.0,
+          117.0,
+          126.0,
+          135.0,
+          144.0,
+          153.0,
+          162.0,
+          171.0,
+          180.0,
+          189.0,
+          198.0,
+          207.0,
+          216.0,
+          225.0,
+          234.0,
+          243.0,
+          252.0,
+          261.0,
+          270.0
+        ],
+        "times": [
+          9272042.0,
+          19034166.0,
+          28909125.0,
+          38849125.0,
+          49000958.0,
+          58222000.0,
+          66323000.0,
+          77942375.0,
+          85540917.0,
+          100150125.0,
+          106108500.0,
+          115920875.0,
+          233572458.0,
+          159815750.0,
+          210016042.0,
+          202781875.0,
+          240032292.0,
+          275419917.0,
+          237949750.0,
+          303290375.0,
+          354709167.0,
+          222626709.0,
+          216496166.0,
+          226596709.0,
+          234832000.0,
+          244849667.0,
+          253506458.0,
+          263626250.0,
+          277977584.0,
+          287149875.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "scanner_documents",
+        "function_id": "ts_279_document_28_lines_rust",
+        "value_str": null,
+        "throughput": null,
+        "full_id": "scanner_documents/ts_279_document_28_lines_rust",
+        "directory_name": "scanner_documents/ts_279_document_28_lines_rust",
+        "title": "scanner_documents/ts_279_document_28_lines_rust"
+      }
+    },
+    {
+      "case": "scanner_documents/ts_279_document_28_lines_rust",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-1",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^scanner_documents/ts_279_document_28_lines_rust$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-1"
+      ],
+      "start_utc": "2026-09-26T19:21:38.642994+00:00",
+      "load_average": [
+        7.9248046875,
+        6.43212890625,
+        5.5576171875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.376834332999991,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1068420.2448298624,
+            "upper_bound": 1190649.0501245519
+          },
+          "point_estimate": 1122020.8771502897,
+          "standard_error": 31504.457213787133
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1043000.665079365,
+            "upper_bound": 1055182.0674074073
+          },
+          "point_estimate": 1050187.1134259258,
+          "standard_error": 4224.349273356159
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 5476.8968805434615,
+            "upper_bound": 20758.982714722322
+          },
+          "point_estimate": 12675.269032403565,
+          "standard_error": 5751.439289943424
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1050914.1636416633,
+            "upper_bound": 1091892.5941780114
+          },
+          "point_estimate": 1065788.3351430753,
+          "standard_error": 10642.693103047226
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 65255.7022248512,
+            "upper_bound": 248812.59298624287
+          },
+          "point_estimate": 175551.5897664789,
+          "standard_error": 47107.642518258355
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          9.0,
+          18.0,
+          27.0,
+          36.0,
+          45.0,
+          54.0,
+          63.0,
+          72.0,
+          81.0,
+          90.0,
+          99.0,
+          108.0,
+          117.0,
+          126.0,
+          135.0,
+          144.0,
+          153.0,
+          162.0,
+          171.0,
+          180.0,
+          189.0,
+          198.0,
+          207.0,
+          216.0,
+          225.0,
+          234.0,
+          243.0,
+          252.0,
+          261.0,
+          270.0
+        ],
+        "times": [
+          9374416.0,
+          18941375.0,
+          27938125.0,
+          45314875.0,
+          46910417.0,
+          68290709.0,
+          65486833.0,
+          126073250.0,
+          102028458.0,
+          147386625.0,
+          131403083.0,
+          113413750.0,
+          123170291.0,
+          131487000.0,
+          142511333.0,
+          155515125.0,
+          159376083.0,
+          170847625.0,
+          179266708.0,
+          187617083.0,
+          197856875.0,
+          209296459.0,
+          219627917.0,
+          226853333.0,
+          237313042.0,
+          243665125.0,
+          252871042.0,
+          263980959.0,
+          271773000.0,
+          281205083.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "scanner_documents",
+        "function_id": "ts_279_document_28_lines_rust",
+        "value_str": null,
+        "throughput": null,
+        "full_id": "scanner_documents/ts_279_document_28_lines_rust",
+        "directory_name": "scanner_documents/ts_279_document_28_lines_rust",
+        "title": "scanner_documents/ts_279_document_28_lines_rust"
+      }
+    },
+    {
+      "case": "scanner_documents/ts_279_document_28_lines_rust",
+      "variant": "baseline",
+      "label": "diagnostic-baseline-2",
+      "command": [
+        "/tmp/ferroni-round2-baseline.bench",
+        "^scanner_documents/ts_279_document_28_lines_rust$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-baseline-2"
+      ],
+      "start_utc": "2026-09-26T19:21:44.023000+00:00",
+      "load_average": [
+        8.0107421875,
+        6.474609375,
+        5.57763671875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.0931992080000015,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1020579.0602493827,
+            "upper_bound": 1025452.4017799973
+          },
+          "point_estimate": 1022995.9319127615,
+          "standard_error": 1251.1892657888138
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1020780.2738095238,
+            "upper_bound": 1023777.5982905983
+          },
+          "point_estimate": 1022618.6028806585,
+          "standard_error": 823.9689715537038
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 2242.2292890813324,
+            "upper_bound": 7150.540548885778
+          },
+          "point_estimate": 3788.766652498778,
+          "standard_error": 1226.9157644982274
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1021852.726725425,
+            "upper_bound": 1025535.5638031693
+          },
+          "point_estimate": 1023535.1264939186,
+          "standard_error": 954.8692597601041
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 4514.754775890517,
+            "upper_bound": 8990.610701788519
+          },
+          "point_estimate": 7005.800296986193,
+          "standard_error": 1144.5317625119915
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          9.0,
+          18.0,
+          27.0,
+          36.0,
+          45.0,
+          54.0,
+          63.0,
+          72.0,
+          81.0,
+          90.0,
+          99.0,
+          108.0,
+          117.0,
+          126.0,
+          135.0,
+          144.0,
+          153.0,
+          162.0,
+          171.0,
+          180.0,
+          189.0,
+          198.0,
+          207.0,
+          216.0,
+          225.0,
+          234.0,
+          243.0,
+          252.0,
+          261.0,
+          270.0
+        ],
+        "times": [
+          9077958.0,
+          18159375.0,
+          27567750.0,
+          37179459.0,
+          45914709.0,
+          55243334.0,
+          65670875.0,
+          73091125.0,
+          83941209.0,
+          91356583.0,
+          101495791.0,
+          110901959.0,
+          119792458.0,
+          129253375.0,
+          137812125.0,
+          146865041.0,
+          157458750.0,
+          165782958.0,
+          174139792.0,
+          183308208.0,
+          193134542.0,
+          202397625.0,
+          211160500.0,
+          220849792.0,
+          230232667.0,
+          239543000.0,
+          248536625.0,
+          257223958.0,
+          269474250.0,
+          276748000.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "scanner_documents",
+        "function_id": "ts_279_document_28_lines_rust",
+        "value_str": null,
+        "throughput": null,
+        "full_id": "scanner_documents/ts_279_document_28_lines_rust",
+        "directory_name": "scanner_documents/ts_279_document_28_lines_rust",
+        "title": "scanner_documents/ts_279_document_28_lines_rust"
+      }
+    },
+    {
+      "case": "scanner_documents/ts_279_document_28_lines_rust",
+      "variant": "finder",
+      "label": "diagnostic-finder-2",
+      "command": [
+        "/tmp/ferroni-round2-finder.bench",
+        "^scanner_documents/ts_279_document_28_lines_rust$",
+        "--bench",
+        "--noplot",
+        "--save-baseline",
+        "diagnostic-finder-2"
+      ],
+      "start_utc": "2026-09-26T19:21:49.119506+00:00",
+      "load_average": [
+        7.76953125,
+        6.44970703125,
+        5.57421875
+      ],
+      "exit": 0,
+      "elapsed_seconds": 5.152537457999998,
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1030962.1378875258,
+            "upper_bound": 1038210.7188090003
+          },
+          "point_estimate": 1034615.6144590583,
+          "standard_error": 1853.5100999242784
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1030286.7896825396,
+            "upper_bound": 1038137.086419753
+          },
+          "point_estimate": 1035215.8353909466,
+          "standard_error": 2068.3678119890333
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 4689.426750442344,
+            "upper_bound": 16407.255255317934
+          },
+          "point_estimate": 8257.233171676193,
+          "standard_error": 2974.826825322724
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1034543.4445438259,
+            "upper_bound": 1042680.0667561222
+          },
+          "point_estimate": 1038628.4264057818,
+          "standard_error": 2077.635123927337
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 7655.4489000140575,
+            "upper_bound": 12627.618352276608
+          },
+          "point_estimate": 10383.11980673482,
+          "standard_error": 1262.9133562696734
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          9.0,
+          18.0,
+          27.0,
+          36.0,
+          45.0,
+          54.0,
+          63.0,
+          72.0,
+          81.0,
+          90.0,
+          99.0,
+          108.0,
+          117.0,
+          126.0,
+          135.0,
+          144.0,
+          153.0,
+          162.0,
+          171.0,
+          180.0,
+          189.0,
+          198.0,
+          207.0,
+          216.0,
+          225.0,
+          234.0,
+          243.0,
+          252.0,
+          261.0,
+          270.0
+        ],
+        "times": [
+          9092208.0,
+          18744625.0,
+          28018500.0,
+          36872125.0,
+          46724375.0,
+          55295667.0,
+          64533709.0,
+          73445334.0,
+          84074333.0,
+          92513958.0,
+          102241042.0,
+          111673917.0,
+          119390208.0,
+          130118708.0,
+          137986750.0,
+          151213416.0,
+          158881041.0,
+          167682958.0,
+          177253166.0,
+          187949792.0,
+          194726250.0,
+          205312625.0,
+          216900666.0,
+          227323500.0,
+          237233292.0,
+          245239292.0,
+          251590459.0,
+          259629542.0,
+          268890334.0,
+          280854667.0
+        ]
+      },
+      "benchmark": {
+        "group_id": "scanner_documents",
+        "function_id": "ts_279_document_28_lines_rust",
+        "value_str": null,
+        "throughput": null,
+        "full_id": "scanner_documents/ts_279_document_28_lines_rust",
+        "directory_name": "scanner_documents/ts_279_document_28_lines_rust",
+        "title": "scanner_documents/ts_279_document_28_lines_rust"
+      }
+    }
+  ],
+  "summaries": [
+    {
+      "case": "single_pattern/rust/literal_exact",
+      "run_means_ns": {
+        "baseline": [
+          101.62825243470232,
+          100.83838871614704
+        ],
+        "finder": [
+          55.851631639029925,
+          55.868092137467436
+        ]
+      },
+      "baseline_ns": 101.23332057542467,
+      "candidate_ns": 55.85986188824868,
+      "time_change_percent": -44.82067606719483
+    },
+    {
+      "case": "general_regex/rust/url_extraction",
+      "run_means_ns": {
+        "baseline": [
+          9847.533276818704,
+          9861.42168698193
+        ],
+        "finder": [
+          8949.315104726655,
+          8902.109154291462
+        ]
+      },
+      "baseline_ns": 9854.477481900318,
+      "candidate_ns": 8925.712129509058,
+      "time_change_percent": -9.424805669271851
+    },
+    {
+      "case": "general_regex/rust/uuid_validation",
+      "run_means_ns": {
+        "baseline": [
+          6422.367655073383,
+          5738.235067351181
+        ],
+        "finder": [
+          5984.5509762186675,
+          5906.724021895833
+        ]
+      },
+      "baseline_ns": 6080.301361212281,
+      "candidate_ns": 5945.63749905725,
+      "time_change_percent": -2.2147563772757173
+    },
+    {
+      "case": "general_regex/rust/access_log_captures",
+      "run_means_ns": {
+        "baseline": [
+          31245.006072321263,
+          31326.30163653761
+        ],
+        "finder": [
+          31283.801528244785,
+          31302.3170355843
+        ]
+      },
+      "baseline_ns": 31285.653854429438,
+      "candidate_ns": 31293.059281914542,
+      "time_change_percent": 0.023670361883953994
+    },
+    {
+      "case": "compilation/rust/literal",
+      "run_means_ns": {
+        "baseline": [
+          504.4881292543581,
+          515.596694388774
+        ],
+        "finder": [
+          536.085596783252,
+          537.8627765363167
+        ]
+      },
+      "baseline_ns": 510.0424118215661,
+      "candidate_ns": 536.9741866597843,
+      "time_change_percent": 5.280301052227032
+    },
+    {
+      "case": "scanner_documents/ts_279_document_28_lines_rust",
+      "run_means_ns": {
+        "baseline": [
+          1122020.8771502897,
+          1022995.9319127615
+        ],
+        "finder": [
+          1227733.517109187,
+          1034615.6144590583
+        ]
+      },
+      "baseline_ns": 1072508.4045315257,
+      "candidate_ns": 1131174.5657841228,
+      "time_change_percent": 5.469995480196044
+    }
+  ],
+  "end_utc": "2026-09-26T19:21:54.277882+00:00"
+}

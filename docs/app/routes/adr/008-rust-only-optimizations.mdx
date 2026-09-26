@@ -70,6 +70,13 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **C's optimizer still decides**: the table only narrows the positions an entry is attempted at. An entry whose optimizer has a distance is dispatched by its bytecode start bytes but attempted only where C's optimizer admits the position (`sr[i]`); the check runs after an attempt with a match or an error, or before every attempt where callouts or a search retry budget can observe it. The extra class and type byte maps (`optimize_nodes` with `start_maps`) serve only where C has no optimizer, and as a routing hint (`start_dispatch`).
 - **Windowed table scan**: with fallback entries in the set the table is scanned in windows (256 bytes, then four times as large), and the fallback entries are asked for an event inside each window, so an early fallback match ends the search as C's position-by-position search does.
 
+#### Compiled forward literal finder (`src/regcomp.rs`, `src/regexec.rs`)
+
+- **Trigger**: the existing optimizer selects `StrFast` with an exact string longer than one byte.
+- **Execution**: compilation creates an owned `memchr::memmem::Finder`, reused by forward literal searches. The optimizer's string, distance bounds, search slice, candidate positions, and VM attempts remain unchanged. Single-byte searches still use `memchr`; backward and encoding-step searches keep their existing paths.
+- **Bounds**: one optional pointer per compiled regex; eligible expressions additionally own a boxed finder and a copy of the exact string, bounded by `OPT_EXACT_MAXLEN` (24 bytes). Search adds no allocation or shared mutable state. No new dependency or unsafe code.
+- **Validation and measurements**: [simple-pattern profiling](/perf/simple-pattern-profiling), including bounded-search and limit comparisons against the previous search path, cache/C parity, compilation costs, memory layout, and repeated workload measurements.
+
 #### Unicode class range lookup (`src/regexec.rs`)
 
 - **Trigger**: multibyte character classes with more than four sorted intervals.

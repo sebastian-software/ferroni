@@ -7650,6 +7650,7 @@ mod tests {
             anc_dist_max: 0,
             sub_anchor: 0,
             exact: Vec::new(),
+            exact_finder: None,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],

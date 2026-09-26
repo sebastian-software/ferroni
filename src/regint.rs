@@ -650,6 +650,8 @@ pub struct RegexType {
     pub(crate) anc_dist_max: OnigLen,
     pub(crate) sub_anchor: i32,
     pub(crate) exact: Vec<u8>,
+    /// Reuse the forward literal search plan across haystacks (ADR-008).
+    pub(crate) exact_finder: Option<Box<memchr::memmem::Finder<'static>>>,
     pub(crate) map: [u8; CHAR_MAP_SIZE],
     pub(crate) map_offset: i32,
     pub(crate) map_bytes: [u8; 3],
