@@ -1,0 +1,149 @@
+---
+order: 8
+title: "ASCII Class Run Evaluation (2026-09)"
+---
+
+# ASCII Class Run Evaluation
+
+Batching adjacent identical ASCII character classes reduces the UUID validation
+workload from **11.08 to 5.61 us per 64 inputs**, about **49% less time** on this
+machine. The other six everyday tasks changed by -3.1% to +0.3%.
+The measured benefit is concentrated in fixed-width class sequences.
+
+The benchmark inputs and output contracts are unchanged from the
+[general regex comparison](/perf/pr-173-oniguruma-comparison#everyday-regex-tasks-ferroni-vs-oniguruma).
+The [raw artifact](https://github.com/sebastian-software/ferroni/blob/main/benches/results/ascii-class-runs-2026-09-26.json)
+retains 183 measurements, including rejected experiments, individual Criterion
+samples, confidence intervals, source hashes, and execution order.
+
+## What changed
+
+The UUID expression repeats `[0-9A-Fa-f]` 8, 4, 4, 4, and 12 times. Its
+compiled code previously dispatched a separate `CClass` instruction for each
+character. An eight-second samply profile of the original benchmark put 67.2%
+of leaf samples in the VM and 6.3% in the UTF-8 encoding's `flag` method.
+
+A post-compile pass now emits `CClassRun` for adjacent identical positive classes
+that contain only ASCII bytes, under an ASCII-compatible encoding. Existing
+equality and case-pair fast paths remain unchanged. The new instruction checks
+up to 255 bytes in one VM dispatch. Longer sequences continue at the original
+suffix address. The compiler reuses the existing bitsets and adds no heap
+allocation, dependency, or unsafe code.
+
+Every original instruction address stays valid. An optional prefix can still
+backtrack into the middle of a run. A partial failure leaves the same subject
+position, and captures and stack/retry accounting retain their existing behavior.
+A fused one-instruction look-behind evaluates only its original class even if
+its instruction borders a forward class run. Negated and multibyte classes keep
+the existing path. Backward searches with a matching range beyond the logical
+text end execute classes one at a time, retaining the original end clamp. This
+also preserves raw-byte behavior for truncated UTF-8. The optional match cache
+recognizes the new instruction.
+
+Two diagnostic approaches were rejected: hoisting the encoding flag alone
+helped UUIDs only slightly; putting run metadata in the existing class dispatch
+added overhead to number validation. A separate opcode retains the original
+single-class dispatch. The raw artifact labels these experiments separately
+from the final paired measurements. An earlier separate-opcode prototype was
+also measured; final review found a raw-byte backward-search boundary defect.
+Its measurements remain labeled `paired-*`; the corrected code was rebuilt and
+remeasured as `final-*`, which supplies every before/after table below.
+
+## Everyday tasks
+
+Times are microseconds for the **whole batch or text**. Values below are the
+arithmetic mean of two independent run means for each version. The order was
+baseline, candidate, candidate, baseline. Small differences on this interactive
+desktop are not evidence of a portable regression or improvement.
+
+| Task                      | Before (us) | After (us) | Time change |
+| ------------------------- | ----------: | ---------: | ----------: |
+| Email shape, 64 inputs    |       6.765 |      6.626 |       -2.1% |
+| UUID shape, 64 inputs     |      11.084 |      5.612 |      -49.4% |
+| Number syntax, 64 inputs  |       7.818 |      7.796 |       -0.3% |
+| Access log, 64 records    |      31.881 |     30.881 |       -3.1% |
+| Extract 64 URLs           |       9.917 |      9.951 |       +0.3% |
+| Extract 384 Unicode words |      63.661 |     63.577 |       -0.1% |
+| Redact 128 emails         |      78.800 |     77.154 |       -2.1% |
+
+The original three-engine baseline measured Rust `regex` at 1.770 us for this
+UUID batch. Against that shared-syntax reference, Ferroni's gap narrows from
+about 6.3x to 3.2x. `regex` remains faster here. This comparison says nothing
+about [features outside the shared subset](/perf/pr-173-oniguruma-comparison#what-the-comparison-covers).
+
+The UUID measurements in execution order, with each run's 95% confidence
+interval for its mean:
+
+| Run            | Mean (us) | 95% interval (us) |
+| -------------- | --------: | ----------------: |
+| final-before-1 |    11.132 |     11.094–11.169 |
+| final-after-1  |     5.668 |       5.642–5.695 |
+| final-after-2  |     5.557 |       5.550–5.562 |
+| final-before-2 |    11.035 |     11.011–11.061 |
+
+## Broader checks
+
+The first paired run also measured the following 15 existing scanner,
+single-pattern, and compilation cases. These are one pair per case; they
+provide a broader check, not the repeated evidence used for the UUID result.
+All absolute values are microseconds, including the short single-pattern rows.
+
+| Benchmark                                          | Before (us) | After (us) | Time change |
+| -------------------------------------------------- | ----------: | ---------: | ----------: |
+| `compilation/rust/literal`                         |       0.492 |      0.496 |       +0.8% |
+| `compilation/rust/lookbehind`                      |       1.101 |      1.108 |       +0.7% |
+| `compilation/rust/named_capture`                   |       3.925 |      3.931 |       +0.2% |
+| `scanner_documents/css_117_document_19_lines_rust` |      88.402 |     88.991 |       +0.7% |
+| `scanner_documents/rust_81_document_31_lines_rust` |     102.227 |    103.542 |       +1.3% |
+| `scanner_documents/ts_279_document_28_lines_rust`  |    1033.303 |   1014.369 |       -1.8% |
+| `single_pattern/rust/alternation_10_branch`        |       0.055 |      0.054 |       -1.5% |
+| `single_pattern/rust/alternation_2_branch`         |       0.065 |      0.064 |       -0.4% |
+| `single_pattern/rust/backref_simple`               |       0.082 |      0.082 |       -0.1% |
+| `single_pattern/rust/case_insensitive_phrase`      |       0.094 |      0.094 |       -0.1% |
+| `single_pattern/rust/literal_exact`                |       0.100 |      0.100 |       +0.1% |
+| `single_pattern/rust/lookaround_combined`          |       0.085 |      0.085 |       -0.1% |
+| `single_pattern/rust/named_capture_date`           |       0.207 |      0.208 |       +0.4% |
+| `single_pattern/rust/quantifier_greedy`            |       0.060 |      0.060 |       -1.4% |
+| `single_pattern/rust/unicode_greek`                |       0.102 |      0.101 |       -0.2% |
+
+## Reproduction and limits
+
+- Baseline: `8278d37d2f7421c52c763524963326afc265a9d1`.
+- Candidate: `b1422aee0aee13370bb8cb3924e09eea8e457f2d`.
+- Apple M1 Ultra, 64 GiB RAM, macOS 27.0 (26A428).
+- Rust 1.96.0 (`ac68faa20`), LLVM 22.1.2, Apple Clang 21.0.0.
+- Criterion 0.8.2, `regex` 1.13.1, thin LTO, portable target, `--features ffi`;
+  the opt-in match cache is compiled out in these timings.
+- 30 samples, 500 ms warmup, four-second measurement window per case.
+- Oniguruma and grammar revisions remain pinned in `benches/battle_inputs.toml`.
+- Compilation and fixtures are outside search timing. Compilation has its own
+  three cases. There is no new memory, cold-start, or cross-platform speed claim.
+
+Run each revision in an isolated checkout. Keep the executables so that the
+second pair can reverse the execution order without rebuilding between runs:
+
+```sh
+./scripts/prepare-oniguruma-sources.sh
+cargo bench --locked --features ffi --bench battle_bench -- \
+  'general_regex/rust|single_pattern/rust|scanner_documents/.*_rust$|compilation/rust' \
+  --save-baseline before
+# At the candidate revision, use the same command with --save-baseline after.
+# Repeat general_regex/rust in candidate-then-baseline order.
+```
+
+## Correctness evidence
+
+The focused test makes **316,800 comparisons** of optimized and unbatched
+instructions, checking raw status and capture arrays across forward, backward,
+equal-endpoint, and logically truncated searches. It includes malformed UTF-8,
+lookarounds, backreferences, `\K`, optional prefixes, case folding, and
+configured retry and stack limits. Separate tests cover ASCII and UTF-8 at the
+254/255/256/300-byte metadata boundary and verify multibyte, negated, and
+equality/case-pair exclusions.
+
+The complete default and all-feature test suites pass, including the extended
+cache/plain/C differential test. Clippy, Rust formatting, rustdoc, and
+cargo-deny pass. All 96 benchmark smoke cases pass with the opt-in match cache
+enabled. The benchmark harness validates matching and capture results
+against C before timing. This evidence covers the tested inputs and modes;
+it is not a proof over all regex programs.

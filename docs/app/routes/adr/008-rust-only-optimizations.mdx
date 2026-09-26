@@ -70,6 +70,13 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **C's optimizer still decides**: the table only narrows the positions an entry is attempted at. An entry whose optimizer has a distance is dispatched by its bytecode start bytes but attempted only where C's optimizer admits the position (`sr[i]`); the check runs after an attempt with a match or an error, or before every attempt where callouts or a search retry budget can observe it. The extra class and type byte maps (`optimize_nodes` with `start_maps`) serve only where C has no optimizer, and as a routing hint (`start_dispatch`).
 - **Windowed table scan**: with fallback entries in the set the table is scanned in windows (256 bytes, then four times as large), and the fallback entries are asked for an event inside each window, so an early fallback match ends the search as C's position-by-position search does.
 
+#### Adjacent ASCII class runs (`src/regcomp.rs`, `src/regexec.rs`)
+
+- **Trigger**: consecutive identical, non-negated `CClass` instructions whose bitsets contain only ASCII bytes, with an ASCII-compatible encoding. Existing equality/case-pair fast paths remain unchanged.
+- **Execution**: a post-compile pass marks each eligible prefix with `CClassRun`. All instruction addresses remain valid, including branches into a suffix. Each dispatch checks at most 255 bytes and preserves the failure position. Fused one-instruction look-behinds still evaluate only their original class. Backward searches whose matching range extends past the logical end execute classes one at a time to preserve the existing clamp.
+- **Bounds**: one linear pass over bytecode, existing bitsets reused, no extra heap allocation, dependency, or unsafe code. Longer runs continue at their remaining suffix.
+- **Validation and measurements**: [ASCII class run evaluation](/perf/ascii-class-runs). Tests compare raw results, captures, and deterministic limit outcomes against unbatched instructions, including malformed UTF-8 and backward or bounded searches. The opt-in cache and C differential suite also exercise the new opcode.
+
 #### ASCII fast paths in VM execution (`src/regexec.rs`)
 
 Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` traversal) for ASCII bytes, avoiding full UTF-8 decode on the hot path.
