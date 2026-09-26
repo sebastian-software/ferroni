@@ -7657,9 +7657,19 @@ fn onig_search_inner_core_with_right_range(
         }
     }
 
+    let class_prefix = atomic_ascii_class_prefix(reg, msa);
+    let mut class_prefix_end = s;
+
     // Normal position-by-position search (no optimization or fallthrough)
     if best_start == ONIG_MISMATCH {
         loop {
+            if let Some((bsp, delimiter)) = class_prefix {
+                if s >= class_prefix_end {
+                    (s, class_prefix_end) = skip_nonmatching_class_prefix(
+                        reg.enc, str_data, end, cur_range, s, bsp, delimiter,
+                    );
+                }
+            }
             if let Some(filter) = start_filter {
                 // No match starts on an excluded byte. The range limit and the
                 // logical end are still attempted, as the loop below does.
@@ -7712,6 +7722,96 @@ fn onig_search_inner_core_with_right_range(
         data_range,
         msa,
     )
+}
+
+/// A leading atomic `[class]+literal` has only one possible exit from its
+/// ASCII run. A run ending at a different byte cannot match from any suffix.
+/// Recognize the exact auto-possessive sequence, leaving captures, anchors,
+/// alternations, and every other prefix on the ordinary VM path.
+fn atomic_ascii_class_prefix<'a>(reg: &'a RegexType, msa: &MatchArg) -> Option<(&'a BitSet, u8)> {
+    let [mark, head, star, cut, literal, ..] = reg.ops.as_slice() else {
+        return None;
+    };
+    let (
+        OpCode::Mark,
+        OperationPayload::Mark { id, save_pos: true },
+        OpCode::CClass,
+        OperationPayload::CClass { bsp, .. },
+        OpCode::CClassStarPeekNext,
+        OperationPayload::CClassStarPeekNext { bsp: tail, c },
+        OpCode::CutToMark,
+        OperationPayload::CutToMark {
+            id: cut_id,
+            restore_pos: false,
+        },
+        OpCode::Str1,
+        OperationPayload::Exact { s },
+    ) = (
+        mark.opcode,
+        &mark.payload,
+        head.opcode,
+        &head.payload,
+        star.opcode,
+        &star.payload,
+        cut.opcode,
+        &cut.payload,
+        literal.opcode,
+        &literal.payload,
+    )
+    else {
+        return None;
+    };
+    // Every rejected prefix fails before reaching the tail and pops only the
+    // bottom sentinel: the atomic cut removes its lazy star choice. That costs
+    // one retry per attempt. A per-match limit of one or an accumulating search
+    // budget can therefore observe the attempts; so can stack/time limits.
+    if msa.retry_limit_in_search != 0
+        || msa.retry_limit_in_match == 1
+        || msa.match_stack_limit != 0
+        || msa.time_limit != 0
+        || reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0)
+        || !onigenc_is_ascii_compatible_encoding(reg.enc)
+    {
+        return None;
+    }
+    #[cfg(feature = "match-cache")]
+    if msa.match_cache.is_some() {
+        return None;
+    }
+    (*id == *cut_id
+        && bsp == tail
+        && s[0] == *c
+        && !bitset_at(bsp, *c as usize)
+        && bsp[128 / BITS_IN_ROOM..].iter().all(|&bits| bits == 0))
+    .then_some((bsp, *c))
+}
+
+fn skip_nonmatching_class_prefix(
+    enc: OnigEncoding,
+    text: &[u8],
+    end: usize,
+    range: usize,
+    mut start: usize,
+    bsp: &BitSet,
+    delimiter: u8,
+) -> (usize, usize) {
+    while start < range && start < end {
+        let mut run_end = start;
+        while run_end < end && bitset_at(bsp, text[run_end] as usize) {
+            run_end += 1;
+        }
+        if run_end > start {
+            if run_end < end && text[run_end] == delimiter {
+                // If the tail fails, the remaining starts in this same run
+                // already satisfy the prefix. Do not scan it again per suffix.
+                return (start, run_end);
+            }
+            start = run_end.min(range);
+        } else {
+            start = advance_char_to_end(enc, text, start, end);
+        }
+    }
+    (start, start)
 }
 
 /// Rust-only start filter of a search whose optimizer (C's) sits at an
@@ -7900,6 +8000,168 @@ mod tests {
             std::str::from_utf8(pattern)
         );
         reg
+    }
+
+    #[test]
+    fn atomic_class_prefix_filter_falls_back_for_observable_modes() {
+        let compile = |pattern: &str| {
+            regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        for pattern in [
+            r"([ab]+):",
+            r"[ab]*:",
+            r"[ab]+a",
+            r"[^x]+:",
+            r"\p{L}+:",
+            r"\A[ab]+:",
+            r"[ab]+:(?{x})",
+            r"[ab]+:\x00",
+            r"[ab]+\x00",
+            r"[ab]+:|other",
+        ] {
+            let reg = compile(pattern);
+            let msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, 0);
+            assert!(atomic_ascii_class_prefix(&reg, &msa).is_none(), "{pattern}");
+        }
+        let reg = compile(r"[ab]+:");
+        for (retry, search_retry, stack, time) in
+            [(1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)]
+        {
+            let mut msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, 0);
+            msa.retry_limit_in_match = retry;
+            msa.retry_limit_in_search = search_retry;
+            msa.match_stack_limit = stack;
+            msa.time_limit = time;
+            assert!(atomic_ascii_class_prefix(&reg, &msa).is_none());
+        }
+    }
+
+    #[test]
+    fn atomic_class_prefix_filter_preserves_search_results_and_limits() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns = [
+            r"[ab]+:",
+            r"[ab]+:(a+)\1",
+            r"[ab]+:(?<!a:)(c?)",
+            r"[ab]+:\K(c?)",
+            r"[ab]+:(?:c|cc)",
+            r"[ab]+:\G",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"a",
+            b"ab",
+            b"ab:",
+            b"aab!ab:cc",
+            b"a:aaa ab:aa",
+            b"ba:ccab:c",
+            b"!b:\0",
+            b"ab\0",
+            b"\xc2ab:",
+            b"a\xffab:",
+            b"ab\xe2\x82",
+            b"\xc2\xa1ab:",
+            b"aaaa!",
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let compile = || {
+                    regcomp::onig_new(
+                        pattern.as_bytes(),
+                        ONIG_OPTION_NONE,
+                        enc,
+                        &crate::regsyntax::OnigSyntaxOniguruma,
+                    )
+                    .unwrap()
+                };
+                let optimized = compile();
+                let mut reference = compile();
+                assert!(
+                    atomic_ascii_class_prefix(
+                        &optimized,
+                        &MatchArg::new(&optimized, ONIG_OPTION_NONE, None, 0),
+                    )
+                    .is_some(),
+                    "{pattern}"
+                );
+                // CUT_TO_MARK has restore_pos=false. Omitting the unused position
+                // preserves the original bytecode's behavior but disables the filter.
+                let OperationPayload::Mark { save_pos, .. } = &mut reference.ops[0].payload else {
+                    panic!("expected the compiler's atomic prefix");
+                };
+                *save_pos = false;
+                assert!(
+                    atomic_ascii_class_prefix(
+                        &reference,
+                        &MatchArg::new(&reference, ONIG_OPTION_NONE, None, 0),
+                    )
+                    .is_none()
+                );
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack) in [
+                                        (0, 0, 0),
+                                        (1, 0, 0),
+                                        (2, 0, 0),
+                                        (3, 0, 0),
+                                        (0, 1, 0),
+                                        (0, 3, 0),
+                                        (0, 0, 1),
+                                        (0, 0, 3),
+                                    ] {
+                                        let mut mp = onig_new_match_param();
+                                        mp.retry_limit_in_match = retry;
+                                        mp.retry_limit_in_search = search_retry;
+                                        mp.match_stack_limit = stack;
+                                        mp.time_limit = 0;
+                                        let search = |reg| {
+                                            let (result, region) = onig_search_with_param(
+                                                reg,
+                                                input,
+                                                end,
+                                                start,
+                                                range,
+                                                Some(OnigRegion::new()),
+                                                option,
+                                                &mp,
+                                            );
+                                            let region = region.unwrap();
+                                            (result, region.beg, region.end)
+                                        };
+                                        assert_eq!(
+                                            search(&optimized),
+                                            search(&reference),
+                                            "{} {pattern:?} {input:?} end={end} start={start} range={range} {option:?} retry={retry} search_retry={search_retry} stack={stack}",
+                                            enc.name()
+                                        );
+                                        comparisons += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("{comparisons} prefix-filter/original comparisons");
     }
 
     /// Class runs must preserve entry into a suffix (the optional prefix),
