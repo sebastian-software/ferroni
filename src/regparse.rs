@@ -7337,18 +7337,47 @@ fn prs_branch(
         let (node2, r2) = prs_exp(tok, term, p, end, pattern, env, false)?;
         r = r2;
 
-        let new_cell = node_new_list(node2, None);
-        *headp = Some(new_cell);
-        let cell = headp.as_mut().expect("newly appended list cell");
+        // C splices a list that `prs_exp` returns (a non-capturing group's
+        // body, a string split before a quantifier) into the branch instead
+        // of nesting it, so later passes see one flat list: the optimizer
+        // joins its strings, `tune_next` pairs its neighbours.
+        let (mut cell, cells) = if matches!(node2.inner, NodeInner::List(_)) {
+            let cells = list_cell_count(&node2);
+            (&mut **headp.insert(node2), cells)
+        } else {
+            (&mut **headp.insert(node_new_list(node2, None)), 1)
+        };
+        for _ in 1..cells {
+            cell = match &mut cell.inner {
+                NodeInner::List(cons) => cons.cdr.as_deref_mut().expect("counted list cell"),
+                _ => unreachable!("a list spine holds only List nodes"),
+            };
+        }
         headp = match &mut cell.inner {
             NodeInner::List(cons) => &mut cons.cdr,
             _ => unreachable!("node_new_list must create a List node"),
         };
-        list_depth += 1;
+        list_depth = list_depth.saturating_add(u32::try_from(cells).unwrap_or(u32::MAX));
     }
 
     env.parse_depth -= 1;
     Ok((top, r))
+}
+
+/// The number of cells of the list spine starting at `node`.
+fn list_cell_count(node: &Node) -> usize {
+    let mut count = 1;
+    let mut cur = node;
+    while let NodeInner::List(cons) = &cur.inner {
+        match &cons.cdr {
+            Some(next) => {
+                count += 1;
+                cur = next;
+            }
+            None => break,
+        }
+    }
+    count
 }
 
 /// Parse alternations (top-level: handles |)
@@ -7629,6 +7658,7 @@ mod tests {
             keep_moves_match_start: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
+            start_dispatch: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,

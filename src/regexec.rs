@@ -4025,8 +4025,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 // Use SIMD to find newline boundary, then push Alt entries up to that point.
                 // In UTF-8/ASCII, 0x0a can only appear as a complete single-byte character,
                 // so memchr finds the exact newline position.
-                let nl_limit =
-                    memchr::memchr(b'\n', &str_data[s..right_range]).map_or(right_range, |i| s + i);
+                // An absent operator can lower right_range below s; C's loop
+                // (DATA_ENSURE_CHECK1) then simply does not run.
+                let nl_limit = if s < right_range {
+                    memchr::memchr(b'\n', &str_data[s..right_range]).map_or(right_range, |i| s + i)
+                } else {
+                    s
+                };
                 while s < nl_limit {
                     let n = enclen(enc, str_data, s);
                     if s + n > nl_limit {
@@ -4063,8 +4068,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             OpCode::AnyCharStarPeekNext => {
                 if let OperationPayload::AnyCharStarPeekNext { c } = reg.ops[p].payload {
                     // Find newline boundary with SIMD
-                    let nl_limit = memchr::memchr(b'\n', &str_data[s..right_range])
-                        .map_or(right_range, |i| s + i);
+                    // See AnyCharStar: right_range can be below s here.
+                    let nl_limit = if s < right_range {
+                        memchr::memchr(b'\n', &str_data[s..right_range])
+                            .map_or(right_range, |i| s + i)
+                    } else {
+                        s
+                    };
                     if c < 0x80 {
                         // ASCII peek byte: use SIMD to find all occurrences directly.
                         // In UTF-8, bytes < 0x80 can only be leading (single-byte) characters,
@@ -6445,7 +6455,7 @@ fn onigenc_get_right_adjust_char_head(
 
 /// Forward search using optimization strategy.
 /// Returns Some((low, high)) if a candidate was found, None otherwise.
-fn forward_search(
+pub(crate) fn forward_search(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
@@ -6917,7 +6927,7 @@ fn onig_search_inner_core_with_right_range(
     let enc = reg.enc;
     // Skipping an attempt is unobservable except through the search retry
     // budget, which counts every failed attempt.
-    let start_filter = start_filter.filter(|_| msa.retry_limit_in_search == 0);
+    let mut start_filter = start_filter.filter(|_| msa.retry_limit_in_search == 0);
     // Position-led RegSet searches still honor FIND_LONGEST within each
     // attempted position, but must return the earliest successful position.
     // Public onig_search retains its historical global-longest behavior.
@@ -7382,7 +7392,11 @@ fn onig_search_inner_core_with_right_range(
                     msa,
                 );
             }
-            // Fall through to normal position loop below
+            // Fall through to normal position loop below. Only this path
+            // looks up the Rust-only filter, which keeps it off the others.
+            if msa.retry_limit_in_search == 0 {
+                start_filter = start_filter.or_else(|| unbounded_optimizer_start_bytes(reg));
+            }
         }
     }
 
@@ -7441,6 +7455,22 @@ fn onig_search_inner_core_with_right_range(
         data_range,
         msa,
     )
+}
+
+/// Rust-only start filter of a search whose optimizer (C's) sits at an
+/// unbounded distance, so that the search attempts every position after one
+/// successful optimizer check: the bytes a match can start with, where the
+/// extra byte maps pin them down (`first_byte_map`, set only for a map at
+/// distance 0). Skipping a position it excludes cannot lose a match; without
+/// callouts it is unobservable but for the search retry budget, which the
+/// caller checks.
+#[inline]
+fn unbounded_optimizer_start_bytes(reg: &RegexType) -> Option<&[u8; CHAR_MAP_SIZE]> {
+    (reg.has_first_byte_map
+        && reg.dist_max == INFINITE_LEN
+        && reg.optimize != OptimizeType::None
+        && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0))
+    .then_some(&reg.first_byte_map)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7517,6 +7547,7 @@ mod tests {
             keep_moves_match_start: false,
             first_byte_map: [0u8; CHAR_MAP_SIZE],
             has_first_byte_map: false,
+            start_dispatch: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],
             extp: None,
