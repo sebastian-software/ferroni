@@ -1,6 +1,6 @@
 [package]
 name = "ferroni"
-version = "1.5.1"
+version = "1.5.2"
 edition = "2024"
 description = "Oniguruma, continued in pure Rust, with a vscode-oniguruma-compatible TextMate scanner"
 license = "BSD-2-Clause"

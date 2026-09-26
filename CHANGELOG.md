@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.2](https://github.com/sebastian-software/ferroni/compare/v1.5.1...v1.5.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **regexec:** let .* match nothing when an absent operator lowers the range ([#170](https://github.com/sebastian-software/ferroni/issues/170)) ([bcf6997](https://github.com/sebastian-software/ferroni/commit/bcf6997a04522815cc605daa167e3ee9a7d23814))
+* **regexec:** stop at the buffer around truncated multibyte characters ([#168](https://github.com/sebastian-software/ferroni/issues/168)) ([7482c5f](https://github.com/sebastian-software/ferroni/commit/7482c5f1d510f2e0ab677b70dd56747821cd2070))
+* **regset:** attempt only the positions C's optimizer admits ([#171](https://github.com/sebastian-software/ferroni/issues/171)) ([ff8c5c2](https://github.com/sebastian-software/ferroni/commit/ff8c5c28ea7e62979f07fd01c2719aa5d6d3f56b))
+
 ## [1.5.1](https://github.com/sebastian-software/ferroni/compare/v1.5.0...v1.5.1) (2026-09-24)
 
 
