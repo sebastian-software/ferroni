@@ -1,0 +1,298 @@
+---
+order: 15
+title: "Execution Profiling of Simple and Complex Expressions (2026-09)"
+---
+
+# Execution Profiling of Simple and Complex Expressions
+
+**Status: analysis with throwaway prototypes; no engine change is proposed for
+merge in this report.** Compilation is out of scope. Every expression is
+compiled once and the measurements cover search time only.
+
+The profile covers 33 expressions over four corpora (prose, Rust source, an
+access log, and multilingual text). Plain literal searches are already close
+to Rust's `regex` crate. The large gaps have four structural causes. The
+biggest one, **start positions that cannot match**, is general and can be
+fixed on the search side without touching the C-ported VM. Prototypes of three
+changes in that area cut the affected workloads by **2.2× to 33×** and leave the
+other workloads' results unchanged.
+
+[Raw timings, VM counters, corpus hashes, harness source, and prototype diff](https://github.com/sebastian-software/ferroni/blob/main/benches/results/execution-profile-2026-09-27.json)
+
+## Ranked improvement ideas
+
+Ranked by expected effect across ordinary workloads. "Measured" means a
+prototype ran on the matrix below. "Bound" means a proxy expression that
+already takes an equivalent fast path.
+
+| #   | Idea                                                   | Affected shapes                                          | Evidence                                                            |
+| --- | ------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------- |
+| 1   | Reverse run from the required literal                  | `C+lit…`: emails, `\d+\.`, `\w+(`, `key=value`           | Measured: 21–33× on email-like scans                                |
+| 2   | Skip the rest of a failed leading class run            | any leading `C+` / `C*`                                  | Measured: 2.5–2.7× (`[a-z]+ing\b`, `\w+ing\b`)                      |
+| 3   | Bytecode start-byte filter where C's optimizer is weak | unbounded optimizer distance, sparse candidate positions | Measured: 11× (`float_num`), 2.2× (`date_named`)                    |
+| 4   | Leaner per-search entry                                | many matches, short subjects, `is_match` per line        | Callgrind: ≈500 instructions of plumbing per search vs ≈100 of work |
+| 5   | Literal-set prefilter for alternations with context    | `\b(?:kw1\|kw2…)\b`, `(?i)(?:a\|b…)`                     | Bound: 4× (`keywords`), 2–20× (`ci_alt`)                            |
+| 6   | Rare-byte prefilter for case-insensitive literals      | `(?i)word`                                               | Bound: 0.44 ms → 0.016 ms                                           |
+| 7   | Fused lazy `.*?X` loop                                 | `\[.*?\]`, `<.*?>`, `".*?"`                              | Bound: 3×                                                           |
+| 8   | Look-behind literal as search anchor                   | `(?<=key=)\d+`                                           | Bound: 24×                                                          |
+| 9   | Table lookup for Unicode ctypes                        | `\w`, `\s`, `\d` on non-ASCII text                       | Profile: 27% in `onigenc_unicode_is_code_ctype`                     |
+
+Items 1–3 share one mechanism and should be designed together (see
+[recommendation](#recommendation)).
+
+## Setup
+
+- Baseline: `808b9b0` (v1.6.1), release profile with thin LTO and line tables.
+- Host: shared cloud VM, 4 vCPU Intel Xeon at 2.1 GHz, Linux x86_64.
+  Wall-clock times on this host vary by up to about 25% between runs.
+  Only effects far outside that band are claimed. Callgrind instruction counts
+  are used where small differences matter.
+- Method: best-of-N complete passes per case, with N ≥ 3 and at least 400 ms per
+  case and configuration. Each configuration ran in three interleaved rounds.
+  Find cases use `find_iter_bytes`, per-line cases call `is_match_bytes` or
+  `captures_bytes` once per log line (12,000 calls), and capture cases iterate
+  `onig_search` with a region.
+- Tools: `perf` task-clock sampling, callgrind, and throwaway in-process
+  counters for VM attempts (`match_at` calls) and opcode dispatches.
+- `regex` 1.13.1 is shown as a shared-syntax reference. It is a different engine
+  class (lazy DFA), so its times show headroom, not a target. The C Oniguruma
+  comparison could not run because the source download was blocked in this
+  environment.
+
+## Baseline matrix
+
+Corpora: prose 321 KB (repository docs), code 1.09 MB (`regcomp.rs`,
+`regexec.rs`, `regparse.rs`), log 1.87 MB (synthetic access log, 12,000 lines),
+unicode 294 KB (mixed scripts).
+
+| Case               | Expression                                                                                        | Corpus  | Matches | Ferroni ms | `regex` ms | VM attempts / KB |
+| ------------------ | ------------------------------------------------------------------------------------------------- | ------- | ------: | ---------: | ---------: | ---------------: |
+| `lit_common`       | `regex`                                                                                           | prose   |     245 |      0.024 |      0.011 |              0.8 |
+| `lit_rare`         | `Oniguruma`                                                                                       | prose   |     122 |      0.016 |      0.009 |              0.4 |
+| `lit_none`         | `zqxjkvw`                                                                                         | code    |       0 |      0.028 |      0.029 |              0.0 |
+| `lit_ci`           | `(?i)regex`                                                                                       | prose   |     298 |      0.441 |      0.040 |             47.5 |
+| `char_digit`       | `\d+`                                                                                             | log     | 247,890 |       16.4 |       5.15 |            135.6 |
+| `word`             | `\w+`                                                                                             | prose   |  42,731 |       3.26 |       1.60 |            136.9 |
+| `class_lower`      | `[a-z]+ing\b`                                                                                     | prose   |     880 |       7.66 |       1.74 |            618.1 |
+| `alt5_words`       | `Oniguruma\|backtrack\|compile\|search\|Unicode`                                                  | prose   |     601 |      0.075 |      0.050 |              0.0 |
+| `ident`            | `[A-Za-z_][A-Za-z0-9_]*`                                                                          | code    |  90,872 |       8.77 |       5.29 |             85.7 |
+| `line_anchor`      | `(?m)^fn `                                                                                        | code    |     359 |      0.073 |      0.046 |              0.3 |
+| `dot_star_line`    | `ERROR.*`                                                                                         | log     |   1,165 |      0.211 |      0.164 |              0.6 |
+| `v_line_lit`       | `ERROR`                                                                                           | log     |   1,165 |      0.408 |      0.181 |              0.6 |
+| `v_line_ipv4`      | `\A\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} `                                                           | log     |  12,000 |       1.18 |      0.385 |              6.6 |
+| `v_line_email`     | `[\w.+-]+@[\w-]+\.[\w.]+`                                                                         | log     |  12,000 |       43.2 |      0.488 |            854.7 |
+| `v_line_logcaps`   | `^(\S+) \S+ \S+ \[([^\]]+)\] "(\w+) ([^ "]+) HTTP/[\d.]+" (\d{3}) (\d+)`                          | log     |  58,623 |       6.52 |       11.2 |             13.1 |
+| `email_scan`       | `[\w.+-]+@[\w-]+\.[\w.-]+`                                                                        | log     |  12,000 |       45.8 |      0.581 |            932.8 |
+| `log_caps`         | `(\d+\.\d+\.\d+\.\d+) .*?\[([^\]]+)\] "(GET\|POST) ([^ ]+) HTTP/1\.1" (\d{3})`                    | log     |  18,000 |       26.0 |       10.7 |            488.3 |
+| `date_named`       | `(?<d>\d{2})/(?<m>\w{3})/(?<y>\d{4})`                                                             | log     |  18,033 |       9.76 |       1.98 |            260.9 |
+| `keywords`         | `\b(?:fn\|let\|mut\|if\|else\|match\|return\|while\|loop\|for\|impl\|pub\|struct\|enum\|const)\b` | code    |  12,490 |       9.21 |       1.87 |            189.2 |
+| `str_literal`      | `"(?:[^"\\]\|\\.)*"`                                                                              | code    |   1,131 |      0.122 |      0.079 |              1.1 |
+| `lazy_dot`         | `\[.*?\]`                                                                                         | log     |  12,000 |       3.08 |      0.583 |              6.6 |
+| `ci_alt`           | `(?i)(?:error\|warn\|fatal\|panic)`                                                               | log     |   2,398 |       5.97 |      0.376 |             85.2 |
+| `unicode_letters`  | `\p{L}+`                                                                                          | unicode |  37,064 |       3.51 |       1.53 |            144.5 |
+| `unicode_word`     | `\w+`                                                                                             | unicode |  40,000 |       4.16 |       1.53 |            139.5 |
+| `greek_cyr`        | `[\p{Greek}\p{Cyrillic}]+`                                                                        | unicode |   5,731 |       2.15 |      0.605 |            146.8 |
+| `float_num`        | `[-+]?\d+\.\d+(?:[eE][-+]?\d+)?`                                                                  | code    |       2 |       22.1 |       1.06 |           1023.7 |
+| `suffix_lit`       | `\w+ing\b`                                                                                        | prose   |     880 |       12.9 |       2.16 |            999.5 |
+| `dot_star_mid`     | `^.*status.*$`                                                                                    | code    |     221 |       3.61 |          – |             28.8 |
+| `backref_dup`      | `\b(\w+)\s+\1\b`                                                                                  | prose   |       4 |       9.76 |          – |            725.2 |
+| `lookbehind`       | `(?<=took=)\d+`                                                                                   | log     |  12,000 |       19.6 |          – |            313.6 |
+| `lookahead_neg`    | `\b\w+(?!\w\|\()\b`                                                                               | code    |  86,189 |       16.9 |          – |            164.6 |
+| `atomic_poss`      | `(?>\w+)@\w++`                                                                                    | log     |  12,000 |       55.8 |          – |            959.0 |
+| `html_tag_backref` | `<(\w+)[^>]*>.*?</\1>`                                                                            | prose   |       0 |      0.073 |          – |              0.2 |
+| `subexp_call`      | `(?<p>\((?:[^()]\|\g<p>)*\))`                                                                     | code    |   4,954 |       1.71 |          – |              4.7 |
+
+`dot_star_mid` has no `regex` time because `^` means different things in the
+two syntaxes. The Oniguruma-only rows use look-arounds, back references,
+atomic groups, or subexpression calls.
+
+What is already good: literal searches with a distance-0 optimizer run at
+`memchr` speed; `lit_none` matches `regex`. Whole-line capture extraction
+(`v_line_logcaps`) is faster than `regex`, and `str_literal` and `dot_star_line`
+are within 1.6×.
+
+## Where the time goes
+
+### 1. Start positions that cannot match
+
+The last column of the matrix is the clearest signal. `email_scan`,
+`float_num`, `suffix_lit` and `atomic_poss` enter the VM at almost **every
+byte** (930–1,020 attempts per KB) to find a match every 150 bytes or less
+often. `perf` puts 76–81% of their time in `match_at_vm` and 7–16% in
+`stack_pop`. The matching itself is not slow; it runs far too often.
+
+The cause is C's search strategy. When the optimizer's string sits at an
+unbounded distance from the match start (`[\w.+-]+@…` selects `@` with distance
+`1..∞`), `onig_search` checks once that the string occurs and then falls back to
+the position-by-position loop. Each attempt inside a word rescans the rest of
+the word before failing, so the cost grows with the square of the run length.
+The existing
+[atomic class prefix filter](/perf/atomic-class-prefix) addresses one shape
+of this: an ASCII-only class, an atomic run, and a one-byte delimiter. Unicode
+`\w` (a `CClassMix`), greedy runs, captures around the run, and multi-byte
+literals miss it.
+
+### 2. Fixed cost per search
+
+For many short matches (`char_digit`, `word`, `ident`) or one `is_match` per
+short line (`v_line_lit`), Ferroni is 1.7–3.2× behind `regex`, even though the
+VM does 2–3 dispatches per attempt. Callgrind for `v_line_lit` attributes about
+**625 instructions per `is_match` call**. `memchr` accounts for about 100 of
+them; the rest is plumbing: `search_in_range` →
+`search_in_range_inner` → `onig_search_inner_core_with_right_range` →
+`forward_search` → `finish_search`, plus the thread-local `MatchArg` handoff.
+Observed contributors:
+
+- `OnigRegion` travels by value through the return tuples of four layers, and
+  each layer moves it again.
+- `onigenc_is_ascii_compatible_encoding(enc)` is a dynamic `enc.flag()` call.
+  It runs once per byte in the map scan and in the ASCII fast paths. The
+  `Utf8Encoding::flag` symbol accounts for 2–8% in the profiles for
+  `ci_alt`, `keywords`, `lookbehind`, `char_digit` and `email_scan`.
+- `FindIter` always requests a region. For an expression with groups, this
+  enables capture tracking (`TRACK_CAPTURES`) in every attempt, even when the
+  caller only wants match bounds. `Region::resize`, `clear` and a `memset`
+  appear in every `char_digit` search.
+- `match_at_vm` sets up the backtracking stack, sentinel, limit arithmetic and
+  callout data on each attempt. This dominates when attempts greatly outnumber
+  matches (section 1).
+
+### 3. Weak or scalar prefilters
+
+- **Map optimizer scan.** `forward_search` walks the map byte by byte through a
+  table (18–38% in `char_digit`, `keywords`, `ci_alt`, `lookbehind`).
+  Under `(?i)`, the map for `ci_alt` contains 136 bytes. It includes every byte
+  from 0x80 up, because of non-ASCII fold partners, so no `memchr` variant
+  applies.
+- **Case-insensitive literals** (`(?i)regex`) use a map on the first
+  character. The search enters the VM at every `r`/`R` (47 attempts per KB,
+  9–11× behind `regex`). A rare-byte probe (`memchr2(b'x', b'X')` plus an
+  ASCII-fold comparison) finds the same 298 matches in 0.016 ms.
+- **Literal alternations with context.** A pure alternation already uses
+  Aho-Corasick (`alt5_words`: no VM attempts). With `\b…\b` around it
+  (`keywords`) or under `(?i)` (`ci_alt`), the search falls back to a map plus
+  a trie walk per candidate. Aho-Corasick with a word-boundary check finds the
+  same 12,490 `keywords` matches in 2.2 ms (9.2 ms now). A case-sensitive
+  alternation that finds the same 2,398 `ci_alt` matches in this corpus takes
+  the Aho-Corasick path and runs in 0.30 ms (6.0 ms now). Aho-Corasick with
+  ASCII case folding needs 2.8 ms.
+
+### 4. Generic VM loops where a fused one would do
+
+- `\[.*?\]` executes `Jump`, `AnyChar`, `PushOrJumpExact1` per character
+  (57 dispatches per attempt). The equivalent `\[[^\]\n]*\]` uses the fused
+  negated class star and runs in 1.01 ms instead of 3.08 ms.
+- `(?<=took=)\d+` enters the VM at every digit (314 attempts per KB) and runs the
+  look-behind each time. The optimizer ignores look-behind contents. The
+  literal-led `took=\d+` finds the same 12,000 matches (with a longer extent)
+  in 0.82 ms instead of 19.6 ms.
+- Unicode `\w` on non-ASCII text spends 27% of `unicode_word` in
+  `onigenc_unicode_is_code_ctype`.
+
+## Prototype results
+
+Three throwaway prototypes target cause 1. They are search-side only: the VM,
+the bytecode and C's optimizer choice stay unchanged. Each one only changes
+which start positions reach `match_at`.
+
+- **P1: bytecode start-byte filter.** Store `derive_start_byte_map`, which the
+  RegSet already uses, when it excludes at least one byte. Apply it in the
+  unbounded fallthrough loop and within bounded optimizer windows.
+- **P2: skip the rest of a failed leading run.** The expression must start
+  with `C+` or `C*`, optionally inside capture or atomic groups, where the head
+  class equals the star class. After a failed attempt at `p` whose run extends
+  to `q`, continue at `q`. From any `p' ∈ (p, q)`, the run ends at the same
+  `q`, and the tail is tried at a subset of the end positions tried from `p`.
+  That holds for greedy, lazy and atomic loops alike. This extends the existing
+  atomic ASCII filter to Unicode and mixed classes, greedy runs and arbitrary
+  tails. It also skips interior starts after a failed tail, which the existing
+  filter still attempts.
+- **P3: reverse run from the required literal.** If the optimizer's string
+  directly follows that run and its first byte is not in the class, every match
+  starts in the run that ends at a literal occurrence. Find the literal with
+  `memmem`, scan back over the class, and attempt only the run's first
+  position. By P2's argument, the other starts in that run fail as well.
+
+All three are disabled for back references, `\G`, `\K`, subexpression calls,
+callouts, FIND_LONGEST, and any search retry budget, stack limit or time limit.
+
+| Case           | Baseline ms | Prototypes ms | Speedup | Attempts before → after |
+| -------------- | ----------: | ------------: | ------: | ----------------------: |
+| `email_scan`   |        45.8 |          2.20 |   20.9× |      1,705,812 → 12,000 |
+| `v_line_email` |        43.2 |          1.45 |   29.8× |      1,563,070 → 12,000 |
+| `atomic_poss`  |        55.8 |          1.67 |   33.4× |      1,753,808 → 12,000 |
+| `float_num`    |        22.1 |          1.95 |   11.3× |      1,085,439 → 12,288 |
+| `log_caps`     |        26.0 |          8.26 |    3.2× |        892,988 → 40,015 |
+| `suffix_lit`   |        12.9 |          4.85 |    2.7× |       313,086 → 135,802 |
+| `class_lower`  |        7.66 |          3.05 |    2.5× |        193,614 → 40,470 |
+| `date_named`   |        9.76 |          4.49 |    2.2× |        477,098 → 77,875 |
+
+`float_num` and `date_named` come from P1. `email_scan`, `v_line_email` and
+`atomic_poss` come mostly from P3. `suffix_lit` and `class_lower` come from P2:
+their literal starts with a class member, so P3 does not apply. `log_caps` now
+beats `regex` (8.3 vs 10.7 ms).
+
+For the other workloads, wall-clock differences stayed inside the noise band.
+Single-pass callgrind counts rose by 0.0–2.5%: `unicode_letters` +2.5%,
+`keywords` +1.6%, `char_digit` +0.9%. This overhead comes from the prototypes
+checking the start map where C's map already filters the same positions. A
+production version should install the map only where it excludes positions
+that C's optimizer admits.
+
+### Validation of the prototypes
+
+- `cargo test --release --lib` and the `compat_utf8`, `compat_syntax`,
+  `compat_options`, `compat_regset`, `compat_back` and `api_test` suites pass
+  with all prototypes enabled.
+- A differential test covered 37,634 random pairs of expression and subject.
+  Each expression combined one of 9 classes, 6 quantifiers, 5 group wrappers,
+  9 literals and 14 tails, including look-arounds, back references and anchors.
+  All matches and capture bounds were identical to the original path. An
+  off-by-one injected into P3 produced 362 mismatches, so the test reaches the
+  new paths.
+- Not run: the C differential (`ffi`), the `match-cache` feature, and the
+  scanner and RegSet benchmarks. A production change needs all three.
+
+## Recommendation
+
+1. **Generalize the leading-run filter (items 1–3) into one search-side
+   component.** Derive it once at compile time: the run class, the literal that
+   follows (if disjoint), and the bytecode start map. Keep the existing atomic
+   ASCII filter as a special case, or replace it. This has the largest measured
+   effect, and ordinary extraction expressions start this way: emails,
+   numbers, identifiers followed by punctuation, and `key=value` fields. It
+   fits ADR-008 because it is additive and guarded, it leaves the VM and C's
+   optimizer choice unchanged, and its cost is linear.
+   The design question is retry-limit observability. A skipped start would
+   have consumed retries, so behavior near `retry_limit_in_match` changes in the
+   direction ADR-008 already accepts. The existing filter's fallbacks (per-match
+   limit of one, search budget, stack and time limits, callouts, match cache)
+   carry over.
+2. **Lean per-search entry (item 4).** Cache ASCII compatibility as a `bool` on
+   the regex. Pass the region by reference instead of by value. Let `FindIter`
+   and `is_match` request only match bounds. Hoist per-attempt VM setup into
+   the search loop. Each step is small and mechanical, and together they affect
+   every search.
+   Expected effect: 20–40% for high-match-rate iteration, and up to 2× for short
+   `is_match` subjects. This is an estimate from the callgrind attribution; no
+   prototype ran.
+3. **Prefilter upgrades (items 5–6).** Use a rare-byte `memchr2`/`memchr3` probe
+   for `(?i)` literals. Use Aho-Corasick (already a dependency) as a candidate
+   finder for literal alternations with a boundary or a case-insensitive trie.
+   Both must respect Unicode case folding. A literal containing a character
+   with a non-ASCII fold partner (`k` → K, KELVIN SIGN; `s` → ſ, LATIN SMALL
+   LETTER LONG S; and others) must keep the current path, or the candidate
+   check must include those partners.
+4. **Fused loops (items 7–9)** are narrower, but each is small. A lazy
+   `.*?X` opcode can scan with `memchr2(X, b'\n')`. A leading look-behind whose
+   body is a literal can serve as the optimizer string at a negative offset.
+   A BMP bitmap for the Unicode ctypes serves `\w`, `\s` and `\d`.
+
+## Reproducing
+
+The results JSON embeds the harness (`harness_source`), the corpus generator
+and the prototype diff. The prose and code corpora are concatenations of
+repository files at the baseline commit; their SHA-256 hashes are recorded.
+The harness takes the case list and the modes `count` (VM counters, needs the
+prototype diff's `tmpcount` feature), `diff` (differential test) and
+`<case> <seconds>` (a loop for `perf record` or callgrind).
