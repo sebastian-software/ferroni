@@ -1396,6 +1396,9 @@ fn or_cclass(dest: &mut CClassNode, cc: &CClassNode, enc: OnigEncoding) -> i32 {
 // Character class helpers
 // ============================================================================
 
+/// Most ctypes whose bits and ranges are kept per thread.
+const CTYPE_CACHE_ENTRIES: usize = 32;
+
 fn add_ctype_to_cc_by_range(
     cc: &mut CClassNode,
     ctype: i32,
@@ -1440,14 +1443,11 @@ fn add_ctype_to_cc_by_range(
                     return r;
                 }
                 CACHE.with(|cache| {
-                    cache.borrow_mut().push((
-                        enc_id,
-                        ctype,
-                        not,
-                        sb_out,
-                        fresh.bs,
-                        fresh.mbuf.clone(),
-                    ))
+                    let mut cache = cache.borrow_mut();
+                    if cache.len() >= CTYPE_CACHE_ENTRIES {
+                        cache.remove(0);
+                    }
+                    cache.push((enc_id, ctype, not, sb_out, fresh.bs, fresh.mbuf.clone()));
                 });
                 (fresh.bs, fresh.mbuf)
             }
