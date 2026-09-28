@@ -1,0 +1,205 @@
+---
+order: 18
+title: "Case-Insensitive Alternations and Grammar Compilation (2026-09)"
+---
+
+# Case-Insensitive Alternations and Grammar Compilation
+
+A third profiling round covered three topics: case-insensitive literal
+alternations, the fixed cost of a search call, and the TextMate scanner.
+Case-insensitive alternations used to attempt every position of their start
+map, which includes every non-ASCII byte. They now jump to the next
+candidate. `(?i)(?:error|warn|fatal|panic)` over a log runs **9.2×** faster
+and moves from 19× to 2.1× behind the `regex` crate. The same shape over
+prose runs 3.0× faster, over code 1.7× faster, and 3.2× faster over mostly
+non-ASCII text. After a failed attempt, `^.*status.*$` finds the next line
+start with `memchr` (−51% instructions). Compiling the CSS grammar takes 38% fewer
+instructions, TypeScript 15% and Rust 6%. The other 53 cases change by −1.9%
+to +1.1% in instructions, and scanner searches by −3.5% to +0.2%. The fixed
+cost per search call stayed where it was. It is spread over the layers that
+mirror C, and neither experiment that targeted it paid off.
+
+[Raw timings, instruction counts, scanner measurements and validation notes](https://github.com/sebastian-software/ferroni/blob/main/benches/results/folded-alternations-and-grammar-compilation-2026-09-28.json)
+
+## What changed
+
+### Case-insensitive literal alternations
+
+The compiler turns `(?i)(?:error|warn|…)` over ASCII literals into a folded
+literal trie. That trie also accepts non-ASCII input that Unicode case folding
+admits, such as `K` (Kelvin sign) for `k`, `ſ` for `s` or `ß` for `ss`. The
+[leading-check jumps](/perf/leading-check-jumps) left such tries out, since
+Aho-Corasick folds only ASCII. They are now covered in two parts
+(`src/leading_run.rs`):
+
+1. **ASCII case variants.** An Aho-Corasick automaton finds the next ASCII
+   case variant of a literal. It holds the case variants of the longest
+   literal prefixes that stay within 64 strings (`err`, `Err`, … `ERR`). With
+   ASCII case folding switched on, the automaton would give up its vectorized
+   prefilter. Over exact bytes it keeps it. The VM checks every candidate.
+2. **Starts near non-ASCII input.** The trie reads ASCII input one literal
+   byte at a time. It stops at a non-ASCII byte that is neither a class
+   member nor a ligature it knows. A match that holds a non-ASCII character
+   therefore starts at most the longest literal minus one byte before the
+   first such byte, and the trie must read that byte. Those starts stay
+   candidates. A 256-bit table of the lead bytes the trie can read rejects all
+   other non-ASCII bytes cheaply. The trie's walk and the prefilter share one
+   reader (`CaseFolds::read`), so they cannot disagree.
+
+Each search after a failed candidate starts the scan again. The scan
+therefore runs in windows, 256 bytes and then twice as large each time, so
+its work stays proportional to the distance it moves. The jump keeps every
+gate of the leading-check jumps: it is off for FIND_LONGEST, search retry
+budgets, stack or time limits, a per-match limit of one, callouts and the
+match cache, and it never jumps over bytes that are not valid UTF-8.
+
+### Line starts after `.*`
+
+An expression that starts with `.*` (`ANCR_ANYCHAR_INF`) is attempted only
+at line starts. After a failed attempt, C's loop steps character by
+character to the next newline. `memchr` now finds it, where the bytes up to
+it are valid UTF-8 or the encoding is single-byte. The character steps then
+land on the same position. Elsewhere, the loop steps as before.
+
+### Grammar compilation
+
+Three changes to the compiler leave its output unchanged. Tests compare each
+with the path it replaces.
+
+- **Unicode ctype ranges** (`src/regparse.rs`). Grammars add the same ctypes
+  (`[:alpha:]`, `\w`) to class after class, and each time hundreds of ranges
+  were written anew. Into a class without multibyte ranges, a ctype adds the
+  same bits and ranges every time. These are now kept per thread, for up to
+  32 ctypes.
+- **Case-fold expansions** (`src/regparse.rs`). `(?i)[\w-]` visits thousands
+  of fold entries. The expansion depends only on the class's bits and
+  ranges, the case-fold flag and the encoding. It is kept per thread for
+  classes with at least 32 multibyte ranges, up to 32 expansions.
+- **Optimizer maps** (`src/regcomp.rs`). The optimizer merged its 256-byte
+  start maps byte by byte. It now gathers eight map bytes into bits with one
+  multiplication and visits only the members a merge adds.
+
+## Measurements
+
+The harness and corpora are those of the [execution profile](/perf/execution-profiling),
+plus three case-insensitive alternation cases. The baseline is `main` at
+`e316362`, which includes the [leading-check jumps](/perf/leading-check-jumps).
+Both builds use the release profile with thin LTO on a shared 4-vCPU x86_64
+VM without hardware counters. Times are the best of three interleaved
+rounds. Instruction counts (Ir) are per iteration: the count with two
+iterations minus the count without, halved. All cases found the same matches
+in both builds.
+
+| Case           | Expression                             | Corpus  | Baseline ms | Candidate ms | Speedup |     Ir | `regex` ms |
+| -------------- | -------------------------------------- | ------- | ----------: | -----------: | ------: | -----: | ---------: |
+| `ci_alt`       | `(?i)(?:error\|warn\|fatal\|panic)`    | log     |        7.26 |        0.787 |    9.2× | −90.8% |      0.373 |
+| `ci_alt_uni`   | `(?i)(?:error\|warn\|…\|stra)`         | unicode |        3.85 |         1.21 |    3.2× | −84.8% |      0.189 |
+| `ci_alt_prose` | `(?i)\b(?:the\|and\|regex\|match)\b`   | prose   |        2.66 |        0.877 |    3.0× | −72.4% |      0.521 |
+| `ci_kw_code`   | `(?i)\b(?:fn\|let\|…\|struct\|impl)\b` | code    |        7.17 |         4.34 |    1.7× | −54.2% |      3.086 |
+| `dot_star_mid` | `^.*status.*$`                         | code    |        3.69 |         2.67 |    1.4× | −51.2% |          – |
+
+The unicode corpus is mostly non-ASCII. There the scan still stops at every
+character the trie could read, and the automaton restarts behind each
+failed candidate, so `ci_alt_uni` stays 6.4× behind `regex`. `dot_star_mid`
+has no `regex` column because `^` means the text start there.
+
+**The other 53 cases** change by −1.9% to +1.1% in instructions. The largest
+increases are in the per-token validation cases (`t_valid_int` and
+`t_valid_email` +1.1%, `v_line_lit` +1.0%). No code on their path changed, so
+the difference comes from code layout. Two first versions of the changes
+moved other cases by up to +15% through the same effect: `[-+]?\d+\.\d+`
+took 15% more instructions once the line-start skip was inlined into the
+search loop. Both paths now run out of line.
+
+### TextMate scanner
+
+The driver of the [leading-run skips](/perf/leading-run-skips#textmate-scanner)
+compiles the grammars and tokenizes the `regression_scanner_documents`
+inputs and the 20-pattern CSS set line by line.
+
+| Grammar compilation      | Baseline Ir | Candidate Ir |     Ir | Baseline ms | Candidate ms |
+| ------------------------ | ----------: | -----------: | -----: | ----------: | -----------: |
+| TypeScript, 279 patterns | 161,517,896 |  137,155,424 | −15.1% |        18.1 |         16.5 |
+| CSS, 117 patterns        | 285,268,885 |  176,286,179 | −38.2% |        25.6 |         17.3 |
+| Rust, 81 patterns        |   4,316,221 |    4,071,316 |  −5.7% |           – |            – |
+
+Rust compiles in about half a millisecond; its wall-clock rounds varied by
+more than the change.
+
+| Search per iteration               | Baseline Ir | Candidate Ir |     Ir |
+| ---------------------------------- | ----------: | -----------: | -----: |
+| TypeScript, 279 patterns, 28 lines |  14,556,971 |   14,562,499 | +0.04% |
+| CSS, 117 patterns, 19 lines        |   1,619,523 |    1,616,910 | −0.16% |
+| Rust, 81 patterns, 31 lines        |   1,646,053 |    1,649,396 | +0.20% |
+| CSS, 20 patterns, tokenize         |     197,429 |      195,987 | −0.73% |
+| TypeScript line, 279 patterns      |     104,690 |      100,982 | −3.54% |
+
+Scanner searches barely use the search plans. Only 0 to 2 patterns per
+grammar start with a class run, and 2 to 4 get a leading-check jump. Most
+runs sit behind optional prefixes or captures. The TypeScript document
+spends its time in look-behind-led fallback entries, the Rust document in
+identifier runs, and the CSS document in the VM of short attempts.
+
+## The fixed cost of a search call
+
+A validation call such as `\A[+-]?\d+\z` on one token costs about 808
+instructions (40 ns). Three fifths of them sit in the layers around the VM:
+
+| Layer (exclusive)                         | Ir per call |
+| ----------------------------------------- | ----------: |
+| `match_at_vm` with inlined helpers        |        ~190 |
+| `forward_search` (map check at `\A`)      |         155 |
+| `onig_search_inner_core_with_right_range` |         154 |
+| `search_in_range` (thread-local MatchArg) |          94 |
+| `search_in_range_inner`                   |          52 |
+| `finish_search`                           |          31 |
+| `stack_pop`                               |          22 |
+
+Each layer mirrors one in C. Sampling attributes a quarter of the time to
+`search_in_range`, most of it to one load of the returned
+`(i32, Option<OnigRegion>)` tuple. That load stalls because it reads what
+narrower stores just wrote. Two experiments targeted this. A drop guard let
+the result go straight to the caller's slot; the stall moved on to
+`forward_search`, and the timings changed by −5% and +1% in two rounds.
+Inlining the two thin layers added 1% instructions. Neither was kept. A
+smaller fixed cost would need a different internal calling convention: the
+search layers would return the position and leave the region in the
+`MatchArg`. That touches every search entry point, so it is left for a
+separate change.
+
+## What remains
+
+- **Grammar compilation** still spends a quarter to a third of its
+  instructions in `malloc` and `free` (nodes from case-fold unraveling, strings,
+  `Vec` growth). Another share goes to `compile_length_tree`, which computes
+  lengths of nested subtrees again for every enclosing quantifier, as C does.
+- **Mostly non-ASCII text** keeps case-insensitive alternations 6× behind
+  `regex`.
+- **The fixed cost per call**, see above.
+
+## Validation
+
+- `cargo test --release` passes the unit tests, all `compat_*` suites and
+  `api_test`. It also passes with `--features match-cache`.
+- The search tests compare results, capture bounds and limit errors with the
+  same expression without its plans. They now include folded alternations,
+  the Kelvin sign, long s, sharp s and ligatures around every window edge,
+  malformed bytes, and generated expressions with folded alternation heads.
+- A test checks every lead byte, second byte and a set of continuation bytes:
+  wherever the trie reads a character, its lead byte is in the table.
+- The line-start skip is compared with the character loop over malformed
+  UTF-8, both encodings, and every start, range and end of the test inputs.
+- The compilation caches are compared with the uncached paths, on first use
+  and on repeated use. The inputs include classes to which the folding adds
+  ranges and ctypes without multibyte ranges.
+- Injected faults fail the tests:
+  - folded starts that ignore the reach, or skip non-ASCII bytes;
+  - a window scan that does not extend by the reach;
+  - a lead table built with the wrong continuation-byte shift, a bug the
+    tests found during development;
+  - a line-start skip without its UTF-8 check, off by one, or with the range
+    past the end;
+  - caches that overwrite the class bits, lose its buffer, ignore the
+    case-fold flag or do not restore the ranges on a hit.
+- The `ffi` differential against C Oniguruma could not run in this
+  environment. CI runs it.

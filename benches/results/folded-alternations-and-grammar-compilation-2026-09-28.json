@@ -1,0 +1,1552 @@
+{
+ "format_version": 1,
+ "date": "2026-09-28",
+ "question": "Can case-insensitive literal alternations, the fixed cost per search call and the TextMate scanner (search and grammar compilation) get faster without changing results?",
+ "baseline_commit": "e316362 (main, with the leading-check jumps)",
+ "candidate_commit": "280a99d (branch claude/regexp-performance-profiling-hao93x)",
+ "environment": {
+  "host": "shared cloud VM, 4 vCPU Intel Xeon @ 2.10GHz, Linux x86_64, no hardware performance counters",
+  "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+  "profile": "release, thin LTO, debug=line-tables-only",
+  "noise_note": "Wall-clock timings vary by up to about 15-25% between runs; small differences are judged by callgrind instruction counts."
+ },
+ "method": {
+  "matrix": "Execution-profile harness (55 cases) plus 3 case-insensitive alternation cases (ci_alt_uni, ci_alt_prose, ci_kw_code). Best of three interleaved rounds of at least 400 ms per case and build.",
+  "callgrind": "Instructions per iteration = (Ir with 2 iterations - Ir with 0 iterations) / 2, so process start, corpus load and compilation cancel out.",
+  "scanner": "Driver tokenizing the regression_scanner_documents inputs and the css_20 set line by line. Search Ir per iteration = (Ir with 20 iterations - Ir without) / 20. Compile Ir = Ir of one Scanner::new minus the grammar loading. Compile wall clock: best of three rounds of 10-100 compilations."
+ },
+ "timings_ms": {
+  "baseline": [
+   {
+    "case": "alt5_words",
+    "pattern": "Oniguruma|backtrack|compile|search|Unicode",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 0.073,
+    "regex_ms": 0.05,
+    "matches": 601
+   },
+   {
+    "case": "atomic_poss",
+    "pattern": "(?>\\w+)@\\w++",
+    "kind": "onig-only",
+    "corpus": "log",
+    "ferroni_ms": 1.828,
+    "regex_ms": null,
+    "matches": 12000
+   },
+   {
+    "case": "backref_dup",
+    "pattern": "\\b(\\w+)\\s+\\1\\b",
+    "kind": "onig-only",
+    "corpus": "prose",
+    "ferroni_ms": 11.778,
+    "regex_ms": null,
+    "matches": 4
+   },
+   {
+    "case": "char_digit",
+    "pattern": "\\d+",
+    "kind": "simple",
+    "corpus": "log",
+    "ferroni_ms": 16.959,
+    "regex_ms": 5.653,
+    "matches": 247890
+   },
+   {
+    "case": "ci_alt",
+    "pattern": "(?i)(?:error|warn|fatal|panic)",
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 7.26,
+    "regex_ms": 0.453,
+    "matches": 2398
+   },
+   {
+    "case": "ci_alt_prose",
+    "pattern": "(?i)\\b(?:the|and|regex|match)\\b",
+    "kind": "complex",
+    "corpus": "prose",
+    "ferroni_ms": 2.66,
+    "regex_ms": 0.494,
+    "matches": 2896
+   },
+   {
+    "case": "ci_alt_uni",
+    "pattern": "(?i)(?:error|warn|fatal|panic|stra)",
+    "kind": "complex",
+    "corpus": "unicode",
+    "ferroni_ms": 3.846,
+    "regex_ms": 0.192,
+    "matches": 1453
+   },
+   {
+    "case": "ci_kw_code",
+    "pattern": "(?i)\\b(?:fn|let|for|while|match|return|struct|impl)\\b",
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 7.17,
+    "regex_ms": 3.108,
+    "matches": 6397
+   },
+   {
+    "case": "class_lower",
+    "pattern": "[a-z]+ing\\b",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 2.898,
+    "regex_ms": 2.146,
+    "matches": 880
+   },
+   {
+    "case": "date_named",
+    "pattern": "(?<d>\\d{2})/(?<m>\\w{3})/(?<y>\\d{4})",
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 5.904,
+    "regex_ms": 2.282,
+    "matches": 18033
+   },
+   {
+    "case": "dot_star_line",
+    "pattern": "ERROR.*",
+    "kind": "simple",
+    "corpus": "log",
+    "ferroni_ms": 0.208,
+    "regex_ms": 0.173,
+    "matches": 1165
+   },
+   {
+    "case": "dot_star_mid",
+    "pattern": "^.*status.*$",
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 3.692,
+    "regex_ms": null,
+    "matches": 221
+   },
+   {
+    "case": "email_scan",
+    "pattern": "[\\w.+-]+@[\\w-]+\\.[\\w.-]+",
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 1.812,
+    "regex_ms": 0.611,
+    "matches": 12000
+   },
+   {
+    "case": "float_num",
+    "pattern": "[-+]?\\d+\\.\\d+(?:[eE][-+]?\\d+)?",
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 2.186,
+    "regex_ms": 1.132,
+    "matches": 2
+   },
+   {
+    "case": "greek_cyr",
+    "pattern": "[\\p{Greek}\\p{Cyrillic}]+",
+    "kind": "complex",
+    "corpus": "unicode",
+    "ferroni_ms": 2.661,
+    "regex_ms": 0.756,
+    "matches": 5731
+   },
+   {
+    "case": "html_tag_backref",
+    "pattern": "<(\\w+)[^>]*>.*?</\\1>",
+    "kind": "onig-only",
+    "corpus": "prose",
+    "ferroni_ms": 0.096,
+    "regex_ms": null,
+    "matches": 0
+   },
+   {
+    "case": "ident",
+    "pattern": "[A-Za-z_][A-Za-z0-9_]*",
+    "kind": "simple",
+    "corpus": "code",
+    "ferroni_ms": 9.399,
+    "regex_ms": 4.688,
+    "matches": 90872
+   },
+   {
+    "case": "keywords",
+    "pattern": null,
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 3.58,
+    "regex_ms": 1.858,
+    "matches": 12490
+   },
+   {
+    "case": "lazy_dot",
+    "pattern": "\\[.*?\\]",
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 2.547,
+    "regex_ms": 0.618,
+    "matches": 12000
+   },
+   {
+    "case": "line_anchor",
+    "pattern": "(?m)^fn ",
+    "kind": "simple",
+    "corpus": "code",
+    "ferroni_ms": 0.055,
+    "regex_ms": 0.05,
+    "matches": 359
+   },
+   {
+    "case": "lit_ci",
+    "pattern": "(?i)regex",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 0.049,
+    "regex_ms": 0.041,
+    "matches": 298
+   },
+   {
+    "case": "lit_common",
+    "pattern": "regex",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 0.025,
+    "regex_ms": 0.012,
+    "matches": 245
+   },
+   {
+    "case": "lit_none",
+    "pattern": "zqxjkvw",
+    "kind": "simple",
+    "corpus": "code",
+    "ferroni_ms": 0.029,
+    "regex_ms": 0.028,
+    "matches": 0
+   },
+   {
+    "case": "lit_rare",
+    "pattern": "Oniguruma",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 0.016,
+    "regex_ms": 0.009,
+    "matches": 122
+   },
+   {
+    "case": "log_caps",
+    "pattern": null,
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 8.58,
+    "regex_ms": 10.94,
+    "matches": 18000
+   },
+   {
+    "case": "lookahead_neg",
+    "pattern": "\\b\\w+(?!\\w|\\()\\b",
+    "kind": "onig-only",
+    "corpus": "code",
+    "ferroni_ms": 12.676,
+    "regex_ms": null,
+    "matches": 86189
+   },
+   {
+    "case": "lookbehind",
+    "pattern": "(?<=took=)\\d+",
+    "kind": "onig-only",
+    "corpus": "log",
+    "ferroni_ms": 20.887,
+    "regex_ms": null,
+    "matches": 12000
+   },
+   {
+    "case": "px_ci_alt_as_cs",
+    "pattern": "error|warn|fatal|panic|ERROR|WARN",
+    "kind": "proxy",
+    "corpus": "log",
+    "ferroni_ms": 0.37,
+    "regex_ms": 0.26,
+    "matches": 2398
+   },
+   {
+    "case": "px_lazy_as_negcls",
+    "pattern": "\\[[^\\]\\n]*\\]",
+    "kind": "proxy",
+    "corpus": "log",
+    "ferroni_ms": 1.161,
+    "regex_ms": 0.624,
+    "matches": 12000
+   },
+   {
+    "case": "px_lookbehind_as_lit",
+    "pattern": "took=\\d+",
+    "kind": "proxy",
+    "corpus": "log",
+    "ferroni_ms": 1.004,
+    "regex_ms": 0.451,
+    "matches": 12000
+   },
+   {
+    "case": "str_literal",
+    "pattern": null,
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 0.137,
+    "regex_ms": 0.089,
+    "matches": 1131
+   },
+   {
+    "case": "subexp_call",
+    "pattern": "(?<p>\\((?:[^()]|\\g<p>)*\\))",
+    "kind": "onig-only",
+    "corpus": "code",
+    "ferroni_ms": 1.815,
+    "regex_ms": null,
+    "matches": 4954
+   },
+   {
+    "case": "suffix_lit",
+    "pattern": "\\w+ing\\b",
+    "kind": "complex",
+    "corpus": "prose",
+    "ferroni_ms": 5.175,
+    "regex_ms": 2.309,
+    "matches": 880
+   },
+   {
+    "case": "t_camel",
+    "pattern": "\\b[a-z]+(?:[A-Z][a-z]+)+\\b",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 7.472,
+    "regex_ms": 28.734,
+    "matches": 1
+   },
+   {
+    "case": "t_ci_phrase",
+    "pattern": "(?i)regular expression",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 0.366,
+    "regex_ms": 0.025,
+    "matches": 0
+   },
+   {
+    "case": "t_ci_word",
+    "pattern": "(?i)\\berror\\b",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 0.516,
+    "regex_ms": 0.205,
+    "matches": 1165
+   },
+   {
+    "case": "t_fn_call",
+    "pattern": "\\b\\w+\\(",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 1.907,
+    "regex_ms": 0.89,
+    "matches": 8904
+   },
+   {
+    "case": "t_hex",
+    "pattern": "\\b0x[0-9a-fA-F]+\\b",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 0.045,
+    "regex_ms": 0.033,
+    "matches": 216
+   },
+   {
+    "case": "t_html_tag",
+    "pattern": "<[^>]+>",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 0.045,
+    "regex_ms": 0.083,
+    "matches": 39
+   },
+   {
+    "case": "t_kv_caps",
+    "pattern": "(\\w+)=(\\S+)",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 8.147,
+    "regex_ms": 5.81,
+    "matches": 286679
+   },
+   {
+    "case": "t_line_starts",
+    "pattern": "^\\s*//",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 2.73,
+    "regex_ms": null,
+    "matches": 2947
+   },
+   {
+    "case": "t_md_link",
+    "pattern": "\\[([^\\]]+)\\]\\(([^)]+)\\)",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 0.131,
+    "regex_ms": 0.508,
+    "matches": 554
+   },
+   {
+    "case": "t_quoted",
+    "pattern": null,
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 0.119,
+    "regex_ms": 0.082,
+    "matches": 1137
+   },
+   {
+    "case": "t_split_comma",
+    "pattern": "\\s*,\\s*",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 1.539,
+    "regex_ms": 0.587,
+    "matches": 12139
+   },
+   {
+    "case": "t_split_ws",
+    "pattern": "\\s+",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 2.872,
+    "regex_ms": 1.389,
+    "matches": 39889
+   },
+   {
+    "case": "t_trailing_ws",
+    "pattern": "(?m)[ \\t]+$",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 6.818,
+    "regex_ms": 1.641,
+    "matches": 0
+   },
+   {
+    "case": "t_url",
+    "pattern": null,
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 0.048,
+    "regex_ms": 0.066,
+    "matches": 330
+   },
+   {
+    "case": "t_valid_email",
+    "pattern": "\\A[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+\\z",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 5.406,
+    "regex_ms": 1.568,
+    "matches": 0
+   },
+   {
+    "case": "t_valid_int",
+    "pattern": "\\A[+-]?\\d+\\z",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 7.821,
+    "regex_ms": 1.883,
+    "matches": 24000
+   },
+   {
+    "case": "t_valid_ipv4",
+    "pattern": "\\A(?:\\d{1,3}\\.){3}\\d{1,3}\\z",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 10.225,
+    "regex_ms": 1.106,
+    "matches": 12000
+   },
+   {
+    "case": "t_valid_word",
+    "pattern": "\\A[A-Za-z]+\\z",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 1.989,
+    "regex_ms": 0.856,
+    "matches": 24212
+   },
+   {
+    "case": "unicode_letters",
+    "pattern": "\\p{L}+",
+    "kind": "complex",
+    "corpus": "unicode",
+    "ferroni_ms": 3.617,
+    "regex_ms": 1.697,
+    "matches": 37064
+   },
+   {
+    "case": "unicode_word",
+    "pattern": "\\w+",
+    "kind": "complex",
+    "corpus": "unicode",
+    "ferroni_ms": 4.262,
+    "regex_ms": 1.872,
+    "matches": 40000
+   },
+   {
+    "case": "v_line_email",
+    "pattern": "[\\w.+-]+@[\\w-]+\\.[\\w.]+",
+    "kind": "per-line",
+    "corpus": "log",
+    "ferroni_ms": 1.554,
+    "regex_ms": 0.48,
+    "matches": 12000
+   },
+   {
+    "case": "v_line_ipv4",
+    "pattern": "\\A\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3} ",
+    "kind": "per-line",
+    "corpus": "log",
+    "ferroni_ms": 1.222,
+    "regex_ms": 0.396,
+    "matches": 12000
+   },
+   {
+    "case": "v_line_lit",
+    "pattern": "ERROR",
+    "kind": "per-line",
+    "corpus": "log",
+    "ferroni_ms": 0.461,
+    "regex_ms": 0.154,
+    "matches": 1165
+   },
+   {
+    "case": "v_line_logcaps",
+    "pattern": null,
+    "kind": "per-line",
+    "corpus": "log",
+    "ferroni_ms": 6.935,
+    "regex_ms": 10.274,
+    "matches": 58623
+   },
+   {
+    "case": "word",
+    "pattern": "\\w+",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 3.459,
+    "regex_ms": 1.763,
+    "matches": 42731
+   }
+  ],
+  "candidate": [
+   {
+    "case": "alt5_words",
+    "pattern": "Oniguruma|backtrack|compile|search|Unicode",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 0.063,
+    "regex_ms": 0.041,
+    "matches": 601
+   },
+   {
+    "case": "atomic_poss",
+    "pattern": "(?>\\w+)@\\w++",
+    "kind": "onig-only",
+    "corpus": "log",
+    "ferroni_ms": 2.014,
+    "regex_ms": null,
+    "matches": 12000
+   },
+   {
+    "case": "backref_dup",
+    "pattern": "\\b(\\w+)\\s+\\1\\b",
+    "kind": "onig-only",
+    "corpus": "prose",
+    "ferroni_ms": 10.666,
+    "regex_ms": null,
+    "matches": 4
+   },
+   {
+    "case": "char_digit",
+    "pattern": "\\d+",
+    "kind": "simple",
+    "corpus": "log",
+    "ferroni_ms": 16.41,
+    "regex_ms": 6.365,
+    "matches": 247890
+   },
+   {
+    "case": "ci_alt",
+    "pattern": "(?i)(?:error|warn|fatal|panic)",
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 0.787,
+    "regex_ms": 0.373,
+    "matches": 2398
+   },
+   {
+    "case": "ci_alt_prose",
+    "pattern": "(?i)\\b(?:the|and|regex|match)\\b",
+    "kind": "complex",
+    "corpus": "prose",
+    "ferroni_ms": 0.877,
+    "regex_ms": 0.521,
+    "matches": 2896
+   },
+   {
+    "case": "ci_alt_uni",
+    "pattern": "(?i)(?:error|warn|fatal|panic|stra)",
+    "kind": "complex",
+    "corpus": "unicode",
+    "ferroni_ms": 1.206,
+    "regex_ms": 0.189,
+    "matches": 1453
+   },
+   {
+    "case": "ci_kw_code",
+    "pattern": "(?i)\\b(?:fn|let|for|while|match|return|struct|impl)\\b",
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 4.342,
+    "regex_ms": 3.086,
+    "matches": 6397
+   },
+   {
+    "case": "class_lower",
+    "pattern": "[a-z]+ing\\b",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 3.035,
+    "regex_ms": 1.768,
+    "matches": 880
+   },
+   {
+    "case": "date_named",
+    "pattern": "(?<d>\\d{2})/(?<m>\\w{3})/(?<y>\\d{4})",
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 4.824,
+    "regex_ms": 1.982,
+    "matches": 18033
+   },
+   {
+    "case": "dot_star_line",
+    "pattern": "ERROR.*",
+    "kind": "simple",
+    "corpus": "log",
+    "ferroni_ms": 0.212,
+    "regex_ms": 0.185,
+    "matches": 1165
+   },
+   {
+    "case": "dot_star_mid",
+    "pattern": "^.*status.*$",
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 2.668,
+    "regex_ms": null,
+    "matches": 221
+   },
+   {
+    "case": "email_scan",
+    "pattern": "[\\w.+-]+@[\\w-]+\\.[\\w.-]+",
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 1.852,
+    "regex_ms": 0.587,
+    "matches": 12000
+   },
+   {
+    "case": "float_num",
+    "pattern": "[-+]?\\d+\\.\\d+(?:[eE][-+]?\\d+)?",
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 2.064,
+    "regex_ms": 1.118,
+    "matches": 2
+   },
+   {
+    "case": "greek_cyr",
+    "pattern": "[\\p{Greek}\\p{Cyrillic}]+",
+    "kind": "complex",
+    "corpus": "unicode",
+    "ferroni_ms": 2.248,
+    "regex_ms": 0.638,
+    "matches": 5731
+   },
+   {
+    "case": "html_tag_backref",
+    "pattern": "<(\\w+)[^>]*>.*?</\\1>",
+    "kind": "onig-only",
+    "corpus": "prose",
+    "ferroni_ms": 0.088,
+    "regex_ms": null,
+    "matches": 0
+   },
+   {
+    "case": "ident",
+    "pattern": "[A-Za-z_][A-Za-z0-9_]*",
+    "kind": "simple",
+    "corpus": "code",
+    "ferroni_ms": 7.457,
+    "regex_ms": 4.522,
+    "matches": 90872
+   },
+   {
+    "case": "keywords",
+    "pattern": null,
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 3.455,
+    "regex_ms": 2.2,
+    "matches": 12490
+   },
+   {
+    "case": "lazy_dot",
+    "pattern": "\\[.*?\\]",
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 2.847,
+    "regex_ms": 0.584,
+    "matches": 12000
+   },
+   {
+    "case": "line_anchor",
+    "pattern": "(?m)^fn ",
+    "kind": "simple",
+    "corpus": "code",
+    "ferroni_ms": 0.055,
+    "regex_ms": 0.048,
+    "matches": 359
+   },
+   {
+    "case": "lit_ci",
+    "pattern": "(?i)regex",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 0.051,
+    "regex_ms": 0.04,
+    "matches": 298
+   },
+   {
+    "case": "lit_common",
+    "pattern": "regex",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 0.024,
+    "regex_ms": 0.011,
+    "matches": 245
+   },
+   {
+    "case": "lit_none",
+    "pattern": "zqxjkvw",
+    "kind": "simple",
+    "corpus": "code",
+    "ferroni_ms": 0.032,
+    "regex_ms": 0.028,
+    "matches": 0
+   },
+   {
+    "case": "lit_rare",
+    "pattern": "Oniguruma",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 0.018,
+    "regex_ms": 0.011,
+    "matches": 122
+   },
+   {
+    "case": "log_caps",
+    "pattern": null,
+    "kind": "complex",
+    "corpus": "log",
+    "ferroni_ms": 10.164,
+    "regex_ms": 10.875,
+    "matches": 18000
+   },
+   {
+    "case": "lookahead_neg",
+    "pattern": "\\b\\w+(?!\\w|\\()\\b",
+    "kind": "onig-only",
+    "corpus": "code",
+    "ferroni_ms": 13.47,
+    "regex_ms": null,
+    "matches": 86189
+   },
+   {
+    "case": "lookbehind",
+    "pattern": "(?<=took=)\\d+",
+    "kind": "onig-only",
+    "corpus": "log",
+    "ferroni_ms": 20.881,
+    "regex_ms": null,
+    "matches": 12000
+   },
+   {
+    "case": "px_ci_alt_as_cs",
+    "pattern": "error|warn|fatal|panic|ERROR|WARN",
+    "kind": "proxy",
+    "corpus": "log",
+    "ferroni_ms": 0.33,
+    "regex_ms": 0.245,
+    "matches": 2398
+   },
+   {
+    "case": "px_lazy_as_negcls",
+    "pattern": "\\[[^\\]\\n]*\\]",
+    "kind": "proxy",
+    "corpus": "log",
+    "ferroni_ms": 1.079,
+    "regex_ms": 0.627,
+    "matches": 12000
+   },
+   {
+    "case": "px_lookbehind_as_lit",
+    "pattern": "took=\\d+",
+    "kind": "proxy",
+    "corpus": "log",
+    "ferroni_ms": 0.87,
+    "regex_ms": 0.406,
+    "matches": 12000
+   },
+   {
+    "case": "str_literal",
+    "pattern": null,
+    "kind": "complex",
+    "corpus": "code",
+    "ferroni_ms": 0.122,
+    "regex_ms": 0.079,
+    "matches": 1131
+   },
+   {
+    "case": "subexp_call",
+    "pattern": "(?<p>\\((?:[^()]|\\g<p>)*\\))",
+    "kind": "onig-only",
+    "corpus": "code",
+    "ferroni_ms": 2.023,
+    "regex_ms": null,
+    "matches": 4954
+   },
+   {
+    "case": "suffix_lit",
+    "pattern": "\\w+ing\\b",
+    "kind": "complex",
+    "corpus": "prose",
+    "ferroni_ms": 6.176,
+    "regex_ms": 2.26,
+    "matches": 880
+   },
+   {
+    "case": "t_camel",
+    "pattern": "\\b[a-z]+(?:[A-Z][a-z]+)+\\b",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 7.46,
+    "regex_ms": 31.767,
+    "matches": 1
+   },
+   {
+    "case": "t_ci_phrase",
+    "pattern": "(?i)regular expression",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 0.38,
+    "regex_ms": 0.027,
+    "matches": 0
+   },
+   {
+    "case": "t_ci_word",
+    "pattern": "(?i)\\berror\\b",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 0.541,
+    "regex_ms": 0.22,
+    "matches": 1165
+   },
+   {
+    "case": "t_fn_call",
+    "pattern": "\\b\\w+\\(",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 1.769,
+    "regex_ms": 0.832,
+    "matches": 8904
+   },
+   {
+    "case": "t_hex",
+    "pattern": "\\b0x[0-9a-fA-F]+\\b",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 0.046,
+    "regex_ms": 0.036,
+    "matches": 216
+   },
+   {
+    "case": "t_html_tag",
+    "pattern": "<[^>]+>",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 0.048,
+    "regex_ms": 0.088,
+    "matches": 39
+   },
+   {
+    "case": "t_kv_caps",
+    "pattern": "(\\w+)=(\\S+)",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 8.594,
+    "regex_ms": 5.788,
+    "matches": 286679
+   },
+   {
+    "case": "t_line_starts",
+    "pattern": "^\\s*//",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 2.597,
+    "regex_ms": null,
+    "matches": 2947
+   },
+   {
+    "case": "t_md_link",
+    "pattern": "\\[([^\\]]+)\\]\\(([^)]+)\\)",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 0.143,
+    "regex_ms": 0.537,
+    "matches": 554
+   },
+   {
+    "case": "t_quoted",
+    "pattern": null,
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 0.13,
+    "regex_ms": 0.101,
+    "matches": 1137
+   },
+   {
+    "case": "t_split_comma",
+    "pattern": "\\s*,\\s*",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 1.769,
+    "regex_ms": 0.609,
+    "matches": 12139
+   },
+   {
+    "case": "t_split_ws",
+    "pattern": "\\s+",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 2.982,
+    "regex_ms": 1.401,
+    "matches": 39889
+   },
+   {
+    "case": "t_trailing_ws",
+    "pattern": "(?m)[ \\t]+$",
+    "kind": "typical",
+    "corpus": "code",
+    "ferroni_ms": 6.473,
+    "regex_ms": 1.917,
+    "matches": 0
+   },
+   {
+    "case": "t_url",
+    "pattern": null,
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 0.053,
+    "regex_ms": 0.069,
+    "matches": 330
+   },
+   {
+    "case": "t_valid_email",
+    "pattern": "\\A[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+\\z",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 5.947,
+    "regex_ms": 1.895,
+    "matches": 0
+   },
+   {
+    "case": "t_valid_int",
+    "pattern": "\\A[+-]?\\d+\\z",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 9.173,
+    "regex_ms": 1.799,
+    "matches": 24000
+   },
+   {
+    "case": "t_valid_ipv4",
+    "pattern": "\\A(?:\\d{1,3}\\.){3}\\d{1,3}\\z",
+    "kind": "typical",
+    "corpus": "log",
+    "ferroni_ms": 9.143,
+    "regex_ms": 1.174,
+    "matches": 12000
+   },
+   {
+    "case": "t_valid_word",
+    "pattern": "\\A[A-Za-z]+\\z",
+    "kind": "typical",
+    "corpus": "prose",
+    "ferroni_ms": 2.347,
+    "regex_ms": 0.959,
+    "matches": 24212
+   },
+   {
+    "case": "unicode_letters",
+    "pattern": "\\p{L}+",
+    "kind": "complex",
+    "corpus": "unicode",
+    "ferroni_ms": 3.807,
+    "regex_ms": 1.721,
+    "matches": 37064
+   },
+   {
+    "case": "unicode_word",
+    "pattern": "\\w+",
+    "kind": "complex",
+    "corpus": "unicode",
+    "ferroni_ms": 4.283,
+    "regex_ms": 1.637,
+    "matches": 40000
+   },
+   {
+    "case": "v_line_email",
+    "pattern": "[\\w.+-]+@[\\w-]+\\.[\\w.]+",
+    "kind": "per-line",
+    "corpus": "log",
+    "ferroni_ms": 1.624,
+    "regex_ms": 0.486,
+    "matches": 12000
+   },
+   {
+    "case": "v_line_ipv4",
+    "pattern": "\\A\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3} ",
+    "kind": "per-line",
+    "corpus": "log",
+    "ferroni_ms": 1.429,
+    "regex_ms": 0.386,
+    "matches": 12000
+   },
+   {
+    "case": "v_line_lit",
+    "pattern": "ERROR",
+    "kind": "per-line",
+    "corpus": "log",
+    "ferroni_ms": 0.469,
+    "regex_ms": 0.162,
+    "matches": 1165
+   },
+   {
+    "case": "v_line_logcaps",
+    "pattern": null,
+    "kind": "per-line",
+    "corpus": "log",
+    "ferroni_ms": 7.1,
+    "regex_ms": 9.532,
+    "matches": 58623
+   },
+   {
+    "case": "word",
+    "pattern": "\\w+",
+    "kind": "simple",
+    "corpus": "prose",
+    "ferroni_ms": 3.271,
+    "regex_ms": 1.663,
+    "matches": 42731
+   }
+  ]
+ },
+ "callgrind_ir_per_iteration": [
+  {
+   "case": "ci_alt",
+   "baseline": 128681290,
+   "candidate": 11865323,
+   "change_percent": -90.78
+  },
+  {
+   "case": "ci_alt_uni",
+   "baseline": 67546197,
+   "candidate": 10241131,
+   "change_percent": -84.84
+  },
+  {
+   "case": "ci_alt_prose",
+   "baseline": 40776973,
+   "candidate": 11241020,
+   "change_percent": -72.43
+  },
+  {
+   "case": "ci_kw_code",
+   "baseline": 107138804,
+   "candidate": 49047924,
+   "change_percent": -54.22
+  },
+  {
+   "case": "dot_star_mid",
+   "baseline": 60201183,
+   "candidate": 29354616,
+   "change_percent": -51.24
+  },
+  {
+   "case": "t_ci_phrase",
+   "baseline": 5588609,
+   "candidate": 5483542,
+   "change_percent": -1.88
+  },
+  {
+   "case": "t_ci_word",
+   "baseline": 6769863,
+   "candidate": 6731860,
+   "change_percent": -0.56
+  },
+  {
+   "case": "backref_dup",
+   "baseline": 193168403,
+   "candidate": 192486753,
+   "change_percent": -0.35
+  },
+  {
+   "case": "lookbehind",
+   "baseline": 408336550,
+   "candidate": 406944589,
+   "change_percent": -0.34
+  },
+  {
+   "case": "greek_cyr",
+   "baseline": 36822642,
+   "candidate": 36700049,
+   "change_percent": -0.33
+  },
+  {
+   "case": "suffix_lit",
+   "baseline": 95303545,
+   "candidate": 95037917,
+   "change_percent": -0.28
+  },
+  {
+   "case": "alt5_words",
+   "baseline": 897579,
+   "candidate": 895753,
+   "change_percent": -0.2
+  },
+  {
+   "case": "px_ci_alt_as_cs",
+   "baseline": 4105015,
+   "candidate": 4097798,
+   "change_percent": -0.18
+  },
+  {
+   "case": "t_camel",
+   "baseline": 127053513,
+   "candidate": 126833985,
+   "change_percent": -0.17
+  },
+  {
+   "case": "lit_ci",
+   "baseline": 890820,
+   "candidate": 889349,
+   "change_percent": -0.17
+  },
+  {
+   "case": "date_named",
+   "baseline": 89491435,
+   "candidate": 89348104,
+   "change_percent": -0.16
+  },
+  {
+   "case": "class_lower",
+   "baseline": 47388605,
+   "candidate": 47312929,
+   "change_percent": -0.16
+  },
+  {
+   "case": "t_trailing_ws",
+   "baseline": 129680614,
+   "candidate": 129479093,
+   "change_percent": -0.16
+  },
+  {
+   "case": "float_num",
+   "baseline": 42779415,
+   "candidate": 42755173,
+   "change_percent": -0.06
+  },
+  {
+   "case": "html_tag_backref",
+   "baseline": 1477232,
+   "candidate": 1477058,
+   "change_percent": -0.01
+  },
+  {
+   "case": "t_html_tag",
+   "baseline": 1098447,
+   "candidate": 1098608,
+   "change_percent": 0.01
+  },
+  {
+   "case": "log_caps",
+   "baseline": 133769285,
+   "candidate": 133841201,
+   "change_percent": 0.05
+  },
+  {
+   "case": "subexp_call",
+   "baseline": 29901636,
+   "candidate": 29921455,
+   "change_percent": 0.07
+  },
+  {
+   "case": "v_line_logcaps",
+   "baseline": 114582999,
+   "candidate": 114679033,
+   "change_percent": 0.08
+  },
+  {
+   "case": "t_md_link",
+   "baseline": 2712141,
+   "candidate": 2714416,
+   "change_percent": 0.08
+  },
+  {
+   "case": "lazy_dot",
+   "baseline": 50458040,
+   "candidate": 50506045,
+   "change_percent": 0.1
+  },
+  {
+   "case": "email_scan",
+   "baseline": 30662668,
+   "candidate": 30698638,
+   "change_percent": 0.12
+  },
+  {
+   "case": "t_fn_call",
+   "baseline": 22100687,
+   "candidate": 22127426,
+   "change_percent": 0.12
+  },
+  {
+   "case": "atomic_poss",
+   "baseline": 28854483,
+   "candidate": 28890488,
+   "change_percent": 0.12
+  },
+  {
+   "case": "t_hex",
+   "baseline": 646328,
+   "candidate": 647193,
+   "change_percent": 0.13
+  },
+  {
+   "case": "dot_star_line",
+   "baseline": 3452656,
+   "candidate": 3457317,
+   "change_percent": 0.13
+  },
+  {
+   "case": "t_kv_caps",
+   "baseline": 135614198,
+   "candidate": 135807267,
+   "change_percent": 0.14
+  },
+  {
+   "case": "t_url",
+   "baseline": 912331,
+   "candidate": 913660,
+   "change_percent": 0.15
+  },
+  {
+   "case": "t_split_comma",
+   "baseline": 22777948,
+   "candidate": 22814344,
+   "change_percent": 0.16
+  },
+  {
+   "case": "line_anchor",
+   "baseline": 852275,
+   "candidate": 853717,
+   "change_percent": 0.17
+  },
+  {
+   "case": "lit_rare",
+   "baseline": 257305,
+   "candidate": 257798,
+   "change_percent": 0.19
+  },
+  {
+   "case": "str_literal",
+   "baseline": 2331092,
+   "candidate": 2335600,
+   "change_percent": 0.19
+  },
+  {
+   "case": "t_quoted",
+   "baseline": 2334325,
+   "candidate": 2338857,
+   "change_percent": 0.19
+  },
+  {
+   "case": "px_lazy_as_negcls",
+   "baseline": 22462030,
+   "candidate": 22510040,
+   "change_percent": 0.21
+  },
+  {
+   "case": "lookahead_neg",
+   "baseline": 222607283,
+   "candidate": 223106386,
+   "change_percent": 0.22
+  },
+  {
+   "case": "unicode_letters",
+   "baseline": 60534688,
+   "candidate": 60674059,
+   "change_percent": 0.23
+  },
+  {
+   "case": "unicode_word",
+   "baseline": 66650940,
+   "candidate": 66810857,
+   "change_percent": 0.24
+  },
+  {
+   "case": "lit_common",
+   "baseline": 392001,
+   "candidate": 392987,
+   "change_percent": 0.25
+  },
+  {
+   "case": "v_line_email",
+   "baseline": 27220414,
+   "candidate": 27292398,
+   "change_percent": 0.26
+  },
+  {
+   "case": "lit_none",
+   "baseline": 341659,
+   "candidate": 342585,
+   "change_percent": 0.27
+  },
+  {
+   "case": "px_lookbehind_as_lit",
+   "baseline": 16586384,
+   "candidate": 16634384,
+   "change_percent": 0.29
+  },
+  {
+   "case": "ident",
+   "baseline": 121044472,
+   "candidate": 121407987,
+   "change_percent": 0.3
+  },
+  {
+   "case": "word",
+   "baseline": 55477380,
+   "candidate": 55648070,
+   "change_percent": 0.31
+  },
+  {
+   "case": "t_split_ws",
+   "baseline": 50149151,
+   "candidate": 50308154,
+   "change_percent": 0.32
+  },
+  {
+   "case": "char_digit",
+   "baseline": 312548123,
+   "candidate": 313539677,
+   "change_percent": 0.32
+  },
+  {
+   "case": "v_line_ipv4",
+   "baseline": 22585760,
+   "candidate": 22693772,
+   "change_percent": 0.48
+  },
+  {
+   "case": "t_line_starts",
+   "baseline": 35428454,
+   "candidate": 35606953,
+   "change_percent": 0.5
+  },
+  {
+   "case": "keywords",
+   "baseline": 32932462,
+   "candidate": 33110551,
+   "change_percent": 0.54
+  },
+  {
+   "case": "t_valid_ipv4",
+   "baseline": 175967512,
+   "candidate": 177251279,
+   "change_percent": 0.73
+  },
+  {
+   "case": "t_valid_word",
+   "baseline": 37543853,
+   "candidate": 37857748,
+   "change_percent": 0.84
+  },
+  {
+   "case": "v_line_lit",
+   "baseline": 8110168,
+   "candidate": 8194171,
+   "change_percent": 1.04
+  },
+  {
+   "case": "t_valid_int",
+   "baseline": 147534023,
+   "candidate": 149085650,
+   "change_percent": 1.05
+  },
+  {
+   "case": "t_valid_email",
+   "baseline": 113134384,
+   "candidate": 114394021,
+   "change_percent": 1.11
+  }
+ ],
+ "scanner": {
+  "search_ir_per_iteration": {
+   "ts_doc": {
+    "baseline": 14556971,
+    "candidate": 14562499,
+    "change_percent": 0.04
+   },
+   "css_doc": {
+    "baseline": 1619523,
+    "candidate": 1616910,
+    "change_percent": -0.16
+   },
+   "rust_doc": {
+    "baseline": 1646053,
+    "candidate": 1649396,
+    "change_percent": 0.2
+   },
+   "css20": {
+    "baseline": 197429,
+    "candidate": 195987,
+    "change_percent": -0.73
+   },
+   "ts_line": {
+    "baseline": 104690,
+    "candidate": 100982,
+    "change_percent": -3.54
+   }
+  },
+  "compile_ir": {
+   "ts_compile": {
+    "baseline": 161517896,
+    "candidate": 137155424,
+    "change_percent": -15.08
+   },
+   "css_compile": {
+    "baseline": 285268885,
+    "candidate": 176286179,
+    "change_percent": -38.2
+   },
+   "rust_compile": {
+    "baseline": 4316221,
+    "candidate": 4071316,
+    "change_percent": -5.67
+   }
+  },
+  "wall_clock_best_of_three": {
+   "ts_compile": {
+    "baseline": 18.14,
+    "candidate": 16.459,
+    "unit": "ms"
+   },
+   "css_compile": {
+    "baseline": 25.624,
+    "candidate": 17.282,
+    "unit": "ms"
+   },
+   "rust_compile": {
+    "baseline": 0.487,
+    "candidate": 0.589,
+    "unit": "ms"
+   },
+   "ts_doc": {
+    "baseline": 1569.972,
+    "candidate": 1507.96,
+    "unit": "us"
+   },
+   "css_doc": {
+    "baseline": 87.74,
+    "candidate": 112.015,
+    "unit": "us"
+   },
+   "rust_doc": {
+    "baseline": 148.585,
+    "candidate": 149.366,
+    "unit": "us"
+   },
+   "css20": {
+    "baseline": 16.506,
+    "candidate": 11.679,
+    "unit": "us"
+   },
+   "ts_line": {
+    "baseline": 3.308,
+    "candidate": 3.671,
+    "unit": "us"
+   }
+  },
+  "plan_census": "Grammar patterns with a leading-run plan: TypeScript 2 of 279, CSS 2 of 117, Rust 0 of 81; with a leading-check jump: 2, 3 and 4."
+ },
+ "per_call_overhead": {
+  "case": "t_valid_int, \\A[+-]?\\d+\\z per token, about 180,000 tokens",
+  "ir_per_call": 808,
+  "wall_clock_ns_per_call": 40.5,
+  "exclusive_ir_per_call": {
+   "forward_search": 155,
+   "onig_search_inner_core_with_right_range": 154,
+   "match_at_vm_with_inlined_helpers": 190,
+   "stack_pop": 22,
+   "search_in_range": 79,
+   "search_in_range_inner": 52,
+   "finish_search": 31,
+   "thread_local_match_arg": 15
+  },
+  "sampling": "perf (cpu-clock) attributes 24% of the time to search_in_range, 62% of it to one 16-byte load of the (i32, Option<OnigRegion>) result: a store-forwarding stall after narrower stores.",
+  "experiments_not_kept": [
+   "Returning the result straight into the caller's slot through a drop guard: the stall moved to forward_search; wall clock -5% and +1% in two rounds.",
+   "Inlining search_in_range_inner and onig_search_inner_core: +1.0% instructions."
+  ]
+ },
+ "validation": {
+  "tests": "cargo test --release and --features match-cache pass; clippy with -D warnings is clean.",
+  "new_tests": [
+   "leading_run::folded_alternations_find_every_match",
+   "literal_trie::folded_leads_cover_every_read_character",
+   "regexec::after_next_newline_matches_the_character_loop",
+   "regparse::cached_ctype_ranges_build_the_same_class",
+   "regparse::cached_fold_expansion_matches_the_computed_one"
+  ],
+  "extended_tests": [
+   "leading_run::skips_preserve_results_and_limits (folded alternations, Unicode fold inputs)",
+   "leading_run::generated_expressions_match_the_original_path (folded alternation heads, fold pieces)",
+   "leading_run::jumps_follow_the_leading_checks"
+  ],
+  "fault_injections_caught": [
+   "folded starts ignore the reach before a non-ASCII byte",
+   "no candidates at non-ASCII bytes",
+   "window haystack not extended by the reach",
+   "lead-byte table built with the wrong continuation-byte shift (found during development)",
+   "newline skip without the UTF-8 check, landing on the newline, or with cur_range past end",
+   "ctype cache overwriting the class bits, or dropping the class's buffer",
+   "fold cache keyed without the case-fold flag, or not restoring the ranges on a hit"
+  ],
+  "c_differential": "The ffi differential against C Oniguruma could not run in this environment; CI runs it."
+ }
+}

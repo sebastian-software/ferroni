@@ -114,16 +114,33 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 
 #### Leading-check jumps (`src/leading_run.rs`, `src/regexec.rs`)
 
-- **Trigger**: the expression starts, after zero-width captures, marks and word boundaries, with `^`, with byte classes or literals (at least two, one with at most three bytes), or with a case-sensitive literal alternation (`AltLiterals`). The leading-run plans above also accept `C*` runs and runs behind `\b` whose class holds only word characters in the boundary's sense.
+- **Trigger**: the expression starts, after zero-width captures, marks and word boundaries, with `^`, with byte classes or literals (at least two, one with at most three bytes), or with a literal alternation (`AltLiterals`; folded tries as in the next entry). The leading-run plans above also accept `C*` runs and runs behind `\b` whose class holds only word characters in the boundary's sense.
 - **Execution**: the search moves its start to the next position that can pass these leading checks, then runs C's optimizer and loops unchanged from there:
   - the rarest leading class is found with `memchr` and the other classes are checked;
   - `^` jumps to the next line start, following `BeginLine`'s rules: NOTBOL, never the end, and the previous character head found by stepping back over 0x80..=0xBF in every encoding;
   - the alternation is found with Aho-Corasick, built on first use.
 - **Observability**: every position a jump passes would fail its first check with exactly one backtrack. The jumps share the leading-run gates: they stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit of one, callouts and the match cache. A jump over bytes that are not valid UTF-8 is not taken, and a jump in a range-bounded position loop never passes that loop's last attempt.
-- **Not applied**: expressions whose C optimizer already searches a string at the match start (for `^`, with its line-anchor check). Also bare alternations, which take `ac_alt`, and case-insensitive tries, whose folded matches Aho-Corasick would miss beyond ASCII.
+- **Not applied**: expressions whose C optimizer already searches a string at the match start (for `^`, with its line-anchor check). Also bare alternations, which take `ac_alt`.
 - **Bounds**: at most 16 leading classes per expression, and one lazily built automaton per alternation. The scans are linear, and no new dependency or unsafe code is added.
 - **Impact**: `\s*,\s*` 14×, `\b\w+\(` 11×, `(?i)regex` 9.2×, `^\s*//` 6.9×, `(?i)regular expression` 4.4×, keyword alternations 3.2×. Other expressions change by −1.4% to +2.2% in instructions. TextMate scanner searches change by at most ±0.2%, and their compilation by at most +0.6%.
 - **Validation and measurements**: [leading-check jumps](/perf/leading-check-jumps).
+
+#### Case-insensitive literal alternations (`src/leading_run.rs`, `src/literal_trie.rs`)
+
+- **Trigger**: the leading-check jump of an expression that starts with a folded literal trie, such as `(?i)(?:error|warn|fatal)` (see the literal trie entry). Its literals are ASCII.
+- **Execution**: an Aho-Corasick automaton over exact bytes finds the next ASCII case variant of a literal. It holds the case variants of the longest literal prefixes that stay within 64 strings, and so keeps the vectorized prefilter that ASCII case folding would switch off. The folded trie also matches non-ASCII input (Kelvin sign for `k`, `ß` for `ss`). Its walk reads ASCII one literal byte at a time and stops at a non-ASCII byte it cannot read. Such a match therefore starts at most the longest literal minus one byte before the first non-ASCII byte it holds, and the walk reads that byte. Those starts stay candidates. A 256-bit table of the lead bytes the walk can read rejects the other non-ASCII bytes, and the walk and the prefilter share one reader (`CaseFolds::read`).
+- **Observability**: the gates of the leading-check jumps.
+- **Bounds**: one lazily built automaton of at most 64 prefixes per trie, plus 32 bytes per folded trie. The scan runs in windows of 256 bytes, then twice as large each time, so a search scans in proportion to the distance it moves. No new dependency or unsafe code.
+- **Impact**: `(?i)(?:error|warn|fatal|panic)` over a log 9.2× (from 19× to 2.1× behind `regex`), over prose 3.0×, keyword alternations over code 1.7×, mostly non-ASCII text 3.2×.
+- **Validation and measurements**: [case-insensitive alternations and grammar compilation](/perf/folded-alternations-and-grammar-compilation).
+
+#### Line starts after `.*` (`src/regexec.rs`)
+
+- **Trigger**: C's forward loop for an expression with `ANCR_ANYCHAR_INF` (a leading `.*`), which attempts only line starts.
+- **Execution**: after a failed attempt, `memchr` finds the next newline instead of the character loop. It applies where the bytes up to the newline are valid UTF-8 or the encoding is single-byte, so the character steps would land on the same position. Otherwise the loop steps as before. The skip runs out of line; inlined, it changed the code of the other position loops in the same function.
+- **Bounds**: a `memchr` and a UTF-8 check over the skipped bytes, no new data.
+- **Impact**: `^.*status.*$` −51% instructions.
+- **Validation and measurements**: [case-insensitive alternations and grammar compilation](/perf/folded-alternations-and-grammar-compilation).
 
 #### ASCII fast paths in VM execution (`src/regexec.rs`)
 
@@ -154,6 +171,16 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Fast-path census**: `grammar_fast_path_census` asserts how many grammar patterns reach each of these paths, fused look-behinds and push guards included.
 - **Impact**: warm TypeScript line -57%, TypeScript document -44%, Rust document -37%, CSS document -33%, CSS grammar compile -25%, TypeScript compile -15% (wall clock).
 - **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](/perf/performance-structure-analysis#second-pass)
+
+#### Grammar compilation caches (`src/regparse.rs`, `src/regcomp.rs`)
+
+- **Ctype ranges**: into a class without multibyte ranges, a Unicode ctype (`[:alpha:]`, `\w`, `\p{…}`) adds the same bits and ranges every time. They are kept per thread, for up to 32 ctypes.
+- **Case-fold expansions**: the expansion of a `(?i)` class depends only on its bits and ranges, the case-fold flag and the encoding. Classes with at least 32 multibyte ranges keep it per thread, up to 32 expansions.
+- **Optimizer maps**: map merges gather eight map bytes into bits with one multiplication and visit only the members they add.
+- **Output**: unchanged. Tests compare each cache with the path it replaces, on first and repeated use, and the map operations with the byte loops.
+- **Bounds**: per thread, at most 32 ctype entries and 32 expansions, each the size of the class it stands for (a few KiB for `\w`). Lookups compare the whole key.
+- **Impact**: grammar compilation −38% instructions for CSS, −15% for TypeScript, −6% for Rust (CSS 25.6 → 17.3 ms).
+- **Measurements**: [case-insensitive alternations and grammar compilation](/perf/folded-alternations-and-grammar-compilation#grammar-compilation).
 
 #### Single-byte star loops (`src/regcomp.rs`)
 
