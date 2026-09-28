@@ -6818,6 +6818,30 @@ pub(crate) fn forward_search(
     }
 }
 
+/// Rust-only (ADR-008): where the character loop from `s` that stops behind
+/// the first newline, or at the first character boundary at or past
+/// `cur_range`, stops, found with `memchr`. `None` where that loop could
+/// step differently: over bytes that are not valid UTF-8 in a multibyte
+/// encoding, or with `cur_range` past `end`.
+#[inline]
+fn after_next_newline(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    cur_range: usize,
+    end: usize,
+) -> Option<usize> {
+    if s >= cur_range || cur_range > end {
+        return None;
+    }
+    let newline = memchr::memchr(b'\n', &str_data[s..cur_range]).map(|off| s + off);
+    let stop = newline.unwrap_or(cur_range);
+    if enc.max_enc_len() > 1 && std::str::from_utf8(&str_data[s..stop]).is_err() {
+        return None;
+    }
+    Some(newline.map_or(cur_range, |at| at + 1))
+}
+
 /// Check if encoding is single-byte.
 fn enc_is_singlebyte(enc: OnigEncoding) -> bool {
     enc.max_enc_len() == 1
@@ -7678,11 +7702,19 @@ fn onig_search_inner_core_with_right_range(
                         s = msa.skip_search;
                     }
                     // Skip past non-newline chars
-                    while s < cur_range && !is_mbc_newline(enc, str_data, prev, end) {
-                        let prev2 = s;
-                        s = advance_char_to_end(enc, str_data, s, end);
-                        if is_mbc_newline(enc, str_data, prev2, end) {
-                            break;
+                    let skip = !is_mbc_newline(enc, str_data, prev, end);
+                    if let Some(next) = skip
+                        .then(|| after_next_newline(enc, str_data, s, cur_range, end))
+                        .flatten()
+                    {
+                        s = next;
+                    } else {
+                        while s < cur_range && skip {
+                            let prev2 = s;
+                            s = advance_char_to_end(enc, str_data, s, end);
+                            if is_mbc_newline(enc, str_data, prev2, end) {
+                                break;
+                            }
                         }
                     }
                 }
@@ -8153,6 +8185,49 @@ mod tests {
     use crate::regcomp;
     use crate::regparse;
     use crate::regparse_types::ParseEnv;
+
+    /// `after_next_newline` stops where the character loop it replaces
+    /// stops, and declines where it cannot vouch for that loop's steps.
+    #[test]
+    fn after_next_newline_matches_the_character_loop() {
+        let utf8: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        let ascii: OnigEncoding = &crate::encodings::ascii::ONIG_ENCODING_ASCII;
+        let texts: &[&[u8]] = &[
+            b"",
+            b"abc",
+            b"ab\ncd\n",
+            b"\n\n",
+            "caf\u{e9}\nx\u{20ac}y\n".as_bytes(),
+            b"a\xe2\nb\nc",
+            b"\xff\xfe\n",
+            b"x\xc3",
+            b"\xe2\x82\xac\n",
+        ];
+        let mut fast = 0;
+        for enc in [utf8, ascii] {
+            for &text in texts {
+                for end in 0..=text.len() {
+                    for s in 0..=end {
+                        for cur_range in s..=end + 1 {
+                            let mut expected = s;
+                            while expected < cur_range {
+                                let at = expected;
+                                expected = advance_char_to_end(enc, text, expected, end);
+                                if is_mbc_newline(enc, text, at, end) || expected == at {
+                                    break;
+                                }
+                            }
+                            if let Some(found) = after_next_newline(enc, text, s, cur_range, end) {
+                                assert_eq!(found, expected, "{text:?} {s} {cur_range} {end}");
+                                fast += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(fast > 200, "{fast}");
+    }
 
     fn make_test_context() -> (RegexType, ParseEnv) {
         use crate::regsyntax::OnigSyntaxOniguruma;
