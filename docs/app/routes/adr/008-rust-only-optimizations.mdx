@@ -99,6 +99,19 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Bounds**: constant scratch space, linear prefix scanning, no new compiled metadata, opcode, allocation, dependency, or unsafe code. Backward and equal-endpoint searches retain their existing paths.
 - **Validation and measurements**: [atomic class prefix evaluation](/perf/atomic-class-prefix), including 500,736 exact original-path comparisons, C/cache differential cases, repeated general workloads, and broader scanner/search/compilation checks.
 
+#### Leading class runs and bytecode start bytes (`src/leading_run.rs`, `src/regexec.rs`)
+
+- **Trigger**: the expression starts with a class run `C+` (`CClass`, `CClassMix`, `Word` or `WordAscii` head and star with one class, optionally inside capture or atomic groups), or its bytecode start map excludes some byte. This is the case where C's optimizer string sits at an unbounded distance from the match start (`[\w.+-]+@…` selects `@` at `1..∞`), so C attempts every position.
+- **Execution**: a compile-time plan changes only which positions reach the VM; bytecode and C's optimizer choice are unchanged.
+  - After a failed attempt, the search continues at the end of its run. Every later start in the run tries a subset of the same end positions with the same state.
+  - An atomic run followed by a literal outside the class is searched from the literal. `memmem` finds the occurrence, the search scans back to the start of its run, and only that position is attempted.
+  - The bytecode start map (`derive_start_byte_map`) filters the fallthrough loop behind an unbounded optimizer and bounded windows wider than one position.
+- **Observability**: every left-out attempt would fail with at most the backtracks of an attempt that already failed, or with a count known at compile time: one for the reverse scan, `miss_retries` for the start map. The plans stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit at or below that count, callouts and the match cache. Back references, conditions, position checks, `\K`, calls, absent operators and capture-aware empty checks disable the run plan.
+- **Malformed UTF-8**: the reverse scan needs a valid UTF-8 segment, and falls back to attempting each position otherwise. A malformed lead byte lets the VM's run step over a byte the scan stops at. The forward scan steps like the VM's star loops and stops early where the VM could decide differently.
+- **Bounds**: one boxed plan and one boxed 256-byte map per eligible expression. The scans are linear; the reverse scan never passes the previous occurrence. The paths are out of line. No new dependency or unsafe code.
+- **Impact**: email-like scans 22–31×, number extraction 11×, `[a-z]+ing\b`, `\w+ing\b` and captured log fields 2.6–2.9×. Other expressions change by −1.5% to +1.4% in instructions, and TextMate scanner searches by at most ±0.2%.
+- **Validation and measurements**: [leading-run skips](/perf/leading-run-skips). Tests compare results, capture bounds and limit errors with the original path, exhaustively on small inputs with malformed UTF-8 and on 4,000 generated expressions.
+
 #### ASCII fast paths in VM execution (`src/regexec.rs`)
 
 Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` traversal) for ASCII bytes, avoiding full UTF-8 decode on the hot path.

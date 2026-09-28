@@ -38,7 +38,8 @@ already takes an equivalent fast path.
 | 9   | Table lookup for Unicode ctypes                        | `\w`, `\s`, `\d` on non-ASCII text                       | Profile: 27% in `onigenc_unicode_is_code_ctype`                     |
 
 Items 1–3 share one mechanism and should be designed together (see
-[recommendation](#recommendation)).
+[recommendation](#recommendation)). They are now implemented; see
+[leading-run skips](/perf/leading-run-skips).
 
 ## Setup
 

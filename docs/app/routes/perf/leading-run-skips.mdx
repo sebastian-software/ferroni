@@ -1,0 +1,137 @@
+---
+order: 16
+title: "Leading-Run Skips (2026-09)"
+---
+
+# Leading-Run Skips
+
+Some expressions start with a character-class run in front of an optimizer
+string at an unbounded distance: `[\w.+-]+@…`, `(?>\w+)@\w++`, `\d+\.\d+`.
+The forward search used to enter the VM at almost every byte for these, and
+each attempt rescanned the rest of its word. Three search-side plans now
+choose fewer start positions. On the
+[execution profile](/perf/execution-profiling) matrix they cut email-like
+scans by **22–31×**, number extraction by **11×**, and `[a-z]+ing\b`,
+`\w+ing\b` and captured log fields by **2.6–2.9×**. Every other workload
+changes by −1.5% to +1.4% in callgrind instructions. The TextMate scanner
+documents change by at most ±0.2% in search instructions.
+
+[Raw timings, instruction counts, scanner measurements and validation notes](https://github.com/sebastian-software/ferroni/blob/main/benches/results/leading-run-skips-2026-09-28.json)
+
+## What changed
+
+The compiler plans the skips once, after every other bytecode pass
+(`src/leading_run.rs`). The bytecode and C's optimizer choice are unchanged.
+Only the set of positions that reach `match_at` shrinks.
+
+1. **Failed-run skip.** The expression starts with `C+`, where the head and the
+   star instruction share one class (`CClass`, `CClassMix`, `Word` or
+   `WordAscii`). The run may sit inside capture or atomic groups. Take a
+   failed attempt at `p` whose run ends at `q`. An attempt from any
+   `p' ∈ (p, q)` tries a subset of the same end positions, with the same text
+   and state, so it fails too. It also needs no more backtracks than the
+   attempt at `p`. The search therefore continues at `q`.
+2. **Reverse run from the literal.** The run is atomic, which the compiler
+   produces automatically when the next literal cannot continue it. A literal
+   whose first byte the class does not hold follows the run. Every match then
+   starts in the run that ends at an occurrence of that literal. The search
+   finds the occurrence with `memmem` and scans back to the start of its run.
+   It attempts only that position. Every start it leaves out would fail with
+   one backtrack, or with at most the backtracks of the attempted position.
+3. **Bytecode start map.** `derive_start_byte_map`, which the RegSet already
+   uses, filters two kinds of positions: those of the fallthrough loop behind
+   an unbounded optimizer, and those of bounded optimizer windows wider than
+   one position. `miss_retries` counts the backtracks an attempt at an
+   excluded byte would count. That is the fixed counts of guarded pushes in
+   front of the first character instruction, plus its failure. The map is
+   used only when the per-match retry limit is above that count.
+
+### What keeps the original path
+
+- Expressions with back references, conditions, position checks such as
+  `\G`, `\K`, subexpression calls, callouts, absent operators, or
+  capture-aware empty checks keep the original path. These make the rest of
+  the expression depend on where the attempt started.
+- Searches with FIND_LONGEST, a search retry budget, stack or time limits, a
+  per-match limit the skipped attempts could reach, or the opt-in match cache
+  also keep it. Backward searches keep their existing loop.
+- The reverse scan applies only to valid UTF-8. A malformed lead byte lets
+  the VM's run step over a byte that a byte-wise scan stops at, so an invalid
+  segment attempts every position, as before. The tests contain such inputs;
+  without the check they fail.
+- The forward scan needs no validation. It steps by the encoding's character
+  length, as the VM's star loops and the search loop do, and stops early
+  wherever the VM could decide differently. A failure at a multibyte
+  character keeps the plain step, because its class lookup costs about as
+  much as the attempt did.
+
+## Measurements
+
+The corpora, harness and noise caveats are those of the
+[execution profile](/perf/execution-profiling). The baseline is `main` at
+`1342339`, the candidate `0e6d848`. Both were built with the release profile
+and thin LTO on a shared 4-vCPU x86_64 VM. Times are the best of three
+interleaved rounds. Instructions (Ir) come from one callgrind pass per case,
+including process start, corpus load and compilation. Every case found the
+same matches in both builds.
+
+| Case           | Baseline ms | Candidate ms | Speedup | Instructions |
+| -------------- | ----------: | -----------: | ------: | -----------: |
+| `email_scan`   |        56.3 |         1.84 |   30.6× |       −95.5% |
+| `v_line_email` |        44.6 |         2.01 |   22.2× |       −95.6% |
+| `atomic_poss`  |        53.8 |         1.81 |   29.7× |       −95.8% |
+| `float_num`    |        23.5 |         2.10 |   11.2× |       −89.2% |
+| `log_caps`     |        27.8 |         9.50 |    2.9× |       −70.5% |
+| `class_lower`  |        9.23 |         3.35 |    2.8× |       −67.8% |
+| `suffix_lit`   |        14.1 |         5.40 |    2.6× |       −60.5% |
+| `date_named`   |        9.91 |         5.92 |    1.7× |       −50.0% |
+
+`email_scan`, `v_line_email`, `atomic_poss` and `log_caps` use the reverse
+run. `class_lower` and `suffix_lit` use the failed-run skip, because their
+literal starts with a class member. `float_num` and `date_named` use the
+start map. `email_scan` is now about 3× from the `regex` crate (0.60 ms),
+and `log_caps` is faster than it (10.9 ms).
+
+**The other 29 cases** change by −1.5% to +1.4% in instructions. The largest
+increases are `unicode_letters` (+1.4%), `char_digit` (+1.3%), `ident`
+(+1.2%) and `word` (+1.1%). All four have many short matches, and the cost
+comes from one pointer check per search and per failed attempt. The
+wall-clock differences of these cases stayed within the ±15% noise of the
+host, in both directions.
+
+### TextMate scanner
+
+A driver tokenizes the documents of `regression_scanner_documents` and the
+`css_20_patterns_tokenize` input line by line, with the same loop as the
+benchmark. Search instructions are measured per iteration: the run with N
+iterations minus the run without iterations, divided by N.
+
+| Workload                           | Search Ir, baseline | Search Ir, candidate | Change |
+| ---------------------------------- | ------------------: | -------------------: | -----: |
+| TypeScript, 279 patterns, 28 lines |          14,558,359 |           14,562,140 | +0.03% |
+| CSS, 117 patterns, 19 lines        |           1,619,548 |            1,619,561 | +0.00% |
+| Rust, 81 patterns, 31 lines        |           1,649,238 |            1,646,252 | −0.18% |
+| CSS, 20 patterns, tokenize         |             195,035 |              195,194 | +0.08% |
+| TypeScript line, 279 patterns      |              55,228 |               55,320 | +0.17% |
+
+Grammar parsing plus scanner compilation costs +0.5% (TypeScript, CSS) to
++2.8% (the 20-pattern CSS set) in instructions. Most of that is
+`derive_start_byte_map` and the plan for each pattern. One Criterion run of
+`regression_bench` moved individual rows by −35% to +40% in both
+directions, with a baseline that overlapped local builds. It is recorded in
+the raw results but not used here.
+
+## Validation
+
+- `cargo test --release` passes the unit tests, all `compat_*` suites and
+  `api_test`. It also passes with `--features match-cache`.
+- The new tests in `src/leading_run.rs` compare results, capture bounds and
+  limit errors with the same compiled expression without its plans. One test
+  covers every start and range, three options, retry, search-budget and stack
+  limits, and UTF-8 and ASCII. Its inputs include malformed UTF-8. The test
+  makes more than 100,000 comparisons. A second test compares 4,000
+  generated expressions match by match.
+- Three injected faults fail the tests: an off-by-one in the reverse scan, an
+  off-by-one in the run skip, and a missing UTF-8 segment check.
+- The `ffi` differential against C Oniguruma could not run in this
+  environment; CI runs it.
