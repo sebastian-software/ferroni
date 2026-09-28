@@ -4780,125 +4780,7 @@ fn prs_cc(
     // - FOLDS2/FOLDS3 (~73 entries): direct iteration, no callback
     if opton_ignorecase(env.options) {
         let cc = node.as_cclass_mut().unwrap();
-        let ascii_only = crate::regenc::case_fold_is_ascii_only(env.case_fold_flag);
-        let flag = env.case_fold_flag;
-        let mut codes_to_add: Vec<OnigCodePoint> = Vec::new();
-        let mut multi_char_alts: Vec<Vec<u8>> = Vec::new();
-        // Decoded once; every membership test below is a binary search here.
-        let mb_ranges = cc.mbuf.as_ref().map_or_else(Vec::new, code_ranges_of);
-
-        // --- Part 1: Single-char folds (FOLDS1) ---
-
-        // 1a. Bitset: inverted iteration over set bits (at most 256 lookups)
-        let bs_limit = if ascii_only { 128 } else { SINGLE_BYTE_SIZE };
-        for cp in 0..bs_limit {
-            if !bitset_at(&cc.bs, cp) {
-                continue;
-            }
-            if let Some((fold, unfolds)) = crate::unicode::case_fold_group_1(cp as OnigCodePoint) {
-                if !ascii_only || fold < 128 {
-                    codes_to_add.push(fold);
-                }
-                for &uf in unfolds {
-                    if !ascii_only || uf < 128 {
-                        codes_to_add.push(uf);
-                    }
-                }
-            }
-        }
-
-        // 1b. Multi-byte ranges (UTF-8 also stores 0x80-0xFF there): every
-        // fold group with a member inside the ranges contributes all members.
-        if !ascii_only {
-            crate::unicode::for_each_folds1_group_in_ranges(&mb_ranges, |fold, unfolds| {
-                codes_to_add.push(fold);
-                codes_to_add.extend_from_slice(unfolds);
-            });
-        }
-
-        // --- Part 2: Multi-char folds (FOLDS2/FOLDS3) ---
-        // These have few entries (~73 total), so iterating them is cheap.
-
-        // Helper: check if a codepoint is in the (non-negated) CClass.
-        // Must check BOTH bitset and mbuf — for multibyte encodings like UTF-8,
-        // codepoints < 256 may be stored in mbuf when they require multibyte
-        // encoding (e.g., ß = U+00DF is 2 bytes in UTF-8).
-        let is_in_cc = |cp: OnigCodePoint| -> bool {
-            let in_bs = if (cp as usize) < SINGLE_BYTE_SIZE {
-                bitset_at(&cc.bs, cp as usize)
-            } else {
-                false
-            };
-            in_bs || code_ranges_contain(&mb_ranges, cp)
-        };
-
-        // FOLDS2
-        crate::unicode::for_each_folds2_group(flag, |fold, unfolds| {
-            let any_in_class = unfolds.iter().any(|&uf| is_in_cc(uf));
-            if any_in_class {
-                let mut buf = Vec::new();
-                let mut tmp = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
-                for &cp in fold {
-                    let len = enc.code_to_mbc(cp, &mut tmp);
-                    if len > 0 {
-                        buf.extend_from_slice(&tmp[..len as usize]);
-                    }
-                }
-                if !buf.is_empty() {
-                    multi_char_alts.push(buf);
-                }
-                for &uf in unfolds {
-                    codes_to_add.push(uf);
-                }
-            }
-        });
-
-        // FOLDS3
-        crate::unicode::for_each_folds3_group(flag, |fold, unfolds| {
-            let any_in_class = unfolds.iter().any(|&uf| is_in_cc(uf));
-            if any_in_class {
-                let mut buf = Vec::new();
-                let mut tmp = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
-                for &cp in fold {
-                    let len = enc.code_to_mbc(cp, &mut tmp);
-                    if len > 0 {
-                        buf.extend_from_slice(&tmp[..len as usize]);
-                    }
-                }
-                if !buf.is_empty() {
-                    multi_char_alts.push(buf);
-                }
-                for &uf in unfolds {
-                    codes_to_add.push(uf);
-                }
-            }
-        });
-
-        // Add collected codes to the CClass. Bitset bits are O(1) and
-        // idempotent; multi-byte codes not yet present are merged into the
-        // ranges in one pass.
-        let mut mb_codes: Vec<OnigCodePoint> = Vec::new();
-        for code in codes_to_add {
-            if (code as usize) < SINGLE_BYTE_SIZE {
-                bitset_set_bit(&mut cc.bs, code as usize);
-            } else if !code_ranges_contain(&mb_ranges, code) {
-                mb_codes.push(code);
-            }
-        }
-        if !mb_codes.is_empty() {
-            mb_codes.sort_unstable();
-            mb_codes.dedup();
-            let merged = union_code_ranges_with_points(&mb_ranges, &mb_codes);
-            if merged.len() <= ONIG_MAX_MULTI_BYTE_RANGES_NUM as usize {
-                cc.mbuf = Some(code_range_buf_of(&merged));
-            } else {
-                // Keep add_code_range_to_buf's behavior at the range limit:
-                // additions that would exceed it are dropped.
-                for code in mb_codes {
-                    add_code_range_to_buf(&mut cc.mbuf, code, code);
-                }
-            }
-        }
+        let multi_char_alts = fold_cclass_cached(cc, env.case_fold_flag, enc);
 
         // If there are multi-char fold alternatives, wrap in Alt(CC, string1, ...)
         if !multi_char_alts.is_empty() {
@@ -4934,6 +4816,201 @@ fn prs_cc(
 
     env.parse_depth -= 1;
     Ok(node)
+}
+
+/// The multibyte ranges from which a class's case-fold expansion is kept.
+const FOLD_CACHE_MIN_RANGES: usize = 32;
+/// Most expansions kept per thread.
+const FOLD_CACHE_ENTRIES: usize = 32;
+
+/// `fold_cclass`, kept per thread for classes with many multibyte ranges.
+/// Rust-only: grammars fold the same large classes (`(?i)[\w-]`) again and
+/// again, and each expansion visits thousands of fold entries. The result
+/// depends only on the class's bits and ranges, the case-fold flag and the
+/// encoding.
+fn fold_cclass_cached(
+    cc: &mut CClassNode,
+    flag: OnigCaseFoldType,
+    enc: OnigEncoding,
+) -> Vec<Vec<u8>> {
+    let ranges = cc
+        .mbuf
+        .as_ref()
+        .map_or(0, |mbuf| bbuf_read_code_point(mbuf, 0) as usize);
+    if ranges < FOLD_CACHE_MIN_RANGES {
+        return fold_cclass(cc, flag, enc);
+    }
+    type Entry = (
+        *const (),
+        OnigCaseFoldType,
+        (BitSet, Vec<u8>),
+        (BitSet, Option<BBuf>, Vec<Vec<u8>>),
+    );
+    thread_local! {
+        static CACHE: std::cell::RefCell<Vec<Entry>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let enc_id = enc as *const dyn Encoding as *const ();
+    let data = cc
+        .mbuf
+        .as_ref()
+        .map(|mbuf| mbuf.data.clone())
+        .unwrap_or_default();
+    let key = (cc.bs, data);
+    let cached = CACHE.with(|cache| {
+        cache
+            .borrow()
+            .iter()
+            .find(|entry| entry.0 == enc_id && entry.1 == flag && entry.2 == key)
+            .map(|entry| entry.3.clone())
+    });
+    if let Some((bs, mbuf, alts)) = cached {
+        cc.bs = bs;
+        cc.mbuf = mbuf;
+        return alts;
+    }
+    let alts = fold_cclass(cc, flag, enc);
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= FOLD_CACHE_ENTRIES {
+            cache.remove(0);
+        }
+        cache.push((enc_id, flag, key, (cc.bs, cc.mbuf.clone(), alts.clone())));
+    });
+    alts
+}
+
+/// Case-fold expansion: add fold equivalents for all codes in the class,
+/// and return the strings of the multi-character folds it holds.
+///
+/// Strategy: invert the iteration so the cost follows the class, not the
+/// fold tables, and avoid the `dyn FnMut` dispatch of apply_all_case_fold.
+///
+/// - Bitset (0-255): iterate set bits, look up their fold groups
+/// - Multi-byte ranges: walk the class's ranges through the sorted fold
+///   keys (two binary searches per range), then merge the additions into
+///   the ranges in one pass instead of one buffer rewrite per code point
+/// - FOLDS2/FOLDS3 (~73 entries): direct iteration, no callback
+fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -> Vec<Vec<u8>> {
+    let ascii_only = crate::regenc::case_fold_is_ascii_only(flag);
+    let mut codes_to_add: Vec<OnigCodePoint> = Vec::new();
+    let mut multi_char_alts: Vec<Vec<u8>> = Vec::new();
+    // Decoded once; every membership test below is a binary search here.
+    let mb_ranges = cc.mbuf.as_ref().map_or_else(Vec::new, code_ranges_of);
+
+    // --- Part 1: Single-char folds (FOLDS1) ---
+
+    // 1a. Bitset: inverted iteration over set bits (at most 256 lookups)
+    let bs_limit = if ascii_only { 128 } else { SINGLE_BYTE_SIZE };
+    for cp in 0..bs_limit {
+        if !bitset_at(&cc.bs, cp) {
+            continue;
+        }
+        if let Some((fold, unfolds)) = crate::unicode::case_fold_group_1(cp as OnigCodePoint) {
+            if !ascii_only || fold < 128 {
+                codes_to_add.push(fold);
+            }
+            for &uf in unfolds {
+                if !ascii_only || uf < 128 {
+                    codes_to_add.push(uf);
+                }
+            }
+        }
+    }
+
+    // 1b. Multi-byte ranges (UTF-8 also stores 0x80-0xFF there): every
+    // fold group with a member inside the ranges contributes all members.
+    if !ascii_only {
+        crate::unicode::for_each_folds1_group_in_ranges(&mb_ranges, |fold, unfolds| {
+            codes_to_add.push(fold);
+            codes_to_add.extend_from_slice(unfolds);
+        });
+    }
+
+    // --- Part 2: Multi-char folds (FOLDS2/FOLDS3) ---
+    // These have few entries (~73 total), so iterating them is cheap.
+
+    // Helper: check if a codepoint is in the (non-negated) CClass.
+    // Must check BOTH bitset and mbuf — for multibyte encodings like UTF-8,
+    // codepoints < 256 may be stored in mbuf when they require multibyte
+    // encoding (e.g., ß = U+00DF is 2 bytes in UTF-8).
+    let is_in_cc = |cp: OnigCodePoint| -> bool {
+        let in_bs = if (cp as usize) < SINGLE_BYTE_SIZE {
+            bitset_at(&cc.bs, cp as usize)
+        } else {
+            false
+        };
+        in_bs || code_ranges_contain(&mb_ranges, cp)
+    };
+
+    // FOLDS2
+    crate::unicode::for_each_folds2_group(flag, |fold, unfolds| {
+        let any_in_class = unfolds.iter().any(|&uf| is_in_cc(uf));
+        if any_in_class {
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
+            for &cp in fold {
+                let len = enc.code_to_mbc(cp, &mut tmp);
+                if len > 0 {
+                    buf.extend_from_slice(&tmp[..len as usize]);
+                }
+            }
+            if !buf.is_empty() {
+                multi_char_alts.push(buf);
+            }
+            for &uf in unfolds {
+                codes_to_add.push(uf);
+            }
+        }
+    });
+
+    // FOLDS3
+    crate::unicode::for_each_folds3_group(flag, |fold, unfolds| {
+        let any_in_class = unfolds.iter().any(|&uf| is_in_cc(uf));
+        if any_in_class {
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
+            for &cp in fold {
+                let len = enc.code_to_mbc(cp, &mut tmp);
+                if len > 0 {
+                    buf.extend_from_slice(&tmp[..len as usize]);
+                }
+            }
+            if !buf.is_empty() {
+                multi_char_alts.push(buf);
+            }
+            for &uf in unfolds {
+                codes_to_add.push(uf);
+            }
+        }
+    });
+
+    // Add collected codes to the CClass. Bitset bits are O(1) and
+    // idempotent; multi-byte codes not yet present are merged into the
+    // ranges in one pass.
+    let mut mb_codes: Vec<OnigCodePoint> = Vec::new();
+    for code in codes_to_add {
+        if (code as usize) < SINGLE_BYTE_SIZE {
+            bitset_set_bit(&mut cc.bs, code as usize);
+        } else if !code_ranges_contain(&mb_ranges, code) {
+            mb_codes.push(code);
+        }
+    }
+    if !mb_codes.is_empty() {
+        mb_codes.sort_unstable();
+        mb_codes.dedup();
+        let merged = union_code_ranges_with_points(&mb_ranges, &mb_codes);
+        if merged.len() <= ONIG_MAX_MULTI_BYTE_RANGES_NUM as usize {
+            cc.mbuf = Some(code_range_buf_of(&merged));
+        } else {
+            // Keep add_code_range_to_buf's behavior at the range limit:
+            // additions that would exceed it are dropped.
+            for code in mb_codes {
+                add_code_range_to_buf(&mut cc.mbuf, code, code);
+            }
+        }
+    }
+
+    multi_char_alts
 }
 
 // ============================================================================
@@ -7602,6 +7679,79 @@ pub fn onig_parse_tree(
 mod tests {
     use super::*;
     use crate::regsyntax::OnigSyntaxOniguruma;
+
+    /// A kept case-fold expansion is the one `fold_cclass` computes, for
+    /// classes above and below the size that is kept.
+    #[test]
+    fn cached_fold_expansion_matches_the_computed_one() {
+        let enc: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        let copy = |class: &CClassNode| CClassNode {
+            flags: class.flags,
+            bs: class.bs,
+            mbuf: class.mbuf.clone(),
+        };
+        let mut classes = Vec::new();
+        for (ctype, not) in [
+            (ONIGENC_CTYPE_WORD, false),
+            (ONIGENC_CTYPE_ALPHA, false),
+            (ONIGENC_CTYPE_WORD, true),
+            (ONIGENC_CTYPE_SPACE, false),
+        ] {
+            let mut sb_out = 0;
+            enc.get_ctype_code_range(ctype, &mut sb_out);
+            let mut cc = CClassNode {
+                flags: 0,
+                bs: [0; BITSET_REAL_SIZE],
+                mbuf: None,
+            };
+            bitset_set_bit(&mut cc.bs, b'-' as usize);
+            assert_eq!(
+                add_ctype_ranges_to_cc(&mut cc, ctype as i32, not, enc, sb_out),
+                0
+            );
+            classes.push(cc);
+        }
+        classes.push(CClassNode {
+            flags: 0,
+            bs: [0; BITSET_REAL_SIZE],
+            mbuf: code_range_buf_of(&[(0xDF, 0xDF), (0x212A, 0x212A)]).into(),
+        });
+        // Single capitals whose lowercase letters the expansion adds.
+        let capitals: Vec<(OnigCodePoint, OnigCodePoint)> = (0x100..0x120)
+            .chain(0x391..0x3A1)
+            .chain(0x410..0x430)
+            .step_by(2)
+            .map(|code| (code, code))
+            .collect();
+        classes.push(CClassNode {
+            flags: 0,
+            bs: [0; BITSET_REAL_SIZE],
+            mbuf: code_range_buf_of(&capitals).into(),
+        });
+        let mut kept = 0;
+        for flag in [ONIGENC_CASE_FOLD_MIN, ONIGENC_CASE_FOLD_ASCII_ONLY] {
+            for class in &classes {
+                let mut expected = copy(class);
+                let expected_alts = fold_cclass(&mut expected, flag, enc);
+                for _ in 0..2 {
+                    let mut cc = copy(class);
+                    let alts = fold_cclass_cached(&mut cc, flag, enc);
+                    assert_eq!(alts, expected_alts);
+                    assert_eq!(cc.bs, expected.bs);
+                    assert_eq!(
+                        cc.mbuf.as_ref().map(|b| &b.data),
+                        expected.mbuf.as_ref().map(|b| &b.data)
+                    );
+                }
+                let ranges = class
+                    .mbuf
+                    .as_ref()
+                    .map_or(0, |b| bbuf_read_code_point(b, 0));
+                kept += usize::from(ranges as usize >= FOLD_CACHE_MIN_RANGES);
+            }
+        }
+        assert!(kept >= 6, "{kept}");
+    }
 
     /// The kept ctype bits and ranges give the class the uncached path
     /// builds, on the first call and on repeated ones.
