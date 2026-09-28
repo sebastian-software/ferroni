@@ -14,6 +14,9 @@ pub struct LiteralTrie {
     raw_literals: Vec<Vec<u8>>,
     /// Unicode case folding of a case-insensitive UTF-8 alternation.
     folds: Option<Box<CaseFolds>>,
+    /// The bytes that can start a non-ASCII character the folded walk
+    /// reads, as a bitset over byte values.
+    folded_leads: [u64; 4],
 }
 
 struct TrieNode {
@@ -51,6 +54,13 @@ pub(crate) struct CaseFolds {
     pub(crate) accepted: Vec<Vec<Vec<u8>>>,
 }
 
+/// A non-ASCII character as the folded walk reads it: the lowercase letter
+/// of a class that accepts it, or the lowercase text of a ligature.
+enum Folded<'a> {
+    Letter(u8),
+    Text(&'a [u8]),
+}
+
 /// A character consumed by the folded walk: its input bytes and how many
 /// literal bytes (lowercase ASCII symbols) it stands for.
 #[derive(Clone, Copy)]
@@ -73,6 +83,53 @@ impl CaseFolds {
             .iter()
             .find(|(ligature, _)| ligature == bytes)
             .map(|(_, text)| text.as_slice())
+    }
+
+    /// How the folded walk reads the non-ASCII character at `input[i]`, and
+    /// its length; `None` stops the walk. As a class instruction reads a
+    /// character: length from the lead byte, which must fit before `end`,
+    /// then its code.
+    fn read(&self, input: &[u8], i: usize, end: usize) -> Option<(Folded<'_>, usize)> {
+        let len = ONIG_ENCODING_UTF8.mbc_enc_len(&input[i..]);
+        if len == 1 || i + len > end {
+            return None;
+        }
+        let bytes = &input[i..i + len];
+        let code = ONIG_ENCODING_UTF8.mbc_to_code(bytes, len);
+        if let Some(member_of) = self.class_member(code) {
+            Some((Folded::Letter(member_of), len))
+        } else {
+            self.ligature(bytes).map(|text| (Folded::Text(text), len))
+        }
+    }
+
+    /// The bytes that start a character [`CaseFolds::read`] accepts. A
+    /// character's code takes the lead byte's bits and the low six bits of
+    /// each continuation byte, so a lead byte can start a class member
+    /// exactly when the member, encoded behind that lead byte, reads back.
+    fn leads(&self) -> [u64; 4] {
+        let mut leads = [0u64; 4];
+        let mut set = |byte: u8| leads[byte as usize / 64] |= 1 << (byte % 64);
+        for lead in 0x80..=0xFFu8 {
+            let len = ONIG_ENCODING_UTF8.mbc_enc_len(&[lead]);
+            let reads = self.class_members.iter().any(|&(code, _)| {
+                let bytes: Vec<u8> = std::iter::once(lead)
+                    .chain(
+                        (0..len - 1)
+                            .rev()
+                            .map(|k| 0x80 | ((code >> (6 * k)) & 0x3F) as u8),
+                    )
+                    .collect();
+                self.read(&bytes, 0, bytes.len()).is_some()
+            });
+            if reads {
+                set(lead);
+            }
+        }
+        for (ligature, _) in &self.ligatures {
+            set(ligature[0]);
+        }
+        leads
     }
 
     /// Whether the characters consumed for `literal` fit its segments: a
@@ -130,6 +187,7 @@ impl LiteralTrie {
             case_insensitive,
             raw_literals: literals.iter().map(|l| l.to_vec()).collect(),
             folds: None,
+            folded_leads: [0; 4],
         };
 
         for (index, lit) in literals.iter().enumerate() {
@@ -144,6 +202,7 @@ impl LiteralTrie {
     /// like `literals`.
     pub(crate) fn build_folded(literals: &[&[u8]], folds: CaseFolds) -> Self {
         let mut trie = Self::build(literals, true);
+        trie.folded_leads = folds.leads();
         trie.folds = Some(Box::new(folds));
         trie
     }
@@ -199,6 +258,19 @@ impl LiteralTrie {
         root.terminal
             .is_none()
             .then(|| root.children.iter().map(|&(byte, _)| byte))
+    }
+
+    /// Whether a match can read the non-ASCII byte at `input[i]` when the
+    /// walk reaches it, with `end` bounding the character. The walk stops
+    /// at any other non-ASCII byte: literals are ASCII.
+    #[inline]
+    pub(crate) fn reads_non_ascii_at(&self, input: &[u8], i: usize, end: usize) -> bool {
+        let lead = input[i];
+        self.folded_leads[lead as usize / 64] & (1 << (lead % 64)) != 0
+            && self
+                .folds
+                .as_ref()
+                .is_some_and(|folds| folds.read(input, i, end).is_some())
     }
 
     /// Returns whether this trie was built with case-insensitive matching.
@@ -315,21 +387,13 @@ impl LiteralTrie {
                 letter[0] = b.to_ascii_lowercase();
                 (&letter, 1)
             } else {
-                // As a class instruction reads a character: length from the
-                // lead byte, which must fit before `end`, then its code.
-                let len = ONIG_ENCODING_UTF8.mbc_enc_len(&input[i..]);
-                if len == 1 || i + len > end {
-                    return;
-                }
-                let bytes = &input[i..i + len];
-                let code = ONIG_ENCODING_UTF8.mbc_to_code(bytes, len);
-                if let Some(member_of) = folds.class_member(code) {
-                    letter[0] = member_of;
-                    (&letter, len)
-                } else if let Some(text) = folds.ligature(bytes) {
-                    (text, len)
-                } else {
-                    return;
+                match folds.read(input, i, end) {
+                    Some((Folded::Letter(member_of), len)) => {
+                        letter[0] = member_of;
+                        (&letter, len)
+                    }
+                    Some((Folded::Text(text), len)) => (text, len),
+                    None => return,
                 }
             };
             // A literal ending inside a ligature cannot match; its node is
@@ -380,6 +444,43 @@ mod tests {
         assert_eq!(trie.find_match(b"abce", 0, 4), Some(3));
         assert_eq!(trie.find_match(b"abx", 0, 3), Some(2));
         assert_eq!(trie.find_match(b"axx", 0, 3), None);
+    }
+
+    /// Every byte that starts a character the folded walk reads is in the
+    /// lead table, including malformed sequences.
+    #[test]
+    fn folded_leads_cover_every_read_character() {
+        use crate::oniguruma::*;
+        let mut checked = 0;
+        for pattern in [r"(?i)(?:ks|ss|st|ffi|k)", r"(?i)(?:ij|dz|ae|ohm|a)"] {
+            let reg = crate::regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let trie = &reg.literal_tries[0];
+            let folds = trie.folds.as_ref().expect("a folded trie");
+            let tails = [0x00, 0x41, 0x80, 0x84, 0x9F, 0xAA, 0xBF, 0xC3];
+            for lead in 0x80..=0xFFu8 {
+                for second in 0..=0xFFu8 {
+                    for &third in &tails {
+                        for &fourth in &tails {
+                            let bytes = [lead, second, third, fourth];
+                            if folds.read(&bytes, 0, bytes.len()).is_some() {
+                                assert!(
+                                    trie.reads_non_ascii_at(&bytes, 0, bytes.len()),
+                                    "{pattern} {bytes:x?}"
+                                );
+                                checked += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 0);
     }
 
     #[test]

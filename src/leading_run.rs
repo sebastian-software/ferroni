@@ -513,8 +513,8 @@ pub(crate) struct SearchJump {
     /// The class found with `memchr`: the one least likely to occur.
     probe: usize,
     probe_bytes: Vec<u8>,
-    /// A leading case-sensitive literal alternation (`AltLiterals`), found
-    /// with Aho-Corasick.
+    /// A leading literal alternation (`AltLiterals`), found with
+    /// Aho-Corasick.
     alternation: Option<Alternation>,
 }
 
@@ -522,9 +522,124 @@ pub(crate) struct SearchJump {
 /// built on first use: grammars compile many alternations that are never
 /// searched this way (the scanner runs them through its RegSet), and the
 /// automaton costs more to build than the trie.
+///
+/// A folded (case-insensitive) trie also matches non-ASCII input, such as
+/// `K` (Kelvin sign) for `k` or `ß` for `ss`, which an automaton over ASCII
+/// case variants misses. The walk reads ASCII input one literal byte at a
+/// time and stops at a non-ASCII byte it cannot read, so such a match
+/// starts at most `reach` bytes before the first non-ASCII byte it holds,
+/// and the walk reads that byte. Those positions stay candidates.
 struct Alternation {
     trie_idx: usize,
+    /// The longest literal minus one byte, for a folded trie.
+    reach: Option<usize>,
     automaton: std::sync::OnceLock<Option<aho_corasick::AhoCorasick>>,
+}
+
+/// The first window a folded alternation scans; each further one doubles.
+const FOLDED_WINDOW: usize = 256;
+
+/// Most prefixes a folded alternation's automaton holds.
+const MAX_CASE_VARIANTS: usize = 64;
+
+/// The ASCII case variants of the longest literal prefixes that stay within
+/// [`MAX_CASE_VARIANTS`] (at least one byte). Every ASCII case variant of a
+/// literal starts with one of them. An automaton over exact bytes can use
+/// its vectorized prefilter, which ASCII case folding disables.
+fn case_variants(literals: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let shortest = literals.iter().map(Vec::len).min().unwrap_or(0);
+    let variants = |len: usize| {
+        let mut out: Vec<Vec<u8>> = Vec::new();
+        for literal in literals {
+            let mut prefixes = vec![Vec::new()];
+            for &byte in &literal[..len] {
+                let cases = [byte.to_ascii_lowercase(), byte.to_ascii_uppercase()];
+                let cases = if byte.is_ascii_alphabetic() {
+                    &cases[..]
+                } else {
+                    &cases[..1]
+                };
+                prefixes = prefixes
+                    .iter()
+                    .flat_map(|prefix| {
+                        cases
+                            .iter()
+                            .map(move |&case| [&prefix[..], &[case]].concat())
+                    })
+                    .collect();
+            }
+            out.extend(prefixes);
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    };
+    let mut best = variants(1.min(shortest));
+    for len in 2..=shortest {
+        let more = variants(len);
+        if more.len() > MAX_CASE_VARIANTS {
+            break;
+        }
+        best = more;
+    }
+    best
+}
+
+impl Alternation {
+    /// The first position in `s..limit` where a literal can start, or `s`
+    /// without an automaton. `None` when no literal starts there.
+    fn candidate(&self, reg: &RegexType, text: &[u8], s: usize, limit: usize) -> Option<usize> {
+        let trie = &reg.literal_tries[self.trie_idx];
+        let automaton = self.automaton.get_or_init(|| {
+            let mut builder = aho_corasick::AhoCorasick::builder();
+            builder.match_kind(aho_corasick::MatchKind::LeftmostFirst);
+            if trie.is_case_insensitive() {
+                builder.build(case_variants(trie.literals())).ok()
+            } else {
+                builder.build(trie.literals()).ok()
+            }
+        });
+        // Without an automaton every position stays a candidate.
+        let Some(automaton) = automaton else {
+            return Some(s);
+        };
+        let Some(reach) = self.reach else {
+            return Some(s + automaton.find(&text[s..limit])?.start());
+        };
+        // Windows of growing size keep the scans proportional to the
+        // distance moved: a search restarts behind every failed candidate.
+        let mut from = s;
+        let mut window = FOLDED_WINDOW;
+        while from < limit {
+            // Candidates in `from..to`. A literal or a folded match starting
+            // there ends by `to + reach`.
+            let to = limit.min(from.saturating_add(window));
+            let hay_end = limit.min(to.saturating_add(reach));
+            let found = automaton
+                .find(&text[from..hay_end])
+                .map(|m| from + m.start())
+                .filter(|&p| p < to);
+            // The first start a non-ASCII byte the walk reads admits. From
+            // `p + reach` on such a byte only admits starts after `p`. The
+            // bound of its character is the whole text, which admits more
+            // than the match's own bound.
+            let scan_end = found.map_or(hay_end, |p| p.saturating_add(reach).min(hay_end));
+            let folded = (!text[from..scan_end].is_ascii())
+                .then(|| {
+                    (from..scan_end)
+                        .find(|&q| text[q] >= 0x80 && trie.reads_non_ascii_at(text, q, text.len()))
+                })
+                .flatten()
+                .map(|q| q.saturating_sub(reach).max(from))
+                .filter(|&p| p < to);
+            if let Some(p) = folded.or(found) {
+                return Some(p);
+            }
+            from = to;
+            window = window.saturating_mul(2);
+        }
+        None
+    }
 }
 
 /// Leading classes a [`SearchJump`] checks.
@@ -571,14 +686,24 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
     if let Some(OperationPayload::AltLiterals { trie_idx }) = reg.ops.get(pc).map(|op| &op.payload)
     {
         let trie = reg.literal_tries.get(*trie_idx as usize)?;
-        // Aho-Corasick folds ASCII only; a folded trie also matches
-        // non-ASCII input. A bare alternation takes `ac_alt` already.
-        if trie.is_case_insensitive() || reg.ac_alt.is_some() {
+        // A bare case-sensitive alternation takes `ac_alt` already.
+        if reg.ac_alt.is_some() {
             return line_start.then(SearchJump::lines);
         }
+        // Folded tries hold ASCII literals, which Aho-Corasick folds.
+        let reach = if trie.is_case_insensitive() {
+            let longest = trie.literals().iter().map(Vec::len).max()?;
+            if longest == 0 || trie.literals().iter().any(|literal| !literal.is_ascii()) {
+                return line_start.then(SearchJump::lines);
+            }
+            Some(longest - 1)
+        } else {
+            None
+        };
         return Some(SearchJump {
             alternation: Some(Alternation {
                 trie_idx: *trie_idx as usize,
+                reach,
                 automaton: std::sync::OnceLock::new(),
             }),
             ..SearchJump::lines_if(line_start)
@@ -709,17 +834,7 @@ impl SearchJump {
                 if s >= limit {
                     return None;
                 }
-                let automaton = alternation.automaton.get_or_init(|| {
-                    aho_corasick::AhoCorasick::builder()
-                        .match_kind(aho_corasick::MatchKind::LeftmostFirst)
-                        .build(reg.literal_tries[alternation.trie_idx].literals())
-                        .ok()
-                });
-                match automaton {
-                    Some(automaton) => s + automaton.find(&text[s..limit])?.start(),
-                    // Without an automaton every position stays a candidate.
-                    None => s,
-                }
+                alternation.candidate(reg, text, s, limit)?
             } else if self.probe_bytes.is_empty() {
                 s
             } else {
@@ -956,8 +1071,15 @@ mod tests {
                 .is_some_and(|jump| jump.alternation.is_some())
         };
         assert!(alternation(r"\b(?:fn|let|for|while|match)\b"));
-        // Aho-Corasick would miss what a folded trie matches beyond ASCII.
-        assert!(!alternation(r"(?i)\b(?:fn|let|for|while|match)\b"));
+        // A folded trie keeps the starts near non-ASCII input as candidates.
+        let reach = |pattern: &str| {
+            compile(pattern, UTF8)
+                .unwrap()
+                .search_jump
+                .and_then(|jump| jump.alternation.map(|alternation| alternation.reach))
+        };
+        assert_eq!(reach(r"(?i)\b(?:fn|let|for|while|match)\b"), Some(Some(4)));
+        assert_eq!(reach(r"\b(?:fn|let|for|while|match)\b"), Some(None));
         assert!(jump("ERROR").is_none());
         assert!(jump(r"\d+").is_none());
         assert!(jump(r"(?i)k").is_none());
@@ -1016,6 +1138,8 @@ mod tests {
             r"\b(?:ab|abc|b|xx:)\b",
             r"(?:ab|cd|ex|g:)(\w?)",
             r"^(?:ab|re|x:)",
+            r"(?i)(?:ks|ss|st|ff|re)",
+            r"(?i)\b(?:k|ss|stx|ffi)(\w?)",
         ];
         let inputs: &[&[u8]] = &[
             b"",
@@ -1041,6 +1165,9 @@ mod tests {
             b"\n\xc3\xa9//",
             b"xx: :",
             b"\xc3\xff@a",
+            // Unicode case folding: Kelvin sign, sharp s, long s, ligatures.
+            "xK\u{212a}s \u{df}t\u{17f}s\u{fb00}i".as_bytes(),
+            "RE \u{fb06}x Ss\u{fb03}".as_bytes(),
         ];
         let limits = [
             (0, 0, 0),
@@ -1093,6 +1220,54 @@ mod tests {
         assert!(comparisons > 100_000, "{comparisons}");
     }
 
+    /// Folded alternations over subjects longer than the scan windows, with
+    /// Unicode case folds and malformed bytes around every window edge.
+    #[test]
+    fn folded_alternations_find_every_match() {
+        let patterns = [
+            r"(?i)(?:error|warn|fatal|panic)",
+            r"(?i)\b(?:kiss|strasse|office|k)\b",
+            r"(?i)(?:ss|st|ffl|re)(\w?)",
+        ];
+        let fillers: &[&[u8]] = &[b"-", b"x", b" ", "\u{e9}".as_bytes(), b"\xff", b"\xe2\x84"];
+        let words: &[&[u8]] = &[
+            b"ERROR",
+            b"Warn",
+            "\u{212a}iss".as_bytes(),
+            "stra\u{df}e".as_bytes(),
+            "o\u{fb03}ce".as_bytes(),
+            "\u{17f}t".as_bytes(),
+            "\u{fb04}".as_bytes(),
+            b"PaNiC",
+            b"k",
+        ];
+        for pattern in patterns {
+            let optimized = compile(pattern, UTF8).unwrap();
+            assert!(
+                optimized
+                    .search_jump
+                    .as_ref()
+                    .is_some_and(|jump| jump.alternation.is_some()),
+                "{pattern}"
+            );
+            let reference = reference(pattern, UTF8);
+            for (filler, &word) in fillers.iter().zip(words.iter().cycle()) {
+                for gap in [1, 7, 250, 255, 256, 257, 300, 700] {
+                    let mut text = Vec::new();
+                    for (at, &other) in words.iter().enumerate() {
+                        text.extend(filler.repeat(gap + at));
+                        text.extend_from_slice(if at % 2 == 0 { word } else { other });
+                    }
+                    assert_eq!(
+                        scan(&optimized, &text),
+                        scan(&reference, &text),
+                        "{pattern:?} {filler:?} {gap}"
+                    );
+                }
+            }
+        }
+    }
+
     /// Generated expressions and subjects, compared match by match.
     #[test]
     fn generated_expressions_match_the_original_path() {
@@ -1129,6 +1304,7 @@ mod tests {
             "(?i:ab){}",
             "(?i)re{}",
             "(?:ab|ing|x@|re){}",
+            "(?i)(?:ab|ss|k|re){}",
             r"\b(?:ab|ing|re|:=){}",
         ];
         let literals = ["@", ".", "ing", ":", "=", "é", "b", "x@", ";", "::"];
@@ -1180,6 +1356,10 @@ mod tests {
             b"\xc3",
             b"\xff",
             b"\xe2\x82",
+            "\u{212a}".as_bytes(),
+            "\u{df}".as_bytes(),
+            b"SS",
+            b"K",
         ];
         let mut checked = 0;
         for _ in 0..4000 {
