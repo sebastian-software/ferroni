@@ -603,9 +603,22 @@ impl Alternation {
         let Some(automaton) = automaton else {
             return Some(s);
         };
-        let Some(reach) = self.reach else {
-            return Some(s + automaton.find(&text[s..limit])?.start());
-        };
+        match self.reach {
+            None => Some(s + automaton.find(&text[s..limit])?.start()),
+            Some(reach) => Self::folded_candidate(trie, automaton, reach, text, s, limit),
+        }
+    }
+
+    /// [`Alternation::candidate`] for a folded trie.
+    #[inline(never)]
+    fn folded_candidate(
+        trie: &crate::literal_trie::LiteralTrie,
+        automaton: &aho_corasick::AhoCorasick,
+        reach: usize,
+        text: &[u8],
+        s: usize,
+        limit: usize,
+    ) -> Option<usize> {
         // Windows of growing size keep the scans proportional to the
         // distance moved: a search restarts behind every failed candidate.
         let mut from = s;
