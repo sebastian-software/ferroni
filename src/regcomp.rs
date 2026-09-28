@@ -8964,15 +8964,18 @@ fn add_high_bytes_opt_map(m: &mut OptMap, enc: OnigEncoding) {
 /// one byte of the result, and the map operations below visit only the
 /// members they change or sum instead of all 256 bytes. Grammars with many
 /// `(?i)` letters (two-member classes) call them tens of thousands of times.
+///
+/// The multiplication moves bit 0 of byte `k` to bit `56 + k`. Every other
+/// product term lands on its own bit below 56, so no carry reaches the top
+/// byte.
 fn map_bits(map: &[u8; CHAR_MAP_SIZE]) -> BitSet {
     let mut bits: BitSet = [0; BITSET_REAL_SIZE];
-    for (at, chunk) in map.chunks_exact(8).enumerate() {
-        let mut x = u64::from_le_bytes(chunk.try_into().expect("eight map bytes"));
-        debug_assert_eq!(x & !0x0101_0101_0101_0101, 0, "map bytes are 0 or 1");
-        x |= x >> 7;
-        x |= x >> 14;
-        x |= x >> 28;
-        bits[at * 8 / BITS_IN_ROOM] |= ((x & 0xFF) as Bits) << (at * 8 % BITS_IN_ROOM);
+    for (word, bytes) in bits.iter_mut().zip(map.chunks_exact(BITS_IN_ROOM)) {
+        for (at, chunk) in bytes.chunks_exact(8).enumerate() {
+            let x = u64::from_le_bytes(chunk.try_into().expect("eight map bytes"));
+            debug_assert_eq!(x & !0x0101_0101_0101_0101, 0, "map bytes are 0 or 1");
+            *word |= ((x.wrapping_mul(0x0102_0408_1020_4080) >> 56) as Bits) << (at * 8);
+        }
     }
     bits
 }

@@ -1403,6 +1403,73 @@ fn add_ctype_to_cc_by_range(
     enc: OnigEncoding,
     sb_out: OnigCodePoint,
 ) -> i32 {
+    // Rust-only: grammars add the same Unicode ctypes (`[:alpha:]`, `\w`) to
+    // class after class, and each time the hundreds of ranges are written
+    // anew. Into a class without multibyte ranges the ctype adds the same
+    // bits and ranges every time, so those are kept per thread.
+    if cc
+        .mbuf
+        .as_ref()
+        .is_none_or(|mbuf| bbuf_read_code_point(mbuf, 0) == 0)
+    {
+        type Entry = (*const (), i32, bool, OnigCodePoint, BitSet, Option<BBuf>);
+        thread_local! {
+            static CACHE: std::cell::RefCell<Vec<Entry>> = const { std::cell::RefCell::new(Vec::new()) };
+        }
+        let enc_id = enc as *const dyn Encoding as *const ();
+        let key = |entry: &&Entry| {
+            entry.0 == enc_id && entry.1 == ctype && entry.2 == not && entry.3 == sb_out
+        };
+        let cached = CACHE.with(|cache| {
+            cache
+                .borrow()
+                .iter()
+                .find(key)
+                .map(|(.., bs, mbuf)| (*bs, mbuf.clone()))
+        });
+        let (bs, mbuf) = match cached {
+            Some(entry) => entry,
+            None => {
+                let mut fresh = CClassNode {
+                    flags: 0,
+                    bs: [0; BITSET_REAL_SIZE],
+                    mbuf: None,
+                };
+                let r = add_ctype_ranges_to_cc(&mut fresh, ctype, not, enc, sb_out);
+                if r != 0 {
+                    return r;
+                }
+                CACHE.with(|cache| {
+                    cache.borrow_mut().push((
+                        enc_id,
+                        ctype,
+                        not,
+                        sb_out,
+                        fresh.bs,
+                        fresh.mbuf.clone(),
+                    ))
+                });
+                (fresh.bs, fresh.mbuf)
+            }
+        };
+        for (word, add) in cc.bs.iter_mut().zip(bs) {
+            *word |= add;
+        }
+        if mbuf.is_some() {
+            cc.mbuf = mbuf;
+        }
+        return ONIG_NORMAL;
+    }
+    add_ctype_ranges_to_cc(cc, ctype, not, enc, sb_out)
+}
+
+fn add_ctype_ranges_to_cc(
+    cc: &mut CClassNode,
+    ctype: i32,
+    not: bool,
+    enc: OnigEncoding,
+    sb_out: OnigCodePoint,
+) -> i32 {
     let mut r: i32;
     let range_opt = enc.get_ctype_code_range(ctype as u32, &mut 0);
     if range_opt.is_none() {
@@ -7535,6 +7602,69 @@ pub fn onig_parse_tree(
 mod tests {
     use super::*;
     use crate::regsyntax::OnigSyntaxOniguruma;
+
+    /// The kept ctype bits and ranges give the class the uncached path
+    /// builds, on the first call and on repeated ones.
+    #[test]
+    fn cached_ctype_ranges_build_the_same_class() {
+        let enc: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        let mut with_bits = [0; BITSET_REAL_SIZE];
+        bitset_set_bit(&mut with_bits, b'$' as usize);
+        let classes = [
+            CClassNode {
+                flags: 0,
+                bs: [0; BITSET_REAL_SIZE],
+                mbuf: None,
+            },
+            CClassNode {
+                flags: 0,
+                bs: with_bits,
+                mbuf: Some(new_code_range()),
+            },
+            CClassNode {
+                flags: 0,
+                bs: with_bits,
+                mbuf: code_range_buf_of(&[(0xE9, 0xE9), (0x20AC, 0x20AC)]).into(),
+            },
+        ];
+        let copy = |class: &CClassNode| CClassNode {
+            flags: class.flags,
+            bs: class.bs,
+            mbuf: class.mbuf.clone(),
+        };
+        let mut checked = 0;
+        for ctype in [
+            ONIGENC_CTYPE_ALPHA,
+            ONIGENC_CTYPE_WORD,
+            ONIGENC_CTYPE_SPACE,
+            ONIGENC_CTYPE_DIGIT,
+            // No multibyte ranges: the class keeps its buffer.
+            ONIGENC_CTYPE_XDIGIT,
+        ] {
+            let mut sb_out = 0;
+            assert!(enc.get_ctype_code_range(ctype, &mut sb_out).is_some());
+            for not in [false, true] {
+                for class in &classes {
+                    let mut expected = copy(class);
+                    let r = add_ctype_ranges_to_cc(&mut expected, ctype as i32, not, enc, sb_out);
+                    assert_eq!(r, 0);
+                    for _ in 0..2 {
+                        let mut cc = copy(class);
+                        let r = add_ctype_to_cc_by_range(&mut cc, ctype as i32, not, enc, sb_out);
+                        assert_eq!(r, 0);
+                        assert_eq!(cc.bs, expected.bs, "{ctype} {not}");
+                        assert_eq!(
+                            cc.mbuf.as_ref().map(|b| &b.data),
+                            expected.mbuf.as_ref().map(|b| &b.data),
+                            "{ctype} {not}"
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 60);
+    }
 
     #[test]
     fn code_range_helpers_round_trip_and_coalesce() {
