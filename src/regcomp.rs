@@ -8970,9 +8970,9 @@ fn add_high_bytes_opt_map(m: &mut OptMap, enc: OnigEncoding) {
 /// byte.
 fn map_bits(map: &[u8; CHAR_MAP_SIZE]) -> BitSet {
     let mut bits: BitSet = [0; BITSET_REAL_SIZE];
-    for (word, bytes) in bits.iter_mut().zip(map.chunks_exact(BITS_IN_ROOM)) {
-        for (at, chunk) in bytes.chunks_exact(8).enumerate() {
-            let x = u64::from_le_bytes(chunk.try_into().expect("eight map bytes"));
+    for (word, bytes) in bits.iter_mut().zip(map.as_chunks::<BITS_IN_ROOM>().0) {
+        for (at, chunk) in bytes.as_chunks::<8>().0.iter().enumerate() {
+            let x = u64::from_le_bytes(*chunk);
             debug_assert_eq!(x & !0x0101_0101_0101_0101, 0, "map bytes are 0 or 1");
             *word |= ((x.wrapping_mul(0x0102_0408_1020_4080) >> 56) as Bits) << (at * 8);
         }
