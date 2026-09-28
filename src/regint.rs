@@ -708,6 +708,9 @@ pub struct RegexType {
     /// Rust-only (ADR-008): bytecode start bytes for positions C's optimizer
     /// does not narrow down (`crate::leading_run`).
     pub(crate) search_start_map: Option<Box<crate::leading_run::SearchStartMap>>,
+    /// Rust-only (ADR-008): where attempts can pass the leading checks
+    /// (`crate::leading_run::SearchJump`).
+    pub(crate) search_jump: Option<Box<crate::leading_run::SearchJump>>,
 }
 
 /// Set in a guard's `skipped_retries` when the backtracks it skips depend on

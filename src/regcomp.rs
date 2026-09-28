@@ -10356,6 +10356,7 @@ pub fn onig_new(
         ac_alt_has_capture: false,
         leading_run: None,
         search_start_map: None,
+        search_jump: None,
     };
 
     let (r, par) = compile_recording_name(&mut reg, pattern);
@@ -10677,6 +10678,7 @@ mod tests {
             ac_alt_has_capture: false,
             leading_run: None,
             search_start_map: None,
+            search_jump: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

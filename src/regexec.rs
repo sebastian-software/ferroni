@@ -7524,6 +7524,14 @@ fn onig_search_inner_core_with_right_range(
 
     // === Forward search ===
     let mut s = cur_start;
+    // Rust-only (ADR-008): the search moves its start to where an attempt can
+    // pass the expression's leading checks (a line start, leading classes or
+    // literals), where no limit or FIND_LONGEST can observe a skipped attempt.
+    let search_jump = match reg.search_jump.as_deref() {
+        Some(jump) if !find_longest && may_skip_attempts(msa) => Some(jump),
+        _ => None,
+    };
+    let notbol = opton_notbol(msa.options);
     // Rust-only (ADR-008): the bytecode start map narrows the optimizer's
     // windows where no limit or FIND_LONGEST can observe a skipped attempt.
     let window_start_map = match reg.search_start_map.as_deref() {
@@ -7547,7 +7555,13 @@ fn onig_search_inner_core_with_right_range(
 
         if reg.dist_max != INFINITE_LEN {
             // Finite dist_max: iterate with forward_search
-            while let Some((low, high)) = forward_search(reg, str_data, end, s, sch_range) {
+            loop {
+                if let Some(jump) = search_jump {
+                    s = jump.next_start(enc, str_data, s, end, data_range, notbol, None);
+                }
+                let Some((low, high)) = forward_search(reg, str_data, end, s, sch_range) else {
+                    break;
+                };
                 if s < low {
                     s = low;
                 }
@@ -7721,6 +7735,9 @@ fn onig_search_inner_core_with_right_range(
     // Normal position-by-position search (no optimization or fallthrough)
     if best_start == ONIG_MISMATCH {
         loop {
+            if let Some(jump) = search_jump {
+                s = jump.next_start(enc, str_data, s, end, data_range, notbol, Some(cur_range));
+            }
             if let Some((bsp, delimiter)) = class_prefix {
                 if s >= class_prefix_end {
                     (s, class_prefix_end) = skip_nonmatching_class_prefix(
@@ -8048,14 +8065,15 @@ fn literal_run_search(
         // A start filter that rejects the run's first position leaves no
         // failed attempt there to stand for the rest of the run.
         let run_start = crate::leading_run::run_start_before(reg, run, str_data, s, k)
-            .filter(|&r| r == k || admitted(r));
+            .filter(|&r| (r == k && !run.min_zero) || admitted(r));
         match run_start {
             Some(r) => {
                 // `s..k` is well formed: its boundaries are the loop's steps.
                 let attempted = r <= cur_range
                     || (enc.max_enc_len() > 1
                         && str_data[cur_range..r].iter().all(|&b| (b & 0xC0) == 0x80));
-                if r < k && attempted {
+                // An empty `C*` run starts at the occurrence itself.
+                if (r < k || run.min_zero) && attempted {
                     attempt!(r);
                 }
                 if k >= cur_range {
@@ -8075,8 +8093,11 @@ fn literal_run_search(
                     x = advance_char_to_end(enc, str_data, x, end);
                 }
                 if x == k {
-                    // The occurrence's byte ends every run: no match starts
-                    // there.
+                    // The occurrence's byte ends every run, so only an empty
+                    // `C*` run can start there.
+                    if run.min_zero {
+                        attempt!(k);
+                    }
                     if k >= cur_range {
                         break;
                     }
@@ -8176,6 +8197,7 @@ mod tests {
             ac_alt_has_capture: false,
             leading_run: None,
             search_start_map: None,
+            search_jump: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),
