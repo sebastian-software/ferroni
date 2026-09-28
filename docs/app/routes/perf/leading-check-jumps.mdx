@@ -1,0 +1,131 @@
+---
+order: 17
+title: "Leading-Check Jumps (2026-09)"
+---
+
+# Leading-Check Jumps
+
+A second profiling round covered typical tasks: validating short tokens,
+splitting, key/value captures, `(?i)` search, URLs, HTML tags, Markdown links,
+line-anchored patterns and function calls. In four common shapes the forward
+search still attempted positions that cannot match. The search now moves its
+start to the next position that can pass the expression's leading checks.
+Splitting on `\s*,\s*` and finding `\b\w+\(` calls is **11–14×** faster,
+`^\s*//` **6.9×**, `(?i)regex` **9.2×** and keyword alternations **3.2×**.
+Every other case of the 55-case matrix changes by −1.4% to +2.2% in callgrind
+instructions. The TextMate scanner documents change by at most ±0.2% in search
+and +0.6% in compilation.
+
+[Raw timings, instruction counts and scanner measurements](https://github.com/sebastian-software/ferroni/blob/main/benches/results/leading-check-jumps-2026-09-28.json)
+
+## What changed
+
+Every plan is additive (`src/leading_run.rs`). The search moves its start `s`
+before C's optimizer runs from it, and the original loops continue unchanged
+from there. Each position a jump passes over would fail its first check with
+exactly one backtrack.
+
+1. **Prefix probe.** Some expressions start with byte classes or literals,
+   such as the case pairs of `(?i)regular expression`. For these, the search
+   uses `memchr` to find the class least likely to occur (`x`/`X` here). It
+   checks the other leading classes before an attempt. C's optimizer probed
+   the space at distance 7 in this example, which is 52,537 candidates in the
+   prose corpus against 1,432 for `x`/`X`.
+2. **Line starts.** An expression that starts with `^` moves to the next line
+   start. The check follows `BeginLine` exactly: NOTBOL applies, the end of
+   the text is never a line start, and the previous character head is found
+   by stepping back over bytes 0x80..=0xBF in every encoding. The jump is
+   skipped where C's optimizer already searches a string at the match start
+   and checks its line anchor.
+3. **Literal alternations.** A leading case-sensitive `AltLiterals`, as in
+   `\b(?:fn|let|…)\b`, is found with Aho-Corasick. The automaton is built on
+   first use. Scanner grammars compile many alternations that are never
+   searched this way, and building the automaton up front added 22–64% to
+   their compilation. Case-insensitive (folded) tries keep the old path,
+   because they also match non-ASCII input such as `ß` for `ss`.
+4. **More leading runs.** The [leading-run skips](/perf/leading-run-skips) now
+   accept two more shapes: `C*` runs (`\s*,\s*`), and runs behind `\b` whose
+   class holds only word characters in the boundary's sense (`\b\w+\(`).
+   Inside such a run no start passes the boundary check. The forward skip
+   behind `\b` only crosses ASCII bytes.
+
+Some jumps would pass over bytes that are not valid UTF-8. The plain loop's
+character steps could miss the target there, so such a jump is not taken. In
+a position loop bounded by the search range, a jump never passes the loop's
+last attempt. The plans stay off for FIND_LONGEST, a search retry budget,
+stack or time limits, a per-match limit of one, callouts and the match
+cache.
+
+## Measurements
+
+The harness and corpora are those of the [execution profile](/perf/execution-profiling),
+extended by 18 typical cases. The baseline is `main` at `b0d1652`, which
+includes the [leading-run skips](/perf/leading-run-skips). Both builds use
+the release profile with thin LTO on a shared 4-vCPU x86_64 VM. Times are the
+best of three interleaved rounds. Instruction counts (Ir) come from one
+callgrind pass per case, including process start, corpus load and
+compilation. All cases found the same matches in both builds.
+
+| Case            | Expression                   | Baseline ms | Candidate ms | Speedup |     Ir | `regex` ms |
+| --------------- | ---------------------------- | ----------: | -----------: | ------: | -----: | ---------: |
+| `t_split_comma` | `\s*,\s*`                    |        27.3 |         1.94 |   14.1× | −94.6% |      0.763 |
+| `t_fn_call`     | `\b\w+\(`                    |        21.7 |         1.92 |   11.3× | −93.1% |      1.068 |
+| `t_line_starts` | `^\s*//`                     |        17.9 |         2.60 |    6.9× | −86.9% |          – |
+| `lit_ci`        | `(?i)regex`                  |       0.442 |        0.048 |    9.2× | −69.5% |      0.053 |
+| `t_ci_phrase`   | `(?i)regular expression`     |        1.58 |        0.357 |    4.4× | −73.6% |      0.025 |
+| `keywords`      | `\b(?:fn\|let\|…\|const)\b`  |        11.0 |         3.44 |    3.2× | −73.5% |      2.281 |
+| `t_camel`       | `\b[a-z]+(?:[A-Z][a-z]+)+\b` |        17.9 |         7.97 |    2.2× | −50.8% |     28.826 |
+| `t_ci_word`     | `(?i)\berror\b`              |       0.965 |        0.536 |    1.8× | −39.2% |      0.246 |
+| `lookahead_neg` | `\b\w+(?!\w\|\()\b`          |        15.7 |         13.8 |    1.1× | −14.0% |          – |
+
+`(?i)regex` now runs at the speed of the `regex` crate, and `t_camel` stays
+3.6× faster than it. `t_line_starts` has no `regex` row because `^` means the
+text start there.
+
+**The other 46 cases** change by −1.4% to +2.2% in instructions. The largest
+increases are in the per-token validation cases (`t_valid_int` +2.2%,
+`t_valid_word` +1.7%, `t_valid_ipv4` +1.7%). There each search costs about 700
+instructions, and the new plan checks and code layout add a few of them.
+Wall-clock differences of these cases stayed within the ±15% noise of the
+host.
+
+### TextMate scanner
+
+The driver of the [leading-run skips](/perf/leading-run-skips#textmate-scanner)
+tokenizes the `regression_scanner_documents` inputs and the 20-pattern CSS set
+line by line.
+
+| Workload                           | Search Ir | Setup Ir (grammar parsing + compilation) |
+| ---------------------------------- | --------: | ---------------------------------------: |
+| TypeScript, 279 patterns, 28 lines |    −0.03% |                                   +0.03% |
+| CSS, 117 patterns, 19 lines        |    −0.00% |                                   +0.07% |
+| Rust, 81 patterns, 31 lines        |    +0.19% |                                   +0.58% |
+| CSS, 20 patterns, tokenize         |    −0.00% |                                   +0.53% |
+| TypeScript line, 279 patterns      |    −1.46% |                                   +0.06% |
+
+## What remains
+
+- **Validation of short strings** (`\A…\z` per token) is still 2.5–9× behind
+  `regex`. About 700 instructions per call go to the layers around the VM
+  (`search_in_range` → `onig_search_inner_core_with_right_range` →
+  `forward_search` → `match_at` → `finish_search`). That fixed cost is the
+  largest general target left.
+- **Case-insensitive literal alternations** (`(?i)(?:error|warn|…)`, 17×
+  behind `regex`) need a candidate finder that covers Unicode case folding.
+
+## Validation
+
+- `cargo test --release` passes the unit tests, all `compat_*` suites and
+  `api_test`. It also passes with `--features match-cache`.
+- The tests in `src/leading_run.rs` compare results, capture bounds and limit
+  errors with the same expression without its plans. They now include:
+  - `(?i)` prefixes, `^`-led patterns, `C*` runs, `\b` runs, literal
+    alternations, and look-ahead or atomic prefixes;
+  - inputs with newlines and malformed UTF-8, and the NOTBOL option;
+  - generated expressions with these heads.
+- Three injected faults fail the tests: an off-by-one jump target, a
+  line-start check without the previous-character-head rule, and a missing
+  attempt at an empty `C*` run in the fallback path. The generated test found
+  that last one during development, as a real bug.
+- The `ffi` differential against C Oniguruma could not run in this
+  environment. CI runs it.

@@ -1,0 +1,3023 @@
+{
+ "format_version": 1,
+ "date": "2026-09-28",
+ "question": "Which typical scenarios still attempt start positions that cannot match, and what do the leading-check jumps change?",
+ "baseline_commit": "b0d1652 (main, with the leading-run skips)",
+ "candidate_commit": "branch claude/regexp-performance-profiling-hao93x after 215ae5f (lazy Aho-Corasick build and line-jump condition included for the instruction counts)",
+ "environment": {
+  "host": "shared cloud VM, 4 vCPU Intel Xeon @ 2.10GHz, Linux x86_64",
+  "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+  "profile": "release, thin LTO, debug=line-tables-only",
+  "noise_note": "Wall-clock timings vary by up to about 15-25% between runs; small differences are judged by callgrind instruction counts."
+ },
+ "method": {
+  "matrix": "Execution-profile harness plus 18 typical cases (t_*); tokens for t_valid_* are the whitespace-separated words of the corpus. Best of three interleaved rounds of at least 400 ms per case and build.",
+  "callgrind": "One pass per case including process start, corpus load and compilation; total Ir. Measured after the lazy Aho-Corasick build; the timing rounds ran before it (search timing is unaffected: the automaton is built during warm-up).",
+  "scanner": "Driver tokenizing the regression_scanner_documents inputs and the css_20 set line by line; search Ir per iteration = (Ir with N iterations - Ir without iterations) / N; setup Ir = grammar parsing plus Scanner compilation."
+ },
+ "timings_ms": {
+  "baseline": [
+   [
+    {
+     "case": "lit_common",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.027,
+     "regex_ms": 0.014,
+     "matches": 245
+    },
+    {
+     "case": "lit_rare",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.022,
+     "regex_ms": 0.011,
+     "matches": 122
+    },
+    {
+     "case": "lit_none",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.036,
+     "regex_ms": 0.036,
+     "matches": 0
+    },
+    {
+     "case": "lit_ci",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.584,
+     "regex_ms": 0.053,
+     "matches": 298
+    },
+    {
+     "case": "char_digit",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 25.879,
+     "regex_ms": 6.713,
+     "matches": 247890
+    },
+    {
+     "case": "word",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 4.793,
+     "regex_ms": 1.978,
+     "matches": 42731
+    },
+    {
+     "case": "class_lower",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 3.334,
+     "regex_ms": 2.11,
+     "matches": 880
+    },
+    {
+     "case": "alt5_words",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.084,
+     "regex_ms": 0.053,
+     "matches": 601
+    },
+    {
+     "case": "ident",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 9.022,
+     "regex_ms": 5.679,
+     "matches": 90872
+    },
+    {
+     "case": "line_anchor",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.076,
+     "regex_ms": 0.046,
+     "matches": 359
+    },
+    {
+     "case": "dot_star_line",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 0.256,
+     "regex_ms": 0.197,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_lit",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 0.414,
+     "regex_ms": 0.181,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_ipv4",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.211,
+     "regex_ms": 0.38,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_email",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.467,
+     "regex_ms": 0.484,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_logcaps",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 7.047,
+     "regex_ms": 12.511,
+     "matches": 58623
+    },
+    {
+     "case": "email_scan",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 2.358,
+     "regex_ms": 0.739,
+     "matches": 12000
+    },
+    {
+     "case": "log_caps",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 11.183,
+     "regex_ms": 10.603,
+     "matches": 18000
+    },
+    {
+     "case": "date_named",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 5.038,
+     "regex_ms": 1.989,
+     "matches": 18033
+    },
+    {
+     "case": "keywords",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 12.158,
+     "regex_ms": 2.281,
+     "matches": 12490
+    },
+    {
+     "case": "str_literal",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 0.169,
+     "regex_ms": 0.082,
+     "matches": 1131
+    },
+    {
+     "case": "lazy_dot",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 3.137,
+     "regex_ms": 0.705,
+     "matches": 12000
+    },
+    {
+     "case": "ci_alt",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 7.639,
+     "regex_ms": 0.372,
+     "matches": 2398
+    },
+    {
+     "case": "unicode_letters",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 5.058,
+     "regex_ms": 2.05,
+     "matches": 37064
+    },
+    {
+     "case": "unicode_word",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 5.962,
+     "regex_ms": 2.001,
+     "matches": 40000
+    },
+    {
+     "case": "greek_cyr",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 2.377,
+     "regex_ms": 0.815,
+     "matches": 5731
+    },
+    {
+     "case": "float_num",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 2.496,
+     "regex_ms": 1.065,
+     "matches": 2
+    },
+    {
+     "case": "suffix_lit",
+     "kind": "complex",
+     "corpus": "prose",
+     "ferroni_ms": 5.189,
+     "regex_ms": 2.688,
+     "matches": 880
+    },
+    {
+     "case": "dot_star_mid",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 3.704,
+     "regex_ms": null,
+     "matches": 221
+    },
+    {
+     "case": "backref_dup",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 12.513,
+     "regex_ms": null,
+     "matches": 4
+    },
+    {
+     "case": "lookbehind",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 22.214,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "lookahead_neg",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 15.67,
+     "regex_ms": null,
+     "matches": 86189
+    },
+    {
+     "case": "atomic_poss",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 1.943,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "html_tag_backref",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 0.094,
+     "regex_ms": null,
+     "matches": 0
+    },
+    {
+     "case": "px_lazy_as_negcls",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.466,
+     "regex_ms": 0.704,
+     "matches": 12000
+    },
+    {
+     "case": "px_lookbehind_as_lit",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.315,
+     "regex_ms": 0.508,
+     "matches": 12000
+    },
+    {
+     "case": "px_ci_alt_as_cs",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 0.431,
+     "regex_ms": 0.301,
+     "matches": 2398
+    },
+    {
+     "case": "subexp_call",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 2.283,
+     "regex_ms": null,
+     "matches": 4954
+    },
+    {
+     "case": "t_valid_int",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 9.374,
+     "regex_ms": 1.888,
+     "matches": 24000
+    },
+    {
+     "case": "t_valid_ipv4",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 10.332,
+     "regex_ms": 1.266,
+     "matches": 12000
+    },
+    {
+     "case": "t_valid_email",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 7.005,
+     "regex_ms": 2.001,
+     "matches": 0
+    },
+    {
+     "case": "t_valid_word",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 2.221,
+     "regex_ms": 0.851,
+     "matches": 24212
+    },
+    {
+     "case": "t_split_ws",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 3.495,
+     "regex_ms": 1.784,
+     "matches": 39889
+    },
+    {
+     "case": "t_split_comma",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 38.604,
+     "regex_ms": 0.763,
+     "matches": 12139
+    },
+    {
+     "case": "t_kv_caps",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 9.292,
+     "regex_ms": 6.61,
+     "matches": 286679
+    },
+    {
+     "case": "t_ci_word",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 1.11,
+     "regex_ms": 0.246,
+     "matches": 1165
+    },
+    {
+     "case": "t_ci_phrase",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 1.583,
+     "regex_ms": 0.025,
+     "matches": 0
+    },
+    {
+     "case": "t_url",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.054,
+     "regex_ms": 0.084,
+     "matches": 330
+    },
+    {
+     "case": "t_html_tag",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.055,
+     "regex_ms": 0.099,
+     "matches": 39
+    },
+    {
+     "case": "t_md_link",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.17,
+     "regex_ms": 0.513,
+     "matches": 554
+    },
+    {
+     "case": "t_quoted",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.158,
+     "regex_ms": 0.088,
+     "matches": 1137
+    },
+    {
+     "case": "t_hex",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.049,
+     "regex_ms": 0.033,
+     "matches": 216
+    },
+    {
+     "case": "t_fn_call",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 23.313,
+     "regex_ms": 1.068,
+     "matches": 8904
+    },
+    {
+     "case": "t_trailing_ws",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 7.458,
+     "regex_ms": 1.997,
+     "matches": 0
+    },
+    {
+     "case": "t_camel",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 17.892,
+     "regex_ms": 28.826,
+     "matches": 1
+    },
+    {
+     "case": "t_line_starts",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 17.882,
+     "regex_ms": null,
+     "matches": 2947
+    }
+   ],
+   [
+    {
+     "case": "lit_common",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.029,
+     "regex_ms": 0.012,
+     "matches": 245
+    },
+    {
+     "case": "lit_rare",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.02,
+     "regex_ms": 0.01,
+     "matches": 122
+    },
+    {
+     "case": "lit_none",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.031,
+     "regex_ms": 0.028,
+     "matches": 0
+    },
+    {
+     "case": "lit_ci",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.442,
+     "regex_ms": 0.045,
+     "matches": 298
+    },
+    {
+     "case": "char_digit",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 17.142,
+     "regex_ms": 5.523,
+     "matches": 247890
+    },
+    {
+     "case": "word",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 3.27,
+     "regex_ms": 1.737,
+     "matches": 42731
+    },
+    {
+     "case": "class_lower",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 2.954,
+     "regex_ms": 2.225,
+     "matches": 880
+    },
+    {
+     "case": "alt5_words",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.082,
+     "regex_ms": 0.043,
+     "matches": 601
+    },
+    {
+     "case": "ident",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 7.615,
+     "regex_ms": 4.48,
+     "matches": 90872
+    },
+    {
+     "case": "line_anchor",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.057,
+     "regex_ms": 0.058,
+     "matches": 359
+    },
+    {
+     "case": "dot_star_line",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 0.263,
+     "regex_ms": 0.209,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_lit",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 0.492,
+     "regex_ms": 0.158,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_ipv4",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.192,
+     "regex_ms": 0.48,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_email",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.45,
+     "regex_ms": 0.484,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_logcaps",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 7.675,
+     "regex_ms": 12.077,
+     "matches": 58623
+    },
+    {
+     "case": "email_scan",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 1.712,
+     "regex_ms": 0.578,
+     "matches": 12000
+    },
+    {
+     "case": "log_caps",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 8.908,
+     "regex_ms": 13.529,
+     "matches": 18000
+    },
+    {
+     "case": "date_named",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 5.472,
+     "regex_ms": 2.507,
+     "matches": 18033
+    },
+    {
+     "case": "keywords",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 11.565,
+     "regex_ms": 1.938,
+     "matches": 12490
+    },
+    {
+     "case": "str_literal",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 0.12,
+     "regex_ms": 0.087,
+     "matches": 1131
+    },
+    {
+     "case": "lazy_dot",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 3.287,
+     "regex_ms": 0.748,
+     "matches": 12000
+    },
+    {
+     "case": "ci_alt",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 7.146,
+     "regex_ms": 0.441,
+     "matches": 2398
+    },
+    {
+     "case": "unicode_letters",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 4.404,
+     "regex_ms": 2.091,
+     "matches": 37064
+    },
+    {
+     "case": "unicode_word",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 4.378,
+     "regex_ms": 2.112,
+     "matches": 40000
+    },
+    {
+     "case": "greek_cyr",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 2.743,
+     "regex_ms": 0.803,
+     "matches": 5731
+    },
+    {
+     "case": "float_num",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 2.597,
+     "regex_ms": 1.347,
+     "matches": 2
+    },
+    {
+     "case": "suffix_lit",
+     "kind": "complex",
+     "corpus": "prose",
+     "ferroni_ms": 6.412,
+     "regex_ms": 2.513,
+     "matches": 880
+    },
+    {
+     "case": "dot_star_mid",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 4.199,
+     "regex_ms": null,
+     "matches": 221
+    },
+    {
+     "case": "backref_dup",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 10.688,
+     "regex_ms": null,
+     "matches": 4
+    },
+    {
+     "case": "lookbehind",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 21.452,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "lookahead_neg",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 18.576,
+     "regex_ms": null,
+     "matches": 86189
+    },
+    {
+     "case": "atomic_poss",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 2.135,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "html_tag_backref",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 0.096,
+     "regex_ms": null,
+     "matches": 0
+    },
+    {
+     "case": "px_lazy_as_negcls",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.196,
+     "regex_ms": 0.685,
+     "matches": 12000
+    },
+    {
+     "case": "px_lookbehind_as_lit",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.005,
+     "regex_ms": 0.48,
+     "matches": 12000
+    },
+    {
+     "case": "px_ci_alt_as_cs",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 0.364,
+     "regex_ms": 0.276,
+     "matches": 2398
+    },
+    {
+     "case": "subexp_call",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 2.293,
+     "regex_ms": null,
+     "matches": 4954
+    },
+    {
+     "case": "t_valid_int",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 9.163,
+     "regex_ms": 2.203,
+     "matches": 24000
+    },
+    {
+     "case": "t_valid_ipv4",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 8.96,
+     "regex_ms": 1.179,
+     "matches": 12000
+    },
+    {
+     "case": "t_valid_email",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 5.437,
+     "regex_ms": 1.908,
+     "matches": 0
+    },
+    {
+     "case": "t_valid_word",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 2.404,
+     "regex_ms": 0.969,
+     "matches": 24212
+    },
+    {
+     "case": "t_split_ws",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 3.614,
+     "regex_ms": 1.415,
+     "matches": 39889
+    },
+    {
+     "case": "t_split_comma",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 27.305,
+     "regex_ms": 0.605,
+     "matches": 12139
+    },
+    {
+     "case": "t_kv_caps",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 9.584,
+     "regex_ms": 7.337,
+     "matches": 286679
+    },
+    {
+     "case": "t_ci_word",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 1.045,
+     "regex_ms": 0.251,
+     "matches": 1165
+    },
+    {
+     "case": "t_ci_phrase",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 2.741,
+     "regex_ms": 0.032,
+     "matches": 0
+    },
+    {
+     "case": "t_url",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.052,
+     "regex_ms": 0.066,
+     "matches": 330
+    },
+    {
+     "case": "t_html_tag",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.045,
+     "regex_ms": 0.099,
+     "matches": 39
+    },
+    {
+     "case": "t_md_link",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.163,
+     "regex_ms": 0.653,
+     "matches": 554
+    },
+    {
+     "case": "t_quoted",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.152,
+     "regex_ms": 0.082,
+     "matches": 1137
+    },
+    {
+     "case": "t_hex",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.045,
+     "regex_ms": 0.043,
+     "matches": 216
+    },
+    {
+     "case": "t_fn_call",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 21.727,
+     "regex_ms": 0.827,
+     "matches": 8904
+    },
+    {
+     "case": "t_trailing_ws",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 7.331,
+     "regex_ms": 1.897,
+     "matches": 0
+    },
+    {
+     "case": "t_camel",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 18.469,
+     "regex_ms": 35.29,
+     "matches": 1
+    },
+    {
+     "case": "t_line_starts",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 19.644,
+     "regex_ms": null,
+     "matches": 2947
+    }
+   ],
+   [
+    {
+     "case": "lit_common",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.029,
+     "regex_ms": 0.011,
+     "matches": 245
+    },
+    {
+     "case": "lit_rare",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.016,
+     "regex_ms": 0.013,
+     "matches": 122
+    },
+    {
+     "case": "lit_none",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.037,
+     "regex_ms": 0.028,
+     "matches": 0
+    },
+    {
+     "case": "lit_ci",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.469,
+     "regex_ms": 0.041,
+     "matches": 298
+    },
+    {
+     "case": "char_digit",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 21.012,
+     "regex_ms": 6.942,
+     "matches": 247890
+    },
+    {
+     "case": "word",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 3.293,
+     "regex_ms": 2.118,
+     "matches": 42731
+    },
+    {
+     "case": "class_lower",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 2.82,
+     "regex_ms": 1.728,
+     "matches": 880
+    },
+    {
+     "case": "alt5_words",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.064,
+     "regex_ms": 0.043,
+     "matches": 601
+    },
+    {
+     "case": "ident",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 9.655,
+     "regex_ms": 4.715,
+     "matches": 90872
+    },
+    {
+     "case": "line_anchor",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.055,
+     "regex_ms": 0.055,
+     "matches": 359
+    },
+    {
+     "case": "dot_star_line",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 0.263,
+     "regex_ms": 0.196,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_lit",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 0.489,
+     "regex_ms": 0.183,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_ipv4",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.498,
+     "regex_ms": 0.452,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_email",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.902,
+     "regex_ms": 0.577,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_logcaps",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 8.454,
+     "regex_ms": 11.487,
+     "matches": 58623
+    },
+    {
+     "case": "email_scan",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 1.989,
+     "regex_ms": 0.74,
+     "matches": 12000
+    },
+    {
+     "case": "log_caps",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 11.242,
+     "regex_ms": 13.872,
+     "matches": 18000
+    },
+    {
+     "case": "date_named",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 5.886,
+     "regex_ms": 2.285,
+     "matches": 18033
+    },
+    {
+     "case": "keywords",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 10.966,
+     "regex_ms": 2.176,
+     "matches": 12490
+    },
+    {
+     "case": "str_literal",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 0.144,
+     "regex_ms": 0.096,
+     "matches": 1131
+    },
+    {
+     "case": "lazy_dot",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 3.021,
+     "regex_ms": 0.739,
+     "matches": 12000
+    },
+    {
+     "case": "ci_alt",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 8.733,
+     "regex_ms": 0.388,
+     "matches": 2398
+    },
+    {
+     "case": "unicode_letters",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 4.481,
+     "regex_ms": 2.122,
+     "matches": 37064
+    },
+    {
+     "case": "unicode_word",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 4.812,
+     "regex_ms": 1.971,
+     "matches": 40000
+    },
+    {
+     "case": "greek_cyr",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 2.697,
+     "regex_ms": 0.642,
+     "matches": 5731
+    },
+    {
+     "case": "float_num",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 2.052,
+     "regex_ms": 1.065,
+     "matches": 2
+    },
+    {
+     "case": "suffix_lit",
+     "kind": "complex",
+     "corpus": "prose",
+     "ferroni_ms": 6.571,
+     "regex_ms": 2.754,
+     "matches": 880
+    },
+    {
+     "case": "dot_star_mid",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 4.759,
+     "regex_ms": null,
+     "matches": 221
+    },
+    {
+     "case": "backref_dup",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 11.092,
+     "regex_ms": null,
+     "matches": 4
+    },
+    {
+     "case": "lookbehind",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 23.771,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "lookahead_neg",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 18.803,
+     "regex_ms": null,
+     "matches": 86189
+    },
+    {
+     "case": "atomic_poss",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 2.172,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "html_tag_backref",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 0.083,
+     "regex_ms": null,
+     "matches": 0
+    },
+    {
+     "case": "px_lazy_as_negcls",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.198,
+     "regex_ms": 0.712,
+     "matches": 12000
+    },
+    {
+     "case": "px_lookbehind_as_lit",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.065,
+     "regex_ms": 0.485,
+     "matches": 12000
+    },
+    {
+     "case": "px_ci_alt_as_cs",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 0.364,
+     "regex_ms": 0.279,
+     "matches": 2398
+    },
+    {
+     "case": "subexp_call",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 2.218,
+     "regex_ms": null,
+     "matches": 4954
+    },
+    {
+     "case": "t_valid_int",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 9.295,
+     "regex_ms": 2.248,
+     "matches": 24000
+    },
+    {
+     "case": "t_valid_ipv4",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 9.508,
+     "regex_ms": 1.41,
+     "matches": 12000
+    },
+    {
+     "case": "t_valid_email",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 6.769,
+     "regex_ms": 1.578,
+     "matches": 0
+    },
+    {
+     "case": "t_valid_word",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 2.584,
+     "regex_ms": 1.048,
+     "matches": 24212
+    },
+    {
+     "case": "t_split_ws",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 3.11,
+     "regex_ms": 1.805,
+     "matches": 39889
+    },
+    {
+     "case": "t_split_comma",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 35.183,
+     "regex_ms": 0.638,
+     "matches": 12139
+    },
+    {
+     "case": "t_kv_caps",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 8.467,
+     "regex_ms": 6.109,
+     "matches": 286679
+    },
+    {
+     "case": "t_ci_word",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 0.965,
+     "regex_ms": 0.243,
+     "matches": 1165
+    },
+    {
+     "case": "t_ci_phrase",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 1.58,
+     "regex_ms": 0.03,
+     "matches": 0
+    },
+    {
+     "case": "t_url",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.049,
+     "regex_ms": 0.066,
+     "matches": 330
+    },
+    {
+     "case": "t_html_tag",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.058,
+     "regex_ms": 0.083,
+     "matches": 39
+    },
+    {
+     "case": "t_md_link",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.155,
+     "regex_ms": 0.586,
+     "matches": 554
+    },
+    {
+     "case": "t_quoted",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.126,
+     "regex_ms": 0.105,
+     "matches": 1137
+    },
+    {
+     "case": "t_hex",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.054,
+     "regex_ms": 0.043,
+     "matches": 216
+    },
+    {
+     "case": "t_fn_call",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 22.458,
+     "regex_ms": 0.884,
+     "matches": 8904
+    },
+    {
+     "case": "t_trailing_ws",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 6.536,
+     "regex_ms": 1.577,
+     "matches": 0
+    },
+    {
+     "case": "t_camel",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 18.544,
+     "regex_ms": 36.641,
+     "matches": 1
+    },
+    {
+     "case": "t_line_starts",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 20.854,
+     "regex_ms": null,
+     "matches": 2947
+    }
+   ]
+  ],
+  "candidate": [
+   [
+    {
+     "case": "lit_common",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.024,
+     "regex_ms": 0.011,
+     "matches": 245
+    },
+    {
+     "case": "lit_rare",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.022,
+     "regex_ms": 0.013,
+     "matches": 122
+    },
+    {
+     "case": "lit_none",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.038,
+     "regex_ms": 0.036,
+     "matches": 0
+    },
+    {
+     "case": "lit_ci",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.048,
+     "regex_ms": 0.05,
+     "matches": 298
+    },
+    {
+     "case": "char_digit",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 16.703,
+     "regex_ms": 5.182,
+     "matches": 247890
+    },
+    {
+     "case": "word",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 3.284,
+     "regex_ms": 1.683,
+     "matches": 42731
+    },
+    {
+     "case": "class_lower",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 3.707,
+     "regex_ms": 2.235,
+     "matches": 880
+    },
+    {
+     "case": "alt5_words",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.063,
+     "regex_ms": 0.043,
+     "matches": 601
+    },
+    {
+     "case": "ident",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 7.378,
+     "regex_ms": 4.319,
+     "matches": 90872
+    },
+    {
+     "case": "line_anchor",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.066,
+     "regex_ms": 0.048,
+     "matches": 359
+    },
+    {
+     "case": "dot_star_line",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 0.252,
+     "regex_ms": 0.193,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_lit",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 0.449,
+     "regex_ms": 0.185,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_ipv4",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.668,
+     "regex_ms": 0.39,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_email",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.716,
+     "regex_ms": 0.573,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_logcaps",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 8.847,
+     "regex_ms": 11.706,
+     "matches": 58623
+    },
+    {
+     "case": "email_scan",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 1.886,
+     "regex_ms": 0.578,
+     "matches": 12000
+    },
+    {
+     "case": "log_caps",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 11.408,
+     "regex_ms": 14.052,
+     "matches": 18000
+    },
+    {
+     "case": "date_named",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 6.185,
+     "regex_ms": 2.505,
+     "matches": 18033
+    },
+    {
+     "case": "keywords",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 4.372,
+     "regex_ms": 2.397,
+     "matches": 12490
+    },
+    {
+     "case": "str_literal",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 0.129,
+     "regex_ms": 0.086,
+     "matches": 1131
+    },
+    {
+     "case": "lazy_dot",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 2.939,
+     "regex_ms": 0.753,
+     "matches": 12000
+    },
+    {
+     "case": "ci_alt",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 7.848,
+     "regex_ms": 0.475,
+     "matches": 2398
+    },
+    {
+     "case": "unicode_letters",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 4.661,
+     "regex_ms": 1.942,
+     "matches": 37064
+    },
+    {
+     "case": "unicode_word",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 5.432,
+     "regex_ms": 1.875,
+     "matches": 40000
+    },
+    {
+     "case": "greek_cyr",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 2.721,
+     "regex_ms": 0.636,
+     "matches": 5731
+    },
+    {
+     "case": "float_num",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 2.209,
+     "regex_ms": 1.3,
+     "matches": 2
+    },
+    {
+     "case": "suffix_lit",
+     "kind": "complex",
+     "corpus": "prose",
+     "ferroni_ms": 5.292,
+     "regex_ms": 2.14,
+     "matches": 880
+    },
+    {
+     "case": "dot_star_mid",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 4.084,
+     "regex_ms": null,
+     "matches": 221
+    },
+    {
+     "case": "backref_dup",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 12.303,
+     "regex_ms": null,
+     "matches": 4
+    },
+    {
+     "case": "lookbehind",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 20.229,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "lookahead_neg",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 13.876,
+     "regex_ms": null,
+     "matches": 86189
+    },
+    {
+     "case": "atomic_poss",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 1.837,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "html_tag_backref",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 0.086,
+     "regex_ms": null,
+     "matches": 0
+    },
+    {
+     "case": "px_lazy_as_negcls",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.248,
+     "regex_ms": 0.614,
+     "matches": 12000
+    },
+    {
+     "case": "px_lookbehind_as_lit",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.032,
+     "regex_ms": 0.49,
+     "matches": 12000
+    },
+    {
+     "case": "px_ci_alt_as_cs",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 0.388,
+     "regex_ms": 0.291,
+     "matches": 2398
+    },
+    {
+     "case": "subexp_call",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 2.166,
+     "regex_ms": null,
+     "matches": 4954
+    },
+    {
+     "case": "t_valid_int",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 9.747,
+     "regex_ms": 1.855,
+     "matches": 24000
+    },
+    {
+     "case": "t_valid_ipv4",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 12.091,
+     "regex_ms": 1.372,
+     "matches": 12000
+    },
+    {
+     "case": "t_valid_email",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 6.673,
+     "regex_ms": 1.934,
+     "matches": 0
+    },
+    {
+     "case": "t_valid_word",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 2.593,
+     "regex_ms": 0.837,
+     "matches": 24212
+    },
+    {
+     "case": "t_split_ws",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 3.597,
+     "regex_ms": 1.711,
+     "matches": 39889
+    },
+    {
+     "case": "t_split_comma",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 1.956,
+     "regex_ms": 0.763,
+     "matches": 12139
+    },
+    {
+     "case": "t_kv_caps",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 10.763,
+     "regex_ms": 7.298,
+     "matches": 286679
+    },
+    {
+     "case": "t_ci_word",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 0.625,
+     "regex_ms": 0.243,
+     "matches": 1165
+    },
+    {
+     "case": "t_ci_phrase",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.357,
+     "regex_ms": 0.025,
+     "matches": 0
+    },
+    {
+     "case": "t_url",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.05,
+     "regex_ms": 0.07,
+     "matches": 330
+    },
+    {
+     "case": "t_html_tag",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.055,
+     "regex_ms": 0.105,
+     "matches": 39
+    },
+    {
+     "case": "t_md_link",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.135,
+     "regex_ms": 0.518,
+     "matches": 554
+    },
+    {
+     "case": "t_quoted",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.158,
+     "regex_ms": 0.102,
+     "matches": 1137
+    },
+    {
+     "case": "t_hex",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.06,
+     "regex_ms": 0.034,
+     "matches": 216
+    },
+    {
+     "case": "t_fn_call",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 1.918,
+     "regex_ms": 0.976,
+     "matches": 8904
+    },
+    {
+     "case": "t_trailing_ws",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 8.326,
+     "regex_ms": 2.01,
+     "matches": 0
+    },
+    {
+     "case": "t_camel",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 9.521,
+     "regex_ms": 38.631,
+     "matches": 1
+    },
+    {
+     "case": "t_line_starts",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 3.083,
+     "regex_ms": null,
+     "matches": 2947
+    }
+   ],
+   [
+    {
+     "case": "lit_common",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.024,
+     "regex_ms": 0.014,
+     "matches": 245
+    },
+    {
+     "case": "lit_rare",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.019,
+     "regex_ms": 0.01,
+     "matches": 122
+    },
+    {
+     "case": "lit_none",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.029,
+     "regex_ms": 0.036,
+     "matches": 0
+    },
+    {
+     "case": "lit_ci",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.048,
+     "regex_ms": 0.041,
+     "matches": 298
+    },
+    {
+     "case": "char_digit",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 20.892,
+     "regex_ms": 5.189,
+     "matches": 247890
+    },
+    {
+     "case": "word",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 4.205,
+     "regex_ms": 1.946,
+     "matches": 42731
+    },
+    {
+     "case": "class_lower",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 2.856,
+     "regex_ms": 1.754,
+     "matches": 880
+    },
+    {
+     "case": "alt5_words",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.063,
+     "regex_ms": 0.042,
+     "matches": 601
+    },
+    {
+     "case": "ident",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 7.426,
+     "regex_ms": 4.293,
+     "matches": 90872
+    },
+    {
+     "case": "line_anchor",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.061,
+     "regex_ms": 0.057,
+     "matches": 359
+    },
+    {
+     "case": "dot_star_line",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 0.263,
+     "regex_ms": 0.207,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_lit",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 0.496,
+     "regex_ms": 0.17,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_ipv4",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.516,
+     "regex_ms": 0.396,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_email",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.952,
+     "regex_ms": 0.498,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_logcaps",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 7.078,
+     "regex_ms": 12.341,
+     "matches": 58623
+    },
+    {
+     "case": "email_scan",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 1.93,
+     "regex_ms": 0.689,
+     "matches": 12000
+    },
+    {
+     "case": "log_caps",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 10.942,
+     "regex_ms": 13.936,
+     "matches": 18000
+    },
+    {
+     "case": "date_named",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 5.854,
+     "regex_ms": 2.524,
+     "matches": 18033
+    },
+    {
+     "case": "keywords",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 3.467,
+     "regex_ms": 2.334,
+     "matches": 12490
+    },
+    {
+     "case": "str_literal",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 0.152,
+     "regex_ms": 0.101,
+     "matches": 1131
+    },
+    {
+     "case": "lazy_dot",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 3.419,
+     "regex_ms": 0.743,
+     "matches": 12000
+    },
+    {
+     "case": "ci_alt",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 6.179,
+     "regex_ms": 0.382,
+     "matches": 2398
+    },
+    {
+     "case": "unicode_letters",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 4.649,
+     "regex_ms": 1.894,
+     "matches": 37064
+    },
+    {
+     "case": "unicode_word",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 5.447,
+     "regex_ms": 1.958,
+     "matches": 40000
+    },
+    {
+     "case": "greek_cyr",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 2.231,
+     "regex_ms": 0.606,
+     "matches": 5731
+    },
+    {
+     "case": "float_num",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 2.081,
+     "regex_ms": 1.347,
+     "matches": 2
+    },
+    {
+     "case": "suffix_lit",
+     "kind": "complex",
+     "corpus": "prose",
+     "ferroni_ms": 6.686,
+     "regex_ms": 2.595,
+     "matches": 880
+    },
+    {
+     "case": "dot_star_mid",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 4.062,
+     "regex_ms": null,
+     "matches": 221
+    },
+    {
+     "case": "backref_dup",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 10.023,
+     "regex_ms": null,
+     "matches": 4
+    },
+    {
+     "case": "lookbehind",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 21.149,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "lookahead_neg",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 17.331,
+     "regex_ms": null,
+     "matches": 86189
+    },
+    {
+     "case": "atomic_poss",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 2.141,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "html_tag_backref",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 0.088,
+     "regex_ms": null,
+     "matches": 0
+    },
+    {
+     "case": "px_lazy_as_negcls",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.298,
+     "regex_ms": 0.743,
+     "matches": 12000
+    },
+    {
+     "case": "px_lookbehind_as_lit",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.017,
+     "regex_ms": 0.392,
+     "matches": 12000
+    },
+    {
+     "case": "px_ci_alt_as_cs",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 0.307,
+     "regex_ms": 0.272,
+     "matches": 2398
+    },
+    {
+     "case": "subexp_call",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 1.665,
+     "regex_ms": null,
+     "matches": 4954
+    },
+    {
+     "case": "t_valid_int",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 9.021,
+     "regex_ms": 1.795,
+     "matches": 24000
+    },
+    {
+     "case": "t_valid_ipv4",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 11.809,
+     "regex_ms": 1.399,
+     "matches": 12000
+    },
+    {
+     "case": "t_valid_email",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 5.557,
+     "regex_ms": 2.065,
+     "matches": 0
+    },
+    {
+     "case": "t_valid_word",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 2.616,
+     "regex_ms": 1.086,
+     "matches": 24212
+    },
+    {
+     "case": "t_split_ws",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 2.991,
+     "regex_ms": 1.411,
+     "matches": 39889
+    },
+    {
+     "case": "t_split_comma",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 1.979,
+     "regex_ms": 0.76,
+     "matches": 12139
+    },
+    {
+     "case": "t_kv_caps",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 8.525,
+     "regex_ms": 7.26,
+     "matches": 286679
+    },
+    {
+     "case": "t_ci_word",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 0.536,
+     "regex_ms": 0.219,
+     "matches": 1165
+    },
+    {
+     "case": "t_ci_phrase",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.376,
+     "regex_ms": 0.026,
+     "matches": 0
+    },
+    {
+     "case": "t_url",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.063,
+     "regex_ms": 0.078,
+     "matches": 330
+    },
+    {
+     "case": "t_html_tag",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.052,
+     "regex_ms": 0.102,
+     "matches": 39
+    },
+    {
+     "case": "t_md_link",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.146,
+     "regex_ms": 0.514,
+     "matches": 554
+    },
+    {
+     "case": "t_quoted",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.124,
+     "regex_ms": 0.081,
+     "matches": 1137
+    },
+    {
+     "case": "t_hex",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.045,
+     "regex_ms": 0.045,
+     "matches": 216
+    },
+    {
+     "case": "t_fn_call",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 2.149,
+     "regex_ms": 1.076,
+     "matches": 8904
+    },
+    {
+     "case": "t_trailing_ws",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 8.278,
+     "regex_ms": 2.006,
+     "matches": 0
+    },
+    {
+     "case": "t_camel",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 9.513,
+     "regex_ms": 38.779,
+     "matches": 1
+    },
+    {
+     "case": "t_line_starts",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 2.596,
+     "regex_ms": null,
+     "matches": 2947
+    }
+   ],
+   [
+    {
+     "case": "lit_common",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.027,
+     "regex_ms": 0.014,
+     "matches": 245
+    },
+    {
+     "case": "lit_rare",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.02,
+     "regex_ms": 0.01,
+     "matches": 122
+    },
+    {
+     "case": "lit_none",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.029,
+     "regex_ms": 0.028,
+     "matches": 0
+    },
+    {
+     "case": "lit_ci",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.058,
+     "regex_ms": 0.04,
+     "matches": 298
+    },
+    {
+     "case": "char_digit",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 20.997,
+     "regex_ms": 6.427,
+     "matches": 247890
+    },
+    {
+     "case": "word",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 4.089,
+     "regex_ms": 1.948,
+     "matches": 42731
+    },
+    {
+     "case": "class_lower",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 3.684,
+     "regex_ms": 1.739,
+     "matches": 880
+    },
+    {
+     "case": "alt5_words",
+     "kind": "simple",
+     "corpus": "prose",
+     "ferroni_ms": 0.063,
+     "regex_ms": 0.041,
+     "matches": 601
+    },
+    {
+     "case": "ident",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 7.453,
+     "regex_ms": 5.313,
+     "matches": 90872
+    },
+    {
+     "case": "line_anchor",
+     "kind": "simple",
+     "corpus": "code",
+     "ferroni_ms": 0.078,
+     "regex_ms": 0.047,
+     "matches": 359
+    },
+    {
+     "case": "dot_star_line",
+     "kind": "simple",
+     "corpus": "log",
+     "ferroni_ms": 0.198,
+     "regex_ms": 0.171,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_lit",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 0.436,
+     "regex_ms": 0.155,
+     "matches": 1165
+    },
+    {
+     "case": "v_line_ipv4",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 1.72,
+     "regex_ms": 0.384,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_email",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 2.014,
+     "regex_ms": 0.516,
+     "matches": 12000
+    },
+    {
+     "case": "v_line_logcaps",
+     "kind": "per-line",
+     "corpus": "log",
+     "ferroni_ms": 8.634,
+     "regex_ms": 10.068,
+     "matches": 58623
+    },
+    {
+     "case": "email_scan",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 2.008,
+     "regex_ms": 0.695,
+     "matches": 12000
+    },
+    {
+     "case": "log_caps",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 8.797,
+     "regex_ms": 12.427,
+     "matches": 18000
+    },
+    {
+     "case": "date_named",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 5.507,
+     "regex_ms": 1.989,
+     "matches": 18033
+    },
+    {
+     "case": "keywords",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 3.439,
+     "regex_ms": 1.857,
+     "matches": 12490
+    },
+    {
+     "case": "str_literal",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 0.155,
+     "regex_ms": 0.101,
+     "matches": 1131
+    },
+    {
+     "case": "lazy_dot",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 3.483,
+     "regex_ms": 0.731,
+     "matches": 12000
+    },
+    {
+     "case": "ci_alt",
+     "kind": "complex",
+     "corpus": "log",
+     "ferroni_ms": 7.445,
+     "regex_ms": 0.474,
+     "matches": 2398
+    },
+    {
+     "case": "unicode_letters",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 3.676,
+     "regex_ms": 1.728,
+     "matches": 37064
+    },
+    {
+     "case": "unicode_word",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 4.24,
+     "regex_ms": 1.875,
+     "matches": 40000
+    },
+    {
+     "case": "greek_cyr",
+     "kind": "complex",
+     "corpus": "unicode",
+     "ferroni_ms": 2.747,
+     "regex_ms": 0.738,
+     "matches": 5731
+    },
+    {
+     "case": "float_num",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 2.396,
+     "regex_ms": 1.279,
+     "matches": 2
+    },
+    {
+     "case": "suffix_lit",
+     "kind": "complex",
+     "corpus": "prose",
+     "ferroni_ms": 5.536,
+     "regex_ms": 2.584,
+     "matches": 880
+    },
+    {
+     "case": "dot_star_mid",
+     "kind": "complex",
+     "corpus": "code",
+     "ferroni_ms": 4.912,
+     "regex_ms": null,
+     "matches": 221
+    },
+    {
+     "case": "backref_dup",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 11.308,
+     "regex_ms": null,
+     "matches": 4
+    },
+    {
+     "case": "lookbehind",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 24.634,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "lookahead_neg",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 13.796,
+     "regex_ms": null,
+     "matches": 86189
+    },
+    {
+     "case": "atomic_poss",
+     "kind": "onig-only",
+     "corpus": "log",
+     "ferroni_ms": 1.839,
+     "regex_ms": null,
+     "matches": 12000
+    },
+    {
+     "case": "html_tag_backref",
+     "kind": "onig-only",
+     "corpus": "prose",
+     "ferroni_ms": 0.069,
+     "regex_ms": null,
+     "matches": 0
+    },
+    {
+     "case": "px_lazy_as_negcls",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 1.218,
+     "regex_ms": 0.698,
+     "matches": 12000
+    },
+    {
+     "case": "px_lookbehind_as_lit",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 0.992,
+     "regex_ms": 0.442,
+     "matches": 12000
+    },
+    {
+     "case": "px_ci_alt_as_cs",
+     "kind": "proxy",
+     "corpus": "log",
+     "ferroni_ms": 0.361,
+     "regex_ms": 0.274,
+     "matches": 2398
+    },
+    {
+     "case": "subexp_call",
+     "kind": "onig-only",
+     "corpus": "code",
+     "ferroni_ms": 2.016,
+     "regex_ms": null,
+     "matches": 4954
+    },
+    {
+     "case": "t_valid_int",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 8.905,
+     "regex_ms": 2.09,
+     "matches": 24000
+    },
+    {
+     "case": "t_valid_ipv4",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 11.359,
+     "regex_ms": 1.333,
+     "matches": 12000
+    },
+    {
+     "case": "t_valid_email",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 6.332,
+     "regex_ms": 2.007,
+     "matches": 0
+    },
+    {
+     "case": "t_valid_word",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 2.103,
+     "regex_ms": 0.838,
+     "matches": 24212
+    },
+    {
+     "case": "t_split_ws",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 3.556,
+     "regex_ms": 1.663,
+     "matches": 39889
+    },
+    {
+     "case": "t_split_comma",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 1.937,
+     "regex_ms": 0.606,
+     "matches": 12139
+    },
+    {
+     "case": "t_kv_caps",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 8.302,
+     "regex_ms": 7.211,
+     "matches": 286679
+    },
+    {
+     "case": "t_ci_word",
+     "kind": "typical",
+     "corpus": "log",
+     "ferroni_ms": 0.67,
+     "regex_ms": 0.22,
+     "matches": 1165
+    },
+    {
+     "case": "t_ci_phrase",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.431,
+     "regex_ms": 0.025,
+     "matches": 0
+    },
+    {
+     "case": "t_url",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.063,
+     "regex_ms": 0.066,
+     "matches": 330
+    },
+    {
+     "case": "t_html_tag",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.058,
+     "regex_ms": 0.105,
+     "matches": 39
+    },
+    {
+     "case": "t_md_link",
+     "kind": "typical",
+     "corpus": "prose",
+     "ferroni_ms": 0.167,
+     "regex_ms": 0.624,
+     "matches": 554
+    },
+    {
+     "case": "t_quoted",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.151,
+     "regex_ms": 0.087,
+     "matches": 1137
+    },
+    {
+     "case": "t_hex",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 0.046,
+     "regex_ms": 0.043,
+     "matches": 216
+    },
+    {
+     "case": "t_fn_call",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 2.16,
+     "regex_ms": 1.082,
+     "matches": 8904
+    },
+    {
+     "case": "t_trailing_ws",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 7.066,
+     "regex_ms": 1.656,
+     "matches": 0
+    },
+    {
+     "case": "t_camel",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 7.975,
+     "regex_ms": 37.39,
+     "matches": 1
+    },
+    {
+     "case": "t_line_starts",
+     "kind": "typical",
+     "corpus": "code",
+     "ferroni_ms": 4.156,
+     "regex_ms": null,
+     "matches": 2947
+    }
+   ]
+  ]
+ },
+ "callgrind_matrix_ir": [
+  {
+   "case": "lit_common",
+   "baseline": 2747305,
+   "candidate": 2745138
+  },
+  {
+   "case": "lit_rare",
+   "baseline": 2616197,
+   "candidate": 2612032
+  },
+  {
+   "case": "lit_none",
+   "baseline": 6981730,
+   "candidate": 6975457
+  },
+  {
+   "case": "lit_ci",
+   "baseline": 10837708,
+   "candidate": 3308927
+  },
+  {
+   "case": "char_digit",
+   "baseline": 319080976,
+   "candidate": 323288323
+  },
+  {
+   "case": "word",
+   "baseline": 57207836,
+   "candidate": 57928789
+  },
+  {
+   "case": "class_lower",
+   "baseline": 49430844,
+   "candidate": 49756526
+  },
+  {
+   "case": "alt5_words",
+   "baseline": 3587583,
+   "candidate": 3581547
+  },
+  {
+   "case": "ident",
+   "baseline": 126336097,
+   "candidate": 127874874
+  },
+  {
+   "case": "line_anchor",
+   "baseline": 7491963,
+   "candidate": 7491900
+  },
+  {
+   "case": "dot_star_line",
+   "baseline": 13684064,
+   "candidate": 13698254
+  },
+  {
+   "case": "v_line_lit",
+   "baseline": 18128661,
+   "candidate": 18369657
+  },
+  {
+   "case": "v_line_ipv4",
+   "baseline": 32705472,
+   "candidate": 32915023
+  },
+  {
+   "case": "v_line_email",
+   "baseline": 37507575,
+   "candidate": 37621382
+  },
+  {
+   "case": "v_line_logcaps",
+   "baseline": 123790671,
+   "candidate": 125044416
+  },
+  {
+   "case": "email_scan",
+   "baseline": 40950666,
+   "candidate": 41064460
+  },
+  {
+   "case": "log_caps",
+   "baseline": 143949934,
+   "candidate": 144207596
+  },
+  {
+   "case": "date_named",
+   "baseline": 99193958,
+   "candidate": 99798146
+  },
+  {
+   "case": "keywords",
+   "baseline": 150457661,
+   "candidate": 39920717
+  },
+  {
+   "case": "str_literal",
+   "baseline": 8977412,
+   "candidate": 8990861
+  },
+  {
+   "case": "lazy_dot",
+   "baseline": 60528541,
+   "candidate": 60726780
+  },
+  {
+   "case": "ci_alt",
+   "baseline": 137905499,
+   "candidate": 139013631
+  },
+  {
+   "case": "unicode_letters",
+   "baseline": 62104615,
+   "candidate": 62762925
+  },
+  {
+   "case": "unicode_word",
+   "baseline": 68189548,
+   "candidate": 68863552
+  },
+  {
+   "case": "greek_cyr",
+   "baseline": 38549704,
+   "candidate": 38968199
+  },
+  {
+   "case": "float_num",
+   "baseline": 49496935,
+   "candidate": 49502783
+  },
+  {
+   "case": "suffix_lit",
+   "baseline": 97553004,
+   "candidate": 97684910
+  },
+  {
+   "case": "dot_star_mid",
+   "baseline": 67835869,
+   "candidate": 66857691
+  },
+  {
+   "case": "backref_dup",
+   "baseline": 193981607,
+   "candidate": 195565983
+  },
+  {
+   "case": "lookbehind",
+   "baseline": 416468219,
+   "candidate": 419086937
+  },
+  {
+   "case": "lookahead_neg",
+   "baseline": 266758943,
+   "candidate": 229447043
+  },
+  {
+   "case": "atomic_poss",
+   "baseline": 39034422,
+   "candidate": 39148243
+  },
+  {
+   "case": "html_tag_backref",
+   "baseline": 3872834,
+   "candidate": 3867386
+  },
+  {
+   "case": "px_lazy_as_negcls",
+   "baseline": 32534596,
+   "candidate": 32732812
+  },
+  {
+   "case": "px_lookbehind_as_lit",
+   "baseline": 26660170,
+   "candidate": 26857837
+  },
+  {
+   "case": "px_ci_alt_as_cs",
+   "baseline": 14645325,
+   "candidate": 14641099
+  },
+  {
+   "case": "subexp_call",
+   "baseline": 36555334,
+   "candidate": 36633368
+  },
+  {
+   "case": "t_valid_int",
+   "baseline": 165241675,
+   "candidate": 168938294
+  },
+  {
+   "case": "t_valid_ipv4",
+   "baseline": 194024100,
+   "candidate": 197344625
+  },
+  {
+   "case": "t_valid_email",
+   "baseline": 132725915,
+   "candidate": 134614924
+  },
+  {
+   "case": "t_valid_word",
+   "baseline": 41598496,
+   "candidate": 42312139
+  },
+  {
+   "case": "t_split_ws",
+   "baseline": 51914356,
+   "candidate": 52588617
+  },
+  {
+   "case": "t_split_comma",
+   "baseline": 549580442,
+   "candidate": 29459816
+  },
+  {
+   "case": "t_kv_caps",
+   "baseline": 145571348,
+   "candidate": 145961178
+  },
+  {
+   "case": "t_ci_word",
+   "baseline": 28100721,
+   "candidate": 17083736
+  },
+  {
+   "case": "t_ci_phrase",
+   "baseline": 31055904,
+   "candidate": 8189044
+  },
+  {
+   "case": "t_url",
+   "baseline": 3289638,
+   "candidate": 3289494
+  },
+  {
+   "case": "t_html_tag",
+   "baseline": 3467098,
+   "candidate": 3461967
+  },
+  {
+   "case": "t_md_link",
+   "baseline": 5091906,
+   "candidate": 5093323
+  },
+  {
+   "case": "t_quoted",
+   "baseline": 8965982,
+   "candidate": 8979545
+  },
+  {
+   "case": "t_hex",
+   "baseline": 7299336,
+   "candidate": 7297344
+  },
+  {
+   "case": "t_fn_call",
+   "baseline": 417571199,
+   "candidate": 28777797
+  },
+  {
+   "case": "t_trailing_ws",
+   "baseline": 135524501,
+   "candidate": 136324625
+  },
+  {
+   "case": "t_camel",
+   "baseline": 271598003,
+   "candidate": 133731927
+  },
+  {
+   "case": "t_line_starts",
+   "baseline": 320561013,
+   "candidate": 42146465
+  }
+ ],
+ "scanner_callgrind": [
+  {
+   "workload": "typescript_279_patterns_28_lines",
+   "iterations": 20,
+   "total_ir": {
+    "baseline": 632534528,
+    "candidate": 632545857
+   },
+   "setup_ir": {
+    "baseline": 341381030,
+    "candidate": 341490036
+   }
+  },
+  {
+   "workload": "css_117_patterns_19_lines",
+   "iterations": 20,
+   "total_ir": {
+    "baseline": 612448767,
+    "candidate": 612871048
+   },
+   "setup_ir": {
+    "baseline": 580056932,
+    "candidate": 580479729
+   }
+  },
+  {
+   "workload": "rust_81_patterns_31_lines",
+   "iterations": 20,
+   "total_ir": {
+    "baseline": 44664236,
+    "candidate": 44793746
+   },
+   "setup_ir": {
+    "baseline": 11741243,
+    "candidate": 11809718
+   }
+  },
+  {
+   "workload": "css_20_patterns_tokenize",
+   "iterations": 200,
+   "total_ir": {
+    "baseline": 40700847,
+    "candidate": 40709466
+   },
+   "setup_ir": {
+    "baseline": 1662144,
+    "candidate": 1670945
+   }
+  },
+  {
+   "workload": "typescript_279_patterns_tokenize_line",
+   "iterations": 200,
+   "total_ir": {
+    "baseline": 352419753,
+    "candidate": 352449392
+   },
+   "setup_ir": {
+    "baseline": 341356600,
+    "candidate": 341547891
+   }
+  }
+ ],
+ "compile_cost_before_lazy_automaton": "Building the Aho-Corasick automaton at compile time added 22% (Rust grammar) and 64% (css_20 set) to scanner setup instructions; building it on first use removed that.",
+ "validation": {
+  "suites": "cargo test --release (lib, compat_*, api_test) and --features match-cache pass; clippy -D warnings and rustfmt clean.",
+  "unit_tests": "src/leading_run.rs: plan and jump detection; exhaustive comparison with the original path now including (?i) prefixes, ^-led patterns, C* runs, \\b runs, literal alternations, newline and malformed UTF-8 inputs and NOTBOL; generated expressions with these heads.",
+  "mutations": "Off-by-one jump target, line-start check without the previous-character-head rule, and a missing empty-C* attempt in the fallback path each fail the tests; the generated test found the last one during development.",
+  "not_run": "ffi differential against C Oniguruma (source download blocked in this environment)."
+ },
+ "harness_source": "//! Execution-time profiling matrix for Ferroni (compile once, measure search).\n//!\n//! Usage:\n//!   prof                 -> run the full matrix, print a table\n//!   prof <case> <secs>   -> loop one case (for perf record / callgrind)\n//!   prof list            -> list case names\n\nuse std::hint::black_box;\nuse std::time::{Duration, Instant};\n\nuse ferroni::api::Regex as FRegex;\nuse ferroni::oniguruma::{ONIG_OPTION_NONE, OnigRegion};\nuse ferroni::regexec::onig_search;\n\n#[derive(Clone, Copy, PartialEq)]\nenum Mode {\n    /// find_iter over the whole corpus (match positions only)\n    Find,\n    /// iterate all matches with capture groups\n    Caps,\n    /// one is_match per line (many short subjects)\n    LineMatch,\n    /// one captures() per line\n    LineCaps,\n    /// one is_match per whitespace-separated token (validation of short strings)\n    TokMatch,\n    /// all matches with captures, via the idiomatic captures API per line\n    LineCapsIter,\n}\n\nfn subjects(mode: Mode, text: &[u8]) -> Vec<&[u8]> {\n    if mode == Mode::TokMatch {\n        text.split(|&b| b == b' ' || b == b'\\n').filter(|t| !t.is_empty()).collect()\n    } else {\n        text.split(|&b| b == b'\\n').collect()\n    }\n}\n\nstruct Case {\n    name: &'static str,\n    kind: &'static str,\n    pat: &'static str,\n    corpus: &'static str,\n    mode: Mode,\n    /// false when the regex crate cannot express the pattern\n    regex_ok: bool,\n}\n\nconst fn c(\n    name: &'static str,\n    kind: &'static str,\n    pat: &'static str,\n    corpus: &'static str,\n    mode: Mode,\n    regex_ok: bool,\n) -> Case {\n    Case { name, kind, pat, corpus, mode, regex_ok }\n}\n\nfn cases() -> Vec<Case> {\n    use Mode::*;\n    vec![\n        // ---------------- simple ----------------\n        c(\"lit_common\", \"simple\", \"regex\", \"prose\", Find, true),\n        c(\"lit_rare\", \"simple\", \"Oniguruma\", \"prose\", Find, true),\n        c(\"lit_none\", \"simple\", \"zqxjkvw\", \"code\", Find, true),\n        c(\"lit_ci\", \"simple\", \"(?i)regex\", \"prose\", Find, true),\n        c(\"char_digit\", \"simple\", r\"\\d+\", \"log\", Find, true),\n        c(\"word\", \"simple\", r\"\\w+\", \"prose\", Find, true),\n        c(\"class_lower\", \"simple\", r\"[a-z]+ing\\b\", \"prose\", Find, true),\n        c(\"alt5_words\", \"simple\", \"Oniguruma|backtrack|compile|search|Unicode\", \"prose\", Find, true),\n        c(\"ident\", \"simple\", r\"[A-Za-z_][A-Za-z0-9_]*\", \"code\", Find, true),\n        c(\"line_anchor\", \"simple\", r\"(?m)^fn \", \"code\", Find, true),\n        c(\"dot_star_line\", \"simple\", r\"ERROR.*\", \"log\", Find, true),\n        // ------------- per-line / validation (call overhead) -------------\n        c(\"v_line_lit\", \"per-line\", \"ERROR\", \"log\", LineMatch, true),\n        c(\"v_line_ipv4\", \"per-line\", r\"\\A\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3} \", \"log\", LineMatch, true),\n        c(\"v_line_email\", \"per-line\", r\"[\\w.+-]+@[\\w-]+\\.[\\w.]+\", \"log\", LineMatch, true),\n        c(\n            \"v_line_logcaps\",\n            \"per-line\",\n            r#\"^(\\S+) \\S+ \\S+ \\[([^\\]]+)\\] \"(\\w+) ([^ \"]+) HTTP/[\\d.]+\" (\\d{3}) (\\d+)\"#,\n            \"log\",\n            LineCaps,\n            true,\n        ),\n        // ---------------- complex ----------------\n        c(\"email_scan\", \"complex\", r\"[\\w.+-]+@[\\w-]+\\.[\\w.-]+\", \"log\", Find, true),\n        c(\n            \"log_caps\",\n            \"complex\",\n            r#\"(\\d+\\.\\d+\\.\\d+\\.\\d+) .*?\\[([^\\]]+)\\] \"(GET|POST) ([^ ]+) HTTP/1\\.1\" (\\d{3})\"#,\n            \"log\",\n            Caps,\n            true,\n        ),\n        c(\"date_named\", \"complex\", r\"(?<d>\\d{2})/(?<m>\\w{3})/(?<y>\\d{4})\", \"log\", Caps, true),\n        c(\n            \"keywords\",\n            \"complex\",\n            r\"\\b(?:fn|let|mut|if|else|match|return|while|loop|for|impl|pub|struct|enum|const)\\b\",\n            \"code\",\n            Find,\n            true,\n        ),\n        c(\"str_literal\", \"complex\", r#\"\"(?:[^\"\\\\]|\\\\.)*\"\"#, \"code\", Find, true),\n        c(\"lazy_dot\", \"complex\", r\"\\[.*?\\]\", \"log\", Find, true),\n        c(\"ci_alt\", \"complex\", r\"(?i)(?:error|warn|fatal|panic)\", \"log\", Find, true),\n        c(\"unicode_letters\", \"complex\", r\"\\p{L}+\", \"unicode\", Find, true),\n        c(\"unicode_word\", \"complex\", r\"\\w+\", \"unicode\", Find, true),\n        c(\"greek_cyr\", \"complex\", r\"[\\p{Greek}\\p{Cyrillic}]+\", \"unicode\", Find, true),\n        c(\"float_num\", \"complex\", r\"[-+]?\\d+\\.\\d+(?:[eE][-+]?\\d+)?\", \"code\", Find, true),\n        c(\"suffix_lit\", \"complex\", r\"\\w+ing\\b\", \"prose\", Find, true),\n        c(\"dot_star_mid\", \"complex\", r\"^.*status.*$\", \"code\", Find, false),\n        // ---------------- Oniguruma-only ----------------\n        c(\"backref_dup\", \"onig-only\", r\"\\b(\\w+)\\s+\\1\\b\", \"prose\", Find, false),\n        c(\"lookbehind\", \"onig-only\", r\"(?<=took=)\\d+\", \"log\", Find, false),\n        c(\"lookahead_neg\", \"onig-only\", r\"\\b\\w+(?!\\w|\\()\\b\", \"code\", Find, false),\n        c(\"atomic_poss\", \"onig-only\", r\"(?>\\w+)@\\w++\", \"log\", Find, false),\n        c(\"html_tag_backref\", \"onig-only\", r\"<(\\w+)[^>]*>.*?</\\1>\", \"prose\", Find, false),\n        // ---------------- proxies for upper bounds ----------------\n        c(\"px_lazy_as_negcls\", \"proxy\", r\"\\[[^\\]\\n]*\\]\", \"log\", Find, true),\n        c(\"px_lookbehind_as_lit\", \"proxy\", r\"took=\\d+\", \"log\", Find, true),\n        c(\"px_ci_alt_as_cs\", \"proxy\", \"error|warn|fatal|panic|ERROR|WARN\", \"log\", Find, true),\n        c(\"subexp_call\", \"onig-only\", r\"(?<p>\\((?:[^()]|\\g<p>)*\\))\", \"code\", Find, false),\n        // ---------------- typical scenarios (round 2) ----------------\n        c(\"t_valid_int\", \"typical\", r\"\\A[+-]?\\d+\\z\", \"log\", TokMatch, true),\n        c(\"t_valid_ipv4\", \"typical\", r\"\\A(?:\\d{1,3}\\.){3}\\d{1,3}\\z\", \"log\", TokMatch, true),\n        c(\"t_valid_email\", \"typical\", r\"\\A[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+\\z\", \"log\", TokMatch, true),\n        c(\"t_valid_word\", \"typical\", r\"\\A[A-Za-z]+\\z\", \"prose\", TokMatch, true),\n        c(\"t_split_ws\", \"typical\", r\"\\s+\", \"prose\", Find, true),\n        c(\"t_split_comma\", \"typical\", r\"\\s*,\\s*\", \"code\", Find, true),\n        c(\"t_kv_caps\", \"typical\", r\"(\\w+)=(\\S+)\", \"log\", LineCapsIter, true),\n        c(\"t_ci_word\", \"typical\", r\"(?i)\\berror\\b\", \"log\", Find, true),\n        c(\"t_ci_phrase\", \"typical\", r\"(?i)regular expression\", \"prose\", Find, true),\n        c(\"t_url\", \"typical\", r#\"https?://[^\\s\"'<>)]+\"#, \"prose\", Find, true),\n        c(\"t_html_tag\", \"typical\", r\"<[^>]+>\", \"prose\", Find, true),\n        c(\"t_md_link\", \"typical\", r\"\\[([^\\]]+)\\]\\(([^)]+)\\)\", \"prose\", Caps, true),\n        c(\"t_quoted\", \"typical\", r#\"\"[^\"]*\"\"#, \"code\", Find, true),\n        c(\"t_hex\", \"typical\", r\"\\b0x[0-9a-fA-F]+\\b\", \"code\", Find, true),\n        c(\"t_fn_call\", \"typical\", r\"\\b\\w+\\(\", \"code\", Find, true),\n        c(\"t_trailing_ws\", \"typical\", r\"(?m)[ \\t]+$\", \"code\", Find, true),\n        c(\"t_camel\", \"typical\", r\"\\b[a-z]+(?:[A-Z][a-z]+)+\\b\", \"code\", Find, true),\n        c(\"t_line_starts\", \"typical\", r\"^\\s*//\", \"code\", Find, false),\n    ]\n}\n\nstruct Corpora {\n    prose: Vec<u8>,\n    code: Vec<u8>,\n    log: Vec<u8>,\n    unicode: Vec<u8>,\n}\n\nimpl Corpora {\n    fn load() -> Self {\n        let dir = concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../corpus/\");\n        let rd = |n: &str| std::fs::read(format!(\"{dir}{n}.txt\")).unwrap();\n        Corpora { prose: rd(\"prose\"), code: rd(\"code\"), log: rd(\"log\"), unicode: rd(\"unicode\") }\n    }\n    fn get(&self, n: &str) -> &[u8] {\n        match n {\n            \"prose\" => &self.prose,\n            \"code\" => &self.code,\n            \"log\" => &self.log,\n            \"unicode\" => &self.unicode,\n            _ => unreachable!(),\n        }\n    }\n}\n\n/// One execution of a case. Returns a checksum (match count / sum).\nfn run_ferroni(re: &FRegex, mode: Mode, text: &[u8], lines: &[&[u8]], region: &mut Option<OnigRegion>) -> usize {\n    match mode {\n        Mode::Find => re.find_iter_bytes(text).count(),\n        Mode::Caps => {\n            let raw = re.as_raw();\n            let mut n = 0usize;\n            let mut start = 0usize;\n            while start <= text.len() {\n                let (pos, r) = onig_search(raw, text, text.len(), start, text.len(), region.take(), ONIG_OPTION_NONE);\n                *region = r;\n                if pos < 0 {\n                    break;\n                }\n                let rg = region.as_ref().unwrap();\n                n += rg.beg[rg.num_regs as usize - 1].max(0) as usize & 1;\n                n += 1;\n                let end = rg.end[0] as usize;\n                start = if end == pos as usize { end + 1 } else { end };\n            }\n            n\n        }\n        Mode::LineMatch | Mode::TokMatch => lines.iter().filter(|l| re.is_match_bytes(l)).count(),\n        Mode::LineCapsIter => lines\n            .iter()\n            .map(|l| {\n                let mut n = 0;\n                let mut start = 0;\n                while start <= l.len() {\n                    let Some(c) = re.captures_bytes(&l[start..]) else { break };\n                    let m = c.get(0).unwrap();\n                    n += c.get(c.len() - 1).map_or(0, |m| m.len());\n                    start += if m.end() > m.start() { m.end() } else { m.start() + 1 };\n                }\n                n\n            })\n            .sum(),\n        Mode::LineCaps => lines\n            .iter()\n            .filter_map(|l| re.captures_bytes(l))\n            .map(|c| c.get(c.len() - 1).map_or(0, |m| m.len()))\n            .sum(),\n    }\n}\n\nfn run_regex(re: &regex::bytes::Regex, mode: Mode, text: &[u8], lines: &[&[u8]], locs: &mut regex::bytes::CaptureLocations) -> usize {\n    match mode {\n        Mode::Find => re.find_iter(text).count(),\n        Mode::Caps => {\n            let mut n = 0usize;\n            let mut start = 0usize;\n            while start <= text.len() {\n                let Some(m) = re.captures_read_at(locs, text, start) else { break };\n                n += locs.get(locs.len() - 1).map_or(0, |(b, _)| b & 1);\n                n += 1;\n                start = if m.end() == m.start() { m.end() + 1 } else { m.end() };\n            }\n            n\n        }\n        Mode::LineMatch | Mode::TokMatch => lines.iter().filter(|l| re.is_match(l)).count(),\n        Mode::LineCapsIter => lines\n            .iter()\n            .map(|l| {\n                let mut n = 0;\n                let mut start = 0;\n                while start <= l.len() {\n                    let Some(c) = re.captures(&l[start..]) else { break };\n                    let m = c.get(0).unwrap();\n                    n += c.get(c.len() - 1).map_or(0, |m| m.len());\n                    start += if m.end() > m.start() { m.end() } else { m.start() + 1 };\n                }\n                n\n            })\n            .sum(),\n        Mode::LineCaps => lines\n            .iter()\n            .filter_map(|l| re.captures(l))\n            .map(|c| c.get(c.len() - 1).map_or(0, |m| m.len()))\n            .sum(),\n    }\n}\n\nfn time<F: FnMut() -> usize>(mut f: F, budget: Duration) -> (f64, usize) {\n    // warm up\n    let chk = f();\n    let mut best = f64::INFINITY;\n    let t0 = Instant::now();\n    let mut iters = 0;\n    while t0.elapsed() < budget || iters < 3 {\n        let t = Instant::now();\n        black_box(f());\n        best = best.min(t.elapsed().as_secs_f64());\n        iters += 1;\n    }\n    (best, chk)\n}\n\nfn main() {\n    let args: Vec<String> = std::env::args().collect();\n    let corp = Corpora::load();\n    let all = cases();\n    if args.get(1).map(String::as_str) == Some(\"list\") {\n        for c in &all {\n            println!(\"{}\", c.name);\n        }\n        return;\n    }\n    if args.get(1).map(String::as_str) == Some(\"diff\") {\n        let mut seed: u64 = 0x9E3779B97F4A7C15;\n        let mut rnd = move |n: usize| { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; (seed % n as u64) as usize };\n        let classes = [r\"\\w\", r\"\\d\", \"[a-z]\", r\"[\\w.+-]\", r\"[^\\s]\", r\"\\p{L}\", \"[A-Za-z0-9_]\", \"[ab]\", r\"[^@\\n]\"];\n        let quants = [\"+\", \"*\", \"++\", \"+?\", \"{2,}\", \"\"];\n        let lits = [\"@\", \".\", \"ing\", \":\", \"=\", \"é\", \"b\", \"x@\", \";\"];\n        let tails = [\"\", r\"\\w+\", r\"\\d{2}\", \"(?=x)\", r\"\\b\", r\"(?!\\d)\", \"[a-z]*z\", \".*?;\", \"(a|b)+\", r\"\\w*$\", \"é?\", r\"(?<=@)\\w\", r\"\\1\", \"\"];\n        let wraps = [\"{}\", \"({})\", \"(?>{})\", \"(?:{})\", \"(?<n>{})\"];\n        let alpha: Vec<&str> = vec![\"a\",\"b\",\"@\",\".\",\"i\",\"n\",\"g\",\":\",\"=\",\"é\",\"1\",\"2\",\" \",\"Z\",\"x\",\";\",\"\\n\",\"_\",\"-\",\"+\",\"ing\",\"ü\"];\n        let mut checked = 0usize; let mut mism = 0usize;\n        for _ in 0..40000 {\n            let head = format!(\"{}{}\", classes[rnd(classes.len())], quants[rnd(quants.len())]);\n            let w = wraps[rnd(wraps.len())].replace(\"{}\", &head);\n            let pat = format!(\"{}{}{}\", w, lits[rnd(lits.len())], tails[rnd(tails.len())]);\n            let text: String = (0..rnd(120)).map(|_| alpha[rnd(alpha.len())]).collect();\n            unsafe { std::env::set_var(\"TMP_NO_BCMAP\", \"1\"); std::env::set_var(\"TMP_NO_RUNSKIP\", \"1\"); std::env::set_var(\"TMP_NO_REVRUN\", \"1\"); }\n            let Ok(a) = FRegex::new(&pat) else { continue };\n            unsafe { std::env::remove_var(\"TMP_NO_BCMAP\"); std::env::remove_var(\"TMP_NO_RUNSKIP\"); std::env::remove_var(\"TMP_NO_REVRUN\"); }\n            let b = FRegex::new(&pat).unwrap();\n            let caps = |re: &FRegex| -> Vec<Vec<Option<(usize,usize)>>> {\n                let mut out = Vec::new(); let mut start = 0; let t = text.as_bytes();\n                let raw = re.as_raw(); let mut region = Some(OnigRegion::new());\n                while start <= t.len() {\n                    let (pos, r) = onig_search(raw, t, t.len(), start, t.len(), region.take(), ONIG_OPTION_NONE);\n                    region = r; if pos < 0 { if pos != -1 { out.push(vec![Some((usize::MAX, pos as usize))]); } break; }\n                    let rg = region.as_ref().unwrap();\n                    out.push((0..rg.num_regs as usize).map(|i| (rg.beg[i] >= 0).then(|| (rg.beg[i] as usize, rg.end[i] as usize))).collect());\n                    let e = rg.end[0] as usize; start = if e == pos as usize { e + 1 } else { e };\n                }\n                out\n            };\n            checked += 1;\n            if caps(&a) != caps(&b) { mism += 1; if mism < 10 { println!(\"MISMATCH pat={pat:?} text={text:?}\\n  base={:?}\\n  new ={:?}\", caps(&a), caps(&b)); } }\n        }\n        println!(\"checked {checked}, mismatches {mism}\");\n        return;\n    }\n    if args.get(1).map(String::as_str) == Some(\"ac\") {\n        let log = corp.get(\"log\"); let code = corp.get(\"code\"); let prose = corp.get(\"prose\");\n        let ac_ci = aho_corasick::AhoCorasick::builder().ascii_case_insensitive(true).match_kind(aho_corasick::MatchKind::LeftmostFirst).build([\"error\",\"warn\",\"fatal\",\"panic\"]).unwrap();\n        let kws = [\"fn\",\"let\",\"mut\",\"if\",\"else\",\"match\",\"return\",\"while\",\"loop\",\"for\",\"impl\",\"pub\",\"struct\",\"enum\",\"const\"];\n        let ac_kw = aho_corasick::AhoCorasick::builder().match_kind(aho_corasick::MatchKind::LeftmostFirst).build(kws).unwrap();\n        let isw = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b >= 0x80;\n        let (t, n) = time(|| ac_ci.find_iter(log).count(), Duration::from_millis(400));\n        println!(\"ac ci_alt           {:.3}ms  {n}\", t*1e3);\n        let (t, n) = time(|| ac_kw.find_iter(code).filter(|m| (m.start()==0 || !isw(code[m.start()-1])) && (m.end()==code.len() || !isw(code[m.end()]))).count(), Duration::from_millis(400));\n        println!(\"ac keywords (+\\\\b)  {:.3}ms  {n}  (approx: leftmost-first w/o retry)\", t*1e3);\n        let fx = memchr::memmem::Finder::new(b\"x\"); let _ = fx;\n        let (t, n) = time(|| { let mut n=0; for i in memchr::memchr2_iter(b'x', b'X', prose) { if i>=4 && prose[i-4..i+1].eq_ignore_ascii_case(b\"regex\") { n+=1; } } n }, Duration::from_millis(400));\n        println!(\"rare-byte (?i)regex  {:.3}ms  {n}\", t*1e3);\n        return;\n    }\n    if let Some(name) = args.get(1) {\n        let secs: f64 = args.get(2).map_or(5.0, |s| s.parse().unwrap());\n        let engine = args.get(3).map_or(\"ferroni\", String::as_str);\n        let case = all.iter().find(|c| c.name == name).expect(\"unknown case\");\n        let text = corp.get(case.corpus);\n        let lines: Vec<&[u8]> = subjects(case.mode, text);\n        let t0 = Instant::now();\n        let mut iters = 0;\n        if engine == \"regex\" {\n            let re = regex::bytes::Regex::new(case.pat).unwrap();\n            let mut locs = re.capture_locations();\n            loop {\n                black_box(run_regex(&re, case.mode, text, &lines, &mut locs));\n                iters += 1;\n                if t0.elapsed().as_secs_f64() >= secs { break; }\n            }\n        } else {\n            let re = FRegex::new(case.pat).unwrap();\n            let mut region = Some(OnigRegion::new());\n            loop {\n                black_box(run_ferroni(&re, case.mode, text, &lines, &mut region));\n                iters += 1;\n                if t0.elapsed().as_secs_f64() >= secs { break; }\n            }\n        }\n        eprintln!(\"{} iterations\", iters);\n        return;\n    }\n\n    let budget = Duration::from_millis(\n        std::env::var(\"BUDGET_MS\").ok().and_then(|s| s.parse().ok()).unwrap_or(700),\n    );\n    println!(\n        \"{:<18} {:<9} {:>8} {:>10} {:>10} {:>9} {:>8} {:>8}\",\n        \"case\", \"kind\", \"corpus\", \"ferroni\", \"regex\", \"F/regex\", \"F MB/s\", \"matches\"\n    );\n    let only: Option<Vec<String>> = std::env::var(\"CASES\").ok().map(|v| v.split(',').map(String::from).collect());\n    for case in all.iter().filter(|c| only.as_ref().is_none_or(|o| o.iter().any(|n| n == c.name))) {\n        let text = corp.get(case.corpus);\n        let lines: Vec<&[u8]> = subjects(case.mode, text);\n        let fre = FRegex::new(case.pat).unwrap();\n        let mut region = Some(OnigRegion::new());\n        let (ft, fchk) = time(|| run_ferroni(&fre, case.mode, text, &lines, &mut region), budget);\n        let (rt, rchk) = if case.regex_ok {\n            let rre = regex::bytes::Regex::new(case.pat).unwrap();\n            let mut locs = rre.capture_locations();\n            let (t, c) = time(|| run_regex(&rre, case.mode, text, &lines, &mut locs), budget);\n            (Some(t), Some(c))\n        } else {\n            (None, None)\n        };\n        let mismatch = match rchk {\n            Some(r) if r != fchk => format!(\" MISMATCH regex={r}\"),\n            _ => String::new(),\n        };\n        println!(\n            \"{:<18} {:<9} {:>8} {:>8.3}ms {:>10} {:>9} {:>8.0} {:>8}{}\",\n            case.name,\n            case.kind,\n            case.corpus,\n            ft * 1e3,\n            rt.map_or(\"-\".into(), |t| format!(\"{:.3}ms\", t * 1e3)),\n            rt.map_or(\"-\".into(), |t| format!(\"{:.2}x\", ft / t)),\n            text.len() as f64 / ft / 1e6,\n            fchk,\n            mismatch\n        );\n    }\n}\n"
+}

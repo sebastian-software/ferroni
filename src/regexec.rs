@@ -7531,7 +7531,6 @@ fn onig_search_inner_core_with_right_range(
         Some(jump) if !find_longest && may_skip_attempts(msa) => Some(jump),
         _ => None,
     };
-    let notbol = opton_notbol(msa.options);
     // Rust-only (ADR-008): the bytecode start map narrows the optimizer's
     // windows where no limit or FIND_LONGEST can observe a skipped attempt.
     let window_start_map = match reg.search_start_map.as_deref() {
@@ -7557,7 +7556,7 @@ fn onig_search_inner_core_with_right_range(
             // Finite dist_max: iterate with forward_search
             loop {
                 if let Some(jump) = search_jump {
-                    s = jump.next_start(enc, str_data, s, end, data_range, notbol, None);
+                    s = jump.next_start(reg, str_data, s, end, data_range, msa.options, None);
                 }
                 let Some((low, high)) = forward_search(reg, str_data, end, s, sch_range) else {
                     break;
@@ -7736,7 +7735,15 @@ fn onig_search_inner_core_with_right_range(
     if best_start == ONIG_MISMATCH {
         loop {
             if let Some(jump) = search_jump {
-                s = jump.next_start(enc, str_data, s, end, data_range, notbol, Some(cur_range));
+                s = jump.next_start(
+                    reg,
+                    str_data,
+                    s,
+                    end,
+                    data_range,
+                    msa.options,
+                    Some(cur_range),
+                );
             }
             if let Some((bsp, delimiter)) = class_prefix {
                 if s >= class_prefix_end {

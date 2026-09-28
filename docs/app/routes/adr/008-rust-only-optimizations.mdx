@@ -112,6 +112,19 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Impact**: email-like scans 22–31×, number extraction 11×, `[a-z]+ing\b`, `\w+ing\b` and captured log fields 2.6–2.9×. Other expressions change by −1.5% to +1.4% in instructions, and TextMate scanner searches by at most ±0.2%.
 - **Validation and measurements**: [leading-run skips](/perf/leading-run-skips). Tests compare results, capture bounds and limit errors with the original path, exhaustively on small inputs with malformed UTF-8 and on 4,000 generated expressions.
 
+#### Leading-check jumps (`src/leading_run.rs`, `src/regexec.rs`)
+
+- **Trigger**: the expression starts, after zero-width captures, marks and word boundaries, with `^`, with byte classes or literals (at least two, one with at most three bytes), or with a case-sensitive literal alternation (`AltLiterals`). The leading-run plans above also accept `C*` runs and runs behind `\b` whose class holds only word characters in the boundary's sense.
+- **Execution**: the search moves its start to the next position that can pass these leading checks, then runs C's optimizer and loops unchanged from there:
+  - the rarest leading class is found with `memchr` and the other classes are checked;
+  - `^` jumps to the next line start, following `BeginLine`'s rules: NOTBOL, never the end, and the previous character head found by stepping back over 0x80..=0xBF in every encoding;
+  - the alternation is found with Aho-Corasick, built on first use.
+- **Observability**: every position a jump passes would fail its first check with exactly one backtrack. The jumps share the leading-run gates: they stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit of one, callouts and the match cache. A jump over bytes that are not valid UTF-8 is not taken, and a jump in a range-bounded position loop never passes that loop's last attempt.
+- **Not applied**: expressions whose C optimizer already searches a string at the match start (for `^`, with its line-anchor check). Also bare alternations, which take `ac_alt`, and case-insensitive tries, whose folded matches Aho-Corasick would miss beyond ASCII.
+- **Bounds**: at most 16 leading classes per expression, and one lazily built automaton per alternation. The scans are linear, and no new dependency or unsafe code is added.
+- **Impact**: `\s*,\s*` 14×, `\b\w+\(` 11×, `(?i)regex` 9.2×, `^\s*//` 6.9×, `(?i)regular expression` 4.4×, keyword alternations 3.2×. Other expressions change by −1.4% to +2.2% in instructions. TextMate scanner searches change by at most ±0.2%, and their compilation by at most +0.6%.
+- **Validation and measurements**: [leading-check jumps](/perf/leading-check-jumps).
+
 #### ASCII fast paths in VM execution (`src/regexec.rs`)
 
 Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` traversal) for ASCII bytes, avoiding full UTF-8 decode on the hot path.

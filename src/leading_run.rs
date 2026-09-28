@@ -513,9 +513,18 @@ pub(crate) struct SearchJump {
     /// The class found with `memchr`: the one least likely to occur.
     probe: usize,
     probe_bytes: Vec<u8>,
-    /// A leading case-sensitive literal alternation (`AltLiterals`): its
-    /// literals, found with Aho-Corasick.
-    alternation: Option<aho_corasick::AhoCorasick>,
+    /// A leading case-sensitive literal alternation (`AltLiterals`), found
+    /// with Aho-Corasick.
+    alternation: Option<Alternation>,
+}
+
+/// The literals of a trie, searched with an Aho-Corasick automaton that is
+/// built on first use: grammars compile many alternations that are never
+/// searched this way (the scanner runs them through its RegSet), and the
+/// automaton costs more to build than the trie.
+struct Alternation {
+    trie_idx: usize,
+    automaton: std::sync::OnceLock<Option<aho_corasick::AhoCorasick>>,
 }
 
 /// Leading classes a [`SearchJump`] checks.
@@ -539,6 +548,12 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
     {
         return None;
     }
+    // C's optimizer already searches an exact string at the match start; with
+    // a line anchor it also checks the line start of each occurrence.
+    let exact_at_start = matches!(
+        reg.optimize,
+        OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward
+    ) && reg.dist_max == 0;
     let mut pc = 0;
     let mut line_start = false;
     loop {
@@ -550,20 +565,22 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
         }
         pc += 1;
     }
+    if exact_at_start && (reg.sub_anchor & ANCR_BEGIN_LINE) != 0 {
+        line_start = false;
+    }
     if let Some(OperationPayload::AltLiterals { trie_idx }) = reg.ops.get(pc).map(|op| &op.payload)
     {
         let trie = reg.literal_tries.get(*trie_idx as usize)?;
         // Aho-Corasick folds ASCII only; a folded trie also matches
-        // non-ASCII input.
-        if trie.is_case_insensitive() {
+        // non-ASCII input. A bare alternation takes `ac_alt` already.
+        if trie.is_case_insensitive() || reg.ac_alt.is_some() {
             return line_start.then(SearchJump::lines);
         }
-        let alternation = aho_corasick::AhoCorasick::builder()
-            .match_kind(aho_corasick::MatchKind::LeftmostFirst)
-            .build(trie.literals())
-            .ok()?;
         return Some(SearchJump {
-            alternation: Some(alternation),
+            alternation: Some(Alternation {
+                trie_idx: *trie_idx as usize,
+                automaton: std::sync::OnceLock::new(),
+            }),
             ..SearchJump::lines_if(line_start)
         });
     }
@@ -591,11 +608,6 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
         pc += 1;
     }
     prefix.truncate(MAX_PREFIX);
-    // C's optimizer already searches an exact string at the match start.
-    let exact_at_start = matches!(
-        reg.optimize,
-        OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward
-    ) && reg.dist_max == 0;
     let probe = (prefix.len() >= 2 && !exact_at_start)
         .then(|| {
             prefix
@@ -685,6 +697,7 @@ impl SearchJump {
     /// `None` when no such position remains.
     fn candidate(
         &self,
+        reg: &RegexType,
         text: &[u8],
         mut s: usize,
         end: usize,
@@ -696,7 +709,17 @@ impl SearchJump {
                 if s >= limit {
                     return None;
                 }
-                s + alternation.find(&text[s..limit])?.start()
+                let automaton = alternation.automaton.get_or_init(|| {
+                    aho_corasick::AhoCorasick::builder()
+                        .match_kind(aho_corasick::MatchKind::LeftmostFirst)
+                        .build(reg.literal_tries[alternation.trie_idx].literals())
+                        .ok()
+                });
+                match automaton {
+                    Some(automaton) => s + automaton.find(&text[s..limit])?.start(),
+                    // Without an automaton every position stays a candidate.
+                    None => s,
+                }
             } else if self.probe_bytes.is_empty() {
                 s
             } else {
@@ -744,15 +767,17 @@ impl SearchJump {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn next_start(
         &self,
-        enc: OnigEncoding,
+        reg: &RegexType,
         text: &[u8],
         s: usize,
         end: usize,
         limit: usize,
-        notbol: bool,
+        options: crate::oniguruma::OnigOptionType,
         last: Option<usize>,
     ) -> usize {
-        let candidate = self.candidate(text, s, end, limit, notbol);
+        let enc = reg.enc;
+        let notbol = options.contains(crate::oniguruma::OnigOptionType::NOTBOL);
+        let candidate = self.candidate(reg, text, s, end, limit, notbol);
         let target = match (candidate, last) {
             (Some(p), Some(last)) if p > last => last,
             (None, Some(last)) => last,
@@ -919,8 +944,8 @@ mod tests {
         assert_eq!(jump(r"^\s*//"), Some((true, 0, Vec::new())));
         assert_eq!(
             jump(r"^ab"),
-            // C's optimizer finds "ab"; only the line start is added.
-            Some((true, 0, Vec::new()))
+            // C's optimizer finds "ab" and checks its line start itself.
+            None
         );
         // C's optimizer already searches the leading string, or nothing is
         // known about the leading characters.
