@@ -7669,6 +7669,8 @@ mod tests {
             check_dependent_guards: false,
             ac_alt: None,
             ac_alt_has_capture: false,
+            leading_run: None,
+            search_start_map: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

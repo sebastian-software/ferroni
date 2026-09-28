@@ -701,6 +701,13 @@ pub struct RegexType {
     // capture group, so the fast path must also populate region[1].
     pub(crate) ac_alt: Option<aho_corasick::AhoCorasick>,
     pub(crate) ac_alt_has_capture: bool,
+
+    /// Rust-only (ADR-008): skips for a leading class run
+    /// (`crate::leading_run`).
+    pub(crate) leading_run: Option<Box<crate::leading_run::LeadingRun>>,
+    /// Rust-only (ADR-008): bytecode start bytes for positions C's optimizer
+    /// does not narrow down (`crate::leading_run`).
+    pub(crate) search_start_map: Option<Box<crate::leading_run::SearchStartMap>>,
 }
 
 /// Set in a guard's `skipped_retries` when the backtracks it skips depend on

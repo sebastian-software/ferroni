@@ -79,6 +79,7 @@ pub mod api;
 pub mod encodings;
 pub mod error;
 mod first_bytes;
+mod leading_run;
 pub mod literal_trie;
 #[cfg(feature = "match-cache")]
 pub mod match_cache;

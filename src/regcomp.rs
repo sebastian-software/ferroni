@@ -10092,6 +10092,7 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
     refresh_capture_tracking_requirement(reg);
     guard_backtrack_pushes(reg);
     fuse_ascii_class_runs(reg);
+    crate::leading_run::plan(reg);
 
     0
 }
@@ -10353,6 +10354,8 @@ pub fn onig_new(
         check_dependent_guards: false,
         ac_alt: None,
         ac_alt_has_capture: false,
+        leading_run: None,
+        search_start_map: None,
     };
 
     let (r, par) = compile_recording_name(&mut reg, pattern);
@@ -10672,6 +10675,8 @@ mod tests {
             check_dependent_guards: false,
             ac_alt: None,
             ac_alt_has_capture: false,
+            leading_run: None,
+            search_start_map: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

@@ -7524,6 +7524,12 @@ fn onig_search_inner_core_with_right_range(
 
     // === Forward search ===
     let mut s = cur_start;
+    // Rust-only (ADR-008): the bytecode start map narrows the optimizer's
+    // windows where no limit or FIND_LONGEST can observe a skipped attempt.
+    let window_start_map = match reg.search_start_map.as_deref() {
+        Some(map) if map.in_windows => window_start_map(map, find_longest, msa),
+        _ => None,
+    };
 
     // Use optimization if available
     if reg.optimize != OptimizeType::None {
@@ -7546,6 +7552,12 @@ fn onig_search_inner_core_with_right_range(
                     s = low;
                 }
                 while s <= high {
+                    if let Some(map) = window_start_map {
+                        if s < end && map[str_data[s] as usize] == 0 {
+                            s = advance_char_to_end(enc, str_data, s, end);
+                            continue;
+                        }
+                    }
                     msa.best_len = ONIG_MISMATCH;
                     msa.best_s = 0;
                     let r = match_at(reg, str_data, end, data_range, s, msa);
@@ -7572,7 +7584,20 @@ fn onig_search_inner_core_with_right_range(
                     // `end`. C steps past the buffer here and its NUL
                     // terminator hides that; Rust stays inside the haystack
                     // and lets the next attempt run at the logical end.
-                    s = advance_char_to_end(enc, str_data, s, end);
+                    s = if reg.leading_run.is_some() {
+                        after_failed_run(
+                            reg,
+                            find_longest,
+                            msa,
+                            str_data,
+                            end,
+                            data_range,
+                            cur_range,
+                            s,
+                        )
+                    } else {
+                        advance_char_to_end(enc, str_data, s, end)
+                    };
                     if msa.skip_search > s {
                         s = msa.skip_search;
                     }
@@ -7662,8 +7687,31 @@ fn onig_search_inner_core_with_right_range(
             // Fall through to normal position loop below. Only this path
             // looks up the Rust-only filter, which keeps it off the others.
             if msa.retry_limit_in_search == 0 {
-                start_filter = start_filter.or_else(|| unbounded_optimizer_start_bytes(reg));
+                start_filter = start_filter
+                    .or_else(|| unbounded_optimizer_start_bytes(reg))
+                    .or_else(|| {
+                        reg.search_start_map
+                            .as_deref()
+                            .filter(|map| start_map_applies(map, find_longest, msa))
+                            .map(|map| &map.bytes)
+                    });
             }
+        }
+    }
+
+    if reg.leading_run.is_some() && best_start == ONIG_MISMATCH {
+        if let Some(result) = literal_run_search(
+            reg,
+            find_longest,
+            str_data,
+            end,
+            s,
+            cur_range,
+            data_range,
+            start_filter,
+            msa,
+        ) {
+            return result;
         }
     }
 
@@ -7715,7 +7763,20 @@ fn onig_search_inner_core_with_right_range(
             if s >= end {
                 break;
             }
-            s = advance_char_to_end(enc, str_data, s, end);
+            s = if reg.leading_run.is_some() {
+                after_failed_run(
+                    reg,
+                    find_longest,
+                    msa,
+                    str_data,
+                    end,
+                    data_range,
+                    cur_range,
+                    s,
+                )
+            } else {
+                advance_char_to_end(enc, str_data, s, end)
+            };
             if msa.skip_search > s {
                 s = msa.skip_search;
             }
@@ -7840,6 +7901,194 @@ fn unbounded_optimizer_start_bytes(reg: &RegexType) -> Option<&[u8; CHAR_MAP_SIZ
     .then_some(&reg.first_byte_map)
 }
 
+/// Whether the forward search may leave out attempts that cannot match
+/// (`crate::leading_run`). Each attempt it leaves out would fail with at most
+/// the backtracks of an attempt that already failed, or with a count known
+/// at compile time (one for the leading-run skips, `miss_retries` for the
+/// start map): a per-match retry limit that low, the search retry budget, and
+/// stack or time limits could observe that, as could the opt-in match cache.
+#[inline]
+fn may_skip_attempts(msa: &MatchArg) -> bool {
+    #[cfg(feature = "match-cache")]
+    if msa.match_cache.is_some() {
+        return false;
+    }
+    msa.retry_limit_in_search == 0
+        && msa.retry_limit_in_match != 1
+        && msa.match_stack_limit == 0
+        && msa.time_limit == 0
+}
+
+/// Whether the bytecode start map may leave out the attempts it excludes:
+/// each of them would count `miss_retries` backtracks.
+#[inline]
+fn start_map_applies(
+    map: &crate::leading_run::SearchStartMap,
+    find_longest: bool,
+    msa: &MatchArg,
+) -> bool {
+    !find_longest && may_skip_attempts(msa) && map.skippable(msa.retry_limit_in_match)
+}
+
+/// The bytecode start map for the positions of bounded optimizer windows.
+/// Out of line, like the other leading-run helpers: code added to the search
+/// loop shifts its layout.
+#[inline(never)]
+fn window_start_map<'a>(
+    map: &'a crate::leading_run::SearchStartMap,
+    find_longest: bool,
+    msa: &MatchArg,
+) -> Option<&'a [u8; CHAR_MAP_SIZE]> {
+    start_map_applies(map, find_longest, msa).then_some(&map.bytes)
+}
+
+/// The position after a failed attempt at `failed`: the end of its leading
+/// run, since every start inside the run tries a subset of the same end
+/// positions (`crate::leading_run`), or else the next character. A run
+/// reaching past `cur_range` is not skipped: the loop's last attempt is the
+/// first character boundary at or past `cur_range`, which need not be the
+/// run's end.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn after_failed_run(
+    reg: &RegexType,
+    find_longest: bool,
+    msa: &MatchArg,
+    str_data: &[u8],
+    end: usize,
+    data_range: usize,
+    cur_range: usize,
+    failed: usize,
+) -> usize {
+    let next = advance_char_to_end(reg.enc, str_data, failed, end);
+    let Some(run) = reg.leading_run.as_deref() else {
+        return next;
+    };
+    // Cheap checks first: a run that the next byte already ends has nothing
+    // to skip, and a failure at a multibyte character, whose class lookup
+    // costs about as much as the attempt did, keeps the plain step.
+    if failed >= end
+        || str_data[failed] >= 0x80
+        || next >= data_range
+        || !crate::leading_run::may_continue(reg, run, str_data[next])
+        || find_longest
+        || !may_skip_attempts(msa)
+    {
+        return next;
+    }
+    let run_end = crate::leading_run::run_end(reg, run, str_data, data_range, failed);
+    if run_end > next && run_end <= cur_range {
+        run_end
+    } else {
+        next
+    }
+}
+
+/// Rust-only (ADR-008): the forward position loop for an expression that
+/// starts with an atomic class run followed by a literal the class does not
+/// hold. A match starts in the run that ends at an occurrence of the literal,
+/// and only that run's first position needs an attempt: every later start in
+/// it tries a subset of the same end positions. Starts before the run end
+/// their own runs elsewhere, where no occurrence follows. A segment that is
+/// not valid UTF-8 falls back to attempting each position, as the plain loop
+/// does, because a malformed multibyte sequence can carry the VM's run past a
+/// byte the scan stops at.
+///
+/// `None` where the expression has no such literal or a limit could observe
+/// the skipped attempts; the plain loop then runs.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn literal_run_search(
+    reg: &RegexType,
+    find_longest: bool,
+    str_data: &[u8],
+    end: usize,
+    mut s: usize,
+    cur_range: usize,
+    data_range: usize,
+    start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
+    msa: &mut MatchArg,
+) -> Option<(i32, Option<OnigRegion>)> {
+    let run = reg.leading_run.as_deref()?;
+    let literal = run.literal.as_ref()?;
+    if find_longest || !may_skip_attempts(msa) {
+        return None;
+    }
+    let enc = reg.enc;
+    let admitted =
+        |x: usize| x >= end || start_filter.is_none_or(|filter| filter[str_data[x] as usize] != 0);
+    macro_rules! attempt {
+        ($x:expr) => {{
+            let x = $x;
+            if admitted(x) {
+                msa.best_len = ONIG_MISMATCH;
+                msa.best_s = 0;
+                let r = match_at(reg, str_data, end, data_range, x, msa);
+                if r != ONIG_MISMATCH {
+                    if r < 0 {
+                        return Some((r, msa.region.take()));
+                    }
+                    return Some((x as i32, msa.region.take()));
+                }
+            }
+        }};
+    }
+    // `s` is always a position the plain loop steps to. That loop's last
+    // attempt is the first character boundary at or past `cur_range`.
+    loop {
+        if s > cur_range {
+            // Stepped past `cur_range` over a malformed sequence: this is the
+            // loop's last attempt.
+            attempt!(s);
+            break;
+        }
+        let Some(k) = literal.find(str_data, s, data_range) else {
+            break;
+        };
+        // A start filter that rejects the run's first position leaves no
+        // failed attempt there to stand for the rest of the run.
+        let run_start = crate::leading_run::run_start_before(reg, run, str_data, s, k)
+            .filter(|&r| r == k || admitted(r));
+        match run_start {
+            Some(r) => {
+                // `s..k` is well formed: its boundaries are the loop's steps.
+                let attempted = r <= cur_range
+                    || (enc.max_enc_len() > 1
+                        && str_data[cur_range..r].iter().all(|&b| (b & 0xC0) == 0x80));
+                if r < k && attempted {
+                    attempt!(r);
+                }
+                if k >= cur_range {
+                    break;
+                }
+                s = k + 1;
+            }
+            None => {
+                // Attempt every position before the occurrence, as the plain
+                // loop does.
+                let mut x = s;
+                while x < k {
+                    attempt!(x);
+                    if x >= cur_range {
+                        return Some((ONIG_MISMATCH, msa.region.take()));
+                    }
+                    x = advance_char_to_end(enc, str_data, x, end);
+                }
+                if x == k {
+                    // The occurrence's byte ends every run: no match starts
+                    // there.
+                    if k >= cur_range {
+                        break;
+                    }
+                    x = k + 1;
+                }
+                s = x;
+            }
+        }
+    }
+    Some((ONIG_MISMATCH, msa.region.take()))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn finish_search(
     find_longest: bool,
@@ -7925,6 +8174,8 @@ mod tests {
             check_dependent_guards: false,
             ac_alt: None,
             ac_alt_has_capture: false,
+            leading_run: None,
+            search_start_map: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),
