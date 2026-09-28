@@ -6818,12 +6818,34 @@ pub(crate) fn forward_search(
     }
 }
 
-/// Rust-only (ADR-008): where the character loop from `s` that stops behind
-/// the first newline, or at the first character boundary at or past
-/// `cur_range`, stops, found with `memchr`. `None` where that loop could
-/// step differently: over bytes that are not valid UTF-8 in a multibyte
+/// The character loop of the `ANCR_ANYCHAR_INF` search from `s`: it stops
+/// behind the first newline, or at the first character boundary at or past
+/// `cur_range`. Out of line, like the C loop's cold path.
+#[inline(never)]
+fn skip_past_newline(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    mut s: usize,
+    cur_range: usize,
+    end: usize,
+) -> usize {
+    if let Some(next) = after_next_newline(enc, str_data, s, cur_range, end) {
+        return next;
+    }
+    while s < cur_range {
+        let prev = s;
+        s = advance_char_to_end(enc, str_data, s, end);
+        if is_mbc_newline(enc, str_data, prev, end) {
+            break;
+        }
+    }
+    s
+}
+
+/// Rust-only (ADR-008): where [`skip_past_newline`]'s character loop
+/// stops, found with `memchr`. `None` where that loop could step
+/// differently: over bytes that are not valid UTF-8 in a multibyte
 /// encoding, or with `cur_range` past `end`.
-#[inline]
 fn after_next_newline(
     enc: OnigEncoding,
     str_data: &[u8],
@@ -7702,20 +7724,8 @@ fn onig_search_inner_core_with_right_range(
                         s = msa.skip_search;
                     }
                     // Skip past non-newline chars
-                    let skip = !is_mbc_newline(enc, str_data, prev, end);
-                    if let Some(next) = skip
-                        .then(|| after_next_newline(enc, str_data, s, cur_range, end))
-                        .flatten()
-                    {
-                        s = next;
-                    } else {
-                        while s < cur_range && skip {
-                            let prev2 = s;
-                            s = advance_char_to_end(enc, str_data, s, end);
-                            if is_mbc_newline(enc, str_data, prev2, end) {
-                                break;
-                            }
-                        }
+                    if !is_mbc_newline(enc, str_data, prev, end) {
+                        s = skip_past_newline(enc, str_data, s, cur_range, end);
                     }
                 }
                 return finish_search(
