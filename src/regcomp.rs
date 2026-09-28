@@ -8959,6 +8959,35 @@ fn add_high_bytes_opt_map(m: &mut OptMap, enc: OnigEncoding) {
     m.value += added * map_position_value(enc, 0x80);
 }
 
+/// The bytes of an optimizer map as a bitset. Rust-only: map bytes are 0 or
+/// 1 (every writer stores 1), so bit 0 of eight bytes at a time gathers into
+/// one byte of the result, and the map operations below visit only the
+/// members they change or sum instead of all 256 bytes. Grammars with many
+/// `(?i)` letters (two-member classes) call them tens of thousands of times.
+fn map_bits(map: &[u8; CHAR_MAP_SIZE]) -> BitSet {
+    let mut bits: BitSet = [0; BITSET_REAL_SIZE];
+    for (at, chunk) in map.chunks_exact(8).enumerate() {
+        let mut x = u64::from_le_bytes(chunk.try_into().expect("eight map bytes"));
+        debug_assert_eq!(x & !0x0101_0101_0101_0101, 0, "map bytes are 0 or 1");
+        x |= x >> 7;
+        x |= x >> 14;
+        x |= x >> 28;
+        bits[at * 8 / BITS_IN_ROOM] |= ((x & 0xFF) as Bits) << (at * 8 % BITS_IN_ROOM);
+    }
+    bits
+}
+
+/// The members of `bits`, in increasing order.
+fn bit_members(bits: &BitSet) -> impl Iterator<Item = usize> + '_ {
+    bits.iter().enumerate().flat_map(|(word, &b)| {
+        std::iter::successors((b != 0).then_some(b), |&rest| {
+            let rest = rest & (rest - 1);
+            (rest != 0).then_some(rest)
+        })
+        .map(move |rest| word * BITS_IN_ROOM + rest.trailing_zeros() as usize)
+    })
+}
+
 fn alt_merge_opt_map(enc: OnigEncoding, to: &mut OptMap, add: &OptMap) {
     if to.value == 0 {
         return;
@@ -8968,18 +8997,20 @@ fn alt_merge_opt_map(enc: OnigEncoding, to: &mut OptMap, add: &OptMap) {
         return;
     }
     to.mm.alt_merge(&add.mm);
-    let mut val = 0;
-    // One table lookup per byte instead of a `map_position_value` call keeps
-    // this loop branch-free; byte 0 is corrected for the encoding below.
-    for ((to_byte, &add_byte), &value) in to.map.iter_mut().zip(&add.map).zip(&MAP_POSITION_VALUES)
-    {
-        if add_byte != 0 {
-            *to_byte = 1;
-        }
-        if *to_byte != 0 {
-            val += value;
-        }
+    let to_bits = map_bits(&to.map);
+    let add_bits = map_bits(&add.map);
+    let mut union: BitSet = [0; BITSET_REAL_SIZE];
+    let mut added: BitSet = [0; BITSET_REAL_SIZE];
+    for word in 0..BITSET_REAL_SIZE {
+        union[word] = to_bits[word] | add_bits[word];
+        added[word] = add_bits[word] & !to_bits[word];
     }
+    for i in bit_members(&added) {
+        to.map[i] = 1;
+    }
+    // The table holds the position values; byte 0 is corrected for the
+    // encoding below.
+    let mut val: i32 = bit_members(&union).map(|i| MAP_POSITION_VALUES[i]).sum();
     if to.map[0] != 0 {
         val += map_position_value(enc, 0) - MAP_POSITION_VALUES[0];
     }
@@ -8998,20 +9029,18 @@ fn add_cclass_bitset_opt_map(m: &mut OptMap, cc: &CClassNode, enc: OnigEncoding,
     add_bitset_opt_map(m, &bs, enc);
 }
 
-/// `add_char_opt_map` for every member of `bs`, in one branch-free pass
-/// over the map with the position values from `MAP_POSITION_VALUES`: a
-/// negated class has a hundred members or more below 0x80 alone.
+/// `add_char_opt_map` for every member of `bs`, visiting only the members
+/// the map does not hold yet (`map_bits`).
 fn add_bitset_opt_map(m: &mut OptMap, bs: &BitSet, enc: OnigEncoding) {
-    let first = m.map[0];
-    let mut value = 0;
-    for (i, (byte, &position_value)) in m.map.iter_mut().zip(&MAP_POSITION_VALUES).enumerate() {
-        let member = ((bs[i / BITS_IN_ROOM] >> (i % BITS_IN_ROOM)) & 1) as u8;
-        let added = member & u8::from(*byte == 0);
-        *byte |= added;
-        value += i32::from(added) * position_value;
+    let have = map_bits(&m.map);
+    let mut added: BitSet = [0; BITSET_REAL_SIZE];
+    for word in 0..BITSET_REAL_SIZE {
+        added[word] = bs[word] & !have[word];
     }
-    if first == 0 && m.map[0] != 0 {
-        value += map_position_value(enc, 0) - MAP_POSITION_VALUES[0];
+    let mut value = 0;
+    for i in bit_members(&added) {
+        m.map[i] = 1;
+        value += map_position_value(enc, i);
     }
     m.value += value;
 }
@@ -11569,6 +11598,84 @@ mod tests {
         );
         // Nested branches keep their normal ordered backtracking operations.
         assert!(push_count > 0, "expected ordered Alt operations");
+    }
+
+    /// The bitset map operations against the byte loops they replace.
+    #[test]
+    fn map_bit_operations_match_byte_loops() {
+        fn reference_add(m: &mut OptMap, bs: &BitSet, enc: OnigEncoding) {
+            for i in 0..CHAR_MAP_SIZE {
+                if bitset_at(bs, i) {
+                    add_char_opt_map(m, i as u8, enc);
+                }
+            }
+        }
+        fn reference_merge(enc: OnigEncoding, to: &mut OptMap, add: &OptMap) {
+            if to.value == 0 {
+                return;
+            }
+            if add.value == 0 || to.mm.max < add.mm.min {
+                to.clear();
+                return;
+            }
+            to.mm.alt_merge(&add.mm);
+            let mut val = 0;
+            for i in 0..CHAR_MAP_SIZE {
+                if add.map[i] != 0 {
+                    to.map[i] = 1;
+                }
+                if to.map[i] != 0 {
+                    val += map_position_value(enc, i);
+                }
+            }
+            to.value = val;
+            alt_merge_opt_anc_info(&mut to.anc, &add.anc);
+        }
+        let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let encodings: [OnigEncoding; 2] = [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII,
+        ];
+        for round in 0..3000 {
+            let enc = encodings[round % 2];
+            let mut random_bits = |density: u64| {
+                let mut bs: BitSet = [0; BITSET_REAL_SIZE];
+                for i in 0..CHAR_MAP_SIZE {
+                    if next() % 64 < density {
+                        bitset_set_bit(&mut bs, i);
+                    }
+                }
+                bs
+            };
+            let density = [1, 4, 32, 63][round % 4];
+            let (start, class, other) = (
+                random_bits(density),
+                random_bits(density),
+                random_bits(density),
+            );
+            let mut base = OptMap::new();
+            reference_add(&mut base, &start, enc);
+            let (mut fast, mut slow) = (base, base);
+            add_bitset_opt_map(&mut fast, &class, enc);
+            reference_add(&mut slow, &class, enc);
+            assert_eq!((fast.map, fast.value), (slow.map, slow.value));
+
+            let mut add = OptMap::new();
+            reference_add(&mut add, &other, enc);
+            add.mm.max = (next() % 4) as OnigLen;
+            let (mut fast, mut slow) = (base, base);
+            fast.mm.max = 3;
+            slow.mm.max = 3;
+            alt_merge_opt_map(enc, &mut fast, &add);
+            reference_merge(enc, &mut slow, &add);
+            assert_eq!((fast.map, fast.value), (slow.map, slow.value));
+        }
     }
 
     #[test]
