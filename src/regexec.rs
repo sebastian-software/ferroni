@@ -1515,7 +1515,7 @@ pub struct MatchArg {
     /// Deadline fixed when the search starts (C: `TIME_LIMIT_INIT`). `None`
     /// without a limit, or when the limit is too large to represent.
     time_end: Option<Instant>,
-    /// Rust-only: the length of the last successful attempt. With `\K` the
+    /// Rust-only: the length of the last match without FIND_LONGEST. With `\K` the
     /// match may start after the attempt position, but it ends there plus
     /// this length (`onig_search_bounds`).
     pub(crate) match_len: i32,
@@ -3501,18 +3501,14 @@ fn match_at(
     // so such runs keep the bookkeeping to stay observably identical to C.
     // A region without capture groups only needs the match bounds, which
     // OP_END records either way.
-    let r = if (msa.region.is_some() && reg.num_mem > 0)
+    if (msa.region.is_some() && reg.num_mem > 0)
         || reg.needs_capture_tracking
         || (msa.match_stack_limit != 0 && (reg.push_mem_start | reg.push_mem_end) != 0)
     {
         match_at_impl::<true>(reg, str_data, end, in_right_range, sstart, msa)
     } else {
         match_at_impl::<false>(reg, str_data, end, in_right_range, sstart, msa)
-    };
-    if r >= 0 {
-        msa.match_len = r;
     }
-    r
 }
 
 /// While memoizing, expose each character of a fused star as a branch state.
@@ -3841,6 +3837,7 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
 
                         // For non-FIND_LONGEST, return immediately
                         if !opton_find_longest(options) {
+                            msa.match_len = best_len;
                             // C leaves through match_at_end, which adds
                             // this match's retries to the search's count.
                             msa.retry_limit_in_search_counter += retry_in_match_counter;
@@ -5475,45 +5472,25 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
                 {
                     // Rust-only (ADR-008): the lazy `.*?c` loop (`AnyChar`
                     // before this instruction, which jumps back to it) runs
-                    // to its next stop in one step, counting the retries
-                    // its jumps count.
-                    #[cfg(test)]
-                    let fuse = !LAZY_STOP_DISABLED.with(|disabled| disabled.get());
-                    #[cfg(not(test))]
-                    let fuse = true;
-                    if fuse
-                        && !CACHE
+                    // to its next stop in one step.
+                    if !CACHE
                         && addr == -1
-                        && skipped_retries & GUARD_RETRIES_BY_CHECKS == 0
-                        && time_limit_ms == 0
-                        && p > 0
+                        && matches!(reg.ops[p - 1].opcode, OpCode::AnyChar | OpCode::AnyCharMl)
                     {
-                        let multiline = match reg.ops[p - 1].opcode {
-                            OpCode::AnyChar => Some(false),
-                            OpCode::AnyCharMl => Some(true),
-                            _ => None,
-                        };
-                        if let Some(multiline) = multiline {
-                            let stop =
-                                lazy_any_char_stop(enc, str_data, s, right_range, c, multiline);
-                            let (jumps, at) = match stop {
-                                LazyStop::At(at, jumps) => (jumps, Some(at)),
-                                LazyStop::Fails(jumps) => (jumps, None),
-                                LazyStop::Unknown => (0, Some(s)),
-                            };
-                            let counted = count_retries_at_once(
-                                jumps * guard_retries(skipped_retries),
-                                &mut retry_in_match_counter,
-                                retry_limit_in_match,
-                                msa,
-                            );
-                            if let Err(err) = counted {
-                                stop_at_limit!(err);
-                            }
-                            match at {
-                                Some(at) => s = at,
-                                None => goto_fail = true,
-                            }
+                        match lazy_any_char_step(
+                            reg,
+                            p,
+                            str_data,
+                            s,
+                            right_range,
+                            &mut retry_in_match_counter,
+                            retry_limit_in_match,
+                            msa,
+                        ) {
+                            LazyStep::Stay => {}
+                            LazyStep::At(at) => s = at,
+                            LazyStep::Fail => goto_fail = true,
+                            LazyStep::Limit(err) => stop_at_limit!(err),
                         }
                     }
                     if goto_fail {
@@ -6979,6 +6956,75 @@ thread_local! {
     /// Runs the lazy `.*?c` loop one instruction at a time, as the
     /// reference for `lazy_any_char_stop` in differential tests.
     static LAZY_STOP_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// What the fused lazy `.*?c` loop does at its `PushOrJumpExact1`.
+enum LazyStep {
+    /// Not fused: the instruction runs as usual.
+    Stay,
+    /// The loop reaches `c` here; the instruction pushes as usual.
+    At(usize),
+    /// `AnyChar` fails before any `c`.
+    Fail,
+    /// The retries of the loop's jumps reach a limit.
+    Limit(i32),
+}
+
+/// The fused lazy `.*?c` loop at the `PushOrJumpExact1` at `p` (which jumps
+/// back to the `AnyChar` before it): its stop, after counting the retries
+/// its jumps count. Out of line: code added to `match_at_vm` shifts its
+/// layout.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn lazy_any_char_step(
+    reg: &RegexType,
+    p: usize,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    retry_in_match_counter: &mut u64,
+    retry_limit_in_match: u64,
+    msa: &mut MatchArg,
+) -> LazyStep {
+    #[cfg(test)]
+    if LAZY_STOP_DISABLED.with(|disabled| disabled.get()) {
+        return LazyStep::Stay;
+    }
+    let OperationPayload::PushOrJumpExact1 {
+        c, skipped_retries, ..
+    } = reg.ops[p].payload
+    else {
+        return LazyStep::Stay;
+    };
+    // A time limit reads the clock by the number of retries counted.
+    if msa.time_limit != 0 {
+        return LazyStep::Stay;
+    }
+    let multiline = match p.checked_sub(1).map(|body| reg.ops[body].opcode) {
+        Some(OpCode::AnyChar) => false,
+        Some(OpCode::AnyCharMl) => true,
+        _ => return LazyStep::Stay,
+    };
+    if skipped_retries & GUARD_RETRIES_BY_CHECKS != 0 {
+        return LazyStep::Stay;
+    }
+    let (jumps, at) = match lazy_any_char_stop(reg.enc, str_data, s, right_range, c, multiline) {
+        LazyStop::At(at, jumps) => (jumps, Some(at)),
+        LazyStop::Fails(jumps) => (jumps, None),
+        LazyStop::Unknown => return LazyStep::Stay,
+    };
+    if let Err(err) = count_retries_at_once(
+        jumps * guard_retries(skipped_retries),
+        retry_in_match_counter,
+        retry_limit_in_match,
+        msa,
+    ) {
+        return LazyStep::Limit(err);
+    }
+    match at {
+        Some(at) => LazyStep::At(at),
+        None => LazyStep::Fail,
+    }
 }
 
 /// Where the lazy loop `L: AnyChar; PushOrJumpExact1(c, L)` entered at
