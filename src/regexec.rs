@@ -1515,6 +1515,10 @@ pub struct MatchArg {
     /// Deadline fixed when the search starts (C: `TIME_LIMIT_INIT`). `None`
     /// without a limit, or when the limit is too large to represent.
     time_end: Option<Instant>,
+    /// Rust-only: the length of the last successful attempt. With `\K` the
+    /// match may start after the attempt position, but it ends there plus
+    /// this length (`onig_search_bounds`).
+    pub(crate) match_len: i32,
     // Reusable VM state (avoids heap allocation per match_at call)
     stack: Vec<StackEntry>,
     mem_start_stk: Vec<MemPtr>,
@@ -1551,6 +1555,7 @@ impl MatchArg {
             time_counter: 0,
             time_end: None,
             subexp_call_in_search_counter: 0,
+            match_len: 0,
             stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
@@ -1588,6 +1593,7 @@ impl MatchArg {
             time_counter: 0,
             time_end: None,
             subexp_call_in_search_counter: 0,
+            match_len: 0,
             stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
@@ -1597,7 +1603,7 @@ impl MatchArg {
     }
 
     /// Full reset for thread-local reuse: re-reads global limits, keeps allocated buffers.
-    fn reset_full(
+    pub(crate) fn reset_full(
         &mut self,
         reg: &RegexType,
         option: OnigOptionType,
@@ -3495,14 +3501,18 @@ fn match_at(
     // so such runs keep the bookkeeping to stay observably identical to C.
     // A region without capture groups only needs the match bounds, which
     // OP_END records either way.
-    if (msa.region.is_some() && reg.num_mem > 0)
+    let r = if (msa.region.is_some() && reg.num_mem > 0)
         || reg.needs_capture_tracking
         || (msa.match_stack_limit != 0 && (reg.push_mem_start | reg.push_mem_end) != 0)
     {
         match_at_impl::<true>(reg, str_data, end, in_right_range, sstart, msa)
     } else {
         match_at_impl::<false>(reg, str_data, end, in_right_range, sstart, msa)
+    };
+    if r >= 0 {
+        msa.match_len = r;
     }
+    r
 }
 
 /// While memoizing, expose each character of a fused star as a branch state.
@@ -6995,31 +7005,74 @@ pub(crate) fn search_in_range(
         return search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
     }
 
-    // Box the cached state so each warm call moves only a pointer. Taking
-    // ownership still leaves the cache available to re-entrant calls.
-    thread_local! {
-        static CACHED_MSA: RefCell<Option<Box<MatchArg>>> = const { RefCell::new(None) };
-    }
+    let mut msa = take_cached_msa(reg, option, region, start);
+    let result = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
+    // Return the MSA to cache (region already taken out by inner).
+    cache_msa(msa);
+    result
+}
 
-    // Reuse a cached MatchArg to avoid heap allocation per search.
-    // .take() makes this safe for re-entrant calls (e.g. from callouts).
-    let mut msa = match CACHED_MSA.with(|c| c.borrow_mut().take()) {
+// Box the cached state so each warm call moves only a pointer. Taking
+// ownership still leaves the cache available to re-entrant calls.
+thread_local! {
+    static CACHED_MSA: RefCell<Option<Box<MatchArg>>> = const { RefCell::new(None) };
+}
+
+/// The thread's cached MatchArg, reset for a search, or a new one. Reusing
+/// it avoids a heap allocation per search; `.take()` makes this safe for
+/// re-entrant calls (e.g. from callouts).
+#[inline]
+pub(crate) fn take_cached_msa(
+    reg: &RegexType,
+    option: OnigOptionType,
+    region: Option<OnigRegion>,
+    start: usize,
+) -> Box<MatchArg> {
+    match CACHED_MSA
+        .try_with(|c| c.borrow_mut().take())
+        .ok()
+        .flatten()
+    {
         Some(mut cached) => {
             cached.reset_full(reg, option, region, start);
             cached
         }
         None => Box::new(MatchArg::new(reg, option, region, start)),
-    };
+    }
+}
 
-    let result = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
-
-    // Return the MSA to cache (region already taken out by inner).
+/// Give a MatchArg back to the thread's cache.
+#[inline]
+pub(crate) fn cache_msa(mut msa: Box<MatchArg>) {
     release_oversized_stack(&mut msa);
-    CACHED_MSA.with(|c| {
+    // Drop can run after this thread-local's destructor during thread
+    // teardown; the MatchArg is then simply freed.
+    let _ = CACHED_MSA.try_with(|c| {
         *c.borrow_mut() = Some(msa);
     });
+}
 
-    result
+/// Rust-only (API layer): the bounds of the first match from `start` to the
+/// end of `text`, as `onig_search` with no options would find it, without a
+/// region. `msa` is reused across the searches of one iteration. Not for
+/// expressions whose match can start away from its attempt (`\K`) or with
+/// FIND_LONGEST, where only the region carries the match.
+pub(crate) fn onig_search_bounds(
+    reg: &RegexType,
+    text: &[u8],
+    start: usize,
+    msa: &mut MatchArg,
+) -> Result<Option<(usize, usize)>, i32> {
+    debug_assert!(!reg.keep_moves_match_start && !opton_find_longest(reg.options));
+    msa.reset_full(reg, ONIG_OPTION_NONE, None, start);
+    let end = text.len();
+    let (r, _) = search_in_range_inner(reg, text, end, start, end, end, msa);
+    release_oversized_stack(msa);
+    match r {
+        r if r >= 0 => Ok(Some((r as usize, r as usize + msa.match_len as usize))),
+        ONIG_MISMATCH => Ok(None),
+        err => Err(err),
+    }
 }
 
 /// Search reusing a pre-allocated MatchArg. Preserves buffer capacity.
@@ -7348,6 +7401,7 @@ fn onig_search_inner_core_with_right_range(
             {
                 let match_start = start + mat.start();
                 let match_end = start + mat.end();
+                msa.match_len = (match_end - match_start) as i32;
                 if let Some(ref mut r) = msa.region {
                     r.beg[0] = match_start as i32;
                     r.end[0] = match_end as i32;

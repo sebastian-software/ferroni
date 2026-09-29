@@ -12,8 +12,8 @@ use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new;
 use crate::regexec::{
-    OnigMatchParam, onig_name_to_backref_number, onig_new_match_param, onig_search,
-    onig_search_with_param,
+    MatchArg, OnigMatchParam, cache_msa, onig_name_to_backref_number, onig_new_match_param,
+    onig_search, onig_search_bounds, onig_search_with_param, take_cached_msa,
 };
 use crate::regint::RegexType;
 use crate::regsyntax::OnigSyntaxOniguruma;
@@ -389,23 +389,27 @@ impl Regex {
     /// Iteration ends early when a search stops at a process-wide limit. Use
     /// [`Regex::find_iter_with`] with [`SearchOptions`] to see that error.
     pub fn find_iter<'r, 't>(&'r self, text: &'t str) -> FindIter<'r, 't> {
-        FindIter {
-            regex: self,
-            text: text.as_bytes(),
-            last_end: 0,
-            last_was_empty: false,
-            region: take_cached_region(),
-        }
+        self.find_iter_bytes(text.as_bytes())
     }
 
     /// Iterate over all non-overlapping matches in `text` (as bytes).
     pub fn find_iter_bytes<'r, 't>(&'r self, text: &'t [u8]) -> FindIter<'r, 't> {
+        // An iterator yields match bounds only. Where they follow from the
+        // attempt position and the match length, it searches without a
+        // region, reusing one MatchArg for all its searches.
+        let bounds_only = !self.inner.keep_moves_match_start
+            && !self.inner.options.contains(ONIG_OPTION_FIND_LONGEST);
         FindIter {
             regex: self,
             text,
             last_end: 0,
             last_was_empty: false,
-            region: take_cached_region(),
+            region: if bounds_only {
+                OnigRegion::new()
+            } else {
+                take_cached_region()
+            },
+            msa: bounds_only.then(|| take_cached_msa(&self.inner, ONIG_OPTION_NONE, None, 0)),
         }
     }
 
@@ -795,6 +799,8 @@ pub struct FindIter<'r, 't> {
     last_end: usize,
     last_was_empty: bool,
     region: OnigRegion,
+    /// Set when the searches need no region (`onig_search_bounds`).
+    msa: Option<Box<MatchArg>>,
 }
 
 impl<'r, 't> Iterator for FindIter<'r, 't> {
@@ -805,25 +811,35 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
             return None;
         }
 
-        let (result, region) = onig_search(
-            &self.regex.inner,
-            self.text,
-            self.text.len(),
-            self.last_end,
-            self.text.len(),
-            Some(std::mem::take(&mut self.region)),
-            ONIG_OPTION_NONE,
-        );
-        self.region = region?;
+        let m = if let Some(msa) = self.msa.as_deref_mut() {
+            let (start, end) =
+                onig_search_bounds(&self.regex.inner, self.text, self.last_end, msa).ok()??;
+            (end <= self.text.len()).then_some(Match {
+                text: self.text,
+                start,
+                end,
+            })?
+        } else {
+            let (result, region) = onig_search(
+                &self.regex.inner,
+                self.text,
+                self.text.len(),
+                self.last_end,
+                self.text.len(),
+                Some(std::mem::take(&mut self.region)),
+                ONIG_OPTION_NONE,
+            );
+            self.region = region?;
 
-        if result < 0 {
-            return None;
-        }
-        if self.region.num_regs < 1 {
-            return None;
-        }
+            if result < 0 {
+                return None;
+            }
+            if self.region.num_regs < 1 {
+                return None;
+            }
 
-        let m = Match::from_region(self.text, self.region.beg[0], self.region.end[0])?;
+            Match::from_region(self.text, self.region.beg[0], self.region.end[0])?
+        };
         let (start, end) = (m.start, m.end);
 
         // Handle empty matches: advance by one byte to avoid infinite loop.
@@ -854,7 +870,10 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
 
 impl Drop for FindIter<'_, '_> {
     fn drop(&mut self) {
-        cache_region(std::mem::take(&mut self.region));
+        match self.msa.take() {
+            Some(msa) => cache_msa(msa),
+            None => cache_region(std::mem::take(&mut self.region)),
+        }
     }
 }
 
@@ -1024,17 +1043,90 @@ mod tests {
     #[test]
     fn find_iter_reuses_one_region_for_every_step() {
         clear_cached_region();
-        let re = Regex::new(r"(\w+)").unwrap();
+        // `\K` moves the match start away from the attempt, so only the
+        // region carries the match.
+        let re = Regex::new(r"(\w)\K\w+").unwrap();
         let mut matches = re.find_iter("one two");
+        assert!(matches.msa.is_none());
 
-        assert_eq!(matches.next().unwrap().as_str(), "one");
+        assert_eq!(matches.next().unwrap().as_str(), "ne");
         let first = matches.region.beg.as_ptr();
-        assert_eq!(matches.next().unwrap().as_str(), "two");
+        assert_eq!(matches.next().unwrap().as_str(), "wo");
         assert_eq!(matches.region.beg.as_ptr(), first);
         drop(matches);
 
         let cached = cached_region_buffer().expect("iterator drop should return its region");
         assert_eq!(cached.0, first);
+    }
+
+    #[test]
+    fn find_iter_reuses_one_match_arg_without_a_region() {
+        let re = Regex::new(r"(\w+)").unwrap();
+        let mut matches = re.find_iter("one two");
+        let msa: *const MatchArg = &**matches.msa.as_ref().expect("bounds-only iterator");
+        assert_eq!(matches.next().unwrap().as_str(), "one");
+        assert_eq!(matches.next().unwrap().as_str(), "two");
+        assert!(matches.next().is_none());
+        assert!(std::ptr::eq(&**matches.msa.as_ref().unwrap(), msa));
+        assert!(matches.region.beg.is_empty(), "no region was requested");
+    }
+
+    /// The bounds-only iterator yields what the region-based one yields.
+    #[test]
+    fn find_iter_bounds_match_the_region_path() {
+        let patterns = [
+            r"\d+",
+            r"(\w+)",
+            r"(a)|b",
+            r"\b(\w+)\s+\1\b",
+            r"(?<=@)\w+",
+            r"\w+(?=\()",
+            r"x*",
+            r"",
+            r"^",
+            r"$",
+            r"(?m)^\s*$",
+            r"alpha|beta|gamma|delta",
+            r"(alpha|beta|gamma|delta)",
+            r"(?i)(?:error|warn|fatal|panic)",
+            r"\b(?:if|else|for|while)\b",
+            r"(?>a+)b|a",
+            r"(a|ab)(c|bcd)(d*)",
+            r"[\w.+-]+@\w+\.\w+",
+            r"\p{L}+",
+            r"é|e",
+            r".*",
+            r"(?<n>\d)(?<m>\d)?",
+        ];
+        let texts = [
+            "",
+            "a",
+            "one two two three",
+            "x@y.z foo(1) bar( a@b.cd",
+            "alpha beta gammadelta ERROR warn Panic",
+            "if else\nfor  \n\nwhile",
+            "aab abcd abcbcdd",
+            "Grüße café éte 12 345",
+            "xxaxxb",
+        ];
+        for pattern in patterns {
+            let re = Regex::new(pattern).unwrap();
+            for text in texts {
+                let bounds = re.find_iter(text);
+                assert!(bounds.msa.is_some(), "{pattern}");
+                let region_path = FindIter {
+                    regex: &re,
+                    text: text.as_bytes(),
+                    last_end: 0,
+                    last_was_empty: false,
+                    region: OnigRegion::new(),
+                    msa: None,
+                };
+                let got: Vec<_> = bounds.map(|m| m.range()).collect();
+                let expected: Vec<_> = region_path.map(|m| m.range()).collect();
+                assert_eq!(got, expected, "{pattern:?} {text:?}");
+            }
+        }
     }
 
     #[test]
