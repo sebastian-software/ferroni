@@ -5473,7 +5473,52 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
                     skipped_retries,
                 } = reg.ops[p].payload
                 {
-                    if (s < right_range && str_data[s] == c)
+                    // Rust-only (ADR-008): the lazy `.*?c` loop (`AnyChar`
+                    // before this instruction, which jumps back to it) runs
+                    // to its next stop in one step, counting the retries
+                    // its jumps count.
+                    #[cfg(test)]
+                    let fuse = !LAZY_STOP_DISABLED.with(|disabled| disabled.get());
+                    #[cfg(not(test))]
+                    let fuse = true;
+                    if fuse
+                        && !CACHE
+                        && addr == -1
+                        && skipped_retries & GUARD_RETRIES_BY_CHECKS == 0
+                        && time_limit_ms == 0
+                        && p > 0
+                    {
+                        let multiline = match reg.ops[p - 1].opcode {
+                            OpCode::AnyChar => Some(false),
+                            OpCode::AnyCharMl => Some(true),
+                            _ => None,
+                        };
+                        if let Some(multiline) = multiline {
+                            let stop =
+                                lazy_any_char_stop(enc, str_data, s, right_range, c, multiline);
+                            let (jumps, at) = match stop {
+                                LazyStop::At(at, jumps) => (jumps, Some(at)),
+                                LazyStop::Fails(jumps) => (jumps, None),
+                                LazyStop::Unknown => (0, Some(s)),
+                            };
+                            let counted = count_retries_at_once(
+                                jumps * guard_retries(skipped_retries),
+                                &mut retry_in_match_counter,
+                                retry_limit_in_match,
+                                msa,
+                            );
+                            if let Err(err) = counted {
+                                stop_at_limit!(err);
+                            }
+                            match at {
+                                Some(at) => s = at,
+                                None => goto_fail = true,
+                            }
+                        }
+                    }
+                    if goto_fail {
+                        // The loop's `AnyChar` fails before any `c`.
+                    } else if (s < right_range && str_data[s] == c)
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
                         // Character matches: push alternative and continue
@@ -6927,6 +6972,96 @@ fn after_next_newline(
         return None;
     }
     Some(newline.map_or(cur_range, |at| at + 1))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Runs the lazy `.*?c` loop one instruction at a time, as the
+    /// reference for `lazy_any_char_stop` in differential tests.
+    static LAZY_STOP_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Where the lazy loop `L: AnyChar; PushOrJumpExact1(c, L)` entered at
+/// its `PushOrJumpExact1` from `s` stops: at the first `c` it reaches, or
+/// failing at a newline (unless `multiline`) or at `right_range`.
+enum LazyStop {
+    /// The loop reaches `c` here and pushes its alternative, after jumping
+    /// this many times.
+    At(usize, u64),
+    /// `AnyChar` fails before any `c`, after this many jumps.
+    Fails(u64),
+    /// The character steps could land elsewhere: the bytes are not valid
+    /// UTF-8 in a multibyte encoding, or `c` is not ASCII.
+    Unknown,
+}
+
+/// Rust-only (ADR-008): [`LazyStop`] found with `memchr`. Between `s` and
+/// the stop, the loop pushes nothing and counts no retries, so running it
+/// in one step is unobservable. An ASCII byte in valid UTF-8 is a character
+/// head, so the character steps land on the stop.
+#[inline(never)]
+fn lazy_any_char_stop(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    c: u8,
+    multiline: bool,
+) -> LazyStop {
+    let right_range = right_range.min(str_data.len());
+    if c >= 0x80 || s >= right_range {
+        return LazyStop::Unknown;
+    }
+    let hay = &str_data[s..right_range];
+    let found = if multiline || c == b'\n' {
+        memchr::memchr(c, hay)
+    } else {
+        memchr::memchr2(c, b'\n', hay)
+    };
+    let stop = found.map_or(right_range, |off| s + off);
+    let skipped = &str_data[s..stop];
+    // One jump per character before the stop.
+    let jumps = if enc.max_enc_len() == 1 {
+        skipped.len()
+    } else {
+        match std::str::from_utf8(skipped) {
+            Ok(text) => text.chars().count(),
+            Err(_) => return LazyStop::Unknown,
+        }
+    } as u64;
+    match found {
+        Some(_) if str_data[stop] == c => LazyStop::At(stop, jumps),
+        // A newline, or the range's end: the instruction jumps once more,
+        // and `AnyChar` fails there.
+        _ => LazyStop::Fails(jumps + 1),
+    }
+}
+
+/// `count_retry` for `backtracks` retries counted one at a time, without a
+/// time limit: the count stops at the limit, where the single retries
+/// would have stopped.
+#[inline]
+fn count_retries_at_once(
+    backtracks: u64,
+    retry_in_match_counter: &mut u64,
+    retry_limit_in_match: u64,
+    msa: &mut MatchArg,
+) -> Result<(), i32> {
+    if backtracks == 0 {
+        return Ok(());
+    }
+    let backtracks = if retry_limit_in_match != 0 {
+        backtracks.min(retry_limit_in_match.saturating_sub(*retry_in_match_counter))
+    } else {
+        backtracks
+    };
+    count_retry(
+        backtracks,
+        retry_in_match_counter,
+        retry_limit_in_match,
+        0,
+        msa,
+    )
 }
 
 /// Check if encoding is single-byte.
@@ -8388,6 +8523,123 @@ mod tests {
             }
         }
         assert!(searched > 100_000, "{searched}");
+    }
+
+    /// The fused lazy `.*?c` loop gives the results, captures and limit
+    /// errors of the loop run one instruction at a time.
+    #[test]
+    fn lazy_any_char_stop_matches_the_instruction_loop() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let utf8: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        let ascii: OnigEncoding = &crate::encodings::ascii::ONIG_ENCODING_ASCII;
+        let patterns = [
+            r"\[.*?\]",
+            r#"".*?""#,
+            r"<.*?>",
+            r#"(".*?")x"#,
+            r"(?m)<.*?>",
+            r"a.*?b.*?c",
+            r"(\w).*?\1",
+            r".*?x",
+            r"(?:.*?,){2}",
+            r"x.*?\n",
+            r"\[(.*?)\](.*?);",
+            r"(?m)\[.*?\](.*?)x",
+        ];
+        let pieces: &[&[u8]] = &[
+            b"[",
+            b"]",
+            b"\"",
+            b"<",
+            b">",
+            b"x",
+            b",",
+            b";",
+            b"a",
+            b"b",
+            b"c",
+            b"\n",
+            b" ",
+            "\u{e9}".as_bytes(),
+            "\u{20ac}".as_bytes(),
+            b"\xff",
+            b"\xe2\x82",
+            b"\xc3",
+        ];
+        let mut seed: u64 = 0x5851_F42D_4C95_7F2D;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let run = |reg: &RegexType, text: &[u8], fused: bool, limits: (u64, u64, u32)| {
+            LAZY_STOP_DISABLED.with(|disabled| disabled.set(!fused));
+            let mut mp = onig_new_match_param();
+            (
+                mp.retry_limit_in_match,
+                mp.retry_limit_in_search,
+                mp.match_stack_limit,
+            ) = limits;
+            let mut out = Vec::new();
+            let mut start = 0;
+            while start <= text.len() {
+                let (r, region) = onig_search_with_param(
+                    reg,
+                    text,
+                    text.len(),
+                    start,
+                    text.len(),
+                    Some(OnigRegion::new()),
+                    ONIG_OPTION_NONE,
+                    &mp,
+                );
+                let region = region.unwrap();
+                out.push((r, region.beg.clone(), region.end.clone()));
+                if r < 0 {
+                    break;
+                }
+                let e = region.end[0] as usize;
+                start = if e > r as usize { e } else { r as usize + 1 };
+            }
+            LAZY_STOP_DISABLED.with(|disabled| disabled.set(false));
+            out
+        };
+        let mut compared = 0;
+        for enc in [utf8, ascii] {
+            for pattern in patterns {
+                let reg = crate::regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                for _ in 0..150 {
+                    let text: Vec<u8> = (0..next(50))
+                        .flat_map(|_| pieces[next(pieces.len())].to_vec())
+                        .collect();
+                    for limits in [
+                        (0, 0, 0),
+                        (1, 0, 0),
+                        (3, 0, 0),
+                        (0, 5, 0),
+                        (7, 5, 0),
+                        (4, 10, 0),
+                        (0, 0, 2),
+                    ] {
+                        assert_eq!(
+                            run(&reg, &text, true, limits),
+                            run(&reg, &text, false, limits),
+                            "{} {pattern:?} {text:?} {limits:?}",
+                            enc.name()
+                        );
+                        compared += 1;
+                    }
+                }
+            }
+        }
+        assert!(compared > 20_000, "{compared}");
     }
 
     /// `after_next_newline` stops where the character loop it replaces
