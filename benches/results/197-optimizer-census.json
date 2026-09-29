@@ -1,0 +1,654 @@
+{
+  "compile_errors": [
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "ada.json",
+      "pattern": "(?i)(?:\\b(end)\\s+(\\3|\\4)\\s*)?(;)"
+    },
+    {
+      "error": "syntax error: invalid code point value",
+      "grammar": "ahk2.json",
+      "pattern": "(?<=(&[ \t]+|^[ \t]*))([<>$~*!+#^]*?)(?i:shift|lshift|rshift|alt|lalt|ralt|control|lcontrol|rcontrol|ctrl|lctrl|rctrl|lwin|rwin|appskey|lbutton|rbutton|mbutton|wheeldown|wheelup|wheelleft|wheelright|xbutton[12]|(0*[2-9]|0*1[0-6]?)?joy0*([1-9]|[12]\\d|3[012])|space|tab|enter|escape|esc|backspace|bs|delete|del|insert|ins|pgdn|pgup|home|end|up|down|left|right|printscreen|ctrlbreak|pause|help|sleep|scrolllock|capslock|numlock|numpad0|numpad1|numpad2|numpad3|numpad4|numpad5|numpad6|numpad7|numpad8|numpad9|numpadmult|numpadadd|numpadsub|numpaddiv|numpaddot|numpaddel|numpadins|numpadclear|numpadleft|numpadright|numpaddown|numpadup|numpadhome|numpadend|numpadpgdn|numpadpgup|numpadenter|f1|f2|f3|f4|f5|f6|f7|f8|f9|f10|f11|f12|f13|f14|f15|f16|f17|f18|f19|f20|f21|f22|f23|f24|browser_back|browser_forward|browser_refresh|browser_stop|browser_search|browser_favorites|browser_home|volume_mute|volume_down|volume_up|media_next|media_prev|media_stop|media_play_pause|launch_mail|launch_media|launch_app1|launch_app2|vk[a-f\\d]{1,2}(sc[a-f\\d]+)?|sc[a-f\\d]+|`[;{]|[\\x21-\\x3A\\x3C-\\x7E]|[^\\x00-\\xff]|(?<=[^ \t]);)(?=([ \t]|$))"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "ahk2.json",
+      "pattern": "(\\3)|(?=$|\\*/)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "angular-inline-style.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "angular-inline-template.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "angular-ts.json",
+      "pattern": "(\\3)|(?=$|\\*/)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "apl.json",
+      "pattern": "(?<=\\s)(\\2>)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "apl.json",
+      "pattern": "^.*?\\2.*?$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "asciidoc.json",
+      "pattern": "(?<=\\1)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "asciidoc.json",
+      "pattern": "(?<=\\1)$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "asciidoc.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "asciidoc.json",
+      "pattern": "^\\1$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "astro.json",
+      "pattern": "</\\1\\s*>|/>"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "astro.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "berry.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "blade.json",
+      "pattern": "^\\s*(\\2)\\b"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "blade.json",
+      "pattern": "^\\s*(\\3)\\b"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "c3.json",
+      "pattern": "\\2"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "cmake.json",
+      "pattern": "]\\1]"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "crystal.json",
+      "pattern": "\\s*\\1\\b"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "crystal.json",
+      "pattern": "\\s*\\2\\b"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "d.json",
+      "pattern": "\\1\""
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "elixir.json",
+      "pattern": "\\1[a-z]*"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "erlang.json",
+      "pattern": "(\\2)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "erlang.json",
+      "pattern": "^(\\s*(\\3))(?!\")"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "erlang.json",
+      "pattern": "^(\\s*(\\7))\\s*(\\)\\s*)?(\\.)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "fortran-free-form.json",
+      "pattern": "(?i)(?:^|(?<=;))(?=\\s*\\b\\2\\b)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "gdscript.json",
+      "pattern": "(\\3)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "gdscript.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "gdscript.json",
+      "pattern": "\\2"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "gnuplot.json",
+      "pattern": "^(\\3)\\b(.*)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "hack.json",
+      "pattern": "^(\\2)(?=;?$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haml.json",
+      "pattern": "(?m:(?<=\\n)(?!\\1\\s+|$\\n*))"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haml.json",
+      "pattern": "^(?!\\1\\s+|$\\n*)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haml.json",
+      "pattern": "^(?!\\1\\s+|\\n)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haml.json",
+      "pattern": "^(?=\\1\\s+|$\\n*)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haskell.json",
+      "pattern": "(?=(?<!')\\bderiving\\b(?!'))|(?=[;}])|^(?!\\1\\s+\\S|\\s*(?:$|\\{-[^@]|--+(?![[\\p{S}\\p{P}]&&[^]\"'(),;\\[_`{}]]).*$))"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haskell.json",
+      "pattern": "(?=(?<!')\\bwhere\\b(?!'))|(?=[;}])|^(?!\\1\\s+\\S|\\s*(?:$|\\{-[^@]|--+(?![[\\p{S}\\p{P}]&&[^]\"'(),;\\[_`{}]]).*$))"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haskell.json",
+      "pattern": "(?=[;}])|^(?!\\1\\s+\\S|\\s*(?:$|\\{-[^@]|--+(?![[\\p{S}\\p{P}]&&[^]\"'(),;\\[_`{}]]).*$))"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haskell.json",
+      "pattern": "(?=\\b(?<!'')deriving\\b(?!'))|(?=[;}])|^(?!\\1\\s+\\S|\\s*(?:$|\\{-[^@]|--+(?![[\\p{S}\\p{P}]&&[^]\"'(),;\\[_`{}]]).*$))"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haskell.json",
+      "pattern": "(?=^(?!\\1--+(?![[\\p{S}\\p{P}]&&[^]\"'(),;\\[_`{}]])))"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haskell.json",
+      "pattern": "\\3]"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "haskell.json",
+      "pattern": "\\5]"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "hcl.json",
+      "pattern": "^\\s*\\2\\s*$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "imba.json",
+      "pattern": "(\\3)|(?=$|\\*/)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "javascript.json",
+      "pattern": "(\\3)|(?=$|\\*/)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "jsx.json",
+      "pattern": "(\\3)|(?=$|\\*/)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "kdl.json",
+      "pattern": "\\2\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "latex.json",
+      "pattern": "(\\\\end\\{\\2}(?:\\s*\\n)?)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "latex.json",
+      "pattern": "(\\\\end\\{\\2})"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "latex.json",
+      "pattern": "\\\\end\\{\\1}"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "latex.json",
+      "pattern": "\\\\end\\{\\1}(?:\\s*\\n)?"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "lua.json",
+      "pattern": "(]\\2])[\\t ]*"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "lua.json",
+      "pattern": "]\\1][\\t ]*"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "luau.json",
+      "pattern": "]\\1]"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "markdown.json",
+      "pattern": "^(?: {0,3}\\1-*[\\t ]*|[\\t ]*\\.{3})$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "marko.json",
+      "pattern": "/>|(?<=</>)|(?<=</\\2>)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "marko.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "marko.json",
+      "pattern": "\\2>"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "mojo.json",
+      "pattern": "(\\2)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "mojo.json",
+      "pattern": "(\\3)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "mojo.json",
+      "pattern": "(\\3)|((?<!\\\\)\\n)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "mojo.json",
+      "pattern": "(\\4)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "mojo.json",
+      "pattern": "(\\4)|((?<!\\\\)\\n)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "nushell.json",
+      "pattern": "'\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "objective-cpp.json",
+      "pattern": "\\)\\2(\\3)\""
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "org.json",
+      "pattern": "(?i)(?:^|\\G)\\s*(#\\+END_\\2)\\s*$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "perl.json",
+      "pattern": "(?=\\2)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "perl.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "perl.json",
+      "pattern": "\\1(?=[acdegilmoprsu]*x[acdegilmoprsu]*)\\b"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "perl.json",
+      "pattern": "\\2"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "perl.json",
+      "pattern": "^((?!\\5)\\s+)?((\\6))$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "php.json",
+      "pattern": "^\\s*(\\2)(?![0-9A-Z_a-z\\x7F-\\x{10FFFF}])"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "php.json",
+      "pattern": "^\\s*(\\3)(?![0-9A-Z_a-z\\x7F-\\x{10FFFF}])"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "pug.json",
+      "pattern": "\\G((?<!\\5[^-\\w]))|}|$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "purescript.json",
+      "pattern": "^(?!\\1[\\t ]*|[\\t ]*$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "purescript.json",
+      "pattern": "^(?!\\1[\\t ]|[\\t ]*$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "python.json",
+      "pattern": "(\\2)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "python.json",
+      "pattern": "(\\3)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "python.json",
+      "pattern": "(\\3)|((?<!\\\\)\\n)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "python.json",
+      "pattern": "(\\4)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "python.json",
+      "pattern": "(\\4)|((?<!\\\\)\\n)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "r.json",
+      "pattern": "\\)\\1\""
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "r.json",
+      "pattern": "\\)\\1'"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "r.json",
+      "pattern": "]\\1\""
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "r.json",
+      "pattern": "]\\1'"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "r.json",
+      "pattern": "}\\1\""
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "r.json",
+      "pattern": "}\\1'"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "racket.json",
+      "pattern": "^\\1$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "raku.json",
+      "pattern": "\\3"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "rst.json",
+      "pattern": "^(?!\\1[\\t ]|$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "rst.json",
+      "pattern": "^(?!\\1\\s|\\s*$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "ruby.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "ruby.json",
+      "pattern": "\\1[eimnosux]*"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "ruby.json",
+      "pattern": "^(?!\\s*#\\3\\s{2,}|\\s*#\\s*$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "ruby.json",
+      "pattern": "^\\2$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "ruby.json",
+      "pattern": "^\\s*\\6$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "shellscript.json",
+      "pattern": "(?<!\\G)(?<=\\2)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "shellscript.json",
+      "pattern": "^\\2(?=[\\&;\\s]|$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "shellscript.json",
+      "pattern": "^\\3(?=[\\&;\\s]|$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "shellscript.json",
+      "pattern": "^\\t*\\2(?=[\\&;\\s]|$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "shellscript.json",
+      "pattern": "^\\t*\\3(?=[\\&;\\s]|$)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "svelte.json",
+      "pattern": "(\\3)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "svelte.json",
+      "pattern": "</\\1\\s*>|/>"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "svelte.json",
+      "pattern": "\\1"
+    },
+    {
+      "error": "syntax error: numbered backref/call is not allowed. (use name)",
+      "grammar": "swift.json",
+      "pattern": "((#+)/)(?<guts>(?>(?:\\\\Q(?:(?!\\\\E)(?!/\\2).)*+(?:\\\\E|(?=/\\2))|\\\\.|\\(\\?#[^)]*\\)|\\(\\?(?>\\{(?:[^{].*?|\\{[^{].*?}|\\{\\{[^{].*?}}|\\{\\{\\{[^{].*?}}}|\\{\\{\\{\\{[^{].*?}}}}|\\{\\{\\{\\{\\{.+?}}}}})})(?:\\[(?!\\d)\\w+])?[<>X]?\\)|\\[(?:\\\\.|[^]\\[\\\\]|\\[(?:\\\\.|[^]\\[\\\\]|\\[(?:\\\\.|[^]\\[\\\\]|\\[(?:\\\\.|[^]\\[\\\\])+])+])+])+]|\\(\\g<guts>?+\\)|(?:(?!/\\2)[^()\\[\\\\])+)+))?+(/\\2)|#+/.+(\\n)"
+    },
+    {
+      "error": "syntax error: numbered backref/call is not allowed. (use name)",
+      "grammar": "swift.json",
+      "pattern": "(\\()(?<keyw>\\?C)(?:(?<num>\\d+)|`(?<name>(?:[^`]|``)*)`|'(?<name>(?:[^']|'')*)'|\"(?<name>(?:[^\"]|\"\")*)\"|\\^(?<name>(?:[^^]|\\^\\^)*)\\^|%(?<name>(?:[^%]|%%)*)%|#(?<name>(?:[^#]|##)*)#|\\$(?<name>(?:[^$]|\\$\\$)*)\\$|\\{(?<name>(?:[^}]|}})*)})?(\\))|(\\()(?<keyw>\\*)(?<name>(?!\\d)\\w+)(?:\\[(?<tag>(?!\\d)\\w+)])?(?:\\{[^,}]+(?:,[^,}]+)*})?(\\))|(\\()(?<keyw>\\?)(?>(\\{(?:\\g<20>|(?!\\{).*?)}))(?:\\[(?<tag>(?!\\d)\\w+)])?(?<keyw>[<>X]?)(\\))"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "swift.json",
+      "pattern": "/\\1"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "terraform.json",
+      "pattern": "^\\s*\\2\\s*$"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "tsx.json",
+      "pattern": "(\\3)|(?=$|\\*/)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "typescript.json",
+      "pattern": "(\\3)|(?=$|\\*/)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "vue-vine.json",
+      "pattern": "(\\3)|(?=$|\\*/)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "vue.json",
+      "pattern": "(?=\\1)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "vue.json",
+      "pattern": "(\\2)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "vyper.json",
+      "pattern": "(\\2)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "vyper.json",
+      "pattern": "(\\3)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "vyper.json",
+      "pattern": "(\\3)|((?<!\\\\)\\n)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "vyper.json",
+      "pattern": "(\\4)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "vyper.json",
+      "pattern": "(\\4)|((?<!\\\\)\\n)"
+    },
+    {
+      "error": "syntax error: invalid backref number/name",
+      "grammar": "yaml.json",
+      "pattern": "^(?!\\1|\\s*$)"
+    }
+  ],
+  "refused": [
+    {
+      "grammar": "v.json",
+      "pattern": "(?:[0-9]+_?)+",
+      "reports": [
+        "Refused(NoMandatoryDot)"
+      ]
+    }
+  ],
+  "rewritten": [
+    {
+      "grammar": "purescript.json",
+      "pattern": "\\b(([0-9]+_?)*[0-9]+|0([Xx]\\h+|[Oo][0-7]+))\\b",
+      "reports": [
+        "DeterministicDecimalTail"
+      ]
+    },
+    {
+      "grammar": "v.json",
+      "pattern": "([0-9]+(_?))+(\\.)([0-9]+)",
+      "reports": [
+        "PossessiveDecimalDigits"
+      ]
+    },
+    {
+      "grammar": "v.json",
+      "pattern": "([0-9]+(_?))+(\\.)([0-9]+[Ee][-+]?[0-9]+)",
+      "reports": [
+        "PossessiveDecimalDigits"
+      ]
+    }
+  ],
+  "summary": {
+    "capture_comparisons": 153,
+    "compile_errors": 120,
+    "compiled": 22305,
+    "corpus_inputs": 51,
+    "grammar_files": 260,
+    "pattern_occurrences": 33878,
+    "patterns_per_grammar_deduplicated": 22425,
+    "refused_patterns": 1,
+    "rewritten_patterns": 3
+  },
+  "provenance": {
+    "base_commit": "f8870de29b55bcf783979fe07652c64fc6206194",
+    "grammar_snapshot_sha256": "7be2e2839703e32eb162002f50845ecaed687cf69fa00b65b3cd2910360a1afc",
+    "manifest_algorithm": "SHA256 of sorted UTF-8 file name, NUL, then raw SHA256 of file bytes, for each JSON file",
+    "scope": "Compilation checked for every extracted per-grammar unique pattern; capture traces compared only for the three rewritten patterns on the 51-input diagnostic corpus.",
+    "implementation_commit": "fdbc123c955595e312f2b8e051557ee0271defcf"
+  }
+}

@@ -1,0 +1,649 @@
+{
+  "base_commit": "f8870de29b55bcf783979fe07652c64fc6206194",
+  "branch": "codex/197-backtracking-optimizer",
+  "hardware": "Apple M1 Ultra, arm64",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "features": [
+    "ffi"
+  ],
+  "profile": "bench, thin LTO",
+  "pinned_oniguruma_commit": "f95747b462de672b6f8dbdeb478245ddf061ca53",
+  "implementation_sha256": {
+    "Cargo.toml": "870642e02f0267cb1338c31a6d733aff7d3da9d44804d73ae41d1386e07c1d90",
+    "src/api.rs": "7e2d9194bdeae5d311a6f9fc30f56a3c220a4e79759dafe7357219b0ae93be92",
+    "src/backtrack_rewrite.rs": "163600def6453192896bd4b3c7102425ee7468762e44932d4bb50fe4e88207fe",
+    "src/regcomp.rs": "3893a2ee1e6308f3ce565604aaaca78f7a013ca5b98c32117151a662ca9830b4",
+    "src/regexec.rs": "d351f91fb3d4323bd44ffcbf2ce4153f59a9422690b317d9ed8cead9366b8cea",
+    "src/regint.rs": "b7812a5afc7ca0464d7bb26e5ba080b3ee14c3977b1d4a31ebea192bfc185f87",
+    "src/regparse_types.rs": "8c318bb02ea45b299c1f13fd1be6a80f9987e2a13e8cdd29fc428c8f3489655e",
+    "src/scanner.rs": "e34b70a3c40e8ed9574700516d4bf89877666c2d0cc251b01e120818b8fecc74",
+    "src/leading_run.rs": "12efb9395f70157e8f973029bf683f8730def38ffc861db09e76aed1078a1739",
+    "benches/purescript_rewrite_bench.rs": "bd1fb0c248a61f0ef66bd15d33e4a1288ef86e5bac07478c7d5a0a39dba448ea",
+    "benches/backtrack_compiler_bench.rs": "413a89c04b1f693127f5eab912a66502eb08f92364ee5d4e3001bbde3c05e23b",
+    "benches/battle_bench.rs": "97c4385f5cb7dfa0c28c1dfb8dc6289551cde8b435d91a68f460c20e1b769f95"
+  },
+  "sample_size": 30,
+  "warmup_ms": 500,
+  "measurement_ms": 4000,
+  "runs": [
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "benchmarks": [
+        {
+          "id": "scanner_documents/css_117_document_19_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 92047.65458073866,
+                "upper_bound": 92655.38131369886
+              },
+              "point_estimate": 92353.40167308753,
+              "standard_error": 155.4830098101749
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 92021.23866612112,
+                "upper_bound": 92587.06629663892
+              },
+              "point_estimate": 92467.36152482269,
+              "standard_error": 153.45860345495169
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 92075.47130422006,
+                "upper_bound": 92608.09814080042
+              },
+              "point_estimate": 92363.27600504068,
+              "standard_error": 137.21197080687034
+            }
+          },
+          "version": "before"
+        },
+        {
+          "id": "scanner_documents/rust_81_document_31_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 105483.0559022293,
+                "upper_bound": 106426.81085818348
+              },
+              "point_estimate": 105960.05575280453,
+              "standard_error": 241.0588210286692
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 105527.40545515394,
+                "upper_bound": 106505.3336919105
+              },
+              "point_estimate": 105969.4693057946,
+              "standard_error": 249.40403263311805
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 105160.30709370888,
+                "upper_bound": 106261.18053501601
+              },
+              "point_estimate": 105659.18691837684,
+              "standard_error": 280.91816820546444
+            }
+          },
+          "version": "before"
+        },
+        {
+          "id": "scanner_documents/ts_279_document_28_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1008952.967244244,
+                "upper_bound": 1026947.2238628683
+              },
+              "point_estimate": 1017982.5484654964,
+              "standard_error": 4615.431704075374
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 999029.1499999999,
+                "upper_bound": 1036037.4445450886
+              },
+              "point_estimate": 1018793.5363247864,
+              "standard_error": 10422.205675592626
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1018771.9689184119,
+                "upper_bound": 1039164.015032287
+              },
+              "point_estimate": 1030494.1563194077,
+              "standard_error": 5211.555199516877
+            }
+          },
+          "version": "before"
+        },
+        {
+          "id": "scanner_documents/css_117_document_19_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91242.33983651466,
+                "upper_bound": 91816.1024418325
+              },
+              "point_estimate": 91527.70896484611,
+              "standard_error": 146.45127210243402
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91119.90131578947,
+                "upper_bound": 91902.53618735835
+              },
+              "point_estimate": 91420.0653508772,
+              "standard_error": 225.41809419862835
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91680.18075073957,
+                "upper_bound": 92375.34258324213
+              },
+              "point_estimate": 92065.47765314927,
+              "standard_error": 178.7714876987119
+            }
+          },
+          "version": "after"
+        },
+        {
+          "id": "scanner_documents/rust_81_document_31_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 103976.6395923268,
+                "upper_bound": 104944.626088371
+              },
+              "point_estimate": 104461.7697590835,
+              "standard_error": 247.31905837849257
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 103498.38180359436,
+                "upper_bound": 105183.33514808363
+              },
+              "point_estimate": 104749.16990022172,
+              "standard_error": 479.95216998163403
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 103678.96999239136,
+                "upper_bound": 105143.45510746048
+              },
+              "point_estimate": 104400.11228024919,
+              "standard_error": 376.42006514319485
+            }
+          },
+          "version": "after"
+        },
+        {
+          "id": "scanner_documents/ts_279_document_28_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1017263.9805465753,
+                "upper_bound": 1030046.001732717
+              },
+              "point_estimate": 1023700.4613134298,
+              "standard_error": 3262.5842226505742
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1020580.0586419753,
+                "upper_bound": 1028859.3928571428
+              },
+              "point_estimate": 1025736.9895061728,
+              "standard_error": 2312.496259377482
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1023190.2951688548,
+                "upper_bound": 1032375.1964866772
+              },
+              "point_estimate": 1027769.8241142252,
+              "standard_error": 2347.5327801898093
+            }
+          },
+          "version": "after"
+        }
+      ]
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "benchmarks": [
+        {
+          "id": "scanner_documents/css_117_document_19_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91742.60832021976,
+                "upper_bound": 92362.24866190965
+              },
+              "point_estimate": 92061.0191589551,
+              "standard_error": 158.4375634621471
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91912.83872340425,
+                "upper_bound": 92584.18028115502
+              },
+              "point_estimate": 92174.39361702127,
+              "standard_error": 206.96708922434004
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91249.037098762,
+                "upper_bound": 92130.86530406395
+              },
+              "point_estimate": 91674.48812291144,
+              "standard_error": 226.12409027397567
+            }
+          },
+          "version": "after"
+        },
+        {
+          "id": "scanner_documents/rust_81_document_31_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 105337.70127883369,
+                "upper_bound": 107119.50675520011
+              },
+              "point_estimate": 106107.44472398474,
+              "standard_error": 457.15814487747815
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 105344.73865176152,
+                "upper_bound": 106418.64244914682
+              },
+              "point_estimate": 105775.86711672474,
+              "standard_error": 223.5588644313767
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 105760.01496189537,
+                "upper_bound": 106355.45426771659
+              },
+              "point_estimate": 106056.2215242935,
+              "standard_error": 151.87147390504217
+            }
+          },
+          "version": "after"
+        },
+        {
+          "id": "scanner_documents/ts_279_document_28_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1033000.7779436973,
+                "upper_bound": 1049671.39271656
+              },
+              "point_estimate": 1040812.7582357365,
+              "standard_error": 4271.360263779113
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1029344.4200779727,
+                "upper_bound": 1044340.3961047254
+              },
+              "point_estimate": 1036318.2853535353,
+              "standard_error": 3984.1966599384477
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1033406.9537231631,
+                "upper_bound": 1047726.3922913853
+              },
+              "point_estimate": 1040704.0645278806,
+              "standard_error": 3639.2260951424655
+            }
+          },
+          "version": "after"
+        },
+        {
+          "id": "scanner_documents/css_117_document_19_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91821.22707641,
+                "upper_bound": 92391.48550295633
+              },
+              "point_estimate": 92106.71988432833,
+              "standard_error": 145.70414920807534
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91698.31815159574,
+                "upper_bound": 92635.68744218317
+              },
+              "point_estimate": 92155.45985633752,
+              "standard_error": 275.0031229123161
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91583.51410479748,
+                "upper_bound": 92315.66405416664
+              },
+              "point_estimate": 91940.57206138821,
+              "standard_error": 187.0133948781085
+            }
+          },
+          "version": "before"
+        },
+        {
+          "id": "scanner_documents/rust_81_document_31_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 105438.73100031688,
+                "upper_bound": 106820.97812311628
+              },
+              "point_estimate": 106110.70270845448,
+              "standard_error": 352.99136883118985
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 104679.46504790941,
+                "upper_bound": 106819.27138564864
+              },
+              "point_estimate": 105934.45447154471,
+              "standard_error": 596.5657523361023
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 105159.28115803718,
+                "upper_bound": 106604.67451641713
+              },
+              "point_estimate": 105881.47882008487,
+              "standard_error": 368.5914063758978
+            }
+          },
+          "version": "before"
+        },
+        {
+          "id": "scanner_documents/ts_279_document_28_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1040260.9260043723,
+                "upper_bound": 1051666.1408973602
+              },
+              "point_estimate": 1045767.0913627587,
+              "standard_error": 2921.1877624102253
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1037832.7329244829,
+                "upper_bound": 1048761.9854938271
+              },
+              "point_estimate": 1043326.4505263158,
+              "standard_error": 3677.921745326445
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1041872.5860875314,
+                "upper_bound": 1055600.3671331636
+              },
+              "point_estimate": 1048123.8435865797,
+              "standard_error": 3521.104052497679
+            }
+          },
+          "version": "before"
+        }
+      ]
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "benchmarks": [
+        {
+          "id": "scanner_documents/css_117_document_19_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 92075.87544692915,
+                "upper_bound": 92779.33209809089
+              },
+              "point_estimate": 92428.14476156003,
+              "standard_error": 178.01424405944343
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 92020.74411162315,
+                "upper_bound": 92651.8341577061
+              },
+              "point_estimate": 92365.15048643113,
+              "standard_error": 171.09955359592735
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 91480.45138823726,
+                "upper_bound": 92489.61195513065
+              },
+              "point_estimate": 91986.93953247699,
+              "standard_error": 260.40838493742353
+            }
+          },
+          "version": "before"
+        },
+        {
+          "id": "scanner_documents/rust_81_document_31_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 103370.03613925053,
+                "upper_bound": 104815.18882449818
+              },
+              "point_estimate": 104097.00418171521,
+              "standard_error": 368.4719475301516
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 103880.4218409586,
+                "upper_bound": 104830.06770833334
+              },
+              "point_estimate": 104321.95464304884,
+              "standard_error": 247.19359152957773
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 103703.56505314482,
+                "upper_bound": 104872.2367357553
+              },
+              "point_estimate": 104316.30194404573,
+              "standard_error": 299.76415554505536
+            }
+          },
+          "version": "before"
+        },
+        {
+          "id": "scanner_documents/ts_279_document_28_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1032938.3521105702,
+                "upper_bound": 1053927.410818813
+              },
+              "point_estimate": 1042190.875535186,
+              "standard_error": 5395.845836956516
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1029684.3423611111,
+                "upper_bound": 1050902.2474747475
+              },
+              "point_estimate": 1042598.2829365078,
+              "standard_error": 5367.347551199006
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1044066.5545955414,
+                "upper_bound": 1082757.717588528
+              },
+              "point_estimate": 1059043.2571243905,
+              "standard_error": 10829.82953605695
+            }
+          },
+          "version": "before"
+        },
+        {
+          "id": "scanner_documents/css_117_document_19_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 90536.69018789887,
+                "upper_bound": 91308.63930938301
+              },
+              "point_estimate": 90916.23653111543,
+              "standard_error": 197.0455347507401
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 90383.83552631579,
+                "upper_bound": 91366.0065634675
+              },
+              "point_estimate": 90920.85047758285,
+              "standard_error": 309.30518791165235
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 90891.05105040007,
+                "upper_bound": 91710.36489222429
+              },
+              "point_estimate": 91334.080293913,
+              "standard_error": 208.76463775187122
+            }
+          },
+          "version": "after"
+        },
+        {
+          "id": "scanner_documents/rust_81_document_31_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 102633.01479068804,
+                "upper_bound": 103773.10564695609
+              },
+              "point_estimate": 103215.16501780367,
+              "standard_error": 291.1655622486065
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 102873.51599702382,
+                "upper_bound": 104276.52096088434
+              },
+              "point_estimate": 103434.93716931216,
+              "standard_error": 341.31487920190636
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 102207.83327080516,
+                "upper_bound": 103944.47257071208
+              },
+              "point_estimate": 103138.65386290952,
+              "standard_error": 444.2943414355359
+            }
+          },
+          "version": "after"
+        },
+        {
+          "id": "scanner_documents/ts_279_document_28_lines_rust",
+          "estimates_ns": {
+            "mean": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1004930.6674337818,
+                "upper_bound": 1016280.9695064698
+              },
+              "point_estimate": 1010688.3083754687,
+              "standard_error": 2889.880771035341
+            },
+            "median": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1001855.8080246914,
+                "upper_bound": 1021251.2232217225
+              },
+              "point_estimate": 1011464.7817460317,
+              "standard_error": 5958.278833094601
+            },
+            "slope": {
+              "confidence_interval": {
+                "confidence_level": 0.95,
+                "lower_bound": 1003591.5888244282,
+                "upper_bound": 1020596.2218090016
+              },
+              "point_estimate": 1012554.5099594571,
+              "standard_error": 4371.935087406947
+            }
+          },
+          "version": "after"
+        }
+      ]
+    }
+  ],
+  "implementation_commit": "fdbc123c955595e312f2b8e051557ee0271defcf"
+}
