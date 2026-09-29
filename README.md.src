@@ -13,7 +13,7 @@
   Evidence, not badges:
   <a href="#test-parity">test parity with the C suite</a> &middot;
   <a href="https://github.com/sebastian-software/ferroni/blob/main/.github/workflows/ci.yml">coverage gate enforced in CI</a> &middot;
-  <a href="https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy">unsafe code policy</a>
+  <a href="https://ferroni.dev/adr/002-unsafe-code-policy">unsafe code policy</a>
 </p>
 
 ---
@@ -38,7 +38,7 @@ Ferroni carries the engine forward in Rust:
 - **Memory-safe, no C toolchain.** `cargo add ferroni` and build: no bindgen,
   no C compiler. C Oniguruma has a long history of memory-safety CVEs; Ferroni
   keeps `unsafe` at 0.4%, every block documented in
-  [ADR-002](https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy).
+  [ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy).
 - **Faster where highlighters spend their time.** Tokenizing real code with
   complete TextMate grammars is between 2x and 30x faster than the C original,
   and text search is up to 6x faster ([Performance](#performance)).
@@ -181,7 +181,7 @@ automatic UTF-16 position mapping. API-compatible with
 - Absent expressions -- `(?~...)`
 - Unicode properties -- `\p{Greek}`, `\p{Lu}`, `\p{Emoji}` (902 names) from
   Unicode 17.0 data; C Oniguruma's last snapshot has Unicode 16.0
-  ([ADR-015](https://sebastian-software.github.io/ferroni/adr/015-unicode-data-from-ucd))
+  ([ADR-015](https://ferroni.dev/adr/015-unicode-data-from-ucd))
 - Grapheme clusters -- `\X`, text segment boundaries `\y`, `\Y`
 - Callouts -- `(?{...})`, `(*FAIL)`, `(*MAX{n})`, `(*COUNT)`, `(*CMP)`
 - 12 syntax modes -- Oniguruma, Ruby, Perl, Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic/Extended, ASIS
@@ -207,7 +207,7 @@ run. Scanner comparisons use complete, unmodified Shiki TextMate grammars for
 TypeScript, CSS, and Rust. It shows the direction across the measured
 workloads, not a promise for every pattern or machine. Raw results, inputs,
 and measurement context are in
-[Benchmark Results](https://sebastian-software.github.io/ferroni/perf/benchmark-results).
+[Benchmark Results](https://ferroni.dev/perf/benchmark-results).
 
 ### Scanner workloads
 
@@ -217,10 +217,10 @@ How large the lead is depends on the workload. Tokenizing whole documents line
 by line, each line handed to the scanner once as a real tokenizer does, Ferroni
 is more than twice as fast on TypeScript, about 10x faster on Rust, and about
 30x faster on CSS
-([exact numbers](https://sebastian-software.github.io/ferroni/perf/benchmark-results#scanner-on-whole-documents-line-by-line)).
+([exact numbers](https://ferroni.dev/perf/benchmark-results#scanner-on-whole-documents-line-by-line)).
 Re-scanning the same line, where Ferroni can reuse what it learned about that
 string, the lead grows to between about 15x and nearly 300x
-([exact numbers](https://sebastian-software.github.io/ferroni/perf/benchmark-results#scanner-with-full-shiki-textmate-grammars)).
+([exact numbers](https://ferroni.dev/perf/benchmark-results#scanner-with-full-shiki-textmate-grammars)).
 Compiling the full TypeScript and CSS grammars is also faster in Ferroni, while
 Oniguruma still starts faster on the smaller Rust grammar. In practice,
 Ferroni's strongest fit is a scanner that compiles a grammar once and uses it
@@ -249,7 +249,7 @@ individual patterns. The `regex` crate can take longer to compile, especially
 for capture-heavy patterns. In a separate process-level memory measurement,
 Ferroni and Oniguruma peak in the same approximate range while compiling and
 scanning a large TypeScript workload. Details and methodology are in the
-[Memory Measurements](https://sebastian-software.github.io/ferroni/perf/memory-measurements).
+[Memory Measurements](https://ferroni.dev/perf/memory-measurements).
 
 <details>
 <summary><strong>Running benchmarks</strong></summary>
@@ -291,7 +291,7 @@ Ferroni keeps benchmark suites separated by purpose:
 
 ## Architecture
 
-Each C source file maps 1:1 to a Rust module ([ADR-001](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original)):
+Each C source file maps 1:1 to a Rust module ([ADR-001](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original)):
 
 | C File | Rust Module | Purpose |
 |--------|-------------|---------|
@@ -323,12 +323,12 @@ onig_new() -> onig_compile()
 
 Ferroni targets ASCII/UTF-8 workloads. The following are intentionally not included:
 
-- **27 of 29 encodings** -- only ASCII and UTF-8 ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-encoding-scope-ascii-and-utf8-only)).
+- **27 of 29 encodings** -- only ASCII and UTF-8 ([ADR-003](https://ferroni.dev/adr/003-encoding-scope-ascii-and-utf8-only)).
   UTF-16/32, Shift_JIS, EUC-JP/KR/TW/CN, Big5, GB18030, KOI8-R, CP1251, and
   ISO-8859-1 to -16 are not ported. TextMate scanning (vscode-oniguruma
   compiles every pattern as UTF-8) and jq are fully covered; PHP's mbregex in a
   non-UTF-8 encoding is not.
-- **POSIX/GNU API** -- `regcomp`/`regexec`/`regfree` ([ADR-012](https://sebastian-software.github.io/ferroni/adr/012-posix-and-gnu-api-not-ported))
+- **POSIX/GNU API** -- `regcomp`/`regexec`/`regfree` ([ADR-012](https://ferroni.dev/adr/012-posix-and-gnu-api-not-ported))
 - **C memory management** -- replaced by Rust's `Drop` trait
 - **`onig_new_deluxe`** -- C-specific allocation, use `onig_new()` instead
 
@@ -340,7 +340,7 @@ in [CONTRIBUTING.md](CONTRIBUTING.md#running-tests).
 ## Test parity
 
 Every upstream test that targets UTF-8 is ported 1:1. EUC-JP tests are
-out of scope ([ADR-003](https://sebastian-software.github.io/ferroni/adr/003-encoding-scope-ascii-and-utf8-only)).
+out of scope ([ADR-003](https://ferroni.dev/adr/003-encoding-scope-ascii-and-utf8-only)).
 
 | Upstream file | Encoding | Upstream | Ferroni | Status |
 |---------------|----------|--------:|--------:|--------|
@@ -377,21 +377,21 @@ but pass in normal `cargo test`.
 
 | ADR | Decision |
 |-----|----------|
-| [001](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original) | 1:1 structural parity with C original |
-| [002](https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy) | Unsafe code policy |
-| [003](https://sebastian-software.github.io/ferroni/adr/003-encoding-scope-ascii-and-utf8-only) | Encoding scope: ASCII and UTF-8 only |
-| [004](https://sebastian-software.github.io/ferroni/adr/004-c-to-rust-translation-patterns) | C-to-Rust translation patterns |
-| [005](https://sebastian-software.github.io/ferroni/adr/005-idiomatic-rust-api-layer) | Idiomatic Rust API layer |
-| [006](https://sebastian-software.github.io/ferroni/adr/006-scanner-api) | Scanner API for TextMate tokenization |
-| [007](https://sebastian-software.github.io/ferroni/adr/007-simd-accelerated-search) | SIMD-accelerated search via memchr |
-| [008](https://sebastian-software.github.io/ferroni/adr/008-rust-only-optimizations) | Rust-only optimizations and performance philosophy |
-| [009](https://sebastian-software.github.io/ferroni/adr/009-dependency-philosophy) | Dependency philosophy |
-| [010](https://sebastian-software.github.io/ferroni/adr/010-benchmark-strategy) | Benchmark strategy |
-| [011](https://sebastian-software.github.io/ferroni/adr/011-test-strategy-and-c-test-parity) | Test strategy and C test suite parity |
-| [012](https://sebastian-software.github.io/ferroni/adr/012-posix-and-gnu-api-not-ported) | POSIX and GNU API not ported |
-| [013](https://sebastian-software.github.io/ferroni/adr/013-stack-overflow-debug-builds) | Stack overflow mitigation in debug builds |
-| [014](https://sebastian-software.github.io/ferroni/adr/014-porting-bugs-lessons-learned) | Porting bugs: lessons learned |
-| [015](https://sebastian-software.github.io/ferroni/adr/015-unicode-data-from-ucd) | Generate Unicode tables from the UCD |
+| [001](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original) | 1:1 structural parity with C original |
+| [002](https://ferroni.dev/adr/002-unsafe-code-policy) | Unsafe code policy |
+| [003](https://ferroni.dev/adr/003-encoding-scope-ascii-and-utf8-only) | Encoding scope: ASCII and UTF-8 only |
+| [004](https://ferroni.dev/adr/004-c-to-rust-translation-patterns) | C-to-Rust translation patterns |
+| [005](https://ferroni.dev/adr/005-idiomatic-rust-api-layer) | Idiomatic Rust API layer |
+| [006](https://ferroni.dev/adr/006-scanner-api) | Scanner API for TextMate tokenization |
+| [007](https://ferroni.dev/adr/007-simd-accelerated-search) | SIMD-accelerated search via memchr |
+| [008](https://ferroni.dev/adr/008-rust-only-optimizations) | Rust-only optimizations and performance philosophy |
+| [009](https://ferroni.dev/adr/009-dependency-philosophy) | Dependency philosophy |
+| [010](https://ferroni.dev/adr/010-benchmark-strategy) | Benchmark strategy |
+| [011](https://ferroni.dev/adr/011-test-strategy-and-c-test-parity) | Test strategy and C test suite parity |
+| [012](https://ferroni.dev/adr/012-posix-and-gnu-api-not-ported) | POSIX and GNU API not ported |
+| [013](https://ferroni.dev/adr/013-stack-overflow-debug-builds) | Stack overflow mitigation in debug builds |
+| [014](https://ferroni.dev/adr/014-porting-bugs-lessons-learned) | Porting bugs: lessons learned |
+| [015](https://ferroni.dev/adr/015-unicode-data-from-ucd) | Generate Unicode tables from the UCD |
 
 ## Contributing
 

@@ -18,7 +18,7 @@ Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane.
 
 Debug builds require an increased stack size. The required values are stated
 once in
-[ADR-013](https://sebastian-software.github.io/ferroni/adr/013-stack-overflow-debug-builds);
+[ADR-013](https://ferroni.dev/adr/013-stack-overflow-debug-builds);
 the commands below use them.
 
 ```bash
@@ -211,13 +211,13 @@ Commit all four generated files together with the source change:
 
 1. **Read the ADRs first.** The ADRs live in `docs/app/routes/adr/` and are
    published at
-   [sebastian-software.github.io/ferroni/adr](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original).
+   [ferroni.dev/adr](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original).
    They document all major architectural decisions. In particular:
-   - [ADR-001](https://sebastian-software.github.io/ferroni/adr/001-one-to-one-parity-with-c-original): the 1:1
+   - [ADR-001](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original): the 1:1
      parity goal -- same module mapping, same function names, same control flow.
-   - [ADR-004](https://sebastian-software.github.io/ferroni/adr/004-c-to-rust-translation-patterns): the canonical
+   - [ADR-004](https://ferroni.dev/adr/004-c-to-rust-translation-patterns): the canonical
      C-to-Rust translation patterns used throughout the codebase.
-   - [ADR-002](https://sebastian-software.github.io/ferroni/adr/002-unsafe-code-policy): the `unsafe` code policy.
+   - [ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy): the `unsafe` code policy.
 
 2. **Cross-reference the C original.** When modifying `regcomp.rs`,
    `regexec.rs`, or `regparse.rs`, compare against the corresponding
