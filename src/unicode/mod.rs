@@ -904,8 +904,8 @@ fn bmp_bitmap(ctype: usize, ranges: &[u32]) -> Option<&'static BmpBitmap> {
         .get_or_init(|| {
             (ranges.len() / 2 >= BMP_BITMAP_MIN_RANGES).then(|| {
                 let mut bits: Box<BmpBitmap> = Box::new([0; BMP_END as usize / 64]);
-                for pair in ranges.chunks_exact(2) {
-                    for code in pair[0]..=pair[1].min(BMP_END - 1) {
+                for &[from, to] in ranges.as_chunks::<2>().0 {
+                    for code in from..=to.min(BMP_END - 1) {
                         bits[code as usize / 64] |= 1 << (code % 64);
                     }
                 }
@@ -1594,8 +1594,10 @@ mod bmp_bitmap_tests {
         for (ctype, ranges) in CODE_RANGES.iter().enumerate() {
             let in_ranges = |code: u32| {
                 ranges
-                    .chunks_exact(2)
-                    .any(|pair| pair[0] <= code && code <= pair[1])
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .any(|&[from, to]| from <= code && code <= to)
             };
             if let Some(bits) = bmp_bitmap(ctype, ranges) {
                 bitmaps += 1;
