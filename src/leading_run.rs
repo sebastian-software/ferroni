@@ -516,6 +516,9 @@ pub(crate) struct SearchJump {
     /// A leading literal alternation (`AltLiterals`), found with
     /// Aho-Corasick.
     alternation: Option<Alternation>,
+    /// A leading positive look-behind at an ASCII literal, such as
+    /// `(?<=took=)`: attempts start right behind its occurrences.
+    behind: Option<memchr::memmem::Finder<'static>>,
 }
 
 /// The literals of a trie, searched with an Aho-Corasick automaton that is
@@ -696,6 +699,29 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
     if exact_at_start && (reg.sub_anchor & ANCR_BEGIN_LINE) != 0 {
         line_start = false;
     }
+    // A positive look-behind at an ASCII literal holds at `p` exactly when
+    // the literal ends at `p`: ASCII bytes are character heads, so stepping
+    // back its characters lands on its first byte.
+    if let (
+        Some(OperationPayload::LookBehindOp {
+            char_len,
+            not: false,
+        }),
+        Some(literal),
+    ) = (
+        reg.ops.get(pc).map(|op| &op.payload),
+        reg.ops.get(pc + 1).and_then(exact_bytes),
+    ) {
+        if !literal.is_empty() && literal.is_ascii() && literal.len() == *char_len as usize {
+            let mut prefix = Vec::new();
+            collect_prefix(reg, pc + 2, &mut prefix);
+            return Some(SearchJump {
+                prefix,
+                behind: Some(memchr::memmem::Finder::new(literal).into_owned()),
+                ..SearchJump::lines_if(line_start)
+            });
+        }
+    }
     if let Some(OperationPayload::AltLiterals { trie_idx }) = reg.ops.get(pc).map(|op| &op.payload)
     {
         let trie = reg.literal_tries.get(*trie_idx as usize)?;
@@ -723,29 +749,7 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
         });
     }
     let mut prefix = Vec::new();
-    while prefix.len() < MAX_PREFIX {
-        let Some(op) = reg.ops.get(pc) else { break };
-        match (op.opcode, &op.payload) {
-            (
-                OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,
-                OperationPayload::Exact { s },
-            ) => {
-                let n = op.opcode as usize - OpCode::Str1 as usize + 1;
-                prefix.extend(s[..n].iter().map(|&b| single_byte(b)));
-            }
-            (OpCode::StrN, OperationPayload::ExactN { s, n }) => {
-                prefix.extend(s[..*n as usize].iter().map(|&b| single_byte(b)));
-            }
-            (OpCode::CClass, OperationPayload::CClass { bsp, .. })
-                if bsp[128 / BITS_IN_ROOM..].iter().all(|&bits| bits == 0) =>
-            {
-                prefix.push(**bsp);
-            }
-            _ => break,
-        }
-        pc += 1;
-    }
-    prefix.truncate(MAX_PREFIX);
+    collect_prefix(reg, pc, &mut prefix);
     let probe = (prefix.len() >= 2 && !exact_at_start)
         .then(|| {
             prefix
@@ -775,6 +779,38 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
     })
 }
 
+/// The leading byte classes and literals from `pc` on, at most
+/// [`MAX_PREFIX`] of them.
+fn collect_prefix(reg: &RegexType, mut pc: usize, prefix: &mut Vec<BitSet>) {
+    while prefix.len() < MAX_PREFIX {
+        let Some(op) = reg.ops.get(pc) else { break };
+        if let Some(literal) = exact_bytes(op) {
+            prefix.extend(literal.iter().map(|&b| single_byte(b)));
+        } else if let (OpCode::CClass, OperationPayload::CClass { bsp, .. }) =
+            (op.opcode, &op.payload)
+            && bsp[128 / BITS_IN_ROOM..].iter().all(|&bits| bits == 0)
+        {
+            prefix.push(**bsp);
+        } else {
+            break;
+        }
+        pc += 1;
+    }
+    prefix.truncate(MAX_PREFIX);
+}
+
+/// The bytes an exact string instruction matches.
+fn exact_bytes(op: &crate::regint::Operation) -> Option<&[u8]> {
+    match (op.opcode, &op.payload) {
+        (
+            OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,
+            OperationPayload::Exact { s },
+        ) => Some(&s[..op.opcode as usize - OpCode::Str1 as usize + 1]),
+        (OpCode::StrN, OperationPayload::ExactN { s, n }) => Some(&s[..*n as usize]),
+        _ => None,
+    }
+}
+
 fn single_byte(byte: u8) -> BitSet {
     let mut set = [0; BITSET_REAL_SIZE];
     bitset_set_bit(&mut set, byte as usize);
@@ -800,6 +836,7 @@ impl SearchJump {
             probe: 0,
             probe_bytes: Vec::new(),
             alternation: None,
+            behind: None,
         }
     }
 
@@ -848,6 +885,14 @@ impl SearchJump {
                     return None;
                 }
                 alternation.candidate(reg, text, s, limit)?
+            } else if let Some(behind) = &self.behind {
+                // The next occurrence ending at or after `s`.
+                if s > limit {
+                    return None;
+                }
+                let len = behind.needle().len();
+                let from = s.saturating_sub(len);
+                from + behind.find(&text[from..limit])? + len
             } else if self.probe_bytes.is_empty() {
                 s
             } else {
@@ -1093,6 +1138,18 @@ mod tests {
         };
         assert_eq!(reach(r"(?i)\b(?:fn|let|for|while|match)\b"), Some(Some(4)));
         assert_eq!(reach(r"\b(?:fn|let|for|while|match)\b"), Some(None));
+        // A positive look-behind at an ASCII literal anchors the search.
+        let behind = |pattern: &str| {
+            compile(pattern, UTF8)
+                .unwrap()
+                .search_jump
+                .and_then(|jump| jump.behind.map(|finder| finder.needle().to_vec()))
+        };
+        assert_eq!(behind(r"(?<=took=)\d+"), Some(b"took=".to_vec()));
+        assert_eq!(behind(r"\b(?<=id=)\d+"), Some(b"id=".to_vec()));
+        assert_eq!(behind(r"(?<!took=)\d+"), None);
+        assert_eq!(behind(r"(?<=[=:])\w+"), None);
+        assert_eq!(behind(r"(?<=é)\w+"), None);
         assert!(jump("ERROR").is_none());
         assert!(jump(r"\d+").is_none());
         assert!(jump(r"(?i)k").is_none());
@@ -1151,6 +1208,14 @@ mod tests {
             r"\b(?:ab|abc|b|xx:)\b",
             r"(?:ab|cd|ex|g:)(\w?)",
             r"^(?:ab|re|x:)",
+            r"(?<=ab)\w+",
+            r"(?<=x:)(\d?)",
+            r"\b(?<=ab:)c",
+            r"(?<=ab)(?=c)",
+            r"^(?<=a)b",
+            r"(?<=é)\w",
+            r"(?<=aé)a",
+            r"(?<=\xc3)a",
             r"(?i)(?:ks|ss|st|ff|re)",
             r"(?i)\b(?:k|ss|stx|ffi)(\w?)",
         ];
@@ -1318,6 +1383,8 @@ mod tests {
             "(?i)re{}",
             "(?:ab|ing|x@|re){}",
             "(?i)(?:ab|ss|k|re){}",
+            "(?<=ab){}",
+            "(?<=:)(?:{})",
             r"\b(?:ab|ing|re|:=){}",
         ];
         let literals = ["@", ".", "ing", ":", "=", "é", "b", "x@", ";", "::"];
