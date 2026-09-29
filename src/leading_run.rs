@@ -176,6 +176,7 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
                 | OpCode::WordAsciiStar
                 | OpCode::WordAsciiStarPeekNext
                 | OpCode::CClassStar
+                | OpCode::CClassPossessiveStar
                 | OpCode::CClassStarPeekNext
                 | OpCode::CClassMixStar
         )
@@ -193,7 +194,7 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
             (OpCode::WordAscii, OpCode::WordAsciiStar | OpCode::WordAsciiStarPeekNext, ..) => true,
             (
                 OpCode::CClass,
-                OpCode::CClassStar,
+                OpCode::CClassStar | OpCode::CClassPossessiveStar,
                 OperationPayload::CClass { bsp: a, .. },
                 OperationPayload::CClass { bsp: b, .. },
             )
@@ -350,7 +351,10 @@ fn miss_retries(reg: &RegexType, bytes: &[u8; CHAR_MAP_SIZE]) -> Option<u64> {
 /// a mixed class whose ASCII part the scan reads from its bitset.
 fn byte_class_is_ascii(op: &Operation) -> bool {
     match (op.opcode, &op.payload) {
-        (OpCode::CClassStar, OperationPayload::CClass { bsp, .. })
+        (
+            OpCode::CClassStar | OpCode::CClassPossessiveStar,
+            OperationPayload::CClass { bsp, .. },
+        )
         | (OpCode::CClassStarPeekNext, OperationPayload::CClassStarPeekNext { bsp, .. }) => {
             bsp[128 / BITS_IN_ROOM..].iter().all(|&bits| bits == 0)
         }

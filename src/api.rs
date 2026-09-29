@@ -10,7 +10,7 @@ use std::time::Duration;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
-use crate::regcomp::onig_new;
+use crate::regcomp::{onig_new, onig_new_with_backtracking_optimization};
 use crate::regexec::{
     MatchArg, OnigMatchParam, cache_msa, onig_name_to_backref_number, onig_new_match_param,
     onig_search, onig_search_bounds, onig_search_with_param, take_cached_msa,
@@ -507,6 +507,13 @@ impl Regex {
         &self.inner.backtrack_warnings
     }
 
+    /// Applied and refused decimal-loop candidates from the opt-in rewrite
+    /// pass, in AST traversal order. Empty when optimization is disabled or
+    /// no supported shape is recognized. This is not a safety certification.
+    pub fn backtracking_rewrites(&self) -> &[crate::backtrack_rewrite::BacktrackingRewrite] {
+        &self.inner.backtrack_rewrites
+    }
+
     /// Access the underlying `RegexType` for advanced / C-style usage.
     pub fn as_raw(&self) -> &RegexType {
         &self.inner
@@ -539,6 +546,7 @@ pub struct RegexBuilder {
     options: OnigOptionType,
     syntax: &'static OnigSyntaxType,
     reject_backtracking_risks: bool,
+    optimize_backtracking: bool,
 }
 
 impl RegexBuilder {
@@ -549,6 +557,7 @@ impl RegexBuilder {
             options: ONIG_OPTION_NONE,
             syntax: &OnigSyntaxOniguruma,
             reject_backtracking_risks: false,
+            optimize_backtracking: false,
         }
     }
 
@@ -630,13 +639,35 @@ impl RegexBuilder {
         self
     }
 
+    /// Enable conservative AST rewrites for backtracking-prone patterns.
+    ///
+    /// Default: off. The decimal rule recognizes greedy `(?:[0-9]+_?)+`
+    /// immediately before a mandatory literal dot. Primitive digit runs use
+    /// possessive bytecode; captured primitives use an outer atomic group.
+    /// A greedy `(?:[0-9]+_?)*[0-9]+` before a word boundary uses a
+    /// deterministic prefix when captures wrap only the repeated body. Other
+    /// capture placements keep the complete pair atomic and its give-back
+    /// choices. Both rules retain all groups and successful results. Unsupported
+    /// constructs stay unchanged. Retry, stack, and time-limit outcomes may
+    /// differ because the optimized matcher performs less work. This does
+    /// not guarantee linear-time unanchored searches.
+    ///
+    /// See [`Regex::backtracking_rewrites`] for applied and refused candidates.
+    /// Original lint warnings remain available, and risk rejection still
+    /// rejects the original pattern even when a rewrite would apply.
+    pub fn optimize_backtracking(mut self, yes: bool) -> Self {
+        self.optimize_backtracking = yes;
+        self
+    }
+
     /// Compile the pattern into a [`Regex`].
     pub fn build(self) -> Result<Regex, RegexError> {
-        let inner = onig_new(
+        let inner = onig_new_with_backtracking_optimization(
             &self.pattern,
             self.options,
             &ONIG_ENCODING_UTF8,
             self.syntax,
+            self.optimize_backtracking,
         )?;
         if self.reject_backtracking_risks && !inner.backtrack_warnings.is_empty() {
             return Err(ONIGERR_VERY_INEFFICIENT_PATTERN.into());

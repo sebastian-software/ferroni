@@ -77,6 +77,7 @@
 
 pub mod api;
 pub mod backtrack_lint;
+pub mod backtrack_rewrite;
 pub mod encodings;
 pub mod error;
 mod first_bytes;

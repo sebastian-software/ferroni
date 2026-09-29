@@ -1860,6 +1860,35 @@ fn compile_range_repeat_node(
 // Bag (group) compilation
 // ============================================================================
 
+/// An opt-in rewrite marker, with a defensive check of the lowering shape.
+/// Ordinary and source-written atomic groups keep the original compiler path.
+fn possessive_ascii_class_repeat(bag: &BagNode, status: u32) -> Option<&CClassNode> {
+    if status & ND_ST_POSSESSIVE_CLASS_REPEAT == 0 || bag.bag_type != BagType::StopBacktrack {
+        return None;
+    }
+    let NodeInner::Quant(q) = &bag.body.as_deref()?.inner else {
+        return None;
+    };
+    if !q.greedy || q.lower != 1 || !is_infinite_repeat(q.upper) {
+        return None;
+    }
+    let NodeInner::CClass(class) = &q.body.as_deref()?.inner else {
+        return None;
+    };
+    (!class.is_not()
+        && class.mbuf.is_none()
+        && (128..SINGLE_BYTE_SIZE).all(|byte| !bitset_at(&class.bs, byte)))
+    .then_some(class)
+}
+
+/// Shares the opt-in shape check between length calculation and emission.
+fn decimal_tail_prefix(bag: &BagNode, status: u32) -> Option<(&Node, &Node)> {
+    if status & ND_ST_DECIMAL_TAIL_PREFIX == 0 || bag.bag_type != BagType::StopBacktrack {
+        return None;
+    }
+    crate::backtrack_rewrite::deterministic_tail_parts(bag.body.as_deref()?)
+}
+
 /// Calculate bytecode length for a bag node.
 fn compile_length_bag_node(
     bag: &BagNode,
@@ -1895,6 +1924,18 @@ fn compile_length_bag_node(
             len
         }
         BagType::StopBacktrack => {
+            if let Some((_, tail)) = decimal_tail_prefix(bag, node_status) {
+                let tail_len = compile_length_tree(tail, reg, env);
+                return if tail_len < 0 {
+                    tail_len
+                } else {
+                    SIZE_INC + tail_len
+                };
+            }
+            if let Some(class) = possessive_ascii_class_repeat(bag, node_status) {
+                // One mandatory character followed by a choice-free star.
+                return compile_length_cclass_node(class, reg) + SIZE_INC;
+            }
             let body_len = if let Some(b) = body {
                 compile_length_tree(b, reg, env)
             } else {
@@ -2102,6 +2143,37 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
     match bag.bag_type {
         BagType::Memory => compile_bag_memory_node(bag, node_status, reg, env),
         BagType::StopBacktrack => {
+            if let Some((mut body, tail)) = decimal_tail_prefix(bag, node_status) {
+                let mut captures = Vec::new();
+                while let NodeInner::Bag(memory) = &body.inner {
+                    let BagData::Memory { regnum, .. } = memory.bag_data else {
+                        unreachable!("decimal prefix admits only memory wrappers");
+                    };
+                    captures.push(regnum);
+                    body = memory.body.as_deref().expect("checked decimal prefix body");
+                }
+                add_op(
+                    reg,
+                    OpCode::DecimalTailPrefix,
+                    OperationPayload::DecimalTailPrefix { captures },
+                );
+                return compile_tree(tail, reg, env);
+            }
+            if let Some(class) = possessive_ascii_class_repeat(bag, node_status) {
+                let result = compile_cclass_node(class, reg);
+                if result != 0 {
+                    return result;
+                }
+                add_op(
+                    reg,
+                    OpCode::CClassPossessiveStar,
+                    OperationPayload::CClass {
+                        bsp: Box::new(class.bs),
+                        ascii_fast: detect_cclass_ascii_fast(&class.bs),
+                    },
+                );
+                return 0;
+            }
             let id = reg.num_call; // use call count as mark ID
             reg.num_call += 1;
 
@@ -9883,8 +9955,17 @@ pub fn onig_compile_einfo(
 /// Compile `pattern` into `reg`. On failure, also returns the name the
 /// error refers to, or `None` when none was recorded (C's NULL `einfo->par`).
 fn compile_recording_name(reg: &mut RegexType, pattern: &[u8]) -> (i32, Option<Vec<u8>>) {
+    compile_recording_name_with_optimization(reg, pattern, false)
+}
+
+fn compile_recording_name_with_optimization(
+    reg: &mut RegexType,
+    pattern: &[u8],
+    optimize_backtracking: bool,
+) -> (i32, Option<Vec<u8>>) {
     // Clear previous bytecode
     reg.ops.clear();
+    reg.backtrack_rewrites.clear();
     // Derived from the program emitted below, so it has to describe this
     // compilation and not one a reused `reg` was carrying.
     reg.keep_moves_match_start = false;
@@ -9921,7 +10002,7 @@ fn compile_recording_name(reg: &mut RegexType, pattern: &[u8]) -> (i32, Option<V
         group_min_len: Vec::new(),
     };
 
-    let r = compile_parsed(reg, pattern, &mut env);
+    let r = compile_parsed(reg, pattern, &mut env, optimize_backtracking);
     // C's parse_and_tune() `err:` label
     let par = if r != 0 { env.error.take() } else { None };
     (r, par)
@@ -9929,7 +10010,12 @@ fn compile_recording_name(reg: &mut RegexType, pattern: &[u8]) -> (i32, Option<V
 
 /// The part of `compile_recording_name` that runs on the prepared `ParseEnv`:
 /// parse, tune, and emit the bytecode.
-fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i32 {
+fn compile_parsed(
+    reg: &mut RegexType,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+    optimize_backtracking: bool,
+) -> i32 {
     let mut root = match crate::regparse::onig_parse_tree(pattern, reg, env) {
         Ok(node) => node,
         Err(e) => return e,
@@ -9968,6 +10054,16 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
         .options
         .intersects(ONIG_OPTION_FIND_LONGEST | ONIG_OPTION_FIND_NOT_EMPTY);
     reg.backtrack_warnings = crate::backtrack_lint::check(&root, reg.enc, exhaustive);
+
+    // Rust-only, opt-in (ADR-008): preserve the original warning list and
+    // capture structure while removing retries whose exits cannot match.
+    if optimize_backtracking
+        && std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
+    {
+        reg.backtrack_rewrites =
+            crate::backtrack_rewrite::apply(&mut root, reg.options, env.cap_history);
+        refresh_node_references(&mut root, env);
+    }
 
     // Resolve subroutine call references before tune_tree
     if env.num_call > 0 {
@@ -10324,6 +10420,17 @@ pub fn onig_new(
     enc: OnigEncoding,
     syntax: &OnigSyntaxType,
 ) -> Result<RegexType, crate::error::RegexError> {
+    onig_new_with_backtracking_optimization(pattern, option, enc, syntax, false)
+}
+
+/// Additive compilation entry point; the C-compatible API keeps rewrites off.
+pub(crate) fn onig_new_with_backtracking_optimization(
+    pattern: &[u8],
+    option: OnigOptionType,
+    enc: OnigEncoding,
+    syntax: &OnigSyntaxType,
+    optimize_backtracking: bool,
+) -> Result<RegexType, crate::error::RegexError> {
     // Validate options
     if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP)
         && option.intersects(ONIG_OPTION_CAPTURE_GROUP)
@@ -10351,6 +10458,7 @@ pub fn onig_new(
 
     let mut reg = RegexType {
         backtrack_warnings: Vec::new(),
+        backtrack_rewrites: Vec::new(),
         ops: Vec::new(),
         string_pool: Vec::new(),
         num_mem: 0,
@@ -10399,7 +10507,8 @@ pub fn onig_new(
         search_jump: None,
     };
 
-    let (r, par) = compile_recording_name(&mut reg, pattern);
+    let (r, par) =
+        compile_recording_name_with_optimization(&mut reg, pattern, optimize_backtracking);
     if r != 0 {
         return Err(crate::error::RegexError::from_error_name(r, par.as_deref()));
     }
@@ -10673,6 +10782,7 @@ mod tests {
     fn make_test_context() -> (RegexType, ParseEnv) {
         let reg = RegexType {
             backtrack_warnings: Vec::new(),
+            backtrack_rewrites: Vec::new(),
             ops: Vec::new(),
             string_pool: Vec::new(),
             num_mem: 0,

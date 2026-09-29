@@ -111,6 +111,10 @@ pub const ND_ST_REFERENCED: u32 = 1 << 26;
 pub const ND_ST_INPEEK: u32 = 1 << 27;
 pub const ND_ST_WHOLE_OPTIONS: u32 = 1 << 28;
 pub const ND_ST_LITERAL_ALT: u32 = 1 << 29;
+/// Rust-only: a primitive ASCII class repeat proven possessive by the opt-in pass.
+pub(crate) const ND_ST_POSSESSIVE_CLASS_REPEAT: u32 = 1 << 30;
+/// Rust-only: a decimal tail whose prefix can be evaluated deterministically.
+pub(crate) const ND_ST_DECIMAL_TAIL_PREFIX: u32 = 1 << 31;
 
 // === String Node Flags ===
 pub const ND_STRING_CRUDE: u32 = 1 << 0;

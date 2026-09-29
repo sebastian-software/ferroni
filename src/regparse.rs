@@ -7906,6 +7906,7 @@ mod tests {
     fn make_test_context() -> (RegexType, ParseEnv) {
         let reg = RegexType {
             backtrack_warnings: Vec::new(),
+            backtrack_rewrites: Vec::new(),
             ops: Vec::new(),
             string_pool: Vec::new(),
             num_mem: 0,

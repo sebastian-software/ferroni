@@ -11,7 +11,7 @@ use smallvec::SmallVec;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
-use crate::regcomp::onig_new;
+use crate::regcomp::onig_new_with_backtracking_optimization;
 use crate::regexec::{onig_get_global_limit_revision, onig_get_retry_limit_in_search};
 use crate::regint::ANCR_ANYCHAR_INF;
 use crate::regset::{
@@ -415,6 +415,7 @@ pub struct Scanner {
     /// A search retry budget is set (`onig_set_retry_limit_in_search`).
     search_budget: bool,
     warnings: Vec<Vec<crate::backtrack_lint::BacktrackWarning>>,
+    rewrites: Vec<Vec<crate::backtrack_rewrite::BacktrackingRewrite>>,
 }
 
 impl Scanner {
@@ -445,6 +446,26 @@ impl Scanner {
     /// assert!(m.is_some());
     /// ```
     pub fn with_config(patterns: &[&str], config: &ScannerConfig) -> Result<Scanner, RegexError> {
+        Self::compile(patterns, config, false)
+    }
+
+    /// Create a scanner with the conservative, experimental AST rewrites
+    /// described by [`crate::api::RegexBuilder::optimize_backtracking`].
+    /// Existing `ScannerConfig` struct literals remain source-compatible.
+    /// Successful captures and pattern priority are preserved; retry, stack,
+    /// and timeout outcomes may differ. See [`Scanner::backtracking_rewrites`].
+    pub fn with_backtracking_optimization(
+        patterns: &[&str],
+        config: &ScannerConfig,
+    ) -> Result<Scanner, RegexError> {
+        Self::compile(patterns, config, true)
+    }
+
+    fn compile(
+        patterns: &[&str],
+        config: &ScannerConfig,
+        optimize_backtracking: bool,
+    ) -> Result<Scanner, RegexError> {
         let syntax = config.syntax.as_onig_syntax();
         let options = config.options;
 
@@ -452,9 +473,17 @@ impl Scanner {
         let mut regset_regs = Vec::with_capacity(patterns.len());
 
         let mut warnings = Vec::with_capacity(patterns.len());
+        let mut rewrites = Vec::with_capacity(patterns.len());
 
         for pattern in patterns {
-            let reg = onig_new(pattern.as_bytes(), options, &ONIG_ENCODING_UTF8, syntax)?;
+            let reg = onig_new_with_backtracking_optimization(
+                pattern.as_bytes(),
+                options,
+                &ONIG_ENCODING_UTF8,
+                syntax,
+                optimize_backtracking,
+            )?;
+            rewrites.push(reg.backtrack_rewrites.clone());
             warnings.push(reg.backtrack_warnings.clone());
             caches.push(CacheEntry::new(pattern, reg.anchor));
             regset_regs.push(Box::new(reg));
@@ -473,6 +502,7 @@ impl Scanner {
             limit_revision: None,
             search_budget: false,
             warnings,
+            rewrites,
         })
     }
 
@@ -489,6 +519,13 @@ impl Scanner {
     /// ```
     pub fn warnings(&self) -> &[Vec<crate::backtrack_lint::BacktrackWarning>] {
         &self.warnings
+    }
+
+    /// Rewrite reports for each pattern, in the original pattern order.
+    /// Unsupported shapes have no report; original warnings stay in
+    /// [`Scanner::warnings`], including for successfully rewritten patterns.
+    pub fn backtracking_rewrites(&self) -> &[Vec<crate::backtrack_rewrite::BacktrackingRewrite>] {
+        &self.rewrites
     }
 
     /// Get current scanner counters.

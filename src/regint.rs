@@ -336,6 +336,11 @@ pub enum OpCode {
     PushOrJumpByteSet = 96,
     /// A bounded run of identical ASCII character classes.
     CClassRun = 97,
+    /// Rust-only (ADR-008): positive ASCII class star with no exit choices.
+    /// Emitted only by the explicitly enabled decimal rewrite pass.
+    CClassPossessiveStar = 98,
+    /// Rust-only (ADR-008): decimal prefix reserving the final digit for its tail.
+    DecimalTailPrefix = 99,
 }
 
 // === SaveType ===
@@ -416,6 +421,10 @@ pub enum CClassAsciiFastKind {
 
 pub enum OperationPayload {
     None,
+    /// Captures around the repeated decimal/optional-underscore body, outer first.
+    DecimalTailPrefix {
+        captures: Vec<MemNumType>,
+    },
     Exact {
         s: [u8; 16],
     },
@@ -624,6 +633,8 @@ pub struct RegexExt {
 pub struct RegexType {
     /// Rust-only: findings of the compile-time backtracking check.
     pub(crate) backtrack_warnings: Vec<crate::backtrack_lint::BacktrackWarning>,
+    /// Rust-only: reports from the explicitly enabled AST rewrite pass.
+    pub(crate) backtrack_rewrites: Vec<crate::backtrack_rewrite::BacktrackingRewrite>,
     // bytecode
     pub(crate) ops: Vec<Operation>,
     pub(crate) string_pool: Vec<u8>,
