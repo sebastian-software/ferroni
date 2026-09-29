@@ -1,5 +1,5 @@
 //! Compiler versus capture-preserving source rewrites. All modes validate captures.
-//! `cargo bench --locked --bench backtrack_rewrite_bench`
+//! `cargo bench --locked --bench backtrack_compiler_bench`
 mod grammar_loader;
 mod scanner_documents;
 
@@ -63,7 +63,7 @@ fn regexes(c: &mut Criterion) {
                 format!("{}.56E+78", "123_456_".repeat(512)),
             ),
         ];
-        for len in [12, 20] {
+        for len in [12, 16, 20] {
             cases.push((
                 format!("failed_tail_{len}"),
                 format!("{}.x", "1".repeat(len)),
@@ -212,7 +212,7 @@ fn scanners_and_compilation(c: &mut Criterion) {
         .measurement_time(Duration::from_secs(1));
     for (name, pattern) in [
         ("v_float", patterns::V_FLOAT),
-        ("purescript_unchanged", patterns::PURESCRIPT_INTEGER),
+        ("purescript_integer", patterns::PURESCRIPT_INTEGER),
     ] {
         let mut modes = [
             ("plain", pattern.to_owned(), false),

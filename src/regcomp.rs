@@ -95,7 +95,7 @@ fn enclen(enc: OnigEncoding, p: &[u8], _offset: usize) -> usize {
 // ============================================================================
 
 // All operations are 1 slot in the ops array (matching C where every OPSIZE_* = 1)
-const SIZE_INC: i32 = 1;
+pub(crate) const SIZE_INC: i32 = 1;
 
 const OPSIZE_ANYCHAR_STAR: i32 = 1;
 const OPSIZE_ANYCHAR_STAR_PEEK_NEXT: i32 = 1;
@@ -137,7 +137,7 @@ const OPSIZE_UPDATE_VAR: i32 = 1;
 
 /// Add an operation with the given opcode and payload to the regex's ops array.
 /// Returns the index of the newly added operation.
-fn add_op(reg: &mut RegexType, opcode: OpCode, payload: OperationPayload) -> i32 {
+pub(crate) fn add_op(reg: &mut RegexType, opcode: OpCode, payload: OperationPayload) -> i32 {
     let idx = reg.ops.len();
     reg.ops.push(Operation { opcode, payload });
     idx as i32
@@ -846,7 +846,7 @@ fn compile_string_crude_node(node: &Node, reg: &mut RegexType) -> i32 {
 // ============================================================================
 
 /// Calculate bytecode length for a character class node.
-fn compile_length_cclass_node(cc: &CClassNode, reg: &RegexType) -> i32 {
+pub(crate) fn compile_length_cclass_node(cc: &CClassNode, reg: &RegexType) -> i32 {
     SIZE_INC
 }
 
@@ -860,7 +860,7 @@ fn bbuf_to_u32_vec(data: &[u8]) -> Vec<u32> {
         .collect()
 }
 
-fn detect_cclass_ascii_fast(bs: &BitSet) -> CClassAsciiFastKind {
+pub(crate) fn detect_cclass_ascii_fast(bs: &BitSet) -> CClassAsciiFastKind {
     if bs.iter().map(|word| word.count_ones()).sum::<u32>() > 2 {
         return CClassAsciiFastKind::None;
     }
@@ -884,7 +884,7 @@ fn detect_cclass_ascii_fast(bs: &BitSet) -> CClassAsciiFastKind {
 }
 
 /// Compile a character class node to bytecode.
-fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
+pub(crate) fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
     let has_mb = cc.mbuf.is_some();
     let has_sb = !bitset_is_empty(&cc.bs);
 
@@ -1860,35 +1860,6 @@ fn compile_range_repeat_node(
 // Bag (group) compilation
 // ============================================================================
 
-/// An opt-in rewrite marker, with a defensive check of the lowering shape.
-/// Ordinary and source-written atomic groups keep the original compiler path.
-fn possessive_ascii_class_repeat(bag: &BagNode, status: u32) -> Option<&CClassNode> {
-    if status & ND_ST_POSSESSIVE_CLASS_REPEAT == 0 || bag.bag_type != BagType::StopBacktrack {
-        return None;
-    }
-    let NodeInner::Quant(q) = &bag.body.as_deref()?.inner else {
-        return None;
-    };
-    if !q.greedy || q.lower != 1 || !is_infinite_repeat(q.upper) {
-        return None;
-    }
-    let NodeInner::CClass(class) = &q.body.as_deref()?.inner else {
-        return None;
-    };
-    (!class.is_not()
-        && class.mbuf.is_none()
-        && (128..SINGLE_BYTE_SIZE).all(|byte| !bitset_at(&class.bs, byte)))
-    .then_some(class)
-}
-
-/// Shares the opt-in shape check between length calculation and emission.
-fn decimal_tail_prefix(bag: &BagNode, status: u32) -> Option<(&Node, &Node)> {
-    if status & ND_ST_DECIMAL_TAIL_PREFIX == 0 || bag.bag_type != BagType::StopBacktrack {
-        return None;
-    }
-    crate::backtrack_rewrite::deterministic_tail_parts(bag.body.as_deref()?)
-}
-
 /// Calculate bytecode length for a bag node.
 fn compile_length_bag_node(
     bag: &BagNode,
@@ -1924,17 +1895,10 @@ fn compile_length_bag_node(
             len
         }
         BagType::StopBacktrack => {
-            if let Some((_, tail)) = decimal_tail_prefix(bag, node_status) {
-                let tail_len = compile_length_tree(tail, reg, env);
-                return if tail_len < 0 {
-                    tail_len
-                } else {
-                    SIZE_INC + tail_len
-                };
-            }
-            if let Some(class) = possessive_ascii_class_repeat(bag, node_status) {
-                // One mandatory character followed by a choice-free star.
-                return compile_length_cclass_node(class, reg) + SIZE_INC;
+            if let Some(length) =
+                crate::backtrack_rewrite::lowering::compile_length(bag, node_status, reg, env)
+            {
+                return length;
             }
             let body_len = if let Some(b) = body {
                 compile_length_tree(b, reg, env)
@@ -2143,36 +2107,10 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
     match bag.bag_type {
         BagType::Memory => compile_bag_memory_node(bag, node_status, reg, env),
         BagType::StopBacktrack => {
-            if let Some((mut body, tail)) = decimal_tail_prefix(bag, node_status) {
-                let mut captures = Vec::new();
-                while let NodeInner::Bag(memory) = &body.inner {
-                    let BagData::Memory { regnum, .. } = memory.bag_data else {
-                        unreachable!("decimal prefix admits only memory wrappers");
-                    };
-                    captures.push(regnum);
-                    body = memory.body.as_deref().expect("checked decimal prefix body");
-                }
-                add_op(
-                    reg,
-                    OpCode::DecimalTailPrefix,
-                    OperationPayload::DecimalTailPrefix { captures },
-                );
-                return compile_tree(tail, reg, env);
-            }
-            if let Some(class) = possessive_ascii_class_repeat(bag, node_status) {
-                let result = compile_cclass_node(class, reg);
-                if result != 0 {
-                    return result;
-                }
-                add_op(
-                    reg,
-                    OpCode::CClassPossessiveStar,
-                    OperationPayload::CClass {
-                        bsp: Box::new(class.bs),
-                        ascii_fast: detect_cclass_ascii_fast(&class.bs),
-                    },
-                );
-                return 0;
+            if let Some(result) =
+                crate::backtrack_rewrite::lowering::compile(bag, node_status, reg, env)
+            {
+                return result;
             }
             let id = reg.num_call; // use call count as mark ID
             reg.num_call += 1;

@@ -1,0 +1,68 @@
+{
+  "baseline_source_commit": "2cff3d3701fcbb5303ab2ee90594da61de5391a9",
+  "baseline_binary_origin": "PR 200 retained ffi benchmark binaries; src, Cargo.toml, and the timed benchmark sources match merged main",
+  "branch": "codex/197-optimizer-cleanup",
+  "hardware": "Apple M1 Ultra, arm64",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "profile": "bench, thin LTO",
+  "features": [
+    "ffi"
+  ],
+  "pinned_oniguruma_commit": "f95747b462de672b6f8dbdeb478245ddf061ca53",
+  "matching_configuration": {
+    "samples": 30,
+    "warmup_ms": 200,
+    "measurement_ms": 1000
+  },
+  "document_configuration": {
+    "samples": 30,
+    "warmup_ms": 500,
+    "measurement_ms": 4000,
+    "optimization_enabled": false
+  },
+  "after_source_sha256": {
+    "Cargo.toml": "858de741914d415bee68c90f3f5df75af89eae030f40166ba7b343814d3b954b",
+    "src/backtrack_rewrite.rs": "b11ba8a10ae25c20c99728a7bf4e49330b35c944627896e9a2f051ca44ce2d7d",
+    "src/regcomp.rs": "ae8ce4aff73f8a5122d4009bf4cd85fe186513ac57cb09f63c229274584d5ab5",
+    "src/regexec.rs": "e85d0933304d9672a93c1b50d02514a464d02629a1621f25862e1ce2d748e744",
+    "benches/backtrack_compiler_bench.rs": "2169f4e401d2fef782a0506bcc3c961fe79139c6d94f23984562d8a1781406ec",
+    "benches/purescript_rewrite_bench.rs": "bd1fb0c248a61f0ef66bd15d33e4a1288ef86e5bac07478c7d5a0a39dba448ea",
+    "benches/battle_bench.rs": "97c4385f5cb7dfa0c28c1dfb8dc6289551cde8b435d91a68f460c20e1b769f95",
+    "src/backtrack_rewrite/ast.rs": "6303434eaf112f3d27257c9818ab54584cc5233405a8b01ab6ca154304802039",
+    "src/backtrack_rewrite/lowering.rs": "1bb6a3cd6f234ddbd8f3da8743180596f2f264742cac7bfc7ead0532a2bc3215",
+    "src/backtrack_rewrite/runtime.rs": "7e252dfa7eec0c4692b6e57b6ddedea8d0e6bbd49b1da258ad22da758a2c40fa",
+    "src/backtrack_rewrite/tests.rs": "c287bc83deb77d48e7cd1500f6e09d8b4ca6ba1b8a87c28655ddef9ed0219dd4"
+  },
+  "binary_sha256": {
+    "before/purescript_rewrite_bench": "2006994d4d619551ab383b77b9e7bd0868aba7fbe5573d7d1923aefb817038cc",
+    "before/backtrack_compiler_bench": "45c5c5f85f308b7abee1002d1d1ce91d6c97b4f760570f05f93497d421168f49",
+    "before/battle_bench": "c5d00edf9ef84bb91610e7f16eb85ff3de814cf77a84c55497cf7ccc2a12cdce",
+    "after/purescript_rewrite_bench": "60c1a5a9fae1101d968c869eeb9ee9938969999a48c06ac55223089440495ae5",
+    "after/backtrack_compiler_bench": "4cfa43a78b8a32eb9be00b2b83a77fe6cbdbb719c6594a235f096c7d01887cd9",
+    "after/battle_bench": "a398431e2eae17cc5bbd788806c3ea705102e71a355dd8816cb90764e639d76a"
+  },
+  "run_order": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ]
+  ],
+  "summary_runs": [
+    2,
+    3,
+    4
+  ],
+  "summary_reason": "Run 1 was unstable, including unchanged baseline lanes; all runs remain in the CSV."
+}

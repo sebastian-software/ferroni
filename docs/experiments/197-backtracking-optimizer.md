@@ -46,7 +46,30 @@ Both rules refuse whole patterns with capture reads, subroutine calls,
 look-arounds, scoped options, existing atomic or conditional groups, callouts,
 position checks such as `\G`, capture history or exhaustive compile-time
 matching modes. The compiler refreshes parsed node references after rewriting.
-Proof obligations live next to the rules in `src/backtrack_rewrite.rs`.
+Proof obligations live next to the rules in `src/backtrack_rewrite/ast.rs`.
+
+## Implementation ownership
+
+`src/backtrack_rewrite.rs` is the public diagnostic facade. Its private AST
+pass and crate-private lowering and runtime modules own this optimization:
+
+- `src/backtrack_rewrite/ast.rs`: safety guards, shape recognition, capture
+  preservation and atomic fallbacks.
+- `src/backtrack_rewrite/lowering.rs`: specialized length calculation and
+  bytecode emission, using the same shape checks for both.
+- `src/backtrack_rewrite/runtime.rs`: bounded decimal-prefix scanning and
+  native capture stack entries; both helpers retain `#[inline(never)]`.
+
+`regcomp` invokes the AST pass and delegates marked group lowering. `regexec`
+retains opcode dispatch and the native stack types. Opcode payloads and AST
+status bits remain with the engine's shared types. Public APIs and default-off
+behavior are unchanged.
+
+The redundant `backtrack_rewrite_bench` from the first experiment has been
+removed. `backtrack_compiler_bench` retains its 16-digit failed-tail case along
+with the 12- and 20-digit cases. The compiler and PureScript comparison benches
+remain reproducible references for source rewrites; they are not production
+pattern preprocessors. Earlier attempts and their commits remain in Git.
 
 ## Capture and boundary proof
 
@@ -82,6 +105,53 @@ dispatch. Extraction fixed the earlier inline variant's roughly 10% cost on an
 untouched decimal lane. The separate VM-specialization attempt, `6ecbf56`, did
 not establish reliable additional benefit and is not included. A small scanner
 tradeoff is accepted where the affected expressions improve substantially.
+
+## Cleanup measurements
+
+The cleanup branch `codex/197-optimizer-cleanup` groups the implementation
+without changing the AST or runtime algorithms. Four paired runs compare it
+with merged main `2cff3d3701fcbb5303ab2ee90594da61de5391a9` on Apple M1 Ultra,
+arm64, Rust 1.96.0, `ffi`, thin LTO. Retained PR-200 baseline binaries have
+identical production and timed benchmark sources to merged main. Matching
+uses 30 samples, 200 ms warmup and one-second measurement; document controls
+use 30 samples, 500 ms warmup and four-second measurement. No build or test
+ran concurrently with timing. Each harness validates captures before timing.
+
+The first pair was unstable: even the unchanged baseline V exponent lane
+took 86.180 µs, compared with about 51–54 µs in subsequent runs. Its large
+differences cannot be attributed to this cleanup alone. All four runs and
+their individual 95% confidence intervals remain in
+`benches/results/197-optimizer-cleanup.csv`; source and binary hashes,
+configuration and order remain in `197-optimizer-cleanup-metadata.json`.
+The table summarizes pairs 2–4, including the extra reverse-order pair.
+
+| Workload                                    | Cleanup/main change |
+| ------------------------------------------- | ------------------: |
+| `PureScript captures/success_long_digits`   |    -1.68% to +0.62% |
+| `PureScript captures/success_long_segments` |    -0.48% to +1.21% |
+| `PureScript captures/success_short`         |    -2.21% to +1.33% |
+| `PureScript compile`                        |    +0.37% to +1.69% |
+| `PureScript match/failed_letter_20`         |    -2.49% to -1.84% |
+| `PureScript match/success_long_digits`      |    -0.63% to +2.17% |
+| `PureScript match/success_long_segments`    |    -0.33% to +0.50% |
+| `PureScript match/success_short`            |    -1.82% to +0.73% |
+| `V v_exponent/success_long`                 |    -6.92% to -2.92% |
+| `V v_exponent/success_long (ordinary)`      |    -3.05% to +0.51% |
+| `V v_float/success_long`                    |    -7.95% to -3.45% |
+| `V v_float/success_long (ordinary)`         |    -6.79% to -2.17% |
+| `Document css_117_document_19_lines_rust`   |    -0.97% to +0.71% |
+| `Document rust_81_document_31_lines_rust`   |    -0.42% to +1.57% |
+| `Document ts_279_document_28_lines_rust`    |    +0.86% to +1.99% |
+
+No large reproducible regression appears in these measured lanes. The largest
+positive matching estimate in pairs 2–4 is +2.17%; document controls reach
++1.99%. These are bounded workload checks, not a claim about every input.
+
+The cleanup passes the full all-feature suite and doctests, the release
+comparison over 8,398,075 pattern/input combinations, the Rust 1.94 integration
+suite, Clippy, rustdoc, formatting, README, workflow-pin and standards checks.
+Coverage is 90.05%, above the unchanged 87% gate. Static test count remains
+2,358; no tests or atomic fallbacks were removed.
 
 ## Fresh measurements
 

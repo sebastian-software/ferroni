@@ -73,10 +73,6 @@ name = "regression_bench"
 harness = false
 
 [[bench]]
-name = "backtrack_rewrite_bench"
-harness = false
-
-[[bench]]
 name = "battle_mem_rust"
 harness = false
 
