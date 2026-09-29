@@ -881,6 +881,40 @@ pub fn onigenc_unicode_property_name_to_ctype(p: &[u8]) -> i32 {
 
 /// Check if code point is of the given Unicode ctype.
 /// Port of onigenc_unicode_is_code_ctype from unicode.c
+/// The end of the Basic Multilingual Plane.
+const BMP_END: OnigCodePoint = 0x1_0000;
+
+/// Tables with fewer ranges keep the binary search, which then takes at
+/// most four steps.
+const BMP_BITMAP_MIN_RANGES: usize = 16;
+
+/// A table's members below [`BMP_END`] as bits.
+type BmpBitmap = [u64; BMP_END as usize / 64];
+
+/// Rust-only (ADR-008): the BMP part of the code range table `ctype` as a
+/// bitmap, built on first use, for tables with at least
+/// [`BMP_BITMAP_MIN_RANGES`] ranges. `\w` over non-ASCII text asks this for
+/// every character, and its binary search over hundreds of ranges took
+/// about a quarter of such a search. Each bitmap takes 8 KiB, only for
+/// tables a process queries.
+fn bmp_bitmap(ctype: usize, ranges: &[u32]) -> Option<&'static BmpBitmap> {
+    static BITMAPS: [std::sync::OnceLock<Option<Box<BmpBitmap>>>; CODE_RANGES_NUM] =
+        [const { std::sync::OnceLock::new() }; CODE_RANGES_NUM];
+    BITMAPS[ctype]
+        .get_or_init(|| {
+            (ranges.len() / 2 >= BMP_BITMAP_MIN_RANGES).then(|| {
+                let mut bits: Box<BmpBitmap> = Box::new([0; BMP_END as usize / 64]);
+                for pair in ranges.chunks_exact(2) {
+                    for code in pair[0]..=pair[1].min(BMP_END - 1) {
+                        bits[code as usize / 64] |= 1 << (code % 64);
+                    }
+                }
+                bits
+            })
+        })
+        .as_deref()
+}
+
 pub fn onigenc_unicode_is_code_ctype(code: OnigCodePoint, ctype: u32) -> bool {
     if ctype <= ONIGENC_MAX_STD_CTYPE && code < 256 {
         return (ENC_UNICODE_ISO_8859_1_CTYPE_TABLE[code as usize] & ctype_to_bit(ctype) as u16)
@@ -912,6 +946,11 @@ pub fn onigenc_unicode_is_code_ctype(code: OnigCodePoint, ctype: u32) -> bool {
 
     // Binary search on code range pairs
     let ranges = CODE_RANGES[ctype as usize];
+    if code < BMP_END {
+        if let Some(bits) = bmp_bitmap(ctype as usize, ranges) {
+            return bits[code as usize / 64] >> (code % 64) & 1 != 0;
+        }
+    }
     let n = ranges.len() / 2;
     let mut low = 0usize;
     let mut high = n;
@@ -1540,5 +1579,41 @@ mod tests {
             actual.sort_unstable();
             assert_eq!(actual, expected, "ranges {ranges:x?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod bmp_bitmap_tests {
+    use super::*;
+
+    /// Every table's bitmap holds exactly the BMP codes its ranges hold,
+    /// and the lookup answers as the binary search does.
+    #[test]
+    fn bmp_bitmaps_match_the_ranges() {
+        let mut bitmaps = 0;
+        for (ctype, ranges) in CODE_RANGES.iter().enumerate() {
+            let in_ranges = |code: u32| {
+                ranges
+                    .chunks_exact(2)
+                    .any(|pair| pair[0] <= code && code <= pair[1])
+            };
+            if let Some(bits) = bmp_bitmap(ctype, ranges) {
+                bitmaps += 1;
+                for code in 0..BMP_END {
+                    let bit = bits[code as usize / 64] >> (code % 64) & 1 != 0;
+                    assert_eq!(bit, in_ranges(code), "{ctype} {code:#x}");
+                }
+            }
+            if ctype > ONIGENC_MAX_STD_CTYPE as usize {
+                for code in (0..0x11_0000).step_by(97).chain([0xFFFF, 0x1_0000]) {
+                    assert_eq!(
+                        onigenc_unicode_is_code_ctype(code, ctype as u32),
+                        in_ranges(code),
+                        "{ctype} {code:#x}"
+                    );
+                }
+            }
+        }
+        assert!(bitmaps > 50, "{bitmaps}");
     }
 }
