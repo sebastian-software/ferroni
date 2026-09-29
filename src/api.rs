@@ -204,6 +204,18 @@ impl Regex {
 
     /// Return the first match in `text` (as bytes), or `None` if no match.
     pub fn find_bytes<'t>(&self, text: &'t [u8]) -> Option<Match<'t>> {
+        // Only the bounds are returned: where they follow from the attempt
+        // position and the match length, no region is needed (see
+        // `find_iter_bytes`).
+        if !self.inner.keep_moves_match_start
+            && !self.inner.options.contains(ONIG_OPTION_FIND_LONGEST)
+        {
+            let mut msa = take_cached_msa(&self.inner, ONIG_OPTION_NONE, None, 0);
+            let found = onig_search_bounds(&self.inner, text, 0, &mut msa);
+            cache_msa(msa);
+            let (start, end) = found.ok()??;
+            return (end <= text.len()).then_some(Match { text, start, end });
+        }
         let (result, region) = onig_search(
             &self.inner,
             text,
@@ -996,13 +1008,14 @@ mod tests {
     #[test]
     fn find_reuses_the_thread_local_region_buffer() {
         clear_cached_region();
-        let re = Regex::new(r"(a)(b)(c)").unwrap();
+        // `\K` keeps `find` on the region path.
+        let re = Regex::new(r"(a)(b)\K(c)").unwrap();
 
-        assert_eq!(re.find("abc").unwrap().as_str(), "abc");
+        assert_eq!(re.find("abc").unwrap().as_str(), "c");
         let first = cached_region_buffer().expect("find should return its region to the cache");
         assert!(first.1 >= 4);
 
-        assert_eq!(re.find("abc").unwrap().as_str(), "abc");
+        assert_eq!(re.find("abc").unwrap().as_str(), "c");
         let second = cached_region_buffer().expect("find should preserve the cached region");
         assert_eq!(second, first);
     }
@@ -1125,8 +1138,16 @@ mod tests {
                 let got: Vec<_> = bounds.map(|m| m.range()).collect();
                 let expected: Vec<_> = region_path.map(|m| m.range()).collect();
                 assert_eq!(got, expected, "{pattern:?} {text:?}");
+                assert_eq!(
+                    re.find(text).map(|m| m.range()),
+                    expected.first().cloned(),
+                    "{pattern:?} {text:?}"
+                );
             }
         }
+        // With `\K` the region carries the match start.
+        let keep = Regex::new(r"(\w)\K\w+").unwrap();
+        assert_eq!(keep.find("one two").map(|m| m.range()), Some(1..3));
     }
 
     #[test]
