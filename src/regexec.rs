@@ -3670,6 +3670,11 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
     }
     let mut retry_in_match_counter: u64 = 0;
     let match_stack_limit = msa.match_stack_limit;
+    let stack_cap = if match_stack_limit != 0 {
+        match_stack_limit as usize
+    } else {
+        HARD_MATCH_STACK_CAP
+    };
     let time_limit_ms = msa.time_limit;
 
     // Subexpression call limits (C: `subexp_call_nest_counter`,
@@ -3745,7 +3750,7 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
         }
 
         // Stack limit check (checked once per opcode, like C's STACK_PUSH macro)
-        if match_stack_limit != 0 && stack.len() >= match_stack_limit as usize {
+        if stack.len() >= stack_cap {
             best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
             break;
         }

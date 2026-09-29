@@ -16,6 +16,12 @@ pub const USE_CAPTURE_HISTORY: bool = true;
 pub const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 4096;
 pub const INIT_MATCH_STACK_SIZE: usize = 160;
 pub const DEFAULT_MATCH_STACK_LIMIT_SIZE: u32 = 0;
+/// Rust-only (ADR-008): the backtrack stack never grows past this many
+/// entries unless a larger `match_stack_limit` is set. C lets it grow without
+/// bound when the limit is 0, so one hostile line can exhaust memory. This
+/// is a separate cap and not a default for `match_stack_limit`: a non-zero
+/// limit turns off other optimizations that a plain search is allowed.
+pub const HARD_MATCH_STACK_CAP: usize = 10_000_000;
 pub const DEFAULT_RETRY_LIMIT_IN_MATCH: u64 = 10_000_000;
 pub const DEFAULT_RETRY_LIMIT_IN_SEARCH: u64 = 0;
 pub const DEFAULT_TIME_LIMIT_MSEC: u64 = 0;
