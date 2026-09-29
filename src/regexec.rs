@@ -7002,14 +7002,15 @@ pub(crate) fn search_in_range(
 ) -> (i32, Option<OnigRegion>) {
     if let Some(mp) = mp {
         let mut msa = MatchArg::from_param(reg, option, region, start, mp);
-        return search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
+        let r = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
+        return (r, msa.region.take());
     }
 
     let mut msa = take_cached_msa(reg, option, region, start);
-    let result = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
-    // Return the MSA to cache (region already taken out by inner).
+    let r = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
+    let region = msa.region.take();
     cache_msa(msa);
-    result
+    (r, region)
 }
 
 // Box the cached state so each warm call moves only a pointer. Taking
@@ -7066,7 +7067,7 @@ pub(crate) fn onig_search_bounds(
     debug_assert!(!reg.keep_moves_match_start && !opton_find_longest(reg.options));
     msa.reset_full(reg, ONIG_OPTION_NONE, None, start);
     let end = text.len();
-    let (r, _) = search_in_range_inner(reg, text, end, start, end, end, msa);
+    let r = search_in_range_inner(reg, text, end, start, end, end, msa);
     release_oversized_stack(msa);
     match r {
         r if r >= 0 => Ok(Some((r as usize, r as usize + msa.match_len as usize))),
@@ -7085,7 +7086,8 @@ pub(crate) fn onig_search_with_msa(
     msa: &mut MatchArg,
 ) -> (i32, Option<OnigRegion>) {
     let data_range = if range > start { range } else { end };
-    search_in_range_inner(reg, str_data, end, start, range, data_range, msa)
+    let r = search_in_range_inner(reg, str_data, end, start, range, data_range, msa);
+    (r, msa.region.take())
 }
 
 /// Search positions in `[start, range]` while allowing a match to consume up
@@ -7114,8 +7116,8 @@ pub(crate) fn onig_search_with_msa_and_right_range(
         return (ONIG_MISMATCH, msa.region.take());
     }
 
-    if can_use_two_pass_capture_fill(reg, start, range, msa) {
-        return onig_search_inner_two_pass(
+    let r = if can_use_two_pass_capture_fill(reg, start, range, msa) {
+        onig_search_inner_two_pass(
             reg,
             str_data,
             end,
@@ -7125,19 +7127,21 @@ pub(crate) fn onig_search_with_msa_and_right_range(
             false,
             start_filter,
             msa,
-        );
-    }
-    onig_search_inner_core_with_right_range(
-        reg,
-        str_data,
-        end,
-        start,
-        range,
-        right_range,
-        false,
-        start_filter,
-        msa,
-    )
+        )
+    } else {
+        onig_search_inner_core_with_right_range(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            false,
+            start_filter,
+            msa,
+        )
+    };
+    (r, msa.region.take())
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -7197,7 +7201,7 @@ fn onig_search_inner_two_pass(
     find_longest_across_positions: bool,
     start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
     msa: &mut MatchArg,
-) -> (i32, Option<OnigRegion>) {
+) -> i32 {
     let mut region = match msa.region.take() {
         Some(r) => r,
         None => {
@@ -7217,7 +7221,7 @@ fn onig_search_inner_two_pass(
     region.resize(reg.num_mem + 1);
     region.clear();
 
-    let (match_start, _) = onig_search_inner_core_with_right_range(
+    let match_start = onig_search_inner_core_with_right_range(
         reg,
         str_data,
         end,
@@ -7230,7 +7234,7 @@ fn onig_search_inner_two_pass(
     );
     if match_start < 0 {
         msa.region = Some(region);
-        return (match_start, msa.region.take());
+        return match_start;
     }
 
     msa.region = Some(region);
@@ -7250,7 +7254,7 @@ fn onig_search_inner_two_pass(
     msa.retry_limit_in_search = retry_limit_in_search_before;
     msa.retry_limit_in_search_counter = retry_counter_before;
     if r < ONIG_MISMATCH {
-        return (r, msa.region.take());
+        return r;
     }
     if r == ONIG_MISMATCH {
         // Conservative fallback: preserve semantics if second pass diverges.
@@ -7267,7 +7271,7 @@ fn onig_search_inner_two_pass(
         );
     }
 
-    (match_start, msa.region.take())
+    match_start
 }
 
 fn search_in_range_inner(
@@ -7278,7 +7282,7 @@ fn search_in_range_inner(
     range: usize,
     data_range: usize,
     msa: &mut MatchArg,
-) -> (i32, Option<OnigRegion>) {
+) -> i32 {
     // The C API accepts an end pointer into the supplied buffer. Normalize
     // Rust indices once at the public-search boundary so every optimizer sees
     // a valid slice, and reject a start outside the logical string.
@@ -7286,7 +7290,7 @@ fn search_in_range_inner(
     let range = range.min(end);
     let data_range = data_range.min(end);
     if start > end {
-        return (ONIG_MISMATCH, msa.region.take());
+        return ONIG_MISMATCH;
     }
 
     #[cfg(feature = "match-cache")]
@@ -7312,7 +7316,7 @@ fn onig_search_inner_core(
     range: usize,
     data_range: usize,
     msa: &mut MatchArg,
-) -> (i32, Option<OnigRegion>) {
+) -> i32 {
     let right_range = if start == range && start < end {
         (start + enclen(reg.enc, str_data, start)).min(end)
     } else if range > start {
@@ -7344,7 +7348,7 @@ fn onig_search_inner_core_with_right_range(
     find_longest_across_positions: bool,
     start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
     msa: &mut MatchArg,
-) -> (i32, Option<OnigRegion>) {
+) -> i32 {
     let enc = reg.enc;
     // Skipping an attempt is unobservable except through the search retry
     // budget, which counts every failed attempt.
@@ -7357,7 +7361,7 @@ fn onig_search_inner_core_with_right_range(
     let mut best_len: i32 = ONIG_MISMATCH;
 
     if opton_check_validity_of_string(msa.options) && !enc.is_valid_mbc_string(&str_data[..end]) {
-        return (ONIGERR_INVALID_WIDE_CHAR_VALUE, msa.region.take());
+        return ONIGERR_INVALID_WIDE_CHAR_VALUE;
     }
 
     // Resize region once before entering search loops (matches C behavior)
@@ -7379,12 +7383,12 @@ fn onig_search_inner_core_with_right_range(
         msa.best_s = 0;
         let r = match_at(reg, str_data, end, right_range, start, msa);
         if r < ONIG_MISMATCH {
-            return (r, msa.region.take());
+            return r;
         }
         if r != ONIG_MISMATCH {
-            return (start as i32, msa.region.take());
+            return start as i32;
         }
-        return (ONIG_MISMATCH, msa.region.take());
+        return ONIG_MISMATCH;
     }
 
     // Aho-Corasick fast path for literal alternations.
@@ -7410,9 +7414,9 @@ fn onig_search_inner_core_with_right_range(
                         r.end[1] = match_end as i32;
                     }
                 }
-                return (match_start as i32, msa.region.take());
+                return match_start as i32;
             }
-            return (ONIG_MISMATCH, msa.region.take());
+            return ONIG_MISMATCH;
         }
         // backward search or find_longest: fall through to normal path
     }
@@ -7420,7 +7424,7 @@ fn onig_search_inner_core_with_right_range(
     if start > range {
         // Backward search: start > range, search from start down to range
         if end == 0 {
-            return (ONIG_MISMATCH, msa.region.take());
+            return ONIG_MISMATCH;
         }
 
         // orig_start is the right boundary for matching (upper range). As in
@@ -7446,7 +7450,7 @@ fn onig_search_inner_core_with_right_range(
                 let r = match_at(reg, str_data, end, $orig_start, $s, msa);
                 if r != ONIG_MISMATCH {
                     if r < 0 {
-                        return (r, msa.region.take());
+                        return r;
                     }
                     if find_longest {
                         let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
@@ -7455,13 +7459,13 @@ fn onig_search_inner_core_with_right_range(
                             best_len = match_len;
                         }
                     } else {
-                        return ($s as i32, msa.region.take());
+                        return $s as i32;
                     }
                 }
                 if msa.retry_limit_in_search != 0
                     && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
                 {
-                    return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
+                    return ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER;
                 }
             }};
         }
@@ -7469,7 +7473,7 @@ fn onig_search_inner_core_with_right_range(
         if reg.optimize != OptimizeType::None {
             // Threshold length check (inside optimize branch, matching C)
             if (end as i32 - range as i32) < reg.threshold_len {
-                return (ONIG_MISMATCH, msa.region.take());
+                return ONIG_MISMATCH;
             }
 
             let adjrange = if range < end {
@@ -7539,7 +7543,7 @@ fn onig_search_inner_core_with_right_range(
                 // dist_max == INFINITE_LEN: single backward_search as gate
                 let sch_start = onigenc_get_prev_char_head(enc, str_data, 0, end);
                 if backward_search(reg, str_data, end, sch_start, min_range, adjrange).is_none() {
-                    return (ONIG_MISMATCH, msa.region.take());
+                    return ONIG_MISMATCH;
                 }
             }
         }
@@ -7589,17 +7593,17 @@ fn onig_search_inner_core_with_right_range(
             // search str-position only (must start at 0)
             if range > start {
                 if start != 0 {
-                    return (ONIG_MISMATCH, msa.region.take());
+                    return ONIG_MISMATCH;
                 }
                 cur_range = 1;
             } else {
-                return (ONIG_MISMATCH, msa.region.take());
+                return ONIG_MISMATCH;
             }
         } else if (reg.anchor & ANCR_END_BUF) != 0 {
             let min_semi_end = end;
             let max_semi_end = end;
             if (max_semi_end as OnigLen) < reg.anc_dist_min {
-                return (ONIG_MISMATCH, msa.region.take());
+                return ONIG_MISMATCH;
             }
             if range > start {
                 if reg.anc_dist_max != INFINITE_LEN
@@ -7611,13 +7615,13 @@ fn onig_search_inner_core_with_right_range(
                     < reg.anc_dist_min as usize
                 {
                     if max_semi_end + 1 < reg.anc_dist_min as usize {
-                        return (ONIG_MISMATCH, msa.region.take());
+                        return ONIG_MISMATCH;
                     } else {
                         cur_range = max_semi_end - reg.anc_dist_min as usize + 1;
                     }
                 }
                 if cur_start > cur_range {
-                    return (ONIG_MISMATCH, msa.region.take());
+                    return ONIG_MISMATCH;
                 }
             }
         } else if (reg.anchor & ANCR_SEMI_END_BUF) != 0 {
@@ -7628,7 +7632,7 @@ fn onig_search_inner_core_with_right_range(
                 min_semi_end = end - 1;
             }
             if (max_semi_end as OnigLen) < reg.anc_dist_min {
-                return (ONIG_MISMATCH, msa.region.take());
+                return ONIG_MISMATCH;
             }
             if range > start {
                 if reg.anc_dist_max != INFINITE_LEN
@@ -7640,13 +7644,13 @@ fn onig_search_inner_core_with_right_range(
                     < reg.anc_dist_min as usize
                 {
                     if max_semi_end + 1 < reg.anc_dist_min as usize {
-                        return (ONIG_MISMATCH, msa.region.take());
+                        return ONIG_MISMATCH;
                     } else {
                         cur_range = max_semi_end - reg.anc_dist_min as usize + 1;
                     }
                 }
                 if cur_start > cur_range {
-                    return (ONIG_MISMATCH, msa.region.take());
+                    return ONIG_MISMATCH;
                 }
             }
         } else if (reg.anchor & ANCR_ANYCHAR_INF_ML) != 0 && range > start {
@@ -7663,18 +7667,18 @@ fn onig_search_inner_core_with_right_range(
             msa.best_s = 0;
             let r = match_at(reg, str_data, end, end, s, msa);
             if r < ONIG_MISMATCH {
-                return (r, msa.region.take());
+                return r;
             } // error
             if r != ONIG_MISMATCH {
-                return (s as i32, msa.region.take());
+                return s as i32;
             }
         }
-        return (ONIG_MISMATCH, msa.region.take());
+        return ONIG_MISMATCH;
     }
 
     // === Threshold length check ===
     if (end as i32 - cur_start as i32) < reg.threshold_len {
-        return (ONIG_MISMATCH, msa.region.take());
+        return ONIG_MISMATCH;
     }
 
     // === Forward search ===
@@ -7731,7 +7735,7 @@ fn onig_search_inner_core_with_right_range(
                     let r = match_at(reg, str_data, end, data_range, s, msa);
                     if r != ONIG_MISMATCH {
                         if r < 0 {
-                            return (r, msa.region.take());
+                            return r;
                         } // error
                         if find_longest {
                             let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
@@ -7740,13 +7744,13 @@ fn onig_search_inner_core_with_right_range(
                                 best_len = match_len;
                             }
                         } else {
-                            return (s as i32, msa.region.take());
+                            return s as i32;
                         }
                     }
                     if msa.retry_limit_in_search != 0
                         && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
                     {
-                        return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
+                        return ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER;
                     }
                     // A truncated multibyte lead byte reports a length past
                     // `end`. C steps past the buffer here and its NUL
@@ -7810,7 +7814,7 @@ fn onig_search_inner_core_with_right_range(
                     let r = match_at(reg, str_data, end, data_range, s, msa);
                     if r != ONIG_MISMATCH {
                         if r < 0 {
-                            return (r, msa.region.take());
+                            return r;
                         }
                         if find_longest {
                             let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
@@ -7819,13 +7823,13 @@ fn onig_search_inner_core_with_right_range(
                                 best_len = match_len;
                             }
                         } else {
-                            return (s as i32, msa.region.take());
+                            return s as i32;
                         }
                     }
                     if msa.retry_limit_in_search != 0
                         && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
                     {
-                        return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
+                        return ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER;
                     }
                     let prev = s;
                     s = advance_char_to_end(enc, str_data, s, end);
@@ -7915,7 +7919,7 @@ fn onig_search_inner_core_with_right_range(
             let r = match_at(reg, str_data, end, data_range, s, msa);
             if r != ONIG_MISMATCH {
                 if r < 0 {
-                    return (r, msa.region.take());
+                    return r;
                 }
                 if find_longest {
                     let match_len = if msa.best_len >= 0 { msa.best_len } else { r };
@@ -7924,13 +7928,13 @@ fn onig_search_inner_core_with_right_range(
                         best_len = match_len;
                     }
                 } else {
-                    return (s as i32, msa.region.take());
+                    return s as i32;
                 }
             }
             if msa.retry_limit_in_search != 0
                 && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
             {
-                return (ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER, msa.region.take());
+                return ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER;
             }
             if s >= cur_range {
                 break;
@@ -8183,7 +8187,7 @@ fn literal_run_search(
     data_range: usize,
     start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
     msa: &mut MatchArg,
-) -> Option<(i32, Option<OnigRegion>)> {
+) -> Option<i32> {
     let run = reg.leading_run.as_deref()?;
     let literal = run.literal.as_ref()?;
     if find_longest || !may_skip_attempts(msa) {
@@ -8201,9 +8205,9 @@ fn literal_run_search(
                 let r = match_at(reg, str_data, end, data_range, x, msa);
                 if r != ONIG_MISMATCH {
                     if r < 0 {
-                        return Some((r, msa.region.take()));
+                        return Some(r);
                     }
-                    return Some((x as i32, msa.region.take()));
+                    return Some(x as i32);
                 }
             }
         }};
@@ -8246,7 +8250,7 @@ fn literal_run_search(
                 while x < k {
                     attempt!(x);
                     if x >= cur_range {
-                        return Some((ONIG_MISMATCH, msa.region.take()));
+                        return Some(ONIG_MISMATCH);
                     }
                     x = advance_char_to_end(enc, str_data, x, end);
                 }
@@ -8265,7 +8269,7 @@ fn literal_run_search(
             }
         }
     }
-    Some((ONIG_MISMATCH, msa.region.take()))
+    Some(ONIG_MISMATCH)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -8278,7 +8282,7 @@ fn finish_search(
     end: usize,
     upper_range: usize,
     msa: &mut MatchArg,
-) -> (i32, Option<OnigRegion>) {
+) -> i32 {
     if find_longest && best_start != ONIG_MISMATCH {
         if let Some(ref mut r) = msa.region {
             r.clear();
@@ -8289,9 +8293,9 @@ fn finish_search(
         // MATCH_AND_RETURN_CHECK(orig_start / data_range)); C keeps the
         // region that attempt recorded.
         match_at(reg, str_data, end, upper_range, best_start as usize, msa);
-        return (best_start, msa.region.take());
+        return best_start;
     }
-    (ONIG_MISMATCH, msa.region.take())
+    ONIG_MISMATCH
 }
 
 // ============================================================================
