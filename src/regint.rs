@@ -656,6 +656,9 @@ pub struct RegexType {
     pub(crate) map_offset: i32,
     pub(crate) map_bytes: [u8; 3],
     pub(crate) map_byte_count: u8,
+    /// Rust-only (ADR-008): the ASCII part of `map` as byte ranges, for a
+    /// map search that checks eight ASCII bytes at a time.
+    pub(crate) map_ascii_ranges: MapAsciiRanges,
     pub(crate) dist_min: OnigLen,
     pub(crate) dist_max: OnigLen,
     /// True when capture registers are needed for matching semantics even if
@@ -711,6 +714,68 @@ pub struct RegexType {
     /// Rust-only (ADR-008): where attempts can pass the leading checks
     /// (`crate::leading_run::SearchJump`).
     pub(crate) search_jump: Option<Box<crate::leading_run::SearchJump>>,
+}
+
+/// The ASCII bytes of an optimizer map as at most [`MapAsciiRanges::MAX`]
+/// inclusive ranges. Rust-only (ADR-008): `map_search` tests eight ASCII
+/// bytes at a time against them (`first_member`), instead of one table
+/// lookup and one character step per byte.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct MapAsciiRanges {
+    ranges: [(u8, u8); MapAsciiRanges::MAX],
+    /// Zero when the map's ASCII part needs more ranges than fit.
+    count: u8,
+}
+
+impl MapAsciiRanges {
+    pub(crate) const MAX: usize = 6;
+
+    /// The ranges of `map` below 0x80, or none if they do not fit.
+    pub(crate) fn of(map: &[u8; CHAR_MAP_SIZE]) -> Self {
+        let mut out = Self::default();
+        let mut at = 0;
+        while at < 0x80 {
+            if map[at] == 0 {
+                at += 1;
+                continue;
+            }
+            let lo = at;
+            while at < 0x80 && map[at] != 0 {
+                at += 1;
+            }
+            if out.count as usize == Self::MAX {
+                return Self::default();
+            }
+            out.ranges[out.count as usize] = (lo as u8, (at - 1) as u8);
+            out.count += 1;
+        }
+        out
+    }
+
+    /// Whether `first_member` applies: the map has an ASCII member.
+    #[inline]
+    pub(crate) fn usable(&self) -> bool {
+        self.count != 0
+    }
+
+    /// For eight ASCII bytes (little-endian, every high bit clear), the
+    /// index of the first byte inside a range. Adding `0x80 - lo` sets a
+    /// byte's high bit exactly when the byte is at least `lo`, and adding
+    /// `0x7F - hi` when it is above `hi`; no sum carries into the next byte.
+    #[inline]
+    pub(crate) fn first_member(&self, chunk: u64) -> Option<usize> {
+        const ONES: u64 = 0x0101_0101_0101_0101;
+        const HIGH: u64 = 0x8080_8080_8080_8080;
+        debug_assert_eq!(chunk & HIGH, 0, "ASCII bytes only");
+        let mut hits = 0;
+        for &(lo, hi) in &self.ranges[..self.count as usize] {
+            let at_least_lo = chunk + ONES * (0x80 - lo as u64);
+            let above_hi = chunk + ONES * (0x7F - hi as u64);
+            hits |= at_least_lo & !above_hi;
+        }
+        let hits = hits & HIGH;
+        (hits != 0).then(|| hits.trailing_zeros() as usize / 8)
+    }
 }
 
 /// Set in a guard's `skipped_retries` when the backtracks it skips depend on

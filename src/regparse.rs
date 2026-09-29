@@ -7935,6 +7935,7 @@ mod tests {
             map_offset: 0,
             map_bytes: [0u8; 3],
             map_byte_count: 0,
+            map_ascii_ranges: crate::regint::MapAsciiRanges::default(),
             dist_min: 0,
             dist_max: 0,
             needs_capture_tracking: false,

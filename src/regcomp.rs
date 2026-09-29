@@ -9707,6 +9707,7 @@ fn set_optimize_map(reg: &mut RegexType, m: &OptMap) {
     }
     reg.map_bytes = bytes;
     reg.map_byte_count = count;
+    reg.map_ascii_ranges = MapAsciiRanges::of(&m.map);
 }
 
 /// The bytes a match can start with, when the string or map
@@ -10372,6 +10373,7 @@ pub fn onig_new(
         map_offset: 0,
         map_bytes: [0u8; 3],
         map_byte_count: 0,
+        map_ascii_ranges: MapAsciiRanges::default(),
         dist_min: 0,
         dist_max: 0,
         needs_capture_tracking: false,
@@ -10694,6 +10696,7 @@ mod tests {
             map_offset: 0,
             map_bytes: [0u8; 3],
             map_byte_count: 0,
+            map_ascii_ranges: MapAsciiRanges::default(),
             dist_min: 0,
             dist_max: 0,
             needs_capture_tracking: false,

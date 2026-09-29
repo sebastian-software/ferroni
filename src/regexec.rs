@@ -6476,15 +6476,70 @@ fn map_search(
         _ => {
             let map = &reg.map;
             let mut s = text_start;
+            // Rust-only (ADR-008): after 16 bytes without a candidate the
+            // search goes on eight bytes at a time.
+            let chunks_from = if reg.map_ascii_ranges.usable() {
+                text_start.saturating_add(16)
+            } else {
+                usize::MAX
+            };
             while s < text_range {
                 if map[text[s] as usize] != 0 {
                     return Some(s);
                 }
                 s += enclen(enc, text, s);
+                if s >= chunks_from && onigenc_is_ascii_compatible_encoding(enc) {
+                    return map_search_ascii_chunks(enc, reg, text, s, text_range);
+                }
             }
             None
         }
     }
+}
+
+/// Rust-only (ADR-008): `map_search`'s loop for an ASCII-compatible
+/// encoding, eight bytes at a time while they are ASCII. Every ASCII byte is
+/// a character of its own, so the character loop would visit each of them;
+/// the first one inside the map's ASCII ranges is its answer. A chunk with a
+/// non-ASCII byte is walked character by character, as before.
+#[inline(never)]
+fn map_search_ascii_chunks(
+    enc: OnigEncoding,
+    reg: &RegexType,
+    text: &[u8],
+    text_start: usize,
+    text_range: usize,
+) -> Option<usize> {
+    const HIGH: u64 = 0x8080_8080_8080_8080;
+    let map = &reg.map;
+    let ranges = &reg.map_ascii_ranges;
+    let mut s = text_start;
+    while s < text_range {
+        if let Some(chunk) = text[s..text_range].first_chunk::<8>() {
+            let chunk = u64::from_le_bytes(*chunk);
+            if chunk & HIGH == 0 {
+                match ranges.first_member(chunk) {
+                    Some(at) => return Some(s + at),
+                    None => {
+                        s += 8;
+                        continue;
+                    }
+                }
+            }
+        }
+        // A chunk holding a non-ASCII byte, or the last bytes before the
+        // range: one character, as C steps.
+        let byte = text[s];
+        if map[byte as usize] != 0 {
+            return Some(s);
+        }
+        s += if byte < 0x80 {
+            1
+        } else {
+            enc.mbc_enc_len(&text[s..])
+        };
+    }
+    None
 }
 
 /// Whether C's backward scans (`s = onigenc_get_prev_char_head(enc,
@@ -8196,6 +8251,87 @@ mod tests {
     use crate::regparse;
     use crate::regparse_types::ParseEnv;
 
+    /// The chunked map search finds what the character loop finds, for maps
+    /// with ASCII ranges and high bytes, over ASCII, UTF-8 and malformed
+    /// input, from every start and to every range.
+    #[test]
+    fn chunked_map_search_matches_the_character_loop() {
+        let utf8: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let pieces: &[&[u8]] = &[
+            b"a",
+            b"Z",
+            b"0",
+            b"9",
+            b" ",
+            b"-",
+            b"_",
+            b"@",
+            b".",
+            b"~",
+            b"\x7f",
+            b"\x00",
+            "\u{e9}".as_bytes(),
+            "\u{20ac}".as_bytes(),
+            b"\xff",
+            b"\xc3",
+            b"\xe2\x82",
+        ];
+        let mut searched = 0;
+        for pattern in [
+            r"\d+",
+            r"\w+",
+            r"[a-z]+",
+            r"[\w.+-]+@",
+            r"[0-9A-F_~]+x",
+            r"[\x00\x7f ]+y",
+            r"[a-c]\w",
+            r"(?i)[a-f]+-",
+        ] {
+            let reg = crate::regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                utf8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            if reg.optimize != OptimizeType::Map || !reg.map_ascii_ranges.usable() {
+                continue;
+            }
+            for _ in 0..300 {
+                let text: Vec<u8> = (0..next(40))
+                    .flat_map(|_| pieces[next(pieces.len())].to_vec())
+                    .collect();
+                for start in 0..=text.len() {
+                    for range in start..=text.len() {
+                        let mut expected = None;
+                        let mut s = start;
+                        while s < range {
+                            if reg.map[text[s] as usize] != 0 {
+                                expected = Some(s);
+                                break;
+                            }
+                            s += enclen(utf8, &text, s);
+                        }
+                        assert_eq!(
+                            map_search_ascii_chunks(utf8, &reg, &text, start, range),
+                            expected,
+                            "{pattern} {text:?} {start} {range}"
+                        );
+                        searched += 1;
+                    }
+                }
+            }
+        }
+        assert!(searched > 100_000, "{searched}");
+    }
+
     /// `after_next_newline` stops where the character loop it replaces
     /// stops, and declines where it cannot vouch for that loop's steps.
     #[test]
@@ -8273,6 +8409,7 @@ mod tests {
             map_offset: 0,
             map_bytes: [0u8; 3],
             map_byte_count: 0,
+            map_ascii_ranges: crate::regint::MapAsciiRanges::default(),
             dist_min: 0,
             dist_max: 0,
             needs_capture_tracking: false,
