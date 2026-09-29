@@ -1,4 +1,5 @@
 import {
+  ArdoErrorBoundary,
   ArdoGeneratedSidebar,
   ArdoRoot,
   ArdoRootLayout,
@@ -8,8 +9,9 @@ import {
   ArdoThemeToggle,
 } from "ardo/ui";
 import { MarkDefs, SiteFooter, SiteHeader } from "ferramenta-family";
+import bigShouldersFont from "ferramenta-family/fonts/big-shoulders.woff2?url";
 import { useRef } from "react";
-import { type MetaFunction, NavLink, useHref } from "react-router";
+import { type LinksFunction, type MetaFunction, NavLink, useHref } from "react-router";
 import config from "virtual:ardo/config";
 import "ardo/ui/styles.css";
 import "ferramenta-family/tokens.css";
@@ -23,6 +25,19 @@ import "./routes/home.css";
 // ties the Ardo and site styles around it would otherwise take.
 import "ferramenta-family/chrome.css";
 
+// The display face sets every heading in the family chrome; preloading it
+// avoids a swap on first paint, as on the Ferromark and Ferriki sites.
+// oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
+export const links: LinksFunction = () => [
+  {
+    rel: "preload",
+    href: bigShouldersFont,
+    as: "font",
+    type: "font/woff2",
+    crossOrigin: "anonymous",
+  },
+];
+
 // React Router requires `meta` as a named route export.
 // oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export const meta: MetaFunction = () => [{ title: config.title }];
@@ -32,6 +47,9 @@ export const meta: MetaFunction = () => [{ title: config.title }];
 export function Layout({ children }: { children: React.ReactNode }) {
   return <ArdoRootLayout>{children}</ArdoRootLayout>;
 }
+
+// A render error shows Ardo's error page inside the family chrome.
+export const ErrorBoundary = ArdoErrorBoundary;
 
 /*
  * The family chrome replaces Ardo's own header and footer, so Ardo must not
@@ -127,8 +145,9 @@ function DocsTools() {
 function FooterLegal() {
   return (
     <>
-      ferroni{config.project?.version != null ? ` v${config.project.version}` : ""} · Released under
-      BSD-2-Clause License · <a href="https://ardo-docs.dev">Built with Ardo</a>
+      {`Ferroni${config.project?.version != null ? ` v${config.project.version}` : ""}`} · Released
+      under the BSD-2-Clause License · Copyright {new Date().getFullYear()} Sebastian Software GmbH
+      · <a href="https://ardo-docs.dev">Built with Ardo</a>
       {config.buildTime != null ? (
         <>
           {" · Built on "}
