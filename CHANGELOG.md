@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.6.2](https://github.com/sebastian-software/ferroni/compare/v1.6.1...v1.6.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* read map chunks with as_chunks ([7b0f231](https://github.com/sebastian-software/ferroni/commit/7b0f2317c7537bc61fe7f4e80eff8ad9fb40be2d))
+* read range pairs with as_chunks ([14091d1](https://github.com/sebastian-software/ferroni/commit/14091d1b0bb3eda3c00eff064a452547a08e382e))
+
+
+### Performance Improvements
+
+* anchor the search at a leading look-behind literal ([8d6c400](https://github.com/sebastian-software/ferroni/commit/8d6c400dde10d799375d3f48c52ff4d9645c96e0))
+* bound the per-thread ctype cache ([b0597a9](https://github.com/sebastian-software/ferroni/commit/b0597a9e54d06d353fbd449ee0070d0452e9ba7c))
+* find case-insensitive literal alternations with Aho-Corasick ([579e534](https://github.com/sebastian-software/ferroni/commit/579e534e4feec36158d5219b91316a0c85029e2b))
+* find the first match without a region ([c10182d](https://github.com/sebastian-software/ferroni/commit/c10182d4132917a226123eae1aaa4085f00c7d7a))
+* find the next line start with memchr after a failed .* attempt ([a73273b](https://github.com/sebastian-software/ferroni/commit/a73273b3a5a39dc5cef0d900ad43ab31655f13ee))
+* gather optimizer map bits instead of scanning every byte ([8205c59](https://github.com/sebastian-software/ferroni/commit/8205c59f9791e5a9aff295d119ee54a3c30a3c6c))
+* iterate matches without a region ([43e2049](https://github.com/sebastian-software/ferroni/commit/43e2049c06b5801ced282ac6f5df69b751e71fb4))
+* jump to positions that pass the leading checks ([#186](https://github.com/sebastian-software/ferroni/issues/186)) ([e316362](https://github.com/sebastian-software/ferroni/commit/e31636278f9b7a9fa521c16690ec8567393ab3fe))
+* keep the folded alternation scan out of line ([c8366b7](https://github.com/sebastian-software/ferroni/commit/c8366b78d4cc1d63e85c62bce56219e8b76b074b))
+* keep the fused lazy loop out of the VM's hot path ([b500c39](https://github.com/sebastian-software/ferroni/commit/b500c39376a209c31156b60be81002cb8921dabf))
+* keep the line-start skip out of the search loop ([230e93e](https://github.com/sebastian-software/ferroni/commit/230e93e3c3f8dd1fef7432fc42d5b5b9db05e2bd))
+* look up Unicode ctypes below U+10000 in a bitmap ([a6e231b](https://github.com/sebastian-software/ferroni/commit/a6e231b1dd3a3b99e0e2346c42175ecd53f5cddb))
+* reuse case-fold expansions of large classes ([d197f8b](https://github.com/sebastian-software/ferroni/commit/d197f8bd71c6efe7eb3fbe407d92c96be4996bcf))
+* reuse Unicode ctype ranges and gather map bits by multiplication ([0c7e6a0](https://github.com/sebastian-software/ferroni/commit/0c7e6a081aa80b3eea2f83b557bd040e4ed0249b))
+* run the lazy .*?c loop to its stop in one step ([9596ddc](https://github.com/sebastian-software/ferroni/commit/9596ddc736c812dbfcb2a02a562f83f22474d46f))
+* scan long map gaps eight ASCII bytes at a time ([6d36fda](https://github.com/sebastian-software/ferroni/commit/6d36fda2ef534932b59dafdd3fedc1d0b45cc7e5))
+* skip start positions inside leading class runs ([#184](https://github.com/sebastian-software/ferroni/issues/184)) ([b0d1652](https://github.com/sebastian-software/ferroni/commit/b0d16522bb2f18474b0fcdf05486e930b738c1ec))
+
 ## [1.6.1](https://github.com/sebastian-software/ferroni/compare/v1.6.0...v1.6.1) (2026-09-26)
 
 
