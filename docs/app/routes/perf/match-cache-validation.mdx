@@ -1,0 +1,305 @@
+---
+order: 20
+title: "Match Cache Validation and Ferriki Trial"
+---
+
+# Match Cache Validation and Ferriki Trial
+
+This report closes the validation work tracked in
+[#181](https://github.com/sebastian-software/ferroni/issues/181): an independent
+review of the merged cache, adversarial differential fuzzing against uncached
+Ferroni and C Oniguruma, performance in three build/configuration modes, and an
+opt-in trial in Ferriki with its 261 real grammars. It follows the
+[implementation evaluation](/perf/match-cache-evaluation) and
+[ADR-008](/adr/008-rust-only-optimizations); the cache stays off by default.
+
+The [raw results](https://github.com/sebastian-software/ferroni/blob/main/benches/results/match-cache-validation-2026-09-29.json)
+are checked in.
+
+## Summary
+
+- **No wrong result found.** 136 million cache/plain comparisons, 49 million
+  comparisons with C and 66 million scanner searches (13 seeded campaigns)
+  agree, apart from searches where the cache finishes work the uncached matcher
+  abandons at a retry limit (documented in ADR-008, checked against an unlimited
+  search). Ferriki tokenization of 573 real documents is identical in every mode.
+- **Three defects were found and fixed**, none affecting results:
+  per-search UTF-8 revalidation made `find_iter` quadratic (70× slower than
+  uncached on a 200 KB subject even though the cache never activated),
+  uncommitted failure records survived an attempt restart, and the adaptive
+  activation threshold never fired for large grammar patterns.
+- **One cost remains unexplained.** Compiling the feature in makes the
+  TextMate scanner microbenchmarks about 10% slower even with no cache
+  configured. In the full Ferriki pipeline the same difference is +1.4%.
+- **Ferriki decision:** do not enable the cache by default; expose it as an
+  opt-in option. See [the decision](#ferriki-adoption-decision).
+
+## Environment
+
+Apple M1 Ultra (20 logical CPUs), 64 GiB RAM, macOS (Darwin 27.0.0),
+`aarch64-apple-darwin`, rustc 1.96.0, a local machine rather than a cloud VM.
+This is the same CPU class as the
+[earlier evaluation](/perf/match-cache-evaluation#measurement-setup), so it
+confirms the numbers on non-shared hardware but is **not** a second hardware
+architecture. Revision: `14091d1` plus the changes described here.
+
+## Independent review
+
+A reviewer with no part in the reconstruction read `src/match_cache.rs` and
+every `match-cache` site in `regexec.rs`, `regset.rs`, `scanner.rs`, `api.rs`
+and `regint.rs` (read-only, no builds), attacking eligibility, cache-key
+dimensions, the pending/commit protocol, budget accounting, `cached_star_step`
+against all fused-star opcodes, limits, and unsafe code. Verdict: the
+memoization is sound for the eligible opcode set, because a state's continuation
+depends only on `(pc, position)` plus per-search constants, and the depth-based
+commit protocol is correct. No wrong-result or panic path was reachable through
+`Regex` or `Scanner`.
+
+| Finding                                                                                       | Result                                                      |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Every fresh search revalidates the whole subject as UTF-8                                     | Reproduced (200 KB `find_iter`: 420 ms vs 6 ms). **Fixed.** |
+| `pending` survives the retry-limit restart branch                                             | Benign by trace; cleared defensively. **Fixed.**            |
+| `onig_match` with `at > end` panics under the cache                                           | Not cache-specific: the uncached matcher panics identically |
+| Plan-bearing regexes lose leading-run and start-map skipping even when the cache never wakes  | Confirmed, documented in ADR-008, open                      |
+| `is_linear_time()` reports eligibility only; ignores budget 0, invalid UTF-8, stack limit     | Documented behavior, open (doc wording)                     |
+
+The fix defers the UTF-8 check to activation
+([src/match_cache.rs](https://github.com/sebastian-software/ferroni/blob/main/src/match_cache.rs)).
+Regression tests cover both the subject-scan bound and invalid UTF-8.
+
+## Adversarial differential fuzzing
+
+`tests/match_cache_adversarial.rs` (features `match-cache` and `ffi`) generates
+patterns from a grammar biased toward nested and alternated loops, possessive
+runs, anchors, captures, look-arounds, back-references, conditionals, absent
+operators and `\K`, and subjects with multibyte text and some invalid UTF-8. Each
+pattern is compiled uncached and with five cache configurations: immediate
+activation, tiny shared budgets (1 B to 4 KiB), mid-search activation, adaptive,
+and budget 0. It searches with varied start/range, backward and equal-endpoint
+ranges, the `NOTBOL`, `NOTEOL`, `FIND_NOT_EMPTY` and `FIND_LONGEST` options, and
+retry limits at the match and search level.
+
+- Cached must equal uncached whenever uncached finishes without a limit error.
+  If only the cache finishes, its answer must equal an unlimited search.
+- C is the oracle for forward, full-range, character-aligned searches.
+- A second test runs 1 to 4 patterns in a scanner with shared budgets (64 B,
+  512 B, 16 MiB; threshold 0 and 8) along one line, with foreign strings
+  interleaved, ASCII and multibyte subjects, options, and the C scanner as oracle.
+  It asserts the shared budget is never exceeded.
+
+Scale and seed are environment variables
+(`MATCH_CACHE_ADVERSARIAL_CASES`, `MATCH_CACHE_ADVERSARIAL_SCANNER_CASES`,
+`MATCH_CACHE_ADVERSARIAL_SEED`); the CI defaults take a few seconds.
+
+| Campaign                  | Seeds          | Regex cases each | Scanner cases each | Result |
+| ------------------------- | -------------- | ---------------: | -----------------: | ------ |
+| Initial (before fixes)    | 2, 3, 4        |           25,000 |              8,000 | pass   |
+| Initial, revised harness  | 1, 5, 6, 7     |           25,000 |              8,000 | pass   |
+| After the UTF-8 fix       | 11, 12, 13     |           15,000 |              5,000 | pass   |
+| After threshold tuning    | 21, 22, 23     |           15,000 |              5,000 | pass   |
+
+Seed 1 first failed on a harness assumption: the scanner reports a retry-limit
+error as "no match", so the cached scanner correctly finishing a search the
+uncached one abandoned looked like a divergence. The harness now verifies such
+cases against an unlimited search.
+
+### Known baseline divergences
+
+Every cache/plain comparison agreed, so these are properties of the port before
+the cache, found by the C oracle:
+
+- **`FIND_LONGEST`:** through the FFI path C reports a mismatch for every such
+  search (cause not investigated). The cache rejects the option, so it is
+  excluded from the oracle.
+- **Captures around zero-width matches:** rarely (a handful per 5 million
+  comparisons) Ferroni reports different bounds than C for a capture inside a
+  loop that can match empty, for example `((?:\w)?){2},?x` (Ferroni `(1, 0)`, C
+  `(0, 0)`), `(?i)(?=[^a]|.\K)`, `(,|^){2}` and `(\W|\G){2}$`. Some bounds have
+  `end < start`. These deserve their own issue.
+- **Retry limits:** searches where C itself hits its limit are skipped
+  (about 0.005% of oracle comparisons).
+
+## Performance
+
+Criterion, one second warm-up, three seconds measurement, 20 samples, two
+interleaved rounds; times are the mean of the rounds.
+
+### Feature disabled versus compiled in, cache not configured
+
+`regression_scanner_documents`, same toolchain, target directory and fixtures:
+
+| Document   | Feature disabled | Feature enabled, cache off | Difference |
+| ---------- | ---------------: | -------------------------: | ---------: |
+| TypeScript |        1,034.7 µs |                1,141.5 µs |     +10.3% |
+| CSS        |           91.2 µs |                   99.8 µs |      +9.5% |
+| Rust       |          104.2 µs |                  115.5 µs |     +10.8% |
+
+This is a real cost of compiling the feature in, present in both rounds and in
+four builds. It was **not** measured before: the earlier report compared the
+disabled build with 1.5.2 (no change) and cache off against on in one
+feature-enabled binary. Bisecting on this machine ruled out two candidates.
+Instantiating only the non-cache VM copy does not remove it, and compiling out
+the RegSet and Scanner cache code does not either. Boxing the plan on `RegexType`
+recovers about 2 to 3 points but not the rest. The remainder is probably layout
+or inlining in the large VM function and is **open**. It does not appear
+end-to-end (Ferriki, below).
+
+### Cache off versus on, feature enabled
+
+`match_cache_bench` after the fixes below; the earlier report's numbers in
+parentheses.
+
+| Document   |    Cache off |    Cache on | Difference |
+| ---------- | -----------: | ----------: | ---------: |
+| TypeScript |   1,117.8 µs |  1,146.9 µs |      +2.6% |
+| CSS        |     100.1 µs |    100.0 µs |      −0.0% |
+| Rust       |     117.4 µs |    122.9 µs |      +4.7% |
+
+| Pathological word list, N |   Cache off |  Cache on |
+| ------------------------- | ----------: | --------: |
+| 256                       |    816.3 µs |  116.8 µs |
+| 1,024                     | 12,655.0 µs |  238.1 µs |
+| 2,048                     | 50,659.0 µs |  358.6 µs |
+
+The 1,024 and 2,048 cached times are half of the earlier report's (478 µs and
+952 µs): the per-search UTF-8 check was a large share of them. Scanner with a
+catastrophic `(a+)+$` prepended: off 95.8 µs, 1,488.5 µs and 24,038 µs for
+N = 12, 16, 20; on 53.6 µs, 53.5 µs and 53.5 µs, retaining 1,032 to 1,040 bytes.
+
+### Memory
+
+The cache allocates only when it activates, within the 16 MiB budget shared by a
+scanner (see ADR-008). In the Ferriki runs the largest retained buffers per
+scanner were 83 KB (adaptive) and 367 KB (immediate) over ordinary documents,
+and 583 KB (adaptive) and 875 KB (immediate) over 2,000-character pathological
+lines. Process peak RSS was 1,500 MB without the cache and 1,520 MB with it
+(+1.3%) over the document set, which is dominated by loaded grammars, and within
+±3% across all three modes in the pathological sweep.
+
+## Ferriki trial
+
+Ferriki (`4011970`) was built against this checkout in a scratch copy; nothing
+in the Ferriki repository changed. A throwaway patch chooses the scanner
+constructor from an environment variable (`off`, `on` for the adaptive default,
+`immediate` for threshold 0). A verification mode runs a second uncached scanner
+for every search and asserts equal `ScannerMatch` values.
+
+### Ordinary documents
+
+573 files, 6.4 MB, 29 languages (largest 25 per language chosen by a hash of
+the path from ordinary source files on the machine, excluding build output; a
+copy was frozen because the originals changed during the run; the manifest with
+SHA-256 hashes is in the results file). Each document is highlighted with scopes
+and colors five times, best time kept; three interleaved rounds:
+
+| Variant                           | Mean total | Difference | Retained cache | RSS     |
+| --------------------------------- | ---------: | ---------: | -------------: | ------: |
+| Without the feature               |   9,118 ms |          – |              – | 1,500 MB |
+| Feature compiled, cache off       |   9,247 ms |      +1.4% |              – | 1,500 MB |
+| Cache on (adaptive threshold)     |   9,404 ms |      +3.1% |          83 KB | 1,520 MB |
+| Cache on (threshold 0)            |   9,530 ms |      +4.5% |         367 KB | 1,520 MB |
+
+Round-to-round spread within a variant is about 4%, so differences below that
+are indicative. The complete highlight result (content, offsets, scopes,
+colors) hashes identically in all four variants. With shadow verification, 2.53
+million scanner searches over the documents produce equal matches and captures
+for both cache settings.
+
+### Catastrophic patterns in real grammars
+
+Each of the 261 grammars tokenized 13 hostile line shapes (long identifier
+runs, comma and space word lists, unterminated brackets and strings, member
+chains, digit runs, HTML-attribute runs, generics, multibyte runs) at 400 and
+2,000 characters, with the default retry limits.
+
+- **One result changes.** The V grammar contains `([0-9]+(_?))+(\.)([0-9]+…)`.
+  On a 400-digit line it is exponential, so the uncached scanner exhausts its
+  retry limit, the whole search fails and the digits are not highlighted as a
+  number (385 ms). With the cache the search completes in 2 ms and reports the
+  numeric literal. Even 4 × 10⁹ retries do not settle it uncached, so the answer
+  was checked by hand: no `.` follows, so the two float patterns cannot match
+  and the integer pattern spans the line. This is the documented ADR-008
+  behavior, and Ferriki output for such input would change with the cache.
+- **Most slow grammars do not benefit.** Julia, COBOL, AHK and Fortran (fixed
+  form) take 0.2 to 1.7 s on these lines with or without the cache. Their cost
+  comes from patterns the cache excludes (look-arounds, back-references) or from
+  work that is not repeated failed states.
+- **SQL member chains are the second real win**, but only after tuning (below):
+  1,676 ms to 90 ms at 2,000 characters.
+- Total time over all 3,380 cases: 35,990 ms uncached, 34,075 ms adaptive,
+  34,485 ms immediate. Slower cases exist, but by a few milliseconds
+  (for example SQL word lists 19.6 to 29.6 ms).
+
+### Tuning from the evidence
+
+The adaptive threshold was eight times subject length times cache points, at
+least 4,096. SQL's large alternations have hundreds of cache points, so the
+threshold reached millions of work units and the cache never activated on the
+SQL case. Fixed thresholds show the effect (SQL hostile lines at 2,000
+characters; ordinary documents did not differ between thresholds within noise):
+
+| Threshold      | SQL, 400 chars | SQL, 2,000 chars |
+| -------------- | -------------: | ---------------: |
+| Old adaptive   |         284 ms |         1,819 ms |
+| 0 to 4,096     |          41 ms |           190 ms |
+| 16,384         |          42 ms |           189 ms |
+| 65,536         |             – |           202 ms |
+| 262,144        |             – |           238 ms |
+| 1,048,576      |             – |           387 ms |
+
+The adaptive threshold is now clamped to 4,096 to 16,384 units. Explicit
+thresholds are unchanged. On the final revision, adaptive activation gains 260 ms
+to 20 ms (400 chars) and 1,676 ms to 90 ms (2,000 chars) on SQL member chains.
+
+## Ferriki adoption decision
+
+**Do not enable the cache by default in Ferriki; offer it as an opt-in
+option.** The evidence:
+
+- Correctness is not the obstacle. Traces are identical on ordinary documents.
+  The only observable change is on input that uncached execution cannot finish.
+- The default cost is measurable: +1.4% for the compiled feature and +3.1% with
+  the cache on, for a benefit only on rare hostile input. Only five of 261 grammars
+  (V, SQL, Dart, MDC, PureScript) had a hostile line where it was more than twice
+  as fast, and only V and SQL by a large margin.
+- The feature-disabled to feature-enabled cost on the scanner microbenchmarks
+  (about 10%) is unexplained. Until it is understood, Ferriki should not depend
+  on `match-cache` unconditionally.
+- Ferriki already bounds tokenization time (500 ms default), which limits the
+  practical damage of catastrophic lines.
+
+Recommended shape: a Ferriki Cargo feature forwarding `ferroni/match-cache`
+and a builder option that selects `Scanner::with_match_cache` with the default
+configuration and 16 MiB budget. Document that output for pathological lines
+can differ from Shiki and vscode-oniguruma (numbers or scopes the uncached
+matcher misses). Untrusted-input deployments benefit most. Keep
+`activation_threshold` at its default.
+
+## Reproduce
+
+```sh
+# Fuzzing (needs a local Oniguruma checkout, see CONTRIBUTING.md)
+MATCH_CACHE_ADVERSARIAL_CASES=25000 MATCH_CACHE_ADVERSARIAL_SCANNER_CASES=8000 \
+MATCH_CACHE_ADVERSARIAL_SEED=1 RUST_MIN_STACK=16777216 \
+  cargo test --release --features "match-cache ffi" \
+  --test match_cache_adversarial -- --nocapture
+
+# Feature disabled versus compiled in, cache not configured
+cargo bench --locked --bench regression_bench -- regression_scanner_documents \
+  --warm-up-time 1 --measurement-time 3 --sample-size 20 --noplot
+cargo bench --locked --features match-cache --bench regression_bench -- \
+  regression_scanner_documents --warm-up-time 1 --measurement-time 3 \
+  --sample-size 20 --noplot
+
+# Cache off versus on
+cargo bench --locked --features match-cache --bench match_cache_bench -- \
+  --warm-up-time 1 --measurement-time 3 --sample-size 20 --noplot
+```
+
+## Open items
+
+- The unexplained +10% scanner microbenchmark cost of the compiled-in feature.
+- Optimizer skips (leading runs, start map) are disabled for every regex that
+  has a cache plan, even when the cache never activates.
+- A separate issue for the capture-bound divergences from C.
+- Ferriki work: the opt-in option above.

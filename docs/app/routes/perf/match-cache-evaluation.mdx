@@ -8,8 +8,11 @@ title: "Opt-in Match Cache Evaluation"
 This is the reconstruction of the implementation described in
 [#163](https://github.com/sebastian-software/ferroni/issues/163), based on
 Ferroni 1.5.2 (`5fba613`). The historical prototype's review and measurements
-do not validate this implementation. Independent adversarial review and
-measured adoption in Ferriki remain open.
+do not validate this implementation. The independent review, adversarial
+fuzzing, non-cloud measurements and the Ferriki trial are recorded in
+[Match Cache Validation and Ferriki Trial](/perf/match-cache-validation), which
+also lists three defects fixed since these measurements (the cached times below
+predate the UTF-8 fix and the activation-threshold change).
 
 The [full Oniguruma comparison for PR #173](/perf/pr-173-oniguruma-comparison)
 adds the complete reference suite, a three-way comparison on ordinary grammar
@@ -152,7 +155,7 @@ cargo bench --locked --bench regression_bench -- regression_scanner_documents \
   retry limits, capture fidelity, shared memory accounting, subject changes,
   address reuse, unsupported modes, and budget fallback.
 
-The next steps are independent review, performance verification on another
-machine, and an opt-in Ferriki trial on actual grammar sets.
+The independent review, the measurements on a non-cloud machine and the
+Ferriki trial followed in the [validation report](/perf/match-cache-validation).
 Keep search limits enabled: unsupported patterns, search modes, and budget
 exhaustion still fall back to backtracking.
