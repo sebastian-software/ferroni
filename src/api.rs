@@ -488,6 +488,25 @@ impl Regex {
         self.inner.num_mem as usize
     }
 
+    /// Findings of the compile-time check for patterns that can backtrack
+    /// catastrophically, such as `(a+)+` or `(a|aa)*`.
+    ///
+    /// The list is empty for patterns the check does not flag. It is a
+    /// heuristic: it can miss risky patterns and flag harmless ones, and it
+    /// never changes how the pattern matches. Use
+    /// [`RegexBuilder::reject_backtracking_risks`] to turn findings into a
+    /// compile error.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// assert!(Regex::new(r"(a+)+$").unwrap().backtracking_warnings().len() == 1);
+    /// assert!(Regex::new(r"(a+b)+$").unwrap().backtracking_warnings().is_empty());
+    /// ```
+    pub fn backtracking_warnings(&self) -> &[crate::backtrack_lint::BacktrackWarning] {
+        &self.inner.backtrack_warnings
+    }
+
     /// Access the underlying `RegexType` for advanced / C-style usage.
     pub fn as_raw(&self) -> &RegexType {
         &self.inner
@@ -519,6 +538,7 @@ pub struct RegexBuilder {
     pattern: Vec<u8>,
     options: OnigOptionType,
     syntax: &'static OnigSyntaxType,
+    reject_backtracking_risks: bool,
     #[cfg(feature = "match-cache")]
     match_cache: Option<crate::match_cache::MatchCacheConfig>,
 }
@@ -530,6 +550,7 @@ impl RegexBuilder {
             pattern: pattern.as_bytes().to_vec(),
             options: ONIG_OPTION_NONE,
             syntax: &OnigSyntaxOniguruma,
+            reject_backtracking_risks: false,
             #[cfg(feature = "match-cache")]
             match_cache: None,
         }
@@ -595,6 +616,24 @@ impl RegexBuilder {
         self
     }
 
+    /// Fail to compile a pattern that the backtracking check flags.
+    ///
+    /// By default such a pattern compiles and the findings are available
+    /// from [`Regex::backtracking_warnings`]. With this set, `build` returns
+    /// `ONIGERR_VERY_INEFFICIENT_PATTERN` instead. The check is a heuristic
+    /// and may flag harmless patterns; leave this off to keep them.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// assert!(Regex::builder(r"(a+)+$").reject_backtracking_risks(true).build().is_err());
+    /// assert!(Regex::builder(r"(a+)+$").build().is_ok());
+    /// ```
+    pub fn reject_backtracking_risks(mut self, yes: bool) -> Self {
+        self.reject_backtracking_risks = yes;
+        self
+    }
+
     /// Compile the pattern into a [`Regex`].
     pub fn build(self) -> Result<Regex, RegexError> {
         let inner = onig_new(
@@ -603,6 +642,9 @@ impl RegexBuilder {
             &ONIG_ENCODING_UTF8,
             self.syntax,
         )?;
+        if self.reject_backtracking_risks && !inner.backtrack_warnings.is_empty() {
+            return Err(ONIGERR_VERY_INEFFICIENT_PATTERN.into());
+        }
         #[cfg(feature = "match-cache")]
         let inner = {
             let mut inner = inner;

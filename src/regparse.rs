@@ -7905,6 +7905,7 @@ mod tests {
     /// Create a default RegexType + ParseEnv for testing with Oniguruma syntax and UTF-8.
     fn make_test_context() -> (RegexType, ParseEnv) {
         let reg = RegexType {
+            backtrack_warnings: Vec::new(),
             #[cfg(feature = "match-cache")]
             match_cache: None,
             ops: Vec::new(),

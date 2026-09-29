@@ -76,6 +76,7 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod api;
+pub mod backtrack_lint;
 pub mod encodings;
 pub mod error;
 mod first_bytes;

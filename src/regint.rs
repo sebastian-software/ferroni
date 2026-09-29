@@ -616,6 +616,8 @@ pub struct RegexExt {
 
 // === regex_t (re_pattern_buffer) ===
 pub struct RegexType {
+    /// Rust-only: findings of the compile-time backtracking check.
+    pub(crate) backtrack_warnings: Vec<crate::backtrack_lint::BacktrackWarning>,
     #[cfg(feature = "match-cache")]
     pub(crate) match_cache: Option<crate::match_cache::Plan>,
     // bytecode

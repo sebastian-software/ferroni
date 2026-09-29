@@ -9962,6 +9962,10 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
     }
     refresh_node_references(&mut root, env);
 
+    // Rust-only: flag shapes that can backtrack catastrophically. Runs on the
+    // untuned tree, before tuning rewrites repeats.
+    reg.backtrack_warnings = crate::backtrack_lint::check(&root, reg.enc);
+
     // Resolve subroutine call references before tune_tree
     if env.num_call > 0 {
         let r = resolve_call_references(&mut root, reg, env);
@@ -10343,6 +10347,7 @@ pub fn onig_new(
     }
 
     let mut reg = RegexType {
+        backtrack_warnings: Vec::new(),
         #[cfg(feature = "match-cache")]
         match_cache: None,
         ops: Vec::new(),
@@ -10666,6 +10671,7 @@ mod tests {
 
     fn make_test_context() -> (RegexType, ParseEnv) {
         let reg = RegexType {
+            backtrack_warnings: Vec::new(),
             #[cfg(feature = "match-cache")]
             match_cache: None,
             ops: Vec::new(),

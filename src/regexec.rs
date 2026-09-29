@@ -8735,6 +8735,7 @@ mod tests {
         use crate::regsyntax::OnigSyntaxOniguruma;
         let enc: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
         let reg = RegexType {
+            backtrack_warnings: Vec::new(),
             #[cfg(feature = "match-cache")]
             match_cache: None,
             ops: Vec::new(),

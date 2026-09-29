@@ -414,6 +414,7 @@ pub struct Scanner {
     limit_revision: Option<u64>,
     /// A search retry budget is set (`onig_set_retry_limit_in_search`).
     search_budget: bool,
+    warnings: Vec<Vec<crate::backtrack_lint::BacktrackWarning>>,
 }
 
 impl Scanner {
@@ -487,8 +488,11 @@ impl Scanner {
         let mut caches = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
 
+        let mut warnings = Vec::with_capacity(patterns.len());
+
         for pattern in patterns {
             let reg = onig_new(pattern.as_bytes(), options, &ONIG_ENCODING_UTF8, syntax)?;
+            warnings.push(reg.backtrack_warnings.clone());
             caches.push(CacheEntry::new(pattern, reg.anchor));
             regset_regs.push(Box::new(reg));
         }
@@ -505,7 +509,23 @@ impl Scanner {
             cache_route: CacheRouteState::default(),
             limit_revision: None,
             search_budget: false,
+            warnings,
         })
+    }
+
+    /// Findings of the compile-time backtracking check, one list per
+    /// pattern in the order they were given. Grammar loaders can surface
+    /// these to grammar authors. See [`crate::backtrack_lint`] for limits.
+    ///
+    /// ```
+    /// use ferroni::scanner::Scanner;
+    ///
+    /// let scanner = Scanner::new(&["ok+", "(a+)+$"]).unwrap();
+    /// assert!(scanner.warnings()[0].is_empty());
+    /// assert_eq!(scanner.warnings()[1].len(), 1);
+    /// ```
+    pub fn warnings(&self) -> &[Vec<crate::backtrack_lint::BacktrackWarning>] {
+        &self.warnings
     }
 
     /// Get current scanner counters.
