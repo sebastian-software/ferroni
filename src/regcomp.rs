@@ -9964,7 +9964,10 @@ fn compile_parsed(reg: &mut RegexType, pattern: &[u8], env: &mut ParseEnv) -> i3
 
     // Rust-only: flag shapes that can backtrack catastrophically. Runs on the
     // untuned tree, before tuning rewrites repeats.
-    reg.backtrack_warnings = crate::backtrack_lint::check(&root, reg.enc);
+    let exhaustive = reg
+        .options
+        .intersects(ONIG_OPTION_FIND_LONGEST | ONIG_OPTION_FIND_NOT_EMPTY);
+    reg.backtrack_warnings = crate::backtrack_lint::check(&root, reg.enc, exhaustive);
 
     // Resolve subroutine call references before tune_tree
     if env.num_call > 0 {

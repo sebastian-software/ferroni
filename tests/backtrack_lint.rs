@@ -20,12 +20,13 @@ fn flags_nested_quantifiers() {
         r"(a+)+$",
         r"(a*)*b",
         r"(\w+\s*)+$",
-        r"(\s*\w+)*",
+        r"(\s*\w+)*$",
         r"([0-9]+(_?))+(\.)([0-9]+)",
-        r"(?:a+b?)+",
-        r"((a|b)+)*",
-        r"(a+a)+",
-        r"0x(?:\h+_?)+",
+        r"(?:a+b?)+$",
+        r"((a|b)+)*$",
+        r"(a+a)+$",
+        r"0x(?:\h+_?)+$",
+        r"(?:[0-9]+_?)+\b",
     ] {
         assert!(
             risks(pattern).contains(&BacktrackRisk::NestedQuantifier),
@@ -36,10 +37,15 @@ fn flags_nested_quantifiers() {
 
 #[test]
 fn flags_overlapping_alternation() {
-    for pattern in [r"(a|aa)*", r"(?:foo|foobar)+", r"(\w|\d)*", r"(?:a+|b)*c"] {
+    for pattern in [
+        r"(a|aa)*$",
+        r"(?:foo|foobar)+$",
+        r"(\w|\d)*$",
+        r"(?:a+|b)*c",
+    ] {
         assert!(!risks(pattern).is_empty(), "{pattern}");
     }
-    assert_eq!(risks(r"(a|aa)*"), [BacktrackRisk::OverlappingAlternation]);
+    assert_eq!(risks(r"(a|aa)*$"), [BacktrackRisk::OverlappingAlternation]);
 }
 
 #[test]
@@ -57,6 +63,9 @@ fn leaves_unambiguous_patterns_alone() {
         r"(?:a|b)*",
         r"(a+)(b+)",
         r"(a{2}){3}",
+        // Ends the pattern: nothing after the loop can fail.
+        r"0x(?:\h+_?)+",
+        r"(?:[0-9]+_?)+",
         // Delimited: the next iteration cannot start with what the inner repeat eats.
         r"(?:\[[^\[]*?])*",
         // A look-around decides the way.
@@ -96,7 +105,18 @@ fn rejection_is_opt_in() {
 
 #[test]
 fn scanner_reports_per_pattern() {
-    let scanner = Scanner::new(&["ok+", "(a+)+$", r"(?:a|aa)*"]).unwrap();
+    let scanner = Scanner::new(&["ok+", "(a+)+$", r"(?:a|aa)*$"]).unwrap();
     let counts: Vec<usize> = scanner.warnings().iter().map(Vec::len).collect();
     assert_eq!(counts, [0, 1, 1]);
+}
+
+#[test]
+fn trailing_loops_count_when_the_search_is_exhaustive() {
+    use ferroni::oniguruma::ONIG_OPTION_FIND_LONGEST;
+    assert!(risks(r"(?:[0-9]+_?)+").is_empty());
+    let re = Regex::builder(r"(?:[0-9]+_?)+")
+        .option(ONIG_OPTION_FIND_LONGEST)
+        .build()
+        .unwrap();
+    assert_eq!(re.backtracking_warnings().len(), 1);
 }

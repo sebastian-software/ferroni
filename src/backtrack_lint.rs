@@ -10,11 +10,12 @@
 //! - alternatives that can start with the same byte: `(a|aa)*`, `(\w|\d)*`
 //!
 //! It is a heuristic, tuned against the 260 shiki grammars (34,676 patterns,
-//! about 270 distinct patterns flagged). It compares first bytes only, and only ASCII bytes for
+//! about 240 distinct patterns flagged). It compares first bytes only, and only ASCII bytes for
 //! classes and character types, so it misses patterns whose overlap sits in
 //! non-ASCII characters and flags some patterns that are harmless in
 //! practice. Atomic groups and possessive repeats are not entered, because
-//! nothing backtracks into them. The result never changes how a pattern
+//! nothing backtracks into them, and a repeat that ends the pattern is left
+//! alone, since nothing after it can fail. The result never changes how a pattern
 //! matches; it complements the retry, time and stack limits.
 
 use std::fmt;
@@ -81,24 +82,31 @@ struct Lint {
 }
 
 /// Checks a parsed pattern and returns its findings.
-pub(crate) fn check(root: &Node, enc: OnigEncoding) -> Vec<BacktrackWarning> {
+///
+/// `exhaustive` is set for searches that keep looking after the first match
+/// (`FIND_LONGEST`) or reject some matches (`FIND_NOT_EMPTY`): there, a loop at
+/// the end of the pattern can be forced to backtrack as well.
+pub(crate) fn check(root: &Node, enc: OnigEncoding, exhaustive: bool) -> Vec<BacktrackWarning> {
     let mut lint = Lint {
         enc,
         warnings: Vec::new(),
     };
-    lint.visit(root);
+    lint.visit(root, !exhaustive);
     lint.warnings
 }
 
 impl Lint {
-    fn visit(&mut self, node: &Node) {
+    /// `tail`: nothing after this node can fail, because it ends the pattern.
+    /// A repeat there is never asked to give characters back, so its own
+    /// splits cost nothing; repeats inside its body are still checked.
+    fn visit(&mut self, node: &Node, tail: bool) {
         match &node.inner {
             NodeInner::Quant(q) => {
                 if let Some(body) = q.body.as_deref() {
-                    if is_infinite_repeat(q.upper) {
+                    if is_infinite_repeat(q.upper) && !tail {
                         self.check_loop(body);
                     }
-                    self.visit(body);
+                    self.visit(body, false);
                 }
             }
             NodeInner::Bag(b) => {
@@ -109,10 +117,10 @@ impl Lint {
                         // is safe, only its body is checked.
                         NodeInner::Quant(q) if b.bag_type == BagType::StopBacktrack => {
                             if let Some(inner) = q.body.as_deref() {
-                                self.visit(inner);
+                                self.visit(inner, false);
                             }
                         }
-                        _ => self.visit(body),
+                        _ => self.visit(body, tail),
                     }
                 }
                 if let BagData::IfElse {
@@ -121,20 +129,28 @@ impl Lint {
                 } = &b.bag_data
                 {
                     for n in [then_node, else_node].into_iter().flatten() {
-                        self.visit(n);
+                        self.visit(n, false);
                     }
                 }
             }
             NodeInner::Anchor(a) => {
                 if let Some(body) = a.body.as_deref() {
-                    self.visit(body);
+                    self.visit(body, false);
                 }
             }
-            NodeInner::List(_) | NodeInner::Alt(_) => {
+            NodeInner::List(_) => {
+                let mut items = Vec::new();
+                collect_chain(node, &mut items);
+                let last = items.len() - 1;
+                for (i, item) in items.into_iter().enumerate() {
+                    self.visit(item, tail && i == last);
+                }
+            }
+            NodeInner::Alt(_) => {
                 let mut items = Vec::new();
                 collect_chain(node, &mut items);
                 for item in items {
-                    self.visit(item);
+                    self.visit(item, tail);
                 }
             }
             _ => {}
