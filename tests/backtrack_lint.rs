@@ -24,6 +24,8 @@ fn flags_nested_quantifiers() {
         r"([0-9]+(_?))+(\.)([0-9]+)",
         r"(?:a+b?)+",
         r"((a|b)+)*",
+        r"(a+a)+",
+        r"0x(?:\h+_?)+",
     ] {
         assert!(
             risks(pattern).contains(&BacktrackRisk::NestedQuantifier),
@@ -55,6 +57,13 @@ fn leaves_unambiguous_patterns_alone() {
         r"(?:a|b)*",
         r"(a+)(b+)",
         r"(a{2}){3}",
+        // Delimited: the next iteration cannot start with what the inner repeat eats.
+        r"(?:\[[^\[]*?])*",
+        // A look-around decides the way.
+        r"(?:\*(?!/)|[^*])*\*/",
+        r#"(["'])(`\1|.(?<!\1))*\1"#,
+        // Case folding lists `s` and `ss` side by side.
+        r"(?i)[_a-z\x7F-\x{10FFFF}]*",
     ] {
         assert!(risks(pattern).is_empty(), "{pattern}: {:?}", risks(pattern));
     }
