@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0](https://github.com/sebastian-software/ferroni/compare/v1.6.2...v1.7.0) (2026-09-29)
+
+
+### Features
+
+* cap the backtrack stack at 10M entries when no limit is set ([34a3f32](https://github.com/sebastian-software/ferroni/commit/34a3f32dca0cea468958daf5ba2c6a34f494c61e)), closes [#192](https://github.com/sebastian-software/ferroni/issues/192)
+* remove the opt-in match cache ([1343eeb](https://github.com/sebastian-software/ferroni/commit/1343eeb9ef6dcc00d898a2ef5f6b11401b9d72ef)), closes [#163](https://github.com/sebastian-software/ferroni/issues/163) [#173](https://github.com/sebastian-software/ferroni/issues/173) [#192](https://github.com/sebastian-software/ferroni/issues/192)
+* warn about catastrophic-backtracking patterns at compile time ([6c140d1](https://github.com/sebastian-software/ferroni/commit/6c140d18508d3eba866a476a465609f969bda35e)), closes [#192](https://github.com/sebastian-software/ferroni/issues/192)
+
+
+### Bug Fixes
+
+* cut false positives of the backtracking check on real grammars ([f0dceaf](https://github.com/sebastian-software/ferroni/commit/f0dceaf7bde17660e046bcf884ae1e7d59ba912b)), closes [#192](https://github.com/sebastian-software/ferroni/issues/192)
+* skip repeats that end the pattern in the backtracking check ([bb9703c](https://github.com/sebastian-software/ferroni/commit/bb9703c3f45efc84a4b0495a466c147f4c064df9)), closes [#192](https://github.com/sebastian-software/ferroni/issues/192)
+
 ## [1.6.2](https://github.com/sebastian-software/ferroni/compare/v1.6.1...v1.6.2) (2026-09-29)
 
 
