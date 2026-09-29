@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [pattern-compile, pattern-match, scanner-api, match-cache]
+        target: [pattern-compile, pattern-match, scanner-api, match-cache, match-cache-adversarial]
     # cargo-fuzz needs nightly; rust-toolchain.toml pins the local default to
     # stable, so RUSTUP_TOOLCHAIN keeps this job on the toolchain it asked for.
     env:
@@ -43,11 +43,12 @@ jobs:
         # obviously broken target; the weekly schedule does the real work.
         env:
           MAX_TOTAL_TIME: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '900' || '60' }}
+          MAX_LEN: ${{ matrix.target == 'match-cache-adversarial' && '70' || matrix.target == 'match-cache' && '514' || '16384' }}
         run: >-
           cargo fuzz run ${{ matrix.target }} --
           -dict=fuzz/ferroni.dict
           -max_total_time="$MAX_TOTAL_TIME"
-          -max_len=16384
+          -max_len="$MAX_LEN"
           -timeout=10
           -rss_limit_mb=2048
       - name: Upload crash artifacts

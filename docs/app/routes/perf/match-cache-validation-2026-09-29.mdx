@@ -1,0 +1,50 @@
+---
+order: 20
+title: "Match Cache Validation: Initial Independent Pass"
+---
+
+# Match Cache Validation: Initial Independent Pass
+
+This records the first independent pass for [issue #181](https://github.com/sebastian-software/ferroni/issues/181). The engine under test was commit `7dab263a34efb86deef489873811cfad0751d63d`. This change adds a fuzz harness and does not alter the engine. The cache remains opt-in at both the Cargo feature and runtime configuration levels.
+
+## Scope and reference
+
+The pass inspected eligibility classification and atomic-run restrictions in `src/match_cache.rs`, failed-state entry and unwind in `src/regexec.rs`, shared budget accounting, and `OnigString` identity invalidation in `src/regset.rs`. No defect was found in those inspected paths. This is a first pass, not a completed review of every opcode or scanner route.
+
+The C reference was Oniguruma commit `f95747b462de672b6f8dbdeb478245ddf061ca53` from `benches/battle_inputs.toml`. Every one of its 64 `src/*.c` and `src/*.h` blobs matched the local source by Git blob hash. The run used an Apple M1 Ultra with 64 GiB RAM, `aarch64-apple-darwin`, and Rust 1.96.0. This is the same machine class as the reconstruction evaluation, so it supplies no second-machine performance evidence.
+
+## New adversarial harness
+
+`fuzz/fuzz_targets/match_cache_adversarial.rs` selects from 12 fixed eligible and ineligible patterns, then mutates subject bytes, start and range offsets, search options, cache budget, and activation policy. It compares raw results and every capture bound whenever cached and uncached searches both finish within their 20,000-retry limits. It also compares repeated scanner calls on one immutable subject, a new subject, and the shared budget. Raw invalid UTF-8 exercises fallback.
+
+With the optional `c-oracle` feature, valid UTF-8 full-range forward searches of at most 16 bytes also compare uncached Ferroni with C Oniguruma. C comparison excludes backward and equal-endpoint searches because the pre-existing Ferroni baseline differs from C there. The short subject cap bounds pathological C inputs; it does not validate longer C searches.
+
+Commands and results:
+
+```sh
+FERRONI_ONIGURUMA_DIR=<verified C checkout> cargo +nightly fuzz run \
+  match-cache-adversarial --features c-oracle -- \
+  -max_total_time=90 -max_len=70 -timeout=5 -rss_limit_mb=2048
+# 287,524 inputs in 91 seconds; no crash or differential failure
+
+cargo +nightly fuzz run match-cache-adversarial -- \
+  -max_total_time=30 -max_len=70 -timeout=5 -rss_limit_mb=2048
+# 91,984 inputs in 31 seconds without the C oracle; no failure
+
+FERRONI_ONIGURUMA_DIR=<verified C checkout> RUST_MIN_STACK=268435456 \
+  cargo test --locked --features match-cache,ffi \
+  --test match_cache_differential -- --nocapture
+# 2,068,164 cache/plain comparisons, 439,524 C comparisons,
+# 138 cache-eligible patterns; passed
+
+RUST_MIN_STACK=268435456 cargo test --locked --features match-cache --test match_cache
+# 6 passed
+```
+
+The fuzz count is total inputs, not the count of inputs reaching each comparison branch. The existing differential test reports its comparison counts separately. Retry-limit errors are not treated as semantic match results: memoization can finish before an uncached search reaches its retry limit.
+
+## Remaining work
+
+- Extend the independent review to every eligible opcode and all scanner routes, and run longer adversarial campaigns with retained seeds and crash artifacts.
+- Repeat feature-disabled, feature-enabled/cache-off, and cache-on benchmarks on a different machine, including ordinary grammar documents, pathological inputs, and process memory.
+- Trial explicit cache configuration in Ferriki with actual grammar sets and complete token/capture traces before making an adoption decision.

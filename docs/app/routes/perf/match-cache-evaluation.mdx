@@ -9,7 +9,9 @@ This is the reconstruction of the implementation described in
 [#163](https://github.com/sebastian-software/ferroni/issues/163), based on
 Ferroni 1.5.2 (`5fba613`). The historical prototype's review and measurements
 do not validate this implementation. Independent adversarial review and
-measured adoption in Ferriki remain open.
+measured adoption in Ferriki remain open. An
+[initial independent validation pass](/perf/match-cache-validation-2026-09-29)
+adds a structured cache/plain/C fuzz target and records its bounded results.
 
 The [full Oniguruma comparison for PR #173](/perf/pr-173-oniguruma-comparison)
 adds the complete reference suite, a three-way comparison on ordinary grammar

@@ -8,6 +8,9 @@ rust-version = "1.94"
 [package.metadata]
 cargo-fuzz = true
 
+[features]
+c-oracle = ["ferroni/ffi"]
+
 [dependencies]
 libfuzzer-sys = "0.4"
 
@@ -18,6 +21,13 @@ features = ["match-cache"]
 [[bin]]
 name = "match-cache"
 path = "fuzz_targets/match_cache.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "match-cache-adversarial"
+path = "fuzz_targets/match_cache_adversarial.rs"
 test = false
 doc = false
 bench = false
