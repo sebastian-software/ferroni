@@ -35,10 +35,6 @@ jobs:
         run: cargo build
       - name: Test lib and api
         run: cargo test --lib --test api_test
-      - name: Test opt-in match cache
-        run: cargo test --locked --features match-cache --lib --test api_test --test match_cache
-        env:
-          RUST_MIN_STACK: "268435456"
       - name: Test doctests
         run: cargo test --doc
       - name: Test compat_syntax
@@ -126,10 +122,6 @@ jobs:
       # feature (battle_bench, battle_mem_onig).
       - name: Check ffi feature
         run: cargo check --features ffi --all-targets
-      - name: Compare match cache with C Oniguruma
-        run: cargo test --locked --features ffi,match-cache --test match_cache_differential -- --nocapture
-        env:
-          RUST_MIN_STACK: "268435456"
       # The original breakage only showed in the published layout (benches/
       # and scripts/ are excluded from the crate), so also check the packaged
       # artifact with the sources supplied via FERRONI_ONIGURUMA_DIR.
@@ -181,7 +173,7 @@ jobs:
       - run: cargo doc --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
-      - run: cargo doc --no-deps --locked --features match-cache
+      - run: cargo doc --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
 

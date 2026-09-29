@@ -5,6 +5,13 @@ title: "Opt-in Match Cache Evaluation"
 
 # Opt-in Match Cache Evaluation
 
+> **Removed.** The opt-in match cache was removed from Ferroni after this
+> evaluation ([#192](https://github.com/sebastian-software/ferroni/issues/192)).
+> Only about one in five of the patterns that the compile-time backtracking
+> check flags in the shiki grammars was eligible, the retry, time and stack
+> limits already bound the remaining cases, and the code sat in the hot VM
+> path. This page is kept as a record of the measurements.
+
 This is the reconstruction of the implementation described in
 [#163](https://github.com/sebastian-software/ferroni/issues/163), based on
 Ferroni 1.5.2 (`5fba613`). The historical prototype's review and measurements

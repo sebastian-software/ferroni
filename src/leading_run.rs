@@ -77,7 +77,7 @@ pub(crate) struct SearchStartMap {
 
 impl SearchStartMap {
     /// Whether an attempt the map excludes may be left out: no limit that
-    /// counts it, and no FIND_LONGEST or match cache, can observe that.
+    /// counts it, and no FIND_LONGEST, can observe that.
     #[inline]
     pub(crate) fn skippable(&self, retry_limit_in_match: u64) -> bool {
         retry_limit_in_match == 0 || retry_limit_in_match > self.miss_retries

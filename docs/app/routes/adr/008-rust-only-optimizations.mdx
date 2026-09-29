@@ -37,17 +37,6 @@ An optimization may be implemented in Ferroni without upstream contribution when
 
 ### Current Rust-only optimizations
 
-#### Opt-in failed-state cache (`src/match_cache.rs`, `regexec.rs`, `regset.rs`)
-
-- **Trigger**: the `match-cache` Cargo feature and an explicit `MatchCacheConfig` on a regex or scanner. A work counter includes forward bytes since the last backtrack, as well as failures; ordinary short searches keep the fast loops.
-- **Eligibility**: exhaustive bytecode classification admits regular control flow and captures that matching does not read. Backreferences, look-arounds, subroutine calls, callouts, counted or empty-check repeats, and general atomic groups remain on the original path. A straight-line atomic character run is supported because it has one possible successful exit; the compiler introduces these runs automatically before disjoint literals.
-- **Failure invariant**: a bit for `(instruction, subject position)` is committed only after backtracking leaves that state's complete subtree. A successful return or limit error never commits pending states. Active character stars expose each character as a cache point, including low-backtrack loops that would otherwise rescan each suffix.
-- **Bounds**: the default 16 MiB budget includes failure bits and pending failure records. All patterns in one scanner share it. Compiled metadata and the existing VM stack are outside that cache budget. Budget or allocation failure releases the cache and resumes plain backtracking; existing retry and time limits still apply.
-- **Lifetime**: standalone searches start fresh and release cache allocations before returning their scratch state to thread-local storage. A scanner keeps failures only for the same immutable `OnigString`, logical end, options, and global-limit revision. New subjects release old allocations. Caller-supplied string IDs alone do not authorize failure-cache reuse.
-- **Fallbacks**: backward search, invalid UTF-8, FIND_LONGEST, FIND_NOT_EMPTY, and a nonzero match-stack limit do not use memoization. `Regex::is_linear_time()` reports pattern eligibility; it is not a guarantee for these modes or after memory-budget fallback. Opted-in searches may finish where uncached execution exhausts a retry limit because they perform less work.
-- **Validation**: deterministic cache/plain/C comparisons, linear work and retry bounds, shared-budget and invalidation tests, and the `match-cache` fuzz target. `benches/match_cache_bench.rs` validates token/capture traces before measuring TypeScript, CSS, Rust, and a pathological grammar expression. The rebuilt implementation still requires an independent review and measured Ferriki adoption before closing #163.
-- **Measurements**: [match cache evaluation](/perf/match-cache-evaluation), including normal-document overhead, pathological inputs, and the feature-disabled baseline comparison.
-
 #### Literal trie (`src/literal_trie.rs`, `regcomp.rs`)
 
 Detects alternations consisting entirely of literal strings and replaces them at compile time with a compact trie. The VM executes a single `AltLiterals` trie walk instead of backtracking through N branches.
@@ -95,7 +84,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 
 - **Trigger**: the forward position loop sees exactly the compiler's leading atomic `[class]+literal` bytecode, with identical positive ASCII class bitsets and a disjoint one-byte literal. Capturing, anchored, alternating, and multibyte prefixes stay on the original path.
 - **Execution**: a class run ending at the wrong delimiter cannot match from any suffix, so the filter skips that run. A run ending at the right delimiter still enters the VM, including every interior start if the tail fails. The run end is remembered to avoid repeating the prefix scan.
-- **Fallbacks**: a per-match retry limit of one, any search retry budget, stack or time limit, callouts, or a configured match cache disables the filter. Every skipped prefix would consume exactly one retry and cannot enter its tail; higher per-match limits therefore keep their original outcomes.
+- **Fallbacks**: a per-match retry limit of one, any search retry budget, stack or time limit, or callouts disables the filter. Every skipped prefix would consume exactly one retry and cannot enter its tail; higher per-match limits therefore keep their original outcomes.
 - **Bounds**: constant scratch space, linear prefix scanning, no new compiled metadata, opcode, allocation, dependency, or unsafe code. Backward and equal-endpoint searches retain their existing paths.
 - **Validation and measurements**: [atomic class prefix evaluation](/perf/atomic-class-prefix), including 500,736 exact original-path comparisons, C/cache differential cases, repeated general workloads, and broader scanner/search/compilation checks.
 
@@ -106,7 +95,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
   - After a failed attempt, the search continues at the end of its run. Every later start in the run tries a subset of the same end positions with the same state.
   - An atomic run followed by a literal outside the class is searched from the literal. `memmem` finds the occurrence, the search scans back to the start of its run, and only that position is attempted.
   - The bytecode start map (`derive_start_byte_map`) filters the fallthrough loop behind an unbounded optimizer and bounded windows wider than one position.
-- **Observability**: every left-out attempt would fail with at most the backtracks of an attempt that already failed, or with a count known at compile time: one for the reverse scan, `miss_retries` for the start map. The plans stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit at or below that count, callouts and the match cache. Back references, conditions, position checks, `\K`, calls, absent operators and capture-aware empty checks disable the run plan.
+- **Observability**: every left-out attempt would fail with at most the backtracks of an attempt that already failed, or with a count known at compile time: one for the reverse scan, `miss_retries` for the start map. The plans stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit at or below that count, and callouts. Back references, conditions, position checks, `\K`, calls, absent operators and capture-aware empty checks disable the run plan.
 - **Malformed UTF-8**: the reverse scan needs a valid UTF-8 segment, and falls back to attempting each position otherwise. A malformed lead byte lets the VM's run step over a byte the scan stops at. The forward scan steps like the VM's star loops and stops early where the VM could decide differently.
 - **Bounds**: one boxed plan and one boxed 256-byte map per eligible expression. The scans are linear; the reverse scan never passes the previous occurrence. The paths are out of line. No new dependency or unsafe code.
 - **Impact**: email-like scans 22–31×, number extraction 11×, `[a-z]+ing\b`, `\w+ing\b` and captured log fields 2.6–2.9×. Other expressions change by −1.5% to +1.4% in instructions, and TextMate scanner searches by at most ±0.2%.
@@ -120,7 +109,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
   - `^` jumps to the next line start, following `BeginLine`'s rules: NOTBOL, never the end, and the previous character head found by stepping back over 0x80..=0xBF in every encoding;
   - the alternation is found with Aho-Corasick, built on first use;
   - a look-behind literal is found with `memmem`, and the search starts right behind it. The look-behind holds at `p` exactly when the literal ends at `p`, since ASCII bytes are character heads.
-- **Observability**: every position a jump passes would fail its first check with exactly one backtrack. The jumps share the leading-run gates: they stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit of one, callouts and the match cache. A jump over bytes that are not valid UTF-8 is not taken, and a jump in a range-bounded position loop never passes that loop's last attempt.
+- **Observability**: every position a jump passes would fail its first check with exactly one backtrack. The jumps share the leading-run gates: they stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit of one, and callouts. A jump over bytes that are not valid UTF-8 is not taken, and a jump in a range-bounded position loop never passes that loop's last attempt.
 - **Not applied**: expressions whose C optimizer already searches a string at the match start (for `^`, with its line-anchor check). Also bare alternations, which take `ac_alt`.
 - **Bounds**: at most 16 leading classes per expression, and one lazily built automaton per alternation. The scans are linear, and no new dependency or unsafe code is added.
 - **Impact**: `\s*,\s*` 14×, `\b\w+\(` 11×, `(?i)regex` 9.2×, `^\s*//` 6.9×, `(?i)regular expression` 4.4×, keyword alternations 3.2×; look-behind literals ([2026-09 iteration round](/perf/iteration-and-fused-loops)): `(?<=took=)\d+` 21×. Other expressions change by −1.4% to +2.2% in instructions. TextMate scanner searches change by at most ±0.2%, and their compilation by at most +0.6%.
@@ -185,7 +174,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 
 - **Trigger**: a `PushOrJumpExact1` with an ASCII byte that jumps back to the `AnyChar` or `AnyCharMl` right before it, which is how `.*?c` compiles.
 - **Execution**: `memchr` finds the loop's stop, the byte or a newline where the dot does not match one. The loop's jumps count their retries at once, capped at the limit where single retries would stop, so limit errors do not change.
-- **Falls back**: over bytes that are not valid UTF-8, with a time limit, with a guard count that depends on checks, and with the match cache.
+- **Falls back**: over bytes that are not valid UTF-8, with a time limit, and with a guard count that depends on checks.
 - **Bounds**: out of line behind one opcode check; no new data.
 - **Impact**: `\[.*?\]` 3.0×, `".*?"` 1.8×, `<.*?>` 2.3×, `<(\w+)[^>]*>.*?</\1>` 3.9×. TextMate scanner searches +0.6% to +1.0% (layout of `match_at_vm`).
 

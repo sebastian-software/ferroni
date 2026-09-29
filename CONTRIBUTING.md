@@ -129,21 +129,6 @@ exclude this project from sibling links and include sibling descriptions.
 
 ## Running Benchmarks
 
-The optional match cache has its own correctness and performance checks:
-
-```bash
-RUST_MIN_STACK=268435456 cargo test --locked --features match-cache -- --test-threads=1
-./scripts/prepare-oniguruma-sources.sh
-RUST_MIN_STACK=268435456 cargo test --locked --features match-cache,ffi --test match_cache_differential -- --nocapture
-cargo bench --locked --features match-cache --bench match_cache_bench
-```
-
-The differential test compares cached and uncached results, including raw
-capture bounds, over forward, backward, and equal-endpoint searches. It also
-compares full-range forward searches with the pinned C engine. The cache
-fuzzer compares completed cached and uncached searches; limit errors are not
-treated as equivalent work. See [`fuzz/README.md`](fuzz/README.md).
-
 `battle_bench` requires a local Oniguruma source snapshot for comparison:
 
 ```bash
@@ -154,8 +139,8 @@ cargo bench --features ffi --bench battle_bench -- general_regex
 python3 scripts/gen_battle_tables.py --general-only
 # Short and long Unicode class workloads, with C-validated capture traces
 cargo bench --locked --features ffi --bench battle_bench -- unicode_classes
-# Same document workloads with the opt-in cache included as a third lane
-cargo bench --features ffi,match-cache --bench battle_bench -- scanner_documents
+# Same document workloads through the scanner
+cargo bench --features ffi --bench battle_bench -- scanner_documents
 ```
 
 The reference suite validates match positions, capture bounds, and scanner

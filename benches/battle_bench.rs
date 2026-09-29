@@ -2,7 +2,7 @@
 //
 // Run: cargo bench --features ffi --bench battle_bench
 // Cache-enabled document comparison:
-// cargo bench --features ffi,match-cache --bench battle_bench -- scanner_documents
+// cargo bench --features ffi --bench battle_bench -- scanner_documents
 // HTML report: target/criterion/report/index.html
 // Pinned external inputs: benches/battle_inputs.toml
 
@@ -606,28 +606,6 @@ fn bench_scanner_documents(c: &mut Criterion) {
                 black_box(count);
             });
         });
-
-        #[cfg(feature = "match-cache")]
-        {
-            let mut cached = Scanner::with_match_cache(
-                &patterns,
-                &ferroni::scanner::ScannerConfig::default(),
-                ferroni::match_cache::MatchCacheConfig::new(),
-            )
-            .unwrap();
-            for line in &lines {
-                assert_same_scanner_trace(&mut cached, &c_scanner, line);
-            }
-            group.bench_function(format!("{prefix}_rust_cached"), |b| {
-                b.iter(|| {
-                    let mut count = 0u32;
-                    for (line, len) in &rust_lines {
-                        count += tokenize_line_rust(&mut cached, line, *len);
-                    }
-                    black_box(count);
-                });
-            });
-        }
     }
 
     group.finish();
