@@ -114,15 +114,16 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 
 #### Leading-check jumps (`src/leading_run.rs`, `src/regexec.rs`)
 
-- **Trigger**: the expression starts, after zero-width captures, marks and word boundaries, with `^`, with byte classes or literals (at least two, one with at most three bytes), or with a literal alternation (`AltLiterals`; folded tries as in the next entry). The leading-run plans above also accept `C*` runs and runs behind `\b` whose class holds only word characters in the boundary's sense.
+- **Trigger**: the expression starts, after zero-width captures, marks and word boundaries, with `^`, with byte classes or literals (at least two, one with at most three bytes), with a literal alternation (`AltLiterals`; folded tries as in the next entry), or with a positive look-behind at an ASCII literal (`(?<=took=)`). The leading-run plans above also accept `C*` runs and runs behind `\b` whose class holds only word characters in the boundary's sense.
 - **Execution**: the search moves its start to the next position that can pass these leading checks, then runs C's optimizer and loops unchanged from there:
   - the rarest leading class is found with `memchr` and the other classes are checked;
   - `^` jumps to the next line start, following `BeginLine`'s rules: NOTBOL, never the end, and the previous character head found by stepping back over 0x80..=0xBF in every encoding;
-  - the alternation is found with Aho-Corasick, built on first use.
+  - the alternation is found with Aho-Corasick, built on first use;
+  - a look-behind literal is found with `memmem`, and the search starts right behind it. The look-behind holds at `p` exactly when the literal ends at `p`, since ASCII bytes are character heads.
 - **Observability**: every position a jump passes would fail its first check with exactly one backtrack. The jumps share the leading-run gates: they stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit of one, callouts and the match cache. A jump over bytes that are not valid UTF-8 is not taken, and a jump in a range-bounded position loop never passes that loop's last attempt.
 - **Not applied**: expressions whose C optimizer already searches a string at the match start (for `^`, with its line-anchor check). Also bare alternations, which take `ac_alt`.
 - **Bounds**: at most 16 leading classes per expression, and one lazily built automaton per alternation. The scans are linear, and no new dependency or unsafe code is added.
-- **Impact**: `\s*,\s*` 14×, `\b\w+\(` 11×, `(?i)regex` 9.2×, `^\s*//` 6.9×, `(?i)regular expression` 4.4×, keyword alternations 3.2×. Other expressions change by −1.4% to +2.2% in instructions. TextMate scanner searches change by at most ±0.2%, and their compilation by at most +0.6%.
+- **Impact**: `\s*,\s*` 14×, `\b\w+\(` 11×, `(?i)regex` 9.2×, `^\s*//` 6.9×, `(?i)regular expression` 4.4×, keyword alternations 3.2×; look-behind literals ([2026-09 iteration round](/perf/iteration-and-fused-loops)): `(?<=took=)\d+` 21×. Other expressions change by −1.4% to +2.2% in instructions. TextMate scanner searches change by at most ±0.2%, and their compilation by at most +0.6%.
 - **Validation and measurements**: [leading-check jumps](/perf/leading-check-jumps).
 
 #### Case-insensitive literal alternations (`src/leading_run.rs`, `src/literal_trie.rs`)
@@ -171,6 +172,35 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Fast-path census**: `grammar_fast_path_census` asserts how many grammar patterns reach each of these paths, fused look-behinds and push guards included.
 - **Impact**: warm TypeScript line -57%, TypeScript document -44%, Rust document -37%, CSS document -33%, CSS grammar compile -25%, TypeScript compile -15% (wall clock).
 - **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](/perf/performance-structure-analysis#second-pass)
+
+#### Match bounds without a region (`src/api.rs`, `src/regexec.rs`)
+
+- **Trigger**: `Regex::find_iter`, `find_iter_bytes`, `find` and `find_bytes`, which return only match bounds, for expressions without `\K` and without FIND_LONGEST.
+- **Execution**: the search runs without a region (`onig_search_bounds`). The match ends at its attempt position plus the match length, which `OP_END` records in the `MatchArg`. The iterator keeps one `MatchArg` for all its searches instead of taking and resetting the thread's cached one per match. Expressions with groups also skip the tracked second pass that filled the region.
+- **Also**: as in C, the inner search functions return the position and leave the region in the `MatchArg`; the entry points take it out once.
+- **Impact**: iterating `\d+`, `\w+`, identifiers and whitespace splits takes 22–24% fewer instructions.
+- **Validation and measurements**: [match iteration, lazy loops and look-behind anchors](/perf/iteration-and-fused-loops).
+
+#### Fused lazy `.*?c` loop (`src/regexec.rs`)
+
+- **Trigger**: a `PushOrJumpExact1` with an ASCII byte that jumps back to the `AnyChar` or `AnyCharMl` right before it, which is how `.*?c` compiles.
+- **Execution**: `memchr` finds the loop's stop, the byte or a newline where the dot does not match one. The loop's jumps count their retries at once, capped at the limit where single retries would stop, so limit errors do not change.
+- **Falls back**: over bytes that are not valid UTF-8, with a time limit, with a guard count that depends on checks, and with the match cache.
+- **Bounds**: out of line behind one opcode check; no new data.
+- **Impact**: `\[.*?\]` 3.0×, `".*?"` 1.8×, `<.*?>` 2.3×, `<(\w+)[^>]*>.*?</\1>` 3.9×. TextMate scanner searches +0.6% to +1.0% (layout of `match_at_vm`).
+
+#### Chunked map search (`src/regint.rs`, `src/regexec.rs`)
+
+- **Trigger**: C's map optimizer with more than three bytes, whose ASCII part fits in six ranges, in an ASCII-compatible encoding.
+- **Execution**: after 16 bytes without a candidate, the search tests eight ASCII bytes at a time against the ranges (SWAR). Chunks holding a non-ASCII byte are walked character by character, as before.
+- **Impact**: `\d+` over prose and `[A-Z][A-Z_]+` over code take 42–44% fewer instructions. Searches with close matches stay at their cost because of the 16-byte start.
+
+#### Bitmaps for Unicode ctypes (`src/unicode/mod.rs`)
+
+- **Trigger**: `onigenc_unicode_is_code_ctype` for a code below U+10000 and a table with at least 16 ranges.
+- **Execution**: a bitmap of the table's BMP part, built on first use, replaces the binary search.
+- **Bounds**: 8 KiB per table a process queries, at most one per table (641 tables).
+- **Impact**: part of the `\w+` improvement over non-ASCII text (−27% instructions with the region-free iteration).
 
 #### Grammar compilation caches (`src/regparse.rs`, `src/regcomp.rs`)
 

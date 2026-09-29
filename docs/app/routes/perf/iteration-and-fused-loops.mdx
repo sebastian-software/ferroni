@@ -1,0 +1,191 @@
+---
+order: 19
+title: "Match Iteration, Lazy Loops and Look-Behind Anchors (2026-09)"
+---
+
+# Match Iteration, Lazy Loops and Look-Behind Anchors
+
+A fourth round worked through the execution ideas still open from the
+[execution profile](/perf/execution-profiling). Compilation was not a goal: in
+most real uses an expression is compiled once and run many times. The round
+covers the fixed cost of each match, lazy `.*?` loops, look-behinds at a
+literal, sparse character-class searches and Unicode `\w`.
+
+- `(?<=took=)\d+` over a log runs **21×** faster.
+- Lazy loops such as `\[.*?\]`, `".*?"` and `<.*?>` run **1.8–3.0×** faster,
+  and `<(\w+)[^>]*>.*?</\1>` **3.9×**.
+- Iterating many short matches (`\d+`, `\w+`, identifiers, whitespace splits)
+  takes **22–24%** fewer instructions.
+- Sparse class searches, such as `\d+` over prose, take **42–44%** fewer.
+
+Of the 62 matrix cases, 53 got cheaper and 9 changed by at most +2.9%. The
+TextMate scanner's searches changed by +0.6% to +1.0%.
+
+[Raw timings, instruction counts, scanner measurements and validation notes](https://github.com/sebastian-software/ferroni/blob/main/benches/results/iteration-and-fused-loops-2026-09-29.json)
+
+## What changed
+
+### Match bounds without a region
+
+`find_iter` and `find` return only the match bounds, yet every search
+requested a region. For each match, the iterator took the thread's cached
+`MatchArg`, reset it, and gave it back. The reset reloads all four global
+limits. With capture groups, a second tracked pass also filled every group
+the caller then threw away. Now both calls search without a region. The
+bounds follow from where the match starts and how long it is. The iterator
+keeps one `MatchArg` for all its searches (`src/api.rs`,
+`onig_search_bounds`). With `\K` or FIND_LONGEST only the region carries the
+match, so these keep the old path.
+
+The inner search functions no longer pass `(i32, Option<OnigRegion>)` back
+through three or four layers. As in C, they return the position and leave
+the region in the `MatchArg`. The entry points take it out once. This
+saved only a few percent.
+
+### Lazy `.*?c` loops
+
+`".*?"` compiles to `AnyChar` and a guarded `PushOrJumpExact1('"')` that
+jumps back to it. That is three dispatches and one counted retry per
+character. The loop now finds its stop with `memchr`: the byte `c`, or a
+newline where the dot does not match one. It then counts the retries its
+jumps would have counted, capped at the limit where single retries would
+have stopped, so a retry limit reports the same error.
+
+The loop runs this way only over valid UTF-8 and without a time limit,
+because the clock is read by the number of retries counted. It also needs a
+fixed guard count, and the match cache must be off. In every other case it
+steps as before (`src/regexec.rs`, `lazy_any_char_step`).
+
+### Look-behinds at a literal
+
+C's optimizer ignores what a look-behind holds, so `(?<=took=)\d+` was
+attempted at every digit. A positive look-behind at an ASCII literal holds at
+`p` exactly when the literal ends at `p`. ASCII bytes are character heads,
+so stepping back over the literal's characters lands on its first byte. The
+[leading-check jumps](/perf/leading-check-jumps) therefore search the
+literal with `memmem` and start right behind it. Negative look-behinds, class
+bodies and non-ASCII literals keep the old path (`src/leading_run.rs`).
+
+### Long gaps in the map search
+
+C's map search steps one character at a time, with a table lookup and an
+encoding call per byte. That is fine between close matches. It is slow for
+sparse ones, such as numbers in prose. The ASCII part of the map is now also
+kept as at most six byte ranges. After 16 bytes without a candidate, the
+search tests eight ASCII bytes at a time against them. Chunks that hold
+non-ASCII bytes are walked character by character as before (`src/regint.rs`,
+`MapAsciiRanges`). Switching over only after 16 bytes keeps searches with
+close matches at their previous cost. Scanning in chunks from the first byte
+made those searches cost 3–14% more instructions.
+
+### Unicode ctypes below U+10000
+
+`\w` over non-ASCII text looked up every character with a binary search over
+hundreds of Unicode ranges. For a table with at least 16 ranges, the first
+use now builds an 8 KiB bitmap of its part below U+10000. Only tables a
+process actually queries get one. Codes above that keep the binary search
+(`src/unicode/mod.rs`).
+
+## Measurements
+
+The harness and corpora are those of the [execution profile](/perf/execution-profiling),
+plus seven cases added in this round and the previous one: lazy loops,
+sparse classes and case-insensitive alternations. The baseline is `main` at `7b0f231`, which
+includes the [case-insensitive alternations](/perf/folded-alternations-and-grammar-compilation).
+Both builds use the release profile with thin LTO on a shared 4-vCPU x86_64
+VM without hardware counters. Times are the best of three interleaved rounds.
+Instruction counts (Ir) are per iteration: the count with two iterations
+minus the count without, halved. All cases found the same matches in both
+builds.
+
+| Case               | Expression               | Corpus  | Baseline ms | Candidate ms | Speedup |     Ir | `regex` ms |
+| ------------------ | ------------------------ | ------- | ----------: | -----------: | ------: | -----: | ---------: |
+| `lookbehind`       | `(?<=took=)\d+`          | log     |        46.4 |         2.19 |     21× | −95.4% |          – |
+| `html_tag_backref` | `<(\w+)[^>]*>.*?</\1>`   | prose   |       0.129 |        0.033 |    3.9× | −79.9% |          – |
+| `lazy_dot`         | `\[.*?\]`                | log     |        5.55 |         1.84 |    3.0× | −65.7% |      1.041 |
+| `t_tag_lazy`       | `<.*?>`                  | prose   |       0.027 |        0.012 |    2.3× | −55.2% |      0.007 |
+| `t_quoted_lazy`    | `".*?"`                  | code    |       0.356 |        0.198 |    1.8× | −48.7% |      0.116 |
+| `upper_code`       | `[A-Z][A-Z_]+`           | code    |        4.03 |         2.23 |    1.8× | −44.0% |      2.273 |
+| `digits_prose`     | `\d+`                    | prose   |        1.89 |         1.06 |    1.8× | −41.9% |      0.962 |
+| `unicode_word`     | `\w+`                    | unicode |        8.11 |         5.22 |    1.6× | −26.7% |      2.837 |
+| `t_split_ws`       | `\s+`                    | prose   |        5.85 |         4.03 |    1.5× | −24.0% |      2.323 |
+| `ident`            | `[A-Za-z_][A-Za-z0-9_]*` | code    |        14.7 |         10.9 |    1.4× | −22.7% |      7.686 |
+| `word`             | `\w+`                    | prose   |        6.53 |         4.73 |    1.4× | −22.6% |      2.980 |
+| `char_digit`       | `\d+`                    | log     |        38.0 |         25.6 |    1.5× | −22.3% |     11.698 |
+
+`upper_code` and `digits_prose` now run at the speed of the `regex` crate.
+`lookbehind` and `html_tag_backref` have no `regex` column, because that
+crate supports neither look-behinds nor back references.
+
+**The other 50 cases** change by −22.2% to +2.9% in instructions; 41 of them
+got cheaper. The largest increases:
+
+| Case          | Expression               | Ir    | Why                                                                                                      |
+| ------------- | ------------------------ | ----- | -------------------------------------------------------------------------------------------------------- |
+| `t_ci_phrase` | `(?i)regular expression` | +2.9% | No match in the corpus, so each iteration is one search. Taking the `MatchArg` shows in that fixed cost. |
+| `backref_dup` | `\b(\w+)\s+\1\b`         | +1.2% | The back reference needs capture tracking in every attempt, so dropping the region saves nothing.        |
+| `suffix_lit`  | `\w+ing\b`               | +1.0% | Code layout.                                                                                             |
+
+Validation per token or line (`t_valid_*`, `v_line_*`) changed by −3.0% to
++0.7%.
+
+### TextMate scanner
+
+| Search per iteration               | Baseline Ir | Candidate Ir |     Ir |
+| ---------------------------------- | ----------: | -----------: | -----: |
+| TypeScript, 279 patterns, 28 lines |  14,554,896 |   14,704,461 | +1.03% |
+| CSS, 117 patterns, 19 lines        |   1,616,906 |    1,628,784 | +0.73% |
+| Rust, 81 patterns, 31 lines        |   1,649,379 |    1,659,424 | +0.61% |
+| CSS, 20 patterns, tokenize         |     195,985 |      197,698 | +0.87% |
+
+Scanner searches run through the RegSet and use none of the new paths. The
+increase is the layout of `match_at_vm`, which grew by the call to the fused
+loop. A first version checked the fused loop's conditions inline at every
+`PushOrJumpExact1`, which grammars run constantly. It cost +1.3% to +2.1%, and
+moving the checks out of line brought it down to the values above. The
+TypeScript line workload varied by ±5% between builds of the same code, so
+it is left out.
+
+## What remains
+
+- **Validation per call** (`is_match` on short subjects) barely moved: −3.0%
+  to +0.7%. The layers above the VM mirror C and each costs little. Leaving
+  the region in the `MatchArg` did not remove the stall that sampling showed
+  on the returned tuple. A result that bypasses these layers would need
+  another path next to C's.
+- **Captures per line** (`t_kv_caps`, `date_named`, `log_caps`) run the
+  matcher twice. An untracked pass finds the start, then a tracked pass fills
+  the groups. When the first position already matches, the second pass
+  repeats the whole attempt.
+- **Scanner searches** remain dominated by the VM work of look-behind-led
+  grammar entries. See the [previous round](/perf/folded-alternations-and-grammar-compilation#textmate-scanner).
+
+## Validation
+
+- `cargo test --release` passes the unit tests, all `compat_*` suites and
+  `api_test`. It also passes with `--features match-cache`, and clippy is
+  clean.
+- `find_iter` and `find` without a region give the region path's results.
+  The test covers groups, back references, look-arounds, empty matches,
+  Aho-Corasick alternations and folded tries. A `\K` test pins the fallback
+  to the region path.
+- The fused lazy loop is compared with the instruction-by-instruction loop:
+  12 patterns, UTF-8 and ASCII, and generated subjects with newlines and
+  malformed UTF-8. Each run uses seven sets of retry, search and stack
+  limits, including match and search limits together.
+- Look-behind anchors are part of the exhaustive and generated comparisons
+  with the plan-free search in `src/leading_run.rs`.
+- The chunked map search is compared with the character loop from every
+  start to every range, for eight maps over ASCII, UTF-8 and malformed input.
+  Every bitmap is compared with its ranges over the whole BMP.
+- Injected faults fail the tests:
+  - a lazy stop one byte late, one jump too few, bytes counted as
+    characters, and a missing UTF-8 check;
+  - an uncapped retry count, and a missing newline stop;
+  - a look-behind stop one byte late, or a scan that starts at `s`;
+  - a look-behind taken for a negative one;
+  - a chunk step of nine bytes, and a range test that is off by one;
+  - a bitmap range that leaves out its last code;
+  - a missing match length in the Aho-Corasick path.
+- The `ffi` differential against C Oniguruma could not run in this
+  environment. CI runs it.
