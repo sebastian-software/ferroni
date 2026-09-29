@@ -241,3 +241,57 @@ fn unsupported_modes_keep_the_original_limits_and_results() {
         memoized.find_with(&text, limited).unwrap_err()
     );
 }
+
+#[test]
+fn searches_that_finish_before_activation_do_not_scan_the_subject() {
+    // Every `find_iter` step is a fresh search. Validating the whole subject as
+    // UTF-8 at the start of each one made iteration quadratic (about 70x slower
+    // than uncached on this input) even though the cache never activated.
+    let text = "ab,cd, ef,".repeat(10_000);
+    for pattern in [r"\w+,", r"(?:ab|cd)+,"] {
+        let plain = Regex::new(pattern).unwrap();
+        let memoized = Regex::builder(pattern)
+            .match_cache(MatchCacheConfig::new())
+            .build()
+            .unwrap();
+        assert!(memoized.is_linear_time(), "{pattern}");
+        let start = std::time::Instant::now();
+        let expected: Vec<_> = plain.find_iter(&text).map(|m| m.range()).collect();
+        let plain_time = start.elapsed();
+        let start = std::time::Instant::now();
+        let actual: Vec<_> = memoized.find_iter(&text).map(|m| m.range()).collect();
+        let cached_time = start.elapsed();
+        assert_eq!(actual, expected, "{pattern}");
+        assert!(
+            cached_time < plain_time * 8 + std::time::Duration::from_millis(50),
+            "{pattern}: {cached_time:?} cached vs {plain_time:?} plain"
+        );
+    }
+}
+
+#[test]
+fn invalid_utf8_subjects_never_activate_the_cache() {
+    // The UTF-8 check now happens when the cache would activate. A subject that
+    // fails it must still behave exactly like the uncached matcher.
+    let mut text = "a".repeat(18).into_bytes();
+    text.push(0xFF);
+    text.extend_from_slice(b"a!");
+    let limits = SearchOptions::new()
+        .retry_limit_in_match(0)
+        .retry_limit_in_search(0);
+    for pattern in [r"(a+)+$", r"(a|aa)*$", r"a*b|a+!"] {
+        let plain = Regex::new(pattern).unwrap();
+        let memoized = cached(pattern);
+        assert_eq!(
+            plain
+                .find_bytes_with(&text, limits)
+                .unwrap()
+                .map(|m| m.range()),
+            memoized
+                .find_bytes_with(&text, limits)
+                .unwrap()
+                .map(|m| m.range()),
+            "{pattern}"
+        );
+    }
+}

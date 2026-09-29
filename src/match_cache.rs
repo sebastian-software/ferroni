@@ -67,12 +67,19 @@ impl MatchCacheConfig {
     /// Work counts failures and the forward bytes traversed since the last
     /// backtrack, so a long greedy loop counts even with few backtracks. Zero enables
     /// the cache immediately. The adaptive threshold is eight times the
-    /// subject length times the number of cache points, with a 4,096 minimum.
+    /// subject length times the number of cache points, limited to between
+    /// 4,096 and 16,384 units. Large grammar patterns have hundreds of cache
+    /// points, and a threshold that scaled with them never activated on the
+    /// subjects that needed it (see the Ferriki trial in the validation report).
     pub const fn activation_threshold(mut self, work: usize) -> Self {
         self.activation_threshold = Some(work);
         self
     }
 }
+
+/// Bounds of the adaptive activation threshold, in VM work units.
+const ADAPTIVE_MIN_THRESHOLD: usize = 4096;
+const ADAPTIVE_MAX_THRESHOLD: usize = 16384;
 
 pub(crate) fn allowed_options(options: OnigOptionType) -> bool {
     !options.intersects(ONIG_OPTION_FIND_LONGEST | ONIG_OPTION_FIND_NOT_EMPTY)
@@ -382,22 +389,33 @@ impl MatchCache {
         self.disabled = true;
     }
 
-    pub(crate) fn prepare(&mut self, text: &[u8], end: usize, right: usize, points: usize) {
+    pub(crate) fn prepare(&mut self, end: usize, right: usize, points: usize) {
         let dimensions = (end, right, points);
         if self.dimensions != Some(dimensions) {
             self.release();
             self.dimensions = Some(dimensions);
             self.work = 0;
-            self.disabled = std::str::from_utf8(&text[..end]).is_err();
+            // UTF-8 validity of the subject is checked lazily in `activate`: a
+            // search that finishes before the cache activates must not pay
+            // O(subject) per call (`find_iter` would become quadratic).
+            self.disabled = false;
             if let Some(config) = self.config {
-                self.threshold = config
-                    .activation_threshold
-                    .unwrap_or_else(|| end.saturating_mul(points).saturating_mul(8).max(4096));
+                self.threshold = config.activation_threshold.unwrap_or_else(|| {
+                    end.saturating_mul(points)
+                        .saturating_mul(8)
+                        .clamp(ADAPTIVE_MIN_THRESHOLD, ADAPTIVE_MAX_THRESHOLD)
+                });
                 self.disabled |= config.memory_budget == 0;
             } else {
                 self.disabled = true;
             }
         }
+        self.pending.clear();
+    }
+
+    /// Forget uncommitted failure records when an attempt restarts from an
+    /// empty VM stack, so no record outlives the stack depth it refers to.
+    pub(crate) fn discard_pending(&mut self) {
         self.pending.clear();
     }
 
@@ -428,20 +446,24 @@ impl MatchCache {
     }
 
     #[inline(always)]
-    pub(crate) fn add_work(&mut self, work: usize) {
+    pub(crate) fn add_work(&mut self, work: usize, text: &[u8]) {
         self.work = self.work.saturating_add(work);
         if self.disabled || !self.bits.is_empty() || self.work < self.threshold {
             return;
         }
-        self.activate();
+        self.activate(text);
     }
 
     #[cold]
     #[inline(never)]
-    fn activate(&mut self) {
+    fn activate(&mut self, text: &[u8]) {
         let Some((end, _, points)) = self.dimensions else {
             return;
         };
+        if std::str::from_utf8(&text[..end]).is_err() {
+            self.disable();
+            return;
+        }
         let words = end
             .checked_add(1)
             .and_then(|n| n.checked_mul(points))
@@ -552,6 +574,26 @@ mod tests {
     }
 
     #[test]
+    fn adaptive_threshold_is_bounded_for_large_grammar_patterns() {
+        let config = MatchCacheConfig::new();
+        let mut cache = MatchCache::new(config, Budget::new(config.memory_budget));
+        // Ordinary short subject: the floor keeps trivial searches uncached.
+        cache.prepare(10, 10, 2);
+        assert_eq!(cache.threshold, ADAPTIVE_MIN_THRESHOLD);
+        cache.prepare(300, 300, 3);
+        assert_eq!(cache.threshold, 7200);
+        // A grammar pattern with hundreds of cache points used to need millions
+        // of work units before activating, which it never reached in practice.
+        cache.prepare(2000, 2000, 300);
+        assert_eq!(cache.threshold, ADAPTIVE_MAX_THRESHOLD);
+        // An explicit threshold is never clamped.
+        let config = MatchCacheConfig::new().activation_threshold(1_000_000);
+        let mut cache = MatchCache::new(config, Budget::new(config.memory_budget));
+        cache.prepare(2000, 2000, 300);
+        assert_eq!(cache.threshold, 1_000_000);
+    }
+
+    #[test]
     fn budget_accounts_for_all_buffers_and_releases_on_drop() {
         let config = MatchCacheConfig::new()
             .memory_budget(4096)
@@ -561,8 +603,8 @@ mod tests {
             let mut first = MatchCache::new(config, budget.clone());
             let mut second = MatchCache::new(config, budget.clone());
             for cache in [&mut first, &mut second] {
-                cache.prepare(b"aaaa", 4, 4, 2);
-                cache.add_work(1);
+                cache.prepare(4, 4, 2);
+                cache.add_work(1, b"aaaa");
                 for i in 0..1000 {
                     cache.enter(0, 0, i);
                 }

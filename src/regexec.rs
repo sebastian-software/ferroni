@@ -3605,8 +3605,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             msa.match_cache
                 .as_mut()
                 .unwrap()
-                .prepare(str_data, end, in_right_range, plan.count);
-            msa.match_cache.as_mut().unwrap().add_work(0);
+                .prepare(end, in_right_range, plan.count);
+            msa.match_cache.as_mut().unwrap().add_work(0, str_data);
             return match_at_vm::<TRACK_CAPTURES, true>(
                 reg,
                 str_data,
@@ -3717,6 +3717,10 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
                 last_alt_zid = -1;
                 retry_in_match_counter = 0;
                 subexp_call_nest_counter = 0;
+                #[cfg(feature = "match-cache")]
+                if CACHE {
+                    msa.match_cache.as_mut().unwrap().discard_pending();
+                }
                 stack.clear();
                 stack.push(StackEntry::Alt {
                     pcode: FINISH_PCODE,
@@ -6109,7 +6113,7 @@ fn match_at_vm<const TRACK_CAPTURES: bool, const CACHE: bool>(
                 msa.match_cache
                     .as_mut()
                     .unwrap()
-                    .add_work(1 + s.saturating_sub(cache_previous_position));
+                    .add_work(1 + s.saturating_sub(cache_previous_position), str_data);
                 cache_previous_position = s;
             }
             if let Err(err) = count_retry(
