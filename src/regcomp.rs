@@ -6757,8 +6757,8 @@ struct AltBranchInfo {
 
 /// Walk the AST and detect semantically safe literal alternations. When found,
 /// build a `LiteralTrie` and replace the complete alternation with one trie
-/// node. Partial rewrites are intentionally excluded: moving literal branches
-/// ahead of non-literal ones changes ordered-alternation semantics.
+/// node. Large consecutive literal runs can also become tries in place:
+/// no literal branch moves across a non-literal branch.
 ///
 /// **Must be called before `tune_tree`** so that case-fold expansion has not
 /// yet rewritten the string nodes.
@@ -7259,6 +7259,10 @@ fn detect_literal_alternations_inner(
         return;
     }
 
+    if !in_anchor && matches!(node.inner, NodeInner::Alt(_)) {
+        compact_contiguous_literal_runs(node, reg, backrefed_mem);
+    }
+
     // Recurse into children, then retry flat-check on this Alt.
     recurse_into_children(node, reg, in_anchor, backrefed_mem);
 
@@ -7266,6 +7270,104 @@ fn detect_literal_alternations_inner(
     // nodes; classify_branch handles that via check_literal_branch.
     if matches!(node.inner, NodeInner::Alt(_)) && !in_anchor {
         try_trie_optimize_alt(node, reg, backrefed_mem);
+    }
+}
+
+/// Keep mixed alternatives in their original order while compacting long
+/// consecutive runs of plain strings with the existing trie compiler.
+/// Non-literal branches, captures and option boundaries remain in place.
+/// Short runs stay on C's path; the first experiment requires 16 literals.
+/// Each run is bounded by the existing 8,192-path limit. No nested-path
+/// extraction is enabled: it could lose captures or reorder lazy optionals.
+fn compact_contiguous_literal_runs(
+    node: &mut Node,
+    reg: &mut RegexType,
+    backrefed_mem: MemStatusType,
+) {
+    const MIN_CONTIGUOUS_LITERALS: usize = 16;
+    let mut cursor = node;
+    loop {
+        let mut scan = &*cursor;
+        let mut literals = Vec::new();
+        let mut ignorecase = None;
+        while let NodeInner::Alt(cons) = &scan.inner {
+            let branch = &*cons.car;
+            let NodeInner::String(sn) = &branch.inner else {
+                break;
+            };
+            let folded = branch.has_status(ND_ST_IGNORECASE);
+            if sn.is_crude()
+                || sn.s.is_empty()
+                || branch.has_status(ND_ST_LITERAL_ALT)
+                || ignorecase.is_some_and(|prior| prior != folded)
+                || literals.len() == MAX_NESTED_TRIE_PATHS
+            {
+                break;
+            }
+            ignorecase = Some(folded);
+            literals.push(branch);
+            match cons.cdr.as_deref() {
+                Some(next) => scan = next,
+                None => break,
+            }
+        }
+        let count = literals.len();
+        let mut replacement = None;
+        if count >= MIN_CONTIGUOUS_LITERALS {
+            let mut chain = None;
+            for branch in literals.into_iter().rev() {
+                let NodeInner::String(sn) = &branch.inner else {
+                    unreachable!("only plain strings were collected");
+                };
+                let literal = Node {
+                    status: branch.status,
+                    parent: std::ptr::null_mut(),
+                    inner: NodeInner::String(StrNode {
+                        s: sn.s.clone(),
+                        flag: sn.flag,
+                    }),
+                };
+                chain = Some(Box::new(Node {
+                    status: 0,
+                    parent: std::ptr::null_mut(),
+                    inner: NodeInner::Alt(ConsAltNode {
+                        car: Box::new(literal),
+                        cdr: chain,
+                    }),
+                }));
+            }
+            let mut candidate = chain.unwrap();
+            if try_trie_optimize_alt(&mut candidate, reg, backrefed_mem) {
+                replacement = Some(candidate);
+            }
+        }
+        let compacted = replacement.is_some();
+        if let Some(candidate) = replacement {
+            let NodeInner::Alt(cons) = &mut cursor.inner else {
+                unreachable!("a collected run begins at an alternation");
+            };
+            // Preserve the first boxed node's address and parent link. Only
+            // plain string nodes and their owning Alt cells are discarded.
+            cons.car.inner = candidate.inner;
+            cons.car.status = candidate.status;
+            let mut tail = cons.cdr.take();
+            for _ in 1..count {
+                let NodeInner::Alt(next) = tail.unwrap().inner else {
+                    unreachable!("every collected literal has an Alt cell");
+                };
+                tail = next.cdr;
+            }
+            cons.cdr = tail;
+        }
+        for _ in 0..if compacted { 1 } else { count.max(1) } {
+            let NodeInner::Alt(cons) = &mut cursor.inner else {
+                return;
+            };
+            let Some(next) = cons.cdr.as_deref_mut() else {
+                return;
+            };
+            cursor = next;
+        }
     }
 }
 
@@ -11354,6 +11456,155 @@ mod tests {
             !has_push,
             "should not have Push opcode for trie-optimized alt"
         );
+    }
+
+    #[test]
+    fn contiguous_literal_tries_preserve_mixed_branch_order_and_captures() {
+        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let literals = [
+            "foo",
+            "foobarbaz",
+            "a",
+            "ab",
+            "abc",
+            "b",
+            "ba",
+            "bc",
+            "c",
+            "ca",
+            "cb",
+            "x",
+            "xa",
+            "xb",
+            "s",
+            "ss",
+            "st",
+            "k",
+            "ffi",
+            "fl",
+        ];
+        let plain = literals.join("|");
+        // Block every literal individually, so both large runs stay on the
+        // original compiler path without changing captures or match choices.
+        let blocked = literals
+            .iter()
+            .map(|s| format!("{s}(?=)"))
+            .collect::<Vec<_>>()
+            .join("|");
+        let inputs: Vec<Vec<u8>> = [
+            "",
+            "foo",
+            "foobarbaz",
+            "foobarbazx",
+            "abc",
+            "ababc",
+            "aaab",
+            "xx",
+            "ss",
+            "ſ",
+            "ß",
+            "K",
+            "ﬃ",
+            "SS",
+            "FOOBARBAZ",
+            "afoox",
+            "foobarbazfoo",
+        ]
+        .iter()
+        .map(|s| s.as_bytes().to_vec())
+        .chain([
+            vec![0xC1, 0xAB],
+            vec![0x80, b'f', b'o', b'o'],
+            vec![0xE2, 0x84],
+        ])
+        .collect();
+        let compile = |pattern: &str| {
+            onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        let search = |reg: &RegexType, input: &[u8], start, range| {
+            let (r, region) = onig_search(
+                reg,
+                input,
+                input.len(),
+                start,
+                range,
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            let region = region.unwrap();
+            let captures: Vec<_> = region
+                .beg
+                .iter()
+                .copied()
+                .zip(region.end.iter().copied())
+                .take(region.num_regs as usize)
+                .collect();
+            (r, captures)
+        };
+        let mut used = 0;
+        for flags in ["", "(?i)"] {
+            for middle in ["([a-c]+?)", "(f[o]+)", "(x?)"] {
+                for head in ["", "a*", "\\b"] {
+                    for quantifier in ["", "?", "+", "{2}", "*+"] {
+                        for tail in ["", "x", "$", "(?![a-z])", "\\1"] {
+                            let pattern = |run: &str| {
+                                format!("{flags}{head}({run}|{middle}|{run}){quantifier}{tail}")
+                            };
+                            let optimized = compile(&pattern(&plain));
+                            let reference = compile(&pattern(&blocked));
+                            assert!(reference.literal_tries.is_empty());
+                            used += usize::from(optimized.literal_tries.len() == 2);
+                            for input in &inputs {
+                                for (start, range) in [(0, input.len()), (input.len(), 0)] {
+                                    assert_eq!(
+                                        search(&optimized, input, start, range),
+                                        search(&reference, input, start, range),
+                                        "{} on {input:x?}, {start}..{range}",
+                                        pattern(&plain)
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(used > 300, "only {used} contexts used both tries");
+    }
+
+    #[test]
+    fn contiguous_literal_tries_keep_lookarounds_and_option_boundaries() {
+        let literals = "a|bb|ccc|dddd|ee|ff|gg|hh|ii|jj|kk|ll|mm|nn|oo|pp";
+        let compile = |p: &str| {
+            onig_new(
+                p.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        assert!(
+            compile(&format!("(?={literals}|[xy])"))
+                .literal_tries
+                .is_empty()
+        );
+        assert!(
+            compile(&format!("(?<={literals}|[xy])"))
+                .literal_tries
+                .is_empty()
+        );
+        let pattern = format!("({literals}|([xy])|(?i:{literals}))\\2?");
+        let reg = compile(&pattern);
+        assert_eq!(reg.num_mem, 2);
+        assert_eq!(reg.literal_tries.len(), 2);
     }
 
     #[test]
