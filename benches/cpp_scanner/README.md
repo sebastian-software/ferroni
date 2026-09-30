@@ -96,7 +96,7 @@ benchmark's engine. To reproduce from the pinned engine commit:
 
 ```sh
 git worktree add -b codex/cpp-recapture /tmp/ferroni-cpp-recapture de32096
-git -C /tmp/ferroni-cpp-recapture apply "$PWD/benches/cpp_scanner/capture.patch"
+git -C /tmp/ferroni-cpp-recapture apply --unidiff-zero "$PWD/benches/cpp_scanner/capture.patch"
 git -C /tmp/ferroni-cpp-recapture add Cargo.toml src/scanner.rs
 git -C /tmp/ferroni-cpp-recapture commit -m 'chore(bench): instrument scanner capture'
 # In the pinned Ferriki checkout's node directory:

@@ -2,40 +2,19 @@ diff --git a/Cargo.toml b/Cargo.toml
 index 6ad457d..d128a39 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -43,6 +43,7 @@ collapsible_match = "allow"
- ffi = ["cc"]
- 
- [dependencies]
+@@ -45,0 +46 @@ ffi = ["cc"]
 +serde_json = "1"
- aho-corasick = "1"
- bitflags = "2"
- memchr = "2"
 diff --git a/src/scanner.rs b/src/scanner.rs
 index 1c09a25..e57a38f 100644
 --- a/src/scanner.rs
 +++ b/src/scanner.rs
-@@ -406,6 +406,8 @@ const SCANNER_STATS_ENABLED: bool = cfg!(any(test, debug_assertions));
- /// assert_eq!(m.capture_indices[0].end, 5);
- /// ```
- pub struct Scanner {
+@@ -408,0 +409,2 @@ pub struct Scanner {
 +    trace_patterns: Vec<String>,
 +    trace_id: u64,
-     caches: Vec<CacheEntry>,
-     regset: Box<OnigRegSet>,
-     stats: ScannerStats,
-@@ -495,6 +497,8 @@ impl Scanner {
-         }
- 
-         Ok(Scanner {
+@@ -497,0 +500,2 @@ impl Scanner {
 +            trace_patterns: patterns.iter().map(|s| s.to_string()).collect(),
 +            trace_id: NEXT_ONIG_STRING_ID.fetch_add(1, Ordering::Relaxed),
-             caches,
-             regset: regset.unwrap(),
-             stats: ScannerStats::default(),
-@@ -595,6 +599,34 @@ impl Scanner {
-         string: &OnigString,
-         start_position: usize,
-         options: ScannerFindOptions,
+@@ -597,0 +602,28 @@ impl Scanner {
 +    ) -> Option<ScannerMatch> {
 +        let started = std::time::Instant::now();
 +        let matched = self.trace_find_next_match_utf16(string, start_position, options);
@@ -64,6 +43,3 @@ index 1c09a25..e57a38f 100644
 +        string: &OnigString,
 +        start_position: usize,
 +        options: ScannerFindOptions,
-     ) -> Option<ScannerMatch> {
-         if string.is_ascii() {
-             let start = start_position.min(string.content().len());
