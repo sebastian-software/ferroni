@@ -178,6 +178,20 @@ cargo bench --locked --bench cpp_scanner_bench
 python3 scripts/profile-cpp-scanner.py /tmp/cpp-scanner --sample --group 78
 ```
 
+For uncached construction and destruction of the captured C++ and SCSS scanner
+sets, use:
+
+```sh
+cargo bench --locked --bench scanner_compile_bench
+```
+
+JSON loading and pattern-list preparation are excluded from this measurement.
+Set `FERRONI_SCSS_TRACE` to reuse the same SCSS fixture on an older checkout.
+The [post-#204 comparison](benches/highlighting_results/post-204/README.md)
+retains two complete 20-format highlighting runs, compiler measurements, and
+native CPU profiles. Its performance target is the faster of Shiki's WASM and
+JavaScript backends for each format and API.
+
 ## Regenerating Unicode Tables
 
 The checked-in Unicode tables are generated directly from the versioned

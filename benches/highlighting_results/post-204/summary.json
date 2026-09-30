@@ -1,0 +1,5538 @@
+{
+  "boundary": "Two sequential warm public highlighting matrices on merged Ferroni #204; historical comparisons do not isolate host drift",
+  "nativeBuilds": [
+    {
+      "builtAt": "2026-09-30T21:27:30.475Z",
+      "binarySha256": "bf52fbcb04a816ffca2d9e9dab7f8cf55f42a08ee11007c7115db10fea477eab",
+      "ferriki": {
+        "commit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+        "status": "M Cargo.lock"
+      },
+      "rustSourceSha256": "ad9e8079b44edab747109da0d62354badf9681871afb9ea6fde38b5f1dc47a26",
+      "ferroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "abdf2ec905bd05c930b446b3678d763020d480b8",
+          "status": ""
+        },
+        "sourceSha256": "3026722e2347b950274d0ca0c91f19f1f594df00ee71a91b3ccb99ae76272c33",
+        "features": []
+      },
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+      "cargoArgs": [
+        "build",
+        "--release",
+        "--manifest-path",
+        "/private/tmp/ferriki-curated-benchmark/crates/ferriki-core/Cargo.toml",
+        "--config",
+        "patch.crates-io.ferroni.path=\"/private/tmp/ferroni-scss-analysis\""
+      ],
+      "rustflags": null,
+      "encodedRustflags": null,
+      "targetRustflags": {},
+      "cargoProfileEnv": {},
+      "cargoLockSha256": "11ed21c76fb736d7662a11c2034d2a2c12d3b7c3f55be1665101a8859fc75d6d",
+      "loadedAddon": "/private/tmp/ferriki-curated-benchmark/node/platforms/darwin-arm64/ferriki.node"
+    },
+    {
+      "builtAt": "2026-09-30T21:27:30.475Z",
+      "binarySha256": "bf52fbcb04a816ffca2d9e9dab7f8cf55f42a08ee11007c7115db10fea477eab",
+      "ferriki": {
+        "commit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+        "status": "M Cargo.lock"
+      },
+      "rustSourceSha256": "ad9e8079b44edab747109da0d62354badf9681871afb9ea6fde38b5f1dc47a26",
+      "ferroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "abdf2ec905bd05c930b446b3678d763020d480b8",
+          "status": ""
+        },
+        "sourceSha256": "3026722e2347b950274d0ca0c91f19f1f594df00ee71a91b3ccb99ae76272c33",
+        "features": []
+      },
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+      "cargoArgs": [
+        "build",
+        "--release",
+        "--manifest-path",
+        "/private/tmp/ferriki-curated-benchmark/crates/ferriki-core/Cargo.toml",
+        "--config",
+        "patch.crates-io.ferroni.path=\"/private/tmp/ferroni-scss-analysis\""
+      ],
+      "rustflags": null,
+      "encodedRustflags": null,
+      "targetRustflags": {},
+      "cargoProfileEnv": {},
+      "cargoLockSha256": "11ed21c76fb736d7662a11c2034d2a2c12d3b7c3f55be1665101a8859fc75d6d",
+      "loadedAddon": "/private/tmp/ferriki-curated-benchmark/node/platforms/darwin-arm64/ferriki.node"
+    }
+  ],
+  "method": {
+    "theme": "github-dark",
+    "apis": [
+      "html",
+      "tokens"
+    ],
+    "sizes": [
+      "example",
+      "large"
+    ],
+    "warmup": 5,
+    "budgetMsPerEngine": 300,
+    "minRounds": 30,
+    "maxRounds": 1000,
+    "timeoutMsPerLanguage": 120000,
+    "schedule": "Rotate engine order every round; warm reused highlighters; one process per language; sequential languages",
+    "units": "Milliseconds per document; raw samples include output allocation; setup and validation excluded"
+  },
+  "machine": {
+    "cpu": "Apple M1 Ultra",
+    "cores": 20,
+    "platform": "darwin-arm64",
+    "os": "Darwin 27.0.0",
+    "node": "v24.21.0"
+  },
+  "versions": {
+    "ferriki": "0.7.0",
+    "shiki": "4.4.3",
+    "prism": "1.30.0"
+  },
+  "runComparison": {
+    "baselineFerroni": {
+      "version": "1.7.0",
+      "source": null,
+      "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+      "revision": {
+        "commit": "abdf2ec905bd05c930b446b3678d763020d480b8",
+        "status": ""
+      },
+      "sourceSha256": "3026722e2347b950274d0ca0c91f19f1f594df00ee71a91b3ccb99ae76272c33",
+      "features": []
+    },
+    "candidateFerroni": {
+      "version": "1.7.0",
+      "source": null,
+      "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+      "revision": {
+        "commit": "abdf2ec905bd05c930b446b3678d763020d480b8",
+        "status": ""
+      },
+      "sourceSha256": "3026722e2347b950274d0ca0c91f19f1f594df00ee71a91b3ccb99ae76272c33",
+      "features": []
+    },
+    "comparisons": [
+      {
+        "language": "Vue",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.6087500000001,
+        "candidateMs": 1.6969790000001694,
+        "changePercent": 5.4843201243240935
+      },
+      {
+        "language": "Bash",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.4547079999999823,
+        "candidateMs": 1.4964580000000751,
+        "changePercent": 2.869991778425174
+      },
+      {
+        "language": "Python",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 21.735729000000447,
+        "candidateMs": 22.20425000000023,
+        "changePercent": 2.155533867761106
+      },
+      {
+        "language": "Bash",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 0.8857089999999062,
+        "candidateMs": 0.8990420000000086,
+        "changePercent": 1.5053476932156862
+      },
+      {
+        "language": "Bash",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 13.577792000000045,
+        "candidateMs": 13.745541499999717,
+        "changePercent": 1.2354696551521105
+      },
+      {
+        "language": "TSX",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.8279159999999592,
+        "candidateMs": 1.8465000000001055,
+        "changePercent": 1.0166769151398025
+      },
+      {
+        "language": "Bash",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 22.17962499999976,
+        "candidateMs": 22.393875000000207,
+        "changePercent": 0.9659766565054628
+      },
+      {
+        "language": "SCSS",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.6093330000003334,
+        "candidateMs": 1.6238749999999982,
+        "changePercent": 0.903604163940086
+      },
+      {
+        "language": "TSX",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 3.1828954999998587,
+        "candidateMs": 3.210104000000001,
+        "changePercent": 0.8548348508502279
+      },
+      {
+        "language": "SCSS",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 14.410895499999242,
+        "candidateMs": 14.533396000000266,
+        "changePercent": 0.8500547381044443
+      },
+      {
+        "language": "TSX",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 26.786270999999942,
+        "candidateMs": 26.894999499999813,
+        "changePercent": 0.4059112968724632
+      },
+      {
+        "language": "SCSS",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 22.67614550000053,
+        "candidateMs": 22.7554999999993,
+        "changePercent": 0.3499470401562288
+      },
+      {
+        "language": "Vue",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 2.6120840000003227,
+        "candidateMs": 2.612250000000131,
+        "changePercent": 0.006355078925812663
+      },
+      {
+        "language": "Python",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.019125000000031,
+        "candidateMs": 1.0138124999999718,
+        "changePercent": -0.5212805102474127
+      },
+      {
+        "language": "Ruby",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 0.9081670000000486,
+        "candidateMs": 0.90168749999998,
+        "changePercent": -0.7134700996697996
+      },
+      {
+        "language": "CSS",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 16.810895999999957,
+        "candidateMs": 16.655812499999683,
+        "changePercent": -0.9225177527733996
+      },
+      {
+        "language": "TypeScript",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 45.613187499998276,
+        "candidateMs": 45.17718749999858,
+        "changePercent": -0.9558639154514492
+      },
+      {
+        "language": "TSX",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 46.4345215000003,
+        "candidateMs": 45.938812499999585,
+        "changePercent": -1.0675441115522433
+      },
+      {
+        "language": "MDX",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.8050624999999627,
+        "candidateMs": 1.7844999999997526,
+        "changePercent": -1.1391572314094711
+      },
+      {
+        "language": "MDX",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 2.6170419999998558,
+        "candidateMs": 2.5854999999996835,
+        "changePercent": -1.2052538705979554
+      },
+      {
+        "language": "Python",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.4777709999998478,
+        "candidateMs": 1.4575624999997672,
+        "changePercent": -1.367498753195373
+      },
+      {
+        "language": "Ruby",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 19.883166500000698,
+        "candidateMs": 19.60239599999977,
+        "changePercent": -1.4121015382580815
+      },
+      {
+        "language": "Python",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 15.180354500000249,
+        "candidateMs": 14.943478499999856,
+        "changePercent": -1.5604115174015831
+      },
+      {
+        "language": "SCSS",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.070291500000053,
+        "candidateMs": 1.0498744999999303,
+        "changePercent": -1.9076111508053328
+      },
+      {
+        "language": "Vue",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 23.035249999999905,
+        "candidateMs": 22.554313000000093,
+        "changePercent": -2.0878306074377906
+      },
+      {
+        "language": "Rust",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 18.302874999999858,
+        "candidateMs": 17.91537500000004,
+        "changePercent": -2.117153725848109
+      },
+      {
+        "language": "Vue",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 37.32218799999919,
+        "candidateMs": 36.48702099999991,
+        "changePercent": -2.237722504370032
+      },
+      {
+        "language": "Svelte",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 52.04704149999998,
+        "candidateMs": 50.84620799999993,
+        "changePercent": -2.3072079899105202
+      },
+      {
+        "language": "CSS",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 16.55702149999979,
+        "candidateMs": 16.140312000000222,
+        "changePercent": -2.5168143920062835
+      },
+      {
+        "language": "Ruby",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.40949999999998,
+        "candidateMs": 1.373895500000117,
+        "changePercent": -2.5260376019768382
+      },
+      {
+        "language": "TypeScript",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 26.61881249999942,
+        "candidateMs": 25.944478999999774,
+        "changePercent": -2.533296705101562
+      },
+      {
+        "language": "Ruby",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 13.467063000000053,
+        "candidateMs": 13.121333499999764,
+        "changePercent": -2.56722271218518
+      },
+      {
+        "language": "TypeScript",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 3.2058125000000928,
+        "candidateMs": 3.123437499999909,
+        "changePercent": -2.569551400781589
+      },
+      {
+        "language": "MDX",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 23.504500000000462,
+        "candidateMs": 22.897416499999963,
+        "changePercent": -2.582839456276398
+      },
+      {
+        "language": "TOML",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 8.096125000000029,
+        "candidateMs": 7.87854200000038,
+        "changePercent": -2.687495561143738
+      },
+      {
+        "language": "MDX",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 36.202791499999876,
+        "candidateMs": 35.22675049999998,
+        "changePercent": -2.696037956078323
+      },
+      {
+        "language": "JSON",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 15.78262500000028,
+        "candidateMs": 15.332083500000408,
+        "changePercent": -2.8546677121192743
+      },
+      {
+        "language": "Astro",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 25.03808349999963,
+        "candidateMs": 24.299811999999747,
+        "changePercent": -2.948594288376316
+      },
+      {
+        "language": "JSON",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 9.689895499999693,
+        "candidateMs": 9.389416999999867,
+        "changePercent": -3.1009467542744473
+      },
+      {
+        "language": "Rust",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 13.731124999999793,
+        "candidateMs": 13.289666500000294,
+        "changePercent": -3.2150206192100406
+      },
+      {
+        "language": "TypeScript",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.9852499999999509,
+        "candidateMs": 1.915583999999967,
+        "changePercent": -3.5091802040038034
+      },
+      {
+        "language": "Rust",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 0.8802500000001601,
+        "candidateMs": 0.8487500000000239,
+        "changePercent": -3.578528827052596
+      },
+      {
+        "language": "Java",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 38.89981250000028,
+        "candidateMs": 37.501187500000015,
+        "changePercent": -3.5954543482703327
+      },
+      {
+        "language": "Astro",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 33.09400000000005,
+        "candidateMs": 31.79810400000042,
+        "changePercent": -3.915803468905621
+      },
+      {
+        "language": "Svelte",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 31.106937500000186,
+        "candidateMs": 29.833541500000138,
+        "changePercent": -4.093607736216532
+      },
+      {
+        "language": "YAML",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 18.361062500000116,
+        "candidateMs": 17.560959000000366,
+        "changePercent": -4.357610023928327
+      },
+      {
+        "language": "Rust",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.2568330000001424,
+        "candidateMs": 1.1964165000001685,
+        "changePercent": -4.807042781337456
+      },
+      {
+        "language": "Swift",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.236250000000041,
+        "candidateMs": 1.176687500000071,
+        "changePercent": -4.81799797775272
+      },
+      {
+        "language": "HTML",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 38.3813540000001,
+        "candidateMs": 36.47577049999927,
+        "changePercent": -4.964867836608433
+      },
+      {
+        "language": "YAML",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.1987289999999575,
+        "candidateMs": 1.1391664999999875,
+        "changePercent": -4.9688044587202
+      },
+      {
+        "language": "Astro",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 2.2926455000000487,
+        "candidateMs": 2.1782090000001517,
+        "changePercent": -4.9914607382560705
+      },
+      {
+        "language": "JSON",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 0.5875419999999849,
+        "candidateMs": 0.5580830000000105,
+        "changePercent": -5.013939429006797
+      },
+      {
+        "language": "JSON",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.0242909999999483,
+        "candidateMs": 0.9715000000001055,
+        "changePercent": -5.153906458208213
+      },
+      {
+        "language": "HTML",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.8984170000001086,
+        "candidateMs": 1.79818750000004,
+        "changePercent": -5.279635612200206
+      },
+      {
+        "language": "C++",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 9.882666999999856,
+        "candidateMs": 9.358874999999898,
+        "changePercent": -5.300107754313332
+      },
+      {
+        "language": "TOML",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 5.556770500000084,
+        "candidateMs": 5.259291999999959,
+        "changePercent": -5.353442255715257
+      },
+      {
+        "language": "TOML",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 0.5574375000001055,
+        "candidateMs": 0.5271669999999631,
+        "changePercent": -5.430294876131702
+      },
+      {
+        "language": "Swift",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 17.082020999999713,
+        "candidateMs": 16.151937499999804,
+        "changePercent": -5.4448094871205495
+      },
+      {
+        "language": "Java",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 23.298041499999727,
+        "candidateMs": 22.011771500000123,
+        "changePercent": -5.520936169675972
+      },
+      {
+        "language": "HTML",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 2.69720899999993,
+        "candidateMs": 2.5454580000000533,
+        "changePercent": -5.626223255219765
+      },
+      {
+        "language": "Markdown",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 23.784625000000233,
+        "candidateMs": 22.40302049999991,
+        "changePercent": -5.808813466684082
+      },
+      {
+        "language": "YAML",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 9.085374999999885,
+        "candidateMs": 8.530582999999751,
+        "changePercent": -6.106429288831128
+      },
+      {
+        "language": "CSS",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.1178959999999734,
+        "candidateMs": 1.045833499999958,
+        "changePercent": -6.446261548481891
+      },
+      {
+        "language": "Svelte",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 2.2758754999999837,
+        "candidateMs": 2.1239579999999023,
+        "changePercent": -6.675123485449119
+      },
+      {
+        "language": "TOML",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 0.3504994999999269,
+        "candidateMs": 0.32641649999999345,
+        "changePercent": -6.871051171239473
+      },
+      {
+        "language": "HTML",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 28.063208000000486,
+        "candidateMs": 26.124124499999652,
+        "changePercent": -6.909700059953227
+      },
+      {
+        "language": "Markdown",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.8189170000000559,
+        "candidateMs": 1.6907504999999219,
+        "changePercent": -7.04630832523584
+      },
+      {
+        "language": "Java",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 2.6068749999999454,
+        "candidateMs": 2.4208745000000818,
+        "changePercent": -7.134998801241621
+      },
+      {
+        "language": "C++",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 5.738875000000007,
+        "candidateMs": 5.327791500000103,
+        "changePercent": -7.163137374483741
+      },
+      {
+        "language": "Markdown",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 15.903541499999847,
+        "candidateMs": 14.7121874999998,
+        "changePercent": -7.491123910985853
+      },
+      {
+        "language": "CSS",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.1947909999998956,
+        "candidateMs": 1.0960419999996702,
+        "changePercent": -8.264960147861345
+      },
+      {
+        "language": "C++",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 151.59106249999968,
+        "candidateMs": 139.02941649999957,
+        "changePercent": -8.286534702532434
+      },
+      {
+        "language": "Astro",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 2.9862080000002607,
+        "candidateMs": 2.7359580000002097,
+        "changePercent": -8.38019320824367
+      },
+      {
+        "language": "Java",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.5625830000000178,
+        "candidateMs": 1.4224169999999958,
+        "changePercent": -8.970147505765802
+      },
+      {
+        "language": "C++",
+        "size": "large",
+        "api": "html",
+        "baselineMs": 87.49595800000043,
+        "candidateMs": 79.6453545000004,
+        "changePercent": -8.972532765456432
+      },
+      {
+        "language": "Swift",
+        "size": "large",
+        "api": "tokens",
+        "baselineMs": 26.159541999999874,
+        "candidateMs": 23.809791499999847,
+        "changePercent": -8.982383942348982
+      },
+      {
+        "language": "Svelte",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 3.8897499999998217,
+        "candidateMs": 3.5383125000000746,
+        "changePercent": -9.034963686606169
+      },
+      {
+        "language": "Swift",
+        "size": "example",
+        "api": "tokens",
+        "baselineMs": 1.840583499999866,
+        "candidateMs": 1.6733749999998508,
+        "changePercent": -9.084537593650454
+      },
+      {
+        "language": "YAML",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 0.5958329999999705,
+        "candidateMs": 0.5347499999999172,
+        "changePercent": -10.251698042917445
+      },
+      {
+        "language": "Markdown",
+        "size": "example",
+        "api": "html",
+        "baselineMs": 1.3132080000000315,
+        "candidateMs": 1.1442704999999478,
+        "changePercent": -12.864489098458098
+      }
+    ],
+    "excluded": []
+  },
+  "beforeVsMerged": [
+    {
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "16af64c93e6ecf1cb6786d04a1f434b23bd21716",
+          "status": ""
+        },
+        "sourceSha256": "0e8636ed0343f896b9efe33740e6ca54e675c84086f9cbb882843c0d0a8f42bd",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "abdf2ec905bd05c930b446b3678d763020d480b8",
+          "status": ""
+        },
+        "sourceSha256": "3026722e2347b950274d0ca0c91f19f1f594df00ee71a91b3ccb99ae76272c33",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0900000000001455,
+          "candidateMs": 1.3132080000000315,
+          "changePercent": 20.477798165124426
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5717909999998483,
+          "candidateMs": 1.8189170000000559,
+          "changePercent": 15.722573802765849
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.093499999999949,
+          "candidateMs": 15.903541499999847,
+          "changePercent": 12.84309433426689
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.43131249999942,
+          "candidateMs": 23.784625000000233,
+          "changePercent": 10.980720382855115
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 81.44979150000063,
+          "candidateMs": 87.49595800000043,
+          "changePercent": 7.423182292614894
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 24.609333500000048,
+          "candidateMs": 26.159541999999874,
+          "changePercent": 6.299270559277126
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.7012500000000728,
+          "candidateMs": 1.8050624999999627,
+          "changePercent": 6.1021307861798935
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 5.422604000000092,
+          "candidateMs": 5.738875000000007,
+          "changePercent": 5.832456140996278
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.768666999999823,
+          "candidateMs": 1.840583499999866,
+          "changePercent": 4.0661413369532
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.3563329999999496,
+          "candidateMs": 1.40949999999998,
+          "changePercent": 3.9199075743222567
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 146.0437499999989,
+          "candidateMs": 151.59106249999968,
+          "changePercent": 3.7983908931404464
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.3383750000000134,
+          "candidateMs": 0.3504994999999269,
+          "changePercent": 3.5831547838679034
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5761875000000316,
+          "candidateMs": 0.5958329999999705,
+          "changePercent": 3.4095671981668962
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.2009789999999043,
+          "candidateMs": 1.236250000000041,
+          "changePercent": 2.9368540166097246
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.5188960000000122,
+          "candidateMs": 1.5625830000000178,
+          "changePercent": 2.876233790858973
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.5447085000000698,
+          "candidateMs": 2.6170419999998558,
+          "changePercent": 2.842506322424909
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.93152100000043,
+          "candidateMs": 18.361062500000116,
+          "changePercent": 2.395454908703365
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.5452080000000024,
+          "candidateMs": 0.5574375000001055,
+          "changePercent": 2.243088876190935
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5747499999999945,
+          "candidateMs": 0.5875419999999849,
+          "changePercent": 2.2256633318817665
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.74899950000008,
+          "candidateMs": 17.082020999999713,
+          "changePercent": 1.9883068239367363
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.205457999999908,
+          "candidateMs": 13.467063000000053,
+          "changePercent": 1.9810369318515653
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 8.912041499999987,
+          "candidateMs": 9.085374999999885,
+          "changePercent": 1.9449359610802963
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.86452099999974,
+          "candidateMs": 23.298041499999727,
+          "changePercent": 1.896040157587331
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 15.512083999999959,
+          "candidateMs": 15.78262500000028,
+          "changePercent": 1.7440661100102561
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.0109165000000075,
+          "candidateMs": 1.0242909999999483,
+          "changePercent": 1.323007389823072
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 5.490187500000047,
+          "candidateMs": 5.556770500000084,
+          "changePercent": 1.212763680658191
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 9.77770799999962,
+          "candidateMs": 9.882666999999856,
+          "changePercent": 1.073451978727924
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.5844999999999345,
+          "candidateMs": 2.6068749999999454,
+          "changePercent": 0.8657380537826054
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9056039999999825,
+          "candidateMs": 0.9081670000000486,
+          "changePercent": 0.2830155343909846
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.452145999999857,
+          "candidateMs": 1.4547079999999823,
+          "changePercent": 0.17642854094048754
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1989999999996144,
+          "candidateMs": 1.1987289999999575,
+          "changePercent": -0.02260216844511831
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.9875420000000759,
+          "candidateMs": 1.9852499999999509,
+          "changePercent": -0.1153183178078665
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 9.716915999999856,
+          "candidateMs": 9.689895499999693,
+          "changePercent": -0.27807691247061506
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 39.07006249999995,
+          "candidateMs": 38.89981250000028,
+          "changePercent": -0.435755637707691
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.320270499999424,
+          "candidateMs": 22.17962499999976,
+          "changePercent": -0.6301245318674265
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.685666500000252,
+          "candidateMs": 13.577792000000045,
+          "changePercent": -0.7882297877140676
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.90997950000019,
+          "candidateMs": 21.735729000000447,
+          "changePercent": -0.7953019764338043
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.3120420000000195,
+          "candidateMs": 2.2926455000000487,
+          "changePercent": -0.8389337217909798
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.876937499999713,
+          "candidateMs": 13.731124999999793,
+          "changePercent": -1.0507541739661397
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 8.201750000000175,
+          "candidateMs": 8.096125000000029,
+          "changePercent": -1.2878349132824485
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 20.146999999999935,
+          "candidateMs": 19.883166500000698,
+          "changePercent": -1.3095423636235504
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.4974170000000413,
+          "candidateMs": 1.4777709999998478,
+          "changePercent": -1.3119925845768377
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.383624999999938,
+          "candidateMs": 15.180354500000249,
+          "changePercent": -1.3213433114736661
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.89975000000004,
+          "candidateMs": 0.8857089999999062,
+          "changePercent": -1.5605445957358466
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.041708000000199,
+          "candidateMs": 2.9862080000002607,
+          "changePercent": -1.8246327392351436
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.2804585000001225,
+          "candidateMs": 1.2568330000001424,
+          "changePercent": -1.845081273620175
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 18.663062499999796,
+          "candidateMs": 18.302874999999858,
+          "changePercent": -1.9299485280078854
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.274666500000194,
+          "candidateMs": 3.2058125000000928,
+          "changePercent": -2.1026263285161106
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 24.069354000000203,
+          "candidateMs": 23.504500000000462,
+          "changePercent": -2.346776735261513
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 28.832957999999962,
+          "candidateMs": 28.063208000000486,
+          "changePercent": -2.6696879314272115
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.29168749999917,
+          "candidateMs": 36.202791499999876,
+          "changePercent": -2.91994294975072
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 4.01504100000011,
+          "candidateMs": 3.8897499999998217,
+          "changePercent": -3.1205409857653965
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9181245000000331,
+          "candidateMs": 0.8802500000001601,
+          "changePercent": -4.125203063404981
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.225354499999867,
+          "candidateMs": 25.03808349999963,
+          "changePercent": -4.527187611516337
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.3485420000001795,
+          "candidateMs": 3.1828954999998587,
+          "changePercent": -4.9468246180072395
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 48.03779199999917,
+          "candidateMs": 45.613187499998276,
+          "changePercent": -5.047285478901564
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 28.089750000000095,
+          "candidateMs": 26.61881249999942,
+          "changePercent": -5.2365631591618556
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 54.95533350000005,
+          "candidateMs": 52.04704149999998,
+          "changePercent": -5.29210144816985
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 49.07297949999975,
+          "candidateMs": 46.4345215000003,
+          "changePercent": -5.376600375364326
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 28.3471669999999,
+          "candidateMs": 26.786270999999942,
+          "changePercent": -5.506356243641431
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0828329999999937,
+          "candidateMs": 1.019125000000031,
+          "changePercent": -5.8834557129273986
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.431332999999995,
+          "candidateMs": 2.2758754999999837,
+          "changePercent": -6.39392053659501
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 33.40733349999982,
+          "candidateMs": 31.106937500000186,
+          "changePercent": -6.8859012647616735
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.9167079999999714,
+          "candidateMs": 2.69720899999993,
+          "changePercent": -7.525573351876291
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 41.523646000000554,
+          "candidateMs": 38.3813540000001,
+          "changePercent": -7.567476131552631
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.016792000000123,
+          "candidateMs": 1.8279159999999592,
+          "changePercent": -9.36517003241546
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.7690204999999,
+          "candidateMs": 33.09400000000005,
+          "changePercent": -9.994882784543735
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.143333999999868,
+          "candidateMs": 1.8984170000001086,
+          "changePercent": -11.4269171300308
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 27.383083499999884,
+          "candidateMs": 23.035249999999905,
+          "changePercent": -15.877808282620897
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 46.01637500000015,
+          "candidateMs": 37.32218799999919,
+          "changePercent": -18.89368078211493
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.2639580000000024,
+          "candidateMs": 2.6120840000003227,
+          "changePercent": -19.9718868931426
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.0344159999999647,
+          "candidateMs": 1.6087500000001,
+          "changePercent": -20.92325266808126
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.945958999999903,
+          "candidateMs": 16.55702149999979,
+          "changePercent": -30.856719916709707
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.7730000000001382,
+          "candidateMs": 1.1178959999999734,
+          "changePercent": -36.94890016921115
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 30.72329200000013,
+          "candidateMs": 16.810895999999957,
+          "changePercent": -45.2828948147878
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.2093339999996715,
+          "candidateMs": 1.1947909999998956,
+          "changePercent": -45.920761641287676
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 38.59693799999968,
+          "candidateMs": 14.410895499999242,
+          "changePercent": -62.66311203236028
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 3.0226665000000708,
+          "candidateMs": 1.070291500000053,
+          "changePercent": -64.59114824609237
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 72.54245850000007,
+          "candidateMs": 22.67614550000053,
+          "changePercent": -68.74086435876652
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 5.15099999999984,
+          "candidateMs": 1.6093330000003334,
+          "changePercent": -68.75688215879667
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "16af64c93e6ecf1cb6786d04a1f434b23bd21716",
+          "status": ""
+        },
+        "sourceSha256": "0e8636ed0343f896b9efe33740e6ca54e675c84086f9cbb882843c0d0a8f42bd",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "abdf2ec905bd05c930b446b3678d763020d480b8",
+          "status": ""
+        },
+        "sourceSha256": "3026722e2347b950274d0ca0c91f19f1f594df00ee71a91b3ccb99ae76272c33",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5717909999998483,
+          "candidateMs": 1.6907504999999219,
+          "changePercent": 7.568404450724375
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0900000000001455,
+          "candidateMs": 1.1442704999999478,
+          "changePercent": 4.978944954109643
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.7012500000000728,
+          "candidateMs": 1.7844999999997526,
+          "changePercent": 4.893460690649598
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.43131249999942,
+          "candidateMs": 22.40302049999991,
+          "changePercent": 4.53405735183281
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.093499999999949,
+          "candidateMs": 14.7121874999998,
+          "changePercent": 4.389878312696305
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.452145999999857,
+          "candidateMs": 1.4964580000000751,
+          "changePercent": 3.0514838039854553
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.5447085000000698,
+          "candidateMs": 2.5854999999996835,
+          "changePercent": 1.602993034353939
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.90997950000019,
+          "candidateMs": 22.20425000000023,
+          "changePercent": 1.3430888878742886
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.3563329999999496,
+          "candidateMs": 1.373895500000117,
+          "changePercent": 1.294851633055294
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.685666500000252,
+          "candidateMs": 13.745541499999717,
+          "changePercent": 0.4375015275979832
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.320270499999424,
+          "candidateMs": 22.393875000000207,
+          "changePercent": 0.3297652687532793
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.89975000000004,
+          "candidateMs": 0.8990420000000086,
+          "changePercent": -0.07868852459366193
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9056039999999825,
+          "candidateMs": 0.90168749999998,
+          "changePercent": -0.4324737964941261
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.205457999999908,
+          "candidateMs": 13.121333499999764,
+          "changePercent": -0.6370434103848854
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 15.512083999999959,
+          "candidateMs": 15.332083500000408,
+          "changePercent": -1.1603888942295026
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 5.422604000000092,
+          "candidateMs": 5.327791500000103,
+          "changePercent": -1.7484680791735374
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.2009789999999043,
+          "candidateMs": 1.176687500000071,
+          "changePercent": -2.022641528272795
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.93152100000043,
+          "candidateMs": 17.560959000000366,
+          "changePercent": -2.066539698445291
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 81.44979150000063,
+          "candidateMs": 79.6453545000004,
+          "changePercent": -2.2153979362859677
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.4974170000000413,
+          "candidateMs": 1.4575624999997672,
+          "changePercent": -2.661549855536105
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 20.146999999999935,
+          "candidateMs": 19.60239599999977,
+          "changePercent": -2.703151834020767
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.383624999999938,
+          "candidateMs": 14.943478499999856,
+          "changePercent": -2.8611364356585955
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5747499999999945,
+          "candidateMs": 0.5580830000000105,
+          "changePercent": -2.8998695084791914
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 24.609333500000048,
+          "candidateMs": 23.809791499999847,
+          "changePercent": -3.2489380502734866
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.5452080000000024,
+          "candidateMs": 0.5271669999999631,
+          "changePercent": -3.309012340251649
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 9.716915999999856,
+          "candidateMs": 9.389416999999867,
+          "changePercent": -3.3704006497534134
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.3383750000000134,
+          "candidateMs": 0.32641649999999345,
+          "changePercent": -3.534096786115848
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.74899950000008,
+          "candidateMs": 16.151937499999804,
+          "changePercent": -3.5647621817665898
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.9875420000000759,
+          "candidateMs": 1.915583999999967,
+          "changePercent": -3.6204517942315717
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.86452099999974,
+          "candidateMs": 22.011771500000123,
+          "changePercent": -3.7295751789404585
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.0109165000000075,
+          "candidateMs": 0.9715000000001055,
+          "changePercent": -3.899085631691812
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 8.201750000000175,
+          "candidateMs": 7.87854200000038,
+          "changePercent": -3.9407199682968685
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 18.663062499999796,
+          "candidateMs": 17.91537500000004,
+          "changePercent": -4.006242276688321
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 39.07006249999995,
+          "candidateMs": 37.501187500000015,
+          "changePercent": -4.015542590954224
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.3485420000001795,
+          "candidateMs": 3.210104000000001,
+          "changePercent": -4.134276948002169
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 5.490187500000047,
+          "candidateMs": 5.259291999999959,
+          "changePercent": -4.205603178399386
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.876937499999713,
+          "candidateMs": 13.289666500000294,
+          "changePercent": -4.23199282982597
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 8.912041499999987,
+          "candidateMs": 8.530582999999751,
+          "changePercent": -4.2802594669272604
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 9.77770799999962,
+          "candidateMs": 9.358874999999898,
+          "changePercent": -4.283549887148796
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.274666500000194,
+          "candidateMs": 3.123437499999909,
+          "changePercent": -4.6181496650201215
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 146.0437499999989,
+          "candidateMs": 139.02941649999957,
+          "changePercent": -4.802898788889898
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 24.069354000000203,
+          "candidateMs": 22.897416499999963,
+          "changePercent": -4.869002716068871
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1989999999996144,
+          "candidateMs": 1.1391664999999875,
+          "changePercent": -4.990283569611853
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 28.3471669999999,
+          "candidateMs": 26.894999499999813,
+          "changePercent": -5.12279586880795
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.768666999999823,
+          "candidateMs": 1.6733749999998508,
+          "changePercent": -5.387786395063721
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.29168749999917,
+          "candidateMs": 35.22675049999998,
+          "changePercent": -5.537258135607937
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.3120420000000195,
+          "candidateMs": 2.1782090000001517,
+          "changePercent": -5.788519412703863
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 48.03779199999917,
+          "candidateMs": 45.17718749999858,
+          "changePercent": -5.954904213750378
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.5844999999999345,
+          "candidateMs": 2.4208745000000818,
+          "changePercent": -6.331031147218303
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.5188960000000122,
+          "candidateMs": 1.4224169999999958,
+          "changePercent": -6.351916128557555
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0828329999999937,
+          "candidateMs": 1.0138124999999718,
+          "changePercent": -6.374066915214282
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 49.07297949999975,
+          "candidateMs": 45.938812499999585,
+          "changePercent": -6.386746906207675
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.2804585000001225,
+          "candidateMs": 1.1964165000001685,
+          "changePercent": -6.563430208784271
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5761875000000316,
+          "candidateMs": 0.5347499999999172,
+          "changePercent": -7.191669378476984
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.225354499999867,
+          "candidateMs": 24.299811999999747,
+          "changePercent": -7.342293504555409
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 54.95533350000005,
+          "candidateMs": 50.84620799999993,
+          "changePercent": -7.477209650634031
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9181245000000331,
+          "candidateMs": 0.8487500000000239,
+          "changePercent": -7.55611030965917
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 28.089750000000095,
+          "candidateMs": 25.944478999999774,
+          "changePercent": -7.637202182291814
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.016792000000123,
+          "candidateMs": 1.8465000000001055,
+          "changePercent": -8.443706639058824
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 28.832957999999962,
+          "candidateMs": 26.124124499999652,
+          "changePercent": -9.39492056278205
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.041708000000199,
+          "candidateMs": 2.7359580000002097,
+          "changePercent": -10.051918198590037
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 33.40733349999982,
+          "candidateMs": 29.833541500000138,
+          "changePercent": -10.697627214095684
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 4.01504100000011,
+          "candidateMs": 3.5383125000000746,
+          "changePercent": -11.873564927481993
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 41.523646000000554,
+          "candidateMs": 36.47577049999927,
+          "changePercent": -12.156628779662594
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.431332999999995,
+          "candidateMs": 2.1239579999999023,
+          "changePercent": -12.642241930664921
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.9167079999999714,
+          "candidateMs": 2.5454580000000533,
+          "changePercent": -12.728391049084165
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.7690204999999,
+          "candidateMs": 31.79810400000042,
+          "changePercent": -13.51930628665915
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.143333999999868,
+          "candidateMs": 1.79818750000004,
+          "changePercent": -16.103253156057306
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.0344159999999647,
+          "candidateMs": 1.6969790000001694,
+          "changePercent": -16.586430700495924
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 27.383083499999884,
+          "candidateMs": 22.554313000000093,
+          "changePercent": -17.63413714894384
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.2639580000000024,
+          "candidateMs": 2.612250000000131,
+          "changePercent": -19.966801043391825
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 46.01637500000015,
+          "candidateMs": 36.48702099999991,
+          "changePercent": -20.708615139719733
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.945958999999903,
+          "candidateMs": 16.140312000000222,
+          "changePercent": -32.59692794095117
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.7730000000001382,
+          "candidateMs": 1.045833499999958,
+          "changePercent": -41.013338973498236
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 30.72329200000013,
+          "candidateMs": 16.655812499999683,
+          "changePercent": -45.78766982392507
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.2093339999996715,
+          "candidateMs": 1.0960419999996702,
+          "changePercent": -50.39038913990219
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 38.59693799999968,
+          "candidateMs": 14.533396000000266,
+          "changePercent": -62.34572804713061
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 3.0226665000000708,
+          "candidateMs": 1.0498744999999303,
+          "changePercent": -65.26661145052206
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 5.15099999999984,
+          "candidateMs": 1.6238749999999982,
+          "changePercent": -68.47456804503885
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 72.54245850000007,
+          "candidateMs": 22.7554999999993,
+          "changePercent": -68.6314739388116
+        }
+      ],
+      "excluded": []
+    }
+  ],
+  "previousCandidateVsMerged": [
+    {
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-literal-tries/Cargo.toml",
+        "revision": {
+          "commit": "1d0df6c37f2c2005ab08664dc7ec2eb8dd1ab148",
+          "status": ""
+        },
+        "sourceSha256": "e16e53d985a90aa33006b460d889ad44da7119f1271ca38c99377b382e59e16e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "abdf2ec905bd05c930b446b3678d763020d480b8",
+          "status": ""
+        },
+        "sourceSha256": "3026722e2347b950274d0ca0c91f19f1f594df00ee71a91b3ccb99ae76272c33",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1536659999999301,
+          "candidateMs": 1.3132080000000315,
+          "changePercent": 13.8291325219007
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.3878330000000574,
+          "candidateMs": 1.5625830000000178,
+          "changePercent": 12.591572617163106
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.741708500000186,
+          "candidateMs": 26.159541999999874,
+          "changePercent": 10.183906941657828
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.5313340000002427,
+          "candidateMs": 3.8897499999998217,
+          "changePercent": 10.149592193758906
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.3683534999997846,
+          "candidateMs": 2.6068749999999454,
+          "changePercent": 10.071195030648195
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 79.89716650000037,
+          "candidateMs": 87.49595800000043,
+          "changePercent": 9.510714625906068
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6813955000000078,
+          "candidateMs": 1.840583499999866,
+          "changePercent": 9.467611873581049
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.0995419999999285,
+          "candidateMs": 2.2926455000000487,
+          "changePercent": 9.197410673381468
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5463340000000017,
+          "candidateMs": 0.5958329999999705,
+          "changePercent": 9.060208590343777
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.7406660000001466,
+          "candidateMs": 2.9862080000002607,
+          "changePercent": 8.959209184924433
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 5.316729500000065,
+          "candidateMs": 5.738875000000007,
+          "changePercent": 7.939946916613638
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.68731200000002,
+          "candidateMs": 1.8189170000000559,
+          "changePercent": 7.799683757362863
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 8.460332999999991,
+          "candidateMs": 9.085374999999885,
+          "changePercent": 7.3879125088799125
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.821208000000297,
+          "candidateMs": 15.903541499999847,
+          "changePercent": 7.302599761095907
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 9.251833499999748,
+          "candidateMs": 9.882666999999856,
+          "changePercent": 6.818470090281292
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5502710000000093,
+          "candidateMs": 0.5875419999999849,
+          "changePercent": 6.773208110181161
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 141.99927099999877,
+          "candidateMs": 151.59106249999968,
+          "changePercent": 6.754817424380288
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.296979000000192,
+          "candidateMs": 28.063208000000486,
+          "changePercent": 6.7164711201247895
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8687914999999293,
+          "candidateMs": 1.9852499999999509,
+          "changePercent": 6.2317545857858425
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.107895999999982,
+          "candidateMs": 17.082020999999713,
+          "changePercent": 6.047499934192091
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.9662499999999454,
+          "candidateMs": 1.0242909999999483,
+          "changePercent": 6.0068305304016745
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.14870899999994,
+          "candidateMs": 2.2758754999999837,
+          "changePercent": 5.918274647709265
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 9.154020500000115,
+          "candidateMs": 9.689895499999693,
+          "changePercent": 5.853985142370743
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.33189549999997325,
+          "candidateMs": 0.3504994999999269,
+          "changePercent": 5.605378801446581
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.753478999999516,
+          "candidateMs": 25.03808349999963,
+          "changePercent": 5.408068855935344
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 29.72037499999942,
+          "candidateMs": 31.106937500000186,
+          "changePercent": 4.6653600434072295
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.73466600000029,
+          "candidateMs": 23.784625000000233,
+          "changePercent": 4.6183172429272945
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 31.641749999999774,
+          "candidateMs": 33.09400000000005,
+          "changePercent": 4.589663972442382
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 5.319750000000113,
+          "candidateMs": 5.556770500000084,
+          "changePercent": 4.455481930541216
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.320166499999686,
+          "candidateMs": 23.298041499999727,
+          "changePercent": 4.381127712466015
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.077874999999949,
+          "candidateMs": 3.2058125000000928,
+          "changePercent": 4.156682776270837
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.69879200000014,
+          "candidateMs": 18.361062500000116,
+          "changePercent": 3.741896622096985
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.54652050000004,
+          "candidateMs": 38.89981250000028,
+          "changePercent": 3.604307355192171
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 15.254582999999911,
+          "candidateMs": 15.78262500000028,
+          "changePercent": 3.461530216855957
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1953750000000127,
+          "candidateMs": 1.236250000000041,
+          "changePercent": 3.4194290494637958
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.6159999999999854,
+          "candidateMs": 2.69720899999993,
+          "changePercent": 3.104319571863323
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.5413125000000036,
+          "candidateMs": 0.5574375000001055,
+          "changePercent": 2.9788708001573516
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8479999999999563,
+          "candidateMs": 1.8984170000001086,
+          "changePercent": 2.728192640700944
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.36874999999873,
+          "candidateMs": 38.3813540000001,
+          "changePercent": 2.7097614985821306
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8856250000000045,
+          "candidateMs": 0.9081670000000486,
+          "changePercent": 2.545321100922382
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.03143749999981,
+          "candidateMs": 26.61881249999942,
+          "changePercent": 2.256406316399606
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.175354000000084,
+          "candidateMs": 1.1987289999999575,
+          "changePercent": 1.988762534510613
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 51.08077149999917,
+          "candidateMs": 52.04704149999998,
+          "changePercent": 1.89165114704819
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.3854580000001988,
+          "candidateMs": 1.40949999999998,
+          "changePercent": 1.7353106337238522
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.263187500000186,
+          "candidateMs": 13.467063000000053,
+          "changePercent": 1.537153116472667
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 16.58295850000013,
+          "candidateMs": 16.810895999999957,
+          "changePercent": 1.3745285559257914
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.2423329999999169,
+          "candidateMs": 1.2568330000001424,
+          "changePercent": 1.1671588857598225
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0609999999999218,
+          "candidateMs": 1.070291500000053,
+          "changePercent": 0.8757304429907631
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.651957999999922,
+          "candidateMs": 13.731124999999793,
+          "changePercent": 0.5798948399919679
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.464833500000168,
+          "candidateMs": 16.55702149999979,
+          "changePercent": 0.5599084861661163
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.503166500000134,
+          "candidateMs": 13.577792000000045,
+          "changePercent": 0.5526518539181957
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 8.05712500000027,
+          "candidateMs": 8.096125000000029,
+          "changePercent": 0.4840436259802239
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.603562000000238,
+          "candidateMs": 2.6120840000003227,
+          "changePercent": 0.32732080127471086
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.08477049999965,
+          "candidateMs": 36.202791499999876,
+          "changePercent": 0.3270659570918655
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.116624999999658,
+          "candidateMs": 22.17962499999976,
+          "changePercent": 0.28485358864700494
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8880409999999301,
+          "candidateMs": 0.8857089999999062,
+          "changePercent": -0.262600488043252
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.10091650000004,
+          "candidateMs": 23.035249999999905,
+          "changePercent": -0.28425928469173467
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8829585000000293,
+          "candidateMs": 0.8802500000001601,
+          "changePercent": -0.3067528088657734
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.460291999999754,
+          "candidateMs": 1.4547079999999823,
+          "changePercent": -0.3823892755539626
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 18.413604000000305,
+          "candidateMs": 18.302874999999858,
+          "changePercent": -0.6013434415144681
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1319579999999405,
+          "candidateMs": 1.1178959999999734,
+          "changePercent": -1.2422722397799069
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 20.21204149999994,
+          "candidateMs": 19.883166500000698,
+          "changePercent": -1.6271241081671217
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8354170000002341,
+          "candidateMs": 1.8050624999999627,
+          "changePercent": -1.6538203580040656
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.062583500000073,
+          "candidateMs": 22.67614550000053,
+          "changePercent": -1.6756058574250443
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 46.45091649999904,
+          "candidateMs": 45.613187499998276,
+          "changePercent": -1.8034714126701434
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.48497899999984,
+          "candidateMs": 15.180354500000249,
+          "changePercent": -1.9672257870003818
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.731103999999732,
+          "candidateMs": 14.410895499999242,
+          "changePercent": -2.173689765549791
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.23422900000014,
+          "candidateMs": 21.735729000000447,
+          "changePercent": -2.2420386153245597
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 38.24370799999997,
+          "candidateMs": 37.32218799999919,
+          "changePercent": -2.4095989855397515
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 47.68395849999979,
+          "candidateMs": 46.4345215000003,
+          "changePercent": -2.620245968042889
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.6530625000000327,
+          "candidateMs": 1.6087500000001,
+          "changePercent": -2.6806306476574115
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.2338749999998981,
+          "candidateMs": 1.1947909999998956,
+          "changePercent": -3.1675818052886884
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 24.29285450000043,
+          "candidateMs": 23.504500000000462,
+          "changePercent": -3.245211467429465
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.7164789999999357,
+          "candidateMs": 2.6170419999998558,
+          "changePercent": -3.6605105358842205
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 27.804521000000022,
+          "candidateMs": 26.786270999999942,
+          "changePercent": -3.662174219797132
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.3064170000002377,
+          "candidateMs": 3.1828954999998587,
+          "changePercent": -3.7358113026992767
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.061916999999994,
+          "candidateMs": 1.019125000000031,
+          "changePercent": -4.0296934694484925
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6931665000001885,
+          "candidateMs": 1.6093330000003334,
+          "changePercent": -4.951285062623533
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5615630000002056,
+          "candidateMs": 1.4777709999998478,
+          "changePercent": -5.365905826428186
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.9581875000000082,
+          "candidateMs": 1.8279159999999592,
+          "changePercent": -6.6526571127661915
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-literal-tries/Cargo.toml",
+        "revision": {
+          "commit": "1d0df6c37f2c2005ab08664dc7ec2eb8dd1ab148",
+          "status": ""
+        },
+        "sourceSha256": "e16e53d985a90aa33006b460d889ad44da7119f1271ca38c99377b382e59e16e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "abdf2ec905bd05c930b446b3678d763020d480b8",
+          "status": ""
+        },
+        "sourceSha256": "3026722e2347b950274d0ca0c91f19f1f594df00ee71a91b3ccb99ae76272c33",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.0995419999999285,
+          "candidateMs": 2.1782090000001517,
+          "changePercent": 3.7468647924273846
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.6530625000000327,
+          "candidateMs": 1.6969790000001694,
+          "changePercent": 2.6566751105984165
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 9.154020500000115,
+          "candidateMs": 9.389416999999867,
+          "changePercent": 2.5715094258282223
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8687914999999293,
+          "candidateMs": 1.915583999999967,
+          "changePercent": 2.503890883495541
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.3878330000000574,
+          "candidateMs": 1.4224169999999958,
+          "changePercent": 2.491942474342168
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.460291999999754,
+          "candidateMs": 1.4964580000000751,
+          "changePercent": 2.476627962101241
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.753478999999516,
+          "candidateMs": 24.299811999999747,
+          "changePercent": 2.300012558161457
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.3683534999997846,
+          "candidateMs": 2.4208745000000818,
+          "changePercent": 2.2176165846991225
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8856250000000045,
+          "candidateMs": 0.90168749999998,
+          "changePercent": 1.8136908962569143
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.503166500000134,
+          "candidateMs": 13.745541499999717,
+          "changePercent": 1.7949493550241113
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.077874999999949,
+          "candidateMs": 3.123437499999909,
+          "changePercent": 1.4803232749855288
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5502710000000093,
+          "candidateMs": 0.5580830000000105,
+          "changePercent": 1.4196641291293055
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.116624999999658,
+          "candidateMs": 22.393875000000207,
+          "changePercent": 1.253581864324027
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8880409999999301,
+          "candidateMs": 0.8990420000000086,
+          "changePercent": 1.2387941547833181
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 9.251833499999748,
+          "candidateMs": 9.358874999999898,
+          "changePercent": 1.1569760739874146
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 8.460332999999991,
+          "candidateMs": 8.530582999999751,
+          "changePercent": 0.8303455667733273
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.9662499999999454,
+          "candidateMs": 0.9715000000001055,
+          "changePercent": 0.5433376455534766
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 15.254582999999911,
+          "candidateMs": 15.332083500000408,
+          "changePercent": 0.5080473192908386
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 31.641749999999774,
+          "candidateMs": 31.79810400000042,
+          "changePercent": 0.49413828249273983
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 16.58295850000013,
+          "candidateMs": 16.655812499999683,
+          "changePercent": 0.4393305332070385
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 29.72037499999942,
+          "candidateMs": 29.833541500000138,
+          "changePercent": 0.38077076753142425
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.603562000000238,
+          "candidateMs": 2.612250000000131,
+          "changePercent": 0.33369668169576094
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.741708500000186,
+          "candidateMs": 23.809791499999847,
+          "changePercent": 0.28676537747760467
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.107895999999982,
+          "candidateMs": 16.151937499999804,
+          "changePercent": 0.273415596921045
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 5.316729500000065,
+          "candidateMs": 5.327791500000103,
+          "changePercent": 0.2080602370317708
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.68731200000002,
+          "candidateMs": 1.6907504999999219,
+          "changePercent": 0.2037856661898818
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.5313340000002427,
+          "candidateMs": 3.5383125000000746,
+          "changePercent": 0.19761653810801416
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.54652050000004,
+          "candidateMs": 37.501187500000015,
+          "changePercent": -0.12073821860544287
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.23422900000014,
+          "candidateMs": 22.20425000000023,
+          "changePercent": -0.13483264924505356
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.7406660000001466,
+          "candidateMs": 2.7359580000002097,
+          "changePercent": -0.17178306294661772
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 79.89716650000037,
+          "candidateMs": 79.6453545000004,
+          "changePercent": -0.3151701255888373
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.03143749999981,
+          "candidateMs": 25.944478999999774,
+          "changePercent": -0.3340518555690175
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 51.08077149999917,
+          "candidateMs": 50.84620799999993,
+          "changePercent": -0.45920116926825294
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6813955000000078,
+          "candidateMs": 1.6733749999998508,
+          "changePercent": -0.47701447994579205
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.296979000000192,
+          "candidateMs": 26.124124499999652,
+          "changePercent": -0.6573169488424457
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.821208000000297,
+          "candidateMs": 14.7121874999998,
+          "changePercent": -0.7355709467169902
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.69879200000014,
+          "candidateMs": 17.560959000000366,
+          "changePercent": -0.7787706641208758
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1536659999999301,
+          "candidateMs": 1.1442704999999478,
+          "changePercent": -0.8144038222486327
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.3854580000001988,
+          "candidateMs": 1.373895500000117,
+          "changePercent": -0.8345615673719609
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0609999999999218,
+          "candidateMs": 1.0498744999999303,
+          "changePercent": -1.0485862393960654
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.263187500000186,
+          "candidateMs": 13.121333499999764,
+          "changePercent": -1.0695317396396509
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 5.319750000000113,
+          "candidateMs": 5.259291999999959,
+          "changePercent": -1.1364819775393942
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.14870899999994,
+          "candidateMs": 2.1239579999999023,
+          "changePercent": -1.151900978682463
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.062583500000073,
+          "candidateMs": 22.7554999999993,
+          "changePercent": -1.3315225503715666
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.731103999999732,
+          "candidateMs": 14.533396000000266,
+          "changePercent": -1.3421125802890899
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.320166499999686,
+          "candidateMs": 22.011771500000123,
+          "changePercent": -1.3816877217271983
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.73466600000029,
+          "candidateMs": 22.40302049999991,
+          "changePercent": -1.4587656576981245
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1953750000000127,
+          "candidateMs": 1.176687500000071,
+          "changePercent": -1.563316950742788
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.33189549999997325,
+          "candidateMs": 0.32641649999999345,
+          "changePercent": -1.650820815582088
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.464833500000168,
+          "candidateMs": 16.140312000000222,
+          "changePercent": -1.9709977632020537
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 141.99927099999877,
+          "candidateMs": 139.02941649999957,
+          "changePercent": -2.0914575681161285
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5463340000000017,
+          "candidateMs": 0.5347499999999172,
+          "changePercent": -2.1203146793141836
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 8.05712500000027,
+          "candidateMs": 7.87854200000038,
+          "changePercent": -2.216460586125746
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.10091650000004,
+          "candidateMs": 22.554313000000093,
+          "changePercent": -2.3661550397792497
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.08477049999965,
+          "candidateMs": 35.22675049999998,
+          "changePercent": -2.3777898213310777
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.36874999999873,
+          "candidateMs": 36.47577049999927,
+          "changePercent": -2.3896424151182094
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.5413125000000036,
+          "candidateMs": 0.5271669999999631,
+          "changePercent": -2.613185544401886
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.651957999999922,
+          "candidateMs": 13.289666500000294,
+          "changePercent": -2.653769517893556
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8479999999999563,
+          "candidateMs": 1.79818750000004,
+          "changePercent": -2.6954816017271344
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.6159999999999854,
+          "candidateMs": 2.5454580000000533,
+          "changePercent": -2.696559633024942
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 18.413604000000305,
+          "candidateMs": 17.91537500000004,
+          "changePercent": -2.705765802285398
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 46.45091649999904,
+          "candidateMs": 45.17718749999858,
+          "changePercent": -2.742096595662402
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8354170000002341,
+          "candidateMs": 1.7844999999997526,
+          "changePercent": -2.774137975210811
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.3064170000002377,
+          "candidateMs": 3.210104000000001,
+          "changePercent": -2.912911468826518
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 20.21204149999994,
+          "candidateMs": 19.60239599999977,
+          "changePercent": -3.016249001864413
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.175354000000084,
+          "candidateMs": 1.1391664999999875,
+          "changePercent": -3.078859645697707
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 27.804521000000022,
+          "candidateMs": 26.894999499999813,
+          "changePercent": -3.2711281017939853
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.48497899999984,
+          "candidateMs": 14.943478499999856,
+          "changePercent": -3.4969404866483145
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 47.68395849999979,
+          "candidateMs": 45.938812499999585,
+          "changePercent": -3.6598177980551094
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.2423329999999169,
+          "candidateMs": 1.1964165000001685,
+          "changePercent": -3.6959897225423033
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8829585000000293,
+          "candidateMs": 0.8487500000000239,
+          "changePercent": -3.8743043982253145
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6931665000001885,
+          "candidateMs": 1.6238749999999982,
+          "changePercent": -4.092420916677875
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.061916999999994,
+          "candidateMs": 1.0138124999999718,
+          "changePercent": -4.529967973016957
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 38.24370799999997,
+          "candidateMs": 36.48702099999991,
+          "changePercent": -4.593401351145287
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.7164789999999357,
+          "candidateMs": 2.5854999999996835,
+          "changePercent": -4.82164596156478
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.9581875000000082,
+          "candidateMs": 1.8465000000001055,
+          "changePercent": -5.7036162267352974
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 24.29285450000043,
+          "candidateMs": 22.897416499999963,
+          "changePercent": -5.744232321485487
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5615630000002056,
+          "candidateMs": 1.4575624999997672,
+          "changePercent": -6.6600258843495075
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1319579999999405,
+          "candidateMs": 1.045833499999958,
+          "changePercent": -7.608453670541415
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.2338749999998981,
+          "candidateMs": 1.0960419999996702,
+          "changePercent": -11.170742579292014
+        }
+      ],
+      "excluded": []
+    }
+  ],
+  "wins": {
+    "shiki-wasm": {
+      "html": [
+        17,
+        17
+      ],
+      "tokens": [
+        9,
+        9
+      ]
+    },
+    "shiki-js": {
+      "html": [
+        14,
+        14
+      ],
+      "tokens": [
+        10,
+        10
+      ]
+    },
+    "best-shiki": {
+      "html": [
+        13,
+        13
+      ],
+      "tokens": [
+        5,
+        5
+      ]
+    }
+  },
+  "languages": [
+    {
+      "language": "C++",
+      "textmate": "cpp",
+      "bytes": 14992,
+      "engines": {
+        "ferriki": {
+          "html": [
+            87.49595800000043,
+            79.6453545000004
+          ],
+          "tokens": [
+            151.59106249999968,
+            139.02941649999957
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            62.61747949999972,
+            57.44802100000015
+          ],
+          "tokens": [
+            58.530500500000926,
+            52.19239599999946
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            107.93295849999959,
+            98.84131250000064
+          ],
+          "tokens": [
+            105.74954199999956,
+            93.74179149999873
+          ]
+        },
+        "prism": {
+          "html": [
+            1.7499790000001667,
+            1.7250835000004372
+          ],
+          "tokens": [
+            0.9013964999994641,
+            0.8621670000011363
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 62.61747949999972
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 57.44802100000015
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 58.530500500000926
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 52.19239599999946
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            1.397308845687422,
+            1.3863898723334644
+          ],
+          "tokens": [
+            2.589949875791636,
+            2.6637868186775906
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.810650974604766,
+            0.8057901345654417
+          ],
+          "tokens": [
+            1.4334914329936324,
+            1.4831102998495762
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            1.397308845687422,
+            1.3863898723334644
+          ],
+          "tokens": [
+            2.589949875791636,
+            2.6637868186775906
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        93.06056199999875,
+        86.83702050000011
+      ]
+    },
+    {
+      "language": "Java",
+      "textmate": "java",
+      "bytes": 17856,
+      "engines": {
+        "ferriki": {
+          "html": [
+            23.298041499999727,
+            22.011771500000123
+          ],
+          "tokens": [
+            38.89981250000028,
+            37.501187500000015
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            24.912874999999985,
+            23.377708499999926
+          ],
+          "tokens": [
+            21.646625500000027,
+            20.642583000000286
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            21.129958500000157,
+            20.132729500000323
+          ],
+          "tokens": [
+            17.96914599999991,
+            17.386520999999902
+          ]
+        },
+        "prism": {
+          "html": [
+            1.8950000000002092,
+            1.8261044999999285
+          ],
+          "tokens": [
+            0.9162915000001703,
+            0.9076670000004015
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 21.129958500000157
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 20.132729500000323
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 17.96914599999991
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 17.386520999999902
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.9351807649658957,
+            0.9415709627827805
+          ],
+          "tokens": [
+            1.7970381803852167,
+            1.8166906486460292
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            1.1026070638046712,
+            1.0933326998706145
+          ],
+          "tokens": [
+            2.164811421755963,
+            2.1569115235877394
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            1.1026070638046712,
+            1.0933326998706145
+          ],
+          "tokens": [
+            2.164811421755963,
+            2.1569115235877394
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        20.93066650000037,
+        20.114666500000112
+      ]
+    },
+    {
+      "language": "SCSS",
+      "textmate": "scss",
+      "bytes": 13696,
+      "engines": {
+        "ferriki": {
+          "html": [
+            14.410895499999242,
+            14.533396000000266
+          ],
+          "tokens": [
+            22.67614550000053,
+            22.7554999999993
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            59.32570850000002,
+            60.0498749999997
+          ],
+          "tokens": [
+            55.814478999999665,
+            56.07637499999964
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            12.881521000000248,
+            12.768604000000323
+          ],
+          "tokens": [
+            9.207250000000386,
+            9.425437500000044
+          ]
+        },
+        "prism": {
+          "html": [
+            2.775937499999827,
+            2.8449789999997392
+          ],
+          "tokens": [
+            2.0896040000006906,
+            2.0446459999998297
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 12.881521000000248
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 12.768604000000323
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 9.207250000000386
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 9.425437500000044
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.24291147740779595,
+            0.24202208580784454
+          ],
+          "tokens": [
+            0.406277114940026,
+            0.4057947754290367
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            1.1187262358225372,
+            1.138213386522121
+          ],
+          "tokens": [
+            2.4628575850552097,
+            2.4142645898399087
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            1.1187262358225372,
+            1.138213386522121
+          ],
+          "tokens": [
+            2.4628575850552097,
+            2.4142645898399087
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        13.468895500000144,
+        13.330062499999258
+      ]
+    },
+    {
+      "language": "YAML",
+      "textmate": "yaml",
+      "bytes": 12592,
+      "engines": {
+        "ferriki": {
+          "html": [
+            9.085374999999885,
+            8.530582999999751
+          ],
+          "tokens": [
+            18.361062500000116,
+            17.560959000000366
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            9.319333499999857,
+            8.815666999999848
+          ],
+          "tokens": [
+            7.026458499999535,
+            6.683624999999665
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            7.6851879999999255,
+            7.26791699999967
+          ],
+          "tokens": [
+            5.195250000000215,
+            5.000708999999915
+          ]
+        },
+        "prism": {
+          "html": [
+            0.9526245000001836,
+            0.9117499999997563
+          ],
+          "tokens": [
+            0.4941454999993766,
+            0.47458300000016607
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 7.6851879999999255
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 7.26791699999967
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 5.195250000000215
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 5.000708999999915
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.9748953613474638,
+            0.9676616641712871
+          ],
+          "tokens": [
+            2.6131318501349337,
+            2.6274602479943514
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            1.1821929404980038,
+            1.1737314831746344
+          ],
+          "tokens": [
+            3.5342019152108866,
+            3.5116938418133636
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            1.1821929404980038,
+            1.1737314831746344
+          ],
+          "tokens": [
+            3.5342019152108866,
+            3.5116938418133636
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        13.165812499999902,
+        12.560250000000451
+      ]
+    },
+    {
+      "language": "JSON",
+      "textmate": "json",
+      "bytes": 12176,
+      "engines": {
+        "ferriki": {
+          "html": [
+            9.689895499999693,
+            9.389416999999867
+          ],
+          "tokens": [
+            15.78262500000028,
+            15.332083500000408
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            6.9522704999999405,
+            6.635999999999967
+          ],
+          "tokens": [
+            3.885146000000077,
+            3.7648955000004207
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            6.026249999999891,
+            5.876125000000229
+          ],
+          "tokens": [
+            3.0627915000004577,
+            3.0480210000000625
+          ]
+        },
+        "prism": {
+          "html": [
+            1.1692709999999806,
+            1.1419999999998254
+          ],
+          "tokens": [
+            0.42964549999987867,
+            0.4158335000001898
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 6.026249999999891
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 5.876125000000229
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 3.0627915000004577
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 3.0480210000000625
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            1.3937742353379052,
+            1.4149211874623135
+          ],
+          "tokens": [
+            4.062299074474928,
+            4.072379565382013
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            1.6079478116573107,
+            1.5978926588524751
+          ],
+          "tokens": [
+            5.153019720734474,
+            5.030176465319659
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            1.6079478116573107,
+            1.5978926588524751
+          ],
+          "tokens": [
+            5.153019720734474,
+            5.030176465319659
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        12.719833499999822,
+        12.284062500000346
+      ]
+    },
+    {
+      "language": "Bash",
+      "textmate": "shellscript",
+      "bytes": 16176,
+      "engines": {
+        "ferriki": {
+          "html": [
+            13.577792000000045,
+            13.745541499999717
+          ],
+          "tokens": [
+            22.17962499999976,
+            22.393875000000207
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            19.056103999999777,
+            19.35837450000008
+          ],
+          "tokens": [
+            15.765395999999782,
+            15.892542000000049
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            14.09404150000023,
+            14.28062449999993
+          ],
+          "tokens": [
+            10.750207999999475,
+            10.841708500000095
+          ]
+        },
+        "prism": {
+          "html": [
+            1.9271669999998267,
+            1.9628959999997733
+          ],
+          "tokens": [
+            1.224478999999974,
+            1.2096670000000813
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 14.09404150000023
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 14.28062449999993
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 10.750207999999475
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 10.841708500000095
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.712516682318705,
+            0.7100565959192318
+          ],
+          "tokens": [
+            1.4068549245448745,
+            1.4090807499517786
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.9633710813182877,
+            0.9625308403004214
+          ],
+          "tokens": [
+            2.0631810100791395,
+            2.0655300776625762
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.9633710813182877,
+            0.9625308403004214
+          ],
+          "tokens": [
+            2.0631810100791395,
+            2.0655300776625762
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        11.429417000000285,
+        11.552166500000112
+      ]
+    },
+    {
+      "language": "TSX",
+      "textmate": "tsx",
+      "bytes": 25088,
+      "engines": {
+        "ferriki": {
+          "html": [
+            26.786270999999942,
+            26.894999499999813
+          ],
+          "tokens": [
+            46.4345215000003,
+            45.938812499999585
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            40.73375000000033,
+            40.74554149999949
+          ],
+          "tokens": [
+            35.2056249999996,
+            34.60224999999991
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            100.26945849999993,
+            100.09241649999967
+          ],
+          "tokens": [
+            95.02562500000113,
+            93.2143744999994
+          ]
+        },
+        "prism": {
+          "html": [
+            5.780041500000152,
+            5.803146000000197
+          ],
+          "tokens": [
+            3.852999499999896,
+            3.7940834999999424
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 40.73375000000033
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 40.74554149999949
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 35.2056249999996
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 34.60224999999991
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.6575940344309014,
+            0.6600722069186429
+          ],
+          "tokens": [
+            1.3189517726215862,
+            1.3276250099343165
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.2671428708274111,
+            0.26870167032084696
+          ],
+          "tokens": [
+            0.488652629225009,
+            0.4928297029982203
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.6575940344309014,
+            0.6600722069186429
+          ],
+          "tokens": [
+            1.3189517726215862,
+            1.3276250099343165
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        11.228896500000701,
+        11.336562499999673
+      ]
+    },
+    {
+      "language": "CSS",
+      "textmate": "css",
+      "bytes": 17216,
+      "engines": {
+        "ferriki": {
+          "html": [
+            16.55702149999979,
+            16.140312000000222
+          ],
+          "tokens": [
+            16.810895999999957,
+            16.655812499999683
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            29.701771000000235,
+            28.92810449999979
+          ],
+          "tokens": [
+            24.943479500000194,
+            23.99391650000007
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            10.202770999999984,
+            9.8918749999998
+          ],
+          "tokens": [
+            5.765145999999731,
+            5.434021499999744
+          ]
+        },
+        "prism": {
+          "html": [
+            1.4692290000000412,
+            1.462500000000091
+          ],
+          "tokens": [
+            0.6602084999999533,
+            0.6594995000000381
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 10.202770999999984
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 9.8918749999998
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 5.765145999999731
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 5.434021499999744
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.5574422313066673,
+            0.5579457167682846
+          ],
+          "tokens": [
+            0.6739595412099513,
+            0.6941681446628205
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            1.6227965422334596,
+            1.6316736715739482
+          ],
+          "tokens": [
+            2.915953212633425,
+            3.0650987486892474
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            1.6227965422334596,
+            1.6316736715739482
+          ],
+          "tokens": [
+            2.915953212633425,
+            3.0650987486892474
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        11.045750000000226,
+        11.22179099999994
+      ]
+    },
+    {
+      "language": "HTML",
+      "textmate": "html",
+      "bytes": 22352,
+      "engines": {
+        "ferriki": {
+          "html": [
+            28.063208000000486,
+            26.124124499999652
+          ],
+          "tokens": [
+            38.3813540000001,
+            36.47577049999927
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            38.27954200000022,
+            35.49460450000015
+          ],
+          "tokens": [
+            30.721229499999026,
+            29.523957999999766
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            61.288937499999065,
+            57.06337450000001
+          ],
+          "tokens": [
+            54.50904149999951,
+            51.04860400000052
+          ]
+        },
+        "prism": {
+          "html": [
+            3.8630209999996623,
+            3.636645999999928
+          ],
+          "tokens": [
+            1.9883540000000721,
+            1.9746665000002395
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 38.27954200000022
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 35.49460450000015
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 30.721229499999026
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 29.523957999999766
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.7331124285656376,
+            0.7360026930290079
+          ],
+          "tokens": [
+            1.24934303166484,
+            1.23546343278227
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.4578837412542992,
+            0.4578089664150452
+          ],
+          "tokens": [
+            0.704128213298347,
+            0.714530224959705
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.7331124285656376,
+            0.7360026930290079
+          ],
+          "tokens": [
+            1.24934303166484,
+            1.23546343278227
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        7.660124500001075,
+        6.951812499999505
+      ]
+    },
+    {
+      "language": "TypeScript",
+      "textmate": "typescript",
+      "bytes": 19248,
+      "engines": {
+        "ferriki": {
+          "html": [
+            26.61881249999942,
+            25.944478999999774
+          ],
+          "tokens": [
+            45.613187499998276,
+            45.17718749999858
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            43.42547899999954,
+            42.26877099999956
+          ],
+          "tokens": [
+            38.76935450000019,
+            38.14789549999932
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            128.7758960000001,
+            125.1834789999998
+          ],
+          "tokens": [
+            121.7611250000009,
+            120.4955000000009
+          ]
+        },
+        "prism": {
+          "html": [
+            3.567457999999533,
+            3.4392494999992778
+          ],
+          "tokens": [
+            2.3103124999997817,
+            2.27264600000035
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 43.42547899999954
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 42.26877099999956
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 38.76935450000019
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 38.14789549999932
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.6129768309521629,
+            0.6137978083157432
+          ],
+          "tokens": [
+            1.1765268751120954,
+            1.1842642145226434
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.20670648255477408,
+            0.20725162143799994
+          ],
+          "tokens": [
+            0.37461207343475134,
+            0.37492842056340897
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.6129768309521629,
+            0.6137978083157432
+          ],
+          "tokens": [
+            1.1765268751120954,
+            1.1842642145226434
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        6.843832999998085,
+        7.029291999999259
+      ]
+    },
+    {
+      "language": "TOML",
+      "textmate": "toml",
+      "bytes": 9696,
+      "engines": {
+        "ferriki": {
+          "html": [
+            5.556770500000084,
+            5.259291999999959
+          ],
+          "tokens": [
+            8.096125000000029,
+            7.87854200000038
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            4.027353999999832,
+            3.834229499999992
+          ],
+          "tokens": [
+            2.2652079999998023,
+            2.143459000000348
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            3.0086045000000468,
+            2.8281040000001667
+          ],
+          "tokens": [
+            1.2507920000002741,
+            1.1970830000000205
+          ]
+        },
+        "prism": {
+          "html": [
+            0.7039375000001655,
+            0.6782914999998866
+          ],
+          "tokens": [
+            0.24279100000012477,
+            0.23454099999980826
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 3.0086045000000468
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 2.8281040000001667
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 1.2507920000002741
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 1.1970830000000205
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            1.379757155690887,
+            1.371668545140548
+          ],
+          "tokens": [
+            3.574119904221041,
+            3.675620574034353
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            1.8469594458161576,
+            1.8596529689147392
+          ],
+          "tokens": [
+            6.472798834656965,
+            6.581450074890584
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            1.8469594458161576,
+            1.8596529689147392
+          ],
+          "tokens": [
+            6.472798834656965,
+            6.581450074890584
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        6.845332999999755,
+        6.681459000000359
+      ]
+    },
+    {
+      "language": "Swift",
+      "textmate": "swift",
+      "bytes": 15504,
+      "engines": {
+        "ferriki": {
+          "html": [
+            17.082020999999713,
+            16.151937499999804
+          ],
+          "tokens": [
+            26.159541999999874,
+            23.809791499999847
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            33.63422949999972,
+            31.717999499999905
+          ],
+          "tokens": [
+            30.977812499999345,
+            28.400833000000148
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            23.38479099999995,
+            21.400104499999543
+          ],
+          "tokens": [
+            19.966540999999324,
+            18.099291500000163
+          ]
+        },
+        "prism": {
+          "html": [
+            1.5103750000002947,
+            1.4750834999999825
+          ],
+          "tokens": [
+            0.6801454999999805,
+            0.655500000000302
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 23.38479099999995
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 21.400104499999543
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 19.966540999999324
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 18.099291500000163
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.5078760909328949,
+            0.5092356943886026
+          ],
+          "tokens": [
+            0.8444605957893389,
+            0.8383483505571728
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.7304756754079927,
+            0.7547597489535693
+          ],
+          "tokens": [
+            1.310168947140156,
+            1.3155095877647824
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.7304756754079927,
+            0.7547597489535693
+          ],
+          "tokens": [
+            1.310168947140156,
+            1.3155095877647824
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        6.1930010000005495,
+        5.7104999999996835
+      ]
+    },
+    {
+      "language": "MDX",
+      "textmate": "mdx",
+      "bytes": 17200,
+      "engines": {
+        "ferriki": {
+          "html": [
+            23.504500000000462,
+            22.897416499999963
+          ],
+          "tokens": [
+            36.202791499999876,
+            35.22675049999998
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            36.68024999999943,
+            36.12943749999977
+          ],
+          "tokens": [
+            32.11304150000069,
+            31.406333500000073
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            87.11224999999968,
+            86.03645850000021
+          ],
+          "tokens": [
+            82.8871250000002,
+            81.37704200000007
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 36.68024999999943
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 36.12943749999977
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 32.11304150000069
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 31.406333500000073
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.6407944329714444,
+            0.6337606695371361
+          ],
+          "tokens": [
+            1.1273548006967542,
+            1.1216447949901538
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.26981853872446815,
+            0.2661362043394651
+          ],
+          "tokens": [
+            0.43677219471660755,
+            0.4328831527201486
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.6407944329714444,
+            0.6337606695371361
+          ],
+          "tokens": [
+            1.1273548006967542,
+            1.1216447949901538
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        4.089749999999185,
+        3.8204169999999067
+      ]
+    },
+    {
+      "language": "Markdown",
+      "textmate": "markdown",
+      "bytes": 16304,
+      "engines": {
+        "ferriki": {
+          "html": [
+            15.903541499999847,
+            14.7121874999998
+          ],
+          "tokens": [
+            23.784625000000233,
+            22.40302049999991
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            24.745792000000165,
+            22.838312500000484
+          ],
+          "tokens": [
+            20.392415999999685,
+            18.88710399999991
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            52.00002099999983,
+            45.99187499999971
+          ],
+          "tokens": [
+            46.826624500000435,
+            41.907083500000226
+          ]
+        },
+        "prism": {
+          "html": [
+            3.289625000000342,
+            3.1770830000000387
+          ],
+          "tokens": [
+            2.6551250000002256,
+            2.569833500000641
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 24.745792000000165
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 22.838312500000484
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 20.392415999999685
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 18.88710399999991
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.6426766013389161,
+            0.6441889040619567
+          ],
+          "tokens": [
+            1.1663465966955853,
+            1.1861543463730606
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.3058372130272774,
+            0.3198866647641544
+          ],
+          "tokens": [
+            0.507929522017971,
+            0.5345879175772227
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.6426766013389161,
+            0.6441889040619567
+          ],
+          "tokens": [
+            1.1663465966955853,
+            1.1861543463730606
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        3.3922090000005483,
+        3.515916500000003
+      ]
+    },
+    {
+      "language": "Rust",
+      "textmate": "rust",
+      "bytes": 15440,
+      "engines": {
+        "ferriki": {
+          "html": [
+            13.731124999999793,
+            13.289666500000294
+          ],
+          "tokens": [
+            18.302874999999858,
+            17.91537500000004
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            28.34095850000017,
+            27.31510400000002
+          ],
+          "tokens": [
+            24.18579200000022,
+            23.52639599999975
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            20.2782494999999,
+            19.420896000000084
+          ],
+          "tokens": [
+            16.073458500000015,
+            15.547021500000028
+          ]
+        },
+        "prism": {
+          "html": [
+            1.724874500000169,
+            1.6580834999995204
+          ],
+          "tokens": [
+            0.8354165000000648,
+            0.8196874999994179
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 20.2782494999999
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 19.420896000000084
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 16.073458500000015
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 15.547021500000028
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.48449755148541324,
+            0.486531792081051
+          ],
+          "tokens": [
+            0.756761449035851,
+            0.7615010390881898
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.6771356176478576,
+            0.6842972898881821
+          ],
+          "tokens": [
+            1.1387017299357098,
+            1.1523348700585516
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.6771356176478576,
+            0.6842972898881821
+          ],
+          "tokens": [
+            1.1387017299357098,
+            1.1523348700585516
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        2.229416499999843,
+        2.368353500000012
+      ]
+    },
+    {
+      "language": "Python",
+      "textmate": "python",
+      "bytes": 21824,
+      "engines": {
+        "ferriki": {
+          "html": [
+            15.180354500000249,
+            14.943478499999856
+          ],
+          "tokens": [
+            21.735729000000447,
+            22.20425000000023
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            35.447875500000464,
+            35.04033349999986
+          ],
+          "tokens": [
+            31.486437499999738,
+            32.01912549999952
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            26.448917000000165,
+            26.196478999999727
+          ],
+          "tokens": [
+            22.32141649999994,
+            23.1452290000002
+          ]
+        },
+        "prism": {
+          "html": [
+            2.110478999999941,
+            2.1035624999999527
+          ],
+          "tokens": [
+            1.2175620000007257,
+            1.2001045000001795
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 26.448917000000165
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 26.196478999999727
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 22.32141649999994
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 23.1452290000002
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.42824440917481926,
+            0.4264650763098449
+          ],
+          "tokens": [
+            0.6903203641250499,
+            0.6934683459734265
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.5739499466084057,
+            0.570438435638622
+          ],
+          "tokens": [
+            0.9737611858100719,
+            0.9593445802588533
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.5739499466084057,
+            0.570438435638622
+          ],
+          "tokens": [
+            0.9737611858100719,
+            0.9593445802588533
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        -0.5856874999994943,
+        -0.9409789999999703
+      ]
+    },
+    {
+      "language": "Vue",
+      "textmate": "vue",
+      "bytes": 20960,
+      "engines": {
+        "ferriki": {
+          "html": [
+            23.035249999999905,
+            22.554313000000093
+          ],
+          "tokens": [
+            37.32218799999919,
+            36.48702099999991
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            45.19479199999978,
+            44.05533299999979
+          ],
+          "tokens": [
+            39.974520499999926,
+            38.90833349999957
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            67.02135449999969,
+            65.2830829999998
+          ],
+          "tokens": [
+            61.46302100000048,
+            59.81233350000002
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 45.19479199999978
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 44.05533299999979
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 39.974520499999926
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 38.90833349999957
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.50968815167907,
+            0.5119542054080082
+          ],
+          "tokens": [
+            0.9336494230118222,
+            0.9377687944409214
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.343700156045041,
+            0.34548480193559733
+          ],
+          "tokens": [
+            0.6072299635255302,
+            0.6100250377290479
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.50968815167907,
+            0.5119542054080082
+          ],
+          "tokens": [
+            0.9336494230118222,
+            0.9377687944409214
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        -2.652332500000739,
+        -2.421312499999658
+      ]
+    },
+    {
+      "language": "Svelte",
+      "textmate": "svelte",
+      "bytes": 16992,
+      "engines": {
+        "ferriki": {
+          "html": [
+            31.106937500000186,
+            29.833541500000138
+          ],
+          "tokens": [
+            52.04704149999998,
+            50.84620799999993
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            62.70427099999961,
+            58.83243749999929
+          ],
+          "tokens": [
+            57.339562499999374,
+            54.87243699999817
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            111.19954149999967,
+            104.85514599999942
+          ],
+          "tokens": [
+            104.16308350000054,
+            101.04281249999894
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 62.70427099999961
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 58.83243749999929
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 57.339562499999374
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 54.87243699999817
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.4960896124603758,
+            0.5070934125413468
+          ],
+          "tokens": [
+            0.9076986155937368,
+            0.926625657249406
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.2797398000062822,
+            0.28452148166385943
+          ],
+          "tokens": [
+            0.49966878620677263,
+            0.5032144963304586
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.4960896124603758,
+            0.5070934125413468
+          ],
+          "tokens": [
+            0.9076986155937368,
+            0.926625657249406
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        -5.292520999999397,
+        -4.026228999998239
+      ]
+    },
+    {
+      "language": "Ruby",
+      "textmate": "ruby",
+      "bytes": 13696,
+      "engines": {
+        "ferriki": {
+          "html": [
+            13.467063000000053,
+            13.121333499999764
+          ],
+          "tokens": [
+            19.883166500000698,
+            19.60239599999977
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            38.83329150000009,
+            37.71549999999979
+          ],
+          "tokens": [
+            35.205166499999905,
+            34.275208499999735
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            32.252562500000295,
+            31.47322899999972
+          ],
+          "tokens": [
+            28.643478999999388,
+            28.130999999999858
+          ]
+        },
+        "prism": {
+          "html": [
+            1.8037295000003724,
+            1.7800419999998667
+          ],
+          "tokens": [
+            0.972937500000171,
+            0.9265420000001541
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 32.252562500000295
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 31.47322899999972
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-js",
+            "medianMs": 28.643478999999388
+          },
+          {
+            "engine": "shiki-js",
+            "medianMs": 28.130999999999858
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.34679169547088284,
+            0.34790294441277025
+          ],
+          "tokens": [
+            0.5647797887847158,
+            0.5719117944971779
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.41755017140110745,
+            0.4169045857989303
+          ],
+          "tokens": [
+            0.6941603183049491,
+            0.6968254239095614
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.41755017140110745,
+            0.4169045857989303
+          ],
+          "tokens": [
+            0.6941603183049491,
+            0.6968254239095614
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        -8.76031249999869,
+        -8.528604000000087
+      ]
+    },
+    {
+      "language": "Astro",
+      "textmate": "astro",
+      "bytes": 17296,
+      "engines": {
+        "ferriki": {
+          "html": [
+            25.03808349999963,
+            24.299811999999747
+          ],
+          "tokens": [
+            33.09400000000005,
+            31.79810400000042
+          ]
+        },
+        "shiki-wasm": {
+          "html": [
+            48.47768750000023,
+            46.84914600000002
+          ],
+          "tokens": [
+            44.5215204999995,
+            42.218729500000336
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            78.19818750000013,
+            76.90383299999985
+          ],
+          "tokens": [
+            74.02814599999965,
+            71.04962500000056
+          ]
+        }
+      },
+      "bestShiki": {
+        "html": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 48.47768750000023
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 46.84914600000002
+          }
+        ],
+        "tokens": [
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 44.5215204999995
+          },
+          {
+            "engine": "shiki-wasm",
+            "medianMs": 42.218729500000336
+          }
+        ]
+      },
+      "ferrikiRatios": {
+        "shiki-wasm": {
+          "html": [
+            0.516486754860151,
+            0.5186820694661058
+          ],
+          "tokens": [
+            0.743325915834353,
+            0.7531752939178373
+          ]
+        },
+        "shiki-js": {
+          "html": [
+            0.32018751713394367,
+            0.3159766041830424
+          ],
+          "tokens": [
+            0.44704618159693216,
+            0.4475478090137727
+          ]
+        },
+        "best-shiki": {
+          "html": [
+            0.516486754860151,
+            0.5186820694661058
+          ],
+          "tokens": [
+            0.743325915834353,
+            0.7531752939178373
+          ]
+        }
+      },
+      "tokenGapVsBestShikiMs": [
+        -11.427520499999446,
+        -10.420625499999915
+      ]
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+[
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--check"
+    ],
+    "environment": {
+      "RUST_MIN_STACK": "268435456",
+      "FERRONI_ONIGURUMA_DIR": "/private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig"
+    },
+    "status": "PASSED",
+    "seconds": 0.89
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "environment": {
+      "RUST_MIN_STACK": "268435456",
+      "FERRONI_ONIGURUMA_DIR": "/private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig"
+    },
+    "status": "PASSED",
+    "seconds": 7.98
+  },
+  {
+    "name": "tests",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--all-features",
+      "--",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "RUST_MIN_STACK": "268435456",
+      "FERRONI_ONIGURUMA_DIR": "/private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig"
+    },
+    "status": "PASSED",
+    "seconds": 42.87
+  },
+  {
+    "name": "rustdoc",
+    "command": [
+      "cargo",
+      "doc",
+      "--no-deps",
+      "--locked"
+    ],
+    "environment": {
+      "RUST_MIN_STACK": "268435456",
+      "FERRONI_ONIGURUMA_DIR": "/private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig",
+      "RUSTDOCFLAGS": "-D warnings"
+    },
+    "status": "PASSED",
+    "seconds": 2.03
+  },
+  {
+    "name": "workflow-pins",
+    "command": [
+      "./scripts/check-workflow-pins.sh"
+    ],
+    "environment": {
+      "RUST_MIN_STACK": "268435456",
+      "FERRONI_ONIGURUMA_DIR": "/private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig"
+    },
+    "status": "PASSED",
+    "seconds": 0.67
+  },
+  {
+    "name": "deny",
+    "command": [
+      "cargo",
+      "deny",
+      "--all-features",
+      "--locked",
+      "check"
+    ],
+    "environment": {
+      "RUST_MIN_STACK": "268435456",
+      "FERRONI_ONIGURUMA_DIR": "/private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig"
+    },
+    "status": "FAILED",
+    "seconds": 0.51,
+    "note": "Sandbox run could not acquire the host advisory-cache lock; rerun with host permissions passed."
+  },
+  {
+    "name": "deny-host",
+    "command": [
+      "cargo",
+      "deny",
+      "--all-features",
+      "--locked",
+      "check"
+    ],
+    "status": "PASSED",
+    "note": "Host advisory-cache access; existing unmatched-license-allowance warnings only."
+  },
+  {
+    "name": "readme",
+    "command": [
+      "mise",
+      "run",
+      "readme:check"
+    ],
+    "status": "PASSED",
+    "note": "Host tool/cache access."
+  },
+  {
+    "name": "evidence-reproduction",
+    "status": "PASSED",
+    "commands": [
+      "node --check summarize.mjs",
+      "node --check lookaround-candidates.mjs",
+      "node summarize.mjs /private/tmp/ferriki-curated-benchmark RESULT_DIRECTORY",
+      "node lookaround-candidates.mjs /private/tmp/ferriki-curated-benchmark CPP_TRACE OUTPUT",
+      "python3 summarize-cpu.py profiles/*.sample.txt.gz"
+    ],
+    "note": "All gzip/JSON parsed; all five strict comparisons and AST/native summaries reproduced exactly."
+  },
+  {
+    "name": "coverage",
+    "status": "SKIPPED",
+    "note": "Benchmark and evidence only; no engine source change."
+  },
+  {
+    "name": "fuzzing",
+    "status": "SKIPPED",
+    "note": "Benchmark and evidence only; no engine source change."
+  }
+]
