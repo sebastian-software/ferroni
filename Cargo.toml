@@ -43,6 +43,7 @@ collapsible_match = "allow"
 ffi = ["cc"]
 
 [dependencies]
+serde_json = "1"
 aho-corasick = "1"
 bitflags = "2"
 memchr = "2"
