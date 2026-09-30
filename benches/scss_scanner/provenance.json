@@ -1,0 +1,59 @@
+{
+  "format_version": 1,
+  "ferroni_commit": "16af64c93e6ecf1cb6786d04a1f434b23bd21716",
+  "diagnostic_commit": "dbc7f6f80cca5ab1948759a35a6cb82a9eadf719",
+  "ferriki_commit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+  "capture_api": "native codeToHtml, lang=scss, theme=github-dark, one cold curated large document",
+  "compile_options": "ONIG_OPTION_CAPTURE_GROUP, ScannerSyntax::Oniguruma, backtracking optimization off",
+  "find_api": "find_next_match_utf16 without caller-provided cache ID",
+  "source_path": "node/benchmarks/curated/fixtures/orders.scss",
+  "source_sha256": "5627cbc56635aee1ec2f5cf3f4f2316528591a28345b3064dfb0e890cc38de24",
+  "workload": {
+    "size": "large",
+    "copies": 16,
+    "bytes": 13696,
+    "lines": 705,
+    "sha256": "4785621a97fb3fb161c71c238cbcacdd33e6b9aa6e353b90c4b520044440e2a0"
+  },
+  "html_sha256": "89dbd3f6d16f388fbd041a1d99246668cb4d7d40df3527e8a9143b625a4309e9",
+  "grammar_paths": {
+    "assets/upstream/textmate-grammars-themes/grammars/scss.json": "4d7af18f80744b4546fd6112ebd2e4a7cde30ded4a7ce0bb9cd09f8a97211d68",
+    "assets/shiki/languages/scss.fkgram": "f4a6a789c569427a4b020dd4c264d946701b5266754393b8d30d054ee25398cf"
+  },
+  "fixture_sha256": "b72b52075c97aaac0f1e91df1affed15552652df44d0744169279372523f2d80",
+  "calls": 3744,
+  "scanners": 20,
+  "subjects": 720,
+  "hot_groups": [
+    {
+      "id": 8,
+      "calls": 1264,
+      "patterns": 103
+    },
+    {
+      "id": 10,
+      "calls": 416,
+      "patterns": 28
+    },
+    {
+      "id": 14,
+      "calls": 208,
+      "patterns": 92
+    },
+    {
+      "id": 6,
+      "calls": 224,
+      "patterns": 31
+    },
+    {
+      "id": 13,
+      "calls": 224,
+      "patterns": 30
+    },
+    {
+      "id": 5,
+      "calls": 96,
+      "patterns": 30
+    }
+  ]
+}

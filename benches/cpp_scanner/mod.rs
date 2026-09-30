@@ -1,4 +1,4 @@
-//! Replay of real Ferriki C++ scanner calls, with setup outside measurement.
+//! Replay of real Ferriki scanner calls, with setup outside measurement.
 use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions, ScannerMatch};
 use serde_json::Value;
 use std::hint::black_box;
@@ -36,8 +36,11 @@ pub fn normalized(matched: Option<ScannerMatch>) -> Match {
 
 impl Corpus {
     pub fn load() -> Self {
-        let fixture: Value =
-            serde_json::from_str(include_str!("trace.json")).expect("valid trace JSON");
+        Self::from_json(include_str!("trace.json"))
+    }
+
+    pub fn from_json(json: &str) -> Self {
+        let fixture: Value = serde_json::from_str(json).expect("valid trace JSON");
         assert_eq!(fixture["format_version"], 1);
         let patterns: Vec<Vec<String>> = fixture["scanners"]
             .as_array()
