@@ -446,7 +446,9 @@ impl Scanner {
     /// assert!(m.is_some());
     /// ```
     pub fn with_config(patterns: &[&str], config: &ScannerConfig) -> Result<Scanner, RegexError> {
-        Self::compile(patterns, config, false)
+        // Diagnostic branch only: compare the existing optimizer on a fixed
+        // Ferriki build. This does not propose changing the production default.
+        Self::compile(patterns, config, true)
     }
 
     /// Create a scanner with the conservative, experimental AST rewrites
