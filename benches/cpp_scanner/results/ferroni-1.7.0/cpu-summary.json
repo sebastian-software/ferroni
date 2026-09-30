@@ -1,0 +1,184 @@
+{
+  "document": {
+    "mainThreadSamples": 7937,
+    "inclusive": {
+      "ferroni": {
+        "inclusiveSamples": 7923,
+        "mainThreadPercent": 99.82361093612197
+      },
+      "scanner": {
+        "inclusiveSamples": 7903,
+        "mainThreadPercent": 99.57162655915333
+      },
+      "regset": {
+        "inclusiveSamples": 7903,
+        "mainThreadPercent": 99.57162655915333
+      },
+      "match_at": {
+        "inclusiveSamples": 7092,
+        "mainThreadPercent": 89.35366007307547
+      },
+      "fallback_search": {
+        "inclusiveSamples": 6173,
+        "mainThreadPercent": 77.77497795136702
+      },
+      "string_setup": {
+        "inclusiveSamples": 4,
+        "mainThreadPercent": 0.05039687539372559
+      }
+    },
+    "ferroniExclusiveTop": [
+      [
+        "ferroni::regexec::match_at_impl",
+        6330
+      ],
+      [
+        "ferroni::regexec::stack_pop",
+        636
+      ],
+      [
+        "ferroni::regset::regset_search_body_position_lead",
+        180
+      ],
+      [
+        "ferroni::regexec::match_literal_trie",
+        130
+      ],
+      [
+        "ferroni::regexec::forward_search",
+        107
+      ],
+      [
+        "ferroni::regset::search_fallback_entry",
+        103
+      ],
+      [
+        "ferroni::regset::attempt_fallback_entry",
+        79
+      ],
+      [
+        "ferroni::regexec::is_word_boundary",
+        50
+      ],
+      [
+        "ferroni::regset::attempt_fallback_entry_at_start",
+        19
+      ],
+      [
+        "ferroni::regexec::stack_pop_to_mark",
+        13
+      ],
+      [
+        "ferroni::scanner::build_scanner_match",
+        12
+      ],
+      [
+        "ferroni::regexec::look_behind_body_matches",
+        10
+      ],
+      [
+        "ferroni::regset::onig_regset_search_impl",
+        9
+      ],
+      [
+        "ferroni::regexec::populate_region_for_match",
+        8
+      ],
+      [
+        "ferroni::regexec::prev_char_head",
+        8
+      ]
+    ]
+  },
+  "group_78": {
+    "mainThreadSamples": 8041,
+    "inclusive": {
+      "ferroni": {
+        "inclusiveSamples": 8027,
+        "mainThreadPercent": 99.82589230195249
+      },
+      "scanner": {
+        "inclusiveSamples": 7993,
+        "mainThreadPercent": 99.40305932097998
+      },
+      "regset": {
+        "inclusiveSamples": 7989,
+        "mainThreadPercent": 99.35331426439498
+      },
+      "match_at": {
+        "inclusiveSamples": 7230,
+        "mainThreadPercent": 89.91418977739087
+      },
+      "fallback_search": {
+        "inclusiveSamples": 6533,
+        "mainThreadPercent": 81.2461136674543
+      },
+      "string_setup": {
+        "inclusiveSamples": 18,
+        "mainThreadPercent": 0.2238527546325084
+      }
+    },
+    "ferroniExclusiveTop": [
+      [
+        "ferroni::regexec::match_at_impl",
+        6338
+      ],
+      [
+        "ferroni::regexec::stack_pop",
+        753
+      ],
+      [
+        "ferroni::regset::regset_search_body_position_lead",
+        134
+      ],
+      [
+        "ferroni::regexec::match_literal_trie",
+        102
+      ],
+      [
+        "ferroni::regexec::is_word_boundary",
+        90
+      ],
+      [
+        "ferroni::regset::attempt_fallback_entry",
+        85
+      ],
+      [
+        "ferroni::regset::search_fallback_entry",
+        79
+      ],
+      [
+        "ferroni::regexec::forward_search",
+        78
+      ],
+      [
+        "ferroni::regexec::stack_pop_to_mark",
+        24
+      ],
+      [
+        "ferroni::regset::attempt_fallback_entry_at_start",
+        23
+      ],
+      [
+        "ferroni::regexec::look_behind_body_matches",
+        15
+      ],
+      [
+        "ferroni::scanner::OnigString::new",
+        9
+      ],
+      [
+        "ferroni::regexec::prev_char_head",
+        8
+      ],
+      [
+        "ferroni::regexec::greedy_char_loop",
+        7
+      ],
+      [
+        "ferroni::scanner::build_scanner_match",
+        7
+      ]
+    ]
+  }
+}

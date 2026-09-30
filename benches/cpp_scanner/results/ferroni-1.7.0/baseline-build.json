@@ -1,0 +1,13 @@
+{
+  "commit": "978b211130469e81abcb830180308c11e016fb90",
+  "command": "CARGO_TARGET_DIR=/private/tmp/ferroni-cpp-scanner-target cargo bench --locked --bench cpp_scanner_bench -- --sample-size 30 --warm-up-time 1 --measurement-time 3 --noplot --save-baseline cpp-1.7.0-{1,2}",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "cpu": "Apple M1 Ultra",
+  "profile": "ordinary bench profile, thin LTO, no overrides",
+  "fixture_sha256": "44276a8387359c14676eda1a1a3f880d5810de5369c7934c0c078c1571b5d4eb",
+  "lockfile_sha256": "63b87721a3a58072647cc5d2a5efb320620092ade5ecbef1c077d19345dfa2db",
+  "note": "Two sequential runs; no parallel Rust builds or tests. The earlier exploratory run is excluded.",
+  "binary_sha256": "beccfde246e642e81fd3b61ff46755105ab6f7a1c40f9d6dac644655a2228a3c",
+  "rust_source_sha256": "aeb908bf85f723b8626e7a697aa1691efe781ed56ae3a75310b159a2c46d3f47"
+}
