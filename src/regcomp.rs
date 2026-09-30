@@ -11519,10 +11519,10 @@ mod tests {
             vec![0xE2, 0x84],
         ])
         .collect();
-        let compile = |pattern: &str| {
+        let compile = |pattern: &str, options| {
             onig_new(
                 pattern.as_bytes(),
-                ONIG_OPTION_NONE,
+                options,
                 &crate::encodings::utf8::ONIG_ENCODING_UTF8,
                 &OnigSyntaxOniguruma,
             )
@@ -11549,16 +11549,20 @@ mod tests {
             (r, captures)
         };
         let mut used = 0;
-        for flags in ["", "(?i)"] {
+        for (flags, options) in [
+            ("", ONIG_OPTION_NONE),
+            ("(?i)", ONIG_OPTION_NONE),
+            ("", ONIG_OPTION_IGNORECASE),
+        ] {
             for middle in ["([a-c]+?)", "(f[o]+)", "(x?)"] {
                 for head in ["", "a*", "\\b"] {
-                    for quantifier in ["", "?", "+", "{2}", "*+"] {
+                    for quantifier in ["", "?", "+", "{2}", "*+", "*", "{3,}", "{1,3}"] {
                         for tail in ["", "x", "$", "(?![a-z])", "\\1"] {
                             let pattern = |run: &str| {
                                 format!("{flags}{head}({run}|{middle}|{run}){quantifier}{tail}")
                             };
-                            let optimized = compile(&pattern(&plain));
-                            let reference = compile(&pattern(&blocked));
+                            let optimized = compile(&pattern(&plain), options);
+                            let reference = compile(&pattern(&blocked), options);
                             assert!(reference.literal_tries.is_empty());
                             used += usize::from(optimized.literal_tries.len() == 2);
                             for input in &inputs {
