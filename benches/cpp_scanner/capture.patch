@@ -1,0 +1,69 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 6ad457d..d128a39 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -43,6 +43,7 @@ collapsible_match = "allow"
+ ffi = ["cc"]
+ 
+ [dependencies]
++serde_json = "1"
+ aho-corasick = "1"
+ bitflags = "2"
+ memchr = "2"
+diff --git a/src/scanner.rs b/src/scanner.rs
+index 1c09a25..e57a38f 100644
+--- a/src/scanner.rs
++++ b/src/scanner.rs
+@@ -406,6 +406,8 @@ const SCANNER_STATS_ENABLED: bool = cfg!(any(test, debug_assertions));
+ /// assert_eq!(m.capture_indices[0].end, 5);
+ /// ```
+ pub struct Scanner {
++    trace_patterns: Vec<String>,
++    trace_id: u64,
+     caches: Vec<CacheEntry>,
+     regset: Box<OnigRegSet>,
+     stats: ScannerStats,
+@@ -495,6 +497,8 @@ impl Scanner {
+         }
+ 
+         Ok(Scanner {
++            trace_patterns: patterns.iter().map(|s| s.to_string()).collect(),
++            trace_id: NEXT_ONIG_STRING_ID.fetch_add(1, Ordering::Relaxed),
+             caches,
+             regset: regset.unwrap(),
+             stats: ScannerStats::default(),
+@@ -595,6 +599,34 @@ impl Scanner {
+         string: &OnigString,
+         start_position: usize,
+         options: ScannerFindOptions,
++    ) -> Option<ScannerMatch> {
++        let started = std::time::Instant::now();
++        let matched = self.trace_find_next_match_utf16(string, start_position, options);
++        let elapsed = started.elapsed().as_nanos();
++        if let Ok(path) = std::env::var("FERRONI_CPP_TRACE") {
++            use std::io::Write;
++            let expected = matched.as_ref().map(|m| serde_json::json!({
++                "index": m.index,
++                "captures": m.capture_indices.iter().map(|c| [c.start, c.end]).collect::<Vec<_>>()
++            }));
++            let event = serde_json::json!({"scanner": self.trace_id, "patterns": self.trace_patterns,
++                "subject_id": string.cache_id, "subject": string.content(),
++                "start": start_position, "options": options.0, "expected": expected, "elapsed_ns": elapsed});
++            let mut file = std::fs::OpenOptions::new()
++                .create(true)
++                .append(true)
++                .open(path)
++                .unwrap();
++            writeln!(file, "{event}").unwrap();
++        }
++        matched
++    }
++
++    fn trace_find_next_match_utf16(
++        &mut self,
++        string: &OnigString,
++        start_position: usize,
++        options: ScannerFindOptions,
+     ) -> Option<ScannerMatch> {
+         if string.is_ascii() {
+             let start = start_position.min(string.content().len());

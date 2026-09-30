@@ -1,0 +1,55 @@
+{
+  "format_version": 1,
+  "ferroni_commit": "de320966e9734a59b4af6e7d4ae063fd4dc7bd48",
+  "diagnostic_commit": "a1c0ccb",
+  "ferriki_commit": "b3b1d57797780e28d6fe8fdd48792e8f0bf88b26",
+  "capture_api": "native codeToHtml, lang=cpp, theme=github-dark, one cold document",
+  "compile_options": "ONIG_OPTION_CAPTURE_GROUP, ScannerSyntax::Oniguruma, backtracking optimization off",
+  "find_api": "find_next_match_utf16 (without caller-provided cache ID)",
+  "source_path": "node/benchmarks/tiobe/fixtures/orders.cpp",
+  "source_sha256": "31abfbd31f35233604d6cce9743d809af4be69f865869a584816e1d7c488ae1f",
+  "document_sha256": "1dd82de44248aec3a9f9617bdc3c85814caa2b6c47122a4e30104fd0c75833b0",
+  "document_bytes": 14992,
+  "document_lines": 561,
+  "grammar_paths": {
+    "assets/upstream/textmate-grammars-themes/grammars/cpp.json": "889b3c1aebeffc53e74d8d14f1c375183d36202797995c7c6a68d50b70fddd5b",
+    "assets/shiki/languages/cpp.fkgram": "9dd2e3af9c97dc7f39af8b2d287578bb47dbe5ff1d62cc62ec7816af31ad1fcb",
+    "assets/shiki/languages/cpp-macro.fkgram": "9af5f8afa1a9418a11f3ec1c3a1cfdd767a00db7ba882ed0006df59e38aaced0"
+  },
+  "fixture_sha256": "44276a8387359c14676eda1a1a3f880d5810de5369c7934c0c078c1571b5d4eb",
+  "calls": 4862,
+  "scanners": 96,
+  "subjects": 1621,
+  "hot_groups": [
+    {
+      "id": 78,
+      "calls": 1545,
+      "patterns": 125
+    },
+    {
+      "id": 58,
+      "calls": 125,
+      "patterns": 78
+    },
+    {
+      "id": 17,
+      "calls": 160,
+      "patterns": 132
+    },
+    {
+      "id": 70,
+      "calls": 144,
+      "patterns": 125
+    },
+    {
+      "id": 61,
+      "calls": 61,
+      "patterns": 76
+    },
+    {
+      "id": 77,
+      "calls": 139,
+      "patterns": 125
+    }
+  ]
+}

@@ -88,3 +88,7 @@ harness = false
 [[bench]]
 name = "purescript_rewrite_bench"
 harness = false
+
+[[bench]]
+name = "cpp_scanner_bench"
+harness = false

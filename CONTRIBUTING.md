@@ -164,6 +164,16 @@ workload, use:
 ./scripts/run-battle-memory.sh
 ```
 
+For a pure Ferroni replay of actual C++ TextMate scanner calls, including
+focused hot groups and a bounded CPU profiling driver, see
+[`benches/cpp_scanner/README.md`](benches/cpp_scanner/README.md):
+
+```sh
+cargo bench --locked --features ffi --bench cpp_scanner_bench -- --test
+cargo bench --locked --bench cpp_scanner_bench
+python3 scripts/profile-cpp-scanner.py /tmp/cpp-scanner --sample --group 78
+```
+
 ## Regenerating Unicode Tables
 
 The checked-in Unicode tables are generated directly from the versioned
