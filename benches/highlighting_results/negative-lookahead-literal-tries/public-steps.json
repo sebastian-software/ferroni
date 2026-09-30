@@ -1,0 +1,66 @@
+[
+  {
+    "label": "build-control",
+    "command": [
+      "node",
+      "node/ferriki/scripts/build-native.mjs"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "build-candidate",
+    "command": [
+      "node",
+      "node/ferriki/scripts/build-native.mjs"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "public-control-1",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/public-control-1.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "public-candidate-1",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/public-candidate-1.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "public-candidate-2",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/public-candidate-2.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "public-control-2",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/public-control-2.json"
+    ],
+    "exitCode": 0
+  }
+]

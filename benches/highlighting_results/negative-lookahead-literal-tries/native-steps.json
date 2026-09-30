@@ -1,0 +1,240 @@
+[
+  {
+    "label": "cpp_scanner_bench-c-parity",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "ffi",
+      "--bench",
+      "cpp_scanner_bench",
+      "--",
+      "--test"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "scss_scanner_bench-c-parity",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "ffi",
+      "--bench",
+      "scss_scanner_bench",
+      "--",
+      "--test"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "build-control-cpp_scanner_bench",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "cpp_scanner_bench",
+      "--no-run"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "build-control-scanner_compile_bench",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--no-run"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "build-candidate-cpp_scanner_bench",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "cpp_scanner_bench",
+      "--no-run"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "build-candidate-scanner_compile_bench",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--no-run"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "cpp_scanner_bench-control-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "cpp_scanner_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "negative-lookahead-control-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "scanner_compile_bench-control-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "negative-lookahead-control-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "cpp_scanner_bench-candidate-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "cpp_scanner_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "negative-lookahead-candidate-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "scanner_compile_bench-candidate-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "negative-lookahead-candidate-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "cpp_scanner_bench-candidate-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "cpp_scanner_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "negative-lookahead-candidate-2"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "scanner_compile_bench-candidate-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "negative-lookahead-candidate-2"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "cpp_scanner_bench-control-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "cpp_scanner_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "negative-lookahead-control-2"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "scanner_compile_bench-control-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "negative-lookahead-control-2"
+    ],
+    "exitCode": 0
+  }
+]

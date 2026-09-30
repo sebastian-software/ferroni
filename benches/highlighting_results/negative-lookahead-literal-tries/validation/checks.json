@@ -1,0 +1,172 @@
+{
+  "fullSuite": {
+    "command": "RUST_MIN_STACK=268435456 cargo test --locked --all-features -- --test-threads=1",
+    "testFunctions": 2362,
+    "doctests": 14,
+    "exitCode": 0,
+    "passedTests": 2360,
+    "ignoredTests": 2
+  },
+  "coveragePercent": 89.97,
+  "qualityChecks": [
+    {
+      "label": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "environment": {},
+      "exitCode": 0
+    },
+    {
+      "label": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {},
+      "exitCode": 0
+    },
+    {
+      "label": "rustdoc",
+      "command": [
+        "cargo",
+        "doc",
+        "--no-deps",
+        "--locked"
+      ],
+      "environment": {
+        "RUSTDOCFLAGS": "-D warnings"
+      },
+      "exitCode": 0
+    },
+    {
+      "label": "deny",
+      "command": [
+        "cargo",
+        "deny",
+        "--all-features",
+        "--locked",
+        "check"
+      ],
+      "environment": {},
+      "exitCode": 0
+    },
+    {
+      "label": "workflow-pins",
+      "command": [
+        "./scripts/check-workflow-pins.sh"
+      ],
+      "environment": {},
+      "exitCode": 0
+    },
+    {
+      "label": "readme",
+      "command": [
+        "./scripts/readme-family.sh",
+        "check"
+      ],
+      "environment": {},
+      "exitCode": 0
+    },
+    {
+      "label": "msrv-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "negative_lookahead_tries",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "RUSTUP_TOOLCHAIN": "1.94.0",
+        "RUST_MIN_STACK": "268435456"
+      },
+      "exitCode": 0
+    },
+    {
+      "label": "coverage",
+      "command": [
+        "./scripts/coverage.sh"
+      ],
+      "environment": {
+        "RUSTUP_TOOLCHAIN": "nightly-2026-07-20",
+        "CARGO_TARGET_DIR": "/private/tmp/ferroni-negative-lookahead-perf/coverage-target",
+        "RUST_MIN_STACK": "268435456"
+      },
+      "exitCode": 0
+    },
+    {
+      "label": "docs-install",
+      "command": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "cwd": "docs",
+      "exitCode": 0
+    },
+    {
+      "label": "docs-format-write",
+      "command": [
+        "pnpm",
+        "exec",
+        "oxfmt",
+        "--write",
+        "app/routes/adr/008-rust-only-optimizations.mdx"
+      ],
+      "cwd": "docs",
+      "exitCode": 0
+    },
+    {
+      "label": "docs-format",
+      "command": [
+        "pnpm",
+        "format:check"
+      ],
+      "cwd": "docs",
+      "exitCode": 0
+    },
+    {
+      "label": "docs-lint",
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "cwd": "docs",
+      "exitCode": 0
+    },
+    {
+      "label": "docs-types",
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "docs",
+      "exitCode": 0
+    },
+    {
+      "label": "docs-build",
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "cwd": "docs",
+      "exitCode": 0
+    }
+  ],
+  "notes": [
+    "The initial root-level pnpm --dir docs invocation selected global pnpm 11.25.0 and failed before executing documentation checks. The successful checks run from the docs workspace with the pinned pnpm 10.34.5.",
+    "Coverage uses installed nightly-2026-07-20 with LLVM 22.1.8; benchmark builds use stable Rust 1.96.0."
+  ]
+}

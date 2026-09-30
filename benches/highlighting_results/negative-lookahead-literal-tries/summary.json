@@ -1,0 +1,4697 @@
+{
+  "primaryMetric": {
+    "api": "html",
+    "output": "inline HTML",
+    "target": "ferriki < min(shiki-wasm, shiki-js)"
+  },
+  "diagnosticApis": [
+    "tokens"
+  ],
+  "unmeasuredProductOutputs": [
+    "HTML with CSS in classes mode"
+  ],
+  "order": [
+    "control-1",
+    "candidate-1",
+    "candidate-2",
+    "control-2"
+  ],
+  "method": {
+    "theme": "github-dark",
+    "apis": [
+      "html",
+      "tokens"
+    ],
+    "sizes": [
+      "example",
+      "large"
+    ],
+    "warmup": 5,
+    "budgetMsPerEngine": 300,
+    "minRounds": 30,
+    "maxRounds": 1000,
+    "timeoutMsPerLanguage": 120000,
+    "schedule": "Rotate engine order every round; warm reused highlighters; one process per language; sequential languages",
+    "units": "Milliseconds per document; raw samples include output allocation; setup and validation excluded"
+  },
+  "machine": {
+    "cpu": "Apple M1 Ultra",
+    "cores": 20,
+    "platform": "darwin-arm64",
+    "os": "Darwin 27.0.0",
+    "node": "v24.21.0"
+  },
+  "versions": {
+    "ferriki": "0.7.0",
+    "shiki": "4.4.3",
+    "prism": "1.30.0"
+  },
+  "builds": {
+    "control": {
+      "builtAt": "2026-09-30T22:42:52.177Z",
+      "binarySha256": "7912420a15cb0f7a02ee685e8d5530526ceef4769d8976c6a963ef11eedb49ea",
+      "ferriki": {
+        "commit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+        "status": "M Cargo.lock"
+      },
+      "rustSourceSha256": "ad9e8079b44edab747109da0d62354badf9681871afb9ea6fde38b5f1dc47a26",
+      "ferroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+      "cargoArgs": [
+        "build",
+        "--release",
+        "--manifest-path",
+        "/private/tmp/ferriki-curated-benchmark/crates/ferriki-core/Cargo.toml",
+        "--config",
+        "patch.crates-io.ferroni.path=\"/private/tmp/ferroni-curated-baseline\""
+      ],
+      "rustflags": null,
+      "encodedRustflags": null,
+      "targetRustflags": {},
+      "cargoProfileEnv": {},
+      "cargoLockSha256": "11ed21c76fb736d7662a11c2034d2a2c12d3b7c3f55be1665101a8859fc75d6d",
+      "loadedAddon": "/private/tmp/ferriki-curated-benchmark/node/platforms/darwin-arm64/ferriki.node"
+    },
+    "candidate": {
+      "builtAt": "2026-09-30T22:43:04.250Z",
+      "binarySha256": "8d71183aa08976338068e2e92420dbfa88beb27c3d497cd47e50a354b030dd73",
+      "ferriki": {
+        "commit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+        "status": "M Cargo.lock"
+      },
+      "rustSourceSha256": "ad9e8079b44edab747109da0d62354badf9681871afb9ea6fde38b5f1dc47a26",
+      "ferroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+      "cargoArgs": [
+        "build",
+        "--release",
+        "--manifest-path",
+        "/private/tmp/ferriki-curated-benchmark/crates/ferriki-core/Cargo.toml",
+        "--config",
+        "patch.crates-io.ferroni.path=\"/private/tmp/ferroni-scss-analysis\""
+      ],
+      "rustflags": null,
+      "encodedRustflags": null,
+      "targetRustflags": {},
+      "cargoProfileEnv": {},
+      "cargoLockSha256": "11ed21c76fb736d7662a11c2034d2a2c12d3b7c3f55be1665101a8859fc75d6d",
+      "loadedAddon": "/private/tmp/ferriki-curated-benchmark/node/platforms/darwin-arm64/ferriki.node"
+    }
+  },
+  "pairComparisons": [
+    {
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.910145999999969,
+          "candidateMs": 0.9583749999999327,
+          "changePercent": 5.299039934248495
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.1041660000000775,
+          "candidateMs": 2.2038539999999784,
+          "changePercent": 4.737649025784907
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.096228999999994,
+          "candidateMs": 1.1390000000001237,
+          "changePercent": 3.90164828700299
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.609458000000359,
+          "candidateMs": 15.159145999999964,
+          "changePercent": 3.7625488912702343
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.32231200000001,
+          "candidateMs": 13.667145500000288,
+          "changePercent": 2.5883908138488065
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6098755000000438,
+          "candidateMs": 1.6511250000000928,
+          "changePercent": 2.562278884301783
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.6568750000001273,
+          "candidateMs": 2.7210409999997864,
+          "changePercent": 2.4150929193001547
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1363130000000865,
+          "candidateMs": 1.1628749999999854,
+          "changePercent": 2.3375601616717256
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1071665000000621,
+          "candidateMs": 1.1328125,
+          "changePercent": 2.316363437652469
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.433499999999981,
+          "candidateMs": 1.4663960000000316,
+          "changePercent": 2.294802929895434
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9993329999999787,
+          "candidateMs": 1.0201869999999928,
+          "changePercent": 2.086791890192208
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.945604000000458,
+          "candidateMs": 22.37487549999969,
+          "changePercent": 1.9560705642880594
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.025541499999235,
+          "candidateMs": 23.47197950000009,
+          "changePercent": 1.9388816545351073
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 31.26622950000001,
+          "candidateMs": 31.871250000001055,
+          "changePercent": 1.935060637871433
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 8.348124999999982,
+          "candidateMs": 8.490999999999985,
+          "changePercent": 1.7114621546755027
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.65037499999994,
+          "candidateMs": 1.6752705000001242,
+          "changePercent": 1.5084753465233858
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 29.30043700000033,
+          "candidateMs": 29.587250000000495,
+          "changePercent": 0.9788693595258025
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.440520500000275,
+          "candidateMs": 2.464292000000114,
+          "changePercent": 0.9740340226536137
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.433708499999966,
+          "candidateMs": 3.4668750000000728,
+          "changePercent": 0.9659090164499062
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.529125000000022,
+          "candidateMs": 2.5535409999997682,
+          "changePercent": 0.9653931695644324
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8297710000000507,
+          "candidateMs": 1.8470210000000407,
+          "changePercent": 0.9427409222241279
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5256044999998721,
+          "candidateMs": 1.539395999999897,
+          "changePercent": 0.9040023151495769
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 50.015645499999664,
+          "candidateMs": 50.37139600000046,
+          "changePercent": 0.7112784338668465
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.264250000001084,
+          "candidateMs": 36.51506250000057,
+          "changePercent": 0.6916246716793362
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.159228999999868,
+          "candidateMs": 13.235249999999724,
+          "changePercent": 0.5777010188047882
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.073541499999692,
+          "candidateMs": 16.162667000000056,
+          "changePercent": 0.5544857678089432
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.4003745000002255,
+          "candidateMs": 2.41262549999999,
+          "changePercent": 0.5103786929816057
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.571374999999989,
+          "candidateMs": 1.5774579999999787,
+          "changePercent": 0.38711319704014535
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.157770499999515,
+          "candidateMs": 16.2155415000002,
+          "changePercent": 0.3575431400061335
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.36608350000006,
+          "candidateMs": 36.49385400000028,
+          "changePercent": 0.35134523078412805
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 16.52141649999976,
+          "candidateMs": 16.574874999999793,
+          "changePercent": 0.3235709238371465
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 24.191603999999643,
+          "candidateMs": 24.256582999999864,
+          "changePercent": 0.2686014536292136
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 34.58741650000047,
+          "candidateMs": 34.68010400000094,
+          "changePercent": 0.2679804084253057
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5457085000000461,
+          "candidateMs": 0.5463125000000559,
+          "changePercent": 0.11068180173292586
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.1003749999999854,
+          "candidateMs": 2.101791500000104,
+          "changePercent": 0.06744033804051419
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 19.47995800000035,
+          "candidateMs": 19.47368800000004,
+          "changePercent": -0.03218692771469467
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.259229499999947,
+          "candidateMs": 22.24591650000002,
+          "changePercent": -0.059808898596092064
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.478665999999976,
+          "candidateMs": 17.45085399999971,
+          "changePercent": -0.15911969483407562
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.957874499999889,
+          "candidateMs": 14.916374999999789,
+          "changePercent": -0.2774424935849007
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 25.713666999999077,
+          "candidateMs": 25.630208999999923,
+          "changePercent": -0.32456669832100493
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.32277100000004566,
+          "candidateMs": 0.3213749999999891,
+          "changePercent": -0.4325047789474179
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.4872089999998934,
+          "candidateMs": 2.474833000000217,
+          "changePercent": -0.4975858482209161
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8816249999999854,
+          "candidateMs": 0.8770000000000664,
+          "changePercent": -0.5245994612130045
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.524562499999774,
+          "candidateMs": 37.298999500000264,
+          "changePercent": -0.6011076078488942
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 24.02179150000029,
+          "candidateMs": 23.843124999999418,
+          "changePercent": -0.7437684237700193
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 15.5962499999996,
+          "candidateMs": 15.474146000000019,
+          "changePercent": -0.782906147308382
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.4443750000000364,
+          "candidateMs": 1.4328330000000733,
+          "changePercent": -0.7990999567261126
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.5291459999999688,
+          "candidateMs": 0.5248954999999569,
+          "changePercent": -0.8032754665087127
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.9767499999998108,
+          "candidateMs": 0.9678750000000491,
+          "changePercent": -0.9086255438713553
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.6628329999998641,
+          "candidateMs": 1.647707999999966,
+          "changePercent": -0.9095922440737758
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.70877100000007,
+          "candidateMs": 21.49968799999988,
+          "changePercent": -0.963126839378381
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6608329999999114,
+          "candidateMs": 1.6420414999998911,
+          "changePercent": -1.131450302349557
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.804416500000116,
+          "candidateMs": 22.519750500000555,
+          "changePercent": -1.2482932856429763
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.3580830000000788,
+          "candidateMs": 1.3407500000002983,
+          "changePercent": -1.276284291886387
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0483329999999569,
+          "candidateMs": 1.0347079999999096,
+          "changePercent": -1.299682448234274
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.423916500000132,
+          "candidateMs": 13.241812999999638,
+          "changePercent": -1.3565601365331248
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 8.006666500000165,
+          "candidateMs": 7.887374999999793,
+          "changePercent": -1.489902195881021
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8228960000000143,
+          "candidateMs": 1.7949590000000626,
+          "changePercent": -1.5325613748645828
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.137103500000194,
+          "candidateMs": 22.78143749999981,
+          "changePercent": -1.5372105674350323
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8352080000000228,
+          "candidateMs": 0.822166999999979,
+          "changePercent": -1.5614074577881776
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 46.29133299999921,
+          "candidateMs": 45.54441700000007,
+          "changePercent": -1.613511540052559
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.1334160000001248,
+          "candidateMs": 3.078624999999647,
+          "changePercent": -1.7486028028348422
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 25.963145499999882,
+          "candidateMs": 25.50441699999965,
+          "changePercent": -1.7668448532179415
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.0902915000001485,
+          "candidateMs": 3.0335625000000164,
+          "changePercent": -1.8357167924168083
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 45.224521000000095,
+          "candidateMs": 44.333959000000505,
+          "changePercent": -1.9692016196248718
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 5.220209000000068,
+          "candidateMs": 5.113479499999926,
+          "changePercent": -2.0445445766661963
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0534169999999676,
+          "candidateMs": 1.0301670000001195,
+          "changePercent": -2.207103169955371
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.025291500000094,
+          "candidateMs": 22.49499949999972,
+          "changePercent": -2.3030848491119915
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.205729500000075,
+          "candidateMs": 1.1748340000001463,
+          "changePercent": -2.5623906522919793
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.7980625000000146,
+          "candidateMs": 1.750250000000051,
+          "changePercent": -2.659112238866179
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 18.192687500000375,
+          "candidateMs": 17.6967080000004,
+          "changePercent": -2.7262574592124778
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.938937500000065,
+          "candidateMs": 26.148853999999574,
+          "changePercent": -2.932868083607565
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.172207999999955,
+          "candidateMs": 1.1255839999998898,
+          "changePercent": -3.9774511008342395
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 9.574145999999928,
+          "candidateMs": 9.170978999999761,
+          "changePercent": -4.2109969912738965
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5675830000000133,
+          "candidateMs": 0.5224795000000313,
+          "changePercent": -7.946591071258469
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.549479499999961,
+          "candidateMs": 14.232270999999855,
+          "changePercent": -8.471077761799739
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 5.218582999999853,
+          "candidateMs": 3.4930420000000595,
+          "changePercent": -33.06531677276844
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 78.70087500000045,
+          "candidateMs": 51.03414600000042,
+          "changePercent": -35.154283862790436
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 8.949687499999982,
+          "candidateMs": 5.766125000000102,
+          "changePercent": -35.57177275742741
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 140.92804199999955,
+          "candidateMs": 87.15847899999972,
+          "changePercent": -38.153913328335335
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.7119789999997,
+          "candidateMs": 24.9229164999997,
+          "changePercent": 5.106859701588018
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 31.466416499999468,
+          "candidateMs": 32.60402049999993,
+          "changePercent": 3.6152956915207923
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.480854500000305,
+          "candidateMs": 3.594853999999714,
+          "changePercent": 3.27504352736947
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.6463749999998072,
+          "candidateMs": 1.6891659999998865,
+          "changePercent": 2.599104092329174
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.014353999999969,
+          "candidateMs": 1.0394165000000157,
+          "changePercent": 2.470784361282896
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.209957999999915,
+          "candidateMs": 2.264270500000066,
+          "changePercent": 2.4576258915397053
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6361875000000055,
+          "candidateMs": 1.6744169999997212,
+          "changePercent": 2.336498720330993
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 29.594833000000108,
+          "candidateMs": 30.202895500000068,
+          "changePercent": 2.0546238595093858
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 44.12072949999947,
+          "candidateMs": 44.867041500000596,
+          "changePercent": 1.6915223489247566
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5656249999999545,
+          "candidateMs": 1.5919165000002522,
+          "changePercent": 1.6792974052086906
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.82818800000041,
+          "candidateMs": 24.209749499999816,
+          "changePercent": 1.6013030449457677
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.006040999999982,
+          "candidateMs": 1.021833000000015,
+          "changePercent": 1.5697173375671003
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.52375000000029,
+          "candidateMs": 21.751854000000094,
+          "changePercent": 1.0597781520404137
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.873812499999985,
+          "candidateMs": 16.04154200000039,
+          "changePercent": 1.0566428197410271
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.56379099999981,
+          "candidateMs": 1.57831200000021,
+          "changePercent": 0.9285767727529981
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.285895500000152,
+          "candidateMs": 13.404334000000063,
+          "changePercent": 0.8914604213160482
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.33725000000004,
+          "candidateMs": 2.3568749999998317,
+          "changePercent": 0.8396619959264662
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.0867500000000518,
+          "candidateMs": 1.095707999999945,
+          "changePercent": 0.8242926155870967
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.356999999999971,
+          "candidateMs": 14.447978999999577,
+          "changePercent": 0.6336908824936094
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.3332919999998012,
+          "candidateMs": 1.3401874999999563,
+          "changePercent": 0.5171785325462253
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 50.36118749999969,
+          "candidateMs": 50.58849999999984,
+          "changePercent": 0.451364456011194
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 16.19939549999981,
+          "candidateMs": 16.2713334999994,
+          "changePercent": 0.4440782990920322
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 25.861708500000077,
+          "candidateMs": 25.954083000000537,
+          "changePercent": 0.3571863784655127
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 35.357812500000364,
+          "candidateMs": 35.466833999999835,
+          "changePercent": 0.3083377966311307
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.874854499999856,
+          "candidateMs": 15.914042000000336,
+          "changePercent": 0.24685265619588392
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.745770500000162,
+          "candidateMs": 22.792333999999755,
+          "changePercent": 0.20471278385401082
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.277208499999688,
+          "candidateMs": 14.301749499999914,
+          "changePercent": 0.17188934377632137
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 15.41997899999933,
+          "candidateMs": 15.431833000000552,
+          "changePercent": 0.07687429406499913
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.9727079999997841,
+          "candidateMs": 0.9731664999999339,
+          "changePercent": 0.047136447952511595
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 45.358374999999796,
+          "candidateMs": 45.33958299999995,
+          "changePercent": -0.04143005563989055
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.662937500000226,
+          "candidateMs": 36.62308350000012,
+          "changePercent": -0.10870378294184357
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.44710449999957,
+          "candidateMs": 26.381333499999073,
+          "changePercent": -0.24868884985309592
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.049666500000058,
+          "candidateMs": 15.001083499999822,
+          "changePercent": -0.3228177847013125
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1664590000000317,
+          "candidateMs": 1.1605420000000777,
+          "changePercent": -0.5072617211538399
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.4002920000000358,
+          "candidateMs": 1.3924994999999285,
+          "changePercent": -0.5564910747263507
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.60331249999945,
+          "candidateMs": 36.394499499999256,
+          "changePercent": -0.5704756912374931
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.999125499999991,
+          "candidateMs": 0.9925839999999653,
+          "changePercent": -0.6547225548768187
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 35.00193750000017,
+          "candidateMs": 34.77168750000055,
+          "changePercent": -0.6578207277800341
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.754500500000177,
+          "candidateMs": 22.592895999999655,
+          "changePercent": -0.7102089540507395
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.17720850000046,
+          "candidateMs": 13.067437499999414,
+          "changePercent": -0.8330368302288171
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.4280630000000656,
+          "candidateMs": 2.4072919999998703,
+          "changePercent": -0.855455562734353
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1049159999997755,
+          "candidateMs": 1.0954169999999976,
+          "changePercent": -0.8597033620456052
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8763749999998254,
+          "candidateMs": 0.8686664999999039,
+          "changePercent": -0.8795892169360164
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.717874999999367,
+          "candidateMs": 17.561791999999514,
+          "changePercent": -0.8809352137310933
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8262090000000626,
+          "candidateMs": 0.8188125000000923,
+          "changePercent": -0.8952335304952763
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8079159999999774,
+          "candidateMs": 1.7893750000000637,
+          "changePercent": -1.0255454346282722
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 9.239937499999996,
+          "candidateMs": 9.139917000000423,
+          "changePercent": -1.0824802656898225
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.69262499999968,
+          "candidateMs": 2.6610209999998915,
+          "changePercent": -1.1737245253160777
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.4643340000002354,
+          "candidateMs": 1.4470830000000205,
+          "changePercent": -1.1780782253373978
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.637166999999863,
+          "candidateMs": 1.6177294999999958,
+          "changePercent": -1.1872643413817219
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 21.793061999999964,
+          "candidateMs": 21.52970849999997,
+          "changePercent": -1.2084281685611376
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 19.81816699999945,
+          "candidateMs": 19.57031200000074,
+          "changePercent": -1.2506454305219794
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.972166000000016,
+          "candidateMs": 17.712041499999486,
+          "changePercent": -1.4473742341381102
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9099999999999682,
+          "candidateMs": 0.8962080000000014,
+          "changePercent": -1.5156043956007892
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 25.473125000000437,
+          "candidateMs": 25.07066649999979,
+          "changePercent": -1.579933753713536
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1650829999998678,
+          "candidateMs": 1.1457500000001346,
+          "changePercent": -1.6593667575387605
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.522437500000251,
+          "candidateMs": 2.479791000000205,
+          "changePercent": -1.6906860923230793
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.829916500000081,
+          "candidateMs": 13.592895999999655,
+          "changePercent": -1.7138245194786572
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.150000000000091,
+          "candidateMs": 1.1300829999999848,
+          "changePercent": -1.7319130434873542
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.308750000000146,
+          "candidateMs": 22.86220850000018,
+          "changePercent": -1.9157676838095772
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.07858350000015,
+          "candidateMs": 2.0376659999999447,
+          "changePercent": -1.9685280865648247
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.0650829999999587,
+          "candidateMs": 3.002291500000183,
+          "changePercent": -2.048606840329492
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5635835000000498,
+          "candidateMs": 0.5499579999999469,
+          "changePercent": -2.4176541719375555
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.4935830000001715,
+          "candidateMs": 2.4263750000000073,
+          "changePercent": -2.6952381372570944
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.840520999999967,
+          "candidateMs": 1.7873544999999922,
+          "changePercent": -2.88866576366017
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.1174585000001116,
+          "candidateMs": 3.0193954999999733,
+          "changePercent": -3.1456072310227956
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.74445850000029,
+          "candidateMs": 22.0089380000004,
+          "changePercent": -3.233844850603429
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.7529169999997976,
+          "candidateMs": 1.69270900000015,
+          "changePercent": -3.434731935377122
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 8.547417000000223,
+          "candidateMs": 8.228937499999802,
+          "changePercent": -3.7260320866574492
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.515374999999949,
+          "candidateMs": 1.4477919999999358,
+          "changePercent": -4.459820176524987
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 8.275125000000116,
+          "candidateMs": 7.890145999999959,
+          "changePercent": -4.652243923809641
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.035687499999767,
+          "candidateMs": 21.913104500000372,
+          "changePercent": -4.873234193680598
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5687499999999659,
+          "candidateMs": 0.5352920000000267,
+          "changePercent": -5.882725274714929
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 5.484957999999779,
+          "candidateMs": 5.161916000000019,
+          "changePercent": -5.889598425362097
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.5627079999999296,
+          "candidateMs": 0.5246669999999085,
+          "changePercent": -6.760344619238722
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.3525409999999738,
+          "candidateMs": 0.32102050000003146,
+          "changePercent": -8.940945875783147
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 5.031667000000198,
+          "candidateMs": 3.398041499999863,
+          "changePercent": -32.466884235389
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 76.85354149999876,
+          "candidateMs": 48.85081249999985,
+          "changePercent": -36.436484843056135
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 8.788416999999754,
+          "candidateMs": 5.574500000000171,
+          "changePercent": -36.56991924711439
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 137.40766650000114,
+          "candidateMs": 83.94087500000023,
+          "changePercent": -38.91106869208092
+        }
+      ],
+      "excluded": []
+    }
+  ],
+  "repeatComparisons": {
+    "control": {
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.32277100000004566,
+          "candidateMs": 0.3525409999999738,
+          "changePercent": 9.223257355810755
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.5291459999999688,
+          "candidateMs": 0.5627079999999296,
+          "changePercent": 6.342672910683023
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.1003749999999854,
+          "candidateMs": 2.209957999999915,
+          "changePercent": 5.217306433371682
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 5.220209000000068,
+          "candidateMs": 5.484957999999779,
+          "changePercent": 5.071616864376649
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.945604000000458,
+          "candidateMs": 23.035687499999767,
+          "changePercent": 4.96720664420669
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.32231200000001,
+          "candidateMs": 13.829916500000081,
+          "changePercent": 3.810183247472887
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 8.006666500000165,
+          "candidateMs": 8.275125000000116,
+          "changePercent": 3.3529372055142614
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5457085000000461,
+          "candidateMs": 0.5635835000000498,
+          "changePercent": 3.275558287987468
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 8.348124999999982,
+          "candidateMs": 8.547417000000223,
+          "changePercent": 2.3872666017847433
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.440520500000275,
+          "candidateMs": 2.4935830000001715,
+          "changePercent": 2.1742288171679114
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 19.47995800000035,
+          "candidateMs": 19.81816699999945,
+          "changePercent": 1.7361895749420597
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6098755000000438,
+          "candidateMs": 1.637166999999863,
+          "changePercent": 1.69525531631598
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.4443750000000364,
+          "candidateMs": 1.4643340000002354,
+          "changePercent": 1.381843357867485
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.433708499999966,
+          "candidateMs": 3.480854500000305,
+          "changePercent": 1.373034432024145
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.478665999999976,
+          "candidateMs": 17.717874999999367,
+          "changePercent": 1.368576984075287
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.6568750000001273,
+          "candidateMs": 2.69262499999968,
+          "changePercent": 1.345565749218558
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.025541499999235,
+          "candidateMs": 23.308750000000146,
+          "changePercent": 1.2299754166516408
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1363130000000865,
+          "candidateMs": 1.150000000000091,
+          "changePercent": 1.2045096729513372
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 34.58741650000047,
+          "candidateMs": 35.00193750000017,
+          "changePercent": 1.1984734390314777
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 29.30043700000033,
+          "candidateMs": 29.594833000000108,
+          "changePercent": 1.0047495196053635
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.096228999999994,
+          "candidateMs": 1.1049159999997755,
+          "changePercent": 0.79244391452713
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 50.015645499999664,
+          "candidateMs": 50.36118749999969,
+          "changePercent": 0.6908678205503227
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.36608350000006,
+          "candidateMs": 36.60331249999945,
+          "changePercent": 0.6523358502418475
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 31.26622950000001,
+          "candidateMs": 31.466416499999468,
+          "changePercent": 0.6402658817541873
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.957874499999889,
+          "candidateMs": 15.049666500000058,
+          "changePercent": 0.6136700772571002
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8297710000000507,
+          "candidateMs": 1.840520999999967,
+          "changePercent": 0.5875052123962998
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 25.713666999999077,
+          "candidateMs": 25.861708500000077,
+          "changePercent": 0.5757307971710368
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5675830000000133,
+          "candidateMs": 0.5687499999999659,
+          "changePercent": 0.20560869510759527
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.159228999999868,
+          "candidateMs": 13.17720850000046,
+          "changePercent": 0.1366303451409756
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.910145999999969,
+          "candidateMs": 0.9099999999999682,
+          "changePercent": -0.016041382371712043
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9993329999999787,
+          "candidateMs": 0.999125499999991,
+          "changePercent": -0.020763849486382657
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.804416500000116,
+          "candidateMs": 22.754500500000177,
+          "changePercent": -0.21888742472292444
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.529125000000022,
+          "candidateMs": 2.522437500000251,
+          "changePercent": -0.2644195126682458
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.9767499999998108,
+          "candidateMs": 0.9727079999997841,
+          "changePercent": -0.41382134630433276
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.571374999999989,
+          "candidateMs": 1.56379099999981,
+          "changePercent": -0.4826346352830524
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.1334160000001248,
+          "candidateMs": 3.1174585000001116,
+          "changePercent": -0.5092684788745694
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8816249999999854,
+          "candidateMs": 0.8763749999998254,
+          "changePercent": -0.5954912803244228
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.172207999999955,
+          "candidateMs": 1.1650829999998678,
+          "changePercent": -0.607827279807649
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5256044999998721,
+          "candidateMs": 1.515374999999949,
+          "changePercent": -0.6705210950756824
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.0902915000001485,
+          "candidateMs": 3.0650829999999587,
+          "changePercent": -0.8157321081259994
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8228960000000143,
+          "candidateMs": 1.8079159999999774,
+          "changePercent": -0.8217693165181505
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.70877100000007,
+          "candidateMs": 21.52375000000029,
+          "changePercent": -0.852286847559347
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.65037499999994,
+          "candidateMs": 1.6361875000000055,
+          "changePercent": -0.8596531091379256
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.6628329999998641,
+          "candidateMs": 1.6463749999998072,
+          "changePercent": -0.9897566382227385
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.423916500000132,
+          "candidateMs": 13.285895500000152,
+          "changePercent": -1.028172366834812
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8352080000000228,
+          "candidateMs": 0.8262090000000626,
+          "changePercent": -1.0774561546297412
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 15.5962499999996,
+          "candidateMs": 15.41997899999933,
+          "changePercent": -1.130213993750262
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 18.192687500000375,
+          "candidateMs": 17.972166000000016,
+          "changePercent": -1.2121436153968657
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.025291500000094,
+          "candidateMs": 22.745770500000162,
+          "changePercent": -1.2139737731438949
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.1041660000000775,
+          "candidateMs": 2.07858350000015,
+          "changePercent": -1.2158023653992434
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.073541499999692,
+          "candidateMs": 15.874854499999856,
+          "changePercent": -1.2361121536273778
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 24.02179150000029,
+          "candidateMs": 23.7119789999997,
+          "changePercent": -1.289714382878504
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 24.191603999999643,
+          "candidateMs": 23.82818800000041,
+          "changePercent": -1.502240198703808
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.137103500000194,
+          "candidateMs": 22.74445850000029,
+          "changePercent": -1.6970361047997984
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.157770499999515,
+          "candidateMs": 15.873812499999985,
+          "changePercent": -1.7574083008515151
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 8.949687499999982,
+          "candidateMs": 8.788416999999754,
+          "changePercent": -1.8019679458107118
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.3580830000000788,
+          "candidateMs": 1.3332919999998012,
+          "changePercent": -1.8254407131431671
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.938937500000065,
+          "candidateMs": 26.44710449999957,
+          "changePercent": -1.8257327335218565
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1071665000000621,
+          "candidateMs": 1.0867500000000518,
+          "changePercent": -1.8440315887456094
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 25.963145499999882,
+          "candidateMs": 25.473125000000437,
+          "changePercent": -1.8873695407956137
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 16.52141649999976,
+          "candidateMs": 16.19939549999981,
+          "changePercent": -1.949112535235431
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 46.29133299999921,
+          "candidateMs": 45.358374999999796,
+          "changePercent": -2.015405345962784
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.259229499999947,
+          "candidateMs": 21.793061999999964,
+          "changePercent": -2.094266111052878
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.609458000000359,
+          "candidateMs": 14.277208499999688,
+          "changePercent": -2.274208256053467
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.524562499999774,
+          "candidateMs": 36.662937500000226,
+          "changePercent": -2.2961626801100032
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.433499999999981,
+          "candidateMs": 1.4002920000000358,
+          "changePercent": -2.3165678409449275
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 78.70087500000045,
+          "candidateMs": 76.85354149999876,
+          "changePercent": -2.347284575936015
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.4872089999998934,
+          "candidateMs": 2.4280630000000656,
+          "changePercent": -2.3780068341595073
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 45.224521000000095,
+          "candidateMs": 44.12072949999947,
+          "changePercent": -2.4406925172311356
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 140.92804199999955,
+          "candidateMs": 137.40766650000114,
+          "changePercent": -2.4979950406168405
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.264250000001084,
+          "candidateMs": 35.357812500000364,
+          "changePercent": -2.499534665685055
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.7980625000000146,
+          "candidateMs": 1.7529169999997976,
+          "changePercent": -2.5107859154070877
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.4003745000002255,
+          "candidateMs": 2.33725000000004,
+          "changePercent": -2.629777145198786
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.205729500000075,
+          "candidateMs": 1.1664590000000317,
+          "changePercent": -3.2569908922391644
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 9.574145999999928,
+          "candidateMs": 9.239937499999996,
+          "changePercent": -3.4907395395885388
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 5.218582999999853,
+          "candidateMs": 5.031667000000198,
+          "changePercent": -3.581738567723469
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0534169999999676,
+          "candidateMs": 1.014353999999969,
+          "changePercent": -3.7082181130549396
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0483329999999569,
+          "candidateMs": 1.006040999999982,
+          "changePercent": -4.034214319302798
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6608329999999114,
+          "candidateMs": 1.5656249999999545,
+          "changePercent": -5.7325450541964145
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.549479499999961,
+          "candidateMs": 14.356999999999971,
+          "changePercent": -7.668935156318213
+        }
+      ],
+      "excluded": []
+    },
+    "candidate": {
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.101791500000104,
+          "candidateMs": 2.264270500000066,
+          "changePercent": 7.730500385026495
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.843124999999418,
+          "candidateMs": 24.9229164999997,
+          "changePercent": 4.528733125378115
+        },
+        {
+          "language": "Svelte",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.4668750000000728,
+          "candidateMs": 3.594853999999714,
+          "changePercent": 3.6914800793117264
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.647707999999966,
+          "candidateMs": 1.6891659999998865,
+          "changePercent": 2.5161011538404443
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5224795000000313,
+          "candidateMs": 0.5352920000000267,
+          "changePercent": 2.4522493226996733
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 31.871250000001055,
+          "candidateMs": 32.60402049999993,
+          "changePercent": 2.299158332349238
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 29.587250000000495,
+          "candidateMs": 30.202895500000068,
+          "changePercent": 2.0807797277528683
+        },
+        {
+          "language": "YAML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1255839999998898,
+          "candidateMs": 1.1457500000001346,
+          "changePercent": 1.7916032921796
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.232270999999855,
+          "candidateMs": 14.447978999999577,
+          "changePercent": 1.515626002341608
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.49499949999972,
+          "candidateMs": 22.792333999999755,
+          "changePercent": 1.321780425023067
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 25.630208999999923,
+          "candidateMs": 25.954083000000537,
+          "changePercent": 1.2636416659755456
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.241812999999638,
+          "candidateMs": 13.404334000000063,
+          "changePercent": 1.2273319371027824
+        },
+        {
+          "language": "TypeScript",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 44.333959000000505,
+          "candidateMs": 44.867041500000596,
+          "changePercent": 1.2024247597650417
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 21.49968799999988,
+          "candidateMs": 21.751854000000094,
+          "changePercent": 1.1728821367092301
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.4328330000000733,
+          "candidateMs": 1.4470830000000205,
+          "changePercent": 0.9945332079835278
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 5.113479499999926,
+          "candidateMs": 5.161916000000019,
+          "changePercent": 0.9472317235278638
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0301670000001195,
+          "candidateMs": 1.0394165000000157,
+          "changePercent": 0.8978641326984116
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 26.148853999999574,
+          "candidateMs": 26.381333499999073,
+          "changePercent": 0.8890619068793626
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.5463125000000559,
+          "candidateMs": 0.5499579999999469,
+          "changePercent": 0.6672920718252984
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.45085399999971,
+          "candidateMs": 17.561791999999514,
+          "changePercent": 0.6357167391338292
+        },
+        {
+          "language": "Python",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.916374999999789,
+          "candidateMs": 15.001083499999822,
+          "changePercent": 0.5678893162717857
+        },
+        {
+          "language": "JSON",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.9678750000000491,
+          "candidateMs": 0.9731664999999339,
+          "changePercent": 0.5467131602618691
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 19.47368800000004,
+          "candidateMs": 19.57031200000074,
+          "changePercent": 0.49617720074750515
+        },
+        {
+          "language": "Svelte",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 50.37139600000046,
+          "candidateMs": 50.58849999999984,
+          "changePercent": 0.4310065180631151
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.519750500000555,
+          "candidateMs": 22.592895999999655,
+          "changePercent": 0.3248059964034544
+        },
+        {
+          "language": "MDX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 34.68010400000094,
+          "candidateMs": 34.77168750000055,
+          "changePercent": 0.26408081129056793
+        },
+        {
+          "language": "Rust",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 17.6967080000004,
+          "candidateMs": 17.712041499999486,
+          "changePercent": 0.08664605868553554
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.5774579999999787,
+          "candidateMs": 1.57831200000021,
+          "changePercent": 0.05413773300027014
+        },
+        {
+          "language": "TOML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 7.887374999999793,
+          "candidateMs": 7.890145999999959,
+          "changePercent": 0.03513209401311279
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.3407500000002983,
+          "candidateMs": 1.3401874999999563,
+          "changePercent": -0.04195413017653582
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 0.5248954999999569,
+          "candidateMs": 0.5246669999999085,
+          "changePercent": -0.04353247456844178
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6752705000001242,
+          "candidateMs": 1.6744169999997212,
+          "changePercent": -0.05094699634494715
+        },
+        {
+          "language": "TOML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.3213749999999891,
+          "candidateMs": 0.32102050000003146,
+          "changePercent": -0.11030727342128399
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 24.256582999999864,
+          "candidateMs": 24.209749499999816,
+          "changePercent": -0.19307542204130002
+        },
+        {
+          "language": "Vue",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.49385400000028,
+          "candidateMs": 36.394499499999256,
+          "changePercent": -0.27224995200842983
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 15.474146000000019,
+          "candidateMs": 15.431833000000552,
+          "changePercent": -0.2734432000284004
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.7949590000000626,
+          "candidateMs": 1.7893750000000637,
+          "changePercent": -0.31109345673069333
+        },
+        {
+          "language": "JSON",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 9.170978999999761,
+          "candidateMs": 9.139917000000423,
+          "changePercent": -0.3386988455576945
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.822166999999979,
+          "candidateMs": 0.8188125000000923,
+          "changePercent": -0.4080071323571466
+        },
+        {
+          "language": "TSX",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 45.54441700000007,
+          "candidateMs": 45.33958299999995,
+          "changePercent": -0.4497455747432655
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.667145500000288,
+          "candidateMs": 13.592895999999655,
+          "changePercent": -0.5432699900694837
+        },
+        {
+          "language": "Ruby",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8770000000000664,
+          "candidateMs": 0.8686664999999039,
+          "changePercent": -0.9502280501894944
+        },
+        {
+          "language": "TypeScript",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.0335625000000164,
+          "candidateMs": 3.002291500000183,
+          "changePercent": -1.0308342089484945
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.2155415000002,
+          "candidateMs": 16.04154200000039,
+          "changePercent": -1.0730415632423163
+        },
+        {
+          "language": "Rust",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1748340000001463,
+          "candidateMs": 1.1605420000000777,
+          "changePercent": -1.216512290252647
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0347079999999096,
+          "candidateMs": 1.021833000000015,
+          "changePercent": -1.2443124050355858
+        },
+        {
+          "language": "Ruby",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.235249999999724,
+          "candidateMs": 13.067437499999414,
+          "changePercent": -1.2679208930720054
+        },
+        {
+          "language": "Swift",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 16.162667000000056,
+          "candidateMs": 15.914042000000336,
+          "changePercent": -1.5382671684055493
+        },
+        {
+          "language": "MDX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.464292000000114,
+          "candidateMs": 2.4263750000000073,
+          "changePercent": -1.538656944879302
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 25.50441699999965,
+          "candidateMs": 25.07066649999979,
+          "changePercent": -1.7006877671419285
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 37.298999500000264,
+          "candidateMs": 36.62308350000012,
+          "changePercent": -1.8121558461645537
+        },
+        {
+          "language": "CSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 16.574874999999793,
+          "candidateMs": 16.2713334999994,
+          "changePercent": -1.8313350779441517
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 3.078624999999647,
+          "candidateMs": 3.0193954999999733,
+          "changePercent": -1.92389459579132
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6511250000000928,
+          "candidateMs": 1.6177294999999958,
+          "changePercent": -2.022590657890533
+        },
+        {
+          "language": "Markdown",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.37487549999969,
+          "candidateMs": 21.913104500000372,
+          "changePercent": -2.063792489032279
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.7210409999997864,
+          "candidateMs": 2.6610209999998915,
+          "changePercent": -2.2057734521420125
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.41262549999999,
+          "candidateMs": 2.3568749999998317,
+          "changePercent": -2.3107813458888904
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 23.47197950000009,
+          "candidateMs": 22.86220850000018,
+          "changePercent": -2.597867810850407
+        },
+        {
+          "language": "Python",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0201869999999928,
+          "candidateMs": 0.9925839999999653,
+          "changePercent": -2.705680429178947
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 3.4930420000000595,
+          "candidateMs": 3.398041499999863,
+          "changePercent": -2.719706777078401
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.474833000000217,
+          "candidateMs": 2.4072919999998703,
+          "changePercent": -2.729113439183195
+        },
+        {
+          "language": "Swift",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1628749999999854,
+          "candidateMs": 1.1300829999999848,
+          "changePercent": -2.819907556702228
+        },
+        {
+          "language": "HTML",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 36.51506250000057,
+          "candidateMs": 35.466833999999835,
+          "changePercent": -2.8706742594257206
+        },
+        {
+          "language": "Vue",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.5535409999997682,
+          "candidateMs": 2.479791000000205,
+          "changePercent": -2.88814630348877
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6420414999998911,
+          "candidateMs": 1.5919165000002522,
+          "changePercent": -3.052602507283908
+        },
+        {
+          "language": "YAML",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 8.490999999999985,
+          "candidateMs": 8.228937499999802,
+          "changePercent": -3.0863561417993624
+        },
+        {
+          "language": "Java",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 22.24591650000002,
+          "candidateMs": 21.52970849999997,
+          "changePercent": -3.2195032288287684
+        },
+        {
+          "language": "TSX",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.8470210000000407,
+          "candidateMs": 1.7873544999999922,
+          "changePercent": -3.2304180623851653
+        },
+        {
+          "language": "CSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.1328125,
+          "candidateMs": 1.095707999999945,
+          "changePercent": -3.2754317241427855
+        },
+        {
+          "language": "HTML",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.750250000000051,
+          "candidateMs": 1.69270900000015,
+          "changePercent": -3.2875874874960354
+        },
+        {
+          "language": "C++",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 5.766125000000102,
+          "candidateMs": 5.574500000000171,
+          "changePercent": -3.323289037263799
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.78143749999981,
+          "candidateMs": 22.0089380000004,
+          "changePercent": -3.39091639849074
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 87.15847899999972,
+          "candidateMs": 83.94087500000023,
+          "changePercent": -3.691670663504232
+        },
+        {
+          "language": "Markdown",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.1390000000001237,
+          "candidateMs": 1.0954169999999976,
+          "changePercent": -3.826426690089668
+        },
+        {
+          "language": "C++",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 51.03414600000042,
+          "candidateMs": 48.85081249999985,
+          "changePercent": -4.27818170994877
+        },
+        {
+          "language": "Java",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.4663960000000316,
+          "candidateMs": 1.3924994999999285,
+          "changePercent": -5.039327712302921
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 15.159145999999964,
+          "candidateMs": 14.301749499999914,
+          "changePercent": -5.655968350724061
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.539395999999897,
+          "candidateMs": 1.4477919999999358,
+          "changePercent": -5.950645577873869
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9583749999999327,
+          "candidateMs": 0.8962080000000014,
+          "changePercent": -6.486709273503132
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.2038539999999784,
+          "candidateMs": 2.0376659999999447,
+          "changePercent": -7.540789907137013
+        }
+      ],
+      "excluded": []
+    }
+  },
+  "wins": {
+    "control": {
+      "example": [
+        13,
+        13
+      ],
+      "large": [
+        13,
+        13
+      ]
+    },
+    "candidate": {
+      "example": [
+        14,
+        14
+      ],
+      "large": [
+        14,
+        14
+      ]
+    }
+  },
+  "cases": [
+    {
+      "language": "TypeScript",
+      "textmate": "typescript",
+      "size": "example",
+      "bytes": 1203,
+      "sha256": "8a0dcbf03baebf972d1f22058485e71f2597bf100193cbbf37fd1cd4a1f72dd9",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.8228960000000143,
+          "ferrikiTokensMs": 3.0902915000001485,
+          "bestShikiHtmlMs": 2.947708499999976,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6184112167129243
+        },
+        {
+          "ferrikiHtmlMs": 1.8079159999999774,
+          "ferrikiTokensMs": 3.0650829999999587,
+          "bestShikiHtmlMs": 2.945790999999872,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6137285367495712
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.7949590000000626,
+          "ferrikiTokensMs": 3.0335625000000164,
+          "bestShikiHtmlMs": 2.9072499999999764,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6174078596612184
+        },
+        {
+          "ferrikiHtmlMs": 1.7893750000000637,
+          "ferrikiTokensMs": 3.002291500000183,
+          "bestShikiHtmlMs": 2.9039170000000922,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6161935757805773
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -1.5325613748645828,
+        -1.0255454346282722
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -0.16224755059249807,
+        0.4016497332943736
+      ]
+    },
+    {
+      "language": "TypeScript",
+      "textmate": "typescript",
+      "size": "large",
+      "bytes": 19248,
+      "sha256": "fcd9d83f28572d3ecc412b1dbf52e20b90583f84b40774ad816c7decb9e67d90",
+      "control": [
+        {
+          "ferrikiHtmlMs": 25.713666999999077,
+          "ferrikiTokensMs": 45.224521000000095,
+          "bestShikiHtmlMs": 42.86658350000016,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5998534266207378
+        },
+        {
+          "ferrikiHtmlMs": 25.861708500000077,
+          "ferrikiTokensMs": 44.12072949999947,
+          "bestShikiHtmlMs": 42.97954149999987,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6017213678279969
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 25.630208999999923,
+          "ferrikiTokensMs": 44.333959000000505,
+          "bestShikiHtmlMs": 41.81574950000049,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6129319528279559
+        },
+        {
+          "ferrikiHtmlMs": 25.954083000000537,
+          "ferrikiTokensMs": 44.867041500000596,
+          "bestShikiHtmlMs": 42.538729500000045,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.610128306723418
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.32456669832100493,
+        0.3571863784655127
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        2.1802869879223197,
+        1.3971481394731367
+      ]
+    },
+    {
+      "language": "TSX",
+      "textmate": "tsx",
+      "size": "example",
+      "bytes": 1568,
+      "sha256": "1e602f48aee24d46f6a7dd37f12745b6aaa20f8c75d9a9edbde67e7415de17a5",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.8297710000000507,
+          "ferrikiTokensMs": 3.1334160000001248,
+          "bestShikiHtmlMs": 2.7788534999999683,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6584625637875734
+        },
+        {
+          "ferrikiHtmlMs": 1.840520999999967,
+          "ferrikiTokensMs": 3.1174585000001116,
+          "bestShikiHtmlMs": 2.7565834999999197,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6676819330885572
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.8470210000000407,
+          "ferrikiTokensMs": 3.078624999999647,
+          "bestShikiHtmlMs": 2.7932289999999966,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6612493998881018
+        },
+        {
+          "ferrikiHtmlMs": 1.7873544999999922,
+          "ferrikiTokensMs": 3.0193954999999733,
+          "bestShikiHtmlMs": 2.723229500000116,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6563363462388742
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        0.9427409222241279,
+        -2.88866576366017
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.4232337954793053,
+        -1.6992502398860299
+      ]
+    },
+    {
+      "language": "TSX",
+      "textmate": "tsx",
+      "size": "large",
+      "bytes": 25088,
+      "sha256": "459d8cafc67117514329825c0fb8224e5448ec3d09288cedc1ef6738a8e9597e",
+      "control": [
+        {
+          "ferrikiHtmlMs": 26.938937500000065,
+          "ferrikiTokensMs": 46.29133299999921,
+          "bestShikiHtmlMs": 40.585208500000135,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6637624517809235
+        },
+        {
+          "ferrikiHtmlMs": 26.44710449999957,
+          "ferrikiTokensMs": 45.358374999999796,
+          "bestShikiHtmlMs": 40.172083499999644,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6583453531853732
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 26.148853999999574,
+          "ferrikiTokensMs": 45.54441700000007,
+          "bestShikiHtmlMs": 39.98560399999997,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.653956709019566
+        },
+        {
+          "ferrikiHtmlMs": 26.381333499999073,
+          "ferrikiTokensMs": 45.33958299999995,
+          "bestShikiHtmlMs": 39.86266599999999,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6618055475767496
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -2.932868083607565,
+        -0.24868884985309592
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.4772969960937021,
+        0.5255895518414988
+      ]
+    },
+    {
+      "language": "Rust",
+      "textmate": "rust",
+      "size": "example",
+      "bytes": 965,
+      "sha256": "fd4293c89219bd08c7617ab35337d1fe40a3c5fddd8b6d2be918e9def74937c9",
+      "control": [
+        {
+          "ferrikiHtmlMs": 0.8352080000000228,
+          "ferrikiTokensMs": 1.205729500000075,
+          "bestShikiHtmlMs": 1.3040000000000873,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.640496932515312
+        },
+        {
+          "ferrikiHtmlMs": 0.8262090000000626,
+          "ferrikiTokensMs": 1.1664590000000317,
+          "bestShikiHtmlMs": 1.2710420000000795,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.65002494016721
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 0.822166999999979,
+          "ferrikiTokensMs": 1.1748340000001463,
+          "bestShikiHtmlMs": 1.2947080000000142,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.635021178520539
+        },
+        {
+          "ferrikiHtmlMs": 0.8188125000000923,
+          "ferrikiTokensMs": 1.1605420000000777,
+          "bestShikiHtmlMs": 1.2550415000000044,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.6524186650402313
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -1.5614074577881776,
+        -0.8952335304952763
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -0.854922750881737,
+        0.36825123546881944
+      ]
+    },
+    {
+      "language": "Rust",
+      "textmate": "rust",
+      "size": "large",
+      "bytes": 15440,
+      "sha256": "47be3e432c0fb4117aa538709156076cc16d3b82674f62b9f85e36195e7580a5",
+      "control": [
+        {
+          "ferrikiHtmlMs": 13.423916500000132,
+          "ferrikiTokensMs": 18.192687500000375,
+          "bestShikiHtmlMs": 19.70322949999968,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.6813053920932277
+        },
+        {
+          "ferrikiHtmlMs": 13.285895500000152,
+          "ferrikiTokensMs": 17.972166000000016,
+          "bestShikiHtmlMs": 19.622645499999862,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.6770695368267364
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 13.241812999999638,
+          "ferrikiTokensMs": 17.6967080000004,
+          "bestShikiHtmlMs": 19.29752099999996,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.686192438914805
+        },
+        {
+          "ferrikiHtmlMs": 13.404334000000063,
+          "ferrikiTokensMs": 17.712041499999486,
+          "bestShikiHtmlMs": 19.6622504999998,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.6817293879965672
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -1.3565601365331248,
+        0.8914604213160482
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.7173063472406094,
+        0.6882381965773288
+      ]
+    },
+    {
+      "language": "CSS",
+      "textmate": "css",
+      "size": "example",
+      "bytes": 1076,
+      "sha256": "118e7ccdad74ab34c45aef733c44ba94174bb4eb310a8265178c9567c4d0760d",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.0534169999999676,
+          "ferrikiTokensMs": 1.1071665000000621,
+          "bestShikiHtmlMs": 0.7183545000000322,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.4664305715352524
+        },
+        {
+          "ferrikiHtmlMs": 1.014353999999969,
+          "ferrikiTokensMs": 1.0867500000000518,
+          "bestShikiHtmlMs": 0.6945420000000126,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.4604645939337728
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.0301670000001195,
+          "ferrikiTokensMs": 1.1328125,
+          "bestShikiHtmlMs": 0.6858330000000024,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.5020668296802808
+        },
+        {
+          "ferrikiHtmlMs": 1.0394165000000157,
+          "ferrikiTokensMs": 1.095707999999945,
+          "bestShikiHtmlMs": 0.7106455000000551,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.4626371376444869
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -2.207103169955371,
+        2.470784361282896
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        2.430136062133492,
+        0.14875702702674687
+      ]
+    },
+    {
+      "language": "CSS",
+      "textmate": "css",
+      "size": "large",
+      "bytes": 17216,
+      "sha256": "ea08df94144a384fb7f7f3526fb8c74933be43f52e6c3d85126367c86fe8f47f",
+      "control": [
+        {
+          "ferrikiHtmlMs": 16.157770499999515,
+          "ferrikiTokensMs": 16.52141649999976,
+          "bestShikiHtmlMs": 9.896146000000044,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.6327336419652096
+        },
+        {
+          "ferrikiHtmlMs": 15.873812499999985,
+          "ferrikiTokensMs": 16.19939549999981,
+          "bestShikiHtmlMs": 10.249563000000308,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.5487306629560216
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 16.2155415000002,
+          "ferrikiTokensMs": 16.574874999999793,
+          "bestShikiHtmlMs": 9.833541999999852,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.64900312623879
+        },
+        {
+          "ferrikiHtmlMs": 16.04154200000039,
+          "ferrikiTokensMs": 16.2713334999994,
+          "bestShikiHtmlMs": 9.946958499999937,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.6127082464454328
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        0.3575431400061335,
+        1.0566428197410271
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.9964567309336481,
+        4.130968994137363
+      ]
+    },
+    {
+      "language": "HTML",
+      "textmate": "html",
+      "size": "example",
+      "bytes": 1397,
+      "sha256": "07344110f85e24e26acf01721b16302f33012b3e19d3c625a6593eedf124a653",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.7980625000000146,
+          "ferrikiTokensMs": 2.4872089999998934,
+          "bestShikiHtmlMs": 2.445145999999909,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.7353599744146491
+        },
+        {
+          "ferrikiHtmlMs": 1.7529169999997976,
+          "ferrikiTokensMs": 2.4280630000000656,
+          "bestShikiHtmlMs": 2.3967499999998836,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.7313724835714541
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.750250000000051,
+          "ferrikiTokensMs": 2.474833000000217,
+          "bestShikiHtmlMs": 2.3637079999998605,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.7404679427408776
+        },
+        {
+          "ferrikiHtmlMs": 1.69270900000015,
+          "ferrikiTokensMs": 2.4072919999998703,
+          "bestShikiHtmlMs": 2.318708000000015,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.7300224952862279
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -2.659112238866179,
+        -3.434731935377122
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.6946214784527172,
+        -0.1845828651679593
+      ]
+    },
+    {
+      "language": "HTML",
+      "textmate": "html",
+      "size": "large",
+      "bytes": 22352,
+      "sha256": "afb35a0236fb4eb1fe13038e8a0ae5e1b8b53a77a4b6ecd937a279e78d0997a1",
+      "control": [
+        {
+          "ferrikiHtmlMs": 25.963145499999882,
+          "ferrikiTokensMs": 36.264250000001084,
+          "bestShikiHtmlMs": 35.64154150000013,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.7284518123325218
+        },
+        {
+          "ferrikiHtmlMs": 25.473125000000437,
+          "ferrikiTokensMs": 35.357812500000364,
+          "bestShikiHtmlMs": 34.83702100000028,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.7312084750300617
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 25.50441699999965,
+          "ferrikiTokensMs": 36.51506250000057,
+          "bestShikiHtmlMs": 35.025250499999856,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.7281722938712388
+        },
+        {
+          "ferrikiHtmlMs": 25.07066649999979,
+          "ferrikiTokensMs": 35.466833999999835,
+          "bestShikiHtmlMs": 34.84837499999958,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.7194213933935253
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -1.7668448532179415,
+        -1.579933753713536
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -0.03837157881286801,
+        -1.6120001393654326
+      ]
+    },
+    {
+      "language": "C++",
+      "textmate": "cpp",
+      "size": "example",
+      "bytes": 937,
+      "sha256": "31abfbd31f35233604d6cce9743d809af4be69f865869a584816e1d7c488ae1f",
+      "control": [
+        {
+          "ferrikiHtmlMs": 5.218582999999853,
+          "ferrikiTokensMs": 8.949687499999982,
+          "bestShikiHtmlMs": 3.9394579999998314,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 1.3246956814871682
+        },
+        {
+          "ferrikiHtmlMs": 5.031667000000198,
+          "ferrikiTokensMs": 8.788416999999754,
+          "bestShikiHtmlMs": 3.7996250000001055,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 1.324253577655705
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 3.4930420000000595,
+          "ferrikiTokensMs": 5.766125000000102,
+          "bestShikiHtmlMs": 3.888666999999714,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.8982620522663207
+        },
+        {
+          "ferrikiHtmlMs": 3.398041499999863,
+          "ferrikiTokensMs": 5.574500000000171,
+          "bestShikiHtmlMs": 3.8255834999999934,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.8882413623960551
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -33.06531677276844,
+        -32.466884235389
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -32.19106359145915,
+        -32.92513024820458
+      ]
+    },
+    {
+      "language": "C++",
+      "textmate": "cpp",
+      "size": "large",
+      "bytes": 14992,
+      "sha256": "1dd82de44248aec3a9f9617bdc3c85814caa2b6c47122a4e30104fd0c75833b0",
+      "control": [
+        {
+          "ferrikiHtmlMs": 78.70087500000045,
+          "ferrikiTokensMs": 140.92804199999955,
+          "bestShikiHtmlMs": 56.22804199999973,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 1.399673049258959
+        },
+        {
+          "ferrikiHtmlMs": 76.85354149999876,
+          "ferrikiTokensMs": 137.40766650000114,
+          "bestShikiHtmlMs": 55.11400000000049,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 1.394446810247815
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 51.03414600000042,
+          "ferrikiTokensMs": 87.15847899999972,
+          "bestShikiHtmlMs": 56.65160449999985,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.9008420229298282
+        },
+        {
+          "ferrikiHtmlMs": 48.85081249999985,
+          "ferrikiTokensMs": 83.94087500000023,
+          "bestShikiHtmlMs": 55.709104000000025,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.8768910104890545
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -35.154283862790436,
+        -36.436484843056135
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -35.63911061895714,
+        -37.11549239133637
+      ]
+    },
+    {
+      "language": "Swift",
+      "textmate": "swift",
+      "size": "example",
+      "bytes": 969,
+      "sha256": "b7bce66519446c587e13d38512dcf00d87e90f8c4968fe7e6378786414416fb6",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.1363130000000865,
+          "ferrikiTokensMs": 1.65037499999994,
+          "bestShikiHtmlMs": 1.4767290000000344,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.7694797081929454
+        },
+        {
+          "ferrikiHtmlMs": 1.150000000000091,
+          "ferrikiTokensMs": 1.6361875000000055,
+          "bestShikiHtmlMs": 1.486915999999951,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.773412889497543
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.1628749999999854,
+          "ferrikiTokensMs": 1.6752705000001242,
+          "bestShikiHtmlMs": 1.4945829999999205,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.7780598334117592
+        },
+        {
+          "ferrikiHtmlMs": 1.1300829999999848,
+          "ferrikiTokensMs": 1.6744169999997212,
+          "bestShikiHtmlMs": 1.4686040000000276,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.7694947038139374
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        2.3375601616717256,
+        -1.7319130434873542
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        1.115055423483935,
+        -0.5066098246890083
+      ]
+    },
+    {
+      "language": "Swift",
+      "textmate": "swift",
+      "size": "large",
+      "bytes": 15504,
+      "sha256": "61889ce5b931d38e3cbb69b6f5118f3cbb2ddc310e887a3df7f6588a989dea30",
+      "control": [
+        {
+          "ferrikiHtmlMs": 16.073541499999692,
+          "ferrikiTokensMs": 24.191603999999643,
+          "bestShikiHtmlMs": 21.964312999999493,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.7318026063460333
+        },
+        {
+          "ferrikiHtmlMs": 15.874854499999856,
+          "ferrikiTokensMs": 23.82818800000041,
+          "bestShikiHtmlMs": 21.280874999999924,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.7459681286601191
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 16.162667000000056,
+          "ferrikiTokensMs": 24.256582999999864,
+          "bestShikiHtmlMs": 21.54024999999956,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.7503472336672223
+        },
+        {
+          "ferrikiHtmlMs": 15.914042000000336,
+          "ferrikiTokensMs": 24.209749499999816,
+          "bestShikiHtmlMs": 21.148916499999814,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.7524755228004458
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        0.5544857678089432,
+        0.24685265619588392
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        2.5341023877715196,
+        0.8723421135987453
+      ]
+    },
+    {
+      "language": "Java",
+      "textmate": "java",
+      "size": "example",
+      "bytes": 1116,
+      "sha256": "90a63d1222f23eaee6008f4ac04ad6c06b653e76e4872c9d60cb9b40f72e9b08",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.433499999999981,
+          "ferrikiTokensMs": 2.4003745000002255,
+          "bestShikiHtmlMs": 1.3749170000000959,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.0426083901791023
+        },
+        {
+          "ferrikiHtmlMs": 1.4002920000000358,
+          "ferrikiTokensMs": 2.33725000000004,
+          "bestShikiHtmlMs": 1.3228750000000673,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.0585217802135232
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.4663960000000316,
+          "ferrikiTokensMs": 2.41262549999999,
+          "bestShikiHtmlMs": 1.390354499999944,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.0546921666381421
+        },
+        {
+          "ferrikiHtmlMs": 1.3924994999999285,
+          "ferrikiTokensMs": 2.3568749999998317,
+          "bestShikiHtmlMs": 1.3331249999999955,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.0445378340365181
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        2.294802929895434,
+        -0.5564910747263507
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        1.1589947455692418,
+        -1.3210825169968854
+      ]
+    },
+    {
+      "language": "Java",
+      "textmate": "java",
+      "size": "large",
+      "bytes": 17856,
+      "sha256": "e3a11e9255e23850f40a4f8bfaaee7bdf67cc14c511edaef570be04f8fe5f820",
+      "control": [
+        {
+          "ferrikiHtmlMs": 22.259229499999947,
+          "ferrikiTokensMs": 37.524562499999774,
+          "bestShikiHtmlMs": 20.52195850000021,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.084654249739357
+        },
+        {
+          "ferrikiHtmlMs": 21.793061999999964,
+          "ferrikiTokensMs": 36.662937500000226,
+          "bestShikiHtmlMs": 19.90285400000016,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.0949717060678728
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 22.24591650000002,
+          "ferrikiTokensMs": 37.298999500000264,
+          "bestShikiHtmlMs": 20.44262499999968,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.088212325961092
+        },
+        {
+          "ferrikiHtmlMs": 21.52970849999997,
+          "ferrikiTokensMs": 36.62308350000012,
+          "bestShikiHtmlMs": 19.716937500000085,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.091939785273442
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.059808898596092064,
+        -1.2084281685611376
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.32803782611741106,
+        -0.2768948985283459
+      ]
+    },
+    {
+      "language": "Markdown",
+      "textmate": "markdown",
+      "size": "example",
+      "bytes": 1019,
+      "sha256": "3ef85443b6a2dc6c8034dba8b2f763f140f476e6ccd65c828ca510be66a30901",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.096228999999994,
+          "ferrikiTokensMs": 1.6098755000000438,
+          "bestShikiHtmlMs": 1.5837915000000748,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6921548701328061
+        },
+        {
+          "ferrikiHtmlMs": 1.1049159999997755,
+          "ferrikiTokensMs": 1.637166999999863,
+          "bestShikiHtmlMs": 1.5843329999997877,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6974013670105487
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.1390000000001237,
+          "ferrikiTokensMs": 1.6511250000000928,
+          "bestShikiHtmlMs": 1.6431250000000546,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6931913275010032
+        },
+        {
+          "ferrikiHtmlMs": 1.0954169999999976,
+          "ferrikiTokensMs": 1.6177294999999958,
+          "bestShikiHtmlMs": 1.588249999999789,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.689700613883295
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        3.90164828700299,
+        -0.8597033620456052
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.14974356360424323,
+        -1.1042067726743099
+      ]
+    },
+    {
+      "language": "Markdown",
+      "textmate": "markdown",
+      "size": "large",
+      "bytes": 16304,
+      "sha256": "87570a071ade89408c0eb595ea7449730fffeb3f01b15ca941916d514ca9e8cc",
+      "control": [
+        {
+          "ferrikiHtmlMs": 15.549479499999961,
+          "ferrikiTokensMs": 21.945604000000458,
+          "bestShikiHtmlMs": 24.928479499999412,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6237636555410581
+        },
+        {
+          "ferrikiHtmlMs": 14.356999999999971,
+          "ferrikiTokensMs": 23.035687499999767,
+          "bestShikiHtmlMs": 21.795791999999892,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6587051298709421
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 14.232270999999855,
+          "ferrikiTokensMs": 22.37487549999969,
+          "bestShikiHtmlMs": 21.76495799999975,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6539075793300413
+        },
+        {
+          "ferrikiHtmlMs": 14.447978999999577,
+          "ferrikiTokensMs": 21.913104500000372,
+          "bestShikiHtmlMs": 22.3061459999999,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6477129218108607
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -8.471077761799739,
+        0.6336908824936094
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        4.832587394473342,
+        -1.6687600508341394
+      ]
+    },
+    {
+      "language": "TOML",
+      "textmate": "toml",
+      "size": "example",
+      "bytes": 606,
+      "sha256": "2a8d0668206cddcbc7ed9ad8ebd134246cf348292f0c6594c970669624ef1cef",
+      "control": [
+        {
+          "ferrikiHtmlMs": 0.32277100000004566,
+          "ferrikiTokensMs": 0.5291459999999688,
+          "bestShikiHtmlMs": 0.19358349999998836,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.6673476820083586
+        },
+        {
+          "ferrikiHtmlMs": 0.3525409999999738,
+          "ferrikiTokensMs": 0.5627079999999296,
+          "bestShikiHtmlMs": 0.2039169999999615,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.7288455597132184
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 0.3213749999999891,
+          "ferrikiTokensMs": 0.5248954999999569,
+          "bestShikiHtmlMs": 0.19585399999999709,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.6408906634533575
+        },
+        {
+          "ferrikiHtmlMs": 0.32102050000003146,
+          "ferrikiTokensMs": 0.5246669999999085,
+          "bestShikiHtmlMs": 0.1958959999999763,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.638729223670061
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.4325047789474179,
+        -8.940945875783147
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.5867727433508616,
+        -5.212515110841132
+      ]
+    },
+    {
+      "language": "TOML",
+      "textmate": "toml",
+      "size": "large",
+      "bytes": 9696,
+      "sha256": "b78d79844bb50008c74481cd84a25e23182ec9d02d19eae7ebf2c4d335815bc4",
+      "control": [
+        {
+          "ferrikiHtmlMs": 5.220209000000068,
+          "ferrikiTokensMs": 8.006666500000165,
+          "bestShikiHtmlMs": 2.83987500000012,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.8381826664905487
+        },
+        {
+          "ferrikiHtmlMs": 5.484957999999779,
+          "ferrikiTokensMs": 8.275125000000116,
+          "bestShikiHtmlMs": 2.908104500000036,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.8860938456646628
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 5.113479499999926,
+          "ferrikiTokensMs": 7.887374999999793,
+          "bestShikiHtmlMs": 2.8181665000001885,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.8144703302660024
+        },
+        {
+          "ferrikiHtmlMs": 5.161916000000019,
+          "ferrikiTokensMs": 7.890145999999959,
+          "bestShikiHtmlMs": 2.850416000000223,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.8109342636301562
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -2.0445445766661963,
+        -5.889598425362097
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.2899880222359994,
+        -3.984933316402406
+      ]
+    },
+    {
+      "language": "YAML",
+      "textmate": "yaml",
+      "size": "example",
+      "bytes": 787,
+      "sha256": "7062527a4252581b2cb8050e83e528ea315da66c2bc205a0959de6d91b8c5c9a",
+      "control": [
+        {
+          "ferrikiHtmlMs": 0.5675830000000133,
+          "ferrikiTokensMs": 1.172207999999955,
+          "bestShikiHtmlMs": 0.5103749999999536,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.112090129806642
+        },
+        {
+          "ferrikiHtmlMs": 0.5687499999999659,
+          "ferrikiTokensMs": 1.1650829999998678,
+          "bestShikiHtmlMs": 0.4953750000000241,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.148120111026875
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 0.5224795000000313,
+          "ferrikiTokensMs": 1.1255839999998898,
+          "bestShikiHtmlMs": 0.4664794999999913,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1200481478822566
+        },
+        {
+          "ferrikiHtmlMs": 0.5352920000000267,
+          "ferrikiTokensMs": 1.1457500000001346,
+          "bestShikiHtmlMs": 0.4833340000000135,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1074991620701458
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -7.946591071258469,
+        -5.882725274714929
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.715591107440039,
+        -3.5380400157260627
+      ]
+    },
+    {
+      "language": "YAML",
+      "textmate": "yaml",
+      "size": "large",
+      "bytes": 12592,
+      "sha256": "0b0f6c7af6e983e37314c4c3f2c7ac08ff8ce299b958780691265ca8a300f2b1",
+      "control": [
+        {
+          "ferrikiHtmlMs": 8.348124999999982,
+          "ferrikiTokensMs": 17.478665999999976,
+          "bestShikiHtmlMs": 7.228542000000289,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.154883654269374
+        },
+        {
+          "ferrikiHtmlMs": 8.547417000000223,
+          "ferrikiTokensMs": 17.717874999999367,
+          "bestShikiHtmlMs": 7.21245799999997,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1850907138731706
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 8.490999999999985,
+          "ferrikiTokensMs": 17.45085399999971,
+          "bestShikiHtmlMs": 7.252500000000055,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1707687004481104
+        },
+        {
+          "ferrikiHtmlMs": 8.228937499999802,
+          "ferrikiTokensMs": 17.561791999999514,
+          "bestShikiHtmlMs": 7.101187500000151,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1588114663920122
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        1.7114621546755027,
+        -3.7260320866574492
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        1.3754672273707191,
+        -2.217488262588041
+      ]
+    },
+    {
+      "language": "JSON",
+      "textmate": "json",
+      "size": "example",
+      "bytes": 761,
+      "sha256": "11231ab1ba5ec9cbabc259cc75ecec4c3c612d59fd6e22170cea6738e418e76c",
+      "control": [
+        {
+          "ferrikiHtmlMs": 0.5457085000000461,
+          "ferrikiTokensMs": 0.9767499999998108,
+          "bestShikiHtmlMs": 0.37935399999994956,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.438520484824514
+        },
+        {
+          "ferrikiHtmlMs": 0.5635835000000498,
+          "ferrikiTokensMs": 0.9727079999997841,
+          "bestShikiHtmlMs": 0.3831664999999873,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.4708579690554064
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 0.5463125000000559,
+          "ferrikiTokensMs": 0.9678750000000491,
+          "bestShikiHtmlMs": 0.3720000000000141,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.4685819892474066
+        },
+        {
+          "ferrikiHtmlMs": 0.5499579999999469,
+          "ferrikiTokensMs": 0.9731664999999339,
+          "bestShikiHtmlMs": 0.38575000000003,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.4256850291637178
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        0.11068180173292586,
+        -2.4176541719375555
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        2.089751570451903,
+        -3.071196596956194
+      ]
+    },
+    {
+      "language": "JSON",
+      "textmate": "json",
+      "size": "large",
+      "bytes": 12176,
+      "sha256": "58852239e36a9dcd855284e28921c6f99f5a803b3a9ef28b37260e151fb1c1b8",
+      "control": [
+        {
+          "ferrikiHtmlMs": 9.574145999999928,
+          "ferrikiTokensMs": 15.5962499999996,
+          "bestShikiHtmlMs": 6.027229499999976,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.5884820712401886
+        },
+        {
+          "ferrikiHtmlMs": 9.239937499999996,
+          "ferrikiTokensMs": 15.41997899999933,
+          "bestShikiHtmlMs": 5.850375000000213,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.579375253722994
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 9.170978999999761,
+          "ferrikiTokensMs": 15.474146000000019,
+          "bestShikiHtmlMs": 5.800478999999996,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.5810727010648202
+        },
+        {
+          "ferrikiHtmlMs": 9.139917000000423,
+          "ferrikiTokensMs": 15.431833000000552,
+          "bestShikiHtmlMs": 5.9158330000000205,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.5449923958300364
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -4.2109969912738965,
+        -1.0824802656898225
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -0.4664434247963256,
+        -2.176991048321686
+      ]
+    },
+    {
+      "language": "Astro",
+      "textmate": "astro",
+      "size": "example",
+      "bytes": 1081,
+      "sha256": "04e99d8d655a8fbf782ed2ed5b83b5d4a50d320e603506c0dcf2f8ee3c56eb62",
+      "control": [
+        {
+          "ferrikiHtmlMs": 2.1041660000000775,
+          "ferrikiTokensMs": 2.6568750000001273,
+          "bestShikiHtmlMs": 3.8155830000000606,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5514664469361679
+        },
+        {
+          "ferrikiHtmlMs": 2.07858350000015,
+          "ferrikiTokensMs": 2.69262499999968,
+          "bestShikiHtmlMs": 3.7414585000000216,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5555543379674365
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 2.2038539999999784,
+          "ferrikiTokensMs": 2.7210409999997864,
+          "bestShikiHtmlMs": 3.8946045000001277,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5658736336385135
+        },
+        {
+          "ferrikiHtmlMs": 2.0376659999999447,
+          "ferrikiTokensMs": 2.6610209999998915,
+          "bestShikiHtmlMs": 3.7793750000000728,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5391542252356291
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        4.737649025784907,
+        -1.9685280865648247
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        2.6125228075776885,
+        -2.9520267615602114
+      ]
+    },
+    {
+      "language": "Astro",
+      "textmate": "astro",
+      "size": "large",
+      "bytes": 17296,
+      "sha256": "da5a7282ea903baa625018f108de791d7050a41ea8d13e30d916fb0a0c31b7f2",
+      "control": [
+        {
+          "ferrikiHtmlMs": 24.02179150000029,
+          "ferrikiTokensMs": 31.26622950000001,
+          "bestShikiHtmlMs": 46.52858349999997,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5162803097154313
+        },
+        {
+          "ferrikiHtmlMs": 23.7119789999997,
+          "ferrikiTokensMs": 31.466416499999468,
+          "bestShikiHtmlMs": 46.57670850000022,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5090952058151466
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 23.843124999999418,
+          "ferrikiTokensMs": 31.871250000001055,
+          "bestShikiHtmlMs": 45.860416500000156,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.519906420823704
+        },
+        {
+          "ferrikiHtmlMs": 24.9229164999997,
+          "ferrikiTokensMs": 32.60402049999993,
+          "bestShikiHtmlMs": 47.71833349999997,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5222922652988231
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.7437684237700193,
+        5.106859701588018
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.7023531674627215,
+        2.5922576627972482
+      ]
+    },
+    {
+      "language": "Svelte",
+      "textmate": "svelte",
+      "size": "example",
+      "bytes": 1062,
+      "sha256": "9fea84163fb00ae79ca7815a0ed6a1d938269ce8101068d88ced92e9e2788c83",
+      "control": [
+        {
+          "ferrikiHtmlMs": 2.1003749999999854,
+          "ferrikiTokensMs": 3.433708499999966,
+          "bestShikiHtmlMs": 4.049750000000017,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5186431261188904
+        },
+        {
+          "ferrikiHtmlMs": 2.209957999999915,
+          "ferrikiTokensMs": 3.480854500000305,
+          "bestShikiHtmlMs": 4.157625000000053,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5315433691109436
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 2.101791500000104,
+          "ferrikiTokensMs": 3.4668750000000728,
+          "bestShikiHtmlMs": 4.0385835000000725,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5204278926014694
+        },
+        {
+          "ferrikiHtmlMs": 2.264270500000066,
+          "ferrikiTokensMs": 3.594853999999714,
+          "bestShikiHtmlMs": 4.345854000000031,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5210185385887446
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        0.06744033804051419,
+        2.4576258915397053
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.34412226687254854,
+        -1.980051136712091
+      ]
+    },
+    {
+      "language": "Svelte",
+      "textmate": "svelte",
+      "size": "large",
+      "bytes": 16992,
+      "sha256": "84b92103a1cb90e8aa3a1920f6f1e9ba318630fd710f4730b5a91bfdb58f7151",
+      "control": [
+        {
+          "ferrikiHtmlMs": 29.30043700000033,
+          "ferrikiTokensMs": 50.015645499999664,
+          "bestShikiHtmlMs": 59.70770850000008,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.4907312261029125
+        },
+        {
+          "ferrikiHtmlMs": 29.594833000000108,
+          "ferrikiTokensMs": 50.36118749999969,
+          "bestShikiHtmlMs": 59.58885399999963,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.49665048097753806
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 29.587250000000495,
+          "ferrikiTokensMs": 50.37139600000046,
+          "bestShikiHtmlMs": 60.159187499999916,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.49181598405065785
+        },
+        {
+          "ferrikiHtmlMs": 30.202895500000068,
+          "ferrikiTokensMs": 50.58849999999984,
+          "bestShikiHtmlMs": 61.66102099999989,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.4898215276065591
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        0.9788693595258025,
+        2.0546238595093858
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.22104930154125402,
+        -1.3750018639945294
+      ]
+    },
+    {
+      "language": "Ruby",
+      "textmate": "ruby",
+      "size": "example",
+      "bytes": 856,
+      "sha256": "e363c8769e15356792beeb9f351702ef1d772c46cc73457c844c8d2fd2063fa5",
+      "control": [
+        {
+          "ferrikiHtmlMs": 0.8816249999999854,
+          "ferrikiTokensMs": 1.3580830000000788,
+          "bestShikiHtmlMs": 2.1177499999998872,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.4163026797308617
+        },
+        {
+          "ferrikiHtmlMs": 0.8763749999998254,
+          "ferrikiTokensMs": 1.3332919999998012,
+          "bestShikiHtmlMs": 2.1085420000000568,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.4156308008091856
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 0.8770000000000664,
+          "ferrikiTokensMs": 1.3407500000002983,
+          "bestShikiHtmlMs": 2.106625000000008,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.4163057022488877
+        },
+        {
+          "ferrikiHtmlMs": 0.8686664999999039,
+          "ferrikiTokensMs": 1.3401874999999563,
+          "bestShikiHtmlMs": 2.155041499999925,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.4030857410402232
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.5245994612130045,
+        -0.8795892169360164
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.0007260385707752448,
+        -3.018318118998531
+      ]
+    },
+    {
+      "language": "Ruby",
+      "textmate": "ruby",
+      "size": "large",
+      "bytes": 13696,
+      "sha256": "ee00147586e541a676a63c739af4373979a1681c6e14fb8324bce6233e03aeca",
+      "control": [
+        {
+          "ferrikiHtmlMs": 13.159228999999868,
+          "ferrikiTokensMs": 19.47995800000035,
+          "bestShikiHtmlMs": 31.169667000000118,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.42218060911590166
+        },
+        {
+          "ferrikiHtmlMs": 13.17720850000046,
+          "ferrikiTokensMs": 19.81816699999945,
+          "bestShikiHtmlMs": 31.572229499999594,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.4173670567040769
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 13.235249999999724,
+          "ferrikiTokensMs": 19.47368800000004,
+          "bestShikiHtmlMs": 31.4170624999997,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.4212758592564104
+        },
+        {
+          "ferrikiHtmlMs": 13.067437499999414,
+          "ferrikiTokensMs": 19.57031200000074,
+          "bestShikiHtmlMs": 31.849499999999807,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.4102870531719334
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        0.5777010188047882,
+        -0.8330368302288171
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -0.21430398269259854,
+        -1.6963493927992013
+      ]
+    },
+    {
+      "language": "Python",
+      "textmate": "python",
+      "size": "example",
+      "bytes": 1364,
+      "sha256": "a6d07790bfe14bd45af981bc65c3e32f1a2094750cd09cc8a77dac13b60f6766",
+      "control": [
+        {
+          "ferrikiHtmlMs": 0.9993329999999787,
+          "ferrikiTokensMs": 1.4443750000000364,
+          "bestShikiHtmlMs": 1.7262919999998303,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.5788898981169333
+        },
+        {
+          "ferrikiHtmlMs": 0.999125499999991,
+          "ferrikiTokensMs": 1.4643340000002354,
+          "bestShikiHtmlMs": 1.7438125000000468,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.5729546611232367
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.0201869999999928,
+          "ferrikiTokensMs": 1.4328330000000733,
+          "bestShikiHtmlMs": 1.8043750000000216,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.5653963283685379
+        },
+        {
+          "ferrikiHtmlMs": 0.9925839999999653,
+          "ferrikiTokensMs": 1.4470830000000205,
+          "bestShikiHtmlMs": 1.7439159999998992,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.5691696159677545
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        2.086791890192208,
+        -0.6547225548768187
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -2.3309388870471626,
+        -0.6606186164995753
+      ]
+    },
+    {
+      "language": "Python",
+      "textmate": "python",
+      "size": "large",
+      "bytes": 21824,
+      "sha256": "fe572cc4a088e52d57ffac694b1eb53372def311cae5b5781a52e30dfef7d00b",
+      "control": [
+        {
+          "ferrikiHtmlMs": 14.957874499999889,
+          "ferrikiTokensMs": 21.70877100000007,
+          "bestShikiHtmlMs": 25.926167000000078,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.5769412231279635
+        },
+        {
+          "ferrikiHtmlMs": 15.049666500000058,
+          "ferrikiTokensMs": 21.52375000000029,
+          "bestShikiHtmlMs": 26.472750500000075,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.5684965187127048
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 14.916374999999789,
+          "ferrikiTokensMs": 21.49968799999988,
+          "bestShikiHtmlMs": 26.30993699999999,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.5669483359082081
+        },
+        {
+          "ferrikiHtmlMs": 15.001083499999822,
+          "ferrikiTokensMs": 21.751854000000094,
+          "bestShikiHtmlMs": 25.86737499999981,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.5799229144820428
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.2774424935849007,
+        -0.3228177847013125
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.7320459726516968,
+        2.009932408242676
+      ]
+    },
+    {
+      "language": "Vue",
+      "textmate": "vue",
+      "size": "example",
+      "bytes": 1310,
+      "sha256": "6f2a439051c630c8a7ffa12bdcbb46262c3d14d2a95d1d6c933ead72fdd175f2",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.571374999999989,
+          "ferrikiTokensMs": 2.529125000000022,
+          "bestShikiHtmlMs": 2.9437090000001263,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5338078594045544
+        },
+        {
+          "ferrikiHtmlMs": 1.56379099999981,
+          "ferrikiTokensMs": 2.522437500000251,
+          "bestShikiHtmlMs": 2.947834000000057,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.530488148247079
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.5774579999999787,
+          "ferrikiTokensMs": 2.5535409999997682,
+          "bestShikiHtmlMs": 2.9957079999999223,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5265726833189415
+        },
+        {
+          "ferrikiHtmlMs": 1.57831200000021,
+          "ferrikiTokensMs": 2.479791000000205,
+          "bestShikiHtmlMs": 2.960375499999941,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5331458796359588
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        0.38711319704014535,
+        0.9285767727529981
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.3553895766322266,
+        0.5009973168414561
+      ]
+    },
+    {
+      "language": "Vue",
+      "textmate": "vue",
+      "size": "large",
+      "bytes": 20960,
+      "sha256": "66fe7a8cdc4a3403a66355fc2e36d58ed49cb53aeefb38c3c4c8cc8569d1d152",
+      "control": [
+        {
+          "ferrikiHtmlMs": 22.804416500000116,
+          "ferrikiTokensMs": 36.36608350000006,
+          "bestShikiHtmlMs": 44.41908349999994,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5133923238195616
+        },
+        {
+          "ferrikiHtmlMs": 22.754500500000177,
+          "ferrikiTokensMs": 36.60331249999945,
+          "bestShikiHtmlMs": 44.633104,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5098121900730941
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 22.519750500000555,
+          "ferrikiTokensMs": 36.49385400000028,
+          "bestShikiHtmlMs": 44.99156300000004,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5005327443280985
+        },
+        {
+          "ferrikiHtmlMs": 22.592895999999655,
+          "ferrikiTokensMs": 36.394499499999256,
+          "bestShikiHtmlMs": 44.29420850000042,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.5100643349344292
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -1.2482932856429763,
+        -0.7102089540507395
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -2.504825042141212,
+        0.04945838217382814
+      ]
+    },
+    {
+      "language": "MDX",
+      "textmate": "mdx",
+      "size": "example",
+      "bytes": 1075,
+      "sha256": "da473b78028237af6b97568060834404cc95e09870d4912c546c3fd823e91743",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.6628329999998641,
+          "ferrikiTokensMs": 2.440520500000275,
+          "bestShikiHtmlMs": 2.467249999999922,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6739621035565576
+        },
+        {
+          "ferrikiHtmlMs": 1.6463749999998072,
+          "ferrikiTokensMs": 2.4935830000001715,
+          "bestShikiHtmlMs": 2.4920419999998558,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6606529905996378
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.647707999999966,
+          "ferrikiTokensMs": 2.464292000000114,
+          "bestShikiHtmlMs": 2.484292000000096,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6632505357662877
+        },
+        {
+          "ferrikiHtmlMs": 1.6891659999998865,
+          "ferrikiTokensMs": 2.4263750000000073,
+          "bestShikiHtmlMs": 2.5222499999999854,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6697060164535221
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.9095922440737758,
+        2.599104092329174
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.5893427440124674,
+        1.3703148222590222
+      ]
+    },
+    {
+      "language": "MDX",
+      "textmate": "mdx",
+      "size": "large",
+      "bytes": 17200,
+      "sha256": "775511aae2b0cf937b03e3aca0455eb03d64176534c44706538df1cea83ddd78",
+      "control": [
+        {
+          "ferrikiHtmlMs": 23.025291500000094,
+          "ferrikiTokensMs": 34.58741650000047,
+          "bestShikiHtmlMs": 36.35349999999926,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6333720687141696
+        },
+        {
+          "ferrikiHtmlMs": 22.745770500000162,
+          "ferrikiTokensMs": 35.00193750000017,
+          "bestShikiHtmlMs": 35.80377099999987,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6352897995018526
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 22.49499949999972,
+          "ferrikiTokensMs": 34.68010400000094,
+          "bestShikiHtmlMs": 35.39604200000076,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6355230197771614
+        },
+        {
+          "ferrikiHtmlMs": 22.792333999999755,
+          "ferrikiTokensMs": 34.77168750000055,
+          "bestShikiHtmlMs": 35.674417000000176,
+          "bestShikiHtmlEngine": "shiki-wasm",
+          "ferrikiVsBestShikiHtml": 0.6388985698070313
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -2.3030848491119915,
+        0.20471278385401082
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.3396030815439266,
+        0.5680510387556126
+      ]
+    },
+    {
+      "language": "SCSS",
+      "textmate": "scss",
+      "size": "example",
+      "bytes": 856,
+      "sha256": "5627cbc56635aee1ec2f5cf3f4f2316528591a28345b3064dfb0e890cc38de24",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.0483329999999569,
+          "ferrikiTokensMs": 1.6608329999999114,
+          "bestShikiHtmlMs": 0.9402499999999918,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1149513427279618
+        },
+        {
+          "ferrikiHtmlMs": 1.006040999999982,
+          "ferrikiTokensMs": 1.5656249999999545,
+          "bestShikiHtmlMs": 0.9129579999998896,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1019575927918959
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.0347079999999096,
+          "ferrikiTokensMs": 1.6420414999998911,
+          "bestShikiHtmlMs": 0.9280420000000049,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.114936608472358
+        },
+        {
+          "ferrikiHtmlMs": 1.021833000000015,
+          "ferrikiTokensMs": 1.5919165000002522,
+          "bestShikiHtmlMs": 0.929290999999921,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.0995834458744376
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -1.299682448234274,
+        1.5697173375671003
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -0.0013215155710510906,
+        -0.21544812005361846
+      ]
+    },
+    {
+      "language": "SCSS",
+      "textmate": "scss",
+      "size": "large",
+      "bytes": 13696,
+      "sha256": "4785621a97fb3fb161c71c238cbcacdd33e6b9aa6e353b90c4b520044440e2a0",
+      "control": [
+        {
+          "ferrikiHtmlMs": 14.609458000000359,
+          "ferrikiTokensMs": 23.025541499999235,
+          "bestShikiHtmlMs": 12.739937499999996,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1467448721785616
+        },
+        {
+          "ferrikiHtmlMs": 14.277208499999688,
+          "ferrikiTokensMs": 23.308750000000146,
+          "bestShikiHtmlMs": 12.322000000000116,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1586762295081605
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 15.159145999999964,
+          "ferrikiTokensMs": 23.47197950000009,
+          "bestShikiHtmlMs": 13.623729000000367,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.1127016692712808
+        },
+        {
+          "ferrikiHtmlMs": 14.301749499999914,
+          "ferrikiTokensMs": 22.86220850000018,
+          "bestShikiHtmlMs": 12.456749999999829,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 1.148112429004364
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        3.7625488912702343,
+        0.17188934377632137
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -2.9686815030274594,
+        -0.9117128870660074
+      ]
+    },
+    {
+      "language": "Bash",
+      "textmate": "shellscript",
+      "size": "example",
+      "bytes": 1011,
+      "sha256": "33c921b87fe7ffec1b3d1f86ec93188ee922a75c3539ad6eea8beeb9e1ee6efc",
+      "control": [
+        {
+          "ferrikiHtmlMs": 0.910145999999969,
+          "ferrikiTokensMs": 1.5256044999998721,
+          "bestShikiHtmlMs": 0.977874499999956,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.9307390672320528
+        },
+        {
+          "ferrikiHtmlMs": 0.9099999999999682,
+          "ferrikiTokensMs": 1.515374999999949,
+          "bestShikiHtmlMs": 0.9750834999999825,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.9332534085542259
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 0.9583749999999327,
+          "ferrikiTokensMs": 1.539395999999897,
+          "bestShikiHtmlMs": 1.038499999999999,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.9228454501684483
+        },
+        {
+          "ferrikiHtmlMs": 0.8962080000000014,
+          "ferrikiTokensMs": 1.4477919999999358,
+          "bestShikiHtmlMs": 0.9625419999999849,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.9310845656605276
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        5.299039934248495,
+        -1.5156043956007892
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -0.8481020450854748,
+        -0.23239592524588737
+      ]
+    },
+    {
+      "language": "Bash",
+      "textmate": "shellscript",
+      "size": "large",
+      "bytes": 16176,
+      "sha256": "0c7e5addcc12e4374aa13fcd288442230d48117c041efec21571d28ab25f11e9",
+      "control": [
+        {
+          "ferrikiHtmlMs": 13.32231200000001,
+          "ferrikiTokensMs": 23.137103500000194,
+          "bestShikiHtmlMs": 13.90360399999986,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.9581912718457851
+        },
+        {
+          "ferrikiHtmlMs": 13.829916500000081,
+          "ferrikiTokensMs": 22.74445850000029,
+          "bestShikiHtmlMs": 14.248562499999935,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.970618369396923
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 13.667145500000288,
+          "ferrikiTokensMs": 22.78143749999981,
+          "bestShikiHtmlMs": 14.449375500000315,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.9458640963410488
+        },
+        {
+          "ferrikiHtmlMs": 13.592895999999655,
+          "ferrikiTokensMs": 22.0089380000004,
+          "bestShikiHtmlMs": 13.867374999999583,
+          "bestShikiHtmlEngine": "shiki-js",
+          "ferrikiVsBestShikiHtml": 0.9802068524143944
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        2.5883908138488065,
+        -1.7138245194786572
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.2865046746867281,
+        0.987873640123782
+      ]
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-01",
+  "question": "Does allowing existing whole literal tries in otherwise unanchored negative lookahead improve finished HTML without major regressions?",
+  "controlCommit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+  "candidateCommit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+  "ferrikiCommit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+  "cOnigurumaCommit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+  "fixtures": {
+    "cpp": {
+      "sha256": "44276a8387359c14676eda1a1a3f880d5810de5369c7934c0c078c1571b5d4eb",
+      "scanners": 96,
+      "patternOccurrences": 4026,
+      "uniquePatterns": 250,
+      "calls": 4862
+    },
+    "scss": {
+      "sha256": "b72b52075c97aaac0f1e91df1affed15552652df44d0744169279372523f2d80",
+      "scanners": 20,
+      "patternOccurrences": 600,
+      "uniquePatterns": 104,
+      "calls": 3744
+    }
+  },
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+  "nativeMeasurement": {
+    "profile": "ordinary Ferroni thin LTO",
+    "samples": 30,
+    "warmupSeconds": 1,
+    "requestedMeasurementSeconds": 3,
+    "order": [
+      "control-1",
+      "candidate-1",
+      "candidate-2",
+      "control-2"
+    ],
+    "boundaries": [
+      "captured C++ scanner replay including returned captures",
+      "uncached construction and teardown of all captured C++ or SCSS scanners"
+    ]
+  },
+  "publicMeasurement": {
+    "profile": "ordinary Ferriki fat LTO with one codegen unit",
+    "primaryApi": "html",
+    "output": "inline HTML",
+    "target": "Ferriki < min(Shiki WASM, Shiki JS)",
+    "diagnosticApi": "tokens",
+    "unmeasured": [
+      "HTML with generated CSS in classes mode"
+    ],
+    "order": [
+      "control-1",
+      "candidate-1",
+      "candidate-2",
+      "control-2"
+    ],
+    "corpus": "curated",
+    "formats": 20,
+    "sizes": [
+      "example",
+      "large"
+    ]
+  },
+  "isolation": "No builds, coverage, profiler, or other benchmark ran concurrently with timed workloads; engine order rotates inside each public worker. Interactive desktop background load is not controlled."
+}

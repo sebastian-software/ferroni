@@ -1,0 +1,170 @@
+[
+  {
+    "label": "focused-astro-control-1",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "astro",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-astro-control-1.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-scss-control-1",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "scss",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-scss-control-1.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-bash-control-1",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "Bash",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-bash-control-1.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-astro-candidate-1",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "astro",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-astro-candidate-1.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-scss-candidate-1",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "scss",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-scss-candidate-1.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-bash-candidate-1",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "Bash",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-bash-candidate-1.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-astro-candidate-2",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "astro",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-astro-candidate-2.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-scss-candidate-2",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "scss",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-scss-candidate-2.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-bash-candidate-2",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "Bash",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-bash-candidate-2.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-astro-control-2",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "astro",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-astro-control-2.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-scss-control-2",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "scss",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-scss-control-2.json"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "focused-bash-control-2",
+    "command": [
+      "node",
+      "node/scripts/bench-tiobe.mjs",
+      "--corpus",
+      "curated",
+      "--language",
+      "Bash",
+      "--write",
+      "/private/tmp/ferroni-negative-lookahead-perf/focused-bash-control-2.json"
+    ],
+    "exitCode": 0
+  }
+]

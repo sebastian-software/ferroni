@@ -1,0 +1,961 @@
+{
+  "boundary": "Focused ABBA repeats of initial small Astro, SCSS, and Bash timing increases; same ordinary addons, fixtures, and public method",
+  "order": [
+    "control-1",
+    "candidate-1",
+    "candidate-2",
+    "control-2"
+  ],
+  "comparisons": [
+    {
+      "language": "astro",
+      "kind": "pair-1",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.7346660000002885,
+          "candidateMs": 2.710750000000189,
+          "changePercent": -0.8745492136917887
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 24.085833499999808,
+          "candidateMs": 23.846395999999004,
+          "changePercent": -0.9941009515024968
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 32.22150000000056,
+          "candidateMs": 31.277187000000595,
+          "changePercent": -2.9306922396534874
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.1488954999999805,
+          "candidateMs": 2.062687500000038,
+          "changePercent": -4.011735331008093
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "astro",
+      "kind": "pair-2",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 31.56658300000072,
+          "candidateMs": 31.69781299999977,
+          "changePercent": 0.41572443871751297
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.652603999999883,
+          "candidateMs": 23.71264549999978,
+          "changePercent": 0.2538473142318587
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.7181250000003274,
+          "candidateMs": 2.7076670000001286,
+          "changePercent": -0.3847505173675825
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.1041455000000724,
+          "candidateMs": 2.0672294999999394,
+          "changePercent": -1.7544414110208462
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "astro",
+      "kind": "control-repeat",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.7346660000002885,
+          "candidateMs": 2.7181250000003274,
+          "changePercent": -0.6048636286829612
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 24.085833499999808,
+          "candidateMs": 23.652603999999883,
+          "changePercent": -1.7986900889268687
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 32.22150000000056,
+          "candidateMs": 31.56658300000072,
+          "changePercent": -2.032546591561002
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.1488954999999805,
+          "candidateMs": 2.1041455000000724,
+          "changePercent": -2.0824651547694417
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "astro",
+      "kind": "candidate-repeat",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 31.277187000000595,
+          "candidateMs": 31.69781299999977,
+          "changePercent": 1.3448332166162036
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 2.062687500000038,
+          "candidateMs": 2.0672294999999394,
+          "changePercent": 0.22019816379850177
+        },
+        {
+          "language": "Astro",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 2.710750000000189,
+          "candidateMs": 2.7076670000001286,
+          "changePercent": -0.11373236189469171
+        },
+        {
+          "language": "Astro",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 23.846395999999004,
+          "candidateMs": 23.71264549999978,
+          "changePercent": -0.5608834978636956
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "scss",
+      "kind": "pair-1",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.596875000000182,
+          "candidateMs": 1.6087079999999787,
+          "changePercent": 0.7410097847230013
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.349833000000217,
+          "candidateMs": 14.28585449999946,
+          "changePercent": -0.44584839419913314
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.727749999999105,
+          "candidateMs": 22.476688000000195,
+          "changePercent": -1.1046496023536023
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0276665000000662,
+          "candidateMs": 1.0114580000001752,
+          "changePercent": -1.5772140086195319
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "scss",
+      "kind": "pair-2",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.50077099999953,
+          "candidateMs": 22.556625000000167,
+          "changePercent": 0.24823149393697896
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5861669999999322,
+          "candidateMs": 1.5892919999996593,
+          "changePercent": 0.19701582492430703
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.361146000000645,
+          "candidateMs": 14.299062500000218,
+          "changePercent": -0.43230185112262953
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.023458499999947,
+          "candidateMs": 1.0188124999999673,
+          "changePercent": -0.4539509906830608
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "scss",
+      "kind": "control-repeat",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.349833000000217,
+          "candidateMs": 14.361146000000645,
+          "changePercent": 0.07883715441445727
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0276665000000662,
+          "candidateMs": 1.023458499999947,
+          "changePercent": -0.4094713606134781
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.596875000000182,
+          "candidateMs": 1.5861669999999322,
+          "changePercent": -0.6705596869040154
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.727749999999105,
+          "candidateMs": 22.50077099999953,
+          "changePercent": -0.9986866275789819
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "scss",
+      "kind": "candidate-repeat",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 1.0114580000001752,
+          "candidateMs": 1.0188124999999673,
+          "changePercent": 0.7271186742099811
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.476688000000195,
+          "candidateMs": 22.556625000000167,
+          "changePercent": 0.35564403438785863
+        },
+        {
+          "language": "SCSS",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 14.28585449999946,
+          "candidateMs": 14.299062500000218,
+          "changePercent": 0.09245509255857431
+        },
+        {
+          "language": "SCSS",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.6087079999999787,
+          "candidateMs": 1.5892919999996593,
+          "changePercent": -1.2069312765473739
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "bash",
+      "kind": "pair-1",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.4450420000000577,
+          "candidateMs": 1.5122079999998732,
+          "changePercent": 4.648030991473795
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.048479500000212,
+          "candidateMs": 22.0373125000001,
+          "changePercent": -0.05064748342448189
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8864589999999453,
+          "candidateMs": 0.88474999999994,
+          "changePercent": -0.19278951423645774
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.50333350000028,
+          "candidateMs": 13.273562500000025,
+          "changePercent": -1.7015872414041344
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "bash",
+      "kind": "pair-2",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.9138544999999851,
+          "candidateMs": 0.9127500000000168,
+          "changePercent": -0.12086169077991649
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.499875000000202,
+          "candidateMs": 13.473083499999802,
+          "changePercent": -0.19845739312697175
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.126874999999927,
+          "candidateMs": 21.967666999999892,
+          "changePercent": -0.7195232042483846
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.468083000000206,
+          "candidateMs": 1.4462499999997362,
+          "changePercent": -1.4871774961270456
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "bash",
+      "kind": "control-repeat",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-curated-baseline/Cargo.toml",
+        "revision": {
+          "commit": "cba34468374bc1ad3903c5b1ae3b95c95621d540",
+          "status": ""
+        },
+        "sourceSha256": "7602c5ab44e9c21e39bf097643abdd073d6eef945d57298d91b26578524fdf9e",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.8864589999999453,
+          "candidateMs": 0.9138544999999851,
+          "changePercent": 3.090441859131854
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.4450420000000577,
+          "candidateMs": 1.468083000000206,
+          "changePercent": 1.5944865270454134
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.048479500000212,
+          "candidateMs": 22.126874999999927,
+          "changePercent": 0.3555596656890314
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.50333350000028,
+          "candidateMs": 13.499875000000202,
+          "changePercent": -0.02561219420433858
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "language": "bash",
+      "kind": "candidate-repeat",
+      "baselineFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "candidateFerroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-scss-analysis/Cargo.toml",
+        "revision": {
+          "commit": "3caf0cbb6aac95aae89c9bc4145c77586bb31b2b",
+          "status": ""
+        },
+        "sourceSha256": "3ff7630188646384f65019eeb149089589699b98799a43bd99bc86a29fde3c99",
+        "features": []
+      },
+      "comparisons": [
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "html",
+          "baselineMs": 0.88474999999994,
+          "candidateMs": 0.9127500000000168,
+          "changePercent": 3.164735801082652
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "html",
+          "baselineMs": 13.273562500000025,
+          "candidateMs": 13.473083499999802,
+          "changePercent": 1.5031458208734527
+        },
+        {
+          "language": "Bash",
+          "size": "large",
+          "api": "tokens",
+          "baselineMs": 22.0373125000001,
+          "candidateMs": 21.967666999999892,
+          "changePercent": -0.3160344529316128
+        },
+        {
+          "language": "Bash",
+          "size": "example",
+          "api": "tokens",
+          "baselineMs": 1.5122079999998732,
+          "candidateMs": 1.4462499999997362,
+          "changePercent": -4.36170156487351
+        }
+      ],
+      "excluded": []
+    }
+  ],
+  "cases": [
+    {
+      "language": "astro",
+      "size": "example",
+      "control": [
+        {
+          "ferrikiHtmlMs": 2.1488954999999805,
+          "bestShikiHtmlMs": 3.8929580000000215,
+          "bestShikiHtmlEngine": "shiki-wasm"
+        },
+        {
+          "ferrikiHtmlMs": 2.1041455000000724,
+          "bestShikiHtmlMs": 3.835104000000001,
+          "bestShikiHtmlEngine": "shiki-wasm"
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 2.062687500000038,
+          "bestShikiHtmlMs": 3.7915625000000546,
+          "bestShikiHtmlEngine": "shiki-wasm"
+        },
+        {
+          "ferrikiHtmlMs": 2.0672294999999394,
+          "bestShikiHtmlMs": 3.8362710000000106,
+          "bestShikiHtmlEngine": "shiki-wasm"
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -4.011735331008093,
+        -1.7544414110208462
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.4447782809155818,
+        -1.7843278728673195
+      ]
+    },
+    {
+      "language": "astro",
+      "size": "large",
+      "control": [
+        {
+          "ferrikiHtmlMs": 24.085833499999808,
+          "bestShikiHtmlMs": 46.92683350000016,
+          "bestShikiHtmlEngine": "shiki-wasm"
+        },
+        {
+          "ferrikiHtmlMs": 23.652603999999883,
+          "bestShikiHtmlMs": 46.63072899999952,
+          "bestShikiHtmlEngine": "shiki-wasm"
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 23.846395999999004,
+          "bestShikiHtmlMs": 46.69254200000023,
+          "bestShikiHtmlEngine": "shiki-wasm"
+        },
+        {
+          "ferrikiHtmlMs": 23.71264549999978,
+          "bestShikiHtmlMs": 46.266416500000105,
+          "bestShikiHtmlEngine": "shiki-wasm"
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.9941009515024968,
+        0.2538473142318587
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -0.497314107108493,
+        1.0432693726618147
+      ]
+    },
+    {
+      "language": "scss",
+      "size": "example",
+      "control": [
+        {
+          "ferrikiHtmlMs": 1.0276665000000662,
+          "bestShikiHtmlMs": 0.9176464999999325,
+          "bestShikiHtmlEngine": "shiki-js"
+        },
+        {
+          "ferrikiHtmlMs": 1.023458499999947,
+          "bestShikiHtmlMs": 0.9109999999999445,
+          "bestShikiHtmlEngine": "shiki-js"
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 1.0114580000001752,
+          "bestShikiHtmlMs": 0.9232499999999391,
+          "bestShikiHtmlEngine": "shiki-js"
+        },
+        {
+          "ferrikiHtmlMs": 1.0188124999999673,
+          "bestShikiHtmlMs": 0.926249999999925,
+          "bestShikiHtmlEngine": "shiki-js"
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -1.5772140086195319,
+        -0.4539509906830608
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -2.1745734251409243,
+        -2.09290078543638
+      ]
+    },
+    {
+      "language": "scss",
+      "size": "large",
+      "control": [
+        {
+          "ferrikiHtmlMs": 14.349833000000217,
+          "bestShikiHtmlMs": 12.509166499999537,
+          "bestShikiHtmlEngine": "shiki-js"
+        },
+        {
+          "ferrikiHtmlMs": 14.361146000000645,
+          "bestShikiHtmlMs": 12.590104500000052,
+          "bestShikiHtmlEngine": "shiki-js"
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 14.28585449999946,
+          "bestShikiHtmlMs": 12.45208300000013,
+          "bestShikiHtmlEngine": "shiki-js"
+        },
+        {
+          "ferrikiHtmlMs": 14.299062500000218,
+          "bestShikiHtmlMs": 12.522916500000065,
+          "bestShikiHtmlEngine": "shiki-js"
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.44584839419913314,
+        -0.43230185112262953
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.010533033159698668,
+        0.10189914776013165
+      ]
+    },
+    {
+      "language": "bash",
+      "size": "example",
+      "control": [
+        {
+          "ferrikiHtmlMs": 0.8864589999999453,
+          "bestShikiHtmlMs": 0.9572500000001583,
+          "bestShikiHtmlEngine": "shiki-js"
+        },
+        {
+          "ferrikiHtmlMs": 0.9138544999999851,
+          "bestShikiHtmlMs": 0.9787709999999947,
+          "bestShikiHtmlEngine": "shiki-js"
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 0.88474999999994,
+          "bestShikiHtmlMs": 0.9509579999999005,
+          "bestShikiHtmlEngine": "shiki-js"
+        },
+        {
+          "ferrikiHtmlMs": 0.9127500000000168,
+          "bestShikiHtmlMs": 0.9717295000000945,
+          "bestShikiHtmlEngine": "shiki-js"
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -0.19278951423645774,
+        -0.12086169077991649
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        0.46758346585542565,
+        0.6028983189700465
+      ]
+    },
+    {
+      "language": "bash",
+      "size": "large",
+      "control": [
+        {
+          "ferrikiHtmlMs": 13.50333350000028,
+          "bestShikiHtmlMs": 13.936333500000046,
+          "bestShikiHtmlEngine": "shiki-js"
+        },
+        {
+          "ferrikiHtmlMs": 13.499875000000202,
+          "bestShikiHtmlMs": 13.756291999999803,
+          "bestShikiHtmlEngine": "shiki-js"
+        }
+      ],
+      "candidate": [
+        {
+          "ferrikiHtmlMs": 13.273562500000025,
+          "bestShikiHtmlMs": 13.84177099999988,
+          "bestShikiHtmlEngine": "shiki-js"
+        },
+        {
+          "ferrikiHtmlMs": 13.473083499999802,
+          "bestShikiHtmlMs": 13.75581249999982,
+          "bestShikiHtmlEngine": "shiki-js"
+        }
+      ],
+      "pairedHtmlChangePercent": [
+        -1.7015872414041344,
+        -0.19845739312697175
+      ],
+      "pairedRelativeToBestShikiChangePercent": [
+        -1.0300442967548507,
+        -0.19497851176839553
+      ]
+    }
+  ]
+}
