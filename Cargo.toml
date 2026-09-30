@@ -92,3 +92,7 @@ harness = false
 [[bench]]
 name = "cpp_scanner_bench"
 harness = false
+
+[[bench]]
+name = "scanner_compile_bench"
+harness = false
