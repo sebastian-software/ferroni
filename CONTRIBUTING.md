@@ -129,6 +129,10 @@ exclude this project from sibling links and include sibling descriptions.
 
 ## Running Benchmarks
 
+The agreed 20-format selection for the next Ferriki highlighting corpus is
+recorded in [`benches/highlighting_corpus.md`](benches/highlighting_corpus.md),
+including its rationale and fixture requirements.
+
 `battle_bench` requires a local Oniguruma source snapshot for comparison:
 
 ```bash
