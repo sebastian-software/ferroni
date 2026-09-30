@@ -139,5 +139,16 @@
     "name": "fuzzing",
     "status": "SKIPPED",
     "note": "Benchmark and evidence only; no engine source change."
+  },
+  {
+    "name": "html-focus",
+    "status": "PASSED",
+    "commands": [
+      "node --check summarize.mjs",
+      "node --check lookaround-candidates.mjs",
+      "node summarize.mjs /private/tmp/ferriki-curated-benchmark RESULT_DIRECTORY",
+      "git diff --check"
+    ],
+    "note": "HTML is the primary metric; all five strict report comparisons still pass. Deterministic regeneration and unchanged raw-report bytes verified. Existing Rust validation remains applicable because Rust and the manifest are unchanged."
   }
 ]

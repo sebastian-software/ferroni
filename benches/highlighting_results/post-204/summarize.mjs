@@ -42,13 +42,17 @@ const languages = runs[0].languages.map((row, index) => {
   })]));
   ratios['best-shiki'] = Object.fromEntries(['html', 'tokens'].map(api => [api, large.map((c,n) => c.results.ferriki[api].medianMs / bestShiki[api][n].medianMs)]));
   return { language: row.name, textmate: row.textmate, bytes: large[0].bytes, engines, bestShiki, ferrikiRatios: ratios,
+    htmlGapVsBestShikiMs: large.map((c,n) => c.results.ferriki.html.medianMs - bestShiki.html[n].medianMs),
     tokenGapVsBestShikiMs: large.map((c,n) => c.results.ferriki.tokens.medianMs - bestShiki.tokens[n].medianMs) };
 });
 const wins = Object.fromEntries(['shiki-wasm', 'shiki-js', 'best-shiki'].map(id => [id, Object.fromEntries(['html', 'tokens'].map(api => [api, runs.map((_,n) => languages.filter(row => row.ferrikiRatios[id][api][n] < 1).length)]))]));
 writeFileSync(join(root, 'summary.json'), JSON.stringify({
   boundary: 'Two sequential warm public highlighting matrices on merged Ferroni #204; historical comparisons do not isolate host drift',
+  primaryMetric: { api: 'html', output: 'inline HTML', comparator: 'min(shiki-wasm, shiki-js)', ranking: 'largest absolute HTML median gap across the two runs' },
+  diagnosticApis: ['tokens'],
+  unmeasuredProductOutputs: ['HTML with CSS in classes mode'],
   nativeBuilds: runs.map(r => r.nativeBuild), method: runs[0].method, machine: runs[0].machine, versions: runs[0].versions,
   runComparison: checked(runs[0], runs[1]), beforeVsMerged: runs.map(r => checked(oldControl, r)), previousCandidateVsMerged: runs.map(r => checked(previous, r)),
-  wins, languages: languages.sort((a,b) => Math.max(...b.tokenGapVsBestShikiMs) - Math.max(...a.tokenGapVsBestShikiMs)),
+  wins, languages: languages.sort((a,b) => Math.max(...b.htmlGapVsBestShikiMs) - Math.max(...a.htmlGapVsBestShikiMs)),
 }, null, 2) + '\n');
 console.log(JSON.stringify({ exactParity: '20 formats, two sizes, three TextMate engines', comparisons: '5 pairs × 80, zero exclusions', wins }));
