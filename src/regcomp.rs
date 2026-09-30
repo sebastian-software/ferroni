@@ -6755,6 +6755,15 @@ struct AltBranchInfo {
     literals: Vec<Vec<u8>>,
 }
 
+/// Assertion context for the additive literal-alternation compiler pass.
+/// Negative lookahead admits whole literal lists but not mixed-run compaction.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LiteralAltContext {
+    OutsideAnchor,
+    NegativeLookahead,
+    OtherAnchor,
+}
+
 /// Walk the AST and detect semantically safe literal alternations. When found,
 /// build a `LiteralTrie` and replace the complete alternation with one trie
 /// node. Large consecutive literal runs can also become tries in place:
@@ -6767,14 +6776,14 @@ pub fn detect_literal_alternations(
     reg: &mut RegexType,
     backrefed_mem: MemStatusType,
 ) {
-    detect_literal_alternations_inner(node, reg, false, backrefed_mem);
+    detect_literal_alternations_inner(node, reg, LiteralAltContext::OutsideAnchor, backrefed_mem);
 }
 
 /// Recurse into the children of a node for literal alternation detection.
 fn recurse_into_children(
     node: &mut Node,
     reg: &mut RegexType,
-    in_anchor: bool,
+    context: LiteralAltContext,
     backrefed_mem: MemStatusType,
 ) {
     match &mut node.inner {
@@ -6790,7 +6799,7 @@ fn recurse_into_children(
                 {
                     let car = &mut *cons.car as *mut Node;
                     let cdr = &mut cons.cdr;
-                    detect_literal_alternations_inner(&mut *car, reg, in_anchor, backrefed_mem);
+                    detect_literal_alternations_inner(&mut *car, reg, context, backrefed_mem);
                     match cdr {
                         Some(next) => cur = &mut **next,
                         None => break,
@@ -6800,17 +6809,27 @@ fn recurse_into_children(
         }
         NodeInner::Quant(qn) => {
             if let Some(ref mut body) = qn.body {
-                detect_literal_alternations_inner(body, reg, in_anchor, backrefed_mem);
+                detect_literal_alternations_inner(body, reg, context, backrefed_mem);
             }
         }
         NodeInner::Bag(bn) => {
             if let Some(ref mut body) = bn.body {
-                detect_literal_alternations_inner(body, reg, in_anchor, backrefed_mem);
+                detect_literal_alternations_inner(body, reg, context, backrefed_mem);
             }
         }
         NodeInner::Anchor(an) => {
             if let Some(ref mut body) = an.body {
-                detect_literal_alternations_inner(body, reg, true, backrefed_mem);
+                // Keep lookbehind and nested assertions on the original path.
+                // Only complete plain-string alternatives in an otherwise
+                // unanchored negative lookahead are eligible.
+                let child_context = if context == LiteralAltContext::OutsideAnchor
+                    && an.anchor_type == ANCR_PREC_READ_NOT
+                {
+                    LiteralAltContext::NegativeLookahead
+                } else {
+                    LiteralAltContext::OtherAnchor
+                };
+                detect_literal_alternations_inner(body, reg, child_context, backrefed_mem);
             }
         }
         _ => {}
@@ -7243,32 +7262,32 @@ fn ascii_case_variants(text: &[u8]) -> impl Iterator<Item = Vec<u8>> + '_ {
 fn detect_literal_alternations_inner(
     node: &mut Node,
     reg: &mut RegexType,
-    in_anchor: bool,
+    context: LiteralAltContext,
     backrefed_mem: MemStatusType,
 ) {
-    // Try top-down: if this node is an Alt (not in anchor), try nested
+    // Try top-down: if this node is an eligible Alt, try nested
     // extraction BEFORE recursing into children.  This prevents inner Alts
     // from being trie-optimized first (which makes them opaque to outer
     // extraction).
     if matches!(node.inner, NodeInner::Alt(_))
-        && !in_anchor
+        && context != LiteralAltContext::OtherAnchor
         && try_trie_optimize_alt(node, reg, backrefed_mem)
     {
         // Successfully trie-optimized this complete literal alternation.
-        recurse_into_children(node, reg, in_anchor, backrefed_mem);
+        recurse_into_children(node, reg, context, backrefed_mem);
         return;
     }
 
-    if !in_anchor && matches!(node.inner, NodeInner::Alt(_)) {
+    if context == LiteralAltContext::OutsideAnchor && matches!(node.inner, NodeInner::Alt(_)) {
         compact_contiguous_literal_runs(node, reg, backrefed_mem);
     }
 
     // Recurse into children, then retry flat-check on this Alt.
-    recurse_into_children(node, reg, in_anchor, backrefed_mem);
+    recurse_into_children(node, reg, context, backrefed_mem);
 
     // After recursion, retry on this Alt.  Inner Alts may now be trie
     // nodes; classify_branch handles that via check_literal_branch.
-    if matches!(node.inner, NodeInner::Alt(_)) && !in_anchor {
+    if matches!(node.inner, NodeInner::Alt(_)) && context != LiteralAltContext::OtherAnchor {
         try_trie_optimize_alt(node, reg, backrefed_mem);
     }
 }
@@ -11609,6 +11628,148 @@ mod tests {
         let reg = compile(&pattern);
         assert_eq!(reg.num_mem, 2);
         assert_eq!(reg.literal_tries.len(), 2);
+    }
+
+    #[test]
+    fn negative_lookahead_tries_keep_other_anchor_and_mixed_run_guards() {
+        let literals = "a|bb|ccc|dddd|ee|ff|gg|hh|ii|jj|kk|ll|mm|nn|oo|pp";
+        let compile = |pattern: &str| {
+            onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        for pattern in [
+            format!("(?!{literals})[a-z]+"),
+            format!("(?!(?:{literals})\\b)[a-z]+"),
+            format!("(?i:(?!{literals})[a-z]+)"),
+        ] {
+            assert_eq!(compile(&pattern).literal_tries.len(), 1, "{pattern}");
+        }
+        for pattern in [
+            format!("(?={literals})"),
+            format!("(?<={literals})"),
+            format!("(?<!{literals})"),
+            format!("(?=(?!{literals}).)"),
+            format!("(?!(?={literals}).)"),
+            format!("(?!(?!{literals}).)"),
+            format!("(?![xy]|{literals}|[zw])"),
+        ] {
+            assert!(compile(&pattern).literal_tries.is_empty(), "{pattern}");
+        }
+    }
+
+    #[test]
+    fn negative_lookahead_tries_preserve_assertion_backtracking_and_captures() {
+        use crate::oniguruma::{ONIG_OPTION_IGNORECASE, OnigRegion};
+        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let search = |reg: &RegexType, input: &[u8], start: usize, range: usize| {
+            let (result, region) = onig_search(
+                reg,
+                input,
+                input.len(),
+                start,
+                range,
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            let region = region.unwrap();
+            let captures: Vec<_> = region
+                .beg
+                .iter()
+                .zip(&region.end)
+                .take(region.num_regs as usize)
+                .map(|(&begin, &end)| (begin, end))
+                .collect();
+            (result, captures)
+        };
+        let sets: [&[&str]; 6] = [
+            &["a", "ab", "abc", "x"],
+            &["abc", "ab", "a", "ab"],
+            &["foo", "foob", "bar", "baz"],
+            &["ss", "st", "ff", "k"],
+            &["é", "α", "😀", "ß"],
+            &["a", "ab", "", "x"],
+        ];
+        let contexts = [
+            "(?!(?:{}))[a-z]+",
+            "(?!(?:{})c)([a-z]+)",
+            "(?!({})c)([a-z]+)",
+            "(?!(?:{})\\b)([a-z]+)",
+            "(?:(?!(?:{})c).){1,3}(x?)",
+            "(?!(?:{})c)([a-z]+)|([a-z]+)",
+            "(?!(?:{})c)([a-z]+)\\1?",
+            "(a*)(?!(?:{})c)([a-z]*)",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"a",
+            b"ab",
+            b"abc",
+            b"abcc",
+            b"ax",
+            b"xabc",
+            b"foobc",
+            b"foo bar baz",
+            b"FOOBC",
+            b"sscx",
+            b"STk",
+            "ſsc".as_bytes(),
+            "ßc".as_bytes(),
+            "Kc".as_bytes(),
+            "éα😀ß".as_bytes(),
+            b"\x80abc",
+            b"a\xc1\xab",
+            b"\xe2\x84",
+            b"abc\xf0\x9f\x98\x80x",
+        ];
+        let mut optimized = 0;
+        for literals in sets {
+            let plain = literals.join("|");
+            // An empty positive assertion preserves the first branch's
+            // meaning and case folding while blocking the plain-string trie.
+            let blocked = format!("{}(?=)|{}", literals[0], literals[1..].join("|"));
+            for context in contexts {
+                for options in [ONIG_OPTION_NONE, ONIG_OPTION_IGNORECASE] {
+                    let compile = |alternation: &str| {
+                        onig_new(
+                            context.replace("{}", alternation).as_bytes(),
+                            options,
+                            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                            &OnigSyntaxOniguruma,
+                        )
+                        .unwrap()
+                    };
+                    let candidate = compile(&plain);
+                    let reference = compile(&blocked);
+                    assert!(reference.literal_tries.is_empty());
+                    optimized += usize::from(!candidate.literal_tries.is_empty());
+                    for input in inputs {
+                        for (start, range) in [
+                            (0, input.len()),
+                            (input.len().min(1), input.len()),
+                            (input.len(), 0),
+                        ] {
+                            assert_eq!(
+                                search(&candidate, input, start, range),
+                                search(&reference, input, start, range),
+                                "{} options={options:?} input={input:x?} start={start} range={range}",
+                                context.replace("{}", &plain)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            optimized >= 60,
+            "only {optimized} assertion contexts used a trie"
+        );
     }
 
     #[test]

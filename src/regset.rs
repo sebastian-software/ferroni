@@ -2612,7 +2612,8 @@ mod tests {
                 table_entries: 200,
                 fallback_entries: 79,
                 fallback_start_filters: 79,
-                literal_tries: 23,
+                // Whole literal lists in negative lookahead are eligible too.
+                literal_tries: 24,
                 folded_literal_tries: 0,
                 without_optimizer: 3,
                 capture_tracking: 0,
