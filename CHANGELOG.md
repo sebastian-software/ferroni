@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.8.0](https://github.com/sebastian-software/ferroni/compare/v1.7.0...v1.8.0) (2026-10-01)
+
+
+### Features
+
+* add opt-in decimal backtracking optimization ([aa42bee](https://github.com/sebastian-software/ferroni/commit/aa42bee03fed0ed4090f515ed9605c5eb88ccab9))
+* **bench:** isolate SCSS scanner calls and pattern diagnosis ([b2ae1fb](https://github.com/sebastian-software/ferroni/commit/b2ae1fb644a92b033ff02458c94c146c6b16a78a))
+* **bench:** measure uncached captured scanner construction ([b877485](https://github.com/sebastian-software/ferroni/commit/b877485e0e0682ba8d7f8226d2a9c66b272ace7e))
+* **bench:** replay captured C++ scanner workloads for profiling ([ff96e19](https://github.com/sebastian-software/ferroni/commit/ff96e1990fd32d82ad29e002ec79a44621850458))
+
+
+### Bug Fixes
+
+* **bench:** keep capture patch free of whitespace warnings ([16af64c](https://github.com/sebastian-software/ferroni/commit/16af64c93e6ecf1cb6786d04a1f434b23bd21716))
+* **bench:** keep profiling example out of crate packages ([c28fea0](https://github.com/sebastian-software/ferroni/commit/c28fea051d74e3f8b6d52b916e3999b4a08aa08e))
+
+
+### Performance Improvements
+
+* **bench:** rank candidates by end-to-end HTML performance ([cba3446](https://github.com/sebastian-software/ferroni/commit/cba34468374bc1ad3903c5b1ae3b95c95621d540))
+* **bench:** retain C++ scanner baseline and focused CPU profiles ([0819fb2](https://github.com/sebastian-software/ferroni/commit/0819fb24ea11899fca6cd341d1e1a51f564227c5))
+* **bench:** retain mixed-alternative compiler comparison ([abdf2ec](https://github.com/sebastian-software/ferroni/commit/abdf2ec905bd05c930b446b3678d763020d480b8))
+* **bench:** retain post-204 best-Shiki comparison and profiles ([5fbf4ee](https://github.com/sebastian-software/ferroni/commit/5fbf4ee34ca96095a0baacac0d62a7451043fcf8))
+* **bench:** retain SCSS baseline and C++ pattern candidates ([f5ef150](https://github.com/sebastian-software/ferroni/commit/f5ef150315a67b6d16b4a0a79076a72e690e37a1))
+* **compiler:** compact contiguous literal alternatives in place ([3d39d61](https://github.com/sebastian-software/ferroni/commit/3d39d61c373528efd01268ab751db857fa2b970b))
+* **compiler:** lower whole literal lists in negative lookahead ([31fe655](https://github.com/sebastian-software/ferroni/commit/31fe655b853561a95e43cf070f9a12dd9d0667ca))
+* **regset:** skip proven failed starts in unbounded leading runs ([c6904f4](https://github.com/sebastian-software/ferroni/commit/c6904f49d8976e38b69b9f9c70482fa3f3d4c11a))
+
 ## [1.7.0](https://github.com/sebastian-software/ferroni/compare/v1.6.2...v1.7.0) (2026-09-29)
 
 
