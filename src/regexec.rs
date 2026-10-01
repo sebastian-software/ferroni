@@ -2531,9 +2531,20 @@ fn mem_is_in_mems(mem: usize, num: i32, mems: &[i32]) -> bool {
 
 /// Check if a byte is a word character (ASCII-only).
 #[inline]
-fn is_word_ascii(c: u8) -> bool {
+const fn is_word_ascii(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
+
+/// `is_word_ascii` as a byte table, for `is_word_boundary_ascii_fast`.
+const WORD_ASCII_TABLE: [bool; 256] = {
+    let mut table = [false; 256];
+    let mut c = 0;
+    while c < 256 {
+        table[c] = is_word_ascii(c as u8);
+        c += 1;
+    }
+    table
+};
 
 /// Check if the character at position s is a word character (encoding-aware).
 /// Uses the encoding's Unicode-aware is_code_ctype for multi-byte encodings.
@@ -2676,6 +2687,32 @@ fn is_word_boundary(
     let prev_word = is_word_char_ascii_mode(enc, str_data, prev, end, mode);
     let curr_word = is_word_char_ascii_mode(enc, str_data, s, end, mode);
     prev_word != curr_word
+}
+
+/// `is_word_boundary` for the `WordBoundary` / `NoWordBoundary` opcodes,
+/// with a Rust-only fast path (ADR-008) for an interior position between two
+/// ASCII bytes. Both supported encodings, ASCII and UTF-8 (ADR-003), are
+/// ASCII-compatible: a byte below 0x80 is a complete character. There
+/// `prev_char_head` steps back exactly one byte, and both modes (Unicode and
+/// ASCII word) classify each byte with `is_word_ascii`, so the fast path needs
+/// no decoding and none of the encoding's virtual calls. The start, the end
+/// and any non-ASCII neighbor take the full check.
+#[inline(always)]
+fn is_word_boundary_ascii_fast(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    end: usize,
+    mode: ModeType,
+) -> bool {
+    if s > 0 && s < end {
+        let prev = str_data[s - 1];
+        let curr = str_data[s];
+        if (prev | curr) < 0x80 {
+            return WORD_ASCII_TABLE[prev as usize] != WORD_ASCII_TABLE[curr as usize];
+        }
+    }
+    is_word_boundary(enc, str_data, s, end, mode)
 }
 
 /// Check if position s is at the start of a word (encoding-aware, mode-aware).
@@ -4678,7 +4715,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 } else {
                     0
                 };
-                if !is_word_boundary(enc, str_data, s, end, mode) {
+                if !is_word_boundary_ascii_fast(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -4691,7 +4728,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 } else {
                     0
                 };
-                if is_word_boundary(enc, str_data, s, end, mode) {
+                if is_word_boundary_ascii_fast(enc, str_data, s, end, mode) {
                     goto_fail = true;
                 } else {
                     p += 1;
@@ -10065,6 +10102,39 @@ mod tests {
     fn match_word_boundary() {
         let (pos, _) = compile_and_search(b"\\bfoo\\b", b"a foo b");
         assert_eq!(pos, 2);
+    }
+
+    /// The ASCII fast path of `WordBoundary` / `NoWordBoundary` decides as
+    /// `is_word_boundary` does: every byte pair, at the start, between the
+    /// bytes and at the end (including an end before the end of the data),
+    /// in both word modes and both encodings.
+    #[test]
+    fn word_boundary_ascii_fast_path_matches_full_check() {
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for mode in [0, 1] {
+                assert_eq!(
+                    is_word_boundary_ascii_fast(enc, b"", 0, 0, mode),
+                    is_word_boundary(enc, b"", 0, 0, mode)
+                );
+                for a in 0..=u8::MAX {
+                    for b in 0..=u8::MAX {
+                        let data = [a, b];
+                        for end in 0..=data.len() {
+                            for s in 0..=end {
+                                assert_eq!(
+                                    is_word_boundary_ascii_fast(enc, &data, s, end, mode),
+                                    is_word_boundary(enc, &data, s, end, mode),
+                                    "bytes {a:#04x} {b:#04x}, s {s}, end {end}, mode {mode}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

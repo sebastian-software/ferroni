@@ -149,6 +149,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Trigger**: Input byte < 0x80
 - **Impact**: Low single-digit percentage gains; primarily reduces constant factors in tight loops
 - **Bounds**: Single `if` guard per call site; no additional memory
+- **Word boundaries**: `\b` / `\B` between two ASCII bytes look both bytes up in a 256-byte `is_word_ascii` table instead of calling `is_word_boundary`, whose `prev_char_head` asks the encoding for its flags through a virtual call. Both encodings are ASCII-compatible (ADR-003), so a byte below 0x80 is a whole character, and both word modes classify it alike. The start, the end and non-ASCII neighbors keep the full check; a test compares both for every byte pair. Captured scanner replays take 9.1% fewer instructions for Java, 1.3% for C++ and 0.9% for SCSS.
 
 #### Scanner fast paths from the 2026-09 profiling pass (`src/regexec.rs`, `src/regset.rs`, `src/regparse.rs`)
 
