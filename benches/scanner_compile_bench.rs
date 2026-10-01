@@ -1,7 +1,8 @@
-//! Uncached construction and destruction of complete captured scanner sets.
+//! Construction and destruction of complete captured scanner sets, uncached
+//! and through one `ScannerPatternCache` per set (`<name>_pattern_cache`).
 //! JSON parsing and fixture loading happen outside the measurement.
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use ferroni::scanner::Scanner;
+use ferroni::scanner::{Scanner, ScannerConfig, ScannerPatternCache};
 use std::hint::black_box;
 use std::path::PathBuf;
 
@@ -11,10 +12,12 @@ fn bench_compile(c: &mut Criterion) {
         || root.join("benches/scss_scanner/trace.json"),
         PathBuf::from,
     );
+    let config = ScannerConfig::default();
     let mut group = c.benchmark_group("scanner_compile_and_drop");
     for (name, path) in [
         ("cpp", root.join("benches/cpp_scanner/trace.json")),
         ("scss", scss),
+        ("java", root.join("benches/java_scanner/trace.json")),
     ] {
         let fixture: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path).expect("captured fixture exists"))
@@ -37,6 +40,22 @@ fn bench_compile(c: &mut Criterion) {
                     })
                     .collect();
                 // Keep teardown inside the named measurement boundary.
+                drop(black_box(scanners));
+            });
+        });
+        // A fresh cache per iteration: each distinct pattern is compiled
+        // once, as on the first highlight of a grammar in a process.
+        group.bench_function(format!("{name}_pattern_cache"), |b| {
+            b.iter(|| {
+                let mut cache = ScannerPatternCache::new();
+                let scanners: Vec<_> = references
+                    .iter()
+                    .map(|patterns| {
+                        Scanner::with_pattern_cache(black_box(patterns), &config, &mut cache)
+                            .expect("captured patterns compile")
+                    })
+                    .collect();
+                drop(black_box(cache));
                 drop(black_box(scanners));
             });
         });

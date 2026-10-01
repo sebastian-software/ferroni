@@ -13,6 +13,7 @@ use crate::regexec::{
     onig_match_with_msa_start, search_in_range,
 };
 use crate::regint::*;
+use std::sync::Arc;
 
 /// Search lead mode for regset search.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,7 +30,10 @@ pub enum OnigRegSetLead {
 }
 
 struct RegSetEntry {
-    reg: Box<RegexType>,
+    /// The compiled regex, which other sets may share (Rust-only,
+    /// `onig_regset_new_shared`). Searches only read it, and its deref
+    /// costs what a `Box`'s does. Everything below is this entry's own.
+    reg: Arc<RegexType>,
     region: Option<OnigRegion>,
     /// Caching a fallback search must not suppress observable callouts or
     /// position-sensitive bytecode such as partial `\G` anchors.
@@ -447,7 +451,44 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
 /// Create a new regex set from an array of compiled regexes.
 /// Returns (Some(set), ONIG_NORMAL) on success, (None, error_code) on failure.
 pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i32) {
-    let mut set = Box::new(OnigRegSet {
+    let mut set = regset_alloc();
+
+    for reg in regs {
+        let r = onig_regset_add(&mut set, reg);
+        if r != ONIG_NORMAL {
+            return (None, r);
+        }
+    }
+
+    build_first_byte_table(&mut set);
+
+    (Some(set), ONIG_NORMAL)
+}
+
+/// Rust-only: `onig_regset_new` over compiled regexes that other sets may
+/// hold as well. Through the scanner's pattern cache
+/// (`crate::scanner::ScannerPatternCache`), the scanners that repeat a
+/// pattern share its compiled regex. Each set still builds its own entries:
+/// regions, memos, gates, start filters and first-instruction tests are
+/// never shared, and a search only reads the regex.
+pub(crate) fn onig_regset_new_shared(regs: Vec<Arc<RegexType>>) -> (Option<Box<OnigRegSet>>, i32) {
+    let mut set = regset_alloc();
+
+    for reg in regs {
+        let r = onig_regset_add_shared(&mut set, reg);
+        if r != ONIG_NORMAL {
+            return (None, r);
+        }
+    }
+
+    build_first_byte_table(&mut set);
+
+    (Some(set), ONIG_NORMAL)
+}
+
+/// An empty set, as `onig_regset_new` allocates it before adding regexes.
+fn regset_alloc() -> Box<OnigRegSet> {
+    Box::new(OnigRegSet {
         entries: Vec::new(),
         enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
         anchor: 0,
@@ -475,22 +516,17 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
         gate_subject: None,
         has_gated: false,
         has_gated_callouts: false,
-    });
-
-    for reg in regs {
-        let r = onig_regset_add(&mut set, reg);
-        if r != ONIG_NORMAL {
-            return (None, r);
-        }
-    }
-
-    build_first_byte_table(&mut set);
-
-    (Some(set), ONIG_NORMAL)
+    })
 }
 
 /// Add a compiled regex to the set. Returns ONIG_NORMAL on success.
 pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
+    onig_regset_add_shared(set, Arc::from(reg))
+}
+
+/// Rust-only: `onig_regset_add` for a compiled regex that other sets may
+/// hold as well (`onig_regset_new_shared`).
+pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) -> i32 {
     if opton_find_longest(reg.options) {
         return ONIGERR_INVALID_ARGUMENT;
     }
@@ -627,7 +663,7 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
                 reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0);
             set.entries[at].start_filter = fallback_start_filter(&reg);
             set.entries[at].first_op = first_op_test(&reg);
-            set.entries[at].reg = reg;
+            set.entries[at].reg = Arc::from(reg);
         }
     }
 
@@ -2657,6 +2693,12 @@ mod tests {
         ));
     }
 
+    /// The regex of an entry the test owns alone, to build a reference set
+    /// without one of its Rust-only plans.
+    fn reg_mut(entry: &mut RegSetEntry) -> &mut RegexType {
+        Arc::get_mut(&mut entry.reg).expect("a test set owns its regexes")
+    }
+
     fn fallback_indices(set: &OnigRegSet) -> Vec<u16> {
         set.fallback_search_candidates
             .iter()
@@ -3118,7 +3160,7 @@ mod tests {
                             let optimized = optimized.as_mut().unwrap();
                             let reference = reference.as_mut().unwrap();
                             for entry in &mut reference.entries {
-                                entry.reg.leading_run = None;
+                                reg_mut(entry).leading_run = None;
                             }
                             for start in 0..=end {
                                 for range in [start, (start + 2).min(end), end] {
@@ -3299,7 +3341,7 @@ mod tests {
                 "{pattern}"
             );
             let mut reference = build();
-            reference.entries[0].reg.required_literals = None;
+            reg_mut(&mut reference.entries[0]).required_literals = None;
             (optimized, reference, build())
         };
         let (mut checked, mut limit_differences) = (0, 0);
@@ -3674,7 +3716,7 @@ mod tests {
                                 kept += 1;
                             }
                             let mut reference = build();
-                            reference.entries[0].reg.required_literals = None;
+                            reg_mut(&mut reference.entries[0]).required_literals = None;
                             for (id, &subject) in (0..).zip(subjects) {
                                 let end = subject.len();
                                 // Plain searches, then memoized ones with

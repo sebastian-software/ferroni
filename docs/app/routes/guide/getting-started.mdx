@@ -269,6 +269,35 @@ assert!(scanner
     .is_some());
 ```
 
+### Sharing compiled patterns between scanners
+
+A TextMate grammar builds one scanner per rule context, and the same patterns
+recur across them: the C++ grammar's 96 scanners in one captured session hold
+4,026 patterns, only 250 of them distinct. Build those scanners from one
+`ScannerPatternCache` and each distinct pattern is compiled once and shared.
+The scanners behave exactly as scanners built without the cache.
+
+```rust
+use ferroni::prelude::*;
+
+let config = ScannerConfig::default();
+let mut cache = ScannerPatternCache::new();
+
+let mut block = Scanner::with_pattern_cache(&[r"\}", r#""[^"]*""#], &config, &mut cache).unwrap();
+let mut call = Scanner::with_pattern_cache(&[r"\)", r#""[^"]*""#], &config, &mut cache).unwrap();
+assert_eq!(cache.len(), 3); // the string pattern was compiled once
+
+let m = call.find_next_match(r#"f("x")"#, 0, ScannerFindOptions::NONE).unwrap();
+assert_eq!(m.index, 1);
+assert!(block.find_next_match("}", 0, ScannerFindOptions::NONE).is_some());
+```
+
+The cache belongs to you, and nothing is cached process-wide. A pattern is
+reused only under the same options, syntax and backtracking optimization
+setting. Dropping or clearing the cache never affects scanners already built.
+`Scanner::new` and `Scanner::with_config` still compile every pattern they are
+given.
+
 ## Handling errors
 
 Compilation returns `Result<_, RegexError>`. The error groups Oniguruma's

@@ -16,5 +16,5 @@ pub use crate::api::{
 pub use crate::error::RegexError;
 pub use crate::scanner::{
     CaptureIndex, OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch,
-    ScannerSyntax,
+    ScannerPatternCache, ScannerSyntax,
 };

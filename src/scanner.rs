@@ -13,14 +13,16 @@ use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new_with_backtracking_optimization;
 use crate::regexec::{onig_get_global_limit_revision, onig_get_retry_limit_in_search};
-use crate::regint::ANCR_ANYCHAR_INF;
+use crate::regint::{ANCR_ANYCHAR_INF, RegexType};
 use crate::regset::{
     FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, onig_regset_entry_search,
-    onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new,
+    onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new_shared,
     onig_regset_number_of_regex, onig_regset_search_fast, onig_regset_search_fast_with_id,
     onig_regset_swap_region,
 };
 use crate::regsyntax::*;
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_ONIG_STRING_ID: AtomicU64 = AtomicU64::new(1);
@@ -143,6 +145,168 @@ impl Default for ScannerConfig {
             options: ONIG_OPTION_CAPTURE_GROUP,
             syntax: ScannerSyntax::default(),
         }
+    }
+}
+
+/// Compiled patterns that scanners share, owned by the caller.
+///
+/// A TextMate grammar creates one scanner per rule context, and the same
+/// pattern strings recur across them: the C++ grammar's scanners in a
+/// captured highlighting session hold 4,026 patterns, 250 of them distinct.
+/// [`Scanner::new`] and [`Scanner::with_config`] compile every pattern they
+/// are given. [`Scanner::with_pattern_cache`] compiles a pattern only if the
+/// cache does not hold it yet, adds it, and shares the compiled program with
+/// every scanner built from the same cache.
+///
+/// A compiled pattern is reused only for the same pattern text, compile
+/// options, syntax and backtracking optimization choice. Each scanner keeps
+/// its own search state, so a scanner built from a cache returns exactly
+/// what a scanner built without one returns, including its
+/// [`warnings`](Scanner::warnings) and
+/// [`backtracking_rewrites`](Scanner::backtracking_rewrites).
+///
+/// # Lifetime
+///
+/// The cache and the scanners built from it hold strong references to the
+/// compiled patterns: a pattern is freed when the last of them is dropped.
+/// [`clear`](Self::clear) or dropping the cache releases only the cache's
+/// own references and never affects scanners already built. The cache does
+/// not evict anything by itself; there is no process-wide cache.
+///
+/// Patterns are compiled under the process-wide compile settings in effect
+/// when the cache first compiles them (`onig_set_capture_num_limit`,
+/// `onig_set_parse_depth_limit`, user-defined Unicode properties, callout
+/// names), and the warning callbacks (`onig_set_warn_func`) run only then.
+/// Clear the cache after changing those settings. Search limits such as the
+/// retry limit are read by every search, so they apply to all scanners alike.
+///
+/// # Threads
+///
+/// The cache is `Send` and `Sync`, and a scanner built from it is `Send`
+/// and `Sync` like any other. Searches only read a shared compiled pattern.
+/// Building a scanner takes `&mut` access to the cache; to build scanners
+/// from one cache on several threads, put the cache behind a `Mutex`.
+///
+/// # Example
+///
+/// ```
+/// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions, ScannerPatternCache};
+///
+/// let config = ScannerConfig::default();
+/// let mut cache = ScannerPatternCache::new();
+/// let mut top_level =
+///     Scanner::with_pattern_cache(&[r"\bfn\b", r#""[^"]*""#], &config, &mut cache).unwrap();
+/// let mut in_call =
+///     Scanner::with_pattern_cache(&[r"\)", r#""[^"]*""#], &config, &mut cache).unwrap();
+/// // The string pattern was compiled once, for both scanners.
+/// assert_eq!(cache.len(), 3);
+///
+/// let m = in_call.find_next_match(r#"("a")"#, 0, ScannerFindOptions::NONE).unwrap();
+/// assert_eq!((m.index, m.capture_indices[0].start), (1, 1));
+/// let m = top_level.find_next_match("fn f", 0, ScannerFindOptions::NONE).unwrap();
+/// assert_eq!(m.index, 0);
+/// ```
+#[derive(Default)]
+pub struct ScannerPatternCache {
+    /// The compiled patterns of each compile setting, in first-use order.
+    /// A grammar usually compiles all its patterns with one setting.
+    compiled: Vec<(PatternSettings, CompiledPatterns)>,
+}
+
+/// Compiled programs by pattern text, for one `PatternSettings`.
+type CompiledPatterns = HashMap<Box<str>, Arc<RegexType>>;
+
+impl ScannerPatternCache {
+    /// Create an empty cache.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Number of compiled patterns the cache holds. A pattern compiled
+    /// under two configurations counts twice.
+    pub fn len(&self) -> usize {
+        self.compiled
+            .iter()
+            .map(|(_, patterns)| patterns.len())
+            .sum()
+    }
+
+    /// Whether the cache holds no compiled pattern.
+    pub fn is_empty(&self) -> bool {
+        self.compiled
+            .iter()
+            .all(|(_, patterns)| patterns.is_empty())
+    }
+
+    /// Drop the cache's references to every compiled pattern. Scanners
+    /// built from it keep theirs.
+    pub fn clear(&mut self) {
+        self.compiled.clear();
+    }
+
+    /// Build a scanner from the cached patterns, compiling and adding the
+    /// others. If construction fails, the cache is left as it was.
+    fn scanner(
+        &mut self,
+        patterns: &[&str],
+        settings: PatternSettings,
+    ) -> Result<Scanner, RegexError> {
+        let at = match self.compiled.iter().position(|(s, _)| *s == settings) {
+            Some(at) => at,
+            None => {
+                self.compiled.push((settings, CompiledPatterns::new()));
+                self.compiled.len() - 1
+            }
+        };
+        let compiled = &mut self.compiled[at].1;
+        let mut added = Vec::new();
+        let scanner = Scanner::compile(patterns, |pattern| {
+            if let Some(reg) = compiled.get(pattern) {
+                return Ok(Arc::clone(reg));
+            }
+            let reg = settings.compile(pattern)?;
+            compiled.insert(pattern.into(), Arc::clone(&reg));
+            added.push(pattern);
+            Ok(reg)
+        });
+        if scanner.is_err() {
+            for pattern in added {
+                compiled.remove(pattern);
+            }
+        }
+        if compiled.is_empty() {
+            self.compiled.remove(at);
+        }
+        scanner
+    }
+}
+
+/// What a compiled scanner pattern depends on besides its text.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PatternSettings {
+    options: OnigOptionType,
+    syntax: ScannerSyntax,
+    optimize_backtracking: bool,
+}
+
+impl PatternSettings {
+    fn of(config: &ScannerConfig, optimize_backtracking: bool) -> Self {
+        PatternSettings {
+            options: config.options,
+            syntax: config.syntax,
+            optimize_backtracking,
+        }
+    }
+
+    fn compile(self, pattern: &str) -> Result<Arc<RegexType>, RegexError> {
+        onig_new_with_backtracking_optimization(
+            pattern.as_bytes(),
+            self.options,
+            &ONIG_ENCODING_UTF8,
+            self.syntax.as_onig_syntax(),
+            self.optimize_backtracking,
+        )
+        .map(Arc::new)
     }
 }
 
@@ -418,6 +582,19 @@ pub struct Scanner {
     rewrites: Vec<Vec<crate::backtrack_rewrite::BacktrackingRewrite>>,
 }
 
+// Scanners hold their compiled patterns as `Arc<RegexType>`, shared or not.
+// That is `Send` and `Sync` because `RegexType` is, from its fields alone, so
+// a scanner can move to or be shared with another thread whether or not it
+// came from a `ScannerPatternCache`. Neither is `UnwindSafe`: `RegexType`
+// holds an `OnigEncoding` trait object, under a `Box` as under an `Arc`.
+const _: () = {
+    const fn send_sync<T: Send + Sync>() {}
+    send_sync::<RegexType>();
+    send_sync::<OnigRegSet>();
+    send_sync::<Scanner>();
+    send_sync::<ScannerPatternCache>();
+};
+
 impl Scanner {
     /// Create a scanner from a list of pattern strings using the
     /// vscode-oniguruma defaults (Oniguruma syntax and capture groups enabled).
@@ -446,7 +623,8 @@ impl Scanner {
     /// assert!(m.is_some());
     /// ```
     pub fn with_config(patterns: &[&str], config: &ScannerConfig) -> Result<Scanner, RegexError> {
-        Self::compile(patterns, config, false)
+        let settings = PatternSettings::of(config, false);
+        Self::compile(patterns, |pattern| settings.compile(pattern))
     }
 
     /// Create a scanner with the conservative, experimental AST rewrites
@@ -458,17 +636,66 @@ impl Scanner {
         patterns: &[&str],
         config: &ScannerConfig,
     ) -> Result<Scanner, RegexError> {
-        Self::compile(patterns, config, true)
+        let settings = PatternSettings::of(config, true);
+        Self::compile(patterns, |pattern| settings.compile(pattern))
     }
 
-    fn compile(
+    /// [`Scanner::with_config`], sharing compiled patterns through `cache`.
+    ///
+    /// A pattern the cache already holds for this `config` is reused
+    /// without compiling it again; the others are compiled and added. The
+    /// scanner behaves exactly like one from [`Scanner::with_config`]. If
+    /// construction fails (a pattern does not compile, or the set is
+    /// refused), the error is the one [`Scanner::with_config`] returns and
+    /// the cache is left as it was. See [`ScannerPatternCache`] for lifetime
+    /// and threads.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerPatternCache};
+    ///
+    /// let config = ScannerConfig::default();
+    /// let mut cache = ScannerPatternCache::new();
+    /// let rules: [&[&str]; 3] = [&[r"\d+", r"\w+"], &[r"\w+", r"\s+"], &[r"\d+", r"\s+"]];
+    /// let scanners: Vec<Scanner> = rules
+    ///     .iter()
+    ///     .map(|patterns| Scanner::with_pattern_cache(patterns, &config, &mut cache))
+    ///     .collect::<Result<_, _>>()
+    ///     .unwrap();
+    /// // Six patterns, three of them distinct, each compiled once.
+    /// assert_eq!((scanners.len(), cache.len()), (3, 3));
+    ///
+    /// // A pattern that does not compile leaves the cache unchanged.
+    /// assert!(Scanner::with_pattern_cache(&["[a-z]+", "("], &config, &mut cache).is_err());
+    /// assert_eq!(cache.len(), 3);
+    /// ```
+    pub fn with_pattern_cache(
         patterns: &[&str],
         config: &ScannerConfig,
-        optimize_backtracking: bool,
+        cache: &mut ScannerPatternCache,
     ) -> Result<Scanner, RegexError> {
-        let syntax = config.syntax.as_onig_syntax();
-        let options = config.options;
+        cache.scanner(patterns, PatternSettings::of(config, false))
+    }
 
+    /// [`Scanner::with_backtracking_optimization`], sharing compiled
+    /// patterns through `cache` as [`Scanner::with_pattern_cache`] does.
+    /// Patterns compiled with and without the optimization are cached
+    /// separately.
+    pub fn with_backtracking_optimization_and_pattern_cache(
+        patterns: &[&str],
+        config: &ScannerConfig,
+        cache: &mut ScannerPatternCache,
+    ) -> Result<Scanner, RegexError> {
+        cache.scanner(patterns, PatternSettings::of(config, true))
+    }
+
+    /// Build a scanner from the compiled form of each pattern, which
+    /// `regex` provides in pattern order.
+    fn compile<'p>(
+        patterns: &[&'p str],
+        mut regex: impl FnMut(&'p str) -> Result<Arc<RegexType>, RegexError>,
+    ) -> Result<Scanner, RegexError> {
         let mut caches = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
 
@@ -476,20 +703,14 @@ impl Scanner {
         let mut rewrites = Vec::with_capacity(patterns.len());
 
         for pattern in patterns {
-            let reg = onig_new_with_backtracking_optimization(
-                pattern.as_bytes(),
-                options,
-                &ONIG_ENCODING_UTF8,
-                syntax,
-                optimize_backtracking,
-            )?;
+            let reg = regex(pattern)?;
             rewrites.push(reg.backtrack_rewrites.clone());
             warnings.push(reg.backtrack_warnings.clone());
             caches.push(CacheEntry::new(pattern, reg.anchor));
-            regset_regs.push(Box::new(reg));
+            regset_regs.push(reg);
         }
 
-        let (regset, r) = onig_regset_new(regset_regs);
+        let (regset, r) = onig_regset_new_shared(regset_regs);
         if r != ONIG_NORMAL {
             return Err(r.into());
         }
@@ -2435,5 +2656,555 @@ mod tests {
         }
         let stats = scanner.stats();
         assert!(stats.route_regset_calls > 0 || stats.route_per_regex_calls > 0);
+    }
+
+    // =================================================================
+    // Pattern cache
+    // =================================================================
+
+    /// Pattern lists that repeat each other's patterns. Between them they
+    /// reach table and fallback entries, captures and named groups, `\G`,
+    /// `\A`, `\z`, look-behind, back references, `\K`, any-char stars,
+    /// Unicode classes, required literals, a callout with per-search data,
+    /// a backtracking warning and a backtracking rewrite.
+    const CACHED_PATTERN_SETS: [&[&str]; 3] = [
+        &[
+            r"\G(\s+)",
+            r"(?<word>\w+)",
+            r#""(?:[^"\\]|\\.)*""#,
+            r"\Afirst",
+            r"(?<=\.)\w+",
+            r"(a+)+b",
+        ],
+        &[
+            r"(\w)\1",
+            r".+\K,",
+            r"(?<word>\w+)",
+            r"\s*$",
+            r"[a-z]*(?:foo|bar|baz)",
+            r"(?:[ab]|(*MAX{2}).)*c",
+        ],
+        &[
+            r"\b(?:fn|let|first)\b",
+            r"\p{Greek}+",
+            r"first\z",
+            r".*;",
+            r"(?<word>\w+)",
+            r"(a+)+b",
+            r"([0-9]+(_?))+(\.)([0-9]+)",
+        ],
+    ];
+
+    const CACHED_PATTERN_SUBJECTS: [&str; 6] = [
+        "first-and-first",
+        "let x = \"a\\\"b\"; // done",
+        "\n!c1 1,é1 zfoo",
+        "αβγ fn foo.bar 12_34.56",
+        "abcbaaccaaa abc",
+        "aaaaaaaaaaaaaaaaaaaa\u{1F4BB}c b",
+    ];
+
+    /// The address of each pattern's compiled program in `scanner`.
+    fn compiled_addresses(scanner: &Scanner) -> Vec<*const RegexType> {
+        (0..onig_regset_number_of_regex(&scanner.regset) as usize)
+            .map(|i| onig_regset_get_regex(&scanner.regset, i).unwrap() as *const RegexType)
+            .collect()
+    }
+
+    /// One scanner per route of `every_route`, so each sees a uniform call
+    /// history.
+    fn route_scanners(mut build: impl FnMut() -> Scanner) -> [Scanner; 4] {
+        std::array::from_fn(|_| build())
+    }
+
+    /// The same call on every route: plain, with a string id, UTF-16, and
+    /// UTF-16 with a string id. `start` is a byte offset.
+    fn every_route(
+        scanners: &mut [Scanner; 4],
+        onig: &OnigString,
+        id: u64,
+        start: usize,
+        options: ScannerFindOptions,
+    ) -> [Option<ScannerMatch>; 4] {
+        let text = onig.content();
+        let utf16_start = onig.utf8_offset_to_utf16(start);
+        [
+            scanners[0].find_next_match(text, start, options),
+            scanners[1].find_next_match_with_id(text, id, start, options),
+            scanners[2].find_next_match_utf16(onig, utf16_start, options),
+            scanners[3].find_next_match_utf16_with_id(onig, id, utf16_start, options),
+        ]
+    }
+
+    /// Run the same calls through cached and uncached scanners and collect
+    /// every difference: each start once, then each start eleven times
+    /// (which moves the calls with a string id onto the per-regex route).
+    fn cached_and_uncached_differences(
+        cached: &mut [[Scanner; 4]],
+        uncached: &mut [[Scanner; 4]],
+        subjects: &[&str],
+        options: &[ScannerFindOptions],
+    ) -> Vec<String> {
+        let mut differences = Vec::new();
+        for (set, (cached, uncached)) in cached.iter_mut().zip(uncached.iter_mut()).enumerate() {
+            for &options in options {
+                for (id, subject) in (1..).zip(subjects) {
+                    // A fresh wrapper per pass keeps fallback memos apart,
+                    // as for a new line.
+                    let onig = OnigString::new(subject);
+                    let starts: Vec<usize> = (0..=subject.len())
+                        .filter(|&at| subject.is_char_boundary(at))
+                        .collect();
+                    let calls = starts
+                        .iter()
+                        .copied()
+                        .chain(starts.iter().flat_map(|&at| std::iter::repeat_n(at, 11)));
+                    for start in calls {
+                        let want = every_route(uncached, &onig, id, start, options);
+                        let got = every_route(cached, &onig, id, start, options);
+                        if got != want {
+                            differences.push(format!(
+                                "set {set}, {options:?}, {subject:?} from {start}: \
+                                 {got:?} != {want:?}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        differences
+    }
+
+    /// Scanners built from one pattern cache answer every call exactly as
+    /// scanners compiled on their own do, on every route, with every find
+    /// option, with and without backtracking optimization, and under the
+    /// retry, search and stack limits. Their warnings and rewrites agree too,
+    /// and every occurrence of a pattern shares one compiled program.
+    #[test]
+    fn pattern_cache_scanners_match_uncached_scanners() {
+        // The routes and limit outcomes read the process-wide limits.
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let config = ScannerConfig::default();
+        let every_option: Vec<_> = (0..8).map(ScannerFindOptions::from_bits).collect();
+        let distinct: std::collections::HashSet<&str> = CACHED_PATTERN_SETS
+            .iter()
+            .flat_map(|set| set.iter().copied())
+            .collect();
+        let mut cache = ScannerPatternCache::new();
+        let mut failures = Vec::new();
+
+        for optimize_backtracking in [false, true] {
+            let uncached_scanner = |patterns: &[&str]| {
+                if optimize_backtracking {
+                    Scanner::with_backtracking_optimization(patterns, &config).unwrap()
+                } else {
+                    Scanner::with_config(patterns, &config).unwrap()
+                }
+            };
+            let mut cached: Vec<[Scanner; 4]> = CACHED_PATTERN_SETS
+                .iter()
+                .map(|patterns| {
+                    route_scanners(|| {
+                        if optimize_backtracking {
+                            Scanner::with_backtracking_optimization_and_pattern_cache(
+                                patterns, &config, &mut cache,
+                            )
+                        } else {
+                            Scanner::with_pattern_cache(patterns, &config, &mut cache)
+                        }
+                        .unwrap()
+                    })
+                })
+                .collect();
+            let mut uncached: Vec<[Scanner; 4]> = CACHED_PATTERN_SETS
+                .iter()
+                .map(|patterns| route_scanners(|| uncached_scanner(patterns)))
+                .collect();
+            // Each setting compiles each distinct pattern once.
+            let settings = usize::from(optimize_backtracking) + 1;
+            assert_eq!(cache.len(), settings * distinct.len());
+
+            let mut addresses = HashMap::new();
+            for (patterns, (cached, uncached)) in
+                CACHED_PATTERN_SETS.iter().zip(cached.iter().zip(&uncached))
+            {
+                for scanner in cached {
+                    assert_eq!(scanner.warnings(), uncached[0].warnings());
+                    assert_eq!(
+                        scanner.backtracking_rewrites(),
+                        uncached[0].backtracking_rewrites()
+                    );
+                    for (pattern, address) in patterns.iter().zip(compiled_addresses(scanner)) {
+                        assert_eq!(*addresses.entry(*pattern).or_insert(address), address);
+                    }
+                }
+                for (pattern, address) in patterns.iter().zip(compiled_addresses(&uncached[0])) {
+                    assert_ne!(addresses[pattern], address);
+                }
+            }
+            let rewritten = uncached[2][0].backtracking_rewrites()[6].len();
+            assert_eq!(rewritten, usize::from(optimize_backtracking));
+            assert_eq!(uncached[0][0].warnings()[5].len(), 1);
+
+            failures.extend(cached_and_uncached_differences(
+                &mut cached,
+                &mut uncached,
+                &CACHED_PATTERN_SUBJECTS,
+                &every_option,
+            ));
+            let per_regex_calls: u64 = (cached.iter())
+                .flat_map(|routes| [&routes[1], &routes[3]])
+                .map(|scanner| scanner.stats().route_per_regex_calls)
+                .sum();
+            assert!(per_regex_calls > 0);
+        }
+
+        // The limits are read by each search, so they apply to cached
+        // patterns as to any other. `(a+)+b` from 0 stops at a retry limit
+        // of 1,000, which ends the search with no match; a later start
+        // finds the `c` (as in
+        // `limit_errors_match_c_on_every_route_and_call_history`).
+        let limit_case = format!("{}c b", "a".repeat(12));
+        let limit_sets: Vec<&[&str]> = (CACHED_PATTERN_SETS.iter().copied())
+            .chain([&[r"(a+)+b", "c"][..]])
+            .collect();
+        let limit_subjects: Vec<&str> = (CACHED_PATTERN_SUBJECTS.iter().copied())
+            .chain([limit_case.as_str()])
+            .collect();
+        // Every setting keeps that retry limit in match, which bounds each
+        // attempt; the others add a search retry budget or a stack limit.
+        let limits = [
+            ("retry limit in match", 0, 0),
+            ("retry limit in search", 20_000, 0),
+            ("match stack limit", 0, 64),
+        ];
+        let saved = (
+            crate::regexec::onig_get_retry_limit_in_match(),
+            crate::regexec::onig_get_retry_limit_in_search(),
+            crate::regexec::onig_get_match_stack_limit(),
+        );
+        for (name, in_search, stack) in limits {
+            crate::regexec::onig_set_retry_limit_in_match(1_000);
+            crate::regexec::onig_set_retry_limit_in_search(in_search);
+            crate::regexec::onig_set_match_stack_limit(stack);
+            let mut cached: Vec<[Scanner; 4]> = (limit_sets.iter())
+                .map(|patterns| {
+                    route_scanners(|| {
+                        Scanner::with_pattern_cache(patterns, &config, &mut cache).unwrap()
+                    })
+                })
+                .collect();
+            let mut uncached: Vec<[Scanner; 4]> = (limit_sets.iter())
+                .map(|patterns| route_scanners(|| Scanner::with_config(patterns, &config).unwrap()))
+                .collect();
+            if in_search == 0 && stack == 0 {
+                let limited = &mut cached[3][0];
+                let none = ScannerFindOptions::NONE;
+                assert_eq!(limited.find_next_match(&limit_case, 0, none), None);
+                let after = limited.find_next_match(&limit_case, 5, none).unwrap();
+                assert_eq!((after.index, after.capture_indices[0].start), (1, 12));
+            }
+            failures.extend(
+                cached_and_uncached_differences(
+                    &mut cached,
+                    &mut uncached,
+                    &limit_subjects,
+                    &[ScannerFindOptions::NONE],
+                )
+                .into_iter()
+                .map(|difference| format!("{name}: {difference}")),
+            );
+        }
+        crate::regexec::onig_set_retry_limit_in_match(saved.0);
+        crate::regexec::onig_set_retry_limit_in_search(saved.1);
+        crate::regexec::onig_set_match_stack_limit(saved.2);
+        // The limits did not grow the cache beyond the added `c`.
+        assert_eq!(cache.len(), 2 * distinct.len() + 1);
+
+        assert!(failures.is_empty(), "{failures:#?}");
+    }
+
+    /// The same pattern text compiles to a separate entry for every other
+    /// option set, syntax and backtracking optimization choice, whichever
+    /// is built first.
+    #[test]
+    fn pattern_cache_keeps_settings_apart() {
+        let plain = ScannerConfig::default();
+        let ignore_case = ScannerConfig {
+            options: plain.options | ONIG_OPTION_IGNORECASE,
+            ..plain.clone()
+        };
+        let asis = ScannerConfig {
+            syntax: ScannerSyntax::Asis,
+            ..plain.clone()
+        };
+        let decimal = r"([0-9]+(_?))+(\.)([0-9]+)";
+        let pattern = "a+b";
+        let mut cache = ScannerPatternCache::new();
+        // Optimized first: the plain scanner must not pick up its rewrite.
+        let optimized = Scanner::with_backtracking_optimization_and_pattern_cache(
+            &[pattern, decimal],
+            &plain,
+            &mut cache,
+        )
+        .unwrap();
+        let mut scanners = [&plain, &ignore_case, &asis].map(|config| {
+            Scanner::with_pattern_cache(&[pattern, decimal], config, &mut cache).unwrap()
+        });
+        assert_eq!(cache.len(), 8);
+        assert_eq!(cache.compiled.len(), 4);
+
+        let mut addresses: Vec<_> = scanners.iter().flat_map(compiled_addresses).collect();
+        addresses.extend(compiled_addresses(&optimized));
+        let all = addresses.len();
+        addresses.sort();
+        addresses.dedup();
+        assert_eq!(addresses.len(), all);
+
+        assert!(scanners[0].backtracking_rewrites()[1].is_empty());
+        assert_eq!(optimized.backtracking_rewrites()[1].len(), 1);
+        let text = "AAB a+b aab";
+        let found = scanners.each_mut().map(|scanner| {
+            let m = scanner.find_next_match(text, 0, ScannerFindOptions::NONE)?;
+            Some((m.capture_indices[0].start, m.capture_indices[0].end))
+        });
+        assert_eq!(found, [Some((8, 11)), Some((0, 3)), Some((4, 7))]);
+
+        // Each setting reuses its own entries.
+        let again =
+            Scanner::with_pattern_cache(&[decimal, pattern], &ignore_case, &mut cache).unwrap();
+        assert_eq!(cache.len(), 8);
+        let before = compiled_addresses(&scanners[1]);
+        assert_eq!(compiled_addresses(&again), [before[1], before[0]]);
+    }
+
+    /// A pattern that fails to compile, or a set the RegSet refuses, returns
+    /// the error an uncached scanner returns and leaves the cache as it was:
+    /// patterns compiled earlier in the same call and a setting first seen
+    /// in it are taken out again.
+    #[test]
+    fn failed_construction_leaves_the_pattern_cache_unchanged() {
+        let config = ScannerConfig::default();
+        let mut cache = ScannerPatternCache::new();
+        let kept = Scanner::with_pattern_cache(&["a", "b"], &config, &mut cache).unwrap();
+        let snapshot = |cache: &ScannerPatternCache| {
+            let mut entries: Vec<_> = cache
+                .compiled
+                .iter()
+                .flat_map(|(_, patterns)| patterns.iter())
+                .map(|(pattern, reg)| (pattern.to_string(), Arc::as_ptr(reg)))
+                .collect();
+            entries.sort();
+            (cache.compiled.len(), entries)
+        };
+        let before = snapshot(&cache);
+
+        let failing = ["a", "c", "(", "d"];
+        let error = Scanner::with_pattern_cache(&failing, &config, &mut cache).err();
+        assert!(error.is_some());
+        assert_eq!(error, Scanner::with_config(&failing, &config).err());
+        assert_eq!(snapshot(&cache), before);
+
+        // Every pattern compiles, but the RegSet refuses FIND_LONGEST.
+        let longest = ScannerConfig {
+            options: config.options | ONIG_OPTION_FIND_LONGEST,
+            ..config.clone()
+        };
+        let error = Scanner::with_pattern_cache(&["e", "f"], &longest, &mut cache).err();
+        assert!(error.is_some());
+        assert_eq!(error, Scanner::with_config(&["e", "f"], &longest).err());
+        assert_eq!(snapshot(&cache), before);
+
+        // An empty list adds no setting either.
+        let ruby = ScannerConfig {
+            syntax: ScannerSyntax::Ruby,
+            ..config.clone()
+        };
+        let mut empty = Scanner::with_pattern_cache(&[], &ruby, &mut cache).unwrap();
+        assert_eq!(
+            empty.find_next_match("a", 0, ScannerFindOptions::NONE),
+            None
+        );
+        assert_eq!(snapshot(&cache), before);
+
+        // The kept entries still serve; the compiled `c` was dropped.
+        let next = Scanner::with_pattern_cache(&["b", "c", "b"], &config, &mut cache).unwrap();
+        let kept_addresses = compiled_addresses(&kept);
+        let next_addresses = compiled_addresses(&next);
+        assert_eq!(next_addresses[0], kept_addresses[1]);
+        assert_eq!(next_addresses[2], kept_addresses[1]);
+        assert_eq!(cache.len(), 3);
+    }
+
+    /// The cache and its scanners hold strong references: dropping
+    /// scanners releases only theirs, and clearing or dropping the cache
+    /// leaves built scanners working.
+    #[test]
+    fn pattern_cache_and_scanners_drop_in_any_order() {
+        let config = ScannerConfig::default();
+        let mut cache = ScannerPatternCache::new();
+        assert!(cache.is_empty());
+        let mut first = Scanner::with_pattern_cache(&["x(y)", "z"], &config, &mut cache).unwrap();
+        let second = Scanner::with_pattern_cache(&["z"], &config, &mut cache).unwrap();
+        let references = |cache: &ScannerPatternCache, pattern: &str| {
+            Arc::strong_count(&cache.compiled[0].1[pattern])
+        };
+        assert_eq!(
+            (references(&cache, "x(y)"), references(&cache, "z")),
+            (2, 3)
+        );
+        drop(second);
+        assert_eq!(references(&cache, "z"), 2);
+
+        // The scanner outlives the cleared cache's references.
+        cache.clear();
+        assert!(cache.is_empty());
+        assert_eq!(cache.len(), 0);
+        let whole = |m: Option<ScannerMatch>| {
+            m.map(|m| {
+                let spans: Vec<_> = m.capture_indices.iter().map(|c| (c.start, c.end)).collect();
+                (m.index, spans)
+            })
+        };
+        let found = whole(first.find_next_match("axyz", 0, ScannerFindOptions::NONE));
+        assert_eq!(found, Some((0, vec![(1, 3), (2, 3)])));
+
+        // A cleared cache compiles anew, and the cache outlives this
+        // scanner as the next one outlives the cache.
+        let third = Scanner::with_pattern_cache(&["z"], &config, &mut cache).unwrap();
+        assert_ne!(compiled_addresses(&third)[0], compiled_addresses(&first)[1]);
+        drop(first);
+        let mut fourth = Scanner::with_pattern_cache(&["z"], &config, &mut cache).unwrap();
+        drop(third);
+        assert_eq!(references(&cache, "z"), 2);
+        drop(cache);
+        let found = whole(fourth.find_next_match("axyz", 0, ScannerFindOptions::NONE));
+        assert_eq!(found, Some((0, vec![(3, 4)])));
+    }
+
+    /// Scanners that share compiled patterns search on several threads at
+    /// once, including the lazily built literal searchers and automata of
+    /// their shared patterns.
+    #[test]
+    fn scanners_sharing_a_pattern_cache_search_on_several_threads() {
+        let patterns: &[&str] = &[
+            r"[a-z]*(?:foo|bar|baz)",
+            r"\w*end\b",
+            r"(?i)(?:error|warn|fatal|panic)",
+            r"(?<word>\w+)@(?<host>[a-z]+)",
+            r"\s+",
+        ];
+        let subjects = [
+            "a weekend of error reports from foo@bar",
+            "WARN: the legend ends here, zbaz",
+            "\u{1F4BB} fatal\tpanic   friend",
+        ];
+        let config = ScannerConfig::default();
+        let mut reference = Scanner::with_config(patterns, &config).unwrap();
+        let expected: Vec<Vec<Option<ScannerMatch>>> = subjects
+            .iter()
+            .map(|subject| {
+                (0..=subject.len())
+                    .filter(|&at| subject.is_char_boundary(at))
+                    .map(|at| reference.find_next_match(subject, at, ScannerFindOptions::NONE))
+                    .collect()
+            })
+            .collect();
+        let mut cache = ScannerPatternCache::new();
+        let scanners: Vec<Scanner> = (0..4)
+            .map(|_| Scanner::with_pattern_cache(patterns, &config, &mut cache).unwrap())
+            .collect();
+        std::thread::scope(|scope| {
+            for mut scanner in scanners {
+                let expected = &expected;
+                scope.spawn(move || {
+                    for _ in 0..20 {
+                        for (subject, expected) in subjects.iter().zip(expected) {
+                            let found: Vec<_> = (0..=subject.len())
+                                .filter(|&at| subject.is_char_boundary(at))
+                                .map(|at| {
+                                    scanner.find_next_match(subject, at, ScannerFindOptions::NONE)
+                                })
+                                .collect();
+                            assert_eq!(&found, expected);
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /// Replays every call of the captured Shiki sessions
+    /// (`benches/*_scanner/trace.json`) through scanners built from one
+    /// pattern cache per session. Each distinct pattern is compiled once and
+    /// shared by all its occurrences, each scanner's warnings are those of
+    /// its patterns compiled on their own, and every result equals the
+    /// captured one, which the benchmarks check against C.
+    #[test]
+    fn pattern_cache_replays_the_captured_scanner_traces() {
+        type Expected = Option<(usize, Vec<(usize, usize)>)>;
+        let index = |value: &serde_json::Value| value.as_u64().unwrap() as usize;
+        for (name, distinct_patterns) in [("cpp", 250), ("java", 115), ("scss", 104)] {
+            let path = format!(
+                "{}/benches/{name}_scanner/trace.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let trace: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let pattern_sets: Vec<Vec<&str>> = trace["scanners"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|set| {
+                    let set = set.as_array().unwrap();
+                    set.iter().map(|p| p.as_str().unwrap()).collect()
+                })
+                .collect();
+            let config = ScannerConfig::default();
+            let mut cache = ScannerPatternCache::new();
+            let mut scanners: Vec<Scanner> = pattern_sets
+                .iter()
+                .map(|patterns| Scanner::with_pattern_cache(patterns, &config, &mut cache).unwrap())
+                .collect();
+            assert_eq!(cache.len(), distinct_patterns, "{name}");
+
+            let mut fresh_warnings = HashMap::new();
+            let mut addresses = HashMap::new();
+            for (patterns, scanner) in pattern_sets.iter().zip(&scanners) {
+                let compiled = patterns.iter().zip(compiled_addresses(scanner));
+                for (j, (pattern, address)) in compiled.enumerate() {
+                    assert_eq!(*addresses.entry(*pattern).or_insert(address), address);
+                    let fresh = fresh_warnings
+                        .entry(*pattern)
+                        .or_insert_with(|| Scanner::new(&[pattern]).unwrap().warnings()[0].clone());
+                    assert_eq!(&scanner.warnings()[j], fresh, "{name}: {pattern}");
+                }
+            }
+            assert_eq!(addresses.len(), distinct_patterns, "{name}");
+
+            let strings: Vec<OnigString> = trace["subjects"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| OnigString::new(s.as_str().unwrap()))
+                .collect();
+            for (i, row) in trace["calls"].as_array().unwrap().iter().enumerate() {
+                let expected: Expected = (!row[4].is_null()).then(|| {
+                    let captures = row[5].as_array().unwrap();
+                    let captures = captures.iter().map(|c| (index(&c[0]), index(&c[1])));
+                    (index(&row[4]), captures.collect())
+                });
+                let found = scanners[index(&row[0])].find_next_match_utf16(
+                    &strings[index(&row[1])],
+                    index(&row[2]),
+                    ScannerFindOptions::from_bits(index(&row[3]) as u32),
+                );
+                let found: Expected = found.map(|m| {
+                    let captures = m.capture_indices.iter().map(|c| (c.start, c.end));
+                    (m.index, captures.collect())
+                });
+                assert_eq!(found, expected, "{name}: call {i}");
+            }
+        }
     }
 }

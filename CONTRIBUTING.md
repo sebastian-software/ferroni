@@ -219,8 +219,9 @@ cargo bench --locked --features ffi --bench java_scanner_bench -- --test
 cargo bench --locked --bench java_scanner_bench
 ```
 
-For uncached construction and destruction of the captured C++ and SCSS scanner
-sets, use:
+For construction and destruction of the captured C++, SCSS and Java scanner
+sets, uncached and through one `ScannerPatternCache` per set
+(`<name>_pattern_cache`), use:
 
 ```sh
 cargo bench --locked --bench scanner_compile_bench

@@ -1,5 +1,7 @@
 //! Replay of real Ferriki scanner calls, with setup outside measurement.
-use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions, ScannerMatch};
+use ferroni::scanner::{
+    OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch, ScannerPatternCache,
+};
 use serde_json::Value;
 use std::hint::black_box;
 
@@ -123,6 +125,21 @@ impl Corpus {
             .collect()
     }
 
+    /// The scanners built from one pattern cache, as a grammar loader that
+    /// shares compiled patterns builds them.
+    pub fn cached_scanners(&self) -> Vec<Scanner> {
+        let config = ScannerConfig::default();
+        let mut cache = ScannerPatternCache::new();
+        self.patterns
+            .iter()
+            .map(|patterns| {
+                let refs: Vec<_> = patterns.iter().map(String::as_str).collect();
+                Scanner::with_pattern_cache(&refs, &config, &mut cache)
+                    .expect("captured patterns compile")
+            })
+            .collect()
+    }
+
     /// Keep distinct original subjects distinct, even when their contents match.
     /// New wrappers on every replay prevent fallback memo reuse across documents.
     pub fn strings(&self) -> Vec<OnigString> {
@@ -140,16 +157,24 @@ impl Corpus {
     }
 
     pub fn validate(&self) {
-        let mut scanners = self.scanners();
-        let strings = self.strings();
-        for (i, call) in self.calls.iter().enumerate() {
-            let actual = normalized(scanners[call.scanner].find_next_match_utf16(
-                &strings[call.subject],
-                call.start_utf16,
-                call.options,
-            ));
-            assert_eq!(actual, call.expected, "capture trace differs at call {i}");
+        for (kind, mut scanners) in [
+            ("uncached", self.scanners()),
+            ("pattern cache", self.cached_scanners()),
+        ] {
+            let strings = self.strings();
+            for (i, call) in self.calls.iter().enumerate() {
+                let actual = normalized(scanners[call.scanner].find_next_match_utf16(
+                    &strings[call.subject],
+                    call.start_utf16,
+                    call.options,
+                ));
+                assert_eq!(
+                    actual, call.expected,
+                    "{kind} capture trace differs at call {i}"
+                );
+            }
         }
+        let strings = self.strings();
         // A group replay preserves that scanner's call order independently.
         for &id in &self.hot_groups {
             let mut scanners = self.scanners();
