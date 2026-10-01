@@ -101,8 +101,10 @@ impl Compiled {
         match self {
             Compiled::Pcre2(regex) => regex.search(text, start, |ovector| {
                 ovector
-                    .chunks_exact(2)
-                    .map(|pair| bound((pair[0] != usize::MAX).then_some((pair[0], pair[1]))))
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|&[beg, end]| bound((beg != usize::MAX).then_some((beg, end))))
                     .collect()
             }),
             Compiled::Fancy(regex) => {
