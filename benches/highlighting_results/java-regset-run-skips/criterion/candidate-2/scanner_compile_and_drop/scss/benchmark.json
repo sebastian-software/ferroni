@@ -1,0 +1,9 @@
+{
+  "group_id": "scanner_compile_and_drop",
+  "function_id": "scss",
+  "value_str": null,
+  "throughput": { "Elements": 600 },
+  "full_id": "scanner_compile_and_drop/scss",
+  "directory_name": "scanner_compile_and_drop/scss",
+  "title": "scanner_compile_and_drop/scss"
+}

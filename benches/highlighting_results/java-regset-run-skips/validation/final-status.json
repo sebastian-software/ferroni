@@ -1,0 +1,43 @@
+{
+  "format": "passed",
+  "clippy": "passed",
+  "allFeatureTests": {
+    "passed": 2362,
+    "ignored": 2,
+    "doctests": 14
+  },
+  "rustdoc": "passed",
+  "deny": "passed after environment retry",
+  "workflowPins": "passed",
+  "readme": "passed after environment retry",
+  "docs": {
+    "lint": "passed",
+    "typecheck": "passed",
+    "format": "passed",
+    "build": "passed after environment retry"
+  },
+  "cParity": {
+    "cppCalls": 4862,
+    "scssCalls": 3744,
+    "javaCalls": 3920
+  },
+  "regsetMatrixOutcomes": 968436,
+  "publicMatrices": {
+    "complete": 4,
+    "formats": 20,
+    "sizes": 2,
+    "strictComparisons": 4,
+    "pairsEach": 80,
+    "excluded": 0
+  },
+  "runtimeCI": {
+    "commit": "ba2be54a3caff68c69f128435ecc1ccdf6c3318e",
+    "passedChecks": 24,
+    "lineCoveragePercent": 90.17,
+    "gatePercent": 87
+  },
+  "commonLocalEnvironment": {
+    "FERRONI_ONIGURUMA_DIR": "/private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig",
+    "RUST_MIN_STACK": "268435456"
+  }
+}

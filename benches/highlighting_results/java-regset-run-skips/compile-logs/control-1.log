@@ -1,0 +1,24 @@
+   Compiling ferroni v1.7.0 (/private/tmp/ferroni-scss-analysis)
+    Finished `bench` profile [optimized] target(s) in 4.77s
+     Running benches/scanner_compile_bench.rs (target/release/deps/scanner_compile_bench-fdda32b449d7be3f)
+Gnuplot not found, using plotters backend
+Benchmarking scanner_compile_and_drop/cpp
+Benchmarking scanner_compile_and_drop/cpp: Warming up for 1.0000 s
+
+Warning: Unable to complete 30 samples in 3.0s. You may wish to increase target time to 7.6s, or reduce sample count to 10.
+Benchmarking scanner_compile_and_drop/cpp: Collecting 30 samples in estimated 7.5742 s (30 iterations)
+Benchmarking scanner_compile_and_drop/cpp: Analyzing
+scanner_compile_and_drop/cpp
+                        time:   [240.74 ms 241.09 ms 241.49 ms]
+                        thrpt:  [16.672 Kelem/s 16.699 Kelem/s 16.723 Kelem/s]
+Found 7 outliers among 30 measurements (23.33%)
+  4 (13.33%) low mild
+  3 (10.00%) high severe
+Benchmarking scanner_compile_and_drop/scss
+Benchmarking scanner_compile_and_drop/scss: Warming up for 1.0000 s
+Benchmarking scanner_compile_and_drop/scss: Collecting 30 samples in estimated 3.4037 s (60 iterations)
+Benchmarking scanner_compile_and_drop/scss: Analyzing
+scanner_compile_and_drop/scss
+                        time:   [56.610 ms 56.909 ms 57.236 ms]
+                        thrpt:  [10.483 Kelem/s 10.543 Kelem/s 10.599 Kelem/s]
+

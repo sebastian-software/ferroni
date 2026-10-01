@@ -1,0 +1,82 @@
+[
+  {
+    "label": "control-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-run-skips-compile-control-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "candidate-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-run-skips-compile-candidate-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "candidate-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-run-skips-compile-candidate-2"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "control-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "scanner_compile_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-run-skips-compile-control-2"
+    ],
+    "exitCode": 0
+  }
+]

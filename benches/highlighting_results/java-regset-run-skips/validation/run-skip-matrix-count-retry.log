@@ -1,0 +1,201 @@
+   Compiling ferroni v1.7.0 (/private/tmp/ferroni-java-run-skips)
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:2413:44: warning: unused parameter 'env' [-Wunused-parameter]
+warning: ferroni@1.7.0:  2413 | node_new_no_newline(Node** node, ParseEnv* env)
+warning: ferroni@1.7.0:       |                                            ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:2769:38: warning: unused parameter 'env' [-Wunused-parameter]
+warning: ferroni@1.7.0:  2769 | node_new_fail(Node** node, ParseEnv* env)
+warning: ferroni@1.7.0:       |                                      ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:2804:47: warning: unused parameter 'env' [-Wunused-parameter]
+warning: ferroni@1.7.0:  2804 |                             int id, ParseEnv* env)
+warning: ferroni@1.7.0:       |                                               ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:2924:28: warning: unused parameter 'env' [-Wunused-parameter]
+warning: ferroni@1.7.0:  2924 |                  ParseEnv* env)
+warning: ferroni@1.7.0:       |                            ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:7422:9: warning: comparison of integers of different signs: 'OnigCodePoint' (aka 'unsigned int') and 'int' [-Wsign-compare]
+warning: ferroni@1.7.0:  7422 |   if (c != cterm)
+warning: ferroni@1.7.0:       |       ~ ^  ~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:7559:28: warning: comparison of integers of different signs: 'OnigCodePoint' (aka 'unsigned int') and 'int' [-Wsign-compare]
+warning: ferroni@1.7.0:  7559 |         if (c == '\\' || c == cterm || c == ',') {
+warning: ferroni@1.7.0:       |                          ~ ^  ~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:7573:20: warning: comparison of integers of different signs: 'OnigCodePoint' (aka 'unsigned int') and 'int' [-Wsign-compare]
+warning: ferroni@1.7.0:  7573 |         else if (c == cterm || c == ',')
+warning: ferroni@1.7.0:       |                  ~ ^  ~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:7666:11: warning: comparison of integers of different signs: 'OnigCodePoint' (aka 'unsigned int') and 'int' [-Wsign-compare]
+warning: ferroni@1.7.0:  7666 |     if (c == cterm) break;
+warning: ferroni@1.7.0:       |         ~ ^  ~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:7669:9: warning: comparison of integers of different signs: 'OnigCodePoint' (aka 'unsigned int') and 'int' [-Wsign-compare]
+warning: ferroni@1.7.0:  7669 |   if (c != cterm) {
+warning: ferroni@1.7.0:       |       ~ ^  ~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:7719:11: warning: comparison of integers of different signs: 'OnigCodePoint' (aka 'unsigned int') and 'int' [-Wsign-compare]
+warning: ferroni@1.7.0:  7719 |     if (c == cterm || c == '[' || c == '{') break;
+warning: ferroni@1.7.0:       |         ~ ^  ~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regparse.c:7795:9: warning: comparison of integers of different signs: 'OnigCodePoint' (aka 'unsigned int') and 'int' [-Wsign-compare]
+warning: ferroni@1.7.0:  7795 |   if (c != cterm) {
+warning: ferroni@1.7.0:       |       ~ ^  ~~~~~
+warning: ferroni@1.7.0: 11 warnings generated.
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:91:9: warning: comparison of integers of different signs: 'int' and 'unsigned int' [-Wsign-compare]
+warning: ferroni@1.7.0:    91 |   if (n == reg->ops_alloc) return ONIG_NORMAL;
+warning: ferroni@1.7.0:       |       ~ ^  ~~~~~~~~~~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:1040:52: warning: unused parameter 'mb_len' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1040 | add_compile_string_length(UChar* s ARG_UNUSED, int mb_len, int str_len,
+warning: ferroni@1.7.0:       |                                                    ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:1040:64: warning: unused parameter 'str_len' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1040 | add_compile_string_length(UChar* s ARG_UNUSED, int mb_len, int str_len,
+warning: ferroni@1.7.0:       |                                                                ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:1181:44: warning: unused parameter 'reg' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1181 | set_multi_byte_cclass(BBuf* mbuf, regex_t* reg)
+warning: ferroni@1.7.0:       |                                            ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:1195:40: warning: unused parameter 'cc' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1195 | compile_length_cclass_node(CClassNode* cc, regex_t* reg)
+warning: ferroni@1.7.0:       |                                        ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:1195:53: warning: unused parameter 'reg' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1195 | compile_length_cclass_node(CClassNode* cc, regex_t* reg)
+warning: ferroni@1.7.0:       |                                                     ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:1285:62: warning: unused parameter 'emptiness' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1285 | compile_range_repeat_node(QuantNode* qn, int target_len, int emptiness,
+warning: ferroni@1.7.0:       |                                                              ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:2437:57: warning: unused parameter 'reg' [-Wunused-parameter]
+warning: ferroni@1.7.0:  2437 | compile_length_gimmick_node(GimmickNode* node, regex_t* reg)
+warning: ferroni@1.7.0:       |                                                         ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:4578:48: warning: unused parameter 'reg' [-Wunused-parameter]
+warning: ferroni@1.7.0:  4578 | alt_reduce_in_look_behind(Node* node, regex_t* reg, ParseEnv* env)
+warning: ferroni@1.7.0:       |                                                ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:4578:63: warning: unused parameter 'env' [-Wunused-parameter]
+warning: ferroni@1.7.0:  4578 | alt_reduce_in_look_behind(Node* node, regex_t* reg, ParseEnv* env)
+warning: ferroni@1.7.0:       |                                                               ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:4862:30: warning: unused parameter 'case_fold_flag' [-Wunused-parameter]
+warning: ferroni@1.7.0:  4862 |             OnigCaseFoldType case_fold_flag, UChar* s, UChar* end)
+warning: ferroni@1.7.0:       |                              ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:4925:24: warning: comparison of integers of different signs: 'int' and 'OnigLen' (aka 'unsigned int') [-Wsign-compare]
+warning: ferroni@1.7.0:  4925 |     if (item->byte_len == one_len) {
+warning: ferroni@1.7.0:       |         ~~~~~~~~~~~~~~ ^  ~~~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:4944:26: warning: comparison of integers of different signs: 'int' and 'OnigLen' (aka 'unsigned int') [-Wsign-compare]
+warning: ferroni@1.7.0:  4944 |       if (item->byte_len == one_len) {
+warning: ferroni@1.7.0:       |           ~~~~~~~~~~~~~~ ^  ~~~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:5004:31: warning: comparison of integers of different signs: 'int' and 'OnigLen' (aka 'unsigned int') [-Wsign-compare]
+warning: ferroni@1.7.0:  5004 |         if (items[0].byte_len != one_len) {
+warning: ferroni@1.7.0:       |             ~~~~~~~~~~~~~~~~~ ^  ~~~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regcomp.c:5146:55: warning: unused parameter 'state' [-Wunused-parameter]
+warning: ferroni@1.7.0:  5146 | check_call_reference(CallNode* cn, ParseEnv* env, int state)
+warning: ferroni@1.7.0:       |                                                       ^
+warning: ferroni@1.7.0: 15 warnings generated.
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:239:52: warning: unused parameter 'param' [-Wunused-parameter]
+warning: ferroni@1.7.0:   239 | onig_set_time_limit_of_match_param(OnigMatchParam* param,
+warning: ferroni@1.7.0:       |                                                    ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:240:20: warning: unused parameter 'limit' [-Wunused-parameter]
+warning: ferroni@1.7.0:   240 |      unsigned long limit /* msec. */)
+warning: ferroni@1.7.0:       |                    ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:1642:35: warning: unused parameter 'n' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1642 | onig_set_time_limit(unsigned long n)
+warning: ferroni@1.7.0:       |                                   ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:1790:47: warning: unused parameter 'reg' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1790 | onig_get_callout_data_dont_clear_old(regex_t* reg, OnigMatchParam* mp,
+warning: ferroni@1.7.0:       |                                               ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:1829:32: warning: unused parameter 'reg' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1829 | onig_get_callout_data(regex_t* reg, OnigMatchParam* mp,
+warning: ferroni@1.7.0:       |                                ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:1882:32: warning: unused parameter 'reg' [-Wunused-parameter]
+warning: ferroni@1.7.0:  1882 | onig_set_callout_data(regex_t* reg, OnigMatchParam* mp,
+warning: ferroni@1.7.0:       |                                ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:2843:40: warning: unused parameter 'reg' [-Wunused-parameter]
+warning: ferroni@1.7.0:  2843 | backref_check_at_nested_level(regex_t* reg,
+warning: ferroni@1.7.0:       |                                        ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:3235:19: warning: comparison of integers of different signs: 'int' and 'unsigned int' [-Wsign-compare]
+warning: ferroni@1.7.0:  3235 |     for (i = 0; i < reg->ops_used; i++) {
+warning: ferroni@1.7.0:       |                 ~ ^ ~~~~~~~~~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:4426:36: warning: comparison of integers of different signs: 'unsigned long' and 'int' [-Wsign-compare]
+warning: ferroni@1.7.0:  4426 |       if (subexp_call_nest_counter == SubexpCallMaxNestLevel)
+warning: ferroni@1.7.0:       |           ~~~~~~~~~~~~~~~~~~~~~~~~ ^  ~~~~~~~~~~~~~~~~~~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:4497:16: warning: comparison of integers of different signs: 'LengthType' (aka 'int') and 'OnigLen' (aka 'unsigned int') [-Wsign-compare]
+warning: ferroni@1.7.0:  4497 |       if (tlen != INFINITE_LEN) tlen--;
+warning: ferroni@1.7.0:       |           ~~~~ ^  ~~~~~~~~~~~~
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:4755:27: warning: unused parameter 'option' [-Wunused-parameter]
+warning: ferroni@1.7.0:  4755 |            OnigOptionType option, MatchArg* msas, int* rmatch_pos)
+warning: ferroni@1.7.0:       |                           ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/regexec.c:6908:51: warning: unused parameter 'user_data' [-Wunused-parameter]
+warning: ferroni@1.7.0:  6908 | onig_builtin_monitor(OnigCalloutArgs* args, void* user_data)
+warning: ferroni@1.7.0:       |                                                   ^
+warning: ferroni@1.7.0: 12 warnings generated.
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/euc_jp.c:226:37: warning: unused parameter 'enc' [-Wunused-parameter]
+warning: ferroni@1.7.0:   226 | property_name_to_ctype(OnigEncoding enc, UChar* p, UChar* end)
+warning: ferroni@1.7.0:       |                                     ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/euc_jp.c:232:11: warning: comparison of integers of different signs: 'int' and 'unsigned long' [-Wsign-compare]
+warning: ferroni@1.7.0:   232 |   if (len < sizeof(q) - 1) {
+warning: ferroni@1.7.0:       |       ~~~ ^ ~~~~~~~~~~~~~
+warning: ferroni@1.7.0: 2 warnings generated.
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/sjis.c:231:37: warning: unused parameter 'enc' [-Wunused-parameter]
+warning: ferroni@1.7.0:   231 | property_name_to_ctype(OnigEncoding enc, UChar* p, UChar* end)
+warning: ferroni@1.7.0:       |                                     ^
+warning: ferroni@1.7.0: /private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig/src/sjis.c:237:11: warning: comparison of integers of different signs: 'int' and 'unsigned long' [-Wsign-compare]
+warning: ferroni@1.7.0:   237 |   if (len < sizeof(q) - 1) {
+warning: ferroni@1.7.0:       |       ~~~ ^ ~~~~~~~~~~~~~
+warning: ferroni@1.7.0: 2 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.28s
+     Running unittests src/lib.rs (target/debug/deps/ferroni-a7aaf2d54ab11c8e)
+
+running 1 test
+test regset::tests::fallback_run_skips_preserve_winners_captures_bounds_and_limits ... Compared 968436 RegSet search outcomes, including captures and limit errors
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 390 filtered out; finished in 8.29s
+
+     Running tests/api_test.rs (target/debug/deps/api_test-96f163fff9df6f2b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 210 filtered out; finished in 0.00s
+
+     Running tests/backtrack_lint.rs (target/debug/deps/backtrack_lint-88a07c70e55a252c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/backtrack_rewrite.rs (target/debug/deps/backtrack_rewrite-a86a2fefbe4bd1ee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/compat_back.rs (target/debug/deps/compat_back-3a84c930d4f0df6d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s
+
+     Running tests/compat_options.rs (target/debug/deps/compat_options-0c8f72a703783a8d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running tests/compat_regset.rs (target/debug/deps/compat_regset-93aabe824cefbd40)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.00s
+
+     Running tests/compat_syntax.rs (target/debug/deps/compat_syntax-dc00cdc59bfb8a7a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.00s
+
+     Running tests/compat_utf8.rs (target/debug/deps/compat_utf8-caa7daf4c51cf140)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1587 filtered out; finished in 0.00s
+
+     Running tests/stack_cap.rs (target/debug/deps/stack_cap-6301da9330daa7bd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/subexp_call_limits.rs (target/debug/deps/subexp_call_limits-36432d26f74d23c1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+

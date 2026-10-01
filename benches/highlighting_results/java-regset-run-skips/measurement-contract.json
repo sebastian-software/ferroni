@@ -1,0 +1,135 @@
+{
+  "date": "2026-10-01",
+  "controlCommit": "ca89c466e0cd76c672f73a858ed82e10b63a742d",
+  "mergedRuntimeBase": "0ae25008711cdf1d7217e1775d0d84bff8bbed5d",
+  "candidateRuntimeCommit": "ba2be54a3caff68c69f128435ecc1ccdf6c3318e",
+  "ferrikiCommit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+  "cOnigurumaCommit": "f95747b462de672b6f8dbdeb478245ddf061ca53",
+  "primaryMetric": "Finished inline HTML time < min(Shiki WASM, Shiki JS)",
+  "unmeasured": [
+    "HTML with generated CSS in classes mode",
+    "Java uncached scanner construction",
+    "whole-app cold start"
+  ],
+  "publicMethod": {
+    "theme": "github-dark",
+    "apis": ["html", "tokens"],
+    "sizes": ["example", "large"],
+    "warmup": 5,
+    "budgetMsPerEngine": 300,
+    "minRounds": 30,
+    "maxRounds": 1000,
+    "timeoutMsPerLanguage": 120000,
+    "schedule": "Rotate engine order every round; warm reused highlighters; one process per language; sequential languages",
+    "units": "Milliseconds per document; raw samples include output allocation; setup and validation excluded"
+  },
+  "order": ["control-1", "candidate-1", "candidate-2", "control-2"],
+  "nativeMethod": {
+    "samples": 30,
+    "warmupSeconds": 1,
+    "requestedMeasurementSeconds": 3,
+    "profile": "ordinary thin LTO; no profiler flags"
+  },
+  "addonBytes": {
+    "control": 2157936,
+    "candidate": 2157936
+  },
+  "timingIsolation": "Sequential ordinary builds and benchmarks; no concurrent builds, coverage, profiles or other benchmarks",
+  "javaCorpus": {
+    "format_version": 1,
+    "ferroni_commit": "0ae25008711cdf1d7217e1775d0d84bff8bbed5d",
+    "ferriki_commit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+    "capture_api": "native codeToHtml, lang=java, theme=github-dark, one cold curated large document",
+    "compile_options": "ONIG_OPTION_CAPTURE_GROUP, ScannerSyntax::Oniguruma, backtracking optimization off",
+    "find_api": "find_next_match_utf16 without caller-provided cache ID",
+    "capture_patch_sha256": "763c4d7057601dd2bde29f9eae4b69ce4b78860573040fa5e7c62e3cf06864c2",
+    "capture_receipt": {
+      "builtAt": "2026-10-01T04:52:22.308Z",
+      "binarySha256": "da4874664af3ab05c19769eea2bbd49b15bf4144602d47568b52071a834991ec",
+      "ferriki": {
+        "commit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+        "status": "M Cargo.lock"
+      },
+      "rustSourceSha256": "ad9e8079b44edab747109da0d62354badf9681871afb9ea6fde38b5f1dc47a26",
+      "ferroni": {
+        "version": "1.7.0",
+        "source": null,
+        "manifestPath": "/private/tmp/ferroni-java-capture/Cargo.toml",
+        "revision": {
+          "commit": "0ae25008711cdf1d7217e1775d0d84bff8bbed5d",
+          "status": "M  Cargo.toml\nM  src/scanner.rs"
+        },
+        "sourceSha256": "ebb87bdf57f430aa6c6ed6e2fd9a66673b4ed14c08660bc6431c780f4e81e637",
+        "features": []
+      },
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+      "cargoArgs": [
+        "build",
+        "--release",
+        "--manifest-path",
+        "/private/tmp/ferriki-curated-benchmark/crates/ferriki-core/Cargo.toml",
+        "--config",
+        "patch.crates-io.ferroni.path=\"/private/tmp/ferroni-java-capture\""
+      ],
+      "rustflags": null,
+      "encodedRustflags": null,
+      "targetRustflags": {},
+      "cargoProfileEnv": {},
+      "cargoLockSha256": "b42d876466c024c69dac6bfca9cff7e3abee6253a76ec24cc7a1eb3374982e7c"
+    },
+    "capture_receipt_note": "The diagnostic addon includes the exact staged capture patch on the recorded base revision; the receipt retains that dirty state. Source fingerprints pin the instrumented addon, which is excluded from ordinary replay timings.",
+    "source_path": "node/benchmarks/curated/fixtures/orders.java",
+    "source_sha256": "90a63d1222f23eaee6008f4ac04ad6c06b653e76e4872c9d60cb9b40f72e9b08",
+    "workload": {
+      "size": "large",
+      "copies": 16,
+      "bytes": 17856,
+      "lines": 513,
+      "sha256": "e3a11e9255e23850f40a4f8bfaaee7bdf67cc14c511edaef570be04f8fe5f820"
+    },
+    "html_sha256": "55c8019e8614df595615dded8d9156f359f4cf03a29c90794bbad7e54c5b8bce",
+    "grammar_paths": {
+      "assets/upstream/textmate-grammars-themes/grammars/java.json": "c2d622b901b19119f2b3469583ef50fe6998788c179c0d3bbd7a0eab019378cb",
+      "assets/shiki/languages/java.fkgram": "5940e32aa6af91d0036c5691239489d7bb15aaa1fcb42301d86c96cae963baf9"
+    },
+    "fixture_sha256": "c8ca55d21795fbc7dc81021b886b2807e98a8efd14e09774cb6fec151be645f5",
+    "calls": 3920,
+    "scanners": 27,
+    "subjects": 544,
+    "unique_patterns": 115,
+    "hot_groups": [
+      {
+        "id": 15,
+        "calls": 592,
+        "patterns": 62
+      },
+      {
+        "id": 19,
+        "calls": 672,
+        "patterns": 62
+      },
+      {
+        "id": 5,
+        "calls": 128,
+        "patterns": 77
+      },
+      {
+        "id": 22,
+        "calls": 400,
+        "patterns": 62
+      },
+      {
+        "id": 7,
+        "calls": 96,
+        "patterns": 62
+      },
+      {
+        "id": 17,
+        "calls": 272,
+        "patterns": 16
+      }
+    ],
+    "capture_commit": "60bf4a7a3cee36cd5465550c2e098cdb3ea5131e",
+    "capture_commit_note": "The signed diagnostic commit contains the exact capture source built before it was committed. The original build receipt retains its actual staged state."
+  }
+}

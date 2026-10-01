@@ -1,0 +1,9 @@
+{
+  "group_id": "scanner_compile_and_drop",
+  "function_id": "cpp",
+  "value_str": null,
+  "throughput": { "Elements": 4026 },
+  "full_id": "scanner_compile_and_drop/cpp",
+  "directory_name": "scanner_compile_and_drop/cpp",
+  "title": "scanner_compile_and_drop/cpp"
+}

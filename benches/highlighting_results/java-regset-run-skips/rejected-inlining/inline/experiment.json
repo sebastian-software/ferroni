@@ -1,0 +1,9 @@
+{
+  "status": "rejected",
+  "reason": "No stable end-to-end HTML benefit",
+  "branch": "codex/java-word-boundary-inline",
+  "commit": "07ffe198b1f32d1617a42f322fd9ce8560bbc20a",
+  "runtimeIncludedInThisPR": false,
+  "completePublicABBA": true,
+  "publicReports": "All available reports retained; force-inline candidate-2 is partial and control-2 is absent"
+}

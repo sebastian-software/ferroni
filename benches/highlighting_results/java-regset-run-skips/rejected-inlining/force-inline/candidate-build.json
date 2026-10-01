@@ -1,0 +1,34 @@
+{
+  "builtAt": "2026-10-01T05:34:49.250Z",
+  "binarySha256": "1afe3c3ed593b4d54b93011a358f4f3cd6eac3cbf871028f109f2a6da2d99147",
+  "ferriki": {
+    "commit": "0136c99d3aad9aad9eeaa025692124e94420153d",
+    "status": "M Cargo.lock"
+  },
+  "rustSourceSha256": "ad9e8079b44edab747109da0d62354badf9681871afb9ea6fde38b5f1dc47a26",
+  "ferroni": {
+    "version": "1.7.0",
+    "source": null,
+    "manifestPath": "/private/tmp/ferroni-java-force-inline/Cargo.toml",
+    "revision": {
+      "commit": "3c385d057234183d7907ebef341fecd0abedec2a",
+      "status": ""
+    },
+    "sourceSha256": "357e2af58b6cbd9930ee523a9430b8c719e3f7ae2f9375f871db9f323b6d268e",
+    "features": []
+  },
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+  "cargoArgs": [
+    "build",
+    "--release",
+    "--manifest-path",
+    "/private/tmp/ferriki-curated-benchmark/crates/ferriki-core/Cargo.toml",
+    "--config",
+    "patch.crates-io.ferroni.path=\"/private/tmp/ferroni-java-force-inline\""
+  ],
+  "rustflags": null,
+  "encodedRustflags": null,
+  "targetRustflags": {},
+  "cargoProfileEnv": {},
+  "cargoLockSha256": "11ed21c76fb736d7662a11c2034d2a2c12d3b7c3f55be1665101a8859fc75d6d"
+}

@@ -1,0 +1,2 @@
+[readme:check] $ binary=$(mise which mdtheme) && "$binary" --check
+/private/tmp/ferroni-java-run-skips/README.md is up to date.

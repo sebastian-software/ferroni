@@ -1,0 +1,2069 @@
+{
+  "versions": {
+    "onigurumaToEs": "4.3.4",
+    "onigurumaParser": "0.12.1"
+  },
+  "boundary": "Shiki translation is a reference; optional parser optimizer is a separate experiment and is not enabled by Shiki",
+  "uniquePatterns": 115,
+  "changedPatterns": 0,
+  "translationErrors": 0,
+  "optimizerErrors": 0,
+  "records": [
+    {
+      "original": "\\b(package)\\b\\s*",
+      "locations": [[0, 0]],
+      "shikiTranslation": {
+        "pattern": "\\b(package)\\b\\p{space}*",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(package)\\b\\s*",
+      "changed": false
+    },
+    {
+      "original": "\\b(import)\\b\\s*\\b(static)?\\b\\s",
+      "locations": [[0, 1]],
+      "shikiTranslation": {
+        "pattern": "\\b(import)\\b\\p{space}*\\b(static)?\\b\\p{space}",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(import)\\b\\s*\\b(static)?\\b\\s",
+      "changed": false
+    },
+    {
+      "original": "^\\s*(/\\*\\*)(?!/)",
+      "locations": [
+        [0, 2],
+        [5, 1],
+        [9, 2]
+      ],
+      "shikiTranslation": {
+        "pattern": "^\\p{space}*(/\\*\\*)(?!/)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "^\\s*(/\\*\\*)(?!/)",
+      "changed": false
+    },
+    {
+      "original": "((@)\\s*([^(\\s]+))(\\()",
+      "locations": [
+        [0, 3],
+        [5, 12],
+        [5, 16],
+        [7, 1],
+        [9, 13],
+        [9, 17],
+        [14, 2],
+        [15, 1],
+        [16, 3],
+        [18, 1],
+        [19, 1],
+        [21, 1],
+        [22, 1],
+        [25, 8]
+      ],
+      "shikiTranslation": {
+        "pattern": "((@)\\p{space}*([^\\(\\p{space}]+))(\\()",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "((@)\\s*([^(\\s]+))(\\()",
+      "changed": false
+    },
+    {
+      "original": "(@)(interface)\\s+(\\w*)|((@)\\s*(\\w+))",
+      "locations": [
+        [0, 4],
+        [5, 13],
+        [5, 17],
+        [7, 2],
+        [9, 14],
+        [9, 18],
+        [14, 3],
+        [15, 2],
+        [16, 4],
+        [18, 2],
+        [19, 2],
+        [21, 2],
+        [22, 2],
+        [25, 9]
+      ],
+      "shikiTranslation": {
+        "pattern": "(@)(interface)\\p{space}+([\\p{L}\\p{M}\\p{N}\\p{Pc}]*)|((@)\\p{space}*([\\p{L}\\p{M}\\p{N}\\p{Pc}]+))",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(@)(interface)\\s+(\\w*)|((@)\\s*(\\w+))",
+      "changed": false
+    },
+    {
+      "original": "/\\*\\*/",
+      "locations": [
+        [0, 5],
+        [1, 1],
+        [2, 1],
+        [4, 3],
+        [5, 2],
+        [5, 18],
+        [6, 3],
+        [7, 3],
+        [9, 3],
+        [9, 19],
+        [10, 7],
+        [11, 10],
+        [13, 13],
+        [14, 19],
+        [15, 3],
+        [16, 5],
+        [17, 1],
+        [18, 3],
+        [19, 3],
+        [20, 1],
+        [21, 3],
+        [22, 3],
+        [24, 1],
+        [25, 10]
+      ],
+      "shikiTranslation": {
+        "pattern": "/\\*\\*/",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "/\\*\\*/",
+      "changed": false
+    },
+    {
+      "original": "/\\*",
+      "locations": [
+        [0, 6],
+        [1, 2],
+        [2, 2],
+        [4, 4],
+        [5, 3],
+        [5, 19],
+        [6, 4],
+        [7, 4],
+        [9, 4],
+        [9, 20],
+        [10, 8],
+        [11, 11],
+        [13, 14],
+        [14, 20],
+        [15, 4],
+        [16, 6],
+        [17, 2],
+        [18, 4],
+        [19, 4],
+        [20, 2],
+        [21, 4],
+        [22, 4],
+        [24, 2],
+        [25, 11]
+      ],
+      "shikiTranslation": {
+        "pattern": "/\\*",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "/\\*",
+      "changed": false
+    },
+    {
+      "original": "(^[\\t ]+)?(?=//)",
+      "locations": [
+        [0, 7],
+        [1, 3],
+        [2, 3],
+        [4, 5],
+        [5, 4],
+        [5, 20],
+        [6, 5],
+        [7, 5],
+        [9, 5],
+        [9, 21],
+        [10, 9],
+        [11, 12],
+        [13, 15],
+        [14, 21],
+        [15, 5],
+        [16, 7],
+        [17, 3],
+        [18, 5],
+        [19, 5],
+        [20, 3],
+        [21, 5],
+        [22, 5],
+        [24, 3],
+        [25, 12]
+      ],
+      "shikiTranslation": {
+        "pattern": "(^[\\t ]+)?(?=//)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(^[\\t ]+)?(?=//)",
+      "changed": false
+    },
+    {
+      "original": "^\\s*([\\w\\s]*)(enum)\\s+(\\w+)",
+      "locations": [
+        [0, 8],
+        [5, 5],
+        [5, 21],
+        [7, 6],
+        [9, 6],
+        [9, 22],
+        [15, 6],
+        [16, 8],
+        [18, 6],
+        [19, 6],
+        [21, 6],
+        [22, 6],
+        [25, 13]
+      ],
+      "shikiTranslation": {
+        "pattern": "^\\p{space}*([\\p{L}\\p{M}\\p{N}\\p{Pc}\\p{space}]*)(enum)\\p{space}+([\\p{L}\\p{M}\\p{N}\\p{Pc}]+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "^\\s*([\\w\\s]*)(enum)\\s+(\\w+)",
+      "changed": false
+    },
+    {
+      "original": "(?=\\w?[-\\w\\s]*\\b(?:class|(?<!@)interface|enum)\\s+[$\\w]+)",
+      "locations": [
+        [0, 9],
+        [5, 6],
+        [5, 22],
+        [7, 7],
+        [9, 7],
+        [9, 23],
+        [15, 7],
+        [16, 9],
+        [18, 7],
+        [19, 7],
+        [21, 7],
+        [22, 7],
+        [25, 14]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?=[\\p{L}\\p{M}\\p{N}\\p{Pc}]?[\\-\\p{L}\\p{M}\\p{N}\\p{Pc}\\p{space}]*\\b(?:class|(?<!@)interface|enum)\\p{space}+[\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=\\w?[-\\w\\s]*\\b(?:class|(?<!@)interface|enum)\\s+[$\\w]+)",
+      "changed": false
+    },
+    {
+      "original": "(?=\\w?[\\w\\s]*\\brecord\\s+[$\\w]+)",
+      "locations": [
+        [0, 10],
+        [5, 23],
+        [7, 8],
+        [9, 24],
+        [15, 8],
+        [16, 10],
+        [18, 8],
+        [19, 8],
+        [21, 8],
+        [22, 8],
+        [25, 15]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?=[\\p{L}\\p{M}\\p{N}\\p{Pc}]?[\\p{L}\\p{M}\\p{N}\\p{Pc}\\p{space}]*\\brecord\\p{space}+[\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=\\w?[\\w\\s]*\\brecord\\s+[$\\w]+)",
+      "changed": false
+    },
+    {
+      "original": "\\{",
+      "locations": [
+        [0, 11],
+        [0, 18],
+        [4, 10],
+        [5, 8],
+        [5, 24],
+        [5, 31],
+        [6, 8],
+        [7, 9],
+        [7, 16],
+        [9, 9],
+        [9, 25],
+        [9, 32],
+        [10, 6],
+        [11, 9],
+        [13, 11],
+        [14, 18],
+        [15, 9],
+        [15, 16],
+        [16, 11],
+        [16, 18],
+        [17, 15],
+        [18, 9],
+        [18, 16],
+        [19, 9],
+        [19, 16],
+        [20, 6],
+        [21, 9],
+        [21, 16],
+        [22, 9],
+        [22, 16],
+        [24, 4],
+        [25, 16],
+        [25, 23]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\{",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\{",
+      "changed": false
+    },
+    {
+      "original": "\\btry\\b",
+      "locations": [
+        [0, 12],
+        [5, 25],
+        [7, 10],
+        [9, 26],
+        [15, 10],
+        [16, 12],
+        [18, 10],
+        [19, 10],
+        [21, 10],
+        [22, 10],
+        [25, 17]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\btry\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\btry\\b",
+      "changed": false
+    },
+    {
+      "original": "\\b(catch)\\b",
+      "locations": [
+        [0, 13],
+        [5, 26],
+        [7, 11],
+        [9, 27],
+        [15, 11],
+        [16, 13],
+        [18, 11],
+        [19, 11],
+        [21, 11],
+        [22, 11],
+        [25, 18]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(catch)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(catch)\\b",
+      "changed": false
+    },
+    {
+      "original": "\\bfinally\\b",
+      "locations": [
+        [0, 14],
+        [5, 27],
+        [7, 12],
+        [9, 28],
+        [15, 12],
+        [16, 14],
+        [18, 12],
+        [19, 12],
+        [21, 12],
+        [22, 12],
+        [25, 19]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\bfinally\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\bfinally\\b",
+      "changed": false
+    },
+    {
+      "original": "\\b(assert)\\s",
+      "locations": [
+        [0, 15],
+        [5, 28],
+        [7, 13],
+        [9, 29],
+        [15, 13],
+        [16, 15],
+        [18, 13],
+        [19, 13],
+        [21, 13],
+        [22, 13],
+        [25, 20]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(assert)\\p{space}",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(assert)\\s",
+      "changed": false
+    },
+    {
+      "original": "\\(",
+      "locations": [
+        [0, 16],
+        [5, 29],
+        [7, 14],
+        [9, 30],
+        [11, 7],
+        [13, 9],
+        [14, 16],
+        [15, 14],
+        [16, 16],
+        [17, 13],
+        [18, 14],
+        [19, 14],
+        [20, 4],
+        [21, 14],
+        [22, 14],
+        [25, 21]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\(",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\(",
+      "changed": false
+    },
+    {
+      "original": "\\[",
+      "locations": [
+        [0, 17],
+        [5, 30],
+        [7, 15],
+        [9, 31],
+        [11, 8],
+        [13, 10],
+        [14, 17],
+        [15, 15],
+        [16, 17],
+        [17, 14],
+        [18, 15],
+        [19, 15],
+        [20, 5],
+        [21, 15],
+        [22, 15],
+        [25, 22]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\[",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\[",
+      "changed": false
+    },
+    {
+      "original": "\\b(true|false|null)\\b",
+      "locations": [
+        [0, 19],
+        [5, 32],
+        [7, 17],
+        [9, 33],
+        [15, 17],
+        [16, 19],
+        [18, 17],
+        [19, 17],
+        [21, 17],
+        [22, 17],
+        [25, 24]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(true|false|null)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(true|false|null)\\b",
+      "changed": false
+    },
+    {
+      "original": "\\bthis\\b",
+      "locations": [
+        [0, 20],
+        [5, 33],
+        [7, 18],
+        [9, 34],
+        [15, 18],
+        [16, 20],
+        [18, 18],
+        [19, 18],
+        [21, 18],
+        [22, 18],
+        [25, 25]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\bthis\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\bthis\\b",
+      "changed": false
+    },
+    {
+      "original": "\\bsuper\\b",
+      "locations": [
+        [0, 21],
+        [5, 34],
+        [7, 19],
+        [9, 35],
+        [15, 19],
+        [16, 21],
+        [18, 19],
+        [19, 19],
+        [21, 19],
+        [22, 19],
+        [25, 26]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\bsuper\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\bsuper\\b",
+      "changed": false
+    },
+    {
+      "original": "\\b(?<!\\$)0([Xx])((?<!\\.)\\h([_\\h]*\\h)?[Ll]?(?!\\.)|(\\h([_\\h]*\\h)?\\.?|(\\h([_\\h]*\\h)?)?\\.\\h([_\\h]*\\h)?)[Pp][-+]?[0-9]([0-9_]*[0-9])?[DFdf]?)\\b(?!\\$)",
+      "locations": [
+        [0, 22],
+        [5, 35],
+        [7, 20],
+        [9, 36],
+        [15, 20],
+        [16, 22],
+        [18, 20],
+        [19, 20],
+        [21, 20],
+        [22, 20],
+        [25, 27]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(?<!\\$)0([Xx])((?<!\\.)\\p{AHex}([_\\p{AHex}]*\\p{AHex})?[Ll]?(?!\\.)|(\\p{AHex}([_\\p{AHex}]*\\p{AHex})?\\.?|(\\p{AHex}([_\\p{AHex}]*\\p{AHex})?)?\\.\\p{AHex}([_\\p{AHex}]*\\p{AHex})?)[Pp][\\-\\+]?[0-9]([0-9_]*[0-9])?[DFdf]?)\\b(?!\\$)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(?<!\\$)0([Xx])((?<!\\.)\\h([_\\h]*\\h)?[Ll]?(?!\\.)|(\\h([_\\h]*\\h)?\\.?|(\\h([_\\h]*\\h)?)?\\.\\h([_\\h]*\\h)?)[Pp][-+]?[0-9]([0-9_]*[0-9])?[DFdf]?)\\b(?!\\$)",
+      "changed": false
+    },
+    {
+      "original": "\\b(?<!\\$)0([Bb])[01]([01_]*[01])?[Ll]?\\b(?!\\$)",
+      "locations": [
+        [0, 23],
+        [5, 36],
+        [7, 21],
+        [9, 37],
+        [15, 21],
+        [16, 23],
+        [18, 21],
+        [19, 21],
+        [21, 21],
+        [22, 21],
+        [25, 28]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(?<!\\$)0([Bb])[01]([01_]*[01])?[Ll]?\\b(?!\\$)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(?<!\\$)0([Bb])[01]([01_]*[01])?[Ll]?\\b(?!\\$)",
+      "changed": false
+    },
+    {
+      "original": "\\b(?<!\\$)0[0-7]([0-7_]*[0-7])?[Ll]?\\b(?!\\$)",
+      "locations": [
+        [0, 24],
+        [5, 37],
+        [7, 22],
+        [9, 38],
+        [15, 22],
+        [16, 24],
+        [18, 22],
+        [19, 22],
+        [21, 22],
+        [22, 22],
+        [25, 29]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(?<!\\$)0[0-7]([0-7_]*[0-7])?[Ll]?\\b(?!\\$)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(?<!\\$)0[0-7]([0-7_]*[0-7])?[Ll]?\\b(?!\\$)",
+      "changed": false
+    },
+    {
+      "original": "(?<!\\$)(\\b[0-9]([0-9_]*[0-9])?\\.\\B(?!\\.)|\\b[0-9]([0-9_]*[0-9])?\\.([Ee][-+]?[0-9]([0-9_]*[0-9])?)[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?\\.([Ee][-+]?[0-9]([0-9_]*[0-9])?)?[DFdf]\\b|\\b[0-9]([0-9_]*[0-9])?\\.([0-9]([0-9_]*[0-9])?)([Ee][-+]?[0-9]([0-9_]*[0-9])?)?[DFdf]?\\b|(?<!\\.)\\B\\.[0-9]([0-9_]*[0-9])?([Ee][-+]?[0-9]([0-9_]*[0-9])?)?[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?([Ee][-+]?[0-9]([0-9_]*[0-9])?)[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?([Ee][-+]?[0-9]([0-9_]*[0-9])?)?[DFdf]\\b|\\b(0|[1-9]([0-9_]*[0-9])?)(?!\\.)[Ll]?\\b)(?!\\$)",
+      "locations": [
+        [0, 25],
+        [5, 38],
+        [7, 23],
+        [9, 39],
+        [15, 23],
+        [16, 25],
+        [18, 23],
+        [19, 23],
+        [21, 23],
+        [22, 23],
+        [25, 30]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?<!\\$)(\\b[0-9]([0-9_]*[0-9])?\\.\\B(?!\\.)|\\b[0-9]([0-9_]*[0-9])?\\.([Ee][\\-\\+]?[0-9]([0-9_]*[0-9])?)[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?\\.([Ee][\\-\\+]?[0-9]([0-9_]*[0-9])?)?[DFdf]\\b|\\b[0-9]([0-9_]*[0-9])?\\.([0-9]([0-9_]*[0-9])?)([Ee][\\-\\+]?[0-9]([0-9_]*[0-9])?)?[DFdf]?\\b|(?<!\\.)\\B\\.[0-9]([0-9_]*[0-9])?([Ee][\\-\\+]?[0-9]([0-9_]*[0-9])?)?[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?([Ee][\\-\\+]?[0-9]([0-9_]*[0-9])?)[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?([Ee][\\-\\+]?[0-9]([0-9_]*[0-9])?)?[DFdf]\\b|\\b(0|[1-9]([0-9_]*[0-9])?)(?!\\.)[Ll]?\\b)(?!\\$)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?<!\\$)(\\b[0-9]([0-9_]*[0-9])?\\.\\B(?!\\.)|\\b[0-9]([0-9_]*[0-9])?\\.([Ee][-+]?[0-9]([0-9_]*[0-9])?)[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?\\.([Ee][-+]?[0-9]([0-9_]*[0-9])?)?[DFdf]\\b|\\b[0-9]([0-9_]*[0-9])?\\.([0-9]([0-9_]*[0-9])?)([Ee][-+]?[0-9]([0-9_]*[0-9])?)?[DFdf]?\\b|(?<!\\.)\\B\\.[0-9]([0-9_]*[0-9])?([Ee][-+]?[0-9]([0-9_]*[0-9])?)?[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?([Ee][-+]?[0-9]([0-9_]*[0-9])?)[DFdf]?\\b|\\b[0-9]([0-9_]*[0-9])?([Ee][-+]?[0-9]([0-9_]*[0-9])?)?[DFdf]\\b|\\b(0|[1-9]([0-9_]*[0-9])?)(?!\\.)[Ll]?\\b)(?!\\$)",
+      "changed": false
+    },
+    {
+      "original": "\\bnew\\b",
+      "locations": [
+        [0, 26],
+        [5, 39],
+        [7, 24],
+        [9, 40],
+        [15, 24],
+        [16, 26],
+        [18, 24],
+        [19, 24],
+        [21, 24],
+        [22, 24],
+        [25, 31]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\bnew\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\bnew\\b",
+      "changed": false
+    },
+    {
+      "original": "->",
+      "locations": [
+        [0, 27],
+        [5, 40],
+        [7, 25],
+        [9, 41],
+        [15, 25],
+        [16, 27],
+        [18, 25],
+        [19, 25],
+        [21, 25],
+        [22, 25],
+        [25, 32]
+      ],
+      "shikiTranslation": {
+        "pattern": "->",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "->",
+      "changed": false
+    },
+    {
+      "original": "\\bthrow\\b",
+      "locations": [
+        [0, 28],
+        [5, 41],
+        [7, 26],
+        [9, 42],
+        [15, 26],
+        [16, 28],
+        [18, 26],
+        [19, 26],
+        [21, 26],
+        [22, 26],
+        [25, 33]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\bthrow\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\bthrow\\b",
+      "changed": false
+    },
+    {
+      "original": "[:?]",
+      "locations": [
+        [0, 29],
+        [5, 42],
+        [7, 27],
+        [9, 43],
+        [15, 27],
+        [16, 29],
+        [18, 27],
+        [19, 27],
+        [21, 27],
+        [22, 27],
+        [25, 34]
+      ],
+      "shikiTranslation": {
+        "pattern": "[\\:\\?]",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "[:?]",
+      "changed": false
+    },
+    {
+      "original": "\\b(return|yield|break|case|continue|default|do|while|for|switch|if|else)\\b",
+      "locations": [
+        [0, 30],
+        [5, 43],
+        [7, 28],
+        [9, 44],
+        [15, 28],
+        [16, 30],
+        [18, 28],
+        [19, 28],
+        [21, 28],
+        [22, 28],
+        [25, 35]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(return|yield|break|case|continue|default|do|while|for|switch|if|else)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(return|yield|break|case|continue|default|do|while|for|switch|if|else)\\b",
+      "changed": false
+    },
+    {
+      "original": "\\b(instanceof)\\b",
+      "locations": [
+        [0, 31],
+        [5, 44],
+        [7, 29],
+        [9, 45],
+        [15, 29],
+        [16, 31],
+        [18, 29],
+        [19, 29],
+        [21, 29],
+        [22, 29],
+        [25, 36]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(instanceof)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(instanceof)\\b",
+      "changed": false
+    },
+    {
+      "original": "(<<|>>>?|[\\^~])",
+      "locations": [
+        [0, 32],
+        [5, 45],
+        [7, 30],
+        [9, 46],
+        [15, 30],
+        [16, 32],
+        [18, 30],
+        [19, 30],
+        [21, 30],
+        [22, 30],
+        [25, 37]
+      ],
+      "shikiTranslation": {
+        "pattern": "(<<|>>>?|[\\^\\~])",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(<<|>>>?|[\\^~])",
+      "changed": false
+    },
+    {
+      "original": "(([\\&^|]|<<|>>>?)=)",
+      "locations": [
+        [0, 33],
+        [5, 46],
+        [7, 31],
+        [9, 47],
+        [15, 31],
+        [16, 33],
+        [18, 31],
+        [19, 31],
+        [21, 31],
+        [22, 31],
+        [25, 38]
+      ],
+      "shikiTranslation": {
+        "pattern": "(([\\&\\^\\|]|<<|>>>?)=)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(([\\&^|]|<<|>>>?)=)",
+      "changed": false
+    },
+    {
+      "original": "(===?|!=|<=|>=|<>|[<>])",
+      "locations": [
+        [0, 34],
+        [5, 47],
+        [7, 32],
+        [9, 48],
+        [15, 32],
+        [16, 34],
+        [18, 32],
+        [19, 32],
+        [21, 32],
+        [22, 32],
+        [25, 39]
+      ],
+      "shikiTranslation": {
+        "pattern": "(===?|!=|<=|>=|<>|[\\<\\>])",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(===?|!=|<=|>=|<>|[<>])",
+      "changed": false
+    },
+    {
+      "original": "([-%*+/]=)",
+      "locations": [
+        [0, 35],
+        [5, 48],
+        [7, 33],
+        [9, 49],
+        [15, 33],
+        [16, 35],
+        [18, 33],
+        [19, 33],
+        [21, 33],
+        [22, 33],
+        [25, 40]
+      ],
+      "shikiTranslation": {
+        "pattern": "([\\-\\%\\*\\+\\/]=)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "([-%*+/]=)",
+      "changed": false
+    },
+    {
+      "original": "(=)",
+      "locations": [
+        [0, 36],
+        [5, 49],
+        [7, 34],
+        [9, 50],
+        [15, 34],
+        [16, 36],
+        [18, 34],
+        [19, 34],
+        [21, 34],
+        [22, 34],
+        [25, 41]
+      ],
+      "shikiTranslation": {
+        "pattern": "(=)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(=)",
+      "changed": false
+    },
+    {
+      "original": "(--|\\+\\+)",
+      "locations": [
+        [0, 37],
+        [5, 50],
+        [7, 35],
+        [9, 51],
+        [15, 35],
+        [16, 37],
+        [18, 35],
+        [19, 35],
+        [21, 35],
+        [22, 35],
+        [25, 42]
+      ],
+      "shikiTranslation": {
+        "pattern": "(--|\\+\\+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(--|\\+\\+)",
+      "changed": false
+    },
+    {
+      "original": "([-%*+/])",
+      "locations": [
+        [0, 38],
+        [5, 51],
+        [7, 36],
+        [9, 52],
+        [15, 36],
+        [16, 38],
+        [18, 36],
+        [19, 36],
+        [21, 36],
+        [22, 36],
+        [25, 43]
+      ],
+      "shikiTranslation": {
+        "pattern": "([\\-\\%\\*\\+\\/])",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "([-%*+/])",
+      "changed": false
+    },
+    {
+      "original": "(!|&&|\\|\\|)",
+      "locations": [
+        [0, 39],
+        [5, 52],
+        [7, 37],
+        [9, 53],
+        [15, 37],
+        [16, 39],
+        [18, 37],
+        [19, 37],
+        [21, 37],
+        [22, 37],
+        [25, 44]
+      ],
+      "shikiTranslation": {
+        "pattern": "(!|&&|\\|\\|)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(!|&&|\\|\\|)",
+      "changed": false
+    },
+    {
+      "original": "([\\&|])",
+      "locations": [
+        [0, 40],
+        [5, 53],
+        [7, 38],
+        [9, 54],
+        [15, 38],
+        [16, 40],
+        [18, 38],
+        [19, 38],
+        [21, 38],
+        [22, 38],
+        [25, 45]
+      ],
+      "shikiTranslation": {
+        "pattern": "([\\&\\|])",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "([\\&|])",
+      "changed": false
+    },
+    {
+      "original": "\\b(const|goto)\\b",
+      "locations": [
+        [0, 41],
+        [5, 54],
+        [7, 39],
+        [9, 55],
+        [15, 39],
+        [16, 41],
+        [18, 39],
+        [19, 39],
+        [21, 39],
+        [22, 39],
+        [25, 46]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(const|goto)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(const|goto)\\b",
+      "changed": false
+    },
+    {
+      "original": "\\b(public|private|protected|static|final|native|synchronized|abstract|threadsafe|transient|volatile|default|strictfp|sealed|non-sealed)\\b",
+      "locations": [
+        [0, 42],
+        [4, 1],
+        [5, 14],
+        [5, 55],
+        [6, 1],
+        [7, 40],
+        [9, 15],
+        [9, 56],
+        [10, 1],
+        [15, 40],
+        [16, 42],
+        [18, 40],
+        [19, 40],
+        [21, 40],
+        [22, 40],
+        [25, 47]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(public|private|protected|static|final|native|synchronized|abstract|threadsafe|transient|volatile|default|strictfp|sealed|non-sealed)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(public|private|protected|static|final|native|synchronized|abstract|threadsafe|transient|volatile|default|strictfp|sealed|non-sealed)\\b",
+      "changed": false
+    },
+    {
+      "original": "(\\.)\\s*([$A-Z_a-z][$\\w]*)\\s*(\\()",
+      "locations": [
+        [0, 43],
+        [5, 56],
+        [7, 41],
+        [9, 57],
+        [15, 41],
+        [16, 43],
+        [18, 41],
+        [19, 41],
+        [21, 41],
+        [22, 41],
+        [25, 48]
+      ],
+      "shikiTranslation": {
+        "pattern": "(\\.)\\p{space}*([\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*)\\p{space}*(\\()",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(\\.)\\s*([$A-Z_a-z][$\\w]*)\\s*(\\()",
+      "changed": false
+    },
+    {
+      "original": "([$A-Z_a-z][$\\w]*)\\s*(\\()",
+      "locations": [
+        [0, 44],
+        [5, 57],
+        [7, 42],
+        [9, 58],
+        [15, 42],
+        [16, 44],
+        [17, 4],
+        [18, 42],
+        [19, 42],
+        [21, 42],
+        [22, 42],
+        [25, 49]
+      ],
+      "shikiTranslation": {
+        "pattern": "([\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*)\\p{space}*(\\()",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "([$A-Z_a-z][$\\w]*)\\s*(\\()",
+      "changed": false
+    },
+    {
+      "original": "(?=\\b((void|boolean|byte|char|short|int|float|long|double)|(?>(\\w+\\.)*[A-Z_]+\\w*))\\b\\s*(<[],.<>?\\[\\w\\s]*>)?\\s*((\\[])*)?\\s+[$A-Z_a-z][$\\w]*([]$,\\[\\w][],\\[\\w\\s]*)?\\s*([:;=]))",
+      "locations": [
+        [0, 45],
+        [5, 58],
+        [7, 43],
+        [9, 59],
+        [15, 43],
+        [16, 45],
+        [18, 43],
+        [19, 43],
+        [21, 43],
+        [22, 43],
+        [25, 50]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?=\\b((void|boolean|byte|char|short|int|float|long|double)|(?:(?=(([\\p{L}\\p{M}\\p{N}\\p{Pc}]+\\.)*[A-Z_]+[\\p{L}\\p{M}\\p{N}\\p{Pc}]*))\\3))\\b\\p{space}*(<[\\]\\,\\.\\<\\>\\?\\[\\p{L}\\p{M}\\p{N}\\p{Pc}\\p{space}]*>)?\\p{space}*((\\[\\])*)?\\p{space}+[\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*([\\]\\$\\,\\[\\p{L}\\p{M}\\p{N}\\p{Pc}][\\]\\,\\[\\p{L}\\p{M}\\p{N}\\p{Pc}\\p{space}]*)?\\p{space}*([\\:\\;\\=]))",
+        "flags": "dgv",
+        "options": {
+          "hiddenCaptures": [3]
+        }
+      },
+      "optimizedOniguruma": "(?=\\b((void|boolean|byte|char|short|int|float|long|double)|(?>(\\w+\\.)*[A-Z_]+\\w*))\\b\\s*(<[],.<>?\\[\\w\\s]*>)?\\s*((\\[])*)?\\s+[$A-Z_a-z][$\\w]*([]$,\\[\\w][],\\[\\w\\s]*)?\\s*([:;=]))",
+      "changed": false
+    },
+    {
+      "original": "(?=\\b(var)\\b\\s+[$A-Z_a-z][$\\w]*\\s*([:;=]))",
+      "locations": [
+        [0, 46],
+        [5, 59],
+        [7, 44],
+        [9, 60],
+        [15, 44],
+        [16, 46],
+        [18, 44],
+        [19, 44],
+        [21, 44],
+        [22, 44],
+        [25, 51]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?=\\b(var)\\b\\p{space}+[\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*\\p{space}*([\\:\\;\\=]))",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=\\b(var)\\b\\s+[$A-Z_a-z][$\\w]*\\s*([:;=]))",
+      "changed": false
+    },
+    {
+      "original": "(?<![$\\w])[$A-Z_a-z][$\\w]*(?=\\s*\\.\\s*[$\\w]+)",
+      "locations": [
+        [0, 47],
+        [5, 60],
+        [7, 45],
+        [9, 61],
+        [15, 45],
+        [16, 47],
+        [18, 45],
+        [19, 45],
+        [21, 45],
+        [22, 45],
+        [25, 52]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?<![\\$\\p{L}\\p{M}\\p{N}\\p{Pc}])[\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*(?=\\p{space}*\\.\\p{space}*[\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?<![$\\w])[$A-Z_a-z][$\\w]*(?=\\s*\\.\\s*[$\\w]+)",
+      "changed": false
+    },
+    {
+      "original": "(\\.)\\s*(new)",
+      "locations": [
+        [0, 48],
+        [5, 61],
+        [7, 46],
+        [9, 62],
+        [15, 46],
+        [16, 48],
+        [18, 46],
+        [19, 46],
+        [21, 46],
+        [22, 46],
+        [25, 53]
+      ],
+      "shikiTranslation": {
+        "pattern": "(\\.)\\p{space}*(new)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(\\.)\\s*(new)",
+      "changed": false
+    },
+    {
+      "original": "(\\.)\\s*([$A-Z_a-z][$\\w]*)(?=\\s*\\.\\s*[$A-Z_a-z][$\\w]*)",
+      "locations": [
+        [0, 49],
+        [5, 62],
+        [7, 47],
+        [9, 63],
+        [15, 47],
+        [16, 49],
+        [18, 47],
+        [19, 47],
+        [21, 47],
+        [22, 47],
+        [25, 54]
+      ],
+      "shikiTranslation": {
+        "pattern": "(\\.)\\p{space}*([\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*)(?=\\p{space}*\\.\\p{space}*[\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(\\.)\\s*([$A-Z_a-z][$\\w]*)(?=\\s*\\.\\s*[$A-Z_a-z][$\\w]*)",
+      "changed": false
+    },
+    {
+      "original": "(\\.)\\s*([$A-Z_a-z][$\\w]*)",
+      "locations": [
+        [0, 50],
+        [5, 63],
+        [7, 48],
+        [9, 64],
+        [15, 48],
+        [16, 50],
+        [18, 48],
+        [19, 48],
+        [21, 48],
+        [22, 48],
+        [25, 55]
+      ],
+      "shikiTranslation": {
+        "pattern": "(\\.)\\p{space}*([\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(\\.)\\s*([$A-Z_a-z][$\\w]*)",
+      "changed": false
+    },
+    {
+      "original": "(\\.)\\s*([0-9][$\\w]*)",
+      "locations": [
+        [0, 51],
+        [5, 64],
+        [7, 49],
+        [9, 65],
+        [15, 49],
+        [16, 51],
+        [18, 49],
+        [19, 49],
+        [21, 49],
+        [22, 49],
+        [25, 56]
+      ],
+      "shikiTranslation": {
+        "pattern": "(\\.)\\p{space}*([0-9][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(\\.)\\s*([0-9][$\\w]*)",
+      "changed": false
+    },
+    {
+      "original": "\"\"\"",
+      "locations": [
+        [0, 52],
+        [5, 65],
+        [7, 50],
+        [9, 66],
+        [14, 10],
+        [15, 50],
+        [16, 52],
+        [18, 50],
+        [19, 50],
+        [21, 50],
+        [22, 50],
+        [25, 57],
+        [26, 0]
+      ],
+      "shikiTranslation": {
+        "pattern": "\"\"\"",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\"\"\"",
+      "changed": false
+    },
+    {
+      "original": "\"",
+      "locations": [
+        [0, 53],
+        [5, 66],
+        [7, 51],
+        [9, 67],
+        [14, 11],
+        [15, 51],
+        [16, 53],
+        [18, 51],
+        [19, 51],
+        [21, 51],
+        [22, 51],
+        [23, 0],
+        [25, 58]
+      ],
+      "shikiTranslation": {
+        "pattern": "\"",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\"",
+      "changed": false
+    },
+    {
+      "original": "'",
+      "locations": [
+        [0, 54],
+        [5, 67],
+        [7, 52],
+        [9, 68],
+        [14, 12],
+        [15, 52],
+        [16, 54],
+        [18, 52],
+        [19, 52],
+        [21, 52],
+        [22, 52],
+        [25, 59]
+      ],
+      "shikiTranslation": {
+        "pattern": "'",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "'",
+      "changed": false
+    },
+    {
+      "original": "\\b(void|boolean|byte|char|short|int|float|long|double)\\b\\s*(?=\\[)",
+      "locations": [
+        [0, 55],
+        [5, 68],
+        [7, 53],
+        [9, 69],
+        [11, 1],
+        [13, 3],
+        [14, 4],
+        [15, 53],
+        [16, 55],
+        [17, 5],
+        [18, 53],
+        [19, 53],
+        [21, 53],
+        [22, 53],
+        [25, 2],
+        [25, 60]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(void|boolean|byte|char|short|int|float|long|double)\\b\\p{space}*(?=\\[)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(void|boolean|byte|char|short|int|float|long|double)\\b\\s*(?=\\[)",
+      "changed": false
+    },
+    {
+      "original": "\\b(void|boolean|byte|char|short|int|float|long|double)\\b",
+      "locations": [
+        [0, 56],
+        [5, 69],
+        [7, 54],
+        [9, 70],
+        [11, 2],
+        [14, 5],
+        [15, 54],
+        [16, 56],
+        [17, 6],
+        [18, 54],
+        [19, 54],
+        [21, 54],
+        [22, 54],
+        [25, 3],
+        [25, 61]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(void|boolean|byte|char|short|int|float|long|double)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(void|boolean|byte|char|short|int|float|long|double)\\b",
+      "changed": false
+    },
+    {
+      "original": "<",
+      "locations": [
+        [0, 57],
+        [4, 2],
+        [5, 7],
+        [5, 70],
+        [6, 2],
+        [7, 55],
+        [9, 8],
+        [9, 71],
+        [10, 3],
+        [11, 3],
+        [13, 12],
+        [14, 6],
+        [15, 55],
+        [16, 57],
+        [17, 7],
+        [18, 55],
+        [19, 55],
+        [21, 55],
+        [22, 55],
+        [25, 4],
+        [25, 62]
+      ],
+      "shikiTranslation": {
+        "pattern": "<",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "<",
+      "changed": false
+    },
+    {
+      "original": "\\b((?:[A-Z_a-z]\\w*\\s*\\.\\s*)*)([A-Z_]\\w*)\\s*(?=\\[)",
+      "locations": [
+        [0, 58],
+        [5, 71],
+        [7, 56],
+        [9, 72],
+        [11, 4],
+        [14, 7],
+        [15, 56],
+        [16, 58],
+        [17, 8],
+        [18, 56],
+        [19, 56],
+        [21, 56],
+        [22, 56],
+        [25, 5],
+        [25, 63]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b((?:[A-Z_a-z][\\p{L}\\p{M}\\p{N}\\p{Pc}]*\\p{space}*\\.\\p{space}*)*)([A-Z_][\\p{L}\\p{M}\\p{N}\\p{Pc}]*)\\p{space}*(?=\\[)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b((?:[A-Z_a-z]\\w*\\s*\\.\\s*)*)([A-Z_]\\w*)\\s*(?=\\[)",
+      "changed": false
+    },
+    {
+      "original": "\\b((?:[A-Z_a-z]\\w*\\s*\\.\\s*)*[A-Z_]\\w*)\\s*(?=<)",
+      "locations": [
+        [0, 59],
+        [5, 72],
+        [7, 57],
+        [9, 73],
+        [11, 5],
+        [14, 8],
+        [15, 57],
+        [16, 59],
+        [17, 9],
+        [18, 57],
+        [19, 57],
+        [21, 57],
+        [22, 57],
+        [25, 6],
+        [25, 64]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b((?:[A-Z_a-z][\\p{L}\\p{M}\\p{N}\\p{Pc}]*\\p{space}*\\.\\p{space}*)*[A-Z_][\\p{L}\\p{M}\\p{N}\\p{Pc}]*)\\p{space}*(?=<)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b((?:[A-Z_a-z]\\w*\\s*\\.\\s*)*[A-Z_]\\w*)\\s*(?=<)",
+      "changed": false
+    },
+    {
+      "original": "\\b((?:[A-Z_a-z]\\w*\\s*\\.\\s*)*[A-Z_]\\w*)\\b((?=\\s*[\\n$A-Z_a-z])|(?=\\s*\\.\\.\\.))",
+      "locations": [
+        [0, 60],
+        [5, 73],
+        [7, 58],
+        [9, 74],
+        [11, 6],
+        [14, 9],
+        [15, 58],
+        [16, 60],
+        [17, 10],
+        [18, 58],
+        [19, 58],
+        [21, 58],
+        [22, 58],
+        [25, 7],
+        [25, 65]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b((?:[A-Z_a-z][\\p{L}\\p{M}\\p{N}\\p{Pc}]*\\p{space}*\\.\\p{space}*)*[A-Z_][\\p{L}\\p{M}\\p{N}\\p{Pc}]*)\\b((?=\\p{space}*[\\n\\$A-Z_a-z])|(?=\\p{space}*\\.\\.\\.))",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b((?:[A-Z_a-z]\\w*\\s*\\.\\s*)*[A-Z_]\\w*)\\b((?=\\s*[\\n$A-Z_a-z])|(?=\\s*\\.\\.\\.))",
+      "changed": false
+    },
+    {
+      "original": ",",
+      "locations": [
+        [0, 61],
+        [5, 74],
+        [7, 59],
+        [9, 75],
+        [13, 7],
+        [14, 14],
+        [15, 59],
+        [16, 61],
+        [18, 59],
+        [19, 59],
+        [21, 59],
+        [22, 59],
+        [25, 66]
+      ],
+      "shikiTranslation": {
+        "pattern": ",",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": ",",
+      "changed": false
+    },
+    {
+      "original": "\\.",
+      "locations": [
+        [0, 62],
+        [1, 8],
+        [2, 8],
+        [5, 75],
+        [7, 60],
+        [8, 1],
+        [9, 76],
+        [12, 1],
+        [13, 8],
+        [15, 60],
+        [16, 62],
+        [18, 60],
+        [19, 60],
+        [21, 60],
+        [22, 60],
+        [25, 67]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\.",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\.",
+      "changed": false
+    },
+    {
+      "original": ";",
+      "locations": [
+        [0, 63],
+        [5, 76],
+        [7, 61],
+        [9, 77],
+        [15, 61],
+        [16, 63],
+        [18, 61],
+        [19, 61],
+        [21, 61],
+        [22, 61],
+        [25, 68]
+      ],
+      "shikiTranslation": {
+        "pattern": ";",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": ";",
+      "changed": false
+    },
+    {
+      "original": "((open)\\s)?(module)\\s+(\\w+)",
+      "locations": [[0, 64]],
+      "shikiTranslation": {
+        "pattern": "((open)\\p{space})?(module)\\p{space}+([\\p{L}\\p{M}\\p{N}\\p{Pc}]+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "((open)\\s)?(module)\\s+(\\w+)",
+      "changed": false
+    },
+    {
+      "original": "\\s*(;)",
+      "locations": [
+        [1, 0],
+        [2, 0]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\p{space}*(;)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\s*(;)",
+      "changed": false
+    },
+    {
+      "original": "(?<=\\.)\\s*\\.|\\.(?=\\s*;)",
+      "locations": [
+        [1, 4],
+        [2, 4]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?<=\\.)\\p{space}*\\.|\\.(?=\\p{space}*;)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?<=\\.)\\s*\\.|\\.(?=\\s*;)",
+      "changed": false
+    },
+    {
+      "original": "(?<!_)_(?=\\s*([.;]))|\\b\\d+|-+",
+      "locations": [
+        [1, 5],
+        [2, 6]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?<!_)_(?=\\p{space}*([\\.\\;]))|\\b\\p{Nd}+|-+",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?<!_)_(?=\\s*([.;]))|\\b\\d+|-+",
+      "changed": false
+    },
+    {
+      "original": "[A-Z]+",
+      "locations": [[1, 6]],
+      "shikiTranslation": {
+        "pattern": "[A-Z]+",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "[A-Z]+",
+      "changed": false
+    },
+    {
+      "original": "\\b(?<!\\$)(abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|non-sealed|package|permits|private|protected|public|return|sealed|short|static|strictfp|super|switch|syncronized|this|throws??|transient|try|void|volatile|while|yield|true|false|null)\\b",
+      "locations": [
+        [1, 7],
+        [2, 7]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\b(?<!\\$)(abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|non-sealed|package|permits|private|protected|public|return|sealed|short|static|strictfp|super|switch|syncronized|this|throws??|transient|try|void|volatile|while|yield|true|false|null)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(?<!\\$)(abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|non-sealed|package|permits|private|protected|public|return|sealed|short|static|strictfp|super|switch|syncronized|this|throws??|transient|try|void|volatile|while|yield|true|false|null)\\b",
+      "changed": false
+    },
+    {
+      "original": "(?<!\\.)\\s*\\*",
+      "locations": [[2, 5]],
+      "shikiTranslation": {
+        "pattern": "(?<!\\.)\\p{space}*\\*",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?<!\\.)\\s*\\*",
+      "changed": false
+    },
+    {
+      "original": "\\*",
+      "locations": [[2, 9]],
+      "shikiTranslation": {
+        "pattern": "\\*",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\*",
+      "changed": false
+    },
+    {
+      "original": "\\*/",
+      "locations": [[3, 0]],
+      "shikiTranslation": {
+        "pattern": "\\*/",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\*/",
+      "changed": false
+    },
+    {
+      "original": "@(author|deprecated|return|see|serial|since|version)\\b",
+      "locations": [[3, 1]],
+      "shikiTranslation": {
+        "pattern": "@(author|deprecated|return|see|serial|since|version)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "@(author|deprecated|return|see|serial|since|version)\\b",
+      "changed": false
+    },
+    {
+      "original": "(@param)\\s+(\\S+)",
+      "locations": [[3, 2]],
+      "shikiTranslation": {
+        "pattern": "(@param)\\p{space}+(\\P{space}+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(@param)\\s+(\\S+)",
+      "changed": false
+    },
+    {
+      "original": "(@(?:exception|throws))\\s+(\\S+)",
+      "locations": [[3, 3]],
+      "shikiTranslation": {
+        "pattern": "(@(?:exception|throws))\\p{space}+(\\P{space}+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(@(?:exception|throws))\\s+(\\S+)",
+      "changed": false
+    },
+    {
+      "original": "\\{(@link)\\s+(\\S+)?#([$\\w]+\\s*\\([^()]*\\)).*?}",
+      "locations": [[3, 4]],
+      "shikiTranslation": {
+        "pattern": "\\{(@link)\\p{space}+(\\P{space}+)?#([\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]+\\p{space}*\\([^\\(\\)]*\\))[^\\n]*?\\}",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\{(@link)\\s+(\\S+)?#([$\\w]+\\s*\\([^()]*\\)).*?}",
+      "changed": false
+    },
+    {
+      "original": "}",
+      "locations": [
+        [4, 0],
+        [6, 0]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\}",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "}",
+      "changed": false
+    },
+    {
+      "original": "(class|(?<!@)interface|enum)\\s+([$\\w]+)",
+      "locations": [[4, 6]],
+      "shikiTranslation": {
+        "pattern": "(class|(?<!@)interface|enum)\\p{space}+([\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]+)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(class|(?<!@)interface|enum)\\s+([$\\w]+)",
+      "changed": false
+    },
+    {
+      "original": "extends",
+      "locations": [[4, 7]],
+      "shikiTranslation": {
+        "pattern": "extends",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "extends",
+      "changed": false
+    },
+    {
+      "original": "(implements)\\s",
+      "locations": [
+        [4, 8],
+        [6, 7]
+      ],
+      "shikiTranslation": {
+        "pattern": "(implements)\\p{space}",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(implements)\\s",
+      "changed": false
+    },
+    {
+      "original": "(permits)\\s",
+      "locations": [[4, 9]],
+      "shikiTranslation": {
+        "pattern": "(permits)\\p{space}",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(permits)\\s",
+      "changed": false
+    },
+    {
+      "original": "(?=})",
+      "locations": [
+        [5, 0],
+        [9, 0],
+        [15, 0]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?=\\})",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=})",
+      "changed": false
+    },
+    {
+      "original": "static",
+      "locations": [
+        [5, 9],
+        [9, 10]
+      ],
+      "shikiTranslation": {
+        "pattern": "static",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "static",
+      "changed": false
+    },
+    {
+      "original": "(?==)",
+      "locations": [
+        [5, 10],
+        [9, 11]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?==)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?==)",
+      "changed": false
+    },
+    {
+      "original": "(?!new)(?=[<\\w].*\\s+)(?=([^/=]|/(?!/))+\\()",
+      "locations": [
+        [5, 11],
+        [9, 12]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?!new)(?=[\\<\\p{L}\\p{M}\\p{N}\\p{Pc}][^\\n]*\\p{space}+)(?=([^\\/\\=]|/(?!/))+\\()",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?!new)(?=[<\\w].*\\s+)(?=([^/=]|/(?!/))+\\()",
+      "changed": false
+    },
+    {
+      "original": "(?=private|protected|public|native|synchronized|abstract|threadsafe|transient|static|final)",
+      "locations": [
+        [5, 15],
+        [9, 16]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?=private|protected|public|native|synchronized|abstract|threadsafe|transient|static|final)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=private|protected|public|native|synchronized|abstract|threadsafe|transient|static|final)",
+      "changed": false
+    },
+    {
+      "original": "(record)\\s+([$\\w]+)(<[$\\w]+>)?(\\()",
+      "locations": [[6, 6]],
+      "shikiTranslation": {
+        "pattern": "(record)\\p{space}+([\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]+)(<[\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]+>)?(\\()",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(record)\\s+([$\\w]+)(<[$\\w]+>)?(\\()",
+      "changed": false
+    },
+    {
+      "original": "\\)",
+      "locations": [
+        [7, 0],
+        [14, 0],
+        [18, 0],
+        [19, 0],
+        [22, 0]
+      ],
+      "shikiTranslation": {
+        "pattern": "\\)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\)",
+      "changed": false
+    },
+    {
+      "original": "[A-Z_a-z]\\w*",
+      "locations": [
+        [8, 0],
+        [12, 0]
+      ],
+      "shikiTranslation": {
+        "pattern": "[A-Z_a-z][\\p{L}\\p{M}\\p{N}\\p{Pc}]*",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "[A-Z_a-z]\\w*",
+      "changed": false
+    },
+    {
+      "original": "(?!new)(?=[<\\w].*\\s+)(?=([^(/=]|/(?!/))+(?=\\{))",
+      "locations": [[9, 1]],
+      "shikiTranslation": {
+        "pattern": "(?!new)(?=[\\<\\p{L}\\p{M}\\p{N}\\p{Pc}][^\\n]*\\p{space}+)(?=([^\\(\\/\\=]|/(?!/))+(?=\\{))",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?!new)(?=[<\\w].*\\s+)(?=([^(/=]|/(?!/))+(?=\\{))",
+      "changed": false
+    },
+    {
+      "original": "(})|(?=;)",
+      "locations": [[10, 0]],
+      "shikiTranslation": {
+        "pattern": "(\\})|(?=;)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(})|(?=;)",
+      "changed": false
+    },
+    {
+      "original": "(\\w+)\\s*(\\()",
+      "locations": [[10, 2]],
+      "shikiTranslation": {
+        "pattern": "([\\p{L}\\p{M}\\p{N}\\p{Pc}]+)\\p{space}*(\\()",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(\\w+)\\s*(\\()",
+      "changed": false
+    },
+    {
+      "original": "(?=\\w.*\\s+\\w+\\s*\\()",
+      "locations": [[10, 4]],
+      "shikiTranslation": {
+        "pattern": "(?=[\\p{L}\\p{M}\\p{N}\\p{Pc}][^\\n]*\\p{space}+[\\p{L}\\p{M}\\p{N}\\p{Pc}]+\\p{space}*\\()",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=\\w.*\\s+\\w+\\s*\\()",
+      "changed": false
+    },
+    {
+      "original": "throws",
+      "locations": [[10, 5]],
+      "shikiTranslation": {
+        "pattern": "throws",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "throws",
+      "changed": false
+    },
+    {
+      "original": "(?=\\s+\\w+\\s*\\()",
+      "locations": [[11, 0]],
+      "shikiTranslation": {
+        "pattern": "(?=\\p{space}+[\\p{L}\\p{M}\\p{N}\\p{Pc}]+\\p{space}*\\()",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=\\s+\\w+\\s*\\()",
+      "changed": false
+    },
+    {
+      "original": ">",
+      "locations": [[13, 0]],
+      "shikiTranslation": {
+        "pattern": ">",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": ">",
+      "changed": false
+    },
+    {
+      "original": "\\b(extends|super)\\b",
+      "locations": [[13, 1]],
+      "shikiTranslation": {
+        "pattern": "\\b(extends|super)\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\b(extends|super)\\b",
+      "changed": false
+    },
+    {
+      "original": "(?<!\\.)([$A-Z_a-z][$0-9A-Z_a-z]*)(?=\\s*<)",
+      "locations": [[13, 2]],
+      "shikiTranslation": {
+        "pattern": "(?<!\\.)([\\$A-Z_a-z][\\$0-9A-Z_a-z]*)(?=\\p{space}*<)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?<!\\.)([$A-Z_a-z][$0-9A-Z_a-z]*)(?=\\s*<)",
+      "changed": false
+    },
+    {
+      "original": "[$A-Z_a-z][$0-9A-Z_a-z]*",
+      "locations": [[13, 4]],
+      "shikiTranslation": {
+        "pattern": "[\\$A-Z_a-z][\\$0-9A-Z_a-z]*",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "[$A-Z_a-z][$0-9A-Z_a-z]*",
+      "changed": false
+    },
+    {
+      "original": "\\?",
+      "locations": [[13, 5]],
+      "shikiTranslation": {
+        "pattern": "\\?",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\?",
+      "changed": false
+    },
+    {
+      "original": "&",
+      "locations": [[13, 6]],
+      "shikiTranslation": {
+        "pattern": "&",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "&",
+      "changed": false
+    },
+    {
+      "original": "\\bfinal\\b",
+      "locations": [[14, 1]],
+      "shikiTranslation": {
+        "pattern": "\\bfinal\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\bfinal\\b",
+      "changed": false
+    },
+    {
+      "original": "\\w+",
+      "locations": [[14, 13]],
+      "shikiTranslation": {
+        "pattern": "[\\p{L}\\p{M}\\p{N}\\p{Pc}]+",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\w+",
+      "changed": false
+    },
+    {
+      "original": "\\.\\.\\.",
+      "locations": [[14, 15]],
+      "shikiTranslation": {
+        "pattern": "\\.\\.\\.",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\.\\.\\.",
+      "changed": false
+    },
+    {
+      "original": "(?=[:;=])",
+      "locations": [
+        [16, 0],
+        [25, 0]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?=[\\:\\;\\=])",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=[:;=])",
+      "changed": false
+    },
+    {
+      "original": "\\bvar\\b",
+      "locations": [[16, 1]],
+      "shikiTranslation": {
+        "pattern": "\\bvar\\b",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\bvar\\b",
+      "changed": false
+    },
+    {
+      "original": "([$A-Z_a-z][$\\w]*)(?=\\s*(\\[])*\\s*([:;=]))",
+      "locations": [[16, 2]],
+      "shikiTranslation": {
+        "pattern": "([\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*)(?=\\p{space}*(\\[\\])*\\p{space}*([\\:\\;\\=]))",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "([$A-Z_a-z][$\\w]*)(?=\\s*(\\[])*\\s*([:;=]))",
+      "changed": false
+    },
+    {
+      "original": "(?=[])-.:;?}]|/(?![*/])|[!%\\&=^|])",
+      "locations": [
+        [17, 0],
+        [24, 0]
+      ],
+      "shikiTranslation": {
+        "pattern": "(?=[\\]\\)-\\.\\:\\;\\?\\}]|/(?![\\*\\/])|[\\!\\%\\&\\=\\^\\|])",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?=[])-.:;?}]|/(?![*/])|[!%\\&=^|])",
+      "changed": false
+    },
+    {
+      "original": "(?<=\\))",
+      "locations": [[17, 11]],
+      "shikiTranslation": {
+        "pattern": "(?<=\\))",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?<=\\))",
+      "changed": false
+    },
+    {
+      "original": "(?<=])",
+      "locations": [[17, 12]],
+      "shikiTranslation": {
+        "pattern": "(?<=\\])",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?<=])",
+      "changed": false
+    },
+    {
+      "original": "(?!\\s*\\[)",
+      "locations": [[20, 0]],
+      "shikiTranslation": {
+        "pattern": "(?!\\p{space}*\\[)",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(?!\\s*\\[)",
+      "changed": false
+    },
+    {
+      "original": "]",
+      "locations": [[21, 0]],
+      "shikiTranslation": {
+        "pattern": "\\]",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "]",
+      "changed": false
+    },
+    {
+      "original": "\\\\.",
+      "locations": [[23, 1]],
+      "shikiTranslation": {
+        "pattern": "\\\\[^\\n]",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "\\\\.",
+      "changed": false
+    },
+    {
+      "original": "([$A-Z_a-z][$\\w]*)(?=\\s*(\\[])*\\s*([,:;=]))",
+      "locations": [[25, 1]],
+      "shikiTranslation": {
+        "pattern": "([\\$A-Z_a-z][\\$\\p{L}\\p{M}\\p{N}\\p{Pc}]*)(?=\\p{space}*(\\[\\])*\\p{space}*([\\,\\:\\;\\=]))",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "([$A-Z_a-z][$\\w]*)(?=\\s*(\\[])*\\s*([,:;=]))",
+      "changed": false
+    },
+    {
+      "original": "(\\\\\"\"\")(?!\")|(\\\\.)",
+      "locations": [[26, 1]],
+      "shikiTranslation": {
+        "pattern": "(\\\\\"\"\")(?!\")|(\\\\[^\\n])",
+        "flags": "dgv"
+      },
+      "optimizedOniguruma": "(\\\\\"\"\")(?!\")|(\\\\.)",
+      "changed": false
+    }
+  ]
+}

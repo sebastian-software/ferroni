@@ -1,0 +1,97 @@
+[
+  {
+    "label": "candidate-c-parity",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "ffi",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "--test"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "control-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-inline-control-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "candidate-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-inline-candidate-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "candidate-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-inline-candidate-2"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "control-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-inline-control-2"
+    ],
+    "exitCode": 0
+  }
+]

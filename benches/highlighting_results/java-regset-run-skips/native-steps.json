@@ -1,0 +1,101 @@
+[
+  {
+    "label": "candidate-c-parity",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "ffi",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "--test"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "control-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "java_scanner/document",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-run-skips-control-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "candidate-1",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "java_scanner/document",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-run-skips-candidate-1"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "candidate-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "java_scanner/document",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-run-skips-candidate-2"
+    ],
+    "exitCode": 0
+  },
+  {
+    "label": "control-2",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "java_scanner/document",
+      "--sample-size",
+      "30",
+      "--warm-up-time",
+      "1",
+      "--measurement-time",
+      "3",
+      "--save-baseline",
+      "java-run-skips-control-2"
+    ],
+    "exitCode": 0
+  }
+]

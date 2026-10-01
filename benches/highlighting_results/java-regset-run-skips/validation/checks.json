@@ -1,0 +1,162 @@
+[
+  {
+    "label": "fmt",
+    "command": ["cargo", "fmt", "--all", "--check"],
+    "environment": {},
+    "exitCode": 0
+  },
+  {
+    "label": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "environment": {},
+    "exitCode": 0
+  },
+  {
+    "label": "tests",
+    "command": ["cargo", "test", "--locked", "--all-features", "--", "--test-threads=1"],
+    "environment": {},
+    "exitCode": 0
+  },
+  {
+    "label": "rustdoc",
+    "command": ["cargo", "doc", "--no-deps", "--locked"],
+    "environment": {
+      "RUSTDOCFLAGS": "-D warnings"
+    },
+    "exitCode": 0
+  },
+  {
+    "label": "deny",
+    "command": ["cargo", "deny", "--all-features", "--locked", "check"],
+    "environment": {},
+    "exitCode": 1
+  },
+  {
+    "label": "workflow-pins",
+    "command": ["./scripts/check-workflow-pins.sh"],
+    "environment": {},
+    "exitCode": 0
+  },
+  {
+    "label": "readme",
+    "command": ["./scripts/readme-family.sh", "check"],
+    "environment": {},
+    "exitCode": 2
+  },
+  {
+    "label": "count-tests",
+    "command": ["./scripts/count-tests.sh"],
+    "environment": {},
+    "exitCode": 0
+  },
+  {
+    "label": "cpp_scanner_bench-c-parity",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "ffi",
+      "--bench",
+      "cpp_scanner_bench",
+      "--",
+      "--test"
+    ],
+    "environment": {},
+    "exitCode": 0
+  },
+  {
+    "label": "scss_scanner_bench-c-parity",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "ffi",
+      "--bench",
+      "scss_scanner_bench",
+      "--",
+      "--test"
+    ],
+    "environment": {},
+    "exitCode": 0
+  },
+  {
+    "label": "java_scanner_bench-c-parity",
+    "command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "ffi",
+      "--bench",
+      "java_scanner_bench",
+      "--",
+      "--test"
+    ],
+    "environment": {},
+    "exitCode": 0
+  },
+  {
+    "label": "deny",
+    "command": ["cargo", "deny", "--all-features", "--locked", "check"],
+    "exitCode": 0,
+    "retryReason": "Advisory database lock is outside writable roots",
+    "scope": "host access",
+    "log": "deny-retry.log"
+  },
+  {
+    "label": "readme",
+    "command": ["./scripts/readme-family.sh", "check"],
+    "exitCode": 0,
+    "retryReason": "Pinned GitHub theme fetch needs network access",
+    "scope": "host access",
+    "log": "readme-retry.log"
+  },
+  {
+    "label": "docs-verify",
+    "command": ["pnpm", "verify"],
+    "exitCode": 1,
+    "scope": "sandbox",
+    "log": "docs-quality.log",
+    "note": "Lint, typecheck and format pass; build needs loopback preview server"
+  },
+  {
+    "label": "docs-build",
+    "command": ["pnpm", "build"],
+    "exitCode": 0,
+    "retryReason": "Prerendering needs a loopback preview server",
+    "scope": "host access",
+    "log": "docs-build-retry.log"
+  },
+  {
+    "label": "run-skip-matrix-count",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--all-features",
+      "fallback_run_skips_preserve_winners_captures_bounds_and_limits",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exitCode": 0,
+    "environment": {
+      "FERRONI_ONIGURUMA_DIR": "/private/tmp/ferroni-scss-analysis/.cache/upstream/oniguruma-orig",
+      "RUST_MIN_STACK": "268435456"
+    },
+    "comparedOutcomes": 968436,
+    "log": "run-skip-matrix-count-retry.log"
+  }
+]

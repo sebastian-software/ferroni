@@ -1,0 +1,247 @@
+{
+  "headRefOid": "ba2be54a3caff68c69f128435ecc1ccdf6c3318e",
+  "number": 207,
+  "statusCheckRollup": [
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:20:21Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156853",
+      "name": "Test (ubuntu-latest, stable)",
+      "startedAt": "2026-10-01T06:18:40Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:13:01Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823560957/job/110244156935",
+      "name": "Validate pull request title",
+      "startedAt": "2026-10-01T06:12:57Z",
+      "status": "COMPLETED",
+      "workflowName": "Conventional Commits"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:13:10Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823565032/job/110244168176",
+      "name": "Validate pull request title",
+      "startedAt": "2026-10-01T06:13:06Z",
+      "status": "COMPLETED",
+      "workflowName": "Conventional Commits"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:15:22Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823560950/job/110244156042",
+      "name": "Fuzz pattern-compile",
+      "startedAt": "2026-10-01T06:13:34Z",
+      "status": "COMPLETED",
+      "workflowName": "Fuzz"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:19:10Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156640",
+      "name": "Test (ubuntu-latest, nightly)",
+      "startedAt": "2026-10-01T06:17:59Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:16:50Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823560950/job/110244156386",
+      "name": "Fuzz pattern-match",
+      "startedAt": "2026-10-01T06:15:07Z",
+      "status": "COMPLETED",
+      "workflowName": "Fuzz"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:20:04Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156886",
+      "name": "Test (ubuntu-latest, 1.94)",
+      "startedAt": "2026-10-01T06:18:50Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:16:51Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823560950/job/110244156381",
+      "name": "Fuzz scanner-api",
+      "startedAt": "2026-10-01T06:15:07Z",
+      "status": "COMPLETED",
+      "workflowName": "Fuzz"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:20:03Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244157003",
+      "name": "Test (macos-latest, stable)",
+      "startedAt": "2026-10-01T06:18:24Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:15:39Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156820",
+      "name": "Test (macos-latest, nightly)",
+      "startedAt": "2026-10-01T06:13:54Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:17:18Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244157012",
+      "name": "Test (macos-latest, 1.94)",
+      "startedAt": "2026-10-01T06:15:46Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:19:09Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156976",
+      "name": "Test (windows-latest, stable)",
+      "startedAt": "2026-10-01T06:16:52Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:19:39Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156982",
+      "name": "Test (windows-latest, nightly)",
+      "startedAt": "2026-10-01T06:17:29Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:17:57Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156888",
+      "name": "Test (windows-latest, 1.94)",
+      "startedAt": "2026-10-01T06:16:04Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:19:47Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156791",
+      "name": "Fresh dependency resolution",
+      "startedAt": "2026-10-01T06:18:46Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:20:07Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156725",
+      "name": "Coverage",
+      "startedAt": "2026-10-01T06:18:44Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:15:05Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156723",
+      "name": "FFI feature smoke",
+      "startedAt": "2026-10-01T06:14:29Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:14:22Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156610",
+      "name": "Clippy",
+      "startedAt": "2026-10-01T06:13:14Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:18:42Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156683",
+      "name": "Rustdoc",
+      "startedAt": "2026-10-01T06:18:11Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:13:32Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156466",
+      "name": "cargo-deny",
+      "startedAt": "2026-10-01T06:12:46Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:19:21Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244157154",
+      "name": "README themes",
+      "startedAt": "2026-10-01T06:19:11Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:19:54Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156873",
+      "name": "Docs format",
+      "startedAt": "2026-10-01T06:19:01Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:18:59Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156856",
+      "name": "Format",
+      "startedAt": "2026-10-01T06:18:50Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T06:16:29Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/sebastian-software/ferroni/actions/runs/36823561007/job/110244156655",
+      "name": "standards drift",
+      "startedAt": "2026-10-01T06:16:15Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    }
+  ],
+  "url": "https://github.com/sebastian-software/ferroni/pull/207"
+}

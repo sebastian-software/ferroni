@@ -1,0 +1,9 @@
+{
+  "status": "unaccepted; public ABBA intentionally interrupted",
+  "reason": "Shifted investigation to avoided search work; no complete repeated HTML comparison",
+  "branch": "codex/java-word-boundary-force-inline",
+  "commit": "3c385d057234183d7907ebef341fecd0abedec2a",
+  "runtimeIncludedInThisPR": false,
+  "completePublicABBA": false,
+  "publicReports": "All available reports retained; force-inline candidate-2 is partial and control-2 is absent"
+}

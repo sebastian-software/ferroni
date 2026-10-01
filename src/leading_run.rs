@@ -1155,6 +1155,18 @@ mod tests {
             &onig_new_match_param(),
         );
         assert_eq!(actual, (1, vec![1], vec![2]));
+        // With an unbounded optimizer range, an earlier word start can
+        // pass the assertion and fail its suffix before a later word wins.
+        let reg = compile(r"(?=[\w\s]*a)\b\w+", UTF8).unwrap();
+        assert!(reg.leading_run.is_none());
+        let actual = search(
+            &reg,
+            b"xx aba",
+            (6, 1, 6),
+            ONIG_OPTION_NONE,
+            &onig_new_match_param(),
+        );
+        assert_eq!(actual, (3, vec![3], vec![6]));
     }
 
     #[test]

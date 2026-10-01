@@ -1,0 +1,15 @@
+Integration tests (tests/):
+  api_test.rs                     210
+  backtrack_lint.rs                 7
+  backtrack_rewrite.rs              7
+  compat_back.rs                   26
+  compat_options.rs                50
+  compat_regset.rs                 40
+  compat_syntax.rs                 43
+  compat_utf8.rs                 1587
+  stack_cap.rs                      2
+  subexp_call_limits.rs             1
+
+  tests/ total                   1973
+  src/ unit tests                 391
+  grand total                    2364
