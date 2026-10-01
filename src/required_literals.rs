@@ -16,10 +16,10 @@
 //! `(…|\s++|(?<=\W)|(?=\W)|^|\n?$|\Z)((?<!\w)(?:static|const)_cast(?!\w))`
 //! needs `_cast`, and one ending in `(?=\{)` needs `{`.
 //!
-//! Outside look-behind the VM never moves back past the attempt start: a
-//! look-ahead restores the position where it began, and a call runs its
-//! group from the current position. A node matched at `x >= p` contributes
-//! as follows:
+//! Outside look-behind the VM does not move back past the attempt start
+//! (but see look-behind leads below): a look-ahead restores the position
+//! where it began, and a call runs its group from the current position. A
+//! node matched at `x >= p` contributes as follows:
 //!
 //! - a string matches its own bytes at `x` (`tune_tree` has unraveled
 //!   case-insensitive strings into classes, alternations and exact
@@ -43,11 +43,28 @@
 //! it also matches non-ASCII input such as the Kelvin sign for `k`, which no
 //! finder over its ASCII literals sees.
 //!
-//! A variable-length look-behind that checks its trailing literal can go on
-//! before the attempt start where that literal holds a lead byte the
-//! encoding reads as a one-byte character (`\x{140000}`, which C rejects).
-//! The RegSet therefore keeps every attempt of an entry with a position
-//! check (ADR-008).
+//! Position checks rest on an invariant of an attempt from `p`: every byte
+//! between the VM's position outside look-behind and `p` is a trailing
+//! byte (`0x80..=0xBF`). No literal of a set starts with one, so each lies
+//! at or after `p`. Moving forward keeps the invariant, and so does going
+//! back: a look-ahead, a fixed-length look-behind and backtracking return
+//! to where they began; a negative look-behind of variable length leaves
+//! through the alternative it pushed at its position, and a positive one
+//! goes on only where its body ends at its position (`CheckPosition`
+//! against the right range it set there). `\G` only tests the position.
+//! Without the case below the position never lies before `p`, whatever
+//! strings the expression holds.
+//!
+//! A look-behind that checks its trailing literal first (`lead_node`,
+//! `OpCode::Move`) steps back as many characters as the literal has,
+//! matches its bytes forward and, if positive, goes on where they end. For
+//! a string C accepts, that end keeps the invariant. Ferroni also accepts
+//! `\x{140000}`, which C rejects (`USE_CHECK_VALIDITY_OF_STRING_IN_TREE`):
+//! its `F5 80 80 80` counts as four characters but is passed in one step
+//! back, and the match can go on before `p` with no trailing byte there.
+//! The RegSet therefore keeps every attempt of an entry with such a check,
+//! as of one with callouts (ADR-008); including those entries waits for
+//! C's string validity check.
 
 use std::sync::OnceLock;
 

@@ -34,6 +34,9 @@ struct RegSetEntry {
     /// Caching a fallback search must not suppress observable callouts or
     /// position-sensitive bytecode such as partial `\G` anchors.
     fallback_memo_safe: bool,
+    /// The entry's required literals may rule out attempts
+    /// (`required_literals_are_safe`).
+    required_literals_safe: bool,
     /// Start-byte map of a fallback entry whose optimizer cannot bound the
     /// match start (`dist_max` infinite). Its search would otherwise run the
     /// VM at every position; see `fallback_start_filter`.
@@ -243,12 +246,9 @@ fn fallback_start_filter(reg: &RegexType) -> Option<Box<[u8; CHAR_MAP_SIZE]>> {
 }
 
 /// Rust-only (ADR-008): the required literals of a fallback entry, where
-/// the search may leave out the attempts they rule out. As for the start
-/// filter, the entry has no callouts or position checks
-/// (`fallback_memo_is_safe`): a variable-length look-behind can go on
-/// before the attempt start (see
-/// `required_literals_keep_attempts_of_entries_with_position_checks`). And
-/// no limit observes the left-out attempts (`RequiredLiterals::applies`).
+/// the search may leave out the attempts they rule out: the entry allows it
+/// (`required_literals_are_safe`), and no limit observes the left-out
+/// attempts (`RequiredLiterals::applies`).
 #[inline]
 fn required_literals<'a>(
     entry: &'a RegSetEntry,
@@ -257,8 +257,21 @@ fn required_literals<'a>(
 ) -> Option<&'a crate::required_literals::RequiredLiterals> {
     let reg = &entry.reg;
     reg.required_literals.as_deref().filter(|required| {
-        entry.fallback_memo_safe && required.applies(msa, opton_find_longest(option | reg.options))
+        entry.required_literals_safe
+            && required.applies(msa, opton_find_longest(option | reg.options))
     })
+}
+
+/// Whether a fallback search may leave out the attempts `reg`'s required
+/// literals rule out: no callouts, which observe every attempt, and no
+/// look-behind that checks its trailing literal (`OpCode::Move`), after
+/// which the match can go on before the attempt start (see
+/// `required_literals_keep_attempts_of_entries_with_position_checks`).
+/// Other position checks (`\G`, look-behinds without that check) leave the
+/// position where it was (`crate::required_literals`).
+fn required_literals_are_safe(reg: &RegexType) -> bool {
+    reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
+        && !reg.ops.iter().any(|op| op.opcode == OpCode::Move)
 }
 
 /// The first occurrence of `reg`'s required literals in `s..end`.
@@ -488,12 +501,14 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 
     let region = Some(OnigRegion::new());
     let fallback_memo_safe = fallback_memo_is_safe(&reg);
+    let required_literals_safe = required_literals_are_safe(&reg);
     let start_filter = fallback_start_filter(&reg);
     let first_op = first_op_test(&reg);
     set.entries.push(RegSetEntry {
         reg,
         region,
         fallback_memo_safe,
+        required_literals_safe,
         start_filter,
         fallback: false,
         gated: false,
@@ -607,6 +622,7 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
                 return ONIGERR_INVALID_ARGUMENT;
             }
             set.entries[at].fallback_memo_safe = fallback_memo_is_safe(&reg);
+            set.entries[at].required_literals_safe = required_literals_are_safe(&reg);
             set.entries[at].has_callouts =
                 reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0);
             set.entries[at].start_filter = fallback_start_filter(&reg);
@@ -3199,6 +3215,27 @@ mod tests {
             b"aaaaaaaaaa x a",
             b"no literal here at all",
         ];
+        // Position checks that leave the position alone: `\G`, and
+        // look-behinds of variable length without a trailing literal to
+        // check, in front of, behind and around the required literal.
+        let position_patterns = [
+            r"\G\s*(\{)",
+            r"(?:\s+|^|\G)(?:foo|bar)_x(\w*)",
+            r"\s*(?<=(?:\W|^)(?:ab|cd))(x\w*)",
+            r"\s*(?<!(?:\W|^)(?:ab|cd))(x\w*)",
+            r"\s*(x\w*)(?<=(?:\W|^)(?:ab|cd)x\w*)",
+            r"\s*(x)(?<!(?:\W|^)(?:ax|bx))",
+            r"\s*(?<=(?:\W|^)(?:é|ab))(x\w*)(?<!(?:\W|^)(?:yx|zx))",
+        ];
+        // Well-formed, multibyte, stray trailing bytes, F4 and F5 leads.
+        let position_inputs: &[&[u8]] = &[
+            b"",
+            b"abx foo_x{ cdxx {",
+            b"yx zx ax bx abx",
+            "\u{e9}x abx \u{e9}{ zx".as_bytes(),
+            b"ab\xa9x cd\x80\x80x {\xa9 x",
+            b"\xf4\x8f\xbf\xbfx ab\xf5\x80\x80\x80x",
+        ];
         // Retry limit in match, search retry budget, match stack limit,
         // calls per search.
         let limits = [
@@ -3258,7 +3295,7 @@ mod tests {
             assert_eq!(fallback_indices(&optimized), [0], "{pattern}");
             let entry = &optimized.entries[0];
             assert!(
-                entry.fallback_memo_safe && entry.reg.required_literals.is_some(),
+                entry.required_literals_safe && entry.reg.required_literals.is_some(),
                 "{pattern}"
             );
             let mut reference = build();
@@ -3266,7 +3303,12 @@ mod tests {
             (optimized, reference, build())
         };
         let (mut checked, mut limit_differences) = (0, 0);
-        for pattern in patterns {
+        let cases = (patterns.iter().map(|&pattern| (pattern, inputs))).chain(
+            position_patterns
+                .iter()
+                .map(|&pattern| (pattern, position_inputs)),
+        );
+        for (pattern, inputs) in cases {
             for &input in inputs {
                 for end in [input.len(), input.len().saturating_sub(1)] {
                     for (retry, search_retry, stack, calls) in limits {
@@ -3419,18 +3461,18 @@ mod tests {
         assert!(limit_differences > 0);
     }
 
-    /// Entries with a position check keep the attempts their required
-    /// literals would rule out (ADR-008). A variable-length look-behind
-    /// ending in a literal checks that literal first: it steps back as many
-    /// characters as the literal has, matches its bytes forward and goes on
-    /// where they end. `\x{140000}` encodes as `F5 80 80 80`, four one-byte
-    /// characters to the encoding's length table, but stepping back passes
-    /// all four bytes at once: from 10 it stops at 9, 8, 7 and 3, the
-    /// literal matches 3..7, and the attempt at 10 matches `ABC` at 7..10
-    /// without an occurrence from 10 on. C rejects such strings
-    /// (`USE_CHECK_VALIDITY_OF_STRING_IN_TREE`); for the strings it accepts
-    /// the check ends no earlier than the trailing bytes before the
-    /// look-behind's position, where no literal starts.
+    /// Entries whose look-behind checks a trailing literal (`OpCode::Move`)
+    /// keep the attempts their required literals would rule out (ADR-008).
+    /// A variable-length look-behind ending in a literal checks that literal
+    /// first: it steps back as many characters as the literal has, matches
+    /// its bytes forward and goes on where they end. `\x{140000}` encodes
+    /// as `F5 80 80 80`, four one-byte characters to the encoding's length
+    /// table, but stepping back passes all four bytes at once: from 10 it
+    /// stops at 9, 8, 7 and 3, the literal matches 3..7, and the attempt at
+    /// 10 matches `ABC` at 7..10 without an occurrence from 10 on. C rejects
+    /// such strings (`USE_CHECK_VALIDITY_OF_STRING_IN_TREE`); for the
+    /// strings it accepts the check ends no earlier than the trailing bytes
+    /// before the look-behind's position, where no literal starts.
     #[test]
     fn required_literals_keep_attempts_of_entries_with_position_checks() {
         let _lock = LIMIT_TEST_LOCK.lock().unwrap();
@@ -3486,6 +3528,200 @@ mod tests {
                 "start={start}"
             );
         }
+    }
+
+    /// The required-literal gate is set when an entry is added or replaced.
+    /// Callouts (which also give no set) and a look-behind that checks a
+    /// trailing literal close it, a negative one too although it returns to
+    /// its position; `\G` and look-behinds without the check leave it open
+    /// but keep the entry out of the memo.
+    #[test]
+    fn required_literals_gate_closes_for_callouts_and_look_behind_leads() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let (set, status) = onig_regset_new(vec![compile(br"\s*(\{)")]);
+        assert_eq!(status, ONIG_NORMAL);
+        let mut set = set.unwrap();
+        for (pattern, filtered, memo_safe) in [
+            (&br"\s*(\{)(?{x})"[..], false, false),
+            (br"\G\s*(\{)", true, false),
+            (br"\s*(?<!(?:\W|^)(?:ab|cd))(x\w*)", true, false),
+            (br"\s*(?<=(?:\W|^)return)\s*(\[)", false, false),
+            (br"\s*(?<!(?:\W|^)return)\s*(\[)", false, false),
+            (br"\s*(\{)", true, true),
+        ] {
+            assert_eq!(
+                onig_regset_replace(&mut set, 0, Some(compile(pattern))),
+                ONIG_NORMAL
+            );
+            let entry = &set.entries[0];
+            let msa = MatchArg::new(&entry.reg, ONIG_OPTION_NONE, None, 0);
+            let pattern = String::from_utf8_lossy(pattern);
+            assert_eq!(
+                entry.reg.required_literals.is_some(),
+                !entry.has_callouts,
+                "{pattern}"
+            );
+            assert_eq!(entry.required_literals_safe, filtered, "{pattern}");
+            assert_eq!(
+                required_literals(entry, ONIG_OPTION_NONE, &msa).is_some(),
+                filtered,
+                "{pattern}"
+            );
+            assert_eq!(entry.fallback_memo_safe, memo_safe, "{pattern}");
+        }
+    }
+
+    /// A "no event" that the required literals decide for an entry the memo
+    /// leaves out stays out of the memo, as that of a full search would.
+    #[test]
+    fn required_literals_no_event_of_memo_unsafe_entry_is_not_memoized() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        // `{` at 2 fails; past it no occurrence is left.
+        let input = b"ab{ cd x";
+        for (pattern, memo_safe) in [
+            (&br"(?:\s+|^)(?<!(?:\W|^)(?:ab|cd))(\{)"[..], false),
+            (br"(?:\s+|^)(\{)", true),
+        ] {
+            let (set, status) = onig_regset_new(vec![compile(pattern)]);
+            assert_eq!(status, ONIG_NORMAL);
+            let mut set = set.unwrap();
+            assert_eq!(fallback_indices(&set), [0]);
+            let msa = MatchArg::new(&set.entries[0].reg, ONIG_OPTION_NONE, None, 0);
+            assert!(required_literals(&set.entries[0], ONIG_OPTION_NONE, &msa).is_some());
+            assert_eq!(set.entries[0].fallback_memo_safe, memo_safe);
+            for start in [0, 3] {
+                assert_eq!(
+                    onig_regset_search_fast_with_id(
+                        &mut set,
+                        input,
+                        input.len(),
+                        start,
+                        input.len(),
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                        FallbackMemoIdentity::OnigString(181),
+                    ),
+                    (ONIG_MISMATCH, 0)
+                );
+            }
+            if memo_safe {
+                assert_settled_from(&set, 0);
+            } else {
+                let candidate = set.fallback_search_candidates[0];
+                assert!(set.fallback_memos[0].is_empty());
+                assert_eq!(
+                    [
+                        candidate.no_match_from,
+                        candidate.exact_miss,
+                        candidate.match_from,
+                        candidate.match_at
+                    ],
+                    [usize::MAX; 4]
+                );
+            }
+        }
+    }
+
+    /// Generated combinations of `\G` and variable-length look-behinds,
+    /// with and without a trailing literal to check, in front of and behind
+    /// required literals, over subjects with stray trailing bytes and F4 or
+    /// F5 sequences: every search agrees with the one without the filter.
+    /// (`\x{140000}` checks are left to
+    /// `required_literals_keep_attempts_of_entries_with_position_checks`:
+    /// their attempts can end before they start.)
+    #[test]
+    fn required_literals_agree_on_generated_position_checks() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let subjects: &[&[u8]] = &[
+            b"A\xa9B yA\xa9\xa9C",
+            "y\u{e9}\u{a9}B ab\u{e9}C".as_bytes(),
+            b"ab\xa9AB y\xf4\x8f\xbf\xbfB",
+            b"yC \xf5\x80\x80AB\xa9",
+            b"abAB yAB C\tB",
+            // Back-to-back occurrences: the first fails behind `ab`.
+            b"abABAB abBB",
+            b"",
+        ];
+        let (mut filtered, mut kept) = (0, 0);
+        for prefix in [r"\s*", r"(?:\s+|\G)"] {
+            for behind in [
+                "",
+                r"(?<=(?:\W|^)(?:ab|é))",
+                r"(?<!(?:\W|^)(?:ab|é))",
+                r"(?<=y*A)",
+                r"(?<!y*A)",
+            ] {
+                for middle in ["", "."] {
+                    for literal in ["B", "(?:AB|é)C?"] {
+                        for after in ["", r"(?<=(?:\W|^)(?:yB|C))", r"(?<!y*B)"] {
+                            let pattern = format!("{prefix}{behind}{middle}{literal}{after}");
+                            let build = || {
+                                let (set, status) =
+                                    onig_regset_new(vec![compile(pattern.as_bytes())]);
+                                assert_eq!(status, ONIG_NORMAL);
+                                set.unwrap()
+                            };
+                            let mut optimized = build();
+                            let entry = &optimized.entries[0];
+                            if fallback_indices(&optimized) != [0]
+                                || entry.reg.required_literals.is_none()
+                            {
+                                continue;
+                            }
+                            if entry.required_literals_safe {
+                                filtered += 1;
+                            } else {
+                                kept += 1;
+                            }
+                            let mut reference = build();
+                            reference.entries[0].reg.required_literals = None;
+                            for (id, &subject) in (0..).zip(subjects) {
+                                let end = subject.len();
+                                // Plain searches, then memoized ones with
+                                // advancing starts, as a scanner makes them.
+                                for fast in [false, true] {
+                                    for start in 0..=end {
+                                        let outcome = |set: &mut OnigRegSet| {
+                                            let found = if fast {
+                                                onig_regset_search_fast_with_id(
+                                                    set,
+                                                    subject,
+                                                    end,
+                                                    start,
+                                                    end,
+                                                    OnigRegSetLead::PositionLead,
+                                                    ONIG_OPTION_NONE,
+                                                    FallbackMemoIdentity::Caller(id),
+                                                )
+                                            } else {
+                                                onig_regset_search(
+                                                    set,
+                                                    subject,
+                                                    end,
+                                                    start,
+                                                    end,
+                                                    OnigRegSetLead::PositionLead,
+                                                    ONIG_OPTION_NONE,
+                                                )
+                                            };
+                                            let region = onig_regset_get_region(set, 0).unwrap();
+                                            (found, (found.0 == 0).then(|| region.beg.clone()))
+                                        };
+                                        assert_eq!(
+                                            outcome(&mut optimized),
+                                            outcome(&mut reference),
+                                            "{pattern} {subject:?} start={start} fast={fast}"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Lead checks keep their attempts; the rest are filtered.
+        assert_eq!((filtered, kept), (48, 72));
     }
 
     /// Attempts left out because their first instruction fails
