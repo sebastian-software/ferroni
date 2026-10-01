@@ -124,7 +124,7 @@ fn rust_trace(regex: &RegexType, text: &[u8]) -> Trace {
 }
 
 /// All matches of a further engine, under the same iteration as `collect_matches`.
-fn engine_trace(regex: &Compiled, text: &[u8]) -> Result<Trace, String> {
+fn engine_trace(regex: &Compiled, text: &str) -> Result<Trace, String> {
     let mut trace = Vec::new();
     let mut start = 0;
     while start < text.len() {
@@ -146,7 +146,7 @@ fn trace_engines(
     group: &str,
     name: &str,
     pattern: &str,
-    text: &[u8],
+    text: &str,
     expected: &Trace,
 ) -> Vec<(engines::Engine, Compiled)> {
     engines::validated(group, name, pattern, false, |compiled| {
@@ -481,7 +481,7 @@ pub fn bench_general_regex(c: &mut Criterion) {
         });
         let accepts = |compiled: &Compiled| {
             for (text, expected) in &inputs {
-                if compiled.search(text.as_bytes(), 0)?.is_some() != *expected {
+                if compiled.search(text, 0)?.is_some() != *expected {
                     return Err(format!("{text:?}: expected {expected}"));
                 }
             }
@@ -494,9 +494,7 @@ pub fn bench_general_regex(c: &mut Criterion) {
                 b.iter(|| {
                     let count = black_box(&inputs)
                         .iter()
-                        .filter(|(text, _)| {
-                            matches!(compiled.search(text.as_bytes(), 0), Ok(Some(_)))
-                        })
+                        .filter(|(text, _)| matches!(compiled.search(text, 0), Ok(Some(_))))
                         .count();
                     black_box(count);
                 })
@@ -564,12 +562,16 @@ pub fn bench_general_regex(c: &mut Criterion) {
             })
         });
         let expected = rust_trace(&rust, text);
-        for (engine, compiled) in
-            trace_engines("general_regex", case.name, case.pattern, text, &expected)
-        {
+        for (engine, compiled) in trace_engines(
+            "general_regex",
+            case.name,
+            case.pattern,
+            &case.text,
+            &expected,
+        ) {
             group.bench_function(BenchmarkId::new(engine.id(), case.name), |b| {
                 b.iter(|| {
-                    let trace = engine_trace(&compiled, black_box(text)).unwrap();
+                    let trace = engine_trace(&compiled, black_box(&case.text)).unwrap();
                     if case.redacted.is_some() {
                         black_box(redact(text, trace));
                     } else {
@@ -653,15 +655,11 @@ pub fn bench_oniguruma_features(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("c", name), |b| {
             b.iter(|| black_box(c_trace(&c_regex, black_box(text.as_bytes()))));
         });
-        for (engine, compiled) in trace_engines(
-            "oniguruma_features",
-            name,
-            pattern,
-            text.as_bytes(),
-            &expected,
-        ) {
+        for (engine, compiled) in
+            trace_engines("oniguruma_features", name, pattern, &text, &expected)
+        {
             group.bench_function(BenchmarkId::new(engine.id(), name), |b| {
-                b.iter(|| black_box(engine_trace(&compiled, black_box(text.as_bytes())).unwrap()));
+                b.iter(|| black_box(engine_trace(&compiled, black_box(&text)).unwrap()));
             });
         }
     }

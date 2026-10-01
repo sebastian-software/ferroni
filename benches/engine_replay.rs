@@ -58,22 +58,20 @@ impl EngineReplay {
         };
         for (i, (&(scanner, subject, start), call)) in replay.calls.iter().zip(calls).enumerate() {
             let text = &replay.subjects[subject];
-            let actual = replay
-                .find(scanner, text.as_bytes(), start)?
-                .map(|(index, captures)| {
-                    let utf16 = |byte: i32| text[..byte as usize].encode_utf16().count();
-                    let captures = captures
-                        .into_iter()
-                        .map(|(beg, end)| {
-                            if beg >= 0 && end >= beg {
-                                (utf16(beg), utf16(end))
-                            } else {
-                                (0, 0)
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (index, captures)
-                });
+            let actual = replay.find(scanner, text, start)?.map(|(index, captures)| {
+                let utf16 = |byte: i32| text[..byte as usize].encode_utf16().count();
+                let captures = captures
+                    .into_iter()
+                    .map(|(beg, end)| {
+                        if beg >= 0 && end >= beg {
+                            (utf16(beg), utf16(end))
+                        } else {
+                            (0, 0)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                (index, captures)
+            });
             if actual != call.expected && highlighted(&actual) == highlighted(&call.expected) {
                 replay.empty_capture_differences += 1;
             } else if actual != call.expected {
@@ -89,7 +87,7 @@ impl EngineReplay {
     fn find(
         &self,
         scanner: usize,
-        text: &[u8],
+        text: &str,
         start: usize,
     ) -> Result<Option<(usize, crate::engines::Captures)>, String> {
         let mut best: Option<(usize, crate::engines::Captures)> = None;
@@ -109,7 +107,7 @@ impl EngineReplay {
 
     pub fn replay(&self) {
         for &(scanner, subject, start) in &self.calls {
-            let text = self.subjects[subject].as_bytes();
+            let text = self.subjects[subject].as_str();
             black_box(
                 self.find(scanner, black_box(text), black_box(start))
                     .unwrap(),

@@ -129,6 +129,7 @@ fn first_match_engines(
 ) -> Vec<(engines::Engine, engines::Compiled)> {
     let expected = c_first_captures(c_reg, text);
     let pattern = std::str::from_utf8(pattern).expect("pattern is not UTF-8");
+    let text = std::str::from_utf8(text).expect("text is not UTF-8");
     engines::validated(group, name, pattern, ignore_case, |compiled| {
         let actual = compiled.captures(text, 0)?;
         if actual == expected {
@@ -705,11 +706,10 @@ fn bench_text_scanning(c: &mut Criterion) {
         for (engine, compiled) in
             first_match_engines("text_scanning", name, pattern, false, &c_reg, text)
         {
-            group.bench_with_input(
-                BenchmarkId::new(engine.id(), name),
-                &text.as_slice(),
-                |b, text| b.iter(|| black_box(compiled.search(black_box(text), 0))),
-            );
+            let text = std::str::from_utf8(text).unwrap();
+            group.bench_with_input(BenchmarkId::new(engine.id(), name), text, |b, text| {
+                b.iter(|| black_box(compiled.search(black_box(text), 0)))
+            });
         }
     }
 
@@ -921,7 +921,8 @@ fn bench_single_pattern(c: &mut Criterion) {
         for (engine, compiled) in
             first_match_engines("single_pattern", name, pattern, ignore_case, &c_reg, text)
         {
-            group.bench_with_input(BenchmarkId::new(engine.id(), name), &text[..], |b, text| {
+            let text = std::str::from_utf8(text).unwrap();
+            group.bench_with_input(BenchmarkId::new(engine.id(), name), text, |b, text| {
                 b.iter(|| black_box(compiled.search(black_box(text), 0)));
             });
         }

@@ -2,12 +2,14 @@
 //! interpreter), fancy-regex in its Oniguruma mode and, with the `onigmo`
 //! feature, Ruby's Onigmo.
 //!
+//! Texts are `&str`, so every engine may skip UTF-8 validation of the
+//! subject, as an application with known-valid text would; Ferroni and C
+//! Oniguruma never validate it either.
+//!
 //! A benchmark only times one of these after it reproduced the Oniguruma
 //! result for that case. A pattern an engine rejects or evaluates differently
 //! is printed as an `UNSUPPORTED` line instead, so a missing timing always
 //! comes with its reason.
-
-use std::cell::RefCell;
 
 /// Raw capture bounds as Oniguruma reports them; -1 marks an unset group.
 pub type Captures = Vec<(i32, i32)>;
@@ -52,16 +54,8 @@ impl Engine {
     ) -> Result<Compiled, String> {
         match self {
             Engine::Pcre2Jit | Engine::Pcre2 => {
-                let regex = pcre2::bytes::RegexBuilder::new()
-                    .utf(true)
-                    .ucp(true)
-                    .multi_line(true)
-                    .caseless(ignore_case)
-                    .jit(self == Engine::Pcre2Jit)
-                    .build(pattern)
-                    .map_err(|error| error.to_string())?;
-                let locations = RefCell::new(regex.capture_locations());
-                Ok(Compiled::Pcre2(regex, locations))
+                pcre2::Regex::new(pattern, ignore_case, self == Engine::Pcre2Jit)
+                    .map(Compiled::Pcre2)
             }
             Engine::Fancy => fancy_regex::RegexBuilder::new(pattern)
                 .oniguruma_mode(true)
@@ -79,7 +73,7 @@ impl Engine {
 }
 
 pub enum Compiled {
-    Pcre2(pcre2::bytes::Regex, RefCell<pcre2::bytes::CaptureLocations>),
+    Pcre2(pcre2::Regex),
     Fancy(fancy_regex::Regex),
     #[cfg(feature = "onigmo")]
     Onigmo(onigmo::Regex),
@@ -87,38 +81,30 @@ pub enum Compiled {
 
 impl Compiled {
     /// Start of the first match at or after `start`, without capture output.
-    pub fn search(&self, text: &[u8], start: usize) -> Result<Option<usize>, String> {
+    pub fn search(&self, text: &str, start: usize) -> Result<Option<usize>, String> {
         match self {
-            Compiled::Pcre2(regex, _) => regex
-                .find_at(text, start)
-                .map(|m| m.map(|m| m.start()))
-                .map_err(|error| error.to_string()),
+            Compiled::Pcre2(regex) => regex.search(text, start, |ovector| ovector[0]),
             Compiled::Fancy(regex) => regex
                 .find_from_pos(text, start)
                 .map(|m| m.map(|m| m.start()))
                 .map_err(|error| error.to_string()),
             #[cfg(feature = "onigmo")]
-            Compiled::Onigmo(regex) => regex.search(text, start, false),
+            Compiled::Onigmo(regex) => regex.search(text.as_bytes(), start, false),
         }
     }
 
     /// The first match at or after `start` with every capture bound.
-    pub fn captures(&self, text: &[u8], start: usize) -> Result<Option<Captures>, String> {
+    pub fn captures(&self, text: &str, start: usize) -> Result<Option<Captures>, String> {
         let bound = |range: Option<(usize, usize)>| {
             range.map_or((-1, -1), |(beg, end)| (beg as i32, end as i32))
         };
         match self {
-            Compiled::Pcre2(regex, locations) => {
-                let mut locations = locations.borrow_mut();
-                let found = regex
-                    .captures_read_at(&mut locations, text, start)
-                    .map_err(|error| error.to_string())?;
-                Ok(found.map(|_| {
-                    (0..locations.len())
-                        .map(|i| bound(locations.get(i)))
-                        .collect()
-                }))
-            }
+            Compiled::Pcre2(regex) => regex.search(text, start, |ovector| {
+                ovector
+                    .chunks_exact(2)
+                    .map(|pair| bound((pair[0] != usize::MAX).then_some((pair[0], pair[1]))))
+                    .collect()
+            }),
             Compiled::Fancy(regex) => {
                 let found = regex
                     .captures_from_pos(text, start)
@@ -130,9 +116,9 @@ impl Compiled {
                 }))
             }
             #[cfg(feature = "onigmo")]
-            Compiled::Onigmo(regex) => {
-                Ok(regex.search(text, start, true)?.map(|_| regex.captures()))
-            }
+            Compiled::Onigmo(regex) => Ok(regex
+                .search(text.as_bytes(), start, true)?
+                .map(|_| regex.captures())),
         }
     }
 }
@@ -170,6 +156,138 @@ pub fn validated(
             }
         })
         .collect()
+}
+
+/// PCRE2 through its C API, because the `pcre2` crate validates the whole
+/// subject as UTF-8 on every interpreter call and offers no way to skip it.
+mod pcre2 {
+    use pcre2_sys::*;
+    use std::cell::Cell;
+    use std::ptr;
+
+    pub struct Regex {
+        code: *mut pcre2_code_8,
+        match_data: *mut pcre2_match_data_8,
+        context: *mut pcre2_match_context_8,
+        jit_stack: *mut pcre2_jit_stack_8,
+        /// The match data is reused, so searches must not overlap.
+        busy: Cell<bool>,
+    }
+
+    impl Regex {
+        /// UTF-8 with Unicode classes and line anchors, as Oniguruma matches.
+        pub fn new(pattern: &str, ignore_case: bool, jit: bool) -> Result<Self, String> {
+            let mut options = PCRE2_UTF | PCRE2_UCP | PCRE2_MULTILINE;
+            if ignore_case {
+                options |= PCRE2_CASELESS;
+            }
+            let (mut error, mut offset) = (0, 0);
+            // SAFETY: the pattern pointer and length describe a live slice;
+            // the error out pointers are valid for the call.
+            let code = unsafe {
+                pcre2_compile_8(
+                    pattern.as_ptr(),
+                    pattern.len(),
+                    options,
+                    &mut error,
+                    &mut offset,
+                    ptr::null_mut(),
+                )
+            };
+            if code.is_null() {
+                return Err(format!("PCRE2 at offset {offset}: {}", message(error)));
+            }
+            // SAFETY: `code` is a freshly compiled pattern; the match data,
+            // context and JIT stack created here are owned by `Regex`, whose
+            // Drop frees them, also on the JIT error path.
+            unsafe {
+                let regex = Self {
+                    code,
+                    match_data: pcre2_match_data_create_from_pattern_8(code, ptr::null_mut()),
+                    context: pcre2_match_context_create_8(ptr::null_mut()),
+                    jit_stack: if jit {
+                        pcre2_jit_stack_create_8(32 * 1024, 8 * 1024 * 1024, ptr::null_mut())
+                    } else {
+                        ptr::null_mut()
+                    },
+                    busy: Cell::new(false),
+                };
+                if jit {
+                    let rc = pcre2_jit_compile_8(code, PCRE2_JIT_COMPLETE);
+                    if rc != 0 {
+                        return Err(format!("PCRE2 JIT: {}", message(rc)));
+                    }
+                    pcre2_jit_stack_assign_8(regex.context, None, regex.jit_stack.cast());
+                }
+                Ok(regex)
+            }
+        }
+
+        /// Calls `read` with the capture offsets of the first match at or after
+        /// `start`; PCRE2_UNSET (`usize::MAX`) marks a group that did not take
+        /// part.
+        pub fn search<R>(
+            &self,
+            text: &str,
+            start: usize,
+            read: impl FnOnce(&[usize]) -> R,
+        ) -> Result<Option<R>, String> {
+            // The match data is shared by all searches on this regex.
+            assert!(!self.busy.replace(true), "overlapping PCRE2 searches");
+            // SAFETY: `text` is valid UTF-8 by type, which PCRE2_NO_UTF_CHECK
+            // requires; pattern, match data and context are owned by `self`.
+            let rc = unsafe {
+                pcre2_match_8(
+                    self.code,
+                    text.as_ptr(),
+                    text.len(),
+                    start,
+                    PCRE2_NO_UTF_CHECK,
+                    self.match_data,
+                    self.context,
+                )
+            };
+            let result = match rc {
+                PCRE2_ERROR_NOMATCH => Ok(None),
+                rc if rc > 0 => {
+                    // SAFETY: after a successful match the ovector holds at
+                    // least `rc` set pairs; `busy` keeps the match data from
+                    // being overwritten while `read` borrows it.
+                    let ovector = unsafe {
+                        let count = pcre2_get_ovector_count_8(self.match_data) as usize;
+                        std::slice::from_raw_parts(
+                            pcre2_get_ovector_pointer_8(self.match_data),
+                            2 * count,
+                        )
+                    };
+                    Ok(Some(read(ovector)))
+                }
+                rc => Err(format!("PCRE2 match: {}", message(rc))),
+            };
+            self.busy.set(false);
+            result
+        }
+    }
+
+    impl Drop for Regex {
+        fn drop(&mut self) {
+            // SAFETY: each pointer is owned by this wrapper and freed once;
+            // PCRE2's free functions accept null.
+            unsafe {
+                pcre2_match_context_free_8(self.context);
+                pcre2_jit_stack_free_8(self.jit_stack);
+                pcre2_match_data_free_8(self.match_data);
+                pcre2_code_free_8(self.code);
+            }
+        }
+    }
+
+    fn message(code: i32) -> String {
+        let mut buffer = [0u8; 256];
+        // SAFETY: the buffer pointer and length describe a live array.
+        let length = unsafe { pcre2_get_error_message_8(code, buffer.as_mut_ptr(), buffer.len()) };
+        String::from_utf8_lossy(&buffer[..length.max(0) as usize]).into_owned()
+    }
 }
 
 #[cfg(feature = "onigmo")]
