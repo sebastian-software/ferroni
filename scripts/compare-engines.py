@@ -24,12 +24,15 @@ binaries are ordinary release builds, as users run them.
       writes OUT/measurements.json, OUT/engine-notes.json, OUT/summary.md
   compare-engines.py report SUMMARY.md DIR...
       merges the measurements of several runs, one table set per host
+  compare-engines.py figures RUN_DIR OUT.json
+      condenses one published run into the README and home page figures
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -401,6 +404,115 @@ def report(args):
     print(args.summary.read_text())
 
 
+# The README and home page condense a run into three workloads. Highlighting
+# needs every grammar: a highlighter that cannot load one is not a candidate.
+# Searches may miss a case; the figure then says over how many it was taken.
+WORKLOADS = [
+    {'id': 'highlighting', 'label': 'Syntax highlighting', 'short': 'Highlighting', 'require_all': True,
+     'detail': 'Shiki scanner calls replayed for whole C++, Java and SCSS documents',
+     'cases': ['cpp_scanner/document', 'java_scanner/document', 'scss_scanner/document']},
+    {'id': 'shared', 'label': 'Search, shared syntax', 'short': 'Shared syntax', 'require_all': False,
+     'detail': 'single searches, extraction and validation the regex crate can also run',
+     'cases': [case for case in CASES['trivial'] if not case.startswith('compilation/')]},
+    {'id': 'oniguruma', 'label': 'Search, Oniguruma syntax', 'short': 'Oniguruma syntax', 'require_all': False,
+     'detail': 'lookaround, backreferences, atomic groups, subexpression calls, absent operator, conditionals',
+     'cases': ['single_pattern/rust/lookaround_combined', 'single_pattern/rust/backref_simple',
+               *[case for case in CASES['oniguruma'] if case.startswith('oniguruma_features/')]]},
+]
+FIGURE_ENGINES = ('c', 'shiki_js', 'onigmo', 'pcre2', 'pcre2_jit', 'fancy_regex', 'regex')
+FIGURE_LABELS = {**LABELS, 'c': 'Oniguruma (C)'}
+HOST_LABELS = {'macos-arm64': 'macOS arm64', 'linux-x86-64': 'Linux x86-64'}
+GRAMMARS = {'cpp_scanner': 'C++', 'java_scanner': 'Java', 'scss_scanner': 'SCSS'}
+
+
+def factor_text(values):
+    def one(value):
+        return f'{value:.0f}' if value >= 10 else f'{value:.1f}'
+    low, high = one(min(values)), one(max(values))
+    return f'{low}×' if low == high else f'{low}–{high}×'
+
+
+def figures(args):
+    """Geometric mean of (engine time / Ferroni time) per workload and host."""
+    hosts, notes, commits, dates, runs = {}, {'unsupported': {}}, set(), set(), set()
+    for path in sorted(Path(args.run).rglob('measurements.json')):
+        data = json.loads(path.read_text())
+        host = data['host']
+        entry = hosts.setdefault(host['runner_profile'], {'host': host, 'timing': {}})
+        for cases in data['results'].values():
+            for case, result in cases.items():
+                entry['timing'][case] = {engine: row['mean_ns'] for engine, row in result['timing'].items()}
+        notes['unsupported'].update(data['notes']['unsupported'])
+        commits.add(data['build']['git_commit'])
+        runs.add(host['run_url'])
+    if set(hosts) != set(HOST_LABELS) or len(commits) != 1 or len(runs) != 1:
+        raise SystemExit('figures needs one complete run of both runner profiles')
+    date = re.search(r'(\d{4}-\d{2}-\d{2})', Path(args.run).name)
+    order = list(HOST_LABELS)
+    engines = []
+    for engine in FIGURE_ENGINES:
+        cells = {}
+        for workload in WORKLOADS:
+            per_host = {}
+            for host_id in order:
+                timing = hosts[host_id]['timing']
+                ratios = [timing[case][engine] / timing[case]['rust'] for case in workload['cases']
+                          if engine in timing[case]]
+                per_host[host_id] = (math.exp(sum(map(math.log, ratios)) / len(ratios)) if ratios else None,
+                                     len(ratios))
+            runs_cases = per_host[order[0]][1]
+            total = len(workload['cases'])
+            missing = [case for case in workload['cases'] if variant(case, engine) in notes['unsupported']]
+            cell = {'cases': runs_cases, 'of': total}
+            if runs_cases == 0:
+                cell['text'] = 'n/a' if missing else '–'
+                if missing:
+                    cell['note'] = 'cannot run these cases'
+            elif workload['require_all'] and runs_cases < total:
+                grammar_notes = []
+                for case in missing:
+                    reason = notes['unsupported'][variant(case, engine)]['reason']
+                    verb = 'rejects' if reason.startswith(('scanner', 'compile')) else 'differs on'
+                    grammar_notes.append(f'{verb} {GRAMMARS[case.split("/")[0]]}')
+                cell.update(text='n/a', note=', '.join(grammar_notes),
+                            grammars=[GRAMMARS[case.split('/')[0]] for case in missing])
+            else:
+                cell['factors'] = {host_id: round(per_host[host_id][0], 3) for host_id in order}
+                cell['text'] = factor_text(list(cell['factors'].values()))
+                if runs_cases < total:
+                    cell['note'] = f'{runs_cases} of {total} cases'
+            cells[workload['id']] = cell
+        engines.append({'id': engine, 'label': FIGURE_LABELS[engine], 'cells': cells})
+    out = {
+        'measured': date.group(1) if date else None,
+        'commit': commits.pop(),
+        'run': runs.pop(),
+        'data': Path(args.run).as_posix(),
+        'hosts': [{'id': host_id, 'label': HOST_LABELS[host_id], 'machine': hosts[host_id]['host']['cpu'],
+                   'cpus': hosts[host_id]['host']['cpus'], 'runner': hosts[host_id]['host']['runner_label']}
+                  for host_id in order],
+        'workloads': [{key: workload[key] for key in ('id', 'label', 'short', 'detail')} | {'cases': len(workload['cases'])}
+                      for workload in WORKLOADS],
+        'engines': engines,
+    }
+    args.output.write_text(json.dumps(out, indent=2, ensure_ascii=False) + '\n')
+    print(readme_table(out))
+
+
+def readme_table(figures_data):
+    """The README rows; docs/scripts/check-benchmark-claims.mjs compares them."""
+    workloads = figures_data['workloads']
+    lines = ['| Ferroni compared with | ' + ' | '.join(w['label'] for w in workloads) + ' |',
+             '| --- |' + ' ---: |' * len(workloads)]
+    for engine in figures_data['engines']:
+        cells = []
+        for workload in workloads:
+            cell = engine['cells'][workload['id']]
+            cells.append(cell['text'] + (f' ({cell["note"]})' if cell.get('note') else ''))
+        lines.append(f'| {engine["label"]} | ' + ' | '.join(cells) + ' |')
+    return '\n'.join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -417,8 +529,13 @@ def main():
     report_parser = commands.add_parser('report', help='merge the measurements of several runs')
     report_parser.add_argument('summary', type=Path)
     report_parser.add_argument('directories', nargs='+', type=Path)
+    figures_parser = commands.add_parser('figures', help='condense one run for the README and home page')
+    figures_parser.add_argument('run', type=Path)
+    figures_parser.add_argument('output', type=Path)
     args = parser.parse_args()
-    if args.command == 'run':
+    if args.command == 'figures':
+        figures(args)
+    elif args.command == 'run':
         if not 0.5 <= args.measure_seconds <= 30 or not 0.1 <= args.warm_up_seconds <= 5:
             run_parser.error('--measure-seconds must be 0.5-30 and --warm-up-seconds 0.1-5')
         run(args, run_parser)
