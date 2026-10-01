@@ -127,9 +127,14 @@ impl Compiled {
 
 /// Prints why `engine` has no timing for the benchmark `id`.
 pub fn unsupported(id: &str, engine: Engine, reason: &str) {
+    unsupported_engine(id, engine.id(), reason);
+}
+
+/// [`unsupported`] for an engine outside [`Engine`], such as the `regex` crate.
+pub fn unsupported_engine(id: &str, engine: &str, reason: &str) {
     println!(
         "UNSUPPORTED {}",
-        serde_json::json!({"id": id, "engine": engine.id(), "reason": reason})
+        serde_json::json!({"id": id, "engine": engine, "reason": reason})
     );
 }
 

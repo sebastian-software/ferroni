@@ -16,6 +16,10 @@ use regex::bytes::Regex;
 use super::engines::{self, Compiled};
 use super::{assert_same_match, c_compile, configure_battle_group, regex_compile, rust_compile};
 
+#[path = "regex_tasks.rs"]
+mod regex_tasks;
+pub use regex_tasks::bench_regex_tasks;
+
 const EMAIL: &str = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}";
 const BATCH_REPEATS: usize = 8;
 const TEXT_RECORDS: usize = 64;
