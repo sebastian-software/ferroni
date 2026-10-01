@@ -247,3 +247,105 @@ pub fn replay(scanners: &mut [Scanner], strings: &[OnigString], calls: &[&Call])
         ));
     }
 }
+
+/// The same calls through the vscode-oniguruma C scanner
+/// (`benches/vscode_scanner_native.c`), the native counterpart of Shiki's WASM
+/// engine. UTF-16 starts become byte offsets outside timing; vscode-oniguruma
+/// performs that conversion in JavaScript, Ferroni inside its timed call.
+#[cfg(feature = "ffi")]
+pub struct CReplay {
+    scanners: Vec<ferroni::ffi::CScanner>,
+    subjects: Vec<String>,
+    /// (scanner, subject, byte start, Oniguruma search options)
+    calls: Vec<(usize, usize, usize, std::os::raw::c_uint)>,
+}
+
+#[cfg(feature = "ffi")]
+static NEXT_C_STR_CACHE_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1);
+
+#[cfg(feature = "ffi")]
+impl CReplay {
+    /// Builds the C scanners and checks every selected call against the
+    /// captured Shiki result before anything is timed.
+    pub fn new(corpus: &Corpus, calls: &[&Call]) -> Self {
+        let scanners = corpus
+            .patterns
+            .iter()
+            .map(|patterns| {
+                let refs: Vec<_> = patterns.iter().map(String::as_bytes).collect();
+                ferroni::ffi::CScanner::new(&refs).expect("C scanner compiles")
+            })
+            .collect();
+        let replay = Self {
+            scanners,
+            subjects: corpus.subjects.clone(),
+            calls: calls
+                .iter()
+                .map(|call| {
+                    let text = &corpus.subjects[call.subject];
+                    (
+                        call.scanner,
+                        call.subject,
+                        byte_offset(text, call.start_utf16),
+                        call.option_bits << 22,
+                    )
+                })
+                .collect(),
+        };
+        let ids = replay.fresh_ids();
+        for (i, (&(scanner, subject, start, options), call)) in
+            replay.calls.iter().zip(calls).enumerate()
+        {
+            let text = &replay.subjects[subject];
+            let actual = replay.scanners[scanner]
+                .find_next_match_with_options(text.as_bytes(), ids + subject as i32, start, options)
+                .map(|(index, captures)| {
+                    let utf16 = |byte: i32| text[..byte as usize].encode_utf16().count();
+                    let captures = captures
+                        .into_iter()
+                        .map(|(beg, end)| {
+                            if beg >= 0 && end >= beg {
+                                (utf16(beg), utf16(end))
+                            } else {
+                                (0, 0)
+                            }
+                        })
+                        .collect();
+                    (index, captures)
+                });
+            assert_eq!(actual, call.expected, "C scanner trace differs at call {i}");
+        }
+        replay
+    }
+
+    /// New string-cache identities for one replay, like `Corpus::strings`.
+    pub fn fresh_ids(&self) -> i32 {
+        NEXT_C_STR_CACHE_ID.fetch_add(
+            i32::try_from(self.subjects.len()).unwrap(),
+            std::sync::atomic::Ordering::Relaxed,
+        )
+    }
+
+    pub fn replay(&self, ids: i32) {
+        for &(scanner, subject, start, options) in &self.calls {
+            black_box(self.scanners[scanner].find_next_match_with_options(
+                black_box(self.subjects[subject].as_bytes()),
+                ids + subject as i32,
+                black_box(start),
+                options,
+            ));
+        }
+    }
+}
+
+#[cfg(feature = "ffi")]
+fn byte_offset(text: &str, start_utf16: usize) -> usize {
+    let mut utf16 = 0;
+    text.char_indices()
+        .find_map(|(byte, ch)| {
+            let at = utf16;
+            utf16 += ch.len_utf16();
+            (start_utf16 >= at && start_utf16 < utf16).then_some(byte)
+        })
+        .unwrap_or(text.len())
+}

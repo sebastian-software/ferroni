@@ -453,6 +453,18 @@ impl CScanner {
         str_cache_id: i32,
         position: usize,
     ) -> Option<(usize, Vec<(i32, i32)>)> {
+        self.find_next_match_with_options(text, str_cache_id, position, ONIG_OPTION_NONE)
+    }
+
+    /// [`Self::find_next_match`] with Oniguruma search options, as
+    /// vscode-oniguruma passes them for its `FindOption` flags.
+    pub fn find_next_match_with_options(
+        &self,
+        text: &[u8],
+        str_cache_id: i32,
+        position: usize,
+        options: c_uint,
+    ) -> Option<(usize, Vec<(i32, i32)>)> {
         // SAFETY: `self.handle` is owned by this wrapper and `text` remains
         // live for the synchronous C call.
         let encoded = unsafe {
@@ -462,7 +474,7 @@ impl CScanner {
                 text.as_ptr(),
                 text.len() as c_int,
                 position as c_int,
-                ONIG_OPTION_NONE as c_int,
+                options as c_int,
             )
         };
         if encoded.is_null() {
