@@ -76,7 +76,7 @@ type DocsSection = {
  */
 const sections: DocsSection[] = [
   { id: "guide", label: "Guide", to: "/guide/getting-started" },
-  { id: "perf", label: "Performance", to: "/perf/benchmark-results" },
+  { id: "perf", label: "Performance", to: "/perf/engine-comparison" },
   {
     id: "adr",
     label: "ADRs",

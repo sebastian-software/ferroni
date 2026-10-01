@@ -1,14 +1,19 @@
 ---
-order: 1
+order: 2
 title: "Benchmark Results"
 ---
 
 # Benchmark Results
 
+> **An earlier reference run.** Current numbers, with Onigmo, PCRE2,
+> fancy-regex and Shiki's JavaScript engine beside C Oniguruma on two
+> reproducible cloud hosts, are on the [engine comparison](/perf/engine-comparison).
+> This page keeps the `battle_bench` tables of 2026-09-23 on an Apple M1 Pro as
+> dated evidence.
+
 Raw benchmark tables for the `battle_bench` reference suite:
-Ferroni (Rust) vs Oniguruma at `-O3`. This is the primary comparison for an
-Oniguruma-compatible engine. Measurements for Rust's `regex` crate are retained
-in a [separate shared-syntax appendix](#shared-syntax-context-only-regex).
+Ferroni (Rust) vs Oniguruma at `-O3`. Measurements for Rust's `regex` crate are
+retained in a [separate shared-syntax appendix](#shared-syntax-context-only-regex).
 
 Measured with [Criterion](https://github.com/bheisler/criterion.rs) on Apple
 M1 Pro.
@@ -17,19 +22,9 @@ M1 Pro.
 > to get current numbers on your hardware, then render the tables below with
 > `./scripts/gen_battle_tables.py`.
 
-The README intentionally rounds values for readability. This file keeps the
-raw numbers, and the home page derives its speed factors from the rows below
-(`pnpm check:numbers` in `docs/` enforces that).
-
 Every number on this page comes from the single run recorded in
 [Measurement context](#measurement-context). Releases after that commit include
-further performance work, so treat the tables as dated evidence: refresh them by
-re-running the suite on the reference machine and updating this page and the
-README together.
-
-The [engine comparison](/perf/engine-comparison) is a newer, reproducible run
-on two cloud hosts that adds Onigmo, PCRE2, fancy-regex and Shiki's JavaScript
-engine.
+further performance work.
 
 A [full comparison for PR #173](/perf/pr-173-oniguruma-comparison) records a
 newer run on an M1 Ultra, including seven everyday regex tasks, opt-in match-cache,

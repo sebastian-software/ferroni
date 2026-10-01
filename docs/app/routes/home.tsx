@@ -1,5 +1,7 @@
 import {
-  EvidenceFigures,
+  type ComparisonCell,
+  type ComparisonRow,
+  ComparisonTable,
   family,
   Mark,
   Measured,
@@ -13,6 +15,7 @@ import {
 import { Link, type MetaFunction } from "react-router";
 import config from "virtual:ardo/config";
 
+import engineComparison from "../data/engine-comparison.json";
 import sample from "../data/regex-sample.json";
 import { ClosingSection, CodeSection, CoverageSection } from "./home-bottom-sections";
 
@@ -103,92 +106,84 @@ function RelationsSection() {
   );
 }
 
-const benchmarks = [
-  {
-    category: "Syntax Highlighting",
-    label: "TypeScript Document",
-    desc: "279 patterns, 28 lines, line by line",
-    speedup: "2.5x",
-    ferroni: "~1.26 ms",
-    oniguruma: "~3.13 ms",
-  },
-  {
-    category: "Syntax Highlighting",
-    label: "CSS Document",
-    desc: "117 patterns, 19 lines, line by line",
-    speedup: "32.6x",
-    ferroni: "~93 µs",
-    oniguruma: "~3.04 ms",
-  },
-  {
-    category: "Syntax Highlighting",
-    label: "Rust Document",
-    desc: "81 patterns, 31 lines, line by line",
-    speedup: "9.8x",
-    ferroni: "~108 µs",
-    oniguruma: "~1.06 ms",
-  },
-  {
-    category: "Text Search",
-    label: "Rejection Speed",
-    desc: "No match in 50 KB buffer",
-    speedup: "6.2x",
-    ferroni: "~1.5 µs",
-    oniguruma: "~9.3 µs",
-  },
-  {
-    category: "Text Search",
-    label: "RegSet Multi-Pattern",
-    desc: "5 patterns, simultaneous search",
-    speedup: "3.6x",
-    ferroni: "~104 ns",
-    oniguruma: "~370 ns",
-  },
-  {
-    category: "Pattern Matching",
-    label: "Lookaround Combined",
-    desc: "Feature most Rust engines skip",
-    speedup: "3.1x",
-    ferroni: "~79 ns",
-    oniguruma: "~247 ns",
-  },
-];
+type FigureCell = {
+  text: string;
+  note?: string;
+  grammars?: string[];
+  cases: number;
+  of: number;
+  factors?: Record<string, number>;
+};
+
+const workloads = engineComparison.workloads;
+
+function figureValue(cell: FigureCell): ComparisonCell {
+  if (cell.factors === undefined) {
+    return cell.grammars === undefined ? undefined : { mark: "no", note: cell.grammars.join(", ") };
+  }
+  if (cell.note === undefined) return cell.text;
+  return (
+    <>
+      {cell.text} <small>{cell.note}</small>
+    </>
+  );
+}
+
+/* Every figure comes from docs/app/data/engine-comparison.json, which
+ * `scripts/compare-engines.py figures` derives from the retained run. */
+const comparisonRows: ComparisonRow[] = engineComparison.engines.map((engine) => {
+  const cells = engine.cells as Record<string, FigureCell>;
+  const measured = workloads.flatMap((workload) => Object.values(cells[workload.id].factors ?? {}));
+  return {
+    label: engine.label,
+    values: Object.fromEntries(
+      workloads.map((workload) => [workload.id, figureValue(cells[workload.id])]),
+    ),
+    // Ferroni is slower in every workload this engine was measured in.
+    behind: measured.length > 0 && measured.every((factor) => factor < 1),
+  };
+});
 
 function EvidenceSection() {
+  const hosts = engineComparison.hosts
+    .map((host) => `${host.label}: ${host.machine}, ${host.cpus} vCPUs`)
+    .join("; ");
   return (
     <Section
       id="fr-evidence"
       layout="split"
-      title="Measured against C Oniguruma"
+      title="Measured against seven engines"
       intro={
         <>
-          Each factor is Oniguruma&rsquo;s time divided by Ferroni&rsquo;s on the same input, higher
-          is faster. The highlighting rows tokenize whole documents line by line, each line handed
-          to the scanner once, the way vscode-textmate and Shiki drive it.
+          Each factor is the other engine&rsquo;s time divided by Ferroni&rsquo;s, as the geometric
+          mean over the workload; a range spans the two hosts. Above 1&times;, Ferroni is faster.
+          Every engine first has to reproduce Oniguruma&rsquo;s results, or the results Shiki
+          produced for highlighting.
         </>
       }
       note={
         <>
-          Reference measurements with <code>battle_bench</code>; they predate the latest
-          optimizations. More recent measurements:{" "}
-          <Link to="/perf/simple-pattern-profiling">Simple-pattern profiling</Link>.
+          Highlighting replays the scanner calls Shiki makes for whole C++, Java and SCSS documents;
+          &times; names the grammars an engine rejects or answers differently. The searches use
+          patterns the <code>regex</code> crate also runs, or Oniguruma syntax. PCRE2&rsquo;s JIT
+          and the <code>regex</code> crate win single searches, but neither finds the earliest match
+          among many patterns in one search, as a highlighter needs.
         </>
       }
     >
-      <EvidenceFigures
-        figures={benchmarks.map((benchmark) => ({
-          label: benchmark.label,
-          value: benchmark.speedup.replace("x", "×"),
-          detail: benchmark.desc,
-          measure: `${benchmark.ferroni} vs ${benchmark.oniguruma}`,
-        }))}
+      <ComparisonTable
+        align="end"
+        caption="Ferroni's speedup over each engine; below 1×, the other engine is faster."
+        subject="Compared with"
+        contenders={workloads.map((workload) => ({ id: workload.id, label: workload.short }))}
+        rows={comparisonRows}
       />
       <Measured
-        on="2026-09-23"
-        machine="MacBookPro18,1 (Apple M1 Pro, 32 GB), macOS 27.0"
-        revision={<code>2f109a75</code>}
+        on={engineComparison.measured}
+        machine={`Blacksmith runners. ${hosts}`}
+        revision={<code>{engineComparison.commit.slice(0, 8)}</code>}
       >
-        <Link to="/perf/benchmark-results">Full tables and the command to reproduce them</Link>
+        <Link to="/perf/engine-comparison">Every case, the hosts, versions and raw data</Link>
       </Measured>
     </Section>
   );

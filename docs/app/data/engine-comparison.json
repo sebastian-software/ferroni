@@ -1,0 +1,259 @@
+{
+  "measured": "2026-10-01",
+  "commit": "11a7ba0248c920d4874d169349633bc8d761e8db",
+  "run": "https://github.com/sebastian-software/ferroni/actions/runs/36915129576",
+  "data": "benches/results/blacksmith-2026-10-01",
+  "hosts": [
+    {
+      "id": "macos-arm64",
+      "label": "macOS arm64",
+      "machine": "Apple M4 Pro (Virtual)",
+      "cpus": 6,
+      "runner": "blacksmith-6vcpu-macos-26"
+    },
+    {
+      "id": "linux-x86-64",
+      "label": "Linux x86-64",
+      "machine": "AMD EPYC",
+      "cpus": 4,
+      "runner": "blacksmith-4vcpu-ubuntu-2404"
+    }
+  ],
+  "workloads": [
+    {
+      "id": "highlighting",
+      "label": "Syntax highlighting",
+      "short": "Highlighting",
+      "detail": "Shiki scanner calls replayed for whole C++, Java and SCSS documents",
+      "cases": 3
+    },
+    {
+      "id": "shared",
+      "label": "Search, shared syntax",
+      "short": "Shared syntax",
+      "detail": "single searches, extraction and validation the regex crate can also run",
+      "cases": 18
+    },
+    {
+      "id": "oniguruma",
+      "label": "Search, Oniguruma syntax",
+      "short": "Oniguruma syntax",
+      "detail": "lookaround, backreferences, atomic groups, subexpression calls, absent operator, conditionals",
+      "cases": 8
+    }
+  ],
+  "engines": [
+    {
+      "id": "c",
+      "label": "Oniguruma (C)",
+      "cells": {
+        "highlighting": {
+          "cases": 3,
+          "of": 3,
+          "factors": {
+            "macos-arm64": 5.397,
+            "linux-x86-64": 5.425
+          },
+          "text": "5.4×"
+        },
+        "shared": {
+          "cases": 18,
+          "of": 18,
+          "factors": {
+            "macos-arm64": 2.847,
+            "linux-x86-64": 2.126
+          },
+          "text": "2.1–2.8×"
+        },
+        "oniguruma": {
+          "cases": 8,
+          "of": 8,
+          "factors": {
+            "macos-arm64": 1.644,
+            "linux-x86-64": 1.548
+          },
+          "text": "1.5–1.6×"
+        }
+      }
+    },
+    {
+      "id": "shiki_js",
+      "label": "Shiki JS",
+      "cells": {
+        "highlighting": {
+          "cases": 3,
+          "of": 3,
+          "factors": {
+            "macos-arm64": 2.5,
+            "linux-x86-64": 2.602
+          },
+          "text": "2.5–2.6×"
+        },
+        "shared": {
+          "cases": 0,
+          "of": 18,
+          "text": "–"
+        },
+        "oniguruma": {
+          "cases": 0,
+          "of": 8,
+          "text": "–"
+        }
+      }
+    },
+    {
+      "id": "onigmo",
+      "label": "Onigmo",
+      "cells": {
+        "highlighting": {
+          "cases": 2,
+          "of": 3,
+          "text": "n/a",
+          "note": "rejects C++",
+          "grammars": ["C++"]
+        },
+        "shared": {
+          "cases": 18,
+          "of": 18,
+          "factors": {
+            "macos-arm64": 1.87,
+            "linux-x86-64": 1.704
+          },
+          "text": "1.7–1.9×"
+        },
+        "oniguruma": {
+          "cases": 8,
+          "of": 8,
+          "factors": {
+            "macos-arm64": 1.104,
+            "linux-x86-64": 1.039
+          },
+          "text": "1.0–1.1×"
+        }
+      }
+    },
+    {
+      "id": "pcre2",
+      "label": "PCRE2",
+      "cells": {
+        "highlighting": {
+          "cases": 1,
+          "of": 3,
+          "text": "n/a",
+          "note": "rejects C++, differs on SCSS",
+          "grammars": ["C++", "SCSS"]
+        },
+        "shared": {
+          "cases": 18,
+          "of": 18,
+          "factors": {
+            "macos-arm64": 1.46,
+            "linux-x86-64": 1.271
+          },
+          "text": "1.3–1.5×"
+        },
+        "oniguruma": {
+          "cases": 7,
+          "of": 8,
+          "factors": {
+            "macos-arm64": 1.722,
+            "linux-x86-64": 1.634
+          },
+          "text": "1.6–1.7×",
+          "note": "7 of 8 cases"
+        }
+      }
+    },
+    {
+      "id": "pcre2_jit",
+      "label": "PCRE2 JIT",
+      "cells": {
+        "highlighting": {
+          "cases": 1,
+          "of": 3,
+          "text": "n/a",
+          "note": "rejects C++, differs on SCSS",
+          "grammars": ["C++", "SCSS"]
+        },
+        "shared": {
+          "cases": 18,
+          "of": 18,
+          "factors": {
+            "macos-arm64": 0.467,
+            "linux-x86-64": 0.445
+          },
+          "text": "0.4–0.5×"
+        },
+        "oniguruma": {
+          "cases": 7,
+          "of": 8,
+          "factors": {
+            "macos-arm64": 0.363,
+            "linux-x86-64": 0.375
+          },
+          "text": "0.4×",
+          "note": "7 of 8 cases"
+        }
+      }
+    },
+    {
+      "id": "fancy_regex",
+      "label": "fancy-regex",
+      "cells": {
+        "highlighting": {
+          "cases": 3,
+          "of": 3,
+          "factors": {
+            "macos-arm64": 57.116,
+            "linux-x86-64": 62.982
+          },
+          "text": "57–63×"
+        },
+        "shared": {
+          "cases": 18,
+          "of": 18,
+          "factors": {
+            "macos-arm64": 0.664,
+            "linux-x86-64": 0.725
+          },
+          "text": "0.7×"
+        },
+        "oniguruma": {
+          "cases": 7,
+          "of": 8,
+          "factors": {
+            "macos-arm64": 2.488,
+            "linux-x86-64": 2.431
+          },
+          "text": "2.4–2.5×",
+          "note": "7 of 8 cases"
+        }
+      }
+    },
+    {
+      "id": "regex",
+      "label": "regex",
+      "cells": {
+        "highlighting": {
+          "cases": 0,
+          "of": 3,
+          "text": "–"
+        },
+        "shared": {
+          "cases": 18,
+          "of": 18,
+          "factors": {
+            "macos-arm64": 0.542,
+            "linux-x86-64": 0.584
+          },
+          "text": "0.5–0.6×"
+        },
+        "oniguruma": {
+          "cases": 0,
+          "of": 8,
+          "text": "–"
+        }
+      }
+    }
+  ]
+}

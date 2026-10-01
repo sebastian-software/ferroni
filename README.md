@@ -191,15 +191,29 @@ automatic UTF-16 position mapping. API-compatible with
 
 ## Performance
 
-This summary draws on the
-[engine comparison](https://ferroni.dev/perf/engine-comparison) of 2026-10-01,
-run on two cloud hosts: an Apple M4 Pro and an AMD EPYC (x86-64) runner from
-Blacksmith. Every engine first has to reproduce Oniguruma's results for a case
-before it is timed. Scanner comparisons use complete, unmodified Shiki TextMate
-grammars and replays of real Shiki scanner calls. It shows the direction across
-the measured workloads, not a promise for every pattern or machine. The older
-`battle_bench` reference tables are in
-[Benchmark Results](https://ferroni.dev/perf/benchmark-results).
+How much faster Ferroni is than each engine: the other engine's time divided
+by Ferroni's, as the geometric mean over each workload. A range spans the two
+hosts; below 1×, the other engine is faster.
+
+<!-- engine-comparison -->
+| Ferroni compared with | Syntax highlighting | Search, shared syntax | Search, Oniguruma syntax |
+| --- | ---: | ---: | ---: |
+| Oniguruma (C) | 5.4× | 2.1–2.8× | 1.5–1.6× |
+| Shiki JS | 2.5–2.6× | – | – |
+| Onigmo | n/a (rejects C++) | 1.7–1.9× | 1.0–1.1× |
+| PCRE2 | n/a (rejects C++, differs on SCSS) | 1.3–1.5× | 1.6–1.7× (7 of 8 cases) |
+| PCRE2 JIT | n/a (rejects C++, differs on SCSS) | 0.4–0.5× | 0.4× (7 of 8 cases) |
+| fancy-regex | 57–63× | 0.7× | 2.4–2.5× (7 of 8 cases) |
+| regex | – | 0.5–0.6× | – |
+<!-- /engine-comparison -->
+
+Measured 2026-10-01 on Blacksmith's macOS arm64 (Apple M4 Pro) and Linux
+x86-64 (AMD EPYC) runners. Every engine first has to reproduce Oniguruma's
+results, or the captured Shiki results for highlighting; `n/a` marks a case it
+rejects or answers differently, `–` one it does not cover. These are
+observations on the measured workloads, not a promise for every pattern or
+machine.
+[Cases, hosts, versions and raw data](https://ferroni.dev/perf/engine-comparison).
 
 ### Scanner workloads
 
@@ -228,21 +242,11 @@ conditionals and case-insensitive backreferences.
 
 When patterns fit the narrower syntax of Rust's
 [`regex`](https://crates.io/crates/regex) crate, that engine often has the
-throughput advantage. It is a good choice for plain-text matching when its
+throughput advantage, and PCRE2's JIT is faster still on single searches. It
+cannot load every TextMate grammar, though, and neither engine finds the
+earliest match among many patterns in one search, as Oniguruma's RegSet does. It is a good choice for plain-text matching when its
 feature set is enough; Ferroni is for workloads that need Oniguruma features
 and practical scanner speed.
-
-### Other engines
-
-PCRE2's JIT has the fastest single search in about half of the shared-syntax
-cases and on every Oniguruma-syntax pattern it can run. It cannot load the C++ grammar, which uses
-Oniguruma's stacked quantifiers, and it answers some SCSS scanner calls
-differently. Without a RegSet it is 4x to 5x slower than Ferroni on the Java
-replay. Ruby's Onigmo is mixed against Ferroni on single searches, 7x to 17x
-slower on the scanner replays, and rejects the C++ grammar as well.
-fancy-regex runs all three grammars in its Oniguruma mode, but 32x to 123x
-slower than Ferroni. Shiki's JavaScript engine runs them too and is 1.6x to
-3.6x slower than Ferroni.
 
 ### Compilation and memory
 
