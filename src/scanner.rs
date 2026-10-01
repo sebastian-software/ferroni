@@ -165,6 +165,18 @@ impl Default for ScannerConfig {
 /// [`warnings`](Scanner::warnings) and
 /// [`backtracking_rewrites`](Scanner::backtracking_rewrites).
 ///
+/// # Scope
+///
+/// The cache knows nothing about grammars: every scanner built from it
+/// shares its patterns, so its owner decides how far sharing reaches. One
+/// cache for all the grammars a highlighter loads also shares patterns
+/// between grammars. Related grammars repeat each other's patterns (in the
+/// Shiki grammar collection, TypeScript and TSX have 351 of their 362 and
+/// 375 regex source strings in common), and a grammar that embeds another,
+/// such as Vue or Markdown, builds scanners over the embedded grammar's
+/// patterns again. A cache per grammar shares only within that grammar and
+/// is freed with it.
+///
 /// # Lifetime
 ///
 /// The cache and the scanners built from it hold strong references to the
