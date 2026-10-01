@@ -6,3 +6,4 @@
 /fuzz/coverage
 /fuzz/target
 __pycache__/
+node_modules/
