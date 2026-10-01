@@ -245,8 +245,10 @@ fn fallback_start_filter(reg: &RegexType) -> Option<Box<[u8; CHAR_MAP_SIZE]>> {
 /// Rust-only (ADR-008): the required literals of a fallback entry, where
 /// the search may leave out the attempts they rule out. As for the start
 /// filter, the entry has no callouts or position checks
-/// (`fallback_memo_is_safe`), and no limit observes the left-out attempts
-/// (`RequiredLiterals::applies`).
+/// (`fallback_memo_is_safe`): a variable-length look-behind can go on
+/// before the attempt start (see
+/// `required_literals_keep_attempts_of_entries_with_position_checks`). And
+/// no limit observes the left-out attempts (`RequiredLiterals::applies`).
 #[inline]
 fn required_literals<'a>(
     entry: &'a RegSetEntry,
@@ -3415,6 +3417,75 @@ mod tests {
         // The retry-limit example does leave out failing attempts that
         // reach the limit.
         assert!(limit_differences > 0);
+    }
+
+    /// Entries with a position check keep the attempts their required
+    /// literals would rule out (ADR-008). A variable-length look-behind
+    /// ending in a literal checks that literal first: it steps back as many
+    /// characters as the literal has, matches its bytes forward and goes on
+    /// where they end. `\x{140000}` encodes as `F5 80 80 80`, four one-byte
+    /// characters to the encoding's length table, but stepping back passes
+    /// all four bytes at once: from 10 it stops at 9, 8, 7 and 3, the
+    /// literal matches 3..7, and the attempt at 10 matches `ABC` at 7..10
+    /// without an occurrence from 10 on. C rejects such strings
+    /// (`USE_CHECK_VALIDITY_OF_STRING_IN_TREE`); for the strings it accepts
+    /// the check ends no earlier than the trailing bytes before the
+    /// look-behind's position, where no literal starts.
+    #[test]
+    fn required_literals_keep_attempts_of_entries_with_position_checks() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let pattern = br"\s*(?<=y*\x{140000})ABC";
+        let subject = b"yyy\xf5\x80\x80\x80ABCD";
+        let end = subject.len();
+        let reg = compile(pattern);
+        let required = reg.required_literals.as_deref().unwrap();
+        assert_eq!(required.literal_list(), [b"ABC".to_vec()]);
+        assert_eq!(
+            onig_search(&reg, subject, end, 0, end, None, ONIG_OPTION_NONE).0,
+            10
+        );
+        assert_eq!(required.find(subject, 10, end), None);
+
+        let (set, status) = onig_regset_new(vec![compile(pattern), compile(b"(id|green|Order|b)")]);
+        assert_eq!(status, ONIG_NORMAL);
+        let mut set = set.unwrap();
+        assert_eq!(fallback_indices(&set), [0]);
+        let msa = MatchArg::new(&set.entries[0].reg, ONIG_OPTION_NONE, None, 0);
+        assert!(required_literals(&set.entries[0], ONIG_OPTION_NONE, &msa).is_none());
+        for start in 0..=7 {
+            assert_eq!(
+                onig_regset_search(
+                    &mut set,
+                    subject,
+                    end,
+                    start,
+                    end,
+                    OnigRegSetLead::PositionLead,
+                    ONIG_OPTION_NONE,
+                ),
+                (0, 10),
+                "start={start}"
+            );
+            assert_eq!(
+                onig_regset_search_fast_with_id(
+                    &mut set,
+                    subject,
+                    end,
+                    start,
+                    end,
+                    OnigRegSetLead::PositionLead,
+                    ONIG_OPTION_NONE,
+                    FallbackMemoIdentity::Caller(181),
+                ),
+                (0, 10),
+                "start={start}"
+            );
+            assert_eq!(
+                onig_regset_entry_search(&mut set, 0, subject, end, start, end, ONIG_OPTION_NONE),
+                RegSetEntryEvent::Match { position: 10 },
+                "start={start}"
+            );
+        }
     }
 
     /// Attempts left out because their first instruction fails

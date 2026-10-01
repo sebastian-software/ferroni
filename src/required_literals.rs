@@ -42,6 +42,12 @@
 //! saved one. A folded (case-insensitive) literal trie gives nothing either:
 //! it also matches non-ASCII input such as the Kelvin sign for `k`, which no
 //! finder over its ASCII literals sees.
+//!
+//! A variable-length look-behind that checks its trailing literal can go on
+//! before the attempt start where that literal holds a lead byte the
+//! encoding reads as a one-byte character (`\x{140000}`, which C rejects).
+//! The RegSet therefore keeps every attempt of an entry with a position
+//! check (ADR-008).
 
 use std::sync::OnceLock;
 
