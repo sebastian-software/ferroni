@@ -3530,7 +3530,7 @@ pub(crate) fn first_op_fails(
     let enc = reg.enc;
     match test {
         FirstOpTest::WordBoundary { mode, not } => {
-            is_word_boundary(enc, str_data, s, end, mode) == not
+            is_word_boundary_ascii_fast(enc, str_data, s, end, mode) == not
         }
         // The `BeginLine` arm.
         FirstOpTest::BeginLine => {
