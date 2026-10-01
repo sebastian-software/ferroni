@@ -5968,16 +5968,43 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 stop_at_limit!(err);
             }
 
-            // Only the bottom sentinel is left, so STACK_POP would return
-            // FINISH_PCODE.
-            if let [
-                StackEntry::Alt {
-                    pcode: FINISH_PCODE,
-                    ..
-                },
-            ] = stack.as_slice()
-            {
-                break;
+            // Most backtracks find a choice point on top of the stack, where
+            // STACK_POP has nothing to skip or restore: take it here and
+            // leave the other entries to `stack_pop`. The bottom sentinel
+            // stays in place, as STACK_POP would return FINISH_PCODE. An
+            // ASCII star run without a peek byte gives up its last character
+            // in place, like the pop and push in `stack_pop`.
+            let top = match stack.last_mut() {
+                Some(StackEntry::Alt {
+                    pcode, pstr, zid, ..
+                }) => Some((*pcode, *pstr, *zid, true)),
+                Some(StackEntry::AltLazy {
+                    pcode,
+                    pstr,
+                    pstr_start,
+                    ascii: true,
+                    peek_byte: 0,
+                }) => {
+                    let at = *pstr;
+                    let exhausted = at <= *pstr_start;
+                    if !exhausted {
+                        *pstr = at - 1;
+                    }
+                    Some((*pcode, at, -1, exhausted))
+                }
+                _ => None,
+            };
+            if let Some((pcode, pstr, alt_zid, pop)) = top {
+                if pcode == FINISH_PCODE {
+                    break;
+                }
+                if pop {
+                    stack.pop();
+                }
+                p = pcode;
+                s = pstr;
+                last_alt_zid = alt_zid;
+                continue;
             }
             let pop_result = stack_pop(
                 &mut stack,
