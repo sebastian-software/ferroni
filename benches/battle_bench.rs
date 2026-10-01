@@ -923,6 +923,7 @@ criterion_group!(
     benches,
     general_regex::bench_general_regex,
     general_regex::bench_unicode_classes,
+    general_regex::bench_oniguruma_features,
     bench_scanner_highlighting,
     bench_scanner_documents,
     bench_text_scanning,

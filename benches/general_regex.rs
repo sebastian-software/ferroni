@@ -499,3 +499,78 @@ pub fn bench_general_regex(c: &mut Criterion) {
     }
     group.finish();
 }
+
+/// Syntax that only a backtracking engine with Oniguruma's extensions can run,
+/// so the `regex` crate has no counterpart. Each record is repeated to give
+/// the search loop a few kilobytes of text; empty matches are excluded as in
+/// `collect_matches`.
+pub fn bench_oniguruma_features(c: &mut Criterion) {
+    let cases = [
+        (
+            "atomic_possessive_strings",
+            r#""(?>[^"\\]++|\\.)*+""#,
+            "say \"hello \\\"world\\\"\" and \"x\" then \"tab\\tend\" done\n",
+            3,
+        ),
+        (
+            "subexp_call_balanced",
+            r"(?<p>\((?:[^()]|\g<p>)*\))",
+            "call(f(a, g(b)), (c)) and x(y) plus ((nested (deep)))\n",
+            3,
+        ),
+        (
+            "absent_comments",
+            r"/\*(?~\*/)\*/",
+            "int a; /* one */ b = 2; /* two * three */ c;\n",
+            2,
+        ),
+        (
+            "conditional_brackets",
+            r"(<)?\w+@\w+\.org(?(1)>)",
+            "to <alice@example.org> cc bob@example.org bad <carol@example.org\n",
+            3,
+        ),
+        (
+            "backref_ignorecase",
+            r"(?i)\b(\w+)\s+\1\b",
+            "The the quick brown Fox fox jumps over over the lazy dog\n",
+            3,
+        ),
+        (
+            "lookbehind_alternation",
+            r"(?<=\$|EUR )\d+(?:\.\d\d)?",
+            "paid $42.99 and EUR 17 but not 99 or USD 5\n",
+            2,
+        ),
+    ];
+    let mut group = c.benchmark_group("oniguruma_features");
+    configure_battle_group(&mut group);
+    for (name, pattern, record, matches_per_record) in cases {
+        let rust = rust_compile(pattern.as_bytes(), ONIG_OPTION_NONE);
+        let c_regex = c_compile(pattern.as_bytes(), ffi::ONIG_OPTION_NONE);
+        let text = record.repeat(TEXT_RECORDS);
+        let expected = c_trace(&c_regex, text.as_bytes());
+        assert_eq!(expected.len(), matches_per_record * TEXT_RECORDS, "{name}");
+        assert_eq!(rust_trace(&rust, text.as_bytes()), expected, "{name}");
+        println!(
+            "WORKLOAD {}",
+            serde_json::json!({
+                "name": name,
+                "pattern": pattern,
+                "record": record,
+                "records": TEXT_RECORDS,
+                "bytes": text.len(),
+                "matches": expected.len(),
+                "boundary": "all matches and raw capture bounds; materialized result vectors",
+            })
+        );
+        group.throughput(Throughput::Bytes(text.len() as u64));
+        group.bench_function(BenchmarkId::new("rust", name), |b| {
+            b.iter(|| black_box(rust_trace(&rust, black_box(text.as_bytes()))));
+        });
+        group.bench_function(BenchmarkId::new("c", name), |b| {
+            b.iter(|| black_box(c_trace(&c_regex, black_box(text.as_bytes()))));
+        });
+    }
+    group.finish();
+}
