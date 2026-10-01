@@ -1096,7 +1096,27 @@ fn search_fallback_entry(
         if s >= stop || s >= end {
             return None;
         }
-        s = (s + enclen(enc, str_data, s)).min(end);
+        s = if admitted
+            && !after_newline_only
+            && matches!(search_range, EntrySearchRange::AllRange { .. })
+            && entry.reg.leading_run.is_some()
+        {
+            // The failed attempt read the whole subject, even when a
+            // competing regex bounds match starts at `stop`. Starts inside
+            // its run cannot succeed; crossing `stop` finishes this entry.
+            crate::regexec::after_failed_run(
+                &entry.reg,
+                opton_find_longest(option | entry.reg.options),
+                msa,
+                str_data,
+                end,
+                end,
+                end,
+                s,
+            )
+        } else {
+            (s + enclen(enc, str_data, s)).min(end)
+        };
     }
 }
 
@@ -2854,6 +2874,154 @@ mod tests {
             ONIG_OPTION_NONE,
         );
         assert_eq!((index, position), (0, 1));
+    }
+
+    #[test]
+    fn fallback_run_skips_preserve_winners_captures_bounds_and_limits() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        struct RestoreLimits(u64, u64, u32, u64);
+        impl Drop for RestoreLimits {
+            fn drop(&mut self) {
+                onig_set_retry_limit_in_match(self.0);
+                onig_set_retry_limit_in_search(self.1);
+                onig_set_match_stack_limit(self.2);
+                onig_set_time_limit(self.3);
+            }
+        }
+        let _restore = RestoreLimits(
+            onig_get_retry_limit_in_match(),
+            onig_get_retry_limit_in_search(),
+            onig_get_match_stack_limit(),
+            onig_get_time_limit(),
+        );
+        onig_set_time_limit(0);
+        let patterns = [
+            r"(?=\w?[\w\s]*\brecord\s+[$\w]+)",
+            r"(?=\w?[-\w\s]*\b(?:class|(?<!@)interface|enum)\s+[$\w]+)",
+            r"(?=\w?[\w\s]*\b(record)\s+(\w+))",
+            r"(?=[\w\s]*\brecord\s+\w+)",
+            r"(?=\w?[a-z]*record)",
+            r"(?=[a-z]*a)b",
+            r"[a-z]+(x+)+z",
+            r"a*bc",
+            r"(\w+)@([\w-]+\.\w+)",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"private int id = 1;",
+            b"  private red green;",
+            b"   record Order",
+            b"recordX record Order;",
+            b"@interface Api",
+            b"public class Order",
+            b"enum Status",
+            b"aba",
+            b"aaaa bc",
+            b"aa xxxxx y",
+            b"user@example.org",
+            "é abc record 名".as_bytes(),
+            b"a\xc3\xa9 abc",
+            b"aa\xffbbb record R",
+            b"a\xe2\x82 record R",
+        ];
+        let limits = [
+            (0, 0, 0),
+            (1, 0, 0),
+            (2, 0, 0),
+            (3, 0, 0),
+            (4, 0, 0),
+            (8, 0, 0),
+            (16, 0, 0),
+            (32, 0, 0),
+            (64, 0, 0),
+            (10_000_000, 0, 0),
+            (0, 2, 0),
+            (0, 8, 0),
+            (0, 0, 2),
+            (0, 0, 8),
+        ];
+        let outcome = |set: &mut OnigRegSet, input: &[u8], end, start, range, option, fast| {
+            let found = if fast {
+                onig_regset_search_fast_with_id(
+                    set,
+                    input,
+                    end,
+                    start,
+                    range,
+                    OnigRegSetLead::PositionLead,
+                    option,
+                    FallbackMemoIdentity::Caller(71),
+                )
+            } else {
+                onig_regset_search(
+                    set,
+                    input,
+                    end,
+                    start,
+                    range,
+                    OnigRegSetLead::PositionLead,
+                    option,
+                )
+            };
+            let region = if found.0 >= 0 {
+                let region = onig_regset_get_region(set, found.0 as usize).unwrap();
+                (region.beg.clone(), region.end.clone())
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            (found, onig_regset_last_match_len(set), region)
+        };
+        let mut checked = 0;
+        for pattern in patterns {
+            for &input in inputs {
+                for end in [input.len(), input.len().saturating_sub(1)] {
+                    for (retry, search_retry, stack) in limits {
+                        onig_set_retry_limit_in_match(retry);
+                        onig_set_retry_limit_in_search(search_retry);
+                        onig_set_match_stack_limit(stack);
+                        for fast in [false, true] {
+                            let (mut optimized, status) = onig_regset_new(vec![
+                                compile(pattern.as_bytes()),
+                                compile(b"(id|green|Order|b)"),
+                            ]);
+                            assert_eq!(status, ONIG_NORMAL);
+                            let (mut reference, status) = onig_regset_new(vec![
+                                compile(pattern.as_bytes()),
+                                compile(b"(id|green|Order|b)"),
+                            ]);
+                            assert_eq!(status, ONIG_NORMAL);
+                            let optimized = optimized.as_mut().unwrap();
+                            let reference = reference.as_mut().unwrap();
+                            for entry in &mut reference.entries {
+                                entry.reg.leading_run = None;
+                            }
+                            for start in 0..=end {
+                                for range in [start, (start + 2).min(end), end] {
+                                    for option in [
+                                        ONIG_OPTION_NONE,
+                                        ONIG_OPTION_FIND_LONGEST,
+                                        ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ] {
+                                        assert_eq!(
+                                            outcome(
+                                                optimized, input, end, start, range, option, fast
+                                            ),
+                                            outcome(
+                                                reference, input, end, start, range, option, fast
+                                            ),
+                                            "{pattern} {input:?} end={end} start={start} range={range} option={option:?} fast={fast} retry={retry} search_retry={search_retry} stack={stack}"
+                                        );
+                                        checked += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("Compared {checked} RegSet search outcomes, including captures and limit errors");
+        assert!(checked > 100_000, "{checked}");
     }
 
     #[test]

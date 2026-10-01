@@ -52,7 +52,11 @@ pub(crate) struct LeadingRun {
     /// characters: no start inside a run passes it. The forward skip then only
     /// crosses ASCII bytes, where the boundary check sees the same characters
     /// as the scan.
-    boundary: bool,
+    ascii_only: bool,
+    /// An optional word before the run is redundant over ASCII starts.
+    pub(crate) optional_word_prefix: bool,
+    /// The run belongs to the sole positive assertion.
+    pub(crate) whole_lookahead: bool,
     /// Set when the run is atomic and a literal outside the class follows it.
     pub(crate) literal: Option<RunLiteral>,
 }
@@ -154,11 +158,46 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
     }
     let mut pc = 0;
     let mut mark = None;
+    let mut mark_count = 0;
     let mut boundary = None;
+    let mut whole_lookahead = false;
     loop {
         match (reg.ops.get(pc)?.opcode, &reg.ops[pc].payload) {
             (OpCode::MemStart | OpCode::MemStartPush, _) => {}
-            (OpCode::Mark, OperationPayload::Mark { id, .. }) => mark = Some((pc, *id)),
+            (OpCode::Mark, OperationPayload::Mark { id, .. }) => {
+                // At most eight bounded scans of the compiled instructions.
+                mark_count += 1;
+                if mark_count > 8 {
+                    return None;
+                }
+                let restores_position = reg.ops[pc + 1..].iter().find_map(|op| {
+                    if let OperationPayload::CutToMark {
+                        id: cut_id,
+                        restore_pos,
+                    } = &op.payload
+                    {
+                        (cut_id == id).then_some(*restore_pos)
+                    } else {
+                        None
+                    }
+                })?;
+                // A restored start before a consuming suffix makes that
+                // suffix depend on the position we would skip. A complete
+                // positive assertion has no such suffix.
+                if restores_position {
+                    whole_lookahead = pc == 0
+                        && matches!(reg.ops.last()?.opcode, OpCode::End)
+                        && matches!(
+                            &reg.ops.get(reg.ops.len().checked_sub(2)?)?.payload,
+                            OperationPayload::CutToMark { id: cut_id, restore_pos: true }
+                                if cut_id == id
+                        );
+                    if !whole_lookahead {
+                        return None;
+                    }
+                }
+                mark = Some((pc, *id));
+            }
             (OpCode::WordBoundary, OperationPayload::WordBoundary { mode })
                 if boundary.is_none() =>
             {
@@ -167,6 +206,22 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
             _ => break,
         }
         pc += 1;
+    }
+    // A whole positive assertion may begin with `\w?C*`. Over ASCII,
+    // the optional word cannot extend a run containing every word byte.
+    // Keep the program and its optimizer intact; only plan failed starts.
+    let optional_word_prefix = matches!(
+        (&reg.ops.get(pc)?.opcode, &reg.ops[pc].payload),
+        (OpCode::Push, OperationPayload::Push { addr: 2 })
+    ) && reg
+        .ops
+        .get(pc + 1)
+        .is_some_and(|op| matches!(op.opcode, OpCode::Word | OpCode::WordAscii));
+    if optional_word_prefix {
+        if !whole_lookahead || mark_count != 1 {
+            return None;
+        }
+        pc += 2;
     }
     let head = &reg.ops[pc];
     let is_star = |op: &Operation| {
@@ -218,9 +273,20 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
     let mut run = LeadingRun {
         star_pc,
         min_zero,
-        boundary: boundary.is_some(),
+        ascii_only: boundary.is_some() || optional_word_prefix,
+        optional_word_prefix,
+        whole_lookahead,
         literal: None,
     };
+    if optional_word_prefix
+        && (!min_zero
+            || !(0u8..128).all(|byte| {
+                !(byte.is_ascii_alphanumeric() || byte == b'_')
+                    || ascii_member(run.class(reg), byte)
+            }))
+    {
+        return None;
+    }
     // A start inside a run must fail the boundary check: every member is a
     // word character in the boundary's own sense.
     if let Some(mode) = boundary {
@@ -424,7 +490,7 @@ pub(crate) fn run_end(
     mut s: usize,
 ) -> usize {
     let class = run.class(reg);
-    let byte_steps = !run.multibyte(reg) || reg.enc.max_enc_len() == 1 || run.boundary;
+    let byte_steps = !run.multibyte(reg) || reg.enc.max_enc_len() == 1 || run.ascii_only;
     while s < limit {
         let byte = text[s];
         if byte < 0x80 {
@@ -1055,6 +1121,40 @@ mod tests {
             };
         }
         out
+    }
+
+    #[test]
+    fn whole_lookahead_runs_keep_restored_starts_and_ascii_guards() {
+        for pattern in [
+            r"(?=\w?[-\w\s]*\b(?:class|(?<!@)interface|enum)\s+[$\w]+)",
+            r"(?=\w?[\w\s]*\brecord\s+[$\w]+)",
+        ] {
+            let reg = compile(pattern, UTF8).unwrap();
+            let run = reg.leading_run.as_ref().expect("whole assertion run");
+            assert!(run.optional_word_prefix && run.ascii_only && run.min_zero);
+        }
+        for pattern in [
+            r"(?=\w?[a-z]*record)",
+            r"(?=\w?[\w\s]*record)b",
+            r"(?=(?>\w?[\w\s]*)record)",
+        ] {
+            assert!(
+                compile(pattern, UTF8).unwrap().leading_run.is_none(),
+                "{pattern}"
+            );
+        }
+        // A successful lookahead restores the original attempt before `b`.
+        // Failure at `a` therefore says nothing about a later start at `b`.
+        let reg = compile(r"(?=[a-z]*a)b", UTF8).unwrap();
+        assert!(reg.leading_run.is_none());
+        let actual = search(
+            &reg,
+            b"aba",
+            (3, 0, 3),
+            ONIG_OPTION_NONE,
+            &onig_new_match_param(),
+        );
+        assert_eq!(actual, (1, vec![1], vec![2]));
     }
 
     #[test]

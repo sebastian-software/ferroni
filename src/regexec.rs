@@ -8128,7 +8128,7 @@ fn window_start_map<'a>(
 /// run's end.
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
-fn after_failed_run(
+pub(crate) fn after_failed_run(
     reg: &RegexType,
     find_longest: bool,
     msa: &MatchArg,
@@ -8149,6 +8149,15 @@ fn after_failed_run(
         || str_data[failed] >= 0x80
         || next >= data_range
         || !crate::leading_run::may_continue(reg, run, str_data[next])
+        // A word start tries both optional-prefix paths. Its failed
+        // attempts bound the retries of every later ASCII start; a nonword
+        // start tries only one path, so keep it when a match limit is set.
+        || (run.optional_word_prefix
+            && msa.retry_limit_in_match != 0
+            && !(str_data[failed].is_ascii_alphanumeric() || str_data[failed] == b'_'))
+        // FIND_NOT_EMPTY can reject a successful assertion after its cut;
+        // that failure does not bound later assertions' retry counts.
+        || (run.whole_lookahead && opton_find_not_empty(msa.options))
         || find_longest
         || !may_skip_attempts(msa)
     {
