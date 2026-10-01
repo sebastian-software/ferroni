@@ -732,7 +732,7 @@ impl Alternation {
 const MAX_PREFIX: usize = 16;
 
 /// Bytes in decreasing order of frequency in prose and source code.
-const COMMON_BYTES: &[u8] =
+pub(crate) const COMMON_BYTES: &[u8] =
     b" etaoinsrhldcumfpgwybvkxjqz\nETAOINSRHLDCUMFPGWYBVKXJQZ.,;:()\"'_-=/0123456789{}[]<>*#@$%&!?+|\\~^`\t";
 
 /// How common a byte is: higher is more frequent.

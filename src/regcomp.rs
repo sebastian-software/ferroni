@@ -6976,6 +6976,17 @@ impl LiteralAltSummary {
     }
 }
 
+/// Rust-only (ADR-008): the trie a literal alternation node stands for, as
+/// an index into `RegexType::literal_tries`.
+pub(crate) fn literal_alt_trie_index(node: &Node) -> Option<usize> {
+    match &node.inner {
+        NodeInner::String(sn) if node.has_status(ND_ST_LITERAL_ALT) => {
+            Some(LiteralAltSummary::decode(&sn.s).trie_idx as usize)
+        }
+        _ => None,
+    }
+}
+
 /// Replace an alternation of case-insensitive ASCII literals with a folded
 /// trie. Rust-only (ADR-008): the trie must accept exactly what the
 /// alternation accepts once `unravel_case_fold_string` has expanded it,
@@ -10288,6 +10299,9 @@ fn compile_parsed(
     guard_backtrack_pushes(reg);
     fuse_ascii_class_runs(reg);
     crate::leading_run::plan(reg);
+    // Rust-only (ADR-008): literals every match contains, for RegSet
+    // fallback searches. Read from the tuned tree, which is gone afterwards.
+    reg.required_literals = crate::required_literals::derive(&root, reg, env).map(Box::new);
 
     0
 }
@@ -10564,6 +10578,7 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         leading_run: None,
         search_start_map: None,
         search_jump: None,
+        required_literals: None,
     };
 
     let (r, par) =
@@ -10888,6 +10903,7 @@ mod tests {
             leading_run: None,
             search_start_map: None,
             search_jump: None,
+            required_literals: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

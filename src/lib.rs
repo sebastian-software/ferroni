@@ -95,6 +95,7 @@ pub mod regparse_types;
 pub mod regset;
 pub mod regsyntax;
 pub mod regtrav;
+mod required_literals;
 pub mod scanner;
 pub mod unicode;
 

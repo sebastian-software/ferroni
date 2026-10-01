@@ -238,6 +238,29 @@ fn fallback_start_filter(reg: &RegexType) -> Option<Box<[u8; CHAR_MAP_SIZE]>> {
         .map(Box::new)
 }
 
+/// Rust-only (ADR-008): the required literals of a fallback entry, where
+/// the search may leave out the attempts they rule out. As for the start
+/// filter, the entry has no callouts or position checks
+/// (`fallback_memo_is_safe`), and no limit observes the left-out attempts
+/// (`RequiredLiterals::applies`).
+#[inline]
+fn required_literals<'a>(
+    entry: &'a RegSetEntry,
+    option: OnigOptionType,
+    msa: &MatchArg,
+) -> Option<&'a crate::required_literals::RequiredLiterals> {
+    let reg = &entry.reg;
+    reg.required_literals.as_deref().filter(|required| {
+        entry.fallback_memo_safe && required.applies(msa, opton_find_longest(option | reg.options))
+    })
+}
+
+/// The first occurrence of `reg`'s required literals in `s..end`.
+#[inline(never)]
+fn next_required_literal(reg: &RegexType, str_data: &[u8], s: usize, end: usize) -> Option<usize> {
+    reg.required_literals.as_deref()?.find(str_data, s, end)
+}
+
 #[inline]
 fn fallback_memo_is_safe(reg: &RegexType) -> bool {
     reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
@@ -973,6 +996,11 @@ fn attempt_fallback_entry_at_start(
     {
         return None;
     }
+    if required_literals(entry, option, msa)
+        .is_some_and(|required| required.find(str_data, start, end).is_none())
+    {
+        return None;
+    }
     let fill = EntryRegion::of(&entry.reg, option, msa);
     msa.retry_limit_in_search_counter = 0;
     let result = attempt_fallback_entry(entry, str_data, end, start, start, option, fill, msa);
@@ -1007,8 +1035,10 @@ fn attempt_fallback_entry_at_start(
 /// positions (its per-regex anchors and any-char-star skipping), which shows
 /// when an attempt stops at a retry limit.
 ///
-/// The one Rust-only difference is the start filter: positions whose byte
-/// cannot start a match are not attempted (see `fallback_start_filter`).
+/// The Rust-only differences leave out attempts that cannot match: positions
+/// whose byte cannot start a match (see `fallback_start_filter`), the rest of
+/// a failed leading run (`after_failed_run`), and the positions after the
+/// last occurrence of the entry's required literals (`required_literals`).
 #[allow(clippy::too_many_arguments)]
 #[inline(never)]
 fn search_fallback_entry(
@@ -1036,6 +1066,15 @@ fn search_fallback_entry(
             entry, index, str_data, end, start, range, option, msa,
         );
     }
+    // An attempt needs an occurrence of a required literal at or after its
+    // start: the first one from `start` admits the positions up to it, and
+    // a position past it looks for the next one. This runs before the
+    // optimizer's search: where the literal is the optimizer's own string,
+    // `memchr`/`memmem` rule out a subject without it sooner.
+    let mut required_hit = match required_literals(entry, option, msa) {
+        Some(required) => Some(required.find(str_data, start, end)?),
+        None => None,
+    };
     let mut search_range = entry_search_range(&entry.reg, str_data, end, start, range)?;
     // C updates `prev_is_newline` only while some regex of the set has
     // `ANCR_ANYCHAR_INF`, and the first position counts as after a newline.
@@ -1050,6 +1089,9 @@ fn search_fallback_entry(
     loop {
         if s > stop {
             return None;
+        }
+        if required_hit.is_some_and(|hit| s > hit) {
+            required_hit = Some(next_required_literal(&entry.reg, str_data, s, end)?);
         }
         let admitted = match search_range {
             EntrySearchRange::LowHigh {
@@ -3022,6 +3064,292 @@ mod tests {
         }
         eprintln!("Compared {checked} RegSet search outcomes, including captures and limit errors");
         assert!(checked > 100_000, "{checked}");
+    }
+
+    /// Fallback searches with and without the required-literal filter. The
+    /// filter leaves out attempts that cannot match; with a retry limit in
+    /// match, such an attempt may still have stopped at the limit, which
+    /// only the reference then reports (ADR-008's deliberate difference).
+    #[test]
+    fn required_literals_preserve_winners_captures_bounds_and_limits() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        struct RestoreLimits(u64, u64, u32, u64, u64);
+        impl Drop for RestoreLimits {
+            fn drop(&mut self) {
+                onig_set_retry_limit_in_match(self.0);
+                onig_set_retry_limit_in_search(self.1);
+                onig_set_match_stack_limit(self.2);
+                onig_set_time_limit(self.3);
+                crate::regexec::onig_set_subexp_call_limit_in_search(self.4);
+            }
+        }
+        let _restore = RestoreLimits(
+            onig_get_retry_limit_in_match(),
+            onig_get_retry_limit_in_search(),
+            onig_get_match_stack_limit(),
+            onig_get_time_limit(),
+            crate::regexec::onig_get_subexp_call_limit_in_search(),
+        );
+        onig_set_time_limit(0);
+        // Each pattern is a fallback entry with required literals.
+        let patterns = [
+            // The optimizer's exact string.
+            r"\s*(\{)",
+            r"\s*é(\w?)",
+            // Literal tries and their union.
+            r"(?:\s+|^)(?:foo|bar)_x(\w*)",
+            r"(?:\s+|(?<=\W)|^)((?<!\w)(?:reinterpret|dynamic|static|const)_cast(?!\w))",
+            // A positive look-ahead.
+            r"(?:\s+|^)\w*(?=\s*\{)",
+            // A class of one-byte literals.
+            r"(?:\s+|^)[{(]x?",
+            // Exact alternatives of a case-insensitive string.
+            r"(?:\s+|^)(?i:st)\w*",
+            // A recursive call: its group's own literals.
+            r"(?:\s+|^)(?<p>\((?:[^()]|\g<p>)*\))",
+            // A back reference does not count, its group does.
+            r"(?:\s+|^)(ab)\w*\1",
+            // Nor does the text of a look-behind or a negative look-ahead.
+            r"(?:\s+|^|(?<=b))(?<=ab)(?:c|d)",
+            r"(?:\s+|^|(?<=b))(?!ab)(?:c|d)",
+            // Backtracks a lot before failing (the retry-limit example).
+            r"(?:\s+|^)(?:a*a?)*x",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"{",
+            b"  {x",
+            b"foo_x bar_xy foo_",
+            b" static_cast<int>(x); dynamic_cast",
+            b"abcd { efgh",
+            "\u{17f}t ST \u{fb06}x sT".as_bytes(),
+            b"a(b(c)d)e) f(",
+            b"ab abxab ab",
+            b"abc ab c abc",
+            b"\xc3\xa9x \xc3\xa9\xc3",
+            b"\xff{\xc3( \xc3\xa9",
+            b"aaaaaaaaaaaa",
+            b"aaaaaaaaaa x a",
+            b"no literal here at all",
+        ];
+        // Retry limit in match, search retry budget, match stack limit,
+        // calls per search.
+        let limits = [
+            (0, 0, 0, 0),
+            (1, 0, 0, 0),
+            (2, 0, 0, 0),
+            (8, 0, 0, 0),
+            (64, 0, 0, 0),
+            (10_000_000, 0, 0, 0),
+            (0, 2, 0, 0),
+            (0, 8, 0, 0),
+            (0, 0, 2, 0),
+            (0, 0, 8, 0),
+            (0, 0, 0, 2),
+        ];
+        let outcome = |set: &mut OnigRegSet, input: &[u8], end, start, range, option, fast| {
+            let found = if fast {
+                onig_regset_search_fast_with_id(
+                    set,
+                    input,
+                    end,
+                    start,
+                    range,
+                    OnigRegSetLead::PositionLead,
+                    option,
+                    FallbackMemoIdentity::Caller(73),
+                )
+            } else {
+                onig_regset_search(
+                    set,
+                    input,
+                    end,
+                    start,
+                    range,
+                    OnigRegSetLead::PositionLead,
+                    option,
+                )
+            };
+            let region = if found.0 >= 0 {
+                let region = onig_regset_get_region(set, found.0 as usize).unwrap();
+                (region.beg.clone(), region.end.clone())
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            (found, onig_regset_last_match_len(set), region)
+        };
+        let sets = |pattern: &str| {
+            let build = || {
+                let (set, status) = onig_regset_new(vec![
+                    compile(pattern.as_bytes()),
+                    compile(b"(id|green|Order|b)"),
+                ]);
+                assert_eq!(status, ONIG_NORMAL);
+                set.unwrap()
+            };
+            let optimized = build();
+            assert_eq!(fallback_indices(&optimized), [0], "{pattern}");
+            let entry = &optimized.entries[0];
+            assert!(
+                entry.fallback_memo_safe && entry.reg.required_literals.is_some(),
+                "{pattern}"
+            );
+            let mut reference = build();
+            reference.entries[0].reg.required_literals = None;
+            (optimized, reference, build())
+        };
+        let (mut checked, mut limit_differences) = (0, 0);
+        for pattern in patterns {
+            for &input in inputs {
+                for end in [input.len(), input.len().saturating_sub(1)] {
+                    for (retry, search_retry, stack, calls) in limits {
+                        onig_set_retry_limit_in_match(retry);
+                        onig_set_retry_limit_in_search(search_retry);
+                        onig_set_match_stack_limit(stack);
+                        crate::regexec::onig_set_subexp_call_limit_in_search(calls);
+                        for fast in [false, true] {
+                            let (mut optimized, mut reference, mut unlimited) = sets(pattern);
+                            for start in 0..=end {
+                                for range in [start, (start + 2).min(end), end] {
+                                    for option in [
+                                        ONIG_OPTION_NONE,
+                                        ONIG_OPTION_FIND_NOT_EMPTY,
+                                        ONIG_OPTION_NOTBOL,
+                                    ] {
+                                        let expected = outcome(
+                                            &mut reference,
+                                            input,
+                                            end,
+                                            start,
+                                            range,
+                                            option,
+                                            fast,
+                                        );
+                                        let actual = outcome(
+                                            &mut optimized,
+                                            input,
+                                            end,
+                                            start,
+                                            range,
+                                            option,
+                                            fast,
+                                        );
+                                        if actual != expected
+                                            && retry != 0
+                                            && expected.0.0 == ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+                                        {
+                                            // Without the left-out attempts,
+                                            // a match or no match is what a
+                                            // search without the limit
+                                            // finds.
+                                            onig_set_retry_limit_in_match(0);
+                                            let unlimited = outcome(
+                                                &mut unlimited,
+                                                input,
+                                                end,
+                                                start,
+                                                range,
+                                                option,
+                                                false,
+                                            );
+                                            onig_set_retry_limit_in_match(retry);
+                                            assert_eq!(
+                                                actual, unlimited,
+                                                "{pattern} {input:?} end={end} start={start} range={range} option={option:?} fast={fast} retry={retry}"
+                                            );
+                                            limit_differences += 1;
+                                            continue;
+                                        }
+                                        assert_eq!(
+                                            actual, expected,
+                                            "{pattern} {input:?} end={end} start={start} range={range} option={option:?} fast={fast} retry={retry} search_retry={search_retry} stack={stack} calls={calls}"
+                                        );
+                                        checked += 1;
+                                    }
+                                }
+                            }
+                            // One regex on its own, as the scanner's cache
+                            // route asks it.
+                            for start in 0..=end {
+                                for stop in [start, end] {
+                                    let event = |set: &mut OnigRegSet| {
+                                        let event = onig_regset_entry_search(
+                                            set,
+                                            0,
+                                            input,
+                                            end,
+                                            start,
+                                            stop,
+                                            ONIG_OPTION_NONE,
+                                        );
+                                        let region = onig_regset_get_region(set, 0).unwrap();
+                                        (event, region.beg.clone(), region.end.clone())
+                                    };
+                                    let expected = event(&mut reference);
+                                    let actual = event(&mut optimized);
+                                    if actual.0 != expected.0
+                                        && retry != 0
+                                        && matches!(
+                                            expected.0,
+                                            RegSetEntryEvent::Error {
+                                                code: ONIGERR_RETRY_LIMIT_IN_MATCH_OVER,
+                                                ..
+                                            }
+                                        )
+                                    {
+                                        match actual.0 {
+                                            RegSetEntryEvent::Error { position, code } => {
+                                                // The limit, at a later
+                                                // attempt.
+                                                assert_eq!(code, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER);
+                                                assert!(matches!(
+                                                    expected.0,
+                                                    RegSetEntryEvent::Error { position: first, .. }
+                                                        if first < position
+                                                ));
+                                            }
+                                            _ => {
+                                                onig_set_retry_limit_in_match(0);
+                                                let unlimited = event(&mut unlimited);
+                                                onig_set_retry_limit_in_match(retry);
+                                                assert_eq!(
+                                                    actual.0, unlimited.0,
+                                                    "{pattern} {input:?} end={end} start={start} stop={stop} retry={retry}"
+                                                );
+                                                if matches!(
+                                                    actual.0,
+                                                    RegSetEntryEvent::Match { .. }
+                                                ) {
+                                                    assert_eq!(actual, unlimited);
+                                                }
+                                            }
+                                        }
+                                        limit_differences += 1;
+                                        continue;
+                                    }
+                                    assert_eq!(
+                                        actual.0, expected.0,
+                                        "{pattern} {input:?} end={end} start={start} stop={stop} retry={retry} search_retry={search_retry} stack={stack} calls={calls}"
+                                    );
+                                    if matches!(actual.0, RegSetEntryEvent::Match { .. }) {
+                                        assert_eq!(actual, expected);
+                                    }
+                                    checked += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "Compared {checked} RegSet outcomes with and without required literals; \
+             {limit_differences} retry-limit errors left out"
+        );
+        assert!(checked > 100_000, "{checked}");
+        // The retry-limit example does leave out failing attempts that
+        // reach the limit.
+        assert!(limit_differences > 0);
     }
 
     #[test]

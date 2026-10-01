@@ -7953,6 +7953,7 @@ mod tests {
             leading_run: None,
             search_start_map: None,
             search_jump: None,
+            required_literals: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),
