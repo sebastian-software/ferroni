@@ -161,6 +161,28 @@ engines by their complete feature sets.
 Exact external input revisions for the publishable battle suite are pinned in
 [`benches/battle_inputs.toml`](benches/battle_inputs.toml).
 
+The `oniguruma_features` group covers syntax only Oniguruma runs (atomic and
+possessive groups, subexpression calls, the absent operator, conditionals,
+case-insensitive backreferences, alternating lookbehind) against C.
+
+With `--features ffi`, the C++, Java and SCSS scanner replays add a `_c`
+case per replay: the same captured Shiki calls through the vscode-oniguruma C
+scanner, checked against every captured result before timing.
+
+`scripts/cloud-profile.py` times a selection of cases per engine and samples
+Ferroni and C with [samply](https://github.com/mstange/samply). The `trivial`
+set holds patterns the `regex` crate also runs; the `oniguruma` set holds
+Oniguruma-only syntax, the grammar scanners of `battle_bench` and the Shiki
+scanner replays. The
+[Blacksmith profile](.github/workflows/blacksmith-profile.yml) workflow runs
+it by hand on `blacksmith-6vcpu-macos-26` and `blacksmith-4vcpu-ubuntu-2404`
+and keeps the profiles as an artifact; open one with `samply load`.
+
+```bash
+./scripts/cloud-profile.py /tmp/ferroni-profile --cases oniguruma
+./scripts/cloud-profile.py /tmp/ferroni-profile --only 'literal|subexp' --profile-seconds 5
+```
+
 For process-isolated memory comparison on the large TypeScript scanner
 workload, use:
 
