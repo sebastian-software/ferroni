@@ -1,0 +1,122 @@
+name: Blacksmith comparison
+
+# Ferroni next to C Oniguruma, Ruby's Onigmo, PCRE2 (JIT and interpreter),
+# fancy-regex, the regex crate and Shiki's JavaScript engine, on one Apple
+# Silicon and one x86-64 host. scripts/compare-engines.py validates every case
+# per engine and times the engines that reproduce Oniguruma's results; the
+# others are listed with the reason. Each case set runs as its own job, so a
+# host's sets run in parallel on separate VMs; all engines of one case always
+# share a VM. A final job merges the sets into one summary per host.
+# Provider-managed runners cost money, so the workflow only runs when
+# dispatched by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Runner profile
+        type: choice
+        options: [both, macos-arm64, linux-x86-64]
+        default: both
+      cases:
+        description: Case set
+        type: choice
+        options: [all, trivial, oniguruma, textmate]
+        default: all
+      measure_seconds:
+        description: Criterion measurement seconds per case and engine
+        type: choice
+        options: ["3", "5", "10"]
+        default: "3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blacksmith-comparison-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  PYTHONDONTWRITEBYTECODE: "1"
+  # rust-toolchain.toml pins the local default; keep the requested one in charge.
+  RUSTUP_TOOLCHAIN: stable
+
+jobs:
+  compare:
+    name: ${{ matrix.profile }} / ${{ matrix.cases }}
+    if: github.repository == 'sebastian-software/ferroni'
+    runs-on: ${{ matrix.profile == 'macos-arm64' && 'blacksmith-6vcpu-macos-26' || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(inputs.platform == 'macos-arm64' && '["macos-arm64"]' || inputs.platform == 'linux-x86-64' && '["linux-x86-64"]' || '["macos-arm64","linux-x86-64"]') }}
+        cases: ${{ fromJSON(inputs.cases == 'all' && '["trivial","oniguruma","textmate"]' || format('["{0}"]', inputs.cases)) }}
+    env:
+      PROFILE: ${{ matrix.profile }}
+      RUNNER_LABEL: ${{ matrix.profile == 'macos-arm64' && 'blacksmith-6vcpu-macos-26' || 'blacksmith-4vcpu-ubuntu-2404' }}
+      CASES: ${{ matrix.cases }}
+      MEASURE_SECONDS: ${{ inputs.measure_seconds }}
+      COMPARISON_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: compare-engines-${{ matrix.profile }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v4.4.0
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+      - name: Install Shiki's JavaScript engine
+        if: matrix.cases == 'textmate'
+        run: pnpm install --frozen-lockfile --dir benches/shiki_js
+      - name: Prepare Oniguruma and Onigmo sources
+        run: |
+          ./scripts/prepare-oniguruma-sources.sh
+          ./scripts/prepare-onigmo-sources.sh
+      - name: Validate and measure
+        run: >-
+          ./scripts/compare-engines.py run "$RUNNER_TEMP/compare/$PROFILE-$CASES"
+          --runner-profile "$PROFILE" --cases "$CASES" --measure-seconds "$MEASURE_SECONDS"
+          $([[ "$CASES" == textmate ]] || echo --no-shiki-js)
+      - name: Keep the measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: comparison-${{ matrix.profile }}-${{ matrix.cases }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/compare/*/*.json
+            ${{ runner.temp }}/compare/*/summary.md
+            ${{ runner.temp }}/compare/*/logs/
+          if-no-files-found: warn
+          retention-days: 90
+
+  report:
+    name: Summary
+    needs: compare
+    if: always() && github.repository == 'sebastian-software/ferroni'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: comparison-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/compare
+      - name: Merge the case sets per host
+        run: |
+          ./scripts/compare-engines.py report "$RUNNER_TEMP/summary.md" "$RUNNER_TEMP/compare"
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"

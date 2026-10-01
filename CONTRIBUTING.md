@@ -178,20 +178,20 @@ differently prints an `UNSUPPORTED` line with the reason instead of a timing.
 `benches/shiki_js` replays the same Shiki calls through Shiki's JavaScript
 engine in Node.
 
-`scripts/cloud-profile.py` times a selection of cases per engine and samples
-Ferroni and C with [samply](https://github.com/mstange/samply). The `trivial`
-set holds patterns the `regex` crate also runs; the `oniguruma` set holds
-Oniguruma-only syntax, the grammar scanners of `battle_bench` and the Shiki
-scanner replays. The [Blacksmith profile](.github/workflows/blacksmith-profile.yml)
-workflow runs it by hand on `blacksmith-6vcpu-macos-26` and
-`blacksmith-4vcpu-ubuntu-2404` and keeps the profiles as an artifact; open one
-with `samply load`.
+`scripts/compare-engines.py` validates and times a selection of cases for
+every engine in an ordinary release build. The `trivial` set holds patterns
+the `regex` crate also runs, the `oniguruma` set Oniguruma-only syntax, and the
+`textmate` set the grammar scanners of `battle_bench` and the Shiki scanner
+replays. The [Blacksmith comparison](.github/workflows/blacksmith-comparison.yml)
+workflow runs each set as its own job on `blacksmith-6vcpu-macos-26` and
+`blacksmith-4vcpu-ubuntu-2404` and merges them into one summary per host.
+CPU profiles are a local job; see the scanner READMEs below.
 
 ```bash
 ./scripts/prepare-onigmo-sources.sh
 pnpm install --frozen-lockfile --dir benches/shiki_js
-./scripts/cloud-profile.py /tmp/ferroni-profile --cases oniguruma
-./scripts/cloud-profile.py /tmp/ferroni-profile --only 'literal|subexp' --profile-seconds 5
+./scripts/compare-engines.py run /tmp/ferroni-compare --cases oniguruma textmate
+./scripts/compare-engines.py report /tmp/ferroni-compare.md /tmp/ferroni-compare
 ```
 
 For process-isolated memory comparison on the large TypeScript scanner
