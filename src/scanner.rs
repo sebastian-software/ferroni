@@ -406,6 +406,8 @@ const SCANNER_STATS_ENABLED: bool = cfg!(any(test, debug_assertions));
 /// assert_eq!(m.capture_indices[0].end, 5);
 /// ```
 pub struct Scanner {
+    trace_patterns: Vec<String>,
+    trace_id: u64,
     caches: Vec<CacheEntry>,
     regset: Box<OnigRegSet>,
     stats: ScannerStats,
@@ -495,6 +497,8 @@ impl Scanner {
         }
 
         Ok(Scanner {
+            trace_patterns: patterns.iter().map(|s| s.to_string()).collect(),
+            trace_id: NEXT_ONIG_STRING_ID.fetch_add(1, Ordering::Relaxed),
             caches,
             regset: regset.unwrap(),
             stats: ScannerStats::default(),
@@ -591,6 +595,34 @@ impl Scanner {
     /// assert_eq!(m.capture_indices[0].end, 5);
     /// ```
     pub fn find_next_match_utf16(
+        &mut self,
+        string: &OnigString,
+        start_position: usize,
+        options: ScannerFindOptions,
+    ) -> Option<ScannerMatch> {
+        let started = std::time::Instant::now();
+        let matched = self.trace_find_next_match_utf16(string, start_position, options);
+        let elapsed = started.elapsed().as_nanos();
+        if let Ok(path) = std::env::var("FERRONI_CPP_TRACE") {
+            use std::io::Write;
+            let expected = matched.as_ref().map(|m| serde_json::json!({
+                "index": m.index,
+                "captures": m.capture_indices.iter().map(|c| [c.start, c.end]).collect::<Vec<_>>()
+            }));
+            let event = serde_json::json!({"scanner": self.trace_id, "patterns": self.trace_patterns,
+                "subject_id": string.cache_id, "subject": string.content(),
+                "start": start_position, "options": options.0, "expected": expected, "elapsed_ns": elapsed});
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .unwrap();
+            writeln!(file, "{event}").unwrap();
+        }
+        matched
+    }
+
+    fn trace_find_next_match_utf16(
         &mut self,
         string: &OnigString,
         start_position: usize,
