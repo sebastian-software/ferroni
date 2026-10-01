@@ -1,3 +1,7 @@
+#[path = "engine_replay.rs"]
+mod engine_replay;
+#[path = "engines.rs"]
+mod engines;
 #[path = "cpp_scanner/mod.rs"]
 mod scanner_replay;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -31,6 +35,27 @@ fn bench_scss(c: &mut Criterion) {
                     BatchSize::SmallInput,
                 );
             });
+        }
+        for &engine in engines::Engine::ALL {
+            match engine_replay::EngineReplay::new(engine, &corpus, &calls) {
+                Ok(replay) => {
+                    let id = format!("scss_scanner/{name}_{}", engine.id());
+                    if replay.empty_capture_differences > 0 {
+                        println!(
+                            "EQUIVALENT {}",
+                            serde_json::json!({"id": id, "empty_capture_differences": replay.empty_capture_differences})
+                        );
+                    }
+                    group.bench_function(format!("{name}_{}", engine.id()), |b| {
+                        b.iter(|| replay.replay());
+                    });
+                }
+                Err(reason) => engines::unsupported(
+                    &format!("scss_scanner/{name}_{}", engine.id()),
+                    engine,
+                    &reason,
+                ),
+            }
         }
     }
     group.finish();

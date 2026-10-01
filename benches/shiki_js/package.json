@@ -1,0 +1,10 @@
+{
+  "name": "ferroni-shiki-js-replay",
+  "private": true,
+  "type": "module",
+  "description": "Replays the captured Shiki scanner calls through Shiki's JavaScript regex engine",
+  "dependencies": {
+    "@shikijs/engine-javascript": "4.5.0"
+  },
+  "packageManager": "pnpm@10.34.5"
+}
