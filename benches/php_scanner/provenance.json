@@ -1,0 +1,32 @@
+{
+  "format_version": 1,
+  "capture": "benches/shiki_js/capture.mjs: Shiki codeToTokensBase with its Oniguruma (WASM) engine, theme github-dark, one cold document",
+  "capture_command": "node capture.mjs php ../php_scanner/orders.php 16 ../php_scanner/trace.json",
+  "shiki": "4.5.0",
+  "grammar_source": "@shikijs/langs 4.5.0 (MIT), from shikijs/textmate-grammars-themes",
+  "lock": "benches/shiki_js/pnpm-lock.yaml",
+  "document": "orders.php",
+  "document_origin": "sebastian-software/ferriki node/benchmarks/tiobe/fixtures/orders.php at a3f586ac91f552a125504f1f198325aff30e61d5",
+  "document_sha256": "70e1146dba5f45c5e5b209d29c0a0f8d5219e085a7336469b555a258f8bac732",
+  "copies": 16,
+  "document_bytes": 14304,
+  "document_lines": 545,
+  "calls": 3952,
+  "scanners": 35,
+  "subjects": 816,
+  "hot_groups": [
+    {
+      "id": 13,
+      "calls": 752
+    },
+    {
+      "id": 1,
+      "calls": 446
+    },
+    {
+      "id": 2,
+      "calls": 432
+    }
+  ],
+  "trace_sha256": "53b64553a1ee7d6639a9a1d717270f410787998bb499e3fd0f2f4ea0d3a6a7b6"
+}

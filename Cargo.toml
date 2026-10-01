@@ -109,3 +109,7 @@ harness = false
 [[bench]]
 name = "java_scanner_bench"
 harness = false
+
+[[bench]]
+name = "shiki_scanner_bench"
+harness = false

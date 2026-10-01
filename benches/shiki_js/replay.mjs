@@ -4,7 +4,7 @@
 // captured result first; a pattern the engine rejects or a call it answers
 // differently makes the replay "unsupported" instead of timed.
 //
-//   node replay.mjs <cpp|java|scss> <document|group_N> <validate|measure|profile> [seconds]
+//   node replay.mjs <cpp|java|scss|c|php> <document|group_N> <validate|measure|profile> [seconds]
 //
 // Prints one JSON line. Like the Rust replays, scanners are created once and
 // every replay gets fresh string identities, so the per-string search cache
@@ -14,9 +14,9 @@ import { readFileSync } from 'node:fs';
 import { createJavaScriptRegexEngine } from '@shikijs/engine-javascript';
 
 const [language, selection, mode, seconds = '5'] = process.argv.slice(2);
-if (!['cpp', 'java', 'scss'].includes(language) || !/^(document|group_\d+)$/.test(selection)
+if (!['cpp', 'java', 'scss', 'c', 'php'].includes(language) || !/^(document|group_\d+)$/.test(selection)
     || !['validate', 'measure', 'profile'].includes(mode)) {
-  throw new Error('Usage: node replay.mjs <cpp|java|scss> <document|group_N> <validate|measure|profile> [seconds]');
+  throw new Error('Usage: node replay.mjs <cpp|java|scss|c|php> <document|group_N> <validate|measure|profile> [seconds]');
 }
 const id = `${language}_scanner/${selection}_shiki_js`;
 const fixture = JSON.parse(readFileSync(new URL(`../${language}_scanner/trace.json`, import.meta.url), 'utf8'));
