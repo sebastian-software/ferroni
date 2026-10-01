@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.1](https://github.com/sebastian-software/ferroni/compare/v1.8.0...v1.8.1) (2026-10-01)
+
+
+### Performance Improvements
+
+* **regset:** reject attempts whose first instruction fails before entering the VM ([110c1ef](https://github.com/sebastian-software/ferroni/commit/110c1ef7665b2e6d2a0d3ecaddbf53269ec345de))
+* **regset:** skip fallback attempts after the last required literal ([72151f5](https://github.com/sebastian-software/ferroni/commit/72151f5c06f5f6226a4b31d8c50c6276e9a74feb))
+* **vm:** decide ASCII word boundaries without decoding ([8b637c0](https://github.com/sebastian-software/ferroni/commit/8b637c09625f16d0f3e047091b6f52b3c9481f40))
+* **vm:** take a choice point on top of the stack without a call ([80abb91](https://github.com/sebastian-software/ferroni/commit/80abb91bdaaae0e6d5d9a30fac4cc40436dc8d71))
+
 ## [1.8.0](https://github.com/sebastian-software/ferroni/compare/v1.7.0...v1.8.0) (2026-10-01)
 
 
