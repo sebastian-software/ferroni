@@ -31,6 +31,8 @@ Add a `Scanner` API (`src/scanner.rs`) that wraps Ferroni's C-ported `RegSet` in
 
 4. **`ScannerSyntax`**: Enum selecting the regex syntax variant (Oniguruma, Asis, POSIX Basic/Extended, Java, Perl, Ruby, Python, etc.), matching vscode-oniguruma's `Syntax` type.
 
+5. **`ScannerPatternCache`** and **`Scanner::with_pattern_cache(patterns, config, cache)`** (with `Scanner::with_backtracking_optimization_and_pattern_cache`): opt-in sharing of compiled patterns between scanners, Rust-only (see [Pattern cache](#pattern-cache)). `Scanner::new` and `Scanner::with_config` keep compiling every pattern.
+
 ### Layering
 
 ```
@@ -39,11 +41,36 @@ Add a `Scanner` API (`src/scanner.rs`) that wraps Ferroni's C-ported `RegSet` in
          └── onig_search / onig_match (C-ported VM, ADR-001)
 ```
 
-The Scanner does **not** modify the C-ported internals. It is an additive layer that:
+The Scanner does **not** modify the C-ported control flow. It is an additive layer that:
 
 - Delegates pattern compilation to `onig_new()` (same as `Regex`)
 - Delegates multi-pattern search to `onig_regset_search_fast()` (C-ported RegSet)
 - Adds result formatting, option translation, and scratch space management
+
+The one change below it is in the RegSet's data: an entry holds its regex as `Arc<RegexType>` instead of `Box<RegexType>`, so that sets can share it (see [Pattern cache](#pattern-cache)).
+
+### Pattern cache
+
+A TextMate grammar creates one scanner per rule context, and the same pattern strings recur across them. In the captured Ferriki sessions (`benches/*_scanner/trace.json`), the C++ grammar's 96 scanners hold 4,026 patterns, 250 of them distinct; SCSS has 600 in 20 scanners (104 distinct), Java 866 in 27 (115 distinct). Most of the work of constructing every scanner went into compiling patterns that had already been compiled. This is a cold-start cost: the first highlight of a grammar in a process.
+
+`ScannerPatternCache` maps a pattern's text, compile options, syntax and backtracking optimization choice to its compiled `RegexType`, which carries everything a scanner keeps per pattern besides its search state (bytecode, optimizer data, the Rust-only plans, backtracking warnings and rewrites). A scanner built with the cache reuses the patterns it holds and compiles and adds the others.
+
+- **Explicit, caller-owned, not process-wide.** The caller knows when a grammar is loaded and dropped; a process-wide cache would keep every pattern for the life of the process or need an eviction policy of its own. Compilation also reads process-wide settings (`onig_set_capture_num_limit`, `onig_set_parse_depth_limit`, user-defined Unicode properties, callout names) and runs the warning callbacks; a process-wide cache would freeze them for every caller, while a caller's cache is cleared by its owner after changing them. Finally, the cache takes `&mut` and needs no lock inside Ferroni; callers that build scanners on several threads put it behind a `Mutex` or keep one per thread. vscode-oniguruma has no such cache, so `Scanner::new` and `Scanner::with_config` stay as they were.
+- **Lifetime.** The cache and the scanners hold strong references; a compiled pattern is freed with the last of them. `clear()` and dropping the cache never affect built scanners, and the cache never evicts by itself. A construction that fails (a pattern does not compile, or the RegSet refuses the set) leaves the cache as it was.
+- **What is shared.** Only the compiled regex. Every RegSet builds its own entries (region, fallback memo, gates, start filters, first-instruction tests, routing flags), and every scanner its own per-regex cache entries. Searches take `&RegexType`; the only interior mutability inside it is two `OnceLock`s (the required-literal searcher and the folded-alternation automaton), built on first use from the regex's immutable data. A scanner built from the cache therefore returns exactly what one built without it returns.
+- **Threads.** `RegexType` is `Send` and `Sync` from its fields alone (no `unsafe impl`), so `Arc<RegexType>`, the RegSet, the cache and every scanner are `Send` and `Sync`, as a compile-time assertion states. None of them is `UnwindSafe`, under a `Box` as under an `Arc`: `RegexType` holds an `OnigEncoding` trait object.
+- **Search cost.** Dereferencing an `Arc` costs what dereferencing a `Box` does: one pointer load, with the reference counts skipped at a constant offset. Searches never touch the counts.
+- **C API.** `onig_regset_new`, `onig_regset_add`, `onig_regset_replace` and `onig_regset_get_regex` keep their signatures and semantics; a `Box<RegexType>` they receive moves into an `Arc` (one copy of the 1,096-byte struct). The sharing path is the Rust-only `onig_regset_new_shared` next to them.
+
+Constructing every scanner of a captured session, release build on an Apple M1 Ultra: instructions per construction (median of five interleaved runs, two run lengths subtracted) and minimum wall-clock. The cached rows start from an empty cache, so they include compiling each distinct pattern once.
+
+| Trace | Scanners | Patterns (distinct) |           Before |           Uncached after |                  Cached |
+| ----- | -------: | ------------------: | ---------------: | -----------------------: | ----------------------: |
+| C++   |       96 |         4,026 (250) | 3,214M, 232.5 ms | 3,206M (−0.2%), 231.3 ms |  332M (−89.7%), 24.4 ms |
+| SCSS  |       20 |           600 (104) |    818M, 54.0 ms |    816M (−0.1%), 54.3 ms |   112M (−86.3%), 7.5 ms |
+| Java  |       27 |           866 (115) |   67.4M, 4.81 ms |   67.2M (−0.4%), 4.76 ms | 13.6M (−79.8%), 1.01 ms |
+
+With every scanner of the session alive, the peak memory footprint above the loaded fixture falls from 97.9 to 12.4 MiB for C++, from 24.5 to 4.4 MiB for SCSS and from 5.7 to 1.9 MiB for Java; uncached scanners stay within 0.2 MiB of before. Replaying the captured calls through uncached scanners takes the same instructions as before (C++ −0.00%, Java +0.07%, SCSS +0.04%; minimum cycles −0.4%, +0.1%, −0.3%). Through cached scanners it takes 0.04–0.13% more instructions and 2–6% fewer minimum cycles than through uncached ones. `scanner_compile_bench` reproduces the construction comparison (`<name>` and `<name>_pattern_cache`).
 
 ### Relationship to ADR-005
 
@@ -53,7 +80,8 @@ ADR-005 defines the idiomatic Rust API layer (`Regex`, `RegexBuilder`, `Match`, 
 
 - **Drop-in compatibility**: Shiki and other tools can switch from vscode-oniguruma (WASM) to Ferroni (native) with minimal API translation.
 - **Performance**: Native execution avoids WASM overhead. Combined with RegSet optimizations (first-byte dispatch, skip needle — see ADR-007), the Scanner achieves 4-6x match speedup and 215x compilation speedup compared to the WASM path.
-- **Zero internal disruption**: The Scanner is purely additive — no C-ported code is modified. The full 1,695-test C-parity suite passes unchanged.
+- **Zero internal disruption**: The Scanner is purely additive — no C-ported control flow or function signature is modified; only the RegSet entry's ownership of its regex changed (`Arc` for `Box`) to let scanners share compiled patterns. The full 1,695-test C-parity suite passes unchanged.
+- **Cold start**: Sharing compiled patterns takes 80–90% out of constructing a grammar's scanners and leaves the search path as it was. It is an opt-in next to the vscode-oniguruma-shaped constructors, so that those keep their behavior and the caller decides how long compiled patterns live.
 
 ## Consequences
 
@@ -61,4 +89,5 @@ ADR-005 defines the idiomatic Rust API layer (`Regex`, `RegexBuilder`, `Match`, 
 - The `smallvec` crate is added as a dependency for `ScannerMatch::capture_indices`.
 - The Scanner API is Ferroni-specific — it does not exist in C Oniguruma. This is acceptable because it layers on top of (rather than modifying) the C-ported internals, consistent with ADR-001's parity goal.
 - Future Scanner changes should maintain vscode-oniguruma interface compatibility to avoid breaking downstream integrations (Shiki, ferriki).
+- Grammar loaders that build many scanners can share compiled patterns through a `ScannerPatternCache` they own; nothing is cached across callers. Anything that would let a search write into a `RegexType` must keep that state per RegSet entry or per scanner instead, since the regex may be shared.
 - The default capture behavior matches vscode-oniguruma: unnamed groups remain captures when a pattern also contains named groups, and numbered backreferences remain available. Callers can select different behavior with an explicit `ScannerConfig`.
