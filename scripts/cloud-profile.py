@@ -5,15 +5,21 @@ Built for the manually dispatched Blacksmith workflow
 (.github/workflows/blacksmith-profile.yml), and runnable on any macOS or
 Linux machine with samply and the pinned Oniguruma sources. Two case sets:
 
-  trivial    patterns the `regex` crate also runs: Ferroni, C Oniguruma, regex
+  trivial    patterns the `regex` crate also runs
   oniguruma  syntax only Oniguruma runs (lookbehind, backreferences, atomic
              groups, subexpression calls, absent operator, conditionals), the
              TypeScript, CSS and Rust grammar scanners of battle_bench, and
              replays of real Shiki scanner calls for C++, Java and SCSS
-             (benches/*_scanner), each against the vscode-oniguruma C scanner
+             (benches/*_scanner)
 
-Every case is timed with Criterion for each engine, then sampled with samply
-for Ferroni and C. Only samples inside Criterion's measurement routine are
+Engines: Ferroni, C Oniguruma (the vscode-oniguruma scanner for the replays),
+Ruby's Onigmo (with the `onigmo` feature), PCRE2 with and without JIT,
+fancy-regex in its Oniguruma mode, the `regex` crate where the syntax allows,
+and Shiki's JavaScript engine for the replays (benches/shiki_js, Node). An
+engine is timed only where it reproduced Oniguruma's (or the captured Shiki)
+results; the summary lists every case an engine could not run, with the
+reason. Every case is timed per engine, then sampled with samply for Ferroni
+and C. Only samples inside Criterion's measurement routine are
 attributed, so the per-process setup of every group (grammar compilation,
 validation against C and the captured Shiki results) does not leak into the
 hot-function tables.
@@ -99,7 +105,10 @@ CASES = {
 # Criterion group prefix -> bench target; everything else is battle_bench.
 BENCHES = {'cpp_scanner': 'cpp_scanner_bench', 'java_scanner': 'java_scanner_bench',
            'scss_scanner': 'scss_scanner_bench'}
-ENGINES = ('rust', 'c', 'regex')
+ENGINES = ('rust', 'c', 'onigmo', 'pcre2_jit', 'pcre2', 'fancy_regex', 'regex', 'shiki_js')
+LABELS = {'rust': 'Ferroni', 'c': 'C', 'onigmo': 'Onigmo', 'pcre2_jit': 'PCRE2 JIT', 'pcre2': 'PCRE2',
+          'fancy_regex': 'fancy-regex', 'regex': 'regex', 'shiki_js': 'Shiki JS'}
+SHIKI_JS = ROOT / 'benches' / 'shiki_js'
 # Frames of Criterion's timed loop. Samples without one are process setup.
 MEASURED_FRAME = re.compile(r'criterion::routine::')
 RUNNER_PROFILES = {
@@ -161,14 +170,17 @@ def describe_host(runner_profile):
     }
 
 
-def build(target_dir, benches):
+def build(target_dir, benches, onigmo):
     env = dict(os.environ,
                CARGO_TARGET_DIR=str(target_dir),
+               # The bundled PCRE2 of pcre2-sys, not whatever the host has.
+               PCRE2_SYS_STATIC='1',
                CARGO_PROFILE_BENCH_DEBUG='line-tables-only',
                CARGO_PROFILE_BENCH_STRIP='none',
                RUSTFLAGS=(os.environ.get('RUSTFLAGS', '') + ' -C force-frame-pointers=yes').strip(),
                CFLAGS=(os.environ.get('CFLAGS', '') + ' -fno-omit-frame-pointer').strip())
-    command = ['cargo', 'bench', '--locked', '--features', 'ffi', '--no-run', '--message-format=json']
+    command = ['cargo', 'bench', '--locked', '--features', 'onigmo' if onigmo else 'ffi', '--no-run',
+               '--message-format=json']
     for bench in benches:
         command += ['--bench', bench]
     result = subprocess.run(command, cwd=ROOT, env=env, check=True, text=True, stdout=subprocess.PIPE)
@@ -184,6 +196,7 @@ def build(target_dir, benches):
         'git_commit': output(['git', 'rev-parse', 'HEAD']),
         'git_status': output(['git', 'status', '--porcelain']),
         'oniguruma_dir': os.environ.get('FERRONI_ONIGURUMA_DIR', '.cache/upstream/oniguruma-orig'),
+        'onigmo_dir': os.environ.get('FERRONI_ONIGMO_DIR', '.cache/upstream/onigmo-ruby') if onigmo else None,
         'battle_inputs_sha256': sha256(ROOT / 'benches/battle_inputs.toml'),
         'lockfile_sha256': sha256(ROOT / 'Cargo.lock'),
         'binaries': {bench: {'path': str(path), 'sha256': sha256(path)} for bench, path in binaries.items()},
@@ -191,7 +204,7 @@ def build(target_dir, benches):
         'samply': output(['samply', '--version']),
         'build_command': command,
         'build_environment': {key: env[key] for key in env
-                              if key.startswith('CARGO_PROFILE_') or key in ('RUSTFLAGS', 'CFLAGS')},
+                              if key.startswith('CARGO_PROFILE_') or key in ('RUSTFLAGS', 'CFLAGS', 'PCRE2_SYS_STATIC')},
     }
     return binaries, receipt
 
@@ -205,10 +218,35 @@ def run_bench(binary, args, out, log_name):
     (out / 'logs' / log_name).write_text(result.stdout)
     if result.returncode != 0:
         raise SystemExit(f'{" ".join(args)} failed; see logs/{log_name}:\n{result.stdout[-3000:]}')
-    return time.monotonic() - started
+    return result.stdout
+
+
+def engine_notes(log):
+    """UNSUPPORTED and EQUIVALENT lines the benches print during setup."""
+    notes = {'unsupported': {}, 'equivalent': {}}
+    for line in log.splitlines():
+        kind, _, payload = line.partition(' ')
+        if kind in ('UNSUPPORTED', 'EQUIVALENT'):
+            note = json.loads(payload)
+            notes[kind.lower()][note['id']] = note
+    return notes
+
+
+def shiki_js(case, mode, seconds=None):
+    group, selection = case.split('/', 1)
+    command = ['node', str(SHIKI_JS / 'replay.mjs'), group.removesuffix('_scanner'), selection, mode]
+    if seconds:
+        command.append(str(seconds))
+    return json.loads(subprocess.check_output(command, cwd=SHIKI_JS, text=True).strip().splitlines()[-1])
 
 
 def measure(binaries, out, case, engines, seconds):
+    rows = {}
+    if 'shiki_js' in engines:
+        timing = shiki_js(case, 'measure', seconds)
+        rows['shiki_js'] = {'id': timing['id'], 'mean_ns': timing['mean_ns'], 'median_ns': timing['median_ns'],
+                            'samples': timing['samples'], 'harness': 'node, 1 ms batches'}
+        engines = [engine for engine in engines if engine != 'shiki_js']
     ids = [variant(case, engine) for engine in engines]
     pattern = '^(' + '|'.join(re.escape(i) for i in ids) + ')$'
     # 30 samples, as configure_battle_group sets for battle_bench; the replay
@@ -216,7 +254,6 @@ def measure(binaries, out, case, engines, seconds):
     # per document replay.
     run_bench(binaries[bench_of(case)], [pattern, '--bench', '--noplot', '--sample-size', '30', '--warm-up-time', '1',
                        '--measurement-time', str(seconds)], out, slug(case) + '.measure.log')
-    rows = {}
     for engine, bench_id in zip(engines, ids):
         estimates = json.loads((out / 'criterion' / bench_id / 'new' / 'estimates.json').read_text())
         rows[engine] = {'id': bench_id,
@@ -339,28 +376,57 @@ def ns(value):
     return f'{value:.3g} ns'
 
 
-def render_summary(host, receipt, results):
+def render_summary(host, receipt, results, notes):
     lines = [f'### Ferroni profile: {host["runner_profile"] or host["system"]} ({host["cpu"]})', '',
              f'Source `{receipt["git_commit"][:12]}`, {host["os"]}, {host["cpus"]} CPUs'
              + (f', {host["cpu_features"]}' if host['cpu_features'] else ''), '',
-             'Times are Criterion means; ratios above 1.00 mean Ferroni is slower. '
-             'Hot functions are self time of Ferroni samples inside the measured loop.', '']
+             'Ferroni is the Criterion mean. Every other column is that engine\'s time divided by '
+             'Ferroni\'s: above 1.00, Ferroni is faster. `n/a`: the engine cannot run the case '
+             '(reasons below); `–`: no such variant. Shiki JS is timed in Node over 1 ms batches.', '']
+    engines = [engine for engine in ENGINES if engine != 'rust']
     for case_set, cases in results.items():
         lines += [f'#### {case_set}', '',
-                  '| case | Ferroni | C | regex | Ferroni/C | Ferroni/regex | Ferroni hot spots (self) |',
-                  '| --- | ---: | ---: | ---: | ---: | ---: | --- |']
+                  '| case | Ferroni | ' + ' | '.join(LABELS[e] for e in engines) + ' |',
+                  '| --- | ---: |' + ' ---: |' * len(engines)]
         for case, result in cases.items():
             timing = result.get('timing', {})
             rust = timing.get('rust', {}).get('mean_ns')
-            cells = [ns(timing[e]['mean_ns']) if e in timing else '–' for e in ENGINES]
-            ratios = [f'{rust / timing[e]["mean_ns"]:.2f}' if rust and e in timing else '–'
-                      for e in ('c', 'regex')]
-            profile = result.get('profile', {}).get('rust')
-            hot = '<br>'.join(f'{row["percent"]:.0f}% `{short(row["function"], 60)}`'
-                              for row in (profile or {}).get('self', [])[:3]) or '–'
-            lines.append(f'| `{slug(case)}` | ' + ' | '.join(cells + ratios) + f' | {hot} |')
+            cells = []
+            for engine in engines:
+                if engine in timing and rust:
+                    cells.append(f'{timing[engine]["mean_ns"] / rust:.2f}')
+                elif variant(case, engine) in notes['unsupported']:
+                    cells.append('n/a')
+                else:
+                    cells.append('–')
+            lines.append(f'| `{slug(case)}` | {ns(rust) if rust else "–"} | ' + ' | '.join(cells) + ' |')
         lines.append('')
+    profiled = [(case, result['profile']['rust']) for cases in results.values()
+                for case, result in cases.items() if result.get('profile', {}).get('rust')]
+    if profiled:
+        lines += ['#### Ferroni hot spots (self time in the measured loop)', '',
+                  '| case | functions |', '| --- | --- |']
+        lines += [f'| `{slug(case)}` | ' + '<br>'.join(f'{row["percent"]:.0f}% `{short(row["function"], 70)}`'
+                                                     for row in profile['self'][:3]) + ' |'
+                  for case, profile in profiled]
+        lines.append('')
+    selected = {variant(case, engine) for cases in results.values() for case in cases for engine in ENGINES}
+    unsupported = [note for bench_id, note in sorted(notes['unsupported'].items()) if bench_id in selected]
+    if unsupported:
+        lines += ['#### Cases an engine cannot run', '', '| benchmark | reason |', '| --- | --- |']
+        lines += [f'| `{note["id"]}` | {short_reason(note["reason"])} |' for note in unsupported]
+        lines.append('')
+    equivalent = [note for bench_id, note in sorted(notes['equivalent'].items()) if bench_id in selected]
+    if equivalent:
+        lines += ['Accepted with empty capture groups reported as unset (or the reverse), which '
+                  'vscode-textmate skips either way: '
+                  + ', '.join(f'`{note["id"]}` ({note["empty_capture_differences"]} calls)' for note in equivalent), '']
     return '\n'.join(lines)
+
+
+def short_reason(reason, width=180):
+    reason = reason.replace('|', '\\|').replace('\n', ' ')
+    return reason if len(reason) <= width else reason[:width - 1] + '…'
 
 
 def main():
@@ -370,7 +436,9 @@ def main():
     parser.add_argument('--measure-seconds', type=int, default=5)
     parser.add_argument('--profile-seconds', type=int, default=15)
     parser.add_argument('--profile-engines', default='rust,c',
-                        help='comma-separated engines to sample (rust, c, regex)')
+                        help='comma-separated engines to sample; any but shiki_js')
+    parser.add_argument('--no-onigmo', action='store_true', help='build without the onigmo feature')
+    parser.add_argument('--no-shiki-js', action='store_true', help='skip the Node replays of Shiki\'s JS engine')
     parser.add_argument('--skip-measure', action='store_true')
     parser.add_argument('--skip-profile', action='store_true')
     parser.add_argument('--runner-profile', choices=RUNNER_PROFILES)
@@ -381,8 +449,15 @@ def main():
     if not 1 <= args.measure_seconds <= 30 or not 2 <= args.profile_seconds <= 120:
         parser.error('--measure-seconds must be 1-30 and --profile-seconds 2-120')
     profile_engines = [engine for engine in args.profile_engines.split(',') if engine]
-    if not set(profile_engines) <= set(ENGINES):
-        parser.error(f'--profile-engines takes {", ".join(ENGINES)}')
+    if not set(profile_engines) <= set(ENGINES) - {'shiki_js'}:
+        parser.error(f'--profile-engines takes {", ".join(ENGINES[:-1])}')
+    onigmo_dir = Path(os.environ.get('FERRONI_ONIGMO_DIR', ROOT / '.cache/upstream/onigmo-ruby'))
+    onigmo = not args.no_onigmo
+    if onigmo and not (onigmo_dir / 'regexec.c').is_file():
+        parser.error('Onigmo sources are missing: run scripts/prepare-onigmo-sources.sh or pass --no-onigmo')
+    use_shiki_js = not args.no_shiki_js
+    if use_shiki_js and not (SHIKI_JS / 'node_modules').is_dir():
+        parser.error('Run `pnpm install --frozen-lockfile` in benches/shiki_js or pass --no-shiki-js')
 
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -396,7 +471,10 @@ def main():
     if not selected:
         parser.error('no case matches --only')
     benches = sorted({bench_of(case) for cases in selected.values() for case in cases})
-    binaries, receipt = build(args.target_dir.resolve(), benches)
+    binaries, receipt = build(args.target_dir.resolve(), benches, onigmo)
+    if use_shiki_js:
+        receipt['node'] = output(['node', '--version'])
+        receipt['shiki_js_lock_sha256'] = sha256(SHIKI_JS / 'pnpm-lock.yaml')
     (out / 'build.json').write_text(json.dumps(receipt, indent=2) + '\n')
 
     available = set()
@@ -407,11 +485,25 @@ def main():
     missing = [case for cases in selected.values() for case in cases if case not in available]
     if missing:
         raise SystemExit(f'The benches no longer have: {", ".join(missing)}')
-    # One validation pass of every selected case before any timing.
+    # One validation pass of every selected case before any timing. Setup
+    # reports which engines could not reproduce a case.
+    notes = {'unsupported': {}, 'equivalent': {}}
     for bench, binary in binaries.items():
         ids = [variant(case, engine) for cases in selected.values() for case in cases
                if bench_of(case) == bench for engine in ENGINES if variant(case, engine) in available]
-        run_bench(binary, ['^(' + '|'.join(map(re.escape, ids)) + ')$', '--test'], out, f'smoke-{bench}.log')
+        log = run_bench(binary, ['^(' + '|'.join(map(re.escape, ids)) + ')$', '--test'], out, f'smoke-{bench}.log')
+        for kind, found in engine_notes(log).items():
+            notes[kind].update(found)
+    if use_shiki_js:
+        for case in [case for cases in selected.values() for case in cases if bench_of(case) != 'battle_bench']:
+            check = shiki_js(case, 'validate')
+            if check['status'] == 'ok':
+                available.add(check['id'])
+                if check['empty_capture_differences']:
+                    notes['equivalent'][check['id']] = check
+            else:
+                notes['unsupported'][check['id']] = check
+    (out / 'engine-notes.json').write_text(json.dumps(notes, indent=2) + '\n')
 
     results = {}
     for case_set, cases in selected.items():
@@ -426,9 +518,9 @@ def main():
                                      for engine in profile_engines if engine in engines}
             print(f'{case}: done', flush=True)
             (out / 'measurements.json').write_text(json.dumps(
-                {'host': host, 'build': receipt, 'results': results}, indent=2) + '\n')
+                {'host': host, 'build': receipt, 'results': results, 'notes': notes}, indent=2) + '\n')
 
-    summary = render_summary(host, receipt, results)
+    summary = render_summary(host, receipt, results, notes)
     (out / 'summary.md').write_text(summary + '\n')
     print(summary)
 

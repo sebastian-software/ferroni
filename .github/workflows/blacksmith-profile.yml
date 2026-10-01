@@ -1,12 +1,14 @@
 name: Blacksmith profile
 
-# Where Ferroni spends its time, next to C Oniguruma and the regex crate, on
-# one Apple Silicon and one x86-64 host. scripts/cloud-profile.py times each
-# case with Criterion and samples Ferroni and C with samply; the case sets
-# split patterns any regex engine runs ("trivial") from syntax and TextMate
-# scanner work that needs Oniguruma ("oniguruma"), including replays of real
-# Shiki scanner calls. The full set takes about an hour per host with the
-# defaults. Provider-managed runners cost money, so the workflow only runs
+# Where Ferroni spends its time, next to C Oniguruma, Ruby's Onigmo, PCRE2
+# (JIT and interpreter), fancy-regex, the regex crate and Shiki's JavaScript
+# engine, on one Apple Silicon and one x86-64 host. scripts/cloud-profile.py
+# times each case per engine and samples Ferroni and C with samply; the case
+# sets split patterns any regex engine runs ("trivial") from syntax and
+# TextMate scanner work that needs Oniguruma ("oniguruma"), including replays
+# of real Shiki scanner calls. Engines that cannot reproduce a case are listed
+# with the reason instead of timed. The full set takes about 90 minutes per
+# host with the defaults. Provider-managed runners cost money, so the workflow only runs
 # when dispatched by hand.
 on:
   workflow_dispatch:
@@ -54,7 +56,7 @@ jobs:
     name: ${{ matrix.profile }} / ${{ inputs.cases }}
     if: github.repository == 'sebastian-software/ferroni'
     runs-on: ${{ matrix.profile == 'macos-arm64' && 'blacksmith-6vcpu-macos-26' || 'blacksmith-4vcpu-ubuntu-2404' }}
-    timeout-minutes: 150
+    timeout-minutes: 210
     strategy:
       fail-fast: false
       matrix:
@@ -73,13 +75,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v4.4.0
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+      - name: Install Shiki's JavaScript engine
+        run: pnpm install --frozen-lockfile --dir benches/shiki_js
       - name: Install samply
         run: cargo install samply --version 0.13.1 --locked
       - name: Allow unprivileged perf events
         if: runner.os == 'Linux'
         run: sudo sysctl -w kernel.perf_event_paranoid=1 kernel.kptr_restrict=0
-      - name: Prepare Oniguruma sources
-        run: ./scripts/prepare-oniguruma-sources.sh
+      - name: Prepare Oniguruma and Onigmo sources
+        run: |
+          ./scripts/prepare-oniguruma-sources.sh
+          ./scripts/prepare-onigmo-sources.sh
       - name: Measure and profile
         run: >-
           ./scripts/cloud-profile.py "$RUNNER_TEMP/profile"
