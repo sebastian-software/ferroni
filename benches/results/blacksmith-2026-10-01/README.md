@@ -1,6 +1,8 @@
 # Blacksmith engine comparison, 2026-10-01
 
-Raw data behind [Engine Comparison](https://ferroni.dev/perf/engine-comparison):
+The first engine comparison, superseded on the same day by
+[`blacksmith-2026-10-01-36926978824`](../blacksmith-2026-10-01-36926978824/README.md),
+which adds the everyday regex tasks and the portable C and PHP replays. Raw data of
 workflow run
 [36915129576](https://github.com/sebastian-software/ferroni/actions/runs/36915129576)
 of `.github/workflows/blacksmith-comparison.yml` on Ferroni
