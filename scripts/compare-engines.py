@@ -28,6 +28,8 @@ binaries are ordinary release builds, as users run them.
       merges the measurements of several runs, one table set per host
   compare-engines.py figures RUN_DIR OUT.json
       condenses one published run into the README and home page figures
+  compare-engines.py tables RUN_DIR
+      prints the per-case tables of docs/app/routes/perf/engine-comparison.mdx
 """
 from __future__ import annotations
 
@@ -539,6 +541,89 @@ def readme_table(figures_data):
     return '\n'.join(lines)
 
 
+DOC_TABLES = [
+    ('Text processing, shared syntax', CASES['shared']),
+    ('Text processing, Oniguruma syntax', CASES['oniguruma']),
+    ('Highlighting, portable grammars', [case for case in CASES['textmate']
+                                         if case.split('/')[0] in ('c_scanner', 'java_scanner', 'php_scanner')]),
+    ('Highlighting, grammars with Oniguruma-only syntax', [case for case in CASES['textmate']
+                                                          if case.split('/')[0] in ('cpp_scanner', 'scss_scanner')]),
+    ('Grammar scanners', [case for case in CASES['textmate'] if case.startswith('scanner_')]),
+    ('Short searches and compilation', CASES['micro']),
+]
+DOC_LANGUAGES = {'ts': 'TypeScript', 'css': 'CSS', 'rust': 'Rust'}
+
+
+def doc_label(case):
+    group, _, rest = case.replace('/rust/', '/').removesuffix('_rust').partition('/')
+    if group == 'compilation':
+        return f'compile `{rest}`'
+    if group == 'scanner_highlighting':
+        language, _, what = rest.split('_', 2)
+        return f'{DOC_LANGUAGES[language]} grammar, ' + {'compile': 'compile', 'tokenize': 're-scan line'}[what]
+    if group == 'scanner_documents':
+        return f'{DOC_LANGUAGES[rest.split("_")[0]]} document, {rest.split("_")[-2]} lines'
+    if group in GRAMMARS:
+        return f'{GRAMMARS[group]} replay, ' + ('document' if rest == 'document' else 'scanner ' + rest.removeprefix('group_'))
+    return f'`{rest}`'
+
+
+def tables(args):
+    """Per-case tables, Apple Silicon above x86-64 in every cell."""
+    hosts, unsupported = {}, {}
+    for path in sorted(Path(args.run).rglob('measurements.json')):
+        data = json.loads(path.read_text())
+        timing = hosts.setdefault(data['host']['runner_profile'], {})
+        for cases in data['results'].values():
+            for case, result in cases.items():
+                timing[case] = {engine: row['mean_ns'] for engine, row in result['timing'].items()}
+        unsupported.update(data['notes']['unsupported'])
+    order = list(HOST_LABELS)
+    if set(hosts) != set(order):
+        raise SystemExit('tables needs both runner profiles')
+
+    def time(value):
+        for unit, scale in (('s', 1e9), ('ms', 1e6), ('µs', 1e3)):
+            if value >= scale:
+                return f'{value / scale:.3g}\u00a0{unit}'
+        return f'{value:.3g}\u00a0ns'
+
+    others = [engine for engine in ENGINES if engine != 'rust']
+    for title, cases in DOC_TABLES:
+        used = [engine for engine in others
+                if any(engine in hosts[host][case] or variant(case, engine) in unsupported
+                       for host in order for case in cases)]
+        print(f'### {title}\n')
+        print('| Case | Ferroni | ' + ' | '.join(FIGURE_LABELS[engine] for engine in used) + ' |')
+        print('| --- | ---: |' + ' ---: |' * len(used))
+        for case in cases:
+            ferroni = [hosts[host][case]['rust'] for host in order]
+            cells = []
+            for engine in used:
+                values = []
+                for host, base in zip(order, ferroni):
+                    if engine in hosts[host][case]:
+                        values.append(f'{hosts[host][case][engine] / base:.2f}')
+                    elif variant(case, engine) in unsupported:
+                        values.append('n/a')
+                    else:
+                        values.append('–')
+                cells.append(values[0] if values[0] == values[1] and values[0] in ('–', 'n/a')
+                             else '<br />'.join(values))
+            print(f'| {doc_label(case)} | {time(ferroni[0])}<br />{time(ferroni[1])} | ' + ' | '.join(cells) + ' |')
+        print()
+    selected = {variant(case, engine) for _, cases in DOC_TABLES for case in cases for engine in ENGINES}
+    print('### Cases an engine cannot run\n')
+    print('| Case | Engine | Reason |')
+    print('| --- | --- | --- |')
+    for bench_id, note in sorted(unsupported.items()):
+        if bench_id not in selected:
+            continue
+        case = next(case for _, cases in DOC_TABLES for case in cases
+                    if any(variant(case, engine) == bench_id for engine in ENGINES))
+        print(f'| {doc_label(case)} | {FIGURE_LABELS[note["engine"]]} | {short_reason(note["reason"], 140)} |')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -558,9 +643,13 @@ def main():
     figures_parser = commands.add_parser('figures', help='condense one run for the README and home page')
     figures_parser.add_argument('run', type=Path)
     figures_parser.add_argument('output', type=Path)
+    tables_parser = commands.add_parser('tables', help='print the per-case tables of the engine comparison page')
+    tables_parser.add_argument('run', type=Path)
     args = parser.parse_args()
     if args.command == 'figures':
         figures(args)
+    elif args.command == 'tables':
+        tables(args)
     elif args.command == 'run':
         if not 0.5 <= args.measure_seconds <= 30 or not 0.1 <= args.warm_up_seconds <= 5:
             run_parser.error('--measure-seconds must be 0.5-30 and --warm-up-seconds 0.1-5')
