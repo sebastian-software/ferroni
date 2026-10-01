@@ -113,7 +113,7 @@
     "exitCode": 0,
     "retryReason": "Advisory database lock is outside writable roots",
     "scope": "host access",
-    "log": "deny-retry.log"
+    "log": "deny-retry.log.gz"
   },
   {
     "label": "readme",
@@ -121,14 +121,14 @@
     "exitCode": 0,
     "retryReason": "Pinned GitHub theme fetch needs network access",
     "scope": "host access",
-    "log": "readme-retry.log"
+    "log": "readme-retry.log.gz"
   },
   {
     "label": "docs-verify",
     "command": ["pnpm", "verify"],
     "exitCode": 1,
     "scope": "sandbox",
-    "log": "docs-quality.log",
+    "log": "docs-quality.log.gz",
     "note": "Lint, typecheck and format pass; build needs loopback preview server"
   },
   {
@@ -137,7 +137,7 @@
     "exitCode": 0,
     "retryReason": "Prerendering needs a loopback preview server",
     "scope": "host access",
-    "log": "docs-build-retry.log"
+    "log": "docs-build-retry.log.gz"
   },
   {
     "label": "run-skip-matrix-count",
@@ -157,6 +157,6 @@
       "RUST_MIN_STACK": "268435456"
     },
     "comparedOutcomes": 968436,
-    "log": "run-skip-matrix-count-retry.log"
+    "log": "run-skip-matrix-count-retry.log.gz"
   }
 ]

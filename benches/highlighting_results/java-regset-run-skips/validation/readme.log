@@ -1,3 +1,0 @@
-[readme:check] $ binary=$(mise which mdtheme) && "$binary" --check
-mdtheme: Git theme operation failed: fatal: unable to access 'https://github.com/sebastian-software/sebastian-theme.git/': Could not resolve host: github.com
-[readme:check] ERROR task failed

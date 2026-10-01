@@ -1,1 +1,0 @@
-2026-10-01 06:25:25 [ERROR] failed to acquire advisory database lock: failed to obtain lock file '/Users/sebastian/.cargo/advisory-dbs/db.lock': attempted to take an exclusive lock on a read-only path
