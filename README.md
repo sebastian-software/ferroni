@@ -414,29 +414,23 @@ under the BSD-2-Clause license of the code it is derived from.
 
 [Ferramenta](https://ferramenta.dev) — A family of Rust tools.
 
-**The content pipeline**
+**Engines**
 
 | Tool | Job |
 | --- | --- |
-| [ferriki](https://github.com/sebastian-software/ferriki) | Shiki-compatible syntax highlighting |
-| [ferromark](https://sebastian-software.github.io/ferromark/) | Markdown to HTML, sanitized by default |
-
-**The language workshop**
-
-| Tool | Job |
-| --- | --- |
+| [ferriki](https://ferriki.dev) | Shiki-compatible syntax highlighting |
+| [ferromark](https://ferromark.dev) | Markdown to HTML, sanitized by default |
 | [ferrolex](https://github.com/sebastian-software/ferrolex) | Spell checking for text and code |
 | [ferrocat](https://ferrocat.dev) | Translation catalog engine |
-| [palamedes](https://palamedes.dev) | Internationalization for TypeScript applications |
+| [ferralk](https://github.com/sebastian-software/ferralk) | Glob matching and parallel filesystem walking |
+| [ferrugo](https://github.com/sebastian-software/ferrugo) | PDF previews for untrusted files |
 
-**On the workbench**
+**Applications**
 
 | Tool | Job |
 | --- | --- |
-| [ferralk](https://github.com/sebastian-software/ferralk) | Glob matching and parallel filesystem walking |
-| [ferrugo](https://github.com/sebastian-software/ferrugo) | PDF previews for untrusted files |
-| [dalo](https://dalo.sh) | Team agent skills, versioned and synced as code |
-| [cuttledoc](https://github.com/sebastian-software/cuttledoc) | Local-first speech transcription |
+| [palamedes](https://palamedes.dev) | Internationalization for TypeScript applications |
+| [dalo](https://dalo.sh) | Your team's agent setup, versioned like code |
 
 ---
 
