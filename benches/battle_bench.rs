@@ -6,6 +6,7 @@
 // HTML report: target/criterion/report/index.html
 // Pinned external inputs: benches/battle_inputs.toml
 
+mod engines;
 mod general_regex;
 mod grammar_loader;
 mod scanner_css_workload;
@@ -102,6 +103,40 @@ fn assert_same_match(
             "{label}: captures differ"
         );
     }
+}
+
+/// Oniguruma's first match from the text start, with every capture bound.
+fn c_first_captures(c_reg: &ffi::CRegex, text: &[u8]) -> Option<engines::Captures> {
+    let mut region = ffi::CRegion::new();
+    let pos = c_reg.search(
+        text,
+        0,
+        text.len(),
+        Some(&mut region),
+        ffi::ONIG_OPTION_NONE,
+    );
+    (pos >= 0).then(|| region.capture_ranges())
+}
+
+/// The further engines that reproduce Oniguruma's first match and captures.
+fn first_match_engines(
+    group: &str,
+    name: &str,
+    pattern: &[u8],
+    ignore_case: bool,
+    c_reg: &ffi::CRegex,
+    text: &[u8],
+) -> Vec<(engines::Engine, engines::Compiled)> {
+    let expected = c_first_captures(c_reg, text);
+    let pattern = std::str::from_utf8(pattern).expect("pattern is not UTF-8");
+    engines::validated(group, name, pattern, ignore_case, |compiled| {
+        let actual = compiled.captures(text, 0)?;
+        if actual == expected {
+            Ok(())
+        } else {
+            Err(format!("first match {actual:?}, Oniguruma {expected:?}"))
+        }
+    })
 }
 
 fn assert_same_scanner_trace(scanner: &mut Scanner, c_scanner: &ffi::CScanner, text: &str) {
@@ -667,6 +702,15 @@ fn bench_text_scanning(c: &mut Criterion) {
                 });
             },
         );
+        for (engine, compiled) in
+            first_match_engines("text_scanning", name, pattern, false, &c_reg, text)
+        {
+            group.bench_with_input(
+                BenchmarkId::new(engine.id(), name),
+                &text.as_slice(),
+                |b, text| b.iter(|| black_box(compiled.search(black_box(text), 0))),
+            );
+        }
     }
 
     {
@@ -873,6 +917,14 @@ fn bench_single_pattern(c: &mut Criterion) {
                 });
             });
         }
+        let ignore_case = *rust_option == ONIG_OPTION_IGNORECASE;
+        for (engine, compiled) in
+            first_match_engines("single_pattern", name, pattern, ignore_case, &c_reg, text)
+        {
+            group.bench_with_input(BenchmarkId::new(engine.id(), name), &text[..], |b, text| {
+                b.iter(|| black_box(compiled.search(black_box(text), 0)));
+            });
+        }
     }
 
     group.finish();
@@ -905,14 +957,23 @@ fn bench_compilation(c: &mut Criterion) {
                 black_box(&reg);
             });
         });
+        let pattern = std::str::from_utf8(pattern).unwrap();
         if *regex_compatible {
-            let pattern = std::str::from_utf8(pattern).unwrap();
             group.bench_with_input(BenchmarkId::new("regex", name), pattern, |b, pattern| {
                 b.iter(|| {
                     let regex = Regex::new(black_box(pattern)).unwrap();
                     black_box(&regex);
                 });
             });
+        }
+        for (engine, _) in engines::validated("compilation", name, pattern, false, |_| Ok(())) {
+            group.bench_with_input(
+                BenchmarkId::new(engine.id(), name),
+                pattern,
+                |b, pattern| {
+                    b.iter(|| black_box(engine.compile(black_box(pattern), false, false).is_ok()));
+                },
+            );
         }
     }
 
