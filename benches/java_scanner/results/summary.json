@@ -1,0 +1,43 @@
+{
+  "baseline_commit": "0ae25008711cdf1d7217e1775d0d84bff8bbed5d",
+  "fixture_sha256": "c8ca55d21795fbc7dc81021b886b2807e98a8efd14e09774cb6fec151be645f5",
+  "scope": "Native scanner replay, without capture instrumentation, reused scanners and fresh string identities outside timing; no highlighting or HTML rendering.",
+  "criterion": {
+    "sample_size": 30,
+    "warmup_seconds": 1,
+    "measurement_seconds": 3
+  },
+  "cases": {
+    "group_5": [
+      2.4178321916607404,
+      2.3728276285175953
+    ],
+    "group_17": [
+      0.2788881172484745,
+      0.2806293475146566
+    ],
+    "group_19": [
+      2.8846471220093046,
+      2.817223751189803
+    ],
+    "document": [
+      12.15307598361552,
+      11.974335265347005
+    ],
+    "group_7": [
+      1.0601420088364126,
+      1.0486550182255072
+    ],
+    "group_22": [
+      0.9097245177381382,
+      0.8989575686620428
+    ],
+    "group_15": [
+      2.9723950760478024,
+      2.9922158547541007
+    ]
+  },
+  "unit": "milliseconds",
+  "individual_pattern_warning": "Independent searches are diagnostic: they do not reproduce RegSet dispatch, memoization, or range restriction, and their times cannot be added into actual scanner shares.",
+  "cpu_profile_warning": "CPU samples use a separate build with line tables. Only ordinary-build Criterion samples support runtime timings."
+}

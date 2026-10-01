@@ -1,0 +1,66 @@
+    Finished `bench` profile [optimized] target(s) in 0.05s
+     Running benches/java_scanner_bench.rs (target/release/deps/java_scanner_bench-084c548feeffb484)
+Gnuplot not found, using plotters backend
+Benchmarking java_scanner/document
+Benchmarking java_scanner/document: Warming up for 1.0000 s
+
+Warning: Unable to complete 30 samples in 3.0s. You may wish to increase target time to 5.6s, enable flat sampling, or reduce sample count to 10.
+Benchmarking java_scanner/document: Collecting 30 samples in estimated 5.6061 s (465 iterations)
+Benchmarking java_scanner/document: Analyzing
+java_scanner/document   time:   [11.897 ms 11.937 ms 11.998 ms]
+                        thrpt:  [326.72 Kelem/s 328.39 Kelem/s 329.49 Kelem/s]
+Found 7 outliers among 30 measurements (23.33%)
+  1 (3.33%) low severe
+  1 (3.33%) low mild
+  2 (6.67%) high mild
+  3 (10.00%) high severe
+Benchmarking java_scanner/group_15
+Benchmarking java_scanner/group_15: Warming up for 1.0000 s
+Benchmarking java_scanner/group_15: Collecting 30 samples in estimated 4.1617 s (1395 iterations)
+Benchmarking java_scanner/group_15: Analyzing
+java_scanner/group_15   time:   [2.9472 ms 2.9558 ms 2.9697 ms]
+                        thrpt:  [199.35 Kelem/s 200.28 Kelem/s 200.87 Kelem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high severe
+Benchmarking java_scanner/group_19
+Benchmarking java_scanner/group_19: Warming up for 1.0000 s
+Benchmarking java_scanner/group_19: Collecting 30 samples in estimated 3.9651 s (1395 iterations)
+Benchmarking java_scanner/group_19: Analyzing
+java_scanner/group_19   time:   [2.8123 ms 2.8157 ms 2.8189 ms]
+                        thrpt:  [238.39 Kelem/s 238.66 Kelem/s 238.95 Kelem/s]
+Found 3 outliers among 30 measurements (10.00%)
+  2 (6.67%) low mild
+  1 (3.33%) high mild
+Benchmarking java_scanner/group_5
+Benchmarking java_scanner/group_5: Warming up for 1.0000 s
+Benchmarking java_scanner/group_5: Collecting 30 samples in estimated 3.3424 s (1395 iterations)
+Benchmarking java_scanner/group_5: Analyzing
+java_scanner/group_5    time:   [2.3733 ms 2.3764 ms 2.3797 ms]
+                        thrpt:  [53.789 Kelem/s 53.864 Kelem/s 53.933 Kelem/s]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) low mild
+Benchmarking java_scanner/group_22
+Benchmarking java_scanner/group_22: Warming up for 1.0000 s
+Benchmarking java_scanner/group_22: Collecting 30 samples in estimated 3.0369 s (3255 iterations)
+Benchmarking java_scanner/group_22: Analyzing
+java_scanner/group_22   time:   [898.21 µs 900.92 µs 903.53 µs]
+                        thrpt:  [442.71 Kelem/s 443.99 Kelem/s 445.33 Kelem/s]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) high mild
+Benchmarking java_scanner/group_7
+Benchmarking java_scanner/group_7: Warming up for 1.0000 s
+Benchmarking java_scanner/group_7: Collecting 30 samples in estimated 3.4746 s (3255 iterations)
+Benchmarking java_scanner/group_7: Analyzing
+java_scanner/group_7    time:   [1.0482 ms 1.0496 ms 1.0511 ms]
+                        thrpt:  [91.332 Kelem/s 91.460 Kelem/s 91.584 Kelem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking java_scanner/group_17
+Benchmarking java_scanner/group_17: Warming up for 1.0000 s
+Benchmarking java_scanner/group_17: Collecting 30 samples in estimated 3.0734 s (10k iterations)
+Benchmarking java_scanner/group_17: Analyzing
+java_scanner/group_17   time:   [278.54 µs 279.01 µs 279.62 µs]
+                        thrpt:  [972.76 Kelem/s 974.88 Kelem/s 976.52 Kelem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+

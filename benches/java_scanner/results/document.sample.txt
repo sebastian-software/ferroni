@@ -1,0 +1,601 @@
+Analysis of sampling profile_cpp_scanner (pid 50631) every 1 millisecond
+Process:         profile_cpp_scanner [50631]
+Path:            /private/tmp/*/profile_cpp_scanner
+Load Address:    0x102560000
+Identifier:      profile_cpp_scanner
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  Python [50614]
+Target Type:     live task
+
+Date/Time:       2026-10-01 07:00:37.515 +0200
+Launch Time:     2026-10-01 07:00:37.224 +0200
+OS Version:      macOS 27.0 (26A428)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         16.4M
+Physical footprint (peak):  16.4M
+Idle exit:                  untracked
+----
+
+Call graph:
+    7197 Thread_20788846   DispatchQueue_1: com.apple.main-thread  (serial)
+      7196 start  (in dyld) + 6688  [0x183e67e80]
+      + 7196 main  (in profile_cpp_scanner) + 52  [0x102604ec0]
+      +   7196 _RNvNtCsaLOjE9VYtxK_3std2rt19lang_start_internal  (in profile_cpp_scanner) + 932  [0x10262acbc]  rt.rs:171
+      +     7196 std::rt::lang_start::_$u7b$$u7b$closure$u7d$$u7d$::h8a310bf0e16c6f48  (in profile_cpp_scanner) + 16  [0x10260153c]
+      +       7196 std::sys::backtrace::__rust_begin_short_backtrace::hf39bd8fdae41a391  (in profile_cpp_scanner) + 12  [0x102601554]  backtrace.rs:166
+      +         7183 profile_cpp_scanner::main::h4c61efb4d70e192f  (in profile_cpp_scanner) + 1472  [0x102604024]  profile_cpp_scanner.rs:36
+      +         ! 7167 profile_cpp_scanner::cpp_scanner::replay::he9994640436c16ec  (in profile_cpp_scanner) + 168  [0x102606134]  mod.rs:243
+      +         ! : 6659 ferroni::scanner::Scanner::find_next_match_utf16::ha16147ba16b62788  (in profile_cpp_scanner) + 112  [0x1025e7348]  scanner.rs:601
+      +         ! : | 6644 ferroni::regset::onig_regset_search_impl::h506bc6c4e873f1db  (in profile_cpp_scanner) + 880  [0x1025cbd98]
+      +         ! : | + 5790 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 16200  [0x1025d0454]  regset.rs:1826
+      +         ! : | + ! 5433 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 884  [0x1025cb43c]  regset.rs:1091
+      +         ! : | + ! : 3684 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 644  [0x1025cb7e0]  regset.rs:802
+      +         ! : | + ! : | 1966 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 19684,604,...  [0x1025a9658,0x1025a4bd0,...]
+      +         ! : | + ! : | 678 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 14540  [0x1025a8240]
+      +         ! : | + ! : | + 179 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1244,1252  [0x1025b556c,0x1025b5574]  regexec.rs:1781
+      +         ! : | + ! : | + 117 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 924,1188,...  [0x1025b542c,0x1025b5534,...]  regexec.rs:0
+      +         ! : | + ! : | + 114 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 980,300,...  [0x1025b5464,0x1025b51bc,...]  regexec.rs:1737
+      +         ! : | + ! : | + 84 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 32,4,...  [0x1025b50b0,0x1025b5094,...]  regexec.rs:1726
+      +         ! : | + ! : | + 62 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1140,1108,...  [0x1025b5504,0x1025b54e4,...]  regexec.rs:1762
+      +         ! : | + ! : | + 41 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1148  [0x1025b550c]  regexec.rs:1762
+      +         ! : | + ! : | + ! 41 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | + 34 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 40  [0x1025b50b8]  mod.rs:0
+      +         ! : | + ! : | + 28 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 308,312  [0x1025b51c4,0x1025b51c8]  regexec.rs:1738
+      +         ! : | + ! : | + 12 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1264  [0x1025b5580]  regexec.rs:1840
+      +         ! : | + ! : | + 6 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1008  [0x1025b5480]  regexec.rs:1759
+      +         ! : | + ! : | + 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 908  [0x1025b541c]  regexec.rs:1754
+      +         ! : | + ! : | 578 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 10900  [0x1025a7408]
+      +         ! : | + ! : | + 230 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 428,140,...  [0x1025aea54,0x1025ae934,...]  regexec.rs:2676
+      +         ! : | + ! : | + 119 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 52,44,...  [0x1025ae8dc,0x1025ae8d4,...]  regexec.rs:2654
+      +         ! : | + ! : | + 97 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 92,100,...  [0x1025ae904,0x1025ae90c,...]  regexec.rs:2675
+      +         ! : | + ! : | + 72 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 108  [0x1025ae914]  regexec.rs:2675
+      +         ! : | + ! : | + ! 72 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0,4  [0x1025e882c,0x1025e8830]  utf8.rs:219
+      +         ! : | + ! : | + 39 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 68  [0x1025ae8ec]  regexec.rs:0
+      +         ! : | + ! : | + 15 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 76  [0x1025ae8f4]  regexec.rs:2670
+      +         ! : | + ! : | + 5 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 60,232  [0x1025ae8e4,0x1025ae990]  regexec.rs:2664
+      +         ! : | + ! : | + 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 284  [0x1025ae9c4]  regexec.rs:2671
+      +         ! : | + ! : | +   1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | 283 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1284,1272,...  [0x1025b5594,0x1025b5588,...]  regexec.rs:1840
+      +         ! : | + ! : | 130 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 656,652  [0x1025aeb38,0x1025aeb34]  regexec.rs:2679
+      +         ! : | + ! : | 34 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 19724  [0x1025a9680]
+      +         ! : | + ! : | + 13 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 84  [0x1025abc54]  regexec.rs:2646
+      +         ! : | + ! : | + ! 13 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0,4  [0x1025e882c,0x1025e8830]  utf8.rs:219
+      +         ! : | + ! : | + 8 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 16  [0x1025abc10]  regexec.rs:2641
+      +         ! : | + ! : | + 7 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 76  [0x1025abc4c]  regexec.rs:0
+      +         ! : | + ! : | + 6 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 32,48  [0x1025abc20,0x1025abc30]  regexec.rs:2646
+      +         ! : | + ! : | 11 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 172  [0x1025abcac]  regexec.rs:2650
+      +         ! : | + ! : | 4 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 16456  [0x1025a89bc]
+      +         ! : | + ! : |   4 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 4,0  [0x1025e8830,0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : 1498 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 404  [0x1025cb6f0]  regset.rs:807
+      +         ! : | + ! : | 1150 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 604,548,...  [0x1025a4bd0,0x1025a4b98,...]
+      +         ! : | + ! : | 187 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 14540  [0x1025a8240]
+      +         ! : | + ! : | + 49 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 316,300,...  [0x1025b51cc,0x1025b51bc,...]  regexec.rs:1737
+      +         ! : | + ! : | + 27 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1244,1252  [0x1025b556c,0x1025b5574]  regexec.rs:1781
+      +         ! : | + ! : | + 26 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 924,1100,...  [0x1025b542c,0x1025b54dc,...]  regexec.rs:0
+      +         ! : | + ! : | + 26 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 308,392,...  [0x1025b51c4,0x1025b5218,...]  regexec.rs:1738
+      +         ! : | + ! : | + 25 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 32,4  [0x1025b50b0,0x1025b5094]  regexec.rs:1726
+      +         ! : | + ! : | + 9 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1140  [0x1025b5504]  regexec.rs:1762
+      +         ! : | + ! : | + 8 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1148  [0x1025b550c]  regexec.rs:1762
+      +         ! : | + ! : | + ! 8 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | + 5 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 48,40  [0x1025b50c0,0x1025b50b8]  mod.rs:0
+      +         ! : | + ! : | + 5 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 892  [0x1025b540c]  regexec.rs:1754
+      +         ! : | + ! : | + 4 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1008  [0x1025b5480]  regexec.rs:1759
+      +         ! : | + ! : | + 3 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1012  [0x1025b5484]  regexec.rs:1760
+      +         ! : | + ! : | 89 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 10900  [0x1025a7408]
+      +         ! : | + ! : | + 42 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 428,140,...  [0x1025aea54,0x1025ae934,...]  regexec.rs:2676
+      +         ! : | + ! : | + 17 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 52,12,...  [0x1025ae8dc,0x1025ae8b4,...]  regexec.rs:2654
+      +         ! : | + ! : | + 12 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 92,100,...  [0x1025ae904,0x1025ae90c,...]  regexec.rs:2675
+      +         ! : | + ! : | + 9 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 68,72  [0x1025ae8ec,0x1025ae8f0]  regexec.rs:0
+      +         ! : | + ! : | + 7 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 108  [0x1025ae914]  regexec.rs:2675
+      +         ! : | + ! : | + ! 7 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | + 2 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 284  [0x1025ae9c4]  regexec.rs:2671
+      +         ! : | + ! : | +   2 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | 41 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1284,1272,...  [0x1025b5594,0x1025b5588,...]  regexec.rs:1840
+      +         ! : | + ! : | 14 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 656,652,...  [0x1025aeb38,0x1025aeb34,...]  regexec.rs:2679
+      +         ! : | + ! : | 6 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 19724  [0x1025a9680]
+      +         ! : | + ! : | + 2 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 76  [0x1025abc4c]  regexec.rs:0
+      +         ! : | + ! : | + 2 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 16  [0x1025abc10]  regexec.rs:2641
+      +         ! : | + ! : | + 1 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 84  [0x1025abc54]  regexec.rs:2646
+      +         ! : | + ! : | + ! 1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | + 1 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 32  [0x1025abc20]  regexec.rs:2646
+      +         ! : | + ! : | 3 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 7792  [0x1025a67e4]
+      +         ! : | + ! : | + 3 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::max_enc_len::h1a24c776efb308a9  (in profile_cpp_scanner) + 0  [0x1025e867c]  utf8.rs:51
+      +         ! : | + ! : | 3 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 17616  [0x1025a8e44]
+      +         ! : | + ! : | + 3 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | 3 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 172  [0x1025abcac]  regexec.rs:2650
+      +         ! : | + ! : | 2 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 11224  [0x1025a754c]
+      +         ! : | + ! : |   2 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : 50 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 176,180  [0x1025c93a8,0x1025c93ac]  mod.rs:810
+      +         ! : | + ! : 38 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 612  [0x1025cb7c0]  regset.rs:821
+      +         ! : | + ! : | 31 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 912,952,...  [0x10259e184,0x10259e1ac,...]
+      +         ! : | + ! : | 2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1280,1284  [0x1025b5590,0x1025b5594]  regexec.rs:1840
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 272  [0x10259df04]
+      +         ! : | + ! : | + 1 _platform_memset  (in libsystem_platform.dylib) + 208  [0x184247b60]
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 420  [0x10259df98]
+      +         ! : | + ! : | + 1 _platform_memset  (in libsystem_platform.dylib) + 180  [0x184247b44]
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 5960  [0x10259f53c]
+      +         ! : | + ! : | + 1 ferroni::regexec::populate_region_for_match::h44f502873f2bd1d5  (in profile_cpp_scanner) + 188  [0x1025b2f2c]  regexec.rs:0
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 13044  [0x1025a10e8]
+      +         ! : | + ! : | + 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 428  [0x1025aea54]  regexec.rs:2676
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 21136  [0x1025a3084]
+      +         ! : | + ! : |   1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1244  [0x1025b556c]  regexec.rs:1781
+      +         ! : | + ! : 34 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 20,60  [0x1025cb570,0x1025cb598]  regset.rs:790
+      +         ! : | + ! : 26 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 108,400,...  [0x1025cb5c8,0x1025cb6ec,...]  regset.rs:807
+      +         ! : | + ! : 23 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 20880,20868,...  [0x1025a9b04,0x1025a9af8,...]
+      +         ! : | + ! : 21 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 616,268,...  [0x1025cb7c4,0x1025cb668,...]  regset.rs:802
+      +         ! : | + ! : 20 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 220  [0x1025cb638]  regset.rs:801
+      +         ! : | + ! : | 20 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20  [0x1025c930c]  mod.rs:810
+      +         ! : | + ! : 9 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 688  [0x1025cb80c]  regset.rs:803
+      +         ! : | + ! : | 9 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20  [0x1025c930c]  mod.rs:810
+      +         ! : | + ! : 9 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 76  [0x1025cb5a8]  regset.rs:806
+      +         ! : | + ! : | 9 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20  [0x1025c930c]  mod.rs:810
+      +         ! : | + ! : 8 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 208  [0x1025cb62c]  regset.rs:801
+      +         ! : | + ! : 7 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 820  [0x1025cb890]  regset.rs:836
+      +         ! : | + ! : 4 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 676  [0x1025cb800]  regset.rs:803
+      +         ! : | + ! : 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 24600  [0x1025a3e0c]
+      +         ! : | + ! : 1 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 464  [0x1025cb72c]  regset.rs:820
+      +         ! : | + ! :   1 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20  [0x1025c930c]  mod.rs:810
+      +         ! : | + ! 76 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 804,676,...  [0x1025cb3ec,0x1025cb36c,...]  regset.rs:0
+      +         ! : | + ! 75 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 388  [0x1025cb24c]  regset.rs:1039
+      +         ! : | + ! : 20 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2296,2356,...  [0x1025aaee8,0x1025aaf24,...]  regexec.rs:6667
+      +         ! : | + ! : 15 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 624,844,...  [0x1025aa860,0x1025aa93c,...]  regexec.rs:6661
+      +         ! : | + ! : 10 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 3156,284,...  [0x1025ab244,0x1025aa70c,...]  regexec.rs:0
+      +         ! : | + ! : 5 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2404,3236,...  [0x1025aaf54,0x1025ab294,...]  regexec.rs:6663
+      +         ! : | + ! : 5 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 3476  [0x1025ab384]  regexec.rs:6667
+      +         ! : | + ! : | 4 ferroni::regexec::map_search_ascii_chunks::h0aa739f7d3a8337f  (in profile_cpp_scanner) + 68,248  [0x1025b1288,0x1025b133c]  regexec.rs:0
+      +         ! : | + ! : | 1 ferroni::regexec::map_search_ascii_chunks::h0aa739f7d3a8337f  (in profile_cpp_scanner) + 580  [0x1025b1488]  regexec.rs:6387
+      +         ! : | + ! : 4 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 60  [0x1025aa62c]  regexec.rs:6644
+      +         ! : | + ! : 4 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2072  [0x1025aae08]  regexec.rs:6663
+      +         ! : | + ! : | 2 memchr::memmem::searcher::searcher_kind_neon::h4d3b90c3a8142ada  (in profile_cpp_scanner) + 320,1204  [0x1025faf70,0x1025fb2e4]  searcher.rs:435
+      +         ! : | + ! : | 1 memchr::memmem::searcher::searcher_kind_neon::h4d3b90c3a8142ada  (in profile_cpp_scanner) + 20  [0x1025fae44]  searcher.rs:425
+      +         ! : | + ! : | 1 memchr::memmem::searcher::searcher_kind_neon::h4d3b90c3a8142ada  (in profile_cpp_scanner) + 112  [0x1025faea0]  searcher.rs:433
+      +         ! : | + ! : 4 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2320  [0x1025aaf00]  regexec.rs:6667
+      +         ! : | + ! : | 4 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : 2 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 4148  [0x1025ab624]  memchr.rs:0
+      +         ! : | + ! : 2 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 272,276  [0x1025aa700,0x1025aa704]  regexec.rs:6652
+      +         ! : | + ! : 1 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2004  [0x1025aadc4]  rabinkarp.rs:0
+      +         ! : | + ! : 1 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 68  [0x1025aa634]  regexec.rs:6645
+      +         ! : | + ! : 1 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 224  [0x1025aa6d0]  regexec.rs:6653
+      +         ! : | + ! : | 1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : 1 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2804  [0x1025ab0e4]  regexec.rs:6673
+      +         ! : | + ! 53 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 624,972,...  [0x1025cb338,0x1025cb494,...]  regset.rs:1099
+      +         ! : | + ! 41 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 716,648  [0x1025cb394,0x1025cb350]  regset.rs:1054
+      +         ! : | + ! 24 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 844,836,...  [0x1025cb8a8,0x1025cb8a0,...]  regset.rs:836
+      +         ! : | + ! 23 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 992  [0x1025cb4a8]  regset.rs:1099
+      +         ! : | + ! : 23 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! 20 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 928  [0x1025cb468]  regset.rs:1096
+      +         ! : | + ! 19 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 888,884  [0x1025cb440,0x1025cb43c]  regset.rs:1092
+      +         ! : | + ! 8 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 92,64,...  [0x1025cb124,0x1025cb108,...]  index.rs:0
+      +         ! : | + ! 6 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 696  [0x1025cb380]  regset.rs:1086
+      +         ! : | + ! 5 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 156,148  [0x1025cb164,0x1025cb15c]  regset.rs:1039
+      +         ! : | + ! 3 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 544  [0x1025cb2e8]  regset.rs:1050
+      +         ! : | + ! 2 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 688  [0x1025cb378]  regset.rs:1085
+      +         ! : | + ! 1 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 5268  [0x1025aba84]  regexec.rs:6737
+      +         ! : | + ! 1 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 876  [0x1025cb434]  regset.rs:1091
+      +         ! : | + 247 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 4324  [0x1025cd5f0]  regset.rs:1810
+      +         ! : | + ! 196 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 604,2840,...  [0x1025a4bd0,0x1025a548c,...]
+      +         ! : | + ! 17 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 2244  [0x1025a5238]
+      +         ! : | + ! : 9 ferroni::regexec::look_behind_body_matches::hfed16b77d6466f04  (in profile_cpp_scanner) + 132,604,...  [0x1025b1698,0x1025b1870,...]  regexec.rs:3311
+      +         ! : | + ! : 4 ferroni::regexec::look_behind_body_matches::hfed16b77d6466f04  (in profile_cpp_scanner) + 100  [0x1025b1678]  regexec.rs:3310
+      +         ! : | + ! : | 3 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::left_adjust_char_head::hf225320916a85c6d  (in profile_cpp_scanner) + 12,20,...  [0x1025e87e0,0x1025e87e8,...]  utf8.rs:184
+      +         ! : | + ! : | 1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::left_adjust_char_head::hf225320916a85c6d  (in profile_cpp_scanner) + 0  [0x1025e87d4]  utf8.rs:179
+      +         ! : | + ! : 2 ferroni::regexec::look_behind_body_matches::hfed16b77d6466f04  (in profile_cpp_scanner) + 48,52  [0x1025b1644,0x1025b1648]  regexec.rs:3301
+      +         ! : | + ! : 2 ferroni::regexec::look_behind_body_matches::hfed16b77d6466f04  (in profile_cpp_scanner) + 76  [0x1025b1660]  regexec.rs:3310
+      +         ! : | + ! 15 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 14540  [0x1025a8240]
+      +         ! : | + ! : 6 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 32  [0x1025b50b0]  regexec.rs:1726
+      +         ! : | + ! : 4 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 300,36,...  [0x1025b51bc,0x1025b50b4,...]  regexec.rs:1737
+      +         ! : | + ! : 2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1100  [0x1025b54dc]  regexec.rs:0
+      +         ! : | + ! : 2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 308  [0x1025b51c4]  regexec.rs:1738
+      +         ! : | + ! : 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1244  [0x1025b556c]  regexec.rs:1781
+      +         ! : | + ! 7 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1284,1272  [0x1025b5594,0x1025b5588]  regexec.rs:1840
+      +         ! : | + ! 5 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 10900  [0x1025a7408]
+      +         ! : | + ! : 3 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 140,420  [0x1025ae934,0x1025aea4c]  regexec.rs:2676
+      +         ! : | + ! : 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 52  [0x1025ae8dc]  regexec.rs:2654
+      +         ! : | + ! : 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 92  [0x1025ae904]  regexec.rs:2675
+      +         ! : | + ! 3 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 13308  [0x1025a7d70]
+      +         ! : | + ! : 3 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! 2 ferroni::regexec::look_behind_body_matches::hfed16b77d6466f04  (in profile_cpp_scanner) + 3440,3444  [0x1025b2384,0x1025b2388]  regexec.rs:3312
+      +         ! : | + ! 1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 11224  [0x1025a754c]
+      +         ! : | + ! : 1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! 1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 19724  [0x1025a9680]
+      +         ! : | + !   1 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 32  [0x1025abc20]  regexec.rs:2646
+      +         ! : | + 219 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 4084  [0x1025cd500]  regset.rs:1810
+      +         ! : | + ! 153 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 952,896,...  [0x10259e1ac,0x10259e174,...]
+      +         ! : | + ! 16 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 4272  [0x10259eea4]
+      +         ! : | + ! : 16 ferroni::regexec::match_literal_trie::he7ac9d9f69a3ee41  (in profile_cpp_scanner) + 536,548,...  [0x1025b0238,0x1025b0244,...]  regexec.rs:3282
+      +         ! : | + ! 13 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 13044  [0x1025a10e8]
+      +         ! : | + ! : 5 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 140,428,...  [0x1025ae934,0x1025aea54,...]  regexec.rs:2676
+      +         ! : | + ! : 2 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 52  [0x1025ae8dc]  regexec.rs:2654
+      +         ! : | + ! : 2 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 108  [0x1025ae914]  regexec.rs:2675
+      +         ! : | + ! : | 2 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : 2 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 84,100  [0x1025ae8fc,0x1025ae90c]  regexec.rs:2675
+      +         ! : | + ! : 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 68  [0x1025ae8ec]  regexec.rs:0
+      +         ! : | + ! : 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 232  [0x1025ae990]  regexec.rs:2664
+      +         ! : | + ! 10 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 272  [0x10259df04]
+      +         ! : | + ! : 8 _platform_memset  (in libsystem_platform.dylib) + 176,180,...  [0x184247b40,0x184247b44,...]
+      +         ! : | + ! : 2 DYLD-STUB$$memset  (in profile_cpp_scanner) + 0,4  [0x10263e2d0,0x10263e2d4]
+      +         ! : | + ! 9 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 420  [0x10259df98]
+      +         ! : | + ! : 7 _platform_memset  (in libsystem_platform.dylib) + 180,208  [0x184247b44,0x184247b60]
+      +         ! : | + ! : 2 DYLD-STUB$$memset  (in profile_cpp_scanner) + 4  [0x10263e2d4]
+      +         ! : | + ! 7 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 21136  [0x1025a3084]
+      +         ! : | + ! : 3 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 300,352,...  [0x1025b51bc,0x1025b51f0,...]  regexec.rs:1737
+      +         ! : | + ! : 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 48  [0x1025b50c0]  mod.rs:0
+      +         ! : | + ! : 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 924  [0x1025b542c]  regexec.rs:0
+      +         ! : | + ! : 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 308  [0x1025b51c4]  regexec.rs:1738
+      +         ! : | + ! : 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1140  [0x1025b5504]  regexec.rs:1762
+      +         ! : | + ! 3 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 656  [0x1025aeb38]  regexec.rs:2679
+      +         ! : | + ! 2 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 5960  [0x10259f53c]
+      +         ! : | + ! : 1 ferroni::regexec::populate_region_for_match::h44f502873f2bd1d5  (in profile_cpp_scanner) + 132  [0x1025b2ef4]  regexec.rs:2342
+      +         ! : | + ! : 1 ferroni::regexec::populate_region_for_match::h44f502873f2bd1d5  (in profile_cpp_scanner) + 296  [0x1025b2f98]  regexec.rs:2343
+      +         ! : | + ! 2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1272,1284  [0x1025b5588,0x1025b5594]  regexec.rs:1840
+      +         ! : | + ! 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 216  [0x10259decc]
+      +         ! : | + ! : 1 _platform_memset  (in libsystem_platform.dylib) + 180  [0x184247b44]
+      +         ! : | + ! 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 2560  [0x10259e7f4]
+      +         ! : | + ! : 1 ferroni::regexec::look_behind_body_matches::hfed16b77d6466f04  (in profile_cpp_scanner) + 100  [0x1025b1678]  regexec.rs:3310
+      +         ! : | + ! :   1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::left_adjust_char_head::hf225320916a85c6d  (in profile_cpp_scanner) + 76  [0x1025e8820]  utf8.rs:188
+      +         ! : | + ! 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 15816  [0x1025a1bbc]
+      +         ! : | + ! : 1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 23424  [0x1025a3974]
+      +         ! : | + !   1 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 48  [0x1025abc30]  regexec.rs:2646
+      +         ! : | + 145 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 3688,3604,...  [0x1025cd374,0x1025cd320,...]  regset.rs:1810
+      +         ! : | + 93 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 13488,13532,...  [0x1025cf9bc,0x1025cf9e8,...]  regset.rs:1826
+      +         ! : | + 53 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 15868  [0x1025d0308]  regset.rs:1826
+      +         ! : | + ! 46 ferroni::regset::attempt_fallback_entry_at_start::h74d91842dacb9ed6  (in profile_cpp_scanner) + 236  [0x1025cc368]  regset.rs:978
+      +         ! : | + ! : 28 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 644  [0x1025cb7e0]  regset.rs:802
+      +         ! : | + ! : | 17 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 540,7960,...  [0x1025a4b90,0x1025a688c,...]
+      +         ! : | + ! : | 4 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 14540  [0x1025a8240]
+      +         ! : | + ! : | + 2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 300,980  [0x1025b51bc,0x1025b5464]  regexec.rs:1737
+      +         ! : | + ! : | + 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 32  [0x1025b50b0]  regexec.rs:1726
+      +         ! : | + ! : | + 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1124  [0x1025b54f4]  regexec.rs:1762
+      +         ! : | + ! : | 4 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1284,1280  [0x1025b5594,0x1025b5590]  regexec.rs:1840
+      +         ! : | + ! : | 2 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 10900  [0x1025a7408]
+      +         ! : | + ! : | + 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 92  [0x1025ae904]  regexec.rs:2675
+      +         ! : | + ! : | + 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 384  [0x1025aea28]  regexec.rs:2676
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 19724  [0x1025a9680]
+      +         ! : | + ! : |   1 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 48  [0x1025abc30]  regexec.rs:2646
+      +         ! : | + ! : 14 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 404  [0x1025cb6f0]  regset.rs:807
+      +         ! : | + ! : | 11 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 564,8344,...  [0x1025a4ba8,0x1025a6a0c,...]
+      +         ! : | + ! : | 3 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 14540  [0x1025a8240]
+      +         ! : | + ! : |   2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 316,904  [0x1025b51cc,0x1025b5418]  regexec.rs:1737
+      +         ! : | + ! : |   1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 32  [0x1025b50b0]  regexec.rs:1726
+      +         ! : | + ! : 3 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 612  [0x1025cb7c0]  regset.rs:821
+      +         ! : | + ! : | 2 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 21136  [0x1025a3084]
+      +         ! : | + ! : | + 2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 32  [0x1025b50b0]  regexec.rs:1726
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 7016  [0x10259f95c]
+      +         ! : | + ! : 1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 20880  [0x1025a9b04]
+      +         ! : | + ! 2 ferroni::regset::attempt_fallback_entry_at_start::h74d91842dacb9ed6  (in profile_cpp_scanner) + 0,64  [0x1025cc27c,0x1025cc2bc]  regset.rs:955
+      +         ! : | + ! 2 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 44,64  [0x1025cb0f4,0x1025cb108]  index.rs:0
+      +         ! : | + ! 2 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 0  [0x1025cb0c8]  regset.rs:1014
+      +         ! : | + ! 1 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 32  [0x1025cb0e8]  regset.rs:1027
+      +         ! : | + 17 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 8128,1604,...  [0x1025ce4cc,0x1025ccb50,...]  regset.rs:0
+      +         ! : | + 9 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 20740  [0x1025d1610]  regset.rs:1736
+      +         ! : | + ! 9 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 84,288,...  [0x1025a49c8,0x1025a4a94,...]
+      +         ! : | + 8 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 176,180  [0x1025c93a8,0x1025c93ac]  mod.rs:810
+      +         ! : | + 5 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 17988,19188,...  [0x1025d0b50,0x1025d1000,...]  regset.rs:1736
+      +         ! : | + 5 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 624,612,...  [0x1025cc77c,0x1025cc770,...]  regset.rs:1765
+      +         ! : | + 5 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 15104  [0x1025d000c]  regset.rs:1826
+      +         ! : | + ! 4 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 404,552,...  [0x10259df88,0x10259e01c,...]
+      +         ! : | + ! 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1284  [0x1025b5594]  regexec.rs:1840
+      +         ! : | + 4 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 584,572  [0x1025cb310,0x1025cb304]  regset.rs:1101
+      +         ! : | + 3 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 24600,24584  [0x1025a3e0c,0x1025a3dfc]
+      +         ! : | + 3 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 20880,20868  [0x1025a9b04,0x1025a9af8]
+      +         ! : | + 3 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 1308,1312,...  [0x1025cca28,0x1025cca2c,...]  regset.rs:1797
+      +         ! : | + 3 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 3708  [0x1025cd388]  regset.rs:1810
+      +         ! : | + ! 3 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20  [0x1025c930c]  mod.rs:810
+      +         ! : | + 3 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 4188  [0x1025cd568]  regset.rs:1810
+      +         ! : | + ! 3 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20,28  [0x1025c930c,0x1025c9314]  mod.rs:810
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 296  [0x1025cc634]  option.rs:0
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 40,44  [0x1025cc534,0x1025cc538]  regset.rs:1710
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 252,256  [0x1025cc608,0x1025cc60c]  regset.rs:1721
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 1084  [0x1025cc948]  regset.rs:1769
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 1196  [0x1025cc9b8]  regset.rs:1793
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 3896  [0x1025cd444]  regset.rs:1810
+      +         ! : | + ! 2 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20  [0x1025c930c]  mod.rs:810
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 4412  [0x1025cd648]  regset.rs:1810
+      +         ! : | + ! 2 ferroni::regset::table_gate_admits::h2cb0cd67e2c2e51c  (in profile_cpp_scanner) + 300  [0x1025cae5c]  regset.rs:1193
+      +         ! : | + !   2 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2776,3776  [0x1025ab0c8,0x1025ab4b0]  regexec.rs:6667
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 15732  [0x1025d0280]  regset.rs:1826
+      +         ! : | + ! 2 ferroni::regset::take_scratch_msa::h1b5b1aec0b8e39b0  (in profile_cpp_scanner) + 148,152  [0x1025cacf0,0x1025cacf4]  regset.rs:1470
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 17436  [0x1025d0928]  regset.rs:1826
+      +         ! : | + ! 2 _platform_memset  (in libsystem_platform.dylib) + 180,200  [0x184247b44,0x184247b58]
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 1256  [0x1025cc9f4]  cmp.rs:0
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 1100  [0x1025cc958]  macros.rs:0
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 432  [0x1025cc6bc]  regset.rs:1735
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 20128  [0x1025d13ac]  regset.rs:1736
+      +         ! : | + ! 1 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 164  [0x1025c939c]  mod.rs:810
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 476  [0x1025cc6e8]  regset.rs:1752
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 976  [0x1025cc8dc]  regset.rs:1762
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 1144  [0x1025cc984]  regset.rs:1784
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 1284  [0x1025cca10]  regset.rs:1795
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 14484  [0x1025cfda0]  regset.rs:1826
+      +         ! : | + ! 1 ferroni::regset::take_scratch_msa::h1b5b1aec0b8e39b0  (in profile_cpp_scanner) + 180  [0x1025cad10]  regset.rs:1471
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 16448  [0x1025d054c]  regset.rs:1826
+      +         ! : | + ! 1 ferroni::oniguruma::OnigRegion::clear::hd59962d7cb31aaf1  (in profile_cpp_scanner) + 56  [0x1025eaaf4]  oniguruma.rs:461
+      +         ! : | + !   1 _platform_memset  (in libsystem_platform.dylib) + 188  [0x184247b4c]
+      +         ! : | + 1 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 320  [0x1025cb208]  regset.rs:1035
+      +         ! : | 15 ferroni::regset::onig_regset_search_impl::h506bc6c4e873f1db  (in profile_cpp_scanner) + 36,144,...  [0x1025cba4c,0x1025cbab8,...]
+      +         ! : 485 ferroni::scanner::Scanner::find_next_match_utf16::ha16147ba16b62788  (in profile_cpp_scanner) + 332  [0x1025e7424]  scanner.rs:611
+      +         ! : | 484 ferroni::regset::onig_regset_search_impl::h506bc6c4e873f1db  (in profile_cpp_scanner) + 880  [0x1025cbd98]
+      +         ! : | + 440 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 16200  [0x1025d0454]  regset.rs:1826
+      +         ! : | + ! 406 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 884  [0x1025cb43c]  regset.rs:1091
+      +         ! : | + ! : 277 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 644  [0x1025cb7e0]  regset.rs:802
+      +         ! : | + ! : | 144 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 6332,604,...  [0x1025a6230,0x1025a4bd0,...]
+      +         ! : | + ! : | 52 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 10900  [0x1025a7408]
+      +         ! : | + ! : | + 19 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 428,140,...  [0x1025aea54,0x1025ae934,...]  regexec.rs:2676
+      +         ! : | + ! : | + 12 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 44,52,...  [0x1025ae8d4,0x1025ae8dc,...]  regexec.rs:2654
+      +         ! : | + ! : | + 8 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 92,100  [0x1025ae904,0x1025ae90c]  regexec.rs:2675
+      +         ! : | + ! : | + 5 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 68  [0x1025ae8ec]  regexec.rs:0
+      +         ! : | + ! : | + 5 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 108  [0x1025ae914]  regexec.rs:2675
+      +         ! : | + ! : | + ! 5 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | + 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 60  [0x1025ae8e4]  regexec.rs:2664
+      +         ! : | + ! : | + 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 76  [0x1025ae8f4]  regexec.rs:2670
+      +         ! : | + ! : | + 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 688  [0x1025aeb58]  regexec.rs:2677
+      +         ! : | + ! : | 45 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 14540  [0x1025a8240]
+      +         ! : | + ! : | + 9 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 40  [0x1025b50b8]  mod.rs:0
+      +         ! : | + ! : | + 9 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1244,1252  [0x1025b556c,0x1025b5574]  regexec.rs:1781
+      +         ! : | + ! : | + 8 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 32,4  [0x1025b50b0,0x1025b5094]  regexec.rs:1726
+      +         ! : | + ! : | + 5 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 924,1100,...  [0x1025b542c,0x1025b54dc,...]  regexec.rs:0
+      +         ! : | + ! : | + 5 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1140,1108  [0x1025b5504,0x1025b54e4]  regexec.rs:1762
+      +         ! : | + ! : | + 4 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 980,300,...  [0x1025b5464,0x1025b51bc,...]  regexec.rs:1737
+      +         ! : | + ! : | + 2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 308  [0x1025b51c4]  regexec.rs:1738
+      +         ! : | + ! : | + 2 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1264  [0x1025b5580]  regexec.rs:1840
+      +         ! : | + ! : | + 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1148  [0x1025b550c]  regexec.rs:1762
+      +         ! : | + ! : | +   1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | 20 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1284,1272,...  [0x1025b5594,0x1025b5588,...]  regexec.rs:1840
+      +         ! : | + ! : | 12 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 656  [0x1025aeb38]  regexec.rs:2679
+      +         ! : | + ! : | 2 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 19724  [0x1025a9680]
+      +         ! : | + ! : | + 1 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 76  [0x1025abc4c]  regexec.rs:0
+      +         ! : | + ! : | + 1 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 84  [0x1025abc54]  regexec.rs:2646
+      +         ! : | + ! : | +   1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | 2 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 172  [0x1025abcac]  regexec.rs:2650
+      +         ! : | + ! : 108 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 404  [0x1025cb6f0]  regset.rs:807
+      +         ! : | + ! : | 81 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 604,548,...  [0x1025a4bd0,0x1025a4b98,...]
+      +         ! : | + ! : | 13 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 10900  [0x1025a7408]
+      +         ! : | + ! : | + 8 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 384,428,...  [0x1025aea28,0x1025aea54,...]  regexec.rs:2676
+      +         ! : | + ! : | + 2 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 12,52  [0x1025ae8b4,0x1025ae8dc]  regexec.rs:2654
+      +         ! : | + ! : | + 2 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 84,92  [0x1025ae8fc,0x1025ae904]  regexec.rs:2675
+      +         ! : | + ! : | + 1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 108  [0x1025ae914]  regexec.rs:2675
+      +         ! : | + ! : | +   1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | 7 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 14540  [0x1025a8240]
+      +         ! : | + ! : | + 3 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 904,372  [0x1025b5418,0x1025b5204]  regexec.rs:1737
+      +         ! : | + ! : | + 3 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 308,392  [0x1025b51c4,0x1025b5218]  regexec.rs:1738
+      +         ! : | + ! : | + 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1244  [0x1025b556c]  regexec.rs:1781
+      +         ! : | + ! : | 3 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 652,656  [0x1025aeb34,0x1025aeb38]  regexec.rs:2679
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 7792  [0x1025a67e4]
+      +         ! : | + ! : | + 1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::max_enc_len::h1a24c776efb308a9  (in profile_cpp_scanner) + 0  [0x1025e867c]  utf8.rs:51
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 17616  [0x1025a8e44]
+      +         ! : | + ! : | + 1 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! : | 1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 19724  [0x1025a9680]
+      +         ! : | + ! : | + 1 ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 32  [0x1025abc20]  regexec.rs:2646
+      +         ! : | + ! : | 1 ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 1284  [0x1025b5594]  regexec.rs:1840
+      +         ! : | + ! : 5 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 60,20  [0x1025cb598,0x1025cb570]  regset.rs:790
+      +         ! : | + ! : 3 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 244  [0x1025cb650]  regset.rs:802
+      +         ! : | + ! : 2 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 176  [0x1025c93a8]  mod.rs:810
+      +         ! : | + ! : 2 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 20868,20880  [0x1025a9af8,0x1025a9b04]
+      +         ! : | + ! : 2 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 220  [0x1025cb638]  regset.rs:801
+      +         ! : | + ! : | 2 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20  [0x1025c930c]  mod.rs:810
+      +         ! : | + ! : 2 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 676  [0x1025cb800]  regset.rs:803
+      +         ! : | + ! : 1 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 208  [0x1025cb62c]  regset.rs:801
+      +         ! : | + ! : 1 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 76  [0x1025cb5a8]  regset.rs:806
+      +         ! : | + ! : | 1 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 20  [0x1025c930c]  mod.rs:810
+      +         ! : | + ! : 1 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 112  [0x1025cb5cc]  regset.rs:807
+      +         ! : | + ! : 1 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 608  [0x1025cb7bc]  regset.rs:821
+      +         ! : | + ! : 1 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 820  [0x1025cb890]  regset.rs:836
+      +         ! : | + ! 8 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 624,972,...  [0x1025cb338,0x1025cb494,...]  regset.rs:1099
+      +         ! : | + ! 7 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 676,644  [0x1025cb36c,0x1025cb34c]  regset.rs:0
+      +         ! : | + ! 6 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 388  [0x1025cb24c]  regset.rs:1039
+      +         ! : | + ! : 4 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2356,1520  [0x1025aaf24,0x1025aabe0]  regexec.rs:6667
+      +         ! : | + ! : 1 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 3156  [0x1025ab244]  regexec.rs:0
+      +         ! : | + ! : 1 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 2072  [0x1025aae08]  regexec.rs:6663
+      +         ! : | + ! :   1 memchr::memmem::searcher::searcher_kind_neon::h4d3b90c3a8142ada  (in profile_cpp_scanner) + 308  [0x1025faf64]  searcher.rs:435
+      +         ! : | + ! 3 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 648,716  [0x1025cb350,0x1025cb394]  regset.rs:1054
+      +         ! : | + ! 2 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 844  [0x1025cb8a8]  regset.rs:836
+      +         ! : | + ! 2 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 696  [0x1025cb380]  regset.rs:1086
+      +         ! : | + ! 2 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 928  [0x1025cb468]  regset.rs:1096
+      +         ! : | + ! 2 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 992  [0x1025cb4a8]  regset.rs:1099
+      +         ! : | + ! : 2 _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+      +         ! : | + ! 1 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 544  [0x1025cb2e8]  regset.rs:1050
+      +         ! : | + ! 1 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 888  [0x1025cb440]  regset.rs:1092
+      +         ! : | + 10 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 3488,1688,...  [0x1025cd2ac,0x1025ccba4,...]  regset.rs:1810
+      +         ! : | + 10 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 13428,13440,...  [0x1025cf980,0x1025cf98c,...]  regset.rs:1826
+      +         ! : | + 6 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 4324  [0x1025cd5f0]  regset.rs:1810
+      +         ! : | + ! 5 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 96,308,...  [0x1025a49d4,0x1025a4aa8,...]
+      +         ! : | + ! 1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 2244  [0x1025a5238]
+      +         ! : | + !   1 ferroni::regexec::look_behind_body_matches::hfed16b77d6466f04  (in profile_cpp_scanner) + 764  [0x1025b1910]  regexec.rs:3311
+      +         ! : | + !     1 _platform_memcmp  (in libsystem_platform.dylib) + 140  [0x1842451fc]
+      +         ! : | + 5 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 4084  [0x1025cd500]  regset.rs:1810
+      +         ! : | + ! 4 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 488,624,...  [0x10259dfdc,0x10259e064,...]
+      +         ! : | + ! 1 ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 420  [0x10259df98]
+      +         ! : | + !   1 _platform_memset  (in libsystem_platform.dylib) + 180  [0x184247b44]
+      +         ! : | + 3 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 624  [0x1025cc77c]  regset.rs:1765
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 8092,8128  [0x1025ce4a8,0x1025ce4cc]  regset.rs:0
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 1168  [0x1025cc99c]  regset.rs:1793
+      +         ! : | + 2 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 15868  [0x1025d0308]  regset.rs:1826
+      +         ! : | + ! 1 ferroni::regset::attempt_fallback_entry_at_start::h74d91842dacb9ed6  (in profile_cpp_scanner) + 84  [0x1025cc2d0]  regset.rs:971
+      +         ! : | + ! 1 ferroni::regset::attempt_fallback_entry_at_start::h74d91842dacb9ed6  (in profile_cpp_scanner) + 236  [0x1025cc368]  regset.rs:978
+      +         ! : | + !   1 ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner) + 644  [0x1025cb7e0]  regset.rs:802
+      +         ! : | + !     1 ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 10900  [0x1025a7408]
+      +         ! : | + !       1 ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 100  [0x1025ae90c]  regexec.rs:2675
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 476  [0x1025cc6e8]  regset.rs:1752
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 3708  [0x1025cd388]  regset.rs:1810
+      +         ! : | + ! 1 core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 164  [0x1025c939c]  mod.rs:810
+      +         ! : | + 1 ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner) + 17100  [0x1025d07d8]  regset.rs:1826
+      +         ! : | + ! 1 ferroni::oniguruma::OnigRegion::clear::hd59962d7cb31aaf1  (in profile_cpp_scanner) + 84  [0x1025eab10]  oniguruma.rs:463
+      +         ! : | + 1 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 584  [0x1025cb310]  regset.rs:1101
+      +         ! : | 1 ferroni::regset::onig_regset_search_impl::h506bc6c4e873f1db  (in profile_cpp_scanner) + 136  [0x1025cbab0]
+      +         ! : 7 ferroni::scanner::Scanner::find_next_match_utf16::ha16147ba16b62788  (in profile_cpp_scanner) + 172,80,...  [0x1025e7384,0x1025e7328,...]  scanner.rs:601
+      +         ! : 7 ferroni::scanner::build_scanner_match::h03c7b83c0e0cdbda  (in profile_cpp_scanner) + 776  [0x1025e7214]  scanner.rs:1028
+      +         ! : 2 ferroni::scanner::build_scanner_match::h03c7b83c0e0cdbda  (in profile_cpp_scanner) + 656  [0x1025e719c]  range.rs:0
+      +         ! : 1 ferroni::regset::onig_regset_search_impl::h506bc6c4e873f1db  (in profile_cpp_scanner) + 120  [0x1025cbaa0]
+      +         ! : 1 ferroni::scanner::Scanner::find_next_match_utf16::ha16147ba16b62788  (in profile_cpp_scanner) + 20  [0x1025e72ec]  scanner.rs:593
+      +         ! : 1 ferroni::scanner::Scanner::find_next_match_utf16::ha16147ba16b62788  (in profile_cpp_scanner) + 328  [0x1025e7420]  scanner.rs:611
+      +         ! : 1 ferroni::scanner::Scanner::find_next_match_utf16::ha16147ba16b62788  (in profile_cpp_scanner) + 808  [0x1025e7600]  scanner.rs:620
+      +         ! : 1 ferroni::scanner::build_scanner_match::h03c7b83c0e0cdbda  (in profile_cpp_scanner) + 432  [0x1025e70bc]  scanner.rs:0
+      +         ! : 1 ferroni::scanner::build_scanner_match::h03c7b83c0e0cdbda  (in profile_cpp_scanner) + 516  [0x1025e7110]  scanner.rs:1011
+      +         ! : 1 ferroni::scanner::build_scanner_match::h03c7b83c0e0cdbda  (in profile_cpp_scanner) + 808  [0x1025e7234]  scanner.rs:1030
+      +         ! 6 profile_cpp_scanner::cpp_scanner::replay::he9994640436c16ec  (in profile_cpp_scanner) + 92,168,...  [0x1026060e8,0x102606134,...]  mod.rs:243
+      +         ! 5 profile_cpp_scanner::cpp_scanner::replay::he9994640436c16ec  (in profile_cpp_scanner) + 232  [0x102606174]  mod.rs:247
+      +         ! 2 profile_cpp_scanner::cpp_scanner::replay::he9994640436c16ec  (in profile_cpp_scanner) + 144  [0x10260611c]  mod.rs:245
+      +         ! 2 profile_cpp_scanner::cpp_scanner::replay::he9994640436c16ec  (in profile_cpp_scanner) + 156  [0x102606128]  mod.rs:246
+      +         ! 1 ferroni::scanner::Scanner::find_next_match_utf16::ha16147ba16b62788  (in profile_cpp_scanner) + 824  [0x1025e7610]  scanner.rs:620
+      +         6 profile_cpp_scanner::main::h4c61efb4d70e192f  (in profile_cpp_scanner) + 1432  [0x102603ffc]  profile_cpp_scanner.rs:34
+      +         ! 6 _$LT$alloc..vec..Vec$LT$T$GT$$u20$as$u20$alloc..vec..spec_from_iter_nested..SpecFromIterNested$LT$T$C$I$GT$$GT$::from_iter::h4f96f6df49483ad9  (in profile_cpp_scanner) + 144  [0x1025fd168]  spec_from_iter_nested.rs:60
+      +         !   6 ferroni::scanner::OnigString::new::hdbf618e01290c3b7  (in profile_cpp_scanner) + 544  [0x1025e6ad4]  scanner.rs:184
+      +         !     5 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 56,80,...  [0x184064528,0x184064540,...]
+      +         !     1 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 116  [0x18405f87c]
+      +         3 profile_cpp_scanner::main::h4c61efb4d70e192f  (in profile_cpp_scanner) + 1688  [0x1026040fc]  profile_cpp_scanner.rs:38
+      +         ! 3 xzm_segment_group_free_chunk  (in libsystem_malloc.dylib) + 624  [0x1840396c8]
+      +         !   3 _xzm_segment_group_segment_span_free_coalesce  (in libsystem_malloc.dylib) + 248  [0x184039ccc]
+      +         !     3 _xzm_segment_group_span_mark_used  (in libsystem_malloc.dylib) + 124  [0x18403b718]
+      +         !       2 _xzm_reclaim_mark_used  (in libsystem_malloc.dylib) + 72  [0x1840382e4]
+      +         !       1 _xzm_reclaim_mark_used  (in libsystem_malloc.dylib) + 124  [0x184038318]
+      +         !         1 _xzm_reclaim_mark_used_locked  (in libsystem_malloc.dylib) + 60  [0x18403ae24]
+      +         !           1 mach_vm_reclaim_try_cancel  (in libsystem_kernel.dylib) + 260  [0x18420c6b8]
+      +         !             1 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x1841f90f8]
+      +         2 profile_cpp_scanner::main::h4c61efb4d70e192f  (in profile_cpp_scanner) + 1636  [0x1026040c8]  profile_cpp_scanner.rs:38
+      +         ! 2 _xzm_free_main  (in libsystem_malloc.dylib) + 288,364  [0x184060fdc,0x184061028]
+      +         1 _xzm_free_main  (in libsystem_malloc.dylib) + 1072  [0x1840612ec]
+      +         1 profile_cpp_scanner::main::h4c61efb4d70e192f  (in profile_cpp_scanner) + 1480  [0x10260402c]  profile_cpp_scanner.rs:37
+      +           1 _RNvMNtNtNtNtCsaLOjE9VYtxK_3std3sys3pal4unix4timeNtB2_8Timespec3now  (in profile_cpp_scanner) + 24  [0x102620458]
+      +             1 clock_gettime  (in libsystem_c.dylib) + 60  [0x1840d4100]
+      +               1 clock_gettime_nsec_np  (in libsystem_c.dylib) + 384  [0x1840c61ac]
+      +                 1 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x1841f90f8]
+      1 ???  (in <unknown binary>)  [0x726f20726176]
+        1 ???  (in <unknown binary>)  [0x1e]
+          1 ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner) + 388  [0x1025cb24c]  regset.rs:1039
+            1 ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner) + 24  [0x1025aa608]  regexec.rs:6636
+
+Total number in stack (recursive counted multiple, when >=5):
+        24       _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner) + 0  [0x1025e882c]  utf8.rs:219
+        14       core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner) + 0  [0x1025c92f8]  mod.rs:810
+        13       ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 0  [0x1025a4974]
+        11       ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 0  [0x1025b5090]  regexec.rs:1840
+        8       _platform_memset  (in libsystem_platform.dylib) + 0  [0x184247a90]
+        8       ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 0  [0x1025ae8a8]  regexec.rs:2675
+        8       ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 0  [0x1025ae8a8]  regexec.rs:2676
+        8       ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 0  [0x1025b5090]  regexec.rs:1737
+        7       ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner) + 0  [0x10259ddf4]
+        7       ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 10900  [0x1025a7408]
+        7       ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 14540  [0x1025a8240]
+        7       ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 0  [0x1025b5090]  regexec.rs:1726
+        6       ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 0  [0x1025ae8a8]  regexec.rs:2654
+        6       ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner) + 19724  [0x1025a9680]
+        6       ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner) + 0  [0x1025abc00]  regexec.rs:2646
+        6       ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 0  [0x1025b5090]  regexec.rs:1738
+        6       ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 0  [0x1025b5090]  regexec.rs:1781
+        5       ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 0  [0x1025ae8a8]  regexec.rs:2679
+        5       ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner) + 108  [0x1025ae914]  regexec.rs:2675
+        5       ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 0  [0x1025b5090]  regexec.rs:0
+        5       ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner) + 0  [0x1025b5090]  regexec.rs:1762
+
+Sort by top of stack, same collapsed (when >= 5):
+        ferroni::regexec::match_at_impl::h835726b383ffda7e  (in profile_cpp_scanner)        3608
+        ferroni::regexec::stack_pop::hd381c9794127b606  (in profile_cpp_scanner)        1260
+        ferroni::regexec::is_word_boundary::h3bb65bec92c53cef  (in profile_cpp_scanner)        826
+        ferroni::regset::regset_search_body_position_lead::h3b7a68aa9ff679eb  (in profile_cpp_scanner)        313
+        ferroni::regset::search_fallback_entry::h46872b3d3781474e  (in profile_cpp_scanner)        269
+        _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::flag::h5bf248ac94f2f4b0  (in profile_cpp_scanner)        200
+        ferroni::regexec::match_at_impl::h5c11a05ce4093816  (in profile_cpp_scanner)        197
+        ferroni::regset::attempt_fallback_entry::hac87797457a248fa  (in profile_cpp_scanner)        140
+        core::ptr::drop_in_place$LT$core..option..Option$LT$ferroni..oniguruma..OnigRegion$GT$$GT$::h3fc9277f710adbb0  (in profile_cpp_scanner)        112
+        ferroni::regexec::forward_search::h32c222aa94edc412  (in profile_cpp_scanner)        70
+        ferroni::regexec::prev_char_head::h6f15388195613e94  (in profile_cpp_scanner)        47
+        _platform_memset  (in libsystem_platform.dylib)        22
+        ferroni::regset::onig_regset_search_impl::h506bc6c4e873f1db  (in profile_cpp_scanner)        17
+        ferroni::regexec::match_literal_trie::he7ac9d9f69a3ee41  (in profile_cpp_scanner)        16
+        ferroni::regexec::look_behind_body_matches::hfed16b77d6466f04  (in profile_cpp_scanner)        15
+        profile_cpp_scanner::cpp_scanner::replay::he9994640436c16ec  (in profile_cpp_scanner)        15
+        ferroni::scanner::build_scanner_match::h03c7b83c0e0cdbda  (in profile_cpp_scanner)        12
+        ferroni::scanner::Scanner::find_next_match_utf16::ha16147ba16b62788  (in profile_cpp_scanner)        11
+        _$LT$ferroni..encodings..utf8..Utf8Encoding$u20$as$u20$ferroni..regenc..Encoding$GT$::left_adjust_char_head::hf225320916a85c6d  (in profile_cpp_scanner)        5
+        _malloc_zone_malloc  (in libsystem_malloc.dylib)        5
+        ferroni::regexec::map_search_ascii_chunks::h0aa739f7d3a8337f  (in profile_cpp_scanner)        5
+        memchr::memmem::searcher::searcher_kind_neon::h4d3b90c3a8142ada  (in profile_cpp_scanner)        5
+
+Binary Images:
+       0x102560000 -        0x1028e11c7 +profile_cpp_scanner (0) <94A94FCB-A438-3689-8B57-B7092EA1F5A1> /tmp/*/profile_cpp_scanner
+       0x183db4000 -        0x183e035f7  libobjc.A.dylib (973.1) <C0680DF6-9900-3C29-A071-95A031686EF8> /usr/lib/libobjc.A.dylib
+       0x183e04000 -        0x183e0e23f  libsharedcache.dylib (0) <117C1ED6-AE11-3D9E-B05B-844F35395552> /usr/lib/libsharedcache.dylib
+       0x183e0f000 -        0x183e35d3b  libdyld.dylib (27062) <62863BCA-DD60-3D32-A9DB-89099BA6F3D7> /usr/lib/system/libdyld.dylib
+       0x183e36000 -        0x183ef56e3  dyld (1.0.0 - 27062) <D341DDCB-7969-3A9C-8E03-0CF4751398A9> /usr/lib/dyld
+       0x183ef6000 -        0x183ef901f  libsystem_blocks.dylib (98.1) <6F304731-D95D-3501-B4AD-F2934F7F2446> /usr/lib/system/libsystem_blocks.dylib
+       0x183efa000 -        0x183f4f0df  libxpc.dylib (3298.1.1) <0791121F-B5FC-3F84-BF04-115E86D2D882> /usr/lib/system/libxpc.dylib
+       0x183f50000 -        0x183f6fc13  libsystem_trace.dylib (1966.1.1) <B48A8E3E-A12A-3342-8321-428B555E965E> /usr/lib/system/libsystem_trace.dylib
+       0x183f70000 -        0x184024f27  libcorecrypto.dylib (2109.0.22) <807AA6C9-5D8A-3CA5-B4CE-FACE5296EF6A> /usr/lib/system/libcorecrypto.dylib
+       0x184025000 -        0x18407ac5f  libsystem_malloc.dylib (886.0.8) <2339CB57-FE5A-3154-A206-A76059C749EB> /usr/lib/system/libsystem_malloc.dylib
+       0x18407b000 -        0x1840c119f  libdispatch.dylib (1605.0.2) <022BF08F-0B3A-3225-9E65-16D1553CE90D> /usr/lib/system/libdispatch.dylib
+       0x1840c2000 -        0x1840c4d2b  libsystem_featureflags.dylib (108) <20C1CAB2-1F13-3426-8146-9CAE9FF2A33D> /usr/lib/system/libsystem_featureflags.dylib
+       0x1840c5000 -        0x184147ca3  libsystem_c.dylib (1786.0.3) <FBA7B23E-AA60-3A90-9AA4-A7A2E0AD63EE> /usr/lib/system/libsystem_c.dylib
+       0x184148000 -        0x1841dd033  libc++.1.dylib (2200.27) <1E9BA4AA-B5DA-3CF3-80AC-4B880049573F> /usr/lib/libc++.1.dylib
+       0x1841de000 -        0x1841f7eff  libc++abi.dylib (2200.27) <A21743EE-6E1C-3E74-97EA-7AF793DE4BDF> /usr/lib/libc++abi.dylib
+       0x1841f8000 -        0x1842369ab  libsystem_kernel.dylib (13432.1.9) <F63BF418-8F75-34A4-AAF1-8CAF2B9B6A05> /usr/lib/system/libsystem_kernel.dylib
+       0x184237000 -        0x18424391b  libsystem_pthread.dylib (553.0.1) <5A1828C3-CBC2-3B85-BD07-C8ED10021A41> /usr/lib/system/libsystem_pthread.dylib
+       0x184244000 -        0x18424d4f3  libsystem_platform.dylib (402.0.1.0.1) <080E4444-A0FB-3913-9756-4E470015F32F> /usr/lib/system/libsystem_platform.dylib
+       0x18424e000 -        0x18427c903  libsystem_info.dylib (603) <BC387AEB-1CEF-3513-92D7-D7F913596711> /usr/lib/system/libsystem_info.dylib
+       0x1883a6000 -        0x1883afb13  libsystem_darwin.dylib (1786.0.3) <4E66C888-993C-3E6A-A8DA-A949C01C5B67> /usr/lib/system/libsystem_darwin.dylib
+       0x188800000 -        0x188811b8b  libsystem_notify.dylib (368) <58FD36D8-37A7-311C-80F2-8E64DD8710CF> /usr/lib/system/libsystem_notify.dylib
+       0x18a95d000 -        0x18a977d93  libsystem_networkextension.dylib (2340.1.2) <22E1D190-486F-324F-ABA4-F36AB841BFE9> /usr/lib/system/libsystem_networkextension.dylib
+       0x18aa05000 -        0x18aa1c247  libsystem_asl.dylib (409) <B4D449B7-A821-3A9A-8019-E917B291F10A> /usr/lib/system/libsystem_asl.dylib
+       0x18b9b0000 -        0x18b9b0f2f  libobjcMsgSend.dylib (973.1) <41179EDE-DC97-3BBE-8848-6400D12C1436> /usr/lib/objc/libobjcMsgSend.dylib
+       0x18cafc000 -        0x18cb03edf  libsystem_symptoms.dylib (2394.0.4) <60EE7884-9F4E-3184-A6AC-FA40A7A0297D> /usr/lib/system/libsystem_symptoms.dylib
+       0x190e94000 -        0x190eceaeb  libsystem_containermanager.dylib (833.0.8.0.1) <08A57205-555D-3792-8931-9D5B585AF326> /usr/lib/system/libsystem_containermanager.dylib
+       0x1924e7000 -        0x1924eb317  libsystem_configuration.dylib (1446) <F3EB66A7-7A24-3AE5-B6E8-9A37BB00F119> /usr/lib/system/libsystem_configuration.dylib
+       0x1924ec000 -        0x1924f2e03  libsystem_sandbox.dylib (3051.0.52) <1E892B56-092E-3832-BDE3-DCE356D7A4FA> /usr/lib/system/libsystem_sandbox.dylib
+       0x1939b0000 -        0x1939b0f2f  libobjcMsgSend1.dylib (973.1) <B40D9B2A-E1EE-37ED-8004-711A1F263DE1> /usr/lib/objc/libobjcMsgSend1.dylib
+       0x1940d0000 -        0x1940d2f93  libquarantine.dylib (217.0.4) <7FD4AE22-86EF-382B-83F5-ADF9336C1160> /usr/lib/system/libquarantine.dylib
+       0x1947e2000 -        0x1947e81e7  libsystem_coreservices.dylib (203) <57248E07-11A5-3857-918E-4A3A63B69FE8> /usr/lib/system/libsystem_coreservices.dylib
+       0x194daa000 -        0x194de7b27  libsystem_m.dylib (3326.0.1) <A3FB340F-3ED5-30F4-8B64-9D5860F64D35> /usr/lib/system/libsystem_m.dylib
+       0x194de9000 -        0x194dec4f7  libmacho.dylib (27062) <50DEADEC-3E99-3519-AFC3-4A3FEB3F14C3> /usr/lib/system/libmacho.dylib
+       0x194e06000 -        0x194e12707  libcommonCrypto.dylib (600041) <41C99F45-C5E6-39DB-B1F2-A1BEA9D242A4> /usr/lib/system/libcommonCrypto.dylib
+       0x194e13000 -        0x194e1cc87  libunwind.dylib (2200.5) <3070AB81-B082-39E8-8A00-EF88DDE9AC47> /usr/lib/system/libunwind.dylib
+       0x194e24000 -        0x194e2e7eb  libcopyfile.dylib (260.0.3) <72D95AF9-BF5E-3A84-81A6-BCC5BDB99857> /usr/lib/system/libcopyfile.dylib
+       0x194e2f000 -        0x194e328bf  libcompiler_rt.dylib (103.4) <DFB5CE7F-A36E-36AA-BECE-1392D3D43607> /usr/lib/system/libcompiler_rt.dylib
+       0x194e33000 -        0x194e38077  libsystem_collections.dylib (1786.0.3) <1E8022D4-5A37-3A7A-8936-603E6FA88358> /usr/lib/system/libsystem_collections.dylib
+       0x194e39000 -        0x194e3bf1f  libsystem_secinit.dylib (182) <DE037464-4C5D-3E96-A33F-2A4557CC6A20> /usr/lib/system/libsystem_secinit.dylib
+       0x194e3c000 -        0x194e3e97f  libremovefile.dylib (96) <E6E6DFCF-6B2C-3F30-A59D-816CAB1190CE> /usr/lib/system/libremovefile.dylib
+       0x194e3f000 -        0x194e3fe27  libkeymgr.dylib (31) <5EC997EF-3ADA-360B-9FCD-5F940C83FA4E> /usr/lib/system/libkeymgr.dylib
+       0x194e40000 -        0x194e48af7  libsystem_dnssd.dylib (3111.0.5.0.1) <DE22096F-1E5B-3D6E-8164-771582DD6391> /usr/lib/system/libsystem_dnssd.dylib
+       0x194e49000 -        0x194e4df1b  libcache.dylib (95) <80BAE197-E285-3F6E-A1EE-B77FE37D7E5D> /usr/lib/system/libcache.dylib
+       0x194e4e000 -        0x194e4f8f3  libSystem.B.dylib (1359) <4FDC9AA6-B344-37FE-B8C6-A4C94A038F57> /usr/lib/libSystem.B.dylib
+       0x19b9b0000 -        0x19b9b0f2f  libobjcMsgSend2.dylib (973.1) <BD27A84B-C9AE-3282-BBEA-3B6119837B5A> /usr/lib/objc/libobjcMsgSend2.dylib
+       0x1a39b0000 -        0x1a39b0f2f  libobjcMsgSend3.dylib (973.1) <C0860D68-DDFC-3BD7-8B06-DB0645CBBED4> /usr/lib/objc/libobjcMsgSend3.dylib
+       0x1ab9b0000 -        0x1ab9b0f2f  libobjcMsgSend4.dylib (973.1) <A6153BF5-622B-3B01-81B6-F64A365EF613> /usr/lib/objc/libobjcMsgSend4.dylib
+       0x1b39b0000 -        0x1b39b0f2f  libobjcMsgSend5.dylib (973.1) <3913A71C-B29A-3AEA-820B-BEC40AC1861A> /usr/lib/objc/libobjcMsgSend5.dylib
+       0x1bb9b0000 -        0x1bb9b0f2f  libobjcMsgSend6.dylib (973.1) <9BC523A3-E167-3F6C-8CAE-0F3EBA671791> /usr/lib/objc/libobjcMsgSend6.dylib
+       0x1c39b0000 -        0x1c39b0f2f  libobjcMsgSend7.dylib (973.1) <248B7BCE-5B4C-34C7-A340-43D5228628C5> /usr/lib/objc/libobjcMsgSend7.dylib
+       0x1cb9b0000 -        0x1cb9b0f2f  libobjcMsgSend8.dylib (973.1) <3E041BAD-A8E8-3069-B741-78CD1A45B176> /usr/lib/objc/libobjcMsgSend8.dylib
+       0x1d39b0000 -        0x1d39b0f2f  libobjcMsgSend9.dylib (973.1) <34A67969-21A0-39D6-BB81-8FDA5A2409DB> /usr/lib/objc/libobjcMsgSend9.dylib
+       0x1db9b0000 -        0x1db9b0f2f  libobjcMsgSend10.dylib (973.1) <678186C0-8EAD-3B35-8CBB-00285B41E4A0> /usr/lib/objc/libobjcMsgSend10.dylib
+       0x1e39b0000 -        0x1e39b0f2f  libobjcMsgSend11.dylib (973.1) <E05CB08C-E956-36FA-8967-AE8E346A8D2C> /usr/lib/objc/libobjcMsgSend11.dylib
+       0x20b9b0000 -        0x20b9b0f2f  libobjcMsgSend12.dylib (973.1) <10AB03AA-FF1F-3FDC-9DFB-BFC40042C501> /usr/lib/objc/libobjcMsgSend12.dylib
+       0x2139b0000 -        0x2139b0f2f  libobjcMsgSend13.dylib (973.1) <ABF53427-FA6F-3D0D-8F9D-7AD795CA5C92> /usr/lib/objc/libobjcMsgSend13.dylib
+       0x21b9b0000 -        0x21b9b0f2f  libobjcMsgSend14.dylib (973.1) <9A844C46-A6DA-34D4-8EBF-2AD775C30684> /usr/lib/objc/libobjcMsgSend14.dylib
+       0x2239b0000 -        0x2239b0f2f  libobjcMsgSend15.dylib (973.1) <7C995666-2B2D-3284-AA0A-EBF7C922838E> /usr/lib/objc/libobjcMsgSend15.dylib
+       0x22b9b0000 -        0x22b9b0f2f  libobjcMsgSend16.dylib (973.1) <B6C0E14B-53AE-3E22-9ED5-1729C49F46F2> /usr/lib/objc/libobjcMsgSend16.dylib
+       0x2339b0000 -        0x2339b0f2f  libobjcMsgSend17.dylib (973.1) <07B4CF85-251B-301B-832B-20B315A59E19> /usr/lib/objc/libobjcMsgSend17.dylib
+       0x23b9b0000 -        0x23b9b0f2f  libobjcMsgSend18.dylib (973.1) <43E575B7-04DB-3999-A633-1A3B638BA6E3> /usr/lib/objc/libobjcMsgSend18.dylib
+       0x2439b0000 -        0x2439b0f2f  libobjcMsgSend19.dylib (973.1) <736F4D85-76F7-3B28-8D87-C07E8F7A0EF4> /usr/lib/objc/libobjcMsgSend19.dylib
+       0x24b9b0000 -        0x24b9b0f2f  libobjcMsgSend20.dylib (973.1) <74E67C8B-6BCA-3184-A18E-A97F370052C6> /usr/lib/objc/libobjcMsgSend20.dylib
+       0x2539b0000 -        0x2539b0f2f  libobjcMsgSend21.dylib (973.1) <CC0D732F-98E7-3888-9E15-70984DA2FB04> /usr/lib/objc/libobjcMsgSend21.dylib
+       0x25b9b0000 -        0x25b9b0f2f  libobjcMsgSend22.dylib (973.1) <85A60286-5DE3-32BA-B18C-2A498B065C88> /usr/lib/objc/libobjcMsgSend22.dylib
+       0x2639b0000 -        0x2639b0f2f  libobjcMsgSend23.dylib (973.1) <5452A0D2-6B19-39BE-ADDD-80B7BCDE3A98> /usr/lib/objc/libobjcMsgSend23.dylib
+       0x26b9b0000 -        0x26b9b0f2f  libobjcMsgSend24.dylib (973.1) <94BBF2D6-722B-350D-8557-4D25A8E8D53A> /usr/lib/objc/libobjcMsgSend24.dylib
+       0x2739b0000 -        0x2739b0f2f  libobjcMsgSend25.dylib (973.1) <35481387-5A8E-3AE4-86A6-94CEB3CC8726> /usr/lib/objc/libobjcMsgSend25.dylib
+       0x28b9b0000 -        0x28b9b0f2f  libobjcMsgSend26.dylib (973.1) <9E0C8664-E7F4-39D1-AAFC-BD92B255E4E8> /usr/lib/objc/libobjcMsgSend26.dylib
+       0x2939b0000 -        0x2939b0f2f  libobjcMsgSend27.dylib (973.1) <FD424935-55A9-3650-955A-EED3441A1D19> /usr/lib/objc/libobjcMsgSend27.dylib
+       0x29b9b0000 -        0x29b9b0f2f  libobjcMsgSend28.dylib (973.1) <09BA7B97-7DF7-3C7F-932A-B6847662FC49> /usr/lib/objc/libobjcMsgSend28.dylib
+       0x2a39b0000 -        0x2a39b0f2f  libobjcMsgSend29.dylib (973.1) <36D5BA3F-2139-30B0-8558-556764BE9813> /usr/lib/objc/libobjcMsgSend29.dylib
+       0x2ab9b0000 -        0x2ab9b0f2f  libobjcMsgSend30.dylib (973.1) <9F05564A-9D12-372C-98FC-E9F0E6BE4F04> /usr/lib/objc/libobjcMsgSend30.dylib
+       0x2b06ca000 -        0x2b06d0fe5  libRosetta.dylib (385) <E359944B-D230-33F9-A04E-0C3B17C3326E> /usr/lib/libRosetta.dylib
+       0x2b10b9000 -        0x2b10bc75b  libsystem_darwindirectory.dylib (129.0.1) <61264923-2AA5-3658-B8C4-550C71E9D4B3> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x2b10bd000 -        0x2b10c7d9b  libsystem_eligibility.dylib (446.1.3) <EDDE8E9C-A2CF-3931-BBB3-321CB852EB30> /usr/lib/system/libsystem_eligibility.dylib
+       0x2b10c8000 -        0x2b10d142b  libsystem_sanitizers.dylib (32) <7138ED99-7AA0-34EA-B35B-20EF6ADB1EED> /usr/lib/system/libsystem_sanitizers.dylib
+       0x2b10d2000 -        0x2b10d2a13  libsystem_trial.dylib (511) <6AE48824-EC44-3A8C-B501-BE57DBE892E7> /usr/lib/system/libsystem_trial.dylib
+       0x2b39b0000 -        0x2b39b0f2f  libobjcMsgSend31.dylib (973.1) <0985E20F-78C3-3466-A2B2-DBB95F7104A3> /usr/lib/objc/libobjcMsgSend31.dylib
+       0x2bb9b0000 -        0x2bb9b0f2f  libobjcMsgSend32.dylib (973.1) <0D309D58-D576-3E5D-AD4B-6D55AB491702> /usr/lib/objc/libobjcMsgSend32.dylib
+       0x2c39b0000 -        0x2c39b0f2f  libobjcMsgSend33.dylib (973.1) <346E0484-48FA-369B-8A64-93B5F5341CFE> /usr/lib/objc/libobjcMsgSend33.dylib
+       0x2cb9b0000 -        0x2cb9b0f2f  libobjcMsgSend34.dylib (973.1) <6A31F809-BCBE-3E01-A367-E91FDACCE324> /usr/lib/objc/libobjcMsgSend34.dylib

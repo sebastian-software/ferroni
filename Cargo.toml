@@ -100,3 +100,7 @@ harness = false
 [[bench]]
 name = "scanner_compile_bench"
 harness = false
+
+[[bench]]
+name = "java_scanner_bench"
+harness = false

@@ -1,0 +1,184 @@
+{
+  "document": {
+    "mainThreadSamples": 7197,
+    "inclusive": {
+      "ferroni": {
+        "inclusiveSamples": 7175,
+        "mainThreadPercent": 99.69431707655968
+      },
+      "scanner": {
+        "inclusiveSamples": 7155,
+        "mainThreadPercent": 99.41642350979575
+      },
+      "regset": {
+        "inclusiveSamples": 7146,
+        "mainThreadPercent": 99.29137140475198
+      },
+      "match_at": {
+        "inclusiveSamples": 5634,
+        "mainThreadPercent": 78.28261775739892
+      },
+      "fallback_search": {
+        "inclusiveSamples": 6215,
+        "mainThreadPercent": 86.35542587189107
+      },
+      "string_setup": {
+        "inclusiveSamples": 6,
+        "mainThreadPercent": 0.08336807002917883
+      }
+    },
+    "ferroniExclusiveTop": [
+      [
+        "ferroni::regexec::match_at_impl",
+        3805
+      ],
+      [
+        "ferroni::regexec::stack_pop",
+        1260
+      ],
+      [
+        "ferroni::regexec::is_word_boundary",
+        826
+      ],
+      [
+        "ferroni::regset::regset_search_body_position_lead",
+        313
+      ],
+      [
+        "ferroni::regset::search_fallback_entry",
+        269
+      ],
+      [
+        "ferroni::regset::attempt_fallback_entry",
+        140
+      ],
+      [
+        "ferroni::regexec::forward_search",
+        70
+      ],
+      [
+        "ferroni::regexec::prev_char_head",
+        47
+      ],
+      [
+        "ferroni::regset::onig_regset_search_impl",
+        17
+      ],
+      [
+        "ferroni::regexec::match_literal_trie",
+        16
+      ],
+      [
+        "ferroni::regexec::look_behind_body_matches",
+        15
+      ],
+      [
+        "ferroni::scanner::build_scanner_match",
+        12
+      ],
+      [
+        "ferroni::scanner::Scanner::find_next_match_utf16",
+        11
+      ],
+      [
+        "ferroni::regexec::map_search_ascii_chunks",
+        5
+      ],
+      [
+        "ferroni::regexec::populate_region_for_match",
+        3
+      ]
+    ]
+  },
+  "group_15": {
+    "mainThreadSamples": 7331,
+    "inclusive": {
+      "ferroni": {
+        "inclusiveSamples": 7298,
+        "mainThreadPercent": 99.54985677260947
+      },
+      "scanner": {
+        "inclusiveSamples": 7241,
+        "mainThreadPercent": 98.77233665257127
+      },
+      "regset": {
+        "inclusiveSamples": 7237,
+        "mainThreadPercent": 98.71777383713
+      },
+      "match_at": {
+        "inclusiveSamples": 5608,
+        "mainThreadPercent": 76.49706724867004
+      },
+      "fallback_search": {
+        "inclusiveSamples": 6780,
+        "mainThreadPercent": 92.48397217296413
+      },
+      "string_setup": {
+        "inclusiveSamples": 47,
+        "mainThreadPercent": 0.6411130814350021
+      }
+    },
+    "ferroniExclusiveTop": [
+      [
+        "ferroni::regexec::match_at_impl",
+        3676
+      ],
+      [
+        "ferroni::regexec::stack_pop",
+        1389
+      ],
+      [
+        "ferroni::regexec::is_word_boundary",
+        957
+      ],
+      [
+        "ferroni::regset::search_fallback_entry",
+        306
+      ],
+      [
+        "ferroni::regset::regset_search_body_position_lead",
+        219
+      ],
+      [
+        "ferroni::regset::attempt_fallback_entry",
+        189
+      ],
+      [
+        "ferroni::regexec::forward_search",
+        79
+      ],
+      [
+        "ferroni::regexec::prev_char_head",
+        63
+      ],
+      [
+        "ferroni::scanner::OnigString::new",
+        20
+      ],
+      [
+        "ferroni::scanner::build_scanner_match",
+        10
+      ],
+      [
+        "ferroni::regexec::look_behind_body_matches",
+        9
+      ],
+      [
+        "ferroni::regexec::map_search_ascii_chunks",
+        7
+      ],
+      [
+        "ferroni::regset::attempt_fallback_entry_at_start",
+        6
+      ],
+      [
+        "ferroni::regset::onig_regset_search_impl",
+        5
+      ],
+      [
+        "ferroni::scanner::Scanner::find_next_match_utf16",
+        4
+      ]
+    ]
+  }
+}

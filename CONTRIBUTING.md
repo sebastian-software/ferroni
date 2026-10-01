@@ -178,6 +178,14 @@ cargo bench --locked --bench cpp_scanner_bench
 python3 scripts/profile-cpp-scanner.py /tmp/cpp-scanner --sample --group 78
 ```
 
+For the Java replay, C parity and bounded CPU/pattern diagnosis, see
+[`benches/java_scanner/README.md`](benches/java_scanner/README.md):
+
+```sh
+cargo bench --locked --features ffi --bench java_scanner_bench -- --test
+cargo bench --locked --bench java_scanner_bench
+```
+
 For uncached construction and destruction of the captured C++ and SCSS scanner
 sets, use:
 

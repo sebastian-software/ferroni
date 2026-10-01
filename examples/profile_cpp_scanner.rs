@@ -7,15 +7,20 @@ use std::time::{Duration, Instant};
 fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
     assert!(
-        args.len() <= 2,
-        "Usage: profile_cpp_scanner [SECONDS] [GROUP_ID]"
+        args.len() <= 3,
+        "Usage: profile_cpp_scanner [SECONDS] [GROUP_ID|all] [TRACE.json]"
     );
     let seconds: u64 = args
         .first()
         .map_or(20, |s| s.parse().expect("integer seconds"));
     assert!((1..=300).contains(&seconds));
-    let selected = args.get(1).map(|s| s.parse().expect("integer group ID"));
-    let corpus = Corpus::load();
+    let selected = args
+        .get(1)
+        .filter(|s| s.as_str() != "all")
+        .map(|s| s.parse().expect("integer group ID"));
+    let corpus = args.get(2).map_or_else(Corpus::load, |path| {
+        Corpus::from_json(&std::fs::read_to_string(path).expect("captured trace exists"))
+    });
     corpus.validate();
     let calls = corpus.selected(selected);
     let mut scanners = corpus.scanners();
