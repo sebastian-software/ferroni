@@ -2651,6 +2651,7 @@ fn prev_char_head(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) ->
 
 /// Check word boundary at position s (encoding-aware, mode-aware).
 /// mode == 0: Unicode word, mode != 0: ASCII-only word.
+#[inline(always)]
 fn is_word_boundary(
     enc: OnigEncoding,
     str_data: &[u8],
