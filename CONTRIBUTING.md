@@ -169,16 +169,27 @@ With `--features ffi`, the C++, Java and SCSS scanner replays add a `_c`
 case per replay: the same captured Shiki calls through the vscode-oniguruma C
 scanner, checked against every captured result before timing.
 
+`battle_bench` and the scanner replays also time further engines where they
+reproduce Oniguruma's results (or the captured Shiki ones): PCRE2 with and
+without JIT, fancy-regex in its Oniguruma mode and, with the `onigmo` feature,
+Ruby's Onigmo (pinned in `benches/battle_inputs.toml`, fetched by
+`scripts/prepare-onigmo-sources.sh`). A case an engine rejects or evaluates
+differently prints an `UNSUPPORTED` line with the reason instead of a timing.
+`benches/shiki_js` replays the same Shiki calls through Shiki's JavaScript
+engine in Node.
+
 `scripts/cloud-profile.py` times a selection of cases per engine and samples
 Ferroni and C with [samply](https://github.com/mstange/samply). The `trivial`
 set holds patterns the `regex` crate also runs; the `oniguruma` set holds
 Oniguruma-only syntax, the grammar scanners of `battle_bench` and the Shiki
-scanner replays. The
-[Blacksmith profile](.github/workflows/blacksmith-profile.yml) workflow runs
-it by hand on `blacksmith-6vcpu-macos-26` and `blacksmith-4vcpu-ubuntu-2404`
-and keeps the profiles as an artifact; open one with `samply load`.
+scanner replays. The [Blacksmith profile](.github/workflows/blacksmith-profile.yml)
+workflow runs it by hand on `blacksmith-6vcpu-macos-26` and
+`blacksmith-4vcpu-ubuntu-2404` and keeps the profiles as an artifact; open one
+with `samply load`.
 
 ```bash
+./scripts/prepare-onigmo-sources.sh
+pnpm install --frozen-lockfile --dir benches/shiki_js
 ./scripts/cloud-profile.py /tmp/ferroni-profile --cases oniguruma
 ./scripts/cloud-profile.py /tmp/ferroni-profile --only 'literal|subexp' --profile-seconds 5
 ```
