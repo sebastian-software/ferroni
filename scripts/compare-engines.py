@@ -5,12 +5,14 @@ Built for the manually dispatched Blacksmith workflow
 (.github/workflows/blacksmith-comparison.yml) and runnable on any macOS or
 Linux machine with the pinned Oniguruma and Onigmo sources. Case sets:
 
-  trivial    patterns the `regex` crate also runs
-  oniguruma  syntax only Oniguruma runs: lookbehind, backreferences, atomic
-             groups, subexpression calls, absent operator, conditionals
+  shared     everyday text processing the `regex` crate also runs: markup,
+             logs, chat with emoji, Markdown, JSON, CSV, validation
+  oniguruma  the same kind of work with Oniguruma syntax: lookaround,
+             backreferences, possessive and atomic groups, subexpression
+             calls, the absent operator, conditionals, grapheme clusters
+  micro      one search on a short string, and compiling single patterns
   textmate   the TypeScript, CSS and Rust grammar scanners of battle_bench and
-             replays of real Shiki scanner calls for C++, Java and SCSS
-             (benches/*_scanner)
+             replays of real Shiki scanner calls (benches/*_scanner)
 
 Engines: Ferroni, C Oniguruma (the vscode-oniguruma scanner for the replays),
 Ruby's Onigmo (`onigmo` feature), PCRE2 with and without JIT, fancy-regex in
@@ -20,7 +22,7 @@ only where it reproduced Oniguruma's (or the captured Shiki) results; the
 summary lists every case an engine could not run, with the reason. The
 binaries are ordinary release builds, as users run them.
 
-  compare-engines.py run OUT [--cases trivial oniguruma ...]
+  compare-engines.py run OUT [--cases shared oniguruma ...]
       writes OUT/measurements.json, OUT/engine-notes.json, OUT/summary.md
   compare-engines.py report SUMMARY.md DIR...
       merges the measurements of several runs, one table set per host
@@ -43,19 +45,20 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 # Ferroni benchmark IDs; the other engines' IDs are derived from them.
+REGEX_TASKS_SHARED = ['html_tags', 'html_attributes', 'html_comments', 'hex_colors', 'email_addresses', 'emoji',
+                      'ascii_emoticons', 'hashtags_mentions', 'ipv4_addresses', 'iso_timestamps',
+                      'log_keywords_ignorecase', 'markdown_links', 'semantic_versions', 'json_strings', 'csv_fields',
+                      # At the limit: whole-grammar expressions, large alternations, backtracking, full
+                      # Unicode case folding.
+                      'rfc5322_emails', 'ipv6_addresses', 'rfc3986_urls', 'keyword_alternation_200',
+                      'csv_last_column_backtracking', 'unicode_case_folding']
+REGEX_TASKS_ONIGURUMA = ['html_element_pairs', 'html_attribute_values', 'prices_lookbehind', 'quoted_strings',
+                         'camel_case_words', 'markdown_emphasis', 'emoji_graphemes', 'password_rules',
+                         'json_objects_recursive', 'html_nested_divs_recursive', 'variable_lookbehind']
 CASES = {
-    'trivial': [
-        'single_pattern/rust/literal_exact',
-        'single_pattern/rust/quantifier_greedy',
-        'single_pattern/rust/alternation_2_branch',
-        'single_pattern/rust/alternation_10_branch',
-        'single_pattern/rust/case_insensitive_phrase',
-        'single_pattern/rust/named_capture_date',
-        'single_pattern/rust/unicode_greek',
-        'text_scanning/rust/literal_50k',
-        'text_scanning/rust/no_match_50k',
-        'text_scanning/rust/field_extract_50k',
-        'text_scanning/rust/timestamp_50k',
+    # Everyday text processing on documents of a few dozen kilobytes.
+    'shared': [
+        *[f'regex_tasks/rust/{name}' for name in REGEX_TASKS_SHARED],
         'general_regex/rust/email_validation',
         'general_regex/rust/uuid_validation',
         'general_regex/rust/number_validation',
@@ -63,20 +66,35 @@ CASES = {
         'general_regex/rust/url_extraction',
         'general_regex/rust/unicode_words',
         'general_regex/rust/email_redaction',
-        'compilation/rust/literal',
-        'compilation/rust/named_capture',
+        'text_scanning/rust/literal_50k',
+        'text_scanning/rust/no_match_50k',
+        'text_scanning/rust/field_extract_50k',
+        'text_scanning/rust/timestamp_50k',
     ],
     'oniguruma': [
-        'single_pattern/rust/lookaround_combined',
-        'single_pattern/rust/backref_simple',
+        *[f'regex_tasks/rust/{name}' for name in REGEX_TASKS_ONIGURUMA],
         'oniguruma_features/rust/atomic_possessive_strings',
         'oniguruma_features/rust/subexp_call_balanced',
         'oniguruma_features/rust/absent_comments',
         'oniguruma_features/rust/conditional_brackets',
         'oniguruma_features/rust/backref_ignorecase',
         'oniguruma_features/rust/lookbehind_alternation',
-        'compilation/rust/lookbehind',
+    ],
+    # One search on a short string, and compiling a pattern: mostly call cost.
+    'micro': [
+        'single_pattern/rust/literal_exact',
+        'single_pattern/rust/quantifier_greedy',
+        'single_pattern/rust/alternation_2_branch',
+        'single_pattern/rust/alternation_10_branch',
+        'single_pattern/rust/case_insensitive_phrase',
+        'single_pattern/rust/named_capture_date',
+        'single_pattern/rust/unicode_greek',
+        'single_pattern/rust/lookaround_combined',
+        'single_pattern/rust/backref_simple',
         'text_scanning/regset_position_lead_rust',
+        'compilation/rust/literal',
+        'compilation/rust/named_capture',
+        'compilation/rust/lookbehind',
     ],
     'textmate': [
         'scanner_highlighting/ts_279_compile_rust',
@@ -96,11 +114,17 @@ CASES = {
         'java_scanner/group_15',
         'scss_scanner/document',
         'scss_scanner/group_8',
+        # Recorded with benches/shiki_js/capture.mjs; every engine runs them.
+        'c_scanner/document',
+        'c_scanner/group_12',
+        'php_scanner/document',
+        'php_scanner/group_13',
     ],
 }
 # Criterion group prefix -> bench target; everything else is battle_bench.
 BENCHES = {'cpp_scanner': 'cpp_scanner_bench', 'java_scanner': 'java_scanner_bench',
-           'scss_scanner': 'scss_scanner_bench'}
+           'scss_scanner': 'scss_scanner_bench', 'c_scanner': 'shiki_scanner_bench',
+           'php_scanner': 'shiki_scanner_bench'}
 ENGINES = ('rust', 'c', 'onigmo', 'pcre2_jit', 'pcre2', 'fancy_regex', 'regex', 'shiki_js')
 LABELS = {'rust': 'Ferroni', 'c': 'C', 'onigmo': 'Onigmo', 'pcre2_jit': 'PCRE2 JIT', 'pcre2': 'PCRE2',
           'fancy_regex': 'fancy-regex', 'regex': 'regex', 'shiki_js': 'Shiki JS'}
@@ -408,21 +432,23 @@ def report(args):
 # needs every grammar: a highlighter that cannot load one is not a candidate.
 # Searches may miss a case; the figure then says over how many it was taken.
 WORKLOADS = [
-    {'id': 'highlighting', 'label': 'Syntax highlighting', 'short': 'Highlighting', 'require_all': True,
-     'detail': 'Shiki scanner calls replayed for whole C++, Java and SCSS documents',
-     'cases': ['cpp_scanner/document', 'java_scanner/document', 'scss_scanner/document']},
-    {'id': 'shared', 'label': 'Search, shared syntax', 'short': 'Shared syntax', 'require_all': False,
-     'detail': 'single searches, extraction and validation the regex crate can also run',
-     'cases': [case for case in CASES['trivial'] if not case.startswith('compilation/')]},
-    {'id': 'oniguruma', 'label': 'Search, Oniguruma syntax', 'short': 'Oniguruma syntax', 'require_all': False,
-     'detail': 'lookaround, backreferences, atomic groups, subexpression calls, absent operator, conditionals',
-     'cases': ['single_pattern/rust/lookaround_combined', 'single_pattern/rust/backref_simple',
-               *[case for case in CASES['oniguruma'] if case.startswith('oniguruma_features/')]]},
+    {'id': 'shared', 'label': 'Text processing, shared syntax', 'short': 'Shared syntax', 'require_all': False,
+     'detail': 'markup, logs, chat with emoji, Markdown, JSON, CSV and validation the regex crate can also run',
+     'cases': CASES['shared']},
+    {'id': 'oniguruma', 'label': 'Text processing, Oniguruma syntax', 'short': 'Oniguruma syntax',
+     'require_all': False,
+     'detail': 'lookaround, backreferences, possessive groups, subexpression calls, absent operator, graphemes',
+     'cases': CASES['oniguruma']},
+    {'id': 'highlighting', 'label': 'Highlighting, portable grammars', 'short': 'Highlighting',
+     'require_all': True,
+     'detail': 'Shiki scanner calls replayed for whole documents in grammars every engine runs',
+     'cases': ['c_scanner/document', 'java_scanner/document', 'php_scanner/document']},
 ]
 FIGURE_ENGINES = ('c', 'shiki_js', 'onigmo', 'pcre2', 'pcre2_jit', 'fancy_regex', 'regex')
 FIGURE_LABELS = {**LABELS, 'c': 'Oniguruma (C)'}
 HOST_LABELS = {'macos-arm64': 'macOS arm64', 'linux-x86-64': 'Linux x86-64'}
-GRAMMARS = {'cpp_scanner': 'C++', 'java_scanner': 'Java', 'scss_scanner': 'SCSS'}
+GRAMMARS = {'cpp_scanner': 'C++', 'java_scanner': 'Java', 'scss_scanner': 'SCSS', 'c_scanner': 'C',
+            'php_scanner': 'PHP'}
 
 
 def factor_text(values):

@@ -20,7 +20,7 @@ on:
       cases:
         description: Case set
         type: choice
-        options: [all, trivial, oniguruma, textmate]
+        options: [all, shared, oniguruma, micro, textmate]
         default: all
       measure_seconds:
         description: Criterion measurement seconds per case and engine
@@ -55,7 +55,7 @@ jobs:
       fail-fast: false
       matrix:
         profile: ${{ fromJSON(inputs.platform == 'macos-arm64' && '["macos-arm64"]' || inputs.platform == 'linux-x86-64' && '["linux-x86-64"]' || '["macos-arm64","linux-x86-64"]') }}
-        cases: ${{ fromJSON(inputs.cases == 'all' && '["trivial","oniguruma","textmate"]' || format('["{0}"]', inputs.cases)) }}
+        cases: ${{ fromJSON(inputs.cases == 'all' && '["shared","oniguruma","micro","textmate"]' || format('["{0}"]', inputs.cases)) }}
     env:
       PROFILE: ${{ matrix.profile }}
       RUNNER_LABEL: ${{ matrix.profile == 'macos-arm64' && 'blacksmith-6vcpu-macos-26' || 'blacksmith-4vcpu-ubuntu-2404' }}
