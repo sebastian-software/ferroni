@@ -10583,6 +10583,37 @@ pub(crate) fn onig_new_with_backtracking_optimization(
 mod tests {
     use super::*;
 
+    #[test]
+    fn dump_java_lookahead_search_plans() {
+        let patterns = [
+            r"(?=\w?[-\w\s]*\b(?:class|(?<!@)interface|enum)\s+[$\w]+)",
+            r"(?=\w?[\w\s]*\brecord\s+[$\w]+)",
+        ];
+        for pattern in patterns {
+            let reg = onig_new(
+                pattern.as_bytes(),
+                crate::oniguruma::ONIG_OPTION_CAPTURE_GROUP,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "pattern": pattern,
+                    "optimizer": format!("{:?}", reg.optimize),
+                    "exact": String::from_utf8_lossy(&reg.exact),
+                    "dist_min": reg.dist_min,
+                    "dist_max": reg.dist_max,
+                    "start_dispatch": reg.start_dispatch,
+                    "has_first_byte_map": reg.has_first_byte_map,
+                    "map_ascii": reg.map.iter().enumerate().filter_map(|(i, &v)| (i < 128 && v != 0).then_some(i)).collect::<Vec<_>>(),
+                    "ops": reg.ops.iter().map(|op| format!("{:?}", op.opcode)).collect::<Vec<_>>(),
+                })
+            );
+        }
+    }
+
     /// Where C finds an optimizer, Ferroni uses the same one; the extra class
     /// and type byte maps only fill in where C has none. Expected values are
     /// C's (`reg->optimize`, `dist_min`, `dist_max`, `map`).
