@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.9.0](https://github.com/sebastian-software/ferroni/compare/v1.8.1...v1.9.0) (2026-10-01)
+
+
+### Features
+
+* **docs:** move the site to ferramenta-family 2.0 ([a6dfa22](https://github.com/sebastian-software/ferroni/commit/a6dfa2236f08ee4547b46b52292b3bc77b98601b))
+* **scanner:** share compiled patterns between scanners through a pattern cache ([a5eeed5](https://github.com/sebastian-software/ferroni/commit/a5eeed544434dc81201d3df33ee41d4bbd06f9f1))
+
+
+### Performance Improvements
+
+* **regset:** apply required literals to entries with position checks but no look-behind lead ([86a41c8](https://github.com/sebastian-software/ferroni/commit/86a41c89a3af10b199378cdfee34835ba70c357f))
+* **regset:** decide first-instruction word boundaries on the ASCII path ([4049ba1](https://github.com/sebastian-software/ferroni/commit/4049ba1203c420aff4ead17c4b52d910aa7c69ec))
+
 ## [1.8.1](https://github.com/sebastian-software/ferroni/compare/v1.8.0...v1.8.1) (2026-10-01)
 
 
