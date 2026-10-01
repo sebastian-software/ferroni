@@ -1,0 +1,846 @@
+{
+  "host": {
+    "runner_profile": "linux-x86-64",
+    "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+    "system": "Linux",
+    "machine": "x86_64",
+    "cpu": "AMD EPYC",
+    "cpu_features": "avx2 avx512bw avx512f bmi2 sse4_2",
+    "cpus": 4,
+    "memory_bytes": 16555134976,
+    "os": "Ubuntu 24.04.3 LTS",
+    "kernel": "6.6.141",
+    "image": {
+      "ImageOS": "ubuntu24",
+      "ImageVersion": "20260121153938"
+    },
+    "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/36915129576"
+  },
+  "build": {
+    "git_commit": "11a7ba0248c920d4874d169349633bc8d761e8db",
+    "git_status": "",
+    "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+    "onigmo_dir": ".cache/upstream/onigmo-ruby",
+    "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+    "lockfile_sha256": "8b845f83d6741508e0c44f6078e740c593b90943110ed10ae12cd0f54f96f102",
+    "binaries": {
+      "java_scanner_bench": {
+        "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/java_scanner_bench-459b8e34c2ea53d3",
+        "sha256": "49eb4e8d4d419c6815e36fe4006f624d995dec92c60edc43e0ef1718ffaffc0e"
+      },
+      "cpp_scanner_bench": {
+        "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/cpp_scanner_bench-2412bc384286dc50",
+        "sha256": "d91cf85a9324288d56378474db8ee96c109b43e98bf22e2051b97374559d1e84"
+      },
+      "scss_scanner_bench": {
+        "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/scss_scanner_bench-741a6fbc05b115f2",
+        "sha256": "c6da9619e51ab488bb1043eaa4b77c9bead30d64f1c295b2ec0370e6bf4ff0d2"
+      },
+      "battle_bench": {
+        "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-bbfa788369356d86",
+        "sha256": "dcfb8c0cb3f63a6279122cd5cf34092e18647c4a7ae37fd2133108e94686fe76"
+      }
+    },
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+    "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "build_command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "onigmo",
+      "--no-run",
+      "--message-format=json",
+      "--bench",
+      "battle_bench",
+      "--bench",
+      "cpp_scanner_bench",
+      "--bench",
+      "java_scanner_bench",
+      "--bench",
+      "scss_scanner_bench"
+    ],
+    "build_environment": {
+      "PCRE2_SYS_STATIC": "1"
+    },
+    "node": "v24.21.0",
+    "shiki_js_lock_sha256": "79d2783ee6ba6733b1f883e182dce8407fdad55900b4b9c19acee79e0411de91"
+  },
+  "settings": {
+    "measure_seconds": 3.0,
+    "warm_up_seconds": 0.5,
+    "sample_size": 30
+  },
+  "results": {
+    "textmate": {
+      "scanner_highlighting/ts_279_compile_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_highlighting/ts_279_compile_rust",
+            "mean_ns": 14216780.38723574,
+            "median_ns": 13921161.818181818,
+            "mean_ci_ns": [
+              13626971.65510466,
+              14858422.035854222
+            ]
+          },
+          "c": {
+            "id": "scanner_highlighting/ts_279_compile_c",
+            "mean_ns": 10473916.004740348,
+            "median_ns": 10244986.520833332,
+            "mean_ci_ns": [
+              10115325.678409543,
+              10849502.182472898
+            ]
+          }
+        }
+      },
+      "scanner_highlighting/css_117_compile_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_highlighting/css_117_compile_rust",
+            "mean_ns": 8976766.36003258,
+            "median_ns": 8881556.666666668,
+            "mean_ci_ns": [
+              8625924.555368682,
+              9335417.219864769
+            ]
+          },
+          "c": {
+            "id": "scanner_highlighting/css_117_compile_c",
+            "mean_ns": 13061617.024386294,
+            "median_ns": 12762340.4375,
+            "mean_ci_ns": [
+              12722210.564262716,
+              13440639.225252861
+            ]
+          }
+        }
+      },
+      "scanner_highlighting/rust_81_compile_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_highlighting/rust_81_compile_rust",
+            "mean_ns": 310724.49073021946,
+            "median_ns": 298143.11833333335,
+            "mean_ci_ns": [
+              301567.96113060013,
+              321411.76243668766
+            ]
+          },
+          "c": {
+            "id": "scanner_highlighting/rust_81_compile_c",
+            "mean_ns": 181928.75656901536,
+            "median_ns": 185529.16493841127,
+            "mean_ci_ns": [
+              176373.8907267567,
+              187777.6403724291
+            ]
+          }
+        }
+      },
+      "scanner_highlighting/ts_279_tokenize_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_highlighting/ts_279_tokenize_rust",
+            "mean_ns": 2231.316436707183,
+            "median_ns": 2164.090094072135,
+            "mean_ci_ns": [
+              2142.974125896514,
+              2320.9094090686785
+            ]
+          },
+          "c": {
+            "id": "scanner_highlighting/ts_279_tokenize_c",
+            "mean_ns": 138073.60723037898,
+            "median_ns": 136420.47557527944,
+            "mean_ci_ns": [
+              134208.99804688533,
+              142175.83432705578
+            ]
+          }
+        }
+      },
+      "scanner_highlighting/css_117_tokenize_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_highlighting/css_117_tokenize_rust",
+            "mean_ns": 168308.73249138737,
+            "median_ns": 168189.11284722222,
+            "mean_ci_ns": [
+              160454.96766938703,
+              176410.77928985492
+            ]
+          },
+          "c": {
+            "id": "scanner_highlighting/css_117_tokenize_c",
+            "mean_ns": 10273407.394726377,
+            "median_ns": 10214715.75925926,
+            "mean_ci_ns": [
+              10172740.328453513,
+              10380396.858582225
+            ]
+          }
+        }
+      },
+      "scanner_highlighting/rust_81_tokenize_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_highlighting/rust_81_tokenize_rust",
+            "mean_ns": 4842.973623025945,
+            "median_ns": 4787.301263186489,
+            "mean_ci_ns": [
+              4624.948849060747,
+              5076.302461713489
+            ]
+          },
+          "c": {
+            "id": "scanner_highlighting/rust_81_tokenize_c",
+            "mean_ns": 63420.273318708256,
+            "median_ns": 61650.9035775809,
+            "mean_ci_ns": [
+              61874.60346049933,
+              65134.78815912614
+            ]
+          }
+        }
+      },
+      "scanner_documents/ts_279_document_28_lines_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_documents/ts_279_document_28_lines_rust",
+            "mean_ns": 731458.1266854231,
+            "median_ns": 690625.7767857143,
+            "mean_ci_ns": [
+              692659.9721330033,
+              772636.250801228
+            ]
+          },
+          "c": {
+            "id": "scanner_documents/ts_279_document_28_lines_c",
+            "mean_ns": 2373930.4846881214,
+            "median_ns": 2350898.144230769,
+            "mean_ci_ns": [
+              2325535.8196098604,
+              2423828.5797250755
+            ]
+          }
+        }
+      },
+      "scanner_documents/css_117_document_19_lines_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_documents/css_117_document_19_lines_rust",
+            "mean_ns": 71628.7252795118,
+            "median_ns": 71350.04778846154,
+            "mean_ci_ns": [
+              69644.98114488329,
+              73761.19096122186
+            ]
+          },
+          "c": {
+            "id": "scanner_documents/css_117_document_19_lines_c",
+            "mean_ns": 2349111.332808112,
+            "median_ns": 2315813.0381944445,
+            "mean_ci_ns": [
+              2315844.480386805,
+              2390207.702993131
+            ]
+          }
+        }
+      },
+      "scanner_documents/rust_81_document_31_lines_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "scanner_documents/rust_81_document_31_lines_rust",
+            "mean_ns": 73744.84977299211,
+            "median_ns": 73075.94486765159,
+            "mean_ci_ns": [
+              73195.91478562322,
+              74351.04875749702
+            ]
+          },
+          "c": {
+            "id": "scanner_documents/rust_81_document_31_lines_c",
+            "mean_ns": 789156.6284135194,
+            "median_ns": 784092.2272727273,
+            "mean_ci_ns": [
+              783733.9524263708,
+              795347.4242463394
+            ]
+          }
+        }
+      },
+      "cpp_scanner/document": {
+        "engines": [
+          "rust",
+          "c",
+          "fancy_regex",
+          "shiki_js"
+        ],
+        "timing": {
+          "shiki_js": {
+            "id": "cpp_scanner/document_shiki_js",
+            "mean_ns": 44114676.308823526,
+            "median_ns": 39007329,
+            "samples": 68,
+            "harness": "node, 1 ms batches"
+          },
+          "rust": {
+            "id": "cpp_scanner/document",
+            "mean_ns": 13459707.5,
+            "median_ns": 12730619.3125,
+            "mean_ci_ns": [
+              12643271.3353125,
+              14461168.217812499
+            ]
+          },
+          "c": {
+            "id": "cpp_scanner/document_c",
+            "mean_ns": 28680225.225,
+            "median_ns": 27853072.75,
+            "mean_ci_ns": [
+              28104691.543541666,
+              29314776.0
+            ]
+          },
+          "fancy_regex": {
+            "id": "cpp_scanner/document_fancy_regex",
+            "mean_ns": 1234465377.5333333,
+            "median_ns": 1208770951.0,
+            "mean_ci_ns": [
+              1181389564.1041667,
+              1291919413.2724998
+            ]
+          }
+        }
+      },
+      "cpp_scanner/group_78": {
+        "engines": [
+          "rust",
+          "c",
+          "fancy_regex",
+          "shiki_js"
+        ],
+        "timing": {
+          "shiki_js": {
+            "id": "cpp_scanner/group_78_shiki_js",
+            "mean_ns": 19037886.29113924,
+            "median_ns": 18405863,
+            "samples": 158,
+            "harness": "node, 1 ms batches"
+          },
+          "rust": {
+            "id": "cpp_scanner/group_78",
+            "mean_ns": 6404818.217853233,
+            "median_ns": 5963396.791208791,
+            "mean_ci_ns": [
+              6032919.379389715,
+              6832760.811052758
+            ]
+          },
+          "c": {
+            "id": "cpp_scanner/group_78_c",
+            "mean_ns": 16911767.42777778,
+            "median_ns": 16635155.583333334,
+            "mean_ci_ns": [
+              16677390.00361111,
+              17199378.014861114
+            ]
+          },
+          "fancy_regex": {
+            "id": "cpp_scanner/group_78_fancy_regex",
+            "mean_ns": 619487901.0333333,
+            "median_ns": 609002787.5,
+            "mean_ci_ns": [
+              606467788.5333333,
+              634154815.5691667
+            ]
+          }
+        }
+      },
+      "java_scanner/document": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "shiki_js"
+        ],
+        "timing": {
+          "shiki_js": {
+            "id": "java_scanner/document_shiki_js",
+            "mean_ns": 6854539.794520548,
+            "median_ns": 6422792,
+            "samples": 438,
+            "harness": "node, 1 ms batches"
+          },
+          "rust": {
+            "id": "java_scanner/document",
+            "mean_ns": 1981681.499399979,
+            "median_ns": 1961992.6289525693,
+            "mean_ci_ns": [
+              1962318.8621298599,
+              2002184.7625509568
+            ]
+          },
+          "c": {
+            "id": "java_scanner/document_c",
+            "mean_ns": 8625201.527605098,
+            "median_ns": 8484469.925,
+            "mean_ci_ns": [
+              8460646.810304675,
+              8834198.138253944
+            ]
+          },
+          "onigmo": {
+            "id": "java_scanner/document_onigmo",
+            "mean_ns": 30562334.816666666,
+            "median_ns": 29770675.625,
+            "mean_ci_ns": [
+              29920617.64666667,
+              31257544.167708334
+            ]
+          },
+          "pcre2_jit": {
+            "id": "java_scanner/document_pcre2_jit",
+            "mean_ns": 9863429.785784299,
+            "median_ns": 9691805.083333332,
+            "mean_ci_ns": [
+              9721621.388991717,
+              10018436.247631488
+            ]
+          },
+          "pcre2": {
+            "id": "java_scanner/document_pcre2",
+            "mean_ns": 30522886.466666665,
+            "median_ns": 30730953.0,
+            "mean_ci_ns": [
+              30179404.012291666,
+              30865352.532708336
+            ]
+          },
+          "fancy_regex": {
+            "id": "java_scanner/document_fancy_regex",
+            "mean_ns": 78049155.9,
+            "median_ns": 76306544.0,
+            "mean_ci_ns": [
+              76394270.35041668,
+              80184127.27666667
+            ]
+          }
+        }
+      },
+      "java_scanner/group_15": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "shiki_js"
+        ],
+        "timing": {
+          "shiki_js": {
+            "id": "java_scanner/group_15_shiki_js",
+            "mean_ns": 1483658.9267689262,
+            "median_ns": 1409972,
+            "samples": 2021,
+            "harness": "node, 1 ms batches"
+          },
+          "rust": {
+            "id": "java_scanner/group_15",
+            "mean_ns": 449695.790804508,
+            "median_ns": 451225.63713260426,
+            "mean_ci_ns": [
+              443107.45933164627,
+              456779.12420373753
+            ]
+          },
+          "c": {
+            "id": "java_scanner/group_15_c",
+            "mean_ns": 1547872.8168680796,
+            "median_ns": 1535287.6015625,
+            "mean_ci_ns": [
+              1530599.6506140071,
+              1567562.1049831419
+            ]
+          },
+          "onigmo": {
+            "id": "java_scanner/group_15_onigmo",
+            "mean_ns": 5548063.504286993,
+            "median_ns": 5495097.833333334,
+            "mean_ci_ns": [
+              5473058.694331654,
+              5631541.276026392
+            ]
+          },
+          "pcre2_jit": {
+            "id": "java_scanner/group_15_pcre2_jit",
+            "mean_ns": 1742134.3042980868,
+            "median_ns": 1711088.9764676113,
+            "mean_ci_ns": [
+              1706582.7418756501,
+              1779712.8886314596
+            ]
+          },
+          "pcre2": {
+            "id": "java_scanner/group_15_pcre2",
+            "mean_ns": 6428396.091847367,
+            "median_ns": 6326469.378125,
+            "mean_ci_ns": [
+              6218050.058557254,
+              6659286.271773694
+            ]
+          },
+          "fancy_regex": {
+            "id": "java_scanner/group_15_fancy_regex",
+            "mean_ns": 14505973.083333334,
+            "median_ns": 14156824.25,
+            "mean_ci_ns": [
+              14071178.441041667,
+              15110974.999374999
+            ]
+          }
+        }
+      },
+      "scss_scanner/document": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "fancy_regex",
+          "shiki_js"
+        ],
+        "timing": {
+          "shiki_js": {
+            "id": "scss_scanner/document_shiki_js",
+            "mean_ns": 4376562.121167883,
+            "median_ns": 4157235,
+            "samples": 685,
+            "harness": "node, 1 ms batches"
+          },
+          "rust": {
+            "id": "scss_scanner/document",
+            "mean_ns": 2817394.5734536527,
+            "median_ns": 2755869.3240740737,
+            "mean_ci_ns": [
+              2668400.475281513,
+              2982469.3115709694
+            ]
+          },
+          "c": {
+            "id": "scss_scanner/document_c",
+            "mean_ns": 48508534.333333336,
+            "median_ns": 41678897.0,
+            "mean_ci_ns": [
+              43553308.045,
+              54046632.152499996
+            ]
+          },
+          "onigmo": {
+            "id": "scss_scanner/document_onigmo",
+            "mean_ns": 21068894.646666665,
+            "median_ns": 20722909.200000003,
+            "mean_ci_ns": [
+              20633472.113333333,
+              21550598.074999996
+            ]
+          },
+          "fancy_regex": {
+            "id": "scss_scanner/document_fancy_regex",
+            "mean_ns": 194855955.36666667,
+            "median_ns": 192168901.0,
+            "mean_ci_ns": [
+              181758147.16666666,
+              207984442.67916664
+            ]
+          }
+        }
+      },
+      "scss_scanner/group_8": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "fancy_regex",
+          "shiki_js"
+        ],
+        "timing": {
+          "shiki_js": {
+            "id": "scss_scanner/group_8_shiki_js",
+            "mean_ns": 3049506.9979674798,
+            "median_ns": 2784611,
+            "samples": 984,
+            "harness": "node, 1 ms batches"
+          },
+          "rust": {
+            "id": "scss_scanner/group_8",
+            "mean_ns": 1197268.108970674,
+            "median_ns": 993573.358058608,
+            "mean_ci_ns": [
+              1004039.3009683727,
+              1440163.7154039878
+            ]
+          },
+          "c": {
+            "id": "scss_scanner/group_8_c",
+            "mean_ns": 16065961.319047619,
+            "median_ns": 15919032.357142856,
+            "mean_ci_ns": [
+              15784944.003809521,
+              16357926.483571429
+            ]
+          },
+          "onigmo": {
+            "id": "scss_scanner/group_8_onigmo",
+            "mean_ns": 9257056.925461385,
+            "median_ns": 9118277.125,
+            "mean_ci_ns": [
+              9073767.171282288,
+              9456131.942405852
+            ]
+          },
+          "fancy_regex": {
+            "id": "scss_scanner/group_8_fancy_regex",
+            "mean_ns": 58281259.78333333,
+            "median_ns": 58410546.5,
+            "mean_ci_ns": [
+              56053426.72416667,
+              60579825.02125
+            ]
+          }
+        }
+      }
+    }
+  },
+  "notes": {
+    "unsupported": {
+      "cpp_scanner/document_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "cpp_scanner/document_pcre2_jit",
+        "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/document_pcre2": {
+        "engine": "pcre2",
+        "id": "cpp_scanner/document_pcre2",
+        "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/document_onigmo": {
+        "engine": "onigmo",
+        "id": "cpp_scanner/document_onigmo",
+        "reason": "scanner 0, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+      },
+      "cpp_scanner/group_78_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "cpp_scanner/group_78_pcre2_jit",
+        "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_78_pcre2": {
+        "engine": "pcre2",
+        "id": "cpp_scanner/group_78_pcre2",
+        "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_78_onigmo": {
+        "engine": "onigmo",
+        "id": "cpp_scanner/group_78_onigmo",
+        "reason": "scanner 78, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+      },
+      "cpp_scanner/group_58_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "cpp_scanner/group_58_pcre2_jit",
+        "reason": "scanner 58, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_58_pcre2": {
+        "engine": "pcre2",
+        "id": "cpp_scanner/group_58_pcre2",
+        "reason": "scanner 58, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_58_onigmo": {
+        "engine": "onigmo",
+        "id": "cpp_scanner/group_58_onigmo",
+        "reason": "scanner 58, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+      },
+      "cpp_scanner/group_17_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "cpp_scanner/group_17_pcre2_jit",
+        "reason": "scanner 17, pattern \"(\\\\s*+((?:(?:(?:\\\\[\\\\[.*?]]|__attribute(?:__)?\\\\s*\\\\(\\\\s*\\\\(.*?\\\\)\\\\s*\\\\))|__declspec\\\\(.*?\\\\))|alignas\\\\(.*?\\\\))(?!\\\\)))?((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(?:(?:(?:unsigned|signed|short|long)|(?:struct|class|union|enum))((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))*(?:((?:::)?(?:(?!\\\\b(?:__has_cpp_attribute|reinterpret_cast|atomic_noexcept|atomic_commit|atomic_cancel|__has_include|thread_local|dynamic_cast|synchronized|static_cast|const_cast|consteval|co_return|protected|constinit|constexpr|co_return|consteval|namespace|constexpr|co_await|explicit|volatile|noexcept|co_yield|noexcept|requires|typename|decltype|operator|template|continue|co_await|co_yield|volatile|register|restrict|reflexpr|mutable|alignof|include|private|defined|typedef|_Pragma|__asm__|concept|mutable|warning|default|virtual|alignas|public|sizeof|delete|not_eq|bitand|and_eq|xor_eq|typeid|switch|return|struct|static|extern|inline|friend|ifndef|define|pragma|export|import|module|catch|throw|const|or_eq|compl|while|ifdef|const|bitor|union|class|undef|error|break|using|endif|goto|line|enum|this|case|else|elif|else|not|try|for|asm|and|xor|new|do|if|or|if)\\\\b)(?<!\\\\w)(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*(?!\\\\w)\\\\s*+(((?<!<)<(?!<)(?:/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/|\\\"(?:[^\\\"]*|\\\\\\\\\\\")\\\"|'(?:[^']*|\\\\\\\\')'|\\\\g<18>|(?:[^\\\"'/<>]|/[^*])++)*>)\\\\s*+)?::)*+)((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))?(?!(?:transaction_safe_dynamic|__has_cpp_attribute|reinterpret_cast|transaction_safe|atomic_noexcept|atomic_commit|__has_include|atomic_cancel|synchronized|thread_local|dynamic_cast|static_cast|const_cast|constexpr|co_return|constinit|namespace|protected|consteval|constexpr|co_return|consteval|co_await|continue|template|reflexpr|volatile|register|co_await|co_yield|restrict|noexcept|volatile|override|explicit|decltype|operator|noexcept|typename|requires|co_yield|nullptr|alignof|alignas|default|mutable|virtual|mutable|private|include|warning|_Pragma|defined|typedef|__asm__|concept|define|module|sizeof|switch|delete|pragma|and_eq|inline|xor_eq|typeid|import|extern|public|bitand|static|export|return|friend|ifndef|not_eq|false|final|break|const|catch|endif|ifdef|undef|error|audit|while|using|axiom|or_eq|compl|throw|bitor|const|line|case|else|this|true|goto|else|NULL|elif|new|asm|xor|and|try|not|for|do|if|or|if)\\\\b)(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*\\\\b((?<!<)<(?!<)(?:/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/|\\\"(?:[^\\\"]*|\\\\\\\\\\\")\\\"|'(?:[^']*|\\\\\\\\')'|\\\\g<18>|(?:[^\\\"'/<>]|/[^*])++)*>)?(?![.:<\\\\w]))(((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)?(?:[\\\\&*]((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))*[\\\\&*])?((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(\\\\()(\\\\*)\\\\s+{0,1}((?:(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*)?)\\\\s+{0,1}(?:(\\\\[)(\\\\w*)(])\\\\s+{0,1})*(\\\\))\\\\s+{0,1}(\\\\()\": PCRE2 at offset 2898: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_17_pcre2": {
+        "engine": "pcre2",
+        "id": "cpp_scanner/group_17_pcre2",
+        "reason": "scanner 17, pattern \"(\\\\s*+((?:(?:(?:\\\\[\\\\[.*?]]|__attribute(?:__)?\\\\s*\\\\(\\\\s*\\\\(.*?\\\\)\\\\s*\\\\))|__declspec\\\\(.*?\\\\))|alignas\\\\(.*?\\\\))(?!\\\\)))?((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(?:(?:(?:unsigned|signed|short|long)|(?:struct|class|union|enum))((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))*(?:((?:::)?(?:(?!\\\\b(?:__has_cpp_attribute|reinterpret_cast|atomic_noexcept|atomic_commit|atomic_cancel|__has_include|thread_local|dynamic_cast|synchronized|static_cast|const_cast|consteval|co_return|protected|constinit|constexpr|co_return|consteval|namespace|constexpr|co_await|explicit|volatile|noexcept|co_yield|noexcept|requires|typename|decltype|operator|template|continue|co_await|co_yield|volatile|register|restrict|reflexpr|mutable|alignof|include|private|defined|typedef|_Pragma|__asm__|concept|mutable|warning|default|virtual|alignas|public|sizeof|delete|not_eq|bitand|and_eq|xor_eq|typeid|switch|return|struct|static|extern|inline|friend|ifndef|define|pragma|export|import|module|catch|throw|const|or_eq|compl|while|ifdef|const|bitor|union|class|undef|error|break|using|endif|goto|line|enum|this|case|else|elif|else|not|try|for|asm|and|xor|new|do|if|or|if)\\\\b)(?<!\\\\w)(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*(?!\\\\w)\\\\s*+(((?<!<)<(?!<)(?:/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/|\\\"(?:[^\\\"]*|\\\\\\\\\\\")\\\"|'(?:[^']*|\\\\\\\\')'|\\\\g<18>|(?:[^\\\"'/<>]|/[^*])++)*>)\\\\s*+)?::)*+)((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))?(?!(?:transaction_safe_dynamic|__has_cpp_attribute|reinterpret_cast|transaction_safe|atomic_noexcept|atomic_commit|__has_include|atomic_cancel|synchronized|thread_local|dynamic_cast|static_cast|const_cast|constexpr|co_return|constinit|namespace|protected|consteval|constexpr|co_return|consteval|co_await|continue|template|reflexpr|volatile|register|co_await|co_yield|restrict|noexcept|volatile|override|explicit|decltype|operator|noexcept|typename|requires|co_yield|nullptr|alignof|alignas|default|mutable|virtual|mutable|private|include|warning|_Pragma|defined|typedef|__asm__|concept|define|module|sizeof|switch|delete|pragma|and_eq|inline|xor_eq|typeid|import|extern|public|bitand|static|export|return|friend|ifndef|not_eq|false|final|break|const|catch|endif|ifdef|undef|error|audit|while|using|axiom|or_eq|compl|throw|bitor|const|line|case|else|this|true|goto|else|NULL|elif|new|asm|xor|and|try|not|for|do|if|or|if)\\\\b)(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*\\\\b((?<!<)<(?!<)(?:/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/|\\\"(?:[^\\\"]*|\\\\\\\\\\\")\\\"|'(?:[^']*|\\\\\\\\')'|\\\\g<18>|(?:[^\\\"'/<>]|/[^*])++)*>)?(?![.:<\\\\w]))(((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)?(?:[\\\\&*]((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))*[\\\\&*])?((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(\\\\()(\\\\*)\\\\s+{0,1}((?:(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*)?)\\\\s+{0,1}(?:(\\\\[)(\\\\w*)(])\\\\s+{0,1})*(\\\\))\\\\s+{0,1}(\\\\()\": PCRE2 at offset 2898: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_17_onigmo": {
+        "engine": "onigmo",
+        "id": "cpp_scanner/group_17_onigmo",
+        "reason": "scanner 17, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+      },
+      "cpp_scanner/group_70_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "cpp_scanner/group_70_pcre2_jit",
+        "reason": "scanner 70, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_70_pcre2": {
+        "engine": "pcre2",
+        "id": "cpp_scanner/group_70_pcre2",
+        "reason": "scanner 70, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_70_onigmo": {
+        "engine": "onigmo",
+        "id": "cpp_scanner/group_70_onigmo",
+        "reason": "scanner 70, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+      },
+      "cpp_scanner/group_61_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "cpp_scanner/group_61_pcre2_jit",
+        "reason": "scanner 61, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_61_pcre2": {
+        "engine": "pcre2",
+        "id": "cpp_scanner/group_61_pcre2",
+        "reason": "scanner 61, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_61_onigmo": {
+        "engine": "onigmo",
+        "id": "cpp_scanner/group_61_onigmo",
+        "reason": "scanner 61, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+      },
+      "cpp_scanner/group_77_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "cpp_scanner/group_77_pcre2_jit",
+        "reason": "scanner 77, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_77_pcre2": {
+        "engine": "pcre2",
+        "id": "cpp_scanner/group_77_pcre2",
+        "reason": "scanner 77, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+      },
+      "cpp_scanner/group_77_onigmo": {
+        "engine": "onigmo",
+        "id": "cpp_scanner/group_77_onigmo",
+        "reason": "scanner 77, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+      },
+      "scss_scanner/document_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "scss_scanner/document_pcre2_jit",
+        "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+      },
+      "scss_scanner/document_pcre2": {
+        "engine": "pcre2",
+        "id": "scss_scanner/document_pcre2",
+        "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+      },
+      "scss_scanner/group_8_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "scss_scanner/group_8_pcre2_jit",
+        "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+      },
+      "scss_scanner/group_8_pcre2": {
+        "engine": "pcre2",
+        "id": "scss_scanner/group_8_pcre2",
+        "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+      },
+      "scss_scanner/group_6_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "scss_scanner/group_6_pcre2_jit",
+        "reason": "call 2 (scanner 6): Some((17, [(9, 14), (0, 0), (0, 0)])), Shiki Some((16, [(8, 15), (8, 9)]))"
+      },
+      "scss_scanner/group_6_pcre2": {
+        "engine": "pcre2",
+        "id": "scss_scanner/group_6_pcre2",
+        "reason": "call 2 (scanner 6): Some((17, [(9, 14), (0, 0), (0, 0)])), Shiki Some((16, [(8, 15), (8, 9)]))"
+      },
+      "scss_scanner/group_5_pcre2_jit": {
+        "engine": "pcre2_jit",
+        "id": "scss_scanner/group_5_pcre2_jit",
+        "reason": "call 0 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+      },
+      "scss_scanner/group_5_pcre2": {
+        "engine": "pcre2",
+        "id": "scss_scanner/group_5_pcre2",
+        "reason": "call 0 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+      },
+      "oniguruma_features/fancy_regex/subexp_call_balanced": {
+        "engine": "fancy_regex",
+        "id": "oniguruma_features/fancy_regex/subexp_call_balanced",
+        "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+      },
+      "oniguruma_features/pcre2_jit/absent_comments": {
+        "engine": "pcre2_jit",
+        "id": "oniguruma_features/pcre2_jit/absent_comments",
+        "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+      },
+      "oniguruma_features/pcre2/absent_comments": {
+        "engine": "pcre2",
+        "id": "oniguruma_features/pcre2/absent_comments",
+        "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+      }
+    },
+    "equivalent": {
+      "cpp_scanner/document_shiki_js": {
+        "id": "cpp_scanner/document_shiki_js",
+        "engine": "shiki_js",
+        "engine_version": "4.5.0",
+        "calls": 4862,
+        "empty_capture_differences": 96,
+        "status": "ok"
+      },
+      "java_scanner/document_shiki_js": {
+        "id": "java_scanner/document_shiki_js",
+        "engine": "shiki_js",
+        "engine_version": "4.5.0",
+        "calls": 3920,
+        "empty_capture_differences": 16,
+        "status": "ok"
+      },
+      "java_scanner/group_15_shiki_js": {
+        "id": "java_scanner/group_15_shiki_js",
+        "engine": "shiki_js",
+        "engine_version": "4.5.0",
+        "calls": 592,
+        "empty_capture_differences": 16,
+        "status": "ok"
+      }
+    }
+  }
+}

@@ -1,0 +1,668 @@
+{
+  "host": {
+    "runner_profile": "linux-x86-64",
+    "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+    "system": "Linux",
+    "machine": "x86_64",
+    "cpu": "AMD EPYC",
+    "cpu_features": "avx2 avx512bw avx512f bmi2 sse4_2",
+    "cpus": 4,
+    "memory_bytes": 16555134976,
+    "os": "Ubuntu 24.04.3 LTS",
+    "kernel": "6.6.141",
+    "image": {
+      "ImageOS": "ubuntu24",
+      "ImageVersion": "20260121153938"
+    },
+    "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/36915129576"
+  },
+  "build": {
+    "git_commit": "11a7ba0248c920d4874d169349633bc8d761e8db",
+    "git_status": "",
+    "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+    "onigmo_dir": ".cache/upstream/onigmo-ruby",
+    "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+    "lockfile_sha256": "8b845f83d6741508e0c44f6078e740c593b90943110ed10ae12cd0f54f96f102",
+    "binaries": {
+      "battle_bench": {
+        "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-bbfa788369356d86",
+        "sha256": "6f261f7aa6f3fb39e3e62c8283eb09bf4e16a8b2fb0940554e48baa38920ff1c"
+      }
+    },
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+    "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "build_command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "onigmo",
+      "--no-run",
+      "--message-format=json",
+      "--bench",
+      "battle_bench"
+    ],
+    "build_environment": {
+      "PCRE2_SYS_STATIC": "1"
+    }
+  },
+  "settings": {
+    "measure_seconds": 3.0,
+    "warm_up_seconds": 0.5,
+    "sample_size": 30
+  },
+  "results": {
+    "oniguruma": {
+      "single_pattern/rust/lookaround_combined": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "single_pattern/rust/lookaround_combined",
+            "mean_ns": 54.90973632589192,
+            "median_ns": 54.50190193871944,
+            "mean_ci_ns": [
+              54.40315272351149,
+              55.53354857415565
+            ]
+          },
+          "c": {
+            "id": "single_pattern/c/lookaround_combined",
+            "mean_ns": 200.26859403899908,
+            "median_ns": 190.29354610891176,
+            "mean_ci_ns": [
+              191.927611801217,
+              210.1073825592668
+            ]
+          },
+          "onigmo": {
+            "id": "single_pattern/onigmo/lookaround_combined",
+            "mean_ns": 55.36347399841052,
+            "median_ns": 53.129222133751476,
+            "mean_ci_ns": [
+              53.44334690422396,
+              57.77905824468048
+            ]
+          },
+          "pcre2_jit": {
+            "id": "single_pattern/pcre2_jit/lookaround_combined",
+            "mean_ns": 26.283978098880304,
+            "median_ns": 24.791692891970854,
+            "mean_ci_ns": [
+              25.10514978138328,
+              27.778442458982205
+            ]
+          },
+          "pcre2": {
+            "id": "single_pattern/pcre2/lookaround_combined",
+            "mean_ns": 248.16297067323976,
+            "median_ns": 226.3646046964725,
+            "mean_ci_ns": [
+              234.18552111849274,
+              264.2748327783223
+            ]
+          },
+          "fancy_regex": {
+            "id": "single_pattern/fancy_regex/lookaround_combined",
+            "mean_ns": 198.06254911757682,
+            "median_ns": 199.73277683914716,
+            "mean_ci_ns": [
+              195.01380783336953,
+              201.21613315409797
+            ]
+          }
+        }
+      },
+      "single_pattern/rust/backref_simple": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "single_pattern/rust/backref_simple",
+            "mean_ns": 50.349787427467774,
+            "median_ns": 49.53569449239949,
+            "mean_ci_ns": [
+              49.54975205750926,
+              51.502644304364296
+            ]
+          },
+          "c": {
+            "id": "single_pattern/c/backref_simple",
+            "mean_ns": 109.38896870098112,
+            "median_ns": 102.46515033449987,
+            "mean_ci_ns": [
+              103.43252657452541,
+              116.40593318780127
+            ]
+          },
+          "onigmo": {
+            "id": "single_pattern/onigmo/backref_simple",
+            "mean_ns": 56.5483306805149,
+            "median_ns": 53.50040769500566,
+            "mean_ci_ns": [
+              53.377579174676434,
+              60.41465021893411
+            ]
+          },
+          "pcre2_jit": {
+            "id": "single_pattern/pcre2_jit/backref_simple",
+            "mean_ns": 20.721889102409865,
+            "median_ns": 20.426159386702082,
+            "mean_ci_ns": [
+              20.43940489199403,
+              21.05667245733016
+            ]
+          },
+          "pcre2": {
+            "id": "single_pattern/pcre2/backref_simple",
+            "mean_ns": 62.357936568104535,
+            "median_ns": 56.6636441954174,
+            "mean_ci_ns": [
+              58.83518649124917,
+              66.16111496558366
+            ]
+          },
+          "fancy_regex": {
+            "id": "single_pattern/fancy_regex/backref_simple",
+            "mean_ns": 104.81184470247538,
+            "median_ns": 101.66935962641827,
+            "mean_ci_ns": [
+              95.95334316782986,
+              113.99158607156043
+            ]
+          }
+        }
+      },
+      "oniguruma_features/rust/atomic_possessive_strings": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "oniguruma_features/rust/atomic_possessive_strings",
+            "mean_ns": 26543.794710270035,
+            "median_ns": 24006.074776087422,
+            "mean_ci_ns": [
+              24815.507765445112,
+              28406.811342568828
+            ]
+          },
+          "c": {
+            "id": "oniguruma_features/c/atomic_possessive_strings",
+            "mean_ns": 33762.17250607777,
+            "median_ns": 31464.531050446996,
+            "mean_ci_ns": [
+              32200.862256817592,
+              35571.84049467792
+            ]
+          },
+          "onigmo": {
+            "id": "oniguruma_features/onigmo/atomic_possessive_strings",
+            "mean_ns": 28239.408366077234,
+            "median_ns": 27583.25341498779,
+            "mean_ci_ns": [
+              27660.10276218116,
+              28923.128388657846
+            ]
+          },
+          "pcre2_jit": {
+            "id": "oniguruma_features/pcre2_jit/atomic_possessive_strings",
+            "mean_ns": 8264.8369063059,
+            "median_ns": 8178.635152649769,
+            "mean_ci_ns": [
+              8185.971185830323,
+              8358.336940807443
+            ]
+          },
+          "pcre2": {
+            "id": "oniguruma_features/pcre2/atomic_possessive_strings",
+            "mean_ns": 22284.036951819922,
+            "median_ns": 21660.718882618017,
+            "mean_ci_ns": [
+              21677.20189838098,
+              23056.780856559893
+            ]
+          },
+          "fancy_regex": {
+            "id": "oniguruma_features/fancy_regex/atomic_possessive_strings",
+            "mean_ns": 65771.01335281642,
+            "median_ns": 64413.3442266395,
+            "mean_ci_ns": [
+              64665.15978324116,
+              67040.08756136792
+            ]
+          }
+        }
+      },
+      "oniguruma_features/rust/subexp_call_balanced": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2"
+        ],
+        "timing": {
+          "rust": {
+            "id": "oniguruma_features/rust/subexp_call_balanced",
+            "mean_ns": 34148.27340877432,
+            "median_ns": 33912.25050244042,
+            "mean_ci_ns": [
+              33658.46330132294,
+              34805.372997334394
+            ]
+          },
+          "c": {
+            "id": "oniguruma_features/c/subexp_call_balanced",
+            "mean_ns": 37302.087680477394,
+            "median_ns": 37182.18546068513,
+            "mean_ci_ns": [
+              36953.24108431455,
+              37732.451923678644
+            ]
+          },
+          "onigmo": {
+            "id": "oniguruma_features/onigmo/subexp_call_balanced",
+            "mean_ns": 43204.921851890744,
+            "median_ns": 43063.66237535613,
+            "mean_ci_ns": [
+              42929.39176745845,
+              43492.291184198846
+            ]
+          },
+          "pcre2_jit": {
+            "id": "oniguruma_features/pcre2_jit/subexp_call_balanced",
+            "mean_ns": 10706.130074481887,
+            "median_ns": 10697.422839615694,
+            "mean_ci_ns": [
+              10623.313372675824,
+              10791.557169850714
+            ]
+          },
+          "pcre2": {
+            "id": "oniguruma_features/pcre2/subexp_call_balanced",
+            "mean_ns": 61034.362720321245,
+            "median_ns": 61002.62772780277,
+            "mean_ci_ns": [
+              60642.505477090235,
+              61441.81559587621
+            ]
+          }
+        }
+      },
+      "oniguruma_features/rust/absent_comments": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "fancy_regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "oniguruma_features/rust/absent_comments",
+            "mean_ns": 27061.786713950285,
+            "median_ns": 27082.078901907764,
+            "mean_ci_ns": [
+              26869.23458499469,
+              27255.817900145485
+            ]
+          },
+          "c": {
+            "id": "oniguruma_features/c/absent_comments",
+            "mean_ns": 22981.59511953934,
+            "median_ns": 22950.90280977312,
+            "mean_ci_ns": [
+              22802.10722390845,
+              23195.027143207502
+            ]
+          },
+          "onigmo": {
+            "id": "oniguruma_features/onigmo/absent_comments",
+            "mean_ns": 18232.111200972377,
+            "median_ns": 17957.03465909091,
+            "mean_ci_ns": [
+              17970.710929135214,
+              18632.773521166146
+            ]
+          },
+          "fancy_regex": {
+            "id": "oniguruma_features/fancy_regex/absent_comments",
+            "mean_ns": 40676.43473682702,
+            "median_ns": 40674.391176470584,
+            "mean_ci_ns": [
+              40425.110021205335,
+              40931.94863909606
+            ]
+          }
+        }
+      },
+      "oniguruma_features/rust/conditional_brackets": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "oniguruma_features/rust/conditional_brackets",
+            "mean_ns": 49430.63006846474,
+            "median_ns": 49265.25589887641,
+            "mean_ci_ns": [
+              49110.936190221044,
+              49758.70856767312
+            ]
+          },
+          "c": {
+            "id": "oniguruma_features/c/conditional_brackets",
+            "mean_ns": 53004.297836303944,
+            "median_ns": 53098.403676896356,
+            "mean_ci_ns": [
+              52696.21161690559,
+              53306.76449900388
+            ]
+          },
+          "onigmo": {
+            "id": "oniguruma_features/onigmo/conditional_brackets",
+            "mean_ns": 55850.83323938208,
+            "median_ns": 55544.92624148004,
+            "mean_ci_ns": [
+              55510.259168453056,
+              56272.1580256522
+            ]
+          },
+          "pcre2_jit": {
+            "id": "oniguruma_features/pcre2_jit/conditional_brackets",
+            "mean_ns": 13745.608234136695,
+            "median_ns": 13762.469387755102,
+            "mean_ci_ns": [
+              13668.357514065478,
+              13825.525539356853
+            ]
+          },
+          "pcre2": {
+            "id": "oniguruma_features/pcre2/conditional_brackets",
+            "mean_ns": 45063.5905318439,
+            "median_ns": 44945.95634061619,
+            "mean_ci_ns": [
+              44742.18039091518,
+              45423.161829897406
+            ]
+          },
+          "fancy_regex": {
+            "id": "oniguruma_features/fancy_regex/conditional_brackets",
+            "mean_ns": 118921.4930108918,
+            "median_ns": 118813.74435930184,
+            "mean_ci_ns": [
+              118655.86629392147,
+              119223.9460941935
+            ]
+          }
+        }
+      },
+      "oniguruma_features/rust/backref_ignorecase": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "oniguruma_features/rust/backref_ignorecase",
+            "mean_ns": 68561.5091095577,
+            "median_ns": 68335.4035433071,
+            "mean_ci_ns": [
+              68338.2162590231,
+              68838.43707332844
+            ]
+          },
+          "c": {
+            "id": "oniguruma_features/c/backref_ignorecase",
+            "mean_ns": 75242.6204667157,
+            "median_ns": 75027.16358551494,
+            "mean_ci_ns": [
+              75065.50879656826,
+              75450.95583290038
+            ]
+          },
+          "onigmo": {
+            "id": "oniguruma_features/onigmo/backref_ignorecase",
+            "mean_ns": 71414.28527389492,
+            "median_ns": 71122.21527128997,
+            "mean_ci_ns": [
+              71033.06985882793,
+              71853.13738953386
+            ]
+          },
+          "pcre2_jit": {
+            "id": "oniguruma_features/pcre2_jit/backref_ignorecase",
+            "mean_ns": 21701.846436881613,
+            "median_ns": 21589.387478070174,
+            "mean_ci_ns": [
+              21603.957907640954,
+              21823.26843096963
+            ]
+          },
+          "pcre2": {
+            "id": "oniguruma_features/pcre2/backref_ignorecase",
+            "mean_ns": 79617.26034263047,
+            "median_ns": 79452.0349537037,
+            "mean_ci_ns": [
+              79382.15710770575,
+              79904.17030967334
+            ]
+          },
+          "fancy_regex": {
+            "id": "oniguruma_features/fancy_regex/backref_ignorecase",
+            "mean_ns": 131752.75518309424,
+            "median_ns": 131397.96022727274,
+            "mean_ci_ns": [
+              131083.88310575727,
+              132468.67708594244
+            ]
+          }
+        }
+      },
+      "oniguruma_features/rust/lookbehind_alternation": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "oniguruma_features/rust/lookbehind_alternation",
+            "mean_ns": 17900.427021225205,
+            "median_ns": 17875.88881714876,
+            "mean_ci_ns": [
+              17825.906238296335,
+              17976.383765618553
+            ]
+          },
+          "c": {
+            "id": "oniguruma_features/c/lookbehind_alternation",
+            "mean_ns": 53717.32300751795,
+            "median_ns": 54245.96677985285,
+            "mean_ci_ns": [
+              53036.0421672642,
+              54362.393336661946
+            ]
+          },
+          "onigmo": {
+            "id": "oniguruma_features/onigmo/lookbehind_alternation",
+            "mean_ns": 20094.925214915558,
+            "median_ns": 20086.388206403106,
+            "mean_ci_ns": [
+              19974.3596945032,
+              20226.534466918372
+            ]
+          },
+          "pcre2_jit": {
+            "id": "oniguruma_features/pcre2_jit/lookbehind_alternation",
+            "mean_ns": 11060.233406121984,
+            "median_ns": 10787.509032103018,
+            "mean_ci_ns": [
+              10818.244600972372,
+              11325.311627338504
+            ]
+          },
+          "pcre2": {
+            "id": "oniguruma_features/pcre2/lookbehind_alternation",
+            "mean_ns": 62596.4463751072,
+            "median_ns": 62887.64263285024,
+            "mean_ci_ns": [
+              62108.574386287604,
+              63080.854277628874
+            ]
+          },
+          "fancy_regex": {
+            "id": "oniguruma_features/fancy_regex/lookbehind_alternation",
+            "mean_ns": 69445.86337083233,
+            "median_ns": 69086.36501736111,
+            "mean_ci_ns": [
+              68783.17824803155,
+              70149.44435394739
+            ]
+          }
+        }
+      },
+      "compilation/rust/lookbehind": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "compilation/rust/lookbehind",
+            "mean_ns": 1198.6521129133466,
+            "median_ns": 1197.2311986920831,
+            "mean_ci_ns": [
+              1193.8169835193457,
+              1203.8811988962923
+            ]
+          },
+          "c": {
+            "id": "compilation/c/lookbehind",
+            "mean_ns": 498.39216625093525,
+            "median_ns": 496.08227073702494,
+            "mean_ci_ns": [
+              493.7878103449959,
+              503.26283603837334
+            ]
+          },
+          "onigmo": {
+            "id": "compilation/onigmo/lookbehind",
+            "mean_ns": 333.36175623772283,
+            "median_ns": 332.7585872927264,
+            "mean_ci_ns": [
+              331.4390952734332,
+              335.24453516747826
+            ]
+          },
+          "pcre2_jit": {
+            "id": "compilation/pcre2_jit/lookbehind",
+            "mean_ns": 3403.957731134755,
+            "median_ns": 3362.5578521309935,
+            "mean_ci_ns": [
+              3350.7499883728474,
+              3475.465437027158
+            ]
+          },
+          "pcre2": {
+            "id": "compilation/pcre2/lookbehind",
+            "mean_ns": 214.22533729798204,
+            "median_ns": 211.31163047918213,
+            "mean_ci_ns": [
+              210.6796632630115,
+              219.03379680794808
+            ]
+          },
+          "fancy_regex": {
+            "id": "compilation/fancy_regex/lookbehind",
+            "mean_ns": 154008.4356839777,
+            "median_ns": 152902.7423421406,
+            "mean_ci_ns": [
+              152706.31793033934,
+              155701.37117688777
+            ]
+          }
+        }
+      },
+      "text_scanning/regset_position_lead_rust": {
+        "engines": [
+          "rust",
+          "c"
+        ],
+        "timing": {
+          "rust": {
+            "id": "text_scanning/regset_position_lead_rust",
+            "mean_ns": 59.158099901491326,
+            "median_ns": 58.95815641501214,
+            "mean_ci_ns": [
+              58.860459554655435,
+              59.50093726532573
+            ]
+          },
+          "c": {
+            "id": "text_scanning/regset_position_lead_c",
+            "mean_ns": 202.20579427387605,
+            "median_ns": 200.19630234687645,
+            "mean_ci_ns": [
+              200.34774432497258,
+              204.1342831914961
+            ]
+          }
+        }
+      }
+    }
+  },
+  "notes": {
+    "unsupported": {
+      "oniguruma_features/fancy_regex/subexp_call_balanced": {
+        "engine": "fancy_regex",
+        "id": "oniguruma_features/fancy_regex/subexp_call_balanced",
+        "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+      },
+      "oniguruma_features/pcre2_jit/absent_comments": {
+        "engine": "pcre2_jit",
+        "id": "oniguruma_features/pcre2_jit/absent_comments",
+        "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+      },
+      "oniguruma_features/pcre2/absent_comments": {
+        "engine": "pcre2",
+        "id": "oniguruma_features/pcre2/absent_comments",
+        "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+      }
+    },
+    "equivalent": {}
+  }
+}
