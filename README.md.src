@@ -200,66 +200,66 @@ by Ferroni's, as the geometric mean over each workload. A range spans the two
 hosts; below 1×, the other engine is faster.
 
 <!-- engine-comparison -->
-| Ferroni compared with | Syntax highlighting | Search, shared syntax | Search, Oniguruma syntax |
+| Ferroni compared with | Text processing, shared syntax | Text processing, Oniguruma syntax | Highlighting, portable grammars |
 | --- | ---: | ---: | ---: |
-| Oniguruma (C) | 5.4× | 2.1–2.8× | 1.5–1.6× |
-| Shiki JS | 2.5–2.6× | – | – |
-| Onigmo | n/a (rejects C++) | 1.7–1.9× | 1.0–1.1× |
-| PCRE2 | n/a (rejects C++, differs on SCSS) | 1.3–1.5× | 1.6–1.7× (7 of 8 cases) |
-| PCRE2 JIT | n/a (rejects C++, differs on SCSS) | 0.4–0.5× | 0.4× (7 of 8 cases) |
-| fancy-regex | 57–63× | 0.7× | 2.4–2.5× (7 of 8 cases) |
-| regex | – | 0.5–0.6× | – |
+| Oniguruma (C) | 2.2× | 1.3–1.4× | 3.6–3.7× |
+| Shiki JS | – | – | 1.9–2.0× |
+| Onigmo | 2.4–2.6× | 1.4–1.6× (16 of 17 cases) | 11–13× |
+| PCRE2 | 1.6–1.8× (31 of 32 cases) | 1.3–1.4× (16 of 17 cases) | 8.7–9.6× |
+| PCRE2 JIT | 0.4–0.5× (31 of 32 cases) | 0.3× (16 of 17 cases) | 3.0–3.2× |
+| fancy-regex | 1.5–1.6× (31 of 32 cases) | 2.8–3.1× (15 of 17 cases) | 35–36× |
+| regex | 0.6–0.7× (31 of 32 cases) | – | – |
 <!-- /engine-comparison -->
 
 Measured 2026-10-01 on Blacksmith's macOS arm64 (Apple M4 Pro) and Linux
-x86-64 (AMD EPYC) runners. Every engine first has to reproduce Oniguruma's
-results, or the captured Shiki results for highlighting; `n/a` marks a case it
-rejects or answers differently, `–` one it does not cover. These are
-observations on the measured workloads, not a promise for every pattern or
-machine.
-[Cases, hosts, versions and raw data](https://ferroni.dev/perf/engine-comparison).
+x86-64 (AMD EPYC) runners. Text processing runs 49 tasks over HTML, logs, chat
+with emoji, Markdown, JSON, CSV and source code, from tags and emails to the
+RFC 5322 address syntax. Highlighting replays the scanner calls Shiki makes for
+C, Java and PHP documents, grammars every engine can run. Every engine first
+has to reproduce Oniguruma's results; the note in a cell says how many tasks
+an engine could run, `–` marks one it does not cover. These are observations on
+the measured workloads, not a promise for every pattern or machine.
+[Every task, hosts, versions and raw data](https://ferroni.dev/perf/engine-comparison).
 
-### Scanner workloads
+### Text processing
 
-For syntax highlighting, Ferroni consistently spends less time finding the next
-match and tokenizing lines than Oniguruma, across every grammar measured.
-Tokenizing whole documents line by line, each line handed to the scanner once
-as a real tokenizer does, Ferroni is 3x to 4x faster on TypeScript, 9x to 11x
-on Rust, and 26x to 33x on CSS. Replaying the scanner calls Shiki makes for
-real C++, Java and SCSS files, it is 2x to 3x, 3x to 4x and 13x to 21x faster.
-Re-scanning the same line, where Ferroni can reuse what it learned about that
-string, the lead grows to between 13x and 68x
-([exact numbers](https://ferroni.dev/perf/engine-comparison#textmate-scanners)).
-Grammar compilation is mixed: Ferroni compiles the CSS grammar faster and the
-TypeScript grammar faster on Apple Silicon, while Oniguruma compiles the
-smaller Rust grammar faster and the TypeScript grammar faster on x86-64. In
-practice, Ferroni's strongest fit is a scanner that compiles a grammar once and
-uses it repeatedly.
-
-### Search and matching
-
-Ferroni is faster than Oniguruma on every measured search with shared syntax:
-literals, misses, capture-based extraction, validation and redaction, by 1.1x
-to 10x. On Oniguruma-only syntax, it is 3x to 3.7x faster with lookaround and
-lookbehind and within about 15% either way with the absent operator,
-conditionals and case-insensitive backreferences.
+Ferroni is faster than Oniguruma in 28 of 32 tasks with shared syntax, by up to
+36x on email extraction, and in 14 of 17 tasks with Oniguruma syntax. Oniguruma
+is faster on the RFC 5322 and IPv6 expressions, and by up to 30% on a few
+Oniguruma-syntax tasks.
 
 When patterns fit the narrower syntax of Rust's
 [`regex`](https://crates.io/crates/regex) crate, that engine often has the
-throughput advantage, and PCRE2's JIT is faster still on single searches. It
-cannot load every TextMate grammar, though, and neither engine finds the
-earliest match among many patterns in one search, as Oniguruma's RegSet does. It is a good choice for plain-text matching when its
-feature set is enough; Ferroni is for workloads that need Oniguruma features
-and practical scanner speed.
+throughput advantage, and PCRE2's JIT is faster still on most tasks. Neither
+applies full Unicode case folding (`straße` does not find `STRASSE`), and
+neither finds the earliest match among many patterns in one search, as
+Oniguruma's RegSet does. They are a good choice when their feature set is
+enough; Ferroni is for workloads that need Oniguruma features and practical
+scanner speed.
+
+### Syntax highlighting
+
+On the Shiki replays every engine can run, Ferroni is 2.7x to 5.7x faster than
+Oniguruma. Tokenizing whole documents line by line with the complete Shiki
+grammars, it is 3x to 4x faster on TypeScript, about 10x on Rust and 29x to 32x on
+CSS; re-scanning the same line, where Ferroni reuses what it learned about that
+string, between 14x and 77x
+([exact numbers](https://ferroni.dev/perf/engine-comparison#highlighting)).
+Many TextMate grammars use syntax only Oniguruma reads: PCRE2 and Onigmo reject
+the C++ grammar, and PCRE2 reads the SCSS grammar differently. There Ferroni is
+2x to 3x faster than Oniguruma on C++ and 15x to 21x on SCSS. Grammar
+compilation is mixed: Ferroni compiles the CSS grammar faster, Oniguruma the
+smaller Rust grammar, and the TypeScript grammar depends on the host. Ferroni's
+strongest fit is a scanner that compiles a grammar once and uses it repeatedly.
 
 ### Compilation and memory
 
 Single-pattern compilation is mixed: Oniguruma compiles plain literals and the
 lookbehind pattern faster, Ferroni the capture-heavy pattern. The `regex` crate
-and fancy-regex take much longer for capture-heavy patterns. In a separate
-process-level memory measurement, Ferroni and Oniguruma peak in the same
-approximate range while compiling and scanning a large TypeScript workload.
-Details and methodology are in the
+and fancy-regex take 55x to 64x longer for the capture-heavy pattern. In a
+separate process-level memory measurement, Ferroni and Oniguruma peak in the
+same approximate range while compiling and scanning a large TypeScript
+workload. Details and methodology are in the
 [Memory Measurements](https://ferroni.dev/perf/memory-measurements).
 
 <details>

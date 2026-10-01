@@ -1,8 +1,8 @@
 {
   "measured": "2026-10-01",
-  "commit": "11a7ba0248c920d4874d169349633bc8d761e8db",
-  "run": "https://github.com/sebastian-software/ferroni/actions/runs/36915129576",
-  "data": "benches/results/blacksmith-2026-10-01",
+  "commit": "6db6413e84b03cb806f46cc96ccd972b5eb8c670",
+  "run": "https://github.com/sebastian-software/ferroni/actions/runs/36926978824",
+  "data": "benches/results/blacksmith-2026-10-01-36926978824",
   "hosts": [
     {
       "id": "macos-arm64",
@@ -21,25 +21,25 @@
   ],
   "workloads": [
     {
-      "id": "highlighting",
-      "label": "Syntax highlighting",
-      "short": "Highlighting",
-      "detail": "Shiki scanner calls replayed for whole C++, Java and SCSS documents",
-      "cases": 3
-    },
-    {
       "id": "shared",
-      "label": "Search, shared syntax",
+      "label": "Text processing, shared syntax",
       "short": "Shared syntax",
-      "detail": "single searches, extraction and validation the regex crate can also run",
-      "cases": 18
+      "detail": "markup, logs, chat with emoji, Markdown, JSON, CSV and validation the regex crate can also run",
+      "cases": 32
     },
     {
       "id": "oniguruma",
-      "label": "Search, Oniguruma syntax",
+      "label": "Text processing, Oniguruma syntax",
       "short": "Oniguruma syntax",
-      "detail": "lookaround, backreferences, atomic groups, subexpression calls, absent operator, conditionals",
-      "cases": 8
+      "detail": "lookaround, backreferences, possessive groups, subexpression calls, absent operator, graphemes",
+      "cases": 17
+    },
+    {
+      "id": "highlighting",
+      "label": "Highlighting, portable grammars",
+      "short": "Highlighting",
+      "detail": "Shiki scanner calls replayed for whole documents in grammars every engine runs",
+      "cases": 3
     }
   ],
   "engines": [
@@ -47,32 +47,32 @@
       "id": "c",
       "label": "Oniguruma (C)",
       "cells": {
+        "shared": {
+          "cases": 32,
+          "of": 32,
+          "factors": {
+            "macos-arm64": 2.198,
+            "linux-x86-64": 2.163
+          },
+          "text": "2.2×"
+        },
+        "oniguruma": {
+          "cases": 17,
+          "of": 17,
+          "factors": {
+            "macos-arm64": 1.444,
+            "linux-x86-64": 1.283
+          },
+          "text": "1.3–1.4×"
+        },
         "highlighting": {
           "cases": 3,
           "of": 3,
           "factors": {
-            "macos-arm64": 5.397,
-            "linux-x86-64": 5.425
+            "macos-arm64": 3.679,
+            "linux-x86-64": 3.635
           },
-          "text": "5.4×"
-        },
-        "shared": {
-          "cases": 18,
-          "of": 18,
-          "factors": {
-            "macos-arm64": 2.847,
-            "linux-x86-64": 2.126
-          },
-          "text": "2.1–2.8×"
-        },
-        "oniguruma": {
-          "cases": 8,
-          "of": 8,
-          "factors": {
-            "macos-arm64": 1.644,
-            "linux-x86-64": 1.548
-          },
-          "text": "1.5–1.6×"
+          "text": "3.6–3.7×"
         }
       }
     },
@@ -80,24 +80,24 @@
       "id": "shiki_js",
       "label": "Shiki JS",
       "cells": {
-        "highlighting": {
-          "cases": 3,
-          "of": 3,
-          "factors": {
-            "macos-arm64": 2.5,
-            "linux-x86-64": 2.602
-          },
-          "text": "2.5–2.6×"
-        },
         "shared": {
           "cases": 0,
-          "of": 18,
+          "of": 32,
           "text": "–"
         },
         "oniguruma": {
           "cases": 0,
-          "of": 8,
+          "of": 17,
           "text": "–"
+        },
+        "highlighting": {
+          "cases": 3,
+          "of": 3,
+          "factors": {
+            "macos-arm64": 1.928,
+            "linux-x86-64": 1.952
+          },
+          "text": "1.9–2.0×"
         }
       }
     },
@@ -105,30 +105,33 @@
       "id": "onigmo",
       "label": "Onigmo",
       "cells": {
-        "highlighting": {
-          "cases": 2,
-          "of": 3,
-          "text": "n/a",
-          "note": "rejects C++",
-          "grammars": ["C++"]
-        },
         "shared": {
-          "cases": 18,
-          "of": 18,
+          "cases": 32,
+          "of": 32,
           "factors": {
-            "macos-arm64": 1.87,
-            "linux-x86-64": 1.704
+            "macos-arm64": 2.593,
+            "linux-x86-64": 2.391
           },
-          "text": "1.7–1.9×"
+          "text": "2.4–2.6×"
         },
         "oniguruma": {
-          "cases": 8,
-          "of": 8,
+          "cases": 16,
+          "of": 17,
           "factors": {
-            "macos-arm64": 1.104,
-            "linux-x86-64": 1.039
+            "macos-arm64": 1.577,
+            "linux-x86-64": 1.369
           },
-          "text": "1.0–1.1×"
+          "text": "1.4–1.6×",
+          "note": "16 of 17 cases"
+        },
+        "highlighting": {
+          "cases": 3,
+          "of": 3,
+          "factors": {
+            "macos-arm64": 12.502,
+            "linux-x86-64": 10.565
+          },
+          "text": "11–13×"
         }
       }
     },
@@ -136,31 +139,34 @@
       "id": "pcre2",
       "label": "PCRE2",
       "cells": {
-        "highlighting": {
-          "cases": 1,
-          "of": 3,
-          "text": "n/a",
-          "note": "rejects C++, differs on SCSS",
-          "grammars": ["C++", "SCSS"]
-        },
         "shared": {
-          "cases": 18,
-          "of": 18,
+          "cases": 31,
+          "of": 32,
           "factors": {
-            "macos-arm64": 1.46,
-            "linux-x86-64": 1.271
+            "macos-arm64": 1.77,
+            "linux-x86-64": 1.554
           },
-          "text": "1.3–1.5×"
+          "text": "1.6–1.8×",
+          "note": "31 of 32 cases"
         },
         "oniguruma": {
-          "cases": 7,
-          "of": 8,
+          "cases": 16,
+          "of": 17,
           "factors": {
-            "macos-arm64": 1.722,
-            "linux-x86-64": 1.634
+            "macos-arm64": 1.448,
+            "linux-x86-64": 1.33
           },
-          "text": "1.6–1.7×",
-          "note": "7 of 8 cases"
+          "text": "1.3–1.4×",
+          "note": "16 of 17 cases"
+        },
+        "highlighting": {
+          "cases": 3,
+          "of": 3,
+          "factors": {
+            "macos-arm64": 9.639,
+            "linux-x86-64": 8.73
+          },
+          "text": "8.7–9.6×"
         }
       }
     },
@@ -168,31 +174,34 @@
       "id": "pcre2_jit",
       "label": "PCRE2 JIT",
       "cells": {
-        "highlighting": {
-          "cases": 1,
-          "of": 3,
-          "text": "n/a",
-          "note": "rejects C++, differs on SCSS",
-          "grammars": ["C++", "SCSS"]
-        },
         "shared": {
-          "cases": 18,
-          "of": 18,
+          "cases": 31,
+          "of": 32,
           "factors": {
-            "macos-arm64": 0.467,
-            "linux-x86-64": 0.445
+            "macos-arm64": 0.476,
+            "linux-x86-64": 0.441
           },
-          "text": "0.4–0.5×"
+          "text": "0.4–0.5×",
+          "note": "31 of 32 cases"
         },
         "oniguruma": {
-          "cases": 7,
-          "of": 8,
+          "cases": 16,
+          "of": 17,
           "factors": {
-            "macos-arm64": 0.363,
-            "linux-x86-64": 0.375
+            "macos-arm64": 0.299,
+            "linux-x86-64": 0.273
           },
-          "text": "0.4×",
-          "note": "7 of 8 cases"
+          "text": "0.3×",
+          "note": "16 of 17 cases"
+        },
+        "highlighting": {
+          "cases": 3,
+          "of": 3,
+          "factors": {
+            "macos-arm64": 2.971,
+            "linux-x86-64": 3.227
+          },
+          "text": "3.0–3.2×"
         }
       }
     },
@@ -200,33 +209,34 @@
       "id": "fancy_regex",
       "label": "fancy-regex",
       "cells": {
+        "shared": {
+          "cases": 31,
+          "of": 32,
+          "factors": {
+            "macos-arm64": 1.491,
+            "linux-x86-64": 1.573
+          },
+          "text": "1.5–1.6×",
+          "note": "31 of 32 cases"
+        },
+        "oniguruma": {
+          "cases": 15,
+          "of": 17,
+          "factors": {
+            "macos-arm64": 3.094,
+            "linux-x86-64": 2.795
+          },
+          "text": "2.8–3.1×",
+          "note": "15 of 17 cases"
+        },
         "highlighting": {
           "cases": 3,
           "of": 3,
           "factors": {
-            "macos-arm64": 57.116,
-            "linux-x86-64": 62.982
+            "macos-arm64": 35.154,
+            "linux-x86-64": 35.848
           },
-          "text": "57–63×"
-        },
-        "shared": {
-          "cases": 18,
-          "of": 18,
-          "factors": {
-            "macos-arm64": 0.664,
-            "linux-x86-64": 0.725
-          },
-          "text": "0.7×"
-        },
-        "oniguruma": {
-          "cases": 7,
-          "of": 8,
-          "factors": {
-            "macos-arm64": 2.488,
-            "linux-x86-64": 2.431
-          },
-          "text": "2.4–2.5×",
-          "note": "7 of 8 cases"
+          "text": "35–36×"
         }
       }
     },
@@ -234,23 +244,24 @@
       "id": "regex",
       "label": "regex",
       "cells": {
-        "highlighting": {
-          "cases": 0,
-          "of": 3,
-          "text": "–"
-        },
         "shared": {
-          "cases": 18,
-          "of": 18,
+          "cases": 31,
+          "of": 32,
           "factors": {
-            "macos-arm64": 0.542,
-            "linux-x86-64": 0.584
+            "macos-arm64": 0.614,
+            "linux-x86-64": 0.657
           },
-          "text": "0.5–0.6×"
+          "text": "0.6–0.7×",
+          "note": "31 of 32 cases"
         },
         "oniguruma": {
           "cases": 0,
-          "of": 8,
+          "of": 17,
+          "text": "–"
+        },
+        "highlighting": {
+          "cases": 0,
+          "of": 3,
           "text": "–"
         }
       }

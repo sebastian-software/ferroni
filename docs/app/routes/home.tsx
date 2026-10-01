@@ -163,11 +163,12 @@ function EvidenceSection() {
       }
       note={
         <>
-          Highlighting replays the scanner calls Shiki makes for whole C++, Java and SCSS documents;
-          &times; names the grammars an engine rejects or answers differently. The searches use
-          patterns the <code>regex</code> crate also runs, or Oniguruma syntax. PCRE2&rsquo;s JIT
-          and the <code>regex</code> crate win single searches, but neither finds the earliest match
-          among many patterns in one search, as a highlighter needs.
+          Text processing runs 49 tasks over HTML, logs, chat with emoji, Markdown, JSON, CSV and
+          source code, with syntax the <code>regex</code> crate also runs or Oniguruma syntax.
+          Highlighting replays the scanner calls Shiki makes for C, Java and PHP documents, grammars
+          every engine can run. PCRE2&rsquo;s JIT and the <code>regex</code> crate win most text
+          tasks, but neither finds the earliest match among many patterns in one search, as a
+          highlighter needs.
         </>
       }
     >
