@@ -1,0 +1,186 @@
+---
+order: 1.5
+title: "Engine Comparison"
+---
+
+# Engine Comparison
+
+Ferroni next to seven other engines on two cloud hosts: C Oniguruma, Ruby's
+Onigmo, PCRE2 with and without JIT, fancy-regex, Rust's `regex` crate and, for
+the TextMate scanner replays, Shiki's JavaScript engine. The run comes from the
+manually dispatched
+[Blacksmith comparison](https://github.com/sebastian-software/ferroni/actions/workflows/blacksmith-comparison.yml)
+workflow, so anyone can repeat it on the same runner types.
+
+Every engine first has to reproduce Oniguruma's matches and capture bounds for
+a case, or every captured Shiki result for a scanner replay. Only then is it
+timed. Where an engine rejects a pattern or answers differently, the table says
+`n/a` and [the reason is listed](#cases-an-engine-cannot-run). A dash means the
+engine has no variant for that case: `regex` lacks the syntax, or the case uses
+an API (Oniguruma's RegSet, the grammar loader) the engine does not have.
+
+## How to read the tables
+
+Each cell holds the **Apple Silicon** value on top and the **x86-64** value
+below it. The Ferroni column is the Criterion mean. Every other column is that
+engine's time divided by Ferroni's, the same convention as "C / Ferroni" on the
+other pages: **above 1.00, Ferroni is faster**; below 1.00, the other engine is.
+
+- **Patterns and compilation** time one search or one compile call, with the
+  same validated pattern and text for every engine.
+- **Scanner replays** play back real TextMate scanner calls captured from
+  Shiki: C++ (4,862 calls), Java (3,920) and SCSS (3,744). Ferroni and C use
+  Oniguruma's RegSet scanner (C through the scanner wrapper of
+  vscode-oniguruma). Onigmo, PCRE2 and fancy-regex have no RegSet and search
+  pattern by pattern, which is what vscode-oniguruma itself does on lines of
+  1,000 bytes or more. Shiki JS is `@shikijs/engine-javascript` 4.5.0 with its
+  defaults, timed in Node over 1 ms batches rather than with Criterion.
+- **Empty captures:** vscode-textmate skips zero-length captures, so a replay
+  accepts an empty group reported as unset (or the reverse). Shiki JS needs
+  this for 96 C++ calls and 16 Java calls; no other engine does.
+
+These are point estimates from one run with 30 samples over 3 seconds per case
+and engine. Differences within about 10% are not a ranking. The raw estimates,
+confidence intervals and logs are kept with the
+[run data](https://github.com/sebastian-software/ferroni/tree/main/benches/results/blacksmith-2026-10-01).
+
+## Results
+
+### Shared syntax
+
+Patterns the `regex` crate also runs. No single engine wins here: PCRE2's JIT
+has the fastest search in about half the cases and the `regex` crate in most of
+the rest, mainly literal-led searches and validations. fancy-regex hands these
+patterns to `regex` and lands close to it. Ferroni beats C Oniguruma on every
+search, by 1.1x to 10x. Onigmo and the PCRE2 interpreter are mixed against
+Ferroni: each is faster on some short searches and slower on others.
+Compiling is cheap in both Oniguruma implementations and the PCRE2
+interpreter; the JIT and the automaton-based engines pay more up front.
+
+| Case                      |              Ferroni |   Oniguruma (C) |          Onigmo |      PCRE2 JIT |          PCRE2 |      fancy-regex |            regex |
+| ------------------------- | -------------------: | --------------: | --------------: | -------------: | -------------: | ---------------: | ---------------: |
+| `literal_exact`           | 36.1 ns<br />41.8 ns |  3.04<br />2.08 |  1.05<br />0.79 | 0.42<br />0.46 | 1.17<br />1.15 |   0.32<br />0.37 |   0.21<br />0.26 |
+| `quantifier_greedy`       |   47 ns<br />42.8 ns |  3.36<br />2.72 |  1.42<br />1.58 | 0.44<br />0.56 | 0.92<br />1.13 |   1.10<br />1.36 |   0.99<br />1.39 |
+| `alternation_2_branch`    | 42.3 ns<br />43.1 ns |  2.84<br />2.00 |  0.86<br />0.73 | 0.39<br />0.44 | 1.36<br />1.24 |   0.84<br />1.09 |   0.76<br />0.91 |
+| `alternation_10_branch`   | 28.5 ns<br />32.6 ns |  6.22<br />4.49 |  4.71<br />3.38 | 0.78<br />0.68 | 7.74<br />4.35 |   0.67<br />0.67 |   0.52<br />0.52 |
+| `case_insensitive_phrase` | 70.1 ns<br />90.3 ns |  2.11<br />1.34 |  0.81<br />0.70 | 0.27<br />0.23 | 0.76<br />0.59 |   0.61<br />0.66 |   0.56<br />0.63 |
+| `named_capture_date`      | 67.8 ns<br />82.1 ns |  3.71<br />2.71 |  1.74<br />1.32 | 0.75<br />0.51 | 4.50<br />3.78 |   0.52<br />0.53 |   0.49<br />0.52 |
+| `unicode_greek`           | 63.1 ns<br />73.7 ns |  2.98<br />1.92 |  2.47<br />2.03 | 0.47<br />0.40 | 2.09<br />2.27 |   0.62<br />0.71 |   0.61<br />0.67 |
+| `literal_50k`             | 39.1 ns<br />33.6 ns |  2.82<br />2.18 |  0.78<br />0.69 | 0.41<br />0.49 | 0.96<br />1.11 |   0.30<br />0.37 |   0.21<br />0.26 |
+| `no_match_50k`            |  1.17 µs<br />617 ns | 5.79<br />10.34 | 5.32<br />11.10 | 1.22<br />1.45 | 0.79<br />0.37 |   0.96<br />0.99 |   0.99<br />0.99 |
+| `field_extract_50k`       |   41 ns<br />45.1 ns |  2.76<br />2.03 |  0.98<br />1.02 | 0.48<br />0.50 | 1.26<br />1.32 |   0.81<br />1.09 |   0.83<br />0.98 |
+| `timestamp_50k`           | 58.3 ns<br />68.5 ns |  1.91<br />1.30 |  1.87<br />1.79 | 0.44<br />0.41 | 1.01<br />0.92 |   0.75<br />0.83 |   0.61<br />0.73 |
+| `email_validation`        | 4.41 µs<br />5.41 µs |  1.95<br />1.21 |  2.36<br />1.71 | 0.33<br />0.27 | 1.20<br />0.85 |   0.34<br />0.30 |   0.21<br />0.21 |
+| `uuid_validation`         | 3.68 µs<br />5.09 µs |  3.17<br />1.98 |  3.56<br />2.94 | 0.42<br />0.42 | 0.87<br />0.89 |   0.42<br />0.44 |   0.35<br />0.35 |
+| `number_validation`       | 4.29 µs<br />4.93 µs |  2.23<br />1.61 |  1.79<br />1.70 | 0.37<br />0.38 | 2.48<br />1.98 |   0.24<br />0.26 |   0.17<br />0.18 |
+| `access_log_captures`     |   19.5 µs<br />22 µs |  1.26<br />1.11 |  1.68<br />1.52 | 0.28<br />0.23 | 0.82<br />0.79 |   1.66<br />1.59 |   1.33<br />1.44 |
+| `url_extraction`          | 6.86 µs<br />8.26 µs |  2.46<br />1.72 |  2.26<br />2.07 | 0.49<br />0.49 | 1.21<br />1.17 |   1.70<br />1.65 |   1.41<br />1.23 |
+| `unicode_words`           | 32.3 µs<br />43.3 µs |  2.12<br />1.58 |  1.17<br />1.45 | 0.40<br />0.39 | 1.07<br />1.20 |   1.02<br />1.34 |   0.70<br />0.67 |
+| `email_redaction`         | 14.5 µs<br />23.3 µs |  4.58<br />3.19 |  7.40<br />4.73 | 0.67<br />0.46 | 4.17<br />2.58 |   0.93<br />0.86 |   0.73<br />0.57 |
+| compile `literal`         |   508 ns<br />640 ns |  0.67<br />0.61 |  0.62<br />0.55 | 3.91<br />7.31 | 0.65<br />0.65 |   4.69<br />4.31 |   3.56<br />3.32 |
+| compile `named_capture`   | 2.61 µs<br />2.74 µs |  1.70<br />1.36 |  1.98<br />1.40 | 1.26<br />2.12 | 0.20<br />0.20 | 61.98<br />58.67 | 57.38<br />62.55 |
+
+### Oniguruma syntax
+
+Lookaround, backreferences, atomic and possessive groups, subexpression calls,
+the absent operator `(?~...)` and conditionals. PCRE2's JIT has the fastest
+search wherever it can run the pattern. Against C Oniguruma, Ferroni is ahead
+by 3.0x to 3.7x on lookaround and lookbehind and within about 15% on the absent
+operator, conditionals and case-insensitive backreferences, where the lead
+changes between the hosts. Both Oniguruma implementations compile the lookbehind pattern 2.4x to 3.6x faster than Ferroni. fancy-regex runs every pattern
+but one in its Oniguruma mode, 1.5x to 4.5x slower than Ferroni.
+
+| Case                        |              Ferroni |  Oniguruma (C) |         Onigmo |      PCRE2 JIT |          PCRE2 |        fancy-regex |
+| --------------------------- | -------------------: | -------------: | -------------: | -------------: | -------------: | -----------------: |
+| `lookaround_combined`       | 54.2 ns<br />54.9 ns | 3.60<br />3.65 | 1.03<br />1.01 | 0.45<br />0.48 | 4.72<br />4.52 |     3.86<br />3.61 |
+| `backref_simple`            | 52.1 ns<br />50.3 ns | 2.54<br />2.17 | 1.23<br />1.12 | 0.37<br />0.41 | 0.99<br />1.24 |     1.59<br />2.08 |
+| `atomic_possessive_strings` |   25 µs<br />26.5 µs | 1.40<br />1.27 | 1.13<br />1.06 | 0.33<br />0.31 | 1.13<br />0.84 |     3.16<br />2.48 |
+| `subexp_call_balanced`      | 35.9 µs<br />34.1 µs | 1.24<br />1.09 | 1.55<br />1.27 | 0.31<br />0.31 | 1.70<br />1.79 |                n/a |
+| `absent_comments`           | 28.9 µs<br />27.1 µs | 1.10<br />0.85 | 0.66<br />0.67 |            n/a |            n/a |     1.50<br />1.50 |
+| `conditional_brackets`      | 50.5 µs<br />49.4 µs | 1.06<br />1.07 | 1.24<br />1.13 | 0.29<br />0.28 | 1.01<br />0.91 |     2.77<br />2.41 |
+| `backref_ignorecase`        | 86.2 µs<br />68.6 µs | 0.94<br />1.10 | 1.04<br />1.04 | 0.25<br />0.32 | 0.92<br />1.16 |     1.62<br />1.92 |
+| `lookbehind_alternation`    | 18.2 µs<br />17.9 µs | 3.07<br />3.00 | 1.16<br />1.12 | 0.66<br />0.62 | 5.37<br />3.50 |     4.52<br />3.88 |
+| compile `lookbehind`        |  1.27 µs<br />1.2 µs | 0.36<br />0.42 | 0.29<br />0.28 | 1.69<br />2.84 | 0.20<br />0.18 | 115.44<br />128.48 |
+| `regset_position_lead`      | 75.2 ns<br />59.2 ns | 4.17<br />3.42 |              – |              – |              – |                  – |
+
+### TextMate scanners
+
+The workload Ferroni was built for, with the complete Shiki grammars for
+TypeScript, CSS and Rust: compiling a grammar, re-scanning one line, and
+tokenizing a document line by line. Only Ferroni and C Oniguruma have a grammar
+loader and RegSet scanner here. Ferroni is 3.3x to 68x faster at scanning;
+grammar compilation is mixed, with C Oniguruma faster on the Rust grammar on
+both hosts and on the TypeScript grammar on x86-64.
+
+| Case                             |              Ferroni |    Oniguruma (C) |
+| -------------------------------- | -------------------: | ---------------: |
+| TypeScript grammar, compile      | 10.8 ms<br />14.2 ms |   1.30<br />0.74 |
+| CSS grammar, compile             | 7.52 ms<br />8.98 ms |   2.18<br />1.46 |
+| Rust grammar, compile            |   270 µs<br />311 µs |   0.58<br />0.59 |
+| TypeScript grammar, re-scan line | 2.21 µs<br />2.23 µs | 68.10<br />61.88 |
+| CSS grammar, re-scan line        |   167 µs<br />168 µs | 51.39<br />61.04 |
+| Rust grammar, re-scan line       | 4.13 µs<br />4.84 µs | 15.10<br />13.10 |
+| TypeScript document, 28 lines    |   608 µs<br />731 µs |   4.02<br />3.25 |
+| CSS document, 19 lines           |   79 µs<br />71.6 µs | 26.41<br />32.80 |
+| Rust document, 31 lines          | 80.8 µs<br />73.7 µs |  8.69<br />10.70 |
+
+### Shiki scanner replays
+
+Real scanner calls captured from Shiki for whole C++, Java and SCSS documents,
+and for the scanner group that dominates each document. Ferroni is 2.1x to 3.1x
+faster than C Oniguruma on C++, 3.4x to 4.4x on Java and 13x to 21x on SCSS,
+and 1.6x to 3.6x faster than Shiki's JavaScript engine. Engines without a
+RegSet fall far behind on scanner work. Only Ferroni, C Oniguruma, fancy-regex
+and Shiki JS run all three grammars as they are.
+
+| Case                    |              Ferroni |    Oniguruma (C) |           Onigmo |      PCRE2 JIT |            PCRE2 |       fancy-regex |       Shiki JS |
+| ----------------------- | -------------------: | ---------------: | ---------------: | -------------: | ---------------: | ----------------: | -------------: |
+| C++ replay, document    | 12.5 ms<br />13.5 ms |   2.52<br />2.13 |              n/a |            n/a |              n/a |  86.00<br />91.72 | 2.87<br />3.28 |
+| C++ replay, scanner 78  |  5.26 ms<br />6.4 ms |   3.07<br />2.64 |              n/a |            n/a |              n/a | 122.77<br />96.72 | 3.57<br />2.97 |
+| Java replay, document   | 2.06 ms<br />1.98 ms |   4.20<br />4.35 | 16.56<br />15.42 | 5.00<br />4.98 | 17.62<br />15.40 |  40.44<br />39.39 | 3.27<br />3.46 |
+| Java replay, scanner 15 |   473 µs<br />450 µs |   3.71<br />3.44 | 12.27<br />12.34 | 4.14<br />3.87 | 14.24<br />14.29 |  32.42<br />32.26 | 3.17<br />3.30 |
+| SCSS replay, document   | 2.02 ms<br />2.82 ms | 14.84<br />17.22 |   9.43<br />7.48 |            n/a |              n/a |  53.58<br />69.16 | 1.67<br />1.55 |
+| SCSS replay, scanner 8  |   755 µs<br />1.2 ms | 20.62<br />13.42 |  11.38<br />7.73 |            n/a |              n/a |  66.43<br />48.68 | 2.58<br />2.55 |
+
+## Cases an engine cannot run
+
+| Benchmark                                 | Engines          | Reason                                                                                                              |
+| ----------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `oniguruma_features/absent_comments`      | PCRE2, PCRE2 JIT | PCRE2 has no absent operator: `unrecognized character after (? or (?-`                                              |
+| `oniguruma_features/subexp_call_balanced` | fancy-regex      | Group 1 after the recursive call holds the innermost match (`17..21`); Oniguruma reports the outermost (`4..21`)    |
+| `cpp_scanner/document`, `group_78`        | PCRE2, PCRE2 JIT | The C++ grammar uses Oniguruma's stacked quantifier `\s+{0,1}`: `quantifier does not follow a repeatable item`      |
+| `cpp_scanner/document`, `group_78`        | Onigmo           | The C++ grammar uses `\s+{1,0}`, which Oniguruma reads as a possessive repeat; Onigmo rejects it (error -202)       |
+| `scss_scanner/document`, `group_8`        | PCRE2, PCRE2 JIT | Different scanner results, for example call 12 matches pattern 12 at 10..14 where Shiki matches pattern 11 at 9..16 |
+
+Both hosts report exactly the same cases.
+
+## Measurement context
+
+| Field            | Value                                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| Ferroni commit   | `11a7ba0248c920d4874d169349633bc8d761e8db`                                                                    |
+| Measurement date | `2026-10-01`                                                                                                  |
+| Workflow run     | [36915129576](https://github.com/sebastian-software/ferroni/actions/runs/36915129576)                         |
+| Apple Silicon    | `blacksmith-6vcpu-macos-26`: Apple M4 Pro (virtual), 6 vCPUs, 24 GB, macOS 26.3, Apple clang 21.0.0           |
+| x86-64           | `blacksmith-4vcpu-ubuntu-2404`: AMD EPYC with AVX-512, 4 vCPUs, 16 GB, Ubuntu 24.04.3, GCC 13.3.0             |
+| `rustc`          | `1.99.0 (b940084d7 2026-09-28)`, release profile with thin LTO                                                |
+| Criterion        | 0.8.2: 30 samples, 3 s measurement, 0.5 s warm-up                                                             |
+| Oniguruma        | `f95747b462de672b6f8dbdeb478245ddf061ca53`, `-O3`                                                             |
+| Onigmo           | Ruby `v4.0.7` (`229531a6`), `st.c` from k-takata/Onigmo `1d7ee878`, Ruby syntax                               |
+| PCRE2            | 10.46, bundled by `pcre2-sys` 0.2.10; UTF, UCP and multiline, subject not re-validated (`PCRE2_NO_UTF_CHECK`) |
+| fancy-regex      | 0.19.2, Oniguruma mode                                                                                        |
+| `regex`          | 1.13.1                                                                                                        |
+| Shiki JS         | `@shikijs/engine-javascript` 4.5.0 on Node 24.21.0                                                            |
+
+## Reproducing
+
+```bash
+./scripts/prepare-oniguruma-sources.sh
+./scripts/prepare-onigmo-sources.sh
+pnpm install --frozen-lockfile --dir benches/shiki_js
+./scripts/compare-engines.py run /tmp/ferroni-compare --cases trivial oniguruma textmate
+./scripts/compare-engines.py report /tmp/ferroni-compare.md /tmp/ferroni-compare
+```
+
+Or dispatch the workflow:
+`gh workflow run blacksmith-comparison.yml --ref main -f platform=both -f cases=all`.
