@@ -3475,6 +3475,90 @@ fn single_op_matches(
     }
 }
 
+/// Rust-only (ADR-008): a regex's first instruction that a RegSet position
+/// loop evaluates before an attempt (`first_op_fails`). These are the
+/// zero-width tests that the first-byte dispatch cannot see.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FirstOpTest {
+    /// `WordBoundary`, or `NoWordBoundary` with `not`.
+    WordBoundary { mode: ModeType, not: bool },
+    /// `BeginLine`.
+    BeginLine,
+    /// `LookBehindOp` with its one-instruction body at `ops[1]`.
+    LookBehind { char_len: u32, not: bool },
+}
+
+/// The test for `reg`'s first instruction, if it is one a RegSet position
+/// loop may evaluate on its own. Callouts observe every attempt, so a regex
+/// with callouts has none.
+pub(crate) fn first_op_test(reg: &RegexType) -> Option<FirstOpTest> {
+    if reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0) {
+        return None;
+    }
+    let op = reg.ops.first()?;
+    match (op.opcode, &op.payload) {
+        (OpCode::WordBoundary, &OperationPayload::WordBoundary { mode }) => {
+            Some(FirstOpTest::WordBoundary { mode, not: false })
+        }
+        (OpCode::NoWordBoundary, &OperationPayload::WordBoundary { mode }) => {
+            Some(FirstOpTest::WordBoundary { mode, not: true })
+        }
+        (OpCode::BeginLine, _) => Some(FirstOpTest::BeginLine),
+        (OpCode::LookBehindOp, &OperationPayload::LookBehindOp { char_len, not })
+            if reg.ops.len() > 1 =>
+        {
+            Some(FirstOpTest::LookBehind { char_len, not })
+        }
+        _ => None,
+    }
+}
+
+/// Whether an attempt of `reg` at `s` fails at its first instruction `test`
+/// (`first_op_test(reg)`), decided as `match_at_impl` decides it for a RegSet
+/// attempt: right range `end`, options `option | reg.options`. Such an
+/// attempt counts one retry and changes nothing else; the caller decides
+/// whether the limits could observe that (`may_skip_first_op_failures`).
+#[inline(never)]
+pub(crate) fn first_op_fails(
+    test: FirstOpTest,
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    s: usize,
+    option: OnigOptionType,
+) -> bool {
+    let enc = reg.enc;
+    match test {
+        FirstOpTest::WordBoundary { mode, not } => {
+            is_word_boundary(enc, str_data, s, end, mode) == not
+        }
+        // The `BeginLine` arm.
+        FirstOpTest::BeginLine => {
+            if s == 0 {
+                opton_notbol(option | reg.options)
+            } else if s != end {
+                let sprev = onigenc_get_prev_char_head(enc, str_data, 0, s);
+                !enc.is_mbc_newline(&str_data[sprev..], end)
+            } else {
+                true
+            }
+        }
+        FirstOpTest::LookBehind { char_len, not } => {
+            look_behind_body_matches(&reg.ops[1], char_len, enc, str_data, s, end, end) == not
+        }
+    }
+}
+
+/// Whether a RegSet search may leave out attempts that fail at their first
+/// instruction (`first_op_fails`). Each would count one retry: the limits
+/// `may_skip_attempts` excludes could observe that. FIND_LONGEST in the
+/// search options (a RegSet regex cannot have it) keeps every attempt, as for
+/// the other plans that leave attempts out.
+#[inline]
+pub(crate) fn may_skip_first_op_failures(msa: &MatchArg, option: OnigOptionType) -> bool {
+    may_skip_attempts(msa) && !opton_find_longest(option)
+}
+
 // ============================================================================
 // match_at - the core VM executor (port of C's match_at function)
 // ============================================================================
@@ -8899,6 +8983,152 @@ mod tests {
             msa.match_stack_limit = stack;
             msa.time_limit = time;
             assert!(atomic_ascii_class_prefix(&reg, &msa).is_none());
+        }
+    }
+
+    /// `first_op_fails` decides each supported first instruction exactly as
+    /// the VM does in a RegSet attempt, at every byte position of valid,
+    /// multibyte and malformed subjects and of shortened logical ends. A
+    /// pattern that is only that instruction matches exactly where it holds,
+    /// and an attempt failing there counts exactly one retry.
+    #[test]
+    fn first_op_test_agrees_with_the_vm_attempt() {
+        // The attempts below read the process-global limits.
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let compile = |pattern: &str, option: OnigOptionType| {
+            regcomp::onig_new(
+                pattern.as_bytes(),
+                option,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        let word_ascii = ONIG_OPTION_WORD_IS_ASCII;
+        let cases: [(&str, OnigOptionType, &str); 22] = [
+            (r"\b", ONIG_OPTION_NONE, "boundary"),
+            (r"\B", ONIG_OPTION_NONE, "no-boundary"),
+            (r"\b", word_ascii, "boundary"),
+            (r"\B", word_ascii, "no-boundary"),
+            (r"^", ONIG_OPTION_NONE, "line"),
+            (r"(?<=a)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<!a)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=ab)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<!ab)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=abcdefgh)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=[a-c])", ONIG_OPTION_NONE, "behind"),
+            (r"(?<![a-c\n])", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=[^a-c])", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=é)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<!日本)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=[éa])", ONIG_OPTION_NONE, "behind"),
+            (r"(?<![é日])", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=[\p{L}])", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=\.)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<![\w$])", ONIG_OPTION_NONE, "behind"),
+            (r"(?i)(?<=x)", ONIG_OPTION_NONE, "behind"),
+            (r"(?<=\n)", ONIG_OPTION_NONE, "behind"),
+        ];
+        let subjects: [&[u8]; 18] = [
+            b"",
+            b"a",
+            b"ab",
+            b"ab cd_e.f",
+            b"\n",
+            b"a\nb\n",
+            b"\n\n",
+            b"x\r\ny\n",
+            "é a_b ü".as_bytes(),
+            "日本語 x日本 abcdefgh".as_bytes(),
+            b"\xff\xfe a",
+            b"a\xe2\x82 b",
+            b"\x80abc",
+            b"\xc3",
+            b"\xc3\n\xa9a",
+            b"abcdefgh abc$1",
+            "kK\u{212a}X x".as_bytes(),
+            b"$a.b!c",
+        ];
+        let mut rejected = 0;
+        let mut kept = 0;
+        for (pattern, compile_option, kind) in cases {
+            let reg = compile(pattern, compile_option);
+            let test = first_op_test(&reg)
+                .unwrap_or_else(|| panic!("{pattern} has no first-instruction test"));
+            let expected_kind = match test {
+                FirstOpTest::WordBoundary { not: false, .. } => "boundary",
+                FirstOpTest::WordBoundary { not: true, .. } => "no-boundary",
+                FirstOpTest::BeginLine => "line",
+                FirstOpTest::LookBehind { .. } => "behind",
+            };
+            assert_eq!(expected_kind, kind, "{pattern}");
+            if let FirstOpTest::WordBoundary { mode, .. } = test {
+                assert_eq!(mode != 0, compile_option == word_ascii, "{pattern}");
+            }
+            for subject in subjects {
+                let ends = [subject.len(), subject.len().saturating_sub(1), 0];
+                for end in ends {
+                    for s in 0..=end {
+                        for option in [ONIG_OPTION_NONE, ONIG_OPTION_NOTBOL] {
+                            let fails = first_op_fails(test, &reg, subject, end, s, option);
+                            let mut msa = MatchArg::new(&reg, option, None, s);
+                            let result = onig_match_with_msa_start(
+                                &reg, subject, end, s, s, option, &mut msa,
+                            );
+                            let context =
+                                format!("{pattern} {subject:?} end={end} s={s} option={option:?}");
+                            assert_eq!(fails, result == ONIG_MISMATCH, "{context}");
+                            if fails {
+                                assert_eq!(msa.retry_limit_in_search_counter, 1, "{context}");
+                                rejected += 1;
+                            } else {
+                                assert_eq!(result, 0, "{context}");
+                                kept += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(rejected > 1_000 && kept > 1_000, "{rejected} {kept}");
+    }
+
+    /// Only the listed zero-width first instructions get a test, and never
+    /// with callouts: everything else takes the plain attempt.
+    #[test]
+    fn first_op_test_leaves_other_first_instructions_to_the_vm() {
+        let compile = |pattern: &str| {
+            regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        for pattern in [
+            r"a\b",
+            r"x",
+            r"abc",
+            r"[ab]",
+            r"[^ab]",
+            r"\w",
+            r"(?:\b|x)",
+            r"(?<=a|bc)",
+            r"(?<=\w)",
+            r"(?=a)",
+            r"(?!a)",
+            r"\G\b",
+            r"\A",
+            r"\z",
+            r"$",
+            r"\b(*COUNT)x",
+            r"^(*FAIL)",
+            r"(?<=a)(?{x})",
+            r"(?:)",
+        ] {
+            let reg = compile(pattern);
+            assert_eq!(first_op_test(&reg), None, "{pattern}");
         }
     }
 

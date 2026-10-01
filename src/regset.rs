@@ -7,9 +7,10 @@ use crate::regenc::{
     OnigEncoding, onigenc_get_prev_char_head, onigenc_is_ascii_compatible_encoding,
 };
 use crate::regexec::{
-    MatchArg, OnigMatchParam, forward_search, onig_get_global_limit_revision,
-    onig_get_match_stack_limit, onig_get_retry_limit_in_match, onig_get_retry_limit_in_search,
-    onig_get_time_limit, onig_match, onig_match_with_msa_start, search_in_range,
+    FirstOpTest, MatchArg, OnigMatchParam, first_op_fails, first_op_test, forward_search,
+    may_skip_first_op_failures, onig_get_global_limit_revision, onig_get_match_stack_limit,
+    onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit, onig_match,
+    onig_match_with_msa_start, search_in_range,
 };
 use crate::regint::*;
 
@@ -46,6 +47,9 @@ struct RegSetEntry {
     gated: bool,
     /// The regex has callouts, which observe every attempt.
     has_callouts: bool,
+    /// The first instruction, when the position loops can reject an attempt
+    /// by it before entering the VM (`first_op_rejects`).
+    first_op: Option<FirstOpTest>,
 }
 
 /// Pre-computed memchr needle for SIMD-accelerated position skipping.
@@ -483,6 +487,7 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
     let region = Some(OnigRegion::new());
     let fallback_memo_safe = fallback_memo_is_safe(&reg);
     let start_filter = fallback_start_filter(&reg);
+    let first_op = first_op_test(&reg);
     set.entries.push(RegSetEntry {
         reg,
         region,
@@ -491,6 +496,7 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
         fallback: false,
         gated: false,
         has_callouts: false,
+        first_op,
     });
     let entry = set.entries.last_mut().expect("just pushed");
     entry.has_callouts = entry
@@ -602,6 +608,7 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
             set.entries[at].has_callouts =
                 reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0);
             set.entries[at].start_filter = fallback_start_filter(&reg);
+            set.entries[at].first_op = first_op_test(&reg);
             set.entries[at].reg = reg;
         }
     }
@@ -807,6 +814,42 @@ fn attempt_entry_match(
     onig_match_with_msa_start(&entry.reg, text, end, at, start, option, msa)
 }
 
+/// Whether the attempt of `entry` at `position` of a search that began at
+/// `search_start` fails at its first instruction, so the position loop can
+/// leave it out (`skips`: `may_skip_first_op_failures`). Like that failed
+/// attempt, this resets `msa` for the attempt and counts one retry; the
+/// region stays as it was.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn first_op_rejects(
+    entry: &RegSetEntry,
+    skips: bool,
+    str_data: &[u8],
+    end: usize,
+    position: usize,
+    search_start: usize,
+    option: OnigOptionType,
+    msa: &mut MatchArg,
+) -> bool {
+    let Some(test) = entry.first_op.filter(|_| skips) else {
+        return false;
+    };
+    if !first_op_fails(test, &entry.reg, str_data, end, position, option) {
+        return false;
+    }
+    msa.reset_for_match(&entry.reg, option, search_start);
+    msa.retry_limit_in_search_counter += 1;
+    #[cfg(test)]
+    FIRST_OP_REJECTS.with(|rejects| rejects.set(rejects.get() + 1));
+    true
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Attempts `first_op_rejects` left out, for tests of its gates.
+    static FIRST_OP_REJECTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 /// One `match_at` of a fallback entry at `position` of a search that began
 /// at `search_start` (C: `REGSET_MATCH_AND_RETURN_CHECK`).
 #[allow(clippy::too_many_arguments)]
@@ -1003,6 +1046,10 @@ fn attempt_fallback_entry_at_start(
     }
     let fill = EntryRegion::of(&entry.reg, option, msa);
     msa.retry_limit_in_search_counter = 0;
+    let skips = may_skip_first_op_failures(msa, option);
+    if first_op_rejects(entry, skips, str_data, end, start, start, option, msa) {
+        return None;
+    }
     let result = attempt_fallback_entry(entry, str_data, end, start, start, option, fill, msa);
     let decision = fallback_attempt_decision(result, index, start, msa)?;
     let admitted = match entry_search_range(&entry.reg, str_data, end, start, range) {
@@ -1083,6 +1130,7 @@ fn search_fallback_entry(
     // Skipping an attempt is unobservable except through the search retry
     // budget, which counts every failed attempt.
     let has_start_filter = entry.start_filter.is_some() && msa.retry_limit_in_search == 0;
+    let first_op_skips = may_skip_first_op_failures(msa, option);
     msa.retry_limit_in_search_counter = 0;
 
     let mut s = start;
@@ -1129,7 +1177,10 @@ fn search_fallback_entry(
             }
         } && !(after_newline_only && s > start && str_data[s - 1] != b'\n');
 
-        if admitted {
+        // An attempt that fails at its first instruction is left as failed.
+        if admitted
+            && !first_op_rejects(entry, first_op_skips, str_data, end, s, start, option, msa)
+        {
             let result = attempt_fallback_entry(entry, str_data, end, s, start, option, fill, msa);
             if let Some(decision) = fallback_attempt_decision(result, index, s, msa) {
                 return Some(decision);
@@ -1358,6 +1409,7 @@ fn regset_table_scan<const EAGER_GATES: bool>(
     }
 
     let prev_is_newline_check = set.anychar_inf;
+    let first_op_skips = may_skip_first_op_failures(&msa, option);
     let mut result = None;
 
     'search: loop {
@@ -1439,6 +1491,19 @@ fn regset_table_scan<const EAGER_GATES: bool>(
             }
             if track_search_retry_limit {
                 msa.retry_limit_in_search_counter = set.scratch_table_retry_counters[i];
+            }
+            // An attempt that fails at its first instruction has no event.
+            if first_op_rejects(
+                &set.entries[i],
+                first_op_skips,
+                str_data,
+                end,
+                s,
+                start,
+                option,
+                &mut msa,
+            ) {
+                continue;
             }
             let r = if skip_region_for_nomem && region_is_redundant(&set.entries[i].reg) {
                 // No capture groups and no `\K`: the caller can rebuild the
@@ -3350,6 +3415,239 @@ mod tests {
         // The retry-limit example does leave out failing attempts that
         // reach the limit.
         assert!(limit_differences > 0);
+    }
+
+    /// Attempts left out because their first instruction fails
+    /// (`first_op_rejects`) change no result, winner, capture or limit
+    /// error: every search agrees with the same set without the tests, in
+    /// the table scan and in the fallback searches. Limits that could
+    /// observe the left-out retries, and FIND_LONGEST, turn them off.
+    #[test]
+    fn first_op_rejects_preserve_winners_captures_and_limits() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        struct RestoreLimits(u64, u64, u32, u64);
+        impl Drop for RestoreLimits {
+            fn drop(&mut self) {
+                onig_set_retry_limit_in_match(self.0);
+                onig_set_retry_limit_in_search(self.1);
+                onig_set_match_stack_limit(self.2);
+                onig_set_time_limit(self.3);
+            }
+        }
+        let _restore = RestoreLimits(
+            onig_get_retry_limit_in_match(),
+            onig_get_retry_limit_in_search(),
+            onig_get_match_stack_limit(),
+            onig_get_time_limit(),
+        );
+        // (pattern, dispatched by the table rather than searched on its own)
+        let patterns: [(&str, bool); 13] = [
+            (r"\b(?:if|for|while)\b", true),
+            (r"\b\w*\(", false),
+            (r"^\s*#\s*(\w+)", false),
+            (r"^[a-z]+:", true),
+            (r"(?<=\.)(\w+)", true),
+            (r"(?<![\w$])\d+(?:\.\d+)?", true),
+            (r"(?<=[=:])\s*(\w*);", false),
+            (r"\B\w*-", false),
+            (r"(?W)\b[a-zé]+", true),
+            (r"(?<=é)a", true),
+            (r"\b", true),
+            (r"^", true),
+            (r"(?<!a)", true),
+        ];
+        let mut sets: Vec<Vec<&str>> = patterns.iter().map(|&(p, _)| vec![p]).collect();
+        let mut mixed: Vec<&str> = patterns[..10].iter().map(|&(p, _)| p).collect();
+        mixed.insert(4, "(id|b)");
+        sets.push(mixed);
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"if (x) for",
+            b"  #  include <a>\n#define B",
+            b"a.b = 1.5; c: d;",
+            b"x -a- -b-c d-e-",
+            "é aé \u{e9}a 名.x".as_bytes(),
+            b"aa\xffbbb if(",
+            b"a\xe2\x82 while (",
+            b"\n\nab:\n cd:",
+            b"$1 a1 2.3 id",
+        ];
+        // (retry in match, search retry budget, stack, time, skips apply)
+        let limits = [
+            (0, 0, 0, 0, true),
+            (2, 0, 0, 0, true),
+            (10_000_000, 0, 0, 0, true),
+            (1, 0, 0, 0, false),
+            (0, 1, 0, 0, false),
+            (0, 6, 0, 0, false),
+            (0, 0, 1, 0, false),
+            (0, 0, 6, 0, false),
+            (0, 0, 0, 1_000_000, false),
+        ];
+        let rejects = || FIRST_OP_REJECTS.with(|rejects| rejects.get());
+        let outcome = |set: &mut OnigRegSet, input: &[u8], id, end, start, range, option, mode| {
+            let found = match mode {
+                0 => onig_regset_search(
+                    set,
+                    input,
+                    end,
+                    start,
+                    range,
+                    OnigRegSetLead::PositionLead,
+                    option,
+                ),
+                1 => onig_regset_search_fast(
+                    set,
+                    input,
+                    end,
+                    start,
+                    range,
+                    OnigRegSetLead::PositionLead,
+                    option,
+                ),
+                _ => onig_regset_search_fast_with_id(
+                    set,
+                    input,
+                    end,
+                    start,
+                    range,
+                    OnigRegSetLead::PositionLead,
+                    option,
+                    FallbackMemoIdentity::Caller(id),
+                ),
+            };
+            let region = if found.0 >= 0 {
+                let region = onig_regset_get_region(set, found.0 as usize).unwrap();
+                (region.beg.clone(), region.end.clone())
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            (found, onig_regset_last_match_len(set), region)
+        };
+        let mut checked = 0;
+        let mut rejected_by_set = vec![0u64; sets.len()];
+        for (retry, search_retry, stack, time, skips) in limits {
+            onig_set_retry_limit_in_match(retry);
+            onig_set_retry_limit_in_search(search_retry);
+            onig_set_match_stack_limit(stack);
+            onig_set_time_limit(time);
+            for (set_at, set_patterns) in sets.iter().enumerate() {
+                let build = || {
+                    let regs = set_patterns.iter().map(|p| compile(p.as_bytes())).collect();
+                    let (set, status) = onig_regset_new(regs);
+                    assert_eq!(status, ONIG_NORMAL);
+                    set.unwrap()
+                };
+                let mut optimized = build();
+                let mut reference = build();
+                for entry in &mut reference.entries {
+                    entry.first_op = None;
+                }
+                // The single-pattern sets come first, in pattern order.
+                if let Some(&(pattern, table)) = patterns.get(set_at) {
+                    assert!(optimized.entries[0].first_op.is_some(), "{pattern}");
+                    assert_eq!(optimized.entries[0].fallback, !table, "{pattern}");
+                }
+                for mode in 0..3 {
+                    for (id, &input) in inputs.iter().enumerate() {
+                        for end in [input.len(), input.len().saturating_sub(1)] {
+                            for option in [
+                                ONIG_OPTION_NONE,
+                                ONIG_OPTION_FIND_NOT_EMPTY,
+                                ONIG_OPTION_NOTBOL,
+                                ONIG_OPTION_FIND_LONGEST,
+                            ] {
+                                for start in 0..=end {
+                                    for range in [start, (start + 2).min(end), end] {
+                                        let before = rejects();
+                                        let expected = outcome(
+                                            &mut reference,
+                                            input,
+                                            id as u64,
+                                            end,
+                                            start,
+                                            range,
+                                            option,
+                                            mode,
+                                        );
+                                        assert_eq!(rejects(), before);
+                                        let found = outcome(
+                                            &mut optimized,
+                                            input,
+                                            id as u64,
+                                            end,
+                                            start,
+                                            range,
+                                            option,
+                                            mode,
+                                        );
+                                        let rejected = rejects() - before;
+                                        let context = format!(
+                                            "{set_patterns:?} {input:?} end={end} start={start} range={range} option={option:?} mode={mode} limits={:?}",
+                                            (retry, search_retry, stack, time)
+                                        );
+                                        assert_eq!(found, expected, "{context}");
+                                        if !skips || option == ONIG_OPTION_FIND_LONGEST {
+                                            assert_eq!(rejected, 0, "{context}");
+                                        }
+                                        rejected_by_set[set_at] += rejected;
+                                        checked += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Every pattern's test rejected attempts, in the table scan and in
+        // the fallback searches alike.
+        for (set_patterns, rejected) in sets.iter().zip(&rejected_by_set) {
+            assert!(*rejected > 0, "{set_patterns:?}");
+        }
+        eprintln!(
+            "Compared {checked} RegSet search outcomes; {} attempts left out",
+            rejected_by_set.iter().sum::<u64>()
+        );
+        assert!(checked > 100_000, "{checked}");
+    }
+
+    /// Which committed grammar patterns get a first-instruction test: word
+    /// boundaries, line starts and look-behinds, among the table and the
+    /// fallback entries. Like `grammar_fast_path_census`, this catches an
+    /// eligibility check that quietly turns the tests off.
+    #[test]
+    fn grammar_first_op_test_census() {
+        let census = |patterns: Vec<String>| {
+            let regs = patterns.iter().map(|p| compile(p.as_bytes())).collect();
+            let (set, r) = onig_regset_new(regs);
+            assert_eq!(r, ONIG_NORMAL);
+            let set = set.unwrap();
+            let mut counts = [[0; 3]; 2];
+            for entry in &set.entries {
+                let kind = match entry.first_op {
+                    None => continue,
+                    Some(FirstOpTest::WordBoundary { .. }) => 0,
+                    Some(FirstOpTest::BeginLine) => 1,
+                    Some(FirstOpTest::LookBehind { .. }) => 2,
+                };
+                counts[usize::from(entry.fallback)][kind] += 1;
+            }
+            counts
+        };
+        // [table, fallback] x [word boundary, line start, look-behind]
+        assert_eq!(
+            census(grammar_loader::typescript_patterns()),
+            [[5, 2, 73], [0, 0, 43]]
+        );
+        assert_eq!(
+            census(grammar_loader::css_patterns()),
+            [[0, 0, 32], [0, 0, 3]]
+        );
+        assert_eq!(
+            census(grammar_loader::rust_patterns()),
+            [[36, 0, 3], [0, 0, 1]]
+        );
     }
 
     #[test]
