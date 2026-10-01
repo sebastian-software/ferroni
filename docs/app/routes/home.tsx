@@ -1,16 +1,17 @@
 import {
   EvidenceFigures,
   family,
-  IronBand,
   Mark,
-  PipelineAssembly,
+  Measured,
+  Principles,
   ProjectHero,
-  RegistryFacts,
+  Relations,
   RunSample,
   Section,
-  useToolFacts,
+  WorkWithUs,
 } from "ferramenta-family";
 import { Link, type MetaFunction } from "react-router";
+import config from "virtual:ardo/config";
 
 import sample from "../data/regex-sample.json";
 import { ClosingSection, CodeSection, CoverageSection } from "./home-bottom-sections";
@@ -18,7 +19,7 @@ import { ClosingSection, CodeSection, CoverageSection } from "./home-bottom-sect
 // React Router requires `meta` as a named route export.
 // oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export const meta: MetaFunction = () => [
-  { title: "Ferroni — Oniguruma, continued in Rust" },
+  { title: "Ferroni — Oniguruma-compatible regex engine" },
   {
     name: "description",
     content:
@@ -26,31 +27,29 @@ export const meta: MetaFunction = () => [
   },
 ];
 
-function CurrentRelease() {
+function ferroni() {
   const tool = family.find((entry) => entry.name === "ferroni");
   if (tool === undefined) throw new Error("Ferroni is missing from the family registry.");
-  const facts = useToolFacts(tool);
-  return (
-    <a className="fr-release" href="https://crates.io/crates/ferroni">
-      {facts.onCrates ? `v${facts.version} on crates.io` : "Releases on crates.io"}
-    </a>
-  );
+  return tool;
 }
 
+/*
+ * What it succeeds and what it is checked against come from the registry; the
+ * release is the version this site was built from, read from Cargo.toml.
+ */
 function HeroSection() {
+  const tool = ferroni();
+  const version = config.project?.version;
   return (
     <ProjectHero
-      mark="ferroni"
-      title={
-        <span id="fr-title" translate="no">
-          Ferroni
-        </span>
-      }
+      icon="ferroni"
+      title={<span translate="no">Ferroni</span>}
+      what="A regex engine in memory-safe Rust."
       lede={
         <>
-          <strong>Oniguruma, continued in Rust.</strong> A regex engine in memory-safe Rust, with
-          the vscode-oniguruma scanner built in for TextMate grammars. Verified against the upstream
-          tests and measured against the C original.
+          It continues Oniguruma, the engine TextMate grammars are written for, after its C project
+          ended, with the vscode-oniguruma scanner built in. Verified against the upstream tests and
+          measured against the C original.
         </>
       }
       actions={
@@ -63,12 +62,12 @@ function HeroSection() {
           </a>
         </>
       }
-      install={
-        <>
-          <code translate="no">cargo add ferroni</code>
-          <CurrentRelease />
-        </>
-      }
+      install={<code translate="no">cargo add ferroni</code>}
+      facts={[
+        { label: "Succeeds", value: tool.succeeds },
+        { label: "Checked against", value: tool.evidence },
+        ...(version == null ? [] : [{ label: "Release", value: `v${version}` }]),
+      ]}
     />
   );
 }
@@ -92,20 +91,14 @@ const pillars = [
   },
 ];
 
-function PipelineSection() {
+function RelationsSection() {
   return (
     <Section
-      id="fr-pipeline"
+      id="fr-relations"
       title="Where Ferroni sits"
-      intro={
-        <>
-          Ferroni supplies the regex engine for Ferriki, whose Shiki-compatible highlighter uses
-          TextMate grammars to tokenize code. Ferromark combines that highlighting with Markdown
-          rendering. Each tool also works on its own.
-        </>
-      }
+      intro="Ferroni supplies the regex engine for Ferriki, whose Shiki-compatible highlighter tokenizes code with TextMate grammars. Each tool also works on its own."
     >
-      <PipelineAssembly current="ferroni" />
+      <Relations current="ferroni" />
     </Section>
   );
 }
@@ -176,10 +169,8 @@ function EvidenceSection() {
       }
       note={
         <>
-          Reference measurements from 2026-09-23 with <code>battle_bench</code> at commit{" "}
-          <code>2f109a75</code>, on a MacBookPro18,1 (Apple M1 Pro, 32&nbsp;GB), macOS 27.0. These
-          predate the latest optimizations. Full tables and reproduction:{" "}
-          <Link to="/perf/benchmark-results">Benchmark Results</Link>. More recent measurements:{" "}
+          Reference measurements with <code>battle_bench</code>; they predate the latest
+          optimizations. More recent measurements:{" "}
           <Link to="/perf/simple-pattern-profiling">Simple-pattern profiling</Link>.
         </>
       }
@@ -192,6 +183,13 @@ function EvidenceSection() {
           measure: `${benchmark.ferroni} vs ${benchmark.oniguruma}`,
         }))}
       />
+      <Measured
+        on="2026-09-23"
+        machine="MacBookPro18,1 (Apple M1 Pro, 32 GB), macOS 27.0"
+        revision={<code>2f109a75</code>}
+      >
+        <Link to="/perf/benchmark-results">Full tables and the command to reproduce them</Link>
+      </Measured>
     </Section>
   );
 }
@@ -227,22 +225,22 @@ function SampleSection() {
 
 export default function HomePage() {
   return (
-    <RegistryFacts>
-      <div className="fam-page ferroni-home">
-        <HeroSection />
-        <IronBand
-          id="fr-forward"
-          title="Oniguruma ended. The engine goes on."
-          intro="Oniguruma’s C project closed on April 24, 2025, after more than twenty years as the regex engine that TextMate grammars are written for. Ferroni carries it forward."
-          rows={pillars}
-        />
-        <PipelineSection />
-        <SampleSection />
-        <EvidenceSection />
-        <CodeSection />
-        <CoverageSection />
-        <ClosingSection />
-      </div>
-    </RegistryFacts>
+    <div className="fam-page ferroni-home">
+      <HeroSection />
+      <Section
+        id="fr-forward"
+        title="Oniguruma ended. The engine goes on."
+        intro="Oniguruma’s C project closed on April 24, 2025, after more than twenty years as the regex engine that TextMate grammars are written for. Ferroni carries it forward."
+      >
+        <Principles items={pillars} />
+      </Section>
+      <RelationsSection />
+      <SampleSection />
+      <EvidenceSection />
+      <CodeSection />
+      <CoverageSection />
+      <ClosingSection />
+      <WorkWithUs />
+    </div>
   );
 }

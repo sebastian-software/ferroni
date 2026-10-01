@@ -10,7 +10,7 @@ export default defineConfig({
   plugins: [
     ardo({
       title: "Ferroni",
-      description: "Oniguruma, continued in Rust",
+      description: "Oniguruma-compatible regex engine",
       githubPages: false,
       siteUrl: "https://ferroni.dev",
 

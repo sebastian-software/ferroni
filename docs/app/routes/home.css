@@ -1,19 +1,7 @@
 /* Shared layout, materials, and components belong to ferramenta-family.
- * Only Ferroni's paired API examples and plain-text sample disclosure live here.
+ * Only Ferroni's plain-text sample disclosure lives here.
  * Imported in root.tsx after landing.css and before chrome.css.
  */
-
-.fr-code-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.5rem;
-}
-
-.fr-release {
-  display: inline-block;
-  min-inline-size: 22ch;
-  font-variant-numeric: tabular-nums;
-}
 
 .fr-sample-output {
   margin-top: 1rem;
@@ -31,10 +19,4 @@
   overflow: auto;
   background: var(--bg-dim);
   color: var(--ink);
-}
-
-@media (max-width: 64rem) {
-  .fr-code-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

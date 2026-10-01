@@ -78,7 +78,7 @@ export function CodeSection() {
         </>
       }
     >
-      <div className="fr-code-grid">
+      <div className="fam-code-grid">
         <RegexExample />
         <ScannerExample />
       </div>

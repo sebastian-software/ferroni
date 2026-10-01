@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "ardo": "^4.2.0",
-    "ferramenta-family": "1.2.0",
+    "ferramenta-family": "^2.0.0",
     "isbot": "^5.2.2",
     "lucide-react": "^1.47.0",
     "react": "^19.3.0",

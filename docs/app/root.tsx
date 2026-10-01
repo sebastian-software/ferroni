@@ -8,18 +8,18 @@ import {
   ArdoSidebarSection,
   ArdoThemeToggle,
 } from "ardo/ui";
-import { MarkDefs, SiteFooter, SiteHeader } from "ferramenta-family";
-import bigShouldersFont from "ferramenta-family/fonts/big-shoulders.woff2?url";
-import { useRef } from "react";
-import { type LinksFunction, type MetaFunction, NavLink, useHref } from "react-router";
+import { MarkDefs, SiteFooter, SiteHeader, SiteMenu } from "ferramenta-family";
+import displayFont from "ferramenta-family/fonts/barlow-condensed-700.woff2?url";
+import { type LinksFunction, type MetaFunction, NavLink, useHref, useLocation } from "react-router";
 import config from "virtual:ardo/config";
 import "ardo/ui/styles.css";
 import "ferramenta-family/tokens.css";
 import "ferramenta-family/fonts.css";
 import "ferramenta-family/theme.css";
+import "ferramenta-family/docs.css";
+// The landing kit before the site's own stylesheet, so it adjusts the kit on ties.
 import "ferramenta-family/landing.css";
 
-import "./site.css";
 import "./routes/home.css";
 // Last on purpose (see the package README): the shared chrome has to win the
 // ties the Ardo and site styles around it would otherwise take.
@@ -31,7 +31,7 @@ import "ferramenta-family/chrome.css";
 export const links: LinksFunction = () => [
   {
     rel: "preload",
-    href: bigShouldersFont,
+    href: displayFont,
     as: "font",
     type: "font/woff2",
     crossOrigin: "anonymous",
@@ -85,69 +85,25 @@ const sections: DocsSection[] = [
   },
 ];
 
-/** The site's own navigation, in the header's `nav` slot. */
-function DocsNav() {
-  return (
-    <div className="ferroni-nav">
-      {sections.map((section) => (
-        <NavLink key={section.id} to={section.to}>
-          {section.label}
-        </NavLink>
-      ))}
-    </div>
-  );
-}
-
-/*
- * The controls a documentation site keeps in the bar, in the header's
- * `actions` slot: full-text search, and -- below 1024px, where Ardo hides the
- * sidebar rail and the links above give up their room -- a menu holding the
- * same three sections, which is then the only way into the documentation.
- * `ArdoSearch` reads its index from a virtual module and falls back to the
- * default labels, so it works outside `ArdoRoot`'s provider.
- */
-function DocsTools() {
-  const menuRef = useRef<HTMLDetailsElement>(null);
-
-  return (
-    <>
-      <details className="ferroni-sections" ref={menuRef}>
-        {/* No aria-label: the visible word is the accessible name, so a voice
-            command for what is on screen reaches the control. */}
-        <summary>Docs</summary>
-        <div className="ferroni-sections-flyout">
-          {sections.map((section) => (
-            <NavLink
-              key={section.id}
-              to={section.to}
-              /*
-               * Client-side navigation keeps the page mounted, so the menu has
-               * to close itself when one of its links is taken.
-               */
-              onClick={() => menuRef.current?.removeAttribute("open")}
-            >
-              {section.label}
-            </NavLink>
-          ))}
-        </div>
-      </details>
-      <div className="ferroni-search">
-        <ArdoSearch />
-      </div>
-    </>
-  );
+/** The section links, for the bar where there is room and for the menu where there is not. */
+function SectionLinks() {
+  return sections.map((section) => (
+    <NavLink key={section.id} to={section.to}>
+      {section.label}
+    </NavLink>
+  ));
 }
 
 /**
- * The small print under the family columns: the version, license and build
- * lines the Ardo footer used to render on its own.
+ * The small print after the workshop's copyright line, which the family footer
+ * carries itself: the version, license and build lines the Ardo footer used to
+ * render on its own.
  */
 function FooterLegal() {
   return (
     <>
       {`Ferroni${config.project?.version != null ? ` v${config.project.version}` : ""}`} · Released
-      under the BSD-2-Clause License · Copyright {new Date().getFullYear()} Sebastian Software GmbH
-      · <a href="https://ardo-docs.dev">Built with Ardo</a>
+      under the BSD-2-Clause License · <a href="https://ardo-docs.dev">Built with Ardo</a>
       {config.buildTime != null ? (
         <>
           {" · Built on "}
@@ -164,27 +120,56 @@ function FooterLegal() {
   );
 }
 
-export default function Root() {
+/** The family header with this site's sections, search and, on the documentation, the theme toggle. */
+function DocsHeader() {
   const home = useHref("/");
+  // The landing page has one authored scheme; the documentation keeps Ardo's.
+  const landing = useLocation().pathname === home;
+  return (
+    <SiteHeader
+      current="ferroni"
+      lockup="project"
+      home={home}
+      nav={
+        <div className="site-links">
+          <SectionLinks />
+        </div>
+      }
+      /*
+       * Below 64rem Ardo hides the sidebar rail and the links above give up
+       * their room: the menu holding the same three sections is then the only
+       * way into the documentation. `ArdoSearch` reads its index from a
+       * virtual module and falls back to the default labels, so it works
+       * outside `ArdoRoot`'s provider.
+       */
+      actions={
+        <>
+          <SiteMenu label="Docs">
+            <SectionLinks />
+          </SiteMenu>
+          <div className="site-search">
+            <ArdoSearch />
+          </div>
+        </>
+      }
+      themeToggle={landing ? undefined : <ArdoThemeToggle />}
+    />
+  );
+}
+
+export default function Root() {
   return (
     <>
       <MarkDefs />
-      <SiteHeader
-        current="ferroni"
-        lockup="project"
-        home={home}
-        nav={<DocsNav />}
-        actions={<DocsTools />}
-        themeToggle={<ArdoThemeToggle />}
-      />
+      <DocsHeader />
 
       {/*
-        `ferroni-shell` is the hook site.css needs to turn Ardo's
+        `fam-docs-shell` is the hook docs.css needs to turn Ardo's
         fixed-viewport application shell into a document-scrolling page: the
         family footer sits below the shell, so the page -- not the article --
         has to be what scrolls.
       */}
-      <div className="ferroni-shell">
+      <div className="fam-docs-shell">
         <ArdoRoot config={config}>
           <ArdoSidebar>
             {sections.map((section) => (
