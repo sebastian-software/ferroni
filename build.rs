@@ -7,6 +7,9 @@ fn main() {
 
     #[cfg(feature = "ffi")]
     build_oniguruma_c();
+
+    #[cfg(feature = "onigmo")]
+    build_onigmo();
 }
 
 #[cfg(feature = "ffi")]
@@ -175,4 +178,143 @@ fn resolve_oniguruma_dir() -> std::path::PathBuf {
 Run `./scripts/prepare-oniguruma-sources.sh` first,\n\
 or set FERRONI_ONIGURUMA_DIR=/path/to/oniguruma."
     );
+}
+
+/// Ruby's Onigmo for the engine comparison benchmarks. Onigmo exports the same
+/// symbol names as Oniguruma (`onig_new`, `onig_search`, its own `st.c`), so a
+/// first pass compiles it to objects, `nm` lists every symbol it defines, and
+/// the second pass compiles it with a header that prefixes all of them.
+#[cfg(feature = "onigmo")]
+fn build_onigmo() {
+    use std::fmt::Write;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    println!("cargo:rerun-if-env-changed=FERRONI_ONIGMO_DIR");
+    println!("cargo:rerun-if-changed=benches/onigmo_shim.c");
+    let dir = PathBuf::from(
+        std::env::var("FERRONI_ONIGMO_DIR")
+            .unwrap_or_else(|_| ".cache/upstream/onigmo-ruby".to_owned()),
+    );
+    assert!(
+        dir.join("regexec.c").is_file(),
+        "the onigmo feature needs Onigmo sources.\n\
+Run `./scripts/prepare-onigmo-sources.sh` first, or set FERRONI_ONIGMO_DIR."
+    );
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let shim = Path::new("benches/onigmo_shim.c");
+    assert!(
+        shim.is_file(),
+        "the onigmo feature only serves the in-repository benchmarks"
+    );
+    let unicode = std::fs::read_dir(dir.join("enc/unicode"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.join("casefold.h").is_file())
+        .expect("enc/unicode/<version>/casefold.h");
+
+    // Ruby's build normally supplies these; the regex sources need only a few.
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("onigmo");
+    std::fs::create_dir_all(out.join("internal")).unwrap();
+    // LP64 or ILP32 Unix targets only; the benchmarks do not run on Windows.
+    let pointer = std::env::var("CARGO_CFG_TARGET_POINTER_WIDTH")
+        .unwrap()
+        .parse::<usize>()
+        .unwrap()
+        / 8;
+    std::fs::write(
+        out.join("config.h"),
+        format!(
+            "#include <stdbool.h>\n#include <stdint.h>\n\
+#define HAVE_STDARG_H 1\n#define HAVE_STDLIB_H 1\n#define HAVE_STRING_H 1\n\
+#define SIZEOF_INT 4\n#define SIZEOF_LONG {pointer}\n#define SIZEOF_LONG_LONG 8\n\
+#define SIZEOF_VOIDP {pointer}\n#define SIZEOF_SIZE_T {pointer}\n\
+#define RB_GNUC_EXTENSION __extension__\n\
+#define RB_GNUC_EXTENSION_BLOCK(x) __extension__ ({{ x; }})\n\
+#define UNREACHABLE_RETURN(v) return (v)\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        out.join("internal/sanitizers.h"),
+        "#define NO_SANITIZE(sanitizer, declaration) declaration\n",
+    )
+    .unwrap();
+
+    let sources = [
+        "regcomp.c",
+        "regenc.c",
+        "regerror.c",
+        "regexec.c",
+        "regparse.c",
+        "regsyntax.c",
+        "st.c",
+        "enc/unicode.c",
+        "enc/utf_8.c",
+        "enc/ascii.c",
+        "enc/us_ascii.c",
+    ];
+    let build = |rename: Option<&Path>| {
+        let mut build = cc::Build::new();
+        build
+            .opt_level(3)
+            .warnings(false)
+            .flag_if_supported("-w")
+            .flag("-include")
+            .flag(out.join("config.h").to_str().unwrap())
+            .include(&out)
+            .include(&dir)
+            .include(dir.join("include/ruby"))
+            .include(&unicode);
+        if let Some(rename) = rename {
+            build.flag("-include").flag(rename.to_str().unwrap());
+        }
+        for source in sources {
+            build.file(dir.join(source));
+        }
+        build
+    };
+
+    let nm = std::env::var("NM").unwrap_or_else(|_| "nm".to_owned());
+    let underscore = std::env::var("CARGO_CFG_TARGET_VENDOR").as_deref() == Ok("apple");
+    let mut symbols = std::collections::BTreeSet::new();
+    for object in build(None).compile_intermediates() {
+        let listing = Command::new(&nm)
+            .arg("-g")
+            .arg(&object)
+            .output()
+            .expect("nm lists the Onigmo objects");
+        assert!(
+            listing.status.success(),
+            "nm failed on {}",
+            object.display()
+        );
+        for line in String::from_utf8_lossy(&listing.stdout).lines() {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            if let [_, kind, name] = fields[..]
+                && kind != "U"
+            {
+                let name = if underscore {
+                    name.strip_prefix('_').unwrap_or(name)
+                } else {
+                    name
+                };
+                symbols.insert(name.to_owned());
+            }
+        }
+    }
+    assert!(
+        symbols.contains("onig_search"),
+        "nm found no Onigmo symbols"
+    );
+    let mut header = String::new();
+    for symbol in &symbols {
+        writeln!(header, "#define {symbol} ferroni_onigmo__{symbol}").unwrap();
+    }
+    let rename = out.join("rename.h");
+    std::fs::write(&rename, header).unwrap();
+
+    let mut build = build(Some(&rename));
+    build.file(shim);
+    build.compile("onigmo");
 }

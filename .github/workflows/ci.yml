@@ -148,9 +148,12 @@ jobs:
           toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      # --all-features includes ffi, which compiles the upstream C sources.
-      - name: Prepare Oniguruma sources
-        run: ./scripts/prepare-oniguruma-sources.sh
+      # --all-features includes ffi and onigmo, which compile the upstream C
+      # sources of Oniguruma and Ruby's Onigmo.
+      - name: Prepare Oniguruma and Onigmo sources
+        run: |
+          ./scripts/prepare-oniguruma-sources.sh
+          ./scripts/prepare-onigmo-sources.sh
       # The allowed lints live in the [lints] table of Cargo.toml, never on the
       # command line: command-line flags outrank the manifest, so a lint denied
       # here would silently override the table.

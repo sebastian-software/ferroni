@@ -13,6 +13,7 @@ use ferroni::regexec::onig_search;
 use ferroni::regint::RegexType;
 use regex::bytes::Regex;
 
+use super::engines::{self, Compiled};
 use super::{assert_same_match, c_compile, configure_battle_group, regex_compile, rust_compile};
 
 const EMAIL: &str = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}";
@@ -119,6 +120,49 @@ fn rust_trace(regex: &RegexType, text: &[u8]) -> Trace {
                 .take(region.num_regs as usize)
                 .collect()
         })
+    })
+}
+
+/// All matches of a further engine, under the same iteration as `collect_matches`.
+fn engine_trace(regex: &Compiled, text: &[u8]) -> Result<Trace, String> {
+    let mut trace = Vec::new();
+    let mut start = 0;
+    while start < text.len() {
+        let Some(captures) = regex.captures(text, start)? else {
+            break;
+        };
+        let (beg, end) = captures[0];
+        if beg < start as i32 || end <= beg {
+            return Err(format!("empty or backward match {beg}..{end} from {start}"));
+        }
+        start = end as usize;
+        trace.push(captures);
+    }
+    Ok(trace)
+}
+
+/// The further engines whose complete trace equals Oniguruma's.
+fn trace_engines(
+    group: &str,
+    name: &str,
+    pattern: &str,
+    text: &[u8],
+    expected: &Trace,
+) -> Vec<(engines::Engine, Compiled)> {
+    engines::validated(group, name, pattern, false, |compiled| {
+        let actual = engine_trace(compiled, text)?;
+        match actual.iter().zip(expected).position(|(a, e)| a != e) {
+            None if actual.len() == expected.len() => Ok(()),
+            None => Err(format!(
+                "{} matches, Oniguruma {}",
+                actual.len(),
+                expected.len()
+            )),
+            Some(i) => Err(format!(
+                "match {i}: {:?}, Oniguruma {:?}",
+                actual[i], expected[i]
+            )),
+        }
     })
 }
 
@@ -435,6 +479,29 @@ pub fn bench_general_regex(c: &mut Criterion) {
                 black_box(count);
             })
         });
+        let accepts = |compiled: &Compiled| {
+            for (text, expected) in &inputs {
+                if compiled.search(text.as_bytes(), 0)?.is_some() != *expected {
+                    return Err(format!("{text:?}: expected {expected}"));
+                }
+            }
+            Ok(())
+        };
+        for (engine, compiled) in
+            engines::validated("general_regex", case.name, &case.pattern, false, accepts)
+        {
+            group.bench_function(BenchmarkId::new(engine.id(), case.name), |b| {
+                b.iter(|| {
+                    let count = black_box(&inputs)
+                        .iter()
+                        .filter(|(text, _)| {
+                            matches!(compiled.search(text.as_bytes(), 0), Ok(Some(_)))
+                        })
+                        .count();
+                    black_box(count);
+                })
+            });
+        }
     }
 
     for case in text_cases() {
@@ -496,6 +563,21 @@ pub fn bench_general_regex(c: &mut Criterion) {
                 }
             })
         });
+        let expected = rust_trace(&rust, text);
+        for (engine, compiled) in
+            trace_engines("general_regex", case.name, case.pattern, text, &expected)
+        {
+            group.bench_function(BenchmarkId::new(engine.id(), case.name), |b| {
+                b.iter(|| {
+                    let trace = engine_trace(&compiled, black_box(text)).unwrap();
+                    if case.redacted.is_some() {
+                        black_box(redact(text, trace));
+                    } else {
+                        black_box(trace);
+                    }
+                })
+            });
+        }
     }
     group.finish();
 }
@@ -571,6 +653,17 @@ pub fn bench_oniguruma_features(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("c", name), |b| {
             b.iter(|| black_box(c_trace(&c_regex, black_box(text.as_bytes()))));
         });
+        for (engine, compiled) in trace_engines(
+            "oniguruma_features",
+            name,
+            pattern,
+            text.as_bytes(),
+            &expected,
+        ) {
+            group.bench_function(BenchmarkId::new(engine.id(), name), |b| {
+                b.iter(|| black_box(engine_trace(&compiled, black_box(text.as_bytes())).unwrap()));
+            });
+        }
     }
     group.finish();
 }

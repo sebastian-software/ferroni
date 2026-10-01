@@ -41,6 +41,9 @@ collapsible_match = "allow"
 # (scripts/prepare-oniguruma-sources.sh or FERRONI_ONIGURUMA_DIR) for the
 # in-repo C-vs-Rust benches. Not needed to use the library.
 ffi = ["cc"]
+# Adds Ruby's Onigmo to the comparison benchmarks
+# (scripts/prepare-onigmo-sources.sh or FERRONI_ONIGMO_DIR).
+onigmo = ["ffi"]
 
 [dependencies]
 aho-corasick = "1"
@@ -53,7 +56,9 @@ cc = { version = "1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
+fancy-regex = "0.19"
 libc = "0.2"
+pcre2 = "0.2"
 regex = "1"
 serde_json = "1"
 

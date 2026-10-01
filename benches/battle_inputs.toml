@@ -42,3 +42,15 @@ kind = "deterministic synthetic TypeScript source"
 repeat_blocks = 16000
 driver = "line-by-line first-match scanning with full committed TypeScript grammar"
 template_revision = 3
+
+[onigmo]
+# Ruby's maintained copy of Onigmo, not the standalone k-takata/Onigmo
+# release line (last release 6.2.0, 2019). Ruby's st.c depends on the
+# interpreter, so the standalone project's st.c/st.h fill in for it.
+repo = "https://github.com/ruby/ruby"
+tag = "v4.0.7"
+commit = "229531a6cfbf07e3caef30dbac24a2a3f3fed482"
+st_repo = "https://github.com/k-takata/Onigmo"
+st_commit = "1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+local_cache_dir = ".cache/upstream/onigmo-ruby"
+prepare_script = "scripts/prepare-onigmo-sources.sh"
