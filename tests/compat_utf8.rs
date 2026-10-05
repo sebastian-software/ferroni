@@ -1380,6 +1380,39 @@ fn cc_mixed_range_ends_at_u0080() {
 // ============================================================================
 
 #[test]
+fn cc_case_fold_nested_sets() {
+    // C folds the completed outer class after nested unions/intersections.
+    // A nested class must remain a CClass even when it contains a multi-char fold.
+    x2(b"(?i)[[\\x{0}-\\x{FF}][Z]]", b"A", 0, 1);
+    x2(b"(?i)[[\\x{0}-\\x{FF}][Z]]", "é".as_bytes(), 0, 2);
+    x2("(?i)[[ß]a]".as_bytes(), b"A", 0, 1);
+    x2("(?i)[[ß]a]".as_bytes(), "ß".as_bytes(), 0, 2);
+    x2("(?i)[[ß]a]".as_bytes(), "ẞ".as_bytes(), 0, 3);
+    x2("(?i)[[ß]a]".as_bytes(), b"SS", 0, 2);
+    x2("(?i)[[ß]a]".as_bytes(), "ſſ".as_bytes(), 0, 4);
+    n(b"(?i)[a&&[A]]", b"a");
+    n(b"(?i)[[a]&&[A]]", b"A");
+    x2(b"(?i)[[a]&&[a]]", b"A", 0, 1);
+}
+
+#[test]
+fn cc_case_fold_negated_no_multichar() {
+    // C folds the excluded single-character set but never adds multi-character
+    // alternatives to a negated class. Expectations checked against pinned C.
+    let pattern = "(?i)\\A[^ß]\\z".as_bytes();
+    n(pattern, "ß".as_bytes());
+    n(pattern, "ẞ".as_bytes());
+    n(pattern, b"ss");
+    n(pattern, b"SS");
+    n(pattern, "ſſ".as_bytes());
+    x2(pattern, b"s", 0, 1);
+    x2(pattern, "ſ".as_bytes(), 0, 2);
+    n(b"(?i)\\A[^\\x{0}-\\x{FF}]\\z", "ſſ".as_bytes());
+    x2(b"(?i)\\A[^\\x{0}-\\x{FF}]\\z", "あ".as_bytes(), 0, 3);
+    x2("(?i)\\A[ß]\\z".as_bytes(), "ſſ".as_bytes(), 0, 4);
+}
+
+#[test]
 fn cc_nested_ab() {
     x2(b"[[ab]]", b"b", 0, 1);
 }
