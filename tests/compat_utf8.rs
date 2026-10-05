@@ -1361,6 +1361,20 @@ fn cc_ampersand() {
     x2(b"[&]", b"&", 0, 1);
 }
 
+#[test]
+fn cc_mixed_range_ends_at_u0080() {
+    // C (enc_sb_out) splits a range from a single-byte to a multibyte end at
+    // ASCII_LIMIT + 1, so U+0080 belongs to the multibyte part. Expectations
+    // checked against C Oniguruma (ONIG_SYNTAX_ONIGURUMA, UTF-8).
+    x2(b"[a-\\x{80}]", "\u{80}".as_bytes(), 0, 2);
+    x2(b"[\\x{7f}-\\x{80}]", "\u{80}".as_bytes(), 0, 2);
+    x2(b"[\\x{7f}-\\x{80}]", "\u{7f}".as_bytes(), 0, 1);
+    x2(b"[a-\\xC2\\x80]", "\u{80}".as_bytes(), 0, 2);
+    x2(b"(?i)[\\x{7e}-\\x{80}]", "\u{80}".as_bytes(), 0, 2);
+    n(b"[^\\x{7f}-\\x{80}]", "\u{80}".as_bytes());
+    n(b"[a-\\x{80}]", "\u{81}".as_bytes());
+}
+
 // ============================================================================
 // Nested character classes (C lines 258-261)
 // ============================================================================

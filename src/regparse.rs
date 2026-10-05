@@ -413,7 +413,11 @@ fn backref_rel_to_abs(rel_no: i32, env: &ParseEnv) -> i32 {
 
 fn enc_sb_out(enc: OnigEncoding) -> OnigCodePoint {
     if (enc.flag() & ENC_FLAG_UNICODE) != 0 {
-        if enc.min_enc_len() == 1 { 128 + 1 } else { 0 }
+        if enc.min_enc_len() == 1 {
+            ASCII_LIMIT + 1
+        } else {
+            0
+        }
     } else {
         0x100
     }
