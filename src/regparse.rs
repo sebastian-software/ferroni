@@ -4798,46 +4798,6 @@ fn prs_cc(
         ncc.mbuf = work_cc.mbuf.take();
     }
 
-    // Case-fold expansion: add fold equivalents for all codes in the class.
-    //
-    // Strategy: invert the iteration so the cost follows the class, not the
-    // fold tables, and avoid the `dyn FnMut` dispatch of apply_all_case_fold.
-    //
-    // - Bitset (0-255): iterate set bits, look up their fold groups
-    // - Multi-byte ranges: walk the class's ranges through the sorted fold
-    //   keys (two binary searches per range), then merge the additions into
-    //   the ranges in one pass instead of one buffer rewrite per code point
-    // - FOLDS2/FOLDS3 (~73 entries): direct iteration, no callback
-    if opton_ignorecase(env.options) {
-        let cc = node.as_cclass_mut().unwrap();
-        let multi_char_alts = fold_cclass_cached(cc, env.case_fold_flag, enc);
-
-        // If there are multi-char fold alternatives, wrap in Alt(CC, string1, ...)
-        if !multi_char_alts.is_empty() {
-            // Apply negation to CC before wrapping
-            if neg {
-                let cc = node.as_cclass_mut().unwrap();
-                cc.set_not();
-            }
-
-            // Build alternation: Alt(CC, Alt(string1, Alt(string2, ...)))
-            let mut alt_tail: Option<Box<Node>> = None;
-            for alt_bytes in multi_char_alts.into_iter().rev() {
-                let mut sn = node_new_str(&alt_bytes);
-                sn.status_add(ND_ST_IGNORECASE);
-                if let Some(tail) = alt_tail {
-                    alt_tail = Some(node_new_alt(sn, Some(tail)));
-                } else {
-                    alt_tail = Some(node_new_alt(sn, None));
-                }
-            }
-            node = node_new_alt(node, alt_tail);
-
-            env.parse_depth -= 1;
-            return Ok(node);
-        }
-    }
-
     // Apply negation
     if neg {
         let cc = node.as_cclass_mut().unwrap();
@@ -4857,7 +4817,7 @@ const FOLD_CACHE_ENTRIES: usize = 32;
 /// Rust-only: grammars fold the same large classes (`(?i)[\w-]`) again and
 /// again, and each expansion visits thousands of fold entries. The result
 /// depends only on the class's bits and ranges, the case-fold flag and the
-/// encoding.
+/// encoding and whether the class is negated.
 fn fold_cclass_cached(
     cc: &mut CClassNode,
     flag: OnigCaseFoldType,
@@ -4873,7 +4833,7 @@ fn fold_cclass_cached(
     type Entry = (
         *const (),
         OnigCaseFoldType,
-        (BitSet, Vec<u8>),
+        (bool, BitSet, Vec<u8>),
         (BitSet, Option<BBuf>, Vec<Vec<u8>>),
     );
     thread_local! {
@@ -4885,7 +4845,7 @@ fn fold_cclass_cached(
         .as_ref()
         .map(|mbuf| mbuf.data.clone())
         .unwrap_or_default();
-    let key = (cc.bs, data);
+    let key = (cc.is_not(), cc.bs, data);
     let cached = CACHE.with(|cache| {
         cache
             .borrow()
@@ -4922,6 +4882,7 @@ fn fold_cclass_cached(
 /// - FOLDS2/FOLDS3 (~73 entries): direct iteration, no callback
 fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -> Vec<Vec<u8>> {
     let ascii_only = crate::regenc::case_fold_is_ascii_only(flag);
+    let negated = cc.is_not();
     let mut codes_to_add: Vec<OnigCodePoint> = Vec::new();
     let mut multi_char_alts: Vec<Vec<u8>> = Vec::new();
     // Decoded once; every membership test below is a binary search here.
@@ -4984,7 +4945,8 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
                     buf.extend_from_slice(&tmp[..len as usize]);
                 }
             }
-            if !buf.is_empty() {
+            // C: multi-character alternatives are only valid for positive classes.
+            if !negated && !buf.is_empty() {
                 multi_char_alts.push(buf);
             }
             for &uf in unfolds {
@@ -5005,7 +4967,8 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
                     buf.extend_from_slice(&tmp[..len as usize]);
                 }
             }
-            if !buf.is_empty() {
+            // C: multi-character alternatives are only valid for positive classes.
+            if !negated && !buf.is_empty() {
                 multi_char_alts.push(buf);
             }
             for &uf in unfolds {
@@ -7139,7 +7102,28 @@ fn prs_exp(
             }
         }
         TokenType::CharProperty => prs_char_property(tok, p, end, pattern, env)?,
-        TokenType::OpenCC => prs_cc(tok, p, end, pattern, env)?,
+        TokenType::OpenCC => {
+            // C: fold only after prs_cc finishes nested set operations and negation.
+            let mut np = prs_cc(tok, p, end, pattern, env)?;
+            if opton_ignorecase(env.options) {
+                let cc = np.as_cclass_mut().unwrap();
+                let multi_char_alts = fold_cclass_cached(cc, env.case_fold_flag, env.enc);
+                if !multi_char_alts.is_empty() {
+                    let mut alt_tail: Option<Box<Node>> = None;
+                    for alt_bytes in multi_char_alts.into_iter().rev() {
+                        let mut sn = node_new_str(&alt_bytes);
+                        sn.status_add(ND_ST_IGNORECASE);
+                        if let Some(tail) = alt_tail {
+                            alt_tail = Some(node_new_alt(sn, Some(tail)));
+                        } else {
+                            alt_tail = Some(node_new_alt(sn, None));
+                        }
+                    }
+                    np = node_new_alt(np, alt_tail);
+                }
+            }
+            np
+        }
         TokenType::Anchor => {
             let ascii_mode = opton_word_ascii(env.options) && is_word_anchor_type(tok.anchor);
             let mut np = node_new_anchor_with_options(tok.anchor, env.options);
@@ -7758,6 +7742,17 @@ mod tests {
             bs: [0; BITSET_REAL_SIZE],
             mbuf: code_range_buf_of(&capitals).into(),
         });
+        // Identical stored sets with opposite negation need different cached
+        // multi-character alternatives. Exercise both in the same cache.
+        let negated_classes: Vec<_> = classes
+            .iter()
+            .map(|class| {
+                let mut cc = copy(class);
+                cc.set_not();
+                cc
+            })
+            .collect();
+        classes.extend(negated_classes);
         let mut kept = 0;
         for flag in [ONIGENC_CASE_FOLD_MIN, ONIGENC_CASE_FOLD_ASCII_ONLY] {
             for class in &classes {
