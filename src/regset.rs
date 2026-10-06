@@ -2815,9 +2815,12 @@ mod tests {
             census(grammar_loader::css_patterns()),
             Census {
                 patterns: 117,
-                table_entries: 107,
-                fallback_entries: 10,
-                fallback_start_filters: 8,
+                // Two look-behind entries ahead of a case-insensitive trie
+                // get C's bounded distance (`LiteralAltSummary`) and join
+                // the table.
+                table_entries: 109,
+                fallback_entries: 8,
+                fallback_start_filters: 6,
                 literal_tries: 33,
                 folded_literal_tries: 33,
                 // Four of them have a start map too weak to search
@@ -3994,7 +3997,7 @@ mod tests {
         );
         assert_eq!(
             census(grammar_loader::css_patterns()),
-            [[0, 0, 32], [0, 0, 3]]
+            [[0, 0, 34], [0, 0, 1]]
         );
         assert_eq!(
             census(grammar_loader::rust_patterns()),

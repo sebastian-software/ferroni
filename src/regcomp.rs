@@ -3564,9 +3564,11 @@ const IN_PEEK: i32 = 1 << 8;
 /// Mirrors C's node_min_byte_len() from regcomp.c.
 fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
     match &node.inner {
-        // A literal alternation trie stores its index; its literals are
-        // never empty.
-        NodeInner::String(_) if node.has_status(ND_ST_LITERAL_ALT) => 1,
+        // A literal alternation trie stores its index; the summary holds the
+        // shortest byte length of the alternation it replaced.
+        NodeInner::String(sn) if node.has_status(ND_ST_LITERAL_ALT) => {
+            LiteralAltSummary::decode(&sn.s).min_len
+        }
         NodeInner::String(sn) => sn.s.len() as OnigLen,
 
         NodeInner::CType(_) | NodeInner::CClass(_) => env.enc.min_enc_len() as OnigLen,
@@ -7048,6 +7050,7 @@ fn try_trie_optimize_alt(
         min_len: literal_refs.iter().map(|l| l.len()).min().unwrap_or(0) as OnigLen,
         max_len: literal_refs.iter().map(|l| l.len()).max().unwrap_or(0) as OnigLen,
         start_bytes,
+        unravelled: Vec::new(),
     };
     let trie = crate::literal_trie::LiteralTrie::build(&literal_refs, false);
     reg.literal_tries.push(trie);
@@ -7061,6 +7064,112 @@ fn try_trie_optimize_alt(
     true
 }
 
+/// `optimize_nodes` with C's maps on the alternation C's
+/// `unravel_case_fold_string` would have left for the literals of a
+/// case-insensitive trie, read from their encoding
+/// (`LiteralAltSummary::unravelled`) without building it: per literal a list
+/// of strings, letter classes (a multibyte range where the letter folds to a
+/// non-ASCII character) and alternations of a segment's strings. A list or
+/// alternation of one node is that node, as unravel leaves it.
+fn optimize_unravelled(encoded: &[u8], opt: &mut OptNode, enc: OnigEncoding, env_mm: &MinMaxLen) {
+    struct Units<'a> {
+        bytes: &'a [u8],
+        at: usize,
+    }
+    impl<'a> Units<'a> {
+        fn take(&mut self, n: usize) -> &'a [u8] {
+            self.at += n;
+            &self.bytes[self.at - n..self.at]
+        }
+        fn num(&mut self) -> usize {
+            u32::from_le_bytes(self.take(4).try_into().unwrap()) as usize
+        }
+    }
+    type Each = fn(&mut OptNode, &mut Units, OnigEncoding, &MinMaxLen);
+
+    // The NodeInner::String arm.
+    fn string(opt: &mut OptNode, text: &[u8], enc: OnigEncoding, env_mm: &MinMaxLen) {
+        opt.clear();
+        set_bound_node_opt_info(opt, env_mm);
+        concat_opt_exact_str(&mut opt.sb, text, enc);
+        add_char_opt_map(&mut opt.map, text[0], enc);
+        opt.len.set(text.len() as OnigLen, text.len() as OnigLen);
+    }
+    // The NodeInner::Alt arm over the next `n` branches.
+    fn alternation(
+        opt: &mut OptNode,
+        units: &mut Units,
+        n: usize,
+        enc: OnigEncoding,
+        env_mm: &MinMaxLen,
+        branch: Each,
+    ) {
+        if n == 1 {
+            return branch(opt, units, enc, env_mm);
+        }
+        for i in 0..n {
+            let mut xo = OptNode::new();
+            branch(&mut xo, units, enc, env_mm);
+            if i == 0 {
+                *opt = xo;
+            } else {
+                alt_merge_node_opt_info(opt, &xo, enc);
+            }
+        }
+    }
+    fn segment_string(opt: &mut OptNode, units: &mut Units, enc: OnigEncoding, env_mm: &MinMaxLen) {
+        let len = units.num();
+        string(opt, units.take(len), enc, env_mm);
+    }
+    fn unit(opt: &mut OptNode, units: &mut Units, enc: OnigEncoding, env_mm: &MinMaxLen) {
+        match units.take(1)[0] {
+            0 => segment_string(opt, units, enc, env_mm),
+            // The NodeInner::CClass arm with C's maps.
+            1 => {
+                let &[lower, multibyte] = units.take(2) else {
+                    unreachable!()
+                };
+                opt.clear();
+                set_bound_node_opt_info(opt, env_mm);
+                if multibyte != 0 {
+                    opt.len
+                        .set(enc.min_enc_len() as OnigLen, enc.max_enc_len() as OnigLen);
+                } else {
+                    add_char_opt_map(&mut opt.map, lower.to_ascii_uppercase(), enc);
+                    add_char_opt_map(&mut opt.map, lower, enc);
+                    opt.len.set(1, 1);
+                }
+            }
+            _ => {
+                let n = units.num();
+                alternation(opt, units, n, enc, env_mm, segment_string);
+            }
+        }
+    }
+    // The NodeInner::List arm.
+    fn literal(opt: &mut OptNode, units: &mut Units, enc: OnigEncoding, env_mm: &MinMaxLen) {
+        let n = units.num();
+        if n == 1 {
+            return unit(opt, units, enc, env_mm);
+        }
+        opt.clear();
+        set_bound_node_opt_info(opt, env_mm);
+        let mut nenv_mm = *env_mm;
+        for _ in 0..n {
+            let mut xo = OptNode::new();
+            unit(&mut xo, units, enc, &nenv_mm);
+            nenv_mm.add(&xo.len);
+            concat_left_node_opt_info(enc, opt, &mut xo);
+        }
+    }
+    let mut units = Units {
+        bytes: encoded,
+        at: 0,
+    };
+    let n = units.num();
+    alternation(opt, &mut units, n, enc, env_mm, literal);
+}
+
 /// Payload of the string node that stands for a literal alternation trie
 /// (`ND_ST_LITERAL_ALT`): the trie's index plus what the optimizer derives
 /// from the alternation it replaces, so a pattern keeps its start-byte map.
@@ -7070,16 +7179,59 @@ struct LiteralAltSummary {
     max_len: OnigLen,
     /// Bytes a match can start with.
     start_bytes: BitSet,
+    /// For a case-insensitive trie, each literal as `unravel_case_fold_string`
+    /// would have expanded it, so the optimizer sees C's alternation
+    /// (`optimize_nodes`). Empty for a case-sensitive trie, whose literals
+    /// are plain strings.
+    unravelled: Vec<Vec<FoldUnit>>,
+}
+
+/// One node of a literal as C's `unravel_case_fold_string` expands it.
+#[derive(Clone, Debug, PartialEq)]
+enum FoldUnit {
+    /// A run of bytes without case folds, one string node.
+    Bytes(Vec<u8>),
+    /// A letter's class of both cases; `multibyte` when it also holds
+    /// non-ASCII members (`ſ` for `s`, `K` for `k`), as a multibyte range.
+    Letter { lower: u8, multibyte: bool },
+    /// A multi-character segment: an alternation of the strings it accepts.
+    Strings(Vec<Vec<u8>>),
 }
 
 impl LiteralAltSummary {
     fn encode(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(12 + SIZE_BITSET);
+        let mut bytes = Vec::with_capacity(16 + SIZE_BITSET);
+        let mut put =
+            |bytes: &mut Vec<u8>, n: usize| bytes.extend_from_slice(&(n as u32).to_le_bytes());
         bytes.extend_from_slice(&self.trie_idx.to_le_bytes());
         bytes.extend_from_slice(&self.min_len.to_le_bytes());
         bytes.extend_from_slice(&self.max_len.to_le_bytes());
         for word in self.start_bytes {
             bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        put(&mut bytes, self.unravelled.len());
+        for units in &self.unravelled {
+            put(&mut bytes, units.len());
+            for unit in units {
+                match unit {
+                    FoldUnit::Bytes(text) => {
+                        bytes.push(0);
+                        put(&mut bytes, text.len());
+                        bytes.extend_from_slice(text);
+                    }
+                    FoldUnit::Letter { lower, multibyte } => {
+                        bytes.extend_from_slice(&[1, *lower, u8::from(*multibyte)]);
+                    }
+                    FoldUnit::Strings(strings) => {
+                        bytes.push(2);
+                        put(&mut bytes, strings.len());
+                        for string in strings {
+                            put(&mut bytes, string.len());
+                            bytes.extend_from_slice(string);
+                        }
+                    }
+                }
+            }
         }
         bytes
     }
@@ -7091,7 +7243,15 @@ impl LiteralAltSummary {
             min_len: word(4),
             max_len: word(8),
             start_bytes: std::array::from_fn(|i| word(12 + 4 * i)),
+            unravelled: Vec::new(),
         }
+    }
+
+    /// The encoded literals as C unravels them (`unravelled`), for
+    /// `optimize_unravelled`; `None` for a case-sensitive trie.
+    fn unravelled(bytes: &[u8]) -> Option<&[u8]> {
+        let units = &bytes[12 + SIZE_BITSET..];
+        (units[..4] != [0; 4]).then_some(units)
     }
 }
 
@@ -7135,8 +7295,7 @@ fn try_case_insensitive_trie(
     };
 
     // Case variants of the first letters, and any lead byte: non-ASCII
-    // input matches too. A single character reads as at least one byte and
-    // a multi-character segment as its shortest accepted string.
+    // input matches too.
     let mut start_bytes = [0; BITSET_REAL_SIZE];
     for literal in &literals {
         bitset_set_bit(&mut start_bytes, literal[0].to_ascii_lowercase() as usize);
@@ -7145,28 +7304,61 @@ fn try_case_insensitive_trie(
     for byte in 0x80..SINGLE_BYTE_SIZE {
         bitset_set_bit(&mut start_bytes, byte);
     }
-    let min_len = literals
+
+    // C: unravel_case_fold_string turns each literal into runs of plain
+    // bytes, letter classes and, for a multi-character segment, an
+    // alternation of its accepted strings. The optimizer reads that form
+    // (`LiteralAltSummary::unravelled`), and the byte lengths follow it: a
+    // class with multibyte members reads 1..max_enc_len bytes.
+    let multibyte_letters: Vec<u8> = folds
+        .class_members
         .iter()
-        .zip(&folds.segments)
-        .map(|(literal, segments)| {
-            segments
-                .iter()
-                .fold(literal.len(), |len, &(_, seg_len, accepted)| {
-                    let shortest = folds.accepted[accepted]
-                        .iter()
-                        .map(Vec::len)
-                        .min()
-                        .unwrap_or(0);
-                    len - seg_len + shortest
-                })
-        })
-        .min()
-        .unwrap_or(0);
+        .map(|&(_, letter)| letter)
+        .collect();
+    let max_enc_len = reg.enc.max_enc_len();
+    let mut unravelled = Vec::with_capacity(literals.len());
+    let (mut min_len, mut max_len) = (usize::MAX, 0);
+    for (literal, segments) in literals.iter().zip(&folds.segments) {
+        let mut units: Vec<FoldUnit> = Vec::new();
+        let (mut lo, mut hi) = (0, 0);
+        let mut segments = segments.iter().peekable();
+        let mut pos = 0;
+        while pos < literal.len() {
+            if let Some(&(_, seg_len, accepted)) = segments.next_if(|&&(start, ..)| start == pos) {
+                let strings = &folds.accepted[accepted];
+                lo += strings.iter().map(Vec::len).min().unwrap_or(seg_len);
+                hi += strings.iter().map(Vec::len).max().unwrap_or(seg_len);
+                units.push(FoldUnit::Strings(strings.clone()));
+                pos += seg_len;
+                continue;
+            }
+            let c = literal[pos];
+            if c.is_ascii_alphabetic() {
+                let lower = c.to_ascii_lowercase();
+                let multibyte = multibyte_letters.contains(&lower);
+                lo += 1;
+                hi += if multibyte { max_enc_len } else { 1 };
+                units.push(FoldUnit::Letter { lower, multibyte });
+            } else {
+                lo += 1;
+                hi += 1;
+                match units.last_mut() {
+                    Some(FoldUnit::Bytes(text)) => text.push(c),
+                    _ => units.push(FoldUnit::Bytes(vec![c])),
+                }
+            }
+            pos += 1;
+        }
+        min_len = min_len.min(lo);
+        max_len = max_len.max(hi);
+        unravelled.push(units);
+    }
     let summary = LiteralAltSummary {
         trie_idx: reg.literal_tries.len() as u32,
         min_len: min_len as OnigLen,
-        max_len: INFINITE_LEN,
+        max_len: max_len as OnigLen,
         start_bytes,
+        unravelled,
     };
     let trie = crate::literal_trie::LiteralTrie::build_folded(&literals, folds);
     reg.literal_tries.push(trie);
@@ -9439,8 +9631,11 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
             }
             len
         }
-        // A literal alternation trie stores its index, not its text.
-        NodeInner::String(_) if node.has_status(ND_ST_LITERAL_ALT) => INFINITE_LEN,
+        // A literal alternation trie stores its index; the summary holds the
+        // longest byte length of the alternation it replaced.
+        NodeInner::String(sn) if node.has_status(ND_ST_LITERAL_ALT) => {
+            LiteralAltSummary::decode(&sn.s).max_len
+        }
         NodeInner::String(sn) => sn.s.len() as OnigLen,
         NodeInner::CType(_) | NodeInner::CClass(_) => env.enc.max_enc_len() as OnigLen,
         // C: the maximum over the referenced groups of
@@ -9702,8 +9897,21 @@ fn optimize_nodes(
     // Literal alternation trie: the length range and start bytes of the
     // alternation it replaced, as an alternation of strings would merge
     // them (no exact string).
+    // C's optimizer sees a case-insensitive trie as the alternation C
+    // unravels, whose map C may drop (a branch's best map sits behind the
+    // others'). The Rust-only start maps take every byte the trie can start
+    // with, as for a case-sensitive trie.
     if node.has_status(ND_ST_LITERAL_ALT) {
         if let NodeInner::String(sn) = &node.inner {
+            if !start_maps.extra {
+                if let Some(unravelled) = LiteralAltSummary::unravelled(&sn.s) {
+                    optimize_unravelled(unravelled, opt, enc, env_mm);
+                    if opt.map.value == 0 {
+                        start_maps.skipped.set(true);
+                    }
+                    return 0;
+                }
+            }
             let summary = LiteralAltSummary::decode(&sn.s);
             for byte in bitset_members(&summary.start_bytes) {
                 add_char_opt_map(&mut opt.map, byte as u8, enc);
@@ -10978,6 +11186,39 @@ mod tests {
         assert_eq!(
             optimizer(br"(?:\d|.[ab]*)*[^\s]b+.|b*(?:=+) *"),
             (OptimizeType::Map, 0, INFINITE_LEN, b"=b".to_vec())
+        );
+        // A case-insensitive trie keeps C's lengths and map of the
+        // alternation it replaced (checked against C): `s` and `k` fold to
+        // multibyte characters, so a branch starting with one gives no map,
+        // and `ss` also reads as `ß` and `ẞ`.
+        let abap = &br"(?i)(?<=\s)(align|alpha|case|country|currency|date|decimals|exponent|number|pad|sign|style|time|timestamp|timezone|width|xsd|zero)(?=\s=)"[..];
+        assert_eq!(optimizer(abap), (OptimizeType::Map, 4, 15, b"=".to_vec()));
+        for pattern in [
+            abap,
+            br"(?i)(?:kab|sab|dex|dey|dez)(?=\s=)",
+            br"(?i)(?:align|alpha|case|country|currency|date)(?=\s=)",
+            br"(?i)(?:ssa|ssb|ssc|ssd|sse)x",
+        ] {
+            let reg = onig_new(
+                pattern,
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            assert_eq!(reg.literal_tries.len(), 1, "{pattern:?}");
+        }
+        assert_eq!(
+            optimizer(br"(?i)(?:kab|sab|dex|dey|dez)(?=\s=)"),
+            (OptimizeType::Map, 4, 10, b"=".to_vec())
+        );
+        assert_eq!(
+            optimizer(br"(?i)(?:align|alpha|case|country|currency|date)(?=\s=)"),
+            (OptimizeType::Map, 0, 0, b"ACDacd".to_vec())
+        );
+        assert_eq!(
+            optimizer(br"(?i)(?:ssa|ssb|ssc|ssd|sse)x"),
+            (OptimizeType::Map, 0, 0, vec![b'S', b's', 0xC3, 0xC5, 0xE1])
         );
         // C has no optimizer for these: a Rust-only start map fills in.
         for pattern in [&br"\s+"[..], br"\S+", br"\d+"] {
