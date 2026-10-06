@@ -1516,6 +1516,11 @@ pub struct MatchArg {
     /// match may start after the attempt position, but it ends there plus
     /// this length (`onig_search_bounds`).
     pub(crate) match_len: i32,
+    /// Rust-only: while set, a search with a region records captures only in
+    /// an attempt at this position. Other attempts run untracked and leave
+    /// the region alone; a match there runs again to record its captures
+    /// (`onig_search_inner_two_pass`).
+    pub(crate) capture_position: Option<usize>,
     // Reusable VM state (avoids heap allocation per match_at call)
     stack: Vec<StackEntry>,
     mem_start_stk: Vec<MemPtr>,
@@ -1547,6 +1552,7 @@ impl MatchArg {
             time_end: None,
             subexp_call_in_search_counter: 0,
             match_len: 0,
+            capture_position: None,
             stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
@@ -1579,6 +1585,7 @@ impl MatchArg {
             time_end: None,
             subexp_call_in_search_counter: 0,
             match_len: 0,
+            capture_position: None,
             stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
             mem_start_stk: Vec::new(),
             mem_end_stk: Vec::new(),
@@ -3586,7 +3593,9 @@ fn match_at(
     // so such runs keep the bookkeeping to stay observably identical to C.
     // A region without capture groups only needs the match bounds, which
     // OP_END records either way.
-    if (msa.region.is_some() && reg.num_mem > 0)
+    if (msa.region.is_some()
+        && reg.num_mem > 0
+        && msa.capture_position.is_none_or(|at| at == sstart))
         || reg.needs_capture_tracking
         || (msa.match_stack_limit != 0 && (reg.push_mem_start | reg.push_mem_end) != 0)
     {
@@ -3615,19 +3624,31 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     // Reuse stack and capture-group arrays from MatchArg (avoids heap alloc per call)
     let mut stack = std::mem::take(&mut msa.stack);
     stack.clear();
-    // Untracked runs never touch the capture arrays; they stay empty and the
-    // buffers remain in `msa` for the next tracked run.
-    let mut mem_start_stk = Vec::new();
-    let mut mem_end_stk = Vec::new();
-    if TRACK_CAPTURES {
+    // C keeps both capture arrays in an alloca and invalidates them at the
+    // start of every match_at. A tracked run with few groups keeps them on
+    // the stack likewise, invalidated with a few fixed-size stores; one with
+    // more groups reuses the buffers in `msa`. Untracked runs never touch
+    // them.
+    let mut mem_start_buf;
+    let mut mem_end_buf;
+    let mut mem_start_vec = Vec::new();
+    let mut mem_end_vec = Vec::new();
+    let (mem_start_stk, mem_end_stk): (&mut [MemPtr], &mut [MemPtr]) = if !TRACK_CAPTURES {
+        (&mut [], &mut [])
+    } else if num_mem < MEM_STK_INLINE {
+        mem_start_buf = [MemPtr::invalid(); MEM_STK_INLINE];
+        mem_end_buf = [MemPtr::invalid(); MEM_STK_INLINE];
+        (&mut mem_start_buf, &mut mem_end_buf)
+    } else {
         let need = num_mem + 1;
-        mem_start_stk = std::mem::take(&mut msa.mem_start_stk);
-        mem_start_stk.resize(need, MemPtr::invalid());
-        mem_start_stk.fill(MemPtr::invalid());
-        mem_end_stk = std::mem::take(&mut msa.mem_end_stk);
-        mem_end_stk.resize(need, MemPtr::invalid());
-        mem_end_stk.fill(MemPtr::invalid());
-    }
+        mem_start_vec = std::mem::take(&mut msa.mem_start_stk);
+        mem_start_vec.resize(need, MemPtr::invalid());
+        mem_start_vec.fill(MemPtr::invalid());
+        mem_end_vec = std::mem::take(&mut msa.mem_end_stk);
+        mem_end_vec.resize(need, MemPtr::invalid());
+        mem_end_vec.fill(MemPtr::invalid());
+        (&mut mem_start_vec, &mut mem_end_vec)
+    };
 
     let mut keep: usize = sstart;
     let mut best_len: i32 = ONIG_MISMATCH;
@@ -3754,8 +3775,14 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     } else if n > best_len {
                         best_len = n;
 
-                        // Populate region with capture groups
-                        if let Some(ref mut region) = msa.region {
+                        // Populate region with capture groups. An untracked
+                        // run with groups has a region only while it defers
+                        // the captures to a second pass (`capture_position`).
+                        if let Some(region) = msa
+                            .region
+                            .as_mut()
+                            .filter(|_| TRACK_CAPTURES || num_mem == 0)
+                        {
                             if let Err(err) = populate_region_for_match(
                                 region,
                                 reg,
@@ -3763,8 +3790,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                                 keep,
                                 s,
                                 &stack,
-                                &mem_start_stk,
-                                &mem_end_stk,
+                                mem_start_stk,
+                                mem_end_stk,
                             ) {
                                 best_len = err;
                                 break;
@@ -3778,9 +3805,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             // this match's retries to the search's count.
                             msa.retry_limit_in_search_counter += retry_in_match_counter;
                             msa.stack = stack;
-                            if TRACK_CAPTURES {
-                                msa.mem_start_stk = mem_start_stk;
-                                msa.mem_end_stk = mem_end_stk;
+                            if TRACK_CAPTURES && num_mem >= MEM_STK_INLINE {
+                                msa.mem_start_stk = mem_start_vec;
+                                msa.mem_end_stk = mem_end_vec;
                             }
                             return best_len;
                         }
@@ -4344,8 +4371,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                                 captures,
                                 bounds,
                                 &mut stack,
-                                &mut mem_start_stk,
-                                &mut mem_end_stk,
+                                mem_start_stk,
+                                mem_end_stk,
                             );
                         }
                     }
@@ -4949,8 +4976,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if num_mem < 1 {
                     goto_fail = true;
                 } else if let (Some(ms), Some(me)) = (
-                    get_mem_start(reg, &stack, &mem_start_stk, 1),
-                    get_mem_end(reg, &stack, &mem_end_stk, 1),
+                    get_mem_start(reg, &stack, mem_start_stk, 1),
+                    get_mem_end(reg, &stack, mem_end_stk, 1),
                 ) {
                     let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                     if right_range.saturating_sub(s) < ref_len
@@ -4972,8 +4999,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if num_mem < 2 {
                     goto_fail = true;
                 } else if let (Some(ms), Some(me)) = (
-                    get_mem_start(reg, &stack, &mem_start_stk, 2),
-                    get_mem_end(reg, &stack, &mem_end_stk, 2),
+                    get_mem_start(reg, &stack, mem_start_stk, 2),
+                    get_mem_end(reg, &stack, mem_end_stk, 2),
                 ) {
                     let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                     if right_range.saturating_sub(s) < ref_len
@@ -4997,8 +5024,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     if n1 > num_mem {
                         goto_fail = true;
                     } else if let (Some(ms), Some(me)) = (
-                        get_mem_start(reg, &stack, &mem_start_stk, n1),
-                        get_mem_end(reg, &stack, &mem_end_stk, n1),
+                        get_mem_start(reg, &stack, mem_start_stk, n1),
+                        get_mem_end(reg, &stack, mem_end_stk, n1),
                     ) {
                         let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                         if right_range.saturating_sub(s) < ref_len
@@ -5027,8 +5054,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     if n1 > num_mem {
                         goto_fail = true;
                     } else if let (Some(ms), Some(me)) = (
-                        get_mem_start(reg, &stack, &mem_start_stk, n1),
-                        get_mem_end(reg, &stack, &mem_end_stk, n1),
+                        get_mem_start(reg, &stack, mem_start_stk, n1),
+                        get_mem_end(reg, &stack, mem_end_stk, n1),
                     ) {
                         let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
                         if ref_len != 0
@@ -5068,8 +5095,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             continue;
                         }
                         if let (Some(ms), Some(me)) = (
-                            get_mem_start(reg, &stack, &mem_start_stk, mem),
-                            get_mem_end(reg, &stack, &mem_end_stk, mem),
+                            get_mem_start(reg, &stack, mem_start_stk, mem),
+                            get_mem_end(reg, &stack, mem_end_stk, mem),
                         ) {
                             participated = true;
                             let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
@@ -5111,8 +5138,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             continue;
                         }
                         if let (Some(ms), Some(me)) = (
-                            get_mem_start(reg, &stack, &mem_start_stk, mem),
-                            get_mem_end(reg, &stack, &mem_end_stk, mem),
+                            get_mem_start(reg, &stack, mem_start_stk, mem),
+                            get_mem_end(reg, &stack, mem_end_stk, mem),
                         ) {
                             participated = true;
                             let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
@@ -5160,8 +5187,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         if mem > num_mem {
                             continue;
                         }
-                        if get_mem_start(reg, &stack, &mem_start_stk, mem).is_some()
-                            && get_mem_end(reg, &stack, &mem_end_stk, mem).is_some()
+                        if get_mem_start(reg, &stack, mem_start_stk, mem).is_some()
+                            && get_mem_end(reg, &stack, mem_end_stk, mem).is_some()
                         {
                             found = true;
                             break;
@@ -5224,8 +5251,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             if mem > num_mem {
                                 continue;
                             }
-                            if get_mem_start(reg, &stack, &mem_start_stk, mem).is_some()
-                                && get_mem_end(reg, &stack, &mem_end_stk, mem).is_some()
+                            if get_mem_start(reg, &stack, mem_start_stk, mem).is_some()
+                                && get_mem_end(reg, &stack, mem_end_stk, mem).is_some()
                             {
                                 f = true;
                                 break;
@@ -5413,8 +5440,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     stack_pop_to_mark(
                         &mut stack,
                         id as usize,
-                        &mut mem_start_stk,
-                        &mut mem_end_stk,
+                        mem_start_stk,
+                        mem_end_stk,
                         &mut subexp_call_nest_counter,
                     );
                     p += 1;
@@ -6117,8 +6144,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             let pop_result = stack_pop(
                 &mut stack,
                 pop_level,
-                &mut mem_start_stk,
-                &mut mem_end_stk,
+                mem_start_stk,
+                mem_end_stk,
                 reg,
                 &mut callout_data,
                 str_data,
@@ -6147,13 +6174,17 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
 
     // Return reusable buffers to MatchArg for next call
     msa.stack = stack;
-    if TRACK_CAPTURES {
-        msa.mem_start_stk = mem_start_stk;
-        msa.mem_end_stk = mem_end_stk;
+    if TRACK_CAPTURES && num_mem >= MEM_STK_INLINE {
+        msa.mem_start_stk = mem_start_vec;
+        msa.mem_end_stk = mem_end_vec;
     }
 
     best_len
 }
+
+/// Capture arrays of up to this many entries (group 0 included) live on the
+/// stack of `match_at_impl`.
+const MEM_STK_INLINE: usize = 8;
 
 /// Stack entries a thread-cached `MatchArg` keeps allocated between searches.
 const MAX_CACHED_STACK_ENTRIES: usize = 1 << 16;
@@ -7349,25 +7380,24 @@ fn onig_search_inner_two_pass(
     start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
     msa: &mut MatchArg,
 ) -> i32 {
-    let mut region = match msa.region.take() {
-        Some(r) => r,
-        None => {
-            return onig_search_inner_core_with_right_range(
-                reg,
-                str_data,
-                end,
-                start,
-                range,
-                right_range,
-                find_longest_across_positions,
-                start_filter,
-                msa,
-            );
-        }
-    };
-    region.resize(reg.num_mem + 1);
-    region.clear();
+    if msa.region.is_none() {
+        return onig_search_inner_core_with_right_range(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            find_longest_across_positions,
+            start_filter,
+            msa,
+        );
+    }
 
+    // The attempt at `start` records its captures as it matches: a match
+    // there, the common case of a scanner search, needs no second pass.
+    // Later attempts run untracked.
+    msa.capture_position = Some(start);
     let match_start = onig_search_inner_core_with_right_range(
         reg,
         str_data,
@@ -7379,12 +7409,11 @@ fn onig_search_inner_two_pass(
         start_filter,
         msa,
     );
-    if match_start < 0 {
-        msa.region = Some(region);
+    msa.capture_position = None;
+    if match_start < 0 || match_start as usize == start {
         return match_start;
     }
 
-    msa.region = Some(region);
     msa.best_len = ONIG_MISMATCH;
     msa.best_s = 0;
 
@@ -9663,6 +9692,64 @@ mod tests {
             let region = region.expect("region");
             assert_eq!((region.beg[0], region.end[0]), (beg, end));
             assert_eq!((region.beg[1], region.end[1]), (g1_beg, g1_end));
+        }
+    }
+
+    #[test]
+    fn captures_match_c_on_stack_and_reused_capture_arrays() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        // A tracked run keeps up to MEM_STK_INLINE capture slots on its own
+        // stack and reuses the MatchArg's buffers for more. Groups that never
+        // participate move a pattern to the reused buffers; patterns of both
+        // kinds and sizes alternate on one thread. Expected regions are C
+        // Oniguruma's.
+        type Case = (&'static str, &'static [u8], &'static [(i32, i32)]);
+        let cases: [Case; 6] = [
+            // Groups in a loop keep their last iteration.
+            ("((a)|(b))*c", b"xabac", &[(1, 5), (3, 4), (3, 4), (2, 3)]),
+            ("(.)*x", b"abxcx", &[(0, 5), (3, 4)]),
+            // Backtracking restores the captures of abandoned paths.
+            (
+                "(a|ab)(c|bcd)(d*)",
+                b"abcd",
+                &[(0, 4), (0, 1), (1, 4), (4, 4)],
+            ),
+            ("(?:(a)|b)*", b"aba", &[(0, 3), (2, 3)]),
+            ("((a)|b)*?c", b"abbc", &[(0, 4), (2, 3), (0, 1)]),
+            ("(a)|(b)", b"b", &[(0, 1), (-1, -1), (0, 1)]),
+        ];
+        let pads = [0, MEM_STK_INLINE, 4 * MEM_STK_INLINE];
+        for round in 0..pads.len() {
+            for (pattern, text, expected) in cases {
+                for tier in 0..pads.len() {
+                    let pad = pads[(round + tier) % pads.len()];
+                    let pattern = format!("{pattern}{}", "(x)?".repeat(pad));
+                    let reg = compile_full(pattern.as_bytes());
+                    let num_mem = reg.num_mem as usize;
+                    assert_eq!(num_mem >= MEM_STK_INLINE, pad > 0);
+                    let (pos, region) = onig_search(
+                        &reg,
+                        text,
+                        text.len(),
+                        0,
+                        text.len(),
+                        Some(OnigRegion::new()),
+                        ONIG_OPTION_NONE,
+                    );
+                    assert_eq!(pos, expected[0].0, "{pattern}");
+                    let region = region.expect("region");
+                    for (i, &bounds) in expected.iter().enumerate() {
+                        assert_eq!(
+                            (region.beg[i], region.end[i]),
+                            bounds,
+                            "{pattern} group {i}"
+                        );
+                    }
+                    for i in expected.len()..region.num_regs as usize {
+                        assert_eq!(region.beg[i], ONIG_REGION_NOTPOS, "{pattern} group {i}");
+                    }
+                }
+            }
         }
     }
 
