@@ -2820,7 +2820,9 @@ mod tests {
                 fallback_start_filters: 8,
                 literal_tries: 33,
                 folded_literal_tries: 33,
-                without_optimizer: 6,
+                // Four of them have a start map too weak to search
+                // (`extra_start_map_filters`), which still dispatches them.
+                without_optimizer: 10,
                 capture_tracking: 0,
                 fused_look_behinds: 64,
                 stepping_look_behinds: 11,

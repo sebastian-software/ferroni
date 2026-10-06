@@ -9904,6 +9904,40 @@ fn set_optimize_map(reg: &mut RegexType, m: &OptMap) {
     reg.map_ascii_ranges = MapAsciiRanges::of(&m.map);
 }
 
+/// Rust-only: the share of the ASCII bytes' position value an extra start
+/// map has to leave out to be searched (`extra_start_map_filters`).
+const EXTRA_START_MAP_MIN_LEFT_OUT: i32 = 20;
+
+/// Rust-only: whether a start map from the extra class and type maps, for an
+/// expression C gives no optimizer, leaves out enough to be searched. A map
+/// at the match start is searched once per position it admits
+/// (`forward_search`), which costs a fair part of a failed attempt; a map
+/// that leaves out next to nothing, such as the one of `[^\\]`, makes every
+/// attempt dearer and skips almost none. C's position values
+/// (`map_position_value`) rate how often a byte occurs in text; the map is
+/// searched when the bytes it leaves out are worth at least 1/20 of the
+/// ASCII bytes' value. Over the grammar patterns this keeps every map whose
+/// search measured cheaper than trying every position; the break-even lies
+/// between 1/20 and 1/10.
+///
+/// Other maps are kept: one behind a line anchor, whose search also steps to
+/// line starts (`sub_anchor`), and one at a distance above 0. That one is
+/// searched once per window, which the bytecode start map then narrows
+/// (`window_start_map`), or once per search where the distance is
+/// unbounded; there it also keeps a RegSet entry a fallback entry with a
+/// start filter.
+fn extra_start_map_filters(enc: OnigEncoding, m: &OptMap) -> bool {
+    if (m.anc.left & ANCR_BEGIN_LINE) != 0 || m.mm.max != 0 {
+        return true;
+    }
+    let ascii: i32 = (0..0x80).map(|byte| map_position_value(enc, byte)).sum();
+    let left_out: i32 = (0..CHAR_MAP_SIZE)
+        .filter(|&byte| m.map[byte] == 0)
+        .map(|byte| map_position_value(enc, byte))
+        .sum();
+    left_out * EXTRA_START_MAP_MIN_LEFT_OUT >= ascii
+}
+
 /// The bytes a match can start with, when the string or map
 /// `set_optimize_info_from_tree` would choose from `opt` sits at the match
 /// start.
@@ -9961,8 +9995,11 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
     // Rust-only: where C finds neither a string nor a byte map, and so
     // attempts a match at every position, a start map computed with the
     // extra class and type maps lets the search skip positions no match can
-    // start at. Where C has an optimizer it stays C's, so the search attempts
-    // exactly C's positions (which shows once an attempt hits a retry limit).
+    // start at, where it leaves out enough to pay for its search
+    // (`extra_start_map_filters`). A map at the match start that does not
+    // still routes RegSet dispatch, whose table costs the same for any map.
+    // Where C has an optimizer it stays C's, so the search attempts exactly
+    // C's positions (which shows once an attempt hits a retry limit).
     // Where C's optimizer sits at an unbounded distance but the extra maps
     // would give a bounded one, that only steers the RegSet
     // (`start_dispatch`); a bounded C optimizer is dispatched by start bytes
@@ -9988,7 +10025,12 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
         ) == 0
         {
             if !c_has_optimizer {
-                opt.map = start_opt.map;
+                if extra_start_map_filters(reg.enc, &start_opt.map) {
+                    opt.map = start_opt.map;
+                } else {
+                    // A map at the match start (see above).
+                    start_bytes = Some(start_opt.map.map);
+                }
             } else {
                 start_bytes = optimizer_start_bytes(reg.enc, &start_opt);
                 reg.start_dispatch = optimizer_distance_max(reg.enc, &start_opt)
@@ -10022,7 +10064,8 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
         reg.first_byte_map = opt.map.map;
         reg.has_first_byte_map = true;
     }
-    // A `start_dispatch` entry is dispatched by these bytes.
+    // A `start_dispatch` entry is dispatched by these bytes, and so is an
+    // entry whose extra start map was too weak to search.
     if let Some(start_bytes) = start_bytes {
         reg.first_byte_map = start_bytes;
         reg.has_first_byte_map = true;
@@ -10712,7 +10755,7 @@ mod tests {
             (OptimizeType::Map, 0, INFINITE_LEN, b"=b".to_vec())
         );
         // C has no optimizer for these: a Rust-only start map fills in.
-        for pattern in [&br"\s+"[..], br#"[^"]+"#, br"\d+"] {
+        for pattern in [&br"\s+"[..], br"\S+", br"\d+"] {
             let (optimize, dist_min, dist_max, _) = optimizer(pattern);
             assert_eq!(
                 (optimize, dist_min, dist_max),
@@ -10720,6 +10763,61 @@ mod tests {
                 "{pattern:?}"
             );
         }
+    }
+
+    /// An extra start map that leaves out next to nothing is not searched:
+    /// the search attempts every position, as C's does, and the RegSet still
+    /// dispatches by the map.
+    #[test]
+    fn weak_extra_start_map_is_not_searched() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::ONIG_OPTION_NONE;
+        use crate::regsyntax::OnigSyntaxOniguruma;
+
+        let compile = |pattern: &[u8]| {
+            onig_new(
+                pattern,
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        // Below 1/20 of the ASCII position value left out: `\` (5), `"`
+        // and `'` (7 + 4), tab and space (10 + 12), of 606.
+        for (pattern, left_out) in [
+            (&br"[^\\]$"[..], &b"\\"[..]),
+            (br"(?=[^\\])$", b"\\"),
+            (br#"[^"']+"#, b"\"'"),
+            (br"[^\t ]", b"\t "),
+        ] {
+            let reg = compile(pattern);
+            assert_eq!(reg.optimize, OptimizeType::None, "{pattern:?}");
+            assert!(reg.has_first_byte_map, "{pattern:?}");
+            let excluded: Vec<u8> = (0..=255u8)
+                .filter(|&b| reg.first_byte_map[b as usize] == 0)
+                .collect();
+            assert_eq!(excluded, left_out, "{pattern:?}");
+        }
+        // Whitespace (44), a line anchor, or a distance above 0 keep the map.
+        for pattern in [&br"\S"[..], br"(?=^[^\\])", br".?[^\\]", br"\s*(?=[^;{])"] {
+            assert_eq!(compile(pattern).optimize, OptimizeType::Map, "{pattern:?}");
+        }
+        let distance = |pattern: &[u8]| {
+            let reg = compile(pattern);
+            (reg.dist_min, reg.dist_max)
+        };
+        assert_eq!(distance(br".?[^\\]"), (0, 4));
+        assert_eq!(distance(br"\s*(?=[^;{])"), (0, INFINITE_LEN));
+
+        // The search still finds the right starts.
+        let reg = compile(br"[^\\]$");
+        let search = |text: &[u8]| {
+            let end = text.len();
+            crate::regexec::onig_search(&reg, text, end, 0, end, None, ONIG_OPTION_NONE).0
+        };
+        assert_eq!(search(b"a\\\nb\\"), ONIG_MISMATCH);
+        assert_eq!(search(b"a\\\nbc"), 4);
     }
 
     /// A call contributes its group's minimum length, so a loop over a body
