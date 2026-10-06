@@ -3782,7 +3782,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     // forward scan, the scan's next attempt starts here, with the state this
     // function's prologue sets up, instead of in a new call from the search
     // loop (see `ForwardScan`). Under FIND_LONGEST an attempt can reach the
-    // bottom after a match; that ends the call as before.
+    // bottom after a match; that ends the call as before. Per-attempt state
+    // added to the prologue above must be reset here too.
     macro_rules! attempt_failed {
         () => {{
             if let Some(scan) = scan.as_deref_mut().filter(|_| best_len == ONIG_MISMATCH) {
