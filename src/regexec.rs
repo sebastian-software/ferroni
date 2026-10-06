@@ -3405,7 +3405,13 @@ fn single_op_matches(
             OperationPayload::Exact { s: exact },
         ) => {
             let n = op.opcode as usize - OpCode::Str1 as usize + 1;
-            available >= n && exact[..n] == str_data[s..s + n]
+            // A byte loop: a slice comparison of at most five bytes would
+            // call memcmp.
+            available >= n
+                && exact[..n]
+                    .iter()
+                    .zip(&str_data[s..s + n])
+                    .all(|(a, b)| a == b)
         }
         (OpCode::StrN, OperationPayload::ExactN { s: exact, n }) => {
             let n = *n as usize;
