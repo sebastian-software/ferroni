@@ -651,3 +651,95 @@ fn perl_ng_relative_call() {
     x2_syn(&OnigSyntaxPerl_NG, b"(?+1)(abc)", b"abcabc", 0, 6);
     x2_syn(&OnigSyntaxPerl_NG, b"(abc)(?1)", b"abcabc", 0, 6);
 }
+
+// ============================================================================
+// Back-references in look-behinds (Ferroni regressions, not in test_syntax.c)
+// ============================================================================
+//
+// C measures a back-reference by the groups it refers to (node_char_len1),
+// so a look-behind over a fixed-length group has a fixed length and compiles
+// in syntaxes without variable-length look-behinds. Expectations checked
+// against C Oniguruma (UTF-8).
+
+#[test]
+fn perl_look_behind_back_reference_to_fixed_group() {
+    x2_syn(&OnigSyntaxPerl, b"(a)(?<=\\1)b", b"ab", 0, 2);
+    x2_syn(&OnigSyntaxPerl_NG, b"(?<n>ab)(?<=\\k<n>)c", b"abc", 0, 3);
+    n_syn(&OnigSyntaxPerl, b"(ab)(?<!\\1)c", b"abc");
+    x2_syn(
+        &OnigSyntaxPerl,
+        b"([\"'])(?:`\\1|.(?<!\\1))*\\1",
+        b"x'a`'b'",
+        1,
+        7,
+    );
+    // A reference inside its own group (RECURSION) counts as empty.
+    x2_syn(&OnigSyntaxPerl, b"((?<=\\1)|^)a", b"a", 0, 1);
+    e_syn(
+        &OnigSyntaxPerl,
+        b"(a|bc)(?<=\\1)",
+        b"",
+        ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+    );
+    e_syn(
+        &OnigSyntaxPerl,
+        b"(a+)(?<=\\1)",
+        b"",
+        ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+    );
+}
+
+#[test]
+fn ruby_look_behind_back_reference_alternatives() {
+    // Branches of different fixed lengths become one look-behind each
+    // (CHAR_LEN_TOP_ALT_FIXED).
+    x2_syn(&OnigSyntaxRuby, b"(a)(?<=bc|\\1)x", b"ax", 0, 2);
+    // A reference to several groups merges their lengths.
+    x2_syn(&OnigSyntaxRuby, b"(?<n>a)(?<n>b)(?<=\\k<n>)c", b"abc", 0, 3);
+    e_syn(
+        &OnigSyntaxRuby,
+        b"(?<n>a)(?<n>bc)(?<=\\k<n>)",
+        b"",
+        ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+    );
+    // A forward reference measures the group as written.
+    n_syn(&OnigSyntaxRuby, b"(?<=\\1)(a)", b"aa");
+}
+
+#[test]
+fn look_behind_reference_to_untuned_case_folded_group() {
+    // C measures a group that follows the look-behind before case folding
+    // has rewritten it, and rejects its case-insensitive text.
+    e_syn(
+        &OnigSyntaxOniguruma,
+        b"(?i)(?<=\\1)(a)",
+        b"",
+        ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+    );
+    e_syn(
+        &OnigSyntaxOniguruma,
+        b"(?<=\\g<1>)(?i:(a))",
+        b"",
+        ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
+    );
+    x2_syn(&OnigSyntaxOniguruma, b"(?i)(a)(?<=\\1)b", b"Ab", 0, 2);
+}
+
+#[test]
+fn look_behind_call_into_recursive_group() {
+    // The recursive inner call counts as any length (C: MARK1 on the group).
+    x2_syn(
+        &OnigSyntaxOniguruma,
+        b"(?<=\\g<1>)(a\\g<1>?b)",
+        b"abab",
+        2,
+        4,
+    );
+    x2_syn(
+        &OnigSyntaxOniguruma,
+        b"(a\\g<1>?b)(?<=\\g<1>)",
+        b"aabb",
+        0,
+        4,
+    );
+}
