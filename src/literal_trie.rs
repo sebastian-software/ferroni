@@ -96,6 +96,12 @@ impl CaseFolds {
         }
         let bytes = &input[i..i + len];
         let code = ONIG_ENCODING_UTF8.mbc_to_code(bytes, len);
+        // A class instruction looks a multibyte character up in its code
+        // ranges only, which hold no ASCII member: an overlong `k` (E0 81 AB)
+        // is not one.
+        if code < 0x80 {
+            return None;
+        }
         if let Some(member_of) = self.class_member(code) {
             Some((Folded::Letter(member_of), len))
         } else {

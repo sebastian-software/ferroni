@@ -3467,7 +3467,6 @@ fn single_op_matches(
             } else {
                 let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
                 is_in_code_range(mb, code)
-                    || ((code as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, code as usize))
             };
             in_class != not
         }
@@ -4140,14 +4139,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             let in_class = if len == 1 {
                                 bitset_at(bsp, b as usize)
                             } else {
+                                // C: cclass_mb. A multibyte character is only
+                                // looked up in the code ranges.
                                 let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
-                                if is_in_code_range(mb, code) {
-                                    true
-                                } else if (code as usize) < SINGLE_BYTE_SIZE {
-                                    bitset_at(bsp, code as usize)
-                                } else {
-                                    false
-                                }
+                                is_in_code_range(mb, code)
                             };
                             if in_class == not {
                                 goto_fail = true;
@@ -4448,13 +4443,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             bitset_at(bsp, b as usize)
                         } else {
                             let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
-                            if is_in_code_range(mb, code) {
-                                true
-                            } else if (code as usize) < SINGLE_BYTE_SIZE {
-                                bitset_at(bsp, code as usize)
-                            } else {
-                                false
-                            }
+                            is_in_code_range(mb, code)
                         };
                         if !in_class {
                             break;
@@ -4592,8 +4581,6 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             } else {
                                 let code = enc.mbc_to_code(&str_data[x..], end.saturating_sub(x));
                                 is_in_code_range(mb, code)
-                                    || ((code as usize) < SINGLE_BYTE_SIZE
-                                        && bitset_at(bsp, code as usize))
                             };
                             (!in_class).then_some(x + len)
                         },

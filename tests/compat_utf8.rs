@@ -1413,6 +1413,55 @@ fn cc_case_fold_negated_no_multichar() {
 }
 
 #[test]
+fn cc_nested_negation_multibyte() {
+    // Inverting a nested class sets the bitset bits from 0x80 on. C never
+    // reads them for a multibyte character: a class instruction looks it up
+    // in the code ranges only. Expectations checked against pinned C.
+    n("[[^é]]".as_bytes(), "é".as_bytes());
+    x2("[[^é]]".as_bytes(), b"a", 0, 1);
+    n("[a[^é]]".as_bytes(), "é".as_bytes());
+    x2("[^[^é]]".as_bytes(), "é".as_bytes(), 0, 2);
+    n(b"[[^\\H]]", "é".as_bytes());
+    n(b"[[^\\H]]", "Σ".as_bytes());
+    x2(b"[[^\\H]]", b"a", 0, 1);
+    x2(b"(?i)[[^\\H]]", b"a", 0, 1);
+    // A negated ctype keeps its gaps from 0x80 on, and the gaps between its
+    // ASCII ranges as well; a nested negation inverts those ranges.
+    x2(b"[^[^\\H]]", "é".as_bytes(), 0, 2);
+    x2(b"[^[^\\H]]", "Σ".as_bytes(), 0, 2);
+    n(b"[^[^\\H]]", b"1");
+    // Single-byte codes in the ranges of a multibyte-only class are not
+    // looked up: here the class holds only U+0020 and is negated.
+    x2("[^[^[^İ]\\S]]".as_bytes(), b" ", 0, 1);
+}
+
+#[test]
+fn cc_case_fold_keeps_multibyte_codes_in_ranges() {
+    // A fold that needs two bytes in UTF-8 goes into the code ranges, and
+    // only multibyte codes in the ranges are folded.
+    x2("(?i)[É]".as_bytes(), "é".as_bytes(), 0, 2);
+    n("(?i)[^É]".as_bytes(), "é".as_bytes());
+    x2("(?i)(?<=[É])a".as_bytes(), "éa".as_bytes(), 2, 3);
+    n(b"(?i)[[^\\W\\w]]", b"x");
+}
+
+#[test]
+fn cc_empty_class_after_a_class_prefix() {
+    // An empty class can never match; the search used to loop forever.
+    n(b"(?i)f[a&&b]", b"abc XYZ 123");
+    n(b"[a-z][a&&b]", b"abc XYZ 123");
+    n(b"[ab]c[a&&b]", b"abc XYZ 123");
+}
+
+#[test]
+fn folded_alternation_does_not_read_overlong_ascii() {
+    // E0 81 AB is an overlong `k`. A class instruction does not take it for
+    // `k`, so the folded literal walk does not either.
+    n(b"(?i)(?:ss|st|ff|fi|fl|k)", b"\xE0\x81\xAB");
+    n(b"(?i)(?:ss(?=)|st|ff|fi|fl|k)", b"\xE0\x81\xAB");
+}
+
+#[test]
 fn cc_nested_ab() {
     x2(b"[[ab]]", b"b", 0, 1);
 }

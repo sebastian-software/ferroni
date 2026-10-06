@@ -397,20 +397,29 @@ fn get_tree_tail_literal(node: &Node, nest_level: i32) -> GetValue<'_> {
 
 /// Check if a codepoint is in a character class.
 fn onig_is_code_in_cc(enc: OnigEncoding, code: OnigCodePoint, cc: &CClassNode) -> bool {
-    let in_bs = if (code as usize) < SINGLE_BYTE_SIZE {
+    let len = if enc.min_enc_len() > 1 {
+        2
+    } else {
+        let len = enc.code_to_mbclen(code);
+        if len < 0 {
+            return false;
+        }
+        len
+    };
+    onig_is_code_in_cc_len(len, code, cc)
+}
+
+/// C: a multibyte code is only looked up in the code ranges, a single-byte
+/// code only in the bitset.
+fn onig_is_code_in_cc_len(elen: i32, code: OnigCodePoint, cc: &CClassNode) -> bool {
+    let found = if elen > 1 || code as usize >= SINGLE_BYTE_SIZE {
+        cc.mbuf
+            .as_ref()
+            .is_some_and(|mbuf| onig_is_in_code_range_bbuf(mbuf, code))
+    } else {
         bitset_at(&cc.bs, code as usize)
-    } else {
-        false
     };
-
-    let in_mbuf = if let Some(ref mbuf) = cc.mbuf {
-        onig_is_in_code_range_bbuf(mbuf, code)
-    } else {
-        false
-    };
-
-    let result = in_bs || in_mbuf;
-    if cc.is_not() { !result } else { result }
+    if cc.is_not() { !found } else { found }
 }
 
 /// Check if code ranges in a BBuf contain a codepoint.
@@ -883,6 +892,45 @@ pub(crate) fn detect_cclass_ascii_fast(bs: &BitSet) -> CClassAsciiFastKind {
     }
 }
 
+/// The bits a single-byte class instruction tests. C's `OP_CCLASS` fails on
+/// the first byte of a multibyte character (`ONIGENC_IS_MBC_HEAD`), while
+/// Ferroni's class instructions step over the whole character, so the bits
+/// of such first bytes are cleared. They come from inverting a bitset, as in
+/// `[[^\H]]`. The negated instruction fails on a set bit and keeps them.
+fn single_byte_cclass_bits(cc: &CClassNode, enc: OnigEncoding) -> BitSet {
+    let mut bs = cc.bs;
+    let high_bits = bs[128 / BITS_IN_ROOM..].iter().any(|&bits| bits != 0);
+    if high_bits && !cc.is_not() && enc.max_enc_len() > 1 {
+        for b in 0x80..SINGLE_BYTE_SIZE {
+            if bitset_at(&bs, b) && enc.mbc_enc_len(&[b as u8]) != 1 {
+                bitset_clear_bit(&mut bs, b);
+            }
+        }
+    }
+    bs
+}
+
+/// The code ranges a multibyte-only class instruction tests. C's
+/// `OP_CCLASS_MB` fails on a single-byte character and `OP_CCLASS_MB_NOT`
+/// matches it, without a look at the ranges, so the single-byte codes in
+/// them are dropped. Such codes come from negated ctypes, which keep their
+/// ASCII gaps in the ranges (`[^[^[^İ]\S]]` keeps U+0020).
+fn multibyte_only_ranges(mb: Vec<u32>, enc: OnigEncoding) -> Vec<u32> {
+    if enc.min_enc_len() > 1 || mb.len() < 3 || mb[1] >= 0x80 {
+        return mb;
+    }
+    let n = (mb[0] as usize).min((mb.len() - 1) / 2);
+    let mut out = vec![0];
+    for &[from, to] in mb[1..1 + 2 * n].as_chunks::<2>().0 {
+        if to >= 0x80 {
+            out.push(from.max(0x80));
+            out.push(to);
+        }
+    }
+    out[0] = ((out.len() - 1) / 2) as u32;
+    out
+}
+
 /// Compile a character class node to bytecode.
 pub(crate) fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
     let has_mb = cc.mbuf.is_some();
@@ -920,6 +968,7 @@ pub(crate) fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
             .as_ref()
             .map(|b| bbuf_to_u32_vec(&b.data))
             .unwrap_or_default();
+        let mb_data = multibyte_only_ranges(mb_data, reg.enc);
         add_op(reg, opcode, OperationPayload::CClassMb { mb: mb_data });
     } else {
         // Single-byte only
@@ -928,12 +977,13 @@ pub(crate) fn compile_cclass_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
         } else {
             OpCode::CClass
         };
-        let ascii_fast = detect_cclass_ascii_fast(&cc.bs);
+        let bs = single_byte_cclass_bits(cc, reg.enc);
+        let ascii_fast = detect_cclass_ascii_fast(&bs);
         add_op(
             reg,
             opcode,
             OperationPayload::CClass {
-                bsp: Box::new(cc.bs),
+                bsp: Box::new(bs),
                 ascii_fast,
             },
         );
@@ -1126,6 +1176,7 @@ fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
             .as_ref()
             .map(|b| bbuf_to_u32_vec(&b.data))
             .unwrap_or_default();
+        let mb_data = multibyte_only_ranges(mb_data, reg.enc);
         add_op(
             reg,
             if not {
@@ -1136,7 +1187,8 @@ fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
             OperationPayload::CClassMb { mb: mb_data },
         );
     } else {
-        let ascii_fast = detect_cclass_ascii_fast(&cc.bs);
+        let bs = single_byte_cclass_bits(cc, reg.enc);
+        let ascii_fast = detect_cclass_ascii_fast(&bs);
         add_op(
             reg,
             if not {
@@ -1145,7 +1197,7 @@ fn compile_cclass_star_node(cc: &CClassNode, reg: &mut RegexType) -> i32 {
                 OpCode::CClassStar
             },
             OperationPayload::CClass {
-                bsp: Box::new(cc.bs),
+                bsp: Box::new(bs),
                 ascii_fast,
             },
         );

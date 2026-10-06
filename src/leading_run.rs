@@ -460,10 +460,7 @@ fn multibyte_member(
     let code: OnigCodePoint = enc.mbc_to_code(&text[s..], limit - s);
     let member = match class {
         RunClass::Word => enc.is_code_ctype(code, ONIGENC_CTYPE_WORD),
-        RunClass::Mix(bsp, mb) => {
-            crate::regexec::is_in_code_range(mb, code)
-                || ((code as usize) < SINGLE_BYTE_SIZE && bitset_at(bsp, code as usize))
-        }
+        RunClass::Mix(_, mb) => crate::regexec::is_in_code_range(mb, code),
         RunClass::AsciiBits(_) | RunClass::AsciiWord => false,
     };
     member.then_some(next)

@@ -1485,28 +1485,39 @@ fn add_ctype_ranges_to_cc(
 
     let n = range.len() / 2;
     if not {
-        // Inverted: add everything NOT in the ranges
+        // Inverted: the bits below `sb_out` that the ranges leave out
         let mut prev = 0u32;
-        let mut mb_ranges: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::new();
         for i in 0..n {
             let from = range[i * 2];
             let to = range[i * 2 + 1];
-            if prev < from {
-                if prev < sb_out {
-                    let end = std::cmp::min(from - 1, sb_out - 1);
-                    bitset_set_range(&mut cc.bs, prev as usize, end as usize);
-                }
-                if from > sb_out {
-                    mb_ranges.push((prev, from - 1));
-                }
+            if prev < from && prev < sb_out {
+                let end = std::cmp::min(from - 1, sb_out - 1);
+                bitset_set_range(&mut cc.bs, prev as usize, end as usize);
             }
-            prev = to + 1;
+            prev = to.saturating_add(1);
         }
         if prev < sb_out {
             bitset_set_range(&mut cc.bs, prev as usize, (sb_out - 1) as usize);
         }
-        if prev < u32::MAX {
-            mb_ranges.push((prev, u32::MAX));
+        // C: sb_end2. The gaps are taken from `sb_out` on, but `prev` follows
+        // every range, so the gaps between ranges below `sb_out` are kept as
+        // well (`\H` keeps 0x3A-0x40 and 0x47-0x60). They decide what a
+        // nested negation such as `[^[^\H]]` covers.
+        let mut mb_ranges: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::new();
+        let mut prev = sb_out;
+        let mut to_max = true;
+        for &[from, to] in range.as_chunks::<2>().0 {
+            if prev < from {
+                mb_ranges.push((prev, from - 1));
+            }
+            prev = to.wrapping_add(1);
+            if prev == 0 {
+                to_max = false;
+                break;
+            }
+        }
+        if to_max {
+            mb_ranges.push((prev, MAX_CODE_POINT));
         }
         r = add_sorted_code_ranges_to_buf(&mut cc.mbuf, mb_ranges.into_iter());
         if r != 0 {
@@ -1534,9 +1545,68 @@ fn add_ctype_ranges_to_cc(
     ONIG_NORMAL
 }
 
+/// C: add_ctype_to_cc_by_range_limit, negated. The ranges past `limit` count
+/// as absent; the multibyte ranges keep the gaps from `sb_out` on, as in
+/// `add_ctype_ranges_to_cc`.
+fn add_ctype_to_cc_by_range_limit_not(
+    cc: &mut CClassNode,
+    range: &[OnigCodePoint],
+    sb_out: OnigCodePoint,
+    limit: OnigCodePoint,
+) -> i32 {
+    let pairs = range.as_chunks::<2>().0;
+    let mut prev: OnigCodePoint = 0;
+    'sb: {
+        for &[from, to] in pairs {
+            if from > limit {
+                for j in prev..sb_out {
+                    bitset_set_bit(&mut cc.bs, j as usize);
+                }
+                break 'sb;
+            }
+            for j in prev..from {
+                if j >= sb_out {
+                    break 'sb;
+                }
+                bitset_set_bit(&mut cc.bs, j as usize);
+            }
+            prev = to.min(limit).wrapping_add(1);
+            if prev == 0 {
+                return ONIG_NORMAL;
+            }
+        }
+        for j in prev..sb_out {
+            bitset_set_bit(&mut cc.bs, j as usize);
+        }
+    }
+
+    let mut mb_ranges = Vec::new();
+    let mut prev = sb_out;
+    for &[from, to] in pairs {
+        if from > limit {
+            break;
+        }
+        if prev < from {
+            mb_ranges.push((prev, from - 1));
+        }
+        prev = to.min(limit).wrapping_add(1);
+        if prev == 0 {
+            return add_sorted_code_ranges_to_buf(&mut cc.mbuf, mb_ranges.into_iter());
+        }
+    }
+    mb_ranges.push((prev, MAX_CODE_POINT));
+    add_sorted_code_ranges_to_buf(&mut cc.mbuf, mb_ranges.into_iter())
+}
+
 fn add_ctype_to_cc(cc: &mut CClassNode, ctype: i32, not: bool, env: &ParseEnv) -> i32 {
     let enc = env.enc;
     let ascii_mode = opton_is_ascii_mode_ctype(ctype, env.options);
+    if ascii_mode && not {
+        let mut sb_out: OnigCodePoint = 0;
+        if let Some(range) = enc.get_ctype_code_range(ctype as u32, &mut sb_out) {
+            return add_ctype_to_cc_by_range_limit_not(cc, range, sb_out, ASCII_LIMIT);
+        }
+    }
     if ascii_mode {
         // ASCII-only mode: iterate over 0-127 using encoding's ctype check
         for c in 0..128u32 {
@@ -4887,13 +4957,17 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
     let mut multi_char_alts: Vec<Vec<u8>> = Vec::new();
     // Decoded once; every membership test below is a binary search here.
     let mb_ranges = cc.mbuf.as_ref().map_or_else(Vec::new, code_ranges_of);
+    // C: ADD_CODE_INTO_CC and onig_is_code_in_cc. A code is kept in the
+    // bitset only when it is a single byte in the encoding; in UTF-8 the
+    // bits from 0x80 on are lead bytes, not members.
+    let single_byte = |cp: OnigCodePoint| enc.min_enc_len() == 1 && enc.code_to_mbclen(cp) == 1;
 
     // --- Part 1: Single-char folds (FOLDS1) ---
 
     // 1a. Bitset: inverted iteration over set bits (at most 256 lookups)
     let bs_limit = if ascii_only { 128 } else { SINGLE_BYTE_SIZE };
     for cp in 0..bs_limit {
-        if !bitset_at(&cc.bs, cp) {
+        if !bitset_at(&cc.bs, cp) || !single_byte(cp as OnigCodePoint) {
             continue;
         }
         if let Some((fold, unfolds)) = crate::unicode::case_fold_group_1(cp as OnigCodePoint) {
@@ -4910,8 +4984,22 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
 
     // 1b. Multi-byte ranges (UTF-8 also stores 0x80-0xFF there): every
     // fold group with a member inside the ranges contributes all members.
+    // The ranges can hold single-byte codes too (a negated `\W` keeps
+    // ASCII gaps); C looks those up in the bitset only.
     if !ascii_only {
-        crate::unicode::for_each_folds1_group_in_ranges(&mb_ranges, |fold, unfolds| {
+        let start = mbcode_start_pos(enc);
+        let clipped: Vec<_>;
+        let mb_only = if mb_ranges.first().is_some_and(|&(from, _)| from < start) {
+            clipped = mb_ranges
+                .iter()
+                .filter(|&&(_, to)| to >= start)
+                .map(|&(from, to)| (from.max(start), to))
+                .collect();
+            &clipped
+        } else {
+            &mb_ranges
+        };
+        crate::unicode::for_each_folds1_group_in_ranges(mb_only, |fold, unfolds| {
             codes_to_add.push(fold);
             codes_to_add.extend_from_slice(unfolds);
         });
@@ -4920,17 +5008,14 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
     // --- Part 2: Multi-char folds (FOLDS2/FOLDS3) ---
     // These have few entries (~73 total), so iterating them is cheap.
 
-    // Helper: check if a codepoint is in the (non-negated) CClass.
-    // Must check BOTH bitset and mbuf — for multibyte encodings like UTF-8,
-    // codepoints < 256 may be stored in mbuf when they require multibyte
-    // encoding (e.g., ß = U+00DF is 2 bytes in UTF-8).
+    // Whether a codepoint is in the (non-negated) CClass. In UTF-8 a
+    // codepoint < 256 is in the ranges when it needs two bytes (ß = U+00DF).
     let is_in_cc = |cp: OnigCodePoint| -> bool {
-        let in_bs = if (cp as usize) < SINGLE_BYTE_SIZE {
+        if single_byte(cp) {
             bitset_at(&cc.bs, cp as usize)
         } else {
-            false
-        };
-        in_bs || code_ranges_contain(&mb_ranges, cp)
+            code_ranges_contain(&mb_ranges, cp)
+        }
     };
 
     // FOLDS2
@@ -4982,7 +5067,7 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
     // ranges in one pass.
     let mut mb_codes: Vec<OnigCodePoint> = Vec::new();
     for code in codes_to_add {
-        if (code as usize) < SINGLE_BYTE_SIZE {
+        if single_byte(code) {
             bitset_set_bit(&mut cc.bs, code as usize);
         } else if !code_ranges_contain(&mb_ranges, code) {
             mb_codes.push(code);
