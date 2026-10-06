@@ -17,6 +17,9 @@ pub struct LiteralTrie {
     /// The bytes that can start a non-ASCII character the folded walk
     /// reads, as a bitset over byte values.
     folded_leads: [u64; 4],
+    /// Whether tune_tree has reached the node that stands for the trie, the
+    /// point where C would unravel the case-insensitive strings it replaces.
+    tuned: bool,
 }
 
 struct TrieNode {
@@ -194,6 +197,7 @@ impl LiteralTrie {
             raw_literals: literals.iter().map(|l| l.to_vec()).collect(),
             folds: None,
             folded_leads: [0; 4],
+            tuned: false,
         };
 
         for (index, lit) in literals.iter().enumerate() {
@@ -257,6 +261,36 @@ impl LiteralTrie {
         &self.raw_literals
     }
 
+    /// The character lengths of each literal as the engine compiles it
+    /// without a trie, with `chars` counting the characters of a string.
+    /// A case-insensitive literal reads a multi-character segment as one of
+    /// its accepted strings (`ß` for `ss`), so it gets a shortest and a
+    /// longest length.
+    pub(crate) fn literal_char_lens(
+        &self,
+        chars: impl Fn(&[u8]) -> usize,
+    ) -> impl Iterator<Item = (usize, usize)> {
+        self.raw_literals
+            .iter()
+            .enumerate()
+            .map(move |(literal, text)| {
+                let len = chars(text);
+                let Some(folds) = &self.folds else {
+                    return (len, len);
+                };
+                folds.segments[literal].iter().fold(
+                    (len, len),
+                    |(min, max), &(_, seg_len, accepted)| {
+                        let lens = folds.accepted[accepted].iter().map(|s| chars(s));
+                        (
+                            min - seg_len + lens.clone().min().unwrap_or(seg_len),
+                            max - seg_len + lens.max().unwrap_or(seg_len),
+                        )
+                    },
+                )
+            })
+    }
+
     /// The first byte of every literal, lowercased in a case-insensitive
     /// trie. `None` when a literal is empty.
     pub(crate) fn first_bytes(&self) -> Option<impl Iterator<Item = u8> + '_> {
@@ -282,6 +316,16 @@ impl LiteralTrie {
     /// Returns whether this trie was built with case-insensitive matching.
     pub fn is_case_insensitive(&self) -> bool {
         self.case_insensitive
+    }
+
+    /// Whether tune_tree has reached the node that stands for the trie.
+    pub(crate) fn is_tuned(&self) -> bool {
+        self.tuned
+    }
+
+    /// Record that tune_tree has reached the node that stands for the trie.
+    pub(crate) fn set_tuned(&mut self) {
+        self.tuned = true;
     }
 
     /// Try to find the longest matching literal starting at `input[pos]`.

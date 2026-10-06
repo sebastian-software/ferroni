@@ -454,6 +454,7 @@ impl ParseEnv {
         self.flags = 0;
         self.recursive_mem.clear();
         self.group_min_len.clear();
+        self.group_max_len.clear();
     }
 
     pub fn add_mem_entry(&mut self) -> Result<i32, i32> {
@@ -5674,17 +5675,14 @@ fn node_new_backref_checker(
     nest_level: i32,
     env: &mut ParseEnv,
 ) -> Box<Node> {
-    let mut node = node_new_backref(
+    let mut node = node_new_backref_in_env(
         backrefs.len() as i32,
         backrefs,
         by_name,
         exist_level,
         nest_level,
+        env,
     );
-    if opton_ignorecase(env.options) {
-        node.status_add(ND_ST_IGNORECASE);
-    }
-    env.backref_num += 1;
     node.status_add(ND_ST_CHECKER);
     node
 }
@@ -7231,18 +7229,14 @@ fn prs_exp(
             } else {
                 tok.backref_refs.clone()
             };
-            let mut np = node_new_backref(
+            node_new_backref_in_env(
                 back_num,
                 &refs,
                 tok.backref_by_name,
                 tok.backref_exist_level,
                 tok.backref_level,
-            );
-            if opton_ignorecase(env.options) {
-                np.status_add(ND_ST_IGNORECASE);
-            }
-            env.backref_num += 1;
-            np
+                env,
+            )
         }
         TokenType::Call => {
             let name = &pattern[tok.call_name_start..tok.call_name_end];
@@ -8094,6 +8088,7 @@ mod tests {
             flags: 0,
             recursive_mem: Vec::new(),
             group_min_len: Vec::new(),
+            group_max_len: Vec::new(),
         };
         (reg, env)
     }

@@ -8805,6 +8805,7 @@ mod tests {
             flags: 0,
             recursive_mem: Vec::new(),
             group_min_len: Vec::new(),
+            group_max_len: Vec::new(),
         };
         (reg, env)
     }

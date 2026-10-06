@@ -2498,15 +2498,16 @@ fn compile_length_anchor_node(an: &AnchorNode, reg: &RegexType, env: &ParseEnv) 
 /// C: the `IS_NOT_NULL(node->lead_node)` blocks of
 /// compile_anchor_look_behind_node / compile_anchor_look_behind_not_node.
 fn compile_look_behind_lead_node(lead: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
-    let min = match node_char_len(lead, env.enc) {
-        CharLenResult::Fixed(n) => n,
-        CharLenResult::Variable(mn, _) => mn,
-    };
+    let mut ci = MinMaxCharLen::default();
+    let r = node_char_len(lead, reg, &mut ci, env);
+    if r < 0 {
+        return r;
+    }
     add_op(
         reg,
         OpCode::Move,
         OperationPayload::Move {
-            n: -(min as RelPositionType),
+            n: -(ci.min as RelPositionType),
         },
     );
     compile_tree(lead, reg, env)
@@ -3663,12 +3664,19 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
             }
         }
 
+        // C: the minimum over the referenced groups of
+        // node_min_byte_len(mem_env[backs[i]].mem_node). Like a call, the
+        // port reads each group's length from env.group_min_len instead of
+        // following the raw capture pointer.
         NodeInner::BackRef(br) => {
-            if node.has_status(ND_ST_CHECKER) {
+            if node.has_status(ND_ST_CHECKER) || node.has_status(ND_ST_RECURSION) {
                 0
             } else {
-                // Simplified: return 0 for backrefs (safe minimum)
-                0
+                br.back_refs()
+                    .iter()
+                    .map(|&back| env.group_min_len.get(back as usize).copied().unwrap_or(0))
+                    .min()
+                    .unwrap_or(0)
             }
         }
 
@@ -3687,8 +3695,9 @@ fn node_min_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
 }
 
 /// C: the min_len that node_min_byte_len caches on each BAG_MEMORY node
-/// (ND_ST_FIXED_MIN) and returns for a call to the group. A group reached
-/// again while its own length is being computed counts as 0 (C: MARK1).
+/// (ND_ST_FIXED_MIN) and returns for a call or a back-reference to the
+/// group. A group reached again while its own length is being computed
+/// counts as 0 (C: MARK1).
 ///
 /// C fills the cache lazily, so a value computed inside a recursion cycle can
 /// depend on which group was asked first. Every such value is still a lower
@@ -3780,12 +3789,25 @@ impl GroupMinLen<'_> {
                 }
             },
             NodeInner::Call(cn) => self.group(cn.called_gnum as usize, env),
+            NodeInner::BackRef(br)
+                if !node.has_status(ND_ST_CHECKER) && !node.has_status(ND_ST_RECURSION) =>
+            {
+                let mut len: OnigLen = 0;
+                for (i, &back) in br.back_refs().iter().enumerate() {
+                    let tmin = self.group(back as usize, env);
+                    if i == 0 || len > tmin {
+                        len = tmin;
+                    }
+                }
+                len
+            }
             _ => node_min_byte_len(node, env),
         }
     }
 }
 
-/// Fill `env.group_min_len` for every group of a pattern with calls.
+/// Fill `env.group_min_len` for every group of a pattern with calls or
+/// back-references.
 fn compute_group_min_lens(root: &Node, env: &ParseEnv) -> Vec<OnigLen> {
     let n = env.num_mem.max(0) as usize + 1;
     let mut groups = vec![None; n];
@@ -4086,299 +4108,393 @@ fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, state: i32) ->
 // Lookbehind support: node_char_len, tune_look_behind, divide_look_behind_alternatives
 // ============================================================================
 
-/// Result of computing character length for a node subtree.
-enum CharLenResult {
-    Fixed(OnigLen),
-    Variable(OnigLen, OnigLen),
+/// C: the non-negative returns of node_char_len().
+const CHAR_LEN_NORMAL: i32 = 0; /* fixed or variable */
+const CHAR_LEN_TOP_ALT_FIXED: i32 = 1;
+
+/// C: MinMaxCharLen
+#[derive(Clone, Copy, Default)]
+struct MinMaxCharLen {
+    min: OnigLen,
+    max: OnigLen,
+    min_is_sure: bool,
 }
 
-/// Compute character count (not byte count) for a node subtree.
-fn node_char_len(node: &Node, enc: OnigEncoding) -> CharLenResult {
+/// C: mmcl_fixed
+fn mmcl_fixed(c: &MinMaxCharLen) -> bool {
+    c.min == c.max && c.min != INFINITE_LEN
+}
+
+/// C: mmcl_set
+fn mmcl_set(l: &mut MinMaxCharLen, len: OnigLen) {
+    l.min = len;
+    l.max = len;
+    l.min_is_sure = true;
+}
+
+/// C: mmcl_set_min_max
+fn mmcl_set_min_max(l: &mut MinMaxCharLen, min: OnigLen, max: OnigLen, min_is_sure: bool) {
+    l.min = min;
+    l.max = max;
+    l.min_is_sure = min_is_sure;
+}
+
+/// C: mmcl_add
+fn mmcl_add(to: &mut MinMaxCharLen, add: &MinMaxCharLen) {
+    to.min = distance_add(to.min, add.min);
+    to.max = distance_add(to.max, add.max);
+
+    to.min_is_sure = add.min_is_sure && to.min_is_sure;
+}
+
+/// C: mmcl_multiply
+fn mmcl_multiply(to: &mut MinMaxCharLen, m: i32) {
+    to.min = distance_multiply(to.min, m);
+    to.max = distance_multiply(to.max, m);
+}
+
+/// C: mmcl_repeat_range_multiply
+fn mmcl_repeat_range_multiply(to: &mut MinMaxCharLen, mlow: i32, mhigh: i32) {
+    to.min = distance_multiply(to.min, mlow);
+
+    if is_infinite_repeat(mhigh) {
+        to.max = INFINITE_LEN;
+    } else {
+        to.max = distance_multiply(to.max, mhigh);
+    }
+}
+
+/// C: mmcl_alt_merge
+fn mmcl_alt_merge(to: &mut MinMaxCharLen, alt: &MinMaxCharLen) {
+    if to.min > alt.min {
+        to.min = alt.min;
+        to.min_is_sure = alt.min_is_sure;
+    } else if to.min == alt.min && alt.min_is_sure {
+        to.min_is_sure = true;
+    }
+
+    if to.max < alt.max {
+        to.max = alt.max;
+    }
+}
+
+/// C keeps two marks on a BAG_MEMORY node for node_char_len1(): MARK1
+/// while its body is measured, so that a group reached again through a
+/// call or a back-reference counts as 0..INFINITE instead of recursing, and
+/// FIXED_CLEN (+ FIXED_CLEN_MIN_SURE) with the measured min_char_len /
+/// max_char_len, so that each group is measured once. The port only
+/// borrows the tree here and keeps both per group number for one
+/// node_char_len() call.
+struct CharLenMarks {
+    mark1: Vec<bool>,
+    fixed_clen: Vec<Option<MinMaxCharLen>>,
+}
+
+/// Port of C's node_char_len1(): the character length range of a fixed
+/// size pattern node (a look-behind body). Returns CHAR_LEN_NORMAL,
+/// CHAR_LEN_TOP_ALT_FIXED (the top-level node is an alternation whose
+/// branches after the first all have a fixed length, but not one length),
+/// or an error code.
+fn node_char_len1(
+    node: &Node,
+    reg: &RegexType,
+    ci: &mut MinMaxCharLen,
+    env: &ParseEnv,
+    marks: &mut CharLenMarks,
+    mut level: i32,
+) -> i32 {
+    let mut tci = MinMaxCharLen::default();
+    let mut r = CHAR_LEN_NORMAL;
+
+    level += 1;
+
     match &node.inner {
-        NodeInner::String(sn) => {
-            let n = onigenc_strlen(enc, &sn.s, 0, sn.s.len());
-            CharLenResult::Fixed(n as OnigLen)
-        }
-        NodeInner::CType(_) | NodeInner::CClass(_) => CharLenResult::Fixed(1),
         NodeInner::List(_) => {
-            let mut sum: OnigLen = 0;
-            let mut variable = false;
-            let mut min_sum: OnigLen = 0;
-            let mut max_sum: OnigLen = 0;
+            let mut first = true;
             let mut cur = node;
             while let NodeInner::List(cons) = &cur.inner {
-                match node_char_len(&cons.car, enc) {
-                    CharLenResult::Fixed(n) => {
-                        if variable {
-                            min_sum = distance_add(min_sum, n);
-                            max_sum = distance_add(max_sum, n);
-                        } else {
-                            sum = distance_add(sum, n);
-                        }
-                    }
-                    CharLenResult::Variable(mn, mx) => {
-                        if !variable {
-                            min_sum = sum;
-                            max_sum = sum;
-                            variable = true;
-                        }
-                        min_sum = distance_add(min_sum, mn);
-                        max_sum = distance_add(max_sum, mx);
-                    }
+                r = node_char_len1(&cons.car, reg, &mut tci, env, marks, level);
+                if r < 0 {
+                    break;
+                }
+                if first {
+                    *ci = tci;
+                    first = false;
+                } else {
+                    mmcl_add(ci, &tci);
                 }
                 match &cons.cdr {
                     Some(next) => cur = next,
                     None => break,
                 }
             }
-            if variable {
-                CharLenResult::Variable(min_sum, max_sum)
-            } else {
-                CharLenResult::Fixed(sum)
-            }
         }
-        NodeInner::Alt(_) => {
-            let mut min: OnigLen = OnigLen::MAX;
-            let mut max: OnigLen = 0;
-            let mut cur = node;
-            while let NodeInner::Alt(cons) = &cur.inner {
-                let (mn, mx) = match node_char_len(&cons.car, enc) {
-                    CharLenResult::Fixed(n) => (n, n),
-                    CharLenResult::Variable(mn, mx) => (mn, mx),
+
+        NodeInner::Alt(cons) => {
+            r = node_char_len1(&cons.car, reg, ci, env, marks, level);
+            if r < 0 {
+                return r;
+            }
+
+            let mut fixed = true;
+            let mut next = &cons.cdr;
+            while let Some(alt) = next {
+                let NodeInner::Alt(cons) = &alt.inner else {
+                    break;
                 };
-                if mn < min {
-                    min = mn;
+                r = node_char_len1(&cons.car, reg, &mut tci, env, marks, level);
+                if r < 0 {
+                    break;
                 }
-                if mx > max {
-                    max = mx;
+                if !mmcl_fixed(&tci) {
+                    fixed = false;
                 }
-                match &cons.cdr {
-                    Some(next) => cur = next,
-                    None => break,
-                }
+                mmcl_alt_merge(ci, &tci);
+                next = &cons.cdr;
             }
-            if min == max {
-                CharLenResult::Fixed(min)
-            } else {
-                CharLenResult::Variable(min, max)
+            if r < 0 {
+                return r;
+            }
+
+            r = CHAR_LEN_NORMAL;
+            if !mmcl_fixed(ci) && fixed && level == 1 {
+                r = CHAR_LEN_TOP_ALT_FIXED;
             }
         }
-        NodeInner::Quant(qn) => {
-            if let Some(ref body) = qn.body {
-                match node_char_len(body, enc) {
-                    CharLenResult::Fixed(n) => {
-                        let lo = distance_multiply(n, qn.lower);
-                        let hi = if qn.upper == INFINITE_REPEAT {
-                            INFINITE_LEN
+
+        // Rust-only (ADR-008): a literal alternation trie stands for the
+        // alternation of its literals (C: an ND_ALT of strings, each
+        // unraveled by case folding).
+        NodeInner::String(_) if node.has_status(ND_ST_LITERAL_ALT) => {
+            match literal_alt_trie_index(node).and_then(|i| reg.literal_tries.get(i)) {
+                // C: the ND_IS_REAL_IGNORECASE check below, for strings
+                // tune_tree has not unraveled yet.
+                Some(trie)
+                    if trie.is_case_insensitive()
+                        && !trie.is_tuned()
+                        && case_fold_is_not_ascii_only(env.case_fold_flag) =>
+                {
+                    return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+                }
+                Some(trie) => {
+                    let chars = |s: &[u8]| onigenc_strlen(env.enc, s, 0, s.len());
+                    for (i, (min, max)) in trie.literal_char_lens(chars).enumerate() {
+                        mmcl_set_min_max(&mut tci, min as OnigLen, max as OnigLen, true);
+                        if i == 0 {
+                            *ci = tci;
                         } else {
-                            distance_multiply(n, qn.upper)
-                        };
-                        if lo == hi {
-                            CharLenResult::Fixed(lo)
-                        } else {
-                            CharLenResult::Variable(lo, hi)
+                            mmcl_alt_merge(ci, &tci);
                         }
                     }
-                    CharLenResult::Variable(mn, mx) => {
-                        let lo = distance_multiply(mn, qn.lower);
-                        let hi = if qn.upper == INFINITE_REPEAT {
-                            INFINITE_LEN
-                        } else {
-                            distance_multiply(mx, qn.upper)
-                        };
-                        CharLenResult::Variable(lo, hi)
-                    }
                 }
-            } else {
-                CharLenResult::Fixed(0)
+                None => mmcl_set_min_max(ci, 0, INFINITE_LEN, false),
             }
         }
-        NodeInner::Bag(bn) => {
-            if let BagData::IfElse {
-                ref then_node,
-                ref else_node,
-            } = bn.bag_data
+
+        NodeInner::String(sn) => {
+            if node.has_status(ND_ST_IGNORECASE)
+                && !sn.is_crude()
+                && case_fold_is_not_ascii_only(env.case_fold_flag)
             {
-                // Condition (body) may consume input (non-backref pattern conditions)
-                // or be zero-width (backref checker conditions).
-                let cond_len = if let Some(ref body) = bn.body {
-                    if body.has_status(ND_ST_CHECKER) {
-                        // Backref checker: zero length
-                        (0 as OnigLen, 0 as OnigLen)
-                    } else {
-                        match node_char_len(body, enc) {
-                            CharLenResult::Fixed(n) => (n, n),
-                            CharLenResult::Variable(mn, mx) => (mn, mx),
-                        }
+                /* Such a case is possible.
+                  ex. /(?i)(?<=\1)(a)/
+                  Backref node refer to capture group, but it doesn't tune yet.
+                */
+                return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+            }
+
+            let clen = onigenc_strlen(env.enc, &sn.s, 0, sn.s.len());
+            mmcl_set(ci, clen as OnigLen);
+        }
+
+        NodeInner::Quant(qn) => {
+            let Some(body) = qn.body.as_deref() else {
+                mmcl_set(ci, 0);
+                return r;
+            };
+            if qn.lower == qn.upper {
+                if qn.upper == 0 {
+                    mmcl_set(ci, 0);
+                } else {
+                    r = node_char_len1(body, reg, ci, env, marks, level);
+                    if r < 0 {
+                        return r;
                     }
-                } else {
-                    (0, 0)
-                };
-                let then_len = if let Some(n) = then_node {
-                    match node_char_len(n, enc) {
-                        CharLenResult::Fixed(n) => (n, n),
-                        CharLenResult::Variable(mn, mx) => (mn, mx),
-                    }
-                } else {
-                    (0, 0)
-                };
-                let else_len = if let Some(n) = else_node {
-                    match node_char_len(n, enc) {
-                        CharLenResult::Fixed(n) => (n, n),
-                        CharLenResult::Variable(mn, mx) => (mn, mx),
-                    }
-                } else {
-                    (0, 0)
-                };
-                // Success path: condition + then; Failure path: else
-                let success_min = distance_add(cond_len.0, then_len.0);
-                let success_max = distance_add(cond_len.1, then_len.1);
-                let min = std::cmp::min(success_min, else_len.0);
-                let max = std::cmp::max(success_max, else_len.1);
-                if min == max {
-                    CharLenResult::Fixed(min)
-                } else {
-                    CharLenResult::Variable(min, max)
+                    mmcl_multiply(ci, qn.lower);
                 }
-            } else if let Some(ref body) = bn.body {
-                node_char_len(body, enc)
             } else {
-                CharLenResult::Fixed(0)
+                r = node_char_len1(body, reg, ci, env, marks, level);
+                if r < 0 {
+                    return r;
+                }
+                mmcl_repeat_range_multiply(ci, qn.lower, qn.upper);
             }
         }
-        NodeInner::Anchor(_) => CharLenResult::Fixed(0),
-        NodeInner::BackRef(_) => CharLenResult::Variable(0, INFINITE_LEN),
+
         NodeInner::Call(cn) => {
-            // Follow the call target to compute the character length of the called group
-            if !cn.target_node.is_null() {
+            if node.has_status(ND_ST_RECURSION) {
+                mmcl_set_min_max(ci, 0, INFINITE_LEN, false);
+            } else if !cn.target_node.is_null() {
                 // SAFETY: `target_node` is non-null (checked above) and was set by
                 // resolve_call_references/refresh_call_targets to the called group's
                 // Bag node inside this same live tree; only shared reads follow.
                 let target = unsafe { &*cn.target_node };
-                node_char_len(target, enc)
+                r = node_char_len1(target, reg, ci, env, marks, level);
             } else {
-                CharLenResult::Fixed(0)
+                mmcl_set(ci, 0);
             }
         }
-        _ => CharLenResult::Fixed(0),
-    }
-}
 
-/// Minimum of node_char_len().
-fn node_char_len_min(node: &Node, enc: OnigEncoding) -> OnigLen {
-    match node_char_len(node, enc) {
-        CharLenResult::Fixed(n) => n,
-        CharLenResult::Variable(mn, _) => mn,
-    }
-}
+        NodeInner::CType(_) | NodeInner::CClass(_) => mmcl_set(ci, 1),
 
-/// C: the `min_is_sure` flag of the MinMaxCharLen that node_char_len1()
-/// fills in. It turns false once the shortest match runs through a capture,
-/// an anchor, a back-reference or a call ("can't optimize look-behind if
-/// capture/anchor exists"); tune_look_behind() only drops a look-behind
-/// whose shortest body is empty while it stays true.
-fn node_char_len_min_is_sure(node: &Node, enc: OnigEncoding) -> bool {
-    // C: mmcl_alt_merge() for the flag, given both minimums.
-    fn alt_merge(to: &mut (OnigLen, bool), alt: (OnigLen, bool)) {
-        if to.0 > alt.0 {
-            *to = alt;
-        } else if to.0 == alt.0 && alt.1 {
-            to.1 = true;
-        }
-    }
-
-    match &node.inner {
-        NodeInner::String(_)
-        | NodeInner::CType(_)
-        | NodeInner::CClass(_)
-        | NodeInner::Gimmick(_) => true,
-        // C: mmcl_add() ands the flags.
-        NodeInner::List(_) => {
-            let mut cur = node;
-            while let NodeInner::List(cons) = &cur.inner {
-                if !node_char_len_min_is_sure(&cons.car, enc) {
-                    return false;
-                }
-                match &cons.cdr {
-                    Some(next) => cur = next,
-                    None => break,
-                }
-            }
-            true
-        }
-        NodeInner::Alt(_) => {
-            let mut merged: Option<(OnigLen, bool)> = None;
-            let mut cur = node;
-            while let NodeInner::Alt(cons) = &cur.inner {
-                let alt = (
-                    node_char_len_min(&cons.car, enc),
-                    node_char_len_min_is_sure(&cons.car, enc),
-                );
-                match merged.as_mut() {
-                    None => merged = Some(alt),
-                    Some(to) => alt_merge(to, alt),
-                }
-                match &cons.cdr {
-                    Some(next) => cur = next,
-                    None => break,
-                }
-            }
-            merged.is_none_or(|(_, sure)| sure)
-        }
-        NodeInner::Quant(qn) => {
-            if qn.lower == qn.upper && qn.upper == 0 {
-                true
-            } else {
-                qn.body
-                    .as_ref()
-                    .is_none_or(|body| node_char_len_min_is_sure(body, enc))
-            }
-        }
         NodeInner::Bag(bn) => match &bn.bag_data {
-            // C: "can't optimize look-behind if capture exists."
-            BagData::Memory { .. } => false,
-            BagData::Option { .. } | BagData::StopBacktrack => bn
-                .body
-                .as_ref()
-                .is_none_or(|body| node_char_len_min_is_sure(body, enc)),
+            BagData::Memory { .. } => {
+                let regnum = bn.regnum() as usize;
+                if let Some(Some(fixed)) = marks.fixed_clen.get(regnum) {
+                    *ci = *fixed;
+                } else if marks.mark1.get(regnum).copied().unwrap_or(false) {
+                    mmcl_set_min_max(ci, 0, INFINITE_LEN, false);
+                } else {
+                    if let Some(m) = marks.mark1.get_mut(regnum) {
+                        *m = true;
+                    }
+                    r = match bn.body.as_deref() {
+                        Some(body) => node_char_len1(body, reg, ci, env, marks, level),
+                        None => {
+                            mmcl_set(ci, 0);
+                            CHAR_LEN_NORMAL
+                        }
+                    };
+                    if let Some(m) = marks.mark1.get_mut(regnum) {
+                        *m = false;
+                    }
+                    if r < 0 {
+                        return r;
+                    }
+
+                    if let Some(fixed) = marks.fixed_clen.get_mut(regnum) {
+                        *fixed = Some(*ci);
+                    }
+                }
+                /* can't optimize look-behind if capture exists. */
+                ci.min_is_sure = false;
+            }
+            BagData::Option { .. } | BagData::StopBacktrack => match bn.body.as_deref() {
+                Some(body) => r = node_char_len1(body, reg, ci, env, marks, level),
+                None => mmcl_set(ci, 0),
+            },
             BagData::IfElse {
                 then_node,
                 else_node,
             } => {
-                // Condition + then, merged with else (an empty else is sure).
-                let mut to = match bn.body.as_ref() {
-                    Some(cond) => (
-                        node_char_len_min(cond, enc),
-                        // A back-reference checker counts as an anchor.
-                        !cond.has_status(ND_ST_CHECKER) && node_char_len_min_is_sure(cond, enc),
-                    ),
-                    None => (0, true),
-                };
-                if let Some(then_n) = then_node {
-                    to.0 = distance_add(to.0, node_char_len_min(then_n, enc));
-                    to.1 = to.1 && node_char_len_min_is_sure(then_n, enc);
+                let mut eci = MinMaxCharLen::default();
+
+                match bn.body.as_deref() {
+                    Some(body) => {
+                        r = node_char_len1(body, reg, ci, env, marks, level);
+                        if r < 0 {
+                            return r;
+                        }
+                    }
+                    None => mmcl_set(ci, 0),
                 }
-                let else_ci = match else_node {
-                    Some(else_n) => (
-                        node_char_len_min(else_n, enc),
-                        node_char_len_min_is_sure(else_n, enc),
-                    ),
-                    None => (0, true),
-                };
-                alt_merge(&mut to, else_ci);
-                to.1
+
+                if let Some(then_node) = then_node.as_deref() {
+                    r = node_char_len1(then_node, reg, &mut tci, env, marks, level);
+                    if r < 0 {
+                        return r;
+                    }
+                    mmcl_add(ci, &tci);
+                }
+
+                if let Some(else_node) = else_node.as_deref() {
+                    r = node_char_len1(else_node, reg, &mut eci, env, marks, level);
+                    if r < 0 {
+                        return r;
+                    }
+                } else {
+                    mmcl_set(&mut eci, 0);
+                }
+
+                mmcl_alt_merge(ci, &eci);
             }
         },
-        // Anchors and back-reference checkers; a back-reference takes its
-        // length from a capture, and a call's body is a capture.
-        NodeInner::Anchor(_) | NodeInner::BackRef(_) | NodeInner::Call(_) => false,
+
+        NodeInner::Gimmick(_) => mmcl_set(ci, 0),
+
+        NodeInner::Anchor(_) => {
+            mmcl_set(ci, 0);
+            /* can't optimize look-behind if anchor exists. */
+            ci.min_is_sure = false;
+        }
+
+        NodeInner::BackRef(br) => {
+            if node.has_status(ND_ST_CHECKER) {
+                // C: goto zero
+                mmcl_set(ci, 0);
+                ci.min_is_sure = false;
+                return r;
+            }
+
+            if node.has_status(ND_ST_RECURSION) {
+                if node.has_status(ND_ST_NEST_LEVEL) {
+                    mmcl_set_min_max(ci, 0, INFINITE_LEN, false);
+                    return r;
+                }
+
+                mmcl_set_min_max(ci, 0, 0, false);
+                return r;
+            }
+
+            // C: node_char_len1(mem_env[backs[i]].mem_node, ...) for every
+            // referenced group, merged as alternatives.
+            for (i, &back) in br.back_refs().iter().enumerate() {
+                let to = if i == 0 { &mut *ci } else { &mut tci };
+                let mem_node = env.mem_env(back as usize).mem_node;
+                if mem_node.is_null() {
+                    // No group node to measure: any length.
+                    mmcl_set_min_max(to, 0, INFINITE_LEN, false);
+                } else {
+                    // SAFETY: `mem_node` is non-null (checked above) and was set by
+                    // refresh_node_references to the referenced group's Bag node
+                    // inside this same live tree; tuning does not move capture
+                    // nodes. A back-reference without RECURSION never lies inside
+                    // its group, and only shared reads follow.
+                    let mem = unsafe { &*mem_node };
+                    r = node_char_len1(mem, reg, to, env, marks, level);
+                    if r < 0 {
+                        break;
+                    }
+                }
+                if !mmcl_fixed(to) {
+                    to.min_is_sure = false;
+                }
+                if i != 0 {
+                    mmcl_alt_merge(ci, &tci);
+                }
+            }
+        }
     }
+
+    r
 }
 
-/// Divide variable-length lookbehind with Alt body into per-branch fixed-length lookbehinds.
+/// C: node_char_len
+fn node_char_len(node: &Node, reg: &RegexType, ci: &mut MinMaxCharLen, env: &ParseEnv) -> i32 {
+    let n = env.num_mem.max(0) as usize + 1;
+    let mut marks = CharLenMarks {
+        mark1: vec![false; n],
+        fixed_clen: vec![None; n],
+    };
+    node_char_len1(node, reg, ci, env, &mut marks, 0)
+}
+
+/// Divide variable-length lookbehind with Alt body into per-branch lookbehinds;
+/// tuning the new anchors measures and checks each branch.
 /// For positive: Alt(Anchor(LB,a), Anchor(LB,b)) — any branch must match (OR).
 /// For negative: List(Anchor(LB_NOT,a), Anchor(LB_NOT,b)) — all branches must pass (AND).
-fn divide_look_behind_alt(node: &mut Node, anchor_type: i32, enc: OnigEncoding) -> i32 {
+/// C: divide_look_behind_alternatives
+fn divide_look_behind_alt(node: &mut Node, anchor_type: i32) -> i32 {
     // Extract anchor fields
     let (body, ascii_mode) = if let NodeInner::Anchor(ref mut an) = node.inner {
         (an.body.take().unwrap(), an.ascii_mode)
@@ -4407,16 +4523,9 @@ fn divide_look_behind_alt(node: &mut Node, anchor_type: i32, enc: OnigEncoding) 
     // Build new node tree of anchors, from last to first
     let mut result: Option<Box<Node>> = None;
     for branch in branches.into_iter().rev() {
-        let char_len = match node_char_len(&branch, enc) {
-            CharLenResult::Fixed(n) => n,
-            CharLenResult::Variable(_, _) => return ONIGERR_INVALID_LOOK_BEHIND_PATTERN,
-        };
-
         let mut anchor = node_new_anchor(anchor_type);
         if let NodeInner::Anchor(ref mut an) = anchor.inner {
             an.body = Some(branch);
-            an.char_min_len = char_len;
-            an.char_max_len = char_len;
             an.ascii_mode = ascii_mode;
         }
 
@@ -4435,26 +4544,6 @@ fn divide_look_behind_alt(node: &mut Node, anchor_type: i32, enc: OnigEncoding) 
     }
 
     ONIG_NORMAL
-}
-
-/// Check if a node is an Alt where all top-level branches are individually fixed-length.
-/// Returns true only if: node is Alt, and every branch has CharLenResult::Fixed.
-fn is_alt_all_branches_fixed(node: &Node, enc: OnigEncoding) -> bool {
-    let mut cur = node;
-    loop {
-        if let NodeInner::Alt(cons) = &cur.inner {
-            match node_char_len(&cons.car, enc) {
-                CharLenResult::Fixed(_) => {}
-                CharLenResult::Variable(_, _) => return false,
-            }
-            match &cons.cdr {
-                Some(next) => cur = next,
-                None => return true,
-            }
-        } else {
-            return false;
-        }
-    }
 }
 
 /// Check if a node tree contains absent stoppers (ND_ST_ABSENT_WITH_SIDE_EFFECTS).
@@ -4983,22 +5072,23 @@ fn tune_look_behind(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut 
         alt_reduce_in_look_behind(body);
     }
 
-    let body_char_len = {
+    let mut ci = MinMaxCharLen::default();
+    let r = {
         let body = if let NodeInner::Anchor(ref an) = node.inner {
             an.body.as_ref().unwrap()
         } else {
             return 0;
         };
-        node_char_len(body, enc)
+        node_char_len(body, reg, &mut ci, env)
     };
+    if r < 0 {
+        return r;
+    }
 
-    // Overflow check (C: #177)
+    // C: "#177: overflow in onigenc_step_back()"
     const LOOK_BEHIND_MAX_CHAR_LEN: OnigLen = 65535;
-    let (cmin, cmax) = match body_char_len {
-        CharLenResult::Fixed(n) => (n, n),
-        CharLenResult::Variable(mn, mx) => (mn, mx),
-    };
-    if (cmax != INFINITE_LEN && cmax > LOOK_BEHIND_MAX_CHAR_LEN) || cmin > LOOK_BEHIND_MAX_CHAR_LEN
+    if (ci.max != INFINITE_LEN && ci.max > LOOK_BEHIND_MAX_CHAR_LEN)
+        || ci.min > LOOK_BEHIND_MAX_CHAR_LEN
     {
         return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
     }
@@ -5007,67 +5097,44 @@ fn tune_look_behind(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut 
     // or back-reference on its shortest path and without a referenced
     // capture, always matches right at the current position: the
     // look-behind is then an empty node, and a negative one a FAIL.
-    if cmin == 0 && !lb_used {
-        let min_is_sure = if let NodeInner::Anchor(ref an) = node.inner {
-            an.body
-                .as_ref()
-                .is_some_and(|body| node_char_len_min_is_sure(body, enc))
+    if ci.min == 0 && ci.min_is_sure && !lb_used {
+        if anchor_type == ANCR_LOOK_BEHIND_NOT {
+            onig_node_reset_fail(node);
         } else {
-            false
-        };
-        if min_is_sure {
-            if anchor_type == ANCR_LOOK_BEHIND_NOT {
-                onig_node_reset_fail(node);
-            } else {
-                onig_node_reset_empty(node);
-            }
-            return ONIG_NORMAL;
+            onig_node_reset_empty(node);
         }
+        return ONIG_NORMAL;
     }
 
-    let different_len_alt = is_syntax_bv(&env.syntax, ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND);
-    let variable_len = is_syntax_bv(&env.syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND);
-
-    if let CharLenResult::Variable(..) = body_char_len {
-        // Check if body is Alt with all branches individually fixed-length
-        // (C's CHAR_LEN_TOP_ALT_FIXED case)
-        let top_alt_fixed = if let NodeInner::Anchor(ref an) = node.inner {
-            an.body
-                .as_ref()
-                .is_some_and(|body| is_alt_all_branches_fixed(body, enc))
-        } else {
-            false
-        };
-
-        if top_alt_fixed {
-            if different_len_alt {
-                // C: divide_look_behind_alternatives() + tune_tree(node); the
-                // new anchors each go through tune_look_behind() again.
-                let r = divide_look_behind_alt(node, anchor_type, enc);
-                if r != ONIG_NORMAL {
-                    return r;
-                }
-                return tune_tree(node, reg, state, env);
+    if r == CHAR_LEN_TOP_ALT_FIXED {
+        if is_syntax_bv(&env.syntax, ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND) {
+            // C: divide_look_behind_alternatives() + tune_tree(node); the
+            // new anchors each go through tune_look_behind() again.
+            let r = divide_look_behind_alt(node, anchor_type);
+            if r != ONIG_NORMAL {
+                return r;
             }
-            if !variable_len {
-                return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
-            }
-            // C: goto normal
-        } else if !variable_len {
+            return tune_tree(node, reg, state, env);
+        } else if !is_syntax_bv(&env.syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND) {
             return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
         }
-        if cmin == INFINITE_LEN {
-            return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
-        }
+        // C: goto normal
     }
 
-    // C: CHAR_LEN_NORMAL
+    // C: CHAR_LEN_NORMAL (normal:)
+    if ci.min == INFINITE_LEN {
+        return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+    }
+    if ci.min != ci.max && !is_syntax_bv(&env.syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND) {
+        return ONIGERR_INVALID_LOOK_BEHIND_PATTERN;
+    }
+
     if let NodeInner::Anchor(ref mut an) = node.inner {
         // C: "check lead_node is already set by double call after
         // divide_look_behind_alternatives()"
         if an.lead_node.is_none() {
-            an.char_min_len = cmin;
-            an.char_max_len = cmax;
+            an.char_min_len = ci.min;
+            an.char_max_len = ci.max;
             // A copy of the body's trailing literal. The variable-length
             // look-behind code checks it right before the current position,
             // ahead of the step-back loop, so a position that cannot end the
@@ -7717,6 +7784,11 @@ fn extract_alt_branches(alt_node: &mut Node, indices: &[usize], out: &mut Vec<No
 pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
     // Skip nodes already optimized as literal alternation tries.
     if node.has_status(ND_ST_LITERAL_ALT) {
+        // C unravels the case-insensitive strings the trie replaces here.
+        if let Some(trie) = literal_alt_trie_index(node).and_then(|i| reg.literal_tries.get_mut(i))
+        {
+            trie.set_tuned();
+        }
         return 0;
     }
 
@@ -9371,14 +9443,31 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
         NodeInner::String(_) if node.has_status(ND_ST_LITERAL_ALT) => INFINITE_LEN,
         NodeInner::String(sn) => sn.s.len() as OnigLen,
         NodeInner::CType(_) | NodeInner::CClass(_) => env.enc.max_enc_len() as OnigLen,
-        NodeInner::BackRef(_) => {
+        // C: the maximum over the referenced groups of
+        // node_max_byte_len(mem_env[backs[i]].mem_node). Following a
+        // back-reference would leave the ownership tree through a raw capture
+        // pointer, so the port reads each group's length from
+        // env.group_max_len (see GroupMaxLen).
+        NodeInner::BackRef(br) => {
             if node.has_status(ND_ST_CHECKER) {
                 0
+            } else if node.has_status(ND_ST_RECURSION) {
+                if node.has_status(ND_ST_NEST_LEVEL) {
+                    INFINITE_LEN
+                } else {
+                    0
+                }
             } else {
-                // Following a backreference would leave the ownership tree through
-                // a raw capture pointer. An unbounded maximum is conservative and
-                // only disables optimizations that require a finite upper bound.
-                INFINITE_LEN
+                br.back_refs()
+                    .iter()
+                    .map(|&back| {
+                        env.group_max_len
+                            .get(back as usize)
+                            .copied()
+                            .unwrap_or(INFINITE_LEN)
+                    })
+                    .max()
+                    .unwrap_or(0)
             }
         }
         // Calls are self-referential AST edges. Staying inside the ownership tree
@@ -9447,6 +9536,133 @@ fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
         },
         NodeInner::Anchor(_) | NodeInner::Gimmick(_) => 0,
     }
+}
+
+/// C: the max_len that node_max_byte_len caches on each BAG_MEMORY node
+/// (ND_ST_FIXED_MAX) and returns for a back-reference to the group. A group
+/// reached again while its own length is being computed counts as
+/// INFINITE_LEN (C: MARK1).
+struct GroupMaxLen<'a> {
+    groups: Vec<Option<&'a Node>>,
+    fixed: Vec<Option<OnigLen>>,
+    mark1: Vec<bool>,
+}
+
+impl GroupMaxLen<'_> {
+    fn group(&mut self, regnum: usize, env: &ParseEnv) -> OnigLen {
+        if let Some(Some(len)) = self.fixed.get(regnum) {
+            return *len;
+        }
+        if self.mark1.get(regnum).copied().unwrap_or(true) {
+            return INFINITE_LEN; /* recursive */
+        }
+        let Some(Some(node)) = self.groups.get(regnum).copied() else {
+            return INFINITE_LEN;
+        };
+        self.mark1[regnum] = true;
+        let len = match &node.inner {
+            NodeInner::Bag(bn) => bn.body.as_deref().map_or(0, |body| self.len(body, env)),
+            _ => 0,
+        };
+        self.mark1[regnum] = false;
+        self.fixed[regnum] = Some(len);
+        len
+    }
+
+    /// node_max_byte_len with groups and back-references resolved through
+    /// the cache.
+    fn len(&mut self, node: &Node, env: &ParseEnv) -> OnigLen {
+        match &node.inner {
+            NodeInner::List(_) => {
+                let mut len: OnigLen = 0;
+                let mut cur = node;
+                while let NodeInner::List(cons) = &cur.inner {
+                    len = distance_add(len, self.len(&cons.car, env));
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                }
+                len
+            }
+            NodeInner::Alt(_) => {
+                let mut len: OnigLen = 0;
+                let mut cur = node;
+                while let NodeInner::Alt(cons) = &cur.inner {
+                    let tmax = self.len(&cons.car, env);
+                    if len < tmax {
+                        len = tmax;
+                    }
+                    match &cons.cdr {
+                        Some(next) => cur = next,
+                        None => break,
+                    }
+                }
+                len
+            }
+            NodeInner::Quant(qn) => match &qn.body {
+                Some(body) if qn.upper != 0 => {
+                    let len = self.len(body, env);
+                    if len == 0 {
+                        0
+                    } else if !is_infinite_repeat(qn.upper) {
+                        distance_multiply(len, qn.upper)
+                    } else {
+                        INFINITE_LEN
+                    }
+                }
+                _ => 0,
+            },
+            NodeInner::Bag(bn) => match bn.bag_type {
+                BagType::Memory => self.group(bn.regnum() as usize, env),
+                BagType::Option | BagType::StopBacktrack => {
+                    bn.body.as_deref().map_or(0, |body| self.len(body, env))
+                }
+                BagType::IfElse => {
+                    let BagData::IfElse {
+                        then_node,
+                        else_node,
+                    } = &bn.bag_data
+                    else {
+                        return 0;
+                    };
+                    let mut len = bn.body.as_deref().map_or(0, |body| self.len(body, env));
+                    if let Some(then_node) = then_node {
+                        len = distance_add(len, self.len(then_node, env));
+                    }
+                    let elen = else_node.as_deref().map_or(0, |e| self.len(e, env));
+                    if elen > len { elen } else { len }
+                }
+            },
+            NodeInner::BackRef(br)
+                if !node.has_status(ND_ST_CHECKER) && !node.has_status(ND_ST_RECURSION) =>
+            {
+                let mut len: OnigLen = 0;
+                for &back in br.back_refs() {
+                    let tmax = self.group(back as usize, env);
+                    if len < tmax {
+                        len = tmax;
+                    }
+                }
+                len
+            }
+            _ => node_max_byte_len(node, env),
+        }
+    }
+}
+
+/// Fill `env.group_max_len` for every group of a pattern with
+/// back-references.
+fn compute_group_max_lens(root: &Node, env: &ParseEnv) -> Vec<OnigLen> {
+    let n = env.num_mem.max(0) as usize + 1;
+    let mut groups = vec![None; n];
+    collect_memory_groups(root, &mut groups);
+    let mut cache = GroupMaxLen {
+        groups,
+        fixed: vec![None; n],
+        mark1: vec![false; n],
+    };
+    (0..n).map(|regnum| cache.group(regnum, env)).collect()
 }
 
 /// Which byte maps `optimize_nodes` computes. With `extra` it adds the
@@ -10165,6 +10381,7 @@ fn compile_recording_name_with_optimization(
         flags: 0,
         recursive_mem: Vec::new(),
         group_min_len: Vec::new(),
+        group_max_len: Vec::new(),
     };
 
     let r = compile_parsed(reg, pattern, &mut env, optimize_backtracking);
@@ -10269,9 +10486,10 @@ fn compile_parsed(
     detect_literal_alternations(&mut root, reg, env.backrefed_mem);
     refresh_node_references(&mut root, env);
 
-    // Minimum lengths of called groups for node_min_byte_len (C caches them
-    // on the group nodes while tune_tree asks for them).
-    if env.num_call > 0 {
+    // Minimum lengths of called and back-referenced groups for
+    // node_min_byte_len (C caches them on the group nodes while tune_tree
+    // asks for them).
+    if env.num_call > 0 || env.backref_num > 0 {
         env.group_min_len = compute_group_min_lens(&root, env);
     }
 
@@ -10281,6 +10499,13 @@ fn compile_parsed(
         return r;
     }
     refresh_node_references(&mut root, env);
+
+    // Lengths of the tuned groups for the optimizer's back-references (C
+    // reads them from the group nodes, tuned by then, in optimize_nodes).
+    if env.backref_num > 0 {
+        env.group_min_len = compute_group_min_lens(&root, env);
+        env.group_max_len = compute_group_max_lens(&root, env);
+    }
 
     // Compute empty_status_mem for quantifiers (determines EmptyCheckEnd vs EmptyCheckEndMemst)
     setup_empty_status_mem(&mut root, env);
@@ -10958,6 +11183,69 @@ mod tests {
         assert!(has(b"(?<=\\ba*)b", OpCode::StepBackStart));
     }
 
+    /// C's node_char_len1() measures a back-reference by the groups it
+    /// refers to, so a look-behind over a fixed-length group steps back a
+    /// fixed distance instead of trying every start. A reference inside its
+    /// own group (RECURSION) counts as empty, or as any length with a level.
+    /// Expected (initial, remaining) are C's step-back-start operands.
+    #[test]
+    fn look_behind_back_reference_takes_group_char_len() {
+        let step_back = |pattern: &[u8]| {
+            let reg = compile_utf8(pattern);
+            reg.ops
+                .iter()
+                .filter_map(|op| match op.payload {
+                    OperationPayload::StepBackStart {
+                        initial, remaining, ..
+                    } => Some((initial, remaining)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let any = INFINITE_LEN as LengthType;
+        assert_eq!(step_back(br"((?<=\1)|^)x"), [(0, 0)]);
+        assert_eq!(step_back(br#"(["'])(`\1|.(?<!\1))*\1"#), [(1, 0)]);
+        assert_eq!(step_back(br"(a|bc)(?<=\1)"), [(1, 1)]);
+        assert_eq!(step_back(br"(?<n>a)(?<n>bc)(?<=\k<n>)"), [(1, 1)]);
+        assert_eq!(step_back(br"(?<n>a)(?<=\k<n+0>)"), [(1, 0)]);
+        assert_eq!(step_back(br"(?<n>a(?<=\k<n+0>))"), [(0, any)]);
+        assert_eq!(step_back(br"(?<=(a|bc)\1)x"), [(2, 2)]);
+        // CHAR_LEN_TOP_ALT_FIXED: one look-behind per branch.
+        assert_eq!(step_back(br"(a)(?<=\1|b\1)x"), [(1, 0), (2, 0)]);
+        // A call into a recursive group: the inner call is any length.
+        assert_eq!(step_back(br"(?<=\g<1>)(a\g<1>?b)"), [(2, any)]);
+    }
+
+    /// C's node_min_byte_len() and node_max_byte_len() take a
+    /// back-reference's length from the groups it refers to: a loop over a
+    /// reference to a group that cannot be empty gets no empty check, and
+    /// the optimizer bounds the distance to a literal behind it. Expected
+    /// values are C's.
+    #[test]
+    fn back_reference_byte_len_follows_group() {
+        let empty_checks = |pattern: &[u8]| {
+            compile_utf8(pattern)
+                .ops
+                .iter()
+                .filter(|op| op.opcode == OpCode::EmptyCheckStart)
+                .count()
+        };
+        assert_eq!(empty_checks(br"(a)(?:\1)*"), 0);
+        assert_eq!(empty_checks(br"(?<n>a)(?<n>bc)(?:\k<n>)*"), 0);
+        assert_eq!(empty_checks(br"(a?)(?:\1)*"), 1);
+        assert_eq!(empty_checks(br"(a(?:\1)*)"), 1);
+
+        let exact = |pattern: &[u8]| {
+            let reg = compile_utf8(pattern);
+            (reg.exact.clone(), reg.dist_min, reg.dist_max)
+        };
+        assert_eq!(exact(br"(a)\1xyz"), (b"xyz".to_vec(), 2, 2));
+        assert_eq!(exact(br"(a|bc)\1xyzw"), (b"xyzw".to_vec(), 2, 4));
+        assert_eq!(exact(br"(a|bc)(?:\1|x\1)xyzw"), (b"xyzw".to_vec(), 2, 5));
+        // Groups that refer to each other: the cycle counts as unbounded.
+        assert_eq!(exact(br"(\2)(\1)x"), (b"x".to_vec(), 0, INFINITE_LEN));
+    }
+
     /// A variable-length look-behind that cannot end at a position must fail
     /// there without stepping back over the subject: without the lead_node
     /// check and the early quantifier reduction, each position scans back
@@ -11084,6 +11372,7 @@ mod tests {
             flags: 0,
             recursive_mem: Vec::new(),
             group_min_len: Vec::new(),
+            group_max_len: Vec::new(),
         };
         (reg, env)
     }

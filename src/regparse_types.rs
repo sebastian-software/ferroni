@@ -860,9 +860,15 @@ pub struct ParseEnv {
     /// here so passes need not follow the call's raw target pointer.
     pub recursive_mem: Vec<bool>,
     /// Minimum byte length of each group's body, by group number, filled
-    /// before tune_tree when the pattern has calls. C caches the same value
-    /// in BAG_(node)->min_len (ND_ST_FIXED_MIN) and reads it for a call.
+    /// before tune_tree and again after it when the pattern has calls or
+    /// back-references. C caches the same value in BAG_(node)->min_len
+    /// (ND_ST_FIXED_MIN) and reads it for a call or a back-reference.
     pub group_min_len: Vec<OnigLen>,
+    /// Maximum byte length of each group's body, by group number, filled
+    /// after tune_tree when the pattern has back-references. C caches the
+    /// same value in BAG_(node)->max_len (ND_ST_FIXED_MAX) and reads it for
+    /// a back-reference.
+    pub group_max_len: Vec<OnigLen>,
 }
 
 // SAFETY: the raw pointers in ParseEnv point into data owned by the caller of
@@ -949,8 +955,10 @@ pub fn node_new_anychar() -> Box<Node> {
     node_new_ctype(CTYPE_ANYCHAR, false, false)
 }
 
-/// Port of C's `node_new_backref`. As in C, the NEST_LEVEL status follows
-/// whether a level was written (`\k<n+0>` included), not the level's value.
+/// Port of C's `node_new_backref`, without the steps that need the parse
+/// environment (see `node_new_backref_in_env`). As in C, the NEST_LEVEL
+/// status follows whether a level was written (`\k<n+0>` included), not the
+/// level's value.
 pub fn node_new_backref(
     back_num: i32,
     backrefs: &[i32],
@@ -980,6 +988,35 @@ pub fn node_new_backref(
     if exist_level {
         node.status_add(ND_ST_NEST_LEVEL);
     }
+    node
+}
+
+/// C's `node_new_backref` in full: `node_new_backref` plus the steps that
+/// read the parse environment. A reference to a group that is still open
+/// (`/...(\1).../`) gets the RECURSION status. Kept apart so that
+/// `node_new_backref` keeps its public signature.
+pub(crate) fn node_new_backref_in_env(
+    back_num: i32,
+    backrefs: &[i32],
+    by_name: bool,
+    exist_level: bool,
+    nest_level: i32,
+    env: &mut ParseEnv,
+) -> Box<Node> {
+    let mut node = node_new_backref(back_num, backrefs, by_name, exist_level, nest_level);
+
+    if opton_ignorecase(env.options) {
+        node.status_add(ND_ST_IGNORECASE);
+    }
+
+    if backrefs
+        .iter()
+        .any(|&b| (0..=env.num_mem).contains(&b) && env.mem_env(b as usize).mem_node.is_null())
+    {
+        node.status_add(ND_ST_RECURSION); /* /...(\1).../ */
+    }
+
+    env.backref_num += 1;
     node
 }
 
