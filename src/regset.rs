@@ -835,8 +835,9 @@ fn region_is_redundant(reg: &RegexType) -> bool {
 enum EntryRegion {
     /// Every attempt records its captures.
     Fill,
-    /// Attempts run without a region, and only a successful one runs again
-    /// to record its captures (`can_use_two_pass_capture_fill` in regexec).
+    /// The attempt at the search start records its captures; later attempts
+    /// run without a region, and only a successful one runs again to record
+    /// its captures (`can_use_two_pass_capture_fill` in regexec).
     FillOnMatch,
 }
 
@@ -917,7 +918,7 @@ fn attempt_fallback_entry(
     fill: EntryRegion,
     msa: &mut MatchArg,
 ) -> i32 {
-    if fill == EntryRegion::Fill {
+    if fill == EntryRegion::Fill || position == search_start {
         msa.region = entry.region.take();
         let result = attempt_entry_match(entry, str_data, end, position, search_start, option, msa);
         entry.region = msa.region.take();
