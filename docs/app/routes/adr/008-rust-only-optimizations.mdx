@@ -270,6 +270,16 @@ Where C finds no optimizer, the extra class and type byte maps (`optimize_nodes`
 - **Impact** (instructions retired, a search from every start of every line of a mixed 213-line corpus, all 14,950 Shiki patterns): the 51 patterns whose map is dropped take 15% fewer in total (−35% to +2.2%); `[^\\]$` and `(?=[^\\])$` go from 1.84× and 1.95× C's instructions to 1.20× and 1.46×. All patterns together −0.08%, with unchanged results. Scanner replays (C++, Java, SCSS) and grammar compilation stay within ±0.2%, their run-to-run spread.
 - **Bounds**: one pass over the 256 map bytes per expression with an extra map; no new data.
 
+#### Attempts continued in the VM (`src/regexec.rs`)
+
+Where a forward search attempts position after position and each attempt fails at once (`(\1)`, `\s*(;)`, `(?<=})|(?=#)`), the fixed cost of an attempt dominates: the call into `match_at_impl`, its prologue (stack and capture arrays, limits, the invariants the compiler loads for the dispatch loop) and its epilogue.
+
+- **Trigger**: the forward position-by-position loop of `onig_search_inner_core_with_right_range` (no optimizer, or C's optimizer with an unbounded distance falling through to it), for expressions without callouts. The attempt at the start of a two-pass capture search keeps its own call, since it alone records captures.
+- **Execution**: the steps between two attempts (C: the search retry check, the loop condition and `s += enclen(...)`, plus the Rust-only start filters and leading-run skips) live in `ForwardScan`. The search loop runs them after an attempt that returns; `match_at_impl` runs the same steps where an attempt fails at the bottom of its stack, resets the state its prologue sets up (stack with the bottom sentinel, capture arrays, retry budget of the attempt, call nesting, guard state, `best_len`/`best_s`), and goes on with the next attempt at `p = 0`. A match, an error or the end of the range ends the call as before; `scan.at` gives the attempt's start.
+- **Observability**: none. Every attempt runs, counts its retries into the search's count and checks the search budget at the same point as before, and stack and time limits see the same stacks and backtracks. FIND_LONGEST attempts that reach the bottom after a match still return.
+- **Impact** (instructions retired, a search from every start of every line of the shared 213-line corpus, Ferroni / C): `(\1)` 1.52× → 1.09×, `\s*(;)` 1.70× → 1.35×, `(?<=})|(?=#)` 1.47× → 1.18×, `(\1)|(\n)` 1.71× → 1.40×; over the 89 Shiki patterns at or above 1.3× C's time, 1.58× → 1.35× in total. A full Shiki perfscan (time, every pattern) and the captured scanner replays (cycles) improve or stay within their spread.
+- **Bounds**: no new data or allocation; the reset is the prologue's work without the call.
+
 ## Rationale
 
 - **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.

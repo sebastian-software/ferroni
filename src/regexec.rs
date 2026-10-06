@@ -3588,6 +3588,22 @@ fn match_at(
     sstart: usize,
     msa: &mut MatchArg,
 ) -> i32 {
+    match_at_in_scan(reg, str_data, end, in_right_range, sstart, msa, None)
+}
+
+/// `match_at`, which, given a forward scan, goes on with the scan's next
+/// attempt where this one fails (Rust-only, see `ForwardScan`). The start
+/// of the attempt that ends the call is then in `scan.at`.
+#[inline(always)]
+fn match_at_in_scan(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    in_right_range: usize,
+    sstart: usize,
+    msa: &mut MatchArg,
+    scan: Option<&mut ForwardScan<'_>>,
+) -> i32 {
     // Untracked runs skip the MemStartPush/MemEndPush stack entries. With a
     // match stack limit configured that would change when the limit trips,
     // so such runs keep the bookkeeping to stay observably identical to C.
@@ -3599,10 +3615,37 @@ fn match_at(
         || reg.needs_capture_tracking
         || (msa.match_stack_limit != 0 && (reg.push_mem_start | reg.push_mem_end) != 0)
     {
-        match_at_impl::<true>(reg, str_data, end, in_right_range, sstart, msa)
+        match_at_impl::<true>(reg, str_data, end, in_right_range, sstart, msa, scan)
     } else {
-        match_at_impl::<false>(reg, str_data, end, in_right_range, sstart, msa)
+        match_at_impl::<false>(reg, str_data, end, in_right_range, sstart, msa, scan)
     }
+}
+
+/// Invalidates the capture arrays of more groups than `MEM_STK_INLINE` holds.
+/// Out of line: the fixed-length invalidation of the inline arrays would
+/// otherwise merge with this one into a call to memset.
+#[cold]
+#[inline(never)]
+fn invalidate_mem_stacks(mem_start_stk: &mut [MemPtr], mem_end_stk: &mut [MemPtr]) {
+    mem_start_stk.fill(MemPtr::invalid());
+    mem_end_stk.fill(MemPtr::invalid());
+}
+
+/// The retry limit of one attempt. As in C, the budget left in the search
+/// caps the retries of this match, so one start position cannot overrun the
+/// search limit.
+#[inline]
+fn retry_limit_of_attempt(msa: &MatchArg) -> u64 {
+    let mut retry_limit_in_match = msa.retry_limit_in_match;
+    if msa.retry_limit_in_search != 0 {
+        let rem = msa
+            .retry_limit_in_search
+            .saturating_sub(msa.retry_limit_in_search_counter);
+        if rem < retry_limit_in_match || retry_limit_in_match == 0 {
+            retry_limit_in_match = rem;
+        }
+    }
+    retry_limit_in_match
 }
 
 fn match_at_impl<const TRACK_CAPTURES: bool>(
@@ -3610,8 +3653,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     str_data: &[u8],
     end: usize,
     in_right_range: usize,
-    sstart: usize,
+    mut sstart: usize,
     msa: &mut MatchArg,
+    mut scan: Option<&mut ForwardScan<'_>>,
 ) -> i32 {
     let mut p: usize = 0; // bytecode index into reg.ops
     let mut s: usize = sstart; // current string position
@@ -3654,17 +3698,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     let mut best_len: i32 = ONIG_MISMATCH;
     let mut last_alt_zid: i32 = -1;
 
-    // Safety limits. As in C, the budget left in the search caps the retries
-    // of this match, so one start position cannot overrun the search limit.
-    let mut retry_limit_in_match = msa.retry_limit_in_match;
-    if msa.retry_limit_in_search != 0 {
-        let rem = msa
-            .retry_limit_in_search
-            .saturating_sub(msa.retry_limit_in_search_counter);
-        if rem < retry_limit_in_match || retry_limit_in_match == 0 {
-            retry_limit_in_match = rem;
-        }
-    }
+    // Safety limits.
+    let mut retry_limit_in_match = retry_limit_of_attempt(msa);
     let mut retry_in_match_counter: u64 = 0;
     let match_stack_limit = msa.match_stack_limit;
     let stack_cap = if match_stack_limit != 0 {
@@ -3733,6 +3768,64 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 continue;
             }
             best_len = err;
+            break;
+        }};
+    }
+    // Leaves the loop where the bottom of the stack is reached (C:
+    // `finish`). Rust-only (ADR-008): where that ends a failed attempt of a
+    // forward scan, the scan's next attempt starts here, with the state this
+    // function's prologue sets up, instead of in a new call from the search
+    // loop (see `ForwardScan`). Under FIND_LONGEST an attempt can reach the
+    // bottom after a match; that ends the call as before.
+    macro_rules! attempt_failed {
+        () => {{
+            if let Some(scan) = scan.as_deref_mut().filter(|_| best_len == ONIG_MISMATCH) {
+                // C's match_at_end, then the search loop's step.
+                msa.retry_limit_in_search_counter += retry_in_match_counter;
+                retry_in_match_counter = 0;
+                match scan.after_attempt(reg, msa, str_data, sstart) {
+                    Ok(Some(next)) => {
+                        // Positions only grow, so this start runs with the
+                        // same capture tracking as the scan's first one.
+                        debug_assert!(msa.capture_position != Some(next));
+                        scan.at = next;
+                        sstart = next;
+                        msa.best_len = ONIG_MISMATCH;
+                        msa.best_s = 0;
+                        p = 0;
+                        s = next;
+                        right_range = in_right_range;
+                        keep = next;
+                        last_alt_zid = -1;
+                        // Only the search budget changes it between attempts.
+                        if msa.retry_limit_in_search != 0 {
+                            retry_limit_in_match = retry_limit_of_attempt(msa);
+                        }
+                        subexp_call_nest_counter = 0;
+                        exact_guard_retries = false;
+                        stack.clear();
+                        stack.push(StackEntry::Alt {
+                            pcode: FINISH_PCODE,
+                            pstr: 0,
+                            zid: -1,
+                            is_super: false,
+                        });
+                        if TRACK_CAPTURES {
+                            if num_mem < MEM_STK_INLINE {
+                                // A fixed length stores in place, without
+                                // a call to memset.
+                                mem_start_stk[..MEM_STK_INLINE].fill(MemPtr::invalid());
+                                mem_end_stk[..MEM_STK_INLINE].fill(MemPtr::invalid());
+                            } else {
+                                invalidate_mem_stacks(mem_start_stk, mem_end_stk);
+                            }
+                        }
+                        continue;
+                    }
+                    Ok(None) => {}
+                    Err(err) => best_len = err,
+                }
+            }
             break;
         }};
     }
@@ -6131,7 +6224,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             };
             if let Some((pcode, pstr, alt_zid, pop)) = top {
                 if pcode == FINISH_PCODE {
-                    break;
+                    attempt_failed!();
                 }
                 if pop {
                     stack.pop();
@@ -6155,7 +6248,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 Some((pcode, pstr, alt_zid)) => {
                     if pcode == FINISH_PCODE {
                         // Hit bottom sentinel - no more alternatives
-                        break;
+                        attempt_failed!();
                     }
                     p = pcode;
                     s = pstr;
@@ -6163,7 +6256,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 }
                 None => {
                     // Stack empty - match failed
-                    break;
+                    attempt_failed!();
                 }
             }
         }
@@ -8054,40 +8147,42 @@ fn onig_search_inner_core_with_right_range(
         }
     }
 
-    let class_prefix = atomic_ascii_class_prefix(reg, msa);
-    let mut class_prefix_end = s;
-
     // Normal position-by-position search (no optimization or fallthrough)
     if best_start == ONIG_MISMATCH {
+        let class_prefix = atomic_ascii_class_prefix(reg, msa);
+        let mut scan = ForwardScan {
+            end,
+            cur_range,
+            data_range,
+            find_longest,
+            ascii_compatible: onigenc_is_ascii_compatible_encoding(enc),
+            search_jump,
+            class_prefix,
+            class_prefix_end: s,
+            start_filter,
+            filters: search_jump.is_some() || class_prefix.is_some() || start_filter.is_some(),
+            at: s,
+        };
+        // Callouts can observe the attempts and set `skip_search`: each
+        // attempt keeps its own call there.
+        let in_vm = reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0);
+        if scan.filters {
+            s = scan.attempt_start(reg, msa, str_data, s);
+        }
         loop {
-            if let Some(jump) = search_jump {
-                s = jump.next_start(
-                    reg,
-                    str_data,
-                    s,
-                    end,
-                    data_range,
-                    msa.options,
-                    Some(cur_range),
-                );
-            }
-            if let Some((bsp, delimiter)) = class_prefix {
-                if s >= class_prefix_end {
-                    (s, class_prefix_end) = skip_nonmatching_class_prefix(
-                        reg.enc, str_data, end, cur_range, s, bsp, delimiter,
-                    );
-                }
-            }
-            if let Some(filter) = start_filter {
-                // No match starts on an excluded byte. The range limit and the
-                // logical end are still attempted, as the loop below does.
-                while s < cur_range && s < end && filter[str_data[s] as usize] == 0 {
-                    s = advance_char_to_end(enc, str_data, s, end);
-                }
-            }
             msa.best_len = ONIG_MISMATCH;
             msa.best_s = 0;
-            let r = match_at(reg, str_data, end, data_range, s, msa);
+            // The attempt at the start of a two-pass search records its
+            // captures, the later ones do not (see `match_at`); only
+            // attempts with the same tracking continue in the VM.
+            let r = if in_vm && msa.capture_position != Some(s) {
+                scan.at = s;
+                let r = match_at_in_scan(reg, str_data, end, data_range, s, msa, Some(&mut scan));
+                s = scan.at;
+                r
+            } else {
+                match_at(reg, str_data, end, data_range, s, msa)
+            };
             if r != ONIG_MISMATCH {
                 if r < 0 {
                     return r;
@@ -8102,33 +8197,10 @@ fn onig_search_inner_core_with_right_range(
                     return s as i32;
                 }
             }
-            if msa.retry_limit_in_search != 0
-                && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
-            {
-                return ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER;
-            }
-            if s >= cur_range {
-                break;
-            }
-            if s >= end {
-                break;
-            }
-            s = if reg.leading_run.is_some() {
-                after_failed_run(
-                    reg,
-                    find_longest,
-                    msa,
-                    str_data,
-                    end,
-                    data_range,
-                    cur_range,
-                    s,
-                )
-            } else {
-                advance_char_to_end(enc, str_data, s, end)
-            };
-            if msa.skip_search > s {
-                s = msa.skip_search;
+            match scan.after_attempt(reg, msa, str_data, s) {
+                Ok(Some(next)) => s = next,
+                Ok(None) => break,
+                Err(err) => return err,
             }
         }
     }
@@ -8143,6 +8215,137 @@ fn onig_search_inner_core_with_right_range(
         data_range,
         msa,
     )
+}
+
+/// The steps between two attempts of the forward position-by-position loop
+/// of `onig_search_inner_core_with_right_range` (C: the search-limit check
+/// of `MATCH_AND_RETURN_CHECK`, the loop condition and
+/// `s += enclen(reg->enc, s)`), with the Rust-only start filters at the loop
+/// head.
+///
+/// Rust-only (ADR-008): the search loop runs them after an attempt returns,
+/// and `match_at_impl` runs them where an attempt fails, to start the next
+/// attempt without leaving the VM. A failing attempt then costs no call,
+/// prologue or epilogue; the VM restores the state its prologue sets up, and
+/// both run the same steps, so every attempt, retry count and limit stays
+/// as it was.
+pub(crate) struct ForwardScan<'a> {
+    end: usize,
+    /// Starts are attempted up to and including this position.
+    cur_range: usize,
+    data_range: usize,
+    find_longest: bool,
+    /// `onigenc_is_ascii_compatible_encoding`, read once per search.
+    ascii_compatible: bool,
+    search_jump: Option<&'a crate::leading_run::SearchJump>,
+    class_prefix: Option<(&'a BitSet, u8)>,
+    class_prefix_end: usize,
+    start_filter: Option<&'a [u8; CHAR_MAP_SIZE]>,
+    /// One of the three filters above is set.
+    filters: bool,
+    /// The start of the attempt the VM made last.
+    at: usize,
+}
+
+impl ForwardScan<'_> {
+    /// The loop head: moves `s` past the starts the Rust-only filters leave
+    /// out.
+    #[inline(never)]
+    fn attempt_start(
+        &mut self,
+        reg: &RegexType,
+        msa: &MatchArg,
+        str_data: &[u8],
+        mut s: usize,
+    ) -> usize {
+        if let Some(jump) = self.search_jump {
+            s = jump.next_start(
+                reg,
+                str_data,
+                s,
+                self.end,
+                self.data_range,
+                msa.options,
+                Some(self.cur_range),
+            );
+        }
+        if let Some((bsp, delimiter)) = self.class_prefix {
+            if s >= self.class_prefix_end {
+                (s, self.class_prefix_end) = skip_nonmatching_class_prefix(
+                    reg.enc,
+                    str_data,
+                    self.end,
+                    self.cur_range,
+                    s,
+                    bsp,
+                    delimiter,
+                );
+            }
+        }
+        if let Some(filter) = self.start_filter {
+            // No match starts on an excluded byte. The range limit and the
+            // logical end are still attempted, as the loop does.
+            while s < self.cur_range && s < self.end && filter[str_data[s] as usize] == 0 {
+                s = self.advance(reg.enc, str_data, s);
+            }
+        }
+        s
+    }
+
+    /// After the attempt at `s` (that failed, or matched under
+    /// FIND_LONGEST): the start of the next attempt, `None` at the end of
+    /// the range, or the search retry limit error.
+    #[inline(always)]
+    fn after_attempt(
+        &mut self,
+        reg: &RegexType,
+        msa: &MatchArg,
+        str_data: &[u8],
+        s: usize,
+    ) -> Result<Option<usize>, i32> {
+        if msa.retry_limit_in_search != 0
+            && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
+        {
+            return Err(ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER);
+        }
+        if s >= self.cur_range || s >= self.end {
+            return Ok(None);
+        }
+        let next = self.advance(reg.enc, str_data, s);
+        let mut s = if reg.leading_run.is_some() {
+            after_failed_run_from(
+                reg,
+                self.find_longest,
+                msa,
+                str_data,
+                self.end,
+                self.data_range,
+                self.cur_range,
+                s,
+                next,
+            )
+        } else {
+            next
+        };
+        if msa.skip_search > s {
+            s = msa.skip_search;
+        }
+        if self.filters {
+            s = self.attempt_start(reg, msa, str_data, s);
+        }
+        Ok(Some(s))
+    }
+
+    /// `advance_char_to_end` with the encoding's ASCII compatibility read
+    /// once per search.
+    #[inline]
+    fn advance(&self, enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
+        if self.ascii_compatible && s < str_data.len() && str_data[s] < 0x80 {
+            (s + 1).min(self.end)
+        } else {
+            advance_char_to_end(enc, str_data, s, self.end)
+        }
+    }
 }
 
 /// A leading atomic `[class]+literal` has only one possible exit from its
@@ -8303,6 +8506,33 @@ pub(crate) fn after_failed_run(
     failed: usize,
 ) -> usize {
     let next = advance_char_to_end(reg.enc, str_data, failed, end);
+    after_failed_run_from(
+        reg,
+        find_longest,
+        msa,
+        str_data,
+        end,
+        data_range,
+        cur_range,
+        failed,
+        next,
+    )
+}
+
+/// `after_failed_run` given the next character's position `next`.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn after_failed_run_from(
+    reg: &RegexType,
+    find_longest: bool,
+    msa: &MatchArg,
+    str_data: &[u8],
+    end: usize,
+    data_range: usize,
+    cur_range: usize,
+    failed: usize,
+    next: usize,
+) -> usize {
     let Some(run) = reg.leading_run.as_deref() else {
         return next;
     };
