@@ -825,7 +825,8 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
             prefix
                 .iter()
                 .enumerate()
-                .filter(|(_, class)| class_members(class).count() <= 3)
+                // An empty class, such as `[a&&b]`, has no byte to find.
+                .filter(|(_, class)| (1..=3).contains(&class_members(class).count()))
                 .min_by_key(|(_, class)| class_members(class).map(byte_rank).sum::<usize>())
                 .map(|(at, _)| at)
         })
@@ -1219,6 +1220,32 @@ mod tests {
         }
     }
 
+    /// A leading empty class used to become the probe: the jump then never
+    /// found a candidate and never gave up.
+    #[test]
+    fn jumps_past_an_empty_leading_class_end() {
+        let mp = onig_new_match_param();
+        for pattern in [r"(?i)f[a&&b]", r"[a-z][a&&b]", r"[ab]c[a&&b]"] {
+            for text in [&b"abc XYZ 123"[..], b"", b"fff abc"] {
+                let reg = compile(pattern, UTF8).unwrap();
+                let bounds = (text.len(), 0, text.len());
+                let expected = search(
+                    &reference(pattern, UTF8),
+                    text,
+                    bounds,
+                    ONIG_OPTION_NONE,
+                    &mp,
+                );
+                assert_eq!(expected.0, ONIG_MISMATCH, "{pattern}");
+                assert_eq!(
+                    search(&reg, text, bounds, ONIG_OPTION_NONE, &mp),
+                    expected,
+                    "{pattern}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn jumps_follow_the_leading_checks() {
         let jump = |pattern: &str| {
@@ -1229,6 +1256,9 @@ mod tests {
         };
         // The rarest class is probed: `x`/`X` in "regex".
         assert_eq!(jump(r"(?i)regex"), Some((false, 5, b"Xx".to_vec())));
+        // An empty class is never probed: there is no byte to find.
+        assert_eq!(jump(r"(?i)f[a&&b]"), Some((false, 2, b"Ff".to_vec())));
+        assert_eq!(jump(r"[a-z][a&&b]"), None);
         assert_eq!(jump(r"(?i)\berror\b").map(|(_, len, _)| len), Some(5));
         assert_eq!(jump(r"^\s*//"), Some((true, 0, Vec::new())));
         assert_eq!(
