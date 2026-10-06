@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.9.0](https://github.com/sebastian-software/ferroni/compare/v1.8.1...v1.9.0) (2026-10-06)
+
+
+### Features
+
+* **docs:** move the site to ferramenta-family 2.0 ([a6dfa22](https://github.com/sebastian-software/ferroni/commit/a6dfa2236f08ee4547b46b52292b3bc77b98601b))
+* **scanner:** share compiled patterns between scanners through a pattern cache ([a5eeed5](https://github.com/sebastian-software/ferroni/commit/a5eeed544434dc81201d3df33ee41d4bbd06f9f1))
+
+
+### Bug Fixes
+
+* **regparse:** collect crude bytes in char classes like C ([#226](https://github.com/sebastian-software/ferroni/issues/226)) ([2d3e3b9](https://github.com/sebastian-software/ferroni/commit/2d3e3b9ecb7c3e571e965334643368d4baab2037))
+* **regparse:** fold completed character classes like C ([#230](https://github.com/sebastian-software/ferroni/issues/230)) ([bfaf296](https://github.com/sebastian-software/ferroni/commit/bfaf2963fd42cc534a4fb72a729e38224fce3e96))
+* **regparse:** look up classes by character length like C ([22e5690](https://github.com/sebastian-software/ferroni/commit/22e5690da14a147250d5c11f48ca72cad9d182c1))
+* **regparse:** split char class ranges at ASCII_LIMIT + 1 like C ([#229](https://github.com/sebastian-software/ferroni/issues/229)) ([e98168b](https://github.com/sebastian-software/ferroni/commit/e98168b64b8cada85b97933acd553da5ad8a90fa))
+* **search:** never probe an empty leading class ([8b3f2b4](https://github.com/sebastian-software/ferroni/commit/8b3f2b4a8d1a48a93b1dea44c818e2503aef93a5))
+
+
+### Performance Improvements
+
+* **regset:** apply required literals to entries with position checks but no look-behind lead ([86a41c8](https://github.com/sebastian-software/ferroni/commit/86a41c89a3af10b199378cdfee34835ba70c357f))
+* **regset:** decide first-instruction word boundaries on the ASCII path ([4049ba1](https://github.com/sebastian-software/ferroni/commit/4049ba1203c420aff4ead17c4b52d910aa7c69ec))
+
 ## [1.8.1](https://github.com/sebastian-software/ferroni/compare/v1.8.0...v1.8.1) (2026-10-01)
 
 
