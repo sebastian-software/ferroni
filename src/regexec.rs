@@ -6345,8 +6345,7 @@ pub fn onig_match(
     }
 
     if let Some(ref mut r) = msa.region {
-        r.resize(reg.num_mem + 1);
-        r.clear();
+        r.resize_clear(reg.num_mem + 1);
     }
 
     let result = match_at(reg, str_data, end, end, at, &mut msa);
@@ -6418,8 +6417,7 @@ pub fn onig_match_with_param(
     }
 
     if let Some(ref mut r) = msa.region {
-        r.resize(reg.num_mem + 1);
-        r.clear();
+        r.resize_clear(reg.num_mem + 1);
     }
 
     let result = match_at(reg, str_data, end, end, at, &mut msa);
@@ -7636,8 +7634,7 @@ fn onig_search_inner_core_with_right_range(
 
     // Resize region once before entering search loops (matches C behavior)
     if let Some(ref mut r) = msa.region {
-        r.resize(reg.num_mem + 1);
-        r.clear();
+        r.resize_clear(reg.num_mem + 1);
     }
 
     // C treats start == range (before the logical end) as an anchored attempt
@@ -8680,6 +8677,10 @@ fn literal_run_search(
     Some(ONIG_MISMATCH)
 }
 
+/// The end of a search without a match (C: `mismatch`), or, under
+/// FIND_LONGEST, the replay of the longest match. Inline: most searches end
+/// here without a match, and the call alone cost more than the check.
+#[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn finish_search(
     find_longest: bool,
@@ -8692,18 +8693,31 @@ fn finish_search(
     msa: &mut MatchArg,
 ) -> i32 {
     if find_longest && best_start != ONIG_MISMATCH {
-        if let Some(ref mut r) = msa.region {
-            r.clear();
-        }
-        msa.best_len = ONIG_MISMATCH;
-        msa.best_s = 0;
-        // Replay the winner with the upper range every attempt used (C:
-        // MATCH_AND_RETURN_CHECK(orig_start / data_range)); C keeps the
-        // region that attempt recorded.
-        match_at(reg, str_data, end, upper_range, best_start as usize, msa);
-        return best_start;
+        return finish_longest_search(best_start, reg, str_data, end, upper_range, msa);
     }
     ONIG_MISMATCH
+}
+
+/// `finish_search` with a FIND_LONGEST match.
+#[inline(never)]
+fn finish_longest_search(
+    best_start: i32,
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    upper_range: usize,
+    msa: &mut MatchArg,
+) -> i32 {
+    if let Some(ref mut r) = msa.region {
+        r.clear();
+    }
+    msa.best_len = ONIG_MISMATCH;
+    msa.best_s = 0;
+    // Replay the winner with the upper range every attempt used (C:
+    // MATCH_AND_RETURN_CHECK(orig_start / data_range)); C keeps the
+    // region that attempt recorded.
+    match_at(reg, str_data, end, upper_range, best_start as usize, msa);
+    best_start
 }
 
 // ============================================================================
