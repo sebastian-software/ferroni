@@ -463,6 +463,37 @@ impl OnigRegion {
         self.history_root = None;
     }
 
+    /// C's `onig_region_resize_clear`: `resize` to `n` registers, then
+    /// `clear`. A search does this once; the region usually has the size
+    /// already and one or two registers, which are stored directly rather
+    /// than through memset.
+    pub(crate) fn resize_clear(&mut self, n: i32) {
+        let len = n as usize;
+        if self.beg.len() == len && self.end.len() == len {
+            self.allocated = n;
+            self.num_regs = n;
+        } else {
+            self.resize(n);
+        }
+        match (self.beg.as_mut_slice(), self.end.as_mut_slice()) {
+            ([b0], [e0]) => {
+                *b0 = ONIG_REGION_NOTPOS;
+                *e0 = ONIG_REGION_NOTPOS;
+            }
+            ([b0, b1], [e0, e1]) => {
+                *b0 = ONIG_REGION_NOTPOS;
+                *b1 = ONIG_REGION_NOTPOS;
+                *e0 = ONIG_REGION_NOTPOS;
+                *e1 = ONIG_REGION_NOTPOS;
+            }
+            (beg, end) => {
+                beg.fill(ONIG_REGION_NOTPOS);
+                end.fill(ONIG_REGION_NOTPOS);
+            }
+        }
+        self.history_root = None;
+    }
+
     pub fn resize(&mut self, n: i32) {
         let n = n as usize;
         self.beg.resize(n, ONIG_REGION_NOTPOS);
