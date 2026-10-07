@@ -281,6 +281,17 @@ Where a forward search attempts position after position and each attempt fails a
 - **Impact** (instructions retired, a search from every start of every line of the shared 213-line corpus, Ferroni / C): `(\1)` 1.52× → 1.09×, `\s*(;)` 1.70× → 1.35×, `(?<=})|(?=#)` 1.47× → 1.18×, `(\1)|(\n)` 1.71× → 1.40×; over the 89 Shiki patterns at or above 1.3× C's time, 1.58× → 1.35× in total. A full Shiki perfscan (time, every pattern) and the captured scanner replays (cycles) improve or stay within their spread.
 - **Bounds**: no new data or allocation; the reset is the prologue's work without the call. Per-attempt state added to `match_at_impl`'s prologue must also be reset in `attempt_failed!`, or later attempts of a scan would inherit it.
 
+#### Literal after zero-width checks and class repetitions (`src/leading_run.rs`, `src/regexec.rs`, `src/regset.rs`)
+
+Grammars put look-behinds with many alternatives, anchors and `\s*` in front of a literal (`(?<=[!(+,:=>?\[]|^await|…|^return)\s*(\{)`, `(?i)\s*(text:)`). C's optimizer finds nothing at a fixed distance, so it attempts every position and runs every look-behind alternative there.
+
+- **Trigger** (`plan_literal_prefix`): the expression reads zero-width checks (anchors, look-arounds, alternatives of them), class and type repetitions and single classes, optionally in groups, and then a case-sensitive literal whose first byte is ASCII and outside those classes. Expressions with a leading-check jump (`^`, a look-behind at a literal) keep it; it already lands on fewer starts.
+- **Execution**: `memmem` finds the next occurrence, the search scans back over the class bytes before it, and only the starts of that run up to the occurrence are attempted. A start before the run would have to cross a byte outside the classes. The RegSet position-lead fallback skips the same starts; there it looks for the occurrence only 64 bytes past the entry's stop and, finding none, keeps every start whose class run reaches past that window.
+- **Observability**: a left-out attempt fails with at most `paths × (cost + 2)` backtracks, from the tree's alternatives, bounded repetitions and checks. The plan stays off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit at or below that bound (or any per-match limit where a repetition is unbounded), and callouts.
+- **Malformed UTF-8**: the scan back needs a valid segment, and every position is attempted otherwise; a non-ASCII byte that a class may hold keeps every start.
+- **Impact** (time, a search from every start of every line of the shared 213-line corpus, Ferroni / C): the angular, JavaScript and vue-vine look-behinds 1.29–1.34× → 0.09–0.10×, crystal's 1.36× → 0.10×, haxe's `(?<=trace|…)\s*(\()` 1.14× → 0.10×, mermaid's `(?i)\s*(…:)` about 1.1× → 0.15×; 187 Shiki patterns gain more than 10%, with unchanged results over all of them. Scanner replays (instructions): SCSS −1.8%, C++ and Java within ±0.1%; grammar compilation +0.1–0.4%.
+- **Bounds**: one boxed plan per eligible expression (a `memmem` finder and a 256-bit class); the scans are linear. No new dependency or unsafe code.
+
 ## Rationale
 
 - **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.

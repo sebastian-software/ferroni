@@ -10827,6 +10827,7 @@ fn compile_parsed(
     guard_backtrack_pushes(reg);
     fuse_ascii_class_runs(reg);
     crate::leading_run::plan(reg);
+    reg.literal_prefix = crate::leading_run::plan_literal_prefix(&root, reg).map(Box::new);
     // Rust-only (ADR-008): literals every match contains, for RegSet
     // fallback searches. Read from the tuned tree, which is gone afterwards.
     reg.required_literals = crate::required_literals::derive(&root, reg, env).map(Box::new);
@@ -11104,6 +11105,7 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         ac_alt: None,
         ac_alt_has_capture: false,
         leading_run: None,
+        literal_prefix: None,
         search_start_map: None,
         search_jump: None,
         required_literals: None,
@@ -11580,6 +11582,7 @@ mod tests {
             ac_alt: None,
             ac_alt_has_capture: false,
             leading_run: None,
+            literal_prefix: None,
             search_start_map: None,
             search_jump: None,
             required_literals: None,
