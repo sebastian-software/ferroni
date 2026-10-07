@@ -59,6 +59,11 @@ pub(crate) struct LeadingRun {
     pub(crate) whole_lookahead: bool,
     /// Set when the run is atomic and a literal outside the class follows it.
     pub(crate) literal: Option<RunLiteral>,
+    /// The ASCII bytes of a first character narrower than the run's class
+    /// (`[A-Z_a-z]\w*`). Only an attempt that read its first character
+    /// stands for the later starts in its run; one that failed there says
+    /// nothing about them.
+    head: Option<BitSet>,
 }
 
 /// The literal that directly follows an atomic leading run.
@@ -267,7 +272,15 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
             ) => a == b && m == n,
             _ => false,
         };
-    if !same_class {
+    // A first character narrower than the run's class (`[A-Z_a-z]\w*`,
+    // `[_a-z\x7F-ÿ][0-9_a-z\x7F-ÿ]*`): a later start in the run either fails
+    // at it or reads the same run to the same end.
+    let narrower_head = if same_class {
+        None
+    } else {
+        narrower_head(reg, head, star)
+    };
+    if !same_class && narrower_head.is_none() {
         return None;
     }
     let mut run = LeadingRun {
@@ -277,6 +290,7 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
         optional_word_prefix,
         whole_lookahead,
         literal: None,
+        head: narrower_head,
     };
     if optional_word_prefix
         && (!min_zero
@@ -333,9 +347,14 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
             (OpCode::StrN, OperationPayload::ExactN { s, n }) => Some(&s[..*n as usize]),
             _ => None,
         };
-        if let Some(bytes) = bytes
-            .filter(|bytes| atomic && bytes[0] < 0x80 && !ascii_member(run.class(reg), bytes[0]))
-        {
+        // The reverse scan attempts a run's first position for all of it,
+        // which a narrower first character may not admit.
+        if let Some(bytes) = bytes.filter(|bytes| {
+            atomic
+                && run.head.is_none()
+                && bytes[0] < 0x80
+                && !ascii_member(run.class(reg), bytes[0])
+        }) {
             run.literal = Some(RunLiteral {
                 finder: memchr::memmem::Finder::new(bytes).into_owned(),
             });
@@ -415,6 +434,60 @@ fn miss_retries(reg: &RegexType, bytes: &[u8; CHAR_MAP_SIZE]) -> Option<u64> {
 
 /// Whether a star instruction's class holds only ASCII bytes, or is `\w` or
 /// a mixed class whose ASCII part the scan reads from its bitset.
+/// The bitset of a first character whose class lies within the run's
+/// class, both its single bytes and its multibyte ranges; `None` otherwise.
+fn narrower_head(reg: &RegexType, head: &Operation, star: &Operation) -> Option<BitSet> {
+    let (head_bsp, head_mb): (&BitSet, &[u32]) = match (head.opcode, &head.payload) {
+        (OpCode::CClass, OperationPayload::CClass { bsp, .. }) => (bsp, &[]),
+        (OpCode::CClassMix, OperationPayload::CClassMix { bsp, mb }) => (bsp, mb),
+        _ => return None,
+    };
+    let run_class = match (star.opcode, &star.payload) {
+        (OpCode::WordStar, _) => RunClass::Word,
+        (OpCode::WordAsciiStar | OpCode::WordAsciiStarPeekNext, _) => RunClass::AsciiWord,
+        (
+            OpCode::CClassStar | OpCode::CClassPossessiveStar,
+            OperationPayload::CClass { bsp, .. },
+        )
+        | (OpCode::CClassStarPeekNext, OperationPayload::CClassStarPeekNext { bsp, .. }) => {
+            RunClass::AsciiBits(bsp)
+        }
+        (OpCode::CClassMixStar, OperationPayload::CClassMix { bsp, mb }) => RunClass::Mix(bsp, mb),
+        _ => return None,
+    };
+    let ascii_within =
+        (0u8..128).all(|byte| !bitset_at(head_bsp, byte as usize) || ascii_member(run_class, byte));
+    // Bits from 0x80 on stand for single bytes the encoding reads alone.
+    let high_within = (128..SINGLE_BYTE_SIZE).all(|byte| {
+        !bitset_at(head_bsp, byte)
+            || matches!(run_class, RunClass::AsciiBits(bsp) | RunClass::Mix(bsp, _) if bitset_at(bsp, byte))
+    });
+    // A compiled range list (`[n, from, to, ...]`) as its sorted pairs.
+    fn pairs(mb: &[u32]) -> &[[u32; 2]] {
+        let n = mb.first().map_or(0, |&n| n as usize);
+        mb.get(1..1 + 2 * n)
+            .map_or(&[][..], |flat| flat.as_chunks::<2>().0)
+    }
+    // Whether one of the sorted ranges holds all of `from..=to`. Adjacent
+    // ranges that together hold it count as not holding it, which only plans
+    // less.
+    let covered = |ranges: &[[u32; 2]], from: u32, to: u32| {
+        let at = ranges.partition_point(|&[_, end]| end < from);
+        ranges
+            .get(at)
+            .is_some_and(|&[start, end]| start <= from && to <= end)
+    };
+    let multibyte_within = pairs(head_mb).iter().all(|&[from, to]| match run_class {
+        RunClass::Mix(_, mb) => covered(pairs(mb), from, to),
+        RunClass::Word => reg
+            .enc
+            .get_ctype_code_range(ONIGENC_CTYPE_WORD, &mut 0)
+            .is_some_and(|word| covered(word.as_chunks::<2>().0, from, to)),
+        RunClass::AsciiBits(_) | RunClass::AsciiWord => false,
+    });
+    (ascii_within && high_within && multibyte_within).then_some(*head_bsp)
+}
+
 fn byte_class_is_ascii(op: &Operation) -> bool {
     match (op.opcode, &op.payload) {
         (
@@ -472,6 +545,15 @@ fn multibyte_member(
 #[inline]
 pub(crate) fn may_continue(reg: &RegexType, run: &LeadingRun, byte: u8) -> bool {
     byte >= 0x80 || ascii_member(run.class(reg), byte)
+}
+
+/// Whether an attempt that failed at `byte` read the run's first character,
+/// so its failure stands for the later starts in its run.
+#[inline]
+pub(crate) fn read_head(run: &LeadingRun, byte: u8) -> bool {
+    run.head
+        .as_ref()
+        .is_none_or(|head| bitset_at(head, byte as usize))
 }
 
 /// The end of the run from `s`, stopping at `limit`. The run steps by the
@@ -1167,6 +1249,48 @@ mod tests {
         assert_eq!(actual, (3, vec![3], vec![6]));
     }
 
+    /// A run whose first character is narrower than its class skips the
+    /// later starts of a run only after an attempt that read that character.
+    /// Without the start map, an attempt at a digit fails at `[A-Z_a-z]` and
+    /// stands for nothing: `9abc :` still matches at 1.
+    #[test]
+    fn narrower_first_character_skips_only_after_reading_it() {
+        let mp = onig_new_match_param();
+        for pattern in [
+            r"[A-Z_a-z]\w*\s*:",
+            r"([A-Z_a-z]\w*)\s*:",
+            r"[a-c][a-z]*\s*:",
+            r"([A-Z_a-z][_\w\d]*)\s*:",
+            r"[_a-zé][0-9_a-zé]*\s*:",
+        ] {
+            let mut reg = compile(pattern, UTF8).unwrap();
+            assert!(
+                reg.leading_run
+                    .as_ref()
+                    .is_some_and(|run| run.head.is_some()),
+                "{pattern}"
+            );
+            reg.search_start_map = None;
+            reg.search_jump = None;
+            reg.has_first_byte_map = false;
+            let reference = reference(pattern, UTF8);
+            for text in [
+                &b"9abc :x"[..],
+                b"99ab c: d9e:",
+                b"x9 _a:",
+                "9é1éb :".as_bytes(),
+                "é9ab:".as_bytes(),
+            ] {
+                let bounds = (text.len(), 0, text.len());
+                assert_eq!(
+                    search(&reg, text, bounds, ONIG_OPTION_NONE, &mp),
+                    search(&reference, text, bounds, ONIG_OPTION_NONE, &mp),
+                    "{pattern} on {text:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn plans_follow_the_leading_run() {
         let plan = |pattern: &str| {
@@ -1361,8 +1485,21 @@ mod tests {
             r"(?<=\xc3)a",
             r"(?i)(?:ks|ss|st|ff|re)",
             r"(?i)\b(?:k|ss|stx|ffi)(\w?)",
+            // A first character narrower than the run: a start on a digit
+            // fails at it and says nothing about the starts after it.
+            r"[A-Z_a-z]\w*(?=\s*:)",
+            r"([A-Z_a-z]\w*)\s*(?=[(;=])(;)?",
+            r"[a-c][a-z]*:",
+            r"(?>[A-Z_a-z]\w*):",
+            r"\b[A-Z_a-z]\w*\(",
+            r"[a-z][\w.]*@",
+            r"([A-Z_a-z][_\w\d]*)\s*(?=[(;=])",
+            r"[_a-zé][0-9_a-zé]*(?=\s*:)",
         ];
         let inputs: &[&[u8]] = &[
+            b"9abc :x 1y: _z9 ( q;=",
+            b"9a.b@ 1ab: x9(",
+            "9é1éb :x é9a(".as_bytes(),
             b"",
             b"ab:",
             b"aab!ab:cc",

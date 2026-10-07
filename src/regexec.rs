@@ -8546,6 +8546,7 @@ fn after_failed_run_from(
     if failed >= end
         || str_data[failed] >= 0x80
         || next >= data_range
+        || !crate::leading_run::read_head(run, str_data[failed])
         || !crate::leading_run::may_continue(reg, run, str_data[next])
         // A word start tries both optional-prefix paths. Its failed
         // attempts bound the retries of every later ASCII start; a nonword
