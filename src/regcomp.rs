@@ -5030,7 +5030,15 @@ fn tune_look_behind(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut 
     // fold sequence is already in the CClass. For [-\w], every multi-char fold of
     // a word character ends with a word character (e.g., ß→"ss", ﬁ→"fi"), so the
     // single-char CClass check already covers all cases.
-    strip_redundant_casefold_alts_in_lookbehind(node, enc);
+    //
+    // The strip makes branches of different lengths one fixed-length class,
+    // so it runs only where C accepts those branches anyway; elsewhere C's
+    // length check rejects the look-behind.
+    if is_syntax_bv(&env.syntax, ONIG_SYN_DIFFERENT_LEN_ALT_LOOK_BEHIND)
+        || is_syntax_bv(&env.syntax, ONIG_SYN_VARIABLE_LEN_LOOK_BEHIND)
+    {
+        strip_redundant_casefold_alts_in_lookbehind(node, enc);
+    }
 
     // Full validation of nodes inside lookbehind (C: check_node_in_look_behind)
     let mut lb_used = false;
