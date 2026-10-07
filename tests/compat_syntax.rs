@@ -390,6 +390,36 @@ fn perl_var_lookbehind_error() {
     );
 }
 
+/// Under `(?i)`, a class holding a character with a multi-character fold
+/// (`ß` -> `ss`) and that fold's last character becomes branches of
+/// different lengths. Syntaxes without different-length look-behinds reject
+/// them, as C does (#234).
+const CASE_FOLDED_LOOK_BEHINDS: [&[u8]; 4] = [
+    b"(?i)(?<=[\\S])x",
+    b"(?i)(?<![-\\w])x",
+    "(?i)(?<=[ßſ])x".as_bytes(),
+    "(?i)(?<=[a-zß])x".as_bytes(),
+];
+
+#[test]
+fn case_folded_look_behind_rejected_without_different_lengths() {
+    for syntax in [&OnigSyntaxPerl, &OnigSyntaxPerl_NG, &OnigSyntaxPython] {
+        for pattern in CASE_FOLDED_LOOK_BEHINDS {
+            e_syn(syntax, pattern, b"sx", ONIGERR_INVALID_LOOK_BEHIND_PATTERN);
+        }
+    }
+}
+
+#[test]
+fn case_folded_look_behind_accepted_with_different_lengths() {
+    for syntax in [&OnigSyntaxOniguruma, &OnigSyntaxRuby, &OnigSyntaxJava] {
+        x2_syn(syntax, CASE_FOLDED_LOOK_BEHINDS[0], b" sx", 2, 3);
+        x2_syn(syntax, CASE_FOLDED_LOOK_BEHINDS[1], b"sx x", 3, 4);
+        x2_syn(syntax, CASE_FOLDED_LOOK_BEHINDS[2], "ssx".as_bytes(), 2, 3);
+        x2_syn(syntax, CASE_FOLDED_LOOK_BEHINDS[3], b"0x Sx", 4, 5);
+    }
+}
+
 #[test]
 fn perl_empty_group() {
     x3_syn(&OnigSyntaxPerl, b"()", b"abc", 0, 0, 1);
