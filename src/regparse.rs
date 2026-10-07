@@ -8056,6 +8056,7 @@ mod tests {
             ac_alt_has_capture: false,
             leading_run: None,
             literal_prefix: None,
+            anychar_run: false,
             search_start_map: None,
             search_jump: None,
             required_literals: None,

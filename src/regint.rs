@@ -734,6 +734,11 @@ pub struct RegexType {
     /// Rust-only (ADR-008): the literal after a leading zero-width and class
     /// repetition part (`crate::leading_run::LiteralPrefix`).
     pub(crate) literal_prefix: Option<Box<crate::leading_run::LiteralPrefix>>,
+    /// Rust-only (ADR-008): the expression repeats `.` without an upper
+    /// bound, so a match may run to the end of the line and a second pass
+    /// that records its captures repeat a long attempt
+    /// (`crate::regexec::two_pass_capture_fill_pays`).
+    pub(crate) anychar_run: bool,
     /// Rust-only (ADR-008): literals one of which every match contains,
     /// for RegSet fallback searches (`crate::required_literals`).
     pub(crate) required_literals: Option<Box<crate::required_literals::RequiredLiterals>>,

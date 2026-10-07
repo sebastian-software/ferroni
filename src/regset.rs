@@ -10,7 +10,7 @@ use crate::regexec::{
     FirstOpTest, MatchArg, OnigMatchParam, first_op_fails, first_op_test, forward_search,
     may_skip_first_op_failures, onig_get_global_limit_revision, onig_get_match_stack_limit,
     onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit, onig_match,
-    onig_match_with_msa_start, search_in_range,
+    onig_match_with_msa_start, search_in_range, two_pass_capture_fill_pays,
 };
 use crate::regint::*;
 use std::sync::Arc;
@@ -848,6 +848,7 @@ impl EntryRegion {
             && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
             && msa.time_limit == 0
             && !opton_find_longest(option | reg.options)
+            && two_pass_capture_fill_pays(reg)
         {
             EntryRegion::FillOnMatch
         } else {

@@ -9609,6 +9609,49 @@ fn alt_merge_node_opt_info(to: &mut OptNode, add: &OptNode, env_enc: OnigEncodin
     to.len.alt_merge(&add.len);
 }
 
+/// Rust-only (ADR-008): whether `node` repeats `.` without an upper bound
+/// (`.*`, `.*?`, `(.)+`), outside or inside groups and look-arounds.
+fn has_anychar_run(node: &Node) -> bool {
+    tree_any(node, &|node| match &node.inner {
+        NodeInner::Quant(qn) if qn.upper == INFINITE_REPEAT => {
+            Some(qn.body.as_deref().is_some_and(|body| {
+                tree_any(body, &|node| match &node.inner {
+                    NodeInner::CType(ct) => Some(ct.ctype == CTYPE_ANYCHAR),
+                    _ => None,
+                })
+            }))
+        }
+        _ => None,
+    })
+}
+
+/// Whether `test` holds for a node of the tree under `node`, through lists,
+/// alternatives, quantifiers, groups and look-arounds. `test` decides a node
+/// (`Some`) or leaves it to its children (`None`).
+fn tree_any(node: &Node, test: &dyn Fn(&Node) -> Option<bool>) -> bool {
+    if let Some(found) = test(node) {
+        return found;
+    }
+    match &node.inner {
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            let mut cur = Some(node);
+            while let Some(NodeInner::List(cons) | NodeInner::Alt(cons)) = cur.map(|n| &n.inner) {
+                if tree_any(&cons.car, test) {
+                    return true;
+                }
+                cur = cons.cdr.as_deref();
+            }
+            false
+        }
+        NodeInner::Quant(QuantNode { body, .. })
+        | NodeInner::Bag(BagNode { body, .. })
+        | NodeInner::Anchor(AnchorNode { body, .. }) => {
+            body.as_deref().is_some_and(|body| tree_any(body, test))
+        }
+        _ => false,
+    }
+}
+
 fn node_max_byte_len(node: &Node, env: &ParseEnv) -> OnigLen {
     match &node.inner {
         NodeInner::List(_) => {
@@ -10836,6 +10879,7 @@ fn compile_parsed(
     fuse_ascii_class_runs(reg);
     crate::leading_run::plan(reg);
     reg.literal_prefix = crate::leading_run::plan_literal_prefix(&root, reg).map(Box::new);
+    reg.anychar_run = has_anychar_run(&root);
     // Rust-only (ADR-008): literals every match contains, for RegSet
     // fallback searches. Read from the tuned tree, which is gone afterwards.
     reg.required_literals = crate::required_literals::derive(&root, reg, env).map(Box::new);
@@ -11114,6 +11158,7 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         ac_alt_has_capture: false,
         leading_run: None,
         literal_prefix: None,
+        anychar_run: false,
         search_start_map: None,
         search_jump: None,
         required_literals: None,
@@ -11591,6 +11636,7 @@ mod tests {
             ac_alt_has_capture: false,
             leading_run: None,
             literal_prefix: None,
+            anychar_run: false,
             search_start_map: None,
             search_jump: None,
             required_literals: None,
