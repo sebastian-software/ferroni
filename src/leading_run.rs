@@ -27,6 +27,7 @@
 use crate::oniguruma::{ONIGENC_CTYPE_WORD, OnigCodePoint};
 use crate::regenc::{OnigEncoding, onigenc_is_ascii_compatible_encoding};
 use crate::regint::*;
+use crate::regparse_types::*;
 
 /// The class of a leading run, taken from its star instruction.
 #[derive(Clone, Copy)]
@@ -69,6 +70,344 @@ pub(crate) struct LeadingRun {
 /// The literal that directly follows an atomic leading run.
 pub(crate) struct RunLiteral {
     finder: memchr::memmem::Finder<'static>,
+}
+
+/// Rust-only (ADR-008): the expression begins with zero-width checks and
+/// class repetitions only, then a literal outside those classes
+/// (`(?<=[(,]|^return)\s*(\{)`). A match from `x` reads class characters up
+/// to the first character outside them, where the literal has to be; so only
+/// the starts in the class run that ends at an occurrence can match.
+pub(crate) struct LiteralPrefix {
+    finder: memchr::memmem::Finder<'static>,
+    /// The ASCII bytes the leading repetitions read.
+    class: BitSet,
+    /// Whether they also read non-ASCII characters.
+    multibyte: bool,
+    /// An upper bound of the backtracks of an attempt before the literal,
+    /// where the tree gives one: a per-match retry limit above it cannot
+    /// observe a left-out attempt.
+    retry_bound: Option<u64>,
+}
+
+impl LiteralPrefix {
+    /// Whether a per-match retry limit lets the search leave attempts out.
+    #[inline]
+    pub(crate) fn skippable(&self, retry_limit_in_match: u64) -> bool {
+        retry_limit_in_match == 0
+            || self
+                .retry_bound
+                .is_some_and(|bound| retry_limit_in_match > bound)
+    }
+
+    /// The first occurrence of the literal in `text[from..to]`.
+    #[inline]
+    pub(crate) fn find(&self, text: &[u8], from: usize, to: usize) -> Option<usize> {
+        if from >= to {
+            return None;
+        }
+        self.finder.find(&text[from..to]).map(|i| from + i)
+    }
+
+    /// The starts from `s` that can reach an occurrence, as `(first, k)`:
+    /// the class run before the next occurrence `k`. Only starts up to
+    /// `last` matter, so the occurrence is looked for a short way past it.
+    /// Where none starts there, a start up to `last` needs a class run that
+    /// reaches past that window; without one nothing up to `last` can match
+    /// (`None`). With one, or over malformed UTF-8, every start from `s`
+    /// stays (`(s, usize::MAX)`).
+    pub(crate) fn window(
+        &self,
+        enc: OnigEncoding,
+        text: &[u8],
+        s: usize,
+        last: usize,
+        end: usize,
+    ) -> Option<(usize, usize)> {
+        const REACH: usize = 64;
+        let limit = end.min(last.saturating_add(REACH));
+        let well_formed =
+            |to: usize| enc.max_enc_len() == 1 || std::str::from_utf8(&text[s..to]).is_ok();
+        // Occurrences that start before `limit`.
+        let to = end.min(limit.saturating_add(self.finder.needle().len() - 1));
+        match self.find(text, s, to) {
+            Some(k) if well_formed(k) => Some((self.run_start(text, s, k), k)),
+            Some(_) => Some((s, usize::MAX)),
+            None if to >= end => None,
+            None if well_formed(limit) && self.run_start(text, s, limit) > last => None,
+            None => Some((s, usize::MAX)),
+        }
+    }
+
+    /// Where the class run that ends at `k` starts, no earlier than `floor`:
+    /// the first start that can reach the occurrence. A non-ASCII byte the
+    /// classes may hold keeps every start from `floor`.
+    pub(crate) fn run_start(&self, text: &[u8], floor: usize, k: usize) -> usize {
+        let mut r = k;
+        while r > floor {
+            let byte = text[r - 1];
+            if byte >= 0x80 {
+                return if self.multibyte { floor } else { r };
+            }
+            if !bitset_at(&self.class, byte as usize) {
+                break;
+            }
+            r -= 1;
+        }
+        r
+    }
+}
+
+/// Plan [`LiteralPrefix`] from the tuned tree, which is gone after
+/// compilation.
+pub(crate) fn plan_literal_prefix(root: &Node, reg: &RegexType) -> Option<LiteralPrefix> {
+    // A leading-check jump (`^`, a look-behind at a literal) already lands
+    // on fewer starts than the class run before each occurrence.
+    if !onigenc_is_ascii_compatible_encoding(reg.enc)
+        || reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0)
+        || reg.search_jump.is_some()
+    {
+        return None;
+    }
+    let mut class = [0; BITSET_REAL_SIZE];
+    let mut multibyte = false;
+    let mut bound = Some(RetryBound { paths: 1, cost: 0 });
+    let literal = match prefix_walk(root, reg.enc, &mut class, &mut multibyte, &mut bound)? {
+        Prefix::Literal(bytes) => bytes,
+        Prefix::Open => return None,
+    };
+    if literal[0] >= 0x80 || bitset_at(&class, literal[0] as usize) {
+        return None;
+    }
+    Some(LiteralPrefix {
+        finder: memchr::memmem::Finder::new(&literal).into_owned(),
+        class,
+        multibyte,
+        // The literal's own failure, and the pops back to the bottom.
+        retry_bound: bound.and_then(|b| b.paths.checked_mul(b.cost.checked_add(2)?)),
+    })
+}
+
+/// What a walk over the start of the tree found.
+enum Prefix {
+    /// Only zero-width nodes and class repetitions so far.
+    Open,
+    /// They end at this case-sensitive literal.
+    Literal(Vec<u8>),
+}
+
+/// `None` where a node other than a zero-width check or a class repetition
+/// comes before the literal.
+fn prefix_walk(
+    node: &Node,
+    enc: OnigEncoding,
+    class: &mut BitSet,
+    multibyte: &mut bool,
+    bound: &mut Option<RetryBound>,
+) -> Option<Prefix> {
+    match &node.inner {
+        // Zero-width, whatever its body reads. A look-around is atomic:
+        // each of its paths fails at most once.
+        NodeInner::Anchor(anchor) => {
+            let cost = match anchor.body.as_deref() {
+                None => Some(1),
+                Some(body) => paths(body).and_then(|p| p.checked_mul(2)?.checked_add(2)),
+            };
+            add_cost(bound, cost);
+            Some(Prefix::Open)
+        }
+        NodeInner::List(_) => {
+            let mut cur = node;
+            while let NodeInner::List(cons) = &cur.inner {
+                if let Prefix::Literal(bytes) =
+                    prefix_walk(&cons.car, enc, class, multibyte, bound)?
+                {
+                    return Some(Prefix::Literal(bytes));
+                }
+                match cons.cdr.as_deref() {
+                    Some(next) => cur = next,
+                    None => break,
+                }
+            }
+            Some(Prefix::Open)
+        }
+        // Branches that all read nothing, such as `(?:^|(?<=x))`. A later
+        // failure backtracks into the next branch, so every branch is a path
+        // through the rest.
+        NodeInner::Alt(_) => {
+            let mut cur = node;
+            let mut branches = Some(RetryBound { paths: 0, cost: 0 });
+            while let NodeInner::Alt(cons) = &cur.inner {
+                let mut none = [0; BITSET_REAL_SIZE];
+                let mut none_multibyte = false;
+                let mut branch = Some(RetryBound { paths: 1, cost: 0 });
+                if !matches!(
+                    prefix_walk(&cons.car, enc, &mut none, &mut none_multibyte, &mut branch)?,
+                    Prefix::Open
+                ) || none != [0; BITSET_REAL_SIZE]
+                    || none_multibyte
+                {
+                    return None;
+                }
+                branches = branches.zip(branch).and_then(|(all, one)| {
+                    Some(RetryBound {
+                        paths: all.paths.checked_add(one.paths)?,
+                        cost: all.cost.checked_add(one.cost)?,
+                    })
+                });
+                match cons.cdr.as_deref() {
+                    Some(next) => cur = next,
+                    None => break,
+                }
+            }
+            *bound = bound.zip(branches).and_then(|(b, alt)| {
+                Some(RetryBound {
+                    paths: b.paths.checked_mul(alt.paths)?,
+                    cost: b.cost.checked_add(alt.cost)?,
+                })
+            });
+            Some(Prefix::Open)
+        }
+        // An atomic class repetition fails once and gives nothing back.
+        NodeInner::Bag(bag)
+            if bag.bag_type == BagType::StopBacktrack
+                && matches!(
+                    bag.body.as_deref().map(|b| &b.inner),
+                    Some(NodeInner::Quant(_))
+                ) =>
+        {
+            let NodeInner::Quant(quant) = &bag.body.as_deref()?.inner else {
+                return None;
+            };
+            add_char_class(quant.body.as_deref()?, enc, class, multibyte)?;
+            add_cost(bound, Some(1));
+            Some(Prefix::Open)
+        }
+        NodeInner::Bag(bag) => match bag.bag_type {
+            BagType::Memory | BagType::Option | BagType::StopBacktrack => {
+                prefix_walk(bag.body.as_deref()?, enc, class, multibyte, bound)
+            }
+            BagType::IfElse => None,
+        },
+        // A repetition the rest can backtrack into: one path per count, so
+        // an unbounded one leaves no bound.
+        NodeInner::Quant(quant) => {
+            add_char_class(quant.body.as_deref()?, enc, class, multibyte)?;
+            let counts = (!is_infinite_repeat(quant.upper) && quant.upper >= quant.lower)
+                .then(|| (quant.upper - quant.lower + 1) as u64);
+            *bound = bound.zip(counts).and_then(|(b, n)| {
+                Some(RetryBound {
+                    paths: b.paths.checked_mul(n)?,
+                    cost: b.cost.checked_add(n)?,
+                })
+            });
+            Some(Prefix::Open)
+        }
+        NodeInner::CClass(_) | NodeInner::CType(_) => {
+            add_char_class(node, enc, class, multibyte)?;
+            add_cost(bound, Some(1));
+            Some(Prefix::Open)
+        }
+        NodeInner::String(sn)
+            if !sn.s.is_empty()
+                && !node.has_status(ND_ST_IGNORECASE)
+                && !node.has_status(ND_ST_LITERAL_ALT) =>
+        {
+            Some(Prefix::Literal(sn.s.clone()))
+        }
+        _ => None,
+    }
+}
+
+/// The paths and backtracks per path of the part before the literal.
+#[derive(Clone, Copy)]
+struct RetryBound {
+    paths: u64,
+    cost: u64,
+}
+
+fn add_cost(bound: &mut Option<RetryBound>, cost: Option<u64>) {
+    *bound = bound.zip(cost).and_then(|(b, c)| {
+        Some(RetryBound {
+            paths: b.paths,
+            cost: b.cost.checked_add(c)?,
+        })
+    });
+}
+
+/// How many ways a look-around body can be read, where that is small and
+/// known; each fails at most once.
+fn paths(node: &Node) -> Option<u64> {
+    const MAX_PATHS: u64 = 1 << 20;
+    let p = match &node.inner {
+        NodeInner::String(_) | NodeInner::CClass(_) | NodeInner::CType(_) => 1,
+        NodeInner::Anchor(anchor) => match anchor.body.as_deref() {
+            None => 1,
+            Some(body) => paths(body)?.checked_add(1)?,
+        },
+        NodeInner::List(_) | NodeInner::Alt(_) => {
+            let is_list = matches!(node.inner, NodeInner::List(_));
+            let mut total = if is_list { 1u64 } else { 0 };
+            let mut cur = Some(node);
+            while let Some(NodeInner::List(cons) | NodeInner::Alt(cons)) = cur.map(|n| &n.inner) {
+                let p = paths(&cons.car)?;
+                total = if is_list {
+                    total.checked_mul(p)?
+                } else {
+                    total.checked_add(p)?
+                };
+                cur = cons.cdr.as_deref();
+            }
+            total
+        }
+        NodeInner::Bag(bag) if bag.bag_type != BagType::IfElse => paths(bag.body.as_deref()?)?,
+        NodeInner::Quant(quant) if !is_infinite_repeat(quant.upper) && quant.upper <= 8 => {
+            let body = paths(quant.body.as_deref()?)?;
+            let mut total = 0u64;
+            let mut power = 1u64;
+            for count in 0..=quant.upper {
+                if count >= quant.lower {
+                    total = total.checked_add(power)?;
+                }
+                power = power.checked_mul(body)?;
+            }
+            total
+        }
+        _ => return None,
+    };
+    (p <= MAX_PATHS).then_some(p)
+}
+
+/// Add the characters a class node reads to `class` (ASCII) and
+/// `multibyte`; `None` for any other node.
+fn add_char_class(
+    node: &Node,
+    enc: OnigEncoding,
+    class: &mut BitSet,
+    multibyte: &mut bool,
+) -> Option<()> {
+    match &node.inner {
+        NodeInner::CClass(cc) => {
+            let not = cc.is_not();
+            for byte in 0..128 {
+                if bitset_at(&cc.bs, byte) != not {
+                    bitset_set_bit(class, byte);
+                }
+            }
+            *multibyte |= not
+                || cc.mbuf.is_some()
+                || cc.bs[128 / BITS_IN_ROOM..].iter().any(|&bits| bits != 0);
+        }
+        NodeInner::CType(ct) if ct.ctype != CTYPE_ANYCHAR => {
+            for byte in 0..128u32 {
+                if enc.is_code_ctype(byte, ct.ctype as u32) != ct.not {
+                    bitset_set_bit(class, byte as usize);
+                }
+            }
+            *multibyte |= ct.not || !ct.ascii_mode;
+        }
+        _ => return None,
+    }
+    Some(())
 }
 
 /// Start bytes derived from the bytecode (`derive_start_byte_map`).
@@ -1289,6 +1628,124 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The starts a literal after a zero-width and class repetition part
+    /// leaves (`LiteralPrefix`) give the plain loop's results, regions and
+    /// limit errors, for every start and range.
+    /// `window` keeps every start up to `last` whose class run reaches an
+    /// occurrence, however far past `last` that occurrence lies.
+    #[test]
+    fn literal_prefix_window_keeps_reaching_starts() {
+        let reg = compile(r"[ \t]*//", UTF8).unwrap();
+        let prefix = reg.literal_prefix.as_deref().unwrap();
+        let reaches = |text: &[u8], x: usize| {
+            let run = text[x..]
+                .iter()
+                .take_while(|&&b| b == b' ' || b == b'\t')
+                .count();
+            text[x + run..].starts_with(b"//")
+        };
+        for gap in 0..80 {
+            for tail in [&b""[..], b"/", b" //"] {
+                let text = [&b"x"[..], &b" \t".repeat(gap)[..gap], b"//", tail].concat();
+                let end = text.len();
+                for s in 0..=end {
+                    for last in s..=end {
+                        let window = prefix.window(reg.enc, &text, s, last, end);
+                        let kept = window.map_or(last + 1, |(first, _)| first.min(last + 1));
+                        assert!(
+                            (s..kept).all(|x| !reaches(&text, x)),
+                            "{text:?} s={s} last={last} {window:?}"
+                        );
+                        if let Some((_, k)) = window.filter(|&(_, k)| k != usize::MAX) {
+                            assert!(text[k..].starts_with(b"//"), "{text:?} s={s} k={k}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn literal_prefix_starts_match_the_plain_loop() {
+        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns = [
+            r"(?<!\+\+|--)(?<=[!(+,:=>?\[]|^await|[^$._[:alnum:]]await|^return)\s*(\{)",
+            r"(?:^|(?<=[&(,]|[;\s]if\s))\s*((/))(?![*+?{}])",
+            r"\s*(;)",
+            r"[ \t]*//",
+            r"\s*,\s*",
+            r"(?i)\s*(text:)",
+            r"(?<=\s)\s*=>",
+            r"\b\s*(\()",
+            r"[^a-z]*(z)",
+            r"(?=a)\s*b(c)",
+        ];
+        // The literal's byte lies in the class, or a branch reads before it:
+        // no plan.
+        for pattern in [r"\S*;", r"\w*x", r"a*(?:b|c)d"] {
+            assert!(
+                compile(pattern, UTF8).unwrap().literal_prefix.is_none(),
+                "{pattern}"
+            );
+        }
+        // A leading-check jump lands on fewer starts: it keeps the search.
+        for pattern in [r"(?<=x)\s*(\{)", r"^\s*(\.)", r"^([-0-9A-Za-z]+)(:)\s*"] {
+            let reg = compile(pattern, UTF8).unwrap();
+            assert!(
+                reg.search_jump.is_some() && reg.literal_prefix.is_none(),
+                "{pattern}"
+            );
+        }
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"{",
+            b"return {a}; x {",
+            b"if /x/ , /y/ ;z",
+            "a\u{a0}\u{3000}{ ,\u{a0}; \u{2028}//".as_bytes(),
+            b"\xe0 { \xc3; \xff//x",
+            b"text: TEXT :tex: ;",
+            b"a => b=>c ( d(",
+            b"abcz 12z\xc3\xa9z",
+        ];
+        let mut comparisons = 0;
+        for pattern in patterns {
+            let reg = compile(pattern, UTF8).unwrap();
+            let prefix = reg.literal_prefix.as_deref().expect(pattern);
+            let mut plain = compile(pattern, UTF8).unwrap();
+            plain.literal_prefix = None;
+            // Per-match limits up to and just past the bound of a left-out
+            // attempt's backtracks: below it every attempt runs, above it
+            // no left-out attempt could have reached the limit.
+            let bound = prefix.retry_bound.expect(pattern);
+            let mut limits = vec![(0, 0, 0), (0, 3, 0), (0, 0, 3), (10_000_000, 0, 0)];
+            limits.extend(
+                (1..=12)
+                    .chain(bound.saturating_sub(2)..=bound + 3)
+                    .map(|r| (r, 0, 0)),
+            );
+            for &(retry, search_retry, stack) in &limits {
+                let mut mp = onig_new_match_param();
+                mp.retry_limit_in_match = retry;
+                mp.retry_limit_in_search = search_retry;
+                mp.match_stack_limit = stack;
+                for text in inputs {
+                    for start in 0..=text.len() {
+                        for range in start..=text.len() {
+                            let bounds = (text.len(), start, range);
+                            assert_eq!(
+                                search(&reg, text, bounds, ONIG_OPTION_NONE, &mp),
+                                search(&plain, text, bounds, ONIG_OPTION_NONE, &mp),
+                                "{pattern} on {text:?} {bounds:?} limits {retry}/{search_retry}/{stack}"
+                            );
+                            comparisons += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(comparisons > 10_000, "{comparisons}");
     }
 
     #[test]

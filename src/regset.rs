@@ -1187,6 +1187,23 @@ fn search_fallback_entry(
     let has_start_filter = entry.start_filter.is_some() && msa.retry_limit_in_search == 0;
     let first_op_skips = may_skip_first_op_failures(msa, option);
     msa.retry_limit_in_search_counter = 0;
+    // Rust-only (ADR-008): a match starts in the class run before an
+    // occurrence of the literal that follows the expression's zero-width
+    // and class repetition part (`LiteralPrefix`). No limit may observe the
+    // starts left out: their zero-width checks backtrack without a known
+    // bound.
+    let literal_prefix = entry
+        .reg
+        .literal_prefix
+        .as_deref()
+        .is_some_and(|prefix| prefix.skippable(msa.retry_limit_in_match))
+        && {
+            msa.retry_limit_in_search == 0
+                && msa.match_stack_limit == 0
+                && msa.time_limit == 0
+                && !opton_find_longest(option | entry.reg.options)
+        };
+    let mut prefix_window: Option<(usize, usize)> = None;
 
     let mut s = start;
     loop {
@@ -1195,6 +1212,20 @@ fn search_fallback_entry(
         }
         if required_hit.is_some_and(|hit| s > hit) {
             required_hit = Some(next_required_literal(&entry.reg, str_data, s, end)?);
+        }
+        if let Some(prefix) = entry
+            .reg
+            .literal_prefix
+            .as_deref()
+            .filter(|_| literal_prefix)
+        {
+            if prefix_window.is_none_or(|(_, k)| s > k) {
+                prefix_window = Some(prefix.window(enc, str_data, s, stop, end)?);
+            }
+            if let Some((first, _)) = prefix_window.filter(|&(first, _)| s < first) {
+                s = first;
+                continue;
+            }
         }
         let admitted = match search_range {
             EntrySearchRange::LowHigh {
@@ -4096,6 +4127,87 @@ mod tests {
                 ONIG_OPTION_NONE,
             );
             assert_eq!(found, expected, "start {start}");
+        }
+    }
+
+    /// A fallback entry whose literal follows only zero-width checks and
+    /// class repetitions (`LiteralPrefix`) attempts only the starts in the
+    /// class run before each occurrence; the set's results stay those of
+    /// the same set without the plan, for every start.
+    #[test]
+    fn literal_prefix_starts_keep_position_lead_results() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns: [&[u8]; 6] = [
+            b"(?<!\\+\\+|--)(?<=[!(+,:=>?\\[]|^await|[^$._[:alnum:]]await|^return)\\s*(\\{)",
+            b"(?:^|(?<=[&(,]|[;\\s]if\\s))\\s*((/))(?![*+?{}])",
+            b"\\s*(;)",
+            b"[ \\t]*//",
+            b"zz",
+            b"q\\w+",
+        ];
+        let regs = || patterns.iter().map(|p| compile(p)).collect::<Vec<_>>();
+        let (set, result) = onig_regset_new(regs());
+        assert_eq!(result, ONIG_NORMAL);
+        let mut set = set.expect("regset");
+        assert!(
+            set.entries
+                .iter()
+                .take(4)
+                .all(|entry| entry.reg.literal_prefix.is_some())
+        );
+        let (plain, _) = onig_regset_new(
+            regs()
+                .into_iter()
+                .map(|mut reg| {
+                    reg.literal_prefix = None;
+                    reg
+                })
+                .collect(),
+        );
+        let mut plain = plain.expect("regset");
+        let long = [
+            &b"return"[..],
+            &b" ".repeat(80),
+            b"{ q1",
+            &b" ".repeat(70),
+            b"// zz",
+            &b" ".repeat(90),
+            b";",
+        ]
+        .concat();
+        let inputs: [&[u8]; 6] = [
+            b"return {a}; if /x/ , /y/ ;z // q1",
+            b"x = ( { ; \xc2\xa0{ \t// zz",
+            b"\xe0 { \xc3; \xff//x qq",
+            b"await{ ++{ --{ ,{",
+            b"",
+            &long,
+        ];
+        for input in inputs {
+            for start in 0..=input.len() {
+                for range in [input.len(), start + (input.len() - start) / 2] {
+                    let found = onig_regset_search(
+                        &mut set,
+                        input,
+                        input.len(),
+                        start,
+                        range,
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                    );
+                    let expected = onig_regset_search(
+                        &mut plain,
+                        input,
+                        input.len(),
+                        start,
+                        range,
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                    );
+                    assert_eq!(found, expected, "{input:?} start {start} range {range}");
+                    assert_eq!(set.last_match_len, plain.last_match_len);
+                }
+            }
         }
     }
 

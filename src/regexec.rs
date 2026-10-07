@@ -8151,6 +8151,22 @@ fn onig_search_inner_core_with_right_range(
         }
     }
 
+    if reg.literal_prefix.is_some() && best_start == ONIG_MISMATCH {
+        if let Some(result) = literal_prefix_search(
+            reg,
+            find_longest,
+            str_data,
+            end,
+            s,
+            cur_range,
+            data_range,
+            start_filter,
+            msa,
+        ) {
+            return result;
+        }
+    }
+
     // Normal position-by-position search (no optimization or fallthrough)
     if best_start == ONIG_MISMATCH {
         let class_prefix = atomic_ascii_class_prefix(reg, msa);
@@ -8679,6 +8695,83 @@ fn literal_run_search(
     Some(ONIG_MISMATCH)
 }
 
+/// Rust-only (ADR-008): the forward position loop for an expression that
+/// reads only zero-width checks and class repetitions before a literal
+/// outside those classes (`crate::leading_run::LiteralPrefix`). A start
+/// whose class run does not end at an occurrence of the literal cannot
+/// match, so only the starts in the run before each occurrence are
+/// attempted, in order. Where `s..k` is not valid UTF-8 every position there
+/// is attempted, as the plain loop does.
+///
+/// `None` where a limit or FIND_LONGEST could observe the skipped attempts;
+/// the plain loop then runs.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn literal_prefix_search(
+    reg: &RegexType,
+    find_longest: bool,
+    str_data: &[u8],
+    end: usize,
+    mut s: usize,
+    cur_range: usize,
+    data_range: usize,
+    start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
+    msa: &mut MatchArg,
+) -> Option<i32> {
+    let prefix = reg.literal_prefix.as_deref()?;
+    // A per-match retry limit at or below the bound of a left-out attempt's
+    // backtracks could observe it.
+    if find_longest || !may_skip_attempts(msa) || !prefix.skippable(msa.retry_limit_in_match) {
+        return None;
+    }
+    let enc = reg.enc;
+    let admitted =
+        |x: usize| x >= end || start_filter.is_none_or(|filter| filter[str_data[x] as usize] != 0);
+    macro_rules! attempt {
+        ($x:expr) => {{
+            let x = $x;
+            if admitted(x) {
+                msa.best_len = ONIG_MISMATCH;
+                msa.best_s = 0;
+                let r = match_at(reg, str_data, end, data_range, x, msa);
+                if r != ONIG_MISMATCH {
+                    if r < 0 {
+                        return Some(r);
+                    }
+                    return Some(x as i32);
+                }
+            }
+        }};
+    }
+    // `s` is always a position the plain loop steps to. That loop's last
+    // attempt is the first character boundary at or past `cur_range`.
+    loop {
+        if s > cur_range {
+            // Stepped past `cur_range` over a malformed sequence: this is the
+            // loop's last attempt.
+            attempt!(s);
+            break;
+        }
+        // A well-formed `s..k` makes every character head in it a step of
+        // the plain loop; otherwise every position from `s` is attempted.
+        let Some((first, k)) = prefix.window(enc, str_data, s, cur_range, data_range) else {
+            break;
+        };
+        let mut x = first;
+        while x <= k {
+            attempt!(x);
+            if x >= cur_range {
+                return Some(ONIG_MISMATCH);
+            }
+            x = advance_char_to_end(enc, str_data, x, end);
+        }
+        // Go on where the plain loop would: right after the occurrence's
+        // ASCII byte, or past it where a malformed sequence stepped over it.
+        s = x;
+    }
+    Some(ONIG_MISMATCH)
+}
+
 /// The end of a search without a match (C: `mismatch`), or, under
 /// FIND_LONGEST, the replay of the longest match. Inline: most searches end
 /// here without a match, and the call alone cost more than the check.
@@ -9024,6 +9117,7 @@ mod tests {
             ac_alt: None,
             ac_alt_has_capture: false,
             leading_run: None,
+            literal_prefix: None,
             search_start_map: None,
             search_jump: None,
             required_literals: None,

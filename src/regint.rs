@@ -731,6 +731,9 @@ pub struct RegexType {
     /// Rust-only (ADR-008): where attempts can pass the leading checks
     /// (`crate::leading_run::SearchJump`).
     pub(crate) search_jump: Option<Box<crate::leading_run::SearchJump>>,
+    /// Rust-only (ADR-008): the literal after a leading zero-width and class
+    /// repetition part (`crate::leading_run::LiteralPrefix`).
+    pub(crate) literal_prefix: Option<Box<crate::leading_run::LiteralPrefix>>,
     /// Rust-only (ADR-008): literals one of which every match contains,
     /// for RegSet fallback searches (`crate::required_literals`).
     pub(crate) required_literals: Option<Box<crate::required_literals::RequiredLiterals>>,
