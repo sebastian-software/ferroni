@@ -2,6 +2,7 @@ import {
   type ComparisonCell,
   type ComparisonRow,
   ComparisonTable,
+  EvidenceFigures,
   family,
   Mark,
   Measured,
@@ -17,16 +18,22 @@ import config from "virtual:ardo/config";
 
 import engineComparison from "../data/engine-comparison.json";
 import sample from "../data/regex-sample.json";
-import { ClosingSection, CodeSection, CoverageSection } from "./home-bottom-sections";
+import {
+  ClosingSection,
+  CoverageSection,
+  ProofSection,
+  SafetySection,
+  ScannerSection,
+} from "./home-bottom-sections";
 
 // React Router requires `meta` as a named route export.
 // oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export const meta: MetaFunction = () => [
-  { title: "Ferroni — Oniguruma-compatible regex engine" },
+  { title: "Ferroni — Oniguruma's regex engine, modernized in Rust" },
   {
     name: "description",
     content:
-      "Ferroni continues the Oniguruma regex engine in memory-safe Rust after the C project ended, with the vscode-oniguruma scanner built in. Verified against the upstream tests, and measured against C on real code.",
+      "Full Oniguruma syntax for Rust, with the vscode-oniguruma scanner that TextMate grammars run on. One cargo add, no C compiler, memory-safe, verified against the upstream tests, and measured against the C original.",
   },
 ];
 
@@ -35,6 +42,34 @@ function ferroni() {
   if (tool === undefined) throw new Error("Ferroni is missing from the family registry.");
   return tool;
 }
+
+type FigureCell = {
+  text: string;
+  note?: string;
+  grammars?: string[];
+  cases: number;
+  of: number;
+  factors?: Record<string, number>;
+};
+
+const workloads = engineComparison.workloads;
+
+/* The C original's row: the figures the speed claims on this page rest on. */
+const cRow = engineComparison.engines.find((engine) => engine.id === "c");
+if (cRow === undefined) throw new Error("engine-comparison.json has no row for Oniguruma (C).");
+const cCells = cRow.cells as Record<string, FigureCell>;
+
+/*
+ * "Faster than the original" is only said while it holds: on every host, in
+ * every workload of the retained run. A run where C wins a workload turns the
+ * headline into a plain "measured against".
+ */
+const cFactors = workloads.flatMap((workload) => Object.values(cCells[workload.id].factors ?? {}));
+const aheadOfC = cFactors.length > 0 && cFactors.every((factor) => factor > 1);
+
+/* The narrowest and widest lead over C, rounded as the figures are: "1.3×". */
+const factorText = (factor: number) => `${factor.toFixed(1)}×`;
+const cRange = `${factorText(Math.min(...cFactors))} to ${factorText(Math.max(...cFactors))}`;
 
 /*
  * What it succeeds and what it is checked against come from the registry; the
@@ -47,12 +82,14 @@ function HeroSection() {
     <ProjectHero
       icon="ferroni"
       title={<span translate="no">Ferroni</span>}
-      what="A regex engine in memory-safe Rust."
+      what="Oniguruma's regex engine, modernized in Rust."
       lede={
         <>
-          It continues Oniguruma, the engine TextMate grammars are written for, after its C project
-          ended, with the vscode-oniguruma scanner built in. Verified against the upstream tests and
-          measured against the C original.
+          Look-behind, backreferences, Unicode properties and the multi-pattern scanner that
+          TextMate grammars run on, in one pure-Rust crate. No C compiler, memory-safe
+          {aheadOfC
+            ? ", and faster than the C original."
+            : ", and measured against the C original."}
         </>
       }
       actions={
@@ -78,44 +115,79 @@ function HeroSection() {
 const pillars = [
   {
     heading: "Same engine, verified",
-    text: "A line-by-line port that keeps Oniguruma's module structure and optimization pipeline. Verified against the upstream UTF-8 tests, with differential checks against C.",
+    text: "A line-by-line port of Oniguruma's parser, compiler and optimizer. All 2,974 upstream UTF-8 test cases pass, so a pattern behaves as it does in C.",
   },
   {
-    heading: "Memory-safe, no C toolchain",
-    text: "cargo add ferroni and build: no bindgen, no C compiler, no node-gyp. The limited unsafe code follows two documented patterns in ADR-002.",
+    heading: "Easy to add",
+    text: (
+      <>
+        <code>cargo add ferroni</code> and build: no C compiler, no bindgen, four common
+        dependencies. An idiomatic <code>Regex</code> API on top, <code>Send + Sync</code> for
+        sharing across threads.
+      </>
+    ),
   },
   {
-    heading: "Measured on real code",
-    text: "From individual regex searches to complete TextMate grammars, the benchmark reports record input, timings, and reproduction steps alongside the tradeoffs.",
+    heading: "Safe with untrusted input",
+    text: "Memory-safe Rust, with unsafe confined to two documented patterns. Timeouts and retry limits per search, a compile-time backtracking check, and continuous fuzzing.",
   },
-  {
-    heading: "The scanner, built in",
-    text: "vscode-textmate and Shiki tokenize through vscode-oniguruma's scanner. Ferroni ships a scanner of the same shape, UTF-16 offsets included, next to the regex engine.",
-  },
+  aheadOfC
+    ? {
+        heading: "Faster than the original",
+        text: `Ahead of C Oniguruma in every measured workload: ${cRange} faster across text processing and syntax highlighting, with inputs and raw data published.`,
+      }
+    : {
+        heading: "Measured against C",
+        text: "Every workload is timed against C Oniguruma on two hosts, with the inputs, versions and raw data published.",
+      },
 ];
 
-function RelationsSection() {
+function ForwardSection() {
   return (
     <Section
-      id="fr-relations"
-      title="Where Ferroni sits"
-      intro="Ferroni supplies the regex engine for Ferriki, whose Shiki-compatible highlighter tokenizes code with TextMate grammars. Each tool also works on its own."
+      id="fr-forward"
+      title="Same engine. Modern Rust."
+      intro="Oniguruma’s C project closed on April 24, 2025, after more than twenty years as the engine TextMate grammars are written for. Ferroni carries it forward, and adds what C Oniguruma never shipped: Unicode 17.0, the vscode-oniguruma scanner, a backtracking check and an idiomatic Rust API."
     >
-      <Relations current="ferroni" />
+      <Principles items={pillars} />
     </Section>
   );
 }
 
-type FigureCell = {
-  text: string;
-  note?: string;
-  grammars?: string[];
-  cases: number;
-  of: number;
-  factors?: Record<string, number>;
-};
-
-const workloads = engineComparison.workloads;
+function SampleSection() {
+  return (
+    <Section
+      id="fr-run"
+      title="Familiar Rust, full Oniguruma syntax"
+      intro={
+        <>
+          The look-behind that selects this date is syntax Rust&rsquo;s <code>regex</code> crate
+          does not run; the named groups and the API around them are the ones you already know. The
+          output is what the example printed, committed with the site.
+        </>
+      }
+      note={
+        <a href="https://github.com/sebastian-software/ferroni/blob/main/examples/website_sample.rs">
+          Run the example: cargo run --example website_sample
+        </a>
+      }
+    >
+      <RunSample
+        input={sample.input}
+        inputCaption="website_sample.rs"
+        inputKind="Rust source"
+        output={sample.output}
+        outputCaption={`Ferroni ${sample.version} · stdout`}
+      />
+      <details className="fr-sample-output">
+        <summary>Read the output as text</summary>
+        <pre tabIndex={0}>
+          <code>{sample.stdout}</code>
+        </pre>
+      </details>
+    </Section>
+  );
+}
 
 function figureValue(cell: FigureCell): ComparisonCell {
   if (cell.factors === undefined) {
@@ -144,7 +216,14 @@ const comparisonRows: ComparisonRow[] = engineComparison.engines.map((engine) =>
   };
 });
 
-function EvidenceSection() {
+/* The C original's factor per workload, stamped on plates above the full table. */
+const cFigures = workloads.map((workload) => ({
+  label: workload.label,
+  value: cCells[workload.id].text,
+  detail: workload.detail,
+}));
+
+function SpeedSection() {
   const hosts = engineComparison.hosts
     .map((host) => `${host.label}: ${host.machine}, ${host.cpus} vCPUs`)
     .join("; ");
@@ -152,26 +231,25 @@ function EvidenceSection() {
     <Section
       id="fr-evidence"
       layout="split"
-      title="Measured against seven engines"
+      title={aheadOfC ? "Faster than the C original" : "Measured against the C original"}
       intro={
         <>
-          Each factor is the other engine&rsquo;s time divided by Ferroni&rsquo;s, as the geometric
-          mean over the workload; a range spans the two hosts. Above 1&times;, Ferroni is faster.
-          Every engine first has to reproduce Oniguruma&rsquo;s results, or the results Shiki
-          produced for highlighting.
+          Each figure is C Oniguruma&rsquo;s time divided by Ferroni&rsquo;s, as the geometric mean
+          over a workload; a range spans two hosts. Above 1&times;, Ferroni is faster. The table
+          adds six more engines, and every engine first has to reproduce Oniguruma&rsquo;s results,
+          or the results Shiki produced for highlighting.
         </>
       }
       note={
         <>
-          Text processing runs 49 tasks over HTML, logs, chat with emoji, Markdown, JSON, CSV and
-          source code, with syntax the <code>regex</code> crate also runs or Oniguruma syntax.
-          Highlighting replays the scanner calls Shiki makes for C, Java and PHP documents, grammars
-          every engine can run. PCRE2&rsquo;s JIT and the <code>regex</code> crate win most text
-          tasks, but neither finds the earliest match among many patterns in one search, as a
-          highlighter needs.
+          Where Ferroni is behind, the table says so. When patterns fit their syntax, Rust&rsquo;s{" "}
+          <code>regex</code> crate and PCRE2&rsquo;s JIT win most text tasks; neither finds the
+          earliest match among many patterns in one search, as a highlighter needs. C Oniguruma wins
+          a few individual tasks, and grammar compilation is mixed.
         </>
       }
     >
+      <EvidenceFigures figures={cFigures} />
       <ComparisonTable
         align="end"
         caption="Ferroni's speedup over each engine; below 1×, the other engine is faster."
@@ -190,31 +268,14 @@ function EvidenceSection() {
   );
 }
 
-function SampleSection() {
+function RelationsSection() {
   return (
     <Section
-      id="fr-run"
-      title="A regular expression, run"
-      intro="A lookbehind selects the date; named groups return its parts. This is the committed output of the Rust example shown here."
-      note={
-        <a href="https://github.com/sebastian-software/ferroni/blob/main/examples/website_sample.rs">
-          Run the example: cargo run --example website_sample
-        </a>
-      }
+      id="fr-relations"
+      title="Where Ferroni sits"
+      intro="Ferroni supplies the regex engine for Ferriki, whose Shiki-compatible highlighter tokenizes code with TextMate grammars. Each tool also works on its own."
     >
-      <RunSample
-        input={sample.input}
-        inputCaption="website_sample.rs"
-        inputKind="Rust source"
-        output={sample.output}
-        outputCaption={`Ferroni ${sample.version} · stdout`}
-      />
-      <details className="fr-sample-output">
-        <summary>Read the output as text</summary>
-        <pre tabIndex={0}>
-          <code>{sample.stdout}</code>
-        </pre>
-      </details>
+      <Relations current="ferroni" />
     </Section>
   );
 }
@@ -223,18 +284,14 @@ export default function HomePage() {
   return (
     <div className="fam-page ferroni-home">
       <HeroSection />
-      <Section
-        id="fr-forward"
-        title="Oniguruma ended. The engine goes on."
-        intro="Oniguruma’s C project closed on April 24, 2025, after more than twenty years as the regex engine that TextMate grammars are written for. Ferroni carries it forward."
-      >
-        <Principles items={pillars} />
-      </Section>
-      <RelationsSection />
+      <ForwardSection />
       <SampleSection />
-      <EvidenceSection />
-      <CodeSection />
+      <SpeedSection />
+      <ScannerSection />
+      <SafetySection />
+      <ProofSection />
       <CoverageSection />
+      <RelationsSection />
       <ClosingSection />
       <WorkWithUs />
     </div>

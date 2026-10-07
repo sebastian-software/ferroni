@@ -1,0 +1,145 @@
+---
+order: 3
+title: Compatibility
+---
+
+# Compatibility
+
+A pattern that works in C Oniguruma should work the same way in Ferroni. This
+page says what that promise covers, where Ferroni differs on purpose, how the
+promise is checked, and how the port is built to keep it.
+
+## Why a line-by-line port
+
+Ferroni began as the regex engine for [Ferriki](https://ferriki.dev), a
+Shiki-compatible syntax highlighter in Rust. TextMate grammars are written for
+Oniguruma: they rely on look-behind, `\G` anchors, backreferences and
+quantifier spellings that most other engines reject or read differently.
+
+Bindings to the C library would have kept the C code, the C toolchain and its
+memory-safety record. A new engine would have broken grammars in subtle ways.
+So Ferroni ports Oniguruma itself, file by file and function by function, and
+verifies the result against Oniguruma's own test suite
+([ADR-001](../adr/001-one-to-one-parity-with-c-original)).
+
+## What Ferroni covers
+
+Ferroni ports ASCII and UTF-8, two of Oniguruma's 29 encodings
+([ADR-003](../adr/003-encoding-scope-ascii-and-utf8-only)). All twelve syntax
+modes are included, from Oniguruma and Ruby to Perl, Python, Java and POSIX.
+For the projects built on Oniguruma's syntax, that means:
+
+| Project                           | Status       | What it means                                                                                         |
+| --------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------- |
+| TextMate grammars, VS Code, Shiki | Covered      | vscode-oniguruma compiles every pattern as UTF-8. Ferroni's scanner keeps its API and UTF-16 offsets. |
+| jq                                | Covered      | jq matches on UTF-8 text, which Ferroni handles in full.                                              |
+| PHP mbregex                       | UTF-8 only   | `mb_ereg` in Shift_JIS, EUC-JP or another non-UTF-8 encoding is not covered.                          |
+| Ruby                              | Not a target | Ruby runs Onigmo, a fork of Oniguruma with its own history and encodings.                             |
+
+These parts of the C library are not ported:
+
+- **27 of 29 encodings:** UTF-16 and UTF-32, Shift_JIS, EUC-JP, EUC-KR,
+  EUC-TW, EUC-CN, Big5, GB18030, KOI8-R, CP1251, and ISO-8859-1 to -16.
+- **The POSIX and GNU APIs:** `regcomp`, `regexec` and `regfree`
+  ([ADR-012](../adr/012-posix-and-gnu-api-not-ported)).
+- **C memory management:** Rust's `Drop` frees what `onig_free` and its
+  relatives freed in C.
+- **`onig_new_deluxe`:** a C-specific allocation variant; use `onig_new`.
+
+### Where Ferroni differs on purpose
+
+- **Unicode 17.0.** Ferroni generates its tables from the Unicode Character
+  Database 17.0; C Oniguruma's last release ships 16.0. Some characters change
+  properties as a result: 672 leave `Extended_Pictographic`, U+0295 moves from
+  `Ll` to `Lo`, and some `\X` boundaries move
+  ([ADR-015](../adr/015-unicode-data-from-ucd)).
+- **A capped backtracking stack.** When no stack limit is set, C lets the
+  backtracking stack grow until memory runs out. Ferroni stops at 10 million
+  entries and reports the limit
+  ([untrusted input](./untrusted-input#limit-each-search)).
+- **Additions C never had.** The Scanner, per-search limits, the compile-time
+  backtracking check and the idiomatic `Regex` API sit beside the port and do
+  not change how a pattern matches.
+
+## How compatibility is checked
+
+### Test parity
+
+Every upstream test that targets UTF-8 is ported case by case. The EUC-JP
+tests are out of scope with that encoding.
+
+| Upstream file                                                           | Encoding |  Upstream |   Ferroni | Status       |
+| ----------------------------------------------------------------------- | -------- | --------: | --------: | ------------ |
+| `test_utf8.c`                                                           | UTF-8    |     1,554 |     1,561 | 100%         |
+| `test_back.c`                                                           | UTF-8    |     1,225 |     1,225 | 100%         |
+| `test_syntax.c`                                                         | UTF-8    |       144 |       144 | 100%         |
+| `test_options.c`                                                        | UTF-8    |        47 |        48 | 100%         |
+| `test_regset.c`                                                         | UTF-8    |         4 |        15 | 100%         |
+| `testc.c`                                                               | EUC-JP   |       785 |         — | out of scope |
+| **C total (UTF-8)**                                                     |          | **2,974** | **2,993** | **100%**     |
+| [vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma) tests | UTF-16   |        15 |        25 | 100%         |
+
+The Ferroni column can be higher than the upstream one: some upstream cases
+are split into several Rust tests. On top of the ported cases, Ferroni adds
+Rust-native tests for the idiomatic API, edge cases, error paths and coverage
+gaps. The README quotes the total number of `#[test]` functions, which
+[`scripts/count-tests.sh`](https://github.com/sebastian-software/ferroni/blob/main/scripts/count-tests.sh)
+derives from the tree. The test strategy is recorded in
+[ADR-011](../adr/011-test-strategy-and-c-test-parity).
+
+### Coverage, fuzzing and benchmark checks
+
+- **Coverage gate.** C Oniguruma has no coverage reporting. Ferroni measures
+  line coverage with [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)
+  on every pull request, and
+  [`scripts/coverage.sh`](https://github.com/sebastian-software/ferroni/blob/main/scripts/coverage.sh)
+  fails the build below its threshold. Generated Unicode tables, the FFI
+  bindings and the test files are excluded from the measurement.
+- **Fuzzing.** Three cargo-fuzz targets cover pattern compilation, matching
+  and the Scanner API. Each runs briefly on every pull request and for 15
+  minutes every week.
+- **Results before timings.** Every benchmark case first has to reproduce C
+  Oniguruma's matches and capture bounds before it is timed, so each benchmark
+  run is also a comparison with C
+  ([engine comparison](../perf/engine-comparison)).
+
+The bugs found while porting, and what they teach about C-to-Rust ports, are
+collected in [ADR-014](../adr/014-porting-bugs-lessons-learned).
+
+## How the port maps to C
+
+Each C source file maps to one Rust module, with the same function names and
+control flow ([ADR-001](../adr/001-one-to-one-parity-with-c-original),
+[ADR-004](../adr/004-c-to-rust-translation-patterns)). A fix in upstream C can
+be found and compared in the corresponding Rust function.
+
+| C file        | Rust module      | Purpose                                       |
+| ------------- | ---------------- | --------------------------------------------- |
+| `regparse.c`  | `regparse.rs`    | Pattern parser                                |
+| `regcomp.c`   | `regcomp.rs`     | AST-to-bytecode compiler                      |
+| `regexec.c`   | `regexec.rs`     | VM executor                                   |
+| `regint.h`    | `regint.rs`      | Internal types and opcodes                    |
+| `oniguruma.h` | `oniguruma.rs`   | Public types and constants                    |
+| `regenc.c`    | `regenc.rs`      | Encoding trait                                |
+| `regsyntax.c` | `regsyntax.rs`   | The 12 syntax definitions                     |
+| `regset.c`    | `regset.rs`      | Multi-regex search (RegSet)                   |
+| `regerror.c`  | `regerror.rs`    | Error messages                                |
+| `regtrav.c`   | `regtrav.rs`     | Capture tree traversal                        |
+| `unicode.c`   | `unicode/mod.rs` | Unicode tables and segmentation               |
+| —             | `scanner.rs`     | Multi-pattern scanner for syntax highlighting |
+| —             | `api.rs`         | Idiomatic Rust API                            |
+
+The compilation pipeline is the same as in C:
+
+```text
+onig_new() -> onig_compile()
+  -> onig_parse_tree()     (pattern -> AST)
+  -> reduce_string_list()  (merge adjacent strings)
+  -> tune_tree()           (6 optimization sub-passes)
+  -> compile_tree()        (AST -> VM bytecode)
+  -> set_optimize_info()   (extract search strategy)
+```
+
+Optimizations that C does not have are recorded separately, so the parity of
+the ported code stays reviewable
+([ADR-008](../adr/008-rust-only-optimizations)).

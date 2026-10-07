@@ -3,11 +3,12 @@
 # Count the `#[test]` functions in the tree.
 #
 # This is the single source of truth for the test counts quoted in README.md
-# ("Test parity") and CONTRIBUTING.md. Run it after adding or removing tests
-# and update the README number if it changed.
+# ("Correctness and safety") and CONTRIBUTING.md. Run it after adding or
+# removing tests and update the README number if it changed.
 #
-# Note: the parity table in README.md counts *upstream C test cases*, which is
-# a different metric -- some compat functions bundle several upstream cases.
+# Note: the parity table in docs/app/routes/guide/compatibility.mdx counts
+# *upstream C test cases*, which is a different metric -- some compat
+# functions bundle several upstream cases.
 
 set -euo pipefail
 
