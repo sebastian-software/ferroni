@@ -1458,7 +1458,8 @@ impl SearchJump {
 /// Whether the plain loop, stepping from character head `s`, steps onto `p`:
 /// always in a single-byte encoding, and over valid UTF-8.
 fn reachable(enc: OnigEncoding, text: &[u8], s: usize, p: usize) -> bool {
-    enc.max_enc_len() == 1 || std::str::from_utf8(&text[s..p]).is_ok()
+    // Mostly ASCII, which `is_ascii` reads a word at a time.
+    enc.max_enc_len() == 1 || text[s..p].is_ascii() || std::str::from_utf8(&text[s..p]).is_ok()
 }
 
 #[cfg(test)]
@@ -1820,6 +1821,36 @@ mod tests {
                     expected,
                     "{pattern}"
                 );
+            }
+        }
+    }
+
+    /// Over malformed UTF-8 no jump is taken: a lead byte's step may pass
+    /// over a candidate right before the end.
+    #[test]
+    fn jumps_over_malformed_bytes_keep_the_loop_steps() {
+        let mp = onig_new_match_param();
+        for pattern in [r"(?<=\()x", r"(?<=\()x?", r"^\s*x"] {
+            let reg = compile(pattern, UTF8).unwrap();
+            assert!(reg.search_jump.is_some(), "{pattern}");
+            let reference = reference(pattern, UTF8);
+            for text in [
+                &b"\xe0(x"[..],
+                b"\xe0(",
+                b"a\xf0(x",
+                b"\xe0\nx",
+                b"\xff\xe0",
+            ] {
+                for start in 0..=text.len() {
+                    for range in start..=text.len() {
+                        let bounds = (text.len(), start, range);
+                        assert_eq!(
+                            search(&reg, text, bounds, ONIG_OPTION_NONE, &mp),
+                            search(&reference, text, bounds, ONIG_OPTION_NONE, &mp),
+                            "{pattern} on {text:?} {bounds:?}"
+                        );
+                    }
+                }
             }
         }
     }
