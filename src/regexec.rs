@@ -7464,6 +7464,28 @@ fn can_use_two_pass_capture_fill(
         && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
         // Keep this off when wall-time limiting is active: second pass is extra work.
         && msa.time_limit == 0
+        && two_pass_capture_fill_pays(reg)
+}
+
+/// Whether attempts that run untracked, with a match among them run again to
+/// record its captures, can save work (Rust-only, ADR-008). The second pass
+/// repeats the successful attempt; the untracked ones save the stack entries
+/// of push captures and the capture bookkeeping of each attempt.
+/// - With push captures, unless the optimizer finds a literal at the match
+///   start: its candidates often match, so the second pass would repeat
+///   whole successful attempts while few attempts fail.
+/// - Without them an untracked attempt saves little, which pays only while
+///   the repeated match stays short: not where `.` repeats without bound and
+///   a match may run to the end of the line.
+pub(crate) fn two_pass_capture_fill_pays(reg: &RegexType) -> bool {
+    if (reg.push_mem_start | reg.push_mem_end) != 0 {
+        !(matches!(
+            reg.optimize,
+            OptimizeType::Str | OptimizeType::StrFast | OptimizeType::StrFastStepForward
+        ) && reg.dist_max == 0)
+    } else {
+        !reg.anychar_run
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -9118,6 +9140,7 @@ mod tests {
             ac_alt_has_capture: false,
             leading_run: None,
             literal_prefix: None,
+            anychar_run: false,
             search_start_map: None,
             search_jump: None,
             required_literals: None,
@@ -9208,6 +9231,26 @@ mod tests {
             std::str::from_utf8(pattern)
         );
         reg
+    }
+
+    /// Attempts run untracked, with a second pass for a match among them,
+    /// only where the repeated match is likely to cost less than tracking
+    /// every attempt.
+    #[test]
+    fn two_pass_capture_fill_needs_push_captures_away_from_a_leading_literal() {
+        let pays = |pattern: &[u8]| two_pass_capture_fill_pays(&compile_full(pattern));
+        // Push captures, no literal or one at an unbounded distance.
+        assert!(pays(br"(.)*x"));
+        assert!(pays(br"(\w)+;"));
+        // Plain captures: the repeated match is short unless `.` repeats
+        // without bound.
+        assert!(pays(br"\b(abs|acos|ceil)\b"));
+        assert!(pays(br"(\d+)-(\d+)"));
+        assert!(pays(br"(.{1,3})x"));
+        assert!(!pays(br"\s*([^#(.\\_[:alpha:]\s].*?)(?=#|$)"));
+        assert!(!pays(br"(a)(?=.*b)"));
+        // The literal at the match start makes candidates likely matches.
+        assert!(!pays(br"\((.(?!\.\.))+\)"));
     }
 
     #[test]
