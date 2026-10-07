@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.1](https://github.com/sebastian-software/ferroni/compare/v1.9.0...v1.9.1) (2026-10-07)
+
+
+### Performance Improvements
+
+* **compiler:** optimize case-insensitive literal tries as C's unravelled alternation ([#237](https://github.com/sebastian-software/ferroni/issues/237)) ([cd6fcb8](https://github.com/sebastian-software/ferroni/commit/cd6fcb8e394d035eb3ed9c9aaf6b5a94643b7d51))
+* **compiler:** search an extra start map only where it filters ([#232](https://github.com/sebastian-software/ferroni/issues/232)) ([ea4d17f](https://github.com/sebastian-software/ferroni/commit/ea4d17f1dcd6490a561a1e40ab4cff74b6f5647f))
+* **search:** clear the region in place and inline the no-match exit ([45fc700](https://github.com/sebastian-software/ferroni/commit/45fc70016474ce8c6e5e22b3b2a71711107cd721))
+* **search:** skip failed runs whose first character is narrower than the run ([#239](https://github.com/sebastian-software/ferroni/issues/239)) ([d5a0e36](https://github.com/sebastian-software/ferroni/commit/d5a0e366afd29e78f64042da50e818673da62442))
+* **vm:** continue failed attempts of a forward scan inside the VM ([f963c14](https://github.com/sebastian-software/ferroni/commit/f963c14fca78ebc224013afc7d0be2ea54422342))
+* **vm:** track captures in the attempt at the search start ([#235](https://github.com/sebastian-software/ferroni/issues/235)) ([1be5bf0](https://github.com/sebastian-software/ferroni/commit/1be5bf0b1e9ece897f9e6dea67b8c28593b237dc))
+
 ## [1.9.0](https://github.com/sebastian-software/ferroni/compare/v1.8.1...v1.9.0) (2026-10-06)
 
 
