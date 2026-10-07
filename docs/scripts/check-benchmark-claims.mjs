@@ -74,6 +74,20 @@ for (const [field, label, pattern] of [
 if (!readme.includes(`Measured ${figures.measured}`)) {
   errors.push(`README.md.src does not name the measurement date ${figures.measured}.`);
 }
+// The README's "faster than the original" claim holds only while C loses
+// every workload on every host. The home page checks the same condition and
+// rewords itself; the README has to be edited by hand.
+const cRow = figures.engines.find((engine) => engine.id === "c");
+const aheadOfC =
+  cRow !== undefined &&
+  figures.workloads.every((workload) =>
+    Object.values(cRow.cells[workload.id].factors ?? {}).every((factor) => factor > 1),
+  );
+if (/Ahead of C Oniguruma in every measured\s+workload/.test(readme) && !aheadOfC) {
+  errors.push(
+    "README.md.src says Ferroni is ahead of C Oniguruma in every measured workload, but C wins at least one.",
+  );
+}
 if (!home.includes('from "../data/engine-comparison.json"')) {
   errors.push("home.tsx no longer renders app/data/engine-comparison.json.");
 }

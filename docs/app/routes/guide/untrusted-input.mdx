@@ -1,0 +1,160 @@
+---
+order: 2
+title: Untrusted Input
+---
+
+# Untrusted Input
+
+Regular expressions often meet text that nobody on your team wrote: search
+queries, uploaded documents, log lines, third-party grammars. Sometimes users
+supply the patterns too. Ferroni protects that situation in three layers:
+memory safety, limits on how much work one search may do, and a compile-time
+check for patterns that backtrack catastrophically.
+
+## Memory safety
+
+C Oniguruma has had memory-safety vulnerabilities in exactly this situation,
+where a crafted pattern or input led to a use-after-free, a NULL-pointer
+dereference or an out-of-bounds read (CVE-2019-13224, CVE-2019-13225,
+CVE-2019-19012, CVE-2019-19204, CVE-2019-19246). In Ferroni, buffer arithmetic, string processing and encoding
+conversion are safe Rust. The remaining `unsafe` blocks follow two narrowly
+scoped patterns, shared AST nodes during compilation and global callback
+pointers, and every new block has to fit one of them
+([ADR-002](../adr/002-unsafe-code-policy)).
+
+Three [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets cover
+pattern compilation, matching and the Scanner API. Each runs briefly on every
+pull request and for 15 minutes every week.
+
+## Limit each search
+
+Oniguruma is a backtracking engine, which is what makes look-behind,
+backreferences and conditionals possible. The price is that some combinations
+of pattern and input take exponential time: `(a+)+b` against a long run of `a`
+without a `b` is the classic case. Bound that work per search with
+`SearchOptions` and the `*_with` methods:
+
+```rust
+use std::time::Duration;
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(a+)+b").unwrap();
+let options = SearchOptions::new().timeout(Duration::from_millis(50));
+
+// An ordinary input matches as usual.
+assert_eq!(re.find_with("aab", options).unwrap().unwrap().as_str(), "aab");
+
+// A hostile one stops at the deadline with an error instead of hanging.
+let hostile = "a".repeat(40);
+let err = re.find_with(&hostile, options).unwrap_err();
+assert!(matches!(err, RegexError::TimeLimitOver));
+```
+
+The `*_with` methods return a `Result`, so a search that reached a limit is
+distinguishable from "no match". The plain methods (`find`, `is_match`,
+`captures`, `find_iter`) report a stopped search as no match.
+
+| Option                       | Stops the search with                |
+| ---------------------------- | ------------------------------------ |
+| `timeout(Duration)`          | `RegexError::TimeLimitOver`          |
+| `retry_limit_in_match(u64)`  | `RegexError::RetryLimitInMatchOver`  |
+| `retry_limit_in_search(u64)` | `RegexError::RetryLimitInSearchOver` |
+| `match_stack_limit(u32)`     | `RegexError::MatchStackLimitOver`    |
+
+Retry limits count backtracks, so they stop a search at the same point on
+every machine. A timeout bounds wall-clock time but depends on load: the engine
+reads the clock every 512 backtracks and rounds durations up to whole
+milliseconds. For untrusted input, a retry limit for reproducible behavior and
+a timeout as a backstop work well together.
+
+To iterate under limits, `find_iter_with` yields a `Result` per match. A search
+that reaches a limit yields its error once and ends the iteration:
+
+```rust
+use std::time::Duration;
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(?m)^error: \w+$").unwrap();
+let options = SearchOptions::new().timeout(Duration::from_millis(50));
+
+let found: Result<Vec<&str>, RegexError> = re
+    .find_iter_with("error: one\nerror: two", options)
+    .map(|m| m.map(|m| m.as_str()))
+    .collect();
+assert_eq!(found.unwrap(), ["error: one", "error: two"]);
+```
+
+### The defaults
+
+A limit left unset in `SearchOptions` keeps its process-wide value, and zero
+turns a limit off for that search. Out of the box, Ferroni uses Oniguruma's
+defaults: at most 10,000,000 backtracks per start position, no limit for the
+search as a whole, and no time limit. Unlike C, the backtracking stack never
+grows past 10,000,000 entries when no stack limit is set, so one hostile line
+cannot exhaust memory. A stack limit of your own also turns off some search
+optimizations, so leave it unset unless you need a smaller bound.
+
+The process-wide values can be changed for every search at once with
+`onig_set_time_limit`, `onig_set_retry_limit_in_match`,
+`onig_set_retry_limit_in_search` and `onig_set_match_stack_limit` in
+`ferroni::regexec`.
+
+## Catch risky patterns at compile time
+
+Limits stop a runaway search. A compile-time check finds the patterns most
+likely to cause one, before any input arrives. It looks for the two classic
+shapes inside an unbounded repeat: a nested repeat that can match the same
+characters as what follows it, like `(a+)+`, and alternatives that can start
+with the same character, like `(a|aa)*`.
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(a+)+$").unwrap();
+for warning in re.backtracking_warnings() {
+    eprintln!("warning: {warning}");
+}
+assert_eq!(re.backtracking_warnings().len(), 1);
+
+// Or refuse such patterns, for example when users supply them.
+let strict = Regex::builder(r"(a+)+$").reject_backtracking_risks(true).build();
+assert!(strict.is_err());
+```
+
+Each warning carries a message ready to show to the author of the pattern.
+The check is a heuristic, tuned against the 260 grammars that ship with Shiki:
+it can miss risky patterns and flag harmless ones, and it never changes how a
+pattern matches. Treat it as a complement to the limits, not a replacement.
+
+### Optional rewrites
+
+`RegexBuilder::optimize_backtracking(true)` rewrites a narrow set of
+backtracking-prone shapes into equivalent ones that do less work. Today it
+recognizes repeated digit groups such as `(?:[0-9]+_?)+` before a literal dot.
+Successful matches and their captures stay the same; only the work done, and
+with it the point where a limit trips, changes. `Regex::backtracking_rewrites`
+lists what was applied and what was refused. The option is off by default and
+does not guarantee linear-time searches.
+
+## Patterns from users
+
+When users supply patterns, also bound how deeply they may nest. Ferroni keeps
+Oniguruma's parse depth limit, 4,096 levels by default; a deeper pattern fails
+to compile with `RegexError::ParseDepthLimitOver`. Recursive patterns are
+bounded by a nesting level for subexpression calls (20 by default) and,
+optionally, by a number of calls per search, which stops the search with
+`RegexError::SubexpCallLimitOver`. The setters are `onig_set_parse_depth_limit`
+in `ferroni::regparse`, and `onig_set_subexp_call_max_nest_level` and
+`onig_set_subexp_call_limit_in_search` in `ferroni::regexec`.
+
+A checklist for user-supplied patterns:
+
+1. Compile with `reject_backtracking_risks(true)`, or show the
+   `backtracking_warnings` to the user.
+2. Search with the `*_with` methods and a `SearchOptions` that sets a retry
+   limit and a timeout.
+3. Treat `RegexError::Syntax` as the user's mistake and the limit errors as
+   "too expensive", not as "no match".
+
+For how errors are grouped, see
+[Handling errors](./getting-started#handling-errors).
