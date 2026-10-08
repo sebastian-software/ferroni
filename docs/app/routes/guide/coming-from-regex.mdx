@@ -1,0 +1,145 @@
+---
+order: 4
+title: Coming from regex or onig
+---
+
+# Coming from regex or onig
+
+Ferroni keeps Oniguruma's semantics, so a few defaults differ from the
+[`regex`](https://crates.io/crates/regex) crate. The
+[`onig`](https://crates.io/crates/onig) crate wraps the C library and shares
+those defaults; its API maps onto Ferroni's at the end of this page. Each
+difference below is visible in a single call. The outputs were checked against
+Ferroni 1.9.2 and `regex` 1.13.
+
+| Behavior                                    | Ferroni                                                                     | `regex`                               |
+| ------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------- |
+| `^abc$` on `"x\nabc\ny"`                    | matches: `^` and `$` are line anchors                                       | no match without `(?m)`               |
+| `(?<y>\d+)-(\d+)`, group 2                  | not captured (`get(2)` is `None`) unless `ONIG_OPTION_CAPTURE_GROUP` is set | both groups captured                  |
+| `a*` with `find_iter` over `"ab"`           | `0..1`, `1..1`, `2..2`                                                      | `0..1`, `2..2`                        |
+| `captures_len()` on `(a)(b)`                | `2`: excludes group 0                                                       | `3`: includes group 0                 |
+| `Match::as_str` on a match of invalid UTF-8 | panics; use `as_bytes`                                                      | not applicable (separate `bytes` API) |
+
+## Anchors
+
+Oniguruma's default syntax treats `^` and `$` as line anchors. To match the
+`regex` crate's default, anchor to the input boundaries instead:
+
+```rust
+use ferroni::prelude::*;
+
+let text = "x\nabc\ny";
+
+// Ferroni: ^ and $ match at each line boundary.
+assert!(Regex::new(r"^abc$").unwrap().is_match(text));
+
+// Anchors match only at the start and end of the input.
+let anchored = Regex::builder(r"^abc$")
+    .multi_line_anchors(false)
+    .build()
+    .unwrap();
+assert!(!anchored.is_match(text));
+```
+
+## Capture groups
+
+When a pattern has named groups, Oniguruma does not capture the unnamed
+groups unless `ONIG_OPTION_CAPTURE_GROUP` is set. Set it on the builder to get
+the `regex` crate's behavior:
+
+```rust
+use ferroni::oniguruma::ONIG_OPTION_CAPTURE_GROUP;
+use ferroni::prelude::*;
+
+let default = Regex::new(r"(?<y>\d+)-(\d+)").unwrap();
+let caps = default.captures("12-34").unwrap();
+assert_eq!(caps.name("y").unwrap().as_str(), "12");
+assert!(caps.get(2).is_none());
+
+let regex_like = Regex::builder(r"(?<y>\d+)-(\d+)")
+    .option(ONIG_OPTION_CAPTURE_GROUP)
+    .build()
+    .unwrap();
+let caps = regex_like.captures("12-34").unwrap();
+assert_eq!(caps.get(2).unwrap().as_str(), "34");
+```
+
+The Scanner API is the exception: `Scanner::new` and the default
+`ScannerConfig` capture unnamed groups too, to match vscode-oniguruma. See
+[The Scanner API](./getting-started#the-scanner-api).
+
+## Empty matches
+
+`find_iter` reports an empty match wherever the pattern can match nothing,
+including right after a non-empty match, so `a*` also yields the empty match
+at offset 1. To skip empty matches, filter them out:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"a*").unwrap();
+
+let all: Vec<_> = re.find_iter("ab").map(|m| m.range()).collect();
+assert_eq!(all, [0..1, 1..1, 2..2]);
+
+let non_empty: Vec<_> = re
+    .find_iter("ab")
+    .filter(|m| !m.is_empty())
+    .map(|m| m.range())
+    .collect();
+assert_eq!(non_empty, [0..1]);
+```
+
+## Group counts
+
+`captures_len` returns the number of capture groups without group 0, the whole
+match. `Captures::len` counts group 0, so it is one more:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(a)(b)").unwrap();
+assert_eq!(re.captures_len(), 2);
+assert_eq!(re.captures("ab").unwrap().len(), 3);
+```
+
+## Byte input
+
+`Match::as_str` panics when the matched bytes are not valid UTF-8. Use
+`Match::as_bytes` for matches from a byte search:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new_bytes(b".").unwrap();
+let m = re.find_bytes(&b"\xff"[..]).unwrap();
+assert_eq!(m.as_bytes(), &[0xff][..]);
+// m.as_str() would panic here: the matched byte is not valid UTF-8.
+```
+
+## Why the defaults follow Oniguruma
+
+Ferroni is a 1:1 port of Oniguruma, and its goal is that a pattern which works
+in C Oniguruma works the same way in Ferroni. TextMate grammars, jq and PHP's
+mbregex depend on that behavior, so changing a default would break them. The
+[ADR-001](../adr/001-one-to-one-parity-with-c-original) records this decision.
+Every difference above is a builder option or a documented method, so the
+`regex` behavior is one call away.
+
+## Mapping from the `onig` crate
+
+The `onig` crate wraps the same C library and has its own API. The calls
+below replace its common operations:
+
+| `onig` crate                                  | Ferroni                                                                                                          |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `Regex::with_options(pattern, opts, &syntax)` | `Regex::builder(pattern).option(flag).syntax(&OnigSyntax*).build()`, where `flag` is an `ONIG_OPTION_*` constant |
+| `Syntax::ruby()`                              | `RegexBuilder::syntax(&OnigSyntaxRuby)`                                                                          |
+| `Regex::find` returning `(usize, usize)`      | `Regex::find` returning a `Match`, with `range()`, `start()` and `end()`                                         |
+| `Captures::at(i)` returning `&str`            | `Captures::get(i).map(\|m\| m.as_str())`                                                                         |
+| `Captures::pos(i)` returning `(usize, usize)` | `Captures::get(i).map(\|m\| m.range())`                                                                          |
+
+The option constants are in `ferroni::oniguruma`, and the syntax definitions
+are in `ferroni::regsyntax`. The `onig` crate's own option names are not
+mapped one for one, so check the flag list in `ferroni::oniguruma` when
+porting an options value.
