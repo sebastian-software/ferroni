@@ -1,0 +1,29 @@
+# pnpm 11 and later refuse packages published less than 24 hours ago
+# (minimumReleaseAge defaults to 1440). The lockfile pins rolldown 1.2.13 and
+# its platform bindings, published on 2026-10-07, so frozen installs fail
+# until that release passes the cutoff. Only these exact versions are excluded;
+# remove this exclusion once they are older than 24 hours.
+minimumReleaseAgeExclude:
+  - rolldown@1.2.13
+  - "@rolldown/binding-android-arm-eabi@1.2.13"
+  - "@rolldown/binding-android-arm64@1.2.13"
+  - "@rolldown/binding-darwin-arm64@1.2.13"
+  - "@rolldown/binding-darwin-x64@1.2.13"
+  - "@rolldown/binding-freebsd-x64@1.2.13"
+  - "@rolldown/binding-linux-arm-gnueabihf@1.2.13"
+  - "@rolldown/binding-linux-arm64-gnu@1.2.13"
+  - "@rolldown/binding-linux-arm64-musl@1.2.13"
+  - "@rolldown/binding-linux-ppc64-gnu@1.2.13"
+  - "@rolldown/binding-linux-s390x-gnu@1.2.13"
+  - "@rolldown/binding-linux-x64-gnu@1.2.13"
+  - "@rolldown/binding-linux-x64-musl@1.2.13"
+  - "@rolldown/binding-openharmony-arm64@1.2.13"
+  - "@rolldown/binding-win32-arm64-msvc@1.2.13"
+  - "@rolldown/binding-win32-x64-msvc@1.2.13"
+
+# pnpm 11 and later fail the install on dependency build scripts that are not
+# listed here. pnpm 10 blocked these two scripts silently, so they stay denied:
+# the install behaves as it did before the upgrade.
+allowBuilds:
+  esbuild: false
+  unrs-resolver: false

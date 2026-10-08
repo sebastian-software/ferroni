@@ -7,5 +7,5 @@
     "@shikijs/engine-javascript": "4.5.0",
     "shiki": "4.5.0"
   },
-  "packageManager": "pnpm@10.34.5"
+  "packageManager": "pnpm@12.10.1"
 }
