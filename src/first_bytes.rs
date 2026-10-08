@@ -352,8 +352,13 @@ pub(crate) fn guard_byte_map(
                 }
                 walk.pending.push(pc + 1);
             }
-            // A look-behind consumes nothing; its body instruction follows.
-            (OpCode::LookBehindOp, _) => walk.pending.push(pc + 2),
+            // A negative look-behind consumes nothing; its body instruction
+            // follows. A positive one goes on where its body ends, which
+            // over malformed UTF-8 is not the byte the guard reads (#259).
+            (OpCode::LookBehindOp, OperationPayload::LookBehindOp { not: true, .. }) => {
+                walk.pending.push(pc + 2)
+            }
+            (OpCode::LookBehindOp, _) => return None,
             // Checks, and stack entries that backtracking pops again.
             (
                 OpCode::MemStartPush
@@ -553,7 +558,9 @@ pub(crate) fn guard_skipped_retries(
                         | OpCode::CheckPosition,
                         _,
                     ) => check(pc, passes, checks)?.then_some(pc + 1),
-                    (OpCode::LookBehindOp, _) => check(pc, passes, checks)?.then_some(pc + 2),
+                    (OpCode::LookBehindOp, OperationPayload::LookBehindOp { not: true, .. }) => {
+                        check(pc, passes, checks)?.then_some(pc + 2)
+                    }
                     (OpCode::Fail, _) => None,
                     _ => return None,
                 },
@@ -652,22 +659,68 @@ pub(crate) fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZ
     for byte in bitset_members(&bits) {
         map[byte] = 1;
     }
-    admit_look_behind_continuations(reg, &mut map);
     Some(map)
 }
 
-/// Rust-only (ADR-008): fits a start map to a leading positive look-behind
-/// (`reg.leading_look_behind`), which the maps pass as zero-width. Over
-/// malformed UTF-8 it steps back over continuation bytes and goes on where
-/// its body ends, as in C. From a start inside a character the body ends
-/// past it, so the map admits the continuation bytes; valid UTF-8 never
-/// starts an attempt on one. After a stray run of continuation bytes the
-/// body ends before the start and the next instruction reads that run,
-/// which a map of the start's byte cannot see (#259).
-pub(crate) fn admit_look_behind_continuations(reg: &RegexType, map: &mut [u8; CHAR_MAP_SIZE]) {
-    if reg.leading_look_behind && reg.enc.max_enc_len() > 1 {
-        map[0x80..0xC0].fill(1);
+/// Rust-only (ADR-008): whether a start map may leave out `s`. The maps pass
+/// a leading positive look-behind as zero-width (`reg.look_behind_reach`),
+/// which holds where the characters it steps back over line up: each
+/// character's lead, found by stepping back over continuation bytes as C's
+/// `left_adjust_char_head` does, reads forward to where the step began. Over
+/// malformed UTF-8, or from inside a character, C goes on where the body
+/// ends instead, before or past `s`, and reads bytes the map did not see.
+#[inline]
+pub(crate) fn start_map_may_skip(reg: &RegexType, text: &[u8], s: usize) -> bool {
+    reg.look_behind_reach == 0
+        || ascii_before(text, s, reg.look_behind_reach)
+        || characters_line_up(reg.enc, reg.look_behind_reach, text, s)
+}
+
+/// Whether the `reach` bytes before `s` are ASCII, which line up as
+/// characters of one byte each: the common case, without a call.
+#[inline(always)]
+pub(crate) fn ascii_before(text: &[u8], s: usize, reach: u32) -> bool {
+    let reach = reach as usize;
+    s >= reach && s <= text.len() && text[s - reach..s].iter().all(|&b| b < 0x80)
+}
+
+/// Whether the `reach` characters before `s` line up (see
+/// `start_map_may_skip`).
+#[inline(never)]
+pub(crate) fn characters_line_up(
+    enc: crate::regenc::OnigEncoding,
+    reach: u32,
+    text: &[u8],
+    s: usize,
+) -> bool {
+    if enc.max_enc_len() == 1 {
+        return true;
     }
+    let mut p = s.min(text.len());
+    for _ in 0..reach {
+        if p == 0 {
+            // The step back fails, and the look-behind with it.
+            return true;
+        }
+        let mut head = p - 1;
+        while head > 0 && (text[head] & 0xC0) == 0x80 && p - head < 4 {
+            head -= 1;
+        }
+        if (text[head] & 0xC0) == 0x80 && head > 0 {
+            // A run of more continuation bytes than a character holds.
+            return false;
+        }
+        let len = if text[head] < 0x80 {
+            1
+        } else {
+            enc.mbc_enc_len(&text[head..])
+        };
+        if head + len != p {
+            return false;
+        }
+        p = head;
+    }
+    true
 }
 
 /// The bytes a match can start with when the VM starts at `entry`.

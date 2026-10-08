@@ -1,16 +1,19 @@
 // regset.rs - Port of USE_REGSET section from regexec.c
 // Multi-regex search for syntax highlighters and text editors.
 
-use crate::first_bytes::derive_start_byte_map;
+use crate::first_bytes::{
+    ascii_before, characters_line_up, derive_start_byte_map, start_map_may_skip,
+};
 use crate::oniguruma::*;
 use crate::regenc::{
     OnigEncoding, onigenc_get_prev_char_head, onigenc_is_ascii_compatible_encoding,
 };
 use crate::regexec::{
     FirstOpTest, MatchArg, OnigMatchParam, first_op_fails, first_op_test, forward_search,
-    may_skip_first_op_failures, onig_get_global_limit_revision, onig_get_match_stack_limit,
-    onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit, onig_match,
-    onig_match_with_msa_start, search_in_range, two_pass_capture_fill_pays,
+    map_search_bypassed_for, may_skip_first_op_failures, onig_get_global_limit_revision,
+    onig_get_match_stack_limit, onig_get_retry_limit_in_match, onig_get_retry_limit_in_search,
+    onig_get_time_limit, onig_match, onig_match_with_msa_start, search_in_range,
+    two_pass_capture_fill_pays,
 };
 use crate::regint::*;
 use std::sync::Arc;
@@ -114,6 +117,16 @@ pub struct OnigRegSet {
     scratch_table_retry_counters: Vec<u64>,
     /// SIMD-accelerated skip needle derived from the dispatch table.
     skip_needle: SkipNeedle,
+    /// Table entries a Rust-only start map routes past a leading positive
+    /// look-behind, in index order, and the most characters a table entry's
+    /// leading look-behind steps back. Where those characters do not line up
+    /// the table attempts these entries whatever the byte, and no entry with
+    /// a leading look-behind by its threshold
+    /// (`crate::first_bytes::start_map_may_skip`).
+    look_behind_entries: Vec<u16>,
+    look_behind_reach: u32,
+    /// The subject of the current search is valid UTF-8 (`MatchArg::subject_utf8`).
+    subject_utf8: bool,
     /// Reused MatchArg scratch space for position-lead searches.
     scratch_msa: Option<MatchArg>,
     /// Match length from the last successful position-lead search.
@@ -338,6 +351,72 @@ fn has_finite_variable_optimizer(reg: &RegexType) -> bool {
     reg.dist_max != INFINITE_LEN && has_variable_optimizer(reg)
 }
 
+/// The entries of two lists in index order, each once.
+fn merge_entry_lists(a: &[u16], b: &[u16]) -> Vec<u16> {
+    let mut merged = Vec::with_capacity(a.len() + b.len());
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() || j < b.len() {
+        let next = match (a.get(i), b.get(j)) {
+            (Some(&x), Some(&y)) if x == y => {
+                i += 1;
+                j += 1;
+                x
+            }
+            (Some(&x), Some(&y)) if x < y => {
+                i += 1;
+                x
+            }
+            (Some(_), Some(&y)) | (None, Some(&y)) => {
+                j += 1;
+                y
+            }
+            (Some(&x), None) => {
+                i += 1;
+                x
+            }
+            (None, None) => unreachable!(),
+        };
+        merged.push(next);
+    }
+    merged
+}
+
+/// The table entries a Rust-only start map routes past a leading positive
+/// look-behind (`OnigRegSet::look_behind_entries`): C's own optimizer
+/// windows hold such a look-behind as zero-width too, so only the bytecode
+/// start bytes and the Rust-only first-byte maps need the check.
+fn refresh_look_behind_entries(set: &mut OnigRegSet) {
+    let routed_by_rust_map = |reg: &RegexType| {
+        if has_variable_optimizer(reg) {
+            true
+        } else if reg.optimize == OptimizeType::Map && reg.dist_min == 0 {
+            reg.extra_map_optimizer
+        } else if reg.dist_min == 0 && !reg.exact.is_empty() {
+            false
+        } else {
+            reg.has_first_byte_map
+        }
+    };
+    set.look_behind_entries = set
+        .table_entries
+        .iter()
+        .copied()
+        .filter(|&i| {
+            let reg = &set.entries[i as usize].reg;
+            reg.look_behind_reach > 0 && routed_by_rust_map(reg)
+        })
+        .collect();
+    set.look_behind_entries.sort_unstable();
+    // The reach of every table entry: the threshold pre-filter is Rust-only
+    // for C-routed entries too.
+    set.look_behind_reach = set
+        .table_entries
+        .iter()
+        .map(|&i| set.entries[i as usize].reg.look_behind_reach)
+        .max()
+        .unwrap_or(0);
+}
+
 fn add_entry_by_start_map(
     table: &mut [Vec<u16>; CHAR_MAP_SIZE],
     start_map: &[u8; CHAR_MAP_SIZE],
@@ -430,6 +509,7 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     set.first_byte_candidates = table;
     set.table_entry_count = table_entries.len();
     set.table_entries = table_entries;
+    refresh_look_behind_entries(set);
     set.fallback_search_candidates = fallback_search_candidates;
     set.fallback_memo_key = None;
     set.fallback_memos = vec![Vec::new(); set.entries.len()];
@@ -506,6 +586,9 @@ fn regset_alloc() -> Box<OnigRegSet> {
         scratch_limits_revision: None,
         scratch_table_retry_counters: Vec::new(),
         skip_needle: SkipNeedle::None,
+        look_behind_entries: Vec::new(),
+        look_behind_reach: 0,
+        subject_utf8: false,
         scratch_msa: None,
         last_match_len: ONIG_MISMATCH,
         table_start_bytes: None,
@@ -582,6 +665,7 @@ pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) 
             set.has_gated_callouts |= set.entries[new_idx as usize].has_callouts;
             set.gates.resize(set.entries.len(), EntryGate::STALE);
             set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
+            refresh_look_behind_entries(set);
         } else {
             set.entries[new_idx as usize].fallback = true;
             let candidate =
@@ -597,6 +681,7 @@ pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) 
         set.table_entry_count += 1;
         set.table_entries.push(new_idx);
         set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
+        refresh_look_behind_entries(set);
     }
 
     // Recompute: pass field values to avoid borrow conflict
@@ -978,12 +1063,13 @@ enum EntrySearchRange {
 /// attempts no position at all.
 fn entry_search_range(
     reg: &RegexType,
+    subject_utf8: bool,
     str_data: &[u8],
     end: usize,
     start: usize,
     range: usize,
 ) -> Option<EntrySearchRange> {
-    if reg.optimize == OptimizeType::None {
+    if reg.optimize == OptimizeType::None || map_search_bypassed_for(reg, subject_utf8) {
         return Some(EntrySearchRange::AllRange { until: usize::MAX });
     }
     if reg.dist_max != INFINITE_LEN {
@@ -1076,6 +1162,7 @@ fn fallback_attempt_decision(
 #[inline(never)]
 fn attempt_fallback_entry_at_start(
     entry: &mut RegSetEntry,
+    subject_utf8: bool,
     index: usize,
     str_data: &[u8],
     end: usize,
@@ -1092,6 +1179,7 @@ fn attempt_fallback_entry_at_start(
             .start_filter
             .as_deref()
             .is_some_and(|filter| filter[str_data[start] as usize] == 0)
+        && (subject_utf8 || start_map_may_skip(&entry.reg, str_data, start))
     {
         return None;
     }
@@ -1108,7 +1196,7 @@ fn attempt_fallback_entry_at_start(
     }
     let result = attempt_fallback_entry(entry, str_data, end, start, start, option, fill, msa);
     let decision = fallback_attempt_decision(result, index, start, msa)?;
-    let admitted = match entry_search_range(&entry.reg, str_data, end, start, range) {
+    let admitted = match entry_search_range(&entry.reg, subject_utf8, str_data, end, start, range) {
         None => false,
         Some(EntrySearchRange::AllRange { .. }) => true,
         Some(EntrySearchRange::LowHigh { low, .. }) => start >= low,
@@ -1157,6 +1245,7 @@ fn search_fallback_entry(
 ) -> Option<RegSetDecision> {
     let enc = set.enc;
     let anychar_inf = set.anychar_inf;
+    let subject_utf8 = set.subject_utf8;
     let entry = &mut set.entries[index];
     if stop == start
         && entry
@@ -1166,7 +1255,15 @@ fn search_fallback_entry(
             .is_none_or(|ext| ext.callout_num == 0)
     {
         return attempt_fallback_entry_at_start(
-            entry, index, str_data, end, start, range, option, msa,
+            entry,
+            subject_utf8,
+            index,
+            str_data,
+            end,
+            start,
+            range,
+            option,
+            msa,
         );
     }
     // An attempt needs an occurrence of a required literal at or after its
@@ -1178,7 +1275,8 @@ fn search_fallback_entry(
         Some(required) => Some(required.find(str_data, start, end)?),
         None => None,
     };
-    let mut search_range = entry_search_range(&entry.reg, str_data, end, start, range)?;
+    let mut search_range =
+        entry_search_range(&entry.reg, subject_utf8, str_data, end, start, range)?;
     // C updates `prev_is_newline` only while some regex of the set has
     // `ANCR_ANYCHAR_INF`, and the first position counts as after a newline.
     let after_newline_only = anychar_inf && (entry.reg.anchor & ANCR_ANYCHAR_INF) != 0;
@@ -1261,6 +1359,7 @@ fn search_fallback_entry(
                         .start_filter
                         .as_deref()
                         .is_none_or(|filter| filter[str_data[s] as usize] != 0)
+                    || (!subject_utf8 && !start_map_may_skip(&entry.reg, str_data, s))
             }
         } && !(after_newline_only && s > start && str_data[s - 1] != b'\n');
 
@@ -1390,7 +1489,7 @@ fn table_gate_admits(
         *gate = EntryGate {
             generation: set.gate_generation,
             from: start,
-            range: entry_search_range(reg, str_data, end, start, range),
+            range: entry_search_range(reg, set.subject_utf8, str_data, end, start, range),
         };
     }
     entry_range_admits(reg, str_data, end, &mut gate.range, &mut gate.from, s)
@@ -1498,6 +1597,29 @@ fn regset_table_scan<const EAGER_GATES: bool>(
     let prev_is_newline_check = set.anychar_inf;
     let first_op_skips = may_skip_first_op_failures(&msa, option);
     let mut result = None;
+    // Look-behind entries need a look only after a non-ASCII byte: before
+    // the first one from `look_behind_from` on, every start lines up.
+    let look_behind_from = if set.look_behind_reach == 0 || set.subject_utf8 {
+        usize::MAX
+    } else {
+        let from = start.saturating_sub(set.look_behind_reach as usize);
+        let to = range.min(end);
+        if from >= to || str_data[from..to].is_ascii() {
+            usize::MAX
+        } else {
+            from + str_data[from..to]
+                .iter()
+                .position(|&b| b >= 0x80)
+                .unwrap_or(0)
+        }
+    };
+    // Whether the needle must stop near non-ASCII bytes for look-behind
+    // entries the table routes by Rust-only maps.
+    let needle_stops = look_behind_from < range
+        && !set.look_behind_entries.is_empty()
+        && !matches!(set.skip_needle, SkipNeedle::None);
+    let mut next_non_ascii: Option<usize> = None;
+    let mut visit_until = 0;
 
     'search: loop {
         if s > range {
@@ -1507,19 +1629,39 @@ fn regset_table_scan<const EAGER_GATES: bool>(
         // SIMD-accelerated position skip: jump to next byte that could match.
         // The range position itself must still be attempted (matching
         // Oniguruma's do-while loop), so a failed skip lands on `range`.
-        if s < range {
+        // With look-behind entries it stops at the next non-ASCII byte and
+        // skips nothing within `look_behind_reach` bytes after one, where
+        // their characters may not line up.
+        if s < range && s >= visit_until {
+            let stop = if !needle_stops {
+                range
+            } else {
+                if next_non_ascii.is_none_or(|at| at < s) {
+                    next_non_ascii = Some(
+                        str_data[s..range]
+                            .iter()
+                            .position(|&b| b >= 0x80)
+                            .map_or(range, |off| s + off),
+                    );
+                }
+                next_non_ascii.unwrap_or(range)
+            };
             s = match set.skip_needle {
                 SkipNeedle::None => s,
                 SkipNeedle::One(b) => {
-                    memchr::memchr(b, &str_data[s..range]).map_or(range, |off| s + off)
+                    memchr::memchr(b, &str_data[s..stop]).map_or(stop, |off| s + off)
                 }
                 SkipNeedle::Two(b1, b2) => {
-                    memchr::memchr2(b1, b2, &str_data[s..range]).map_or(range, |off| s + off)
+                    memchr::memchr2(b1, b2, &str_data[s..stop]).map_or(stop, |off| s + off)
                 }
                 SkipNeedle::Three(b1, b2, b3) => {
-                    memchr::memchr3(b1, b2, b3, &str_data[s..range]).map_or(range, |off| s + off)
+                    memchr::memchr3(b1, b2, b3, &str_data[s..stop]).map_or(stop, |off| s + off)
                 }
             };
+        }
+        if needle_stops && s < end && str_data[s] >= 0x80 {
+            visit_until =
+                visit_until.max(s + enclen(enc, str_data, s) + set.look_behind_reach as usize);
         }
 
         #[cfg(test)]
@@ -1542,8 +1684,21 @@ fn regset_table_scan<const EAGER_GATES: bool>(
         // ones. A fallback entry's own search attempts the end where its
         // optimizer admits it.
         let at_end = s == end;
+        // Where a leading look-behind's characters do not line up, its
+        // entries are attempted whatever the byte, in index order.
+        let misaligned = s > look_behind_from
+            && !ascii_before(str_data, s, set.look_behind_reach)
+            && !characters_line_up(enc, set.look_behind_reach, str_data, s);
+        let unaligned = (!at_end && misaligned && !set.look_behind_entries.is_empty()).then(|| {
+            merge_entry_lists(
+                &set.first_byte_candidates[str_data[s] as usize],
+                &set.look_behind_entries,
+            )
+        });
         let candidate_count = if at_end {
             set.table_entries.len()
+        } else if let Some(merged) = &unaligned {
+            merged.len()
         } else {
             set.first_byte_candidates[str_data[s] as usize].len()
         };
@@ -1551,6 +1706,8 @@ fn regset_table_scan<const EAGER_GATES: bool>(
         for candidate_at in 0..candidate_count {
             let i = if at_end {
                 set.table_entries[candidate_at] as usize
+            } else if let Some(merged) = &unaligned {
+                merged[candidate_at] as usize
             } else {
                 set.first_byte_candidates[str_data[s] as usize][candidate_at] as usize
             };
@@ -1560,9 +1717,12 @@ fn regset_table_scan<const EAGER_GATES: bool>(
                 continue;
             }
 
-            // Pre-filter: remaining text too short for this pattern
+            // Pre-filter: remaining text too short for this pattern. Where a
+            // leading look-behind's characters do not line up, the match
+            // can read bytes before its start.
             if set.entries[i].reg.threshold_len > 0
                 && remaining < set.entries[i].reg.threshold_len as usize
+                && !(misaligned && set.entries[i].reg.look_behind_reach > 0)
             {
                 continue;
             }
@@ -1726,6 +1886,7 @@ fn search_table_entry(
 ) -> Option<RegSetDecision> {
     let enc = set.enc;
     let prev_is_newline_check = set.anychar_inf;
+    let subject_utf8 = set.subject_utf8;
     let entry = &mut set.entries[index];
     let after_newline_only = (entry.reg.anchor & ANCR_ANYCHAR_INF) != 0;
     let threshold_len = entry.reg.threshold_len.max(0) as usize;
@@ -1738,16 +1899,21 @@ fn search_table_entry(
     msa.retry_limit_in_search_counter = 0;
     let mut s = start;
     loop {
+        // A leading look-behind whose characters do not line up can make
+        // the match read bytes before `s` (`start_map_may_skip`).
+        let unaligned = !subject_utf8 && s < end && !start_map_may_skip(&entry.reg, str_data, s);
         let mut admitted = (s == end
-            || (start_bytes[str_data[s] as usize / 64] >> (str_data[s] % 64)) & 1 != 0)
+            || (start_bytes[str_data[s] as usize / 64] >> (str_data[s] % 64)) & 1 != 0
+            || unaligned)
             && !(after_newline_only
                 && prev_is_newline_check
                 && s > start
                 && str_data[s - 1] != b'\n')
-            && end - s >= threshold_len;
+            && (end - s >= threshold_len || unaligned);
         if admitted && gate_first {
-            let range = gate
-                .get_or_insert_with(|| entry_search_range(&entry.reg, str_data, end, start, end));
+            let range = gate.get_or_insert_with(|| {
+                entry_search_range(&entry.reg, subject_utf8, str_data, end, start, end)
+            });
             admitted = entry_range_admits(&entry.reg, str_data, end, range, &mut gate_from, s);
         }
         if admitted {
@@ -1787,7 +1953,7 @@ fn search_table_entry(
             if let Some(decision) = decision {
                 let admits = !entry.gated || gate_first || {
                     let range = gate.get_or_insert_with(|| {
-                        entry_search_range(&entry.reg, str_data, end, start, end)
+                        entry_search_range(&entry.reg, subject_utf8, str_data, end, start, end)
                     });
                     entry_range_admits(&entry.reg, str_data, end, range, &mut gate_from, s)
                 };
@@ -1825,7 +1991,8 @@ pub(crate) enum RegSetEntryEvent {
 /// A position-lead search attempts each regex at its own positions, so the
 /// set's result is the earliest of these events, the lower index first on a
 /// tie; a caller that combines them that way gets exactly the set's result,
-/// errors included. The entry's region receives a match.
+/// errors included. The entry's region receives a match. `subject_utf8`
+/// says the subject is valid UTF-8, as a scanner's is.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn onig_regset_entry_search(
     set: &mut OnigRegSet,
@@ -1835,6 +2002,7 @@ pub(crate) fn onig_regset_entry_search(
     start: usize,
     stop: usize,
     option: OnigOptionType,
+    subject_utf8: bool,
 ) -> RegSetEntryEvent {
     let end = end.min(str_data.len());
     if start > end {
@@ -1846,6 +2014,7 @@ pub(crate) fn onig_regset_entry_search(
         .scratch_msa
         .take()
         .unwrap_or_else(|| MatchArg::new(&set.entries[0].reg, option, None, start));
+    set.subject_utf8 = subject_utf8;
     let decision = if set.entries[index].fallback {
         search_fallback_entry(
             set, index, str_data, end, start, end, stop, option, &mut msa,
@@ -2387,12 +2556,14 @@ fn onig_regset_search_impl(
     option: OnigOptionType,
     eager_region_reset: bool,
     fallback_memo_id: Option<FallbackMemoIdentity>,
+    subject_utf8: bool,
 ) -> (i32, i32) {
     let n = set.entries.len();
     if n == 0 {
         return (ONIG_MISMATCH, 0);
     }
     set.last_match_len = ONIG_MISMATCH;
+    set.subject_utf8 = subject_utf8;
 
     let end = end.min(str_data.len());
     let range = range.min(end);
@@ -2548,7 +2719,9 @@ pub fn onig_regset_search(
     lead: OnigRegSetLead,
     option: OnigOptionType,
 ) -> (i32, i32) {
-    onig_regset_search_impl(set, str_data, end, start, range, lead, option, true, None)
+    onig_regset_search_impl(
+        set, str_data, end, start, range, lead, option, true, None, false,
+    )
 }
 
 /// Fast regset search for high-frequency callers (e.g. scanner tokenization).
@@ -2565,7 +2738,9 @@ pub fn onig_regset_search_fast(
     lead: OnigRegSetLead,
     option: OnigOptionType,
 ) -> (i32, i32) {
-    onig_regset_search_impl(set, str_data, end, start, range, lead, option, false, None)
+    onig_regset_search_impl(
+        set, str_data, end, start, range, lead, option, false, None, false,
+    )
 }
 
 /// Fast RegSet search with a stable immutable string identity for caching
@@ -2591,6 +2766,26 @@ pub(crate) fn onig_regset_search_fast_with_id(
         option,
         false,
         Some(identity),
+        false,
+    )
+}
+
+/// `onig_regset_search_fast` for a scanner's subject, which is valid UTF-8
+/// (`MatchArg::subject_utf8`), with its string identity if it has one.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn onig_regset_search_utf8(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    lead: OnigRegSetLead,
+    option: OnigOptionType,
+    identity: Option<FallbackMemoIdentity>,
+) -> (i32, i32) {
+    debug_assert!(std::str::from_utf8(str_data).is_ok());
+    onig_regset_search_impl(
+        set, str_data, end, start, range, lead, option, false, identity, true,
     )
 }
 
@@ -2839,8 +3034,11 @@ mod tests {
                 capture_tracking: 0,
                 fused_look_behinds: 443,
                 stepping_look_behinds: 50,
-                byte_set_push_guards: 2164,
-                unguarded_pushes: 166,
+                // A positive look-behind on a push's path ends its guard
+                // (#259): over malformed UTF-8 it goes on where its body
+                // ends, which is not the byte the guard reads.
+                byte_set_push_guards: 2136,
+                unguarded_pushes: 237,
             }
         );
         assert_eq!(
@@ -2861,8 +3059,9 @@ mod tests {
                 capture_tracking: 0,
                 fused_look_behinds: 64,
                 stepping_look_behinds: 11,
-                byte_set_push_guards: 1275,
-                unguarded_pushes: 70,
+                // A positive look-behind ends a guard (#259).
+                byte_set_push_guards: 1264,
+                unguarded_pushes: 81,
             }
         );
         assert_eq!(
@@ -3470,6 +3669,7 @@ mod tests {
                                             start,
                                             stop,
                                             ONIG_OPTION_NONE,
+                                            false,
                                         );
                                         let region = onig_regset_get_region(set, 0).unwrap();
                                         (event, region.beg.clone(), region.end.clone())
@@ -3603,7 +3803,16 @@ mod tests {
                 "start={start}"
             );
             assert_eq!(
-                onig_regset_entry_search(&mut set, 0, subject, end, start, end, ONIG_OPTION_NONE),
+                onig_regset_entry_search(
+                    &mut set,
+                    0,
+                    subject,
+                    end,
+                    start,
+                    end,
+                    ONIG_OPTION_NONE,
+                    false
+                ),
                 RegSetEntryEvent::Match { position: 10 },
                 "start={start}"
             );
@@ -4128,6 +4337,74 @@ mod tests {
                 ONIG_OPTION_NONE,
             );
             assert_eq!(found, expected, "start {start}");
+        }
+    }
+
+    /// A leading positive look-behind steps back over a stray run of
+    /// continuation bytes and goes on before the start, as in C (#259):
+    /// the dispatch table, fallback start filters and the scan's skips still
+    /// attempt such a start, so the set finds C's winner.
+    #[cfg(feature = "ffi")]
+    #[test]
+    fn look_behind_entries_keep_c_s_winners_over_malformed_utf8() {
+        let sets: [&[&[u8]]; 10] = [
+            &[b"(?<=\\()\\W.*z", b"q"],
+            &[b"(?<=[(\\[])\\W.*z", b"q"],
+            &[b"(?<=[(\\[])[^a-z0-9 ].*z", b"q"],
+            &[b"(?<=[(\\[])\\W", b"zz"],
+            &[b"(?<=\\()\\W", b"zz"],
+            &[b"(?<=\\(|\\*/)\\W?x", b"y"],
+            &[b"(?i)(?<=^|[(\\s]|\\*/)(?:width|\\W)", b"\\w+"],
+            &[b"(?<=\\.)\\W\\w*", b"[a-z]+"],
+            &[b"x(?:(?<=\\()\\W|y)", b"(?<=ab)\\W"],
+            &[b"(?<=\\()[^)]", b"\\)", b"(?<=[(,])\\s*\\W"],
+        ];
+        let subjects: [&[u8]; 12] = [
+            b"(\x80",
+            b",\x85",
+            b"(\x80y",
+            b"(\x80xz",
+            b"(\x80x",
+            b"(\x80\x80\x80\x80x",
+            b"a (\x80) b",
+            b"*/\x85x (width",
+            b".\x80\x80abc",
+            b"x(\x80 ab\xbf)",
+            "( é \u{80} ".as_bytes(),
+            b"\xc3(\x80)\xa9,\x85",
+        ];
+        for patterns in sets {
+            let regs: Vec<_> = patterns.iter().map(|p| compile(p)).collect();
+            let (set, r) = onig_regset_new(regs);
+            assert_eq!(r, ONIG_NORMAL);
+            let mut set = set.unwrap();
+            let c_regs: Vec<_> = patterns
+                .iter()
+                .map(|p| crate::ffi::CRegex::new(p, crate::ffi::ONIG_OPTION_NONE).unwrap())
+                .collect();
+            let raw: Vec<_> = c_regs.iter().map(|reg| reg.raw()).collect();
+            let mut c_set = crate::ffi::CRegSet::new(&raw).unwrap();
+            // The C set owns and frees its regexes.
+            std::mem::forget(c_regs);
+            for subject in subjects {
+                for start in 0..=subject.len() {
+                    let found = onig_regset_search(
+                        &mut set,
+                        subject,
+                        subject.len(),
+                        start,
+                        subject.len(),
+                        OnigRegSetLead::PositionLead,
+                        ONIG_OPTION_NONE,
+                    );
+                    let expected = c_set.search(subject, start, subject.len(), 0, 0);
+                    let context = format!("{patterns:?} on {subject:?} from {start}");
+                    assert_eq!(found.0, expected.0, "{context}");
+                    if found.0 >= 0 {
+                        assert_eq!(found.1, expected.1, "{context}");
+                    }
+                }
+            }
         }
     }
 
@@ -5696,6 +5973,7 @@ mod tests {
                     start,
                     input.len(),
                     ONIG_OPTION_NONE,
+                    true,
                 )
             })
             .collect();

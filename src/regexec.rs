@@ -17,6 +17,7 @@ use std::time::Instant;
 use crate::backtrack_rewrite::runtime::{
     decimal_tail_prefix_bounds, record_decimal_prefix_captures,
 };
+use crate::first_bytes::start_map_may_skip;
 use crate::oniguruma::*;
 use crate::regenc::*;
 use crate::regint::*;
@@ -7468,6 +7469,23 @@ pub fn onig_search_with_param(
     )
 }
 
+/// Rust-only (ADR-008): whether the search goes without the optimizer's
+/// extra map (`RegexType::extra_map_optimizer`): C's map search would leave
+/// out starts a leading positive look-behind can match from where its
+/// characters do not line up (`crate::first_bytes::start_map_may_skip`). C
+/// itself has no optimizer there and attempts every position.
+#[inline]
+pub(crate) fn map_search_bypassed(reg: &RegexType) -> bool {
+    map_search_bypassed_for(reg, false)
+}
+
+/// `map_search_bypassed` for a subject that is (`subject_utf8`) or may not
+/// be valid UTF-8.
+#[inline]
+pub(crate) fn map_search_bypassed_for(reg: &RegexType, subject_utf8: bool) -> bool {
+    reg.extra_map_optimizer && reg.look_behind_reach > 0 && !subject_utf8
+}
+
 #[inline]
 fn can_use_two_pass_capture_fill(
     reg: &RegexType,
@@ -7782,7 +7800,7 @@ fn onig_search_inner_core_with_right_range(
             }};
         }
 
-        if reg.optimize != OptimizeType::None {
+        if reg.optimize != OptimizeType::None && !map_search_bypassed(reg) {
             // Threshold length check (inside optimize branch, matching C)
             if (end as i32 - range as i32) < reg.threshold_len {
                 return ONIG_MISMATCH;
@@ -7972,8 +7990,9 @@ fn onig_search_inner_core_with_right_range(
             }
         }
     } else if start == end {
-        // Empty string
-        if reg.threshold_len == 0 {
+        // Empty string. Without the extra map C has no optimizer and no
+        // threshold (`map_search_bypassed`).
+        if reg.threshold_len == 0 || map_search_bypassed(reg) {
             let mut s = start;
             msa.best_len = ONIG_MISMATCH;
             msa.best_s = 0;
@@ -7989,7 +8008,7 @@ fn onig_search_inner_core_with_right_range(
     }
 
     // === Threshold length check ===
-    if (end as i32 - cur_start as i32) < reg.threshold_len {
+    if (end as i32 - cur_start as i32) < reg.threshold_len && !map_search_bypassed(reg) {
         return ONIG_MISMATCH;
     }
 
@@ -8010,7 +8029,7 @@ fn onig_search_inner_core_with_right_range(
     };
 
     // Use optimization if available
-    if reg.optimize != OptimizeType::None {
+    if reg.optimize != OptimizeType::None && !map_search_bypassed(reg) {
         // Calculate search range for optimization
         let sch_range = if reg.dist_max != 0 {
             if reg.dist_max == INFINITE_LEN || end.saturating_sub(cur_range) < reg.dist_max as usize
@@ -8037,7 +8056,10 @@ fn onig_search_inner_core_with_right_range(
                 }
                 while s <= high {
                     if let Some(map) = window_start_map {
-                        if s < end && map[str_data[s] as usize] == 0 {
+                        if s < end
+                            && map[str_data[s] as usize] == 0
+                            && start_map_may_skip(reg, str_data, s)
+                        {
                             s = advance_char_to_end(enc, str_data, s, end);
                             continue;
                         }
@@ -8177,6 +8199,14 @@ fn onig_search_inner_core_with_right_range(
                     });
             }
         }
+    }
+
+    // Rust-only (ADR-008): an extra map that C's map search may not use
+    // after a leading look-behind filters the position loop where it sits at
+    // the match start; the loop leaves a start to the look-behind where its
+    // characters do not line up.
+    if map_search_bypassed(reg) && reg.dist_max == 0 && !find_longest && may_skip_attempts(msa) {
+        start_filter = start_filter.or(Some(&reg.map));
     }
 
     if reg.leading_run.is_some() && best_start == ONIG_MISMATCH {
@@ -8349,7 +8379,11 @@ impl ForwardScan<'_> {
         if let Some(filter) = self.start_filter {
             // No match starts on an excluded byte. The range limit and the
             // logical end are still attempted, as the loop does.
-            while s < self.cur_range && s < self.end && filter[str_data[s] as usize] == 0 {
+            while s < self.cur_range
+                && s < self.end
+                && filter[str_data[s] as usize] == 0
+                && start_map_may_skip(reg, str_data, s)
+            {
                 s = self.advance(reg.enc, str_data, s);
             }
         }
@@ -8661,8 +8695,12 @@ fn literal_run_search(
         return None;
     }
     let enc = reg.enc;
-    let admitted =
-        |x: usize| x >= end || start_filter.is_none_or(|filter| filter[str_data[x] as usize] != 0);
+    let admitted = |x: usize| {
+        x >= end
+            || start_filter.is_none_or(|filter| {
+                filter[str_data[x] as usize] != 0 || !start_map_may_skip(reg, str_data, x)
+            })
+    };
     macro_rules! attempt {
         ($x:expr) => {{
             let x = $x;
@@ -8769,8 +8807,12 @@ fn literal_prefix_search(
         return None;
     }
     let enc = reg.enc;
-    let admitted =
-        |x: usize| x >= end || start_filter.is_none_or(|filter| filter[str_data[x] as usize] != 0);
+    let admitted = |x: usize| {
+        x >= end
+            || start_filter.is_none_or(|filter| {
+                filter[str_data[x] as usize] != 0 || !start_map_may_skip(reg, str_data, x)
+            })
+    };
     macro_rules! attempt {
         ($x:expr) => {{
             let x = $x;
@@ -9163,7 +9205,8 @@ mod tests {
             leading_run: None,
             literal_prefix: None,
             anychar_run: false,
-            leading_look_behind: false,
+            look_behind_reach: 0,
+            extra_map_optimizer: false,
             search_start_map: None,
             search_jump: None,
             required_literals: None,
