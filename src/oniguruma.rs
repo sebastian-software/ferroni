@@ -436,6 +436,25 @@ pub struct OnigRegion {
     pub history_root: Option<Box<OnigCaptureTreeNode>>,
 }
 
+/// Sets every register to `ONIG_REGION_NOTPOS` in fixed-length chunks: a
+/// search clears a few registers, which a call to memset would cost more
+/// than the stores.
+#[inline]
+fn clear_registers(registers: &mut [i32]) {
+    let (chunks, rest) = registers.as_chunks_mut::<4>();
+    for chunk in chunks {
+        // Opaque to the loop idiom recognizer, which would make the loop a
+        // call to memset.
+        *chunk = std::hint::black_box([ONIG_REGION_NOTPOS; 4]);
+    }
+    if let Some(chunk) = rest.first_chunk_mut::<2>() {
+        *chunk = [ONIG_REGION_NOTPOS; 2];
+    }
+    if rest.len() % 2 == 1 {
+        rest[rest.len() - 1] = ONIG_REGION_NOTPOS;
+    }
+}
+
 impl OnigRegion {
     pub fn new() -> Self {
         OnigRegion {
@@ -487,8 +506,8 @@ impl OnigRegion {
                 *e1 = ONIG_REGION_NOTPOS;
             }
             (beg, end) => {
-                beg.fill(ONIG_REGION_NOTPOS);
-                end.fill(ONIG_REGION_NOTPOS);
+                clear_registers(beg);
+                clear_registers(end);
             }
         }
         self.history_root = None;
@@ -668,4 +687,25 @@ pub fn is_syntax_op2(syntax: &OnigSyntaxType, opm: u32) -> bool {
 #[inline]
 pub fn is_syntax_bv(syntax: &OnigSyntaxType, bvm: u32) -> bool {
     (syntax.behavior & bvm) != 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A search reuses its region: every register reads as unset after the
+    /// clear, whatever the earlier search left in it.
+    #[test]
+    fn resize_clear_unsets_every_register() {
+        for n in 1..=9 {
+            let mut region = OnigRegion::new();
+            region.resize(n);
+            region.beg.fill(3);
+            region.end.fill(5);
+            region.resize_clear(n);
+            assert_eq!(region.num_regs, n);
+            assert!(region.beg.iter().all(|&b| b == ONIG_REGION_NOTPOS), "{n}");
+            assert!(region.end.iter().all(|&e| e == ONIG_REGION_NOTPOS), "{n}");
+        }
+    }
 }

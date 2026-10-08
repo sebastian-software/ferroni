@@ -177,7 +177,7 @@ a few individual tasks, and grammar compilation is mixed. The details:
 - **Test parity.** Every upstream test file for UTF-8 is ported case by case:
   2,974 C test cases and the vscode-oniguruma scanner tests, all passing
   ([parity table](https://ferroni.dev/guide/compatibility#test-parity)). With
-  Ferroni's own tests the tree holds **2,417 `#[test]` functions**, counted by
+  Ferroni's own tests the tree holds **2,419 `#[test]` functions**, counted by
   [`scripts/count-tests.sh`](scripts/count-tests.sh).
 - **Coverage gate.** CI measures line coverage on every pull request and fails
   below the threshold set in [`scripts/coverage.sh`](scripts/coverage.sh).
