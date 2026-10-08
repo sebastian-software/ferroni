@@ -4,11 +4,11 @@
 # ADR-002 match the counts derived from the tree.
 #
 # - The `#[test]` total is quoted rounded down to the nearest hundred, as
-#   "at least N `#[test]` functions". count-tests.sh reports 2525, so the
-#   quoted figure is "at least 2,500". Routine test additions leave it alone;
-#   it moves only when the rounded total does.
-# - The unsafe site count is quoted exactly, from count-unsafe.sh: "10 sites"
-#   in README.md.src and "10 `unsafe` sites" in ADR-002. A change in that
+#   "at least N `#[test]` functions": a total of 2,526 is quoted as "at least
+#   2,500". Routine test additions leave it alone; it moves only when the
+#   rounded total does.
+# - The unsafe site count is quoted exactly, from count-unsafe.sh: "N sites"
+#   in README.md.src and "N `unsafe` sites" in ADR-002. A change in that
 #   number is meant to be a conscious edit.
 #
 # A failure names the file, the phrase expected and the line found, so the
