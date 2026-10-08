@@ -388,3 +388,7 @@ struct CompatibilityDoctests;
 #[cfg(all(doctest, ferroni_guide_docs))]
 #[doc = include_str!("../docs/app/routes/guide/coming-from-regex.mdx")]
 struct ComingFromRegexDoctests;
+
+#[cfg(all(doctest, ferroni_guide_docs))]
+#[doc = include_str!("../docs/app/routes/guide/migrating-to-2.mdx")]
+struct MigratingTo2Doctests;

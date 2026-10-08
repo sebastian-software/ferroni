@@ -28,6 +28,7 @@ fn guide_pages_present() -> bool {
         "untrusted-input",
         "compatibility",
         "coming-from-regex",
+        "migrating-to-2",
     ]
     .iter()
     .all(|page| {

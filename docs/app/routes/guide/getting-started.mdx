@@ -21,10 +21,17 @@ cargo add ferroni
 
 Or add it by hand:
 
+{/* x-release-please-start-major: release-please writes the major version of each release into this block (release-please-config.json). */}
+
 ```toml
 [dependencies]
 ferroni = "1"
 ```
+
+{/* x-release-please-end */}
+
+Upgrading from 1.x? [Migrating to 2.0](./migrating-to-2) has before and after
+code for each breaking change.
 
 Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane. The build script
 only sets cfg flags, so no C toolchain is needed. It compiles C only when the
@@ -454,6 +461,8 @@ scope (see [ADR-003](../adr/003-encoding-scope-ascii-and-utf8-only)).
   from C on purpose, and the test parity with the upstream suite.
 - [Coming from regex or onig](./coming-from-regex) -- where the defaults differ
   from the `regex` and `onig` crates, and how to get `regex`-like behavior.
+- [Migrating to 2.0](./migrating-to-2) -- the breaking changes of 2.0, with
+  before and after code for each.
 - [Benchmark Results](../perf/benchmark-results) -- the raw
   Ferroni-versus-Oniguruma tables, with the measurement context.
 - [Memory Measurements](../perf/memory-measurements) -- peak RSS on a large
