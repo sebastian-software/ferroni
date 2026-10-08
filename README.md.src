@@ -138,36 +138,44 @@ guarantees linear-time matching and is usually faster on plain text search.
 
 ## Performance
 
-How much faster Ferroni is than each engine: the other engine's time divided
-by Ferroni's, as the geometric mean over each workload. A range spans the two
-hosts; below 1×, the other engine is faster.
+How Ferroni compares with seven other engines on three kinds of work. Each
+figure is the geometric mean over every task in the workload, on two test
+machines.
 
 <!-- engine-comparison -->
-| Ferroni compared with | Text processing, shared syntax | Text processing, Oniguruma syntax | Highlighting, portable grammars |
+| Ferroni compared with | Everyday patterns | Advanced patterns | Syntax highlighting |
 | --- | ---: | ---: | ---: |
-| Oniguruma (C) | 2.2× | 1.3–1.4× | 3.6–3.7× |
-| Shiki JS | – | – | 1.9–2.0× |
-| Onigmo | 2.4–2.6× | 1.4–1.6× (16 of 17 cases) | 11–13× |
-| PCRE2 | 1.6–1.8× (31 of 32 cases) | 1.3–1.4× (16 of 17 cases) | 8.7–9.6× |
-| PCRE2 JIT | 0.4–0.5× (31 of 32 cases) | 0.3× (16 of 17 cases) | 3.0–3.2× |
-| fancy-regex | 1.5–1.6× (31 of 32 cases) | 2.8–3.1× (15 of 17 cases) | 35–36× |
-| regex | 0.6–0.7× (31 of 32 cases) | – | – |
+| Oniguruma (C) | 2.2× faster | 1.4× faster | 3.7× faster |
+| Shiki JS | – | – | 1.9× faster |
+| Onigmo | 2.5× faster | 1.5× faster\* | 11× faster |
+| PCRE2 | 1.7× faster\* | 1.4× faster\* | 9.2× faster |
+| PCRE2 JIT | 2.2× slower\* | 3.5× slower\* | 3.1× faster |
+| fancy-regex | 1.5× faster\* | 2.9× faster\* | 35× faster |
+| regex | 1.6× slower\* | – | – |
+
+- **Everyday patterns** (32 tasks): search and extraction in HTML, logs, chat with emoji, Markdown, JSON, CSV and source code, in syntax the regex crate also runs.
+- **Advanced patterns** (17 tasks): look-around, backreferences, possessive groups, subexpression calls, absent expressions and grapheme clusters.
+- **Syntax highlighting** (3 documents): the scanner calls Shiki makes for whole C, Java and PHP documents, in grammars every engine runs.
+
+\* Ran only some of the tasks: the engine rejects a pattern or finds different matches. The figure covers the tasks it ran.
+
+– Not measured: the engine lacks the syntax, or the multi-pattern API the workload needs.
 <!-- /engine-comparison -->
 
 Measured 2026-10-01 on Blacksmith's macOS arm64 (Apple M4 Pro) and Linux
-x86-64 (AMD EPYC) runners, over 49 text-processing tasks and the scanner calls
-Shiki makes for C, Java and PHP documents. Every engine first has to reproduce
-Oniguruma's results, and the note in a cell says how many tasks it could run.
-These are observations on the measured workloads, not a promise for every
-pattern or machine.
+x86-64 (AMD EPYC) runners. Every engine first has to reproduce Oniguruma's
+results before it is timed. These are observations on the measured workloads,
+not a promise for every pattern or machine.
 
-Where Ferroni is behind, the tables say so: Rust's `regex` crate and PCRE2's
+Where Ferroni is behind, the table says so: Rust's `regex` crate and PCRE2's
 JIT are faster on most text tasks whose syntax they support, C Oniguruma wins
-a few individual tasks, and grammar compilation is mixed. The details:
+a few individual tasks, and grammar compilation is mixed. Per-host figures,
+every task and the raw data:
 
 - [Text processing, task by task](https://ferroni.dev/perf/engine-comparison#text-processing)
 - [Highlighting replays and complete TextMate grammars](https://ferroni.dev/perf/engine-comparison#highlighting)
 - [Compilation and short searches](https://ferroni.dev/perf/engine-comparison#short-searches-and-compilation)
+- [Tasks an engine cannot run](https://ferroni.dev/perf/engine-comparison#cases-an-engine-cannot-run)
 - [Memory use](https://ferroni.dev/perf/memory-measurements)
 
 ## Correctness and safety

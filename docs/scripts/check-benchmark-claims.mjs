@@ -31,20 +31,33 @@ const home = readFileSync(homePath, "utf8");
 
 const errors = [];
 
-/** The README rows, exactly as `readme_table` in compare-engines.py writes them. */
+/** A cell left out some cases: the figure covers only the ones the engine ran. */
+const partial = (cell) => cell.factor !== undefined && cell.cases < cell.of;
+
+/** One README cell, exactly as `readme_cell` in compare-engines.py writes it. */
+function readmeCell(cell) {
+  if (cell.factor === undefined) return cell.note ? `${cell.text} (${cell.note})` : cell.text;
+  return `${cell.text} ${cell.direction}${partial(cell) ? "\\*" : ""}`;
+}
+
+/** The README block, exactly as `readme_table` in compare-engines.py writes it. */
 function expectedReadmeTable() {
-  const { workloads, engines } = figures;
+  const { workloads, engines, notes } = figures;
   const lines = [
     `| Ferroni compared with | ${workloads.map((workload) => workload.label).join(" | ")} |`,
     `| --- |${" ---: |".repeat(workloads.length)}`,
   ];
   for (const engine of engines) {
-    const cells = workloads.map((workload) => {
-      const cell = engine.cells[workload.id];
-      return cell.note ? `${cell.text} (${cell.note})` : cell.text;
-    });
+    const cells = workloads.map((workload) => readmeCell(engine.cells[workload.id]));
     lines.push(`| ${engine.label} | ${cells.join(" | ")} |`);
   }
+  lines.push("");
+  for (const workload of workloads) {
+    lines.push(`- **${workload.label}** (${workload.cases} ${workload.unit}): ${workload.detail}.`);
+  }
+  const cells = engines.flatMap((engine) => workloads.map((workload) => engine.cells[workload.id]));
+  if (cells.some((cell) => partial(cell))) lines.push("", `\\* ${notes.partial}`);
+  if (cells.some((cell) => cell.text === "–")) lines.push("", `– ${notes.absent}`);
   return lines.join("\n");
 }
 
