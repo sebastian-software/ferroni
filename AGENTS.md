@@ -31,7 +31,8 @@ English.
 list. Debug builds need a larger thread stack; the required `RUST_MIN_STACK`
 values are stated once in ADR-013
 (`docs/app/routes/adr/013-stack-overflow-debug-builds.mdx`) and are reused by
-CONTRIBUTING.md and the CI workflow -- do not invent a third value.
+`.cargo/config.toml`, CONTRIBUTING.md and the CI workflow -- do not invent a
+third value.
 
 Test counts come from `./scripts/count-tests.sh`, not from memory.
 
