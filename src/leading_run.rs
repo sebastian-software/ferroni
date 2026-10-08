@@ -1565,6 +1565,7 @@ mod tests {
 
     #[test]
     fn whole_lookahead_runs_keep_restored_starts_and_ascii_guards() {
+        let _limits = crate::regexec::shared_limits();
         for pattern in [
             r"(?=\w?[-\w\s]*\b(?:class|(?<!@)interface|enum)\s+[$\w]+)",
             r"(?=\w?[\w\s]*\brecord\s+[$\w]+)",
@@ -1615,6 +1616,7 @@ mod tests {
     /// stands for nothing: `9abc :` still matches at 1.
     #[test]
     fn narrower_first_character_skips_only_after_reading_it() {
+        let _limits = crate::regexec::shared_limits();
         let mp = onig_new_match_param();
         for pattern in [
             r"[A-Z_a-z]\w*\s*:",
@@ -1690,7 +1692,7 @@ mod tests {
 
     #[test]
     fn literal_prefix_starts_match_the_plain_loop() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let patterns = [
             r"(?<!\+\+|--)(?<=[!(+,:=>?\[]|^await|[^$._[:alnum:]]await|^return)\s*(\{)",
             r"(?:^|(?<=[&(,]|[;\s]if\s))\s*((/))(?![*+?{}])",
@@ -1823,6 +1825,7 @@ mod tests {
     /// found a candidate and never gave up.
     #[test]
     fn jumps_past_an_empty_leading_class_end() {
+        let _limits = crate::regexec::shared_limits();
         let mp = onig_new_match_param();
         for pattern in [r"(?i)f[a&&b]", r"[a-z][a&&b]", r"[ab]c[a&&b]"] {
             for text in [&b"abc XYZ 123"[..], b"", b"fff abc"] {
@@ -1850,6 +1853,7 @@ mod tests {
     /// behind continuation bytes after its literal (`(\x80x` at 2).
     #[test]
     fn jumps_over_malformed_bytes_keep_the_loop_steps() {
+        let _limits = crate::regexec::shared_limits();
         let mp = onig_new_match_param();
         for pattern in [r"(?<=\()x", r"(?<=\()x?", r"^\s*x"] {
             let reg = compile(pattern, UTF8).unwrap();
@@ -1957,7 +1961,7 @@ mod tests {
     /// Exhaustive ranges, options and limits against the original path.
     #[test]
     fn skips_preserve_results_and_limits() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let patterns = [
             r"[\w.+-]+@\w+",
             r"(?>\w+)@(\w?)",
@@ -2094,6 +2098,7 @@ mod tests {
     /// Unicode case folds and malformed bytes around every window edge.
     #[test]
     fn folded_alternations_find_every_match() {
+        let _limits = crate::regexec::shared_limits();
         let patterns = [
             r"(?i)(?:error|warn|fatal|panic)",
             r"(?i)\b(?:kiss|strasse|office|k)\b",
@@ -2141,7 +2146,7 @@ mod tests {
     /// Generated expressions and subjects, compared match by match.
     #[test]
     fn generated_expressions_match_the_original_path() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
         let mut next = move |n: usize| {
             seed ^= seed << 13;

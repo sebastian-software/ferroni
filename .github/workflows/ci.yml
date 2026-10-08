@@ -37,6 +37,8 @@ jobs:
         run: cargo test --lib --test api_test
       - name: Test doctests
         run: cargo test --doc
+      - name: Test global_callouts
+        run: cargo test --test global_callouts
       - name: Test compat_syntax
         run: cargo test --test compat_syntax
       - name: Test compat_options

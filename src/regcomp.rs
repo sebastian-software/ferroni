@@ -11225,6 +11225,7 @@ mod tests {
         use crate::encodings::utf8::ONIG_ENCODING_UTF8;
         use crate::oniguruma::ONIG_OPTION_NONE;
         use crate::regsyntax::OnigSyntaxOniguruma;
+        let _limits = crate::regexec::shared_limits();
 
         let compile = |pattern: &[u8]| {
             onig_new(
@@ -11484,6 +11485,7 @@ mod tests {
             onig_new_match_param, onig_search_with_param,
             onig_set_retry_limit_in_search_of_match_param,
         };
+        let _limits = crate::regexec::shared_limits();
         let n = 4000;
         let mut mp = onig_new_match_param();
         onig_set_retry_limit_in_search_of_match_param(&mut mp, 4 * n as u64);
@@ -11722,6 +11724,7 @@ mod tests {
     fn star_opcodes_keep_the_upstream_repeat_choice() {
         use crate::oniguruma::OnigRegion;
         use crate::regexec::onig_search;
+        let _limits = crate::regexec::shared_limits();
 
         type Case = (&'static str, &'static str, i32, &'static [(i32, i32)]);
         let cases: &[Case] = &[
@@ -11821,6 +11824,7 @@ mod tests {
 
     #[test]
     fn compile_over_limit_interval_quantifier_uses_repeat_bytecode() {
+        let _limits = crate::regexec::shared_limits();
         // This is intentionally small enough to stay safe on the vulnerable
         // compiler path, while exceeding the upstream 10-op expansion budget.
         let reg = parse_and_compile(b"a{6,7}").unwrap();
@@ -11840,6 +11844,7 @@ mod tests {
 
     #[test]
     fn compile_over_limit_interval_with_unrelated_call_uses_repeat_bytecode() {
+        let _limits = crate::regexec::shared_limits();
         let mut reg = make_test_context().0;
         assert_eq!(onig_compile(&mut reg, b"(?<digit>\\d)\\g<digit>a{6,7}"), 0);
 
@@ -12166,8 +12171,8 @@ mod tests {
 
     #[test]
     fn contiguous_literal_tries_preserve_mixed_branch_order_and_captures() {
-        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        use crate::regexec::{onig_search, shared_limits};
+        let _limits = shared_limits();
         let literals = [
             "foo",
             "foobarbaz",
@@ -12352,9 +12357,9 @@ mod tests {
     #[test]
     fn negative_lookahead_tries_preserve_assertion_backtracking_and_captures() {
         use crate::oniguruma::{ONIG_OPTION_IGNORECASE, OnigRegion};
-        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+        use crate::regexec::{onig_search, shared_limits};
 
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let search = |reg: &RegexType, input: &[u8], start: usize, range: usize| {
             let (result, region) = onig_search(
                 reg,
@@ -12461,6 +12466,7 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_keeps_alternation_order_for_prefixes() {
+        let _limits = crate::regexec::shared_limits();
         // The prefix pair is intentionally non-adjacent in source order. The
         // trie must try `foobarbaz` before `foo` and backtrack into `foo`,
         // as the ordered alternation does, rather than prefer either length.
@@ -12497,6 +12503,7 @@ mod tests {
     #[test]
     fn literal_alt_trie_match_works() {
         use crate::api::Regex;
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new("alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa").unwrap();
         // Match "eta" in "the eta value"
         let m = re.find("the eta value").unwrap();
@@ -12507,6 +12514,7 @@ mod tests {
     #[test]
     fn literal_alt_trie_no_match() {
         use crate::api::Regex;
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new("alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa").unwrap();
         let result = re.find("no match here");
         assert!(result.is_none());
@@ -12537,6 +12545,7 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_partial_match() {
+        let _limits = crate::regexec::shared_limits();
         // Mixed alternatives retain their original ordered branches.
         use crate::api::Regex;
         let re = Regex::new("alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|[xy]z").unwrap();
@@ -12582,6 +12591,7 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_case_insensitive() {
+        let _limits = crate::regexec::shared_limits();
         // Case-insensitive ASCII alternatives compile to a folded trie.
         let reg = onig_new(
             b"(?i)(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa)",
@@ -12602,6 +12612,7 @@ mod tests {
 
     #[test]
     fn literal_alt_trie_css_like_pattern() {
+        let _limits = crate::regexec::shared_limits();
         // Mimics CSS property-names: (?i)(?<![-\w])(?:prop1|prop2|...)(?![-\w])
         use crate::api::Regex;
         let re = Regex::new(
@@ -12627,6 +12638,7 @@ mod tests {
 
     #[test]
     fn nested_alt_trie_simple() {
+        let _limits = crate::regexec::shared_limits();
         // a(b|c)d → should extract ["abd", "acd"] and trigger trie
         // Need enough branches to exceed threshold, so use multiple nested alts
         use crate::api::Regex;
@@ -12643,6 +12655,7 @@ mod tests {
 
     #[test]
     fn nested_alt_trie_optional() {
+        let _limits = crate::regexec::shared_limits();
         // Optional paths stay on the general Alt path to retain branch order.
         use crate::api::Regex;
         let re = Regex::new("ab(cd)?ef|abgh|abij|abkl|abmn").unwrap();
@@ -12660,6 +12673,7 @@ mod tests {
 
     #[test]
     fn nested_alt_trie_partial_with_cclass() {
+        let _limits = crate::regexec::shared_limits();
         // Mixed: nested structure with one CClass branch → partial optimization
         use crate::api::Regex;
         let re = Regex::new(r"a(b|c|d|e|f)g|[xy]z").unwrap();
@@ -12677,6 +12691,7 @@ mod tests {
 
     #[test]
     fn nested_alt_trie_entity_like() {
+        let _limits = crate::regexec::shared_limits();
         // Mimics HTML entity pattern structure: nested trie encoded as regex
         use crate::api::Regex;
         let re = Regex::new(
@@ -12700,6 +12715,7 @@ mod tests {
 
     #[test]
     fn nested_alt_trie_backreferenced_capture_skipped() {
+        let _limits = crate::regexec::shared_limits();
         // Backreferenced capture group should NOT be optimized
         use crate::api::Regex;
         let re = Regex::new(r"(a|b|c|d|e)\1").unwrap();
@@ -12713,6 +12729,7 @@ mod tests {
 
     #[test]
     fn nested_alt_trie_non_capturing_group() {
+        let _limits = crate::regexec::shared_limits();
         // Non-capturing group should be transparent
         use crate::api::Regex;
         let re = Regex::new("(?:a(?:b|c|d|e|f)g)").unwrap();
@@ -12860,6 +12877,7 @@ mod tests {
 
     #[test]
     fn option_only_group_mid_pattern_keeps_ignorecase_semantics() {
+        let _limits = crate::regexec::shared_limits();
         let reg = onig_new(
             b"a(?i)b|c",
             ONIG_OPTION_NONE,
@@ -12937,10 +12955,10 @@ mod tests {
     #[test]
     fn literal_tries_match_like_the_alternation_in_context() {
         use crate::oniguruma::OnigRegion;
-        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+        use crate::regexec::{onig_search, shared_limits};
 
         // Other tests lower the process-wide retry limits while holding it.
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
 
         let compile = |pattern: &str| {
             onig_new(
@@ -13051,9 +13069,9 @@ mod tests {
     #[test]
     fn folded_literal_tries_match_like_the_unraveled_alternation() {
         use crate::oniguruma::{ONIG_OPTION_IGNORECASE, OnigRegion};
-        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+        use crate::regexec::{onig_search, shared_limits};
 
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let compile = |pattern: &str, option| {
             onig_new(
                 pattern.as_bytes(),
@@ -13202,9 +13220,9 @@ mod tests {
     #[test]
     fn look_behinds_continue_where_c_does_over_malformed_utf8() {
         use crate::oniguruma::OnigRegion;
-        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+        use crate::regexec::{onig_search, shared_limits};
 
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let patterns = [
             r"(?<=\()x",
             r"(?<=\()x?",
@@ -13294,9 +13312,9 @@ mod tests {
     #[test]
     fn fused_look_behinds_match_the_upstream_sequence() {
         use crate::oniguruma::OnigRegion;
-        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+        use crate::regexec::{onig_search, shared_limits};
 
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let compile = |pattern: &str, fused: bool| {
             FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(!fused));
             let reg = onig_new(
@@ -13429,9 +13447,9 @@ mod tests {
     #[test]
     fn guarded_pushes_match_unguarded_pushes() {
         use crate::oniguruma::OnigRegion;
-        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+        use crate::regexec::{onig_search, shared_limits};
 
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let compile = |pattern: &str, guarded: bool| {
             PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(!guarded));
             let reg = onig_new(

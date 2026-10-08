@@ -244,6 +244,7 @@ mod tests {
 
     #[test]
     fn compiles_and_searches_ascii_patterns() {
+        let _limits = crate::regexec::shared_limits();
         let reg = onig_new(
             b"(?i)ab+c",
             ONIG_OPTION_NONE,

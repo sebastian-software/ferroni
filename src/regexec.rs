@@ -43,8 +43,67 @@ static TIME_LIMIT: AtomicU64 = AtomicU64::new(DEFAULT_TIME_LIMIT_MSEC);
 /// caller has changed a global limit.
 static GLOBAL_LIMIT_REVISION: AtomicU64 = AtomicU64::new(0);
 
+/// Keeps the unit tests that change the process-wide limits apart from the
+/// unit tests whose searches read them. A test that changes a limit holds
+/// [`exclusive_limits`] for its whole run; every other test that searches, or
+/// reads the limit revision, holds [`shared_limits`]. Without it the default
+/// parallel test runner lets a changed limit leak into unrelated searches.
+/// The callout callbacks cannot be unset, so the test that sets them runs in a
+/// process of its own, in `tests/global_callouts.rs`.
 #[cfg(test)]
-pub(crate) static LIMIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static LIMIT_TEST_LOCK: RwLock<()> = RwLock::new(());
+
+/// Held by a unit test whose searches read the process-wide limits, so that
+/// none of them changes while it runs.
+#[cfg(test)]
+pub(crate) fn shared_limits() -> std::sync::RwLockReadGuard<'static, ()> {
+    // A failed test restored the limits when it released the lock.
+    LIMIT_TEST_LOCK
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Held by a unit test that changes a process-wide limit; see
+/// [`exclusive_limits`].
+#[cfg(test)]
+pub(crate) struct ExclusiveLimits {
+    saved: (u64, u64, u32, u64, u64, i32),
+    _lock: std::sync::RwLockWriteGuard<'static, ()>,
+}
+
+/// Held by a unit test that changes a process-wide limit. Dropping the guard
+/// restores the limits it found, so a test that fails changes none of them for
+/// the tests after it.
+#[cfg(test)]
+pub(crate) fn exclusive_limits() -> ExclusiveLimits {
+    let lock = LIMIT_TEST_LOCK
+        .write()
+        .unwrap_or_else(PoisonError::into_inner);
+    ExclusiveLimits {
+        saved: (
+            onig_get_retry_limit_in_match(),
+            onig_get_retry_limit_in_search(),
+            onig_get_match_stack_limit(),
+            onig_get_time_limit(),
+            onig_get_subexp_call_limit_in_search(),
+            onig_get_subexp_call_max_nest_level(),
+        ),
+        _lock: lock,
+    }
+}
+
+#[cfg(test)]
+impl Drop for ExclusiveLimits {
+    fn drop(&mut self) {
+        let (retry_in_match, retry_in_search, stack, time, calls, nest) = self.saved;
+        onig_set_retry_limit_in_match(retry_in_match);
+        onig_set_retry_limit_in_search(retry_in_search);
+        onig_set_match_stack_limit(stack);
+        onig_set_time_limit(time);
+        onig_set_subexp_call_limit_in_search(calls);
+        onig_set_subexp_call_max_nest_level(nest);
+    }
+}
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_retry_limit_in_match(n: u64) {
@@ -8986,7 +9045,7 @@ mod tests {
     /// errors of the loop run one instruction at a time.
     #[test]
     fn lazy_any_char_stop_matches_the_instruction_loop() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let utf8: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
         let ascii: OnigEncoding = &crate::encodings::ascii::ONIG_ENCODING_ASCII;
         let patterns = [
@@ -9311,7 +9370,7 @@ mod tests {
 
     #[test]
     fn compiled_literal_finder_preserves_bounded_searches_and_limits() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let patterns = [
             r"ab",
             r"(ab)(c?)",
@@ -9410,6 +9469,7 @@ mod tests {
 
     #[test]
     fn atomic_class_prefix_filter_falls_back_for_observable_modes() {
+        let _limits = shared_limits();
         let compile = |pattern: &str| {
             regcomp::onig_new(
                 pattern.as_bytes(),
@@ -9456,7 +9516,7 @@ mod tests {
     #[test]
     fn first_op_test_agrees_with_the_vm_attempt() {
         // The attempts below read the process-global limits.
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let compile = |pattern: &str, option: OnigOptionType| {
             regcomp::onig_new(
                 pattern.as_bytes(),
@@ -9618,7 +9678,7 @@ mod tests {
 
     #[test]
     fn atomic_class_prefix_filter_preserves_search_results_and_limits() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let patterns = [
             r"[ab]+:",
             r"[ab]+:(a+)\1",
@@ -9742,7 +9802,7 @@ mod tests {
     /// partial-failure positions, captures, and match/retry limit outcomes.
     #[test]
     fn ascii_class_runs_match_unbatched_instructions() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let patterns = [
             r"[ab]{4}",
             r"[ab]?[ab]{3}",
@@ -9856,6 +9916,7 @@ mod tests {
 
     #[test]
     fn ascii_class_runs_split_at_the_metadata_bound() {
+        let _limits = shared_limits();
         for enc in [
             &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
             &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
@@ -9935,6 +9996,7 @@ mod tests {
 
     #[test]
     fn search_start_equal_range_is_a_bounded_anchored_attempt() {
+        let _limits = shared_limits();
         let text = b"aaaa";
         let reg = compile_regex(b"a");
         let (position, region) = onig_search(
@@ -9966,6 +10028,7 @@ mod tests {
 
     #[test]
     fn search_normalizes_out_of_range_endpoints() {
+        let _limits = shared_limits();
         let text = b"abc";
         let reg = compile_regex(b"(?=b)");
 
@@ -10014,6 +10077,7 @@ mod tests {
 
     #[test]
     fn named_capture_can_skip_tracking_when_region_is_none() {
+        let _limits = shared_limits();
         let reg = compile_regex(b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})");
         assert!(
             !reg.needs_capture_tracking,
@@ -10036,6 +10100,7 @@ mod tests {
 
     #[test]
     fn named_capture_region_reuse_mismatch_resets_slots() {
+        let _limits = shared_limits();
         let reg = compile_regex(b"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})");
         assert!(!reg.needs_capture_tracking);
         assert_eq!(reg.push_mem_start, 0);
@@ -10085,6 +10150,7 @@ mod tests {
 
     #[test]
     fn backref_still_requires_capture_tracking_without_region() {
+        let _limits = shared_limits();
         let reg = compile_regex(b"(\\w+) \\1");
         assert!(
             reg.needs_capture_tracking,
@@ -10123,7 +10189,7 @@ mod tests {
     #[cfg(feature = "ffi")]
     #[test]
     fn multibyte_classes_match_c_over_malformed_utf8_and_truncation() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let patterns = [
             r"[\x{80}\x{81}]",
             r"[^\x{80}]",
@@ -10197,7 +10263,7 @@ mod tests {
 
     #[test]
     fn backtracked_push_captures_do_not_require_tracking() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         // A capture inside a repeat compiles to MEM_START_PUSH/MEM_END_PUSH so
         // that backtracking can restore it. Only the region observes that, so
         // a region-free search must not pay for the bookkeeping.
@@ -10245,7 +10311,7 @@ mod tests {
 
     #[test]
     fn captures_match_c_on_stack_and_reused_capture_arrays() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         // A tracked run keeps up to MEM_STK_INLINE capture slots on its own
         // stack and reuses the MatchArg's buffers for more. Groups that never
         // participate move a pattern to the reused buffers; patterns of both
@@ -10303,6 +10369,7 @@ mod tests {
 
     #[test]
     fn match_stack_limit_counts_push_captures_with_and_without_region() {
+        let _limits = shared_limits();
         // Untracked runs drop the push-capture stack entries. A configured
         // stack limit must still trip exactly where a region-tracking run
         // (and C) trips it.
@@ -10365,7 +10432,7 @@ mod tests {
 
     #[test]
     fn negated_class_star_backtracks_through_every_character() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         // (pattern, input, expected match)
         type Case = (&'static [u8], &'static [u8], (i32, i32));
         let cases: [Case; 5] = [
@@ -10409,7 +10476,7 @@ mod tests {
 
     #[test]
     fn star_opcodes_match_the_generic_loop_on_malformed_utf8() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         // `{0,50}` keeps the generic PUSH/JUMP loop, whose backtrack points
         // are exactly the boundaries of the forward scan. Truncated and
         // stray multibyte sequences make `prev_char_head` disagree with
@@ -10582,6 +10649,7 @@ mod tests {
 
     #[test]
     fn cclass_mb_ascii_fast_path_matches_and_misses() {
+        let _limits = shared_limits();
         let reg = compile_regex("[ぁ-ん]".as_bytes());
         assert!(
             has_opcode(&reg, OpCode::CClassMb),
@@ -10598,6 +10666,7 @@ mod tests {
 
     #[test]
     fn cclass_mb_not_ascii_fast_path_matches_and_misses() {
+        let _limits = shared_limits();
         let reg = compile_regex("[^ぁ-ん]".as_bytes());
         assert!(
             has_opcode(&reg, OpCode::CClassMbNot) || has_opcode(&reg, OpCode::CClassMixNot),
@@ -10614,6 +10683,7 @@ mod tests {
 
     #[test]
     fn logical_end_truncates_multibyte_decoding_and_matches_negated_classes() {
+        let _limits = shared_limits();
         let truncated = [0xE2, 0x82];
         let reg = compile_regex(br"\S+");
         let (position, region) = onig_search(
@@ -10648,6 +10718,7 @@ mod tests {
 
     #[test]
     fn cclass_mix_and_star_fast_paths() {
+        let _limits = shared_limits();
         let reg = compile_regex("[aぁ]".as_bytes());
         assert!(
             has_opcode(&reg, OpCode::CClassMix),
@@ -10672,6 +10743,7 @@ mod tests {
 
     #[test]
     fn cclass_ascii_fast_kind_for_fold_pair() {
+        let _limits = shared_limits();
         let reg = compile_regex("[xX]".as_bytes());
         let cclass_op = reg
             .ops
@@ -10694,6 +10766,7 @@ mod tests {
 
     #[test]
     fn cclass_not_ascii_fast_kind_for_fold_pair() {
+        let _limits = shared_limits();
         let reg = compile_regex("[^xX]".as_bytes());
         let cclass_not_op = reg
             .ops
@@ -10714,6 +10787,7 @@ mod tests {
 
     #[test]
     fn cclass_star_ascii_fast_kind_for_fold_pair() {
+        let _limits = shared_limits();
         let reg = compile_regex("[xX]*".as_bytes());
         let cclass_star_op = reg
             .ops
@@ -10734,30 +10808,35 @@ mod tests {
 
     #[test]
     fn match_literal_abc() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"abc", b"abc");
         assert_eq!(r, 3); // matched 3 bytes
     }
 
     #[test]
     fn match_literal_fail() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"abc", b"abd");
         assert_eq!(r, ONIG_MISMATCH);
     }
 
     #[test]
     fn match_literal_too_short() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"abcd", b"abc");
         assert_eq!(r, ONIG_MISMATCH);
     }
 
     #[test]
     fn match_empty_pattern() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"", b"abc");
         assert_eq!(r, 0); // empty pattern matches with length 0
     }
 
     #[test]
     fn match_single_char() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"x", b"xyz");
         assert_eq!(r, 1);
     }
@@ -10766,12 +10845,14 @@ mod tests {
 
     #[test]
     fn match_dot() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a.c", b"abc");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_dot_no_newline() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a.c", b"a\nc");
         assert_eq!(r, ONIG_MISMATCH); // dot doesn't match newline
     }
@@ -10780,18 +10861,21 @@ mod tests {
 
     #[test]
     fn match_alternation_first() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a|b", b"a");
         assert_eq!(r, 1);
     }
 
     #[test]
     fn match_alternation_second() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a|b", b"b");
         assert_eq!(r, 1);
     }
 
     #[test]
     fn match_alternation_fail() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a|b", b"c");
         assert_eq!(r, ONIG_MISMATCH);
     }
@@ -10800,42 +10884,49 @@ mod tests {
 
     #[test]
     fn match_star() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a*", b"aaa");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_star_empty() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a*", b"bbb");
         assert_eq!(r, 0); // a* can match empty
     }
 
     #[test]
     fn match_plus() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a+", b"aaa");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_plus_fail() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a+", b"bbb");
         assert_eq!(r, ONIG_MISMATCH);
     }
 
     #[test]
     fn match_question() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a?b", b"ab");
         assert_eq!(r, 2);
     }
 
     #[test]
     fn match_question_without() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a?b", b"b");
         assert_eq!(r, 1);
     }
 
     #[test]
     fn match_lazy_star() {
+        let _limits = shared_limits();
         // a*? should match as few as possible from position 0
         let (r, _) = compile_and_match(b"a*?", b"aaa");
         assert_eq!(r, 0); // lazy: match empty
@@ -10845,30 +10936,35 @@ mod tests {
 
     #[test]
     fn match_char_class() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"[abc]", b"b");
         assert_eq!(r, 1);
     }
 
     #[test]
     fn match_char_class_fail() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"[abc]", b"d");
         assert_eq!(r, ONIG_MISMATCH);
     }
 
     #[test]
     fn match_char_class_range() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"[a-z]", b"m");
         assert_eq!(r, 1);
     }
 
     #[test]
     fn match_char_class_negated() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"[^abc]", b"d");
         assert_eq!(r, 1);
     }
 
     #[test]
     fn match_char_class_negated_fail() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"[^abc]", b"a");
         assert_eq!(r, ONIG_MISMATCH);
     }
@@ -10877,18 +10973,21 @@ mod tests {
 
     #[test]
     fn match_begin_anchor() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"^abc", b"abc");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_end_anchor() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"abc$", b"abc");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_begin_end_anchors() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"^abc$", b"abc");
         assert_eq!(r, 3);
     }
@@ -10897,6 +10996,7 @@ mod tests {
 
     #[test]
     fn match_capture_group() {
+        let _limits = shared_limits();
         let (r, region) = compile_and_match(b"(abc)", b"abc");
         assert_eq!(r, 3);
         let region = region.unwrap();
@@ -10909,6 +11009,7 @@ mod tests {
 
     #[test]
     fn match_multiple_captures() {
+        let _limits = shared_limits();
         let (r, region) = compile_and_match(b"(a)(b)(c)", b"abc");
         assert_eq!(r, 3);
         let region = region.unwrap();
@@ -10929,6 +11030,7 @@ mod tests {
 
     #[test]
     fn match_non_capturing_group() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"(?:abc)", b"abc");
         assert_eq!(r, 3);
     }
@@ -10937,30 +11039,35 @@ mod tests {
 
     #[test]
     fn search_literal() {
+        let _limits = shared_limits();
         let (pos, _) = compile_and_search(b"bc", b"abcdef");
         assert_eq!(pos, 1); // found at position 1
     }
 
     #[test]
     fn search_literal_not_found() {
+        let _limits = shared_limits();
         let (pos, _) = compile_and_search(b"xyz", b"abcdef");
         assert_eq!(pos, ONIG_MISMATCH);
     }
 
     #[test]
     fn search_at_start() {
+        let _limits = shared_limits();
         let (pos, _) = compile_and_search(b"abc", b"abcdef");
         assert_eq!(pos, 0);
     }
 
     #[test]
     fn search_at_end() {
+        let _limits = shared_limits();
         let (pos, _) = compile_and_search(b"ef", b"abcdef");
         assert_eq!(pos, 4);
     }
 
     #[test]
     fn search_with_captures() {
+        let _limits = shared_limits();
         let (pos, region) = compile_and_search(b"(b)(c)", b"abcdef");
         assert_eq!(pos, 1);
         let region = region.unwrap();
@@ -10972,6 +11079,7 @@ mod tests {
 
     #[test]
     fn search_with_quantifier() {
+        let _limits = shared_limits();
         let (pos, _) = compile_and_search(b"a+", b"bbaab");
         assert_eq!(pos, 2);
     }
@@ -10980,6 +11088,7 @@ mod tests {
 
     #[test]
     fn match_word_boundary() {
+        let _limits = shared_limits();
         let (pos, _) = compile_and_search(b"\\bfoo\\b", b"a foo b");
         assert_eq!(pos, 2);
     }
@@ -11019,12 +11128,14 @@ mod tests {
 
     #[test]
     fn match_complex_alternation() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"abc|def|ghi", b"def");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_nested_groups() {
+        let _limits = shared_limits();
         let (r, region) = compile_and_match(b"((a)(b))", b"ab");
         assert_eq!(r, 2);
         let region = region.unwrap();
@@ -11041,12 +11152,14 @@ mod tests {
 
     #[test]
     fn match_dot_star() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a.*b", b"aXXXb");
         assert_eq!(r, 5);
     }
 
     #[test]
     fn match_backtracking() {
+        let _limits = shared_limits();
         // Pattern: a.*b matches "axb" - requires backtracking
         let (r, _) = compile_and_match(b"a.*b", b"axb");
         assert_eq!(r, 3);
@@ -11054,60 +11167,70 @@ mod tests {
 
     #[test]
     fn match_interval_quantifier() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a{3}", b"aaa");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_interval_quantifier_fail() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a{3}", b"aa");
         assert_eq!(r, ONIG_MISMATCH);
     }
 
     #[test]
     fn match_interval_range() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a{2,4}", b"aaa");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_interval_range_min() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a{2,4}", b"aa");
         assert_eq!(r, 2);
     }
 
     #[test]
     fn match_digit_class() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"\\d+", b"123");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_word_class() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"\\w+", b"abc123_");
         assert_eq!(r, 7);
     }
 
     #[test]
     fn search_email_like() {
+        let _limits = shared_limits();
         let (pos, _) = compile_and_search(b"\\w+@\\w+", b"send to user@host ok");
         assert_eq!(pos, 8); // "user@host" starts at position 8
     }
 
     #[test]
     fn match_escaped_special() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"a\\.b", b"a.b");
         assert_eq!(r, 3);
     }
 
     #[test]
     fn match_back_reference() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"(a)\\1", b"aa");
         assert_eq!(r, 2);
     }
 
     #[test]
     fn match_back_reference_fail() {
+        let _limits = shared_limits();
         let (r, _) = compile_and_match(b"(a)\\1", b"ab");
         assert_eq!(r, ONIG_MISMATCH);
     }
@@ -11118,7 +11241,7 @@ mod tests {
     // (since limits are global statics).
     #[test]
     fn global_limit_setters_publish_a_new_revision() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_retry_match = onig_get_retry_limit_in_match();
         let old_retry_search = onig_get_retry_limit_in_search();
         let old_stack = onig_get_match_stack_limit();
@@ -11140,7 +11263,7 @@ mod tests {
 
     #[test]
     fn retry_limit_in_match() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
 
         // (a+)*b against "aaa..." causes catastrophic backtracking. The tree
         // is compiled without tuning, so the loop has no empty check and its
@@ -11185,7 +11308,7 @@ mod tests {
     /// push that skipped C's backtrack left three times as many.
     #[test]
     fn guarded_pushes_spend_the_retry_budget_on_the_plain_path() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let reg = crate::regcomp::onig_new(
             br"((?=a\g<0>)|(?:\k<1>*?(?=a)()))*",
             ONIG_OPTION_NONE,
@@ -11222,7 +11345,7 @@ mod tests {
 
     #[test]
     fn stack_limit_over() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
 
         // Use onig_match directly to avoid forward_search optimization
         let (mut reg, mut env) = make_test_context();
@@ -11259,7 +11382,7 @@ mod tests {
 
     #[test]
     fn time_limit_over() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
 
         // Untuned, so the loop body must consume (see retry_limit_in_match).
         let (mut reg, mut env) = make_test_context();
@@ -11297,6 +11420,7 @@ mod tests {
 
     #[test]
     fn retry_limit_in_search_caps_the_first_match_attempt() {
+        let _limits = shared_limits();
         // C caps retry_limit_in_match by the search budget still left, so the
         // very first start position already stops at the search limit.
         let (mut reg, mut env) = make_test_context();
@@ -11344,6 +11468,7 @@ mod tests {
 
     #[test]
     fn time_limit_counts_backtracks_across_start_positions() {
+        let _limits = shared_limits();
         // Each start position backtracks fewer than CHECK_TIME_INTERVAL times,
         // so a per-position counter never reads the clock. C keeps the counter
         // and the deadline per search (TIME_LIMIT_INIT, CHECK_TIME_LIMIT_IN_MATCH).
@@ -11379,6 +11504,7 @@ mod tests {
 
     #[test]
     fn limits_zero_means_unlimited() {
+        let _limits = shared_limits();
         // Verify default limits (0 = unlimited) don't interfere with normal matching
         let (r, _) = compile_and_match(b"a*b", b"aaab");
         assert_eq!(r, 4);
@@ -11388,6 +11514,7 @@ mod tests {
 
     #[test]
     fn backward_search_basic() {
+        let _limits = shared_limits();
         // Search backward from end to find last occurrence
         let (mut reg, mut env) = make_test_context();
         let pattern = b"ab";
@@ -11412,6 +11539,7 @@ mod tests {
 
     #[test]
     fn backward_search_at_start() {
+        let _limits = shared_limits();
         let (mut reg, mut env) = make_test_context();
         let pattern = b"he";
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
@@ -11433,6 +11561,7 @@ mod tests {
 
     #[test]
     fn backward_search_no_match() {
+        let _limits = shared_limits();
         let (mut reg, mut env) = make_test_context();
         let pattern = b"xyz";
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
@@ -11481,6 +11610,7 @@ mod tests {
 
     #[test]
     fn optimized_search_bounds_large_finite_distances_to_the_slice() {
+        let _limits = shared_limits();
         let (mut reg, mut env) = make_test_context();
         let pattern = b"a";
         let root = regparse::onig_parse_tree(pattern, &mut reg, &mut env).unwrap();
@@ -11546,46 +11676,6 @@ mod tests {
         assert_eq!(slot.get().map(|f| f as usize), Some(fail as usize));
         slot.set(mismatch);
         assert_eq!(slot.get().map(|f| f as usize), Some(mismatch as usize));
-    }
-
-    /// The process-wide progress, retraction and each-match callbacks round
-    /// trip through their setters, and match parameters built afterwards carry
-    /// the progress and retraction callbacks.
-    #[test]
-    fn global_callout_callbacks_round_trip_through_their_setters() {
-        fn each_match(_: &[u8], _: &OnigRegion, _: *mut std::ffi::c_void) -> i32 {
-            ONIG_NORMAL
-        }
-        let progress: OnigCalloutFunc = onig_builtin_fail;
-        let retraction: OnigCalloutFunc = onig_builtin_mismatch;
-        let each: OnigCallbackEachMatchFunc = each_match;
-
-        assert_eq!(onig_set_progress_callout(progress), ONIG_NORMAL);
-        assert_eq!(onig_set_retraction_callout(retraction), ONIG_NORMAL);
-        assert_eq!(onig_set_callback_each_match(each), ONIG_NORMAL);
-
-        assert_eq!(
-            onig_get_progress_callout().map(|f| f as usize),
-            Some(progress as usize)
-        );
-        assert_eq!(
-            onig_get_retraction_callout().map(|f| f as usize),
-            Some(retraction as usize)
-        );
-        assert_eq!(
-            onig_get_callback_each_match().map(|f| f as usize),
-            Some(each as usize)
-        );
-
-        let mp = onig_new_match_param();
-        assert_eq!(
-            mp.progress_callout.map(|f| f as usize),
-            Some(progress as usize)
-        );
-        assert_eq!(
-            mp.retraction_callout.map(|f| f as usize),
-            Some(retraction as usize)
-        );
     }
 
     /// The `*_by_callout_args` accessors report the regex and the subject
