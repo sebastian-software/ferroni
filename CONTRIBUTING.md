@@ -38,6 +38,11 @@ README quotes the total in its
 [compatibility guide](https://ferroni.dev/guide/compatibility#test-parity)
 carries the per-file parity table.
 
+The `unsafe` figures in the "Current State" section of
+[ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy) are derived the same
+way, by `./scripts/count-unsafe.sh`. Run it after changing `unsafe` code and
+update that section from its output.
+
 ### Code samples in the docs
 
 `cargo test --doc` also runs the Rust samples in the README and in the guide

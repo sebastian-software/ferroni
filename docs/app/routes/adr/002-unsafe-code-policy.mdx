@@ -44,7 +44,18 @@ These are precisely the areas where C Oniguruma's CVEs occurred.
 
 ## Current State
 
-86 `unsafe` blocks across ~20,400 LOC (0.4% of lines). All concentrated in the two patterns above.
+The figures in this section come from `scripts/count-unsafe.sh`, run from the repository root; they are not kept by hand. Run the script after changing `unsafe` code and update this section from its output. At this revision it reports:
+
+- 61 `unsafe` sites in `src/`: 53 `unsafe` blocks and 8 `unsafe impl` items, with no `unsafe fn` items.
+- A line total of 58,143 for the same files, so the sites are 0.10% of lines.
+
+The script excludes `src/ffi.rs` (18 sites, for the benchmark-only `ffi` feature) and the generated Unicode tables in `src/unicode/` (24,588 lines). It prints both separately.
+
+Classification against the two patterns, from reading each site:
+
+- **Pattern 1** accounts for 28 sites: the 22 blocks in `regcomp.rs`, which dereference node pointers into the AST, and the `unsafe impl Send` and `unsafe impl Sync` items for `Node`, `MemEnv`, and `UnsetAddr` in `src/regparse_types.rs`. Their raw pointers (`parent`, `target_node`, `mem_node`, `empty_repeat_node`, `target`) are non-owning links between nodes of one AST, which is the case Pattern 1 describes.
+- **Pattern 2** accounts for 3 sites: the `transmute` calls in `regexec.rs`.
+- **Neither pattern as written** accounts for 30 sites. The `unsafe impl Send` and `unsafe impl Sync` items for `ParseEnv` in `src/regparse_types.rs` do not fit Pattern 1: their raw pointers point into the pattern buffer (`pattern`, `pattern_end`) and to the `RegexType` being compiled (`reg`), not to AST nodes. The other 28 are 15 blocks in `regexec.rs` that dereference the match and callout argument structs, 5 blocks in `regexec.rs` and 1 in `regparse.rs` that compute pointers into the subject or pattern buffer, and 7 blocks in `regparse.rs` that dereference `env.reg`. The six pointer-arithmetic sites fall under "What is NOT allowed". Whether these sites are reclassified, rewritten, or covered by a new pattern is an open decision for this ADR.
 
 ## Consequences
 
