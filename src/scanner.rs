@@ -21,6 +21,7 @@ use crate::regset::{
     onig_regset_number_of_regex, onig_regset_search_utf8, onig_regset_swap_region,
 };
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::{BitOr, BitOrAssign};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -292,7 +293,7 @@ impl ScannerPatternCache {
         };
         let compiled = &mut self.compiled[at].1;
         let mut added = Vec::new();
-        let scanner = Scanner::compile(patterns, |pattern| {
+        let scanner = Scanner::compile(patterns, settings, |pattern| {
             if let Some(reg) = compiled.get(pattern) {
                 return Ok(Arc::clone(reg));
             }
@@ -310,6 +311,15 @@ impl ScannerPatternCache {
             self.compiled.remove(at);
         }
         scanner
+    }
+}
+
+/// Shows the number of cached patterns, as [`ScannerPatternCache::len`] does.
+impl fmt::Debug for ScannerPatternCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ScannerPatternCache")
+            .field("len", &self.len())
+            .finish_non_exhaustive()
     }
 }
 
@@ -465,6 +475,15 @@ impl OnigString {
     }
 }
 
+/// Shows the content. The offset tables are left out.
+impl fmt::Debug for OnigString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OnigString")
+            .field("content", &self.content)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Per-regex cache entry, mirroring vscode-oniguruma's caching strategy.
 struct CacheEntry {
     has_g_anchor: bool,
@@ -612,6 +631,8 @@ pub struct Scanner {
     search_budget: bool,
     warnings: Vec<Vec<crate::backtrack_lint::BacktrackWarning>>,
     rewrites: Vec<Vec<crate::backtrack_rewrite::BacktrackingRewrite>>,
+    /// The compile settings every pattern of this scanner was built with.
+    settings: PatternSettings,
 }
 
 // Scanners hold their compiled patterns as `Arc<RegexType>`, shared or not.
@@ -626,6 +647,21 @@ const _: () = {
     send_sync::<Scanner>();
     send_sync::<ScannerPatternCache>();
 };
+
+/// Shows the pattern count and the settings the patterns were compiled with.
+impl fmt::Debug for Scanner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Scanner")
+            .field("patterns", &self.caches.len())
+            .field("options", &self.settings.options)
+            .field("syntax", &self.settings.syntax)
+            .field(
+                "optimize_backtracking",
+                &self.settings.optimize_backtracking,
+            )
+            .finish_non_exhaustive()
+    }
+}
 
 impl Scanner {
     /// Create a scanner from a list of pattern strings using the
@@ -656,7 +692,7 @@ impl Scanner {
     /// ```
     pub fn with_config(patterns: &[&str], config: &ScannerConfig) -> Result<Scanner, RegexError> {
         let settings = PatternSettings::of(config, false);
-        Self::compile(patterns, |pattern| settings.compile(pattern))
+        Self::compile(patterns, settings, |pattern| settings.compile(pattern))
     }
 
     /// Create a scanner with the conservative, experimental AST rewrites
@@ -669,7 +705,7 @@ impl Scanner {
         config: &ScannerConfig,
     ) -> Result<Scanner, RegexError> {
         let settings = PatternSettings::of(config, true);
-        Self::compile(patterns, |pattern| settings.compile(pattern))
+        Self::compile(patterns, settings, |pattern| settings.compile(pattern))
     }
 
     /// [`Scanner::with_config`], sharing compiled patterns through `cache`.
@@ -723,9 +759,11 @@ impl Scanner {
     }
 
     /// Build a scanner from the compiled form of each pattern, which
-    /// `regex` provides in pattern order.
+    /// `regex` provides in pattern order. `settings` are the ones `regex`
+    /// compiles with.
     fn compile<'p>(
         patterns: &[&'p str],
+        settings: PatternSettings,
         mut regex: impl FnMut(&'p str) -> Result<Arc<RegexType>, RegexError>,
     ) -> Result<Scanner, RegexError> {
         let mut caches = Vec::with_capacity(patterns.len());
@@ -756,6 +794,7 @@ impl Scanner {
             search_budget: false,
             warnings,
             rewrites,
+            settings,
         })
     }
 
