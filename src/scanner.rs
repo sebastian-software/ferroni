@@ -29,7 +29,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_ONIG_STRING_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Result of a capture group match.
+///
+/// The struct is `#[non_exhaustive]`: outside this crate it cannot be built
+/// with a struct literal, and a destructuring pattern must end with `..`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CaptureIndex {
     /// Byte offset of the start of the capture.
     pub start: usize,
