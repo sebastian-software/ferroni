@@ -39,6 +39,22 @@ jobs:
         run: cargo test --doc
       - name: Test global_callouts
         run: cargo test --test global_callouts
+      # These files fit the default thread stack (ADR-013 lists them as
+      # unaffected). The #[ignore]d tests in backtrack_rewrite and stack_cap
+      # stay skipped: stack_cap's grows the backtrack stack to about half a
+      # gigabyte.
+      - name: Test default_case_fold_flag
+        run: cargo test --test default_case_fold_flag
+      - name: Test parse_limits
+        run: cargo test --test parse_limits
+      - name: Test subexp_call_limits
+        run: cargo test --test subexp_call_limits
+      - name: Test backtrack_lint
+        run: cargo test --test backtrack_lint
+      - name: Test backtrack_rewrite
+        run: cargo test --test backtrack_rewrite
+      - name: Test stack_cap
+        run: cargo test --test stack_cap
       - name: Test compat_syntax
         run: cargo test --test compat_syntax
       - name: Test compat_options
