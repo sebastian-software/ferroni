@@ -1,9 +1,11 @@
-// replace.rs - Replacement and splitting for the idiomatic API.
-//
-// The `replace` and `split` families follow the shape of the `regex` crate.
-// They walk the same match sequence as `Regex::find_iter` and
-// `Regex::captures_iter`, including the empty match that Ferroni reports right
-// after a non-empty one, so every method here agrees with those iterators.
+//! Replacement and splitting for the idiomatic API. The [`Replacer`] trait
+//! drives [`Regex::replace_all`] and its relatives, and [`Split`] and its
+//! relatives back [`Regex::split`]. They follow the shape of the `regex` crate
+//! and walk the same matches as [`Regex::find_iter`] and
+//! [`Regex::captures_iter`].
+
+// Each method includes the empty match that Ferroni reports right after a
+// non-empty one, so every method here agrees with those iterators.
 
 use std::borrow::Cow;
 use std::fmt;

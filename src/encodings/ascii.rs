@@ -1,12 +1,16 @@
-// encodings/ascii.rs - Port of ascii.c
-// US-ASCII encoding implementation.
+//! Port of `ascii.c`: the US-ASCII encoding, one byte per character.
+//! [`ONIG_ENCODING_ASCII`] is the static that exposes it.
 
 use crate::oniguruma::*;
 use crate::regenc::*;
 
 // === ASCII Encoding Struct ===
+
+/// The US-ASCII encoding type behind [`ONIG_ENCODING_ASCII`]. Character
+/// classes cover only the bytes below `0x80`.
 pub struct AsciiEncoding;
 
+/// US-ASCII, the encoding to pass to `onig_new` for ASCII patterns and text.
 pub static ONIG_ENCODING_ASCII: AsciiEncoding = AsciiEncoding;
 
 impl Encoding for AsciiEncoding {

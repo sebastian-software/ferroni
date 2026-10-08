@@ -1,6 +1,6 @@
-// prelude.rs - Convenient re-exports for the idiomatic API.
-//
-//! # Prelude
+//! Re-exports of the types most programs need. `use ferroni::prelude::*;` brings
+//! in [`Regex`], [`RegexBuilder`], [`Match`], [`Captures`], the replacement and
+//! split types, and the scanner types.
 //!
 //! ```
 //! use ferroni::prelude::*;

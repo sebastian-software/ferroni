@@ -29,6 +29,8 @@ unsafe_op_in_unsafe_fn = "deny"
 dead_code = "allow"
 # Public types implement Debug; the C port is exempt until #287 decides it.
 missing_debug_implementations = "warn"
+# Rust API items need docs; the C-port modules opt out in src/lib.rs.
+missing_docs = "warn"
 
 [lints.clippy]
 undocumented_unsafe_blocks = "warn"

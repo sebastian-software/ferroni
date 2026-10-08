@@ -1,4 +1,5 @@
-// build.rs -- Compile upstream Oniguruma sources for `ffi` benchmarks.
+//! Build script. It sets the `coverage_nightly` and `ferroni_guide_docs` cfgs,
+//! and compiles upstream Oniguruma sources for the benchmark-only `ffi` feature.
 
 fn main() {
     // Allow the `coverage_nightly` cfg used by #[cfg_attr(coverage_nightly, coverage(off))].

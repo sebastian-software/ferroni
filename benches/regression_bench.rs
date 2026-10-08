@@ -1,4 +1,4 @@
-// Regression benchmark suite: internal Ferroni-only regression and optimization tracking.
+//! Regression benchmark suite: internal Ferroni-only regression and optimization tracking.
 //
 // Run locally: cargo bench --bench regression_bench
 

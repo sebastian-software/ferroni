@@ -1,6 +1,7 @@
-// regparse.rs - Port of regparse.c
-// Parser: converts regex patterns (byte strings) into AST (Node trees).
-//
+//! Port of `regparse.c`: the parser, which turns a pattern (a byte string) into
+//! the AST of node trees that [`regcomp`](crate::regcomp) compiles. It also
+//! holds the global warning hooks and the parse limits.
+
 // This is a 1:1 port of oniguruma's regparse.c (~9,500 LOC).
 // Structure mirrors the C original: helpers → name table → env management →
 // number parsing → code ranges → escape parsing → tokenizer → parser.

@@ -1,11 +1,13 @@
-// regenc.rs - Port of regenc.h + regenc.c
-// Encoding trait (from OnigEncodingType) and shared encoding utility functions.
+//! Port of `regenc.h` and `regenc.c`: the [`Encoding`] trait, which replaces C's
+//! `OnigEncodingType` function table, and the helpers that the encodings share.
 
 use crate::oniguruma::*;
 
 // === Encoding type alias ===
 // In C: OnigEncoding = OnigEncodingType*
 // In Rust: a trait object reference
+/// An encoding, the `enc` argument of `onig_new`: a static reference to an
+/// [`Encoding`] implementation.
 pub type OnigEncoding = &'static dyn Encoding;
 
 // === Encoding flags ===
@@ -27,6 +29,9 @@ pub(crate) const NEWLINE_CODE: OnigCodePoint = 0x0a;
 
 // === Encoding Trait ===
 // 1:1 mapping of OnigEncodingType function pointers to trait methods.
+/// A character encoding. Each function of C's `OnigEncodingType` table is a
+/// method here. [`ONIG_ENCODING_UTF8`](crate::encodings::ONIG_ENCODING_UTF8) and
+/// [`ONIG_ENCODING_ASCII`](crate::encodings::ONIG_ENCODING_ASCII) implement it.
 pub trait Encoding: Send + Sync {
     /// Returns the byte length of the multibyte character at position p.
     fn mbc_enc_len(&self, p: &[u8]) -> usize;

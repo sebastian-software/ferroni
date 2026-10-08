@@ -1,5 +1,5 @@
-// regtrav.rs - Port of regtrav.c
-// Capture tree traversal for capture history.
+//! Port of `regtrav.c`: traversal of the capture tree that capture history
+//! records, through [`onig_capture_tree_traverse`].
 
 use crate::oniguruma::*;
 

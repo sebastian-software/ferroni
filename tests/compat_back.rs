@@ -1,4 +1,4 @@
-// compat_back.rs - Integration tests ported from oniguruma test/test_back.c
+//! Integration tests ported from oniguruma test/test_back.c.
 //
 // Uses backward search: onig_search with start=str+len, range=str
 // (i.e., start=input.len(), range=0)

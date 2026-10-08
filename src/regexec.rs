@@ -1,6 +1,6 @@
-// regexec.rs - Port of regexec.c
-// VM executor: bytecode interpreter, match_at, onig_match, onig_search.
-//
+//! Port of `regexec.c`: the bytecode interpreter, with [`onig_match`] and
+//! [`onig_search`]. [`Regex`](crate::api::Regex) is the idiomatic search API.
+
 // This is a 1:1 port of oniguruma's regexec.c (~7,000 LOC).
 // Structure mirrors the C original: stack types → stack operations →
 // match_at (opcode dispatch) → onig_match → onig_search.

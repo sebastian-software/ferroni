@@ -1,4 +1,4 @@
-// compat_options.rs - Integration tests ported from oniguruma test/test_options.c
+//! Integration tests ported from oniguruma test/test_options.c.
 //
 // Tests compile/search options passed to both onig_new() and onig_search().
 // Uses ONIG_SYNTAX_ONIGURUMA (the default syntax) and ONIG_ENCODING_UTF8.

@@ -10,6 +10,8 @@
 //! and `runtime` executes the decimal prefix with native capture bookkeeping.
 //! `regcomp` and `regexec` supply the compiler and VM integration points.
 //! Public diagnostic types stay here; implementation modules are crate-private.
+//! [`Regex::backtracking_rewrites`](crate::api::Regex::backtracking_rewrites)
+//! lists the applied and refused candidates as [`BacktrackingRewrite`] values.
 
 mod ast;
 pub(crate) mod lowering;

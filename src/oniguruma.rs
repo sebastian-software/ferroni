@@ -1,5 +1,6 @@
-// oniguruma.rs - Port of oniguruma.h
-// Public types, option flags, error codes, syntax flags, structs.
+//! Port of `oniguruma.h`: the public types, option flags, syntax flags, error
+//! codes and structs of the C API. [`RegexType`] is the compiled pattern, which
+//! C calls `regex_t`.
 
 // `regex_t` (OnigRegex) is opaque in oniguruma.h. Its definition lives in the
 // crate-private regint module, and this is its public name.

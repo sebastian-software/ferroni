@@ -26,10 +26,10 @@ Or add it by hand:
 ferroni = "1"
 ```
 
-Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane. The library has
-no build script. The optional
-`ffi` feature exists only for the in-repo C-versus-Rust benchmark harness; you
-never need it to use the crate.
+Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane. The build script
+only sets cfg flags, so no C toolchain is needed. It compiles C only when the
+benchmark-only `ffi` feature is enabled, and you never need that feature to use
+the crate.
 
 ## Your first match
 

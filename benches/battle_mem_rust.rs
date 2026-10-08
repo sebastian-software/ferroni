@@ -1,4 +1,4 @@
-// Process-isolated memory harness for Ferroni's Rust scanner path.
+//! Process-isolated memory harness for Ferroni's Rust scanner path.
 // Run via scripts/run-battle-memory.sh or:
 // cargo bench --bench battle_mem_rust -- --nocapture
 

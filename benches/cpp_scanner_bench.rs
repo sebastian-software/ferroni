@@ -1,3 +1,6 @@
+//! Criterion benchmark that replays the C++ grammar's scanner calls through Ferroni
+//! and the other engines in `engines.rs`.
+
 #[path = "cpp_scanner/mod.rs"]
 mod scanner_replay;
 #[cfg(feature = "ffi")]

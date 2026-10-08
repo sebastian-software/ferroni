@@ -1,5 +1,6 @@
-// unicode/mod.rs - Port of unicode.c
-// Unicode character properties, case folding, and related functions.
+//! Port of `unicode.c`: Unicode character properties, case folding, and related
+//! functions.
+
 // The data tables (case folding, code ranges, grapheme cluster and word
 // boundaries) are generated from the pinned Unicode Character Database by
 // scripts/gen_unicode_tables.py and live in the sibling *_data.rs modules.

@@ -1,3 +1,6 @@
+//! The sample behind the home page's run output. `pnpm sample:check` in `docs/`
+//! reruns it and compares the output with `docs/app/data/regex-sample.json`.
+
 use ferroni::prelude::*;
 
 fn main() -> Result<(), RegexError> {

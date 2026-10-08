@@ -1,4 +1,4 @@
-// compat_regset.rs — tests ported from oniguruma/test/test_regset.c
+//! Tests ported from oniguruma/test/test_regset.c.
 //
 // Tests the RegSet API: multi-regex simultaneous search with both
 // position-lead and regex-lead modes.
