@@ -16,7 +16,11 @@ use crate::regexec::{
     onig_search, onig_search_bounds, onig_search_with_param, take_cached_msa,
 };
 use crate::regint::RegexType;
-use crate::regsyntax::OnigSyntaxOniguruma;
+use crate::regsyntax::{
+    OnigSyntaxASIS, OnigSyntaxEmacs, OnigSyntaxGnuRegex, OnigSyntaxGrep, OnigSyntaxJava,
+    OnigSyntaxOniguruma, OnigSyntaxPerl, OnigSyntaxPerl_NG, OnigSyntaxPosixBasic,
+    OnigSyntaxPosixExtended, OnigSyntaxPython, OnigSyntaxRuby,
+};
 
 thread_local! {
     /// One reusable capture region per thread. Taking the value out keeps
@@ -552,8 +556,25 @@ pub struct RegexBuilder {
 impl RegexBuilder {
     /// Create a new builder for the given pattern.
     pub fn new(pattern: &str) -> Self {
+        Self::new_bytes(pattern.as_bytes())
+    }
+
+    /// Create a new builder for a pattern given as raw bytes.
+    ///
+    /// The bytes are compiled exactly as [`Regex::new_bytes`] compiles them.
+    ///
+    /// ```
+    /// use ferroni::api::RegexBuilder;
+    ///
+    /// let re = RegexBuilder::new_bytes(b"hello")
+    ///     .case_insensitive(true)
+    ///     .build()
+    ///     .unwrap();
+    /// assert!(re.is_match("HELLO"));
+    /// ```
+    pub fn new_bytes(pattern: &[u8]) -> Self {
         RegexBuilder {
-            pattern: pattern.as_bytes().to_vec(),
+            pattern: pattern.to_vec(),
             options: ONIG_OPTION_NONE,
             syntax: &OnigSyntaxOniguruma,
             reject_backtracking_risks: false,
@@ -608,16 +629,91 @@ impl RegexBuilder {
     }
 
     /// Set a raw option flag. See `ONIG_OPTION_*` constants.
+    ///
+    /// Use [`clear_option`](Self::clear_option) to unset a flag again.
     pub fn option(mut self, flag: OnigOptionType) -> Self {
         self.options |= flag;
         self
     }
 
+    /// Clear a raw option flag set earlier on this builder.
+    ///
+    /// The counterpart of [`option`](Self::option). Clearing a flag the
+    /// builder does not hold has no effect.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    /// use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
+    ///
+    /// let re = Regex::builder("hello")
+    ///     .option(ONIG_OPTION_IGNORECASE)
+    ///     .clear_option(ONIG_OPTION_IGNORECASE)
+    ///     .build()
+    ///     .unwrap();
+    /// assert!(!re.is_match("HELLO"));
+    /// ```
+    pub fn clear_option(mut self, flag: OnigOptionType) -> Self {
+        self.options &= !flag;
+        self
+    }
+
+    /// Capture unnamed groups even when the pattern also has named groups.
+    ///
+    /// `true` sets `ONIG_OPTION_CAPTURE_GROUP`, so named and unnamed groups
+    /// are all captured. It also clears `ONIG_OPTION_DONT_CAPTURE_GROUP` set
+    /// through [`option`](Self::option), since the two flags conflict.
+    ///
+    /// `false` clears `ONIG_OPTION_CAPTURE_GROUP` and leaves the choice to the
+    /// syntax, which is the default. The Oniguruma, Ruby and Perl-NG syntaxes
+    /// capture only the named groups of a pattern that has any; the other
+    /// syntaxes capture unnamed groups as well.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// let pattern = r"(?<word>\w+) (\d+)";
+    /// let named_only = Regex::builder(pattern).build().unwrap();
+    /// assert_eq!(named_only.captures_len(), 1);
+    ///
+    /// let all = Regex::builder(pattern).capture_group(true).build().unwrap();
+    /// assert_eq!(all.captures_len(), 2);
+    /// ```
+    pub fn capture_group(mut self, yes: bool) -> Self {
+        if yes {
+            self.options |= ONIG_OPTION_CAPTURE_GROUP;
+            self.options &= !ONIG_OPTION_DONT_CAPTURE_GROUP;
+        } else {
+            self.options &= !ONIG_OPTION_CAPTURE_GROUP;
+        }
+        self
+    }
+
     /// Select the syntax definition to use (default: Oniguruma).
     ///
-    /// Pass one of the `OnigSyntax*` statics from [`crate::regsyntax`].
+    /// Pass one of the `OnigSyntax*` statics from [`crate::regsyntax`]. The
+    /// typed alternative [`syntax_mode`](Self::syntax_mode) selects the same
+    /// definitions by name.
     pub fn syntax(mut self, syntax: &'static OnigSyntaxType) -> Self {
         self.syntax = syntax;
+        self
+    }
+
+    /// Select one of the built-in [`Syntax`] definitions (default: Oniguruma).
+    ///
+    /// This is the typed counterpart of [`syntax`](Self::syntax), which takes
+    /// the `OnigSyntax*` statics. Both set the same definition, and the last
+    /// call wins.
+    ///
+    /// ```
+    /// use ferroni::api::{Regex, Syntax};
+    ///
+    /// // Plain text: metacharacters match only themselves.
+    /// let re = Regex::builder("a.b").syntax_mode(Syntax::Asis).build().unwrap();
+    /// assert!(re.is_match("a.b"));
+    /// assert!(!re.is_match("axb"));
+    /// ```
+    pub fn syntax_mode(mut self, syntax: Syntax) -> Self {
+        self.syntax = syntax.as_onig_syntax();
         self
     }
 
@@ -673,6 +769,88 @@ impl RegexBuilder {
             return Err(ONIGERR_VERY_INEFFICIENT_PATTERN.into());
         }
         Ok(Regex { inner })
+    }
+}
+
+impl Regex {
+    /// Create a [`RegexBuilder`] for a pattern given as raw bytes.
+    ///
+    /// The byte form of [`Regex::builder`]; see [`RegexBuilder::new_bytes`].
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// let re = Regex::builder_bytes(br"\d+").build().unwrap();
+    /// assert_eq!(re.find("abc 42").unwrap().as_str(), "42");
+    /// ```
+    pub fn builder_bytes(pattern: &[u8]) -> RegexBuilder {
+        RegexBuilder::new_bytes(pattern)
+    }
+}
+
+/// A built-in regex syntax definition.
+///
+/// A typed alternative to the `OnigSyntax*` statics in [`crate::regsyntax`],
+/// accepted by [`RegexBuilder::syntax_mode`] and used by the scanner as
+/// [`ScannerSyntax`](crate::scanner::ScannerSyntax). The variants match the
+/// scanner's syntax choices, which follow vscode-oniguruma's `Syntax` enum.
+///
+/// The default is [`Syntax::Oniguruma`]. The enum is not `#[non_exhaustive]`
+/// so that existing `match` expressions over the scanner's syntax remain
+/// exhaustive.
+///
+/// ```
+/// use ferroni::api::{Regex, Syntax};
+///
+/// assert_eq!(Syntax::default(), Syntax::Oniguruma);
+/// let re = Regex::builder(r"\w+").syntax_mode(Syntax::Ruby).build().unwrap();
+/// assert!(re.is_match("ok"));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Syntax {
+    /// Oniguruma syntax (default).
+    #[default]
+    Oniguruma,
+    /// Plain text, no metacharacters.
+    Asis,
+    /// POSIX Basic Regular Expressions.
+    PosixBasic,
+    /// POSIX Extended Regular Expressions.
+    PosixExtended,
+    /// Emacs regex syntax.
+    Emacs,
+    /// grep syntax.
+    Grep,
+    /// GNU regex syntax.
+    GnuRegex,
+    /// Java regex syntax.
+    Java,
+    /// Perl regex syntax.
+    Perl,
+    /// Perl-NG regex syntax.
+    PerlNg,
+    /// Ruby regex syntax.
+    Ruby,
+    /// Python regex syntax.
+    Python,
+}
+
+impl Syntax {
+    pub(crate) fn as_onig_syntax(&self) -> &'static OnigSyntaxType {
+        match self {
+            Self::Oniguruma => &OnigSyntaxOniguruma,
+            Self::Asis => &OnigSyntaxASIS,
+            Self::PosixBasic => &OnigSyntaxPosixBasic,
+            Self::PosixExtended => &OnigSyntaxPosixExtended,
+            Self::Emacs => &OnigSyntaxEmacs,
+            Self::Grep => &OnigSyntaxGrep,
+            Self::GnuRegex => &OnigSyntaxGnuRegex,
+            Self::Java => &OnigSyntaxJava,
+            Self::Perl => &OnigSyntaxPerl,
+            Self::PerlNg => &OnigSyntaxPerl_NG,
+            Self::Ruby => &OnigSyntaxRuby,
+            Self::Python => &OnigSyntaxPython,
+        }
     }
 }
 
