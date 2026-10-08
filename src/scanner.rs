@@ -811,8 +811,9 @@ impl Scanner {
     /// repeatedly advancing through the same string.
     ///
     /// A search that stops at a process-wide limit (time, retry or stack)
-    /// before reaching a match is reported as `None`. A scanner has no `_with`
-    /// variant, so this is the only way such a limit shows up.
+    /// before reaching a match is reported as `None`. Unlike
+    /// [`Regex::find_with`](crate::api::Regex::find_with), a scanner has no
+    /// variant that reports the limit as an error.
     pub fn find_next_match(
         &mut self,
         text: &str,
@@ -828,8 +829,9 @@ impl Scanner {
     /// pass the same `str_id` to enable cache hits that skip redundant searches.
     ///
     /// A search that stops at a process-wide limit (time, retry or stack)
-    /// before reaching a match is reported as `None`. A scanner has no `_with`
-    /// variant, so this is the only way such a limit shows up.
+    /// before reaching a match is reported as `None`. Unlike
+    /// [`Regex::find_with`](crate::api::Regex::find_with), a scanner has no
+    /// variant that reports the limit as an error.
     pub fn find_next_match_with_id(
         &mut self,
         text: &str,
@@ -853,8 +855,9 @@ impl Scanner {
     /// (start, end, length) are also in UTF-16 code units.
     ///
     /// A search that stops at a process-wide limit (time, retry or stack)
-    /// before reaching a match is reported as `None`. A scanner has no `_with`
-    /// variant, so this is the only way such a limit shows up.
+    /// before reaching a match is reported as `None`. Unlike
+    /// [`Regex::find_with`](crate::api::Regex::find_with), a scanner has no
+    /// variant that reports the limit as an error.
     ///
     /// # Example
     ///
@@ -900,8 +903,9 @@ impl Scanner {
     /// Find the next match using UTF-16 positions with a string ID for caching.
     ///
     /// A search that stops at a process-wide limit (time, retry or stack)
-    /// before reaching a match is reported as `None`. A scanner has no `_with`
-    /// variant, so this is the only way such a limit shows up.
+    /// before reaching a match is reported as `None`. Unlike
+    /// [`Regex::find_with`](crate::api::Regex::find_with), a scanner has no
+    /// variant that reports the limit as an error.
     pub fn find_next_match_utf16_with_id(
         &mut self,
         string: &OnigString,
