@@ -201,6 +201,8 @@ jobs:
           install_args: --locked
       - name: Check the generated README
         run: ./scripts/readme-family.sh check
+      - name: Check the README figures against the tree
+        run: ./scripts/check-readme-figures.sh
 
   docs-format:
     name: Docs format

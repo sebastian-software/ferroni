@@ -1,0 +1,7 @@
+# The stack size debug test threads need, so that a plain `cargo test` works.
+# The value is the "Debug, --test-threads=1" row of the "Required stack sizes"
+# table in docs/app/routes/adr/013-stack-overflow-debug-builds.mdx (ADR-013).
+# Cargo does not override a RUST_MIN_STACK that is already set in the
+# environment, so an explicit value still wins.
+[env]
+RUST_MIN_STACK = "268435456"
