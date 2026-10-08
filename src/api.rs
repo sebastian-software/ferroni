@@ -1285,6 +1285,38 @@ impl RegexBuilder {
     }
 }
 
+/// Shows the pattern, the options and the settings. `syntax` is `None` when
+/// the syntax came from [`RegexBuilder::syntax`] and is not a built-in one.
+impl fmt::Debug for RegexBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Kept in step with the variants of `Syntax`.
+        const BUILT_IN: [Syntax; 12] = [
+            Syntax::Oniguruma,
+            Syntax::Asis,
+            Syntax::PosixBasic,
+            Syntax::PosixExtended,
+            Syntax::Emacs,
+            Syntax::Grep,
+            Syntax::GnuRegex,
+            Syntax::Java,
+            Syntax::Perl,
+            Syntax::PerlNg,
+            Syntax::Ruby,
+            Syntax::Python,
+        ];
+        let syntax = BUILT_IN
+            .into_iter()
+            .find(|syntax| std::ptr::eq(syntax.as_onig_syntax(), self.syntax));
+        f.debug_struct("RegexBuilder")
+            .field("pattern", &String::from_utf8_lossy(&self.pattern))
+            .field("options", &self.options)
+            .field("syntax", &syntax)
+            .field("reject_backtracking_risks", &self.reject_backtracking_risks)
+            .field("optimize_backtracking", &self.optimize_backtracking)
+            .finish()
+    }
+}
+
 impl Regex {
     /// Create a [`RegexBuilder`] for a pattern given as raw bytes.
     ///
@@ -1609,6 +1641,12 @@ impl<'c, 't> Iterator for CapturesIter<'c, 't> {
 
 impl ExactSizeIterator for CapturesIter<'_, '_> {}
 
+impl fmt::Debug for CapturesIter<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CapturesIter").finish_non_exhaustive()
+    }
+}
+
 // === CaptureNames ===
 
 /// Iterator over the names of the capture groups, from
@@ -1653,6 +1691,12 @@ impl<'r> Iterator for CaptureNames<'r> {
 impl ExactSizeIterator for CaptureNames<'_> {}
 
 impl std::iter::FusedIterator for CaptureNames<'_> {}
+
+impl fmt::Debug for CaptureNames<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CaptureNames").finish_non_exhaustive()
+    }
+}
 
 // === MatchCursor ===
 
@@ -1775,6 +1819,12 @@ impl Drop for FindIter<'_, '_> {
     }
 }
 
+impl fmt::Debug for FindIter<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FindIter").finish_non_exhaustive()
+    }
+}
+
 /// Iterator over matches that applies [`SearchOptions`] to each search.
 ///
 /// Created by [`Regex::find_iter_with`]. A search that reaches a limit is
@@ -1853,6 +1903,12 @@ impl Drop for TryFindIter<'_, '_> {
     }
 }
 
+impl fmt::Debug for TryFindIter<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TryFindIter").finish_non_exhaustive()
+    }
+}
+
 // === CaptureMatches ===
 
 /// Iterator over the capture groups of all non-overlapping matches in a text.
@@ -1920,6 +1976,12 @@ impl<'r, 't> Iterator for CaptureMatches<'r, 't> {
 impl Drop for CaptureMatches<'_, '_> {
     fn drop(&mut self) {
         cache_region(std::mem::take(&mut self.region));
+    }
+}
+
+impl fmt::Debug for CaptureMatches<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CaptureMatches").finish_non_exhaustive()
     }
 }
 
@@ -2007,6 +2069,12 @@ impl Drop for TryCaptureMatches<'_, '_> {
     }
 }
 
+impl fmt::Debug for TryCaptureMatches<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TryCaptureMatches").finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2031,6 +2099,72 @@ mod tests {
         assert_send_sync::<Regex>();
         assert_send_sync::<crate::regset::OnigRegSet>();
         assert_send_sync::<crate::scanner::Scanner>();
+    }
+
+    #[test]
+    fn public_types_implement_debug() {
+        use crate::scanner::{OnigString, Scanner, ScannerConfig, ScannerPatternCache};
+
+        let re = Regex::new(r"(a)(?<n>b)").unwrap();
+        let text = "ab ab";
+        let captures = re.captures(text).unwrap();
+        let config = ScannerConfig::default();
+        let mut cache = ScannerPatternCache::new();
+        let _top =
+            Scanner::with_pattern_cache(&[r"\bfn\b", r#""[^"]*""#], &config, &mut cache).unwrap();
+        let _call =
+            Scanner::with_pattern_cache(&[r"\)", r#""[^"]*""#], &config, &mut cache).unwrap();
+        let scanner = Scanner::new(&[r"\d+", "[a-z]+"]).unwrap();
+        let custom_syntax: &'static OnigSyntaxType =
+            Box::leak(Box::new(crate::regsyntax::OnigSyntaxRuby.clone()));
+
+        let shown: [(String, &str); 15] = [
+            (
+                format!("{:?}", Regex::builder("a+").syntax_mode(Syntax::Ruby)),
+                "pattern: \"a+\", options:",
+            ),
+            (
+                format!("{:?}", Regex::builder("a+").syntax(custom_syntax)),
+                "syntax: None",
+            ),
+            (format!("{:?}", captures.iter()), "CapturesIter { .. }"),
+            (format!("{:?}", re.capture_names()), "CaptureNames { .. }"),
+            (format!("{:?}", re.find_iter(text)), "FindIter { .. }"),
+            (
+                format!("{:?}", re.find_iter_with(text, SearchOptions::new())),
+                "TryFindIter { .. }",
+            ),
+            (
+                format!("{:?}", re.captures_iter(text)),
+                "CaptureMatches { .. }",
+            ),
+            (
+                format!("{:?}", re.captures_iter_with(text, SearchOptions::new())),
+                "TryCaptureMatches { .. }",
+            ),
+            (format!("{:?}", re.split(text)), "Split { .. }"),
+            (format!("{:?}", re.splitn(text, 2)), "SplitN { .. }"),
+            (
+                format!("{:?}", re.split_bytes(text.as_bytes())),
+                "SplitBytes { .. }",
+            ),
+            (
+                format!("{:?}", re.splitn_bytes(text.as_bytes(), 2)),
+                "SplitNBytes { .. }",
+            ),
+            (format!("{scanner:?}"), "Scanner { patterns: 2,"),
+            (format!("{cache:?}"), "ScannerPatternCache { len: 3, .. }"),
+            (
+                format!("{:?}", OnigString::new("a💻b")),
+                "OnigString { content: \"a💻b\", .. }",
+            ),
+        ];
+        for (shown, expected) in &shown {
+            assert!(
+                shown.contains(*expected),
+                "{shown} does not contain {expected}"
+            );
+        }
     }
 
     #[test]

@@ -282,36 +282,56 @@
 pub mod api;
 pub mod backtrack_lint;
 pub mod backtrack_rewrite;
+// C port: Debug waits for #287.
+#[allow(missing_debug_implementations)]
 pub mod encodings;
 pub mod error;
 mod first_bytes;
 mod leading_run;
 // Hidden: a Rust-only optimization (ADR-008) that no code outside the crate uses.
+// It is not user-facing, so the Debug lint does not apply.
 #[doc(hidden)]
+#[allow(missing_debug_implementations)]
 pub mod literal_trie;
+// C port: Debug waits for #287.
+#[allow(missing_debug_implementations)]
 pub mod oniguruma;
 pub mod prelude;
 pub mod regcomp;
 pub mod regenc;
 pub mod regerror;
+// C port: Debug waits for #287.
+#[allow(missing_debug_implementations)]
 pub mod regexec;
+// C port: Debug waits for #287.
+#[allow(missing_debug_implementations)]
 pub mod regint;
+// C port: Debug waits for #287.
+#[allow(missing_debug_implementations)]
 pub mod regparse;
+// C port: Debug waits for #287.
+#[allow(missing_debug_implementations)]
 pub mod regparse_types;
+// C port: Debug waits for #287.
+#[allow(missing_debug_implementations)]
 pub mod regset;
 pub mod regsyntax;
 pub mod regtrav;
 pub mod replace;
 mod required_literals;
 pub mod scanner;
+// C port: Debug waits for #287.
+#[allow(missing_debug_implementations)]
 pub mod unicode;
 
 // The prelude types are also at the crate root: `use ferroni::Regex;`.
 pub use prelude::*;
 
 // Hidden: FFI bindings to C Oniguruma, used only by the benchmark harness.
+// They are not user-facing, so the Debug lint does not apply.
 #[cfg(feature = "ffi")]
 #[doc(hidden)]
+#[allow(missing_debug_implementations)]
 pub mod ffi;
 
 // Doc tests for the README and the guide pages, run by `cargo test --doc`.

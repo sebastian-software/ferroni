@@ -6,6 +6,7 @@
 // after a non-empty one, so every method here agrees with those iterators.
 
 use std::borrow::Cow;
+use std::fmt;
 use std::ops::Range;
 
 use crate::api::{Captures, FindIter, Match, Regex};
@@ -810,6 +811,12 @@ impl<'h> Iterator for Split<'_, 'h> {
 
 impl std::iter::FusedIterator for Split<'_, '_> {}
 
+impl fmt::Debug for Split<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Split").finish_non_exhaustive()
+    }
+}
+
 /// Iterator over at most a given number of pieces of a `&str`, from
 /// [`Regex::splitn`].
 pub struct SplitN<'r, 'h> {
@@ -838,6 +845,12 @@ impl<'h> Iterator for SplitN<'_, 'h> {
 
 impl std::iter::FusedIterator for SplitN<'_, '_> {}
 
+impl fmt::Debug for SplitN<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SplitN").finish_non_exhaustive()
+    }
+}
+
 /// Iterator over the pieces of a byte slice between matches, from
 /// [`Regex::split_bytes`].
 pub struct SplitBytes<'r, 'h> {
@@ -855,6 +868,12 @@ impl<'h> Iterator for SplitBytes<'_, 'h> {
 }
 
 impl std::iter::FusedIterator for SplitBytes<'_, '_> {}
+
+impl fmt::Debug for SplitBytes<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SplitBytes").finish_non_exhaustive()
+    }
+}
 
 /// Iterator over at most a given number of pieces of a byte slice, from
 /// [`Regex::splitn_bytes`].
@@ -883,3 +902,9 @@ impl<'h> Iterator for SplitNBytes<'_, 'h> {
 }
 
 impl std::iter::FusedIterator for SplitNBytes<'_, '_> {}
+
+impl fmt::Debug for SplitNBytes<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SplitNBytes").finish_non_exhaustive()
+    }
+}

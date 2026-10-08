@@ -28,6 +28,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 unsafe_op_in_unsafe_fn = "deny"
 # The C port keeps items that upstream Oniguruma declares but does not use.
 dead_code = "allow"
+# Public types implement Debug; the C port is exempt until #287 decides it.
+missing_debug_implementations = "warn"
 
 [lints.clippy]
 undocumented_unsafe_blocks = "warn"
