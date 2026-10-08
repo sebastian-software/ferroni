@@ -427,13 +427,20 @@ pub struct OnigString {
     is_ascii: bool,
     utf16_len: usize,
     /// Maps UTF-16 code unit index → UTF-8 byte offset. Length = utf16_len + 1.
-    utf16_to_utf8: Vec<usize>,
+    /// Entries are `u32`; see [`OnigString::new`] for the length limit.
+    utf16_to_utf8: Vec<u32>,
     /// Maps UTF-8 byte offset → UTF-16 code unit index. Length = utf8_len + 1.
-    utf8_to_utf16: Vec<usize>,
+    utf8_to_utf16: Vec<u32>,
 }
 
 impl OnigString {
     /// Create a new `OnigString` from a Rust string, building offset tables.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `content` is not ASCII and is longer than `u32::MAX` bytes
+    /// (4 GiB). The offset tables store `u32` entries, and such lines are not
+    /// supported.
     pub fn new(content: &str) -> Self {
         let cache_id = NEXT_ONIG_STRING_ID.fetch_add(1, Ordering::Relaxed);
         if content.is_ascii() {
@@ -448,11 +455,17 @@ impl OnigString {
             };
         }
 
+        // Every value stored below is at most the UTF-8 length, so this one
+        // check covers both tables. It runs before any allocation.
+        assert!(
+            u32::try_from(content.len()).is_ok(),
+            "OnigString: non-ASCII text longer than u32::MAX bytes is not supported"
+        );
         let utf8_len = content.len();
         let utf16_len: usize = content.chars().map(|c| c.len_utf16()).sum();
 
-        let mut utf16_to_utf8 = Vec::with_capacity(utf16_len + 1);
-        let mut utf8_to_utf16 = vec![0usize; utf8_len + 1];
+        let mut utf16_to_utf8: Vec<u32> = Vec::with_capacity(utf16_len + 1);
+        let mut utf8_to_utf16 = vec![0u32; utf8_len + 1];
 
         let mut utf8_pos = 0;
         for ch in content.chars() {
@@ -460,9 +473,9 @@ impl OnigString {
             let u16_len = ch.len_utf16();
 
             // First UTF-16 code unit maps to the start of the UTF-8 sequence
-            utf16_to_utf8.push(utf8_pos);
+            utf16_to_utf8.push(utf8_pos as u32);
 
-            let utf16_pos = utf16_to_utf8.len() - 1;
+            let utf16_pos = (utf16_to_utf8.len() - 1) as u32;
             // All UTF-8 bytes of this char map to the same UTF-16 position
             for b in 0..u8_len {
                 utf8_to_utf16[utf8_pos + b] = utf16_pos;
@@ -470,15 +483,15 @@ impl OnigString {
 
             if u16_len == 2 {
                 // Surrogate pair: low surrogate maps to byte AFTER this char
-                utf16_to_utf8.push(utf8_pos + u8_len);
+                utf16_to_utf8.push((utf8_pos + u8_len) as u32);
             }
 
             utf8_pos += u8_len;
         }
 
         // Sentinels for end-of-string positions
-        utf16_to_utf8.push(utf8_pos);
-        utf8_to_utf16[utf8_pos] = utf16_len;
+        utf16_to_utf8.push(utf8_pos as u32);
+        utf8_to_utf16[utf8_pos] = utf16_len as u32;
 
         OnigString {
             cache_id,
@@ -512,7 +525,7 @@ impl OnigString {
         } else if utf16_offset >= self.utf16_to_utf8.len() {
             self.content.len()
         } else {
-            self.utf16_to_utf8[utf16_offset]
+            self.utf16_to_utf8[utf16_offset] as usize
         }
     }
 
@@ -523,7 +536,7 @@ impl OnigString {
         } else if utf8_offset >= self.utf8_to_utf16.len() {
             self.utf16_len
         } else {
-            self.utf8_to_utf16[utf8_offset]
+            self.utf8_to_utf16[utf8_offset] as usize
         }
     }
 }
@@ -886,6 +899,11 @@ impl Scanner {
     /// One-off searches (without a stable string ID) use the RegSet path.
     /// Use `find_next_match_with_id` to enable per-regex cache reuse when
     /// repeatedly advancing through the same string.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack)
+    /// before reaching a match is reported as `None`. Unlike
+    /// [`Regex::find_with`](crate::api::Regex::find_with), a scanner has no
+    /// variant that reports the limit as an error.
     pub fn find_next_match(
         &mut self,
         text: &str,
@@ -899,6 +917,11 @@ impl Scanner {
     ///
     /// When searching the same string repeatedly (advancing `start_position`),
     /// pass the same `str_id` to enable cache hits that skip redundant searches.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack)
+    /// before reaching a match is reported as `None`. Unlike
+    /// [`Regex::find_with`](crate::api::Regex::find_with), a scanner has no
+    /// variant that reports the limit as an error.
     pub fn find_next_match_with_id(
         &mut self,
         text: &str,
@@ -920,6 +943,11 @@ impl Scanner {
     ///
     /// `start_position` is in UTF-16 code units. The returned `CaptureIndex` values
     /// (start, end, length) are also in UTF-16 code units.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack)
+    /// before reaching a match is reported as `None`. Unlike
+    /// [`Regex::find_with`](crate::api::Regex::find_with), a scanner has no
+    /// variant that reports the limit as an error.
     ///
     /// # Example
     ///
@@ -963,6 +991,11 @@ impl Scanner {
     }
 
     /// Find the next match using UTF-16 positions with a string ID for caching.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack)
+    /// before reaching a match is reported as `None`. Unlike
+    /// [`Regex::find_with`](crate::api::Regex::find_with), a scanner has no
+    /// variant that reports the limit as an error.
     pub fn find_next_match_utf16_with_id(
         &mut self,
         string: &OnigString,

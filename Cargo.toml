@@ -8,12 +8,11 @@ authors = ["Sebastian Software GmbH"]
 repository = "https://github.com/sebastian-software/ferroni"
 homepage = "https://ferroni.dev/"
 documentation = "https://docs.rs/ferroni"
-readme = "README.md"
 keywords = ["regex", "oniguruma", "textmate", "syntax-highlighting", "ferramenta"]
 categories = ["text-processing", "parsing", "text-editors"]
 rust-version = "1.94"
 autobenches = false
-exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
+exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "examples/backtrack_rewrite_census.rs", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
 
 [package.metadata.docs.rs]
 # The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot
