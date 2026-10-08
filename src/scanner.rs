@@ -151,7 +151,21 @@ pub type ScannerSyntax = Syntax;
 ///
 /// The default options enable unnamed captures when a pattern also contains
 /// named groups, matching vscode-oniguruma's default `CaptureGroup` option.
+///
+/// Build a configuration from [`ScannerConfig::default`] and the chainable
+/// [`options`](Self::options) and [`syntax`](Self::syntax) setters. The struct
+/// is `#[non_exhaustive]`, so a struct literal cannot be written outside this
+/// crate, and new settings can be added without a breaking change.
+///
+/// ```
+/// use ferroni::api::Syntax;
+/// use ferroni::scanner::ScannerConfig;
+///
+/// let config = ScannerConfig::default().syntax(Syntax::Ruby);
+/// assert_eq!(config.syntax, Syntax::Ruby);
+/// ```
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ScannerConfig {
     /// Compile-time options applied to all patterns. Defaults to
     /// [`ONIG_OPTION_CAPTURE_GROUP`].
@@ -715,10 +729,9 @@ impl Scanner {
     /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerSyntax, ScannerFindOptions};
     /// use ferroni::oniguruma::OnigOptionType;
     ///
-    /// let config = ScannerConfig {
-    ///     options: OnigOptionType::IGNORECASE,
-    ///     syntax: ScannerSyntax::Oniguruma,
-    /// };
+    /// let config = ScannerConfig::default()
+    ///     .options(OnigOptionType::IGNORECASE)
+    ///     .syntax(ScannerSyntax::Oniguruma);
     /// let mut scanner = Scanner::with_config(&["hello"], &config).unwrap();
     /// let m = scanner.find_next_match("HELLO", 0, ScannerFindOptions::NONE);
     /// assert!(m.is_some());
@@ -730,7 +743,6 @@ impl Scanner {
 
     /// Create a scanner with the conservative, experimental AST rewrites
     /// described by [`crate::api::RegexBuilder::optimize_backtracking`].
-    /// Existing `ScannerConfig` struct literals remain source-compatible.
     /// Successful captures and pattern priority are preserved; retry, stack,
     /// and timeout outcomes may differ. See [`Scanner::backtracking_rewrites`].
     pub fn with_backtracking_optimization(

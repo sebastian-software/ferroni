@@ -2402,10 +2402,7 @@ fn syntax_default_and_scanner_alias() {
     assert_eq!(scanner_default, Syntax::Oniguruma);
     assert_eq!(Syntax::default(), Syntax::Oniguruma);
 
-    let config = ferroni::scanner::ScannerConfig {
-        syntax: Syntax::Asis,
-        ..Default::default()
-    };
+    let config = ferroni::scanner::ScannerConfig::default().syntax(Syntax::Asis);
     let mut scanner = ferroni::scanner::Scanner::with_config(&["a.b"], &config).unwrap();
     assert!(
         scanner

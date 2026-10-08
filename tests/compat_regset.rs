@@ -10,9 +10,7 @@ use ferroni::regset::{
     OnigRegSet, OnigRegSetLead, onig_regset_get_region, onig_regset_new, onig_regset_search,
 };
 use ferroni::regsyntax::OnigSyntaxOniguruma;
-use ferroni::scanner::{
-    OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch, ScannerSyntax,
-};
+use ferroni::scanner::{OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch};
 
 fn compile(pattern: &[u8]) -> Box<RegexType> {
     let reg = onig_new(
@@ -635,10 +633,7 @@ fn capture_spans(matched: &ScannerMatch) -> Vec<(usize, usize)> {
 }
 
 fn config_without_capture_group() -> ScannerConfig {
-    ScannerConfig {
-        options: ONIG_OPTION_NONE,
-        syntax: ScannerSyntax::default(),
-    }
+    ScannerConfig::default().options(ONIG_OPTION_NONE)
 }
 
 #[test]

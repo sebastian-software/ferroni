@@ -351,15 +351,16 @@ assert_eq!(tokens, ["two", "words"]);
 
 `Scanner::with_config` takes a `ScannerConfig` with the compile-time options
 and the syntax variant, mirroring vscode-oniguruma's `IOnigScannerConfig`.
+Start from `ScannerConfig::default()` and chain the `options` and `syntax`
+setters.
 
 ```rust
 use ferroni::prelude::*;
 use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
 
-let config = ScannerConfig {
-    options: ONIG_OPTION_IGNORECASE,
-    syntax: ScannerSyntax::Ruby,
-};
+let config = ScannerConfig::default()
+    .options(ONIG_OPTION_IGNORECASE)
+    .syntax(ScannerSyntax::Ruby);
 let mut scanner = Scanner::with_config(&[r"hello"], &config).unwrap();
 
 assert!(scanner
