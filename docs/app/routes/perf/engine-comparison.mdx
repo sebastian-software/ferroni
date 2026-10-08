@@ -6,8 +6,9 @@ title: "Engine Comparison"
 # Engine Comparison
 
 Ferroni next to seven other engines on two cloud hosts: C Oniguruma, Ruby's
-Onigmo, PCRE2 with and without JIT, fancy-regex, Rust's `regex` crate and, for
-highlighting, Shiki's JavaScript engine. The focus is everyday regular
+Onigmo, PCRE2 with and without JIT, fancy-regex in three configurations (its
+default, seek mode and RegexSet), Rust's `regex` crate and, for highlighting,
+Shiki's JavaScript engine. The focus is everyday regular
 expressions on realistic text; highlighting counts only grammars every engine
 can run. The run comes from the manually dispatched
 [Blacksmith comparison](https://github.com/sebastian-software/ferroni/actions/workflows/blacksmith-comparison.yml)
@@ -27,6 +28,10 @@ Each cell holds the **Apple Silicon** value on top and the **x86-64** value
 below it. The Ferroni column is the Criterion mean. Every other column is that
 engine's time divided by Ferroni's, the same convention as "C / Ferroni" on the
 other pages: **above 1.00, Ferroni is faster**; below 1.00, the other engine is.
+
+The fancy-regex (seek) and fancy-regex (RegexSet) columns are not in the tables
+yet. The next Blacksmith run adds them; until it publishes, the tables below
+are the run named under [Measurement context](#measurement-context).
 
 These are point estimates from one run with 30 samples over 3 seconds per case
 and engine. Differences within about 10% are not a ranking. The raw estimates,
@@ -123,10 +128,16 @@ document, recorded from Shiki's Oniguruma (WASM) engine with
 [`benches/shiki_js/capture.mjs`](https://github.com/sebastian-software/ferroni/blob/main/benches/shiki_js/capture.mjs).
 Each document is the TIOBE "Orders" program repeated 16 times, about 14 to 18 KB.
 Ferroni and C use Oniguruma's RegSet scanner (C through the scanner wrapper of
-vscode-oniguruma). Onigmo, PCRE2 and fancy-regex have no RegSet and search
-pattern by pattern, which is what vscode-oniguruma itself does on lines of
-1,000 bytes or more. Shiki JS is `@shikijs/engine-javascript` 4.5.0 with its
-defaults, timed in Node over 1 ms batches rather than with Criterion.
+vscode-oniguruma). Onigmo and PCRE2 have no RegSet and search pattern by
+pattern, which is what vscode-oniguruma itself does on lines of 1,000 bytes or
+more. fancy-regex has a `RegexSet`, which the replays run as its own
+configuration: one set per scanner, built once, returning the earliest match
+and, among the patterns that start there, the lowest pattern index with its
+captures. The other two fancy-regex configurations search pattern by pattern:
+the default, and seek mode, which enables fancy-regex's seek pre-filter for
+backtracking patterns (off by default). Shiki JS is
+`@shikijs/engine-javascript` 4.5.0 with its defaults, timed in Node over 1 ms
+batches rather than with Criterion.
 
 These engines were not built for highlighting, which puts many patterns in one
 search. The replays show what that costs when an application uses them for it.

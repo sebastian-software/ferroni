@@ -1,6 +1,7 @@
 //! Further regex engines for the comparison benchmarks: PCRE2 (JIT and
-//! interpreter), fancy-regex in its Oniguruma mode and, with the `onigmo`
-//! feature, Ruby's Onigmo.
+//! interpreter), fancy-regex in its Oniguruma mode with and without seek mode,
+//! fancy-regex's RegexSet over a whole scanner (scanner replays only, see
+//! `engine_replay.rs`) and, with the `onigmo` feature, Ruby's Onigmo.
 //!
 //! Texts are `&str`, so every engine may skip UTF-8 validation of the
 //! subject, as an application with known-valid text would; Ferroni and C
@@ -18,16 +19,37 @@ pub type Captures = Vec<(i32, i32)>;
 pub enum Engine {
     Pcre2Jit,
     Pcre2,
+    /// fancy-regex with its defaults.
     Fancy,
+    /// fancy-regex with seek mode: the seek pre-filter for backtracking
+    /// patterns, which is off by default.
+    FancySeek,
+    /// fancy-regex's `RegexSet` over all patterns of one scanner. It has no
+    /// single-pattern form, so only the scanner replays run it.
+    FancySet,
     #[cfg(feature = "onigmo")]
     Onigmo,
 }
 
 impl Engine {
+    /// Every engine a scanner replay runs.
     pub const ALL: &[Engine] = &[
         Engine::Pcre2Jit,
         Engine::Pcre2,
         Engine::Fancy,
+        Engine::FancySeek,
+        Engine::FancySet,
+        #[cfg(feature = "onigmo")]
+        Engine::Onigmo,
+    ];
+
+    /// The engines that search one pattern at a time, which is what every
+    /// per-pattern benchmark runs.
+    pub const PER_PATTERN: &[Engine] = &[
+        Engine::Pcre2Jit,
+        Engine::Pcre2,
+        Engine::Fancy,
+        Engine::FancySeek,
         #[cfg(feature = "onigmo")]
         Engine::Onigmo,
     ];
@@ -38,6 +60,8 @@ impl Engine {
             Engine::Pcre2Jit => "pcre2_jit",
             Engine::Pcre2 => "pcre2",
             Engine::Fancy => "fancy_regex",
+            Engine::FancySeek => "fancy_regex_seek",
+            Engine::FancySet => "fancy_regex_set",
             #[cfg(feature = "onigmo")]
             Engine::Onigmo => "onigmo",
         }
@@ -57,14 +81,18 @@ impl Engine {
                 pcre2::Regex::new(pattern, ignore_case, self == Engine::Pcre2Jit)
                     .map(Compiled::Pcre2)
             }
-            Engine::Fancy => fancy_regex::RegexBuilder::new(pattern)
+            Engine::Fancy | Engine::FancySeek => fancy_regex::RegexBuilder::new(pattern)
                 .oniguruma_mode(true)
                 .multi_line(true)
                 .case_insensitive(ignore_case)
                 .ignore_numbered_groups_when_named_groups_exist(!capture_group)
+                .seek(self == Engine::FancySeek)
                 .build()
                 .map(Compiled::Fancy)
                 .map_err(|error| error.to_string()),
+            Engine::FancySet => {
+                Err("a RegexSet searches a whole scanner, not one pattern".to_owned())
+            }
             #[cfg(feature = "onigmo")]
             Engine::Onigmo => onigmo::Regex::new(pattern.as_bytes(), ignore_case, capture_group)
                 .map(Compiled::Onigmo),
@@ -147,7 +175,7 @@ pub fn validated(
     ignore_case: bool,
     check: impl Fn(&Compiled) -> Result<(), String>,
 ) -> Vec<(Engine, Compiled)> {
-    Engine::ALL
+    Engine::PER_PATTERN
         .iter()
         .filter_map(|&engine| {
             let outcome = engine

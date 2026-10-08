@@ -2,6 +2,10 @@
 //! call searches every pattern of its scanner from the start position and
 //! keeps the earliest match, stopping at one that starts right there: the
 //! loop vscode-oniguruma runs for lines of 1000 bytes or more.
+//!
+//! `Engine::FancySet` instead builds one fancy-regex `RegexSet` per scanner,
+//! once, and asks it for the earliest match of each call, as a highlighter
+//! with RegexSet support would.
 
 use crate::engines::{Compiled, Engine};
 use crate::scanner_replay::{Call, Corpus};
@@ -12,10 +16,18 @@ pub struct EngineReplay {
     /// reported as unset or the other way round. vscode-textmate skips
     /// zero-length captures, so both highlight alike.
     pub empty_capture_differences: usize,
-    scanners: Vec<Vec<Compiled>>,
+    scanners: Vec<Searcher>,
     subjects: Vec<String>,
     /// (scanner, subject, byte start)
     calls: Vec<(usize, usize, usize)>,
+}
+
+/// One scanner's patterns as the engine searches them.
+enum Searcher {
+    /// Searched one pattern at a time, keeping the earliest match.
+    Patterns(Vec<Compiled>),
+    /// One RegexSet over all patterns, shared by every call of the scanner.
+    Set(fancy_regex::RegexSet),
 }
 
 impl EngineReplay {
@@ -23,22 +35,15 @@ impl EngineReplay {
     /// captured Shiki result; the error names the first pattern or call that
     /// differs.
     pub fn new(engine: Engine, corpus: &Corpus, calls: &[&Call]) -> Result<Self, String> {
-        let mut scanners: Vec<Vec<Compiled>> = Vec::new();
+        let mut scanners: Vec<Searcher> = Vec::new();
         for (id, patterns) in corpus.patterns.iter().enumerate() {
             let used = calls.iter().any(|call| call.scanner == id);
-            let compiled = if used {
-                patterns
-                    .iter()
-                    .map(|pattern| {
-                        engine
-                            .compile(pattern, false, true)
-                            .map_err(|error| format!("scanner {id}, pattern {pattern:?}: {error}"))
-                    })
-                    .collect::<Result<_, _>>()?
+            let searcher = if used {
+                compile_scanner(engine, id, patterns)?
             } else {
-                Vec::new()
+                Searcher::Patterns(Vec::new())
             };
-            scanners.push(compiled);
+            scanners.push(searcher);
         }
         let mut replay = Self {
             empty_capture_differences: 0,
@@ -90,19 +95,46 @@ impl EngineReplay {
         text: &str,
         start: usize,
     ) -> Result<Option<(usize, crate::engines::Captures)>, String> {
-        let mut best: Option<(usize, crate::engines::Captures)> = None;
-        for (index, regex) in self.scanners[scanner].iter().enumerate() {
-            if let Some(captures) = regex.captures(text, start)? {
-                let at = captures[0].0;
-                if best.as_ref().is_none_or(|(_, prior)| at < prior[0].0) {
-                    best = Some((index, captures));
+        match &self.scanners[scanner] {
+            Searcher::Patterns(regexes) => {
+                let mut best: Option<(usize, crate::engines::Captures)> = None;
+                for (index, regex) in regexes.iter().enumerate() {
+                    if let Some(captures) = regex.captures(text, start)? {
+                        let at = captures[0].0;
+                        if best.as_ref().is_none_or(|(_, prior)| at < prior[0].0) {
+                            best = Some((index, captures));
+                        }
+                        if at == start as i32 {
+                            break;
+                        }
+                    }
                 }
-                if at == start as i32 {
-                    break;
-                }
+                Ok(best)
+            }
+            Searcher::Set(set) => {
+                let input = fancy_regex::RegexInput::new(text).from_pos(start);
+                let Some(mut matches) = set.find_input(input).map_err(|error| error.to_string())?
+                else {
+                    return Ok(None);
+                };
+                // The matches at the earliest position come in ascending pattern
+                // order, so the first one is the earliest match, with the lowest
+                // pattern index among those that start there.
+                let Some(first) = matches.next() else {
+                    return Ok(None);
+                };
+                let first = first.map_err(|error| error.to_string())?;
+                let captures = first.captures();
+                let spans = (0..captures.len())
+                    .map(|group| {
+                        captures
+                            .get(group)
+                            .map_or((-1, -1), |m| (m.start() as i32, m.end() as i32))
+                    })
+                    .collect();
+                Ok(Some((first.pattern(), spans)))
             }
         }
-        Ok(best)
     }
 
     pub fn replay(&self) {
@@ -114,6 +146,44 @@ impl EngineReplay {
             );
         }
     }
+}
+
+/// Compiles one scanner's patterns for `engine`. The RegexSet takes the
+/// fancy-regex engine's options (Oniguruma mode, multi-line anchors) and no
+/// seek pre-filter: a RegexSet verifies its members anchored at candidate
+/// positions, where seek does nothing, and its earliest-match search always
+/// uses the seek approximations of the patterns.
+fn compile_scanner(engine: Engine, id: usize, patterns: &[String]) -> Result<Searcher, String> {
+    if engine != Engine::FancySet {
+        return patterns
+            .iter()
+            .map(|pattern| {
+                engine
+                    .compile(pattern, false, true)
+                    .map_err(|error| format!("scanner {id}, pattern {pattern:?}: {error}"))
+            })
+            .collect::<Result<_, _>>()
+            .map(Searcher::Patterns);
+    }
+    let mut options = fancy_regex::RegexOptionsBuilder::new();
+    options
+        .oniguruma_mode(true)
+        .multi_line(true)
+        .ignore_numbered_groups_when_named_groups_exist(false);
+    fancy_regex::RegexSet::new_with_options(patterns, &options)
+        .map(Searcher::Set)
+        .map_err(|error| {
+            // Name the pattern that the per-pattern engine rejects, if one does.
+            patterns
+                .iter()
+                .find_map(|pattern| {
+                    Engine::Fancy
+                        .compile(pattern, false, true)
+                        .err()
+                        .map(|reason| format!("scanner {id}, pattern {pattern:?}: {reason}"))
+                })
+                .unwrap_or_else(|| format!("scanner {id}: {error}"))
+        })
 }
 
 fn byte_offset(text: &str, start_utf16: usize) -> usize {
