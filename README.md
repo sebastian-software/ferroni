@@ -86,7 +86,7 @@ let line = r#"const x = "hello" // greeting"#;
 let m = scanner.find_next_match(line, 0, ScannerFindOptions::NONE).unwrap();
 
 assert_eq!(m.index, 0); // the keyword pattern matched first
-assert_eq!(m.capture_indices[0].end, 5);
+assert_eq!(m.captures()[0].end, 5);
 ```
 
 The guide continues with

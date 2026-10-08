@@ -154,7 +154,7 @@ fn assert_same_scanner_trace(scanner: &mut Scanner, c_scanner: &ffi::CScanner, t
             .map(|m| {
                 (
                     m.index,
-                    m.capture_indices
+                    m.captures()
                         .iter()
                         .map(|c| (c.start, c.end))
                         .collect::<Vec<_>>(),
@@ -321,7 +321,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
                         ScannerFindOptions::NONE,
                     ) {
                         Some(m) => {
-                            let end = m.capture_indices[0].end;
+                            let end = m.captures()[0].end;
                             pos = if end > pos { end } else { pos + 1 };
                             count += 1;
                         }
@@ -391,7 +391,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
                         ScannerFindOptions::NONE,
                     ) {
                         Some(m) => {
-                            let end = m.capture_indices[0].end;
+                            let end = m.captures()[0].end;
                             pos = if end > pos { end } else { pos + 1 };
                             count += 1;
                         }
@@ -488,7 +488,7 @@ fn bench_scanner_highlighting(c: &mut Criterion) {
                         ScannerFindOptions::NONE,
                     ) {
                         Some(m) => {
-                            let end = m.capture_indices[0].end;
+                            let end = m.captures()[0].end;
                             pos = if end > pos { end } else { pos + 1 };
                             count += 1;
                         }
@@ -531,7 +531,7 @@ fn tokenize_line_rust(scanner: &mut Scanner, line: &OnigString, line_len: usize)
     while pos < line_len {
         match scanner.find_next_match_utf16(black_box(line), pos, ScannerFindOptions::NONE) {
             Some(m) => {
-                let end = m.capture_indices[0].end;
+                let end = m.captures()[0].end;
                 pos = if end > pos { end } else { pos + 1 };
                 count += 1;
             }

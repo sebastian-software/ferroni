@@ -130,7 +130,7 @@ fn scan(
         let mut start = 0;
         while let Some(found) = scanner.find_next_match_utf16(line, start, ScannerFindOptions::NONE)
         {
-            let end = found.capture_indices[0].end;
+            let end = found.captures()[0].end;
             visit(found);
             start = if end > start { end } else { start + 1 };
             if start > line.utf16_len() {

@@ -130,7 +130,7 @@ fn scan(scanner: &mut Scanner, lines: &[OnigString]) -> Vec<ferroni::scanner::Sc
         let mut start = 0;
         while let Some(found) = scanner.find_next_match_utf16(line, start, ScannerFindOptions::NONE)
         {
-            let end = found.capture_indices[0].end;
+            let end = found.captures()[0].end;
             matches.push(found);
             start = if end > start { end } else { start + 1 };
             if start > line.utf16_len() {
@@ -171,19 +171,11 @@ fn scanner_and_compile(c: &mut Criterion) {
             assert_eq!(
                 actual
                     .iter()
-                    .map(|m| (
-                        m.index,
-                        m.capture_indices[0].start,
-                        m.capture_indices[0].end
-                    ))
+                    .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
                     .collect::<Vec<_>>(),
                 expected
                     .iter()
-                    .map(|m| (
-                        m.index,
-                        m.capture_indices[0].start,
-                        m.capture_indices[0].end
-                    ))
+                    .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
                     .collect::<Vec<_>>()
             );
         } else {

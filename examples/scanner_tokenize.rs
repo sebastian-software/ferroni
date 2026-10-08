@@ -28,7 +28,7 @@ fn main() -> Result<(), RegexError> {
     // token, then continue from the end of that match.
     let mut position = 0;
     while let Some(m) = scanner.find_next_match(line, position, ScannerFindOptions::NONE) {
-        let whole = &m.capture_indices[0];
+        let whole = &m.captures()[0];
         println!(
             "{:>10}  {:>3}..{:<3} {}",
             SCOPES[m.index],
@@ -54,7 +54,8 @@ fn main() -> Result<(), RegexError> {
         .expect("`world` is in the text");
     println!(
         "\nUTF-16 offsets: {}..{} (the emoji counts as two units)",
-        m.capture_indices[0].start, m.capture_indices[0].end,
+        m.captures()[0].start,
+        m.captures()[0].end,
     );
 
     Ok(())

@@ -40,19 +40,20 @@ pub struct CaptureIndex {
 }
 
 /// Result of a scanner match.
+///
+/// Read the capture groups with [`captures`](Self::captures).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScannerMatch {
     /// Index of the pattern that matched (0-based).
     pub index: usize,
-    /// Capture group information. Index 0 is the full match.
-    pub capture_indices: SmallVec<[CaptureIndex; 8]>,
+    /// Capture group information. Index 0 is the full match. Read it with
+    /// [`captures`](Self::captures).
+    capture_indices: SmallVec<[CaptureIndex; 8]>,
 }
 
 impl ScannerMatch {
     /// The capture groups of the match as a slice. Index 0 is the full match.
-    ///
-    /// It returns the same groups as [`capture_indices`](Self::capture_indices),
-    /// but its signature does not expose the `SmallVec` type.
     ///
     /// ```
     /// use ferroni::scanner::{Scanner, ScannerFindOptions};
@@ -282,7 +283,7 @@ impl ScannerConfig {
 /// assert_eq!(cache.len(), 3);
 ///
 /// let m = in_call.find_next_match(r#"("a")"#, 0, ScannerFindOptions::NONE).unwrap();
-/// assert_eq!((m.index, m.capture_indices[0].start), (1, 1));
+/// assert_eq!((m.index, m.captures()[0].start), (1, 1));
 /// let m = top_level.find_next_match("fn f", 0, ScannerFindOptions::NONE).unwrap();
 /// assert_eq!(m.index, 0);
 /// ```
@@ -664,8 +665,8 @@ const SCANNER_STATS_ENABLED: bool = cfg!(any(test, debug_assertions));
 /// let mut scanner = Scanner::new(&["\\d+", "[a-z]+"]).unwrap();
 /// let m = scanner.find_next_match("hello42", 0, ScannerFindOptions::NONE).unwrap();
 /// assert_eq!(m.index, 1); // "[a-z]+" matched first
-/// assert_eq!(m.capture_indices[0].start, 0);
-/// assert_eq!(m.capture_indices[0].end, 5);
+/// assert_eq!(m.captures()[0].start, 0);
+/// assert_eq!(m.captures()[0].end, 5);
 /// ```
 pub struct Scanner {
     caches: Vec<CacheEntry>,
@@ -924,8 +925,8 @@ impl Scanner {
     /// let s = OnigString::new("a💻bYX");
     /// // 💻 is 2 UTF-16 code units, so Y is at UTF-16 position 4
     /// let m = scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE).unwrap();
-    /// assert_eq!(m.capture_indices[0].start, 4);
-    /// assert_eq!(m.capture_indices[0].end, 5);
+    /// assert_eq!(m.captures()[0].start, 4);
+    /// assert_eq!(m.captures()[0].end, 5);
     /// ```
     pub fn find_next_match_utf16(
         &mut self,
