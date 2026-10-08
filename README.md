@@ -243,7 +243,7 @@ against the [architecture decisions](https://ferroni.dev/adr/001-one-to-one-pari
 starting with structural parity with C Oniguruma. The `help wanted` label marks
 the issues that are waiting for a contributor.
 
-The one open adoption path is offering Ferroni as a regex backend for
+One integration is still open: Ferroni as a regex backend for
 [syntect](https://github.com/trishume/syntect)
 ([#252](https://github.com/sebastian-software/ferroni/issues/252)).
 
