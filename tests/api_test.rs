@@ -2166,7 +2166,7 @@ fn scanner_g_anchor_pattern() {
     assert!(result.is_some());
     let m = result.unwrap();
     assert_eq!(m.index, 0); // \G\w+ matches at start
-    assert_eq!(m.capture_indices[0].start, 0);
+    assert_eq!(m.captures()[0].start, 0);
 }
 
 // =========================================================================
@@ -2469,10 +2469,7 @@ fn syntax_default_and_scanner_alias() {
     assert_eq!(scanner_default, Syntax::Oniguruma);
     assert_eq!(Syntax::default(), Syntax::Oniguruma);
 
-    let config = ferroni::scanner::ScannerConfig {
-        syntax: Syntax::Asis,
-        ..Default::default()
-    };
+    let config = ferroni::scanner::ScannerConfig::default().syntax(Syntax::Asis);
     let mut scanner = ferroni::scanner::Scanner::with_config(&["a.b"], &config).unwrap();
     assert!(
         scanner
@@ -2482,6 +2479,29 @@ fn syntax_default_and_scanner_alias() {
     assert!(
         scanner
             .find_next_match("a.b", 0, ScannerFindOptions::NONE)
+            .is_some()
+    );
+}
+
+#[test]
+fn scanner_config_setters_replace_one_field_each() {
+    use ferroni::oniguruma::ONIG_OPTION_NONE;
+    use ferroni::scanner::ScannerConfig;
+
+    let config = ScannerConfig::default()
+        .syntax(Syntax::Asis)
+        .options(ONIG_OPTION_NONE);
+    assert_eq!(config.syntax, Syntax::Asis);
+    assert_eq!(config.options, ONIG_OPTION_NONE);
+
+    let config = ScannerConfig::default().options(ONIG_OPTION_NONE);
+    assert_eq!(config.syntax, Syntax::Oniguruma);
+    assert_eq!(config.options, ONIG_OPTION_NONE);
+
+    let mut scanner = ferroni::scanner::Scanner::with_config(&["a.b"], &config).unwrap();
+    assert!(
+        scanner
+            .find_next_match("axb", 0, ScannerFindOptions::NONE)
             .is_some()
     );
 }
@@ -2636,7 +2656,8 @@ fn scanner_match_captures_is_the_capture_slice() {
     let m = scanner
         .find_next_match("x42", 0, ScannerFindOptions::NONE)
         .unwrap();
-    assert_eq!(m.captures(), &m.capture_indices[..]);
+    let spans: Vec<_> = m.captures().iter().map(|c| (c.start, c.end)).collect();
+    assert_eq!(spans, [(1, 3), (1, 2), (2, 3)]);
     assert_eq!(m.captures().len(), 3);
 }
 
@@ -2955,13 +2976,7 @@ fn scanner_reports_the_keep_adjusted_match() {
         Scanner::new(patterns)
             .unwrap()
             .find_next_match(text, position, ScannerFindOptions::NONE)
-            .map(|m| {
-                (
-                    m.index,
-                    m.capture_indices[0].start,
-                    m.capture_indices[0].end,
-                )
-            })
+            .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
     };
 
     assert_eq!(spans(&[r"a\Kb"], "xxabxx", 0), Some((0, 3, 4)));
@@ -2982,10 +2997,7 @@ fn scanner_reports_the_keep_adjusted_match() {
         let m = scanner
             .find_next_match_with_id("xxabxx", 1, 0, ScannerFindOptions::NONE)
             .unwrap();
-        assert_eq!(
-            (m.capture_indices[0].start, m.capture_indices[0].end),
-            (3, 4)
-        );
+        assert_eq!((m.captures()[0].start, m.captures()[0].end), (3, 4));
     }
 }
 
@@ -3009,7 +3021,7 @@ fn scanner_keep_match_stays_on_character_boundaries() {
             assert_eq!(position, text.len());
             continue;
         };
-        let whole = &m.capture_indices[0];
+        let whole = &m.captures()[0];
         assert_eq!(
             (whole.start, whole.end),
             (4, 7),

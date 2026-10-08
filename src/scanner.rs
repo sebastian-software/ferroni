@@ -29,7 +29,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_ONIG_STRING_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Result of a capture group match.
+///
+/// The struct is `#[non_exhaustive]`: outside this crate it cannot be built
+/// with a struct literal, and a destructuring pattern must end with `..`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CaptureIndex {
     /// Byte offset of the start of the capture.
     pub start: usize,
@@ -40,19 +44,20 @@ pub struct CaptureIndex {
 }
 
 /// Result of a scanner match.
+///
+/// Read the capture groups with [`captures`](Self::captures).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScannerMatch {
     /// Index of the pattern that matched (0-based).
     pub index: usize,
-    /// Capture group information. Index 0 is the full match.
-    pub capture_indices: SmallVec<[CaptureIndex; 8]>,
+    /// Capture group information. Index 0 is the full match. Read it with
+    /// [`captures`](Self::captures).
+    capture_indices: SmallVec<[CaptureIndex; 8]>,
 }
 
 impl ScannerMatch {
     /// The capture groups of the match as a slice. Index 0 is the full match.
-    ///
-    /// It returns the same groups as [`capture_indices`](Self::capture_indices),
-    /// but its signature does not expose the `SmallVec` type.
     ///
     /// ```
     /// use ferroni::scanner::{Scanner, ScannerFindOptions};
@@ -151,7 +156,21 @@ pub type ScannerSyntax = Syntax;
 ///
 /// The default options enable unnamed captures when a pattern also contains
 /// named groups, matching vscode-oniguruma's default `CaptureGroup` option.
+///
+/// Build a configuration from [`ScannerConfig::default`] and the chainable
+/// [`options`](Self::options) and [`syntax`](Self::syntax) setters. The struct
+/// is `#[non_exhaustive]`, so a struct literal cannot be written outside this
+/// crate, and new settings can be added without a breaking change.
+///
+/// ```
+/// use ferroni::api::Syntax;
+/// use ferroni::scanner::ScannerConfig;
+///
+/// let config = ScannerConfig::default().syntax(Syntax::Ruby);
+/// assert_eq!(config.syntax, Syntax::Ruby);
+/// ```
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ScannerConfig {
     /// Compile-time options applied to all patterns. Defaults to
     /// [`ONIG_OPTION_CAPTURE_GROUP`].
@@ -166,6 +185,39 @@ impl Default for ScannerConfig {
             options: ONIG_OPTION_CAPTURE_GROUP,
             syntax: ScannerSyntax::default(),
         }
+    }
+}
+
+impl ScannerConfig {
+    /// Replace the compile-time options applied to all patterns. The default
+    /// is [`ONIG_OPTION_CAPTURE_GROUP`].
+    ///
+    /// ```
+    /// use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
+    /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
+    ///
+    /// let config = ScannerConfig::default().options(ONIG_OPTION_IGNORECASE);
+    /// let mut scanner = Scanner::with_config(&["hello"], &config).unwrap();
+    /// assert!(scanner.find_next_match("HELLO", 0, ScannerFindOptions::NONE).is_some());
+    /// ```
+    pub const fn options(mut self, options: OnigOptionType) -> Self {
+        self.options = options;
+        self
+    }
+
+    /// Replace the regex syntax used for all patterns. The default is
+    /// [`ScannerSyntax::Oniguruma`].
+    ///
+    /// ```
+    /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions, ScannerSyntax};
+    ///
+    /// let config = ScannerConfig::default().syntax(ScannerSyntax::Ruby);
+    /// let mut scanner = Scanner::with_config(&[r"\w+"], &config).unwrap();
+    /// assert!(scanner.find_next_match("ok", 0, ScannerFindOptions::NONE).is_some());
+    /// ```
+    pub const fn syntax(mut self, syntax: ScannerSyntax) -> Self {
+        self.syntax = syntax;
+        self
     }
 }
 
@@ -236,7 +288,7 @@ impl Default for ScannerConfig {
 /// assert_eq!(cache.len(), 3);
 ///
 /// let m = in_call.find_next_match(r#"("a")"#, 0, ScannerFindOptions::NONE).unwrap();
-/// assert_eq!((m.index, m.capture_indices[0].start), (1, 1));
+/// assert_eq!((m.index, m.captures()[0].start), (1, 1));
 /// let m = top_level.find_next_match("fn f", 0, ScannerFindOptions::NONE).unwrap();
 /// assert_eq!(m.index, 0);
 /// ```
@@ -618,8 +670,8 @@ const SCANNER_STATS_ENABLED: bool = cfg!(any(test, debug_assertions));
 /// let mut scanner = Scanner::new(&["\\d+", "[a-z]+"]).unwrap();
 /// let m = scanner.find_next_match("hello42", 0, ScannerFindOptions::NONE).unwrap();
 /// assert_eq!(m.index, 1); // "[a-z]+" matched first
-/// assert_eq!(m.capture_indices[0].start, 0);
-/// assert_eq!(m.capture_indices[0].end, 5);
+/// assert_eq!(m.captures()[0].start, 0);
+/// assert_eq!(m.captures()[0].end, 5);
 /// ```
 pub struct Scanner {
     caches: Vec<CacheEntry>,
@@ -683,10 +735,9 @@ impl Scanner {
     /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerSyntax, ScannerFindOptions};
     /// use ferroni::oniguruma::OnigOptionType;
     ///
-    /// let config = ScannerConfig {
-    ///     options: OnigOptionType::IGNORECASE,
-    ///     syntax: ScannerSyntax::Oniguruma,
-    /// };
+    /// let config = ScannerConfig::default()
+    ///     .options(OnigOptionType::IGNORECASE)
+    ///     .syntax(ScannerSyntax::Oniguruma);
     /// let mut scanner = Scanner::with_config(&["hello"], &config).unwrap();
     /// let m = scanner.find_next_match("HELLO", 0, ScannerFindOptions::NONE);
     /// assert!(m.is_some());
@@ -698,7 +749,6 @@ impl Scanner {
 
     /// Create a scanner with the conservative, experimental AST rewrites
     /// described by [`crate::api::RegexBuilder::optimize_backtracking`].
-    /// Existing `ScannerConfig` struct literals remain source-compatible.
     /// Successful captures and pattern priority are preserved; retry, stack,
     /// and timeout outcomes may differ. See [`Scanner::backtracking_rewrites`].
     pub fn with_backtracking_optimization(
@@ -880,8 +930,8 @@ impl Scanner {
     /// let s = OnigString::new("a💻bYX");
     /// // 💻 is 2 UTF-16 code units, so Y is at UTF-16 position 4
     /// let m = scanner.find_next_match_utf16(&s, 0, ScannerFindOptions::NONE).unwrap();
-    /// assert_eq!(m.capture_indices[0].start, 4);
-    /// assert_eq!(m.capture_indices[0].end, 5);
+    /// assert_eq!(m.captures()[0].start, 4);
+    /// assert_eq!(m.captures()[0].end, 5);
     /// ```
     pub fn find_next_match_utf16(
         &mut self,

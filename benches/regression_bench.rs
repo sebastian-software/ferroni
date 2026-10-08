@@ -589,7 +589,7 @@ fn bench_regression_scanner(c: &mut Criterion) {
                         ScannerFindOptions::NONE,
                     ) {
                         Some(m) => {
-                            let end = m.capture_indices[0].end;
+                            let end = m.captures()[0].end;
                             pos = if end > pos { end } else { pos + 1 };
                             count += 1;
                         }
@@ -704,7 +704,7 @@ fn bench_regression_scanner_textmate(c: &mut Criterion) {
                         ScannerFindOptions::NONE,
                     ) {
                         Some(m) => {
-                            let end = m.capture_indices[0].end;
+                            let end = m.captures()[0].end;
                             // Advance at least 1 position to avoid infinite loops
                             pos = if end > pos { end } else { pos + 1 };
                             count += 1;
@@ -785,7 +785,7 @@ fn bench_regression_scanner_documents(c: &mut Criterion) {
                             ScannerFindOptions::NONE,
                         ) {
                             Some(m) => {
-                                let end = m.capture_indices[0].end;
+                                let end = m.captures()[0].end;
                                 pos = if end > pos { end } else { pos + 1 };
                                 count += 1;
                             }

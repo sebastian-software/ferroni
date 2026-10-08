@@ -117,7 +117,7 @@
 //! let mut scanner = Scanner::new(&[r"\bfn\b", r#""[^"]*""#, r"//.*$"]).unwrap();
 //! let m = scanner.find_next_match(r#"fn f() "x""#, 0, ScannerFindOptions::NONE).unwrap();
 //! assert_eq!(m.index, 0);
-//! assert_eq!((m.capture_indices[0].start, m.capture_indices[0].end), (0, 2));
+//! assert_eq!((m.captures()[0].start, m.captures()[0].end), (0, 2));
 //! ```
 //!
 //! The earliest match wins. When two patterns match at the same position, the
@@ -128,7 +128,7 @@
 //!
 //! let mut scanner = Scanner::new(&["ab", "a"]).unwrap();
 //! let m = scanner.find_next_match("xab", 0, ScannerFindOptions::NONE).unwrap();
-//! assert_eq!((m.index, m.capture_indices[0].start), (0, 1));
+//! assert_eq!((m.index, m.captures()[0].start), (0, 1));
 //! ```
 //!
 //! A [`ScannerMatch`] carries the winning pattern's index and the byte spans of

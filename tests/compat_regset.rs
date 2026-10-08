@@ -10,9 +10,7 @@ use ferroni::regset::{
     OnigRegSet, OnigRegSetLead, onig_regset_get_region, onig_regset_new, onig_regset_search,
 };
 use ferroni::regsyntax::OnigSyntaxOniguruma;
-use ferroni::scanner::{
-    OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch, ScannerSyntax,
-};
+use ferroni::scanner::{OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch};
 
 fn compile(pattern: &[u8]) -> Box<RegexType> {
     let reg = onig_new(
@@ -288,15 +286,15 @@ fn scanner_cache_id_small_input_progression() {
         .find_next_match_with_id(input, 1, 0, ScannerFindOptions::NONE)
         .expect("first match");
     assert_eq!(m1.index, 0);
-    assert_eq!(m1.capture_indices[0].start, 1);
-    assert_eq!(m1.capture_indices[0].end, 2);
+    assert_eq!(m1.captures()[0].start, 1);
+    assert_eq!(m1.captures()[0].end, 2);
 
     let m2 = scanner
         .find_next_match_with_id(input, 1, 2, ScannerFindOptions::NONE)
         .expect("second match");
     assert_eq!(m2.index, 1);
-    assert_eq!(m2.capture_indices[0].start, 3);
-    assert_eq!(m2.capture_indices[0].end, 4);
+    assert_eq!(m2.captures()[0].start, 3);
+    assert_eq!(m2.captures()[0].end, 4);
 }
 
 #[test]
@@ -317,8 +315,8 @@ fn scanner_optional_prefix_exact_matches_from_the_match_start() {
         .expect("match");
 
     assert_eq!(m.index, 0);
-    assert_eq!(m.capture_indices[0].start, 1);
-    assert_eq!(m.capture_indices[0].end, 4);
+    assert_eq!(m.captures()[0].start, 1);
+    assert_eq!(m.captures()[0].end, 4);
 }
 
 #[test]
@@ -330,8 +328,8 @@ fn scanner_optional_prefix_map_matches_from_the_match_start() {
         .expect("match");
 
     assert_eq!(m.index, 0);
-    assert_eq!(m.capture_indices[0].start, 1);
-    assert_eq!(m.capture_indices[0].end, 3);
+    assert_eq!(m.captures()[0].start, 1);
+    assert_eq!(m.captures()[0].end, 3);
 }
 
 #[test]
@@ -343,8 +341,8 @@ fn scanner_unbounded_prefix_matches_from_the_match_start() {
         .expect("match");
 
     assert_eq!(matched.index, 0);
-    assert_eq!(matched.capture_indices[0].start, 0);
-    assert_eq!(matched.capture_indices[0].end, 4);
+    assert_eq!(matched.captures()[0].start, 0);
+    assert_eq!(matched.captures()[0].end, 4);
 }
 
 #[test]
@@ -357,8 +355,8 @@ fn scanner_fallback_match_may_extend_past_a_later_table_winner() {
             .expect("match");
 
         assert_eq!(matched.index, expected_index);
-        assert_eq!(matched.capture_indices[0].start, 0);
-        assert_eq!(matched.capture_indices[0].end, 4);
+        assert_eq!(matched.captures()[0].start, 0);
+        assert_eq!(matched.captures()[0].end, 4);
     }
 }
 
@@ -456,8 +454,8 @@ fn scanner_negated_multibyte_optional_prefix_includes_ascii_starts() {
         .expect("match");
 
     assert_eq!(matched.index, 0);
-    assert_eq!(matched.capture_indices[0].start, 0);
-    assert_eq!(matched.capture_indices[0].end, 2);
+    assert_eq!(matched.captures()[0].start, 0);
+    assert_eq!(matched.captures()[0].end, 2);
 }
 
 #[test]
@@ -514,8 +512,8 @@ fn scanner_repeated_optional_prefix_match_agrees_across_routes() {
             .find_next_match_with_id(input, 55, 1, ScannerFindOptions::NONE)
             .expect("match");
         assert_eq!(matched.index, 0);
-        assert_eq!(matched.capture_indices[0].start, 1);
-        assert_eq!(matched.capture_indices[0].end, 4);
+        assert_eq!(matched.captures()[0].start, 1);
+        assert_eq!(matched.captures()[0].end, 4);
     }
 }
 
@@ -622,23 +620,20 @@ fn scanner_anychar_star_matches_at_a_mid_line_start_position() {
         .expect("match");
 
     assert_eq!(matched.index, 1);
-    assert_eq!(matched.capture_indices[0].start, 5);
-    assert_eq!(matched.capture_indices[0].end, 10);
+    assert_eq!(matched.captures()[0].start, 5);
+    assert_eq!(matched.captures()[0].end, 10);
 }
 
 fn capture_spans(matched: &ScannerMatch) -> Vec<(usize, usize)> {
     matched
-        .capture_indices
+        .captures()
         .iter()
         .map(|capture| (capture.start, capture.end))
         .collect()
 }
 
 fn config_without_capture_group() -> ScannerConfig {
-    ScannerConfig {
-        options: ONIG_OPTION_NONE,
-        syntax: ScannerSyntax::default(),
-    }
+    ScannerConfig::default().options(ONIG_OPTION_NONE)
 }
 
 #[test]
@@ -670,7 +665,7 @@ fn scanner_keeps_captures_of_the_go_grammar_function_call_pattern() {
         .expect("match");
 
     assert_eq!(matched.index, 0);
-    assert_eq!(matched.capture_indices.len(), 4);
+    assert_eq!(matched.captures().len(), 4);
     assert_eq!(capture_spans(&matched)[..2], [(5, 12), (5, 12)]);
 }
 
@@ -745,10 +740,7 @@ fn scanner_begin_line_does_not_match_at_end_after_trailing_newline() {
         .find_next_match("a\n", 2, ScannerFindOptions::NONE)
         .unwrap();
     assert_eq!(m.index, 1);
-    assert_eq!(
-        (m.capture_indices[0].start, m.capture_indices[0].end),
-        (2, 2)
-    );
+    assert_eq!((m.captures()[0].start, m.captures()[0].end), (2, 2));
 }
 
 // Regex-lead narrows only the range of match starts to the current winner; a

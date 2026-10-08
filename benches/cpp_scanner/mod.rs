@@ -31,7 +31,7 @@ pub fn normalized(matched: Option<ScannerMatch>) -> Match {
     matched.map(|m| {
         (
             m.index,
-            m.capture_indices.iter().map(|c| (c.start, c.end)).collect(),
+            m.captures().iter().map(|c| (c.start, c.end)).collect(),
         )
     })
 }

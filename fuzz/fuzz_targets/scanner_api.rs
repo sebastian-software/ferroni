@@ -68,7 +68,7 @@ fuzz_target!(|data: &[u8]| {
             found.index,
             patterns.len()
         );
-        let whole = &found.capture_indices[0];
+        let whole = &found.captures()[0];
         assert!(
             whole.start <= whole.end && whole.end <= text.len(),
             "match spans {}..{} of a {} byte text",

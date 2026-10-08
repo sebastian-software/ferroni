@@ -273,12 +273,12 @@ let m = scanner
     .unwrap();
 
 assert_eq!(m.index, 0); // pattern 0, the keyword, matched first
-assert_eq!(m.capture_indices[0].start, 0);
-assert_eq!(m.capture_indices[0].end, 5);
+assert_eq!(m.captures()[0].start, 0);
+assert_eq!(m.captures()[0].end, 5);
 ```
 
 `index` is the index of the pattern that matched; the leftmost match across
-all patterns wins. `capture_indices[0]` is the whole match, the rest are its
+all patterns wins. `captures()[0]` is the whole match, the rest are its
 capture groups, all in byte offsets. To tokenize a full line, keep calling
 `find_next_match` with `start_position` set to the end of the previous match.
 
@@ -310,8 +310,8 @@ let m = scanner
     .unwrap();
 
 // The emoji is two UTF-16 code units, so "world" starts at 9, not at byte 11.
-assert_eq!(m.capture_indices[0].start, 9);
-assert_eq!(m.capture_indices[0].end, 14);
+assert_eq!(m.captures()[0].start, 9);
+assert_eq!(m.captures()[0].end, 14);
 ```
 
 ### Scanning the same line repeatedly
@@ -332,7 +332,7 @@ let mut tokens = Vec::new();
 while let Some(m) =
     scanner.find_next_match_with_id(line, string_id, position, ScannerFindOptions::NONE)
 {
-    let whole = &m.capture_indices[0];
+    let whole = &m.captures()[0];
     tokens.push(&line[whole.start..whole.end]);
 
     // On a zero-width match, step to the next character boundary -- stepping
@@ -351,15 +351,16 @@ assert_eq!(tokens, ["two", "words"]);
 
 `Scanner::with_config` takes a `ScannerConfig` with the compile-time options
 and the syntax variant, mirroring vscode-oniguruma's `IOnigScannerConfig`.
+Start from `ScannerConfig::default()` and chain the `options` and `syntax`
+setters.
 
 ```rust
 use ferroni::prelude::*;
 use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
 
-let config = ScannerConfig {
-    options: ONIG_OPTION_IGNORECASE,
-    syntax: ScannerSyntax::Ruby,
-};
+let config = ScannerConfig::default()
+    .options(ONIG_OPTION_IGNORECASE)
+    .syntax(ScannerSyntax::Ruby);
 let mut scanner = Scanner::with_config(&[r"hello"], &config).unwrap();
 
 assert!(scanner
