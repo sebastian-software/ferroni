@@ -38,6 +38,21 @@ README quotes the total in its
 [compatibility guide](https://ferroni.dev/guide/compatibility#test-parity)
 carries the per-file parity table.
 
+### Code samples in the docs
+
+`cargo test --doc` also runs the Rust samples in the README and in the guide
+pages under `docs/app/routes/guide/`. They are included through hidden items at
+the end of [`src/lib.rs`](src/lib.rs). Every `rust` fence must compile and pass.
+A snippet that can only illustrate an API is marked `ignore`, with the reason in
+the sentence before it. Label every other fence with its language (`bash`,
+`toml`, `text`): an unlabeled fence is compiled as Rust. Edit the README in
+`README.md.src` and regenerate it, as described below.
+
+`docs/` is not part of the published crate, so `build.rs` sets the
+`ferroni_guide_docs` cfg only when the guide pages are present. A packaged copy
+therefore tests the README alone. A new guide page needs a hidden item in
+`src/lib.rs` behind that cfg, and the page added to the list in `build.rs`.
+
 ## Coverage
 
 CI measures line coverage on every pull request and fails the build below a

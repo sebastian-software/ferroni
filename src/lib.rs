@@ -101,3 +101,23 @@ pub mod unicode;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;
+
+// Doc tests for the README and the guide pages, run by `cargo test --doc`.
+// The items exist only under `doctest`, so they are never rendered or built
+// into a normal build. The guide pages live in `docs/`, which the published
+// crate excludes; build.rs sets `ferroni_guide_docs` only when they are present.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
+#[cfg(all(doctest, ferroni_guide_docs))]
+#[doc = include_str!("../docs/app/routes/guide/getting-started.mdx")]
+struct GettingStartedDoctests;
+
+#[cfg(all(doctest, ferroni_guide_docs))]
+#[doc = include_str!("../docs/app/routes/guide/untrusted-input.mdx")]
+struct UntrustedInputDoctests;
+
+#[cfg(all(doctest, ferroni_guide_docs))]
+#[doc = include_str!("../docs/app/routes/guide/compatibility.mdx")]
+struct CompatibilityDoctests;
