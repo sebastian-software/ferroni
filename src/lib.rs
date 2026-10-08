@@ -121,3 +121,7 @@ struct UntrustedInputDoctests;
 #[cfg(all(doctest, ferroni_guide_docs))]
 #[doc = include_str!("../docs/app/routes/guide/compatibility.mdx")]
 struct CompatibilityDoctests;
+
+#[cfg(all(doctest, ferroni_guide_docs))]
+#[doc = include_str!("../docs/app/routes/guide/coming-from-regex.mdx")]
+struct ComingFromRegexDoctests;
