@@ -15,7 +15,7 @@ first-match byte offsets, numbered captures, and selected named captures.
 
 The spike is archived here and is not built by cargo. To run the differential,
 copy `research_ecmascript_lookbehind.rs` into `examples/` (the Node helper
-stays in `docs/research/`) and use:
+stays in `docs/archive/research/`) and use:
 
 ```shell
 cargo run --example research_ecmascript_lookbehind

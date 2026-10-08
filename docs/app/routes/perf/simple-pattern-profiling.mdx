@@ -5,6 +5,11 @@ title: "Simple-Pattern Profiling (2026-09)"
 
 # Simple-Pattern Profiling
 
+> **An earlier evaluation.** Current numbers, with Onigmo, PCRE2, fancy-regex
+> and Shiki's JavaScript engine beside C Oniguruma on two reproducible cloud
+> hosts, are on the [engine comparison](/perf/engine-comparison). This page
+> keeps the profiles of September 2026 on an Apple M1 Ultra as dated evidence.
+
 I profiled common validation, extraction, and literal-search workloads after
 merging the ASCII-class, atomic-prefix, and Unicode-range optimizations.
 The baseline is main `405e2835915dceae1a7ba9a431af7d516bf5322f`.

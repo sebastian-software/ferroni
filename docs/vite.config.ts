@@ -15,6 +15,14 @@ export default defineConfig({
       siteUrl: "https://ferroni.dev",
 
       project: { version },
+      // The theme contract moved from the ADR list to docs/readme-theme.md,
+      // which is not part of the site. Old links land on that file on GitHub.
+      redirects: [
+        {
+          from: "/adr/readme-theme-composition",
+          to: "https://github.com/sebastian-software/ferroni/blob/main/docs/readme-theme.md",
+        },
+      ],
     }),
   ],
 });

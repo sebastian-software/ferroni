@@ -5,6 +5,12 @@ title: "Atomic ASCII Class Prefix Evaluation (2026-09)"
 
 # Atomic ASCII Class Prefix Evaluation
 
+> **An earlier evaluation.** Current numbers, with Onigmo, PCRE2, fancy-regex
+> and Shiki's JavaScript engine beside C Oniguruma on two reproducible cloud
+> hosts, are on the [engine comparison](/perf/engine-comparison). This page
+> keeps the measurements of September 2026 on an Apple M1 Ultra as dated
+> evidence.
+
 A search prefilter for a leading atomic ASCII class repetition reduces email
 redaction from **79.33 to 26.76 µs** per document in this local evaluation,
 a **66.3% reduction** (2.96× throughput). The expression and output builder

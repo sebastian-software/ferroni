@@ -15,6 +15,6 @@
     "jsx": "react-jsx",
     "types": ["vite/client", "ardo/virtual"]
   },
-  "include": ["app/**/*", "*.ts", "*.config.ts", "scripts/**/*.mjs", "research/**/*.js"],
+  "include": ["app/**/*", "*.ts", "*.config.ts", "scripts/**/*.mjs", "archive/research/**/*.js"],
   "exclude": ["node_modules", "build"]
 }

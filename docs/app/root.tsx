@@ -5,6 +5,8 @@ import {
   ArdoRootLayout,
   ArdoSearch,
   ArdoSidebar,
+  ArdoSidebarGroup,
+  ArdoSidebarLink,
   ArdoSidebarSection,
   ArdoThemeToggle,
 } from "ardo/ui";
@@ -84,6 +86,91 @@ const sections: DocsSection[] = [
     to: "/adr/001-one-to-one-parity-with-c-original",
   },
 ];
+
+/*
+ * Ardo's generated sidebar can only group pages by folder, and a folder becomes
+ * part of the URL. The Performance section therefore lists its pages here, in
+ * two groups: the current evidence first, then the dated evaluations. The
+ * build fails when a page is in neither list (see the check below).
+ */
+const performanceCurrent = [
+  { to: "/perf/engine-comparison", label: "Engine Comparison" },
+  { to: "/perf/memory-measurements", label: "Memory Measurement Method" },
+];
+
+const performanceHistory = [
+  { to: "/perf/benchmark-results", label: "Benchmark Results" },
+  { to: "/perf/css-optimization-log", label: "CSS Performance Optimization Log" },
+  {
+    to: "/perf/html-entity-trie-optimization",
+    label: "HTML Entity Trie Optimization — Status & Next Steps",
+  },
+  {
+    to: "/perf/performance-structure-analysis",
+    label: "Performance and Structure Analysis (2026-09)",
+  },
+  { to: "/perf/match-cache-evaluation", label: "Opt-in Match Cache Evaluation" },
+  { to: "/perf/pr-173-oniguruma-comparison", label: "PR 173: Full Oniguruma Comparison" },
+  { to: "/perf/ascii-class-runs", label: "ASCII Class Run Evaluation (2026-09)" },
+  { to: "/perf/short-match-overhead", label: "Short match overhead evaluation" },
+  { to: "/perf/atomic-class-prefix", label: "Atomic ASCII Class Prefix Evaluation (2026-09)" },
+  { to: "/perf/unicode-range-lookup", label: "Unicode Range Lookup Evaluation (2026-09)" },
+  {
+    to: "/perf/unicode-range-lookup-expanded",
+    label: "Expanded Unicode Lookup Evaluation (2026-09)",
+  },
+  {
+    to: "/perf/unicode-range-lookup-refinement",
+    label: "Unicode Interval Search Refinement (2026-09)",
+  },
+  { to: "/perf/simple-pattern-profiling", label: "Simple-Pattern Profiling (2026-09)" },
+  {
+    to: "/perf/execution-profiling",
+    label: "Execution Profiling of Simple and Complex Expressions (2026-09)",
+  },
+  { to: "/perf/leading-run-skips", label: "Leading-Run Skips (2026-09)" },
+  { to: "/perf/leading-check-jumps", label: "Leading-Check Jumps (2026-09)" },
+  {
+    to: "/perf/folded-alternations-and-grammar-compilation",
+    label: "Case-Insensitive Alternations and Grammar Compilation (2026-09)",
+  },
+  {
+    to: "/perf/iteration-and-fused-loops",
+    label: "Match Iteration, Lazy Loops and Look-Behind Anchors (2026-09)",
+  },
+];
+
+// Fail the build when a Performance page is in neither list, instead of
+// silently leaving it out of the sidebar. Only the glob's keys are used.
+const unlistedPerformancePages = Object.keys(import.meta.glob("./routes/perf/*.mdx"))
+  .map((file) => `/perf/${file.slice("./routes/perf/".length, -".mdx".length)}`)
+  .filter((to) => ![...performanceCurrent, ...performanceHistory].some((page) => page.to === to));
+if (unlistedPerformancePages.length > 0) {
+  throw new Error(
+    `Add these Performance pages to performanceCurrent or performanceHistory in docs/app/root.tsx: ${unlistedPerformancePages.join(", ")}`,
+  );
+}
+
+function PerformanceSidebar() {
+  return (
+    <>
+      <ArdoSidebarGroup title="Current" collapsible={false}>
+        {performanceCurrent.map((page) => (
+          <ArdoSidebarLink key={page.to} to={page.to}>
+            {page.label}
+          </ArdoSidebarLink>
+        ))}
+      </ArdoSidebarGroup>
+      <ArdoSidebarGroup title="Optimization history" collapsible={false}>
+        {performanceHistory.map((page) => (
+          <ArdoSidebarLink key={page.to} to={page.to}>
+            {page.label}
+          </ArdoSidebarLink>
+        ))}
+      </ArdoSidebarGroup>
+    </>
+  );
+}
 
 /** The section links, for the bar where there is room and for the menu where there is not. */
 function SectionLinks() {
@@ -179,7 +266,11 @@ export default function Root() {
                 label={section.sidebarLabel ?? section.label}
                 to={section.to}
               >
-                <ArdoGeneratedSidebar section={section.id} />
+                {section.id === "perf" ? (
+                  <PerformanceSidebar />
+                ) : (
+                  <ArdoGeneratedSidebar section={section.id} />
+                )}
               </ArdoSidebarSection>
             ))}
           </ArdoSidebar>

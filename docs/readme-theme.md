@@ -31,7 +31,23 @@ project is excluded. Project content stays between the two frames.
 Published subpackage READMEs retain their compact registry family blocks and
 existing regeneration command. The root README uses native theme composition.
 
-See the [living decision](app/routes/adr/readme-theme-composition.mdx).
+## Decision
+
+The project README is composed by native mdtheme from `README.md.src`. The outer
+frame is Sebastian Software; Ferramenta is the inner frame. Footers close in
+reverse order. The project content remains the main focus; shared branding is
+compact and maintained upstream. Standards repositories explicitly delegate
+README ownership to mdtheme, so standards cannot append a second company footer.
+Pin the CLI with mise and both Git theme revisions in `mdtheme.yaml`. CI checks
+the generated output, and source and output are committed together.
+
+## Consequences
+
+Contributors edit the source, then regenerate. No JavaScript configuration or
+Node installation is needed for the root README. Shared theme updates are
+reviewable Git diffs. Rendering requires network access to the Git sources.
+
+Update this page when the theme contract changes.
 
 ## Theme badge placement
 

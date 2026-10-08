@@ -5,6 +5,12 @@ title: "Leading-Check Jumps (2026-09)"
 
 # Leading-Check Jumps
 
+> **An earlier evaluation.** Current numbers, with Onigmo, PCRE2, fancy-regex
+> and Shiki's JavaScript engine beside C Oniguruma on two reproducible cloud
+> hosts, are on the [engine comparison](/perf/engine-comparison). This page
+> keeps the measurements of September 2026 on a shared 4-vCPU x86-64 VM as
+> dated evidence.
+
 A second profiling round covered typical tasks: validating short tokens,
 splitting, key/value captures, `(?i)` search, URLs, HTML tags, Markdown links,
 line-anchored patterns and function calls. In four common shapes the forward

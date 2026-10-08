@@ -5,6 +5,11 @@ title: "HTML Entity Trie Optimization — Status & Next Steps"
 
 # HTML Entity Trie Optimization — Status & Next Steps
 
+> **An earlier evaluation.** Current numbers, with Onigmo, PCRE2, fancy-regex
+> and Shiki's JavaScript engine beside C Oniguruma on two reproducible cloud
+> hosts, are on the [engine comparison](/perf/engine-comparison). This page
+> keeps the implementation notes of 2026-03-03 as dated evidence.
+
 ## Context
 
 HTML is the only language where Rust loses to JS in `codeToHtml` benchmarks.
