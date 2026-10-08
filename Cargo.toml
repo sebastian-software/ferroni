@@ -8,7 +8,6 @@ authors = ["Sebastian Software GmbH"]
 repository = "https://github.com/sebastian-software/ferroni"
 homepage = "https://ferroni.dev/"
 documentation = "https://docs.rs/ferroni"
-readme = "README.md"
 keywords = ["regex", "oniguruma", "textmate", "syntax-highlighting", "ferramenta"]
 categories = ["text-processing", "parsing", "text-editors"]
 rust-version = "1.94"
