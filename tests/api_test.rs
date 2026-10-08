@@ -2420,6 +2420,29 @@ fn syntax_default_and_scanner_alias() {
 }
 
 #[test]
+fn scanner_config_setters_replace_one_field_each() {
+    use ferroni::oniguruma::ONIG_OPTION_NONE;
+    use ferroni::scanner::ScannerConfig;
+
+    let config = ScannerConfig::default()
+        .syntax(Syntax::Asis)
+        .options(ONIG_OPTION_NONE);
+    assert_eq!(config.syntax, Syntax::Asis);
+    assert_eq!(config.options, ONIG_OPTION_NONE);
+
+    let config = ScannerConfig::default().options(ONIG_OPTION_NONE);
+    assert_eq!(config.syntax, Syntax::Oniguruma);
+    assert_eq!(config.options, ONIG_OPTION_NONE);
+
+    let mut scanner = ferroni::scanner::Scanner::with_config(&["a.b"], &config).unwrap();
+    assert!(
+        scanner
+            .find_next_match("axb", 0, ScannerFindOptions::NONE)
+            .is_some()
+    );
+}
+
+#[test]
 fn builder_capture_group_controls_unnamed_captures() {
     use ferroni::oniguruma::{ONIG_OPTION_CAPTURE_GROUP, ONIG_OPTION_DONT_CAPTURE_GROUP};
 

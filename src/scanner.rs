@@ -169,6 +169,39 @@ impl Default for ScannerConfig {
     }
 }
 
+impl ScannerConfig {
+    /// Replace the compile-time options applied to all patterns. The default
+    /// is [`ONIG_OPTION_CAPTURE_GROUP`].
+    ///
+    /// ```
+    /// use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
+    /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
+    ///
+    /// let config = ScannerConfig::default().options(ONIG_OPTION_IGNORECASE);
+    /// let mut scanner = Scanner::with_config(&["hello"], &config).unwrap();
+    /// assert!(scanner.find_next_match("HELLO", 0, ScannerFindOptions::NONE).is_some());
+    /// ```
+    pub const fn options(mut self, options: OnigOptionType) -> Self {
+        self.options = options;
+        self
+    }
+
+    /// Replace the regex syntax used for all patterns. The default is
+    /// [`ScannerSyntax::Oniguruma`].
+    ///
+    /// ```
+    /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions, ScannerSyntax};
+    ///
+    /// let config = ScannerConfig::default().syntax(ScannerSyntax::Ruby);
+    /// let mut scanner = Scanner::with_config(&[r"\w+"], &config).unwrap();
+    /// assert!(scanner.find_next_match("ok", 0, ScannerFindOptions::NONE).is_some());
+    /// ```
+    pub const fn syntax(mut self, syntax: ScannerSyntax) -> Self {
+        self.syntax = syntax;
+        self
+    }
+}
+
 /// Compiled patterns that scanners share, owned by the caller.
 ///
 /// A TextMate grammar creates one scanner per rule context, and the same
