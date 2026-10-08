@@ -3,7 +3,10 @@
 //! Ferroni is a line-by-line port of [Oniguruma](https://github.com/kkos/oniguruma),
 //! the backtracking engine behind TextMate grammars, jq and PHP's mbregex. It
 //! keeps Oniguruma's syntax and semantics for ASCII and UTF-8, and it needs no
-//! C toolchain and no bindings.
+//! C toolchain and no bindings. Ferroni is feature-complete for its scope and
+//! maintained, with no feature work planned; the
+//! [project status](https://github.com/sebastian-software/ferroni#project-status)
+//! says what is and is not covered.
 //!
 //! ## When to use Ferroni
 //!

@@ -278,7 +278,10 @@ export function ClosingSection() {
       <p className="fam-intro">
         Oniguruma&rsquo;s engine and the vscode-oniguruma scanner in one pure-Rust crate. The guide
         takes you from <code>cargo add ferroni</code> to your first match, a tokenizer loop, and
-        searches that are safe to run on untrusted input.
+        searches that are safe to run on untrusted input. Ferroni is feature-complete for its scope
+        and maintained, with no feature work planned; the{" "}
+        <a href="https://github.com/sebastian-software/ferroni#project-status">project status</a>{" "}
+        says what is and is not covered.
       </p>
     </ClosingAction>
   );
