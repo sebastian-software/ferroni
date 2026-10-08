@@ -796,6 +796,10 @@ impl Scanner {
     /// One-off searches (without a stable string ID) use the RegSet path.
     /// Use `find_next_match_with_id` to enable per-regex cache reuse when
     /// repeatedly advancing through the same string.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack)
+    /// before reaching a match is reported as `None`. A scanner has no `_with`
+    /// variant, so this is the only way such a limit shows up.
     pub fn find_next_match(
         &mut self,
         text: &str,
@@ -809,6 +813,10 @@ impl Scanner {
     ///
     /// When searching the same string repeatedly (advancing `start_position`),
     /// pass the same `str_id` to enable cache hits that skip redundant searches.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack)
+    /// before reaching a match is reported as `None`. A scanner has no `_with`
+    /// variant, so this is the only way such a limit shows up.
     pub fn find_next_match_with_id(
         &mut self,
         text: &str,
@@ -830,6 +838,10 @@ impl Scanner {
     ///
     /// `start_position` is in UTF-16 code units. The returned `CaptureIndex` values
     /// (start, end, length) are also in UTF-16 code units.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack)
+    /// before reaching a match is reported as `None`. A scanner has no `_with`
+    /// variant, so this is the only way such a limit shows up.
     ///
     /// # Example
     ///
@@ -873,6 +885,10 @@ impl Scanner {
     }
 
     /// Find the next match using UTF-16 positions with a string ID for caching.
+    ///
+    /// A search that stops at a process-wide limit (time, retry or stack)
+    /// before reaching a match is reported as `None`. A scanner has no `_with`
+    /// variant, so this is the only way such a limit shows up.
     pub fn find_next_match_utf16_with_id(
         &mut self,
         string: &OnigString,
