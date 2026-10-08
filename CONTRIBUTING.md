@@ -12,14 +12,29 @@ cd ferroni
 cargo build
 ```
 
-Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane.
+Ferroni's MSRV is frozen at Rust 1.94 while the crate is in maintenance mode.
+Ferroni no longer follows the family's rolling four-releases-below-stable floor
+(decision D4, set in
+[#104](https://github.com/sebastian-software/ferroni/pull/104)); the MSRV
+moves only when a fix or a dependency requires a newer compiler, and such a
+bump is called out in the release notes. A dedicated CI lane enforces 1.94.
+`rust-version` in `Cargo.toml` is the source; the README badge and the CI lane
+copy it.
 
 ## Running Tests
 
 Debug builds require an increased stack size. The required values are stated
 once in
-[ADR-013](https://ferroni.dev/adr/013-stack-overflow-debug-builds);
-the commands below use them.
+[ADR-013](https://ferroni.dev/adr/013-stack-overflow-debug-builds).
+[`.cargo/config.toml`](.cargo/config.toml) sets the ADR-013 value for every test
+binary Cargo runs, so a plain test run works:
+
+```bash
+cargo test
+```
+
+To run a single suite, or to set a different stack size, use the per-suite
+commands:
 
 ```bash
 # Full UTF-8 compat suite
@@ -36,12 +51,15 @@ Test counts are derived from the tree by `./scripts/count-tests.sh`; the
 README quotes the total in its
 [Correctness and safety](README.md#correctness-and-safety) section, and the
 [compatibility guide](https://ferroni.dev/guide/compatibility#test-parity)
-carries the per-file parity table.
+carries the per-file parity table. The README quotes that total rounded down to
+the hundred, and `scripts/check-readme-figures.sh` (run in CI) enforces it.
 
 The `unsafe` figures in the "Current State" section of
 [ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy) are derived the same
 way, by `./scripts/count-unsafe.sh`. Run it after changing `unsafe` code and
-update that section from its output.
+update that section from its output. The README quotes the site count exactly;
+`scripts/check-readme-figures.sh` (run in CI) enforces it for the README and
+that section.
 
 ### Code samples in the docs
 
@@ -96,6 +114,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked
 cargo deny --all-features --locked check
 ./scripts/check-workflow-pins.sh
 ./scripts/readme-family.sh check
+./scripts/check-readme-figures.sh
 ```
 
 `--all-features` includes `ffi`, so run
@@ -341,6 +360,17 @@ Please open an issue on GitHub with:
 - The regex pattern and input string that triggers the bug
 - Expected vs. actual behavior
 - If possible, the corresponding C Oniguruma behavior for comparison
+
+## Triage and Review
+
+Issues are welcome and are triaged as time allows. Pull requests are reviewed
+against the [architecture decisions](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original),
+so a change has to keep the structural parity with C Oniguruma that ADR-001
+describes. The `help wanted` label marks the issues that are waiting for a
+contributor. Report a suspected vulnerability privately, as
+[SECURITY.md](SECURITY.md) describes, and not in a public issue. The
+[project status](README.md#project-status) lists what the project maintains and
+what is not planned.
 
 ## License
 
