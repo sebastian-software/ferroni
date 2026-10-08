@@ -185,15 +185,15 @@ every task and the raw data:
 - **Test parity.** Every upstream test file for UTF-8 is ported case by case:
   2,974 C test cases and the vscode-oniguruma scanner tests, all passing
   ([parity table](https://ferroni.dev/guide/compatibility#test-parity)). With
-  Ferroni's own tests the tree holds **2,532 `#[test]` functions**, counted by
-  [`scripts/count-tests.sh`](scripts/count-tests.sh).
+  Ferroni's own tests the tree holds **at least 2,500 `#[test]` functions**,
+  counted by [`scripts/count-tests.sh`](scripts/count-tests.sh).
 - **Coverage gate.** CI measures line coverage on every pull request and fails
   below the threshold set in [`scripts/coverage.sh`](scripts/coverage.sh).
 - **Fuzzing.** Pattern compilation, matching and the scanner are fuzzed on
   every pull request, and for longer every week.
 - **Memory safety.** C Oniguruma has a history of memory-safety CVEs in its
   buffer and string handling. Ferroni keeps that code in safe Rust; the
-  remaining `unsafe`, ten sites, covers only the links between parse-tree
+  remaining `unsafe`, 10 sites, covers only the links between parse-tree
   nodes during compilation ([ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy)).
 - **Hostile patterns and input.** Per-search timeouts and retry limits stop
   runaway backtracking, and a compile-time check flags patterns such as
@@ -217,6 +217,35 @@ APIs (`regcomp`, `regexec`) are not ported either
 | [Performance](https://ferroni.dev/perf/engine-comparison) | Every benchmark, with hosts, versions and raw data |
 | [Architecture decisions](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original) | Why the port is built the way it is |
 | [API reference](https://docs.rs/ferroni) | Every type and function on docs.rs |
+
+## Project status
+
+Ferroni is feature-complete for its scope and maintained, with no feature work
+planned. The scope is Oniguruma's syntax for ASCII and UTF-8, and the
+vscode-oniguruma scanner.
+
+The project maintains:
+
+- bug fixes and parity fixes against C Oniguruma,
+- the annual Unicode update,
+- Rust toolchain and dependency upkeep,
+- security fixes for the latest release. [SECURITY.md](SECURITY.md) explains
+  how to report a vulnerability and what to expect.
+
+Not planned:
+
+- the other 27 of Oniguruma's 29 encodings ([ADR-003](https://ferroni.dev/adr/003-encoding-scope-ascii-and-utf8-only)),
+- the POSIX and GNU APIs ([ADR-012](https://ferroni.dev/adr/012-posix-and-gnu-api-not-ported)),
+- an opt-in Onigmo syntax ([#159](https://github.com/sebastian-software/ferroni/issues/159)).
+
+Issues are welcome and are triaged as time allows. Pull requests are reviewed
+against the [architecture decisions](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original),
+starting with structural parity with C Oniguruma. The `help wanted` label marks
+the issues that are waiting for a contributor.
+
+One integration is still open: Ferroni as a regex backend for
+[syntect](https://github.com/trishume/syntect)
+([#252](https://github.com/sebastian-software/ferroni/issues/252)).
 
 ## Contributing
 
