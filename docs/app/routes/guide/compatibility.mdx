@@ -42,17 +42,22 @@ These parts of the C library are not ported:
   EUC-TW, EUC-CN, Big5, GB18030, KOI8-R, CP1251, and ISO-8859-1 to -16.
 - **The POSIX and GNU APIs:** `regcomp`, `regexec` and `regfree`
   ([ADR-012](../adr/012-posix-and-gnu-api-not-ported)).
-- **13 of the 138 functions that `oniguruma.h` declares,** all of them C
-  memory and setup plumbing that Rust does not need. The other 125 are
-  public under their C names.
+- **20 of the 152 functions that `oniguruma.h` declares,** all of them C
+  memory, string and setup plumbing that Rust does not need. The other 132
+  are public under their C names.
   - `onig_new_deluxe`, `onig_new_without_alloc` and `onig_reg_init` allocate
     and initialize a `regex_t` in C; use `onig_new`.
   - `onig_free`, `onig_free_body`, `onig_region_free`, `onig_regset_free`,
     `onig_free_match_param` and `onig_free_match_param_content` free what
     Rust's `Drop` frees.
-  - `onig_initialize_encoding` and `onig_copy_encoding` set up encoding
-    structs; Ferroni's two encodings are the statics `ONIG_ENCODING_UTF8` and
-    `ONIG_ENCODING_ASCII`.
+  - `onig_initialize_encoding`, `onig_copy_encoding`, `onigenc_init`,
+    `onigenc_get_default_encoding`, `onigenc_set_default_encoding` and
+    `onigenc_set_default_caseconv_table` set up encoding structs and C's
+    process-wide encoding defaults; Ferroni's two encodings are the statics
+    `ONIG_ENCODING_UTF8` and `ONIG_ENCODING_ASCII`, passed to `onig_new`.
+  - `onigenc_strdup`, `onigenc_str_bytelen_null` and
+    `onigenc_get_right_adjust_char_head_with_prev` are helpers over C's
+    NUL-terminated buffers; Rust slices carry their length.
   - `onig_null_warn` is C's no-op warning callback; `onig_set_warn_func`
     takes any `fn(&str)`.
   - `onig_setup_builtin_monitors_by_ascii_encoded_name` registers monitor
