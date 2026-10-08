@@ -16,14 +16,17 @@ Linux machine with the pinned Oniguruma and Onigmo sources. Case sets:
 
 Engines: Ferroni, C Oniguruma (the vscode-oniguruma scanner for the replays),
 Ruby's Onigmo (`onigmo` feature), PCRE2 with and without JIT, fancy-regex in
-its Oniguruma mode, the `regex` crate where the syntax allows, and Shiki's
-JavaScript engine for the replays (benches/shiki_js, Node). An engine is timed
-only where it reproduced Oniguruma's (or the captured Shiki) results; the
-summary lists every case an engine could not run, with the reason. The
-binaries are ordinary release builds, as users run them.
+its Oniguruma mode with and without seek mode (fancy_regex_seek), fancy-regex's
+RegexSet over each scanner's patterns (fancy_regex_set, scanner replays only),
+the `regex` crate where the syntax allows, and Shiki's JavaScript engine for
+the replays (benches/shiki_js, Node). An engine is timed only where it
+reproduced Oniguruma's (or the captured Shiki) results; the summary lists every
+case an engine could not run, with the reason. The binaries are ordinary
+release builds, as users run them.
 
-  compare-engines.py run OUT [--cases shared oniguruma ...]
+  compare-engines.py run OUT [--cases shared oniguruma ...] [--engines ...]
       writes OUT/measurements.json, OUT/engine-notes.json, OUT/summary.md
+      --engines times only the named engines next to Ferroni, for local runs
   compare-engines.py report SUMMARY.md DIR...
       merges the measurements of several runs, one table set per host
   compare-engines.py figures RUN_DIR OUT.json
@@ -127,9 +130,11 @@ CASES = {
 BENCHES = {'cpp_scanner': 'cpp_scanner_bench', 'java_scanner': 'java_scanner_bench',
            'scss_scanner': 'scss_scanner_bench', 'c_scanner': 'shiki_scanner_bench',
            'php_scanner': 'shiki_scanner_bench'}
-ENGINES = ('rust', 'c', 'onigmo', 'pcre2_jit', 'pcre2', 'fancy_regex', 'regex', 'shiki_js')
+ENGINES = ('rust', 'c', 'onigmo', 'pcre2_jit', 'pcre2', 'fancy_regex', 'fancy_regex_seek', 'fancy_regex_set',
+           'regex', 'shiki_js')
 LABELS = {'rust': 'Ferroni', 'c': 'C', 'onigmo': 'Onigmo', 'pcre2_jit': 'PCRE2 JIT', 'pcre2': 'PCRE2',
-          'fancy_regex': 'fancy-regex', 'regex': 'regex', 'shiki_js': 'Shiki JS'}
+          'fancy_regex': 'fancy-regex', 'fancy_regex_seek': 'fancy-regex (seek)',
+          'fancy_regex_set': 'fancy-regex (RegexSet)', 'regex': 'regex', 'shiki_js': 'Shiki JS'}
 SHIKI_JS = ROOT / 'benches' / 'shiki_js'
 RUNNER_PROFILES = {
     'macos-arm64': ('Darwin', 'arm64'),
@@ -297,7 +302,12 @@ def render_summary(host, commit, results, notes):
              'Ferroni is the Criterion mean. Every other column is that engine\'s time divided by '
              'Ferroni\'s: above 1.00, Ferroni is faster. `n/a`: the engine cannot run the case '
              '(reasons below); `–`: no such variant. Shiki JS is timed in Node over 1 ms batches.', '']
-    engines = [engine for engine in ENGINES if engine != 'rust']
+    # Columns only for the engines that ran or were reported in these results,
+    # so a partial run (--engines) does not print empty columns.
+    case_names = [case for cases in results.values() for case in cases]
+    timed = {engine for cases in results.values() for result in cases.values() for engine in result['timing']}
+    engines = [engine for engine in ENGINES if engine != 'rust' and (
+        engine in timed or any(variant(case, engine) in notes['unsupported'] for case in case_names))]
     for case_set in CASES:
         cases = results.get(case_set)
         if not cases:
@@ -334,11 +344,13 @@ def render_summary(host, commit, results, notes):
 
 def run(args, parser):
     sets = list(CASES) if 'all' in args.cases else args.cases
+    # Ferroni always runs: every ratio is taken against it.
+    wanted_engines = {*args.engines, 'rust'}
     onigmo_dir = Path(os.environ.get('FERRONI_ONIGMO_DIR', ROOT / '.cache/upstream/onigmo-ruby'))
-    onigmo = not args.no_onigmo
+    onigmo = not args.no_onigmo and 'onigmo' in wanted_engines
     if onigmo and not (onigmo_dir / 'regexec.c').is_file():
         parser.error('Onigmo sources are missing: run scripts/prepare-onigmo-sources.sh or pass --no-onigmo')
-    use_shiki_js = not args.no_shiki_js
+    use_shiki_js = not args.no_shiki_js and 'shiki_js' in wanted_engines
     if use_shiki_js and not (SHIKI_JS / 'node_modules').is_dir():
         parser.error('Run `pnpm install --frozen-lockfile --dir benches/shiki_js` or pass --no-shiki-js')
 
@@ -365,15 +377,18 @@ def run(args, parser):
     missing = [case for cases in selected.values() for case in cases if case not in available]
     if missing:
         raise SystemExit(f'The benches no longer have: {", ".join(missing)}')
+    wanted = {variant(case, engine) for cases in selected.values() for case in cases for engine in wanted_engines}
+    available &= wanted
     # One validation pass of every selected case before any timing. Setup
-    # reports which engines could not reproduce a case.
+    # reports which engines could not reproduce a case; the benches report
+    # every engine they validate, so keep the notes of the engines that run.
     notes = {'unsupported': {}, 'equivalent': {}}
     for bench, binary in binaries.items():
         ids = [variant(case, engine) for cases in selected.values() for case in cases
                if bench_of(case) == bench for engine in ENGINES if variant(case, engine) in available]
         log = run_bench(binary, ['^(' + '|'.join(map(re.escape, ids)) + ')$', '--test'], out, f'validate-{bench}.log')
         for kind, found in engine_notes(log).items():
-            notes[kind].update(found)
+            notes[kind].update({bench_id: note for bench_id, note in found.items() if bench_id in wanted})
     if use_shiki_js:
         for case in [case for cases in selected.values() for case in cases if bench_of(case) != 'battle_bench']:
             check = shiki_js(case, 'validate')
@@ -663,6 +678,8 @@ def main():
     run_parser.add_argument('--warm-up-seconds', type=float, default=0.5)
     run_parser.add_argument('--runner-profile', choices=RUNNER_PROFILES)
     run_parser.add_argument('--only', type=re.compile, help='keep cases whose ID matches this regex')
+    run_parser.add_argument('--engines', nargs='+', choices=ENGINES, default=list(ENGINES),
+                            help='time only these engines next to Ferroni, which always runs (local runs)')
     run_parser.add_argument('--no-onigmo', action='store_true', help='build without the onigmo feature')
     run_parser.add_argument('--no-shiki-js', action='store_true', help='skip the Node replays of Shiki\'s JS engine')
     run_parser.add_argument('--target-dir', type=Path, default=ROOT / 'target' / 'compare-engines')
