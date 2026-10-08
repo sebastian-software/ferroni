@@ -8,7 +8,7 @@ use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::regenc::Encoding;
 
 /// Compact trie over the literal alternatives of one alternation.
-pub struct LiteralTrie {
+pub(crate) struct LiteralTrie {
     nodes: Vec<TrieNode>,
     case_insensitive: bool,
     raw_literals: Vec<Vec<u8>>,
@@ -187,7 +187,7 @@ impl LiteralTrie {
     /// Build a trie from a set of literal byte strings.
     /// If `case_insensitive`, all keys are lowercased during insertion
     /// and lookups will also lowercase input bytes.
-    pub fn build(literals: &[&[u8]], case_insensitive: bool) -> Self {
+    pub(crate) fn build(literals: &[&[u8]], case_insensitive: bool) -> Self {
         let mut trie = LiteralTrie {
             nodes: vec![TrieNode {
                 children: Vec::new(),
@@ -257,7 +257,7 @@ impl LiteralTrie {
     }
 
     /// Returns the raw literals that were used to build this trie.
-    pub fn literals(&self) -> &[Vec<u8>] {
+    pub(crate) fn literals(&self) -> &[Vec<u8>] {
         &self.raw_literals
     }
 
@@ -314,7 +314,7 @@ impl LiteralTrie {
     }
 
     /// Returns whether this trie was built with case-insensitive matching.
-    pub fn is_case_insensitive(&self) -> bool {
+    pub(crate) fn is_case_insensitive(&self) -> bool {
         self.case_insensitive
     }
 
@@ -330,7 +330,7 @@ impl LiteralTrie {
 
     /// Try to find the longest matching literal starting at `input[pos]`.
     /// Returns the match length if found, or `None`.
-    pub fn find_match(&self, input: &[u8], pos: usize, end: usize) -> Option<usize> {
+    pub(crate) fn find_match(&self, input: &[u8], pos: usize, end: usize) -> Option<usize> {
         let mut longest = None;
         self.for_each_match(input, pos, end, |_, len| longest = Some(len));
         longest
@@ -340,7 +340,12 @@ impl LiteralTrie {
     /// whether other literals match too. Ordered alternation tries that
     /// literal first; the others are its backtracking alternatives.
     #[inline]
-    pub fn first_match(&self, input: &[u8], pos: usize, end: usize) -> Option<(usize, bool)> {
+    pub(crate) fn first_match(
+        &self,
+        input: &[u8],
+        pos: usize,
+        end: usize,
+    ) -> Option<(usize, bool)> {
         let mut first: Option<(u32, usize)> = None;
         let mut others = false;
         self.for_each_match(input, pos, end, |literal, len| match first {
@@ -356,7 +361,12 @@ impl LiteralTrie {
     }
 
     /// Every match at `pos` as `(literal, length)`, in alternation order.
-    pub fn matches_in_order(&self, input: &[u8], pos: usize, end: usize) -> Vec<(u32, usize)> {
+    pub(crate) fn matches_in_order(
+        &self,
+        input: &[u8],
+        pos: usize,
+        end: usize,
+    ) -> Vec<(u32, usize)> {
         let mut matches = Vec::new();
         self.for_each_match(input, pos, end, |literal, len| matches.push((literal, len)));
         matches.sort_unstable();

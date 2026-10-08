@@ -12,7 +12,7 @@ use crate::regint::*;
 // === Node Type Enum ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub enum NodeType {
+pub(crate) enum NodeType {
     String = 0,
     CClass = 1,
     CType = 2,
@@ -27,26 +27,26 @@ pub enum NodeType {
 }
 
 #[inline]
-pub fn nd_type2bit(t: NodeType) -> u32 {
+pub(crate) fn nd_type2bit(t: NodeType) -> u32 {
     1 << (t as u32)
 }
 
-pub const ND_BIT_STRING: u32 = 1 << 0;
-pub const ND_BIT_CCLASS: u32 = 1 << 1;
-pub const ND_BIT_CTYPE: u32 = 1 << 2;
-pub const ND_BIT_BACKREF: u32 = 1 << 3;
-pub const ND_BIT_QUANT: u32 = 1 << 4;
-pub const ND_BIT_BAG: u32 = 1 << 5;
-pub const ND_BIT_ANCHOR: u32 = 1 << 6;
-pub const ND_BIT_LIST: u32 = 1 << 7;
-pub const ND_BIT_ALT: u32 = 1 << 8;
-pub const ND_BIT_CALL: u32 = 1 << 9;
-pub const ND_BIT_GIMMICK: u32 = 1 << 10;
+pub(crate) const ND_BIT_STRING: u32 = 1 << 0;
+pub(crate) const ND_BIT_CCLASS: u32 = 1 << 1;
+pub(crate) const ND_BIT_CTYPE: u32 = 1 << 2;
+pub(crate) const ND_BIT_BACKREF: u32 = 1 << 3;
+pub(crate) const ND_BIT_QUANT: u32 = 1 << 4;
+pub(crate) const ND_BIT_BAG: u32 = 1 << 5;
+pub(crate) const ND_BIT_ANCHOR: u32 = 1 << 6;
+pub(crate) const ND_BIT_LIST: u32 = 1 << 7;
+pub(crate) const ND_BIT_ALT: u32 = 1 << 8;
+pub(crate) const ND_BIT_CALL: u32 = 1 << 9;
+pub(crate) const ND_BIT_GIMMICK: u32 = 1 << 10;
 
 // === Bag Type ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum BagType {
+pub(crate) enum BagType {
     Memory = 0,
     Option = 1,
     StopBacktrack = 2,
@@ -56,7 +56,7 @@ pub enum BagType {
 // === Gimmick Type ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum GimmickType {
+pub(crate) enum GimmickType {
     Fail = 0,
     Save = 1,
     UpdateVar = 2,
@@ -66,7 +66,7 @@ pub enum GimmickType {
 // === Body Empty Type ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum BodyEmptyType {
+pub(crate) enum BodyEmptyType {
     NotEmpty = 0,
     MayBeEmpty = 1,
     MayBeEmptyMem = 2,
@@ -74,100 +74,100 @@ pub enum BodyEmptyType {
 }
 
 // === Size Constants ===
-pub const ND_STRING_MARGIN: usize = 16;
-pub const ND_STRING_BUF_SIZE: usize = 24;
-pub const ND_BACKREFS_SIZE: usize = 6;
-pub const PARSEENV_MEMENV_SIZE: usize = 8;
-pub const CTYPE_ANYCHAR: i32 = -1;
+pub(crate) const ND_STRING_MARGIN: usize = 16;
+pub(crate) const ND_STRING_BUF_SIZE: usize = 24;
+pub(crate) const ND_BACKREFS_SIZE: usize = 6;
+pub(crate) const PARSEENV_MEMENV_SIZE: usize = 8;
+pub(crate) const CTYPE_ANYCHAR: i32 = -1;
 
 // === Node Status Flags ===
-pub const ND_ST_FIXED_MIN: u32 = 1 << 0;
-pub const ND_ST_FIXED_MAX: u32 = 1 << 1;
-pub const ND_ST_FIXED_CLEN: u32 = 1 << 2;
-pub const ND_ST_MARK1: u32 = 1 << 3;
-pub const ND_ST_MARK2: u32 = 1 << 4;
-pub const ND_ST_STRICT_REAL_REPEAT: u32 = 1 << 5;
-pub const ND_ST_RECURSION: u32 = 1 << 6;
-pub const ND_ST_CALLED: u32 = 1 << 7;
-pub const ND_ST_FIXED_ADDR: u32 = 1 << 8;
-pub const ND_ST_NAMED_GROUP: u32 = 1 << 9;
-pub const ND_ST_IN_REAL_REPEAT: u32 = 1 << 10;
-pub const ND_ST_IN_ZERO_REPEAT: u32 = 1 << 11;
-pub const ND_ST_IN_MULTI_ENTRY: u32 = 1 << 12;
-pub const ND_ST_NEST_LEVEL: u32 = 1 << 13;
-pub const ND_ST_BY_NUMBER: u32 = 1 << 14;
-pub const ND_ST_BY_NAME: u32 = 1 << 15;
-pub const ND_ST_BACKREF: u32 = 1 << 16;
-pub const ND_ST_CHECKER: u32 = 1 << 17;
-pub const ND_ST_PROHIBIT_RECURSION: u32 = 1 << 18;
-pub const ND_ST_SUPER: u32 = 1 << 19;
-pub const ND_ST_EMPTY_STATUS_CHECK: u32 = 1 << 20;
-pub const ND_ST_IGNORECASE: u32 = 1 << 21;
-pub const ND_ST_MULTILINE: u32 = 1 << 22;
-pub const ND_ST_TEXT_SEGMENT_WORD: u32 = 1 << 23;
-pub const ND_ST_ABSENT_WITH_SIDE_EFFECTS: u32 = 1 << 24;
-pub const ND_ST_FIXED_CLEN_MIN_SURE: u32 = 1 << 25;
-pub const ND_ST_REFERENCED: u32 = 1 << 26;
-pub const ND_ST_INPEEK: u32 = 1 << 27;
-pub const ND_ST_WHOLE_OPTIONS: u32 = 1 << 28;
-pub const ND_ST_LITERAL_ALT: u32 = 1 << 29;
+pub(crate) const ND_ST_FIXED_MIN: u32 = 1 << 0;
+pub(crate) const ND_ST_FIXED_MAX: u32 = 1 << 1;
+pub(crate) const ND_ST_FIXED_CLEN: u32 = 1 << 2;
+pub(crate) const ND_ST_MARK1: u32 = 1 << 3;
+pub(crate) const ND_ST_MARK2: u32 = 1 << 4;
+pub(crate) const ND_ST_STRICT_REAL_REPEAT: u32 = 1 << 5;
+pub(crate) const ND_ST_RECURSION: u32 = 1 << 6;
+pub(crate) const ND_ST_CALLED: u32 = 1 << 7;
+pub(crate) const ND_ST_FIXED_ADDR: u32 = 1 << 8;
+pub(crate) const ND_ST_NAMED_GROUP: u32 = 1 << 9;
+pub(crate) const ND_ST_IN_REAL_REPEAT: u32 = 1 << 10;
+pub(crate) const ND_ST_IN_ZERO_REPEAT: u32 = 1 << 11;
+pub(crate) const ND_ST_IN_MULTI_ENTRY: u32 = 1 << 12;
+pub(crate) const ND_ST_NEST_LEVEL: u32 = 1 << 13;
+pub(crate) const ND_ST_BY_NUMBER: u32 = 1 << 14;
+pub(crate) const ND_ST_BY_NAME: u32 = 1 << 15;
+pub(crate) const ND_ST_BACKREF: u32 = 1 << 16;
+pub(crate) const ND_ST_CHECKER: u32 = 1 << 17;
+pub(crate) const ND_ST_PROHIBIT_RECURSION: u32 = 1 << 18;
+pub(crate) const ND_ST_SUPER: u32 = 1 << 19;
+pub(crate) const ND_ST_EMPTY_STATUS_CHECK: u32 = 1 << 20;
+pub(crate) const ND_ST_IGNORECASE: u32 = 1 << 21;
+pub(crate) const ND_ST_MULTILINE: u32 = 1 << 22;
+pub(crate) const ND_ST_TEXT_SEGMENT_WORD: u32 = 1 << 23;
+pub(crate) const ND_ST_ABSENT_WITH_SIDE_EFFECTS: u32 = 1 << 24;
+pub(crate) const ND_ST_FIXED_CLEN_MIN_SURE: u32 = 1 << 25;
+pub(crate) const ND_ST_REFERENCED: u32 = 1 << 26;
+pub(crate) const ND_ST_INPEEK: u32 = 1 << 27;
+pub(crate) const ND_ST_WHOLE_OPTIONS: u32 = 1 << 28;
+pub(crate) const ND_ST_LITERAL_ALT: u32 = 1 << 29;
 /// Rust-only: a primitive ASCII class repeat proven possessive by the opt-in pass.
 pub(crate) const ND_ST_POSSESSIVE_CLASS_REPEAT: u32 = 1 << 30;
 /// Rust-only: a decimal tail whose prefix can be evaluated deterministically.
 pub(crate) const ND_ST_DECIMAL_TAIL_PREFIX: u32 = 1 << 31;
 
 // === String Node Flags ===
-pub const ND_STRING_CRUDE: u32 = 1 << 0;
-pub const ND_STRING_CASE_EXPANDED: u32 = 1 << 1;
+pub(crate) const ND_STRING_CRUDE: u32 = 1 << 0;
+pub(crate) const ND_STRING_CASE_EXPANDED: u32 = 1 << 1;
 
 // === Memory Called States ===
-pub const CALL_DELTA_UNREFERENCED: i32 = 0;
-pub const CALL_DELTA_REFERENCED: i32 = 1;
-pub const CALL_DELTA_CALLED: i32 = 2;
+pub(crate) const CALL_DELTA_UNREFERENCED: i32 = 0;
+pub(crate) const CALL_DELTA_REFERENCED: i32 = 1;
+pub(crate) const CALL_DELTA_CALLED: i32 = 2;
 
 // === Parse Environment Flags ===
-pub const PE_FLAG_HAS_CALL_ZERO: u32 = 1 << 0;
-pub const PE_FLAG_HAS_WHOLE_OPTIONS: u32 = 1 << 1;
-pub const PE_FLAG_HAS_ABSENT_STOPPER: u32 = 1 << 2;
+pub(crate) const PE_FLAG_HAS_CALL_ZERO: u32 = 1 << 0;
+pub(crate) const PE_FLAG_HAS_WHOLE_OPTIONS: u32 = 1 << 1;
+pub(crate) const PE_FLAG_HAS_ABSENT_STOPPER: u32 = 1 << 2;
 
 // === BBuf (Byte Buffer) ===
 // In C: struct { UChar* p; unsigned int used; unsigned int alloc; }
 // In Rust: Vec<u8> handles allocation automatically.
 
 #[derive(Clone, Debug)]
-pub struct BBuf {
+pub(crate) struct BBuf {
     pub data: Vec<u8>,
 }
 
 impl BBuf {
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         BBuf { data: Vec::new() }
     }
 
-    pub fn with_capacity(cap: usize) -> Self {
+    pub(crate) fn with_capacity(cap: usize) -> Self {
         BBuf {
             data: Vec::with_capacity(cap),
         }
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn used(&self) -> usize {
+    pub(crate) fn used(&self) -> usize {
         self.data.len()
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn write(&mut self, bytes: &[u8]) {
+    pub(crate) fn write(&mut self, bytes: &[u8]) {
         self.data.extend_from_slice(bytes);
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn write_u32(&mut self, val: u32) {
+    pub(crate) fn write_u32(&mut self, val: u32) {
         self.data.extend_from_slice(&val.to_ne_bytes());
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn clone_from(other: &BBuf) -> Self {
+    pub(crate) fn clone_from(other: &BBuf) -> Self {
         BBuf {
             data: other.data.clone(),
         }
@@ -185,13 +185,13 @@ impl Default for BBuf {
 // C uses a union with common base fields (node_type, status, parent, body).
 // Rust: outer struct for common fields + inner enum for variant data.
 
-pub struct Node {
+pub(crate) struct Node {
     pub status: u32,
     pub parent: *mut Node,
     pub inner: NodeInner,
 }
 
-pub enum NodeInner {
+pub(crate) enum NodeInner {
     String(StrNode),
     CClass(CClassNode),
     CType(CtypeNode),
@@ -208,7 +208,7 @@ pub enum NodeInner {
 // === Node Helper Methods ===
 
 impl Node {
-    pub fn node_type(&self) -> NodeType {
+    pub(crate) fn node_type(&self) -> NodeType {
         match &self.inner {
             NodeInner::String(_) => NodeType::String,
             NodeInner::CClass(_) => NodeType::CClass,
@@ -224,26 +224,26 @@ impl Node {
         }
     }
 
-    pub fn node_type_bit(&self) -> u32 {
+    pub(crate) fn node_type_bit(&self) -> u32 {
         nd_type2bit(self.node_type())
     }
 
     // Status helpers (matching C macros ND_STATUS_ADD, ND_STATUS_REMOVE)
-    pub fn status_add(&mut self, flag: u32) {
+    pub(crate) fn status_add(&mut self, flag: u32) {
         self.status |= flag;
     }
 
-    pub fn status_remove(&mut self, flag: u32) {
+    pub(crate) fn status_remove(&mut self, flag: u32) {
         self.status &= !flag;
     }
 
-    pub fn has_status(&self, flag: u32) -> bool {
+    pub(crate) fn has_status(&self, flag: u32) -> bool {
         (self.status & flag) != 0
     }
 
     // Body access (only Quant, Bag, Anchor, Call have body)
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn body(&self) -> Option<&Node> {
+    pub(crate) fn body(&self) -> Option<&Node> {
         match &self.inner {
             NodeInner::Quant(n) => n.body.as_ref().map(|b| b.as_ref()),
             NodeInner::Bag(n) => n.body.as_ref().map(|b| b.as_ref()),
@@ -253,7 +253,7 @@ impl Node {
         }
     }
 
-    pub fn is_anychar(&self) -> bool {
+    pub(crate) fn is_anychar(&self) -> bool {
         if let NodeInner::CType(ct) = &self.inner {
             ct.ctype == CTYPE_ANYCHAR
         } else {
@@ -262,7 +262,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn body_mut(&mut self) -> Option<&mut Node> {
+    pub(crate) fn body_mut(&mut self) -> Option<&mut Node> {
         match &mut self.inner {
             NodeInner::Quant(n) => n.body.as_mut().map(|b| b.as_mut()),
             NodeInner::Bag(n) => n.body.as_mut().map(|b| b.as_mut()),
@@ -272,7 +272,7 @@ impl Node {
         }
     }
 
-    pub fn set_body(&mut self, body: Option<Box<Node>>) {
+    pub(crate) fn set_body(&mut self, body: Option<Box<Node>>) {
         match &mut self.inner {
             NodeInner::Quant(n) => n.body = body,
             NodeInner::Bag(n) => n.body = body,
@@ -282,7 +282,7 @@ impl Node {
         }
     }
 
-    pub fn take_body(&mut self) -> Option<Box<Node>> {
+    pub(crate) fn take_body(&mut self) -> Option<Box<Node>> {
         match &mut self.inner {
             NodeInner::Quant(n) => n.body.take(),
             NodeInner::Bag(n) => n.body.take(),
@@ -293,28 +293,28 @@ impl Node {
     }
 
     // Variant accessors (matching C macros STR_, CCLASS_, etc.)
-    pub fn as_str(&self) -> Option<&StrNode> {
+    pub(crate) fn as_str(&self) -> Option<&StrNode> {
         match &self.inner {
             NodeInner::String(n) => Some(n),
             _ => None,
         }
     }
 
-    pub fn as_str_mut(&mut self) -> Option<&mut StrNode> {
+    pub(crate) fn as_str_mut(&mut self) -> Option<&mut StrNode> {
         match &mut self.inner {
             NodeInner::String(n) => Some(n),
             _ => None,
         }
     }
 
-    pub fn as_cclass(&self) -> Option<&CClassNode> {
+    pub(crate) fn as_cclass(&self) -> Option<&CClassNode> {
         match &self.inner {
             NodeInner::CClass(n) => Some(n),
             _ => None,
         }
     }
 
-    pub fn as_cclass_mut(&mut self) -> Option<&mut CClassNode> {
+    pub(crate) fn as_cclass_mut(&mut self) -> Option<&mut CClassNode> {
         match &mut self.inner {
             NodeInner::CClass(n) => Some(n),
             _ => None,
@@ -322,7 +322,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_ctype(&self) -> Option<&CtypeNode> {
+    pub(crate) fn as_ctype(&self) -> Option<&CtypeNode> {
         match &self.inner {
             NodeInner::CType(n) => Some(n),
             _ => None,
@@ -330,7 +330,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_quant(&self) -> Option<&QuantNode> {
+    pub(crate) fn as_quant(&self) -> Option<&QuantNode> {
         match &self.inner {
             NodeInner::Quant(n) => Some(n),
             _ => None,
@@ -338,14 +338,14 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_quant_mut(&mut self) -> Option<&mut QuantNode> {
+    pub(crate) fn as_quant_mut(&mut self) -> Option<&mut QuantNode> {
         match &mut self.inner {
             NodeInner::Quant(n) => Some(n),
             _ => None,
         }
     }
 
-    pub fn as_bag(&self) -> Option<&BagNode> {
+    pub(crate) fn as_bag(&self) -> Option<&BagNode> {
         match &self.inner {
             NodeInner::Bag(n) => Some(n),
             _ => None,
@@ -353,7 +353,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_bag_mut(&mut self) -> Option<&mut BagNode> {
+    pub(crate) fn as_bag_mut(&mut self) -> Option<&mut BagNode> {
         match &mut self.inner {
             NodeInner::Bag(n) => Some(n),
             _ => None,
@@ -361,14 +361,14 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_anchor(&self) -> Option<&AnchorNode> {
+    pub(crate) fn as_anchor(&self) -> Option<&AnchorNode> {
         match &self.inner {
             NodeInner::Anchor(n) => Some(n),
             _ => None,
         }
     }
 
-    pub fn as_anchor_mut(&mut self) -> Option<&mut AnchorNode> {
+    pub(crate) fn as_anchor_mut(&mut self) -> Option<&mut AnchorNode> {
         match &mut self.inner {
             NodeInner::Anchor(n) => Some(n),
             _ => None,
@@ -376,7 +376,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_backref(&self) -> Option<&BackRefNode> {
+    pub(crate) fn as_backref(&self) -> Option<&BackRefNode> {
         match &self.inner {
             NodeInner::BackRef(n) => Some(n),
             _ => None,
@@ -384,14 +384,14 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_backref_mut(&mut self) -> Option<&mut BackRefNode> {
+    pub(crate) fn as_backref_mut(&mut self) -> Option<&mut BackRefNode> {
         match &mut self.inner {
             NodeInner::BackRef(n) => Some(n),
             _ => None,
         }
     }
 
-    pub fn as_cons(&self) -> Option<&ConsAltNode> {
+    pub(crate) fn as_cons(&self) -> Option<&ConsAltNode> {
         match &self.inner {
             NodeInner::List(n) | NodeInner::Alt(n) => Some(n),
             _ => None,
@@ -399,7 +399,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_cons_mut(&mut self) -> Option<&mut ConsAltNode> {
+    pub(crate) fn as_cons_mut(&mut self) -> Option<&mut ConsAltNode> {
         match &mut self.inner {
             NodeInner::List(n) | NodeInner::Alt(n) => Some(n),
             _ => None,
@@ -407,7 +407,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_call(&self) -> Option<&CallNode> {
+    pub(crate) fn as_call(&self) -> Option<&CallNode> {
         match &self.inner {
             NodeInner::Call(n) => Some(n),
             _ => None,
@@ -415,7 +415,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_call_mut(&mut self) -> Option<&mut CallNode> {
+    pub(crate) fn as_call_mut(&mut self) -> Option<&mut CallNode> {
         match &mut self.inner {
             NodeInner::Call(n) => Some(n),
             _ => None,
@@ -423,7 +423,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_gimmick(&self) -> Option<&GimmickNode> {
+    pub(crate) fn as_gimmick(&self) -> Option<&GimmickNode> {
         match &self.inner {
             NodeInner::Gimmick(n) => Some(n),
             _ => None,
@@ -431,7 +431,7 @@ impl Node {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_gimmick_mut(&mut self) -> Option<&mut GimmickNode> {
+    pub(crate) fn as_gimmick_mut(&mut self) -> Option<&mut GimmickNode> {
         match &mut self.inner {
             NodeInner::Gimmick(n) => Some(n),
             _ => None,
@@ -440,12 +440,12 @@ impl Node {
 
     // ConsAltNode shortcuts (matching C macros ND_CAR, ND_CDR)
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn car(&self) -> Option<&Node> {
+    pub(crate) fn car(&self) -> Option<&Node> {
         self.as_cons().map(|c| c.car.as_ref())
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn cdr(&self) -> Option<&Node> {
+    pub(crate) fn cdr(&self) -> Option<&Node> {
         self.as_cons()
             .and_then(|c| c.cdr.as_ref().map(|b| b.as_ref()))
     }
@@ -474,65 +474,65 @@ unsafe impl Sync for Node {}
 
 // === Node Variant Structs ===
 
-pub struct StrNode {
+pub(crate) struct StrNode {
     pub s: Vec<u8>,
     pub flag: u32,
 }
 
 impl StrNode {
-    pub fn is_crude(&self) -> bool {
+    pub(crate) fn is_crude(&self) -> bool {
         (self.flag & ND_STRING_CRUDE) != 0
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn is_case_expanded(&self) -> bool {
+    pub(crate) fn is_case_expanded(&self) -> bool {
         (self.flag & ND_STRING_CASE_EXPANDED) != 0
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn set_crude(&mut self) {
+    pub(crate) fn set_crude(&mut self) {
         self.flag |= ND_STRING_CRUDE;
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn clear_crude(&mut self) {
+    pub(crate) fn clear_crude(&mut self) {
         self.flag &= !ND_STRING_CRUDE;
     }
 }
 
-pub struct CClassNode {
+pub(crate) struct CClassNode {
     pub flags: u32,
     pub bs: BitSet,
     pub mbuf: Option<BBuf>,
 }
 
 impl CClassNode {
-    pub fn is_not(&self) -> bool {
+    pub(crate) fn is_not(&self) -> bool {
         (self.flags & FLAG_NCCLASS_NOT) != 0
     }
 
-    pub fn set_not(&mut self) {
+    pub(crate) fn set_not(&mut self) {
         self.flags |= FLAG_NCCLASS_NOT;
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn clear_not(&mut self) {
+    pub(crate) fn clear_not(&mut self) {
         self.flags &= !FLAG_NCCLASS_NOT;
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn is_share(&self) -> bool {
+    pub(crate) fn is_share(&self) -> bool {
         (self.flags & FLAG_NCCLASS_SHARE) != 0
     }
 }
 
-pub struct CtypeNode {
+pub(crate) struct CtypeNode {
     pub ctype: i32,
     pub not: bool,
     pub ascii_mode: bool,
 }
 
-pub struct BackRefNode {
+pub(crate) struct BackRefNode {
     pub back_num: i32,
     pub back_static: [i32; ND_BACKREFS_SIZE],
     pub back_dynamic: Option<Vec<i32>>,
@@ -541,7 +541,7 @@ pub struct BackRefNode {
 
 impl BackRefNode {
     /// Get the backreference number array
-    pub fn back_refs(&self) -> &[i32] {
+    pub(crate) fn back_refs(&self) -> &[i32] {
         if let Some(ref dyn_refs) = self.back_dynamic {
             dyn_refs
         } else {
@@ -550,7 +550,7 @@ impl BackRefNode {
     }
 }
 
-pub struct QuantNode {
+pub(crate) struct QuantNode {
     pub body: Option<Box<Node>>,
     pub lower: i32,
     pub upper: i32,
@@ -562,7 +562,7 @@ pub struct QuantNode {
     pub empty_status_mem: MemStatusType,
 }
 
-pub struct BagNode {
+pub(crate) struct BagNode {
     pub body: Option<Box<Node>>,
     pub bag_type: BagType,
     pub bag_data: BagData,
@@ -573,7 +573,7 @@ pub struct BagNode {
     pub opt_count: i32,
 }
 
-pub enum BagData {
+pub(crate) enum BagData {
     Memory {
         regnum: i32,
         called_addr: AbsAddrType,
@@ -592,7 +592,7 @@ pub enum BagData {
 
 impl BagNode {
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn as_memory(&self) -> Option<(i32, AbsAddrType, i32, i32)> {
+    pub(crate) fn as_memory(&self) -> Option<(i32, AbsAddrType, i32, i32)> {
         match &self.bag_data {
             BagData::Memory {
                 regnum,
@@ -604,7 +604,7 @@ impl BagNode {
         }
     }
 
-    pub fn regnum(&self) -> i32 {
+    pub(crate) fn regnum(&self) -> i32 {
         match &self.bag_data {
             BagData::Memory { regnum, .. } => *regnum,
             _ => 0,
@@ -612,7 +612,7 @@ impl BagNode {
     }
 }
 
-pub struct AnchorNode {
+pub(crate) struct AnchorNode {
     pub body: Option<Box<Node>>,
     pub anchor_type: i32,
     pub char_min_len: OnigLen,
@@ -621,12 +621,12 @@ pub struct AnchorNode {
     pub lead_node: Option<Box<Node>>,
 }
 
-pub struct ConsAltNode {
+pub(crate) struct ConsAltNode {
     pub car: Box<Node>,
     pub cdr: Option<Box<Node>>,
 }
 
-pub struct CallNode {
+pub(crate) struct CallNode {
     pub body: Option<Box<Node>>,
     pub by_number: bool,
     pub called_gnum: i32,
@@ -636,7 +636,7 @@ pub struct CallNode {
     pub target_node: *mut Node,
 }
 
-pub struct GimmickNode {
+pub(crate) struct GimmickNode {
     pub gimmick_type: GimmickType,
     pub detail_type: i32,
     pub num: i32,
@@ -647,7 +647,7 @@ pub struct GimmickNode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum TokenType {
+pub(crate) enum TokenType {
     Eot = 0,
     CrudeByte = 1,
     Char = 2,
@@ -685,7 +685,7 @@ pub enum TokenType {
 // This avoids needing to destructure an enum on every access (the C freely writes to
 // different union members as it determines the token type).
 
-pub struct PToken {
+pub(crate) struct PToken {
     pub token_type: TokenType,
     pub escaped: bool,
     pub code_point_continue: bool,
@@ -719,7 +719,7 @@ pub struct PToken {
 }
 
 impl PToken {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         PToken {
             token_type: TokenType::Eot,
             escaped: false,
@@ -748,7 +748,7 @@ impl PToken {
         }
     }
 
-    pub fn init(&mut self) {
+    pub(crate) fn init(&mut self) {
         self.code_point_continue = false;
     }
 }
@@ -762,13 +762,13 @@ impl Default for PToken {
 
 // === Group Number Map ===
 
-pub struct GroupNumMap {
+pub(crate) struct GroupNumMap {
     pub new_val: i32,
 }
 
 // === Memory Environment ===
 
-pub struct MemEnv {
+pub(crate) struct MemEnv {
     pub mem_node: *mut Node,
     pub empty_repeat_node: *mut Node,
 }
@@ -798,13 +798,13 @@ unsafe impl Sync for MemEnv {}
 
 // === Save Item ===
 
-pub struct SaveItem {
+pub(crate) struct SaveItem {
     pub save_type: SaveType,
 }
 
 // === Unset Address (for USE_CALL) ===
 
-pub struct UnsetAddr {
+pub(crate) struct UnsetAddr {
     pub offset: i32,
     pub target: *mut Node,
 }
@@ -827,7 +827,7 @@ unsafe impl Sync for UnsetAddr {}
 /// C reaches them through `env->reg`. The port moves them into the
 /// `ParseEnv` for the duration of `onig_parse_tree` and moves them back on
 /// every return path, so the parser holds no pointer to the regex.
-pub struct RegexParseState {
+pub(crate) struct RegexParseState {
     /// The regex's options, including the whole-option flags that
     /// `set_whole_options` adds during the parse.
     pub options: OnigOptionType,
@@ -847,7 +847,7 @@ impl Default for RegexParseState {
     }
 }
 
-pub struct ParseEnv {
+pub(crate) struct ParseEnv {
     pub options: OnigOptionType,
     pub case_fold_flag: OnigCaseFoldType,
     pub enc: OnigEncoding,
@@ -907,7 +907,7 @@ pub struct ParseEnv {
 
 // === Node Creation Helper Functions ===
 
-pub fn node_new(inner: NodeInner) -> Box<Node> {
+pub(crate) fn node_new(inner: NodeInner) -> Box<Node> {
     Box::new(Node {
         status: 0,
         parent: std::ptr::null_mut(),
@@ -915,7 +915,7 @@ pub fn node_new(inner: NodeInner) -> Box<Node> {
     })
 }
 
-pub fn node_new_str(s: &[u8]) -> Box<Node> {
+pub(crate) fn node_new_str(s: &[u8]) -> Box<Node> {
     node_new(NodeInner::String(StrNode {
         s: s.to_vec(),
         flag: 0,
@@ -923,7 +923,7 @@ pub fn node_new_str(s: &[u8]) -> Box<Node> {
 }
 
 /// Port of node_new_str_with_options from regparse.c.
-pub fn node_new_str_with_options(s: &[u8], options: OnigOptionType) -> Box<Node> {
+pub(crate) fn node_new_str_with_options(s: &[u8], options: OnigOptionType) -> Box<Node> {
     let mut node = node_new_str(s);
     if opton_ignorecase(options) {
         node.status_add(ND_ST_IGNORECASE);
@@ -932,7 +932,7 @@ pub fn node_new_str_with_options(s: &[u8], options: OnigOptionType) -> Box<Node>
 }
 
 /// Port of node_new_str_crude from regparse.c.
-pub fn node_new_str_crude(s: &[u8], options: OnigOptionType) -> Box<Node> {
+pub(crate) fn node_new_str_crude(s: &[u8], options: OnigOptionType) -> Box<Node> {
     let mut node = node_new_str_with_options(s, options);
     if let Some(sn) = node.as_str_mut() {
         sn.set_crude();
@@ -941,18 +941,18 @@ pub fn node_new_str_crude(s: &[u8], options: OnigOptionType) -> Box<Node> {
 }
 
 /// Port of node_new_str_crude_char from regparse.c.
-pub fn node_new_str_crude_char(c: u8, options: OnigOptionType) -> Box<Node> {
+pub(crate) fn node_new_str_crude_char(c: u8, options: OnigOptionType) -> Box<Node> {
     node_new_str_crude(&[c], options)
 }
 
-pub fn node_new_empty() -> Box<Node> {
+pub(crate) fn node_new_empty() -> Box<Node> {
     node_new(NodeInner::String(StrNode {
         s: Vec::new(),
         flag: 0,
     }))
 }
 
-pub fn node_new_cclass() -> Box<Node> {
+pub(crate) fn node_new_cclass() -> Box<Node> {
     node_new(NodeInner::CClass(CClassNode {
         flags: 0,
         bs: [0; BITSET_REAL_SIZE],
@@ -960,7 +960,7 @@ pub fn node_new_cclass() -> Box<Node> {
     }))
 }
 
-pub fn node_new_ctype(ctype: i32, not: bool, ascii_mode: bool) -> Box<Node> {
+pub(crate) fn node_new_ctype(ctype: i32, not: bool, ascii_mode: bool) -> Box<Node> {
     node_new(NodeInner::CType(CtypeNode {
         ctype,
         not,
@@ -968,7 +968,7 @@ pub fn node_new_ctype(ctype: i32, not: bool, ascii_mode: bool) -> Box<Node> {
     }))
 }
 
-pub fn node_new_anychar() -> Box<Node> {
+pub(crate) fn node_new_anychar() -> Box<Node> {
     node_new_ctype(CTYPE_ANYCHAR, false, false)
 }
 
@@ -976,7 +976,7 @@ pub fn node_new_anychar() -> Box<Node> {
 /// environment (see `node_new_backref_in_env`). As in C, the NEST_LEVEL
 /// status follows whether a level was written (`\k<n+0>` included), not the
 /// level's value.
-pub fn node_new_backref(
+pub(crate) fn node_new_backref(
     back_num: i32,
     backrefs: &[i32],
     by_name: bool,
@@ -1037,7 +1037,7 @@ pub(crate) fn node_new_backref_in_env(
     node
 }
 
-pub fn node_new_quantifier(lower: i32, upper: i32, greedy: bool) -> Box<Node> {
+pub(crate) fn node_new_quantifier(lower: i32, upper: i32, greedy: bool) -> Box<Node> {
     node_new(NodeInner::Quant(QuantNode {
         body: None,
         lower,
@@ -1051,7 +1051,7 @@ pub fn node_new_quantifier(lower: i32, upper: i32, greedy: bool) -> Box<Node> {
     }))
 }
 
-pub fn node_new_bag(bag_type: BagType) -> Box<Node> {
+pub(crate) fn node_new_bag(bag_type: BagType) -> Box<Node> {
     let bag_data = match bag_type {
         BagType::Memory => BagData::Memory {
             regnum: 0,
@@ -1081,7 +1081,7 @@ pub fn node_new_bag(bag_type: BagType) -> Box<Node> {
     }))
 }
 
-pub fn node_new_bag_memory(regnum: i32) -> Box<Node> {
+pub(crate) fn node_new_bag_memory(regnum: i32) -> Box<Node> {
     let mut node = node_new_bag(BagType::Memory);
     if let NodeInner::Bag(ref mut bn) = node.inner {
         bn.bag_data = BagData::Memory {
@@ -1094,7 +1094,7 @@ pub fn node_new_bag_memory(regnum: i32) -> Box<Node> {
     node
 }
 
-pub fn node_new_bag_if_else(
+pub(crate) fn node_new_bag_if_else(
     cond: Box<Node>,
     then_node: Option<Box<Node>>,
     else_node: Option<Box<Node>>,
@@ -1116,7 +1116,7 @@ pub fn node_new_bag_if_else(
     node
 }
 
-pub fn node_new_option(options: OnigOptionType) -> Box<Node> {
+pub(crate) fn node_new_option(options: OnigOptionType) -> Box<Node> {
     let mut node = node_new_bag(BagType::Option);
     if let NodeInner::Bag(ref mut bn) = node.inner {
         bn.bag_data = BagData::Option { options };
@@ -1124,7 +1124,7 @@ pub fn node_new_option(options: OnigOptionType) -> Box<Node> {
     node
 }
 
-pub fn node_new_anchor(anchor_type: i32) -> Box<Node> {
+pub(crate) fn node_new_anchor(anchor_type: i32) -> Box<Node> {
     node_new(NodeInner::Anchor(AnchorNode {
         body: None,
         anchor_type,
@@ -1135,7 +1135,7 @@ pub fn node_new_anchor(anchor_type: i32) -> Box<Node> {
     }))
 }
 
-pub fn node_new_anchor_with_options(anchor_type: i32, options: OnigOptionType) -> Box<Node> {
+pub(crate) fn node_new_anchor_with_options(anchor_type: i32, options: OnigOptionType) -> Box<Node> {
     let mut node = node_new_anchor(anchor_type);
     if onig_is_option_on(options, ONIG_OPTION_IGNORECASE) {
         node.status_add(ND_ST_IGNORECASE);
@@ -1149,15 +1149,15 @@ pub fn node_new_anchor_with_options(anchor_type: i32, options: OnigOptionType) -
     node
 }
 
-pub fn node_new_list(car: Box<Node>, cdr: Option<Box<Node>>) -> Box<Node> {
+pub(crate) fn node_new_list(car: Box<Node>, cdr: Option<Box<Node>>) -> Box<Node> {
     node_new(NodeInner::List(ConsAltNode { car, cdr }))
 }
 
-pub fn node_new_alt(car: Box<Node>, cdr: Option<Box<Node>>) -> Box<Node> {
+pub(crate) fn node_new_alt(car: Box<Node>, cdr: Option<Box<Node>>) -> Box<Node> {
     node_new(NodeInner::Alt(ConsAltNode { car, cdr }))
 }
 
-pub fn node_new_call(name: &[u8], gnum: i32, by_number: bool) -> Box<Node> {
+pub(crate) fn node_new_call(name: &[u8], gnum: i32, by_number: bool) -> Box<Node> {
     let mut node = node_new(NodeInner::Call(CallNode {
         body: None,
         by_number,
@@ -1172,7 +1172,7 @@ pub fn node_new_call(name: &[u8], gnum: i32, by_number: bool) -> Box<Node> {
     node
 }
 
-pub fn node_new_fail() -> Box<Node> {
+pub(crate) fn node_new_fail() -> Box<Node> {
     node_new(NodeInner::Gimmick(GimmickNode {
         gimmick_type: GimmickType::Fail,
         detail_type: 0,
@@ -1183,17 +1183,17 @@ pub fn node_new_fail() -> Box<Node> {
 
 /// Turn `node` into an empty string node in place (C: onig_node_reset_empty).
 /// Like C, the status bits and the parent link stay.
-pub fn onig_node_reset_empty(node: &mut Node) {
+pub(crate) fn onig_node_reset_empty(node: &mut Node) {
     node.inner = node_new_empty().inner;
 }
 
 /// Turn `node` into a FAIL gimmick in place (C: onig_node_reset_fail).
 /// Like C, the status bits and the parent link stay.
-pub fn onig_node_reset_fail(node: &mut Node) {
+pub(crate) fn onig_node_reset_fail(node: &mut Node) {
     node.inner = node_new_fail().inner;
 }
 
-pub fn node_new_callout(of: i32, num: i32, id: i32) -> Box<Node> {
+pub(crate) fn node_new_callout(of: i32, num: i32, id: i32) -> Box<Node> {
     node_new(NodeInner::Gimmick(GimmickNode {
         gimmick_type: GimmickType::Callout,
         detail_type: of, // 0=CONTENTS, 1=NAME
@@ -1202,7 +1202,7 @@ pub fn node_new_callout(of: i32, num: i32, id: i32) -> Box<Node> {
     }))
 }
 
-pub fn node_new_save_gimmick(save_type: SaveType, id: i32) -> Box<Node> {
+pub(crate) fn node_new_save_gimmick(save_type: SaveType, id: i32) -> Box<Node> {
     node_new(NodeInner::Gimmick(GimmickNode {
         gimmick_type: GimmickType::Save,
         detail_type: save_type as i32,
@@ -1211,7 +1211,7 @@ pub fn node_new_save_gimmick(save_type: SaveType, id: i32) -> Box<Node> {
     }))
 }
 
-pub fn node_new_update_var_gimmick(var_type: UpdateVarType, id: i32) -> Box<Node> {
+pub(crate) fn node_new_update_var_gimmick(var_type: UpdateVarType, id: i32) -> Box<Node> {
     node_new(NodeInner::Gimmick(GimmickNode {
         gimmick_type: GimmickType::UpdateVar,
         detail_type: var_type as i32,
@@ -1223,19 +1223,21 @@ pub fn node_new_update_var_gimmick(var_type: UpdateVarType, id: i32) -> Box<Node
 // === Utility: make_list / make_alt ===
 
 /// Create a 2-node list: (a . (b . nil))
-pub fn make_list(a: Box<Node>, b: Box<Node>) -> Box<Node> {
+pub(crate) fn make_list(a: Box<Node>, b: Box<Node>) -> Box<Node> {
     let tail = node_new_list(b, None);
     node_new_list(a, Some(tail))
 }
 
 /// Create a 2-node alternation: (a | b)
-pub fn make_alt(a: Box<Node>, b: Box<Node>) -> Box<Node> {
+pub(crate) fn make_alt(a: Box<Node>, b: Box<Node>) -> Box<Node> {
     let tail = node_new_alt(b, None);
     node_new_alt(a, Some(tail))
 }
 
 /// Create a right-linked List chain: `List(ns[0], List(ns[1], ... List(ns[n-1], nil)))`
-pub fn make_list_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
+// The elements are boxed nodes already; the vector is the call site's shape.
+#[allow(clippy::vec_box)]
+pub(crate) fn make_list_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
     assert!(!nodes.is_empty());
     let mut result = node_new_list(nodes.pop().unwrap(), None);
     while let Some(n) = nodes.pop() {
@@ -1246,7 +1248,9 @@ pub fn make_list_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
 
 /// Create a right-linked Alt chain: `Alt(ns[0], Alt(ns[1], ... Alt(ns[n-1], nil)))`
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn make_alt_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
+// The elements are boxed nodes already; the vector is the call site's shape.
+#[allow(clippy::vec_box)]
+pub(crate) fn make_alt_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
     assert!(!nodes.is_empty());
     let mut result = node_new_alt(nodes.pop().unwrap(), None);
     while let Some(n) = nodes.pop() {
@@ -1256,7 +1260,7 @@ pub fn make_alt_n(mut nodes: Vec<Box<Node>>) -> Box<Node> {
 }
 
 /// Anychar that matches newlines (C: node_new_true_anychar)
-pub fn node_new_true_anychar() -> Box<Node> {
+pub(crate) fn node_new_true_anychar() -> Box<Node> {
     let mut n = node_new_anychar();
     n.status_add(ND_ST_MULTILINE);
     n
@@ -1266,7 +1270,7 @@ pub fn node_new_true_anychar() -> Box<Node> {
 /// C returns ONIGERR_TYPE_BUG for the other node types, which have links
 /// that C leaves to the caller; here that is `None`. The copy keeps the
 /// status bits but has no parent, like a freshly allocated node.
-pub fn onig_node_copy(from: &Node) -> Option<Box<Node>> {
+pub(crate) fn onig_node_copy(from: &Node) -> Option<Box<Node>> {
     let inner = match &from.inner {
         NodeInner::String(sn) => NodeInner::String(StrNode {
             s: sn.s.clone(),
@@ -1291,51 +1295,51 @@ pub fn onig_node_copy(from: &Node) -> Option<Box<Node>> {
 
 // === Bitset Utility Functions (from regparse.c) ===
 
-pub fn bitset_set_range(bs: &mut BitSet, from: usize, to: usize) {
+pub(crate) fn bitset_set_range(bs: &mut BitSet, from: usize, to: usize) {
     for i in from..=to {
         bitset_set_bit(bs, i);
     }
 }
 
-pub fn bitset_invert(bs: &mut BitSet) {
+pub(crate) fn bitset_invert(bs: &mut BitSet) {
     for slot in bs.iter_mut() {
         *slot = !*slot;
     }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn bitset_invert_to(from: &BitSet, to: &mut BitSet) {
+pub(crate) fn bitset_invert_to(from: &BitSet, to: &mut BitSet) {
     for i in 0..BITSET_REAL_SIZE {
         to[i] = !from[i];
     }
 }
 
-pub fn bitset_and(dest: &mut BitSet, src: &BitSet) {
+pub(crate) fn bitset_and(dest: &mut BitSet, src: &BitSet) {
     for i in 0..BITSET_REAL_SIZE {
         dest[i] &= src[i];
     }
 }
 
-pub fn bitset_or(dest: &mut BitSet, src: &BitSet) {
+pub(crate) fn bitset_or(dest: &mut BitSet, src: &BitSet) {
     for i in 0..BITSET_REAL_SIZE {
         dest[i] |= src[i];
     }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn bitset_copy(dest: &mut BitSet, src: &BitSet) {
+pub(crate) fn bitset_copy(dest: &mut BitSet, src: &BitSet) {
     dest.copy_from_slice(src);
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn bitset_is_empty(bs: &BitSet) -> bool {
+pub(crate) fn bitset_is_empty(bs: &BitSet) -> bool {
     bs.iter().all(|&b| b == 0)
 }
 
 // === String Node Helpers ===
 
 /// Append bytes to a string node
-pub fn node_str_cat(node: &mut Node, s: &[u8]) -> i32 {
+pub(crate) fn node_str_cat(node: &mut Node, s: &[u8]) -> i32 {
     if let Some(sn) = node.as_str_mut() {
         sn.s.extend_from_slice(s);
         ONIG_NORMAL
@@ -1346,7 +1350,7 @@ pub fn node_str_cat(node: &mut Node, s: &[u8]) -> i32 {
 
 /// Set string node content
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn node_str_set(node: &mut Node, s: &[u8]) -> i32 {
+pub(crate) fn node_str_set(node: &mut Node, s: &[u8]) -> i32 {
     if let Some(sn) = node.as_str_mut() {
         sn.s.clear();
         sn.s.extend_from_slice(s);
@@ -1358,7 +1362,7 @@ pub fn node_str_set(node: &mut Node, s: &[u8]) -> i32 {
 
 /// Clear string node
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn node_str_clear(node: &mut Node) {
+pub(crate) fn node_str_clear(node: &mut Node) {
     if let Some(sn) = node.as_str_mut() {
         sn.s.clear();
     }
@@ -1366,7 +1370,11 @@ pub fn node_str_clear(node: &mut Node) {
 
 /// Append a single code point to a string node (encoding-aware)
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn node_str_cat_codepoint(node: &mut Node, enc: OnigEncoding, code: OnigCodePoint) -> i32 {
+pub(crate) fn node_str_cat_codepoint(
+    node: &mut Node,
+    enc: OnigEncoding,
+    code: OnigCodePoint,
+) -> i32 {
     let mut buf = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
     let len = enc.code_to_mbc(code, &mut buf);
     if len < 0 {
@@ -1377,13 +1385,13 @@ pub fn node_str_cat_codepoint(node: &mut Node, enc: OnigEncoding, code: OnigCode
 
 // === Name Table (port of C's NameEntry + hash table) ===
 
-pub struct NameEntry {
+pub(crate) struct NameEntry {
     pub name: Vec<u8>,
     pub back_num: i32,
     pub back_refs: Vec<i32>,
 }
 
-pub struct NameTable {
+pub(crate) struct NameTable {
     pub entries: HashMap<Vec<u8>, NameEntry>,
 }
 
@@ -1394,22 +1402,27 @@ impl Default for NameTable {
 }
 
 impl NameTable {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         NameTable {
             entries: HashMap::new(),
         }
     }
 
-    pub fn find(&self, name: &[u8]) -> Option<&NameEntry> {
+    pub(crate) fn find(&self, name: &[u8]) -> Option<&NameEntry> {
         self.entries.get(name)
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn find_mut(&mut self, name: &[u8]) -> Option<&mut NameEntry> {
+    pub(crate) fn find_mut(&mut self, name: &[u8]) -> Option<&mut NameEntry> {
         self.entries.get_mut(name)
     }
 
-    pub fn add(&mut self, name: &[u8], backref: i32, allow_multiplex: bool) -> Result<(), i32> {
+    pub(crate) fn add(
+        &mut self,
+        name: &[u8],
+        backref: i32,
+        allow_multiplex: bool,
+    ) -> Result<(), i32> {
         if name.is_empty() {
             return Err(ONIGERR_EMPTY_GROUP_NAME);
         }
@@ -1435,16 +1448,16 @@ impl NameTable {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn num_entries(&self) -> i32 {
+    pub(crate) fn num_entries(&self) -> i32 {
         self.entries.len() as i32
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.entries.clear();
     }
 
-    pub fn name_to_group_numbers(&self, name: &[u8]) -> Option<&[i32]> {
+    pub(crate) fn name_to_group_numbers(&self, name: &[u8]) -> Option<&[i32]> {
         self.entries.get(name).map(|e| e.back_refs.as_slice())
     }
 }

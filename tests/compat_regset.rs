@@ -5,7 +5,6 @@
 
 use ferroni::oniguruma::*;
 use ferroni::regcomp::onig_new;
-use ferroni::regint::RegexType;
 use ferroni::regset::{
     OnigRegSet, OnigRegSetLead, onig_regset_get_region, onig_regset_new, onig_regset_search,
 };

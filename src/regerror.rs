@@ -8,7 +8,7 @@ use crate::oniguruma::*;
 
 /// Get the format string for an error code.
 /// Corresponds to C's onig_error_code_to_format().
-pub fn onig_error_code_to_format(code: i32) -> &'static str {
+pub(crate) fn onig_error_code_to_format(code: i32) -> &'static str {
     match code {
         ONIG_MISMATCH => "mismatch",
         ONIG_NO_SUPPORT_CONFIG => "no support in this configuration",

@@ -242,6 +242,11 @@
 //!
 //! ## Modules
 //!
+//! The supported surface is the Rust API in the modules below and the C API that
+//! `oniguruma.h` declares, at the module paths of the C-port table. Everything else
+//! is crate-private: C Oniguruma keeps its own internal headers private too
+//! ([ADR-005](https://ferroni.dev/adr/005-idiomatic-rust-api-layer)).
+//!
 //! ### Start here
 //!
 //! | Module | Purpose |
@@ -260,11 +265,11 @@
 //! |--------|-------------|---------|
 //! | `oniguruma.h` | [`oniguruma`] | Public types, option flags and error codes |
 //! | `regparse.c` | [`regparse`] | Pattern parser |
-//! | `regparse.h` | [`regparse_types`] | Parse tree and parser types |
+//! | `regparse.h` | crate-private | Parse tree and parser types |
 //! | `regcomp.c` | [`regcomp`] | AST-to-bytecode compiler (`onig_new`) |
 //! | `regexec.c` | [`regexec`] | VM executor (`onig_search`) |
 //! | `regexec.c`, RegSet section | [`regset`] | Multi-regex search (RegSet) |
-//! | `regint.h` | [`regint`] | Internal types and opcodes |
+//! | `regint.h` | crate-private | Internal types and opcodes; `RegexType` is re-exported from [`oniguruma`] |
 //! | `regenc.h`, `regenc.c` | [`regenc`] | Encoding trait |
 //! | `utf8.c`, `ascii.c` | [`encodings`] | UTF-8 and US-ASCII encodings |
 //! | `unicode.c` | [`unicode`] | Character properties and case folding |
@@ -285,37 +290,41 @@
 pub mod api;
 pub mod backtrack_lint;
 pub mod backtrack_rewrite;
-// C port: Debug waits for #287.
+// C port: the C API types do not implement Debug yet. Adding it is additive, so
+// it is outside the 2.0 surface change (ADR-005, amendment 2.0).
 #[allow(missing_debug_implementations)]
 pub mod encodings;
 pub mod error;
 mod first_bytes;
 mod leading_run;
-// Hidden: a Rust-only optimization (ADR-008) that no code outside the crate uses.
-// It is not user-facing, so the Debug lint does not apply.
-#[doc(hidden)]
-#[allow(missing_debug_implementations)]
-pub mod literal_trie;
-// C port: Debug waits for #287.
+// Crate-private (ADR-008): a Rust-only optimization that no code outside the
+// crate uses.
+mod literal_trie;
+// C port: see the note on `encodings`.
 #[allow(missing_debug_implementations)]
 pub mod oniguruma;
 pub mod prelude;
 pub mod regcomp;
 pub mod regenc;
 pub mod regerror;
-// C port: Debug waits for #287.
+// C port: see the note on `encodings`.
 #[allow(missing_debug_implementations)]
 pub mod regexec;
-// C port: Debug waits for #287.
+// Crate-private: regint.h is not installed in C Oniguruma either. The C API
+// types among its items, `RegexType` (regex_t) and `CalloutArg`, are re-exported
+// from `oniguruma` (ADR-005, 2.0). The Debug lint still reaches the rest through
+// those public signatures, so see the note on `encodings`.
 #[allow(missing_debug_implementations)]
-pub mod regint;
-// C port: Debug waits for #287.
+mod regint;
+// C port: see the note on `encodings`.
 #[allow(missing_debug_implementations)]
 pub mod regparse;
-// C port: Debug waits for #287.
+// Crate-private: regparse.h is not installed in C Oniguruma either (ADR-005, 2.0).
+// Its nodes are reached from the public C-port signatures, so see the note on
+// `regint`.
 #[allow(missing_debug_implementations)]
-pub mod regparse_types;
-// C port: Debug waits for #287.
+mod regparse_types;
+// C port: see the note on `encodings`.
 #[allow(missing_debug_implementations)]
 pub mod regset;
 pub mod regsyntax;
@@ -323,7 +332,7 @@ pub mod regtrav;
 pub mod replace;
 mod required_literals;
 pub mod scanner;
-// C port: Debug waits for #287.
+// C port: see the note on `encodings`.
 #[allow(missing_debug_implementations)]
 pub mod unicode;
 

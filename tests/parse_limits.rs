@@ -6,11 +6,15 @@
 // on an 8 MiB thread. The defaults are checked against 2 MiB in api_test.rs.
 
 use ferroni::prelude::{Regex, RegexError};
-use ferroni::regint::{DEFAULT_AST_NODE_LIMIT, DEFAULT_PARSE_DEPTH_LIMIT};
 use ferroni::regparse::{
     onig_get_ast_node_limit, onig_get_parse_depth_limit, onig_set_ast_node_limit,
     onig_set_parse_depth_limit,
 };
+
+// The documented defaults of the parser limits (ADR-013; the setters in
+// `ferroni::regparse` restore them on zero). `regint` is crate-private.
+const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 256;
+const DEFAULT_AST_NODE_LIMIT: u32 = 4096;
 
 /// Compiles `pattern` on a spawned thread with an explicit 8 MiB stack.
 fn compile_on_eight_mib_stack(pattern: String) -> Result<(), RegexError> {

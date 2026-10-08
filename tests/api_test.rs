@@ -8,10 +8,14 @@ use ferroni::oniguruma::{
     ONIGERR_INVALID_BACKREF, ONIGERR_UNDEFINED_GROUP_REFERENCE, OnigSyntaxType,
 };
 use ferroni::prelude::*;
-use ferroni::regint::{DEFAULT_AST_NODE_LIMIT, DEFAULT_PARSE_DEPTH_LIMIT};
 use ferroni::regsyntax::{
     OnigSyntaxOniguruma, OnigSyntaxPerl_NG, OnigSyntaxPython, OnigSyntaxRuby,
 };
+
+// The documented defaults of the parser limits (ADR-013; the setters in
+// `ferroni::regparse` restore them on zero). `regint` is crate-private.
+const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 256;
+const DEFAULT_AST_NODE_LIMIT: u32 = 4096;
 
 // === Regex::new ===
 

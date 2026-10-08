@@ -61,3 +61,29 @@ Add an idiomatic Rust API layer on top of the C-ported internals:
 - `RegexType` fields are no longer directly accessible from outside the crate; use accessor functions or the `Regex` wrapper.
 - Future API additions should follow the idiomatic layer pattern: wrap C-ported internals, don't modify them.
 - The Scanner API ([ADR-006](../006-scanner-api)) extends this layer with a domain-specific multi-pattern interface for TextMate grammar tokenization, following the same principle of wrapping C-ported internals without modification.
+
+## Amendment (2.0): the public surface
+
+Ferroni 2.0 narrows what the crate exports. The C-internal modules are crate-private: `regint`, the port of `regint.h`, and `regparse_types`, the port of `regparse.h`. So are the internal items of the other C-port modules, and `literal_trie`, the Rust-only optimization of ADR-008. The public surface is then two parts and nothing else:
+
+- The Rust API: `prelude`, `api`, `replace`, `scanner`, `error`, `backtrack_lint` and `backtrack_rewrite`, unchanged.
+- The C API that `oniguruma.h` declares, at the module paths of the C-port table in the crate root. Those are the `onig_*` functions, the public types, the `ONIG_*` constants and the `OnigSyntax*` and `ONIG_ENCODING_*` statics.
+
+Three rules sort the C-port items:
+
+- `RegexType`, C's opaque `regex_t`, is re-exported from `oniguruma`. So is `CalloutArg`, which `onig_get_arg_by_callout_args` returns. C callers never see the fields of either.
+- Ferroni-only limit setters and their getters keep the style of the header's limit functions: `onig_set_ast_node_limit` and `onig_get_ast_node_limit`, `onig_set_match_stack_limit` and `onig_get_match_stack_limit`. They stay public.
+- Any other item that `oniguruma.h` does not declare is crate-private, for example `onig_compile`, `onig_parse_tree` and `onig_regset_search_fast`.
+
+The amendment has three reasons:
+
+- **Semver.** Every VM opcode and every parse-tree field was public, so each optimization that added an opcode, as ADR-008 does, was a breaking change. Private internals let the compiler and the VM change without a major release.
+- **C's own boundary.** Oniguruma installs `oniguruma.h` and nothing else. `regint.h` and `regparse.h` are private headers, so their types were never part of C's public API. Ferroni now draws the same line. ADR-001 still holds: the internal modules keep their C names, structure and control flow, and only their visibility changes.
+- **Documentation.** Before this change, 1,380 public items had no docs, and 751 of them were in `regint` and `regparse_types`. docs.rs rendered all of them.
+
+The other 2.0 changes in the same series:
+
+- The scanner and error types are extensible (#309). `ScannerConfig`, `ScannerMatch`, `CaptureIndex`, `RegexError` and `Syntax` are `#[non_exhaustive]`, so a new field or variant is not breaking. `ScannerMatch::capture_indices` is private behind `ScannerMatch::captures()`, which removes `smallvec` from the public API.
+- The nesting limit is split in two (#308). `onig_set_parse_depth_limit` bounds nesting only and defaults to 256 units, about 128 nested groups, down from 4,096. The new `onig_set_ast_node_limit` bounds the expression nodes of one pattern and defaults to 4,096. Deep patterns fail with `ONIGERR_PARSE_DEPTH_LIMIT_OVER` before they can overflow the stack (ADR-013).
+
+Migration: code that named `ferroni::regint::RegexType` uses `ferroni::oniguruma::RegexType` instead. Code that relied on the old nesting default must raise `onig_set_parse_depth_limit` and, for wide alternations, also `onig_set_ast_node_limit`.

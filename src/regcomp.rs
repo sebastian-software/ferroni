@@ -179,7 +179,7 @@ fn can_expand_finite_greedy_quantifier(body_len: i32, upper: i32) -> bool {
 }
 
 /// Add two lengths safely, capping at INFINITE_LEN.
-pub fn distance_add(d1: OnigLen, d2: OnigLen) -> OnigLen {
+pub(crate) fn distance_add(d1: OnigLen, d2: OnigLen) -> OnigLen {
     if d1 == INFINITE_LEN || d2 == INFINITE_LEN {
         INFINITE_LEN
     } else if d1 <= INFINITE_LEN - d2 {
@@ -3196,7 +3196,7 @@ fn compile_gimmick_node(gn: &GimmickNode, reg: &mut RegexType, env: &ParseEnv) -
 
 /// Pass 1: Calculate the bytecode length needed for a node tree.
 /// Returns the number of operations that will be generated.
-pub fn compile_length_tree(node: &Node, reg: &RegexType, env: &ParseEnv) -> i32 {
+pub(crate) fn compile_length_tree(node: &Node, reg: &RegexType, env: &ParseEnv) -> i32 {
     // Literal alternation trie: single AltLiterals opcode.
     if node.has_status(ND_ST_LITERAL_ALT) {
         return SIZE_INC;
@@ -3280,7 +3280,7 @@ pub fn compile_length_tree(node: &Node, reg: &RegexType, env: &ParseEnv) -> i32 
 
 /// Pass 2: Generate bytecode operations from the node tree.
 /// Returns 0 on success or a negative error code.
-pub fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
+pub(crate) fn compile_tree(node: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
     // Literal alternation trie: emit single AltLiterals opcode.
     if node.has_status(ND_ST_LITERAL_ALT) {
         if let NodeInner::String(ref sn) = node.inner {
@@ -6821,7 +6821,7 @@ enum LiteralAltContext {
 ///
 /// **Must be called before `tune_tree`** so that case-fold expansion has not
 /// yet rewritten the string nodes.
-pub fn detect_literal_alternations(
+pub(crate) fn detect_literal_alternations(
     node: &mut Node,
     reg: &mut RegexType,
     backrefed_mem: MemStatusType,
@@ -7857,7 +7857,12 @@ fn extract_alt_branches(alt_node: &mut Node, indices: &[usize], out: &mut Vec<No
 
 /// Tree tuning pass - sets emptiness on quantifier nodes and propagates state.
 /// Mirrors C's tune_tree() from regcomp.c.
-pub fn tune_tree(node: &mut Node, reg: &mut RegexType, state: i32, env: &mut ParseEnv) -> i32 {
+pub(crate) fn tune_tree(
+    node: &mut Node,
+    reg: &mut RegexType,
+    state: i32,
+    env: &mut ParseEnv,
+) -> i32 {
     // Skip nodes already optimized as literal alternation tries.
     if node.has_status(ND_ST_LITERAL_ALT) {
         // C unravels the case-insensitive strings the trie replaces here.
@@ -8741,7 +8746,7 @@ fn rebuild_list(items: Vec<Node>) -> Box<Node> {
 
 /// Consolidate adjacent string nodes in the parse tree.
 /// Mirrors C's reduce_string_list() from regcomp.c.
-pub fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
+pub(crate) fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
     match &mut node.inner {
         NodeInner::List(_) => {
             // Take ownership of the list, flatten, merge, rebuild
@@ -8946,7 +8951,7 @@ pub fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
 /// Simple compilation from a pre-parsed AST tree.
 /// Used internally and by tests that parse separately.
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn compile_from_tree(root: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
+pub(crate) fn compile_from_tree(root: &Node, reg: &mut RegexType, env: &ParseEnv) -> i32 {
     // Clear previous bytecode
     reg.ops.clear();
 
@@ -10479,13 +10484,13 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
 /// Full compilation entry point - mirrors C's onig_compile() called with a
 /// NULL `einfo`. Parses pattern, compiles to bytecode, sets up mem status and
 /// stack_pop_level.
-pub fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
+pub(crate) fn onig_compile(reg: &mut RegexType, pattern: &[u8]) -> i32 {
     onig_compile_einfo(reg, pattern, None)
 }
 
 /// Mirrors C's onig_compile() including its `einfo` out-parameter: on a
 /// failure that names a group or property, `einfo.par` receives that name.
-pub fn onig_compile_einfo(
+pub(crate) fn onig_compile_einfo(
     reg: &mut RegexType,
     pattern: &[u8],
     einfo: Option<&mut OnigErrorInfo>,

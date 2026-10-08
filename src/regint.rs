@@ -7,74 +7,74 @@ use crate::oniguruma::*;
 use crate::regenc::OnigEncoding;
 
 // === Feature Flags (C #define USE_*) ===
-pub const USE_CALL: bool = true;
-pub const USE_CALLOUT: bool = true;
-pub const USE_BACKREF_WITH_LEVEL: bool = true;
-pub const USE_CAPTURE_HISTORY: bool = true;
+pub(crate) const USE_CALL: bool = true;
+pub(crate) const USE_CALLOUT: bool = true;
+pub(crate) const USE_BACKREF_WITH_LEVEL: bool = true;
+pub(crate) const USE_CAPTURE_HISTORY: bool = true;
 
 // === Config Constants ===
 /// Default nesting limit, in parser units: a group costs two, a nested
 /// character class one. Ferroni-specific; C Oniguruma defaults to 4096. The
 /// value keeps a compile of any pattern within it inside a 2 MiB thread, in
 /// debug builds too. See ADR-013.
-pub const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 256;
+pub(crate) const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 256;
 /// Default per-pattern AST budget, in expression nodes; a flat concatenation or
 /// alternation costs one node per cell. Ferroni-only. See ADR-013.
-pub const DEFAULT_AST_NODE_LIMIT: u32 = 4096;
-pub const INIT_MATCH_STACK_SIZE: usize = 160;
-pub const DEFAULT_MATCH_STACK_LIMIT_SIZE: u32 = 0;
+pub(crate) const DEFAULT_AST_NODE_LIMIT: u32 = 4096;
+pub(crate) const INIT_MATCH_STACK_SIZE: usize = 160;
+pub(crate) const DEFAULT_MATCH_STACK_LIMIT_SIZE: u32 = 0;
 /// Rust-only (ADR-008): the backtrack stack never grows past this many
 /// entries unless a larger `match_stack_limit` is set. C lets it grow without
 /// bound when the limit is 0, so one hostile line can exhaust memory. This
 /// is a separate cap and not a default for `match_stack_limit`: a non-zero
 /// limit turns off other optimizations that a plain search is allowed.
-pub const HARD_MATCH_STACK_CAP: usize = 10_000_000;
-pub const DEFAULT_RETRY_LIMIT_IN_MATCH: u64 = 10_000_000;
-pub const DEFAULT_RETRY_LIMIT_IN_SEARCH: u64 = 0;
-pub const DEFAULT_TIME_LIMIT_MSEC: u64 = 0;
-pub const DEFAULT_SUBEXP_CALL_LIMIT_IN_SEARCH: u64 = 0;
-pub const DEFAULT_SUBEXP_CALL_MAX_NEST_LEVEL: i32 = 20;
+pub(crate) const HARD_MATCH_STACK_CAP: usize = 10_000_000;
+pub(crate) const DEFAULT_RETRY_LIMIT_IN_MATCH: u64 = 10_000_000;
+pub(crate) const DEFAULT_RETRY_LIMIT_IN_SEARCH: u64 = 0;
+pub(crate) const DEFAULT_TIME_LIMIT_MSEC: u64 = 0;
+pub(crate) const DEFAULT_SUBEXP_CALL_LIMIT_IN_SEARCH: u64 = 0;
+pub(crate) const DEFAULT_SUBEXP_CALL_MAX_NEST_LEVEL: i32 = 20;
 
 // === Internal Constants ===
-pub const CHAR_MAP_SIZE: usize = 256;
-pub const INFINITE_LEN: OnigLen = ONIG_INFINITE_DISTANCE;
-pub const STEP_BACK_MAX_CHAR_LEN: i32 = 65535;
-pub const LOOK_BEHIND_MAX_CHAR_LEN: i32 = STEP_BACK_MAX_CHAR_LEN;
-pub const INFINITE_REPEAT: i32 = -1;
+pub(crate) const CHAR_MAP_SIZE: usize = 256;
+pub(crate) const INFINITE_LEN: OnigLen = ONIG_INFINITE_DISTANCE;
+pub(crate) const STEP_BACK_MAX_CHAR_LEN: i32 = 65535;
+pub(crate) const LOOK_BEHIND_MAX_CHAR_LEN: i32 = STEP_BACK_MAX_CHAR_LEN;
+pub(crate) const INFINITE_REPEAT: i32 = -1;
 
 #[inline]
-pub fn is_infinite_repeat(n: i32) -> bool {
+pub(crate) fn is_infinite_repeat(n: i32) -> bool {
     n == INFINITE_REPEAT
 }
 
 // === Bytecode Types ===
-pub type RelAddrType = i32;
-pub type AbsAddrType = i32;
-pub type LengthType = i32;
-pub type RelPositionType = i32;
-pub type RepeatNumType = i32;
-pub type MemNumType = i32;
-pub type ModeType = i32;
+pub(crate) type RelAddrType = i32;
+pub(crate) type AbsAddrType = i32;
+pub(crate) type LengthType = i32;
+pub(crate) type RelPositionType = i32;
+pub(crate) type RepeatNumType = i32;
+pub(crate) type MemNumType = i32;
+pub(crate) type ModeType = i32;
 
 // === MemStatus (bit status for captures) ===
-pub type MemStatusType = u32;
+pub(crate) type MemStatusType = u32;
 
-pub const MEM_STATUS_BITS_NUM: usize = 32;
+pub(crate) const MEM_STATUS_BITS_NUM: usize = 32;
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mem_status_clear(stats: &mut MemStatusType) {
+pub(crate) fn mem_status_clear(stats: &mut MemStatusType) {
     *stats = 0;
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mem_status_on_all(stats: &mut MemStatusType) {
+pub(crate) fn mem_status_on_all(stats: &mut MemStatusType) {
     *stats = !0u32;
 }
 
 #[inline]
-pub fn mem_status_at(stats: MemStatusType, n: usize) -> bool {
+pub(crate) fn mem_status_at(stats: MemStatusType, n: usize) -> bool {
     if n < MEM_STATUS_BITS_NUM {
         (stats & (1u32 << n)) != 0
     } else {
@@ -84,7 +84,7 @@ pub fn mem_status_at(stats: MemStatusType, n: usize) -> bool {
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mem_status_at0(stats: MemStatusType, n: usize) -> bool {
+pub(crate) fn mem_status_at0(stats: MemStatusType, n: usize) -> bool {
     if n > 0 && n < MEM_STATUS_BITS_NUM {
         (stats & (1u32 << n)) != 0
     } else {
@@ -94,12 +94,12 @@ pub fn mem_status_at0(stats: MemStatusType, n: usize) -> bool {
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mem_status_is_all_on(stats: MemStatusType) -> bool {
+pub(crate) fn mem_status_is_all_on(stats: MemStatusType) -> bool {
     (stats & 1) != 0
 }
 
 #[inline]
-pub fn mem_status_on(stats: &mut MemStatusType, n: usize) {
+pub(crate) fn mem_status_on(stats: &mut MemStatusType, n: usize) {
     if n < MEM_STATUS_BITS_NUM {
         if n != 0 {
             *stats |= 1u32 << n;
@@ -111,7 +111,7 @@ pub fn mem_status_on(stats: &mut MemStatusType, n: usize) {
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mem_status_on_simple(stats: &mut MemStatusType, n: usize) {
+pub(crate) fn mem_status_on_simple(stats: &mut MemStatusType, n: usize) {
     if n < MEM_STATUS_BITS_NUM {
         *stats |= 1u32 << n;
     }
@@ -119,7 +119,7 @@ pub fn mem_status_on_simple(stats: &mut MemStatusType, n: usize) {
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mem_status_limit_at(stats: MemStatusType, n: usize) -> bool {
+pub(crate) fn mem_status_limit_at(stats: MemStatusType, n: usize) -> bool {
     if n < MEM_STATUS_BITS_NUM {
         (stats & (1u32 << n)) != 0
     } else {
@@ -129,48 +129,48 @@ pub fn mem_status_limit_at(stats: MemStatusType, n: usize) -> bool {
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mem_status_limit_on(stats: &mut MemStatusType, n: usize) {
+pub(crate) fn mem_status_limit_on(stats: &mut MemStatusType, n: usize) {
     if n < MEM_STATUS_BITS_NUM && n != 0 {
         *stats |= 1u32 << n;
     }
 }
 
 // === BitSet (256 bits for ASCII character classes) ===
-pub const BITS_PER_BYTE: usize = 8;
-pub const SINGLE_BYTE_SIZE: usize = 1 << BITS_PER_BYTE;
-pub const BITS_IN_ROOM: usize = 32;
-pub const BITSET_REAL_SIZE: usize = SINGLE_BYTE_SIZE / BITS_IN_ROOM;
-pub type Bits = u32;
-pub type BitSet = [Bits; BITSET_REAL_SIZE];
+pub(crate) const BITS_PER_BYTE: usize = 8;
+pub(crate) const SINGLE_BYTE_SIZE: usize = 1 << BITS_PER_BYTE;
+pub(crate) const BITS_IN_ROOM: usize = 32;
+pub(crate) const BITSET_REAL_SIZE: usize = SINGLE_BYTE_SIZE / BITS_IN_ROOM;
+pub(crate) type Bits = u32;
+pub(crate) type BitSet = [Bits; BITSET_REAL_SIZE];
 
-pub const SIZE_BITSET: usize = std::mem::size_of::<BitSet>();
+pub(crate) const SIZE_BITSET: usize = std::mem::size_of::<BitSet>();
 
 #[inline]
-pub fn bitset_clear(bs: &mut BitSet) {
+pub(crate) fn bitset_clear(bs: &mut BitSet) {
     for slot in bs.iter_mut() {
         *slot = 0;
     }
 }
 
 #[inline]
-pub fn bs_room(pos: usize) -> usize {
+pub(crate) fn bs_room(pos: usize) -> usize {
     pos >> 5
 }
 
 #[inline]
-pub fn bs_bit(pos: usize) -> u32 {
+pub(crate) fn bs_bit(pos: usize) -> u32 {
     1u32 << (pos & 0x1f)
 }
 
 #[inline]
-pub fn bitset_at(bs: &BitSet, pos: usize) -> bool {
+pub(crate) fn bitset_at(bs: &BitSet, pos: usize) -> bool {
     (bs[bs_room(pos)] & bs_bit(pos)) != 0
 }
 
 /// The positions of the set bits of `bs`, ascending. Visits whole words, so
 /// sparse sets cost their population rather than 256 bit tests.
 #[inline]
-pub fn bitset_members(bs: &BitSet) -> impl Iterator<Item = usize> + '_ {
+pub(crate) fn bitset_members(bs: &BitSet) -> impl Iterator<Item = usize> + '_ {
     bs.iter().enumerate().flat_map(|(room, &word)| {
         let mut bits = word;
         std::iter::from_fn(move || {
@@ -184,52 +184,52 @@ pub fn bitset_members(bs: &BitSet) -> impl Iterator<Item = usize> + '_ {
 }
 
 #[inline]
-pub fn bitset_set_bit(bs: &mut BitSet, pos: usize) {
+pub(crate) fn bitset_set_bit(bs: &mut BitSet, pos: usize) {
     bs[bs_room(pos)] |= bs_bit(pos);
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn bitset_clear_bit(bs: &mut BitSet, pos: usize) {
+pub(crate) fn bitset_clear_bit(bs: &mut BitSet, pos: usize) {
     bs[bs_room(pos)] &= !bs_bit(pos);
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn bitset_invert_bit(bs: &mut BitSet, pos: usize) {
+pub(crate) fn bitset_invert_bit(bs: &mut BitSet, pos: usize) {
     bs[bs_room(pos)] ^= bs_bit(pos);
 }
 
 // === Anchor Flags ===
-pub const ANCR_PREC_READ: i32 = 1 << 0;
-pub const ANCR_PREC_READ_NOT: i32 = 1 << 1;
-pub const ANCR_LOOK_BEHIND: i32 = 1 << 2;
-pub const ANCR_LOOK_BEHIND_NOT: i32 = 1 << 3;
-pub const ANCR_BEGIN_BUF: i32 = 1 << 4;
-pub const ANCR_BEGIN_LINE: i32 = 1 << 5;
-pub const ANCR_BEGIN_POSITION: i32 = 1 << 6;
-pub const ANCR_END_BUF: i32 = 1 << 7;
-pub const ANCR_SEMI_END_BUF: i32 = 1 << 8;
-pub const ANCR_END_LINE: i32 = 1 << 9;
-pub const ANCR_WORD_BOUNDARY: i32 = 1 << 10;
-pub const ANCR_NO_WORD_BOUNDARY: i32 = 1 << 11;
-pub const ANCR_WORD_BEGIN: i32 = 1 << 12;
-pub const ANCR_WORD_END: i32 = 1 << 13;
-pub const ANCR_ANYCHAR_INF: i32 = 1 << 14;
-pub const ANCR_ANYCHAR_INF_ML: i32 = 1 << 15;
-pub const ANCR_TEXT_SEGMENT_BOUNDARY: i32 = 1 << 16;
-pub const ANCR_NO_TEXT_SEGMENT_BOUNDARY: i32 = 1 << 17;
-pub const ANCR_ANYCHAR_INF_MASK: i32 = ANCR_ANYCHAR_INF | ANCR_ANYCHAR_INF_ML;
+pub(crate) const ANCR_PREC_READ: i32 = 1 << 0;
+pub(crate) const ANCR_PREC_READ_NOT: i32 = 1 << 1;
+pub(crate) const ANCR_LOOK_BEHIND: i32 = 1 << 2;
+pub(crate) const ANCR_LOOK_BEHIND_NOT: i32 = 1 << 3;
+pub(crate) const ANCR_BEGIN_BUF: i32 = 1 << 4;
+pub(crate) const ANCR_BEGIN_LINE: i32 = 1 << 5;
+pub(crate) const ANCR_BEGIN_POSITION: i32 = 1 << 6;
+pub(crate) const ANCR_END_BUF: i32 = 1 << 7;
+pub(crate) const ANCR_SEMI_END_BUF: i32 = 1 << 8;
+pub(crate) const ANCR_END_LINE: i32 = 1 << 9;
+pub(crate) const ANCR_WORD_BOUNDARY: i32 = 1 << 10;
+pub(crate) const ANCR_NO_WORD_BOUNDARY: i32 = 1 << 11;
+pub(crate) const ANCR_WORD_BEGIN: i32 = 1 << 12;
+pub(crate) const ANCR_WORD_END: i32 = 1 << 13;
+pub(crate) const ANCR_ANYCHAR_INF: i32 = 1 << 14;
+pub(crate) const ANCR_ANYCHAR_INF_ML: i32 = 1 << 15;
+pub(crate) const ANCR_TEXT_SEGMENT_BOUNDARY: i32 = 1 << 16;
+pub(crate) const ANCR_NO_TEXT_SEGMENT_BOUNDARY: i32 = 1 << 17;
+pub(crate) const ANCR_ANYCHAR_INF_MASK: i32 = ANCR_ANYCHAR_INF | ANCR_ANYCHAR_INF_ML;
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn anchor_has_body(anchor_type: i32) -> bool {
+pub(crate) fn anchor_has_body(anchor_type: i32) -> bool {
     anchor_type < ANCR_BEGIN_BUF
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn is_word_anchor_type(anchor_type: i32) -> bool {
+pub(crate) fn is_word_anchor_type(anchor_type: i32) -> bool {
     anchor_type == ANCR_WORD_BOUNDARY
         || anchor_type == ANCR_NO_WORD_BOUNDARY
         || anchor_type == ANCR_WORD_BEGIN
@@ -239,7 +239,7 @@ pub fn is_word_anchor_type(anchor_type: i32) -> bool {
 // === OpCode Enum ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub enum OpCode {
+pub(crate) enum OpCode {
     Finish = 0,
     End = 1,
     Str1 = 2,
@@ -353,7 +353,7 @@ pub enum OpCode {
 // === SaveType ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum SaveType {
+pub(crate) enum SaveType {
     Keep = 0,
     S = 1,
     RightRange = 2,
@@ -362,7 +362,7 @@ pub enum SaveType {
 // === UpdateVarType ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum UpdateVarType {
+pub(crate) enum UpdateVarType {
     KeepFromStackLast = 0,
     SFromStack = 1,
     RightRangeFromStack = 2,
@@ -374,7 +374,7 @@ pub enum UpdateVarType {
 // === CheckPositionType ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum CheckPositionType {
+pub(crate) enum CheckPositionType {
     SearchStart = 0,
     CurrentRightRange = 1,
 }
@@ -382,7 +382,7 @@ pub enum CheckPositionType {
 // === TextSegmentBoundaryType ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum TextSegmentBoundaryType {
+pub(crate) enum TextSegmentBoundaryType {
     ExtendedGraphemeCluster = 0,
     Word = 1,
 }
@@ -390,7 +390,7 @@ pub enum TextSegmentBoundaryType {
 // === Stack Pop Level ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum StackPopLevel {
+pub(crate) enum StackPopLevel {
     Free = 0,
     MemStart = 1,
     All = 2,
@@ -398,7 +398,7 @@ pub enum StackPopLevel {
 
 // === Optimize Type ===
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OptimizeType {
+pub(crate) enum OptimizeType {
     None,
     Str,
     StrFast,
@@ -407,26 +407,26 @@ pub enum OptimizeType {
 }
 
 // === CClass Flags ===
-pub const FLAG_NCCLASS_NOT: u32 = 1 << 0;
-pub const FLAG_NCCLASS_SHARE: u32 = 1 << 1;
+pub(crate) const FLAG_NCCLASS_NOT: u32 = 1 << 0;
+pub(crate) const FLAG_NCCLASS_SHARE: u32 = 1 << 1;
 
 // === Operation (Bytecode Instruction) ===
 //
 // In C this is a struct with opcode + union. In Rust we use struct + enum payload.
 // The opcode field is stored separately for direct access (needed for dispatch).
-pub struct Operation {
+pub(crate) struct Operation {
     pub opcode: OpCode,
     pub payload: OperationPayload,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CClassAsciiFastKind {
+pub(crate) enum CClassAsciiFastKind {
     None,
     Eq(u8),
     EqFoldLower(u8),
 }
 
-pub enum OperationPayload {
+pub(crate) enum OperationPayload {
     None,
     /// Captures around the repeated decimal/optional-underscore body, outer first.
     DecimalTailPrefix {
@@ -584,32 +584,37 @@ pub enum OperationPayload {
 }
 
 // === Callout constants ===
-pub const CALLOUT_IN_PROGRESS: i32 = OnigCalloutIn::Progress as i32;
-pub const CALLOUT_IN_RETRACTION: i32 = OnigCalloutIn::Retraction as i32;
-pub const CALLOUT_IN_BOTH: i32 = CALLOUT_IN_PROGRESS | CALLOUT_IN_RETRACTION;
+pub(crate) const CALLOUT_IN_PROGRESS: i32 = OnigCalloutIn::Progress as i32;
+pub(crate) const CALLOUT_IN_RETRACTION: i32 = OnigCalloutIn::Retraction as i32;
+pub(crate) const CALLOUT_IN_BOTH: i32 = CALLOUT_IN_PROGRESS | CALLOUT_IN_RETRACTION;
 
 /// Builtin callout IDs (hard-coded instead of global name registry)
-pub const CALLOUT_BUILTIN_FAIL: i32 = 0;
-pub const CALLOUT_BUILTIN_MAX: i32 = 1;
-pub const CALLOUT_BUILTIN_COUNT: i32 = 2;
-pub const CALLOUT_BUILTIN_CMP: i32 = 3;
-pub const CALLOUT_BUILTIN_SKIP: i32 = 4;
+pub(crate) const CALLOUT_BUILTIN_FAIL: i32 = 0;
+pub(crate) const CALLOUT_BUILTIN_MAX: i32 = 1;
+pub(crate) const CALLOUT_BUILTIN_COUNT: i32 = 2;
+pub(crate) const CALLOUT_BUILTIN_CMP: i32 = 3;
+pub(crate) const CALLOUT_BUILTIN_SKIP: i32 = 4;
 
 /// Result codes for callout functions
-pub const ONIG_CALLOUT_FAIL: i32 = 1;
-pub const ONIG_CALLOUT_SUCCESS: i32 = 0;
+pub(crate) const ONIG_CALLOUT_FAIL: i32 = 1;
+pub(crate) const ONIG_CALLOUT_SUCCESS: i32 = 0;
 
 // === Callout argument ===
+/// A callout argument, as `onig_get_arg_by_callout_args` returns it.
 #[derive(Clone, Debug)]
 pub enum CalloutArg {
+    /// A number.
     Long(i64),
+    /// A character.
     Char(u8),
+    /// The name of a callout tag.
     Tag(Vec<u8>),
+    /// A string.
     Str(Vec<u8>),
 }
 
 // === CalloutListEntry ===
-pub struct CalloutListEntry {
+pub(crate) struct CalloutListEntry {
     pub of: i32,         // 0=contents, 1=name
     pub callout_in: i32, // CALLOUT_IN_PROGRESS / RETRACTION / BOTH
     pub builtin_id: i32, // CALLOUT_BUILTIN_MAX etc., -1 for contents
@@ -622,14 +627,14 @@ pub struct CalloutListEntry {
 
 // === RepeatRange ===
 #[derive(Clone, Debug)]
-pub struct RepeatRange {
+pub(crate) struct RepeatRange {
     pub lower: i32,
     pub upper: i32,
     pub u_offset: i32,
 }
 
 // === RegexExt (Callout Extension) ===
-pub struct RegexExt {
+pub(crate) struct RegexExt {
     pub pattern: Vec<u8>,
     pub tag_table: Option<HashMap<Vec<u8>, i32>>,
     pub callout_num: i32,
@@ -637,6 +642,8 @@ pub struct RegexExt {
 }
 
 // === regex_t (re_pattern_buffer) ===
+/// A compiled pattern: C's `regex_t`, which `onig_new` returns. Its fields are
+/// crate-private, so C callers only pass it to the functions that take it.
 pub struct RegexType {
     /// Rust-only: findings of the compile-time backtracking check.
     pub(crate) backtrack_warnings: Vec<crate::backtrack_lint::BacktrackWarning>,
@@ -833,35 +840,35 @@ impl MapAsciiRanges {
 pub(crate) const GUARD_RETRIES_BY_CHECKS: u32 = 1 << 31;
 
 // === Optimization data structures ===
-pub const OPT_EXACT_MAXLEN: usize = 24;
+pub(crate) const OPT_EXACT_MAXLEN: usize = 24;
 
 #[derive(Clone, Copy, Default)]
-pub struct MinMaxLen {
+pub(crate) struct MinMaxLen {
     pub min: OnigLen,
     pub max: OnigLen,
 }
 
 impl MinMaxLen {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         MinMaxLen { min: 0, max: 0 }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.min = 0;
         self.max = 0;
     }
 
-    pub fn set(&mut self, min: OnigLen, max: OnigLen) {
+    pub(crate) fn set(&mut self, min: OnigLen, max: OnigLen) {
         self.min = min;
         self.max = max;
     }
 
-    pub fn add(&mut self, other: &MinMaxLen) {
+    pub(crate) fn add(&mut self, other: &MinMaxLen) {
         self.min = crate::regcomp::distance_add(self.min, other.min);
         self.max = crate::regcomp::distance_add(self.max, other.max);
     }
 
-    pub fn alt_merge(&mut self, other: &MinMaxLen) {
+    pub(crate) fn alt_merge(&mut self, other: &MinMaxLen) {
         if self.min > other.min {
             self.min = other.min;
         }
@@ -870,30 +877,30 @@ impl MinMaxLen {
         }
     }
 
-    pub fn is_equal(&self, other: &MinMaxLen) -> bool {
+    pub(crate) fn is_equal(&self, other: &MinMaxLen) -> bool {
         self.min == other.min && self.max == other.max
     }
 }
 
 #[derive(Clone, Copy, Default)]
-pub struct OptAnc {
+pub(crate) struct OptAnc {
     pub left: i32,
     pub right: i32,
 }
 
 impl OptAnc {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         OptAnc { left: 0, right: 0 }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.left = 0;
         self.right = 0;
     }
 }
 
 #[derive(Clone, Copy, Default)]
-pub struct OptStr {
+pub(crate) struct OptStr {
     pub mm: MinMaxLen,
     pub anc: OptAnc,
     pub reach_end: i32,
@@ -902,7 +909,7 @@ pub struct OptStr {
 }
 
 impl OptStr {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         OptStr {
             mm: MinMaxLen::new(),
             anc: OptAnc::new(),
@@ -912,7 +919,7 @@ impl OptStr {
         }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.mm.clear();
         self.anc.clear();
         self.reach_end = 0;
@@ -920,13 +927,13 @@ impl OptStr {
         self.s[0] = 0;
     }
 
-    pub fn is_full(&self) -> bool {
+    pub(crate) fn is_full(&self) -> bool {
         self.len >= OPT_EXACT_MAXLEN
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct OptMap {
+pub(crate) struct OptMap {
     pub mm: MinMaxLen,
     pub anc: OptAnc,
     pub value: i32,
@@ -934,7 +941,7 @@ pub struct OptMap {
 }
 
 impl OptMap {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         OptMap {
             mm: MinMaxLen::new(),
             anc: OptAnc::new(),
@@ -943,7 +950,7 @@ impl OptMap {
         }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.mm.clear();
         self.anc.clear();
         self.value = 0;
@@ -963,7 +970,7 @@ impl Default for OptMap {
 }
 
 #[derive(Clone)]
-pub struct OptNode {
+pub(crate) struct OptNode {
     pub len: MinMaxLen,
     pub anc: OptAnc,
     pub sb: OptStr,
@@ -979,7 +986,7 @@ impl Default for OptNode {
 }
 
 impl OptNode {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         OptNode {
             len: MinMaxLen::new(),
             anc: OptAnc::new(),
@@ -990,7 +997,7 @@ impl OptNode {
         }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.len.clear();
         self.anc.clear();
         self.sb.clear();
@@ -1003,167 +1010,167 @@ impl OptNode {
 // === Option check macros as functions ===
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_ignorecase(option: OnigOptionType) -> bool {
+pub(crate) fn opton_ignorecase(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_IGNORECASE)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_extend(option: OnigOptionType) -> bool {
+pub(crate) fn opton_extend(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_EXTEND)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_multiline(option: OnigOptionType) -> bool {
+pub(crate) fn opton_multiline(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_MULTILINE)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_singleline(option: OnigOptionType) -> bool {
+pub(crate) fn opton_singleline(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_SINGLELINE)
 }
 
 #[inline]
-pub fn opton_find_longest(option: OnigOptionType) -> bool {
+pub(crate) fn opton_find_longest(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_FIND_LONGEST)
 }
 
 #[inline]
-pub fn opton_find_not_empty(option: OnigOptionType) -> bool {
+pub(crate) fn opton_find_not_empty(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_FIND_NOT_EMPTY)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_negate_singleline(option: OnigOptionType) -> bool {
+pub(crate) fn opton_negate_singleline(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_NEGATE_SINGLELINE)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_dont_capture_group(option: OnigOptionType) -> bool {
+pub(crate) fn opton_dont_capture_group(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_DONT_CAPTURE_GROUP)
 }
 
 #[inline]
-pub fn opton_capture_group(option: OnigOptionType) -> bool {
+pub(crate) fn opton_capture_group(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_CAPTURE_GROUP)
 }
 
 #[inline]
-pub fn opton_notbol(option: OnigOptionType) -> bool {
+pub(crate) fn opton_notbol(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_NOTBOL)
 }
 
 #[inline]
-pub fn opton_noteol(option: OnigOptionType) -> bool {
+pub(crate) fn opton_noteol(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_NOTEOL)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_posix_region(option: OnigOptionType) -> bool {
+pub(crate) fn opton_posix_region(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_POSIX_REGION)
 }
 
 #[inline]
-pub fn opton_check_validity_of_string(option: OnigOptionType) -> bool {
+pub(crate) fn opton_check_validity_of_string(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_CHECK_VALIDITY_OF_STRING)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_callback_each_match(option: OnigOptionType) -> bool {
+pub(crate) fn opton_callback_each_match(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_CALLBACK_EACH_MATCH)
 }
 
 #[inline]
-pub fn opton_not_begin_string(option: OnigOptionType) -> bool {
+pub(crate) fn opton_not_begin_string(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_NOT_BEGIN_STRING)
 }
 
 #[inline]
-pub fn opton_not_end_string(option: OnigOptionType) -> bool {
+pub(crate) fn opton_not_end_string(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_NOT_END_STRING)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn opton_not_begin_position(option: OnigOptionType) -> bool {
+pub(crate) fn opton_not_begin_position(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_NOT_BEGIN_POSITION)
 }
 
 #[inline]
-pub fn opton_match_whole_string(option: OnigOptionType) -> bool {
+pub(crate) fn opton_match_whole_string(option: OnigOptionType) -> bool {
     option.contains(ONIG_OPTION_MATCH_WHOLE_STRING)
 }
 
 // === Syntax macros ===
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mc_esc(syn: &OnigSyntaxType) -> OnigCodePoint {
+pub(crate) fn mc_esc(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.esc
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mc_anychar(syn: &OnigSyntaxType) -> OnigCodePoint {
+pub(crate) fn mc_anychar(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.anychar
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mc_anytime(syn: &OnigSyntaxType) -> OnigCodePoint {
+pub(crate) fn mc_anytime(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.anytime
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mc_zero_or_one_time(syn: &OnigSyntaxType) -> OnigCodePoint {
+pub(crate) fn mc_zero_or_one_time(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.zero_or_one_time
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mc_one_or_more_time(syn: &OnigSyntaxType) -> OnigCodePoint {
+pub(crate) fn mc_one_or_more_time(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.one_or_more_time
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn mc_anychar_anytime(syn: &OnigSyntaxType) -> OnigCodePoint {
+pub(crate) fn mc_anychar_anytime(syn: &OnigSyntaxType) -> OnigCodePoint {
     syn.meta_char_table.anychar_anytime
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn is_mc_esc_code(code: OnigCodePoint, syn: &OnigSyntaxType) -> bool {
+pub(crate) fn is_mc_esc_code(code: OnigCodePoint, syn: &OnigSyntaxType) -> bool {
     code == mc_esc(syn) && !is_syntax_op2(syn, ONIG_SYN_OP2_INEFFECTIVE_ESCAPE)
 }
 
 // === Value helpers ===
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn digitval(code: OnigCodePoint) -> u32 {
+pub(crate) fn digitval(code: OnigCodePoint) -> u32 {
     code - b'0' as u32
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn odigitval(code: OnigCodePoint) -> u32 {
+pub(crate) fn odigitval(code: OnigCodePoint) -> u32 {
     digitval(code)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn is_code_word_ascii(code: OnigCodePoint) -> bool {
+pub(crate) fn is_code_word_ascii(code: OnigCodePoint) -> bool {
     code < 128
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn is_code_digit_ascii(code: OnigCodePoint) -> bool {
+pub(crate) fn is_code_digit_ascii(code: OnigCodePoint) -> bool {
     code < 128 && (code >= b'0' as u32 && code <= b'9' as u32)
 }
