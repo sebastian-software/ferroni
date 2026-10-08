@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.2](https://github.com/sebastian-software/ferroni/compare/v1.9.1...v1.9.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **compile:** reject case-folded look-behinds where the syntax needs fixed lengths ([#242](https://github.com/sebastian-software/ferroni/issues/242)) ([e4142f9](https://github.com/sebastian-software/ferroni/commit/e4142f9cbbb66b9df93bb2f5fcdc171c43ec028b)), closes [#234](https://github.com/sebastian-software/ferroni/issues/234)
+* **vm:** continue after a fixed-length look-behind where its body ends, as C does ([#260](https://github.com/sebastian-software/ferroni/issues/260)) ([dd86ed5](https://github.com/sebastian-software/ferroni/commit/dd86ed5378a98b9f59b7ae074696f930be2be4d9)), closes [#257](https://github.com/sebastian-software/ferroni/issues/257)
+* **vm:** read a byte that starts no multibyte character as C's multibyte classes do ([aa2cfbf](https://github.com/sebastian-software/ferroni/commit/aa2cfbff177bd5fd310f53b6edc2fc8e4f223ebc)), closes [#261](https://github.com/sebastian-software/ferroni/issues/261)
+
+
+### Performance Improvements
+
+* **search:** attempt only the class run before a literal after zero-width checks ([#240](https://github.com/sebastian-software/ferroni/issues/240)) ([59ddea7](https://github.com/sebastian-software/ferroni/commit/59ddea7a80d26b794a57bf34fcd810cc386dad46))
+* **search:** cut fixed per-search costs of jump checks and region clears ([#256](https://github.com/sebastian-software/ferroni/issues/256)) ([385de04](https://github.com/sebastian-software/ferroni/commit/385de0461ac8f6012569b6888ca111e536b3f560))
+
 ## [1.9.1](https://github.com/sebastian-software/ferroni/compare/v1.9.0...v1.9.1) (2026-10-07)
 
 
