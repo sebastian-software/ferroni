@@ -183,15 +183,15 @@ every task and the raw data:
 - **Test parity.** Every upstream test file for UTF-8 is ported case by case:
   2,974 C test cases and the vscode-oniguruma scanner tests, all passing
   ([parity table](https://ferroni.dev/guide/compatibility#test-parity)). With
-  Ferroni's own tests the tree holds **2,526 `#[test]` functions**, counted by
-  [`scripts/count-tests.sh`](scripts/count-tests.sh).
+  Ferroni's own tests the tree holds **at least 2,500 `#[test]` functions**,
+  counted by [`scripts/count-tests.sh`](scripts/count-tests.sh).
 - **Coverage gate.** CI measures line coverage on every pull request and fails
   below the threshold set in [`scripts/coverage.sh`](scripts/coverage.sh).
 - **Fuzzing.** Pattern compilation, matching and the scanner are fuzzed on
   every pull request, and for longer every week.
 - **Memory safety.** C Oniguruma has a history of memory-safety CVEs in its
   buffer and string handling. Ferroni keeps that code in safe Rust; the
-  remaining `unsafe`, ten sites, covers only the links between parse-tree
+  remaining `unsafe`, 10 sites, covers only the links between parse-tree
   nodes during compilation ([ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy)).
 - **Hostile patterns and input.** Per-search timeouts and retry limits stop
   runaway backtracking, and a compile-time check flags patterns such as
