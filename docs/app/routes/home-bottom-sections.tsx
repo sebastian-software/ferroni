@@ -163,7 +163,7 @@ const proof = [
   },
   {
     label: "Unicode data",
-    value: "17.0",
+    value: "18.0",
     detail: "Generated from the Unicode Character Database; C Oniguruma ships 16.0.",
   },
   {

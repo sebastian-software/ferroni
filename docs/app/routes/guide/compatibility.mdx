@@ -48,11 +48,11 @@ These parts of the C library are not ported:
 
 ### Where Ferroni differs on purpose
 
-- **Unicode 17.0.** Ferroni generates its tables from the Unicode Character
-  Database 17.0; C Oniguruma's last release ships 16.0. Some characters change
+- **Unicode 18.0.** Ferroni generates its tables from the Unicode Character
+  Database 18.0; C Oniguruma's last release ships 16.0. Some characters change
   properties as a result: 672 leave `Extended_Pictographic`, U+0295 moves from
-  `Ll` to `Lo`, and some `\X` boundaries move
-  ([ADR-015](../adr/015-unicode-data-from-ucd)).
+  `Ll` to `Lo`, and some `\X` boundaries move. U+1DF95 folds to "ss", so
+  `(?i)ss` matches it ([ADR-015](../adr/015-unicode-data-from-ucd)).
 - **A capped backtracking stack.** When no stack limit is set, C lets the
   backtracking stack grow until memory runs out. Ferroni stops at 10 million
   entries and reports the limit

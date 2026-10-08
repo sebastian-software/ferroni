@@ -288,8 +288,8 @@ These scripts are maintainer tools; normal `cargo build`, tests, and CI do not
 run them automatically. Python 3.11+ and rustfmt are required.
 
 ```bash
-python3 scripts/prepare_unicode_data.py 17.0.0
-python3 scripts/gen_unicode_tables.py --version 17.0.0
+python3 scripts/prepare_unicode_data.py 18.0.0
+python3 scripts/gen_unicode_tables.py --version 18.0.0
 ```
 
 To verify that the pipeline still reproduces the recorded Unicode 16.0 baseline
@@ -307,6 +307,26 @@ Commit all four generated files together with the source change:
 - `src/unicode/fold_data.rs`
 - `src/unicode/egcb_data.rs`
 - `src/unicode/wb_data.rs`
+
+### Annual Unicode update
+
+The Unicode Consortium publishes a new UCD each September. Ferroni follows it
+once a year, in a single change:
+
+1. Add the new archive to `unicode_data.toml`. Its `sha256` is the SHA-256 of
+   the complete `UCD.zip` as downloaded from `https://www.unicode.org/Public/`.
+   Keep the older pins; the 16.0.0 pin backs the baseline check.
+2. Run the two commands above for the new version, and run
+   `scripts/check_unicode_16.py` to confirm the baseline still holds.
+3. Update the version and property-name count wherever the README, the
+   documentation site and ADR-015 quote them.
+4. Commit it as a `feat`, for example:
+
+   ```text
+   feat(unicode): move the Unicode tables to Unicode 18.0
+   ```
+
+   Because Ferroni is past 1.0, release-please turns that into a minor release.
 
 ## Guidelines
 

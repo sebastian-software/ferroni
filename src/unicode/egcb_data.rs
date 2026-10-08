@@ -1,4 +1,4 @@
-// Auto-generated Extended Grapheme Cluster Break data from Unicode 17.0.0 (see unicode_data.toml).
+// Auto-generated Extended Grapheme Cluster Break data from Unicode 18.0.0 (see unicode_data.toml).
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -26,7 +26,7 @@ pub struct EgcbRange {
     pub prop: EgcbType,
 }
 
-pub static EGCB_RANGES: [EgcbRange; 1386] = [
+pub static EGCB_RANGES: [EgcbRange; 1392] = [
     EgcbRange {
         start: 0x000000,
         end: 0x000009,
@@ -94,7 +94,7 @@ pub static EGCB_RANGES: [EgcbRange; 1386] = [
     },
     EgcbRange {
         start: 0x0005c7,
-        end: 0x0005c7,
+        end: 0x0005c9,
         prop: EgcbType::Extend,
     },
     EgcbRange {
@@ -493,7 +493,7 @@ pub static EGCB_RANGES: [EgcbRange; 1386] = [
         prop: EgcbType::Extend,
     },
     EgcbRange {
-        start: 0x000b55,
+        start: 0x000b53,
         end: 0x000b57,
         prop: EgcbType::Extend,
     },
@@ -1159,12 +1159,7 @@ pub static EGCB_RANGES: [EgcbRange; 1386] = [
     },
     EgcbRange {
         start: 0x001ab0,
-        end: 0x001add,
-        prop: EgcbType::Extend,
-    },
-    EgcbRange {
-        start: 0x001ae0,
-        end: 0x001aeb,
+        end: 0x001af0,
         prop: EgcbType::Extend,
     },
     EgcbRange {
@@ -5763,7 +5758,12 @@ pub static EGCB_RANGES: [EgcbRange; 1386] = [
         prop: EgcbType::Extend,
     },
     EgcbRange {
-        start: 0x010efa,
+        start: 0x010ecb,
+        end: 0x010ecf,
+        prop: EgcbType::Extend,
+    },
+    EgcbRange {
+        start: 0x010ef0,
         end: 0x010eff,
         prop: EgcbType::Extend,
     },
@@ -6628,6 +6628,11 @@ pub static EGCB_RANGES: [EgcbRange; 1386] = [
         prop: EgcbType::Extend,
     },
     EgcbRange {
+        start: 0x011df0,
+        end: 0x011df0,
+        prop: EgcbType::Extend,
+    },
+    EgcbRange {
         start: 0x011ef3,
         end: 0x011ef4,
         prop: EgcbType::Extend,
@@ -6773,6 +6778,11 @@ pub static EGCB_RANGES: [EgcbRange; 1386] = [
         prop: EgcbType::Extend,
     },
     EgcbRange {
+        start: 0x01d127,
+        end: 0x01d128,
+        prop: EgcbType::Extend,
+    },
+    EgcbRange {
         start: 0x01d165,
         end: 0x01d169,
         prop: EgcbType::Extend,
@@ -6805,6 +6815,26 @@ pub static EGCB_RANGES: [EgcbRange; 1386] = [
     EgcbRange {
         start: 0x01d242,
         end: 0x01d244,
+        prop: EgcbType::Extend,
+    },
+    EgcbRange {
+        start: 0x01d250,
+        end: 0x01d252,
+        prop: EgcbType::Extend,
+    },
+    EgcbRange {
+        start: 0x01d25b,
+        end: 0x01d25c,
+        prop: EgcbType::Extend,
+    },
+    EgcbRange {
+        start: 0x01d25f,
+        end: 0x01d25f,
+        prop: EgcbType::Extend,
+    },
+    EgcbRange {
+        start: 0x01d280,
+        end: 0x01d281,
         prop: EgcbType::Extend,
     },
     EgcbRange {
