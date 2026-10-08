@@ -58,32 +58,32 @@ We considered these alternatives:
 
 ### Stack cost per unit
 
-| Structure                                                | Release       | Debug         |
-| -------------------------------------------------------- | ------------: | ------------: |
-| Parser, per nesting unit (a group is 2 units, a class 1) | about 0.5 KB  | about 3.5 KB  |
-| Compiler passes, per nesting unit (groups)               | about 0.2 KB  | about 1.8 KB  |
-| Dropping a flat spine, per AST node                      | about 32 B    | about 300 B   |
+| Structure                                                |      Release |        Debug |
+| -------------------------------------------------------- | -----------: | -----------: |
+| Parser, per nesting unit (a group is 2 units, a class 1) | about 0.5 KB | about 3.5 KB |
+| Compiler passes, per nesting unit (groups)               | about 0.2 KB | about 1.8 KB |
+| Dropping a flat spine, per AST node                      |   about 32 B |  about 300 B |
 
 A flat spine costs no stack in the parser or the compiler, only when it is destroyed.
 
 At the defaults:
 
-| Budget at its default       | Release, 2 MiB thread | Debug, 2 MiB thread |
-| --------------------------- | --------------------: | ------------------: |
-| Nesting, 256 units          |     about 0.13 MiB (6%) |   about 0.9 MiB (44%) |
-| AST budget, 4,096 nodes     |     about 0.13 MiB (6%) |   about 1.2 MiB (58%) |
+| Budget at its default   | Release, 2 MiB thread | Debug, 2 MiB thread |
+| ----------------------- | --------------------: | ------------------: |
+| Nesting, 256 units      |   about 0.13 MiB (6%) | about 0.9 MiB (44%) |
+| AST budget, 4,096 nodes |   about 0.13 MiB (6%) | about 1.2 MiB (58%) |
 
 ### Verified boundaries
 
 Each case below was compiled on 2 MiB and 8 MiB threads, in release and in debug. Every run ends in success or `ParseDepthLimitOver`, and none aborts.
 
-| Pattern                                             | Last compiling   | First `ParseDepthLimitOver` | Before this change (first failure on 2 MiB)                         |
-| --------------------------------------------------- | ---------------: | --------------------------: | ------------------------------------------------------------------- |
-| Nested groups `(`…`)`                               | 127 groups       | 128 groups                  | release abort at 2,022; debug abort at 299                          |
-| Nested classes `[`…`]`                              | 254 classes      | 255 classes                 | release error at 4,095, abort at 4,107; debug abort at 656          |
-| Flat alternation `a0\|a1\|…`                        | 4,096 alternatives | 4,097 alternatives        | debug error at 4,096; the spine drop would abort at about 6,900     |
-| Flat concatenation `a*b*` repeated                  | 2,048 pairs      | 2,049 pairs                 | error at 2,048 pairs                                                |
-| Mixed: a group per level, 31 alternatives each      | 127 levels       | 128 levels                  | debug abort at 216 levels                                           |
+| Pattern                                        |     Last compiling | First `ParseDepthLimitOver` | Before this change (first failure on 2 MiB)                     |
+| ---------------------------------------------- | -----------------: | --------------------------: | --------------------------------------------------------------- |
+| Nested groups `(`…`)`                          |         127 groups |                  128 groups | release abort at 2,022; debug abort at 299                      |
+| Nested classes `[`…`]`                         |        254 classes |                 255 classes | release error at 4,095, abort at 4,107; debug abort at 656      |
+| Flat alternation `a0\|a1\|…`                   | 4,096 alternatives |          4,097 alternatives | debug error at 4,096; the spine drop would abort at about 6,900 |
+| Flat concatenation `a*b*` repeated             |        2,048 pairs |                 2,049 pairs | error at 2,048 pairs                                            |
+| Mixed: a group per level, 31 alternatives each |         127 levels |                  128 levels | debug abort at 216 levels                                       |
 
 The regression tests in `tests/api_test.rs` compile the groups, classes and alternation boundaries on a 2 MiB thread in debug. `tests/parse_limits.rs` checks the setters and restores the defaults.
 
