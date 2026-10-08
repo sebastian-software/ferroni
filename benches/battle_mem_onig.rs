@@ -1,4 +1,4 @@
-// Process-isolated memory harness for the Oniguruma scanner comparison path.
+//! Process-isolated memory harness for the Oniguruma scanner comparison path.
 // Run via scripts/run-battle-memory.sh or:
 // cargo bench --features ffi --bench battle_mem_onig -- --nocapture
 

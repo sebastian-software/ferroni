@@ -1,3 +1,6 @@
+//! Criterion benchmark that replays the SCSS grammar's scanner calls through Ferroni
+//! and the other engines in `engines.rs`.
+
 #[path = "engine_replay.rs"]
 mod engine_replay;
 #[path = "engines.rs"]

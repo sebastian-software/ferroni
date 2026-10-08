@@ -290,8 +290,12 @@
 pub mod api;
 pub mod backtrack_lint;
 pub mod backtrack_rewrite;
-// C port: the C API types do not implement Debug yet. Adding it is additive, so
-// it is outside the 2.0 surface change (ADR-005, amendment 2.0).
+// C port: the C API mirrors oniguruma.h and is documented upstream
+// (https://github.com/kkos/oniguruma/blob/master/doc/API), so its items are
+// exempt from `missing_docs`. The C API types do not implement Debug yet.
+// Adding it is additive, so it is outside the 2.0 surface change (ADR-005,
+// amendment 2.0).
+#[allow(missing_docs)]
 #[allow(missing_debug_implementations)]
 pub mod encodings;
 pub mod error;
@@ -301,13 +305,21 @@ mod leading_run;
 // crate uses.
 mod literal_trie;
 // C port: see the note on `encodings`.
+#[allow(missing_docs)]
 #[allow(missing_debug_implementations)]
 pub mod oniguruma;
 pub mod prelude;
+// C port: see the note on `encodings`.
+#[allow(missing_docs)]
 pub mod regcomp;
+// C port: see the note on `encodings`.
+#[allow(missing_docs)]
 pub mod regenc;
+// C port: see the note on `encodings`.
+#[allow(missing_docs)]
 pub mod regerror;
 // C port: see the note on `encodings`.
+#[allow(missing_docs)]
 #[allow(missing_debug_implementations)]
 pub mod regexec;
 // Crate-private: regint.h is not installed in C Oniguruma either. The C API
@@ -317,6 +329,7 @@ pub mod regexec;
 #[allow(missing_debug_implementations)]
 mod regint;
 // C port: see the note on `encodings`.
+#[allow(missing_docs)]
 #[allow(missing_debug_implementations)]
 pub mod regparse;
 // Crate-private: regparse.h is not installed in C Oniguruma either (ADR-005, 2.0).
@@ -325,14 +338,20 @@ pub mod regparse;
 #[allow(missing_debug_implementations)]
 mod regparse_types;
 // C port: see the note on `encodings`.
+#[allow(missing_docs)]
 #[allow(missing_debug_implementations)]
 pub mod regset;
+// C port: see the note on `encodings`.
+#[allow(missing_docs)]
 pub mod regsyntax;
+// C port: see the note on `encodings`.
+#[allow(missing_docs)]
 pub mod regtrav;
 pub mod replace;
 mod required_literals;
 pub mod scanner;
 // C port: see the note on `encodings`.
+#[allow(missing_docs)]
 #[allow(missing_debug_implementations)]
 pub mod unicode;
 

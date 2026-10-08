@@ -1,7 +1,5 @@
-// error.rs - Idiomatic Rust error types for Ferroni.
-//
-// Groups the ~100 C-style i32 error codes into semantic variants
-// while preserving the original code for interop.
+//! Idiomatic error types. [`RegexError`] groups the roughly 100 C-style `i32`
+//! error codes into semantic variants, and keeps each original code for interop.
 
 use std::fmt;
 
@@ -30,15 +28,38 @@ pub enum RegexError {
     /// Parse depth limit exceeded.
     ParseDepthLimitOver,
     /// Syntax error in the pattern.
-    Syntax { code: i32, message: String },
+    Syntax {
+        /// The C error code, from `-100` to `-999` (for example
+        /// `ONIGERR_INVALID_CHAR_PROPERTY_NAME`).
+        code: i32,
+        /// The message C Oniguruma gives for `code`. A group or property name
+        /// that the parser recorded fills the placeholder, as in
+        /// `invalid character property name {Nope}`; the placeholder is dropped
+        /// when there is no name.
+        message: String,
+    },
     /// Invalid argument passed to a function.
     InvalidArgument,
     /// Internal engine bug (should not occur in correct usage).
-    InternalBug { code: i32, message: String },
+    InternalBug {
+        /// The C error code, one of the `ONIGERR_*` internal-bug codes (for
+        /// example `ONIGERR_PARSER_BUG`).
+        code: i32,
+        /// The message C Oniguruma gives for `code`, such as
+        /// `internal parser error (bug)`.
+        message: String,
+    },
     /// Library not initialized.
     NotInitialized,
     /// Invalid encoding or encoding combination.
-    Encoding { code: i32, message: String },
+    Encoding {
+        /// The C error code, such as `ONIGERR_DEFAULT_ENCODING_IS_NOT_SET` or
+        /// `ONIGERR_NOT_SUPPORTED_ENCODING_COMBINATION`.
+        code: i32,
+        /// The message C Oniguruma gives for `code`, such as
+        /// `default multibyte-encoding is not set`.
+        message: String,
+    },
     /// Other error not covered by specific variants.
     Other(i32),
 }

@@ -1,5 +1,9 @@
-// regsyntax.rs - Port of regsyntax.c + OnigSyntaxOniguruma/Ruby from regparse.c
-// Syntax definitions and syntax manipulation functions.
+//! Port of `regsyntax.c`, and of the Oniguruma and Ruby syntaxes from
+//! `regparse.c`. It holds one `OnigSyntax*` static per language and the
+//! functions that read and change a syntax. Pass a static to
+//! [`RegexBuilder::syntax`](crate::api::RegexBuilder::syntax), or pass a typed
+//! [`Syntax`](crate::api::Syntax) to
+//! [`RegexBuilder::syntax_mode`](crate::api::RegexBuilder::syntax_mode).
 
 #![allow(non_upper_case_globals)]
 
@@ -56,6 +60,7 @@ const DEFAULT_META_CHAR_TABLE: OnigMetaCharTableType = OnigMetaCharTableType {
 
 // === Syntax Definitions ===
 
+/// Plain text with no metacharacters (`Syntax::Asis`).
 pub static OnigSyntaxASIS: OnigSyntaxType = OnigSyntaxType {
     op: 0,
     op2: ONIG_SYN_OP2_INEFFECTIVE_ESCAPE,
@@ -64,6 +69,7 @@ pub static OnigSyntaxASIS: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
+/// POSIX basic regular expressions (`Syntax::PosixBasic`).
 pub static OnigSyntaxPosixBasic: OnigSyntaxType = OnigSyntaxType {
     op: SYN_POSIX_COMMON_OP | ONIG_SYN_OP_ESC_LPAREN_SUBEXP | ONIG_SYN_OP_ESC_BRACE_INTERVAL,
     op2: 0,
@@ -72,6 +78,7 @@ pub static OnigSyntaxPosixBasic: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
+/// POSIX extended regular expressions (`Syntax::PosixExtended`).
 pub static OnigSyntaxPosixExtended: OnigSyntaxType = OnigSyntaxType {
     op: SYN_POSIX_COMMON_OP
         | ONIG_SYN_OP_LPAREN_SUBEXP
@@ -89,6 +96,7 @@ pub static OnigSyntaxPosixExtended: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
+/// GNU Emacs regular expressions (`Syntax::Emacs`).
 pub static OnigSyntaxEmacs: OnigSyntaxType = OnigSyntaxType {
     op: ONIG_SYN_OP_DOT_ANYCHAR
         | ONIG_SYN_OP_BRACKET_CC
@@ -107,6 +115,8 @@ pub static OnigSyntaxEmacs: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
+/// grep's basic regular expressions, with the GNU `\+`, `\?` and `\|`
+/// operators (`Syntax::Grep`).
 pub static OnigSyntaxGrep: OnigSyntaxType = OnigSyntaxType {
     op: ONIG_SYN_OP_DOT_ANYCHAR
         | ONIG_SYN_OP_BRACKET_CC
@@ -130,6 +140,8 @@ pub static OnigSyntaxGrep: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
+/// GNU regex syntax, where unescaped `(`, `)` and `|` are operators
+/// (`Syntax::GnuRegex`).
 pub static OnigSyntaxGnuRegex: OnigSyntaxType = OnigSyntaxType {
     op: SYN_GNU_REGEX_OP,
     op2: 0,
@@ -138,6 +150,7 @@ pub static OnigSyntaxGnuRegex: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
+/// Java regular expressions, as in `java.util.regex` (`Syntax::Java`).
 pub static OnigSyntaxJava: OnigSyntaxType = OnigSyntaxType {
     op: (SYN_GNU_REGEX_OP
         | ONIG_SYN_OP_QMARK_NON_GREEDY
@@ -164,6 +177,7 @@ pub static OnigSyntaxJava: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
+/// Perl regular expressions, without named groups (`Syntax::Perl`).
 pub static OnigSyntaxPerl: OnigSyntaxType = OnigSyntaxType {
     op: (SYN_GNU_REGEX_OP
         | ONIG_SYN_OP_QMARK_NON_GREEDY
@@ -197,7 +211,7 @@ pub static OnigSyntaxPerl: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
-// Perl + named group
+/// Perl regular expressions with named groups (`Syntax::PerlNg`).
 pub static OnigSyntaxPerl_NG: OnigSyntaxType = OnigSyntaxType {
     op: (SYN_GNU_REGEX_OP
         | ONIG_SYN_OP_QMARK_NON_GREEDY
@@ -237,7 +251,8 @@ pub static OnigSyntaxPerl_NG: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
-// Python 3.9
+/// Python regular expressions, as in the `re` module of Python 3.9
+/// (`Syntax::Python`).
 pub static OnigSyntaxPython: OnigSyntaxType = OnigSyntaxType {
     op: (SYN_GNU_REGEX_OP
         | ONIG_SYN_OP_QMARK_NON_GREEDY
@@ -264,7 +279,8 @@ pub static OnigSyntaxPython: OnigSyntaxType = OnigSyntaxType {
     meta_char_table: DEFAULT_META_CHAR_TABLE,
 };
 
-// Oniguruma (from regparse.c)
+/// Oniguruma's own syntax, which [`Regex::new`](crate::api::Regex::new) uses
+/// (`Syntax::Oniguruma`).
 pub static OnigSyntaxOniguruma: OnigSyntaxType = OnigSyntaxType {
     op: (SYN_GNU_REGEX_OP
         | ONIG_SYN_OP_QMARK_NON_GREEDY
@@ -331,7 +347,7 @@ pub fn prototype_ecmascript_lookbehind_syntax() -> &'static OnigSyntaxType {
     })
 }
 
-// Ruby (from regparse.c)
+/// Ruby regular expressions (`Syntax::Ruby`).
 pub static OnigSyntaxRuby: OnigSyntaxType = OnigSyntaxType {
     op: (SYN_GNU_REGEX_OP
         | ONIG_SYN_OP_QMARK_NON_GREEDY
@@ -383,6 +399,10 @@ pub(crate) fn onig_get_default_syntax() -> &'static OnigSyntaxType {
     *ONIG_DEFAULT_SYNTAX.read().unwrap()
 }
 
+/// Sets the default syntax, or Oniguruma's syntax for `None`, and returns 0.
+/// Ferroni stores the value but never reads it: the POSIX and GNU wrappers that
+/// use the default in C are not ported ([ADR-012](https://ferroni.dev/adr/012-posix-and-gnu-api-not-ported)),
+/// and [`onig_new`](crate::regcomp::onig_new) takes its syntax as an argument.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_default_syntax(syntax: Option<&'static OnigSyntaxType>) -> i32 {
     let syntax = syntax.unwrap_or(&OnigSyntaxOniguruma);
@@ -392,46 +412,57 @@ pub fn onig_set_default_syntax(syntax: Option<&'static OnigSyntaxType>) -> i32 {
 
 // === Syntax Manipulation Functions ===
 
+/// Copies every field of `from` into `to`. The built-in syntaxes are immutable
+/// statics, so copy one before changing it with the `onig_set_syntax_*`
+/// functions.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_copy_syntax(to: &mut OnigSyntaxType, from: &OnigSyntaxType) {
     *to = from.clone();
 }
 
+/// Replaces the `op` operator flags of `syntax`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_syntax_op(syntax: &mut OnigSyntaxType, op: u32) {
     syntax.op = op;
 }
 
+/// Replaces the `op2` operator flags of `syntax`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_syntax_op2(syntax: &mut OnigSyntaxType, op2: u32) {
     syntax.op2 = op2;
 }
 
+/// Replaces the behavior flags of `syntax`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_syntax_behavior(syntax: &mut OnigSyntaxType, behavior: u32) {
     syntax.behavior = behavior;
 }
 
+/// Replaces the option flags that `syntax` turns on for every pattern.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_syntax_options(syntax: &mut OnigSyntaxType, options: OnigOptionType) {
     syntax.options = options;
 }
 
+/// Returns the `op` operator flags of `syntax`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax_op(syntax: &OnigSyntaxType) -> u32 {
     syntax.op
 }
 
+/// Returns the `op2` operator flags of `syntax`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax_op2(syntax: &OnigSyntaxType) -> u32 {
     syntax.op2
 }
 
+/// Returns the behavior flags of `syntax`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax_behavior(syntax: &OnigSyntaxType) -> u32 {
     syntax.behavior
 }
 
+/// Returns the option flags that `syntax` turns on for every pattern.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_syntax_options(syntax: &OnigSyntaxType) -> OnigOptionType {
     syntax.options
@@ -439,6 +470,9 @@ pub fn onig_get_syntax_options(syntax: &OnigSyntaxType) -> OnigOptionType {
 
 // === Meta Char Setter (USE_VARIABLE_META_CHARS) ===
 
+/// Sets one meta character of `syntax`. `what` names it with an
+/// `ONIG_META_CHAR_*` constant, and `code` is its new value. Returns 0, or
+/// `ONIGERR_INVALID_ARGUMENT` when `what` is unknown.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_meta_char(syntax: &mut OnigSyntaxType, what: u32, code: OnigCodePoint) -> i32 {
     match what {

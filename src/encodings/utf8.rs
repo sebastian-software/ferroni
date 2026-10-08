@@ -1,5 +1,5 @@
-// encodings/utf8.rs - Port of utf8.c
-// UTF-8 encoding implementation (RFC 3629 range: U+0000 - U+10FFFF).
+//! Port of `utf8.c`: the UTF-8 encoding, in the RFC 3629 range U+0000 to
+//! U+10FFFF. [`ONIG_ENCODING_UTF8`] is the static that exposes it.
 
 use crate::oniguruma::*;
 use crate::regenc::*;
@@ -32,8 +32,10 @@ static ENC_LEN_UTF8: [u8; 256] = [
 
 // === UTF-8 Encoding Struct ===
 
+/// The UTF-8 encoding type behind [`ONIG_ENCODING_UTF8`].
 pub struct Utf8Encoding;
 
+/// UTF-8, the encoding to pass to `onig_new` for UTF-8 patterns and text.
 pub static ONIG_ENCODING_UTF8: Utf8Encoding = Utf8Encoding;
 
 impl Encoding for Utf8Encoding {

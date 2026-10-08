@@ -1,7 +1,7 @@
-// api.rs - Idiomatic Rust API for Ferroni.
-//
-// Wraps the C-ported internals (onig_new, onig_search, etc.) with
-// Rust-native types: Regex, RegexBuilder, Match, Captures, FindIter.
+//! The idiomatic Rust API. [`Regex`] compiles and searches a pattern,
+//! [`RegexBuilder`] sets its options and syntax, and [`Match`], [`Captures`] and
+//! [`FindIter`] report what a search found. It wraps the C-port functions
+//! [`onig_new`] and [`onig_search`].
 
 use std::cell::RefCell;
 use std::fmt;

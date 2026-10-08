@@ -1,4 +1,4 @@
-// api_test.rs - Integration tests for the idiomatic Rust API.
+//! Integration tests for the idiomatic Rust API.
 
 use std::borrow::Cow;
 

@@ -1,5 +1,6 @@
-// regset.rs - Port of USE_REGSET section from regexec.c
-// Multi-regex search for syntax highlighters and text editors.
+//! Port of the `USE_REGSET` section of `regexec.c`: multi-regex search over a set
+//! of compiled patterns, for syntax highlighters and text editors.
+//! [`Scanner`](crate::scanner::Scanner) runs on it.
 
 use crate::first_bytes::{
     ascii_before, characters_line_up, derive_start_byte_map, start_map_may_skip,

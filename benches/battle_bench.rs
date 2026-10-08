@@ -1,4 +1,4 @@
-// Criterion benchmark suite: README-facing Ferroni vs Oniguruma reference numbers.
+//! Criterion benchmark suite: README-facing Ferroni vs Oniguruma reference numbers.
 //
 // Run: cargo bench --features ffi --bench battle_bench
 // Cache-enabled document comparison:

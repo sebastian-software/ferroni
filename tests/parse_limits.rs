@@ -1,6 +1,6 @@
-// parse_limits.rs - The nesting limit and the AST budget are process-wide, so
-// this file holds a single test that sets and restores them in order, as
-// tests/subexp_call_limits.rs does.
+//! The nesting limit and the AST budget are process-wide, so this file holds a
+//! single test that sets and restores them in order, as
+//! tests/subexp_call_limits.rs does.
 //
 // Raising either limit raises the stack a compile needs, so the test compiles
 // on an 8 MiB thread. The defaults are checked against 2 MiB in api_test.rs.

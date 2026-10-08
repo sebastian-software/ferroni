@@ -1,8 +1,9 @@
-// scanner.rs - High-level multi-pattern scanner API.
-//
-// Compatible with vscode-oniguruma's OnigScanner interface, used by Shiki
-// and other syntax highlighters built on vscode-textmate.
-//
+//! High-level multi-pattern scanner for syntax highlighters. [`Scanner`]
+//! reports the match that starts earliest among its patterns, with the interface
+//! of vscode-oniguruma's `OnigScanner`, which Shiki and other vscode-textmate
+//! based highlighters use. [`ScannerPatternCache`] lets several scanners share
+//! their compiled patterns.
+
 // Scanner API design and test cases derived from vscode-oniguruma
 // (MIT License, Copyright (c) Microsoft Corporation).
 

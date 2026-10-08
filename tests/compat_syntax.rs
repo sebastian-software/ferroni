@@ -1,4 +1,4 @@
-// compat_syntax.rs - Integration tests ported from oniguruma test/test_syntax.c
+//! Integration tests ported from oniguruma test/test_syntax.c.
 //
 // Tests different regex syntax definitions: Perl, Java, Python, POSIX Basic,
 // Grep, Emacs, Perl_NG. Uses forward search with ONIG_ENCODING_UTF8.

@@ -1,4 +1,4 @@
-// subexp_call_limits.rs - Subexpression call limits in search
+//! Subexpression call limits in search.
 //
 // C: regexec.c OP_CALL fails once subexp_call_nest_counter reaches
 // SubexpCallMaxNestLevel (onig_set_subexp_call_max_nest_level, default 20)

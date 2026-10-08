@@ -1,8 +1,8 @@
-// regerror.rs - Port of regerror.c
-// Error code to string conversion.
-//
+//! Port of `regerror.c`: turns an error code into the message that C Oniguruma
+//! prints. The `message` fields of [`RegexError`](crate::error::RegexError) use
+//! the same text.
+
 // This is a 1:1 port of oniguruma's regerror.c.
-// Maps error codes to human-readable messages.
 
 use crate::oniguruma::*;
 

@@ -1,4 +1,4 @@
-// compat_utf8.rs - Integration tests ported from oniguruma test/test_utf8.c
+//! Integration tests ported from oniguruma test/test_utf8.c.
 //
 // Uses the same pattern as the C test suite:
 //   x2(pattern, string, from, to)       -> search, expect match at from..to

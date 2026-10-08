@@ -1,6 +1,8 @@
-// regcomp.rs - Port of regcomp.c
-// Compiler: converts AST (Node trees) into bytecode (Operation arrays).
-//
+//! Port of `regcomp.c`: the compiler, which turns the AST (node trees) into
+//! bytecode (operation arrays). [`onig_new`] is its entry point, and
+//! [`RegexBuilder`](crate::api::RegexBuilder) is the idiomatic way to compile a
+//! pattern.
+
 // This is a 1:1 port of oniguruma's regcomp.c (~8,500 LOC).
 // Structure mirrors the C original: operation management → string compilation →
 // cclass compilation → quantifier compilation → bag compilation → anchor compilation →
@@ -24,11 +26,18 @@ use crate::regparse_types::*;
 
 static DEFAULT_CASE_FOLD_FLAG: AtomicU32 = AtomicU32::new(ONIGENC_CASE_FOLD_MIN);
 
+/// Returns the default case-fold flag, which starts as `ONIGENC_CASE_FOLD_MIN`.
+/// Deprecated upstream. Ferroni stores the value, but [`onig_new`] does not read
+/// it, so [`onig_set_default_case_fold_flag`] does not change how patterns
+/// compile.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_default_case_fold_flag() -> OnigCaseFoldType {
     DEFAULT_CASE_FOLD_FLAG.load(Ordering::Relaxed)
 }
 
+/// Stores the default case-fold flag and returns 0. Deprecated upstream, where
+/// [`onig_new`] uses this value. In Ferroni, [`onig_new`] always starts from
+/// `ONIGENC_CASE_FOLD_MIN`, so this setter does not change how patterns compile.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_default_case_fold_flag(flag: OnigCaseFoldType) -> i32 {
     DEFAULT_CASE_FOLD_FLAG.store(flag, Ordering::Relaxed);

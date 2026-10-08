@@ -17,6 +17,11 @@
 //! nothing backtracks into them, and a repeat that ends the pattern is left
 //! alone, since nothing after it can fail. The result never changes how a pattern
 //! matches; it complements the retry, time and stack limits.
+//!
+//! [`Regex::backtracking_warnings`](crate::api::Regex::backtracking_warnings)
+//! returns the findings as [`BacktrackWarning`] values, and
+//! [`RegexBuilder::reject_backtracking_risks`](crate::api::RegexBuilder::reject_backtracking_risks)
+//! turns them into a compile error.
 
 use std::fmt;
 
