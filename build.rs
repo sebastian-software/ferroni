@@ -5,11 +5,31 @@ fn main() {
     // This silences "unexpected cfg" warnings on stable while activating on nightly+coverage.
     println!("cargo::rustc-check-cfg=cfg(coverage_nightly)");
 
+    // Doc-test the guide pages (src/lib.rs) only where they are present. `docs/`
+    // is excluded from the published crate, so `cargo test --doc` on a packaged
+    // copy must not try to include them.
+    println!("cargo::rustc-check-cfg=cfg(ferroni_guide_docs)");
+    if guide_pages_present() {
+        println!("cargo::rustc-cfg=ferroni_guide_docs");
+    }
+
     #[cfg(feature = "ffi")]
     build_oniguruma_c();
 
     #[cfg(feature = "onigmo")]
     build_onigmo();
+}
+
+fn guide_pages_present() -> bool {
+    let manifest_dir = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    ["getting-started", "untrusted-input", "compatibility"]
+        .iter()
+        .all(|page| {
+            manifest_dir
+                .join("docs/app/routes/guide")
+                .join(format!("{page}.mdx"))
+                .is_file()
+        })
 }
 
 #[cfg(feature = "ffi")]
