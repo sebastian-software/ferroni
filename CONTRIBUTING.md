@@ -139,6 +139,10 @@ After changing the example, run `pnpm sample:write` from `docs/` and commit
 `docs/app/data/regex-sample.json`. `pnpm sample:check` runs the example again
 and compares its source and actual stdout with the committed artifact. The
 output caption retains the Ferroni version that originally generated it.
+CI runs the same comparison in the `sample` job of
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), as
+`node docs/scripts/render-regex-sample.mjs --check`, so a changed example
+without a regenerated artifact fails the build.
 
 CI also runs a `standards drift` lane that executes
 `@sebastian-software/standards check`. Its version is pinned in
