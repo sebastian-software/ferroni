@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.0](https://github.com/sebastian-software/ferroni/compare/v1.9.2...v1.10.0) (2026-10-08)
+
+
+### Features
+
+* **api:** replace and split with a regex ([#273](https://github.com/sebastian-software/ferroni/issues/273)) ([8df77af](https://github.com/sebastian-software/ferroni/commit/8df77af2788cdcaa7c538f25c19295b2975d8bee))
+* **api:** search from a start position and iterate captures ([#271](https://github.com/sebastian-software/ferroni/issues/271)) ([9d6277e](https://github.com/sebastian-software/ferroni/commit/9d6277ea81c286c8724be582a641f15eccb7ab8f)), closes [#243](https://github.com/sebastian-software/ferroni/issues/243)
+* **api:** share the compiled program so Regex is Clone and Captures borrow only the haystack ([#269](https://github.com/sebastian-software/ferroni/issues/269)) ([d29f246](https://github.com/sebastian-software/ferroni/commit/d29f24647fdc1038c90bfa87a783b3ee1008308e)), closes [#244](https://github.com/sebastian-software/ferroni/issues/244) [#246](https://github.com/sebastian-software/ferroni/issues/246)
+* **api:** type the builder's syntax and capture options ([#268](https://github.com/sebastian-software/ferroni/issues/268)) ([5fd3c90](https://github.com/sebastian-software/ferroni/commit/5fd3c9098109a78118aa331e2512ea652c97d899)), closes [#249](https://github.com/sebastian-software/ferroni/issues/249)
+
 ## [1.9.2](https://github.com/sebastian-software/ferroni/compare/v1.9.1...v1.9.2) (2026-10-08)
 
 
