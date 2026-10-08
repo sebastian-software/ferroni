@@ -856,7 +856,7 @@ pub fn onig_callout_tag_is_exist_at_callout_num(reg: &RegexType, callout_num: i3
 
 /// Get the tag for a given callout number.
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onig_get_callout_tag(reg: &RegexType, callout_num: i32) -> Option<&[u8]> {
+pub(crate) fn onig_get_callout_tag(reg: &RegexType, callout_num: i32) -> Option<&[u8]> {
     if let Some(ref ext) = reg.extp {
         let idx = (callout_num - 1) as usize;
         if idx < ext.callout_list.len() {
@@ -1456,7 +1456,7 @@ const FINISH_PCODE: usize = usize::MAX;
 // MatchArg - runtime match state (port of C's MatchArg)
 // ============================================================================
 
-pub struct MatchArg {
+pub(crate) struct MatchArg {
     pub options: OnigOptionType,
     pub region: Option<OnigRegion>,
     pub start: usize, // search start position (for \G anchor)

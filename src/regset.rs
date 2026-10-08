@@ -841,7 +841,7 @@ pub fn onig_regset_get_region(set: &OnigRegSet, at: usize) -> Option<&OnigRegion
 /// winning regex has neither a capture group nor `\K`; every other caller
 /// reads that regex's region.
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
+pub(crate) fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
     set.last_match_len
 }
 
@@ -2729,7 +2729,7 @@ pub fn onig_regset_search(
 /// Semantics of match index/position are identical to `onig_regset_search`.
 /// Only the matched regex's region is guaranteed to be up-to-date; non-matching
 /// regex regions may remain from previous calls.
-pub fn onig_regset_search_fast(
+pub(crate) fn onig_regset_search_fast(
     set: &mut OnigRegSet,
     str_data: &[u8],
     end: usize,

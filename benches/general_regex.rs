@@ -8,9 +8,9 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
 use ferroni::ffi::{self, CRegex, CRegion};
+use ferroni::oniguruma::RegexType;
 use ferroni::oniguruma::{ONIG_OPTION_NONE, OnigRegion};
 use ferroni::regexec::onig_search;
-use ferroni::regint::RegexType;
 use regex::bytes::Regex;
 
 use super::engines::{self, Compiled};

@@ -44,7 +44,7 @@ pub fn onig_set_verb_warn_func(f: OnigWarnFunc) {
 // Global Callout Name Registry (port of C's GlobalCalloutNameList)
 // ============================================================================
 
-pub struct CalloutNameListEntry {
+pub(crate) struct CalloutNameListEntry {
     pub callout_type: OnigCalloutType,
     pub callout_in: i32,
     pub start_func: Option<OnigCalloutFunc>,
@@ -480,7 +480,7 @@ fn mbcode_start_pos(enc: OnigEncoding) -> OnigCodePoint {
 // ============================================================================
 
 impl ParseEnv {
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.cap_history = 0;
         self.backtrack_mem = 0;
         self.backrefed_mem = 0;
@@ -505,7 +505,7 @@ impl ParseEnv {
         self.group_max_len.clear();
     }
 
-    pub fn add_mem_entry(&mut self) -> Result<i32, i32> {
+    pub(crate) fn add_mem_entry(&mut self) -> Result<i32, i32> {
         let need = self.num_mem + 1;
         let max_cap = MAX_CAPTURE_NUM.load(Ordering::Relaxed);
         if need > max_cap && max_cap != 0 {
@@ -537,7 +537,7 @@ impl ParseEnv {
         Ok(self.num_mem)
     }
 
-    pub fn mem_env(&self, num: usize) -> &MemEnv {
+    pub(crate) fn mem_env(&self, num: usize) -> &MemEnv {
         if let Some(ref dyn_env) = self.mem_env_dynamic {
             &dyn_env[num]
         } else {
@@ -545,7 +545,7 @@ impl ParseEnv {
         }
     }
 
-    pub fn mem_env_mut(&mut self, num: usize) -> &mut MemEnv {
+    pub(crate) fn mem_env_mut(&mut self, num: usize) -> &mut MemEnv {
         if let Some(ref mut dyn_env) = self.mem_env_dynamic {
             &mut dyn_env[num]
         } else {
@@ -553,7 +553,7 @@ impl ParseEnv {
         }
     }
 
-    pub fn set_mem_node(&mut self, num: i32, node: *mut Node) -> i32 {
+    pub(crate) fn set_mem_node(&mut self, num: i32, node: *mut Node) -> i32 {
         if self.num_mem >= num {
             self.mem_env_mut(num as usize).mem_node = node;
             0
@@ -564,12 +564,12 @@ impl ParseEnv {
 
     /// Record the name an error refers to - mirrors C's
     /// onig_scan_env_set_error_string(env, ecode, arg, arg_end).
-    pub fn set_error_string(&mut self, _ecode: i32, arg: &[u8]) {
+    pub(crate) fn set_error_string(&mut self, _ecode: i32, arg: &[u8]) {
         self.error = Some(arg.to_vec());
     }
 
     /// Allocate next id
-    pub fn id_entry(&mut self) -> i32 {
+    pub(crate) fn id_entry(&mut self) -> i32 {
         let id = self.id_num;
         self.id_num += 1;
         id
@@ -7733,7 +7733,7 @@ fn prs_regexp(
 // Entry point: onig_parse_tree
 // ============================================================================
 
-pub fn onig_parse_tree(
+pub(crate) fn onig_parse_tree(
     pattern: &[u8],
     reg: &mut RegexType,
     env: &mut ParseEnv,

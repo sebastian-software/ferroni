@@ -87,7 +87,7 @@ ADR-005 defines the idiomatic Rust API layer (`Regex`, `RegexBuilder`, `Match`, 
 ## Consequences
 
 - `src/scanner.rs` is a substantial module (~66 KB) with its own test suite.
-- The `smallvec` crate is added as a dependency for `ScannerMatch::capture_indices`.
+- The `smallvec` crate is a dependency for the capture spans of `ScannerMatch`. They are read through `ScannerMatch::captures()`; since 2.0 `smallvec` is not part of the public API.
 - The Scanner API is Ferroni-specific — it does not exist in C Oniguruma. This is acceptable because it layers on top of (rather than modifying) the C-ported internals, consistent with ADR-001's parity goal.
 - Future Scanner changes should maintain vscode-oniguruma interface compatibility to avoid breaking downstream integrations (Shiki, ferriki).
 - Grammar loaders that build many scanners can share compiled patterns through a `ScannerPatternCache` they own; nothing is cached across callers. Anything that would let a search write into a `RegexType` must keep that state per RegSet entry or per scanner instead, since the regex may be shared.

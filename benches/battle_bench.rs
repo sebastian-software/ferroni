@@ -37,13 +37,13 @@ fn configure_battle_group(group: &mut BenchmarkGroup<'_, WallTime>) {
     group.measurement_time(Duration::from_secs(4));
 }
 
-fn rust_compile(pattern: &[u8], option: OnigOptionType) -> ferroni::regint::RegexType {
+fn rust_compile(pattern: &[u8], option: OnigOptionType) -> ferroni::oniguruma::RegexType {
     onig_new(pattern, option, &ONIG_ENCODING_UTF8, &OnigSyntaxOniguruma)
         .expect("Rust compile failed")
 }
 
 fn rust_search(
-    reg: &ferroni::regint::RegexType,
+    reg: &ferroni::oniguruma::RegexType,
     text: &[u8],
     region: Option<OnigRegion>,
 ) -> (i32, Option<OnigRegion>) {
@@ -72,7 +72,7 @@ fn regex_compile(pattern: &[u8], case_insensitive: bool) -> Regex {
 }
 
 fn assert_same_match(
-    rust_reg: &ferroni::regint::RegexType,
+    rust_reg: &ferroni::oniguruma::RegexType,
     c_reg: &ffi::CRegex,
     text: &[u8],
     label: &str,
@@ -722,7 +722,7 @@ fn bench_text_scanning(c: &mut Criterion) {
             b"\\bpage\\b",
         ];
         let text = b"Error 404: page not found at /api/users/42 on 2025-06-15";
-        let rust_regs: Vec<Box<ferroni::regint::RegexType>> = patterns
+        let rust_regs: Vec<Box<ferroni::oniguruma::RegexType>> = patterns
             .iter()
             .map(|pattern| Box::new(rust_compile(pattern, ONIG_OPTION_NONE)))
             .collect();

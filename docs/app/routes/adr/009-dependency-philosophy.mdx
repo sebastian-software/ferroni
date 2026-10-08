@@ -22,7 +22,7 @@ Ferroni uses **four runtime dependencies**, each chosen because it solves a spec
 | [`aho-corasick`](https://crates.io/crates/aho-corasick) | Aho-Corasick automaton for single-pass literal alternation search   |    1 (`memchr`) |
 | [`bitflags`](https://crates.io/crates/bitflags)         | Type-safe option flags replacing `type OnigOptionType = u32`        |               0 |
 | [`memchr`](https://crates.io/crates/memchr)             | SIMD-vectorized byte search for the forward-scan pipeline (ADR-007) |               0 |
-| [`smallvec`](https://crates.io/crates/smallvec)         | Stack-allocated small vectors for `ScannerMatch::capture_indices`   |               0 |
+| [`smallvec`](https://crates.io/crates/smallvec)         | Stack-allocated small vectors for scanner captures (internal)       |               0 |
 
 Each was selected because:
 

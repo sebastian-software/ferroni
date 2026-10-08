@@ -1,6 +1,13 @@
 // oniguruma.rs - Port of oniguruma.h
 // Public types, option flags, error codes, syntax flags, structs.
 
+// `regex_t` (OnigRegex) is opaque in oniguruma.h. Its definition lives in the
+// crate-private regint module, and this is its public name.
+pub use crate::regint::RegexType;
+// The argument that `onig_get_arg_by_callout_args` (oniguruma.h) returns. Its
+// definition lives in regint, so it is re-exported here as well.
+pub use crate::regint::CalloutArg;
+
 // === Version ===
 pub const ONIGURUMA_VERSION_MAJOR: i32 = 6;
 pub const ONIGURUMA_VERSION_MINOR: i32 = 9;
@@ -397,14 +404,14 @@ pub struct OnigCaptureTreeNode {
 }
 
 impl OnigCaptureTreeNode {
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.childs.clear();
         self.group = -1;
         self.beg = ONIG_REGION_NOTPOS;
         self.end = ONIG_REGION_NOTPOS;
     }
 
-    pub fn add_child(&mut self, child: Box<OnigCaptureTreeNode>) {
+    pub(crate) fn add_child(&mut self, child: Box<OnigCaptureTreeNode>) {
         self.childs.push(child);
     }
 }
@@ -421,7 +428,7 @@ impl Default for OnigCaptureTreeNode {
 }
 
 impl OnigCaptureTreeNode {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 }
@@ -659,14 +666,14 @@ pub enum OnigValue {
 
 // === Pair Case Fold Codes (from regenc.h) ===
 #[derive(Clone, Copy, Debug)]
-pub struct OnigPairCaseFoldCodes {
+pub(crate) struct OnigPairCaseFoldCodes {
     pub from: OnigCodePoint,
     pub to: OnigCodePoint,
 }
 
 // === Code Range ===
 #[derive(Clone, Debug)]
-pub struct OnigCodeRange {
+pub(crate) struct OnigCodeRange {
     pub from: OnigCodePoint,
     pub to: OnigCodePoint,
 }
@@ -674,18 +681,18 @@ pub struct OnigCodeRange {
 // === Syntax check macros as functions ===
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn is_syntax_op(syntax: &OnigSyntaxType, opm: u32) -> bool {
+pub(crate) fn is_syntax_op(syntax: &OnigSyntaxType, opm: u32) -> bool {
     (syntax.op & opm) != 0
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn is_syntax_op2(syntax: &OnigSyntaxType, opm: u32) -> bool {
+pub(crate) fn is_syntax_op2(syntax: &OnigSyntaxType, opm: u32) -> bool {
     (syntax.op2 & opm) != 0
 }
 
 #[inline]
-pub fn is_syntax_bv(syntax: &OnigSyntaxType, bvm: u32) -> bool {
+pub(crate) fn is_syntax_bv(syntax: &OnigSyntaxType, bvm: u32) -> bool {
     (syntax.behavior & bvm) != 0
 }
 

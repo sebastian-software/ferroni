@@ -9,21 +9,21 @@ use crate::oniguruma::*;
 pub type OnigEncoding = &'static dyn Encoding;
 
 // === Encoding flags ===
-pub const ENC_FLAG_ASCII_COMPATIBLE: u32 = 1 << 0;
-pub const ENC_FLAG_UNICODE: u32 = 1 << 1;
-pub const ENC_FLAG_SKIP_OFFSET_MASK: u32 = 7 << 2;
-pub const ENC_FLAG_SKIP_OFFSET_0: u32 = 0;
-pub const ENC_FLAG_SKIP_OFFSET_1: u32 = 1 << 2;
-pub const ENC_FLAG_SKIP_OFFSET_2: u32 = 2 << 2;
-pub const ENC_FLAG_SKIP_OFFSET_3: u32 = 3 << 2;
-pub const ENC_FLAG_SKIP_OFFSET_4: u32 = 4 << 2;
-pub const ENC_SKIP_OFFSET_1_OR_0: u32 = 7;
-pub const ENC_FLAG_SKIP_OFFSET_1_OR_0: u32 = ENC_SKIP_OFFSET_1_OR_0 << 2;
+pub(crate) const ENC_FLAG_ASCII_COMPATIBLE: u32 = 1 << 0;
+pub(crate) const ENC_FLAG_UNICODE: u32 = 1 << 1;
+pub(crate) const ENC_FLAG_SKIP_OFFSET_MASK: u32 = 7 << 2;
+pub(crate) const ENC_FLAG_SKIP_OFFSET_0: u32 = 0;
+pub(crate) const ENC_FLAG_SKIP_OFFSET_1: u32 = 1 << 2;
+pub(crate) const ENC_FLAG_SKIP_OFFSET_2: u32 = 2 << 2;
+pub(crate) const ENC_FLAG_SKIP_OFFSET_3: u32 = 3 << 2;
+pub(crate) const ENC_FLAG_SKIP_OFFSET_4: u32 = 4 << 2;
+pub(crate) const ENC_SKIP_OFFSET_1_OR_0: u32 = 7;
+pub(crate) const ENC_FLAG_SKIP_OFFSET_1_OR_0: u32 = ENC_SKIP_OFFSET_1_OR_0 << 2;
 
 // === Constants ===
-pub const MAX_CODE_POINT: OnigCodePoint = OnigCodePoint::MAX;
-pub const ASCII_LIMIT: OnigCodePoint = 127;
-pub const NEWLINE_CODE: OnigCodePoint = 0x0a;
+pub(crate) const MAX_CODE_POINT: OnigCodePoint = OnigCodePoint::MAX;
+pub(crate) const ASCII_LIMIT: OnigCodePoint = 127;
+pub(crate) const NEWLINE_CODE: OnigCodePoint = 0x0a;
 
 // === Encoding Trait ===
 // 1:1 mapping of OnigEncodingType function pointers to trait methods.
@@ -131,101 +131,101 @@ pub trait Encoding: Send + Sync {
 // === Encoding query helpers ===
 
 #[inline]
-pub fn enc_get_skip_offset(enc: OnigEncoding) -> u32 {
+pub(crate) fn enc_get_skip_offset(enc: OnigEncoding) -> u32 {
     (enc.flag() & ENC_FLAG_SKIP_OFFSET_MASK) >> 2
 }
 
 #[inline]
-pub fn onigenc_is_unicode_encoding(enc: OnigEncoding) -> bool {
+pub(crate) fn onigenc_is_unicode_encoding(enc: OnigEncoding) -> bool {
     (enc.flag() & ENC_FLAG_UNICODE) != 0
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_ascii_compatible_encoding(enc: OnigEncoding) -> bool {
+pub(crate) fn onigenc_is_ascii_compatible_encoding(enc: OnigEncoding) -> bool {
     (enc.flag() & ENC_FLAG_ASCII_COMPATIBLE) != 0
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_singlebyte(enc: OnigEncoding) -> bool {
+pub(crate) fn onigenc_is_singlebyte(enc: OnigEncoding) -> bool {
     enc.max_enc_len() == 1
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_mbc_head(enc: OnigEncoding, p: &[u8]) -> bool {
+pub(crate) fn onigenc_is_mbc_head(enc: OnigEncoding, p: &[u8]) -> bool {
     enc.mbc_enc_len(p) != 1
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_mbc_ascii(p: &[u8]) -> bool {
+pub(crate) fn onigenc_is_mbc_ascii(p: &[u8]) -> bool {
     p[0] < 128
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_code_ascii(code: OnigCodePoint) -> bool {
+pub(crate) fn onigenc_is_code_ascii(code: OnigCodePoint) -> bool {
     code < 128
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_code_word(enc: OnigEncoding, code: OnigCodePoint) -> bool {
+pub(crate) fn onigenc_is_code_word(enc: OnigEncoding, code: OnigCodePoint) -> bool {
     enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_code_newline(enc: OnigEncoding, code: OnigCodePoint) -> bool {
+pub(crate) fn onigenc_is_code_newline(enc: OnigEncoding, code: OnigCodePoint) -> bool {
     enc.is_code_ctype(code, ONIGENC_CTYPE_NEWLINE)
 }
 
 // === Case Fold Helpers ===
 
 #[inline]
-pub fn case_fold_is_ascii_only(flag: OnigCaseFoldType) -> bool {
+pub(crate) fn case_fold_is_ascii_only(flag: OnigCaseFoldType) -> bool {
     (flag & ONIGENC_CASE_FOLD_ASCII_ONLY) != 0
 }
 
 #[inline]
-pub fn case_fold_is_not_ascii_only(flag: OnigCaseFoldType) -> bool {
+pub(crate) fn case_fold_is_not_ascii_only(flag: OnigCaseFoldType) -> bool {
     (flag & ONIGENC_CASE_FOLD_ASCII_ONLY) == 0
 }
 
 // === Ctype bit helpers (from regenc.h) ===
 
-pub const BIT_CTYPE_NEWLINE: u32 = 1 << ONIGENC_CTYPE_NEWLINE;
-pub const BIT_CTYPE_ALPHA: u32 = 1 << ONIGENC_CTYPE_ALPHA;
-pub const BIT_CTYPE_BLANK: u32 = 1 << ONIGENC_CTYPE_BLANK;
-pub const BIT_CTYPE_CNTRL: u32 = 1 << ONIGENC_CTYPE_CNTRL;
-pub const BIT_CTYPE_DIGIT: u32 = 1 << ONIGENC_CTYPE_DIGIT;
-pub const BIT_CTYPE_GRAPH: u32 = 1 << ONIGENC_CTYPE_GRAPH;
-pub const BIT_CTYPE_LOWER: u32 = 1 << ONIGENC_CTYPE_LOWER;
-pub const BIT_CTYPE_PRINT: u32 = 1 << ONIGENC_CTYPE_PRINT;
-pub const BIT_CTYPE_PUNCT: u32 = 1 << ONIGENC_CTYPE_PUNCT;
-pub const BIT_CTYPE_SPACE: u32 = 1 << ONIGENC_CTYPE_SPACE;
-pub const BIT_CTYPE_UPPER: u32 = 1 << ONIGENC_CTYPE_UPPER;
-pub const BIT_CTYPE_XDIGIT: u32 = 1 << ONIGENC_CTYPE_XDIGIT;
-pub const BIT_CTYPE_WORD: u32 = 1 << ONIGENC_CTYPE_WORD;
-pub const BIT_CTYPE_ALNUM: u32 = 1 << ONIGENC_CTYPE_ALNUM;
-pub const BIT_CTYPE_ASCII: u32 = 1 << ONIGENC_CTYPE_ASCII;
+pub(crate) const BIT_CTYPE_NEWLINE: u32 = 1 << ONIGENC_CTYPE_NEWLINE;
+pub(crate) const BIT_CTYPE_ALPHA: u32 = 1 << ONIGENC_CTYPE_ALPHA;
+pub(crate) const BIT_CTYPE_BLANK: u32 = 1 << ONIGENC_CTYPE_BLANK;
+pub(crate) const BIT_CTYPE_CNTRL: u32 = 1 << ONIGENC_CTYPE_CNTRL;
+pub(crate) const BIT_CTYPE_DIGIT: u32 = 1 << ONIGENC_CTYPE_DIGIT;
+pub(crate) const BIT_CTYPE_GRAPH: u32 = 1 << ONIGENC_CTYPE_GRAPH;
+pub(crate) const BIT_CTYPE_LOWER: u32 = 1 << ONIGENC_CTYPE_LOWER;
+pub(crate) const BIT_CTYPE_PRINT: u32 = 1 << ONIGENC_CTYPE_PRINT;
+pub(crate) const BIT_CTYPE_PUNCT: u32 = 1 << ONIGENC_CTYPE_PUNCT;
+pub(crate) const BIT_CTYPE_SPACE: u32 = 1 << ONIGENC_CTYPE_SPACE;
+pub(crate) const BIT_CTYPE_UPPER: u32 = 1 << ONIGENC_CTYPE_UPPER;
+pub(crate) const BIT_CTYPE_XDIGIT: u32 = 1 << ONIGENC_CTYPE_XDIGIT;
+pub(crate) const BIT_CTYPE_WORD: u32 = 1 << ONIGENC_CTYPE_WORD;
+pub(crate) const BIT_CTYPE_ALNUM: u32 = 1 << ONIGENC_CTYPE_ALNUM;
+pub(crate) const BIT_CTYPE_ASCII: u32 = 1 << ONIGENC_CTYPE_ASCII;
 
 #[inline]
-pub fn ctype_to_bit(ctype: u32) -> u32 {
+pub(crate) fn ctype_to_bit(ctype: u32) -> u32 {
     1 << ctype
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn ctype_is_word_graph_print(ctype: u32) -> bool {
+pub(crate) fn ctype_is_word_graph_print(ctype: u32) -> bool {
     ctype == ONIGENC_CTYPE_WORD || ctype == ONIGENC_CTYPE_GRAPH || ctype == ONIGENC_CTYPE_PRINT
 }
 
 // === ASCII Tables (from regenc.c) ===
 
-pub static ONIG_ENC_ASCII_TO_LOWER_CASE_TABLE: [u8; 256] = [
+pub(crate) static ONIG_ENC_ASCII_TO_LOWER_CASE_TABLE: [u8; 256] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
     0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
@@ -246,7 +246,7 @@ pub static ONIG_ENC_ASCII_TO_LOWER_CASE_TABLE: [u8; 256] = [
     0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
 ];
 
-pub static ONIG_ENC_ASCII_CTYPE_TABLE: [u16; 256] = [
+pub(crate) static ONIG_ENC_ASCII_CTYPE_TABLE: [u16; 256] = [
     0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x420c, 0x420c, 0x4209, 0x4208,
     0x4208, 0x4208, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008,
     0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4284, 0x41a0, 0x41a0, 0x41a0,
@@ -272,7 +272,7 @@ pub static ONIG_ENC_ASCII_CTYPE_TABLE: [u16; 256] = [
 ];
 
 // ASCII Lower Map (A-Z -> a-z pairs)
-pub static ONIG_ASCII_LOWER_MAP: [OnigPairCaseFoldCodes; 26] = [
+pub(crate) static ONIG_ASCII_LOWER_MAP: [OnigPairCaseFoldCodes; 26] = [
     OnigPairCaseFoldCodes {
         from: 0x41,
         to: 0x61,
@@ -383,7 +383,7 @@ pub static ONIG_ASCII_LOWER_MAP: [OnigPairCaseFoldCodes; 26] = [
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_ascii_code_ctype(code: u32, ctype: u32) -> bool {
+pub(crate) fn onigenc_is_ascii_code_ctype(code: u32, ctype: u32) -> bool {
     if code < 256 {
         (ONIG_ENC_ASCII_CTYPE_TABLE[code as usize] & ctype_to_bit(ctype) as u16) != 0
     } else {
@@ -392,13 +392,13 @@ pub fn onigenc_is_ascii_code_ctype(code: u32, ctype: u32) -> bool {
 }
 
 #[inline]
-pub fn onigenc_ascii_code_to_lower_case(c: u8) -> u8 {
+pub(crate) fn onigenc_ascii_code_to_lower_case(c: u8) -> u8 {
     ONIG_ENC_ASCII_TO_LOWER_CASE_TABLE[c as usize]
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_is_ascii_code_case_ambig(code: u32) -> bool {
+pub(crate) fn onigenc_is_ascii_code_case_ambig(code: u32) -> bool {
     onigenc_is_ascii_code_ctype(code, ONIGENC_CTYPE_UPPER)
         || onigenc_is_ascii_code_ctype(code, ONIGENC_CTYPE_LOWER)
 }
@@ -408,19 +408,19 @@ pub fn onigenc_is_ascii_code_case_ambig(code: u32) -> bool {
 
 /// Single byte: mbc_enc_len always returns 1
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_single_byte_mbc_enc_len(_p: &[u8]) -> usize {
+pub(crate) fn onigenc_single_byte_mbc_enc_len(_p: &[u8]) -> usize {
     1
 }
 
 /// Single byte: mbc_to_code returns the byte value
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_single_byte_mbc_to_code(p: &[u8], _end: usize) -> OnigCodePoint {
+pub(crate) fn onigenc_single_byte_mbc_to_code(p: &[u8], _end: usize) -> OnigCodePoint {
     p[0] as OnigCodePoint
 }
 
 /// Single byte: code_to_mbclen always returns 1
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_single_byte_code_to_mbclen(code: OnigCodePoint) -> i32 {
+pub(crate) fn onigenc_single_byte_code_to_mbclen(code: OnigCodePoint) -> i32 {
     if code < 256 {
         1
     } else {
@@ -430,43 +430,47 @@ pub fn onigenc_single_byte_code_to_mbclen(code: OnigCodePoint) -> i32 {
 
 /// Single byte: code_to_mbc writes one byte
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_single_byte_code_to_mbc(code: OnigCodePoint, buf: &mut [u8]) -> i32 {
+pub(crate) fn onigenc_single_byte_code_to_mbc(code: OnigCodePoint, buf: &mut [u8]) -> i32 {
     buf[0] = (code & 0xff) as u8;
     1
 }
 
 /// Single byte: left_adjust_char_head returns s unchanged
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_single_byte_left_adjust_char_head(_start: usize, s: usize, _data: &[u8]) -> usize {
+pub(crate) fn onigenc_single_byte_left_adjust_char_head(
+    _start: usize,
+    s: usize,
+    _data: &[u8],
+) -> usize {
     s
 }
 
 /// Always returns true for is_allowed_reverse_match
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_always_true_is_allowed_reverse_match(_p: &[u8]) -> bool {
+pub(crate) fn onigenc_always_true_is_allowed_reverse_match(_p: &[u8]) -> bool {
     true
 }
 
 /// Always returns false for is_allowed_reverse_match
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_always_false_is_allowed_reverse_match(_p: &[u8]) -> bool {
+pub(crate) fn onigenc_always_false_is_allowed_reverse_match(_p: &[u8]) -> bool {
     false
 }
 
 /// Always returns true for is_valid_mbc_string
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_always_true_is_valid_mbc_string(_s: &[u8]) -> bool {
+pub(crate) fn onigenc_always_true_is_valid_mbc_string(_s: &[u8]) -> bool {
     true
 }
 
 /// Check if byte at p is 0x0a newline
-pub fn onigenc_is_mbc_newline_0x0a(p: &[u8], end: usize) -> bool {
+pub(crate) fn onigenc_is_mbc_newline_0x0a(p: &[u8], end: usize) -> bool {
     !p.is_empty() && end > 0 && p[0] == NEWLINE_CODE as u8
 }
 
 /// ASCII mbc_case_fold: fold a single ASCII character
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_ascii_mbc_case_fold(
+pub(crate) fn onigenc_ascii_mbc_case_fold(
     _flag: OnigCaseFoldType,
     pp: &mut usize,
     _end: usize,
@@ -480,7 +484,7 @@ pub fn onigenc_ascii_mbc_case_fold(
 
 /// ASCII apply_all_case_fold: iterate all A-Z <-> a-z pairs
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_ascii_apply_all_case_fold(
+pub(crate) fn onigenc_ascii_apply_all_case_fold(
     _flag: OnigCaseFoldType,
     f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
 ) -> i32 {
@@ -502,7 +506,7 @@ pub fn onigenc_ascii_apply_all_case_fold(
 
 /// ASCII get_case_fold_codes_by_str
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_ascii_get_case_fold_codes_by_str(
+pub(crate) fn onigenc_ascii_get_case_fold_codes_by_str(
     _flag: OnigCaseFoldType,
     p: &[u8],
     _end: usize,
@@ -528,13 +532,13 @@ pub fn onigenc_ascii_get_case_fold_codes_by_str(
 
 /// Minimum property name to ctype (only basic POSIX names)
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_minimum_property_name_to_ctype(_p: &[u8]) -> i32 {
+pub(crate) fn onigenc_minimum_property_name_to_ctype(_p: &[u8]) -> i32 {
     ONIGERR_INVALID_CHAR_PROPERTY_NAME
 }
 
 /// Not supported get_ctype_code_range
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_not_support_get_ctype_code_range(
+pub(crate) fn onigenc_not_support_get_ctype_code_range(
     _ctype: u32,
     _sb_out: &mut OnigCodePoint,
 ) -> Option<&'static [OnigCodePoint]> {
@@ -563,7 +567,7 @@ pub fn onigenc_step_back(
 
 /// Step forward n characters from p, returns None if past end
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_step(
+pub(crate) fn onigenc_step(
     enc: OnigEncoding,
     p: usize,
     end: usize,

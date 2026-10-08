@@ -9,7 +9,7 @@ use crate::oniguruma::*;
 
 // === Composite Helper Constants (from regint.h) ===
 
-pub const SYN_POSIX_COMMON_OP: u32 = ONIG_SYN_OP_DOT_ANYCHAR
+pub(crate) const SYN_POSIX_COMMON_OP: u32 = ONIG_SYN_OP_DOT_ANYCHAR
     | ONIG_SYN_OP_POSIX_BRACKET
     | ONIG_SYN_OP_DECIMAL_BACKREF
     | ONIG_SYN_OP_BRACKET_CC
@@ -17,7 +17,7 @@ pub const SYN_POSIX_COMMON_OP: u32 = ONIG_SYN_OP_DOT_ANYCHAR
     | ONIG_SYN_OP_LINE_ANCHOR
     | ONIG_SYN_OP_ESC_CONTROL_CHARS;
 
-pub const SYN_GNU_REGEX_OP: u32 = ONIG_SYN_OP_DOT_ANYCHAR
+pub(crate) const SYN_GNU_REGEX_OP: u32 = ONIG_SYN_OP_DOT_ANYCHAR
     | ONIG_SYN_OP_BRACKET_CC
     | ONIG_SYN_OP_POSIX_BRACKET
     | ONIG_SYN_OP_DECIMAL_BACKREF
@@ -36,7 +36,7 @@ pub const SYN_GNU_REGEX_OP: u32 = ONIG_SYN_OP_DOT_ANYCHAR
     | ONIG_SYN_OP_ESC_D_DIGIT
     | ONIG_SYN_OP_LINE_ANCHOR;
 
-pub const SYN_GNU_REGEX_BV: u32 = ONIG_SYN_CONTEXT_INDEP_ANCHORS
+pub(crate) const SYN_GNU_REGEX_BV: u32 = ONIG_SYN_CONTEXT_INDEP_ANCHORS
     | ONIG_SYN_CONTEXT_INDEP_REPEAT_OPS
     | ONIG_SYN_CONTEXT_INVALID_REPEAT_OPS
     | ONIG_SYN_ALLOW_INVALID_INTERVAL
@@ -378,7 +378,7 @@ pub static OnigSyntaxRuby: OnigSyntaxType = OnigSyntaxType {
 static ONIG_DEFAULT_SYNTAX: RwLock<&OnigSyntaxType> = RwLock::new(&OnigSyntaxOniguruma);
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onig_get_default_syntax() -> &'static OnigSyntaxType {
+pub(crate) fn onig_get_default_syntax() -> &'static OnigSyntaxType {
     // Safety: the RwLock always holds a &'static ref
     *ONIG_DEFAULT_SYNTAX.read().unwrap()
 }

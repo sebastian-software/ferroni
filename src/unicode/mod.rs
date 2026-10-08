@@ -4,10 +4,14 @@
 // boundaries) are generated from the pinned Unicode Character Database by
 // scripts/gen_unicode_tables.py and live in the sibling *_data.rs modules.
 
-pub mod egcb_data;
+// The generated break classes are named after the Unicode property values (CR,
+// LF, ZWJ, LVT, ...), so the acronym lint does not apply to them.
+#[allow(clippy::upper_case_acronyms)]
+mod egcb_data;
 mod fold_data;
 mod property_data;
-pub mod wb_data;
+#[allow(clippy::upper_case_acronyms)]
+mod wb_data;
 
 use crate::oniguruma::*;
 use crate::regenc::*;
@@ -22,7 +26,7 @@ use wb_data::{WB_RANGES, WbType};
 // From unicode.c: EncUNICODE_ISO_8859_1_CtypeTable[256]
 // Used by onigenc_unicode_is_code_ctype for code < 256.
 
-pub static ENC_UNICODE_ISO_8859_1_CTYPE_TABLE: [u16; 256] = [
+pub(crate) static ENC_UNICODE_ISO_8859_1_CTYPE_TABLE: [u16; 256] = [
     0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x428c, 0x4289, 0x4288,
     0x4288, 0x4288, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008,
     0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4008, 0x4284, 0x41a0, 0x41a0, 0x41a0,
@@ -298,7 +302,7 @@ pub(crate) fn for_each_folds3_group(flag: OnigCaseFoldType, mut f: impl FnMut(&[
 /// Case fold a multibyte character using Unicode rules.
 /// Port of onigenc_unicode_mbc_case_fold from unicode.c lines 79-134
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onigenc_unicode_mbc_case_fold(
+pub(crate) fn onigenc_unicode_mbc_case_fold(
     enc: &dyn Encoding,
     flag: OnigCaseFoldType,
     pp: &mut usize,
@@ -458,7 +462,7 @@ fn apply_case_fold3(
 
 /// Apply all Unicode case fold pairs.
 /// Port of onigenc_unicode_apply_all_case_fold from unicode.c lines 234-286
-pub fn onigenc_unicode_apply_all_case_fold(
+pub(crate) fn onigenc_unicode_apply_all_case_fold(
     flag: OnigCaseFoldType,
     f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
 ) -> i32 {
@@ -498,7 +502,7 @@ pub fn onigenc_unicode_apply_all_case_fold(
 
 /// Get case fold code items for a string.
 /// Port of onigenc_unicode_get_case_fold_codes_by_str from unicode.c lines 288-585
-pub fn onigenc_unicode_get_case_fold_codes_by_str(
+pub(crate) fn onigenc_unicode_get_case_fold_codes_by_str(
     enc: &dyn Encoding,
     flag: OnigCaseFoldType,
     p: &[u8],
@@ -844,7 +848,7 @@ pub fn onig_unicode_define_user_property(name: &[u8], ranges: &[OnigCodePoint]) 
 
 /// Convert Unicode property name to ctype.
 /// Port of onigenc_unicode_property_name_to_ctype from unicode.c
-pub fn onigenc_unicode_property_name_to_ctype(p: &[u8]) -> i32 {
+pub(crate) fn onigenc_unicode_property_name_to_ctype(p: &[u8]) -> i32 {
     // Normalize: strip spaces/hyphens/underscores, lowercase
     let mut buf = [0u8; 128];
     let mut len = 0;
@@ -915,7 +919,7 @@ fn bmp_bitmap(ctype: usize, ranges: &[u32]) -> Option<&'static BmpBitmap> {
         .as_deref()
 }
 
-pub fn onigenc_unicode_is_code_ctype(code: OnigCodePoint, ctype: u32) -> bool {
+pub(crate) fn onigenc_unicode_is_code_ctype(code: OnigCodePoint, ctype: u32) -> bool {
     if ctype <= ONIGENC_MAX_STD_CTYPE && code < 256 {
         return (ENC_UNICODE_ISO_8859_1_CTYPE_TABLE[code as usize] & ctype_to_bit(ctype) as u16)
             != 0;
@@ -967,7 +971,7 @@ pub fn onigenc_unicode_is_code_ctype(code: OnigCodePoint, ctype: u32) -> bool {
 
 /// Get Unicode ctype code range.
 /// Port of onigenc_unicode_ctype_code_range from unicode.c
-pub fn onigenc_unicode_ctype_code_range(ctype: u32) -> Option<&'static [OnigCodePoint]> {
+pub(crate) fn onigenc_unicode_ctype_code_range(ctype: u32) -> Option<&'static [OnigCodePoint]> {
     if (ctype as usize) >= CODE_RANGES_NUM {
         // User-defined properties cannot return &'static references since they
         // are dynamically allocated. Callers should use is_code_ctype instead.
@@ -1103,7 +1107,7 @@ fn code_at(enc: OnigEncoding, str_data: &[u8], pos: usize, end: usize) -> u32 {
 
 /// Full EGCB break position check.
 /// Port of onigenc_egcb_is_break_position from unicode.c:998.
-pub fn onigenc_egcb_is_break_position(
+pub(crate) fn onigenc_egcb_is_break_position(
     enc: OnigEncoding,
     str_data: &[u8],
     s: usize,
@@ -1244,7 +1248,7 @@ fn wb_get_next_main_code(
 
 /// Full WB break position check.
 /// Port of onigenc_wb_is_break_position from unicode.c:675.
-pub fn onigenc_wb_is_break_position(
+pub(crate) fn onigenc_wb_is_break_position(
     enc: OnigEncoding,
     str_data: &[u8],
     s: usize,

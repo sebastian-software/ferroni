@@ -22,13 +22,13 @@ use ferroni::scanner::{OnigString, Scanner, ScannerFindOptions};
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn rust_compile(pattern: &[u8], option: OnigOptionType) -> ferroni::regint::RegexType {
+fn rust_compile(pattern: &[u8], option: OnigOptionType) -> ferroni::oniguruma::RegexType {
     onig_new(pattern, option, &ONIG_ENCODING_UTF8, &OnigSyntaxOniguruma)
         .expect("Rust compile failed")
 }
 
 fn rust_search(
-    reg: &ferroni::regint::RegexType,
+    reg: &ferroni::oniguruma::RegexType,
     text: &[u8],
     region: Option<OnigRegion>,
 ) -> (i32, Option<OnigRegion>) {
@@ -398,7 +398,7 @@ fn bench_regression_regset(c: &mut Criterion) {
         b"\\bpage\\b",
     ];
 
-    let rust_regs: Vec<Box<ferroni::regint::RegexType>> = patterns
+    let rust_regs: Vec<Box<ferroni::oniguruma::RegexType>> = patterns
         .iter()
         .map(|p| Box::new(rust_compile(p, ONIG_OPTION_NONE)))
         .collect();
