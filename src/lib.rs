@@ -286,6 +286,7 @@ pub mod regparse_types;
 pub mod regset;
 pub mod regsyntax;
 pub mod regtrav;
+pub mod replace;
 mod required_literals;
 pub mod scanner;
 pub mod unicode;
