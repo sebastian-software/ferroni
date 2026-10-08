@@ -2893,13 +2893,14 @@ fn is_end_of_bre_subexp(
 /// Look up the group numbers of `name` - mirrors C's name_to_group_numbers(),
 /// which records the name when it is not defined.
 fn name_to_group_numbers(env: &mut ParseEnv, name: &[u8]) -> Result<Vec<i32>, i32> {
-    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
-    // borrowed for the entire parse, so it is non-null and live; the parser
-    // only reaches the regex through `env.reg`, so no aliasing `&mut` exists
-    // while this shared reborrow is used.
-    let reg = unsafe { &*env.reg };
-    match reg.name_table.as_ref().and_then(|nt| nt.find(name)) {
-        Some(e) => Ok(e.back_refs.clone()),
+    let found = env
+        .reg_state
+        .name_table
+        .as_ref()
+        .and_then(|nt| nt.find(name))
+        .map(|e| e.back_refs.clone());
+    match found {
+        Some(back_refs) => Ok(back_refs),
         None => {
             env.set_error_string(ONIGERR_UNDEFINED_NAME_REFERENCE, name);
             Err(ONIGERR_UNDEFINED_NAME_REFERENCE)
@@ -5098,20 +5099,12 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
 
 /// Allocate a new CalloutListEntry on the regex's ext, return its 1-based num.
 fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
-    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
-    // borrowed for the entire parse, so it is non-null and live; we hold the
-    // only `&mut ParseEnv` and the parser reaches the regex only through
-    // `env.reg`, so this exclusive reborrow does not alias any other reference.
-    let reg = unsafe { &mut *env.reg };
-    if reg.extp.is_none() {
-        reg.extp = Some(RegexExt {
-            pattern: Vec::new(),
-            tag_table: None,
-            callout_num: 0,
-            callout_list: Vec::new(),
-        });
-    }
-    let ext = reg.extp.as_mut().unwrap();
+    let ext = env.reg_state.extp.get_or_insert_with(|| RegexExt {
+        pattern: Vec::new(),
+        tag_table: None,
+        callout_num: 0,
+        callout_list: Vec::new(),
+    });
     ext.callout_num += 1;
     let num = ext.callout_num;
     // Placeholder entry — caller will fill in
@@ -5130,12 +5123,11 @@ fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
 
 /// Register a tag name → callout num mapping.
 fn callout_tag_entry(env: &mut ParseEnv, tag: &[u8], num: i32) -> i32 {
-    // SAFETY: as in `reg_callout_list_entry` above — `env.reg` points to the
-    // `RegexType` mutably borrowed by `onig_parse_tree` for the whole parse,
-    // and no other reference to it is live during this exclusive reborrow.
-    let reg = unsafe { &mut *env.reg };
-    let ext = reg.extp.as_mut().unwrap();
-    let t = ext
+    let t = env
+        .reg_state
+        .extp
+        .as_mut()
+        .unwrap()
         .tag_table
         .get_or_insert_with(std::collections::HashMap::new);
 
@@ -5311,13 +5303,7 @@ fn prs_callout_of_name(
 
     // Create callout list entry
     let num = reg_callout_list_entry(env)?;
-    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
-    // borrowed for the entire parse; the reborrow taken inside
-    // `reg_callout_list_entry` ended when it returned, so this exclusive
-    // reborrow is the only live reference to the regex.
-    let reg = unsafe { &mut *env.reg };
-    let ext = reg.extp.as_mut().unwrap();
-    let entry = &mut ext.callout_list[(num - 1) as usize];
+    let entry = &mut env.reg_state.extp.as_mut().unwrap().callout_list[(num - 1) as usize];
     entry.of = OnigCalloutOf::Name as i32;
     entry.callout_in = callout_in;
     entry.builtin_id = builtin_id;
@@ -5637,13 +5623,7 @@ fn prs_callout_of_contents(
 
     // Create entry
     let num = reg_callout_list_entry(env)?;
-    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
-    // borrowed for the entire parse; the reborrow taken inside
-    // `reg_callout_list_entry` ended when it returned, so this exclusive
-    // reborrow is the only live reference to the regex.
-    let reg = unsafe { &mut *env.reg };
-    let ext = reg.extp.as_mut().unwrap();
-    let entry = &mut ext.callout_list[(num - 1) as usize];
+    let entry = &mut env.reg_state.extp.as_mut().unwrap().callout_list[(num - 1) as usize];
     entry.of = OnigCalloutOf::Contents as i32;
     entry.callout_in = callout_in;
     entry.builtin_id = -1;
@@ -6634,11 +6614,7 @@ fn prs_named_group(
     let num = env.add_mem_entry()?;
 
     // Add to name table
-    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
-    // borrowed for the entire parse, so it is non-null and live; this
-    // exclusive reborrow ends with the `if let` and does not overlap any
-    // other reference to the regex.
-    if let Some(ref mut nt) = unsafe { &mut *env.reg }.name_table {
+    if let Some(ref mut nt) = env.reg_state.name_table {
         let name = &pattern[name_start..name_end];
         let allow = is_syntax_bv(&env.syntax, ONIG_SYN_ALLOW_MULTIPLEX_DEFINITION_NAME);
         if let Err(r) = nt.add(name, num, allow) {
@@ -6681,22 +6657,17 @@ struct NamedGroupCtx<'a> {
 
 /// Apply whole options ((?I), (?L), (?C)) to the regex and parse env.
 fn set_whole_options(option: OnigOptionType, env: &mut ParseEnv) {
-    // SAFETY: `env.reg` was set by `onig_parse_tree` from the `&mut RegexType`
-    // borrowed for the entire parse, so it is non-null and live; we hold the
-    // only `&mut ParseEnv` and the parser reaches the regex only through
-    // `env.reg`, so this exclusive reborrow does not alias any other reference.
-    let reg = unsafe { &mut *env.reg };
     if option.intersects(ONIG_OPTION_IGNORECASE_IS_ASCII) {
-        reg.case_fold_flag &=
+        env.reg_state.case_fold_flag &=
             !(INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR | ONIGENC_CASE_FOLD_TURKISH_AZERI);
-        reg.case_fold_flag |= ONIGENC_CASE_FOLD_ASCII_ONLY;
-        env.case_fold_flag = reg.case_fold_flag;
+        env.reg_state.case_fold_flag |= ONIGENC_CASE_FOLD_ASCII_ONLY;
+        env.case_fold_flag = env.reg_state.case_fold_flag;
     }
     if option.intersects(ONIG_OPTION_FIND_LONGEST) {
-        reg.options |= ONIG_OPTION_FIND_LONGEST;
+        env.reg_state.options |= ONIG_OPTION_FIND_LONGEST;
     }
     if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP) {
-        reg.options |= ONIG_OPTION_DONT_CAPTURE_GROUP;
+        env.reg_state.options |= ONIG_OPTION_DONT_CAPTURE_GROUP;
     }
 }
 
@@ -7724,8 +7695,15 @@ pub fn onig_parse_tree(
     reg.num_empty_check = 0;
     reg.repeat_range = Vec::new();
 
-    // Clear name table
-    reg.name_table = Some(NameTable::new());
+    // Move the regex state the parser writes into `env`. It is moved back
+    // below on every return path, so `reg` is complete when this returns.
+    // The name table is cleared here.
+    env.reg_state = RegexParseState {
+        options: reg.options,
+        case_fold_flag: reg.case_fold_flag,
+        name_table: Some(NameTable::new()),
+        extp: reg.extp.take(),
+    };
 
     // Initialize parse environment
     env.clear();
@@ -7734,12 +7712,27 @@ pub fn onig_parse_tree(
     env.enc = reg.enc;
     env.syntax = reg.syntax.clone();
     env.pattern = pattern.as_ptr();
-    // SAFETY: offsetting the slice's base pointer by its own length yields
-    // the one-past-the-end pointer of the same allocation, which `add`
-    // permits; the result is used only as an end sentinel, never dereferenced.
-    env.pattern_end = unsafe { pattern.as_ptr().add(pattern.len()) };
+    env.pattern_end = pattern.as_ptr_range().end;
     env.reg = reg as *mut RegexType;
 
+    let parsed = parse_pattern_tree(pattern, env);
+
+    // Restore the regex on success and on error alike (C's `err:` path).
+    let state = std::mem::take(&mut env.reg_state);
+    reg.options = state.options;
+    reg.case_fold_flag = state.case_fold_flag;
+    reg.name_table = state.name_table;
+    reg.extp = state.extp;
+
+    let root = parsed?;
+    reg.num_mem = env.num_mem;
+
+    Ok(root)
+}
+
+/// The body of `onig_parse_tree` that runs while the regex state is held in
+/// `env.reg_state`. The caller restores that state on every return path.
+fn parse_pattern_tree(pattern: &[u8], env: &mut ParseEnv) -> Result<Box<Node>, i32> {
     // Validate pattern encoding
     if !env.enc.is_valid_mbc_string(pattern) {
         return Err(ONIGERR_INVALID_WIDE_CHAR_VALUE);
@@ -7758,8 +7751,6 @@ pub fn onig_parse_tree(
         env.set_mem_node(0, &mut *zero_node as *mut Node);
         root = zero_node;
     }
-
-    reg.num_mem = env.num_mem;
 
     Ok(root)
 }
@@ -8075,6 +8066,7 @@ mod tests {
             pattern_end: std::ptr::null(),
             error: None,
             reg: std::ptr::null_mut(),
+            reg_state: RegexParseState::default(),
             num_call: 0,
             num_mem: 0,
             num_named: 0,
@@ -8364,6 +8356,19 @@ mod tests {
             _ => panic!("expected Bag node, got {:?}", root.node_type()),
         }
         // Check that the name was registered
+        let nt = reg.name_table.as_ref().expect("expected name table");
+        assert!(nt.find(b"name").is_some());
+    }
+
+    /// The regex state that the parser moves into `env` is moved back on the
+    /// error path too: the group named before the error stays in the name
+    /// table, and the whole option applied before it stays on the regex.
+    #[test]
+    fn parse_error_restores_regex_state() {
+        let (mut reg, mut env) = make_test_context();
+        let r = onig_parse_tree(b"(?L)(?<name>a)\\k<missing>", &mut reg, &mut env);
+        assert_eq!(r.err(), Some(ONIGERR_UNDEFINED_NAME_REFERENCE));
+        assert!(reg.options.intersects(ONIG_OPTION_FIND_LONGEST));
         let nt = reg.name_table.as_ref().expect("expected name table");
         assert!(nt.find(b"name").is_some());
     }

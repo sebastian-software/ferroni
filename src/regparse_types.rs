@@ -823,6 +823,30 @@ unsafe impl Sync for UnsetAddr {}
 
 // === Parse Environment (ScanEnv in C) ===
 
+/// The parts of the `RegexType` under construction that the parser writes.
+/// C reaches them through `env->reg`. The port moves them into the
+/// `ParseEnv` for the duration of `onig_parse_tree` and moves them back on
+/// every return path, so the parser holds no pointer to the regex.
+pub struct RegexParseState {
+    /// The regex's options, including the whole-option flags that
+    /// `set_whole_options` adds during the parse.
+    pub options: OnigOptionType,
+    pub case_fold_flag: OnigCaseFoldType,
+    pub name_table: Option<NameTable>,
+    pub extp: Option<RegexExt>,
+}
+
+impl Default for RegexParseState {
+    fn default() -> Self {
+        Self {
+            options: OnigOptionType::NONE,
+            case_fold_flag: 0,
+            name_table: None,
+            extp: None,
+        }
+    }
+}
+
 pub struct ParseEnv {
     pub options: OnigOptionType,
     pub case_fold_flag: OnigCaseFoldType,
@@ -831,14 +855,20 @@ pub struct ParseEnv {
     pub cap_history: MemStatusType,
     pub backtrack_mem: MemStatusType,
     pub backrefed_mem: MemStatusType,
+    /// C's `env->pattern`. Recorded for parity and never dereferenced.
     pub pattern: *const u8,
+    /// C's `env->pattern_end`. Recorded for parity and never dereferenced.
     pub pattern_end: *const u8,
     /// The name an error refers to, recorded by `set_error_string` and
     /// reported through `OnigErrorInfo`. C keeps it as the pointer pair
     /// `error`/`error_end` into the pattern (or into a node's name); an owned
     /// copy of the bytes serves both without borrowing from either.
     pub error: Option<Vec<u8>>,
+    /// C's `env->reg`. Recorded for parity and never dereferenced; the regex
+    /// state the parser writes is in `reg_state`.
     pub reg: *mut RegexType,
+    /// The regex state moved in from `reg` for the duration of the parse.
+    pub reg_state: RegexParseState,
     pub num_call: i32,
     pub num_mem: i32,
     pub num_named: i32,
@@ -871,22 +901,9 @@ pub struct ParseEnv {
     pub group_max_len: Vec<OnigLen>,
 }
 
-// SAFETY: the raw pointers in ParseEnv point into data owned by the caller of
-// `onig_parse_tree` for the whole compilation: `pattern`/`pattern_end` into the
-// pattern bytes, `reg` at the RegexType under construction, and the MemEnv
-// slots into the parse tree. A ParseEnv is
-// created per compilation, used on that one thread, and discarded; moving it
-// to another thread is only sound while pattern, regex, and tree are moved or
-// kept alive with it. Sending a ParseEnv beyond the lifetime of those
-// referents would break this invariant.
-unsafe impl Send for ParseEnv {}
-// SAFETY: ParseEnv is never shared across threads in practice — parsing is
-// strictly single-threaded and every function takes `&mut ParseEnv`, so no
-// concurrent access through `&ParseEnv` occurs. This impl is trusting rather
-// than airtight: `reg` is a mutably-dereferenced interior pointer, so two
-// threads holding `&ParseEnv` and dereferencing `reg` (as the parser's unsafe
-// blocks do) would race. Kept to mirror the C code's thread-confined ScanEnv.
-unsafe impl Sync for ParseEnv {}
+// ParseEnv is neither Send nor Sync: it holds the raw pointers `pattern`,
+// `pattern_end` and `reg`, which are recorded for C parity and never
+// dereferenced. Nothing requires it to be Send or Sync.
 
 // === Node Creation Helper Functions ===
 
