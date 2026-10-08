@@ -10,5 +10,39 @@
       "depNameTemplate": "@sebastian-software/standards",
       "datasourceTemplate": "npm"
     }
+  ],
+  "packageRules": [
+    {
+      "description": "One PR for all non-major GitHub Actions updates, digests included.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "One PR for all non-major Rust crate updates, requirements and lockfile alike.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Rust crates"
+    },
+    {
+      "description": "One PR for all non-major npm updates of the docs site; this also absorbs the preset's OXC toolchain group.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["docs/package.json"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "docs site"
+    },
+    {
+      "description": "One PR for all non-major npm updates of the Shiki benchmark harness.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["benches/shiki_js/package.json"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Shiki benchmark"
+    },
+    {
+      "description": "One PR for the tool versions pinned across the workflows and package manifests (pnpm, mise), whichever manager detects them. Listed last so it wins over the groups above.",
+      "matchPackageNames": ["pnpm", "jdx/mise"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "toolchain pins"
+    }
   ]
 }
