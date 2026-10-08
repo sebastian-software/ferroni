@@ -157,7 +157,7 @@ function ForwardSection() {
     <Section
       id="fr-forward"
       title="Same engine. Modern Rust."
-      intro="Oniguruma’s C project closed on April 24, 2025, after more than twenty years as the engine TextMate grammars are written for. Ferroni carries it forward, and adds what C Oniguruma never shipped: Unicode 17.0, the vscode-oniguruma scanner, a backtracking check and an idiomatic Rust API."
+      intro="Oniguruma’s C project closed on April 24, 2025, after more than twenty years as the engine TextMate grammars are written for. Ferroni carries it forward, and adds what C Oniguruma never shipped: Unicode 18.0, the vscode-oniguruma scanner, a backtracking check and an idiomatic Rust API."
     >
       <Principles items={pillars} />
     </Section>

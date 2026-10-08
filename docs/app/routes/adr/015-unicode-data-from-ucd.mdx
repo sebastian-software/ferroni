@@ -39,10 +39,10 @@ from the same property ordering as the tables instead of being hard-coded in
 the break algorithm. scripts/check_unicode_16.py preserves the table-body
 comparison with committed SHA-256 values and checks the old index value.
 
-Ferroni now uses Unicode 17.0.0 data. Its Unicode property lookup recognizes
-902 names, up from 886. This is an intentional data-level divergence from the
-frozen Oniguruma snapshot. The regex behavior and table layout continue to
-follow the existing port.
+Ferroni now uses Unicode 18.0.0 data. Its Unicode property lookup recognizes
+914 names, up from 902 with Unicode 17.0.0 and 886 with Unicode 16.0.0. This is
+an intentional data-level divergence from the frozen Oniguruma snapshot. The
+regex behavior and table layout continue to follow the existing port.
 
 The generator sorts each property's ranges before merging them. The
 DerivedCoreProperties.txt file lists Indic_Conjunct_Break (`InCB`) in three

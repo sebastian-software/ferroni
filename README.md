@@ -30,7 +30,7 @@ grammars are written for, which puts it underneath VS Code, Shiki and most
 syntax highlighters. jq and PHP's mbregex use it too. Its C project
 [ended in April 2025](https://github.com/kkos/oniguruma#readme). Ferroni ports
 the engine to Rust line by line, checks it against the upstream test suite,
-and adds what C Oniguruma never shipped: Unicode 17.0 data, a
+and adds what C Oniguruma never shipped: Unicode 18.0 data, a
 vscode-oniguruma-compatible scanner, a compile-time check for catastrophic
 backtracking, and an idiomatic Rust API.
 
@@ -123,7 +123,7 @@ guarantees linear-time matching and is usually faster on plain text search.
   backreferences by number, name and relative position, conditionals
   `(?(cond)T|F)`, absent expressions `(?~...)`, subexpression calls
   `\g<name>`, and callouts.
-- **Unicode 17.0:** 902 property names such as `\p{Greek}`, `\p{Lu}` and
+- **Unicode 18.0:** 914 property names such as `\p{Greek}`, `\p{Lu}` and
   `\p{Emoji}`, grapheme clusters `\X`, text segment boundaries `\y` and `\Y`,
   and full case folding, so `(?i)straße` finds `STRASSE`. C Oniguruma's last
   release ships Unicode 16.0
@@ -185,7 +185,7 @@ every task and the raw data:
 - **Test parity.** Every upstream test file for UTF-8 is ported case by case:
   2,974 C test cases and the vscode-oniguruma scanner tests, all passing
   ([parity table](https://ferroni.dev/guide/compatibility#test-parity)). With
-  Ferroni's own tests the tree holds **2,524 `#[test]` functions**, counted by
+  Ferroni's own tests the tree holds **2,526 `#[test]` functions**, counted by
   [`scripts/count-tests.sh`](scripts/count-tests.sh).
 - **Coverage gate.** CI measures line coverage on every pull request and fails
   below the threshold set in [`scripts/coverage.sh`](scripts/coverage.sh).
