@@ -90,8 +90,8 @@ const sections: DocsSection[] = [
 /*
  * Ardo's generated sidebar can only group pages by folder, and a folder becomes
  * part of the URL. The Performance section therefore lists its pages here, in
- * two groups: the current evidence first, then the dated evaluations. A page
- * that is in neither list does not appear in the sidebar.
+ * two groups: the current evidence first, then the dated evaluations. The
+ * build fails when a page is in neither list (see the check below).
  */
 const performanceCurrent = [
   { to: "/perf/engine-comparison", label: "Engine Comparison" },
@@ -139,6 +139,17 @@ const performanceHistory = [
     label: "Match Iteration, Lazy Loops and Look-Behind Anchors (2026-09)",
   },
 ];
+
+// Fail the build when a Performance page is in neither list, instead of
+// silently leaving it out of the sidebar. Only the glob's keys are used.
+const unlistedPerformancePages = Object.keys(import.meta.glob("./routes/perf/*.mdx"))
+  .map((file) => `/perf/${file.slice("./routes/perf/".length, -".mdx".length)}`)
+  .filter((to) => ![...performanceCurrent, ...performanceHistory].some((page) => page.to === to));
+if (unlistedPerformancePages.length > 0) {
+  throw new Error(
+    `Add these Performance pages to performanceCurrent or performanceHistory in docs/app/root.tsx: ${unlistedPerformancePages.join(", ")}`,
+  );
+}
 
 function PerformanceSidebar() {
   return (
