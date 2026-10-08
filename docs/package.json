@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "ardo": "^4.2.0",
+    "ardo": "^5.0.0",
     "ferramenta-family": "^2.0.0",
     "isbot": "^5.2.2",
     "lucide-react": "^1.52.0",
