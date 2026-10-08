@@ -607,6 +607,7 @@ mod tests {
     /// give nothing, nor does a folded literal trie.
     #[test]
     fn case_insensitive_literals_count_only_as_exact_alternatives() {
+        let _limits = crate::regexec::shared_limits();
         check(&[
             (
                 "(?i)static_cast",
@@ -723,7 +724,7 @@ mod tests {
 
     #[test]
     fn left_out_attempts_stay_unobservable_but_for_the_retry_limit_in_match() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::exclusive_limits();
         let reg = compile("a", false).unwrap();
         let mut msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, 0);
         let required = set(&["a"]);

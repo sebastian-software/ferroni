@@ -1425,6 +1425,7 @@ mod tests {
     /// instead of underflowing `end - start`.
     #[test]
     fn inverted_capture_reads_as_unmatched() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&[r"((?=(a|ab))a?){2}"]).unwrap();
         let m = scanner
             .find_next_match("a", 0, ScannerFindOptions::NONE)
@@ -1439,6 +1440,7 @@ mod tests {
 
     #[test]
     fn cache_miss_with_truncated_range_is_not_reused() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&[";", "}"]).unwrap();
         let s = "a;b}";
 
@@ -1468,6 +1470,7 @@ mod tests {
 
     #[test]
     fn stats_and_reset_work() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["a"]).unwrap();
         assert_eq!(scanner.stats(), ScannerStats::default());
 
@@ -1485,7 +1488,7 @@ mod tests {
     #[test]
     fn cache_mode_regset_probe_is_counted() {
         // A search retry budget disables this route; exclude global-limit tests.
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["a"]).unwrap();
         for _ in 0..20 {
             let _ = scanner.find_next_match_with_id("ba", 1, 0, ScannerFindOptions::NONE);
@@ -1499,7 +1502,7 @@ mod tests {
     #[test]
     fn optional_prefix_match_agrees_after_cache_route_switches() {
         // A search retry budget disables this route; exclude global-limit tests.
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["a?bc", "q"]).unwrap();
 
         for _ in 0..25 {
@@ -1524,6 +1527,7 @@ mod tests {
     /// Port of vscode-oniguruma `simple1`.
     #[test]
     fn vscode_simple1() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["ell", "wo"]).unwrap();
         let s = "Hello world!";
         assert_eq!(
@@ -1553,6 +1557,7 @@ mod tests {
     /// Port of vscode-oniguruma `simple2`.
     #[test]
     fn vscode_simple2() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["a", "b", "c"]).unwrap();
         assert_eq!(
             scanner.find_next_match("x", 0, ScannerFindOptions::NONE),
@@ -1603,6 +1608,7 @@ mod tests {
     /// UTF-8 byte offsets: a=0, b=1, …=2..4, c=5, d=6, e=7, 2=8, 1=9
     #[test]
     fn vscode_unicode1() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner1 = Scanner::new(&["1", "2"]).unwrap();
         // Start at byte 7 (='e'), find '2' at byte 8
         assert_eq!(
@@ -1638,6 +1644,7 @@ mod tests {
     /// UTF-8 byte offsets: a=0, 💻=1..4, b=5, Y=6, X=7
     #[test]
     fn vscode_unicode2() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["Y", "X"]).unwrap();
         let s = "a\u{1F4BB}bYX";
         assert_eq!(s.len(), 8);
@@ -1696,6 +1703,7 @@ mod tests {
     /// 'Возврат' = 7 Cyrillic chars × 2 bytes each = 14 bytes
     #[test]
     fn vscode_unicode3() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner =
             Scanner::new(&["\u{0412}\u{043E}\u{0437}\u{0432}\u{0440}\u{0430}\u{0442}"]).unwrap();
         let s = "\u{0412}\u{043E}\u{0437}\u{0432}\u{0440}\u{0430}\u{0442} long_var_name;";
@@ -1717,6 +1725,7 @@ mod tests {
     /// We test that start > len returns None.
     #[test]
     fn vscode_out_of_bounds() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["X"]).unwrap();
         let s = "X\u{1F4BB}X"; // X(1) 💻(4) X(1) = 6 bytes
         // Start at 0: X at byte 0
@@ -1741,6 +1750,7 @@ mod tests {
     /// Port of vscode-oniguruma `regex with \G`.
     #[test]
     fn vscode_g_anchor() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["\\G-and"]).unwrap();
         let s = "first-and-second";
         assert_eq!(
@@ -1764,6 +1774,7 @@ mod tests {
     /// Complex regex that should NOT match the given input.
     #[test]
     fn vscode_oniguruma_issue_192() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&[
             "(?x)\n  (?<!\\+\\+|--)(?<=[({\\[,?=>:*]|&&|\\|\\||\\?|\\*\\/|^await|[^\\._$[:alnum:]]await|^return|[^\\._$[:alnum:]]return|^default|[^\\._$[:alnum:]]default|^yield|[^\\._$[:alnum:]]yield|^)\\s*\n  (?!<\\s*[_$[:alpha:]][_$[:alnum:]]*((\\s+extends\\s+[^=>])|,)) # look ahead is not type parameter of arrow\n  (?=(<)\\s*(?:([_$[:alpha:]][-_$[:alnum:].]*)(?<!\\.|-)(:))?((?:[a-z][a-z0-9]*|([_$[:alpha:]][-_$[:alnum:].]*))(?<!\\.|-))(?=((<\\s*)|(\\s+))(?!\\?)|\\/?>))",
         ]).unwrap();
@@ -1777,6 +1788,7 @@ mod tests {
     /// Port of vscode-oniguruma `FindOption.NotBeginString`.
     #[test]
     fn vscode_find_option_not_begin_string() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["\\Afirst"]).unwrap();
         let s = "first-and-first";
         assert_eq!(
@@ -1803,6 +1815,7 @@ mod tests {
     /// Port of vscode-oniguruma `FindOption.NotEndString`.
     #[test]
     fn vscode_find_option_not_end_string() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["first\\z"]).unwrap();
         let s = "first-and-first";
         assert_eq!(
@@ -1825,6 +1838,7 @@ mod tests {
     /// Port of vscode-oniguruma `FindOption.NotBeginPosition`.
     #[test]
     fn vscode_find_option_not_begin_position() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["\\G-and"]).unwrap();
         let s = "first-and-second";
         assert_eq!(
@@ -1847,6 +1861,7 @@ mod tests {
     /// Port of vscode-oniguruma `Configure scanner`.
     #[test]
     fn vscode_configure_scanner() {
+        let _limits = crate::regexec::shared_limits();
         let config = ScannerConfig {
             options: OnigOptionType::IGNORECASE,
             ..Default::default()
@@ -1869,6 +1884,7 @@ mod tests {
     /// Port of vscode-oniguruma `Configure syntax`.
     #[test]
     fn vscode_configure_syntax() {
+        let _limits = crate::regexec::shared_limits();
         let config = ScannerConfig {
             syntax: ScannerSyntax::Python,
             ..Default::default()
@@ -1911,6 +1927,7 @@ mod tests {
     /// Port of vscode-oniguruma `simple1` — UTF-16 API.
     #[test]
     fn vscode_utf16_simple1() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["ell", "wo"]).unwrap();
         let s = OnigString::new("Hello world!");
         assert_eq!(
@@ -1940,6 +1957,7 @@ mod tests {
     /// Port of vscode-oniguruma `simple2` — UTF-16 API.
     #[test]
     fn vscode_utf16_simple2() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["a", "b", "c"]).unwrap();
         let x = OnigString::new("x");
         assert_eq!(
@@ -1990,6 +2008,7 @@ mod tests {
     /// Original positions used verbatim (UTF-16 code units).
     #[test]
     fn vscode_utf16_unicode1() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner1 = Scanner::new(&["1", "2"]).unwrap();
         let s1 = OnigString::new("ab\u{2026}cde21"); // … is 1 UTF-16 code unit
         assert_eq!(
@@ -2024,6 +2043,7 @@ mod tests {
     /// These are the ORIGINAL test positions from vscode-oniguruma.
     #[test]
     fn vscode_utf16_unicode2() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["Y", "X"]).unwrap();
         let s = OnigString::new("a\u{1F4BB}bYX");
         assert_eq!(s.utf16_len(), 6);
@@ -2089,6 +2109,7 @@ mod tests {
     /// 'Возврат' = 7 Cyrillic chars, each 1 UTF-16 code unit.
     #[test]
     fn vscode_utf16_unicode3() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["Возврат"]).unwrap();
         let s = OnigString::new("Возврат long_var_name;");
         assert_eq!(
@@ -2107,6 +2128,7 @@ mod tests {
     /// Port of vscode-oniguruma `out of bounds` — UTF-16 API.
     #[test]
     fn vscode_utf16_out_of_bounds() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["X"]).unwrap();
         let s = OnigString::new("X\u{1F4BB}X"); // X(0) 💻(1,2) X(3) = 4 UTF-16 code units
         assert_eq!(
@@ -2129,6 +2151,7 @@ mod tests {
     /// Port of vscode-oniguruma `regex with \G` — UTF-16 API.
     #[test]
     fn vscode_utf16_g_anchor() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["\\G-and"]).unwrap();
         let s = OnigString::new("first-and-second");
         assert_eq!(
@@ -2151,6 +2174,7 @@ mod tests {
     /// Port of vscode-oniguruma `kkos/oniguruma#192` — UTF-16 API.
     #[test]
     fn vscode_utf16_oniguruma_issue_192() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&[
             "(?x)\n  (?<!\\+\\+|--)(?<=[({\\[,?=>:*]|&&|\\|\\||\\?|\\*\\/|^await|[^\\._$[:alnum:]]await|^return|[^\\._$[:alnum:]]return|^default|[^\\._$[:alnum:]]default|^yield|[^\\._$[:alnum:]]yield|^)\\s*\n  (?!<\\s*[_$[:alpha:]][_$[:alnum:]]*((\\s+extends\\s+[^=>])|,)) # look ahead is not type parameter of arrow\n  (?=(<)\\s*(?:([_$[:alpha:]][-_$[:alnum:].]*)(?<!\\.|-)(:))?((?:[a-z][a-z0-9]*|([_$[:alpha:]][-_$[:alnum:].]*))(?<!\\.|-))(?=((<\\s*)|(\\s+))(?!\\?)|\\/?>))",
         ]).unwrap();
@@ -2164,6 +2188,7 @@ mod tests {
     /// Port of vscode-oniguruma `FindOption.NotBeginString` — UTF-16 API.
     #[test]
     fn vscode_utf16_find_option_not_begin_string() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["\\Afirst"]).unwrap();
         let s = OnigString::new("first-and-first");
         assert_eq!(
@@ -2190,6 +2215,7 @@ mod tests {
     /// Port of vscode-oniguruma `FindOption.NotEndString` — UTF-16 API.
     #[test]
     fn vscode_utf16_find_option_not_end_string() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["first\\z"]).unwrap();
         let s = OnigString::new("first-and-first");
         assert_eq!(
@@ -2212,6 +2238,7 @@ mod tests {
     /// Port of vscode-oniguruma `FindOption.NotBeginPosition` — UTF-16 API.
     #[test]
     fn vscode_utf16_find_option_not_begin_position() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["\\G-and"]).unwrap();
         let s = OnigString::new("first-and-second");
         assert_eq!(
@@ -2248,6 +2275,7 @@ mod tests {
 
     #[test]
     fn onig_string_instances_with_equal_contents_have_distinct_cache_ids() {
+        let _limits = crate::regexec::shared_limits();
         let first = OnigString::new("unchanged");
         let second = OnigString::new("unchanged");
 
@@ -2308,6 +2336,7 @@ mod tests {
 
     #[test]
     fn multi_pattern_correct_index() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["\\d+", "[a-z]+"]).unwrap();
         let m = scanner
             .find_next_match("hello42", 0, ScannerFindOptions::NONE)
@@ -2319,6 +2348,7 @@ mod tests {
 
     #[test]
     fn capture_groups() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["(\\d{4})-(\\d{2})-(\\d{2})"]).unwrap();
         let m = scanner
             .find_next_match("date: 2026-02-16", 0, ScannerFindOptions::NONE)
@@ -2337,6 +2367,7 @@ mod tests {
 
     #[test]
     fn long_string_path() {
+        let _limits = crate::regexec::shared_limits();
         // String > 1000 bytes triggers per-regex search path
         let long = "a".repeat(1500);
         let mut scanner = Scanner::new(&["aaa"]).unwrap();
@@ -2350,6 +2381,7 @@ mod tests {
 
     #[test]
     fn caching_with_str_id() {
+        let _limits = crate::regexec::shared_limits();
         let long = "x".repeat(500) + "hello" + &"y".repeat(1000);
         let mut scanner = Scanner::new(&["hello", "world"]).unwrap();
 
@@ -2366,6 +2398,7 @@ mod tests {
 
     #[test]
     fn g_anchor_bypasses_cache() {
+        let _limits = crate::regexec::shared_limits();
         let long = "a".repeat(1500);
         let mut scanner = Scanner::new(&["\\Ga"]).unwrap();
 
@@ -2383,6 +2416,7 @@ mod tests {
 
     #[test]
     fn g_anchor_uses_original_search_start_in_position_lead() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["\\G(\\s+)", "\\s+"]).unwrap();
         let s = "x> y";
 
@@ -2445,7 +2479,7 @@ mod tests {
     /// 10,000 (`None` where C stops at the limit, or finds nothing).
     #[test]
     fn limit_errors_match_c_on_every_route_and_call_history() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::exclusive_limits();
         let old_limit = crate::regexec::onig_get_retry_limit_in_match();
         crate::regexec::onig_set_retry_limit_in_match(10_000);
 
@@ -2518,6 +2552,7 @@ mod tests {
     /// route has to agree, whatever calls came before.
     #[test]
     fn keep_matches_rank_by_their_attempt_position_on_every_route() {
+        let _limits = crate::regexec::shared_limits();
         let patterns = [r".+\K,", r"[^\s]"];
         let text = "\n!c1 1,é1";
         let onig = OnigString::new(text);
@@ -2543,6 +2578,7 @@ mod tests {
 
     #[test]
     fn multi_pattern_earliest_wins() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["world", "hello"]).unwrap();
         let m = scanner
             .find_next_match("hello world", 0, ScannerFindOptions::NONE)
@@ -2553,6 +2589,7 @@ mod tests {
 
     #[test]
     fn empty_pattern_matches() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["", "x"]).unwrap();
         let m = scanner
             .find_next_match("hello", 0, ScannerFindOptions::NONE)
@@ -2562,6 +2599,7 @@ mod tests {
 
     #[test]
     fn optional_capture_group() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["(a)(b)?(c)"]).unwrap();
         let m = scanner
             .find_next_match("ac", 0, ScannerFindOptions::NONE)
@@ -2580,7 +2618,7 @@ mod tests {
     #[test]
     fn cache_hit_on_repeated_search_same_string() {
         // A search retry budget disables this route; exclude global-limit tests.
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         // Exercises per-regex cache reuse: need ≥8 same-start calls to trigger probe
         let mut scanner = Scanner::new(&["foo", "bar", "baz"]).unwrap();
         let input = "xxfooxxbarxxbaz";
@@ -2605,7 +2643,7 @@ mod tests {
     #[test]
     fn cache_no_match_reused() {
         // A search retry budget disables this route; exclude global-limit tests.
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         // Exercises cache path where a pattern previously found no match
         // Need repeated same-start calls to trigger per-regex mode
         let mut scanner = Scanner::new(&["zzz", "a"]).unwrap();
@@ -2628,6 +2666,7 @@ mod tests {
 
     #[test]
     fn cache_invalidated_on_new_string() {
+        let _limits = crate::regexec::shared_limits();
         // Exercises cache reset when str_id changes
         let mut scanner = Scanner::new(&["x"]).unwrap();
 
@@ -2649,6 +2688,7 @@ mod tests {
 
     #[test]
     fn utf16_with_id_ascii() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["x"]).unwrap();
         let s = OnigString::new("axb");
         let m = scanner
@@ -2659,6 +2699,7 @@ mod tests {
 
     #[test]
     fn utf16_with_id_unicode() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["x"]).unwrap();
         let s = OnigString::new("💻x");
         let m = scanner
@@ -2703,6 +2744,7 @@ mod tests {
 
     #[test]
     fn g_anchor_pattern() {
+        let _limits = crate::regexec::shared_limits();
         // Exercises search_g_anchor_with_msa path
         let mut scanner = Scanner::new(&[r"\Gx", "y"]).unwrap();
         let input = "xxy";
@@ -2723,6 +2765,7 @@ mod tests {
 
     #[test]
     fn zero_width_matches_at_end_are_reported() {
+        let _limits = crate::regexec::shared_limits();
         for pattern in ["$", r"\z", "a*"] {
             let mut scanner = Scanner::new(&[pattern]).unwrap();
             let found = scanner
@@ -2738,6 +2781,7 @@ mod tests {
 
     #[test]
     fn zero_width_match_on_empty_input_is_reported() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&["$"]).unwrap();
         let found = scanner
             .find_next_match("", 0, ScannerFindOptions::NONE)
@@ -2751,6 +2795,7 @@ mod tests {
 
     #[test]
     fn repeated_end_anchor_search_agrees_across_adaptive_routes() {
+        let _limits = crate::regexec::shared_limits();
         let mut scanner = Scanner::new(&[r"\z", "q"]).unwrap();
 
         for call in 0..25 {
@@ -2769,6 +2814,7 @@ mod tests {
 
     #[test]
     fn many_searches_trigger_route_switching() {
+        let _limits = crate::regexec::shared_limits();
         // Exercises observe_per_regex_outcome and route switching logic
         let mut scanner = Scanner::new(&["a+", "b+", "c+"]).unwrap();
         let input = "aabbcc";
@@ -2791,6 +2837,7 @@ mod tests {
 
     #[test]
     fn same_start_streak_triggers_per_regex() {
+        let _limits = crate::regexec::shared_limits();
         // Exercises same_start_streak counting in should_use_regset_for_cache
         let mut scanner = Scanner::new(&["x", "y"]).unwrap();
         let input = "xy";
@@ -2928,7 +2975,7 @@ mod tests {
     #[test]
     fn pattern_cache_scanners_match_uncached_scanners() {
         // The routes and limit outcomes read the process-wide limits.
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::exclusive_limits();
         let config = ScannerConfig::default();
         let every_option: Vec<_> = (0..8).map(ScannerFindOptions::from_bits).collect();
         let distinct: std::collections::HashSet<&str> = CACHED_PATTERN_SETS
@@ -3074,6 +3121,7 @@ mod tests {
     /// is built first.
     #[test]
     fn pattern_cache_keeps_settings_apart() {
+        let _limits = crate::regexec::shared_limits();
         let plain = ScannerConfig::default();
         let ignore_case = ScannerConfig {
             options: plain.options | ONIG_OPTION_IGNORECASE,
@@ -3186,6 +3234,7 @@ mod tests {
     /// leaves built scanners working.
     #[test]
     fn pattern_cache_and_scanners_drop_in_any_order() {
+        let _limits = crate::regexec::shared_limits();
         let config = ScannerConfig::default();
         let mut cache = ScannerPatternCache::new();
         assert!(cache.is_empty());
@@ -3232,7 +3281,7 @@ mod tests {
     /// their shared patterns.
     #[test]
     fn scanners_sharing_a_pattern_cache_search_on_several_threads() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let patterns: &[&str] = &[
             r"[a-z]*(?:foo|bar|baz)",
             r"\w*end\b",
@@ -3288,7 +3337,7 @@ mod tests {
     /// captured one, which the benchmarks check against C.
     #[test]
     fn pattern_cache_replays_the_captured_scanner_traces() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         type Expected = Option<(usize, Vec<(usize, usize)>)>;
         let index = |value: &serde_json::Value| value.as_u64().unwrap() as usize;
         for (name, distinct_patterns) in [("cpp", 250), ("java", 115), ("scss", 104)] {
