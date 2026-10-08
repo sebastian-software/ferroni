@@ -50,7 +50,7 @@ fn raw_trace(
 
 #[test]
 fn rewrites_preserve_raw_forward_backward_bounded_and_invalid_byte_searches() {
-    let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+    let _limits = crate::regexec::shared_limits();
     for pattern in [
         r"([0-9]+(_?))+(\.)([0-9]*)",
         r"\b([0-9]+(_?))+(\.)([0-9]*)",

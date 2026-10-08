@@ -2905,10 +2905,10 @@ mod tests {
     use crate::regcomp::onig_new;
     use crate::regexec::onig_search;
     use crate::regexec::{
-        LIMIT_TEST_LOCK, onig_get_global_limit_revision, onig_get_match_stack_limit,
+        exclusive_limits, onig_get_global_limit_revision, onig_get_match_stack_limit,
         onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit,
         onig_set_match_stack_limit, onig_set_retry_limit_in_match, onig_set_retry_limit_in_search,
-        onig_set_time_limit,
+        onig_set_time_limit, shared_limits,
     };
     use crate::regsyntax::OnigSyntaxOniguruma;
 
@@ -3103,6 +3103,7 @@ mod tests {
 
     #[test]
     fn regset_basic_position_lead() {
+        let _limits = shared_limits();
         let regs = vec![compile(b"abc"), compile(b"def"), compile(b"ghi")];
         let (set, r) = onig_regset_new(regs);
         assert_eq!(r, ONIG_NORMAL);
@@ -3255,7 +3256,7 @@ mod tests {
 
     #[test]
     fn lookbehind_start_map_ignores_bytes_before_the_match_start() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let reg = compile(b"(?<=x)a?bc");
         assert!(has_finite_variable_optimizer(&reg));
         let map = derive_start_byte_map(&reg).expect("lookbehind is analyzable");
@@ -3283,7 +3284,7 @@ mod tests {
 
     #[test]
     fn fallback_run_skips_preserve_winners_captures_bounds_and_limits() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         struct RestoreLimits(u64, u64, u32, u64);
         impl Drop for RestoreLimits {
             fn drop(&mut self) {
@@ -3435,7 +3436,7 @@ mod tests {
     /// only the reference then reports (ADR-008's deliberate difference).
     #[test]
     fn required_literals_preserve_winners_captures_bounds_and_limits() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         struct RestoreLimits(u64, u64, u32, u64, u64);
         impl Drop for RestoreLimits {
             fn drop(&mut self) {
@@ -3756,7 +3757,7 @@ mod tests {
     /// before the look-behind's position, where no literal starts.
     #[test]
     fn required_literals_keep_attempts_of_entries_with_position_checks() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let pattern = br"\s*(?<=y*\x{140000})ABC";
         let subject = b"yyy\xf5\x80\x80\x80ABCD";
         let end = subject.len();
@@ -3827,7 +3828,7 @@ mod tests {
     /// but keep the entry out of the memo.
     #[test]
     fn required_literals_gate_closes_for_callouts_and_look_behind_leads() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, status) = onig_regset_new(vec![compile(br"\s*(\{)")]);
         assert_eq!(status, ONIG_NORMAL);
         let mut set = set.unwrap();
@@ -3865,7 +3866,7 @@ mod tests {
     /// leaves out stays out of the memo, as that of a full search would.
     #[test]
     fn required_literals_no_event_of_memo_unsafe_entry_is_not_memoized() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         // `{` at 2 fails; past it no occurrence is left.
         let input = b"ab{ cd x";
         for (pattern, memo_safe) in [
@@ -3921,7 +3922,7 @@ mod tests {
     /// their attempts can end before they start.)
     #[test]
     fn required_literals_agree_on_generated_position_checks() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let subjects: &[&[u8]] = &[
             b"A\xa9B yA\xa9\xa9C",
             "y\u{e9}\u{a9}B ab\u{e9}C".as_bytes(),
@@ -4021,7 +4022,7 @@ mod tests {
     /// observe the left-out retries, and FIND_LONGEST, turn them off.
     #[test]
     fn first_op_rejects_preserve_winners_captures_and_limits() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         struct RestoreLimits(u64, u64, u32, u64);
         impl Drop for RestoreLimits {
             fn drop(&mut self) {
@@ -4259,7 +4260,7 @@ mod tests {
 
     #[test]
     fn fallback_search_fills_backtracked_push_captures() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         // The fallback search runs region-free and fills the region only for
         // the winning position; captures restored by backtracking must still
         // come out unset.
@@ -4292,7 +4293,7 @@ mod tests {
 
     #[test]
     fn fallback_start_filter_only_skips_impossible_starts() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         // `\s*` in front of `[` leaves the optimizer an unbounded distance,
         // so the entry stays on the fallback search, filtered by start byte.
         let patterns: [&[u8]; 2] = [b"\\s*(\\[)", b"x"];
@@ -4348,6 +4349,7 @@ mod tests {
     #[cfg(feature = "ffi")]
     #[test]
     fn look_behind_entries_keep_c_s_winners_over_malformed_utf8() {
+        let _limits = shared_limits();
         let sets: [&[&[u8]]; 10] = [
             &[b"(?<=\\()\\W.*z", b"q"],
             &[b"(?<=[(\\[])\\W.*z", b"q"],
@@ -4415,7 +4417,7 @@ mod tests {
     /// the same set without the plan, for every start.
     #[test]
     fn literal_prefix_starts_keep_position_lead_results() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let patterns: [&[u8]; 6] = [
             b"(?<!\\+\\+|--)(?<=[!(+,:=>?\\[]|^await|[^$._[:alnum:]]await|^return)\\s*(\\{)",
             b"(?:^|(?<=[&(,]|[;\\s]if\\s))\\s*((/))(?![*+?{}])",
@@ -4529,7 +4531,7 @@ mod tests {
 
     #[test]
     fn lookahead_start_filters_keep_regset_results() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let patterns: [&[u8]; 5] = [
             b"(?<=:)(?=\\s*\\{)",
             b"(?=(\\w+)\\s*<)",
@@ -4603,7 +4605,7 @@ mod tests {
 
     #[test]
     fn all_fallback_memo_hit_skips_the_empty_table_pass() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -4647,7 +4649,7 @@ mod tests {
 
     #[test]
     fn mixed_set_keeps_its_table_search() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc"), compile(b"x")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -4671,7 +4673,7 @@ mod tests {
 
     #[test]
     fn fallback_memo_preserves_progressing_match_regions_and_lengths() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -4715,7 +4717,7 @@ mod tests {
 
     #[test]
     fn fallback_memo_invalidates_ids_limits_and_regset_changes() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -4805,7 +4807,7 @@ mod tests {
 
     #[test]
     fn fallback_memo_separates_caller_and_onig_string_id_domains() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -4846,7 +4848,7 @@ mod tests {
 
     #[test]
     fn fallback_memo_rebuilds_match_arg_after_limit_change() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
@@ -4903,7 +4905,7 @@ mod tests {
 
     #[test]
     fn fallback_memo_limit_change_matches_a_fresh_regset_error() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         let input = format!("x{}b", "a".repeat(1_001));
         let identity = FallbackMemoIdentity::OnigString(10);
@@ -4959,7 +4961,7 @@ mod tests {
 
     #[test]
     fn position_lead_refreshes_retry_limits_for_all_fallback_no_id_searches() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_match = onig_get_retry_limit_in_match();
         let old_search = onig_get_retry_limit_in_search();
         let input = format!("{}bx", "a".repeat(1_001));
@@ -5011,7 +5013,7 @@ mod tests {
 
     #[test]
     fn table_position_lead_refreshes_retry_limits_and_reports_search_over() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_match = onig_get_retry_limit_in_match();
         let old_search = onig_get_retry_limit_in_search();
         let input = format!("{}b", "a".repeat(32));
@@ -5064,7 +5066,7 @@ mod tests {
 
     #[test]
     fn table_position_lead_skips_retry_scratch_when_search_limit_is_disabled() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_search = onig_get_retry_limit_in_search();
         onig_set_retry_limit_in_search(0);
 
@@ -5094,7 +5096,7 @@ mod tests {
 
     #[test]
     fn table_retry_search_budget_is_isolated_per_regex() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_match = onig_get_retry_limit_in_match();
         let old_search = onig_get_retry_limit_in_search();
         onig_set_retry_limit_in_match(0);
@@ -5143,7 +5145,7 @@ mod tests {
 
     #[test]
     fn nonzero_time_limit_starts_a_fresh_position_lead_search_clock() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_time = onig_get_time_limit();
         let old_match = onig_get_retry_limit_in_match();
         let old_search = onig_get_retry_limit_in_search();
@@ -5201,7 +5203,7 @@ mod tests {
 
     #[test]
     fn fallback_memo_skips_position_dependent_patterns() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(br"a*(?:\Gx|y)")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -5267,7 +5269,7 @@ mod tests {
 
     #[test]
     fn exact_start_fallback_checks_do_not_prefetch_the_suffix() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc"), compile(b"x")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -5294,7 +5296,7 @@ mod tests {
 
     #[test]
     fn identical_direct_miss_is_cached_without_a_second_vm_attempt() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc"), compile(b"x")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -5325,7 +5327,7 @@ mod tests {
 
     #[test]
     fn second_direct_miss_upgrades_to_an_advancing_optimizer_cursor() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc"), compile(b"x")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -5386,7 +5388,7 @@ mod tests {
 
     #[test]
     fn direct_miss_upgrade_preserves_fallback_match_region_and_restart_passes() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc"), compile(b"x"), compile(b"a")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -5446,7 +5448,7 @@ mod tests {
 
     #[test]
     fn direct_miss_upgrade_preserves_a_same_position_retry_error() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         onig_set_retry_limit_in_match(100);
 
@@ -5487,7 +5489,7 @@ mod tests {
 
     #[test]
     fn fallback_memo_skips_callout_patterns() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(br".*(?{x})a")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -5519,7 +5521,7 @@ mod tests {
 
     #[test]
     fn unbounded_no_match_uses_one_optimizer_scan_then_memoizes() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(b"a*bc")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -5547,7 +5549,7 @@ mod tests {
 
     #[test]
     fn fallback_does_not_probe_a_start_after_an_unbeatable_table_winner() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         onig_set_retry_limit_in_match(100);
 
@@ -5571,7 +5573,7 @@ mod tests {
 
     #[test]
     fn fallback_match_precedes_a_later_table_retry_error() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         onig_set_retry_limit_in_match(100);
 
@@ -5602,7 +5604,7 @@ mod tests {
 
     #[test]
     fn table_retry_error_wins_a_same_start_later_fallback_match() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         onig_set_retry_limit_in_match(100);
 
@@ -5627,7 +5629,7 @@ mod tests {
 
     #[test]
     fn fallback_error_clears_a_superseded_winner_and_match_length() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         onig_set_retry_limit_in_match(100);
 
@@ -5659,7 +5661,7 @@ mod tests {
 
     #[test]
     fn fallback_search_preserves_g_anchor_and_beats_a_later_table_match() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let (set, result) = onig_regset_new(vec![compile(br"\["), compile(br"\G\s*\[")]);
         assert_eq!(result, ONIG_NORMAL);
         let mut set = set.expect("regset");
@@ -5683,6 +5685,7 @@ mod tests {
 
     #[test]
     fn regset_basic_regex_lead() {
+        let _limits = shared_limits();
         let regs = vec![compile(b"abc"), compile(b"def"), compile(b"ghi")];
         let (set, r) = onig_regset_new(regs);
         assert_eq!(r, ONIG_NORMAL);
@@ -5704,6 +5707,7 @@ mod tests {
 
     #[test]
     fn regset_earliest_match_regex_lead() {
+        let _limits = shared_limits();
         let regs = vec![compile(b"yyy"), compile(b"def"), compile(b"xxx")];
         let (set, r) = onig_regset_new(regs);
         assert_eq!(r, ONIG_NORMAL);
@@ -5726,6 +5730,7 @@ mod tests {
 
     #[test]
     fn regset_priority_to_regex_order() {
+        let _limits = shared_limits();
         let regs = vec![compile(b"def"), compile(b"xxx")];
         let (set, r) = onig_regset_new(regs);
         assert_eq!(r, ONIG_NORMAL);
@@ -5757,6 +5762,7 @@ mod tests {
 
     #[test]
     fn regset_no_match() {
+        let _limits = shared_limits();
         let regs = vec![compile(b"abc"), compile(b"def")];
         let (set, r) = onig_regset_new(regs);
         assert_eq!(r, ONIG_NORMAL);
@@ -5777,6 +5783,7 @@ mod tests {
 
     #[test]
     fn regset_empty_string() {
+        let _limits = shared_limits();
         let regs = vec![compile(b""), compile(b"x")];
         let (set, r) = onig_regset_new(regs);
         assert_eq!(r, ONIG_NORMAL);
@@ -5798,6 +5805,7 @@ mod tests {
 
     #[test]
     fn regset_fast_empty_string_records_zero_match_length() {
+        let _limits = shared_limits();
         let (set, r) = onig_regset_new(vec![compile(b"$")]);
         assert_eq!(r, ONIG_NORMAL);
         let mut set = set.unwrap();
@@ -5825,7 +5833,7 @@ mod tests {
     /// start without the optimizer stopped at the retry limit instead.
     #[test]
     fn fallback_attempts_only_positions_its_optimizer_admits() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         onig_set_retry_limit_in_match(10_000);
 
@@ -5876,7 +5884,7 @@ mod tests {
     /// fallback entry's match, as C's position-by-position search does.
     #[test]
     fn a_fallback_match_at_the_start_ends_the_table_scan() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let n = 2_000;
         let input = format!("{}(", "a".repeat(n));
         for identity in [None, Some(FallbackMemoIdentity::Caller(19))] {
@@ -5931,7 +5939,7 @@ mod tests {
     /// searches and the per-regex search of the Scanner's cache route.
     #[test]
     fn start_byte_dispatch_keeps_c_s_optimizer_windows() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         onig_set_retry_limit_in_match(10_000);
 
@@ -5989,7 +5997,7 @@ mod tests {
 
     #[test]
     fn negated_class_maps_do_not_widen_c_s_optimizer() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = exclusive_limits();
         let old_limit = onig_get_retry_limit_in_match();
         onig_set_retry_limit_in_match(10_000);
 
@@ -6025,7 +6033,7 @@ mod tests {
     /// `onig_regset_search`: `(?<=b).*x` on "abx" matches from 2 only.
     #[test]
     fn anychar_star_fallback_attempts_follow_the_regset_newline_rule() {
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let input = b"abx";
         for (start, expected) in [
             (0, (ONIG_MISMATCH, 0)),
@@ -6065,6 +6073,7 @@ mod tests {
 
     #[test]
     fn regset_position_lead_attempts_the_range_position() {
+        let _limits = shared_limits();
         let (set, r) = onig_regset_new(vec![compile(b"(?=b)")]);
         assert_eq!(r, ONIG_NORMAL);
         let mut set = set.unwrap();
@@ -6085,6 +6094,7 @@ mod tests {
 
     #[test]
     fn regset_position_lead_finds_zero_width_matches_at_end() {
+        let _limits = shared_limits();
         for pattern in [b"$".as_slice(), b"\\z".as_slice(), b"a*".as_slice()] {
             let (set, r) = onig_regset_new(vec![compile(pattern)]);
             assert_eq!(r, ONIG_NORMAL);
@@ -6109,6 +6119,7 @@ mod tests {
 
     #[test]
     fn regset_nonempty_eos_keeps_regex_lead_semantics() {
+        let _limits = shared_limits();
         for lead in [
             OnigRegSetLead::RegexLead,
             OnigRegSetLead::PriorityToRegexOrder,
@@ -6146,6 +6157,7 @@ mod tests {
 
     #[test]
     fn regset_search_normalizes_out_of_range_endpoints() {
+        let _limits = shared_limits();
         let (set, r) = onig_regset_new(vec![compile(b"(?=b)")]);
         assert_eq!(r, ONIG_NORMAL);
         let mut set = set.unwrap();
@@ -6174,6 +6186,7 @@ mod tests {
 
     #[test]
     fn regset_add_and_replace() {
+        let _limits = shared_limits();
         let (set, r) = onig_regset_new(vec![compile(b"abc")]);
         assert_eq!(r, ONIG_NORMAL);
         let mut set = set.unwrap();
@@ -6207,6 +6220,7 @@ mod tests {
 
     #[test]
     fn regset_captures() {
+        let _limits = shared_limits();
         let regs = vec![compile(b"a(b)c"), compile(b"(d)(e)f")];
         let (set, r) = onig_regset_new(regs);
         assert_eq!(r, ONIG_NORMAL);
@@ -6243,7 +6257,7 @@ mod tests {
     #[test]
     fn keep_patterns_report_attempt_relative_positions_and_lengths() {
         // Regset searches inherit global limits changed by other tests.
-        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = shared_limits();
         let input = b"xxabxx";
 
         // `a\Kb` dispatches straight from the table route: its first byte is

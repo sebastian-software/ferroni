@@ -2105,6 +2105,7 @@ mod tests {
     #[test]
     fn public_types_implement_debug() {
         use crate::scanner::{OnigString, Scanner, ScannerConfig, ScannerPatternCache};
+        let _limits = crate::regexec::shared_limits();
 
         let re = Regex::new(r"(a)(?<n>b)").unwrap();
         let text = "ab ab";
@@ -2170,6 +2171,7 @@ mod tests {
 
     #[test]
     fn find_reuses_the_thread_local_region_buffer() {
+        let _limits = crate::regexec::shared_limits();
         clear_cached_region();
         // `\K` keeps `find` on the region path.
         let re = Regex::new(r"(a)(b)\K(c)").unwrap();
@@ -2185,6 +2187,7 @@ mod tests {
 
     #[test]
     fn captures_returns_its_region_buffer_when_dropped() {
+        let _limits = crate::regexec::shared_limits();
         clear_cached_region();
         let re = Regex::new(r"(a)(b)(c)").unwrap();
         let captures = re.captures("abc").unwrap();
@@ -2200,6 +2203,7 @@ mod tests {
 
     #[test]
     fn result_drop_during_thread_local_teardown_does_not_panic() {
+        let _limits = crate::regexec::shared_limits();
         thread_local! {
             static LATE_RESULT: RefCell<Option<Captures<'static>>> = const { RefCell::new(None) };
         }
@@ -2218,6 +2222,7 @@ mod tests {
 
     #[test]
     fn find_iter_reuses_one_region_for_every_step() {
+        let _limits = crate::regexec::shared_limits();
         clear_cached_region();
         // `\K` moves the match start away from the attempt, so only the
         // region carries the match.
@@ -2237,6 +2242,7 @@ mod tests {
 
     #[test]
     fn find_iter_reuses_one_match_arg_without_a_region() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"(\w+)").unwrap();
         let mut matches = re.find_iter("one two");
         let msa: *const MatchArg = &**matches.msa.as_ref().expect("bounds-only iterator");
@@ -2250,6 +2256,7 @@ mod tests {
     /// The bounds-only iterator yields what the region-based one yields.
     #[test]
     fn find_iter_bounds_match_the_region_path() {
+        let _limits = crate::regexec::shared_limits();
         let patterns = [
             r"\d+",
             r"(\w+)",
@@ -2314,6 +2321,7 @@ mod tests {
 
     #[test]
     fn regex_new_and_find() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"\d+").unwrap();
         let m = re.find("hello 42 world").unwrap();
         assert_eq!(m.as_str(), "42");
@@ -2326,12 +2334,14 @@ mod tests {
 
     #[test]
     fn regex_no_match() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"\d+").unwrap();
         assert!(re.find("no digits here").is_none());
     }
 
     #[test]
     fn regex_is_match() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"hello").unwrap();
         assert!(re.is_match("say hello"));
         assert!(!re.is_match("say goodbye"));
@@ -2339,7 +2349,7 @@ mod tests {
 
     #[test]
     fn search_options_methods_return_matches_and_captures() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"(\w+)").unwrap();
         let options = SearchOptions::new().timeout(Duration::from_secs(1));
 
@@ -2370,7 +2380,7 @@ mod tests {
 
     #[test]
     fn search_options_surface_time_limit_errors() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"(a+)+b").unwrap();
         let text = "a".repeat(40);
         let options = SearchOptions::new()
@@ -2394,7 +2404,7 @@ mod tests {
 
     #[test]
     fn search_options_timeout_spans_every_start_position() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         // Each start position backtracks only ~400 times; the limit must still
         // fire for the search as a whole.
         let re = Regex::new(r"a{1,400}?(?=b)").unwrap();
@@ -2411,7 +2421,7 @@ mod tests {
 
     #[test]
     fn search_options_surface_retry_limit_errors() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"(a+)+b").unwrap();
         let text = "a".repeat(30);
 
@@ -2432,7 +2442,7 @@ mod tests {
 
     #[test]
     fn search_options_leave_unset_limits_process_wide() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::exclusive_limits();
         let old_retry = crate::regexec::onig_get_retry_limit_in_match();
         crate::regexec::onig_set_retry_limit_in_match(1_000);
         let re = Regex::new(r"(a+)+b").unwrap();
@@ -2454,7 +2464,7 @@ mod tests {
 
     #[test]
     fn search_options_iterator_yields_matches_and_then_finishes() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"\w+").unwrap();
         let options = SearchOptions::new().timeout(Duration::from_secs(1));
         let mut matches = re.find_iter_with("one two", options);
@@ -2472,7 +2482,7 @@ mod tests {
 
     #[test]
     fn search_options_iterator_surfaces_an_error_once() {
-        let _lock = crate::regexec::LIMIT_TEST_LOCK.lock().unwrap();
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"(a+)+b").unwrap();
         let text = "a".repeat(40);
         let options = SearchOptions::new()
@@ -2506,6 +2516,7 @@ mod tests {
 
     #[test]
     fn regex_captures() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"(\d{4})-(\d{2})-(\d{2})").unwrap();
         let caps = re.captures("date: 2026-02-14").unwrap();
         assert_eq!(caps.get(0).unwrap().as_str(), "2026-02-14");
@@ -2524,6 +2535,7 @@ mod tests {
 
     #[test]
     fn regex_find_iter() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"\d+").unwrap();
         let matches: Vec<&str> = re.find_iter("1 + 22 = 333").map(|m| m.as_str()).collect();
         assert_eq!(matches, vec!["1", "22", "333"]);
@@ -2531,6 +2543,7 @@ mod tests {
 
     #[test]
     fn regex_builder_case_insensitive() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::builder(r"hello")
             .case_insensitive(true)
             .build()
@@ -2547,6 +2560,7 @@ mod tests {
 
     #[test]
     fn match_as_bytes() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"world").unwrap();
         let m = re.find("hello world").unwrap();
         assert_eq!(m.as_bytes(), b"world");
@@ -2554,6 +2568,7 @@ mod tests {
 
     #[test]
     fn captures_iter() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"(a)(b)?").unwrap();
         let caps = re.captures("a").unwrap();
         let items: Vec<_> = caps.iter().collect();
@@ -2566,6 +2581,7 @@ mod tests {
 
     #[test]
     fn named_captures() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
         let caps = re.captures("2026-02").unwrap();
         assert_eq!(caps.name("year").unwrap().as_str(), "2026");
@@ -2575,6 +2591,7 @@ mod tests {
 
     #[test]
     fn empty_match_find_iter() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"").unwrap();
         let matches: Vec<_> = re.find_iter("ab").collect();
         // Should yield empty matches at positions 0, 1, 2

@@ -73,6 +73,8 @@ unsafe extern "C" {
 
     pub fn onig_end() -> c_int;
 
+    pub fn onig_set_default_case_fold_flag(case_fold_flag: c_uint) -> c_int;
+
     pub fn onig_new(
         reg: *mut OnigRegex,
         pattern: *const u8,
