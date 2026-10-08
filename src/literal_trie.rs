@@ -318,6 +318,12 @@ impl LiteralTrie {
         self.case_insensitive
     }
 
+    /// The case-fold data of a folded trie.
+    #[cfg(feature = "dfa-prefilter")]
+    pub(crate) fn folds(&self) -> Option<&CaseFolds> {
+        self.folds.as_deref()
+    }
+
     /// Whether tune_tree has reached the node that stands for the trie.
     pub(crate) fn is_tuned(&self) -> bool {
         self.tuned

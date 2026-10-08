@@ -10805,6 +10805,16 @@ fn compile_parsed(
     // Rust-only (ADR-008): literals every match contains, for RegSet
     // fallback searches. Read from the tuned tree, which is gone afterwards.
     reg.required_literals = crate::required_literals::derive(&root, reg, env).map(Box::new);
+    // Spike (refs #252): the seek over-approximation for the RegSet DFA
+    // pre-filter, read from the same tuned tree.
+    #[cfg(feature = "dfa-prefilter")]
+    {
+        reg.seek = if crate::dfa_prefilter::enabled() {
+            crate::dfa_prefilter::derive(&root, reg).map(Box::new)
+        } else {
+            None
+        };
+    }
 
     0
 }
@@ -11087,6 +11097,8 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         search_start_map: None,
         search_jump: None,
         required_literals: None,
+        #[cfg(feature = "dfa-prefilter")]
+        seek: None,
     };
 
     let (r, par) =
@@ -11577,6 +11589,8 @@ mod tests {
             search_start_map: None,
             search_jump: None,
             required_literals: None,
+            #[cfg(feature = "dfa-prefilter")]
+            seek: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),

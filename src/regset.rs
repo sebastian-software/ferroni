@@ -151,6 +151,10 @@ pub struct OnigRegSet {
     has_gated: bool,
     /// Some gated table entry has callouts.
     has_gated_callouts: bool,
+    /// Spike (refs #252): the DFA candidate pre-filter of a scanner's set
+    /// (`crate::dfa_prefilter`), built with the table and dropped with it.
+    #[cfg(feature = "dfa-prefilter")]
+    prefilter: Option<Box<crate::dfa_prefilter::SetPrefilter>>,
 }
 
 /// A fallback entry as the position-lead search walks it on every call.
@@ -519,6 +523,10 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     set.scratch_table_retry_counters = vec![0; set.entries.len()];
     set.scratch_msa = None;
     set.table_start_bytes = None;
+    #[cfg(feature = "dfa-prefilter")]
+    {
+        set.prefilter = None;
+    }
     set.has_gated = set.entries.iter().any(|entry| entry.gated);
     set.has_gated_callouts = set
         .entries
@@ -542,6 +550,13 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
     }
 
     build_first_byte_table(&mut set);
+    // Spike (refs #252): the DFA pre-filter of a scanner's set.
+    #[cfg(feature = "dfa-prefilter")]
+    if crate::dfa_prefilter::enabled() {
+        set.prefilter =
+            crate::dfa_prefilter::SetPrefilter::build(set.entries.iter().map(|entry| &*entry.reg))
+                .map(Box::new);
+    }
 
     (Some(set), ONIG_NORMAL)
 }
@@ -563,6 +578,13 @@ pub(crate) fn onig_regset_new_shared(regs: Vec<Arc<RegexType>>) -> (Option<Box<O
     }
 
     build_first_byte_table(&mut set);
+    // Spike (refs #252): the DFA pre-filter of a scanner's set.
+    #[cfg(feature = "dfa-prefilter")]
+    if crate::dfa_prefilter::enabled() {
+        set.prefilter =
+            crate::dfa_prefilter::SetPrefilter::build(set.entries.iter().map(|entry| &*entry.reg))
+                .map(Box::new);
+    }
 
     (Some(set), ONIG_NORMAL)
 }
@@ -600,6 +622,8 @@ fn regset_alloc() -> Box<OnigRegSet> {
         gate_subject: None,
         has_gated: false,
         has_gated_callouts: false,
+        #[cfg(feature = "dfa-prefilter")]
+        prefilter: None,
     })
 }
 
@@ -642,6 +666,10 @@ pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) 
         .as_ref()
         .is_some_and(|ext| ext.callout_num != 0);
     set.table_start_bytes = None;
+    #[cfg(feature = "dfa-prefilter")]
+    {
+        set.prefilter = None;
+    }
     set.fallback_memo_key = None;
     set.fallback_memos.resize_with(set.entries.len(), Vec::new);
     set.scratch_limits = None;
@@ -844,6 +872,14 @@ pub fn onig_regset_get_region(set: &OnigRegSet, at: usize) -> Option<&OnigRegion
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub(crate) fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
     set.last_match_len
+}
+
+/// Spike (refs #252): the set's DFA pre-filter, if it has one.
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) fn onig_regset_prefilter(
+    set: &OnigRegSet,
+) -> Option<&crate::dfa_prefilter::SetPrefilter> {
+    set.prefilter.as_deref()
 }
 
 #[derive(Clone, Copy)]
@@ -2011,14 +2047,37 @@ pub(crate) fn onig_regset_entry_search(
     }
     let stop = stop.min(end);
     refresh_scratch_limits(set);
-    let mut msa = set
-        .scratch_msa
-        .take()
-        .unwrap_or_else(|| MatchArg::new(&set.entries[0].reg, option, None, start));
     set.subject_utf8 = subject_utf8;
+    match regset_entry_decision(set, index, str_data, end, start, end, stop, option) {
+        None => RegSetEntryEvent::None,
+        Some(RegSetDecision::Match(winner)) => RegSetEntryEvent::Match {
+            position: winner.position as usize,
+        },
+        Some(RegSetDecision::Error(error)) => RegSetEntryEvent::Error {
+            position: error.position as usize,
+            code: error.code,
+        },
+    }
+}
+
+/// `onig_regset_entry_search` as a decision, for a search whose match start
+/// range is `range`, with the scratch limits refreshed and `subject_utf8`
+/// set by the caller.
+#[allow(clippy::too_many_arguments)]
+fn regset_entry_decision(
+    set: &mut OnigRegSet,
+    index: usize,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    stop: usize,
+    option: OnigOptionType,
+) -> Option<RegSetDecision> {
+    let mut msa = take_scratch_msa(set, option, start);
     let decision = if set.entries[index].fallback {
         search_fallback_entry(
-            set, index, str_data, end, start, end, stop, option, &mut msa,
+            set, index, str_data, end, start, range, stop, option, &mut msa,
         )
     } else {
         let start_bytes = table_start_bytes(set, index);
@@ -2035,15 +2094,199 @@ pub(crate) fn onig_regset_entry_search(
         )
     };
     set.scratch_msa = Some(msa);
-    match decision {
-        None => RegSetEntryEvent::None,
-        Some(RegSetDecision::Match(winner)) => RegSetEntryEvent::Match {
-            position: winner.position as usize,
-        },
-        Some(RegSetDecision::Error(error)) => RegSetEntryEvent::Error {
-            position: error.position as usize,
-            code: error.code,
-        },
+    decision
+}
+
+/// Spike (refs #252): the position-lead search with the DFA pre-filter.
+///
+/// Entries the automata do not cover are searched on their own first, as
+/// the per-regex route does (`regset_entry_decision`). Then the meta regex
+/// finds the earliest position at or after `start` where some covered
+/// entry's seek HIR matches, the overlapping DFA names the entries whose HIR
+/// matches there, and those are attempted in index order at that position
+/// (`attempt_entry_at`), the first event deciding; without one the search
+/// goes on one character later. Every attempt left out would fail: the HIR
+/// matches wherever the entry can.
+#[cfg(feature = "dfa-prefilter")]
+fn regset_search_body_prefilter(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+) -> Option<RegSetDecision> {
+    let mut prefilter = set.prefilter.take()?;
+    let mut decision: Option<RegSetDecision> = None;
+
+    for &index in prefilter.own() {
+        let index = index as usize;
+        let bound = decision.map(decision_position_and_index);
+        if bound
+            .is_some_and(|(position, winner)| position as usize <= start && index as i32 >= winner)
+        {
+            break;
+        }
+        let begin_position = (set.entries[index].reg.anchor & ANCR_BEGIN_POSITION) != 0;
+        let stop = if begin_position {
+            start
+        } else {
+            match bound {
+                None => range,
+                Some((position, winner)) if index as i32 > winner => {
+                    match onigenc_get_prev_char_head(set.enc, start, position as usize, str_data) {
+                        Some(before) => before,
+                        None => continue,
+                    }
+                }
+                Some((position, _)) => position as usize,
+            }
+        };
+        if stop < start {
+            continue;
+        }
+        if let Some(found) =
+            regset_entry_decision(set, index, str_data, end, start, range, stop, option)
+        {
+            record_regset_decision(set, &mut decision, found);
+        }
+    }
+
+    let haystack = &str_data[..end];
+    let mut msa = take_scratch_msa(set, option, start);
+    let mut s = start;
+    while s <= range {
+        let Some(at) = prefilter.earliest(haystack, s) else {
+            break;
+        };
+        if at > range {
+            break;
+        }
+        if decision
+            .map(decision_position_and_index)
+            .is_some_and(|(position, _)| at > position as usize)
+        {
+            break;
+        }
+        for &index in prefilter.candidates_at(haystack, at) {
+            let index = index as usize;
+            if decision
+                .map(decision_position_and_index)
+                .is_some_and(|bound| (at as i32, index as i32) >= bound)
+            {
+                break;
+            }
+            if let Some(found) = attempt_entry_at(
+                set, index, str_data, end, at, start, range, option, &mut msa,
+            ) {
+                record_regset_decision(set, &mut decision, found);
+                break;
+            }
+        }
+        if decision
+            .map(decision_position_and_index)
+            .is_some_and(|(position, _)| position as usize <= at)
+        {
+            break;
+        }
+        if at >= end {
+            break;
+        }
+        s = at + enclen(set.enc, str_data, at);
+    }
+    set.scratch_msa = Some(msa);
+    set.prefilter = Some(prefilter);
+    decision
+}
+
+/// Spike (refs #252): one attempt of entry `index` at `position` in a
+/// position-lead search from `search_start`, as that search would make it:
+/// an any-char-star entry only at the first position or after a newline,
+/// and a fallback or gated entry only where C's optimizer admits the
+/// position (`entry_search_range`, asked after an attempt with an event, as
+/// `attempt_fallback_entry_at_start` does).
+#[cfg(feature = "dfa-prefilter")]
+#[allow(clippy::too_many_arguments)]
+fn attempt_entry_at(
+    set: &mut OnigRegSet,
+    index: usize,
+    str_data: &[u8],
+    end: usize,
+    position: usize,
+    search_start: usize,
+    range: usize,
+    option: OnigOptionType,
+    msa: &mut MatchArg,
+) -> Option<RegSetDecision> {
+    let subject_utf8 = set.subject_utf8;
+    let anychar_inf = set.anychar_inf;
+    let entry = &mut set.entries[index];
+    let anchor = entry.reg.anchor;
+    if anychar_inf
+        && (anchor & ANCR_ANYCHAR_INF) != 0
+        && position > search_start
+        && str_data[position - 1] != b'\n'
+    {
+        return None;
+    }
+    if (anchor & ANCR_BEGIN_POSITION) != 0 && position != search_start {
+        return None;
+    }
+    if end - position < entry.reg.threshold_len.max(0) as usize {
+        return None;
+    }
+    if position < end
+        && entry
+            .start_filter
+            .as_deref()
+            .is_some_and(|filter| filter[str_data[position] as usize] == 0)
+        && (subject_utf8 || start_map_may_skip(&entry.reg, str_data, position))
+    {
+        return None;
+    }
+    let fill = EntryRegion::of(&entry.reg, option, msa);
+    msa.retry_limit_in_search_counter = 0;
+    let skips = may_skip_first_op_failures(msa, option);
+    if first_op_rejects(
+        entry,
+        skips,
+        str_data,
+        end,
+        position,
+        search_start,
+        option,
+        msa,
+    ) {
+        return None;
+    }
+    let result = attempt_fallback_entry(
+        entry,
+        str_data,
+        end,
+        position,
+        search_start,
+        option,
+        fill,
+        msa,
+    );
+    let decision = fallback_attempt_decision(result, index, position, msa)?;
+    let admitted = if entry.fallback || entry.gated {
+        match entry_search_range(&entry.reg, subject_utf8, str_data, end, position, range) {
+            None => false,
+            Some(EntrySearchRange::AllRange { .. }) => true,
+            Some(EntrySearchRange::LowHigh { low, .. }) => position >= low,
+        }
+    } else {
+        true
+    };
+    if admitted {
+        Some(decision)
+    } else {
+        // C never made this attempt: leave no match behind.
+        if let Some(region) = entry.region.as_mut() {
+            region.clear();
+        }
+        None
     }
 }
 
@@ -2102,6 +2345,19 @@ fn regset_search_body_position_lead(
     fallback_memo_id: Option<FallbackMemoIdentity>,
 ) -> (i32, i32) {
     let limits = refresh_scratch_limits(set);
+    // Spike (refs #252): the DFA pre-filter decides which entries attempt
+    // which positions. It leaves out attempts, so it stays off where a limit
+    // could observe them, and reads the subject as UTF-8 (scanner calls).
+    #[cfg(feature = "dfa-prefilter")]
+    if set.prefilter.is_some()
+        && set.subject_utf8
+        && limits.retry_limit_in_search == 0
+        && limits.time_limit == 0
+        && limits.match_stack_limit == 0
+    {
+        let decision = regset_search_body_prefilter(set, str_data, end, start, range, option);
+        return regset_decision_result(set, decision);
+    }
     if set.has_gated {
         let subject = fallback_memo_id
             .filter(|_| range == end)

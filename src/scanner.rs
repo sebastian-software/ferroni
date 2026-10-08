@@ -890,6 +890,33 @@ impl Scanner {
         self.stats
     }
 
+    /// Spike (refs #252): what the DFA pre-filter of this scanner covers.
+    #[cfg(feature = "dfa-prefilter")]
+    pub fn dfa_prefilter_report(&self) -> crate::dfa_prefilter::Report {
+        let n = onig_regset_number_of_regex(&self.regset) as usize;
+        let mut report = crate::dfa_prefilter::Report::default();
+        for i in 0..n {
+            let seek = onig_regset_get_regex(&self.regset, i).and_then(|reg| reg.seek.as_deref());
+            report.seeks.push(seek.map(|seek| seek.hir.to_string()));
+            report
+                .approximated
+                .push(seek.map_or(0, |seek| seek.approximated));
+        }
+        match crate::regset::onig_regset_prefilter(&self.regset) {
+            Some(prefilter) => {
+                report.built = true;
+                report.covered = prefilter.covered();
+                report.own = prefilter.own().iter().map(|&i| i as usize).collect();
+                report.memory_usage = prefilter.memory_usage();
+                report.memory_breakdown = prefilter.memory_breakdown();
+                report.build_nanos = prefilter.build_nanos;
+                report.dfa_quits = prefilter.dfa_quits;
+            }
+            None => report.own = (0..n).collect(),
+        }
+        report
+    }
+
     /// Reset scanner counters.
     pub fn reset_stats(&mut self) {
         self.stats = ScannerStats::default();
@@ -2478,6 +2505,10 @@ mod tests {
     /// vscode-oniguruma's scanner over C Oniguruma with a retry limit of
     /// 10,000 (`None` where C stops at the limit, or finds nothing).
     #[test]
+    #[cfg_attr(
+        feature = "dfa-prefilter",
+        ignore = "the DFA pre-filter proves `(a+)+b` cannot match at 0 and skips the attempt C stops at (ADR-008, retry limits)"
+    )]
     fn limit_errors_match_c_on_every_route_and_call_history() {
         let _limits = crate::regexec::exclusive_limits();
         let old_limit = crate::regexec::onig_get_retry_limit_in_match();
@@ -2973,6 +3004,10 @@ mod tests {
     /// retry, search and stack limits. Their warnings and rewrites agree too,
     /// and every occurrence of a pattern shares one compiled program.
     #[test]
+    #[cfg_attr(
+        feature = "dfa-prefilter",
+        ignore = "its retry-limit section expects C's attempt of `(a+)+b` at 0, which the DFA pre-filter leaves out (ADR-008, retry limits)"
+    )]
     fn pattern_cache_scanners_match_uncached_scanners() {
         // The routes and limit outcomes read the process-wide limits.
         let _limits = crate::regexec::exclusive_limits();

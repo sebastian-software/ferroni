@@ -47,12 +47,17 @@ ffi = ["cc"]
 # Adds Ruby's Onigmo to the comparison benchmarks
 # (scripts/prepare-onigmo-sources.sh or FERRONI_ONIGMO_DIR).
 onigmo = ["ffi"]
+# Spike (refs #252): a regex-automata candidate pre-filter in front of the
+# scanner's RegSet search. Off by default; see src/dfa_prefilter.rs.
+dfa-prefilter = ["dep:regex-automata", "dep:regex-syntax"]
 
 [dependencies]
 aho-corasick = "1"
 bitflags = "2"
 memchr = "2"
 smallvec = "1"
+regex-automata = { version = "0.4", optional = true, default-features = false, features = ["std", "syntax", "meta", "nfa", "hybrid", "unicode"] }
+regex-syntax = { version = "0.8", optional = true }
 
 [build-dependencies]
 cc = { version = "1", optional = true }

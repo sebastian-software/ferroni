@@ -8103,6 +8103,8 @@ mod tests {
             search_start_map: None,
             search_jump: None,
             required_literals: None,
+            #[cfg(feature = "dfa-prefilter")]
+            seek: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),
