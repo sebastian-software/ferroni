@@ -67,7 +67,9 @@ that section.
 pages under `docs/app/routes/guide/`. They are included through hidden items at
 the end of [`src/lib.rs`](src/lib.rs). Every `rust` fence must compile and pass.
 A snippet that can only illustrate an API is marked `ignore`, with the reason in
-the sentence before it. Label every other fence with its language (`bash`,
+the sentence before it. Code that must not compile, such as the 1.x code in the
+migration guide, is marked `compile_fail` with the error codes it must raise
+(`rust compile_fail,E0639`). Label every other fence with its language (`bash`,
 `toml`, `text`): an unlabeled fence is compiled as Rust. Edit the README in
 `README.md.src` and regenerate it, as described below.
 

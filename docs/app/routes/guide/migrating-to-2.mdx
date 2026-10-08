@@ -1,0 +1,231 @@
+---
+order: 5
+title: Migrating to 2.0
+---
+
+# Migrating to 2.0
+
+Ferroni 2.0 has three breaking changes. Patterns match as they did in 1.x,
+except that a pattern nested deeper than about 128 groups now fails to compile.
+Code that compiles and searches through `Regex` usually builds unchanged.
+Update the dependency first:
+
+```toml
+[dependencies]
+ferroni = "2"
+```
+
+| Change                                                                        | Affects code that                                                                                | Fix                                                                                  |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| [Nesting and size limits](#nesting-and-size-limits)                           | compiles patterns nested deeper than 128 groups, or calls `onig_set_parse_depth_limit`           | raise `onig_set_parse_depth_limit`, and `onig_set_ast_node_limit` for large patterns |
+| [Extensible scanner and error types](#extensible-scanner-and-error-types)     | writes a `ScannerConfig` literal, reads `capture_indices`, or matches every `RegexError` variant | use the `ScannerConfig` setters and `captures()`, and add a wildcard arm             |
+| [C-internal modules are crate-private](#c-internal-modules-are-crate-private) | imports from `ferroni::regint`, `ferroni::regparse_types` or `ferroni::literal_trie`             | import `RegexType` and `CalloutArg` from `ferroni::oniguruma`                        |
+
+The [changelog](https://github.com/sebastian-software/ferroni/blob/main/CHANGELOG.md)
+lists every change in the release.
+
+## Nesting and size limits
+
+In 1.x, `onig_set_parse_depth_limit` set one limit for both how deeply a
+pattern nests and how many expressions it holds. Its default of 4,096 admitted
+about 2,048 nested groups, and a pattern near that depth could overflow a 2 MiB
+thread and abort the process before the error was returned. 2.0 splits the
+limit in two ([#308](https://github.com/sebastian-software/ferroni/pull/308)):
+
+- `onig_set_parse_depth_limit` bounds nesting only. Its default is 256 units,
+  about 128 nested groups: a group costs two units, a nested character class
+  one.
+- `onig_set_ast_node_limit` is new and bounds the expression nodes of one
+  pattern. Its default is 4,096.
+
+A pattern over either limit fails with `RegexError::ParseDepthLimitOver`, as
+before. None of the 1,231 grammar patterns measured for ADR-013 nests deeper
+than 16 groups, so most code needs no change.
+
+In 1.x, raising the one limit admitted deeper and larger patterns alike. The
+call still compiles in 2.0, but it now raises nesting only:
+
+```rust
+use ferroni::regparse::onig_set_parse_depth_limit;
+
+// 1.x: one limit for nesting and pattern size.
+onig_set_parse_depth_limit(8192);
+```
+
+In 2.0, raise the limit your patterns need. Both limits are process-wide, and
+zero restores a default. Raising either one raises the stack a compile needs,
+so compile on a thread sized for it;
+[ADR-013](../adr/013-stack-overflow-debug-builds) lists the cost per unit.
+
+```rust
+use ferroni::prelude::*;
+use ferroni::regparse::{onig_set_ast_node_limit, onig_set_parse_depth_limit};
+
+let deep = "(".repeat(200) + "a" + &")".repeat(200);
+assert_eq!(Regex::new(&deep).unwrap_err(), RegexError::ParseDepthLimitOver);
+
+onig_set_parse_depth_limit(512); // nesting: about 256 groups
+onig_set_ast_node_limit(8192); // size: expression nodes per pattern
+
+let compiled = std::thread::Builder::new()
+    .stack_size(8 * 1024 * 1024)
+    .spawn(move || Regex::new(&deep))
+    .unwrap()
+    .join()
+    .unwrap();
+assert!(compiled.is_ok());
+```
+
+To restore the 1.x nesting default, call `onig_set_parse_depth_limit(4096)`. A
+compile at that depth needs about 14 MiB of stack in a debug build.
+[Untrusted Input](./untrusted-input#patterns-from-users) covers the limits for
+user-supplied patterns.
+
+## Extensible scanner and error types
+
+`ScannerConfig`, `ScannerMatch`, `CaptureIndex`, `RegexError` and `Syntax`
+(also named `ScannerSyntax`) are `#[non_exhaustive]`
+([#309](https://github.com/sebastian-software/ferroni/pull/309)). Later
+releases can add fields and variants to them without a major version. Outside
+the crate, the structs can no longer be built with a struct literal, and a
+`match` on the enums needs a wildcard arm.
+
+### Building a ScannerConfig
+
+A struct literal no longer compiles, with or without `..Default::default()`:
+
+```rust compile_fail,E0639
+use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
+use ferroni::prelude::*;
+
+let config = ScannerConfig {
+    options: ONIG_OPTION_IGNORECASE,
+    syntax: ScannerSyntax::Ruby,
+};
+```
+
+Start from `ScannerConfig::default()` and chain the `options` and `syntax`
+setters. The fields stay public, so code that reads them, or assigns them on a
+mutable value, is unchanged:
+
+```rust
+use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
+use ferroni::prelude::*;
+
+let config = ScannerConfig::default()
+    .options(ONIG_OPTION_IGNORECASE)
+    .syntax(ScannerSyntax::Ruby);
+let mut scanner = Scanner::with_config(&["hello"], &config).unwrap();
+assert!(scanner.find_next_match("HELLO", 0, ScannerFindOptions::NONE).is_some());
+```
+
+### Reading scanner captures
+
+The `capture_indices` field is private, which takes `smallvec` out of
+Ferroni's API, and a pattern that destructures a `CaptureIndex` must end with
+`..`. This 1.x code no longer compiles:
+
+```rust compile_fail,E0616,E0638
+use ferroni::prelude::*;
+
+let mut scanner = Scanner::new(&[r"\w+"]).unwrap();
+let m = scanner.find_next_match("hello", 0, ScannerFindOptions::NONE).unwrap();
+let CaptureIndex { start, end, length } = m.capture_indices[0].clone();
+```
+
+`captures()` returns the same groups as a slice, group 0 first. Where the code
+named the `SmallVec` type, use `&[CaptureIndex]`, or `to_vec()` for an owned
+copy:
+
+```rust
+use ferroni::prelude::*;
+
+let mut scanner = Scanner::new(&[r"\w+"]).unwrap();
+let m = scanner.find_next_match("hello", 0, ScannerFindOptions::NONE).unwrap();
+let CaptureIndex { start, end, .. } = m.captures()[0];
+assert_eq!((start, end), (0, 5));
+```
+
+### Matching on RegexError and Syntax
+
+A `match` that lists every variant no longer compiles:
+
+```rust compile_fail,E0004
+use ferroni::prelude::*;
+
+fn is_limit(err: &RegexError) -> bool {
+    match err {
+        RegexError::MatchStackLimitOver
+        | RegexError::RetryLimitInMatchOver
+        | RegexError::RetryLimitInSearchOver
+        | RegexError::SubexpCallLimitOver
+        | RegexError::TimeLimitOver
+        | RegexError::ParseDepthLimitOver => true,
+        RegexError::Memory
+        | RegexError::Syntax { .. }
+        | RegexError::InvalidArgument
+        | RegexError::InternalBug { .. }
+        | RegexError::NotInitialized
+        | RegexError::Encoding { .. }
+        | RegexError::Other(_) => false,
+    }
+}
+```
+
+Replace the arm for the remaining variants with a wildcard arm, which also
+covers variants added later. `Syntax` and `ScannerSyntax` need the same:
+
+```rust
+use ferroni::prelude::*;
+
+fn is_limit(err: &RegexError) -> bool {
+    match err {
+        RegexError::MatchStackLimitOver
+        | RegexError::RetryLimitInMatchOver
+        | RegexError::RetryLimitInSearchOver
+        | RegexError::SubexpCallLimitOver
+        | RegexError::TimeLimitOver
+        | RegexError::ParseDepthLimitOver => true,
+        _ => false,
+    }
+}
+
+assert!(!is_limit(&Regex::new("(").unwrap_err()));
+```
+
+## C-internal modules are crate-private
+
+`ferroni::regint` and `ferroni::regparse_types` port `regint.h` and
+`regparse.h`, two headers that C Oniguruma does not install. In 2.0 they are
+crate-private, as is `literal_trie`, an internal optimization
+([#310](https://github.com/sebastian-software/ferroni/pull/310)). The public
+API is the Rust API (`prelude`, `api`, `scanner`, `replace`, `error`,
+`backtrack_lint` and `backtrack_rewrite`) and the C API that `oniguruma.h`
+declares, at the same module paths as in 1.x.
+
+Two C API types are defined in `regint`, and they are re-exported elsewhere.
+This 1.x import no longer compiles:
+
+```rust compile_fail,E0603
+use ferroni::regint::RegexType;
+```
+
+Import `RegexType`, the compiled regex that `onig_new` returns, and
+`CalloutArg` from `ferroni::oniguruma`:
+
+```rust
+use ferroni::encodings::utf8::ONIG_ENCODING_UTF8;
+use ferroni::oniguruma::{ONIG_OPTION_NONE, RegexType};
+use ferroni::regcomp::onig_new;
+use ferroni::regsyntax::OnigSyntaxOniguruma;
+
+let reg: RegexType =
+    onig_new(b"a+", ONIG_OPTION_NONE, &ONIG_ENCODING_UTF8, &OnigSyntaxOniguruma).unwrap();
+```
+
+Other items that `oniguruma.h` does not declare are crate-private too. Compile
+with `onig_new` instead of `onig_compile`; the parse tree, `onig_parse_tree`
+and the VM opcodes have no public replacement. The Ferroni-only limit setters
+and getters, such as `onig_set_ast_node_limit`, stay public.
+[ADR-005](../adr/005-idiomatic-rust-api-layer) records where the public API
+ends.

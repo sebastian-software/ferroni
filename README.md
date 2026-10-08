@@ -214,6 +214,7 @@ APIs (`regcomp`, `regexec`) are not ported either
 | [Guide](https://ferroni.dev/guide/getting-started) | Install, match, capture, scan, and handle errors |
 | [Untrusted input](https://ferroni.dev/guide/untrusted-input) | Limits, backtracking checks, and memory safety |
 | [Compatibility](https://ferroni.dev/guide/compatibility) | What is covered, test parity, and how the port maps to C |
+| [Migrating to 2.0](https://ferroni.dev/guide/migrating-to-2) | The breaking changes of 2.0, with before and after code |
 | [Performance](https://ferroni.dev/perf/engine-comparison) | Every benchmark, with hosts, versions and raw data |
 | [Architecture decisions](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original) | Why the port is built the way it is |
 | [API reference](https://docs.rs/ferroni) | Every type and function on docs.rs |
