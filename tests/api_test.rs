@@ -3206,3 +3206,377 @@ fn capture_names_repeats_a_shared_name_and_marks_unnamed_groups() {
     let no_groups = Regex::new(r"a+").unwrap();
     assert_eq!(no_groups.capture_names().collect::<Vec<_>>(), [None]);
 }
+
+// === Regex::find_at and the start-offset family ===
+
+#[test]
+fn find_at_starts_the_search_at_the_offset() {
+    let re = Regex::new(r"\w+").unwrap();
+    let text = "hello world";
+    assert_eq!(re.find_at(text, 6).unwrap().as_str(), "world");
+    assert_eq!(re.find_at(text, 0).unwrap().as_str(), "hello");
+    // A match can begin in the middle of a word.
+    assert_eq!(re.find_at(text, 2).unwrap().range(), 2..5);
+}
+
+#[test]
+fn find_at_offsets_are_relative_to_the_whole_text() {
+    let re = Regex::new(r"\d+").unwrap();
+    let text = "ab12cd345";
+    assert_eq!(re.find_at(text, 3).unwrap().range(), 3..4);
+    assert_eq!(re.find(&text[3..]).unwrap().range(), 0..1);
+}
+
+#[test]
+fn find_at_look_behind_sees_the_text_before_start() {
+    let re = Regex::new(r"(?<=a)b").unwrap();
+    assert_eq!(re.find_at("ab", 1).unwrap().range(), 1..2);
+    // The slice has no `a` in front of its `b`, so the look-behind fails.
+    assert!(re.find(&"ab"[1..]).is_none());
+}
+
+#[test]
+fn find_at_word_boundary_and_line_anchor_see_the_text_before_start() {
+    let word = Regex::new(r"\bb").unwrap();
+    // There is no word boundary between `a` and `b`.
+    assert!(word.find_at("ab", 1).is_none());
+    assert_eq!(word.find_at("a b", 2).unwrap().range(), 2..3);
+
+    let line = Regex::new(r"^b").unwrap();
+    assert!(line.find_at("ab", 1).is_none());
+    assert_eq!(line.find_at("a\nb", 2).unwrap().range(), 2..3);
+}
+
+#[test]
+fn find_at_g_anchor_matches_at_the_start_offset() {
+    let re = Regex::new(r"\Gb").unwrap();
+    assert_eq!(re.find_at("ab", 1).unwrap().range(), 1..2);
+    assert!(re.find_at("ab", 0).is_none());
+
+    // A tokenizer resumes at the end of each token.
+    let token = Regex::new(r"\G\d+").unwrap();
+    let text = "12ab34";
+    assert_eq!(token.find_at(text, 0).unwrap().range(), 0..2);
+    assert!(token.find_at(text, 2).is_none());
+    assert_eq!(token.find_at(text, 4).unwrap().range(), 4..6);
+}
+
+#[test]
+fn find_at_keep_moves_start_pattern_reports_the_kept_start() {
+    // `\K` moves the match start, so this pattern searches through the region.
+    let re = Regex::new(r"a\Kb").unwrap();
+    assert_eq!(re.find_at("aab", 1).unwrap().range(), 2..3);
+    assert_eq!(re.find_at("aab", 0).unwrap().range(), 2..3);
+    assert!(re.find_at("aab", 2).is_none());
+}
+
+#[test]
+fn find_at_matches_the_text_after_a_multibyte_start() {
+    let re = Regex::new(r"\w").unwrap();
+    let text = "é1é2";
+    assert_eq!(re.find_at(text, 2).unwrap().range(), 2..3);
+    assert_eq!(re.find_at(text, 3).unwrap().as_str(), "é");
+    assert_eq!(re.find_at(text, 5).unwrap().as_str(), "2");
+}
+
+#[test]
+fn find_at_start_at_the_end_of_the_text() {
+    let empty = Regex::new(r"x*").unwrap();
+    assert_eq!(empty.find_at("abc", 3).unwrap().range(), 3..3);
+    assert_eq!(empty.find_bytes_at(b"abc", 3).unwrap().range(), 3..3);
+
+    let letter = Regex::new(r"c").unwrap();
+    assert!(letter.find_at("abc", 3).is_none());
+    assert!(!letter.is_match_at("abc", 3));
+}
+
+#[test]
+fn find_at_resumed_from_each_match_end_matches_find_iter() {
+    let re = Regex::new(r"\w+").unwrap();
+    let text = "one two  three";
+    let mut resumed = Vec::new();
+    let mut position = 0;
+    while let Some(m) = re.find_at(text, position) {
+        resumed.push(m.range());
+        position = m.end();
+    }
+    let iterated: Vec<_> = re.find_iter(text).map(|m| m.range()).collect();
+    assert_eq!(resumed, iterated);
+    assert_eq!(resumed, [0..3, 4..7, 9..14]);
+}
+
+#[test]
+#[should_panic(expected = "not a char boundary")]
+fn find_at_panics_inside_a_character() {
+    let re = Regex::new(r"\w").unwrap();
+    let _ = re.find_at("é", 1);
+}
+
+#[test]
+#[should_panic(expected = "past the end of the text")]
+fn find_bytes_at_panics_past_the_end() {
+    let re = Regex::new(r"a").unwrap();
+    let _ = re.find_bytes_at(b"ab", 3);
+}
+
+#[test]
+fn start_checks_panic_for_every_at_method() {
+    fn panics(f: impl FnOnce() + std::panic::UnwindSafe) -> bool {
+        std::panic::catch_unwind(f).is_err()
+    }
+
+    let re = Regex::new(r"a").unwrap();
+    let options = SearchOptions::new;
+    let text = "éa"; // byte 1 is inside `é`, and byte 4 is past the end
+    let bytes = text.as_bytes();
+
+    assert!(panics(|| {
+        let _ = re.find_at(text, 1);
+    }));
+    assert!(panics(|| {
+        let _ = re.find_at_with(text, 1, options());
+    }));
+    assert!(panics(|| {
+        let _ = re.is_match_at(text, 1);
+    }));
+    assert!(panics(|| {
+        let _ = re.is_match_at_with(text, 1, options());
+    }));
+    assert!(panics(|| {
+        let _ = re.captures_at(text, 1);
+    }));
+    assert!(panics(|| {
+        let _ = re.captures_at_with(text, 1, options());
+    }));
+
+    assert!(panics(|| {
+        let _ = re.find_bytes_at(bytes, 4);
+    }));
+    assert!(panics(|| {
+        let _ = re.find_bytes_at_with(bytes, 4, options());
+    }));
+    assert!(panics(|| {
+        let _ = re.is_match_bytes_at(bytes, 4);
+    }));
+    assert!(panics(|| {
+        let _ = re.is_match_bytes_at_with(bytes, 4, options());
+    }));
+    assert!(panics(|| {
+        let _ = re.captures_bytes_at(bytes, 4);
+    }));
+    assert!(panics(|| {
+        let _ = re.captures_bytes_at_with(bytes, 4, options());
+    }));
+}
+
+#[test]
+fn find_bytes_at_accepts_a_start_inside_a_character() {
+    // The bytes API searches bytes, so a start between the bytes of `é` is
+    // allowed.
+    let re = Regex::new(r"x").unwrap();
+    assert_eq!(re.find_bytes_at("é x".as_bytes(), 1).unwrap().range(), 3..4);
+    assert_eq!(re.find_bytes_at(b"\xff\x78", 1).unwrap().range(), 1..2);
+}
+
+#[test]
+fn find_bytes_at_matches_find_at_on_valid_text() {
+    let re = Regex::new(r"(?<=a)b").unwrap();
+    let text = "xab";
+    assert_eq!(
+        re.find_bytes_at(text.as_bytes(), 2).map(|m| m.range()),
+        re.find_at(text, 2).map(|m| m.range())
+    );
+}
+
+#[test]
+fn is_match_at_checks_from_the_start_offset() {
+    let re = Regex::new(r"(?<=a)b").unwrap();
+    assert!(re.is_match_at("ab", 1));
+    // A match at or after the offset counts, so offset 0 also finds the `b`.
+    assert!(re.is_match_at("ab", 0));
+    assert!(!re.is_match_at("ab", 2));
+    assert!(!re.is_match(&"ab"[1..]));
+    assert!(re.is_match_bytes_at(b"ab", 1));
+    assert!(!re.is_match_bytes_at(b"ab", 2));
+}
+
+#[test]
+fn captures_at_reports_groups_relative_to_the_whole_text() {
+    let re = Regex::new(r"(?<=a)(b)(c)").unwrap();
+    let caps = re.captures_at("abc", 1).unwrap();
+    assert_eq!(caps.get(0).unwrap().range(), 1..3);
+    assert_eq!(caps.get(1).unwrap().range(), 1..2);
+    assert_eq!(caps.get(2).unwrap().range(), 2..3);
+    assert!(re.captures_at("abc", 2).is_none());
+
+    let named = Regex::new(r"(?<=a)(?<mid>b)c").unwrap();
+    assert_eq!(
+        named
+            .captures_at("abc", 1)
+            .unwrap()
+            .name("mid")
+            .unwrap()
+            .range(),
+        1..2
+    );
+    assert!(re.captures_bytes_at(b"abc", 1).is_some());
+}
+
+#[test]
+fn at_with_variants_match_their_plain_counterparts() {
+    let re = Regex::new(r"(?<=a)(b)(c)").unwrap();
+    let text = "abc";
+    let options = SearchOptions::new();
+
+    assert_eq!(
+        re.find_at_with(text, 1, options).unwrap().unwrap().range(),
+        1..3
+    );
+    assert!(re.find_at_with(text, 2, options).unwrap().is_none());
+    assert_eq!(
+        re.find_bytes_at_with(text.as_bytes(), 1, options)
+            .unwrap()
+            .unwrap()
+            .range(),
+        1..3
+    );
+    assert!(re.is_match_at_with(text, 1, options).unwrap());
+    assert!(!re.is_match_at_with(text, 3, options).unwrap());
+    assert!(
+        re.is_match_bytes_at_with(text.as_bytes(), 1, options)
+            .unwrap()
+    );
+
+    let caps = re.captures_at_with(text, 1, options).unwrap().unwrap();
+    assert_eq!(caps.get(1).unwrap().as_str(), "b");
+    assert!(
+        re.captures_bytes_at_with(text.as_bytes(), 1, options)
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
+fn at_with_variants_report_limit_errors() {
+    // The pattern from `guarded_pushes_spend_the_retry_budget_like_c`, started
+    // inside the text.
+    let re = Regex::new(r"((?=a\g<0>)|(?:\k<1>*?(?=a)()))*").unwrap();
+    let options = || {
+        SearchOptions::new()
+            .retry_limit_in_match(100_000)
+            .match_stack_limit(1_000_000)
+    };
+    let expected = Some(RegexError::RetryLimitInMatchOver);
+    assert_eq!(re.find_at_with("xaa", 1, options()).err(), expected);
+    assert_eq!(re.is_match_at_with("xaa", 1, options()).err(), expected);
+    assert_eq!(re.captures_at_with("xaa", 1, options()).err(), expected);
+    assert_eq!(re.find_bytes_at_with(b"xaa", 1, options()).err(), expected);
+}
+
+#[test]
+fn captures_iter_yields_the_find_iter_matches() {
+    let cases: &[(&str, &str)] = &[
+        (r"a*", "ab"),
+        (r"", "ab"),
+        (r"\b", "ab cd"),
+        (r"(?<=a)", "aab"),
+        (r"\G\w", "abc def"),
+        (r"x*", "éxé"),
+        (r"\w*", "héllo wörld"),
+        (r"\d+|\s*", "12 ab 345"),
+        (r"a\Kb", "aab ab"),
+        (r"(?<n>\d)", "a1b2"),
+        (r"^", "a\n\nb"),
+        (r"$", "ab\ncd"),
+        (r"(?<=é)", "éé"),
+    ];
+    for &(pattern, text) in cases {
+        let re = Regex::new(pattern).unwrap();
+        let found: Vec<_> = re.find_iter(text).map(|m| m.range()).collect();
+
+        let captured: Vec<_> = re
+            .captures_iter(text)
+            .map(|caps| caps.get(0).unwrap().range())
+            .collect();
+        assert_eq!(captured, found, "captures_iter: {pattern:?} on {text:?}");
+
+        let bytes: Vec<_> = re
+            .captures_iter_bytes(text.as_bytes())
+            .map(|caps| caps.get(0).unwrap().range())
+            .collect();
+        assert_eq!(bytes, found, "captures_iter_bytes: {pattern:?} on {text:?}");
+
+        let with: Vec<_> = re
+            .captures_iter_with(text, SearchOptions::new())
+            .map(|caps| caps.unwrap().get(0).unwrap().range())
+            .collect();
+        assert_eq!(with, found, "captures_iter_with: {pattern:?} on {text:?}");
+    }
+}
+
+#[test]
+fn captures_iter_empty_matches_follow_find_iter_rule() {
+    // `a*` over "ab": the empty match at 1 is yielded, and the one at 2 too.
+    let re = Regex::new(r"a*").unwrap();
+    let ranges: Vec<_> = re
+        .captures_iter("ab")
+        .map(|caps| caps.get(0).unwrap().range())
+        .collect();
+    assert_eq!(ranges, [0..1, 1..1, 2..2]);
+}
+
+#[test]
+fn captures_iter_yields_every_group_of_each_match() {
+    let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+    let dates: Vec<(&str, &str)> = re
+        .captures_iter("2025-01, then 2026-10")
+        .map(|caps| {
+            (
+                caps.name("year").unwrap().as_str(),
+                caps.name("month").unwrap().as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(dates, [("2025", "01"), ("2026", "10")]);
+
+    let caps: Vec<_> = re.captures_iter("2025-01").collect();
+    assert_eq!(caps[0].len(), 3);
+    assert_eq!(caps[0].get(2).unwrap().range(), 5..7);
+}
+
+#[test]
+fn captures_iter_with_yields_a_limit_error_once() {
+    let re = Regex::new(r"((?=a\g<0>)|(?:\k<1>*?(?=a)()))*").unwrap();
+    let options = SearchOptions::new()
+        .retry_limit_in_match(100_000)
+        .match_stack_limit(1_000_000);
+    let mut matches = re.captures_iter_with("aa", options);
+    assert_eq!(
+        matches.next().and_then(Result::err),
+        Some(RegexError::RetryLimitInMatchOver)
+    );
+    assert!(matches.next().is_none());
+}
+
+#[test]
+fn captures_iterators_are_fused() {
+    fn assert_fused<I: std::iter::FusedIterator>(_: &I) {}
+
+    let re = Regex::new(r"a").unwrap();
+    let mut iter = re.captures_iter_with("a", SearchOptions::new());
+    assert_fused(&iter);
+    assert!(iter.next().is_some());
+    assert!(iter.next().is_none());
+    assert!(iter.next().is_none());
+}
+
+#[test]
+fn captures_from_iter_outlive_the_iterator_and_the_regex() {
+    let text = "a1 b2";
+    let caps: Vec<_> = Regex::new(r"(?<d>\d)")
+        .unwrap()
+        .captures_iter(text)
+        .collect();
+    assert_eq!(caps.len(), 2);
+    assert_eq!(caps[1].name("d").unwrap().as_str(), "2");
+}

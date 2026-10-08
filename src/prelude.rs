@@ -11,8 +11,8 @@
 //! ```
 
 pub use crate::api::{
-    CaptureNames, Captures, CapturesIter, FindIter, Match, Regex, RegexBuilder, SearchOptions,
-    Syntax, TryFindIter,
+    CaptureMatches, CaptureNames, Captures, CapturesIter, FindIter, Match, Regex, RegexBuilder,
+    SearchOptions, Syntax, TryCaptureMatches, TryFindIter,
 };
 pub use crate::error::RegexError;
 pub use crate::scanner::{
