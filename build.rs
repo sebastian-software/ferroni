@@ -22,14 +22,19 @@ fn main() {
 
 fn guide_pages_present() -> bool {
     let manifest_dir = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    ["getting-started", "untrusted-input", "compatibility"]
-        .iter()
-        .all(|page| {
-            manifest_dir
-                .join("docs/app/routes/guide")
-                .join(format!("{page}.mdx"))
-                .is_file()
-        })
+    [
+        "getting-started",
+        "untrusted-input",
+        "compatibility",
+        "coming-from-regex",
+    ]
+    .iter()
+    .all(|page| {
+        manifest_dir
+            .join("docs/app/routes/guide")
+            .join(format!("{page}.mdx"))
+            .is_file()
+    })
 }
 
 #[cfg(feature = "ffi")]
