@@ -322,6 +322,17 @@ Please open an issue on GitHub with:
 - Expected vs. actual behavior
 - If possible, the corresponding C Oniguruma behavior for comparison
 
+## Triage and Review
+
+Issues are welcome and are triaged as time allows. Pull requests are reviewed
+against the [architecture decisions](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original),
+so a change has to keep the structural parity with C Oniguruma that ADR-001
+describes. The `help wanted` label marks the issues that are waiting for a
+contributor. Report a suspected vulnerability privately, as
+[SECURITY.md](SECURITY.md) describes, and not in a public issue. The
+[project status](README.md#project-status) lists what the project maintains and
+what is not planned.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
