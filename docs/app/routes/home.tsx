@@ -49,8 +49,15 @@ type FigureCell = {
   grammars?: string[];
   cases: number;
   of: number;
+  /** Per host; the summary shows only `factor`, their geometric mean. */
   factors?: Record<string, number>;
+  factor?: number;
+  /** "faster" or "slower": which way `text` reads. */
+  direction?: string;
 };
+
+/* The cell covers only the cases the engine could run: footnoted, not spelled out. */
+const partial = (cell: FigureCell) => cell.factor !== undefined && cell.cases < cell.of;
 
 const workloads = engineComparison.workloads;
 
@@ -67,9 +74,12 @@ const cCells = cRow.cells as Record<string, FigureCell>;
 const cFactors = workloads.flatMap((workload) => Object.values(cCells[workload.id].factors ?? {}));
 const aheadOfC = cFactors.length > 0 && cFactors.every((factor) => factor > 1);
 
-/* The narrowest and widest lead over C, rounded as the figures are: "1.3×". */
-const factorText = (factor: number) => `${factor.toFixed(1)}×`;
-const cRange = `${factorText(Math.min(...cFactors))} to ${factorText(Math.max(...cFactors))}`;
+/* The narrowest and widest lead over C, as the table states them: "1.4× to 3.7×". */
+const cTexts = workloads
+  .map((workload) => cCells[workload.id])
+  .sort((a, b) => (a.factor ?? 0) - (b.factor ?? 0))
+  .map((cell) => cell.text);
+const cRange = `${cTexts[0]} to ${cTexts.at(-1)}`;
 
 /*
  * What it succeeds and what it is checked against come from the registry; the
@@ -134,7 +144,7 @@ const pillars = [
   aheadOfC
     ? {
         heading: "Faster than the original",
-        text: `Ahead of C Oniguruma in every measured workload: ${cRange} faster across text processing and syntax highlighting, with inputs and raw data published.`,
+        text: `Ahead of C Oniguruma in every measured workload: ${cRange} faster, from everyday patterns to syntax highlighting, with inputs and raw data published.`,
       }
     : {
         heading: "Measured against C",
@@ -190,13 +200,18 @@ function SampleSection() {
 }
 
 function figureValue(cell: FigureCell): ComparisonCell {
-  if (cell.factors === undefined) {
+  if (cell.factor === undefined) {
     return cell.grammars === undefined ? undefined : { mark: "no", note: cell.grammars.join(", ") };
   }
-  if (cell.note === undefined) return cell.text;
   return (
     <>
-      {cell.text} <small>{cell.note}</small>
+      {cell.text} <small>{cell.direction}</small>
+      {partial(cell) && (
+        <>
+          <sup aria-hidden="true">*</sup>
+          <span className="fam-sr-only">, some tasks left out</span>
+        </>
+      )}
     </>
   );
 }
@@ -217,11 +232,23 @@ const comparisonRows: ComparisonRow[] = engineComparison.engines.map((engine) =>
 });
 
 /* The C original's factor per workload, stamped on plates above the full table. */
-const cFigures = workloads.map((workload) => ({
-  label: workload.label,
-  value: cCells[workload.id].text,
-  detail: workload.detail,
-}));
+const cFigures = workloads.map((workload) => {
+  const cell = cCells[workload.id];
+  return {
+    label: workload.label,
+    value: cell.direction === "slower" ? `${cell.text} slower` : cell.text,
+    detail: workload.detail,
+  };
+});
+
+/* The footnotes the table needs, worded once in compare-engines.py. */
+const allCells = engineComparison.engines.flatMap((engine) =>
+  workloads.map((workload) => (engine.cells as Record<string, FigureCell>)[workload.id]),
+);
+const tableNotes = [
+  ...(allCells.some((cell) => partial(cell)) ? [`* ${engineComparison.notes.partial}`] : []),
+  ...(allCells.some((cell) => cell.text === "–") ? [`– ${engineComparison.notes.absent}`] : []),
+];
 
 function SpeedSection() {
   const hosts = engineComparison.hosts
@@ -234,10 +261,10 @@ function SpeedSection() {
       title={aheadOfC ? "Faster than the C original" : "Measured against the C original"}
       intro={
         <>
-          Each figure is C Oniguruma&rsquo;s time divided by Ferroni&rsquo;s, as the geometric mean
-          over a workload; a range spans two hosts. Above 1&times;, Ferroni is faster. The table
-          adds six more engines, and every engine first has to reproduce Oniguruma&rsquo;s results,
-          or the results Shiki produced for highlighting.
+          How much faster Ferroni is than C Oniguruma on three kinds of work, as the geometric mean
+          over every task and two test machines. The table adds six more engines. Each one first has
+          to reproduce Oniguruma&rsquo;s results, or the results Shiki produced for highlighting,
+          before it is timed.
         </>
       }
       note={
@@ -252,17 +279,22 @@ function SpeedSection() {
       <EvidenceFigures figures={cFigures} />
       <ComparisonTable
         align="end"
-        caption="Ferroni's speedup over each engine; below 1×, the other engine is faster."
+        caption="How much faster or slower Ferroni is than each engine."
         subject="Compared with"
         contenders={workloads.map((workload) => ({ id: workload.id, label: workload.short }))}
         rows={comparisonRows}
       />
+      {tableNotes.map((note) => (
+        <p key={note} className="fam-note">
+          {note}
+        </p>
+      ))}
       <Measured
         on={engineComparison.measured}
         machine={`Blacksmith runners. ${hosts}`}
         revision={<code>{engineComparison.commit.slice(0, 8)}</code>}
       >
-        <Link to="/perf/engine-comparison">Every case, the hosts, versions and raw data</Link>
+        <Link to="/perf/engine-comparison">Per-host figures, every task and the raw data</Link>
       </Measured>
     </Section>
   );

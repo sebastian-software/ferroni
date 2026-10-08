@@ -432,20 +432,28 @@ def report(args):
 
 # The README and home page condense a run into three workloads. Highlighting
 # needs every grammar: a highlighter that cannot load one is not a candidate.
-# Searches may miss a case; the figure then says over how many it was taken.
+# Searches may miss a case; the figure is then taken over the cases the engine
+# ran, and the summary marks it with a footnote instead of spelling out counts.
 WORKLOADS = [
-    {'id': 'shared', 'label': 'Text processing, shared syntax', 'short': 'Shared syntax', 'require_all': False,
-     'detail': 'markup, logs, chat with emoji, Markdown, JSON, CSV and validation the regex crate can also run',
-     'cases': CASES['shared']},
-    {'id': 'oniguruma', 'label': 'Text processing, Oniguruma syntax', 'short': 'Oniguruma syntax',
+    {'id': 'shared', 'label': 'Everyday patterns', 'short': 'Everyday patterns', 'unit': 'tasks',
      'require_all': False,
-     'detail': 'lookaround, backreferences, possessive groups, subexpression calls, absent operator, graphemes',
+     'detail': 'search and extraction in HTML, logs, chat with emoji, Markdown, JSON, CSV and source code, '
+               'in syntax the regex crate also runs',
+     'cases': CASES['shared']},
+    {'id': 'oniguruma', 'label': 'Advanced patterns', 'short': 'Advanced patterns', 'unit': 'tasks',
+     'require_all': False,
+     'detail': 'look-around, backreferences, possessive groups, subexpression calls, absent expressions '
+               'and grapheme clusters',
      'cases': CASES['oniguruma']},
-    {'id': 'highlighting', 'label': 'Highlighting, portable grammars', 'short': 'Highlighting',
+    {'id': 'highlighting', 'label': 'Syntax highlighting', 'short': 'Syntax highlighting', 'unit': 'documents',
      'require_all': True,
-     'detail': 'Shiki scanner calls replayed for whole documents in grammars every engine runs',
+     'detail': 'the scanner calls Shiki makes for whole C, Java and PHP documents, in grammars every engine runs',
      'cases': ['c_scanner/document', 'java_scanner/document', 'php_scanner/document']},
 ]
+# The footnotes under the summary table, in the README and on the home page.
+PARTIAL_NOTE = ('Ran only some of the tasks: the engine rejects a pattern or finds different matches. '
+                'The figure covers the tasks it ran.')
+ABSENT_NOTE = 'Not measured: the engine lacks the syntax, or the multi-pattern API the workload needs.'
 FIGURE_ENGINES = ('c', 'shiki_js', 'onigmo', 'pcre2', 'pcre2_jit', 'fancy_regex', 'regex')
 FIGURE_LABELS = {**LABELS, 'c': 'Oniguruma (C)'}
 HOST_LABELS = {'macos-arm64': 'macOS arm64', 'linux-x86-64': 'Linux x86-64'}
@@ -453,11 +461,10 @@ GRAMMARS = {'cpp_scanner': 'C++', 'java_scanner': 'Java', 'scss_scanner': 'SCSS'
             'php_scanner': 'PHP'}
 
 
-def factor_text(values):
-    def one(value):
-        return f'{value:.0f}' if value >= 10 else f'{value:.1f}'
-    low, high = one(min(values)), one(max(values))
-    return f'{low}×' if low == high else f'{low}–{high}×'
+def factor_text(factor):
+    """One factor as the summary states it: how many times faster or slower."""
+    magnitude = factor if factor >= 1 else 1 / factor
+    return f'{magnitude:.0f}×' if magnitude >= 10 else f'{magnitude:.1f}×'
 
 
 def figures(args):
@@ -506,9 +513,12 @@ def figures(args):
                             grammars=[GRAMMARS[case.split('/')[0]] for case in missing])
             else:
                 cell['factors'] = {host_id: round(per_host[host_id][0], 3) for host_id in order}
-                cell['text'] = factor_text(list(cell['factors'].values()))
-                if runs_cases < total:
-                    cell['note'] = f'{runs_cases} of {total} cases'
+                # One figure per cell: the geometric mean over both hosts. The
+                # per-host values stay in `factors` and on the comparison page.
+                combined = math.exp(sum(math.log(per_host[host_id][0]) for host_id in order) / len(order))
+                cell['factor'] = round(combined, 3)
+                cell['text'] = factor_text(combined)
+                cell['direction'] = 'faster' if combined >= 1 else 'slower'
             cells[workload['id']] = cell
         engines.append({'id': engine, 'label': FIGURE_LABELS[engine], 'cells': cells})
     out = {
@@ -519,25 +529,44 @@ def figures(args):
         'hosts': [{'id': host_id, 'label': HOST_LABELS[host_id], 'machine': hosts[host_id]['host']['cpu'],
                    'cpus': hosts[host_id]['host']['cpus'], 'runner': hosts[host_id]['host']['runner_label']}
                   for host_id in order],
-        'workloads': [{key: workload[key] for key in ('id', 'label', 'short', 'detail')} | {'cases': len(workload['cases'])}
+        'workloads': [{key: workload[key] for key in ('id', 'label', 'short', 'unit', 'detail')}
+                      | {'cases': len(workload['cases'])}
                       for workload in WORKLOADS],
+        'notes': {'partial': PARTIAL_NOTE, 'absent': ABSENT_NOTE},
         'engines': engines,
     }
     args.output.write_text(json.dumps(out, indent=2, ensure_ascii=False) + '\n')
     print(readme_table(out))
 
 
+def readme_cell(cell):
+    """A README cell: "2.2× faster", with a footnote mark when cases were left out."""
+    if 'factor' not in cell:
+        return cell['text'] + (f' ({cell["note"]})' if cell.get('note') else '')
+    mark = '\\*' if cell['cases'] < cell['of'] else ''
+    return f'{cell["text"]} {cell["direction"]}{mark}'
+
+
 def readme_table(figures_data):
-    """The README rows; docs/scripts/check-benchmark-claims.mjs compares them."""
+    """The README block; docs/scripts/check-benchmark-claims.mjs compares it."""
     workloads = figures_data['workloads']
+    engines = figures_data['engines']
     lines = ['| Ferroni compared with | ' + ' | '.join(w['label'] for w in workloads) + ' |',
              '| --- |' + ' ---: |' * len(workloads)]
-    for engine in figures_data['engines']:
-        cells = []
-        for workload in workloads:
-            cell = engine['cells'][workload['id']]
-            cells.append(cell['text'] + (f' ({cell["note"]})' if cell.get('note') else ''))
+    for engine in engines:
+        cells = [readme_cell(engine['cells'][workload['id']]) for workload in workloads]
         lines.append(f'| {engine["label"]} | ' + ' | '.join(cells) + ' |')
+    lines.append('')
+    for workload in workloads:
+        lines.append(f'- **{workload["label"]}** ({workload["cases"]} {workload["unit"]}): {workload["detail"]}.')
+    cells = [engine['cells'][workload['id']] for engine in engines for workload in workloads]
+    footnotes = []
+    if any('factor' in cell and cell['cases'] < cell['of'] for cell in cells):
+        footnotes.append(f'\\* {figures_data["notes"]["partial"]}')
+    if any(cell['text'] == '–' for cell in cells):
+        footnotes.append(f'– {figures_data["notes"]["absent"]}')
+    for footnote in footnotes:
+        lines += ['', footnote]
     return '\n'.join(lines)
 
 
