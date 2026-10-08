@@ -9212,6 +9212,7 @@ mod tests {
             pattern_end: std::ptr::null(),
             error: None,
             reg: std::ptr::null_mut(),
+            reg_state: crate::regparse_types::RegexParseState::default(),
             num_call: 0,
             num_mem: 0,
             num_named: 0,

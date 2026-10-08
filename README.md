@@ -41,9 +41,9 @@ backtracking, and an idiomatic Rust API.
   bindgen, four common dependencies. An idiomatic API of `Regex`, `Captures`
   and match iterators sits on top, and a compiled `Regex` is `Send + Sync`
   ([getting started](https://ferroni.dev/guide/getting-started)).
-- **Safe with untrusted input.** Memory-safe Rust with `unsafe` confined to two
-  documented patterns, timeouts and backtracking limits per search, and
-  fuzzing on every pull request
+- **Safe with untrusted input.** Memory-safe Rust with `unsafe` confined to
+  the links between parse-tree nodes, timeouts and backtracking limits per
+  search, and fuzzing on every pull request
   ([untrusted input](https://ferroni.dev/guide/untrusted-input)).
 - **Faster than the original.** Ahead of C Oniguruma in every measured
   workload, from everyday text processing to syntax highlighting
@@ -193,8 +193,8 @@ every task and the raw data:
   every pull request, and for longer every week.
 - **Memory safety.** C Oniguruma has a history of memory-safety CVEs in its
   buffer and string handling. Ferroni keeps that code in safe Rust; the
-  remaining `unsafe` follows two documented patterns
-  ([ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy)).
+  remaining `unsafe`, ten sites, covers only the links between parse-tree
+  nodes during compilation ([ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy)).
 - **Hostile patterns and input.** Per-search timeouts and retry limits stop
   runaway backtracking, and a compile-time check flags patterns such as
   `(a+)+` ([untrusted input](https://ferroni.dev/guide/untrusted-input)).

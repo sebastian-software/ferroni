@@ -123,9 +123,9 @@ export function SafetySection() {
       intro={
         <>
           Memory-safe Rust replaces the C code behind Oniguruma&rsquo;s CVEs, and{" "}
-          <code>unsafe</code> stays confined to two documented patterns. For text and patterns you
-          did not write, a search can carry a timeout or a retry limit and report it as an error,
-          and a compile-time check flags patterns that backtrack catastrophically.
+          <code>unsafe</code> stays confined to the links between parse-tree nodes. For text and
+          patterns you did not write, a search can carry a timeout or a retry limit and report it as
+          an error, and a compile-time check flags patterns that backtrack catastrophically.
         </>
       }
       note={
