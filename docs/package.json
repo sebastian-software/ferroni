@@ -22,7 +22,7 @@
     "ardo": "^4.2.0",
     "ferramenta-family": "^2.0.0",
     "isbot": "^5.2.2",
-    "lucide-react": "^1.47.0",
+    "lucide-react": "^1.52.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^8.4.0"
@@ -32,13 +32,13 @@
     "@sebastian-software/standards": "0.13.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "eslint": "^10.11.0",
+    "eslint": "^10.12.0",
     "eslint-config-setup": "^0.5.2",
     "jiti": "^2.7.0",
-    "oxfmt": "^0.70.0",
-    "oxlint": "^1.85.0",
+    "oxfmt": "^0.72.0",
+    "oxlint": "^1.87.0",
     "typescript": "^6.0.3",
-    "vite": "^8.3.0"
+    "vite": "^8.3.2"
   },
   "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e"
 }
