@@ -138,14 +138,23 @@ does not guarantee linear-time searches.
 
 ## Patterns from users
 
-When users supply patterns, also bound how deeply they may nest. Ferroni keeps
-Oniguruma's parse depth limit, 4,096 levels by default; a deeper pattern fails
-to compile with `RegexError::ParseDepthLimitOver`. Recursive patterns are
-bounded by a nesting level for subexpression calls (20 by default) and,
-optionally, by a number of calls per search, which stops the search with
-`RegexError::SubexpCallLimitOver`. The setters are `onig_set_parse_depth_limit`
-in `ferroni::regparse`, and `onig_set_subexp_call_max_nest_level` and
+When users supply patterns, also bound how deeply they may nest and how large
+they may grow. Two limits apply, and a pattern over either fails to compile with
+`RegexError::ParseDepthLimitOver`. The nesting limit allows 256 parser units by
+default, about 128 nested groups, where Oniguruma's own default is 4,096; the
+AST budget allows 4,096 expression nodes per pattern, and it is Ferroni-only.
+Recursive patterns are bounded by a nesting level for subexpression calls (20 by
+default) and, optionally, by a number of calls per search, which stops the
+search with `RegexError::SubexpCallLimitOver`. The setters are
+`onig_set_parse_depth_limit` and `onig_set_ast_node_limit` in
+`ferroni::regparse`, and `onig_set_subexp_call_max_nest_level` and
 `onig_set_subexp_call_limit_in_search` in `ferroni::regexec`.
+
+Raising either limit raises the stack a compile needs. Measured per unit, the
+parser needs about 0.5 KB of stack in release builds and about 3.5 KB in debug
+builds; each node of the AST budget costs about 32 bytes in release and about
+300 bytes in debug. Size the thread that compiles user patterns for the limits
+you set, and see ADR-013 for the table.
 
 A checklist for user-supplied patterns:
 
