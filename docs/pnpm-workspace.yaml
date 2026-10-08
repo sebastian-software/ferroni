@@ -1,0 +1,6 @@
+# pnpm 11 and later fail the install on dependency build scripts that are not
+# listed here. pnpm 10 blocked these two scripts silently, so they stay denied:
+# the install behaves as it did before the upgrade.
+allowBuilds:
+  esbuild: false
+  unrs-resolver: false
