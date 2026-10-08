@@ -739,11 +739,17 @@ pub struct RegexType {
     /// that records its captures repeat a long attempt
     /// (`crate::regexec::two_pass_capture_fill_pays`).
     pub(crate) anychar_run: bool,
-    /// Rust-only (ADR-008): a positive look-behind can come before the
-    /// first character a match reads. Over malformed UTF-8 it goes on where
-    /// its body ends, as in C, so a match can read bytes before its start
-    /// (`crate::first_bytes::admit_look_behind_continuations`).
-    pub(crate) leading_look_behind: bool,
+    /// Rust-only (ADR-008): the most characters a fixed-length positive
+    /// look-behind before the first character a match reads steps back, or
+    /// 0 without one. Over malformed UTF-8 it goes on where its body ends,
+    /// as in C, so the start maps leave out a start only where those
+    /// characters line up (`crate::first_bytes::start_map_may_skip`).
+    pub(crate) look_behind_reach: u32,
+    /// Rust-only (ADR-008): the optimizer's map is an extra start map, where
+    /// C has no optimizer. C's map search cannot leave a start to a leading
+    /// look-behind (`look_behind_reach`), so there the search goes without
+    /// it (`map_search_bypassed`).
+    pub(crate) extra_map_optimizer: bool,
     /// Rust-only (ADR-008): literals one of which every match contains,
     /// for RegSet fallback searches (`crate::required_literals`).
     pub(crate) required_literals: Option<Box<crate::required_literals::RequiredLiterals>>,

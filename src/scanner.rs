@@ -17,8 +17,7 @@ use crate::regint::{ANCR_ANYCHAR_INF, RegexType};
 use crate::regset::{
     FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, onig_regset_entry_search,
     onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new_shared,
-    onig_regset_number_of_regex, onig_regset_search_fast, onig_regset_search_fast_with_id,
-    onig_regset_swap_region,
+    onig_regset_number_of_regex, onig_regset_search_utf8, onig_regset_swap_region,
 };
 use crate::regsyntax::*;
 use std::collections::HashMap;
@@ -1060,28 +1059,16 @@ impl Scanner {
         option: OnigOptionType,
         fallback_memo_id: Option<FallbackMemoIdentity>,
     ) -> Option<ScannerMatch> {
-        let (idx, pos) = if let Some(identity) = fallback_memo_id {
-            onig_regset_search_fast_with_id(
-                &mut self.regset,
-                str_data,
-                end,
-                start,
-                end,
-                OnigRegSetLead::PositionLead,
-                option,
-                identity,
-            )
-        } else {
-            onig_regset_search_fast(
-                &mut self.regset,
-                str_data,
-                end,
-                start,
-                end,
-                OnigRegSetLead::PositionLead,
-                option,
-            )
-        };
+        let (idx, pos) = onig_regset_search_utf8(
+            &mut self.regset,
+            str_data,
+            end,
+            start,
+            end,
+            OnigRegSetLead::PositionLead,
+            option,
+            fallback_memo_id,
+        );
 
         if idx < 0 {
             return None;
@@ -1192,7 +1179,8 @@ impl Scanner {
             }
 
             run_stats.vm_calls += 1;
-            let event = onig_regset_entry_search(regset, i, str_data, end, start, stop, onig_opts);
+            let event =
+                onig_regset_entry_search(regset, i, str_data, end, start, stop, onig_opts, true);
             match event {
                 RegSetEntryEvent::Match { position } => {
                     onig_regset_swap_region(regset, i, &mut cache.last_region);

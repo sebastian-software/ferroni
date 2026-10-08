@@ -9614,38 +9614,42 @@ fn alt_merge_node_opt_info(to: &mut OptNode, add: &OptNode, env_enc: OnigEncodin
     to.len.alt_merge(&add.len);
 }
 
-/// Rust-only (ADR-008): whether a positive look-behind can come before the
-/// first character a match of `node` reads.
-fn has_leading_look_behind(node: &Node, env: &ParseEnv) -> bool {
+/// Rust-only (ADR-008): the most characters a fixed-length positive
+/// look-behind that can come before the first character a match of `node`
+/// reads steps back, or 0. A variable-length one checks that its body ends
+/// where it started (`CHECK_POSITION`), so it keeps the position.
+fn leading_look_behind_reach(node: &Node, env: &ParseEnv) -> u32 {
     match &node.inner {
-        NodeInner::Anchor(an) => an.anchor_type == ANCR_LOOK_BEHIND,
+        NodeInner::Anchor(an)
+            if an.anchor_type == ANCR_LOOK_BEHIND && an.char_min_len == an.char_max_len =>
+        {
+            an.char_max_len
+        }
         NodeInner::List(_) => {
+            let mut reach = 0;
             let mut cur = Some(node);
             while let Some(NodeInner::List(cons)) = cur.map(|n| &n.inner) {
-                if has_leading_look_behind(&cons.car, env) {
-                    return true;
-                }
+                reach = reach.max(leading_look_behind_reach(&cons.car, env));
                 if node_min_byte_len(&cons.car, env) > 0 {
-                    return false;
+                    break;
                 }
                 cur = cons.cdr.as_deref();
             }
-            false
+            reach
         }
         NodeInner::Alt(_) => {
+            let mut reach = 0;
             let mut cur = Some(node);
             while let Some(NodeInner::Alt(cons)) = cur.map(|n| &n.inner) {
-                if has_leading_look_behind(&cons.car, env) {
-                    return true;
-                }
+                reach = reach.max(leading_look_behind_reach(&cons.car, env));
                 cur = cons.cdr.as_deref();
             }
-            false
+            reach
         }
         NodeInner::Quant(QuantNode { body, .. }) | NodeInner::Bag(BagNode { body, .. }) => body
             .as_deref()
-            .is_some_and(|body| has_leading_look_behind(body, env)),
-        _ => false,
+            .map_or(0, |body| leading_look_behind_reach(body, env)),
+        _ => 0,
     }
 }
 
@@ -10520,6 +10524,7 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
     // (`start_dispatch`); a bounded C optimizer is dispatched by start bytes
     // anyway.
     reg.start_dispatch = false;
+    reg.extra_map_optimizer = false;
     let mut start_bytes = None;
     let c_has_optimizer = opt.sb.len > 0 || opt.sm.len > 0 || opt.map.value > 0;
     // Without a class or type the extra maps would cover, a second pass
@@ -10539,21 +10544,16 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
             &extra_maps,
         ) == 0
         {
-            let mut extra_map = start_opt.map.map;
-            crate::first_bytes::admit_look_behind_continuations(reg, &mut extra_map);
             if !c_has_optimizer {
-                if extra_start_map_filters(reg.enc, &start_opt.map) {
-                    opt.map = start_opt.map;
-                    opt.map.map = extra_map;
-                } else {
+                if !extra_start_map_filters(reg.enc, &start_opt.map) {
                     // A map at the match start (see above).
-                    start_bytes = Some(extra_map);
+                    start_bytes = Some(start_opt.map.map);
+                } else {
+                    opt.map = start_opt.map;
+                    reg.extra_map_optimizer = start_opt.map.value > 0;
                 }
             } else {
-                start_bytes = optimizer_start_bytes(reg.enc, &start_opt).map(|mut bytes| {
-                    crate::first_bytes::admit_look_behind_continuations(reg, &mut bytes);
-                    bytes
-                });
+                start_bytes = optimizer_start_bytes(reg.enc, &start_opt);
                 reg.start_dispatch = optimizer_distance_max(reg.enc, &start_opt)
                     .is_some_and(|dist_max| dist_max != INFINITE_LEN);
             }
@@ -10613,7 +10613,6 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
             reg.sub_anchor |= opt.anc.right & ANCR_END_LINE;
         }
     }
-
     0
 }
 
@@ -10900,7 +10899,7 @@ fn compile_parsed(
     }
 
     // Set optimization info (exact string, char map, anchors) from parse tree
-    reg.leading_look_behind = has_leading_look_behind(&root, env);
+    reg.look_behind_reach = leading_look_behind_reach(&root, env);
     let r = set_optimize_info_from_tree(&root, reg, env);
     if r != 0 {
         return r;
@@ -11206,7 +11205,8 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         leading_run: None,
         literal_prefix: None,
         anychar_run: false,
-        leading_look_behind: false,
+        look_behind_reach: 0,
+        extra_map_optimizer: false,
         search_start_map: None,
         search_jump: None,
         required_literals: None,
@@ -11685,7 +11685,8 @@ mod tests {
             leading_run: None,
             literal_prefix: None,
             anychar_run: false,
-            leading_look_behind: false,
+            look_behind_reach: 0,
+            extra_map_optimizer: false,
             search_start_map: None,
             search_jump: None,
             required_literals: None,
@@ -13325,6 +13326,13 @@ mod tests {
             r"(?<=\()x?",
             r"(?<=\()",
             r"(?<=\()..",
+            r"(?<=\()\W",
+            r"(?<=\()\W.*z",
+            r"(?<=[(\[])\W.*z",
+            r"(?<=[(\[])[^a-z0-9 ].*z",
+            r"(?<=[(\[])\W",
+            r"(?<=\(|\*/)\W?x",
+            r"(?:(?<=\()|y)\Wz",
             r"\b(?<=\.)\w+",
             r"(?<=ab)c?",
             r"(?<=[^a-c]).?",
@@ -13336,7 +13344,9 @@ mod tests {
             r"(?<=(\())(.?)",
             r"a(?<=\()",
         ];
-        let subjects: [&[u8]; 10] = [
+        let subjects: [&[u8]; 12] = [
+            b"(\x80xz",
+            b"(\x80y",
             b"(\x80x",
             b"(\x80\x80x",
             b"(\x80\x80\x80\x80x",
