@@ -1,5 +1,7 @@
 // api_test.rs - Integration tests for the idiomatic Rust API.
 
+use std::borrow::Cow;
+
 use ferroni::api::{Regex, RegexBuilder};
 use ferroni::error::RegexError;
 use ferroni::oniguruma::{
@@ -3579,4 +3581,447 @@ fn captures_from_iter_outlive_the_iterator_and_the_regex() {
         .collect();
     assert_eq!(caps.len(), 2);
     assert_eq!(caps[1].name("d").unwrap().as_str(), "2");
+}
+
+// === Captures::expand ===
+
+fn expanded(re: &Regex, text: &str, template: &str) -> String {
+    let caps = re.captures(text).expect("the pattern matches the text");
+    let mut out = String::new();
+    caps.expand(template, &mut out);
+    out
+}
+
+#[test]
+fn expand_numbered_reference() {
+    let re = Regex::new(r"(\w+)-(\d+)").unwrap();
+    assert_eq!(expanded(&re, "item-42", "$2 $1"), "42 item");
+    assert_eq!(expanded(&re, "item-42", "$0"), "item-42");
+}
+
+#[test]
+fn expand_braced_numbered_reference_ends_the_name() {
+    let re = Regex::new(r"(\w+)").unwrap();
+    assert_eq!(expanded(&re, "ab", "${1}x"), "abx");
+    assert_eq!(expanded(&re, "ab", "$1x"), "");
+}
+
+#[test]
+fn expand_leading_zeros_name_the_same_group() {
+    let re = Regex::new(r"(a)(b)").unwrap();
+    assert_eq!(expanded(&re, "ab", "$01$002"), "ab");
+}
+
+#[test]
+fn expand_named_reference_takes_longest_name_run() {
+    let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+    assert_eq!(expanded(&re, "2026-10", "$year-$month"), "2026-10");
+    assert_eq!(expanded(&re, "2026-10", "$yearx"), "");
+    assert_eq!(expanded(&re, "2026-10", "$year_"), "");
+    assert_eq!(expanded(&re, "2026-10", "${year}x"), "2026x");
+    assert_eq!(expanded(&re, "2026-10", "${month}"), "10");
+}
+
+#[test]
+fn expand_dollar_dollar_is_a_literal_dollar() {
+    let re = Regex::new(r"(a)").unwrap();
+    assert_eq!(expanded(&re, "a", "$$"), "$");
+    assert_eq!(expanded(&re, "a", "$$1"), "$1");
+    assert_eq!(expanded(&re, "a", "$$$1"), "$a");
+    assert_eq!(expanded(&re, "a", "$$${1}"), "$a");
+    assert_eq!(expanded(&re, "a", "cost: 5$$"), "cost: 5$");
+}
+
+#[test]
+fn expand_missing_group_is_empty() {
+    let re = Regex::new(r"(?<n>\d)").unwrap();
+    assert_eq!(expanded(&re, "7", "[$9]"), "[]");
+    assert_eq!(expanded(&re, "7", "[${9}]"), "[]");
+    assert_eq!(expanded(&re, "7", "[$missing]"), "[]");
+    assert_eq!(expanded(&re, "7", "[${missing}]"), "[]");
+    assert_eq!(expanded(&re, "7", "[$n]"), "[7]");
+}
+
+#[test]
+fn expand_non_participating_group_is_empty() {
+    let re = Regex::new(r"(a)?b").unwrap();
+    assert_eq!(expanded(&re, "b", "[$1]"), "[]");
+    assert_eq!(expanded(&re, "ab", "[$1]"), "[a]");
+}
+
+#[test]
+fn expand_name_resolves_like_captures_name() {
+    // Two groups share the name `n`. `Captures::name` picks the last one that
+    // participated, and `$n` must pick the same group.
+    let re = Regex::new(r"(?<n>a)|(?<n>b)").unwrap();
+    assert_eq!(expanded(&re, "a", "$n"), "a");
+    assert_eq!(expanded(&re, "b", "$n"), "b");
+    let caps = re.captures("b").unwrap();
+    assert_eq!(expanded(&re, "b", "$n"), caps.name("n").unwrap().as_str());
+}
+
+#[test]
+fn expand_invalid_reference_is_literal() {
+    let re = Regex::new(r"(a)").unwrap();
+    assert_eq!(expanded(&re, "a", "cost $"), "cost $");
+    assert_eq!(expanded(&re, "a", "$-$."), "$-$.");
+    assert_eq!(expanded(&re, "a", "$ $"), "$ $");
+    assert_eq!(expanded(&re, "a", "${"), "${");
+    assert_eq!(expanded(&re, "a", "${1"), "${1");
+    assert_eq!(expanded(&re, "a", "${ x"), "${ x");
+    assert_eq!(expanded(&re, "a", "é$"), "é$");
+}
+
+#[test]
+fn expand_braced_reference_runs_to_the_closing_brace() {
+    let re = Regex::new(r"(a)").unwrap();
+    // The text between the braces is looked up as a name or a number. No group
+    // has these names, so they expand to nothing, and the braces are consumed.
+    assert_eq!(expanded(&re, "a", "[${}]"), "[]");
+    assert_eq!(expanded(&re, "a", "[${a-b}]"), "[]");
+    assert_eq!(expanded(&re, "a", "[${1 }]"), "[]");
+    assert_eq!(expanded(&re, "a", "${}x"), "x");
+    assert_eq!(expanded(&re, "a", "${a}b}"), "b}");
+    // A `${` whose first `}` comes later swallows the text in between.
+    assert_eq!(expanded(&re, "a", "${1 $1}"), "");
+    // A number written with a sign or leading zeros still names that group.
+    assert_eq!(expanded(&re, "a", "${+1}"), "a");
+    assert_eq!(expanded(&re, "a", "${001}"), "a");
+}
+
+#[test]
+fn expand_keeps_non_ascii_literal_text() {
+    let re = Regex::new(r"(?<w>\w+)").unwrap();
+    assert_eq!(expanded(&re, "ü", "→ $w ✓"), "→ ü ✓");
+}
+
+#[test]
+fn expand_unnamed_groups_are_not_captured_next_to_named_groups() {
+    let re = Regex::new(r"(?<y>\d+)-(\d+)").unwrap();
+    assert_eq!(re.captures_len(), 1);
+    assert_eq!(expanded(&re, "2026-10", "$y/$2"), "2026/");
+}
+
+#[test]
+fn expand_unnamed_groups_with_capture_group_option() {
+    let re = Regex::builder(r"(?<y>\d+)-(\d+)")
+        .capture_group(true)
+        .build()
+        .unwrap();
+    assert_eq!(re.captures_len(), 2);
+    assert_eq!(expanded(&re, "2026-10", "$y/$2"), "2026/10");
+}
+
+#[test]
+fn expand_bytes_copies_non_utf8_groups() {
+    let re = Regex::new(r"(?<word>\S+)").unwrap();
+    let caps = re.captures_bytes(b"\xff\xfe end").unwrap();
+    let mut out = Vec::new();
+    caps.expand_bytes(b"[$word]$$", &mut out);
+    assert_eq!(out, b"[\xff\xfe]$");
+}
+
+// === Regex::replace ===
+
+#[test]
+fn replace_changes_only_the_first_match() {
+    let re = Regex::new(r"\d+").unwrap();
+    assert_eq!(re.replace("a1 b22 c333", "#"), "a# b22 c333");
+}
+
+#[test]
+fn replace_all_changes_every_match() {
+    let re = Regex::new(r"\d+").unwrap();
+    assert_eq!(re.replace_all("a1 b22 c333", "#"), "a# b# c#");
+}
+
+#[test]
+fn replacen_limits_the_number_of_replacements() {
+    let re = Regex::new(r"\d").unwrap();
+    assert_eq!(re.replacen("1 2 3", 2, "x"), "x x 3");
+    assert_eq!(re.replacen("1 2 3", 1, "x"), "x 2 3");
+    assert_eq!(re.replacen("1 2 3", 5, "x"), "x x x");
+}
+
+#[test]
+fn replacen_zero_replaces_all_matches() {
+    let re = Regex::new(r"\d").unwrap();
+    assert_eq!(re.replacen("1 2 3", 0, "x"), "x x x");
+}
+
+#[test]
+fn replace_without_a_match_borrows_the_text() {
+    let re = Regex::new(r"\d").unwrap();
+    let text = "no digits here";
+    let out = re.replace_all(text, "#");
+    assert!(matches!(out, Cow::Borrowed(_)));
+    assert_eq!(out, text);
+    assert!(matches!(re.replace(text, "#"), Cow::Borrowed(_)));
+}
+
+#[test]
+fn replace_with_a_match_owns_the_result() {
+    let re = Regex::new(r"\d").unwrap();
+    let out = re.replace_all("a1", "#");
+    assert!(matches!(out, Cow::Owned(_)));
+    assert_eq!(out, "a#");
+}
+
+#[test]
+fn replace_all_treats_empty_match_after_nonempty_as_a_match() {
+    // `a*` matches `a` at 0..1, then empty matches at 1 and at 2. Ferroni's
+    // find_iter reports all three, so each one is replaced.
+    let re = Regex::new(r"a*").unwrap();
+    assert_eq!(re.replace_all("ab", "-"), "--b-");
+    assert_eq!(re.replace_all("aab", "-"), "--b-");
+}
+
+#[test]
+fn replace_matches_follow_find_iter_for_empty_patterns() {
+    let re = Regex::new(r"").unwrap();
+    assert_eq!(re.replace_all("ab", "-"), "-a-b-");
+    assert_eq!(re.replacen("ab", 2, "-"), "-a-b");
+}
+
+#[test]
+fn replace_all_at_text_end_and_empty_text() {
+    let re = Regex::new(r"$").unwrap();
+    assert_eq!(re.replace_all("ab", "!"), "ab!");
+    assert_eq!(re.replace_all("", "!"), "!");
+}
+
+#[test]
+fn replace_all_expands_named_references() {
+    let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+    assert_eq!(
+        re.replace_all("2025-01 and 2026-10", "$month/$year"),
+        "01/2025 and 10/2026"
+    );
+    assert_eq!(re.replace_all("2025-01", "${month}.${year}"), "01.2025");
+}
+
+#[test]
+fn replace_all_expands_dollar_escape() {
+    let re = Regex::new(r"\d+").unwrap();
+    assert_eq!(re.replace_all("a1 b2", "$$$0"), "a$1 b$2");
+}
+
+#[test]
+fn replace_all_accepts_every_string_replacer() {
+    let re = Regex::new(r"\d").unwrap();
+    let owned = String::from("#");
+    assert_eq!(re.replace_all("1x2", "#"), "#x#");
+    assert_eq!(re.replace_all("1x2", owned.clone()), "#x#");
+    assert_eq!(re.replace_all("1x2", &owned), "#x#");
+    assert_eq!(re.replace_all("1x2", Cow::Borrowed("#")), "#x#");
+    assert_eq!(re.replace_all("1x2", Cow::<str>::Owned(owned)), "#x#");
+}
+
+#[test]
+fn replace_all_with_a_closure_sees_the_captures() {
+    let re = Regex::new(r"(?<k>\w+)=(?<v>\d+)").unwrap();
+    let out = re.replace_all("a=1, b=22", |caps: &Captures| {
+        format!("{}:{}", &caps["v"], &caps["k"])
+    });
+    assert_eq!(out, "1:a, 22:b");
+}
+
+#[test]
+fn replace_all_with_a_closure_returning_str() {
+    let re = Regex::new(r"\d").unwrap();
+    let out = re.replace_all("1-2", |_: &Captures| "#");
+    assert_eq!(out, "#-#");
+}
+
+#[test]
+fn replace_all_with_no_expansion_inserts_dollars_literally() {
+    let re = Regex::new(r"(\d)").unwrap();
+    assert_eq!(re.replace_all("1 2", NoExpand("$1")), "$1 $1");
+    assert_eq!(re.replace_all("1 2", NoExpand("")), " ");
+}
+
+#[test]
+fn replace_all_with_by_ref_keeps_the_replacer() {
+    let re = Regex::new(r"\d").unwrap();
+    let mut count = 0;
+    let mut counting = |_: &Captures| {
+        count += 1;
+        count.to_string()
+    };
+    assert_eq!(re.replace_all("1 2", counting.by_ref()), "1 2");
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn replace_bytes_handles_text_that_is_not_utf8() {
+    let re = Regex::new(r"(?<d>\d+)").unwrap();
+    let text: &[u8] = b"\xff 12 \xfe 3";
+    let out = re.replace_all_bytes(text, &b"<$d>"[..]);
+    assert_eq!(out, &b"\xff <12> \xfe <3>"[..]);
+    assert!(matches!(out, Cow::Owned(_)));
+}
+
+#[test]
+fn replace_bytes_borrows_without_a_match() {
+    let re = Regex::new(r"\d").unwrap();
+    let text: &[u8] = b"\xff\xfe";
+    let out = re.replace_bytes(text, &b"#"[..]);
+    assert!(matches!(out, Cow::Borrowed(_)));
+    assert_eq!(out, text);
+}
+
+#[test]
+fn replacen_bytes_with_owned_and_no_expansion_replacers() {
+    let re = Regex::new(r"(?<d>\d)").unwrap();
+    let owned: Vec<u8> = b"<$d>".to_vec();
+    assert_eq!(re.replace_all_bytes(b"4", owned.clone()), &b"<4>"[..]);
+    assert_eq!(re.replace_all_bytes(b"4", &owned), &b"<4>"[..]);
+    assert_eq!(
+        re.replace_all_bytes(b"4", Cow::Borrowed(&b"<$d>"[..])),
+        &b"<4>"[..]
+    );
+    assert_eq!(re.replace_all_bytes(b"4", NoExpandBytes(b"$d")), &b"$d"[..]);
+}
+
+#[test]
+fn replace_all_bytes_closure_gets_bytes() {
+    let re = Regex::new(r"\d").unwrap();
+    let out = re.replace_all_bytes(b"1a2", |caps: &Captures| {
+        let digit = caps[0].parse::<u32>().unwrap();
+        (digit * 10).to_string().into_bytes()
+    });
+    assert_eq!(out, &b"10a20"[..]);
+}
+
+// === Regex::split ===
+
+#[test]
+fn split_yields_the_pieces_between_matches() {
+    let re = Regex::new(r"\s*,\s*").unwrap();
+    let parts: Vec<&str> = re.split("a , b,c").collect();
+    assert_eq!(parts, ["a", "b", "c"]);
+}
+
+#[test]
+fn split_keeps_empty_pieces_at_the_ends() {
+    let re = Regex::new(r",").unwrap();
+    assert_eq!(re.split(",x,").collect::<Vec<_>>(), ["", "x", ""]);
+    assert_eq!(re.split(",,").collect::<Vec<_>>(), ["", "", ""]);
+}
+
+#[test]
+fn split_without_a_match_yields_the_whole_text() {
+    let re = Regex::new(r",").unwrap();
+    assert_eq!(re.split("abc").collect::<Vec<_>>(), ["abc"]);
+    assert_eq!(re.split("").collect::<Vec<_>>(), [""]);
+}
+
+#[test]
+fn split_empty_pattern_splits_between_characters() {
+    let re = Regex::new(r"").unwrap();
+    assert_eq!(re.split("ab").collect::<Vec<_>>(), ["", "a", "b", ""]);
+    assert_eq!(re.split("").collect::<Vec<_>>(), ["", ""]);
+}
+
+#[test]
+fn split_follows_empty_matches_after_nonempty_ones() {
+    // The matches are 0..1, 1..1 and 2..2, so the pieces are the text before
+    // 0, between 0 and 1, between 1 and 2, and after 2. The regex crate
+    // yields only ["", "b", ""] here.
+    let re = Regex::new(r"a*").unwrap();
+    assert_eq!(re.split("ab").collect::<Vec<_>>(), ["", "", "b", ""]);
+}
+
+#[test]
+fn split_at_the_end_of_the_text_leaves_an_empty_last_piece() {
+    let re = Regex::new(r"$").unwrap();
+    assert_eq!(re.split("ab").collect::<Vec<_>>(), ["ab", ""]);
+}
+
+#[test]
+fn split_pieces_and_matches_rebuild_the_text() {
+    let re = Regex::new(r"x*").unwrap();
+    let text = "axxbxc";
+    let pieces: Vec<&str> = re.split(text).collect();
+    let matches: Vec<&str> = re.find_iter(text).map(|m| m.as_str()).collect();
+    assert_eq!(pieces.len(), matches.len() + 1);
+
+    let mut rebuilt = String::from(pieces[0]);
+    for (piece, matched) in pieces[1..].iter().zip(&matches) {
+        rebuilt.push_str(matched);
+        rebuilt.push_str(piece);
+    }
+    assert_eq!(rebuilt, text);
+}
+
+#[test]
+fn split_non_ascii_pieces() {
+    let re = Regex::new(r",").unwrap();
+    assert_eq!(re.split("é,ü,日本").collect::<Vec<_>>(), ["é", "ü", "日本"]);
+}
+
+#[test]
+fn split_iterators_are_fused() {
+    fn assert_fused<I: std::iter::FusedIterator>(_: &I) {}
+
+    let re = Regex::new(r",").unwrap();
+    let mut pieces = re.split("a");
+    assert_fused(&pieces);
+    assert_eq!(pieces.next(), Some("a"));
+    assert_eq!(pieces.next(), None);
+    assert_eq!(pieces.next(), None);
+
+    let mut limited = re.splitn("a", 2);
+    assert_fused(&limited);
+    assert_eq!(limited.next(), Some("a"));
+    assert_eq!(limited.next(), None);
+    assert_eq!(limited.next(), None);
+}
+
+// === Regex::splitn ===
+
+#[test]
+fn splitn_last_piece_is_the_unsplit_rest() {
+    let re = Regex::new(r",").unwrap();
+    assert_eq!(re.splitn("a,b,c", 2).collect::<Vec<_>>(), ["a", "b,c"]);
+    assert_eq!(re.splitn("a,b,c", 3).collect::<Vec<_>>(), ["a", "b", "c"]);
+}
+
+#[test]
+fn splitn_limit_one_yields_the_whole_text() {
+    let re = Regex::new(r",").unwrap();
+    assert_eq!(re.splitn("a,b,c", 1).collect::<Vec<_>>(), ["a,b,c"]);
+    assert_eq!(re.splitn("", 1).collect::<Vec<_>>(), [""]);
+}
+
+#[test]
+fn splitn_limit_zero_yields_nothing() {
+    let re = Regex::new(r",").unwrap();
+    assert_eq!(re.splitn("a,b,c", 0).count(), 0);
+}
+
+#[test]
+fn splitn_limit_above_the_piece_count_yields_all_pieces() {
+    let re = Regex::new(r",").unwrap();
+    assert_eq!(re.splitn("a,b", 10).collect::<Vec<_>>(), ["a", "b"]);
+    assert_eq!(re.splitn("a", 10).collect::<Vec<_>>(), ["a"]);
+}
+
+#[test]
+fn splitn_counts_empty_matches_as_separators() {
+    let re = Regex::new(r"a*").unwrap();
+    assert_eq!(re.splitn("ab", 2).collect::<Vec<_>>(), ["", "b"]);
+    assert_eq!(re.splitn("ab", 3).collect::<Vec<_>>(), ["", "", "b"]);
+}
+
+// === Regex::split_bytes ===
+
+#[test]
+fn split_bytes_handles_text_that_is_not_utf8() {
+    let re = Regex::new(r",").unwrap();
+    let text: &[u8] = b"\xff,\xfe,";
+    let parts: Vec<&[u8]> = re.split_bytes(text).collect();
+    assert_eq!(parts, [&b"\xff"[..], &b"\xfe"[..], &b""[..]]);
+    let parts: Vec<&[u8]> = re.splitn_bytes(text, 2).collect();
+    assert_eq!(parts, [&b"\xff"[..], &b"\xfe,"[..]]);
 }

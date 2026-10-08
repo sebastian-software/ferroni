@@ -15,6 +15,9 @@ pub use crate::api::{
     SearchOptions, Syntax, TryCaptureMatches, TryFindIter,
 };
 pub use crate::error::RegexError;
+pub use crate::replace::{
+    NoExpand, NoExpandBytes, Replacer, ReplacerBytes, Split, SplitBytes, SplitN, SplitNBytes,
+};
 pub use crate::scanner::{
     CaptureIndex, OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch,
     ScannerPatternCache, ScannerSyntax,

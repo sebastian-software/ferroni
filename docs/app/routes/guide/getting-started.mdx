@@ -113,6 +113,76 @@ assert_eq!(re.find_at("ab", 1).unwrap().range(), 1..2);
 assert!(re.find(&"ab"[1..]).is_none());
 ```
 
+## Replacing and splitting
+
+`replace_all` substitutes every match and `replace` only the first. Both
+return a `Cow<str>` that borrows the input when nothing matched. In a
+replacement, `$1`, `${1}`, `$name` and `${name}` insert a capture group, and
+`$$` inserts a literal `$`.
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+assert_eq!(re.replace_all("2025-01 and 2026-10", "$month/$year"), "01/2025 and 10/2026");
+assert_eq!(re.replace("2025-01 and 2026-10", "${year}"), "2025 and 2026-10");
+```
+
+As in Oniguruma, a pattern with named groups does not capture its plain
+`(...)` groups. So `$2` expands to nothing here, and `capture_group(true)`
+turns the plain groups back on:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(?<y>\d+)-(\d+)").unwrap();
+assert_eq!(re.replace_all("2026-10", "$y/$2"), "2026/");
+
+let re = Regex::builder(r"(?<y>\d+)-(\d+)").capture_group(true).build().unwrap();
+assert_eq!(re.replace_all("2026-10", "$y/$2"), "2026/10");
+```
+
+A closure receives the captures of each match and returns the replacement.
+`NoExpand` inserts its text as it is, with no `$` expansion:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"\d+").unwrap();
+let doubled = re.replace_all("1 and 21", |caps: &Captures| {
+    (caps[0].parse::<u32>().unwrap() * 2).to_string()
+});
+assert_eq!(doubled, "2 and 42");
+assert_eq!(re.replace_all("a1", NoExpand("$0")), "a$0");
+```
+
+`split` yields the pieces between the matches, and `splitn` stops after a
+given number of pieces, leaving the rest of the text unsplit in the last one:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"\s*,\s*").unwrap();
+let fields: Vec<&str> = re.split("ada , grace,linus").collect();
+assert_eq!(fields, ["ada", "grace", "linus"]);
+
+let head: Vec<&str> = re.splitn("ada, grace, linus", 2).collect();
+assert_eq!(head, ["ada", "grace, linus"]);
+```
+
+Replacing and splitting walk the matches of `find_iter`, so they report an
+empty match right after a non-empty one, as `find_iter` does. For `a*` on
+`ab`, the matches are `a`, then an empty match at 1, then one at 2. The
+`regex` crate skips the empty match at 1, so its results differ here:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"a*").unwrap();
+assert_eq!(re.replace_all("ab", "-"), "--b-");
+assert_eq!(re.split("ab").collect::<Vec<_>>(), ["", "", "b", ""]);
+```
+
 ## Compile-time options
 
 Inline flags such as `(?i)` work as they do in Oniguruma. For the options that

@@ -74,6 +74,20 @@
 //! assert_eq!(pairs, [("a", "1"), ("b", "22")]);
 //! ```
 //!
+//! [`Regex::replace_all`] substitutes every match, with `$1` or `$name` in the
+//! template naming a group, and [`Regex::split`] yields the text between
+//! matches:
+//!
+//! ```
+//! use ferroni::Regex;
+//!
+//! let re = Regex::new(r"(?<key>\w+)=(?<value>\d+)").unwrap();
+//! assert_eq!(re.replace_all("a=1, b=22", "$value:$key"), "1:a, 22:b");
+//!
+//! let sep = Regex::new(r",\s*").unwrap();
+//! assert_eq!(sep.split("a, b,c").collect::<Vec<_>>(), ["a", "b", "c"]);
+//! ```
+//!
 //! Search from a byte offset with [`Regex::find_at`], [`Regex::captures_at`] and
 //! [`Regex::is_match_at`]. The text before the offset stays in view, so a
 //! look-behind sees it. A slice of the text is a new text with no such context:
@@ -231,6 +245,7 @@
 //! |--------|---------|
 //! | [`prelude`] | The types most programs need, also re-exported at the crate root |
 //! | [`api`] | [`Regex`], [`RegexBuilder`], [`Match`], [`Captures`] and the iterators |
+//! | [`replace`] | The [`Replacer`] trait and the iterators behind `replace` and `split` |
 //! | [`scanner`] | [`Scanner`] and [`ScannerPatternCache`] for multi-pattern tokenization |
 //! | [`error`] | [`RegexError`], the typed error of every fallible call |
 //!
@@ -286,6 +301,7 @@ pub mod regparse_types;
 pub mod regset;
 pub mod regsyntax;
 pub mod regtrav;
+pub mod replace;
 mod required_literals;
 pub mod scanner;
 pub mod unicode;
