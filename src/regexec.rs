@@ -3467,10 +3467,15 @@ fn single_op_end(
                 return (is_in_code_range(mb, b as OnigCodePoint) != not).then_some(s + 1);
             }
             let len = enclen(enc, str_data, s);
+            if len == 1 {
+                // A byte that starts no multibyte character matches only the
+                // negated class.
+                return not.then_some(s + 1);
+            }
             if s + len > right_range {
                 // A truncated character matches only the negated class,
-                // which consumes it.
-                return not.then_some(right_range);
+                // which goes on at the end.
+                return not.then_some(end);
             }
             let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
             (is_in_code_range(mb, code) != not).then_some(s + len)
@@ -3486,7 +3491,7 @@ fn single_op_end(
             }
             let len = enclen(enc, str_data, s);
             if s + len > right_range {
-                return not.then_some(right_range);
+                return not.then_some(end);
             }
             let in_class = if len == 1 {
                 bitset_at(bsp, b as usize)
@@ -4202,7 +4207,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         }
                     } else {
                         let mb_len = enclen(enc, str_data, s);
-                        if s + mb_len > right_range {
+                        // C: a byte that starts no multibyte character
+                        // (`ONIGENC_IS_MBC_HEAD`) fails the class.
+                        if mb_len == 1 || s + mb_len > right_range {
                             goto_fail = true;
                         } else {
                             let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
@@ -4233,10 +4240,16 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         }
                     } else {
                         let mb_len = enclen(enc, str_data, s);
-                        if s + mb_len > right_range {
+                        if mb_len == 1 {
+                            // C: a byte that starts no multibyte character
+                            // matches the negated class as one byte.
+                            s += 1;
+                            p += 1;
+                        } else if s + mb_len > right_range {
                             // Upstream treats a multibyte character truncated
-                            // by the logical end as matching a negated class.
-                            s = right_range;
+                            // by the range as matching a negated class and
+                            // goes on at the subject's end (C: `s = end`).
+                            s = end;
                             p += 1;
                         } else {
                             let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
@@ -4274,7 +4287,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             if not {
                                 // Keep CClassMixNot consistent with CClassMbNot
                                 // and consume the trailing truncated character.
-                                s = right_range;
+                                s = end;
                                 p += 1;
                             } else {
                                 goto_fail = true;
@@ -4617,7 +4630,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     let mut exact_heads = true;
                     while s < right_range {
                         let mb_len = enclen(enc, str_data, s);
-                        if s + mb_len > right_range {
+                        // As `CClassMb`: a byte that starts no multibyte
+                        // character ends the run.
+                        if mb_len == 1 || s + mb_len > right_range {
                             break;
                         }
                         let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
@@ -4689,9 +4704,15 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         |b| !is_in_code_range(mb, b as OnigCodePoint),
                         |x| {
                             let mb_len = enclen(enc, str_data, x);
+                            if mb_len == 1 {
+                                // As `CClassMbNot`: a byte that starts no
+                                // multibyte character matches as one byte.
+                                return Some(x + 1);
+                            }
                             if x + mb_len > right_range {
-                                // A truncated character matches a negated class.
-                                return Some(right_range);
+                                // A truncated character matches a negated
+                                // class, which goes on at the end.
+                                return Some(end);
                             }
                             let code = enc.mbc_to_code(&str_data[x..], end.saturating_sub(x));
                             (!is_in_code_range(mb, code)).then_some(x + mb_len)
@@ -4717,8 +4738,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                             let b = str_data[x];
                             let len = enclen(enc, str_data, x);
                             if x + len > right_range {
-                                // A truncated character matches a negated class.
-                                return Some(right_range);
+                                // A truncated character matches a negated
+                                // class, which goes on at the end.
+                                return Some(end);
                             }
                             let in_class = if len == 1 {
                                 bitset_at(bsp, b as usize)
@@ -10123,6 +10145,86 @@ mod tests {
             &crate::regsyntax::OnigSyntaxOniguruma,
         )
         .expect("pattern compiles")
+    }
+
+    /// Multibyte class instructions read a byte that starts no multibyte
+    /// character as C does (#261): the class fails, its negation takes the
+    /// byte alone. A character the range truncates matches the negation,
+    /// which goes on at the subject's end. Every forward start and range
+    /// against C.
+    #[cfg(feature = "ffi")]
+    #[test]
+    fn multibyte_classes_match_c_over_malformed_utf8_and_truncation() {
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns = [
+            r"[\x{80}\x{81}]",
+            r"[^\x{80}]",
+            r"[^\x{100}]",
+            r"[^a\x{100}]",
+            r"[a\x{100}]",
+            r"[\x{80}-\x{10ffff}]+",
+            r"[\x{80}-\x{10ffff}]*x",
+            r"[^\x{100}]*",
+            r"[^\x{100}]+x",
+            r"[^a\x{100}]*$",
+            r"[^a\x{100}]+",
+            r"(?<=[^\x{100}])x?",
+            r"(?<=[\x{80}\x{81}]).",
+            r"x[^\x{100}]{2}",
+            r"[^\x{80}]*",
+            r"[^\x{80}]+x",
+            r"(?<=[^\x{80}])x?",
+        ];
+        let subjects: [&[u8]; 11] = [
+            b"\x80x",
+            b"\x80\x80x",
+            b"\x80",
+            b"(\x80xz",
+            b"a\x80\x80b",
+            b"\xe3\x81\x82",
+            b"x\xe3\x81\x82\xc3",
+            "é\u{80}x".as_bytes(),
+            b"\xc3\xa9\x80\xc3\xa9",
+            b"\xff\xbf\xc3x",
+            b"xx\xf0\x9f\x98",
+        ];
+        for pattern in patterns {
+            let reg = compile_full(pattern.as_bytes());
+            let c =
+                crate::ffi::CRegex::new(pattern.as_bytes(), crate::ffi::ONIG_OPTION_NONE).unwrap();
+            for subject in subjects {
+                // Forward searches: with `range == start` C searches backward,
+                // where a truncated last character reads past the subject.
+                for start in 0..subject.len() {
+                    for range in start + 1..=subject.len() {
+                        let (r, region) = onig_search(
+                            &reg,
+                            subject,
+                            subject.len(),
+                            start,
+                            range,
+                            Some(OnigRegion::new()),
+                            ONIG_OPTION_NONE,
+                        );
+                        let mut c_region = crate::ffi::CRegion::new();
+                        let c_r = c.search(subject, start, range, Some(&mut c_region), 0);
+                        let context = format!("{pattern} on {subject:?} {start}..{range}");
+                        assert_eq!(r, c_r, "{context}");
+                        if r >= 0 {
+                            let region = region.unwrap();
+                            let spans: Vec<(i32, i32)> = region
+                                .beg
+                                .iter()
+                                .zip(&region.end)
+                                .take(region.num_regs as usize)
+                                .map(|(&b, &e)| (b, e))
+                                .collect();
+                            assert_eq!(spans, c_region.capture_ranges(), "{context}");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
