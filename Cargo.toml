@@ -2,7 +2,7 @@
 name = "ferroni"
 version = "1.9.2"
 edition = "2024"
-description = "Oniguruma, continued in pure Rust, with a vscode-oniguruma-compatible TextMate scanner"
+description = "Oniguruma's regex engine in pure Rust: full Oniguruma syntax, a vscode-oniguruma-compatible TextMate scanner, no C toolchain"
 license = "BSD-2-Clause"
 authors = ["Sebastian Software GmbH"]
 repository = "https://github.com/sebastian-software/ferroni"
@@ -10,7 +10,7 @@ homepage = "https://ferroni.dev/"
 documentation = "https://docs.rs/ferroni"
 readme = "README.md"
 keywords = ["regex", "oniguruma", "textmate", "syntax-highlighting", "ferramenta"]
-categories = ["text-processing", "parsing"]
+categories = ["text-processing", "parsing", "text-editors"]
 rust-version = "1.94"
 autobenches = false
 exclude = [".cache/", "benches/", "docs/", "fuzz/", "scripts/", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
