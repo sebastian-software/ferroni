@@ -1636,6 +1636,30 @@ fn unicode_17_script_properties_and_case_folding() {
 }
 
 #[test]
+fn unicode_18_script_properties_and_case_folding() {
+    // Seal, Jurchen and Proto_Cuneiform are new scripts in Unicode 18.0
+    // (Scripts.txt).
+    for (property, character) in [
+        (r"\p{Seal}", '\u{3D000}'),
+        (r"\p{Jurchen}", '\u{18E00}'),
+        (r"\p{Proto_Cuneiform}", '\u{125A8}'),
+    ] {
+        let re = Regex::new(property).unwrap();
+        assert!(re.is_match(&character.to_string()), "{property}");
+    }
+
+    // U+A7DD LATIN CAPITAL LETTER CLOSED OMEGA is new in 18.0 and folds to
+    // U+0277.
+    let folded = Regex::new(&format!("(?i){}", '\u{0277}')).unwrap();
+    assert!(folded.is_match("\u{a7dd}"));
+
+    // U+1DF95 LATIN SMALL LIGATURE LONG S WITH DESCENDER S is new in 18.0 and
+    // full-folds to "ss", so "ss" matches it case-insensitively (ADR-015).
+    let long_s = Regex::new("(?i)ss").unwrap();
+    assert!(long_s.is_match("\u{1df95}"));
+}
+
+#[test]
 fn unicode_incb_covers_every_section() {
     // DerivedCoreProperties.txt lists InCB as Linker, Consonant, and Extend
     // sections out of code point order. C Oniguruma drops ranges when it merges

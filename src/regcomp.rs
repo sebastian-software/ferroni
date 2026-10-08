@@ -11180,9 +11180,17 @@ mod tests {
             optimizer(br"(?i)(?:align|alpha|case|country|currency|date)(?=\s=)"),
             (OptimizeType::Map, 0, 0, b"ACDacd".to_vec())
         );
+        // Unicode 18.0 folds U+1DF95 (lead byte 0xF0) to "ss", so it joins the
+        // map. C's Unicode 16.0 data has no such fold; this is an intentional
+        // data-level divergence (ADR-015, compatibility guide).
         assert_eq!(
             optimizer(br"(?i)(?:ssa|ssb|ssc|ssd|sse)x"),
-            (OptimizeType::Map, 0, 0, vec![b'S', b's', 0xC3, 0xC5, 0xE1])
+            (
+                OptimizeType::Map,
+                0,
+                0,
+                vec![b'S', b's', 0xC3, 0xC5, 0xE1, 0xF0]
+            )
         );
         // C has no optimizer for these: a Rust-only start map fills in.
         for pattern in [&br"\s+"[..], br"\S+", br"\d+"] {
