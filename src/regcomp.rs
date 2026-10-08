@@ -27,17 +27,18 @@ use crate::regparse_types::*;
 static DEFAULT_CASE_FOLD_FLAG: AtomicU32 = AtomicU32::new(ONIGENC_CASE_FOLD_MIN);
 
 /// Returns the default case-fold flag, which starts as `ONIGENC_CASE_FOLD_MIN`.
-/// Deprecated upstream. Ferroni stores the value, but [`onig_new`] does not read
-/// it, so [`onig_set_default_case_fold_flag`] does not change how patterns
-/// compile.
+/// Deprecated upstream. [`onig_new`] starts every pattern from this flag, as C
+/// does through `ONIGENC_CASE_FOLD_DEFAULT`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_default_case_fold_flag() -> OnigCaseFoldType {
     DEFAULT_CASE_FOLD_FLAG.load(Ordering::Relaxed)
 }
 
-/// Stores the default case-fold flag and returns 0. Deprecated upstream, where
-/// [`onig_new`] uses this value. In Ferroni, [`onig_new`] always starts from
-/// `ONIGENC_CASE_FOLD_MIN`, so this setter does not change how patterns compile.
+/// Stores the default case-fold flag and returns 0. Deprecated upstream.
+/// The flag is process-wide: patterns compiled after the call, through
+/// [`onig_new`] or the Rust API, start from `flag`, as in C. Clearing
+/// `INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR`, for example, stops `(?i)ß` from
+/// matching `ss`. Compiled regexes keep the flag they were compiled with.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_default_case_fold_flag(flag: OnigCaseFoldType) -> i32 {
     DEFAULT_CASE_FOLD_FLAG.store(flag, Ordering::Relaxed);
@@ -11023,8 +11024,9 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         effective_option |= syn.options;
     }
 
-    // Case fold flag setup
-    let mut case_fold_flag = ONIGENC_CASE_FOLD_MIN;
+    // Case fold flag setup: C passes ONIGENC_CASE_FOLD_DEFAULT, the stored
+    // OnigDefaultCaseFoldFlag, to onig_reg_init
+    let mut case_fold_flag = DEFAULT_CASE_FOLD_FLAG.load(Ordering::Relaxed);
     if effective_option.intersects(ONIG_OPTION_IGNORECASE_IS_ASCII) {
         case_fold_flag &=
             !(INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR | ONIGENC_CASE_FOLD_TURKISH_AZERI);
