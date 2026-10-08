@@ -43,6 +43,11 @@
       "matchPackageNames": ["pnpm", "jdx/mise"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "toolchain pins"
+    },
+    {
+      "description": "Hold TypeScript below 7 on purpose: the native TypeScript 7 compiler waits until the docs toolchain is ready for it. Remove this rule to receive TypeScript 7 updates.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
     }
   ]
 }
