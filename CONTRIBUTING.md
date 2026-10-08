@@ -18,8 +18,16 @@ Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane.
 
 Debug builds require an increased stack size. The required values are stated
 once in
-[ADR-013](https://ferroni.dev/adr/013-stack-overflow-debug-builds);
-the commands below use them.
+[ADR-013](https://ferroni.dev/adr/013-stack-overflow-debug-builds).
+[`.cargo/config.toml`](.cargo/config.toml) sets the ADR-013 value for every test
+binary Cargo runs, so a plain test run works:
+
+```bash
+cargo test
+```
+
+To run a single suite, or to set a different stack size, use the per-suite
+commands:
 
 ```bash
 # Full UTF-8 compat suite
