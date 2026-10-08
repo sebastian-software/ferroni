@@ -85,6 +85,34 @@ let found: Vec<&str> = re.find_iter(text).map(|m| m.as_str()).collect();
 assert_eq!(found, ["ada@example.com", "grace@example.org"]);
 ```
 
+`captures_iter` walks the same matches and yields a `Captures` for each, so
+every group of every match is available without a second search:
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+let months: Vec<&str> = re
+    .captures_iter("2025-01 and 2026-10")
+    .map(|caps| caps.name("month").unwrap().as_str())
+    .collect();
+assert_eq!(months, ["01", "10"]);
+```
+
+To resume a search at a byte offset, use `find_at`, `captures_at` or
+`is_match_at`. They search all of the text from that offset, so a look-behind,
+`\b` or `\G` still sees the bytes before it. Slicing the text would hide them.
+The offset must lie on a character boundary of a `&str`, and it must not pass
+the end of the text; either case panics.
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"(?<=a)b").unwrap();
+assert_eq!(re.find_at("ab", 1).unwrap().range(), 1..2);
+assert!(re.find(&"ab"[1..]).is_none());
+```
+
 ## Compile-time options
 
 Inline flags such as `(?i)` work as they do in Oniguruma. For the options that

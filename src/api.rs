@@ -58,6 +58,27 @@ fn cache_region(region: OnigRegion) {
     });
 }
 
+/// Panics unless `start` is a char boundary of `text` at or before its end:
+/// the start offsets that `find_at` and its relatives accept for `&str`.
+#[track_caller]
+fn check_str_start(text: &str, start: usize) {
+    check_bytes_start(text.as_bytes(), start);
+    assert!(
+        text.is_char_boundary(start),
+        "start {start} is not a char boundary of the text"
+    );
+}
+
+/// Panics unless `start` is at or before the end of `text`.
+#[track_caller]
+fn check_bytes_start(text: &[u8], start: usize) {
+    assert!(
+        start <= text.len(),
+        "start {start} is past the end of the text ({} bytes)",
+        text.len()
+    );
+}
+
 fn timeout_to_millis(timeout: Duration) -> u64 {
     if timeout.is_zero() {
         return 0;
@@ -319,23 +340,86 @@ impl Regex {
 
     /// Return the first match in `text` (as bytes), or `None` if no match.
     pub fn find_bytes<'t>(&self, text: &'t [u8]) -> Option<Match<'t>> {
+        self.find_from(text, 0)
+    }
+
+    /// Return the first match in `text` at or after byte offset `start`, or
+    /// `None` if no match.
+    ///
+    /// The search sees all of `text`, not only the part from `start`. A
+    /// look-behind, `\b` or `^` at `start` looks at the bytes before it, and
+    /// `\G` matches at `start`. Slicing the text instead (`&text[start..]`)
+    /// hides those bytes, which can change the result. The returned offsets
+    /// are relative to `text`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()` or is not on a char
+    /// boundary of `text`.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// let re = Regex::new(r"(?<=a)b").unwrap();
+    /// // The look-behind sees the `a` before offset 1.
+    /// assert_eq!(re.find_at("ab", 1).unwrap().range(), 1..2);
+    /// // A slice is a new text, and its `a` is out of view.
+    /// assert!(re.find(&"ab"[1..]).is_none());
+    /// ```
+    ///
+    /// `\G` matches at `start` itself:
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// let re = Regex::new(r"\Gb").unwrap();
+    /// assert_eq!(re.find_at("ab", 1).unwrap().range(), 1..2);
+    /// assert!(re.find_at("ab", 0).is_none());
+    /// ```
+    pub fn find_at<'t>(&self, text: &'t str, start: usize) -> Option<Match<'t>> {
+        check_str_start(text, start);
+        self.find_from(text.as_bytes(), start)
+    }
+
+    /// Return the first match in `text` (as bytes) at or after byte offset
+    /// `start`, or `None` if no match.
+    ///
+    /// Behaves as [`Regex::find_at`] does, except that `text` is not required
+    /// to be valid UTF-8 and `start` may fall inside a character.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()`.
+    pub fn find_bytes_at<'t>(&self, text: &'t [u8], start: usize) -> Option<Match<'t>> {
+        check_bytes_start(text, start);
+        self.find_from(text, start)
+    }
+
+    /// The search behind the `find` family: the first match from `start`,
+    /// with all of `text` visible.
+    #[inline]
+    fn find_from<'t>(&self, text: &'t [u8], start: usize) -> Option<Match<'t>> {
         // Only the bounds are returned: where they follow from the attempt
         // position and the match length, no region is needed (see
         // `find_iter_bytes`).
         if !self.program().keep_moves_match_start
             && !self.program().options.contains(ONIG_OPTION_FIND_LONGEST)
         {
-            let mut msa = take_cached_msa(self.program(), ONIG_OPTION_NONE, None, 0);
-            let found = onig_search_bounds(self.program(), text, 0, &mut msa);
+            let mut msa = take_cached_msa(self.program(), ONIG_OPTION_NONE, None, start);
+            let found = onig_search_bounds(self.program(), text, start, &mut msa);
             cache_msa(msa);
-            let (start, end) = found.ok()??;
-            return (end <= text.len()).then_some(Match { text, start, end });
+            let (match_start, match_end) = found.ok()??;
+            return (match_end <= text.len()).then_some(Match {
+                text,
+                start: match_start,
+                end: match_end,
+            });
         }
         let (result, region) = onig_search(
             self.program(),
             text,
             text.len(),
-            0,
+            start,
             text.len(),
             Some(take_cached_region()),
             ONIG_OPTION_NONE,
@@ -378,8 +462,60 @@ impl Regex {
         text: &'t [u8],
         options: SearchOptions,
     ) -> Result<Option<Match<'t>>, RegexError> {
+        self.find_from_with(text, 0, options)
+    }
+
+    /// Return the first match in `text` at or after byte offset `start` under
+    /// per-search `options`.
+    ///
+    /// Searches as [`Regex::find_at`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()` or is not on a char
+    /// boundary of `text`.
+    pub fn find_at_with<'t>(
+        &self,
+        text: &'t str,
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<Option<Match<'t>>, RegexError> {
+        check_str_start(text, start);
+        self.find_from_with(text.as_bytes(), start, options)
+    }
+
+    /// Return the first match in `text` (as bytes) at or after byte offset
+    /// `start` under per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()`.
+    pub fn find_bytes_at_with<'t>(
+        &self,
+        text: &'t [u8],
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<Option<Match<'t>>, RegexError> {
+        check_bytes_start(text, start);
+        self.find_from_with(text, start, options)
+    }
+
+    fn find_from_with<'t>(
+        &self,
+        text: &'t [u8],
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<Option<Match<'t>>, RegexError> {
         let (result, region) =
-            self.search_with(text, 0, text.len(), Some(take_cached_region()), options)?;
+            self.search_with(text, start, text.len(), Some(take_cached_region()), options)?;
         let Some(region) = region else {
             return Ok(None);
         };
@@ -403,11 +539,41 @@ impl Regex {
 
     /// Check whether `text` (as bytes) matches the pattern anywhere.
     pub fn is_match_bytes(&self, text: &[u8]) -> bool {
+        self.is_match_from(text, 0)
+    }
+
+    /// Check whether `text` has a match at or after byte offset `start`.
+    ///
+    /// Searches as [`Regex::find_at`] does: look-behind, `\b` and `^` see the
+    /// bytes before `start`, and `\G` matches at `start`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()` or is not on a char
+    /// boundary of `text`.
+    pub fn is_match_at(&self, text: &str, start: usize) -> bool {
+        check_str_start(text, start);
+        self.is_match_from(text.as_bytes(), start)
+    }
+
+    /// Check whether `text` (as bytes) has a match at or after byte offset
+    /// `start`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()`.
+    pub fn is_match_bytes_at(&self, text: &[u8], start: usize) -> bool {
+        check_bytes_start(text, start);
+        self.is_match_from(text, start)
+    }
+
+    #[inline]
+    fn is_match_from(&self, text: &[u8], start: usize) -> bool {
         let (result, _) = onig_search(
             self.program(),
             text,
             text.len(),
-            0,
+            start,
             text.len(),
             None,
             ONIG_OPTION_NONE,
@@ -434,7 +600,57 @@ impl Regex {
         text: &[u8],
         options: SearchOptions,
     ) -> Result<bool, RegexError> {
-        let (result, _) = self.search_with(text, 0, text.len(), None, options)?;
+        self.is_match_from_with(text, 0, options)
+    }
+
+    /// Check whether `text` has a match at or after byte offset `start` under
+    /// per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()` or is not on a char
+    /// boundary of `text`.
+    pub fn is_match_at_with(
+        &self,
+        text: &str,
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<bool, RegexError> {
+        check_str_start(text, start);
+        self.is_match_from_with(text.as_bytes(), start, options)
+    }
+
+    /// Check whether `text` (as bytes) has a match at or after byte offset
+    /// `start` under per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()`.
+    pub fn is_match_bytes_at_with(
+        &self,
+        text: &[u8],
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<bool, RegexError> {
+        check_bytes_start(text, start);
+        self.is_match_from_with(text, start, options)
+    }
+
+    fn is_match_from_with(
+        &self,
+        text: &[u8],
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<bool, RegexError> {
+        let (result, _) = self.search_with(text, start, text.len(), None, options)?;
         Ok(result >= 0)
     }
 
@@ -449,11 +665,52 @@ impl Regex {
 
     /// Return the first match with all capture groups (bytes), or `None`.
     pub fn captures_bytes<'t>(&self, text: &'t [u8]) -> Option<Captures<'t>> {
+        self.captures_from(text, 0)
+    }
+
+    /// Return the first match at or after byte offset `start`, with all
+    /// capture groups, or `None`.
+    ///
+    /// Searches as [`Regex::find_at`] does. Group 0 is the match, and the
+    /// offsets of every group are relative to `text`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()` or is not on a char
+    /// boundary of `text`.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// let re = Regex::new(r"(?<=a)(b)(c)").unwrap();
+    /// let caps = re.captures_at("abc", 1).unwrap();
+    /// assert_eq!(&caps[0], "bc");
+    /// assert_eq!(&caps[1], "b");
+    /// assert_eq!(&caps[2], "c");
+    /// ```
+    pub fn captures_at<'t>(&self, text: &'t str, start: usize) -> Option<Captures<'t>> {
+        check_str_start(text, start);
+        self.captures_from(text.as_bytes(), start)
+    }
+
+    /// Return the first match at or after byte offset `start` (as bytes), with
+    /// all capture groups, or `None`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()`.
+    pub fn captures_bytes_at<'t>(&self, text: &'t [u8], start: usize) -> Option<Captures<'t>> {
+        check_bytes_start(text, start);
+        self.captures_from(text, start)
+    }
+
+    #[inline]
+    fn captures_from<'t>(&self, text: &'t [u8], start: usize) -> Option<Captures<'t>> {
         let (result, region) = onig_search(
             self.program(),
             text,
             text.len(),
-            0,
+            start,
             text.len(),
             Some(take_cached_region()),
             ONIG_OPTION_NONE,
@@ -495,8 +752,58 @@ impl Regex {
         text: &'t [u8],
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
+        self.captures_from_with(text, 0, options)
+    }
+
+    /// Return the first match at or after byte offset `start`, with all
+    /// capture groups, under per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()` or is not on a char
+    /// boundary of `text`.
+    pub fn captures_at_with<'t>(
+        &self,
+        text: &'t str,
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<Option<Captures<'t>>, RegexError> {
+        check_str_start(text, start);
+        self.captures_from_with(text.as_bytes(), start, options)
+    }
+
+    /// Return the first match at or after byte offset `start` (as bytes), with
+    /// all capture groups, under per-search `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`RegexError`] of a limit the search reached.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is greater than `text.len()`.
+    pub fn captures_bytes_at_with<'t>(
+        &self,
+        text: &'t [u8],
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<Option<Captures<'t>>, RegexError> {
+        check_bytes_start(text, start);
+        self.captures_from_with(text, start, options)
+    }
+
+    fn captures_from_with<'t>(
+        &self,
+        text: &'t [u8],
+        start: usize,
+        options: SearchOptions,
+    ) -> Result<Option<Captures<'t>>, RegexError> {
         let (result, region) =
-            self.search_with(text, 0, text.len(), Some(take_cached_region()), options)?;
+            self.search_with(text, start, text.len(), Some(take_cached_region()), options)?;
         let Some(region) = region else {
             return Ok(None);
         };
@@ -532,8 +839,7 @@ impl Regex {
         FindIter {
             regex: self,
             text,
-            last_end: 0,
-            last_was_empty: false,
+            cursor: MatchCursor::default(),
             region: if bounds_only {
                 OnigRegion::new()
             } else {
@@ -566,8 +872,70 @@ impl Regex {
         TryFindIter {
             regex: self,
             text,
-            last_end: 0,
-            last_was_empty: false,
+            cursor: MatchCursor::default(),
+            region: take_cached_region(),
+            options,
+            finished: false,
+        }
+    }
+
+    /// Iterate over the capture groups of all non-overlapping matches in
+    /// `text`.
+    ///
+    /// The iterator yields the matches of [`Regex::find_iter`], in the same
+    /// order and with the same empty-match handling, each as a [`Captures`].
+    /// Iteration ends early when a search stops at a process-wide limit. Use
+    /// [`Regex::captures_iter_with`] with [`SearchOptions`] to see that error.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+    /// let years: Vec<&str> = re
+    ///     .captures_iter("2025-01 and 2026-10")
+    ///     .map(|caps| caps.name("year").unwrap().as_str())
+    ///     .collect();
+    /// assert_eq!(years, ["2025", "2026"]);
+    /// ```
+    pub fn captures_iter<'r, 't>(&'r self, text: &'t str) -> CaptureMatches<'r, 't> {
+        self.captures_iter_bytes(text.as_bytes())
+    }
+
+    /// Iterate over the capture groups of all non-overlapping matches in
+    /// `text` (as bytes).
+    pub fn captures_iter_bytes<'r, 't>(&'r self, text: &'t [u8]) -> CaptureMatches<'r, 't> {
+        CaptureMatches {
+            regex: self,
+            text,
+            cursor: MatchCursor::default(),
+            region: take_cached_region(),
+        }
+    }
+
+    /// Iterate over the capture groups of all non-overlapping matches in
+    /// `text` under per-search `options`.
+    ///
+    /// The options apply to each search the iterator runs. A search that
+    /// reaches a limit yields its error once and ends the iteration.
+    pub fn captures_iter_with<'r, 't>(
+        &'r self,
+        text: &'t str,
+        options: SearchOptions,
+    ) -> TryCaptureMatches<'r, 't> {
+        self.captures_iter_bytes_with(text.as_bytes(), options)
+    }
+
+    /// Iterate over the capture groups of all non-overlapping matches in
+    /// `text` (as bytes) under per-search `options`.
+    pub fn captures_iter_bytes_with<'r, 't>(
+        &'r self,
+        text: &'t [u8],
+        options: SearchOptions,
+    ) -> TryCaptureMatches<'r, 't> {
+        TryCaptureMatches {
+            regex: self,
+            text,
+            cursor: MatchCursor::default(),
             region: take_cached_region(),
             options,
             finished: false,
@@ -1286,14 +1654,63 @@ impl ExactSizeIterator for CaptureNames<'_> {}
 
 impl std::iter::FusedIterator for CaptureNames<'_> {}
 
+// === MatchCursor ===
+
+/// Where a match iterator searches next, and whether its previous match was
+/// empty. Shared by every iterator that yields matches, so they all apply the
+/// same empty-match rule.
+#[derive(Clone, Copy, Debug, Default)]
+struct MatchCursor {
+    last_end: usize,
+    last_was_empty: bool,
+}
+
+/// What an iterator does with a match its search has found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Verdict {
+    /// Yield the match.
+    Yield,
+    /// Search again from the cursor, which moved one character on.
+    Retry,
+    /// End the iteration.
+    Finish,
+}
+
+impl MatchCursor {
+    /// Apply the empty-match rule to the match `start..end` that a search from
+    /// the cursor found. An empty match directly after another empty match is
+    /// skipped: the cursor moves one character on, and the search runs again.
+    /// That keeps the iteration moving without yielding the same empty match
+    /// twice.
+    #[inline]
+    fn accept(&mut self, program: &RegexType, text: &[u8], start: usize, end: usize) -> Verdict {
+        if start == end {
+            if self.last_was_empty {
+                if self.last_end >= text.len() {
+                    return Verdict::Finish;
+                }
+                // Skip one character to avoid infinite loop on empty match
+                self.last_end += program.enc.mbc_enc_len(&text[self.last_end..]);
+                self.last_was_empty = false;
+                return Verdict::Retry;
+            }
+            self.last_was_empty = true;
+        } else {
+            self.last_was_empty = false;
+        }
+
+        self.last_end = end;
+        Verdict::Yield
+    }
+}
+
 // === FindIter ===
 
 /// Iterator over all non-overlapping matches in a text.
 pub struct FindIter<'r, 't> {
     regex: &'r Regex,
     text: &'t [u8],
-    last_end: usize,
-    last_was_empty: bool,
+    cursor: MatchCursor,
     region: OnigRegion,
     /// Set when the searches need no region (`onig_search_bounds`).
     msa: Option<Box<MatchArg>>,
@@ -1303,13 +1720,14 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
     type Item = Match<'t>;
 
     fn next(&mut self) -> Option<Match<'t>> {
-        if self.last_end > self.text.len() {
+        if self.cursor.last_end > self.text.len() {
             return None;
         }
 
         let m = if let Some(msa) = self.msa.as_deref_mut() {
             let (start, end) =
-                onig_search_bounds(self.regex.program(), self.text, self.last_end, msa).ok()??;
+                onig_search_bounds(self.regex.program(), self.text, self.cursor.last_end, msa)
+                    .ok()??;
             (end <= self.text.len()).then_some(Match {
                 text: self.text,
                 start,
@@ -1320,7 +1738,7 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
                 self.regex.program(),
                 self.text,
                 self.text.len(),
-                self.last_end,
+                self.cursor.last_end,
                 self.text.len(),
                 Some(std::mem::take(&mut self.region)),
                 ONIG_OPTION_NONE,
@@ -1336,31 +1754,15 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
 
             Match::from_region(self.text, self.region.beg[0], self.region.end[0])?
         };
-        let (start, end) = (m.start, m.end);
 
-        // Handle empty matches: advance by one byte to avoid infinite loop.
-        if start == end {
-            if self.last_was_empty {
-                if self.last_end >= self.text.len() {
-                    return None;
-                }
-                // Skip one character to avoid infinite loop on empty match
-                self.last_end += self
-                    .regex
-                    .program()
-                    .enc
-                    .mbc_enc_len(&self.text[self.last_end..]);
-                self.last_was_empty = false;
-                return self.next();
-            }
-            self.last_was_empty = true;
-        } else {
-            self.last_was_empty = false;
+        match self
+            .cursor
+            .accept(self.regex.program(), self.text, m.start, m.end)
+        {
+            Verdict::Yield => Some(m),
+            Verdict::Retry => self.next(),
+            Verdict::Finish => None,
         }
-
-        self.last_end = end;
-
-        Some(m)
     }
 }
 
@@ -1380,8 +1782,7 @@ impl Drop for FindIter<'_, '_> {
 pub struct TryFindIter<'r, 't> {
     regex: &'r Regex,
     text: &'t [u8],
-    last_end: usize,
-    last_was_empty: bool,
+    cursor: MatchCursor,
     region: OnigRegion,
     options: SearchOptions,
     finished: bool,
@@ -1391,14 +1792,14 @@ impl<'r, 't> Iterator for TryFindIter<'r, 't> {
     type Item = Result<Match<'t>, RegexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.finished || self.last_end > self.text.len() {
+        if self.finished || self.cursor.last_end > self.text.len() {
             self.finished = true;
             return None;
         }
 
         let search = self.regex.search_with(
             self.text,
-            self.last_end,
+            self.cursor.last_end,
             self.text.len(),
             Some(std::mem::take(&mut self.region)),
             self.options,
@@ -1429,35 +1830,178 @@ impl<'r, 't> Iterator for TryFindIter<'r, 't> {
             self.finished = true;
             return None;
         };
-        let (start, end) = (m.start, m.end);
 
-        if start == end {
-            if self.last_was_empty {
-                if self.last_end >= self.text.len() {
-                    self.finished = true;
-                    return None;
-                }
-                self.last_end += self
-                    .regex
-                    .program()
-                    .enc
-                    .mbc_enc_len(&self.text[self.last_end..]);
-                self.last_was_empty = false;
-                return self.next();
+        match self
+            .cursor
+            .accept(self.regex.program(), self.text, m.start, m.end)
+        {
+            Verdict::Yield => Some(Ok(m)),
+            Verdict::Retry => self.next(),
+            Verdict::Finish => {
+                self.finished = true;
+                None
             }
-            self.last_was_empty = true;
-        } else {
-            self.last_was_empty = false;
         }
-
-        self.last_end = end;
-        Some(Ok(m))
     }
 }
 
 impl std::iter::FusedIterator for TryFindIter<'_, '_> {}
 
 impl Drop for TryFindIter<'_, '_> {
+    fn drop(&mut self) {
+        cache_region(std::mem::take(&mut self.region));
+    }
+}
+
+// === CaptureMatches ===
+
+/// Iterator over the capture groups of all non-overlapping matches in a text.
+///
+/// Created by [`Regex::captures_iter`] and [`Regex::captures_iter_bytes`]. It
+/// yields the matches of [`FindIter`], in the same order, each as a
+/// [`Captures`].
+pub struct CaptureMatches<'r, 't> {
+    regex: &'r Regex,
+    text: &'t [u8],
+    cursor: MatchCursor,
+    /// The region for the next search. Empty once a yielded [`Captures`] has
+    /// taken it.
+    region: OnigRegion,
+}
+
+impl<'r, 't> Iterator for CaptureMatches<'r, 't> {
+    type Item = Captures<'t>;
+
+    fn next(&mut self) -> Option<Captures<'t>> {
+        if self.cursor.last_end > self.text.len() {
+            return None;
+        }
+
+        let (result, region) = onig_search(
+            self.regex.program(),
+            self.text,
+            self.text.len(),
+            self.cursor.last_end,
+            self.text.len(),
+            Some(std::mem::take(&mut self.region)),
+            ONIG_OPTION_NONE,
+        );
+        let region = region?;
+        if result < 0 || region.num_regs < 1 {
+            self.region = region;
+            return None;
+        }
+        let Some(m) = Match::from_region(self.text, region.beg[0], region.end[0]) else {
+            self.region = region;
+            return None;
+        };
+
+        match self
+            .cursor
+            .accept(self.regex.program(), self.text, m.start, m.end)
+        {
+            Verdict::Yield => Some(Captures {
+                text: self.text,
+                region,
+                compiled: Arc::clone(&self.regex.inner),
+            }),
+            Verdict::Retry => {
+                self.region = region;
+                self.next()
+            }
+            Verdict::Finish => {
+                self.region = region;
+                None
+            }
+        }
+    }
+}
+
+impl Drop for CaptureMatches<'_, '_> {
+    fn drop(&mut self) {
+        cache_region(std::mem::take(&mut self.region));
+    }
+}
+
+/// Iterator over the capture groups of matches that applies [`SearchOptions`]
+/// to each search.
+///
+/// Created by [`Regex::captures_iter_with`]. A search that reaches a limit is
+/// yielded once as `Err` and ends the iterator.
+pub struct TryCaptureMatches<'r, 't> {
+    regex: &'r Regex,
+    text: &'t [u8],
+    cursor: MatchCursor,
+    /// The region for the next search. Empty once a yielded [`Captures`] has
+    /// taken it.
+    region: OnigRegion,
+    options: SearchOptions,
+    finished: bool,
+}
+
+impl<'r, 't> Iterator for TryCaptureMatches<'r, 't> {
+    type Item = Result<Captures<'t>, RegexError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished || self.cursor.last_end > self.text.len() {
+            self.finished = true;
+            return None;
+        }
+
+        let search = self.regex.search_with(
+            self.text,
+            self.cursor.last_end,
+            self.text.len(),
+            Some(std::mem::take(&mut self.region)),
+            self.options,
+        );
+        let (result, region) = match search {
+            Ok(result) => result,
+            Err(error) => {
+                self.finished = true;
+                return Some(Err(error));
+            }
+        };
+        let Some(region) = region else {
+            self.finished = true;
+            return None;
+        };
+        if result < 0 || region.num_regs < 1 {
+            self.finished = true;
+            self.region = region;
+            return None;
+        }
+        let Some(m) = Match::from_region(self.text, region.beg[0], region.end[0]) else {
+            self.finished = true;
+            self.region = region;
+            return None;
+        };
+
+        match self
+            .cursor
+            .accept(self.regex.program(), self.text, m.start, m.end)
+        {
+            Verdict::Yield => Some(Ok(Captures {
+                text: self.text,
+                region,
+                compiled: Arc::clone(&self.regex.inner),
+            })),
+            Verdict::Retry => {
+                self.region = region;
+                self.next()
+            }
+            Verdict::Finish => {
+                self.finished = true;
+                self.region = region;
+                None
+            }
+        }
+    }
+}
+
+impl std::iter::FusedIterator for TryCaptureMatches<'_, '_> {}
+
+impl Drop for TryCaptureMatches<'_, '_> {
     fn drop(&mut self) {
         cache_region(std::mem::take(&mut self.region));
     }
@@ -1614,8 +2158,7 @@ mod tests {
                 let region_path = FindIter {
                     regex: &re,
                     text: text.as_bytes(),
-                    last_end: 0,
-                    last_was_empty: false,
+                    cursor: MatchCursor::default(),
                     region: OnigRegion::new(),
                     msa: None,
                 };
