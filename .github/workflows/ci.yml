@@ -198,6 +198,29 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  sample:
+    name: Home page sample
+    runs-on: ubuntu-latest
+    # The home page shows examples/website_sample.rs and its stdout from
+    # docs/app/data/regex-sample.json. The script reruns the example and fails
+    # when the committed artifact no longer matches its source or its output.
+    # It needs Rust for the example and Node for the script, so it is neither
+    # in the Rust matrix nor in the Node-only docs-format job. Regenerate the
+    # artifact with `pnpm sample:write` in docs/.
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Check the committed sample against the example
+        run: node docs/scripts/render-regex-sample.mjs --check
+
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
