@@ -398,7 +398,8 @@ impl Regex {
 
     /// Iterate over all non-overlapping matches in `text`.
     ///
-    /// Empty matches are reported too, unlike the `regex` crate; see [the guide](https://ferroni.dev/guide/coming-from-regex).
+    /// Unlike the `regex` crate, this also reports an empty match right after
+    /// a non-empty one; see [the guide](https://ferroni.dev/guide/coming-from-regex).
     ///
     /// Iteration ends early when a search stops at a process-wide limit. Use
     /// [`Regex::find_iter_with`] with [`SearchOptions`] to see that error.
@@ -487,7 +488,8 @@ impl Regex {
 
     /// Return the number of capture groups in the pattern (excluding group 0).
     ///
-    /// Unlike the `regex` crate, group 0 is not counted; see [the guide](https://ferroni.dev/guide/coming-from-regex).
+    /// Unlike the `regex` crate, group 0 is not counted; see
+    /// [the guide](https://ferroni.dev/guide/coming-from-regex).
     pub fn captures_len(&self) -> usize {
         self.inner.num_mem as usize
     }
@@ -722,7 +724,10 @@ impl<'t> Match<'t> {
         &self.text[self.start..self.end]
     }
 
-    /// The matched text as a `&str`. Use [`Match::as_bytes`] for invalid UTF-8; see [the guide](https://ferroni.dev/guide/coming-from-regex).
+    /// The matched text as a `&str`.
+    ///
+    /// Use [`Match::as_bytes`] when the match may be invalid UTF-8; see
+    /// [the guide](https://ferroni.dev/guide/coming-from-regex).
     ///
     /// # Panics
     ///
