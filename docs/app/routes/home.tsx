@@ -139,7 +139,7 @@ const pillars = [
   },
   {
     heading: "Safe with untrusted input",
-    text: "Memory-safe Rust, with unsafe confined to two documented patterns. Timeouts and retry limits per search, a compile-time backtracking check, and continuous fuzzing.",
+    text: "Memory-safe Rust, with unsafe confined to the links between parse-tree nodes. Timeouts and retry limits per search, a compile-time backtracking check, and continuous fuzzing.",
   },
   aheadOfC
     ? {

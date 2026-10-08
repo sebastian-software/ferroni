@@ -17,9 +17,9 @@ C Oniguruma has had memory-safety vulnerabilities in exactly this situation,
 where a crafted pattern or input led to a use-after-free, a NULL-pointer
 dereference or an out-of-bounds read (CVE-2019-13224, CVE-2019-13225,
 CVE-2019-19012, CVE-2019-19204, CVE-2019-19246). In Ferroni, buffer arithmetic, string processing and encoding
-conversion are safe Rust. The remaining `unsafe` blocks follow two narrowly
-scoped patterns, shared AST nodes during compilation and global callback
-pointers, and every new block has to fit one of them
+conversion are safe Rust. The remaining `unsafe` follows one narrowly
+scoped pattern, links between AST nodes during compilation, and every new
+block has to fit it
 ([ADR-002](../adr/002-unsafe-code-policy)).
 
 Three [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets cover
