@@ -9,7 +9,11 @@ use crate::oniguruma::*;
 use crate::regerror::{onig_error_code_to_str, onig_error_code_to_str_without_param};
 
 /// Error type for regex compilation and matching operations.
+///
+/// The enum is `#[non_exhaustive]`: a `match` outside this crate needs a
+/// wildcard arm, because new variants may be added.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RegexError {
     /// Memory allocation failure.
     Memory,
