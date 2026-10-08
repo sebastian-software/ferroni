@@ -145,13 +145,13 @@ machines.
 <!-- engine-comparison -->
 | Ferroni compared with | Everyday patterns | Advanced patterns | Syntax highlighting |
 | --- | ---: | ---: | ---: |
-| Oniguruma (C) | 2.2× faster | 1.4× faster | 3.7× faster |
-| Shiki JS | – | – | 1.9× faster |
-| Onigmo | 2.5× faster | 1.5× faster\* | 11× faster |
-| PCRE2 | 1.7× faster\* | 1.4× faster\* | 9.2× faster |
-| PCRE2 JIT | 2.2× slower\* | 3.5× slower\* | 3.1× faster |
-| fancy-regex | 1.5× faster\* | 2.9× faster\* | 35× faster |
-| regex | 1.6× slower\* | – | – |
+| Oniguruma (C) | 2.3× faster | 1.4× faster | 3.8× faster |
+| Shiki JS | – | – | 2.0× faster |
+| Onigmo | 2.7× faster | 1.6× faster\* | 12× faster |
+| PCRE2 | 1.8× faster\* | 1.4× faster\* | 9.0× faster |
+| PCRE2 JIT | 2.0× slower\* | 3.5× slower\* | 3.2× faster |
+| fancy-regex | 1.7× faster\* | 3.1× faster\* | 34× faster |
+| regex | 1.5× slower\* | – | – |
 
 - **Everyday patterns** (32 tasks): search and extraction in HTML, logs, chat with emoji, Markdown, JSON, CSV and source code, in syntax the regex crate also runs.
 - **Advanced patterns** (17 tasks): look-around, backreferences, possessive groups, subexpression calls, absent expressions and grapheme clusters.
@@ -162,7 +162,7 @@ machines.
 – Not measured: the engine lacks the syntax, or the multi-pattern API the workload needs.
 <!-- /engine-comparison -->
 
-Measured 2026-10-01 on Blacksmith's macOS arm64 (Apple M4 Pro) and Linux
+Measured 2026-10-08 on Blacksmith's macOS arm64 (Apple M4 Pro) and Linux
 x86-64 (AMD EPYC) runners. Every engine first has to reproduce Oniguruma's
 results before it is timed. These are observations on the measured workloads,
 not a promise for every pattern or machine.
