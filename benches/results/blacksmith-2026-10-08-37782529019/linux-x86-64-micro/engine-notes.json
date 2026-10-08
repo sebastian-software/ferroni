@@ -1,0 +1,50 @@
+{
+  "unsupported": {
+    "oniguruma_features/fancy_regex/subexp_call_balanced": {
+      "engine": "fancy_regex",
+      "id": "oniguruma_features/fancy_regex/subexp_call_balanced",
+      "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+    },
+    "oniguruma_features/pcre2_jit/absent_comments": {
+      "engine": "pcre2_jit",
+      "id": "oniguruma_features/pcre2_jit/absent_comments",
+      "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+    },
+    "oniguruma_features/pcre2/absent_comments": {
+      "engine": "pcre2",
+      "id": "oniguruma_features/pcre2/absent_comments",
+      "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+    },
+    "regex_tasks/fancy_regex/emoji_graphemes": {
+      "engine": "fancy_regex",
+      "id": "regex_tasks/fancy_regex/emoji_graphemes",
+      "reason": "compile: Parsing error at position 52: Invalid escape: \\X"
+    },
+    "regex_tasks/regex/unicode_case_folding": {
+      "engine": "regex",
+      "id": "regex_tasks/regex/unicode_case_folding",
+      "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+    },
+    "regex_tasks/pcre2_jit/unicode_case_folding": {
+      "engine": "pcre2_jit",
+      "id": "regex_tasks/pcre2_jit/unicode_case_folding",
+      "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+    },
+    "regex_tasks/pcre2/unicode_case_folding": {
+      "engine": "pcre2",
+      "id": "regex_tasks/pcre2/unicode_case_folding",
+      "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+    },
+    "regex_tasks/fancy_regex/unicode_case_folding": {
+      "engine": "fancy_regex",
+      "id": "regex_tasks/fancy_regex/unicode_case_folding",
+      "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+    },
+    "regex_tasks/onigmo/variable_lookbehind": {
+      "engine": "onigmo",
+      "id": "regex_tasks/onigmo/variable_lookbehind",
+      "reason": "compile: Onigmo error -122"
+    }
+  },
+  "equivalent": {}
+}

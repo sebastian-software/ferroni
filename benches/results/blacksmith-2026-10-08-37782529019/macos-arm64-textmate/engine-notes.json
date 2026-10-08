@@ -1,0 +1,220 @@
+{
+  "unsupported": {
+    "cpp_scanner/document_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/document_pcre2_jit",
+      "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/document_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/document_pcre2",
+      "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/document_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/document_onigmo",
+      "reason": "scanner 0, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "cpp_scanner/group_78_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/group_78_pcre2_jit",
+      "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_78_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/group_78_pcre2",
+      "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_78_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/group_78_onigmo",
+      "reason": "scanner 78, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "cpp_scanner/group_58_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/group_58_pcre2_jit",
+      "reason": "scanner 58, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_58_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/group_58_pcre2",
+      "reason": "scanner 58, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_58_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/group_58_onigmo",
+      "reason": "scanner 58, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "cpp_scanner/group_17_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/group_17_pcre2_jit",
+      "reason": "scanner 17, pattern \"(\\\\s*+((?:(?:(?:\\\\[\\\\[.*?]]|__attribute(?:__)?\\\\s*\\\\(\\\\s*\\\\(.*?\\\\)\\\\s*\\\\))|__declspec\\\\(.*?\\\\))|alignas\\\\(.*?\\\\))(?!\\\\)))?((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(?:(?:(?:unsigned|signed|short|long)|(?:struct|class|union|enum))((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))*(?:((?:::)?(?:(?!\\\\b(?:__has_cpp_attribute|reinterpret_cast|atomic_noexcept|atomic_commit|atomic_cancel|__has_include|thread_local|dynamic_cast|synchronized|static_cast|const_cast|consteval|co_return|protected|constinit|constexpr|co_return|consteval|namespace|constexpr|co_await|explicit|volatile|noexcept|co_yield|noexcept|requires|typename|decltype|operator|template|continue|co_await|co_yield|volatile|register|restrict|reflexpr|mutable|alignof|include|private|defined|typedef|_Pragma|__asm__|concept|mutable|warning|default|virtual|alignas|public|sizeof|delete|not_eq|bitand|and_eq|xor_eq|typeid|switch|return|struct|static|extern|inline|friend|ifndef|define|pragma|export|import|module|catch|throw|const|or_eq|compl|while|ifdef|const|bitor|union|class|undef|error|break|using|endif|goto|line|enum|this|case|else|elif|else|not|try|for|asm|and|xor|new|do|if|or|if)\\\\b)(?<!\\\\w)(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*(?!\\\\w)\\\\s*+(((?<!<)<(?!<)(?:/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/|\\\"(?:[^\\\"]*|\\\\\\\\\\\")\\\"|'(?:[^']*|\\\\\\\\')'|\\\\g<18>|(?:[^\\\"'/<>]|/[^*])++)*>)\\\\s*+)?::)*+)((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))?(?!(?:transaction_safe_dynamic|__has_cpp_attribute|reinterpret_cast|transaction_safe|atomic_noexcept|atomic_commit|__has_include|atomic_cancel|synchronized|thread_local|dynamic_cast|static_cast|const_cast|constexpr|co_return|constinit|namespace|protected|consteval|constexpr|co_return|consteval|co_await|continue|template|reflexpr|volatile|register|co_await|co_yield|restrict|noexcept|volatile|override|explicit|decltype|operator|noexcept|typename|requires|co_yield|nullptr|alignof|alignas|default|mutable|virtual|mutable|private|include|warning|_Pragma|defined|typedef|__asm__|concept|define|module|sizeof|switch|delete|pragma|and_eq|inline|xor_eq|typeid|import|extern|public|bitand|static|export|return|friend|ifndef|not_eq|false|final|break|const|catch|endif|ifdef|undef|error|audit|while|using|axiom|or_eq|compl|throw|bitor|const|line|case|else|this|true|goto|else|NULL|elif|new|asm|xor|and|try|not|for|do|if|or|if)\\\\b)(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*\\\\b((?<!<)<(?!<)(?:/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/|\\\"(?:[^\\\"]*|\\\\\\\\\\\")\\\"|'(?:[^']*|\\\\\\\\')'|\\\\g<18>|(?:[^\\\"'/<>]|/[^*])++)*>)?(?![.:<\\\\w]))(((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)?(?:[\\\\&*]((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))*[\\\\&*])?((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(\\\\()(\\\\*)\\\\s+{0,1}((?:(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*)?)\\\\s+{0,1}(?:(\\\\[)(\\\\w*)(])\\\\s+{0,1})*(\\\\))\\\\s+{0,1}(\\\\()\": PCRE2 at offset 2898: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_17_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/group_17_pcre2",
+      "reason": "scanner 17, pattern \"(\\\\s*+((?:(?:(?:\\\\[\\\\[.*?]]|__attribute(?:__)?\\\\s*\\\\(\\\\s*\\\\(.*?\\\\)\\\\s*\\\\))|__declspec\\\\(.*?\\\\))|alignas\\\\(.*?\\\\))(?!\\\\)))?((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(?:(?:(?:unsigned|signed|short|long)|(?:struct|class|union|enum))((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))*(?:((?:::)?(?:(?!\\\\b(?:__has_cpp_attribute|reinterpret_cast|atomic_noexcept|atomic_commit|atomic_cancel|__has_include|thread_local|dynamic_cast|synchronized|static_cast|const_cast|consteval|co_return|protected|constinit|constexpr|co_return|consteval|namespace|constexpr|co_await|explicit|volatile|noexcept|co_yield|noexcept|requires|typename|decltype|operator|template|continue|co_await|co_yield|volatile|register|restrict|reflexpr|mutable|alignof|include|private|defined|typedef|_Pragma|__asm__|concept|mutable|warning|default|virtual|alignas|public|sizeof|delete|not_eq|bitand|and_eq|xor_eq|typeid|switch|return|struct|static|extern|inline|friend|ifndef|define|pragma|export|import|module|catch|throw|const|or_eq|compl|while|ifdef|const|bitor|union|class|undef|error|break|using|endif|goto|line|enum|this|case|else|elif|else|not|try|for|asm|and|xor|new|do|if|or|if)\\\\b)(?<!\\\\w)(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*(?!\\\\w)\\\\s*+(((?<!<)<(?!<)(?:/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/|\\\"(?:[^\\\"]*|\\\\\\\\\\\")\\\"|'(?:[^']*|\\\\\\\\')'|\\\\g<18>|(?:[^\\\"'/<>]|/[^*])++)*>)\\\\s*+)?::)*+)((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))?(?!(?:transaction_safe_dynamic|__has_cpp_attribute|reinterpret_cast|transaction_safe|atomic_noexcept|atomic_commit|__has_include|atomic_cancel|synchronized|thread_local|dynamic_cast|static_cast|const_cast|constexpr|co_return|constinit|namespace|protected|consteval|constexpr|co_return|consteval|co_await|continue|template|reflexpr|volatile|register|co_await|co_yield|restrict|noexcept|volatile|override|explicit|decltype|operator|noexcept|typename|requires|co_yield|nullptr|alignof|alignas|default|mutable|virtual|mutable|private|include|warning|_Pragma|defined|typedef|__asm__|concept|define|module|sizeof|switch|delete|pragma|and_eq|inline|xor_eq|typeid|import|extern|public|bitand|static|export|return|friend|ifndef|not_eq|false|final|break|const|catch|endif|ifdef|undef|error|audit|while|using|axiom|or_eq|compl|throw|bitor|const|line|case|else|this|true|goto|else|NULL|elif|new|asm|xor|and|try|not|for|do|if|or|if)\\\\b)(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*\\\\b((?<!<)<(?!<)(?:/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/|\\\"(?:[^\\\"]*|\\\\\\\\\\\")\\\"|'(?:[^']*|\\\\\\\\')'|\\\\g<18>|(?:[^\\\"'/<>]|/[^*])++)*>)?(?![.:<\\\\w]))(((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)?(?:[\\\\&*]((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z))*[\\\\&*])?((?:\\\\s*+(/\\\\*)((?:[^*]++|\\\\*+(?!/))*+(\\\\*/))\\\\s*+)+|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(\\\\()(\\\\*)\\\\s+{0,1}((?:(?:[A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))(?:[0-9A-Z_a-z]|\\\\\\\\(?:u\\\\h{4}|U\\\\h{8}))*)?)\\\\s+{0,1}(?:(\\\\[)(\\\\w*)(])\\\\s+{0,1})*(\\\\))\\\\s+{0,1}(\\\\()\": PCRE2 at offset 2898: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_17_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/group_17_onigmo",
+      "reason": "scanner 17, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "cpp_scanner/group_70_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/group_70_pcre2_jit",
+      "reason": "scanner 70, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_70_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/group_70_pcre2",
+      "reason": "scanner 70, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_70_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/group_70_onigmo",
+      "reason": "scanner 70, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "cpp_scanner/group_61_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/group_61_pcre2_jit",
+      "reason": "scanner 61, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_61_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/group_61_pcre2",
+      "reason": "scanner 61, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_61_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/group_61_onigmo",
+      "reason": "scanner 61, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "cpp_scanner/group_77_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/group_77_pcre2_jit",
+      "reason": "scanner 77, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_77_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/group_77_pcre2",
+      "reason": "scanner 77, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_77_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/group_77_onigmo",
+      "reason": "scanner 77, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "scss_scanner/document_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "scss_scanner/document_pcre2_jit",
+      "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+    },
+    "scss_scanner/document_pcre2": {
+      "engine": "pcre2",
+      "id": "scss_scanner/document_pcre2",
+      "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+    },
+    "scss_scanner/group_8_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "scss_scanner/group_8_pcre2_jit",
+      "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+    },
+    "scss_scanner/group_8_pcre2": {
+      "engine": "pcre2",
+      "id": "scss_scanner/group_8_pcre2",
+      "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+    },
+    "scss_scanner/group_6_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "scss_scanner/group_6_pcre2_jit",
+      "reason": "call 2 (scanner 6): Some((17, [(9, 14), (0, 0), (0, 0)])), Shiki Some((16, [(8, 15), (8, 9)]))"
+    },
+    "scss_scanner/group_6_pcre2": {
+      "engine": "pcre2",
+      "id": "scss_scanner/group_6_pcre2",
+      "reason": "call 2 (scanner 6): Some((17, [(9, 14), (0, 0), (0, 0)])), Shiki Some((16, [(8, 15), (8, 9)]))"
+    },
+    "scss_scanner/group_5_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "scss_scanner/group_5_pcre2_jit",
+      "reason": "call 0 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+    },
+    "scss_scanner/group_5_pcre2": {
+      "engine": "pcre2",
+      "id": "scss_scanner/group_5_pcre2",
+      "reason": "call 0 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+    },
+    "oniguruma_features/fancy_regex/subexp_call_balanced": {
+      "engine": "fancy_regex",
+      "id": "oniguruma_features/fancy_regex/subexp_call_balanced",
+      "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+    },
+    "oniguruma_features/pcre2_jit/absent_comments": {
+      "engine": "pcre2_jit",
+      "id": "oniguruma_features/pcre2_jit/absent_comments",
+      "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+    },
+    "oniguruma_features/pcre2/absent_comments": {
+      "engine": "pcre2",
+      "id": "oniguruma_features/pcre2/absent_comments",
+      "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+    },
+    "regex_tasks/fancy_regex/emoji_graphemes": {
+      "engine": "fancy_regex",
+      "id": "regex_tasks/fancy_regex/emoji_graphemes",
+      "reason": "compile: Parsing error at position 52: Invalid escape: \\X"
+    },
+    "regex_tasks/regex/unicode_case_folding": {
+      "engine": "regex",
+      "id": "regex_tasks/regex/unicode_case_folding",
+      "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+    },
+    "regex_tasks/pcre2_jit/unicode_case_folding": {
+      "engine": "pcre2_jit",
+      "id": "regex_tasks/pcre2_jit/unicode_case_folding",
+      "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+    },
+    "regex_tasks/pcre2/unicode_case_folding": {
+      "engine": "pcre2",
+      "id": "regex_tasks/pcre2/unicode_case_folding",
+      "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+    },
+    "regex_tasks/fancy_regex/unicode_case_folding": {
+      "engine": "fancy_regex",
+      "id": "regex_tasks/fancy_regex/unicode_case_folding",
+      "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+    },
+    "regex_tasks/onigmo/variable_lookbehind": {
+      "engine": "onigmo",
+      "id": "regex_tasks/onigmo/variable_lookbehind",
+      "reason": "compile: Onigmo error -122"
+    }
+  },
+  "equivalent": {
+    "cpp_scanner/document_shiki_js": {
+      "id": "cpp_scanner/document_shiki_js",
+      "engine": "shiki_js",
+      "engine_version": "4.5.0",
+      "calls": 4862,
+      "empty_capture_differences": 96,
+      "status": "ok"
+    },
+    "java_scanner/document_shiki_js": {
+      "id": "java_scanner/document_shiki_js",
+      "engine": "shiki_js",
+      "engine_version": "4.5.0",
+      "calls": 3920,
+      "empty_capture_differences": 16,
+      "status": "ok"
+    },
+    "java_scanner/group_15_shiki_js": {
+      "id": "java_scanner/group_15_shiki_js",
+      "engine": "shiki_js",
+      "engine_version": "4.5.0",
+      "calls": 592,
+      "empty_capture_differences": 16,
+      "status": "ok"
+    }
+  }
+}
