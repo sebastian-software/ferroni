@@ -31,7 +31,7 @@ other pages: **above 1.00, Ferroni is faster**; below 1.00, the other engine is.
 These are point estimates from one run with 30 samples over 3 seconds per case
 and engine. Differences within about 10% are not a ranking. The raw estimates,
 confidence intervals and logs are kept with the
-[run data](https://github.com/sebastian-software/ferroni/tree/main/benches/results/blacksmith-2026-10-01-36926978824).
+[run data](https://github.com/sebastian-software/ferroni/tree/main/benches/results/blacksmith-2026-10-08-37782529019).
 
 ## Text processing
 
@@ -47,74 +47,74 @@ and a 200-word alternation.
 
 ### Shared syntax
 
-Patterns the `regex` crate also runs. Ferroni is faster than C Oniguruma in 28
-of 32 tasks, by up to 36x on email extraction; C is faster on the RFC 5322 and
+Patterns the `regex` crate also runs. Ferroni is faster than C Oniguruma in 29
+of 32 tasks, by up to 32x on email extraction; C is faster on the RFC 5322 and
 IPv6 expressions. Against Onigmo it is ahead in 29 tasks, and the PCRE2 interpreter is mixed. PCRE2's JIT is faster than Ferroni in 27 tasks and the
-`regex` crate in 23. The automaton-based engines, `regex` and fancy-regex (which hands these patterns to `regex`), run the RFC 5322 and IPv6 expressions 14x to 33x faster than Ferroni and 2x to 7x faster than PCRE2's JIT. Only Oniguruma, Ferroni and Onigmo apply
+`regex` crate in 22. The automaton-based engines, `regex` and fancy-regex (which hands these patterns to `regex`), run the RFC 5322 and IPv6 expressions 13x to 29x faster than Ferroni and 1.6x to 6.3x faster than PCRE2's JIT. Only Oniguruma, Ferroni and Onigmo apply
 full Unicode case folding, so only they find `STRASSE` for `straße`.
 
 | Case                           |              Ferroni |    Oniguruma (C) |           Onigmo |      PCRE2 JIT |            PCRE2 |      fancy-regex |          regex |
 | ------------------------------ | -------------------: | ---------------: | ---------------: | -------------: | ---------------: | ---------------: | -------------: |
-| `html_tags`                    |   409 µs<br />385 µs |   1.31<br />1.24 |   1.39<br />1.52 | 0.35<br />0.36 |   0.68<br />0.76 |   2.11<br />2.30 | 2.84<br />2.03 |
-| `html_attributes`              |  1.18 ms<br />1.2 ms |   1.26<br />1.28 |   1.79<br />1.61 | 0.17<br />0.13 |   0.91<br />0.88 |   0.24<br />0.27 | 0.19<br />0.20 |
-| `html_comments`                | 20.9 µs<br />24.6 µs |   3.56<br />2.81 |   3.39<br />2.64 | 0.73<br />0.59 |   7.49<br />4.43 |   7.17<br />5.45 | 7.19<br />5.29 |
-| `hex_colors`                   | 18.1 µs<br />19.9 µs |   4.04<br />6.59 | 20.36<br />16.46 | 0.67<br />0.67 |   0.90<br />1.07 | 54.57<br />48.67 | 0.69<br />0.89 |
-| `email_addresses`              | 38.2 µs<br />48.6 µs | 36.38<br />32.10 | 67.95<br />53.35 | 3.27<br />1.67 | 32.73<br />26.15 |   0.68<br />0.81 | 0.48<br />0.49 |
-| `emoji`                        |   108 µs<br />159 µs |   2.94<br />2.19 |   4.08<br />2.89 | 0.80<br />0.63 |   5.15<br />3.97 |   0.79<br />0.67 | 0.58<br />0.50 |
-| `ascii_emoticons`              | 66.3 µs<br />85.4 µs |   1.70<br />1.38 |   2.08<br />1.68 | 0.33<br />0.34 |   0.85<br />0.75 |   0.67<br />1.11 | 0.52<br />0.92 |
-| `hashtags_mentions`            | 72.3 µs<br />83.3 µs |   2.38<br />2.09 |   2.06<br />2.44 | 0.56<br />0.58 |   1.03<br />1.03 |   1.31<br />1.61 | 0.89<br />0.98 |
-| `ipv4_addresses`               |   193 µs<br />214 µs |   1.44<br />1.40 |   2.99<br />2.72 | 1.12<br />0.87 |   5.89<br />5.14 | 20.50<br />18.95 | 5.23<br />5.17 |
-| `iso_timestamps`               | 79.1 µs<br />85.2 µs |   1.91<br />2.05 |   5.02<br />3.97 | 0.35<br />0.35 |   6.49<br />7.38 | 24.41<br />24.21 | 0.82<br />0.86 |
-| `log_keywords_ignorecase`      | 89.7 µs<br />73.4 µs |   2.67<br />5.23 |   4.50<br />5.84 | 0.85<br />1.17 |   1.90<br />2.68 | 22.12<br />37.39 | 0.54<br />0.91 |
-| `markdown_links`               | 68.3 µs<br />95.4 µs |   1.93<br />1.91 |   3.66<br />2.74 | 0.54<br />0.41 |   0.97<br />0.91 |   3.88<br />2.81 | 3.68<br />2.82 |
-| `semantic_versions`            |   225 µs<br />302 µs |   0.98<br />1.03 |   1.66<br />1.40 | 0.29<br />0.22 |   0.73<br />0.66 |   5.06<br />5.19 | 0.32<br />0.30 |
-| `json_strings`                 |   315 µs<br />408 µs |   1.81<br />1.72 |   1.40<br />1.32 | 0.47<br />0.55 |   2.10<br />1.85 |   1.05<br />1.41 | 0.68<br />0.88 |
-| `csv_fields`                   |   186 µs<br />219 µs |   2.09<br />1.94 |   1.51<br />1.61 | 0.44<br />0.53 |   1.73<br />1.70 |   1.13<br />1.50 | 0.84<br />1.03 |
-| `rfc5322_emails`               | 3.38 ms<br />5.07 ms |   0.70<br />0.73 |   1.72<br />1.73 | 0.09<br />0.06 |   1.42<br />1.05 |   0.04<br />0.03 | 0.04<br />0.03 |
-| `ipv6_addresses`               | 1.82 ms<br />2.13 ms |   0.57<br />0.67 |   1.50<br />1.55 | 0.38<br />0.41 |   2.45<br />2.34 |   0.07<br />0.07 | 0.06<br />0.06 |
-| `rfc3986_urls`                 | 91.2 µs<br />93.4 µs |   1.57<br />1.70 |   1.99<br />1.78 | 0.76<br />0.67 |   2.42<br />1.88 | 18.92<br />21.87 | 0.50<br />0.57 |
-| `keyword_alternation_200`      |   852 µs<br />907 µs |   3.72<br />4.46 |   4.74<br />3.59 | 0.53<br />0.49 |  10.59<br />7.13 | 21.67<br />14.18 | 0.45<br />0.52 |
-| `csv_last_column_backtracking` |   142 µs<br />155 µs |   1.06<br />0.95 |   1.29<br />1.22 | 0.26<br />0.24 |   0.53<br />0.50 |   0.75<br />0.70 | 1.15<br />1.06 |
-| `unicode_case_folding`         |   151 µs<br />192 µs |   3.28<br />2.66 |   1.00<br />0.83 |            n/a |              n/a |              n/a |            n/a |
-| `email_validation`             | 4.11 µs<br />5.16 µs |   2.26<br />1.67 |   2.47<br />1.84 | 0.40<br />0.31 |   1.31<br />0.91 |   0.34<br />0.32 | 0.25<br />0.26 |
-| `uuid_validation`              | 3.85 µs<br />4.59 µs |   3.17<br />2.44 |   3.25<br />2.89 | 0.41<br />0.39 |   0.83<br />0.75 |   0.39<br />0.46 | 0.32<br />0.32 |
-| `number_validation`            |    4 µs<br />4.75 µs |   2.44<br />1.77 |   2.10<br />1.60 | 0.42<br />0.37 |   2.82<br />1.90 |   0.28<br />0.28 | 0.20<br />0.18 |
-| `access_log_captures`          | 21.7 µs<br />20.8 µs |   1.12<br />1.23 |   1.57<br />1.58 | 0.26<br />0.24 |   0.75<br />0.67 |   1.60<br />1.39 | 1.18<br />1.36 |
-| `url_extraction`               |  6.6 µs<br />6.18 µs |   2.49<br />2.45 |   2.38<br />2.34 | 0.53<br />0.54 |   1.31<br />1.17 |   1.85<br />2.04 | 1.48<br />1.66 |
-| `unicode_words`                | 33.4 µs<br />39.2 µs |   1.68<br />1.77 |   1.18<br />1.59 | 0.38<br />0.46 |   1.05<br />1.07 |   0.95<br />1.26 | 0.62<br />0.79 |
-| `email_redaction`              | 15.6 µs<br />25.2 µs |   3.72<br />2.89 |   5.95<br />4.48 | 0.55<br />0.39 |   3.41<br />2.19 |   0.75<br />0.76 | 0.56<br />0.54 |
-| `literal_50k`                  | 35.4 ns<br />41.2 ns |   2.50<br />2.31 |   0.74<br />0.62 | 0.36<br />0.48 |   0.90<br />1.06 |   0.28<br />0.33 | 0.19<br />0.27 |
-| `no_match_50k`                 |   957 ns<br />716 ns |  5.64<br />10.21 |   5.47<br />9.75 | 1.22<br />1.31 |   0.80<br />0.35 |   0.99<br />0.97 | 0.99<br />0.98 |
-| `field_extract_50k`            | 38.4 ns<br />49.8 ns |   2.49<br />2.15 |   1.13<br />1.00 | 0.50<br />0.47 |   1.30<br />1.22 |   0.88<br />1.02 | 0.83<br />0.99 |
-| `timestamp_50k`                | 67.8 ns<br />63.6 ns |   1.93<br />1.68 |   1.57<br />1.63 | 0.43<br />0.46 |   0.88<br />1.00 |   0.65<br />0.90 | 0.59<br />0.84 |
+| `html_tags`                    |   326 µs<br />310 µs |   1.37<br />1.45 |   1.59<br />1.68 | 0.39<br />0.42 |   0.77<br />0.89 |   2.37<br />2.57 | 3.24<br />2.36 |
+| `html_attributes`              |   513 µs<br />509 µs |   2.97<br />2.77 |   3.94<br />3.51 | 0.37<br />0.30 |   1.98<br />1.88 |   0.55<br />0.61 | 0.45<br />0.46 |
+| `html_comments`                | 21.1 µs<br />21.7 µs |   3.18<br />3.14 |   3.45<br />2.98 | 0.63<br />0.67 |   6.71<br />4.78 |   7.08<br />6.18 | 6.00<br />5.92 |
+| `hex_colors`                   |   17.6 µs<br />19 µs |   4.70<br />6.96 | 22.86<br />17.06 | 0.70<br />0.69 |   1.05<br />1.05 | 62.28<br />48.91 | 0.72<br />0.91 |
+| `email_addresses`              | 41.7 µs<br />41.8 µs | 32.16<br />31.98 | 61.74<br />52.45 | 3.33<br />1.82 | 33.09<br />25.57 |   0.62<br />0.81 | 0.44<br />0.57 |
+| `emoji`                        |   115 µs<br />133 µs |   2.95<br />2.34 |   3.84<br />3.09 | 0.77<br />0.72 |   4.84<br />4.28 |   0.77<br />0.77 | 0.55<br />0.58 |
+| `ascii_emoticons`              | 64.4 µs<br />77.7 µs |   1.82<br />1.37 |   2.23<br />1.72 | 0.38<br />0.35 |   0.95<br />0.70 |   0.75<br />1.15 | 0.57<br />0.96 |
+| `hashtags_mentions`            | 76.4 µs<br />74.7 µs |   2.60<br />2.26 |   1.96<br />2.08 | 0.55<br />0.63 |   0.98<br />1.13 |   1.21<br />1.59 | 0.91<br />1.05 |
+| `ipv4_addresses`               |   205 µs<br />189 µs |   1.37<br />1.47 |   2.90<br />2.72 | 1.05<br />0.89 |   5.59<br />5.00 | 19.83<br />19.55 | 4.85<br />5.52 |
+| `iso_timestamps`               | 77.7 µs<br />77.7 µs |   2.11<br />2.19 |   5.10<br />4.20 | 0.39<br />0.35 |   6.92<br />7.59 | 25.31<br />27.01 | 0.86<br />0.85 |
+| `log_keywords_ignorecase`      | 95.5 µs<br />69.3 µs |   2.64<br />5.05 |   4.83<br />6.00 | 0.93<br />1.14 |   2.00<br />2.72 | 23.24<br />35.43 | 0.55<br />0.93 |
+| `markdown_links`               |   51 µs<br />51.8 µs |   3.15<br />3.00 |   5.32<br />4.77 | 0.80<br />0.67 |   1.48<br />1.38 |   5.62<br />4.79 | 5.34<br />4.34 |
+| `semantic_versions`            |   240 µs<br />252 µs |   1.04<br />1.24 |   1.70<br />1.56 | 0.29<br />0.24 |   0.75<br />0.75 |   5.08<br />5.56 | 0.32<br />0.33 |
+| `json_strings`                 |   321 µs<br />353 µs |   2.00<br />1.78 |   1.59<br />1.57 | 0.47<br />0.57 |   2.06<br />1.97 |   1.13<br />1.50 | 0.66<br />0.96 |
+| `csv_fields`                   |   213 µs<br />216 µs |   2.09<br />1.91 |   1.57<br />1.64 | 0.45<br />0.53 |   1.84<br />1.52 |   1.16<br />1.48 | 0.85<br />1.06 |
+| `rfc5322_emails`               | 3.58 ms<br />4.05 ms |   0.76<br />0.72 |   1.95<br />1.72 | 0.10<br />0.06 |   1.56<br />1.03 |   0.04<br />0.04 | 0.04<br />0.03 |
+| `ipv6_addresses`               | 2.04 ms<br />1.81 ms |   0.58<br />0.70 |   1.31<br />1.43 | 0.39<br />0.40 |   2.37<br />2.32 |   0.07<br />0.08 | 0.06<br />0.07 |
+| `rfc3986_urls`                 |   84 µs<br />79.9 µs |   1.64<br />1.83 |   2.07<br />2.06 | 0.76<br />0.76 |   2.28<br />1.97 | 18.80<br />23.53 | 0.51<br />0.67 |
+| `keyword_alternation_200`      |   864 µs<br />849 µs |   3.79<br />5.65 |   4.94<br />3.41 | 0.56<br />0.52 |   9.82<br />8.27 | 19.91<br />15.38 | 0.45<br />0.56 |
+| `csv_last_column_backtracking` |   140 µs<br />154 µs |   1.17<br />0.94 |   1.51<br />1.16 | 0.27<br />0.25 |   0.57<br />0.51 |   0.82<br />0.71 | 1.15<br />1.07 |
+| `unicode_case_folding`         |   151 µs<br />168 µs |   3.24<br />2.92 |   1.04<br />0.88 |            n/a |              n/a |              n/a |            n/a |
+| `email_validation`             | 4.49 µs<br />5.11 µs |   1.98<br />1.36 |   2.13<br />1.74 | 0.36<br />0.28 |   1.19<br />0.82 |   0.31<br />0.33 | 0.22<br />0.24 |
+| `uuid_validation`              | 3.68 µs<br />4.37 µs |   3.22<br />2.19 |   3.40<br />2.97 | 0.43<br />0.38 |   0.84<br />0.73 |   0.42<br />0.46 | 0.34<br />0.32 |
+| `number_validation`            | 4.01 µs<br />4.45 µs |   2.18<br />1.77 |   1.98<br />1.56 | 0.37<br />0.40 |   2.73<br />1.82 |   0.28<br />0.32 | 0.17<br />0.19 |
+| `access_log_captures`          | 20.4 µs<br />18.5 µs |   1.32<br />1.31 |   1.54<br />1.66 | 0.25<br />0.27 |   0.74<br />0.72 |   1.46<br />1.47 | 1.34<br />1.48 |
+| `url_extraction`               | 5.73 µs<br />6.15 µs |   2.83<br />2.33 |   2.64<br />2.49 | 0.62<br />0.53 |   1.53<br />1.17 |   2.14<br />2.03 | 1.69<br />1.57 |
+| `unicode_words`                | 33.3 µs<br />35.7 µs |   1.89<br />1.94 |   1.29<br />1.31 | 0.38<br />0.47 |   1.04<br />1.14 |   0.99<br />1.31 | 0.66<br />0.74 |
+| `email_redaction`              |   16 µs<br />17.7 µs |   4.29<br />3.46 |   6.10<br />5.81 | 0.60<br />0.50 |   3.75<br />3.02 |   0.79<br />1.05 | 0.60<br />0.74 |
+| `literal_50k`                  | 41.4 ns<br />37.5 ns |   2.41<br />2.29 |   0.66<br />0.66 | 0.34<br />0.46 |   0.80<br />1.01 |   0.25<br />0.35 | 0.17<br />0.24 |
+| `no_match_50k`                 |  1.09 µs<br />717 ns |   5.56<br />9.82 |   5.43<br />9.86 | 1.16<br />1.26 |   0.79<br />0.36 |   0.99<br />0.96 | 0.96<br />0.93 |
+| `field_extract_50k`            | 43.6 ns<br />45.6 ns |   2.74<br />1.89 |   1.03<br />0.99 | 0.49<br />0.49 |   1.32<br />1.34 |   0.86<br />1.09 | 0.81<br />0.97 |
+| `timestamp_50k`                | 66.8 ns<br />61.7 ns |   1.86<br />1.64 |   1.63<br />2.00 | 0.43<br />0.48 |   0.93<br />1.05 |   0.67<br />0.91 | 0.59<br />0.87 |
 
 ### Oniguruma syntax
 
 Element pairs through backreferences, possessive and atomic groups, lookbehind,
 quoted strings with either quote, grapheme clusters, password rules with four
 lookaheads, recursion through `\g<0>`, the absent operator and conditionals.
-Ferroni is faster than C Oniguruma in 14 of 17 tasks; in the others C is up to 30% faster on one host. PCRE2's JIT is faster than Ferroni in every task it can run.
-fancy-regex runs all but two in its Oniguruma mode, 1.3x to 16x slower than Ferroni except on the password rules, where it is twice as fast.
+Ferroni is faster than C Oniguruma in 11 of 17 tasks; in the other six C is up to 25% faster on one host. PCRE2's JIT is faster than Ferroni in every task it can run.
+fancy-regex runs all but two in its Oniguruma mode, 1.5x to 16x slower than Ferroni except on the password rules, where it is twice as fast.
 
 | Case                         |              Ferroni |  Oniguruma (C) |         Onigmo |      PCRE2 JIT |          PCRE2 |      fancy-regex |
 | ---------------------------- | -------------------: | -------------: | -------------: | -------------: | -------------: | ---------------: |
-| `html_element_pairs`         |   456 µs<br />609 µs | 1.13<br />1.02 | 1.54<br />1.29 | 0.27<br />0.19 | 1.36<br />1.14 |   3.27<br />2.43 |
-| `html_attribute_values`      |  944 µs<br />1.08 ms | 1.06<br />1.15 | 1.19<br />1.06 | 0.21<br />0.17 | 0.80<br />0.83 |   2.11<br />2.09 |
-| `prices_lookbehind`          |   223 µs<br />314 µs | 1.66<br />1.30 | 2.65<br />2.09 | 0.26<br />0.25 | 1.12<br />1.05 |   8.06<br />8.92 |
-| `quoted_strings`             |   295 µs<br />325 µs | 1.22<br />1.39 | 1.36<br />1.15 | 0.23<br />0.25 | 1.36<br />1.53 |   4.42<br />3.94 |
-| `camel_case_words`           |   743 µs<br />843 µs | 2.01<br />1.83 | 1.48<br />1.35 | 0.38<br />0.47 | 0.79<br />0.83 |   2.43<br />2.19 |
-| `markdown_emphasis`          |   191 µs<br />210 µs | 1.11<br />1.03 | 1.74<br />1.41 | 0.26<br />0.24 | 0.90<br />0.93 |  10.83<br />9.12 |
-| `emoji_graphemes`            |   170 µs<br />185 µs | 2.34<br />1.84 | 3.48<br />2.93 | 0.56<br />0.54 | 4.28<br />3.75 |              n/a |
-| `password_rules`             | 18.1 µs<br />23.6 µs | 1.16<br />0.85 | 1.54<br />1.39 | 0.21<br />0.18 | 1.29<br />1.01 |   0.52<br />0.47 |
-| `json_objects_recursive`     |   283 µs<br />383 µs | 1.48<br />1.29 | 2.95<br />2.00 | 0.29<br />0.15 | 3.15<br />2.45 |   2.66<br />2.17 |
-| `html_nested_divs_recursive` | 64.6 µs<br />84.1 µs | 2.30<br />1.82 | 2.92<br />2.29 | 0.40<br />0.31 | 2.78<br />1.97 | 15.63<br />14.93 |
-| `variable_lookbehind`        | 1.12 ms<br />1.45 ms | 1.14<br />1.18 |            n/a | 0.17<br />0.14 | 0.68<br />0.60 |   1.55<br />1.45 |
-| `atomic_possessive_strings`  |   24 µs<br />26.1 µs | 1.51<br />1.42 | 1.11<br />1.23 | 0.33<br />0.35 | 1.16<br />1.08 |   3.03<br />2.86 |
-| `subexp_call_balanced`       | 32.8 µs<br />36.3 µs | 1.38<br />1.09 | 1.59<br />1.24 | 0.32<br />0.33 | 1.71<br />1.82 |              n/a |
-| `absent_comments`            | 27.8 µs<br />32.3 µs | 1.17<br />0.77 | 0.66<br />0.63 |            n/a |            n/a |   1.51<br />1.31 |
-| `conditional_brackets`       |   48.1 µs<br />53 µs | 1.21<br />1.12 | 1.25<br />1.19 | 0.30<br />0.29 | 1.03<br />0.95 |   2.91<br />2.50 |
-| `backref_ignorecase`         | 75.1 µs<br />76.8 µs | 0.98<br />1.01 | 1.09<br />1.06 | 0.27<br />0.32 | 0.96<br />1.16 |   1.83<br />1.89 |
-| `lookbehind_alternation`     |   18 µs<br />20.5 µs | 3.13<br />2.98 | 1.19<br />1.07 | 0.61<br />0.58 | 4.97<br />3.49 |   4.33<br />3.57 |
+| `html_element_pairs`         |   490 µs<br />493 µs | 0.95<br />1.21 | 1.44<br />1.18 | 0.25<br />0.17 | 1.33<br />1.08 |   2.96<br />2.45 |
+| `html_attribute_values`      |   987 µs<br />837 µs | 0.96<br />1.04 | 1.18<br />1.09 | 0.20<br />0.18 | 0.75<br />0.86 |   1.99<br />2.13 |
+| `prices_lookbehind`          |   225 µs<br />208 µs | 1.64<br />1.49 | 2.71<br />2.04 | 0.24<br />0.23 | 1.09<br />0.89 |   7.84<br />7.76 |
+| `quoted_strings`             |   305 µs<br />273 µs | 1.16<br />1.16 | 1.44<br />1.24 | 0.21<br />0.23 | 1.27<br />1.33 |   4.52<br />4.21 |
+| `camel_case_words`           |   736 µs<br />701 µs | 2.30<br />1.72 | 1.48<br />1.40 | 0.44<br />0.50 | 0.89<br />0.90 |   2.70<br />2.55 |
+| `markdown_emphasis`          |   193 µs<br />181 µs | 1.21<br />0.98 | 1.76<br />1.52 | 0.29<br />0.23 | 0.96<br />0.98 |  10.79<br />9.52 |
+| `emoji_graphemes`            |   182 µs<br />157 µs | 2.31<br />2.07 | 3.42<br />3.33 | 0.55<br />0.57 | 4.18<br />3.94 |              n/a |
+| `password_rules`             | 19.6 µs<br />18.2 µs | 1.09<br />0.90 | 1.66<br />1.52 | 0.20<br />0.16 | 1.27<br />0.99 |   0.54<br />0.50 |
+| `json_objects_recursive`     |   321 µs<br />266 µs | 1.41<br />1.24 | 2.64<br />2.44 | 0.26<br />0.17 | 2.76<br />2.45 |   2.49<br />2.50 |
+| `html_nested_divs_recursive` | 64.7 µs<br />54.2 µs | 2.18<br />2.00 | 3.14<br />2.98 | 0.38<br />0.31 | 2.74<br />2.24 | 16.14<br />15.92 |
+| `variable_lookbehind`        | 1.26 ms<br />1.05 ms | 1.10<br />1.21 |            n/a | 0.17<br />0.15 | 0.67<br />0.65 |   1.47<br />1.69 |
+| `atomic_possessive_strings`  | 23.7 µs<br />22.3 µs | 1.55<br />1.20 | 1.13<br />1.30 | 0.32<br />0.38 | 1.13<br />0.97 |   3.05<br />3.01 |
+| `subexp_call_balanced`       | 33.1 µs<br />32.4 µs | 1.33<br />1.06 | 1.61<br />1.37 | 0.31<br />0.32 | 1.76<br />1.86 |              n/a |
+| `absent_comments`            | 27.4 µs<br />26.9 µs | 1.22<br />0.80 | 0.71<br />0.70 |            n/a |            n/a |   1.59<br />1.55 |
+| `conditional_brackets`       |     41 µs<br />41 µs | 1.36<br />1.35 | 1.50<br />1.47 | 0.35<br />0.35 | 1.20<br />1.10 |   3.42<br />2.95 |
+| `backref_ignorecase`         | 77.8 µs<br />68.8 µs | 0.98<br />1.11 | 1.05<br />1.12 | 0.27<br />0.36 | 0.98<br />1.20 |   1.79<br />2.03 |
+| `lookbehind_alternation`     | 15.6 µs<br />15.5 µs | 3.62<br />3.38 | 1.29<br />1.34 | 0.73<br />0.67 | 5.94<br />4.29 |   4.92<br />4.95 |
 
 ## Highlighting
 
@@ -134,16 +134,16 @@ search. The replays show what that costs when an application uses them for it.
 ### Portable grammars
 
 C, Java and PHP use no syntax another engine rejects or reads differently;
-every engine reproduces every captured result. Ferroni is 2.7x to 5.7x faster than C Oniguruma and 1.3x to 5.8x faster than PCRE2's JIT here. Shiki's JavaScript engine comes closest: on the PHP document it is faster than Ferroni on Apple Silicon and as fast on x86-64; on the others it is 2x to 3.4x slower.
+every engine reproduces every captured result. Ferroni is 2.8x to 5.9x faster than C Oniguruma and 1.4x to 5.6x faster than PCRE2's JIT here. Shiki's JavaScript engine comes closest: on the PHP document it is faster than Ferroni on Apple Silicon and as fast on x86-64; on the others it is 1.9x to 3.6x slower.
 
 | Case                    |              Ferroni |  Oniguruma (C) |           Onigmo |      PCRE2 JIT |            PCRE2 |      fancy-regex |       Shiki JS |
 | ----------------------- | -------------------: | -------------: | ---------------: | -------------: | ---------------: | ---------------: | -------------: |
-| Java replay, document   | 1.79 ms<br />2.64 ms | 4.45<br />3.66 | 18.33<br />11.35 | 5.80<br />4.12 | 18.37<br />12.48 | 43.29<br />30.95 | 3.43<br />3.06 |
-| Java replay, scanner 15 |   478 µs<br />466 µs | 3.58<br />3.41 | 12.77<br />12.70 | 3.97<br />3.75 | 13.85<br />12.81 | 32.79<br />33.35 | 3.29<br />3.01 |
-| C replay, document      | 3.18 ms<br />3.83 ms | 4.14<br />4.15 | 13.21<br />12.62 | 3.40<br />4.72 | 14.99<br />15.20 | 73.97<br />83.26 | 2.67<br />2.44 |
-| C replay, scanner 12    |   735 µs<br />932 µs | 5.03<br />4.29 | 18.59<br />15.24 | 3.71<br />3.59 | 22.66<br />17.19 | 98.19<br />88.41 | 2.95<br />3.34 |
-| PHP replay, document    | 5.13 ms<br />5.18 ms | 2.71<br />3.16 |   8.07<br />8.23 | 1.33<br />1.73 |   3.25<br />3.51 | 13.57<br />17.88 | 0.78<br />1.00 |
-| PHP replay, scanner 13  |   580 µs<br />604 µs | 5.64<br />5.71 | 21.92<br />22.12 | 2.98<br />3.34 |   8.17<br />8.19 | 36.66<br />42.31 | 1.95<br />2.24 |
+| Java replay, document   | 1.95 ms<br />1.98 ms | 4.50<br />4.49 | 17.15<br />15.70 | 5.63<br />5.31 | 18.47<br />16.99 | 42.58<br />40.64 | 3.51<br />3.30 |
+| Java replay, scanner 15 |   439 µs<br />488 µs | 3.61<br />3.64 | 13.25<br />12.86 | 4.12<br />3.65 | 14.05<br />13.55 | 33.19<br />32.76 | 3.58<br />3.36 |
+| C replay, document      | 3.77 ms<br />4.24 ms | 4.16<br />4.04 | 12.72<br />10.57 | 3.56<br />4.31 | 14.09<br />11.06 | 72.41<br />55.76 | 2.54<br />2.52 |
+| C replay, scanner 12    |   884 µs<br />938 µs | 4.72<br />4.49 | 17.24<br />14.86 | 3.52<br />3.60 | 20.72<br />16.06 | 89.28<br />76.37 | 2.65<br />2.75 |
+| PHP replay, document    | 5.51 ms<br />5.72 ms | 2.81<br />3.09 |   8.12<br />8.15 | 1.37<br />1.68 |   3.26<br />3.33 | 14.41<br />14.76 | 0.87<br />0.99 |
+| PHP replay, scanner 13  |   644 µs<br />639 µs | 5.57<br />5.92 | 21.15<br />21.30 | 2.89<br />3.36 |   8.02<br />8.12 | 36.10<br />38.05 | 1.94<br />2.34 |
 
 ### Grammars with Oniguruma-only syntax
 
@@ -154,32 +154,32 @@ a hex digit in Oniguruma and a horizontal space in PCRE2. A scan of all 260
 Shiki grammars finds these constructs in most large ones. These replays show
 what highlighting with such grammars costs in the engines that run them.
 
-| Case                   |              Ferroni |    Oniguruma (C) |           Onigmo | PCRE2 JIT | PCRE2 |        fancy-regex |       Shiki JS |
-| ---------------------- | -------------------: | ---------------: | ---------------: | --------: | ----: | -----------------: | -------------: |
-| C++ replay, document   | 11.3 ms<br />12.6 ms |   2.54<br />2.19 |              n/a |       n/a |   n/a |   90.92<br />74.64 | 3.22<br />2.58 |
-| C++ replay, scanner 78 | 5.11 ms<br />5.87 ms |   3.25<br />2.94 |              n/a |       n/a |   n/a | 122.13<br />108.25 | 3.41<br />3.14 |
-| SCSS replay, document  |  2.2 ms<br />1.97 ms | 14.77<br />16.74 |  9.20<br />10.27 |       n/a |   n/a |   54.94<br />60.54 | 1.63<br />2.06 |
-| SCSS replay, scanner 8 |   860 µs<br />840 µs | 20.81<br />17.75 | 10.30<br />10.33 |       n/a |   n/a |   65.04<br />57.94 | 2.61<br />2.84 |
+| Case                   |              Ferroni |    Oniguruma (C) |          Onigmo | PCRE2 JIT | PCRE2 |       fancy-regex |       Shiki JS |
+| ---------------------- | -------------------: | ---------------: | --------------: | --------: | ----: | ----------------: | -------------: |
+| C++ replay, document   | 11.9 ms<br />12.4 ms |   2.47<br />2.39 |             n/a |       n/a |   n/a |  81.73<br />68.13 | 2.72<br />2.62 |
+| C++ replay, scanner 78 | 5.17 ms<br />6.03 ms |   3.15<br />3.03 |             n/a |       n/a |   n/a | 133.78<br />95.12 | 3.34<br />2.95 |
+| SCSS replay, document  | 2.12 ms<br />2.27 ms | 14.92<br />15.42 |  9.76<br />9.12 |       n/a |   n/a |  56.25<br />49.28 | 1.72<br />1.96 |
+| SCSS replay, scanner 8 |   852 µs<br />939 µs | 19.37<br />17.78 | 10.80<br />9.66 |       n/a |   n/a |  65.69<br />54.45 | 2.54<br />2.81 |
 
 ### Grammar scanners
 
 The complete Shiki grammars for TypeScript, CSS and Rust: compiling a grammar,
 re-scanning one line, and tokenizing a document line by line. Only Ferroni and
-C Oniguruma have a grammar loader and a RegSet scanner here. Ferroni scans 3.3x
+C Oniguruma have a grammar loader and a RegSet scanner here. Ferroni scans 3.6x
 to 77x faster; compilation is mixed, with C faster on the Rust grammar and on
 the TypeScript grammar on x86-64.
 
 | Case                             |              Ferroni |    Oniguruma (C) |
 | -------------------------------- | -------------------: | ---------------: |
-| TypeScript grammar, compile      | 10.9 ms<br />11.5 ms |   1.32<br />0.82 |
-| CSS grammar, compile             | 7.17 ms<br />7.61 ms |   2.27<br />1.71 |
-| Rust grammar, compile            |   279 µs<br />301 µs |   0.55<br />0.58 |
-| TypeScript grammar, re-scan line | 2.16 µs<br />2.15 µs | 70.51<br />62.44 |
-| CSS grammar, re-scan line        |   153 µs<br />128 µs | 52.79<br />76.64 |
-| Rust grammar, re-scan line       |  3.9 µs<br />4.58 µs | 15.05<br />13.92 |
-| TypeScript document, 28 lines    |   579 µs<br />699 µs |   3.95<br />3.34 |
-| CSS document, 19 lines           | 67.3 µs<br />73.5 µs | 28.78<br />31.54 |
-| Rust document, 31 lines          |   77 µs<br />79.2 µs |  9.50<br />10.31 |
+| TypeScript grammar, compile      | 12.2 ms<br />11.8 ms |   1.19<br />0.81 |
+| CSS grammar, compile             | 8.32 ms<br />8.95 ms |   1.93<br />1.57 |
+| Rust grammar, compile            |   276 µs<br />352 µs |   0.55<br />0.52 |
+| TypeScript grammar, re-scan line | 2.04 µs<br />2.16 µs | 72.67<br />65.18 |
+| CSS grammar, re-scan line        |   165 µs<br />143 µs | 51.08<br />76.59 |
+| Rust grammar, re-scan line       | 3.96 µs<br />4.15 µs | 13.74<br />15.18 |
+| TypeScript document, 28 lines    |   520 µs<br />649 µs |   4.25<br />3.59 |
+| CSS document, 19 lines           | 80.7 µs<br />77.4 µs | 25.93<br />31.16 |
+| Rust document, 31 lines          | 78.5 µs<br />78.7 µs |  8.59<br />10.42 |
 
 ## Short searches and compilation
 
@@ -189,19 +189,19 @@ the home page and in the README.
 
 | Case                      |              Ferroni |  Oniguruma (C) |         Onigmo |      PCRE2 JIT |          PCRE2 |        fancy-regex |            regex |
 | ------------------------- | -------------------: | -------------: | -------------: | -------------: | -------------: | -----------------: | ---------------: |
-| `literal_exact`           | 35.7 ns<br />77.9 ns | 2.83<br />1.84 | 1.06<br />0.82 | 0.43<br />0.41 | 1.12<br />1.16 |     0.31<br />0.30 |   0.21<br />0.23 |
-| `quantifier_greedy`       | 44.3 ns<br />67.7 ns | 3.43<br />2.37 | 1.50<br />1.75 | 0.47<br />0.59 | 0.94<br />1.20 |     1.01<br />1.35 |   0.95<br />1.42 |
-| `alternation_2_branch`    | 40.7 ns<br />72.9 ns | 2.63<br />1.98 | 0.83<br />0.63 | 0.38<br />0.42 | 1.27<br />1.28 |     0.78<br />0.96 |   0.76<br />0.97 |
-| `alternation_10_branch`   | 25.2 ns<br />48.1 ns | 6.47<br />4.69 | 4.61<br />2.91 | 0.81<br />0.78 | 7.89<br />4.50 |     0.64<br />0.72 |   0.51<br />0.54 |
-| `case_insensitive_phrase` |  57.7 ns<br />127 ns | 2.35<br />1.68 | 0.89<br />0.79 | 0.28<br />0.24 | 0.82<br />0.64 |     0.66<br />0.71 |   0.61<br />0.63 |
-| `named_capture_date`      |  57.7 ns<br />128 ns | 3.73<br />2.82 | 2.08<br />1.38 | 0.82<br />0.55 | 4.73<br />3.66 |     0.58<br />0.50 |   0.47<br />0.49 |
-| `unicode_greek`           | 61.7 ns<br />91.5 ns | 2.71<br />2.67 | 2.74<br />2.72 | 0.52<br />0.51 | 2.35<br />3.23 |     0.72<br />1.02 |   0.57<br />1.01 |
-| `lookaround_combined`     | 56.7 ns<br />98.6 ns | 3.60<br />2.79 | 1.08<br />0.97 | 0.53<br />0.40 | 4.99<br />3.21 |     3.93<br />2.95 |                – |
-| `backref_simple`          | 56.6 ns<br />80.5 ns | 2.35<br />1.62 | 1.09<br />1.09 | 0.33<br />0.37 | 0.89<br />0.95 |     1.40<br />1.48 |                – |
-| `regset_position_lead`    |  72.1 ns<br />101 ns | 3.82<br />2.74 |              – |              – |              – |                  – |                – |
-| compile `literal`         |   535 ns<br />830 ns | 0.62<br />0.60 | 0.59<br />0.52 | 3.55<br />6.22 | 0.59<br />0.43 |     4.65<br />4.21 |   3.26<br />3.06 |
-| compile `named_capture`   | 2.68 µs<br />3.44 µs | 1.58<br />1.39 | 1.86<br />1.62 | 1.19<br />2.05 | 0.19<br />0.22 |   55.92<br />63.01 | 55.41<br />64.22 |
-| compile `lookbehind`      | 1.13 µs<br />1.76 µs | 0.38<br />0.39 | 0.30<br />0.28 | 1.73<br />2.67 | 0.21<br />0.18 | 121.96<br />123.81 |                – |
+| `literal_exact`           | 47.9 ns<br />32.6 ns | 2.31<br />2.22 | 0.70<br />0.87 | 0.34<br />0.50 | 0.82<br />1.23 |     0.22<br />0.37 |   0.17<br />0.28 |
+| `quantifier_greedy`       | 41.4 ns<br />36.5 ns | 3.45<br />2.43 | 1.68<br />1.47 | 0.50<br />0.54 | 1.05<br />1.04 |     1.25<br />1.33 |   1.01<br />1.19 |
+| `alternation_2_branch`    | 45.2 ns<br />39.8 ns | 2.54<br />1.60 | 0.81<br />0.67 | 0.37<br />0.39 | 1.24<br />1.13 |     0.82<br />0.96 |   0.70<br />0.78 |
+| `alternation_10_branch`   | 27.9 ns<br />29.8 ns | 5.64<br />4.35 | 4.49<br />2.89 | 0.72<br />0.66 | 7.20<br />4.03 |     0.67<br />0.65 |   0.45<br />0.51 |
+| `case_insensitive_phrase` |   62.4 ns<br />58 ns | 2.13<br />1.70 | 0.86<br />0.93 | 0.30<br />0.27 | 0.80<br />0.69 |     0.66<br />0.84 |   0.65<br />0.77 |
+| `named_capture_date`      | 65.7 ns<br />58.2 ns | 3.43<br />3.76 | 1.83<br />1.61 | 0.72<br />0.62 | 4.69<br />4.61 |     0.55<br />0.69 |   0.48<br />0.65 |
+| `unicode_greek`           | 65.4 ns<br />55.9 ns | 2.70<br />2.30 | 2.52<br />2.59 | 0.54<br />0.47 | 2.19<br />2.84 |     0.64<br />0.89 |   0.61<br />0.82 |
+| `lookaround_combined`     | 59.2 ns<br />54.2 ns | 3.55<br />3.14 | 1.01<br />1.01 | 0.45<br />0.47 | 4.43<br />3.76 |     3.71<br />3.53 |                – |
+| `backref_simple`          | 61.7 ns<br />57.4 ns | 2.04<br />1.35 | 1.02<br />0.94 | 0.33<br />0.34 | 0.86<br />0.85 |     1.38<br />1.30 |                – |
+| `regset_position_lead`    | 77.9 ns<br />63.1 ns | 3.81<br />2.92 |              – |              – |              – |                  – |                – |
+| compile `literal`         |   608 ns<br />561 ns | 0.63<br />0.55 | 0.59<br />0.50 | 3.49<br />6.50 | 0.54<br />0.47 |     4.38<br />4.09 |   3.29<br />3.20 |
+| compile `named_capture`   |  3.04 µs<br />2.6 µs | 1.58<br />1.20 | 1.71<br />1.50 | 1.15<br />1.87 | 0.19<br />0.18 |   55.54<br />59.94 | 53.91<br />55.85 |
+| compile `lookbehind`      |  1.3 µs<br />1.31 µs | 0.33<br />0.36 | 0.27<br />0.28 | 1.66<br />2.47 | 0.19<br />0.16 | 113.05<br />113.02 |                – |
 
 ## Cases an engine cannot run
 
@@ -226,11 +226,11 @@ calls count as equal; no other engine needs this.
 
 | Field            | Value                                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------- |
-| Ferroni commit   | `6db6413e84b03cb806f46cc96ccd972b5eb8c670`                                                                    |
-| Measurement date | `2026-10-01`                                                                                                  |
-| Workflow run     | [36926978824](https://github.com/sebastian-software/ferroni/actions/runs/36926978824)                         |
+| Ferroni commit   | `62892008bbf59e3d06b9c8599a4decdf1e8ba979`                                                                    |
+| Measurement date | `2026-10-08`                                                                                                  |
+| Workflow run     | [37782529019](https://github.com/sebastian-software/ferroni/actions/runs/37782529019)                         |
 | Apple Silicon    | `blacksmith-6vcpu-macos-26`: Apple M4 Pro (virtual), 6 vCPUs, 24 GB, macOS 26.3, Apple clang 21.0.0           |
-| x86-64           | `blacksmith-4vcpu-ubuntu-2404`: AMD EPYC with AVX-512, 4 vCPUs, 16 GB, Ubuntu 24.04.3, GCC 13.3.0             |
+| x86-64           | `blacksmith-4vcpu-ubuntu-2404`: AMD EPYC with AVX-512, 4 vCPUs, 16 GB, Ubuntu 24.04.4, GCC 13.3.0             |
 | `rustc`          | `1.99.0 (b940084d7 2026-09-28)`, release profile with thin LTO                                                |
 | Criterion        | 0.8.2: 30 samples, 3 s measurement, 0.5 s warm-up                                                             |
 | Oniguruma        | `f95747b462de672b6f8dbdeb478245ddf061ca53`, `-O3`                                                             |
@@ -253,4 +253,4 @@ pnpm install --frozen-lockfile --dir benches/shiki_js
 Or dispatch the workflow:
 `gh workflow run blacksmith-comparison.yml --ref main -f platform=both -f cases=all`.
 The tables on this page come from
-`./scripts/compare-engines.py tables benches/results/blacksmith-2026-10-01-36926978824`.
+`./scripts/compare-engines.py tables benches/results/blacksmith-2026-10-08-37782529019`.
