@@ -42,9 +42,21 @@ These parts of the C library are not ported:
   EUC-TW, EUC-CN, Big5, GB18030, KOI8-R, CP1251, and ISO-8859-1 to -16.
 - **The POSIX and GNU APIs:** `regcomp`, `regexec` and `regfree`
   ([ADR-012](../adr/012-posix-and-gnu-api-not-ported)).
-- **C memory management:** Rust's `Drop` frees what `onig_free` and its
-  relatives freed in C.
-- **`onig_new_deluxe`:** a C-specific allocation variant; use `onig_new`.
+- **13 of the 138 functions that `oniguruma.h` declares,** all of them C
+  memory and setup plumbing that Rust does not need. The other 125 are
+  public under their C names.
+  - `onig_new_deluxe`, `onig_new_without_alloc` and `onig_reg_init` allocate
+    and initialize a `regex_t` in C; use `onig_new`.
+  - `onig_free`, `onig_free_body`, `onig_region_free`, `onig_regset_free`,
+    `onig_free_match_param` and `onig_free_match_param_content` free what
+    Rust's `Drop` frees.
+  - `onig_initialize_encoding` and `onig_copy_encoding` set up encoding
+    structs; Ferroni's two encodings are the statics `ONIG_ENCODING_UTF8` and
+    `ONIG_ENCODING_ASCII`.
+  - `onig_null_warn` is C's no-op warning callback; `onig_set_warn_func`
+    takes any `fn(&str)`.
+  - `onig_setup_builtin_monitors_by_ascii_encoded_name` registers monitor
+    callouts that print to a C `FILE*`.
 
 ### Where Ferroni differs on purpose
 
