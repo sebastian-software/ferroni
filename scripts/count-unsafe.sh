@@ -5,7 +5,9 @@
 #
 # This is the single source of truth for the unsafe figures in "Current State"
 # of docs/app/routes/adr/002-unsafe-code-policy.mdx. Run it after adding or
-# removing unsafe code and update the ADR if the numbers changed.
+# removing unsafe code and update the ADR if the numbers changed. The README
+# quotes the site count too; scripts/check-readme-figures.sh (run in CI) fails
+# when the README or the ADR falls behind.
 #
 # Counted, per file under src/:
 #   blocks      `unsafe {` blocks (including `unsafe {` after `=`, `(`, etc.)

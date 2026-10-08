@@ -36,12 +36,15 @@ Test counts are derived from the tree by `./scripts/count-tests.sh`; the
 README quotes the total in its
 [Correctness and safety](README.md#correctness-and-safety) section, and the
 [compatibility guide](https://ferroni.dev/guide/compatibility#test-parity)
-carries the per-file parity table.
+carries the per-file parity table. The README quotes that total rounded down to
+the hundred, and `scripts/check-readme-figures.sh` (run in CI) enforces it.
 
 The `unsafe` figures in the "Current State" section of
 [ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy) are derived the same
 way, by `./scripts/count-unsafe.sh`. Run it after changing `unsafe` code and
-update that section from its output.
+update that section from its output. The README quotes the site count exactly;
+`scripts/check-readme-figures.sh` (run in CI) enforces it for the README and
+that section.
 
 ### Code samples in the docs
 
@@ -96,6 +99,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked
 cargo deny --all-features --locked check
 ./scripts/check-workflow-pins.sh
 ./scripts/readme-family.sh check
+./scripts/check-readme-figures.sh
 ```
 
 `--all-features` includes `ffi`, so run
