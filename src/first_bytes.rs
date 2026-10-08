@@ -652,7 +652,22 @@ pub(crate) fn derive_start_byte_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZ
     for byte in bitset_members(&bits) {
         map[byte] = 1;
     }
+    admit_look_behind_continuations(reg, &mut map);
     Some(map)
+}
+
+/// Rust-only (ADR-008): fits a start map to a leading positive look-behind
+/// (`reg.leading_look_behind`), which the maps pass as zero-width. Over
+/// malformed UTF-8 it steps back over continuation bytes and goes on where
+/// its body ends, as in C. From a start inside a character the body ends
+/// past it, so the map admits the continuation bytes; valid UTF-8 never
+/// starts an attempt on one. After a stray run of continuation bytes the
+/// body ends before the start and the next instruction reads that run,
+/// which a map of the start's byte cannot see (#259).
+pub(crate) fn admit_look_behind_continuations(reg: &RegexType, map: &mut [u8; CHAR_MAP_SIZE]) {
+    if reg.leading_look_behind && reg.enc.max_enc_len() > 1 {
+        map[0x80..0xC0].fill(1);
+    }
 }
 
 /// The bytes a match can start with when the VM starts at `entry`.
@@ -669,7 +684,12 @@ fn first_byte_map_from(
     /// Nested look-aheads whose bodies are derived before giving up.
     const MAX_LOOKAHEAD_DEPTH: u32 = 4;
 
-    fn mark_continuation(reg: &RegexType, pc: usize, id: MemNumType) -> Option<usize> {
+    fn mark_continuation(
+        reg: &RegexType,
+        pc: usize,
+        id: MemNumType,
+        lookbehind: bool,
+    ) -> Option<usize> {
         reg.ops
             .iter()
             .enumerate()
@@ -678,7 +698,11 @@ fn first_byte_map_from(
                 OperationPayload::CutToMark {
                     id: cut_id,
                     restore_pos,
-                } if cut_id == id => Some(if restore_pos { at + 1 } else { pc + 1 }),
+                } if cut_id == id => Some(if restore_pos || lookbehind {
+                    at + 1
+                } else {
+                    pc + 1
+                }),
                 _ => None,
             })
     }
@@ -753,14 +777,18 @@ fn first_byte_map_from(
                 let OperationPayload::Mark { id, save_pos } = op.payload else {
                     return None;
                 };
-                if save_pos {
+                // A fixed-length positive look-behind (MARK, STEP_BACK_START)
+                // goes on where its body ends, as in C; over valid UTF-8 that
+                // is where it started, which this analysis assumes, as it
+                // does for `LookBehindOp`.
+                let lookbehind =
+                    reg.ops.get(pc + 1).map(|op| op.opcode) == Some(OpCode::StepBackStart);
+                if save_pos || lookbehind {
                     // Positive lookahead/lookbehind restores the original input
                     // position at its matching CutToMark. Non-restoring marks
                     // are VM bookkeeping (for example greedy star loops) and
                     // continue normally into their consuming instruction.
-                    let continuation = mark_continuation(reg, pc, id)?;
-                    let lookbehind =
-                        reg.ops.get(pc + 1).map(|op| op.opcode) == Some(OpCode::StepBackStart);
+                    let continuation = mark_continuation(reg, pc, id, lookbehind)?;
                     // A positive look-ahead whose body cannot match empty must
                     // consume the byte at the start position, so its body's
                     // first bytes bound this path like a consuming instruction.

@@ -2607,14 +2607,19 @@ fn compile_anchor_node(
 
     if at == ANCR_LOOK_BEHIND {
         if an.char_min_len == an.char_max_len {
-            // (?<=...) positive lookbehind — fixed-length
+            // (?<=...) positive lookbehind — fixed-length. C keeps the
+            // position where the body ends (`save_pos`/`restore_pos` FALSE):
+            // over malformed UTF-8 that can differ from where it started.
             let id = reg.num_call;
             reg.num_call += 1;
 
             add_op(
                 reg,
                 OpCode::Mark,
-                OperationPayload::Mark { id, save_pos: true },
+                OperationPayload::Mark {
+                    id,
+                    save_pos: false,
+                },
             );
 
             let char_len = an.char_min_len as i32;
@@ -2640,7 +2645,7 @@ fn compile_anchor_node(
                 OpCode::CutToMark,
                 OperationPayload::CutToMark {
                     id,
-                    restore_pos: true,
+                    restore_pos: false,
                 },
             );
         } else {
@@ -9609,6 +9614,41 @@ fn alt_merge_node_opt_info(to: &mut OptNode, add: &OptNode, env_enc: OnigEncodin
     to.len.alt_merge(&add.len);
 }
 
+/// Rust-only (ADR-008): whether a positive look-behind can come before the
+/// first character a match of `node` reads.
+fn has_leading_look_behind(node: &Node, env: &ParseEnv) -> bool {
+    match &node.inner {
+        NodeInner::Anchor(an) => an.anchor_type == ANCR_LOOK_BEHIND,
+        NodeInner::List(_) => {
+            let mut cur = Some(node);
+            while let Some(NodeInner::List(cons)) = cur.map(|n| &n.inner) {
+                if has_leading_look_behind(&cons.car, env) {
+                    return true;
+                }
+                if node_min_byte_len(&cons.car, env) > 0 {
+                    return false;
+                }
+                cur = cons.cdr.as_deref();
+            }
+            false
+        }
+        NodeInner::Alt(_) => {
+            let mut cur = Some(node);
+            while let Some(NodeInner::Alt(cons)) = cur.map(|n| &n.inner) {
+                if has_leading_look_behind(&cons.car, env) {
+                    return true;
+                }
+                cur = cons.cdr.as_deref();
+            }
+            false
+        }
+        NodeInner::Quant(QuantNode { body, .. }) | NodeInner::Bag(BagNode { body, .. }) => body
+            .as_deref()
+            .is_some_and(|body| has_leading_look_behind(body, env)),
+        _ => false,
+    }
+}
+
 /// Rust-only (ADR-008): whether `node` repeats `.` without an upper bound
 /// (`.*`, `.*?`, `(.)+`), outside or inside groups and look-arounds.
 fn has_anychar_run(node: &Node) -> bool {
@@ -10499,15 +10539,21 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
             &extra_maps,
         ) == 0
         {
+            let mut extra_map = start_opt.map.map;
+            crate::first_bytes::admit_look_behind_continuations(reg, &mut extra_map);
             if !c_has_optimizer {
                 if extra_start_map_filters(reg.enc, &start_opt.map) {
                     opt.map = start_opt.map;
+                    opt.map.map = extra_map;
                 } else {
                     // A map at the match start (see above).
-                    start_bytes = Some(start_opt.map.map);
+                    start_bytes = Some(extra_map);
                 }
             } else {
-                start_bytes = optimizer_start_bytes(reg.enc, &start_opt);
+                start_bytes = optimizer_start_bytes(reg.enc, &start_opt).map(|mut bytes| {
+                    crate::first_bytes::admit_look_behind_continuations(reg, &mut bytes);
+                    bytes
+                });
                 reg.start_dispatch = optimizer_distance_max(reg.enc, &start_opt)
                     .is_some_and(|dist_max| dist_max != INFINITE_LEN);
             }
@@ -10854,6 +10900,7 @@ fn compile_parsed(
     }
 
     // Set optimization info (exact string, char map, anchors) from parse tree
+    reg.leading_look_behind = has_leading_look_behind(&root, env);
     let r = set_optimize_info_from_tree(&root, reg, env);
     if r != 0 {
         return r;
@@ -11159,6 +11206,7 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         leading_run: None,
         literal_prefix: None,
         anychar_run: false,
+        leading_look_behind: false,
         search_start_map: None,
         search_jump: None,
         required_literals: None,
@@ -11637,6 +11685,7 @@ mod tests {
             leading_run: None,
             literal_prefix: None,
             anychar_run: false,
+            leading_look_behind: false,
             search_start_map: None,
             search_jump: None,
             required_literals: None,
@@ -13258,6 +13307,91 @@ mod tests {
             }
         }
         assert!(tries_used > 500, "only {tries_used} patterns used a trie");
+    }
+
+    /// Over malformed UTF-8 a fixed-length positive look-behind steps back
+    /// over continuation bytes and goes on where its body ends, which can lie
+    /// before or after where it started (#257). Fused and upstream look-behinds
+    /// give C's results, its negative match lengths included.
+    #[cfg(feature = "ffi")]
+    #[test]
+    fn look_behinds_continue_where_c_does_over_malformed_utf8() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{LIMIT_TEST_LOCK, onig_search};
+
+        let _lock = LIMIT_TEST_LOCK.lock().unwrap();
+        let patterns = [
+            r"(?<=\()x",
+            r"(?<=\()x?",
+            r"(?<=\()",
+            r"(?<=\()..",
+            r"\b(?<=\.)\w+",
+            r"(?<=ab)c?",
+            r"(?<=[^a-c]).?",
+            r"(?<=[^a-c])",
+            r"(?<!\()x",
+            r"(?<=é).?",
+            r"(?i)(?<=k).?",
+            r"(?<=\(|\[)x?",
+            r"(?<=(\())(.?)",
+            r"a(?<=\()",
+        ];
+        let subjects: [&[u8]; 10] = [
+            b"(\x80x",
+            b"(\x80\x80x",
+            b"(\x80\x80\x80\x80x",
+            b".\x80\xe0\x81\xab\xf0\x9f\x98\x80",
+            b"ab\x80c",
+            "é\u{80}x".as_bytes(),
+            b"\xc3(\x80)",
+            b"\xc3\xa9\xa9x",
+            "a(é)b".as_bytes(),
+            b"K\x80\x80k",
+        ];
+        for fused in [true, false] {
+            for pattern in patterns {
+                FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(!fused));
+                let reg = onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                    &OnigSyntaxOniguruma,
+                );
+                FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(false));
+                let reg = reg.unwrap();
+                let c = crate::ffi::CRegex::new(pattern.as_bytes(), crate::ffi::ONIG_OPTION_NONE)
+                    .unwrap();
+                for subject in subjects {
+                    for start in 0..=subject.len() {
+                        let (r, region) = onig_search(
+                            &reg,
+                            subject,
+                            subject.len(),
+                            start,
+                            subject.len(),
+                            Some(OnigRegion::new()),
+                            ONIG_OPTION_NONE,
+                        );
+                        let mut c_region = crate::ffi::CRegion::new();
+                        let c_r = c.search(subject, start, subject.len(), Some(&mut c_region), 0);
+                        let context =
+                            format!("{pattern} on {subject:?} from {start} fused={fused}");
+                        assert_eq!(r, c_r, "{context}");
+                        if r >= 0 {
+                            let region = region.unwrap();
+                            let spans: Vec<(i32, i32)> = region
+                                .beg
+                                .iter()
+                                .zip(&region.end)
+                                .take(region.num_regs as usize)
+                                .map(|(&b, &e)| (b, e))
+                                .collect();
+                            assert_eq!(spans, c_region.capture_ranges(), "{context}");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// A look-behind compiled to `LookBehindOp` must match exactly like the

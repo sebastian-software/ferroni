@@ -8057,6 +8057,7 @@ mod tests {
             leading_run: None,
             literal_prefix: None,
             anychar_run: false,
+            leading_look_behind: false,
             search_start_map: None,
             search_jump: None,
             required_literals: None,
