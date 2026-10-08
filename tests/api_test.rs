@@ -2319,6 +2319,259 @@ fn builder_multi_line_anchors_overrides_syntax_defaults() {
 }
 
 #[test]
+fn builder_syntax_mode_matches_syntax_statics() {
+    use ferroni::regsyntax::{
+        OnigSyntaxASIS, OnigSyntaxEmacs, OnigSyntaxGnuRegex, OnigSyntaxGrep, OnigSyntaxJava,
+        OnigSyntaxOniguruma, OnigSyntaxPerl, OnigSyntaxPerl_NG, OnigSyntaxPosixBasic,
+        OnigSyntaxPosixExtended, OnigSyntaxPython, OnigSyntaxRuby,
+    };
+
+    let pairs: [(Syntax, &'static OnigSyntaxType); 12] = [
+        (Syntax::Oniguruma, &OnigSyntaxOniguruma),
+        (Syntax::Asis, &OnigSyntaxASIS),
+        (Syntax::PosixBasic, &OnigSyntaxPosixBasic),
+        (Syntax::PosixExtended, &OnigSyntaxPosixExtended),
+        (Syntax::Emacs, &OnigSyntaxEmacs),
+        (Syntax::Grep, &OnigSyntaxGrep),
+        (Syntax::GnuRegex, &OnigSyntaxGnuRegex),
+        (Syntax::Java, &OnigSyntaxJava),
+        (Syntax::Perl, &OnigSyntaxPerl),
+        (Syntax::PerlNg, &OnigSyntaxPerl_NG),
+        (Syntax::Ruby, &OnigSyntaxRuby),
+        (Syntax::Python, &OnigSyntaxPython),
+    ];
+    let patterns = [r"a.b", r"^b$", r"(a)(b)", r"a+b", r"(?<n>x)\w"];
+    let texts = ["a.b", "axb", "a\nb\nc", "aab", "xy", "b"];
+
+    for (syntax, statics) in pairs {
+        for pattern in patterns {
+            let typed = Regex::builder(pattern).syntax_mode(syntax).build();
+            let raw = Regex::builder(pattern).syntax(statics).build();
+            match (typed, raw) {
+                (Ok(typed), Ok(raw)) => {
+                    assert_eq!(
+                        typed.captures_len(),
+                        raw.captures_len(),
+                        "{syntax:?} {pattern}"
+                    );
+                    for text in texts {
+                        assert_eq!(
+                            typed.find(text).map(|m| m.range()),
+                            raw.find(text).map(|m| m.range()),
+                            "{syntax:?} {pattern} on {text:?}"
+                        );
+                    }
+                }
+                (Err(typed), Err(raw)) => assert_eq!(typed, raw, "{syntax:?} {pattern}"),
+                (typed, raw) => panic!(
+                    "{syntax:?} {pattern}: typed ok={}, raw ok={}",
+                    typed.is_ok(),
+                    raw.is_ok()
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn builder_syntax_and_syntax_mode_last_call_wins() {
+    use ferroni::regsyntax::OnigSyntaxRuby;
+
+    let re = Regex::builder("a.b")
+        .syntax(&OnigSyntaxRuby)
+        .syntax_mode(Syntax::Asis)
+        .build()
+        .unwrap();
+    assert!(re.is_match("a.b"));
+    assert!(!re.is_match("axb"));
+
+    let re = Regex::builder("a.b")
+        .syntax_mode(Syntax::Asis)
+        .syntax(&OnigSyntaxRuby)
+        .build()
+        .unwrap();
+    assert!(re.is_match("axb"));
+}
+
+#[test]
+fn syntax_default_and_scanner_alias() {
+    // ScannerSyntax is an alias of Syntax, so one value serves both APIs.
+    let scanner_default: ScannerSyntax = ScannerSyntax::default();
+    assert_eq!(scanner_default, Syntax::Oniguruma);
+    assert_eq!(Syntax::default(), Syntax::Oniguruma);
+
+    let config = ferroni::scanner::ScannerConfig {
+        syntax: Syntax::Asis,
+        ..Default::default()
+    };
+    let mut scanner = ferroni::scanner::Scanner::with_config(&["a.b"], &config).unwrap();
+    assert!(
+        scanner
+            .find_next_match("axb", 0, ScannerFindOptions::NONE)
+            .is_none()
+    );
+    assert!(
+        scanner
+            .find_next_match("a.b", 0, ScannerFindOptions::NONE)
+            .is_some()
+    );
+}
+
+#[test]
+fn builder_capture_group_controls_unnamed_captures() {
+    use ferroni::oniguruma::{ONIG_OPTION_CAPTURE_GROUP, ONIG_OPTION_DONT_CAPTURE_GROUP};
+
+    let pattern = r"(?<word>\w+) (\d+)";
+
+    // Oniguruma syntax: unnamed groups are not captured next to named ones by default.
+    let default = Regex::builder(pattern).build().unwrap();
+    assert_eq!(default.captures_len(), 1);
+    let on = Regex::builder(pattern).capture_group(true).build().unwrap();
+    assert_eq!(on.captures_len(), 2);
+    let caps = on.captures("abc 42").unwrap();
+    assert_eq!(caps.get(2).unwrap().as_str(), "42");
+    let back = Regex::builder(pattern)
+        .capture_group(true)
+        .capture_group(false)
+        .build()
+        .unwrap();
+    assert_eq!(back.captures_len(), 1);
+
+    // capture_group(true) overrides an earlier DONT_CAPTURE_GROUP.
+    let overridden = Regex::builder(pattern)
+        .option(ONIG_OPTION_DONT_CAPTURE_GROUP)
+        .capture_group(true)
+        .build()
+        .unwrap();
+    assert_eq!(overridden.captures_len(), 2);
+    let dont = Regex::builder(pattern)
+        .option(ONIG_OPTION_DONT_CAPTURE_GROUP)
+        .build()
+        .unwrap();
+    assert_eq!(dont.captures_len(), 1);
+
+    // The raw flag and the typed method agree.
+    let raw = Regex::builder(pattern)
+        .option(ONIG_OPTION_CAPTURE_GROUP)
+        .build()
+        .unwrap();
+    assert_eq!(raw.captures_len(), 2);
+
+    // Python syntax captures unnamed groups even next to named ones, so false keeps them.
+    let python = Regex::builder(r"(a)(?P<n>b)")
+        .syntax(&OnigSyntaxPython)
+        .capture_group(false)
+        .build()
+        .unwrap();
+    assert_eq!(python.captures_len(), 2);
+}
+
+#[test]
+fn builder_clear_option_removes_flag() {
+    use ferroni::oniguruma::{ONIG_OPTION_EXTEND, ONIG_OPTION_IGNORECASE};
+
+    let re = Regex::builder("hello")
+        .option(ONIG_OPTION_IGNORECASE)
+        .clear_option(ONIG_OPTION_IGNORECASE)
+        .build()
+        .unwrap();
+    assert!(!re.is_match("HELLO"));
+
+    // Clearing a flag that was never set changes nothing.
+    let re = Regex::builder("a b")
+        .clear_option(ONIG_OPTION_EXTEND)
+        .build()
+        .unwrap();
+    assert!(re.is_match("a b"));
+}
+
+#[test]
+fn builder_boolean_setters_false_clear_their_flags() {
+    let insensitive = Regex::builder("hello")
+        .case_insensitive(true)
+        .case_insensitive(false)
+        .build()
+        .unwrap();
+    assert!(!insensitive.is_match("HELLO"));
+
+    let dot = Regex::builder("a.b")
+        .dot_matches_newline(true)
+        .dot_matches_newline(false)
+        .build()
+        .unwrap();
+    assert!(!dot.is_match("a\nb"));
+
+    let extended = Regex::builder("a b")
+        .extended(true)
+        .extended(false)
+        .build()
+        .unwrap();
+    assert!(extended.is_match("a b"));
+    assert!(!extended.is_match("ab"));
+}
+
+#[test]
+fn builder_bytes_matches_regex_new_bytes() {
+    let re = RegexBuilder::new_bytes(b"hello")
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+    assert!(re.is_match("HeLLo"));
+
+    let re = Regex::builder_bytes(br"\d+").build().unwrap();
+    assert_eq!(re.find("abc 42").unwrap().as_str(), "42");
+
+    // Invalid UTF-8 pattern bytes are accepted or rejected exactly as Regex::new_bytes does.
+    let invalid: &[u8] = b"a\xff";
+    let via_new = Regex::new_bytes(invalid).map(|_| ());
+    let via_builder = RegexBuilder::new_bytes(invalid).build().map(|_| ());
+    assert_eq!(via_new, via_builder);
+}
+
+#[test]
+fn scanner_find_options_bitor_combines_flags() {
+    let combined = ScannerFindOptions::NOT_BEGIN_STRING | ScannerFindOptions::NOT_END_STRING;
+    assert_eq!(combined, ScannerFindOptions::from_bits(3));
+    assert_eq!(
+        ScannerFindOptions::NONE | ScannerFindOptions::NOT_BEGIN_POSITION,
+        ScannerFindOptions::NOT_BEGIN_POSITION
+    );
+
+    let mut options = ScannerFindOptions::NONE;
+    options |= ScannerFindOptions::NOT_BEGIN_POSITION;
+    options |= ScannerFindOptions::NOT_END_STRING;
+    assert_eq!(options, ScannerFindOptions::from_bits(6));
+
+    let mut scanner = ferroni::scanner::Scanner::new(&[r"\Gab"]).unwrap();
+    assert!(
+        scanner
+            .find_next_match("xab", 1, ScannerFindOptions::NOT_BEGIN_POSITION)
+            .is_none()
+    );
+    assert!(
+        scanner
+            .find_next_match("xab", 1, ScannerFindOptions::NONE)
+            .is_some()
+    );
+    let mut scanner = ferroni::scanner::Scanner::new(&[r"\Aab"]).unwrap();
+    assert!(
+        scanner
+            .find_next_match("ab", 0, ScannerFindOptions::NOT_BEGIN_STRING)
+            .is_none()
+    );
+}
+
+#[test]
+fn scanner_match_captures_is_the_capture_slice() {
+    let mut scanner = ferroni::scanner::Scanner::new(&[r"(\d)(\d)"]).unwrap();
+    let m = scanner
+        .find_next_match("x42", 0, ScannerFindOptions::NONE)
+        .unwrap();
+    assert_eq!(m.captures(), &m.capture_indices[..]);
+    assert_eq!(m.captures().len(), 3);
+}
+
+#[test]
 fn captures_len_and_is_empty() {
     // Exercises Captures::len() and is_empty()
     let re = Regex::new(r"(a)(b)(c)").unwrap();

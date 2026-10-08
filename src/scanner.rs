@@ -8,6 +8,7 @@
 
 use smallvec::SmallVec;
 
+use crate::api::Syntax;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
@@ -19,8 +20,8 @@ use crate::regset::{
     onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new_shared,
     onig_regset_number_of_regex, onig_regset_search_utf8, onig_regset_swap_region,
 };
-use crate::regsyntax::*;
 use std::collections::HashMap;
+use std::ops::{BitOr, BitOrAssign};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -46,14 +47,52 @@ pub struct ScannerMatch {
     pub capture_indices: SmallVec<[CaptureIndex; 8]>,
 }
 
+impl ScannerMatch {
+    /// The capture groups of the match as a slice. Index 0 is the full match.
+    ///
+    /// It returns the same groups as [`capture_indices`](Self::capture_indices),
+    /// but its signature does not expose the `SmallVec` type.
+    ///
+    /// ```
+    /// use ferroni::scanner::{Scanner, ScannerFindOptions};
+    ///
+    /// let mut scanner = Scanner::new(&[r"(\d)(\d)"]).unwrap();
+    /// let m = scanner.find_next_match("x42", 0, ScannerFindOptions::NONE).unwrap();
+    /// assert_eq!(m.captures().len(), 3);
+    /// assert_eq!((m.captures()[0].start, m.captures()[0].end), (1, 3));
+    /// ```
+    pub fn captures(&self) -> &[CaptureIndex] {
+        &self.capture_indices
+    }
+}
+
 /// Options for `Scanner::find_next_match`, matching vscode-oniguruma's `FindOption`.
+///
+/// Options combine with `|` and `|=`:
+///
+/// ```
+/// use ferroni::scanner::{Scanner, ScannerFindOptions};
+///
+/// let mut scanner = Scanner::new(&[r"\Aab\z"]).unwrap();
+/// let mut options = ScannerFindOptions::NOT_BEGIN_STRING;
+/// options |= ScannerFindOptions::NOT_END_STRING;
+/// assert!(scanner.find_next_match("ab", 0, options).is_none());
+/// assert!(scanner.find_next_match("ab", 0, ScannerFindOptions::NONE).is_some());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScannerFindOptions(u32);
 
 impl ScannerFindOptions {
+    /// No options: the search treats the text as a whole string.
     pub const NONE: Self = Self(0);
+    /// The start of the text is not the start of a string, so `\A` does not
+    /// match there.
     pub const NOT_BEGIN_STRING: Self = Self(1);
+    /// The end of the text is not the end of a string, so `\z` and `\Z` do
+    /// not match there.
     pub const NOT_END_STRING: Self = Self(2);
+    /// The search start position is not the start of the search, so `\G`
+    /// does not match there.
     pub const NOT_BEGIN_POSITION: Self = Self(4);
 
     /// Create from a raw bitmask.
@@ -76,54 +115,36 @@ impl ScannerFindOptions {
     }
 }
 
-/// Regex syntax variant, matching vscode-oniguruma's `Syntax` enum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ScannerSyntax {
-    /// Oniguruma syntax (default).
-    #[default]
-    Oniguruma,
-    /// Plain text, no metacharacters.
-    Asis,
-    /// POSIX Basic Regular Expressions.
-    PosixBasic,
-    /// POSIX Extended Regular Expressions.
-    PosixExtended,
-    /// Emacs regex syntax.
-    Emacs,
-    /// grep syntax.
-    Grep,
-    /// GNU regex syntax.
-    GnuRegex,
-    /// Java regex syntax.
-    Java,
-    /// Perl regex syntax.
-    Perl,
-    /// Perl-NG regex syntax.
-    PerlNg,
-    /// Ruby regex syntax.
-    Ruby,
-    /// Python regex syntax.
-    Python,
-}
+impl BitOr for ScannerFindOptions {
+    type Output = Self;
 
-impl ScannerSyntax {
-    fn as_onig_syntax(&self) -> &'static OnigSyntaxType {
-        match self {
-            Self::Oniguruma => &OnigSyntaxOniguruma,
-            Self::Asis => &OnigSyntaxASIS,
-            Self::PosixBasic => &OnigSyntaxPosixBasic,
-            Self::PosixExtended => &OnigSyntaxPosixExtended,
-            Self::Emacs => &OnigSyntaxEmacs,
-            Self::Grep => &OnigSyntaxGrep,
-            Self::GnuRegex => &OnigSyntaxGnuRegex,
-            Self::Java => &OnigSyntaxJava,
-            Self::Perl => &OnigSyntaxPerl,
-            Self::PerlNg => &OnigSyntaxPerl_NG,
-            Self::Ruby => &OnigSyntaxRuby,
-            Self::Python => &OnigSyntaxPython,
-        }
+    /// Combine two sets of options. Unknown bits from [`from_bits`](Self::from_bits)
+    /// are kept as they are.
+    fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
     }
 }
+
+impl BitOrAssign for ScannerFindOptions {
+    /// Add the options of `rhs` to `self`.
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+/// Regex syntax variant, matching vscode-oniguruma's `Syntax` enum.
+///
+/// This is the same type as [`crate::api::Syntax`], so one value can select a
+/// syntax for both [`crate::api::RegexBuilder::syntax_mode`] and a scanner.
+///
+/// ```
+/// use ferroni::api::Syntax;
+/// use ferroni::scanner::ScannerSyntax;
+///
+/// let syntax: ScannerSyntax = Syntax::Ruby;
+/// assert_eq!(syntax, ScannerSyntax::Ruby);
+/// ```
+pub type ScannerSyntax = Syntax;
 
 /// Configuration for creating a `Scanner`, matching vscode-oniguruma's `IOnigScannerConfig`.
 ///
