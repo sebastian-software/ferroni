@@ -1340,9 +1340,9 @@ impl Regex {
 /// [`ScannerSyntax`](crate::scanner::ScannerSyntax). The variants match the
 /// scanner's syntax choices, which follow vscode-oniguruma's `Syntax` enum.
 ///
-/// The default is [`Syntax::Oniguruma`]. The enum is not `#[non_exhaustive]`
-/// so that existing `match` expressions over the scanner's syntax remain
-/// exhaustive.
+/// The default is [`Syntax::Oniguruma`]. The enum is `#[non_exhaustive]`, so a
+/// new syntax can be added without a breaking change; a `match` outside this
+/// crate needs a wildcard arm.
 ///
 /// ```
 /// use ferroni::api::{Regex, Syntax};
@@ -1352,6 +1352,7 @@ impl Regex {
 /// assert!(re.is_match("ok"));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum Syntax {
     /// Oniguruma syntax (default).
     #[default]
