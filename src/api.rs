@@ -4,7 +4,11 @@
 // Rust-native types: Regex, RegexBuilder, Match, Captures, FindIter.
 
 use std::cell::RefCell;
-use std::ops::Range;
+use std::fmt;
+use std::ops::{Index, Range};
+use std::panic::AssertUnwindSafe;
+use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
@@ -16,6 +20,7 @@ use crate::regexec::{
     onig_search, onig_search_bounds, onig_search_with_param, take_cached_msa,
 };
 use crate::regint::RegexType;
+use crate::regparse_types::NameTable;
 use crate::regsyntax::{
     OnigSyntaxASIS, OnigSyntaxEmacs, OnigSyntaxGnuRegex, OnigSyntaxGrep, OnigSyntaxJava,
     OnigSyntaxOniguruma, OnigSyntaxPerl, OnigSyntaxPerl_NG, OnigSyntaxPosixBasic,
@@ -156,7 +161,31 @@ impl SearchOptions {
     }
 }
 
+/// The immutable state behind a [`Regex`]: the compiled program and the
+/// pattern it was compiled from. Every clone of a `Regex`, and every
+/// [`Captures`] it returns, shares one value through an `Arc`.
+struct Compiled {
+    /// Wrapped in `AssertUnwindSafe`; the notes on [`Regex`] explain why the
+    /// assertion holds.
+    program: AssertUnwindSafe<RegexType>,
+    pattern: Box<[u8]>,
+}
+
 /// A compiled regular expression.
+///
+/// Cloning a `Regex` is cheap: clones share one compiled program through an
+/// `Arc`, so a clone costs one atomic increment and no recompilation.
+///
+/// `Regex` is [`UnwindSafe`](std::panic::UnwindSafe) and
+/// [`RefUnwindSafe`](std::panic::RefUnwindSafe), so it can be used inside
+/// [`std::panic::catch_unwind`] without a wrapper. This holds because the
+/// compiled program is never mutated after compilation: searches only read
+/// it, apart from search helpers built on first use behind a `OnceLock`, which
+/// is unwind-safe itself. Their scratch state lives in thread-local caches and
+/// in each search's own region. The one field the auto traits reject is the
+/// `&'static dyn Encoding` inside `RegexType`, since a trait object does not
+/// promise `RefUnwindSafe`. Encodings are stateless statics, so the assertion
+/// is sound, and it needs no `unsafe`.
 ///
 /// # Examples
 ///
@@ -171,8 +200,19 @@ impl SearchOptions {
 /// assert_eq!(m.start(), 6);
 /// assert_eq!(m.end(), 8);
 /// ```
+///
+/// A `Regex` parses from a string and displays as its pattern:
+///
+/// ```
+/// use ferroni::api::Regex;
+///
+/// let re: Regex = r"\d+".parse().unwrap();
+/// assert_eq!(re.to_string(), r"\d+");
+/// assert_eq!(re.clone().as_str(), Some(r"\d+"));
+/// ```
+#[derive(Clone)]
 pub struct Regex {
-    inner: RegexType,
+    inner: Arc<Compiled>,
 }
 
 impl Regex {
@@ -182,14 +222,85 @@ impl Regex {
     }
 
     /// Compile a pattern from raw bytes using default options.
+    ///
+    /// The pattern is kept as given, so [`Regex::as_bytes`] returns exactly
+    /// these bytes. Oniguruma accepts some byte sequences that are not valid
+    /// UTF-8 (encoded surrogates, for example), and [`Regex::as_str`] returns
+    /// `None` for those.
     pub fn new_bytes(pattern: &[u8]) -> Result<Regex, RegexError> {
-        let inner = onig_new(
+        let program = onig_new(
             pattern,
             ONIG_OPTION_NONE,
             &ONIG_ENCODING_UTF8,
             &OnigSyntaxOniguruma,
         )?;
-        Ok(Regex { inner })
+        Ok(Self::from_parts(program, pattern.into()))
+    }
+
+    fn from_parts(program: RegexType, pattern: Box<[u8]>) -> Regex {
+        Regex {
+            inner: Arc::new(Compiled {
+                program: AssertUnwindSafe(program),
+                pattern,
+            }),
+        }
+    }
+
+    /// The compiled program, shared by every clone of this regex.
+    fn program(&self) -> &RegexType {
+        &self.inner.program
+    }
+
+    /// The pattern this regex was compiled from, or `None` if the pattern is
+    /// not valid UTF-8 (only possible through [`Regex::new_bytes`]).
+    ///
+    /// Use [`Regex::as_bytes`] to read the pattern losslessly.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// assert_eq!(Regex::new(r"a+b").unwrap().as_str(), Some("a+b"));
+    /// assert_eq!(Regex::new_bytes(b"a+b").unwrap().as_str(), Some("a+b"));
+    /// ```
+    pub fn as_str(&self) -> Option<&str> {
+        std::str::from_utf8(&self.inner.pattern).ok()
+    }
+
+    /// The pattern's bytes, exactly as passed to [`Regex::new`] or
+    /// [`Regex::new_bytes`].
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// assert_eq!(Regex::new("é").unwrap().as_bytes(), "é".as_bytes());
+    /// ```
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.inner.pattern
+    }
+
+    /// Iterate over the names of the capture groups, in group order.
+    ///
+    /// The iterator yields one item per group, starting with group 0, so item
+    /// `i` names group `i`, the index that [`Captures::get`] takes. Group 0
+    /// and unnamed groups yield `None`. A name shared by several groups
+    /// appears at each of them.
+    ///
+    /// Oniguruma does not capture plain `(...)` groups in a pattern that has
+    /// named groups, so such groups are absent from the iterator as well.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+    /// let names: Vec<_> = re.capture_names().collect();
+    /// assert_eq!(names, [None, Some("year"), Some("month")]);
+    /// ```
+    pub fn capture_names(&self) -> CaptureNames<'_> {
+        CaptureNames {
+            table: self.program().name_table.as_ref(),
+            next_group: 0,
+            end_group: self.captures_len() as i32 + 1,
+        }
     }
 
     /// Create a [`RegexBuilder`] for fine-grained control over compilation.
@@ -211,17 +322,17 @@ impl Regex {
         // Only the bounds are returned: where they follow from the attempt
         // position and the match length, no region is needed (see
         // `find_iter_bytes`).
-        if !self.inner.keep_moves_match_start
-            && !self.inner.options.contains(ONIG_OPTION_FIND_LONGEST)
+        if !self.program().keep_moves_match_start
+            && !self.program().options.contains(ONIG_OPTION_FIND_LONGEST)
         {
-            let mut msa = take_cached_msa(&self.inner, ONIG_OPTION_NONE, None, 0);
-            let found = onig_search_bounds(&self.inner, text, 0, &mut msa);
+            let mut msa = take_cached_msa(self.program(), ONIG_OPTION_NONE, None, 0);
+            let found = onig_search_bounds(self.program(), text, 0, &mut msa);
             cache_msa(msa);
             let (start, end) = found.ok()??;
             return (end <= text.len()).then_some(Match { text, start, end });
         }
         let (result, region) = onig_search(
-            &self.inner,
+            self.program(),
             text,
             text.len(),
             0,
@@ -293,7 +404,7 @@ impl Regex {
     /// Check whether `text` (as bytes) matches the pattern anywhere.
     pub fn is_match_bytes(&self, text: &[u8]) -> bool {
         let (result, _) = onig_search(
-            &self.inner,
+            self.program(),
             text,
             text.len(),
             0,
@@ -332,14 +443,14 @@ impl Regex {
     /// A search that stops at a process-wide limit (time, retry or stack) is
     /// reported as no match. Use [`Regex::captures_with`] with [`SearchOptions`] to tell
     /// the two apart.
-    pub fn captures<'t>(&'t self, text: &'t str) -> Option<Captures<'t>> {
+    pub fn captures<'t>(&self, text: &'t str) -> Option<Captures<'t>> {
         self.captures_bytes(text.as_bytes())
     }
 
     /// Return the first match with all capture groups (bytes), or `None`.
-    pub fn captures_bytes<'t>(&'t self, text: &'t [u8]) -> Option<Captures<'t>> {
+    pub fn captures_bytes<'t>(&self, text: &'t [u8]) -> Option<Captures<'t>> {
         let (result, region) = onig_search(
-            &self.inner,
+            self.program(),
             text,
             text.len(),
             0,
@@ -355,7 +466,7 @@ impl Regex {
         Some(Captures {
             text,
             region,
-            regex: self,
+            compiled: Arc::clone(&self.inner),
         })
     }
 
@@ -366,7 +477,7 @@ impl Regex {
     ///
     /// Returns the [`RegexError`] of a limit the search reached.
     pub fn captures_with<'t>(
-        &'t self,
+        &self,
         text: &'t str,
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
@@ -380,7 +491,7 @@ impl Regex {
     ///
     /// Returns the [`RegexError`] of a limit the search reached.
     pub fn captures_bytes_with<'t>(
-        &'t self,
+        &self,
         text: &'t [u8],
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
@@ -396,7 +507,7 @@ impl Regex {
         Ok(Some(Captures {
             text,
             region,
-            regex: self,
+            compiled: Arc::clone(&self.inner),
         }))
     }
 
@@ -416,8 +527,8 @@ impl Regex {
         // An iterator yields match bounds only. Where they follow from the
         // attempt position and the match length, it searches without a
         // region, reusing one MatchArg for all its searches.
-        let bounds_only = !self.inner.keep_moves_match_start
-            && !self.inner.options.contains(ONIG_OPTION_FIND_LONGEST);
+        let bounds_only = !self.program().keep_moves_match_start
+            && !self.program().options.contains(ONIG_OPTION_FIND_LONGEST);
         FindIter {
             regex: self,
             text,
@@ -428,7 +539,7 @@ impl Regex {
             } else {
                 take_cached_region()
             },
-            msa: bounds_only.then(|| take_cached_msa(&self.inner, ONIG_OPTION_NONE, None, 0)),
+            msa: bounds_only.then(|| take_cached_msa(self.program(), ONIG_OPTION_NONE, None, 0)),
         }
     }
 
@@ -472,7 +583,7 @@ impl Regex {
         options: SearchOptions,
     ) -> Result<(i32, Option<OnigRegion>), RegexError> {
         let (result, region) = onig_search_with_param(
-            &self.inner,
+            self.program(),
             text,
             text.len(),
             start,
@@ -495,7 +606,7 @@ impl Regex {
     /// Unlike the `regex` crate, group 0 is not counted; see
     /// [the guide](https://ferroni.dev/guide/coming-from-regex).
     pub fn captures_len(&self) -> usize {
-        self.inner.num_mem as usize
+        self.program().num_mem as usize
     }
 
     /// Findings of the compile-time check for patterns that can backtrack
@@ -514,25 +625,53 @@ impl Regex {
     /// assert!(Regex::new(r"(a+b)+$").unwrap().backtracking_warnings().is_empty());
     /// ```
     pub fn backtracking_warnings(&self) -> &[crate::backtrack_lint::BacktrackWarning] {
-        &self.inner.backtrack_warnings
+        &self.program().backtrack_warnings
     }
 
     /// Applied and refused decimal-loop candidates from the opt-in rewrite
     /// pass, in AST traversal order. Empty when optimization is disabled or
     /// no supported shape is recognized. This is not a safety certification.
     pub fn backtracking_rewrites(&self) -> &[crate::backtrack_rewrite::BacktrackingRewrite] {
-        &self.inner.backtrack_rewrites
+        &self.program().backtrack_rewrites
     }
 
     /// Access the underlying `RegexType` for advanced / C-style usage.
     pub fn as_raw(&self) -> &RegexType {
-        &self.inner
+        self.program()
     }
 }
 
-impl std::fmt::Debug for Regex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Regex").finish_non_exhaustive()
+/// Shows the pattern. Bytes that are not valid UTF-8 appear as U+FFFD.
+impl fmt::Debug for Regex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Regex")
+            .field("pattern", &String::from_utf8_lossy(&self.inner.pattern))
+            .finish_non_exhaustive()
+    }
+}
+
+/// Writes the pattern. Bytes that are not valid UTF-8 appear as U+FFFD; use
+/// [`Regex::as_bytes`] for the exact bytes.
+impl fmt::Display for Regex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&String::from_utf8_lossy(&self.inner.pattern))
+    }
+}
+
+/// Equivalent to [`Regex::new`].
+///
+/// ```
+/// use ferroni::api::Regex;
+///
+/// let re: Regex = "a+".parse().unwrap();
+/// assert!(re.is_match("aaa"));
+/// assert!("(".parse::<Regex>().is_err());
+/// ```
+impl FromStr for Regex {
+    type Err = RegexError;
+
+    fn from_str(pattern: &str) -> Result<Self, Self::Err> {
+        Regex::new(pattern)
     }
 }
 
@@ -774,7 +913,7 @@ impl RegexBuilder {
         if self.reject_backtracking_risks && !inner.backtrack_warnings.is_empty() {
             return Err(ONIGERR_VERY_INEFFICIENT_PATTERN.into());
         }
-        Ok(Regex { inner })
+        Ok(Regex::from_parts(inner, self.pattern.into_boxed_slice()))
     }
 }
 
@@ -930,10 +1069,28 @@ impl<'t> Match<'t> {
 /// All capture groups from a single match.
 ///
 /// Group 0 is the entire match. Groups 1..N correspond to `(...)` in the pattern.
+///
+/// A `Captures` borrows only the haystack, not the [`Regex`] that produced
+/// it, so it can be returned from a function that received the regex by
+/// reference. It keeps a shared handle to the compiled program for name
+/// lookups, so creating one costs an atomic increment and no allocation.
+///
+/// # Examples
+///
+/// ```
+/// use ferroni::api::Regex;
+///
+/// fn year<'h>(re: &Regex, text: &'h str) -> Option<&'h str> {
+///     re.captures(text)?.name("year").map(|m| m.as_str())
+/// }
+///
+/// let re = Regex::new(r"(?<year>\d{4})-\d{2}").unwrap();
+/// assert_eq!(year(&re, "published 2026-10"), Some("2026"));
+/// ```
 pub struct Captures<'t> {
     text: &'t [u8],
     region: OnigRegion,
-    regex: &'t Regex,
+    compiled: Arc<Compiled>,
 }
 
 impl<'t> Captures<'t> {
@@ -958,9 +1115,12 @@ impl<'t> Captures<'t> {
 
     /// Get the last capture group with the given name that participated, or `None`.
     pub fn name(&self, name: &str) -> Option<Match<'t>> {
-        let num =
-            onig_name_to_backref_number(&self.regex.inner, name.as_bytes(), Some(&self.region))
-                .ok()?;
+        let num = onig_name_to_backref_number(
+            &self.compiled.program,
+            name.as_bytes(),
+            Some(&self.region),
+        )
+        .ok()?;
         self.get(num as usize)
     }
 
@@ -983,8 +1143,62 @@ impl<'t> Captures<'t> {
     }
 }
 
-impl std::fmt::Debug for Captures<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+/// Returns the text of group `i`.
+///
+/// # Panics
+///
+/// Panics if the pattern has no group `i`, if group `i` did not participate
+/// in the match, or if its bytes are not valid UTF-8 (captures from the
+/// `_bytes` methods). [`Captures::get`] reports the first two cases as `None`.
+///
+/// ```
+/// use ferroni::api::Regex;
+///
+/// let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+/// let caps = re.captures("2026-10").unwrap();
+/// assert_eq!(&caps[1], "2026");
+/// assert_eq!(&caps[2], "10");
+/// ```
+impl Index<usize> for Captures<'_> {
+    type Output = str;
+
+    fn index(&self, i: usize) -> &str {
+        match self.get(i) {
+            Some(m) => m.as_str(),
+            None => panic!("no group at index '{i}'"),
+        }
+    }
+}
+
+/// Returns the text of the last participating group named `name`, as
+/// [`Captures::name`] does.
+///
+/// # Panics
+///
+/// Panics if no group has that name, if no group with that name participated
+/// in the match, or if its bytes are not valid UTF-8 (captures from the
+/// `_bytes` methods). [`Captures::name`] reports these cases as `None`.
+///
+/// ```
+/// use ferroni::api::Regex;
+///
+/// let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+/// let caps = re.captures("2026-10").unwrap();
+/// assert_eq!(&caps["year"], "2026");
+/// ```
+impl<'n> Index<&'n str> for Captures<'_> {
+    type Output = str;
+
+    fn index(&self, name: &'n str) -> &str {
+        match self.name(name) {
+            Some(m) => m.as_str(),
+            None => panic!("no group named '{name}'"),
+        }
+    }
+}
+
+impl fmt::Debug for Captures<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut list = f.debug_list();
         for i in 0..self.len() {
             list.entry(&self.get(i));
@@ -1027,6 +1241,51 @@ impl<'c, 't> Iterator for CapturesIter<'c, 't> {
 
 impl ExactSizeIterator for CapturesIter<'_, '_> {}
 
+// === CaptureNames ===
+
+/// Iterator over the names of the capture groups, from
+/// [`Regex::capture_names`].
+pub struct CaptureNames<'r> {
+    table: Option<&'r NameTable>,
+    next_group: i32,
+    end_group: i32,
+}
+
+impl<'r> CaptureNames<'r> {
+    /// The name of `group`, or `None` if it has none. A name that is not
+    /// valid UTF-8 is reported as absent, because `&str` cannot hold it.
+    fn name_of(&self, group: i32) -> Option<&'r str> {
+        let table = self.table?;
+        let entry = table
+            .entries
+            .values()
+            .find(|entry| entry.back_refs.contains(&group))?;
+        std::str::from_utf8(&entry.name).ok()
+    }
+}
+
+impl<'r> Iterator for CaptureNames<'r> {
+    type Item = Option<&'r str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_group >= self.end_group {
+            return None;
+        }
+        let group = self.next_group;
+        self.next_group += 1;
+        Some(self.name_of(group))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = (self.end_group - self.next_group) as usize;
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for CaptureNames<'_> {}
+
+impl std::iter::FusedIterator for CaptureNames<'_> {}
+
 // === FindIter ===
 
 /// Iterator over all non-overlapping matches in a text.
@@ -1050,7 +1309,7 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
 
         let m = if let Some(msa) = self.msa.as_deref_mut() {
             let (start, end) =
-                onig_search_bounds(&self.regex.inner, self.text, self.last_end, msa).ok()??;
+                onig_search_bounds(self.regex.program(), self.text, self.last_end, msa).ok()??;
             (end <= self.text.len()).then_some(Match {
                 text: self.text,
                 start,
@@ -1058,7 +1317,7 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
             })?
         } else {
             let (result, region) = onig_search(
-                &self.regex.inner,
+                self.regex.program(),
                 self.text,
                 self.text.len(),
                 self.last_end,
@@ -1088,7 +1347,7 @@ impl<'r, 't> Iterator for FindIter<'r, 't> {
                 // Skip one character to avoid infinite loop on empty match
                 self.last_end += self
                     .regex
-                    .inner
+                    .program()
                     .enc
                     .mbc_enc_len(&self.text[self.last_end..]);
                 self.last_was_empty = false;
@@ -1180,7 +1439,7 @@ impl<'r, 't> Iterator for TryFindIter<'r, 't> {
                 }
                 self.last_end += self
                     .regex
-                    .inner
+                    .program()
                     .enc
                     .mbc_enc_len(&self.text[self.last_end..]);
                 self.last_was_empty = false;

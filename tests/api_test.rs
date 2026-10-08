@@ -3057,3 +3057,152 @@ fn assert_c_retry_budgets(cases: &[(&str, &str, u64, u64)]) {
         );
     }
 }
+
+// === Regex: Clone, FromStr, Display, Debug, as_str ===
+
+#[test]
+fn clone_shares_the_compiled_program() {
+    let re = Regex::new(r"(\d+)").unwrap();
+    let copy = re.clone();
+    assert!(std::ptr::eq(re.as_raw(), copy.as_raw()));
+    drop(re);
+    assert_eq!(copy.find("abc 42").unwrap().as_str(), "42");
+    assert_eq!(&copy.captures("7").unwrap()[1], "7");
+}
+
+#[test]
+fn from_str_compiles_or_reports_the_error() {
+    let re: Regex = "a+".parse().unwrap();
+    assert_eq!(re.as_str(), Some("a+"));
+    assert!(matches!(
+        "(".parse::<Regex>(),
+        Err(RegexError::Syntax { .. })
+    ));
+}
+
+#[test]
+fn display_writes_the_pattern() {
+    let re = Regex::new(r"\d{2}-(?<name>x)").unwrap();
+    assert_eq!(re.to_string(), r"\d{2}-(?<name>x)");
+}
+
+#[test]
+fn debug_shows_the_pattern() {
+    let re = Regex::new("a+b").unwrap();
+    assert_eq!(format!("{re:?}"), r#"Regex { pattern: "a+b", .. }"#);
+}
+
+#[test]
+fn as_str_is_none_for_a_pattern_that_is_not_utf8() {
+    // An encoded surrogate: Oniguruma accepts it, UTF-8 does not.
+    let re = Regex::new_bytes(b"\xed\xa0\x80").unwrap();
+    assert_eq!(re.as_str(), None);
+    assert_eq!(re.as_bytes(), b"\xed\xa0\x80");
+    assert!(re.to_string().contains('\u{FFFD}'));
+
+    assert_eq!(Regex::new_bytes(b"ab").unwrap().as_str(), Some("ab"));
+}
+
+#[test]
+fn regex_and_captures_are_unwind_safe() {
+    fn assert_unwind_safe<T: std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
+    assert_unwind_safe::<Regex>();
+    assert_unwind_safe::<Captures<'static>>();
+
+    let re = Regex::new("b+").unwrap();
+    let found = std::panic::catch_unwind(|| re.find("abb").map(|m| m.range()));
+    assert_eq!(found.unwrap(), Some(1..3));
+}
+
+// === Captures borrows only the haystack ===
+
+#[test]
+fn captures_outlive_the_regex_they_came_from() {
+    let caps = {
+        let re = Regex::new(r"(?<word>\w+)!").unwrap();
+        re.captures("hi there!")
+    };
+    assert_eq!(caps.unwrap().name("word").unwrap().as_str(), "there");
+}
+
+// === Captures indexing ===
+
+#[test]
+fn captures_index_by_number_and_name() {
+    let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+    let caps = re.captures("on 2026-10").unwrap();
+    assert_eq!(&caps[0], "2026-10");
+    assert_eq!(&caps[1], "2026");
+    assert_eq!(&caps[2], "10");
+    assert_eq!(&caps["month"], "10");
+}
+
+#[test]
+fn captures_index_by_name_takes_the_last_participating_group() {
+    let re = Regex::new(r"(?<n>a)|(?<n>b)").unwrap();
+    assert_eq!(&re.captures("b").unwrap()["n"], "b");
+}
+
+#[test]
+#[should_panic(expected = "no group at index '3'")]
+fn captures_index_panics_on_a_missing_group() {
+    let re = Regex::new(r"(?<year>\d{4})").unwrap();
+    let caps = re.captures("2026").unwrap();
+    let _ = &caps[3];
+}
+
+#[test]
+#[should_panic(expected = "no group at index '2'")]
+fn captures_index_panics_on_a_group_that_did_not_participate() {
+    let re = Regex::new(r"(a)|(b)").unwrap();
+    let caps = re.captures("a").unwrap();
+    let _ = &caps[2];
+}
+
+#[test]
+#[should_panic(expected = "no group named 'day'")]
+fn captures_index_panics_on_an_unknown_name() {
+    let re = Regex::new(r"(?<year>\d{4})").unwrap();
+    let caps = re.captures("2026").unwrap();
+    let _ = &caps["day"];
+}
+
+#[test]
+#[should_panic(expected = "not valid UTF-8")]
+fn captures_index_panics_on_bytes_that_are_not_utf8() {
+    let re = Regex::new(r"(?<all>.+)").unwrap();
+    let caps = re.captures_bytes(b"\xff").unwrap();
+    assert_eq!(caps.get(1).unwrap().as_bytes(), b"\xff");
+    let _ = &caps[1];
+}
+
+// === Regex::capture_names ===
+
+#[test]
+fn capture_names_lists_one_entry_per_group() {
+    let re = Regex::new(r"(?<year>\d{4})-(?<month>\d{2})").unwrap();
+    let names = re.capture_names();
+    assert_eq!(names.len(), 3);
+    assert_eq!(
+        names.collect::<Vec<_>>(),
+        [None, Some("year"), Some("month")]
+    );
+}
+
+#[test]
+fn capture_names_repeats_a_shared_name_and_marks_unnamed_groups() {
+    let shared = Regex::new(r"(?<n>a)|(?<n>b)").unwrap();
+    assert_eq!(
+        shared.capture_names().collect::<Vec<_>>(),
+        [None, Some("n"), Some("n")]
+    );
+
+    let unnamed = Regex::new(r"(a)(b)").unwrap();
+    assert_eq!(
+        unnamed.capture_names().collect::<Vec<_>>(),
+        [None, None, None]
+    );
+
+    let no_groups = Regex::new(r"a+").unwrap();
+    assert_eq!(no_groups.capture_names().collect::<Vec<_>>(), [None]);
+}
