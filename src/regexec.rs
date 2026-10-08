@@ -3339,10 +3339,11 @@ fn match_literal_trie(
 }
 
 /// `LookBehindOp`: STEP_BACK_START by `char_len` characters from `s`, then
-/// the body instruction `body` at that position. Out of line: code added to
+/// the body instruction `body` at that position; where the body ends if it
+/// matches. Out of line: code added to
 /// `match_at_impl` shifts its layout (see the performance analysis).
 #[inline(never)]
-fn look_behind_body_matches(
+fn look_behind_body_end(
     body: &Operation,
     char_len: u32,
     enc: OnigEncoding,
@@ -3350,9 +3351,9 @@ fn look_behind_body_matches(
     s: usize,
     right_range: usize,
     end: usize,
-) -> bool {
+) -> Option<usize> {
     onigenc_step_back(enc, 0, s, str_data, char_len as usize)
-        .is_some_and(|at| single_op_matches(body, enc, str_data, at, right_range, end))
+        .and_then(|at| single_op_end(body, enc, str_data, at, right_range, end))
 }
 
 /// Whether a guarded push with `skipped_retries` may jump. One whose count
@@ -3386,18 +3387,18 @@ fn guard_retries(skipped_retries: u32) -> u64 {
     u64::from(skipped_retries & !GUARD_RETRIES_BY_CHECKS)
 }
 
-/// Whether the single-character or string instruction `op` matches at `s`,
-/// exactly as the VM executes it. `LookBehindOp` checks its body with it at
-/// the position it stepped back to.
+/// Where the single-character or string instruction `op` ends if it matches
+/// at `s`, exactly as the VM executes and advances it. `LookBehindOp` checks
+/// its body with it at the position it stepped back to.
 #[inline]
-fn single_op_matches(
+fn single_op_end(
     op: &Operation,
     enc: OnigEncoding,
     str_data: &[u8],
     s: usize,
     right_range: usize,
     end: usize,
-) -> bool {
+) -> Option<usize> {
     let available = right_range.saturating_sub(s);
     match (op.opcode, &op.payload) {
         (
@@ -3407,15 +3408,16 @@ fn single_op_matches(
             let n = op.opcode as usize - OpCode::Str1 as usize + 1;
             // A byte loop: a slice comparison of at most five bytes would
             // call memcmp.
-            available >= n
+            (available >= n
                 && exact[..n]
                     .iter()
                     .zip(&str_data[s..s + n])
-                    .all(|(a, b)| a == b)
+                    .all(|(a, b)| a == b))
+            .then_some(s + n)
         }
         (OpCode::StrN, OperationPayload::ExactN { s: exact, n }) => {
             let n = *n as usize;
-            available >= n && exact_eq_at(str_data, s, exact, n)
+            (available >= n && exact_eq_at(str_data, s, exact, n)).then_some(s + n)
         }
         (
             OpCode::StrMb2n1
@@ -3427,53 +3429,63 @@ fn single_op_matches(
             OperationPayload::ExactLenN { s: exact, n, .. },
         ) => {
             let n = *n as usize;
-            available >= n && exact_eq_at(str_data, s, exact, n)
+            (available >= n && exact_eq_at(str_data, s, exact, n)).then_some(s + n)
         }
         (OpCode::CClassRun, OperationPayload::CClassRun { bsp, .. }) => {
             // A fused look-behind evaluates just its original single class;
             // the adjacent forward classes remain at their original addresses.
-            available > 0 && bitset_at(bsp, str_data[s] as usize)
+            (available > 0 && bitset_at(bsp, str_data[s] as usize)).then_some(s + 1)
         }
         (OpCode::CClass | OpCode::CClassNot, OperationPayload::CClass { bsp, ascii_fast }) => {
             if available == 0 {
-                return false;
+                return None;
             }
             let b = str_data[s];
-            let in_class = match *ascii_fast {
-                CClassAsciiFastKind::Eq(c) => b == c,
-                CClassAsciiFastKind::EqFoldLower(lower) => b < 0x80 && (b | 0x20) == lower,
-                CClassAsciiFastKind::None => bitset_at(bsp, b as usize),
+            let not = op.opcode == OpCode::CClassNot;
+            let (in_class, step) = match *ascii_fast {
+                CClassAsciiFastKind::Eq(c) => (b == c, !not),
+                CClassAsciiFastKind::EqFoldLower(lower) => (b < 0x80 && (b | 0x20) == lower, !not),
+                CClassAsciiFastKind::None => (bitset_at(bsp, b as usize), false),
             };
-            in_class != (op.opcode == OpCode::CClassNot)
+            // A one-byte fast path steps one byte; the others one character.
+            (in_class != not).then(|| {
+                if step {
+                    s + 1
+                } else {
+                    advance_char_to_end(enc, str_data, s, end)
+                }
+            })
         }
         (OpCode::CClassMb | OpCode::CClassMbNot, OperationPayload::CClassMb { mb }) => {
             let not = op.opcode == OpCode::CClassMbNot;
             if available == 0 {
-                return false;
+                return None;
             }
             let b = str_data[s];
             if b < 0x80 {
-                return is_in_code_range(mb, b as OnigCodePoint) != not;
+                return (is_in_code_range(mb, b as OnigCodePoint) != not).then_some(s + 1);
             }
-            if s + enclen(enc, str_data, s) > right_range {
-                // A truncated character matches only the negated class.
-                return not;
+            let len = enclen(enc, str_data, s);
+            if s + len > right_range {
+                // A truncated character matches only the negated class,
+                // which consumes it.
+                return not.then_some(right_range);
             }
             let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
-            is_in_code_range(mb, code) != not
+            (is_in_code_range(mb, code) != not).then_some(s + len)
         }
         (OpCode::CClassMix | OpCode::CClassMixNot, OperationPayload::CClassMix { bsp, mb }) => {
             let not = op.opcode == OpCode::CClassMixNot;
             if available == 0 {
-                return false;
+                return None;
             }
             let b = str_data[s];
             if b < 0x80 {
-                return bitset_at(bsp, b as usize) != not;
+                return (bitset_at(bsp, b as usize) != not).then_some(s + 1);
             }
             let len = enclen(enc, str_data, s);
             if s + len > right_range {
-                return not;
+                return not.then_some(right_range);
             }
             let in_class = if len == 1 {
                 bitset_at(bsp, b as usize)
@@ -3481,7 +3493,7 @@ fn single_op_matches(
                 let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
                 is_in_code_range(mb, code)
             };
-            in_class != not
+            (in_class != not).then_some(s + len)
         }
         _ => unreachable!("look-behind body is a single character or string instruction"),
     }
@@ -3556,7 +3568,7 @@ pub(crate) fn first_op_fails(
             }
         }
         FirstOpTest::LookBehind { char_len, not } => {
-            look_behind_body_matches(&reg.ops[1], char_len, enc, str_data, s, end, end) == not
+            look_behind_body_end(&reg.ops[1], char_len, enc, str_data, s, end, end).is_some() == not
         }
     }
 }
@@ -3869,10 +3881,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 if opton_match_whole_string(options) && s < end {
                     goto_fail = true;
                 } else {
-                    let n = (s - sstart) as i32;
+                    // C: `(int )(s - sstart)`. A look-behind that ends before
+                    // its start over malformed UTF-8 can leave `s` before
+                    // `sstart`; C then returns the negative length as is.
+                    let n = s as i32 - sstart as i32;
                     if n == 0 && opton_find_not_empty(options) {
                         goto_fail = true;
-                    } else if n > best_len {
+                    } else if n > best_len || !opton_find_longest(options) {
                         best_len = n;
 
                         // Populate region with capture groups. An untracked
@@ -3887,7 +3902,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                                 region,
                                 reg,
                                 num_mem,
-                                keep,
+                                // C: `if (keep > s) keep = s;`
+                                keep.min(s),
                                 s,
                                 &stack,
                                 mem_start_stk,
@@ -5884,7 +5900,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
             // ================================================================
             OpCode::LookBehindOp => {
                 if let OperationPayload::LookBehindOp { char_len, not } = reg.ops[p].payload {
-                    let matched = look_behind_body_matches(
+                    let body_end = look_behind_body_end(
                         &reg.ops[p + 1],
                         char_len,
                         enc,
@@ -5893,10 +5909,16 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                         right_range,
                         end,
                     );
-                    if matched != not {
-                        p += 2;
-                    } else {
-                        goto_fail = true;
+                    match body_end {
+                        // C: CUT_TO_MARK without restoring the position, so
+                        // the match goes on where the body ended. Over valid
+                        // UTF-8 that is `s` itself.
+                        Some(body_end) if !not => {
+                            s = body_end;
+                            p += 2;
+                        }
+                        None if not => p += 2,
+                        _ => goto_fail = true,
                     }
                 } else {
                     goto_fail = true;
@@ -9141,6 +9163,7 @@ mod tests {
             leading_run: None,
             literal_prefix: None,
             anychar_run: false,
+            leading_look_behind: false,
             search_start_map: None,
             search_jump: None,
             required_literals: None,
@@ -9483,12 +9506,34 @@ mod tests {
                             );
                             let context =
                                 format!("{pattern} {subject:?} end={end} s={s} option={option:?}");
-                            assert_eq!(fails, result == ONIG_MISMATCH, "{context}");
                             if fails {
+                                assert_eq!(result, ONIG_MISMATCH, "{context}");
                                 assert_eq!(msa.retry_limit_in_search_counter, 1, "{context}");
                                 rejected += 1;
                             } else {
-                                assert_eq!(result, 0, "{context}");
+                                // A positive look-behind goes on where its body
+                                // ends, as in C: away from `s` mid-character or
+                                // over malformed UTF-8.
+                                let expected = match test {
+                                    FirstOpTest::LookBehind {
+                                        char_len,
+                                        not: false,
+                                    } => {
+                                        let body_end = look_behind_body_end(
+                                            &reg.ops[1],
+                                            char_len,
+                                            reg.enc,
+                                            subject,
+                                            s,
+                                            end,
+                                            end,
+                                        )
+                                        .expect("the look-behind holds");
+                                        body_end as i32 - s as i32
+                                    }
+                                    _ => 0,
+                                };
+                                assert_eq!(result, expected, "{context}");
                                 kept += 1;
                             }
                         }

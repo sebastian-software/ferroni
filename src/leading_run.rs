@@ -1447,12 +1447,32 @@ impl SearchJump {
             (None, None) => end,
         };
         let boundary = target >= end || enc.max_enc_len() == 1 || (text[target] & 0xC0) != 0x80;
-        if target > s && boundary && reachable(enc, text, s, target) {
+        // A look-behind steps back over a run of continuation bytes before
+        // the position it checks (C: `left_adjust_char_head`), so it can
+        // hold away from its literal's end where that run is malformed.
+        // From the character head before `s` on, valid UTF-8 rules that out.
+        let from = if self.behind.is_some() {
+            char_head_before(text, s)
+        } else {
+            s
+        };
+        if target > s && boundary && reachable(enc, text, from, target) {
             target
         } else {
             s
         }
     }
+}
+
+/// The start of the character that ends at `s`: back over continuation bytes
+/// to the byte before them. `s` itself where no continuation byte precedes
+/// it.
+fn char_head_before(text: &[u8], s: usize) -> usize {
+    let mut head = s;
+    while head > 0 && (text[head - 1] & 0xC0) == 0x80 {
+        head -= 1;
+    }
+    if head < s { head.saturating_sub(1) } else { s }
 }
 
 /// Whether the plain loop, stepping from character head `s`, steps onto `p`:
@@ -1826,7 +1846,8 @@ mod tests {
     }
 
     /// Over malformed UTF-8 no jump is taken: a lead byte's step may pass
-    /// over a candidate right before the end.
+    /// over a candidate right before the end, and a look-behind may hold
+    /// behind continuation bytes after its literal (`(\x80x` at 2).
     #[test]
     fn jumps_over_malformed_bytes_keep_the_loop_steps() {
         let mp = onig_new_match_param();
@@ -1839,6 +1860,9 @@ mod tests {
                 b"\xe0(",
                 b"a\xf0(x",
                 b"\xe0\nx",
+                b"(\x80x",
+                b"(\x80\x80x",
+                b"a(\xc3\xa9x",
                 b"\xff\xe0",
             ] {
                 for start in 0..=text.len() {

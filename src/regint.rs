@@ -739,6 +739,11 @@ pub struct RegexType {
     /// that records its captures repeat a long attempt
     /// (`crate::regexec::two_pass_capture_fill_pays`).
     pub(crate) anychar_run: bool,
+    /// Rust-only (ADR-008): a positive look-behind can come before the
+    /// first character a match reads. Over malformed UTF-8 it goes on where
+    /// its body ends, as in C, so a match can read bytes before its start
+    /// (`crate::first_bytes::admit_look_behind_continuations`).
+    pub(crate) leading_look_behind: bool,
     /// Rust-only (ADR-008): literals one of which every match contains,
     /// for RegSet fallback searches (`crate::required_literals`).
     pub(crate) required_literals: Option<Box<crate::required_literals::RequiredLiterals>>,
