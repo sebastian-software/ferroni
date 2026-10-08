@@ -7,7 +7,7 @@ title: "Stack Overflow in Debug Builds During Full Test Suite"
 
 ## Status
 
-Accepted
+Accepted. The Decision was amended for issue #285: the single shared parse-depth limit became two budgets, and the nesting default changed from 4,096 to 256 units.
 
 ## Context
 
@@ -23,25 +23,71 @@ The root cause is a stack overflow: The recursive tree traversal functions `tune
 - Using `--test-threads=2` or higher with 64 MB stack also works reliably.
 - After adding further recursive passes (tune_call, tune_call2, tune_called_state, tune_next, is_exclusive etc.), 16 MB is no longer sufficient.
 - **Release builds** with optimization and inlining are not affected.
-- **The C original also has no depth limit** in `tune_tree`/`compile_tree` (only the parser has `PARSE_DEPTH_LIMIT`). The issue doesn't manifest in C because C stack frames are smaller.
+- **The C original also has no depth limit** in `tune_tree`/`compile_tree` (only the parser has the parse-depth limit). The issue doesn't manifest in C because C stack frames are smaller.
+- **Issue #285: deep patterns aborted before the limit fired.** With the shared limit at 4,096, a pattern nested 2,022 groups deep overflowed a 2 MiB release thread, and 299 groups overflowed a 2 MiB debug thread. Both happened before the limit reached 2,048 groups. Nested character classes reached the limit with 12 levels of margin on a 2 MiB release thread.
 
 ## Decision
 
-The parser depth limit also bounds the linked `List` and `Alt` AST spines used
-for flat concatenations and alternations. This deliberately differs from C:
-upstream `onig_node_free()` iterates the `cdr` links, while Rust's derived
-`Box` destruction otherwise recurses through them. A sequence or alternation
-spine or nested body that exhausts the shared per-pattern AST-expression budget now fails with
-`ONIGERR_PARSE_DEPTH_LIMIT_OVER`; long literal strings remain unaffected because
-they occupy one AST node.
+Ferroni bounds every pattern with two budgets. A pattern over either one fails with `ParseDepthLimitOver` (`RegexError::ParseDepthLimitOver`), and neither budget may be exceeded during parsing, so the stack never has to hold more than the budget allows.
 
-We do not introduce another artificial limit for nested ASTs because:
+1. **Nesting**, set by `onig_set_parse_depth_limit`. This keeps C's name and meaning. The default is 256 parser units. A capture or non-capturing group costs two units (its alternation and its branch), and a nested character class costs one, so the default admits about 128 nested groups. C Oniguruma defaults to 4,096.
+2. **AST budget**, set by `onig_set_ast_node_limit`. This is Ferroni-only: C Oniguruma has no such budget. The default is 4,096 expression nodes per pattern. Flat `List` and `Alt` cells are nodes too.
 
-1. The C original has none — feature parity takes precedence.
-2. Release builds are not affected.
-3. `RUST_MIN_STACK` provides a simple solution for debug testing.
+Why the AST budget exists: C's `onig_node_free()` iterates the `cdr` links of a flat spine, while Rust's derived `Box` destruction recurses through them, one frame per cell. The tree passes recurse the same way. The budget bounds that recursion. Long literal strings are unaffected because they occupy one node.
+
+Why the nesting default changed: at C's default of 4,096 units, the parser needs about 14 MiB of stack in debug builds before the limit fires, so a compile at the limit could not fit a 2 MiB thread. The old shared limit also let release builds abort first, at 2,022 groups on a 2 MiB thread.
+
+Deviation from C, recorded per ADR-001: C's default of 4,096 is a safe default only on a stack that C's smaller frames fit. Keeping that default in Ferroni would make every caller that compiles untrusted patterns in debug builds size its threads for about 16 MiB. The default is therefore lower. The setter's name, its meaning and its parser units are unchanged; only the default differs.
+
+The defaults are chosen so that a compile at either limit fits a 2 MiB thread in debug and in release builds. Raising either limit raises the stack a compile needs in proportion, and callers who raise a limit must size their threads for it.
+
+We considered these alternatives:
+
+- **Lower the shared default to 1,024**, which the issue proposed. Rejected: 11 patterns in the real-world corpus need more than 1,024 expression nodes (the largest needs 3,565), and a debug 2 MiB thread still aborts at about 300 groups.
+- **Keep one shared limit at 256.** Rejected: 60 corpus patterns need more than 256 nodes.
+- **Weight nesting inside one shared budget.** Rejected: it keeps one knob, but the setter then means different things for nesting and for nodes. Two explicit setters say what each one limits.
+- **Budget the stack by address**, failing once the parser has used N bytes. Rejected: whether a pattern compiles would depend on the depth of the calling thread's stack.
+- **Grow the stack on demand** (`stacker`). Rejected: a new runtime dependency (ADR-009), and a change inside ported functions.
 
 ## Consequences
+
+### Behavior changes
+
+- A pattern nested deeper than 128 groups (or 254 nested classes) now fails with `ParseDepthLimitOver`. It compiled before, up to 2,048 groups. No pattern in the real-world corpus nests deeper than 16 groups.
+- `onig_set_parse_depth_limit` no longer raises the expression budget. A caller that raised it to compile a wide alternation must also call `onig_set_ast_node_limit`.
+
+### Stack cost per unit
+
+| Structure                                                | Release       | Debug         |
+| -------------------------------------------------------- | ------------: | ------------: |
+| Parser, per nesting unit (a group is 2 units, a class 1) | about 0.5 KB  | about 3.5 KB  |
+| Compiler passes, per nesting unit (groups)               | about 0.2 KB  | about 1.8 KB  |
+| Dropping a flat spine, per AST node                      | about 32 B    | about 300 B   |
+
+A flat spine costs no stack in the parser or the compiler, only when it is destroyed.
+
+At the defaults:
+
+| Budget at its default       | Release, 2 MiB thread | Debug, 2 MiB thread |
+| --------------------------- | --------------------: | ------------------: |
+| Nesting, 256 units          |     about 0.13 MiB (6%) |   about 0.9 MiB (44%) |
+| AST budget, 4,096 nodes     |     about 0.13 MiB (6%) |   about 1.2 MiB (58%) |
+
+### Verified boundaries
+
+Each case below was compiled on 2 MiB and 8 MiB threads, in release and in debug. Every run ends in success or `ParseDepthLimitOver`, and none aborts.
+
+| Pattern                                             | Last compiling   | First `ParseDepthLimitOver` | Before this change (first failure on 2 MiB)                         |
+| --------------------------------------------------- | ---------------: | --------------------------: | ------------------------------------------------------------------- |
+| Nested groups `(`…`)`                               | 127 groups       | 128 groups                  | release abort at 2,022; debug abort at 299                          |
+| Nested classes `[`…`]`                              | 254 classes      | 255 classes                 | release error at 4,095, abort at 4,107; debug abort at 656          |
+| Flat alternation `a0\|a1\|…`                        | 4,096 alternatives | 4,097 alternatives        | debug error at 4,096; the spine drop would abort at about 6,900     |
+| Flat concatenation `a*b*` repeated                  | 2,048 pairs      | 2,049 pairs                 | error at 2,048 pairs                                                |
+| Mixed: a group per level, 31 alternatives each      | 127 levels       | 128 levels                  | debug abort at 216 levels                                           |
+
+The regression tests in `tests/api_test.rs` compile the groups, classes and alternation boundaries on a 2 MiB thread in debug. `tests/parse_limits.rs` checks the setters and restores the defaults.
+
+Real-world corpus: all 1,231 unique patterns from the bench grammars (TypeScript, CSS, Rust) and the Shiki trace scanners compile at the defaults. The maxima are 33 nesting units, 3,565 nodes (one pattern; 11 patterns above 1,024), and a longest flat spine of 704 cells.
 
 ### Required stack sizes
 
@@ -64,4 +110,4 @@ CI may run with more headroom than the minimum (the `compat_utf8` lane uses
   ```bash
   RUST_MIN_STACK=268435456 cargo test --test compat_utf8 -- --test-threads=1
   ```
-- The parse-depth limit now protects both nesting and flat linked AST spines.
+- The nesting limit bounds the parser and compiler recursion. The AST budget bounds the recursive destruction of flat spines. Both are enforced while parsing.

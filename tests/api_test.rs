@@ -8,7 +8,7 @@ use ferroni::oniguruma::{
     ONIGERR_INVALID_BACKREF, ONIGERR_UNDEFINED_GROUP_REFERENCE, OnigSyntaxType,
 };
 use ferroni::prelude::*;
-use ferroni::regint::DEFAULT_PARSE_DEPTH_LIMIT;
+use ferroni::regint::{DEFAULT_AST_NODE_LIMIT, DEFAULT_PARSE_DEPTH_LIMIT};
 use ferroni::regsyntax::{
     OnigSyntaxOniguruma, OnigSyntaxPerl_NG, OnigSyntaxPython, OnigSyntaxRuby,
 };
@@ -95,9 +95,76 @@ fn nested_wide_patterns_exceeding_ast_depth_limit_fail_cleanly() {
     assert_eq!(err, RegexError::ParseDepthLimitOver);
 }
 
+/// Compiles `pattern` on a spawned thread with an explicit 2 MiB stack, the
+/// default of `std::thread::spawn` and of Tokio and Rayon workers. Debug builds
+/// use the most stack per level, so these tests are the harder case. A stack
+/// overflow aborts the test binary instead of returning, so a test that gets a
+/// result has shown that the limit fired first.
+fn compile_on_two_mib_stack(pattern: String) -> Result<(), RegexError> {
+    std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || Regex::new(&pattern).map(|_| ()))
+        .expect("spawn compile thread")
+        .join()
+        .expect("compile thread panicked")
+}
+
 #[test]
-fn long_literal_larger_than_ast_depth_limit_is_supported() {
-    let pattern = "a".repeat(DEFAULT_PARSE_DEPTH_LIMIT as usize * 2);
+fn nested_groups_above_depth_limit_fail_cleanly_on_two_mib_stack() {
+    // A group costs two parser units, so 128 groups reach depth 258.
+    let groups = DEFAULT_PARSE_DEPTH_LIMIT as usize / 2;
+    let pattern = "(".repeat(groups) + "a" + &")".repeat(groups);
+    assert_eq!(
+        compile_on_two_mib_stack(pattern),
+        Err(RegexError::ParseDepthLimitOver)
+    );
+}
+
+#[test]
+fn nested_groups_at_depth_limit_compile_on_two_mib_stack() {
+    // 127 groups reach depth 256, exactly the limit.
+    let groups = DEFAULT_PARSE_DEPTH_LIMIT as usize / 2 - 1;
+    let pattern = "(".repeat(groups) + "a" + &")".repeat(groups);
+    assert_eq!(compile_on_two_mib_stack(pattern), Ok(()));
+}
+
+#[test]
+fn nested_classes_above_depth_limit_fail_cleanly_on_two_mib_stack() {
+    // A nested class costs one unit, on top of the two that the top-level
+    // alternation and branch take, so 255 classes reach depth 257.
+    let classes = DEFAULT_PARSE_DEPTH_LIMIT as usize - 1;
+    let pattern = "[".repeat(classes) + "a" + &"]".repeat(classes);
+    assert_eq!(
+        compile_on_two_mib_stack(pattern),
+        Err(RegexError::ParseDepthLimitOver)
+    );
+}
+
+#[test]
+fn nested_classes_at_depth_limit_compile_on_two_mib_stack() {
+    // 254 classes reach depth 256, exactly the limit.
+    let classes = DEFAULT_PARSE_DEPTH_LIMIT as usize - 2;
+    let pattern = "[".repeat(classes) + "a" + &"]".repeat(classes);
+    assert_eq!(compile_on_two_mib_stack(pattern), Ok(()));
+}
+
+#[test]
+fn flat_alternation_above_ast_node_limit_fails_cleanly_on_two_mib_stack() {
+    // One node per alternative: one more alternative than the budget allows.
+    let pattern = (0..=DEFAULT_AST_NODE_LIMIT)
+        .map(|i| format!("a{i}"))
+        .collect::<Vec<_>>()
+        .join("|");
+    assert_eq!(
+        compile_on_two_mib_stack(pattern),
+        Err(RegexError::ParseDepthLimitOver)
+    );
+}
+
+#[test]
+fn long_literal_larger_than_ast_node_limit_is_supported() {
+    // A literal run is one node, so its length is not bounded by the budget.
+    let pattern = "a".repeat(DEFAULT_AST_NODE_LIMIT as usize * 2);
     let re = Regex::new(&pattern).unwrap();
     assert!(re.is_match(&pattern));
 }

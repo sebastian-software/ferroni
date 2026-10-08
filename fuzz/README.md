@@ -21,6 +21,14 @@ engine, and the budget keeps the fuzzer hunting for crashes instead of timing
 out on something like `(a+)+$`. The limits live on the match parameter, so
 nothing is shared between fuzzer threads.
 
+Stack depth is not fuzzed. The `pattern-compile` target calls `onig_new` on
+libFuzzer's main thread, which is 8 MiB in release builds. A pattern that needs
+more stack than a thread has aborts the process, and the fuzzer cannot tell
+that from a crash it should keep. The 2 MiB default of `std::thread::spawn`, of
+Tokio and Rayon workers, and every debug build are therefore not covered here.
+The nesting and AST-budget regression tests in `tests/api_test.rs` compile the
+limit boundaries on a 2 MiB thread instead; ADR-013 gives the per-unit costs.
+
 ## Running
 
 Install [`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz) and run a target

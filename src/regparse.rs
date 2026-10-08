@@ -136,7 +136,6 @@ pub fn onig_get_callout_name_by_name_id(name_id: i32) -> Option<Vec<u8>> {
 // ============================================================================
 
 const DEFAULT_MAX_CAPTURE_NUM: i32 = 32767;
-const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 4096;
 const INIT_PARSEENV_MEMENV_ALLOC_SIZE: usize = 16;
 
 // CSTATE: character class parsing state
@@ -171,6 +170,7 @@ use std::sync::atomic::{AtomicI32, AtomicU32};
 
 static MAX_CAPTURE_NUM: AtomicI32 = AtomicI32::new(DEFAULT_MAX_CAPTURE_NUM);
 static PARSE_DEPTH_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_PARSE_DEPTH_LIMIT);
+static AST_NODE_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_AST_NODE_LIMIT);
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_capture_num_limit(num: i32) -> i32 {
@@ -182,13 +182,27 @@ pub fn onig_set_capture_num_limit(num: i32) -> i32 {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-/// Returns the shared limit for nested parsing and AST expressions.
+/// Returns the nesting limit, in parser units (see [`onig_set_parse_depth_limit`]).
 pub fn onig_get_parse_depth_limit() -> u32 {
     PARSE_DEPTH_LIMIT.load(Ordering::Relaxed)
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-/// Sets the shared limit for nested parsing and AST expressions.
+/// Sets the nesting limit: how deeply a pattern may nest before it fails with
+/// `ParseDepthLimitOver`. Only nesting is limited; the number of expressions in
+/// a pattern is limited by [`onig_set_ast_node_limit`].
+///
+/// This is C Oniguruma's `onig_set_parse_depth_limit` with a smaller default.
+/// Nesting is counted in parser units: a group costs two (its alternation and
+/// its branch) and a nested character class costs one. The default, 256 units,
+/// admits about 128 nested groups. A pattern within the default compiles inside
+/// a 2 MiB thread in debug and release builds.
+///
+/// Stack is the dependency that matters here: raising the limit raises the
+/// stack a compile needs in proportion. Per unit the parser needs about 0.5 KB
+/// in release builds and about 3.5 KB in debug builds, so 1,024 units need
+/// about 3.5 MiB in debug. Callers who raise the limit must size their threads
+/// for it. See ADR-013.
 ///
 /// Passing zero restores the default limit.
 pub fn onig_set_parse_depth_limit(depth: u32) -> i32 {
@@ -200,16 +214,50 @@ pub fn onig_set_parse_depth_limit(depth: u32) -> i32 {
     0
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
+/// Returns the per-pattern AST budget, in expression nodes (see
+/// [`onig_set_ast_node_limit`]).
+pub fn onig_get_ast_node_limit() -> u32 {
+    AST_NODE_LIMIT.load(Ordering::Relaxed)
+}
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+/// Sets the per-pattern AST budget: how many expression nodes one pattern may
+/// parse into, flat concatenation and alternation cells included. A pattern
+/// over the budget fails with `ParseDepthLimitOver`.
+///
+/// Ferroni-only: C Oniguruma has no such budget. The budget bounds the work
+/// that recurses once per cell of a flat spine, which C does not recurse on.
+/// The tree passes and the destruction of a linked `List` or `Alt` spine
+/// recurse in Rust, so an unbounded alternation would overflow the stack while
+/// it is compiled or dropped. Per node, dropping a spine costs about 32 bytes
+/// in release builds and about 300 bytes in debug builds, so the default of
+/// 4,096 nodes needs about 1.2 MiB in debug. Raising the budget raises that
+/// cost in proportion; see ADR-013.
+///
+/// Passing zero restores the default budget.
+pub fn onig_set_ast_node_limit(nodes: u32) -> i32 {
+    if nodes == 0 {
+        AST_NODE_LIMIT.store(DEFAULT_AST_NODE_LIMIT, Ordering::Relaxed);
+    } else {
+        AST_NODE_LIMIT.store(nodes, Ordering::Relaxed);
+    }
+    0
+}
+
 // ============================================================================
 // Syntax helper macros (matching C macros IS_SYNTAX_OP, etc.)
 // ============================================================================
 
-fn ast_spine_limit_reached(env: &ParseEnv, spine_depth: u32) -> bool {
-    env.parse_depth.saturating_add(spine_depth) >= PARSE_DEPTH_LIMIT.load(Ordering::Relaxed)
+/// Whether a flat spine that already holds `spine_depth` cells has reached the
+/// AST budget. Each cell is also a node that `reserve_ast_node` counts, so this
+/// check states the spine's own length explicitly.
+fn ast_spine_limit_reached(spine_depth: u32) -> bool {
+    spine_depth >= AST_NODE_LIMIT.load(Ordering::Relaxed)
 }
 
 fn reserve_ast_node(env: &mut ParseEnv) -> Result<(), i32> {
-    if env.ast_node_count >= PARSE_DEPTH_LIMIT.load(Ordering::Relaxed) {
+    if env.ast_node_count >= AST_NODE_LIMIT.load(Ordering::Relaxed) {
         return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
     }
     env.ast_node_count += 1;
@@ -6933,7 +6981,7 @@ fn prs_exp(
 ) -> Result<(Box<Node>, i32), i32> {
     // The recursive AST consumers follow both List/Alt cdr links and nested
     // bodies. A per-spine check alone lets those paths accumulate, so every
-    // AST-producing expression consumes the same parse-wide budget.
+    // AST-producing expression consumes the same per-pattern AST budget.
     reserve_ast_node(env)?;
     let mut group = 0;
 
@@ -7530,8 +7578,9 @@ fn prs_branch(
 
     let mut top = node_new_list(node, None);
     // `List` cells form a linked AST spine. Unlike parser call depth, a flat
-    // concatenation does not otherwise consume the configured depth budget,
-    // even though recursive compiler passes and destruction must traverse it.
+    // concatenation does not consume the nesting budget, but every cell is a
+    // node of the AST budget, and recursive compiler passes and destruction
+    // must traverse the spine.
     let mut list_depth = 1;
     let mut headp = match &mut top.inner {
         NodeInner::List(cons) => &mut cons.cdr,
@@ -7539,7 +7588,7 @@ fn prs_branch(
     };
 
     while r != TokenType::Eot as i32 && r != term && r != TokenType::Alt as i32 {
-        if ast_spine_limit_reached(env, list_depth) {
+        if ast_spine_limit_reached(list_depth) {
             return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
         }
         let (node2, r2) = prs_exp(tok, term, p, end, pattern, env, false)?;
@@ -7613,8 +7662,8 @@ fn prs_alts(
         Ok((node, r))
     } else if r == TokenType::Alt as i32 {
         let mut top = node_new_alt(node, None);
-        // `Alt` cells use the same linked representation and therefore share
-        // the parse-depth budget with nested parser calls.
+        // `Alt` cells use the same linked representation and therefore count
+        // against the AST budget, as `List` cells do.
         let mut alt_depth = 1;
         let mut headp = match &mut top.inner {
             NodeInner::Alt(cons) => &mut cons.cdr,
@@ -7622,7 +7671,7 @@ fn prs_alts(
         };
 
         while r == TokenType::Alt as i32 {
-            if ast_spine_limit_reached(env, alt_depth) {
+            if ast_spine_limit_reached(alt_depth) {
                 return Err(ONIGERR_PARSE_DEPTH_LIMIT_OVER);
             }
             let r2 = fetch_token(tok, p, end, pattern, env);

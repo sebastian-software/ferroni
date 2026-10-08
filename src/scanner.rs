@@ -208,8 +208,9 @@ impl Default for ScannerConfig {
 ///
 /// Patterns are compiled under the process-wide compile settings in effect
 /// when the cache first compiles them (`onig_set_capture_num_limit`,
-/// `onig_set_parse_depth_limit`, user-defined Unicode properties, callout
-/// names), and the warning callbacks (`onig_set_warn_func`) run only then.
+/// `onig_set_parse_depth_limit`, `onig_set_ast_node_limit`, user-defined
+/// Unicode properties, callout names), and the warning callbacks
+/// (`onig_set_warn_func`) run only then.
 /// Clear the cache after changing those settings. Search limits such as the
 /// retry limit are read by every search, so they apply to all scanners alike.
 ///

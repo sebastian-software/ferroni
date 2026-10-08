@@ -13,7 +13,14 @@ pub const USE_BACKREF_WITH_LEVEL: bool = true;
 pub const USE_CAPTURE_HISTORY: bool = true;
 
 // === Config Constants ===
-pub const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 4096;
+/// Default nesting limit, in parser units: a group costs two, a nested
+/// character class one. Ferroni-specific; C Oniguruma defaults to 4096. The
+/// value keeps a compile of any pattern within it inside a 2 MiB thread, in
+/// debug builds too. See ADR-013.
+pub const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 256;
+/// Default per-pattern AST budget, in expression nodes; a flat concatenation or
+/// alternation costs one node per cell. Ferroni-only. See ADR-013.
+pub const DEFAULT_AST_NODE_LIMIT: u32 = 4096;
 pub const INIT_MATCH_STACK_SIZE: usize = 160;
 pub const DEFAULT_MATCH_STACK_LIMIT_SIZE: u32 = 0;
 /// Rust-only (ADR-008): the backtrack stack never grows past this many
