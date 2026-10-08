@@ -14,10 +14,12 @@ cargo build
 
 Ferroni's MSRV is frozen at Rust 1.94 while the crate is in maintenance mode.
 Ferroni no longer follows the family's rolling four-releases-below-stable floor
-(decision D4, set in #104); the MSRV moves only when a fix or a dependency
-requires a newer compiler, and such a bump is called out in the release notes.
-A dedicated CI lane enforces 1.94. `rust-version` in `Cargo.toml` is the source;
-the README badge and the CI lane copy it.
+(decision D4, set in
+[#104](https://github.com/sebastian-software/ferroni/pull/104)); the MSRV
+moves only when a fix or a dependency requires a newer compiler, and such a
+bump is called out in the release notes. A dedicated CI lane enforces 1.94.
+`rust-version` in `Cargo.toml` is the source; the README badge and the CI lane
+copy it.
 
 ## Running Tests
 
