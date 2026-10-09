@@ -12,7 +12,7 @@ keywords = ["regex", "oniguruma", "textmate", "syntax-highlighting", "ferramenta
 categories = ["text-processing", "parsing", "text-editors"]
 rust-version = "1.94"
 autobenches = false
-exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "examples/backtrack_rewrite_census.rs", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
+exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "examples/backtrack_rewrite_census.rs", "examples/prefilter_census.rs", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
 
 [package.metadata.docs.rs]
 # The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot
@@ -40,6 +40,12 @@ collapsible_if = "allow"
 collapsible_match = "allow"
 
 [features]
+default = ["dfa-prefilter"]
+# The scanner's multi-pattern DFA pre-filter (ADR-008), which decides before
+# any attempt which patterns of a set can match where. It brings the
+# regex-automata and regex-syntax dependencies (ADR-009); without the feature
+# the scanner runs the position-lead search alone, with the same results.
+dfa-prefilter = ["dep:regex-automata", "dep:regex-syntax"]
 # Benchmark-comparison harness: links a local upstream Oniguruma checkout
 # (scripts/prepare-oniguruma-sources.sh or FERRONI_ONIGURUMA_DIR) for the
 # in-repo C-vs-Rust benches. Not needed to use the library.
@@ -47,17 +53,17 @@ ffi = ["cc"]
 # Adds Ruby's Onigmo to the comparison benchmarks
 # (scripts/prepare-onigmo-sources.sh or FERRONI_ONIGMO_DIR).
 onigmo = ["ffi"]
-# Spike (refs #252): a regex-automata candidate pre-filter in front of the
-# scanner's RegSet search. Off by default; see src/dfa_prefilter.rs.
-dfa-prefilter = ["dep:regex-automata", "dep:regex-syntax"]
 
 [dependencies]
 aho-corasick = "1"
 bitflags = "2"
 memchr = "2"
 smallvec = "1"
-regex-automata = { version = "0.4", optional = true, default-features = false, features = ["std", "syntax", "meta", "nfa", "hybrid", "unicode"] }
-regex-syntax = { version = "0.8", optional = true }
+# The scanner's DFA pre-filter (feature `dfa-prefilter`, ADR-009): the regex
+# crate's automata, without its public API. The seeks are byte-based and
+# use ASCII look-arounds only, so no Unicode tables are needed.
+regex-automata = { version = "0.4", optional = true, default-features = false, features = ["std", "syntax", "meta", "nfa-thompson", "hybrid"] }
+regex-syntax = { version = "0.8", optional = true, default-features = false, features = ["std"] }
 
 [build-dependencies]
 cc = { version = "1", optional = true }

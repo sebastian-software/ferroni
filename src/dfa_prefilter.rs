@@ -1,29 +1,42 @@
-//! Spike, not for merge (refs #252): a DFA candidate pre-filter for the
-//! RegSet position-lead search, after fancy-regex's `RegexSet`.
+//! Rust-only (ADR-008): a multi-pattern DFA pre-filter for the scanner's
+//! RegSet search, after fancy-regex's `RegexSet`.
+//!
+//! A TextMate scanner asks its set for the earliest match of any pattern,
+//! and most attempts the position-lead search makes fail. The pre-filter
+//! decides, before any attempt, which entries can match where.
 //!
 //! [`derive`] reads a pattern's tuned parse tree and writes an
-//! over-approximation of it as regex-syntax HIR: wherever the pattern can
-//! match, the HIR matches too (it may match in more places, never fewer).
-//! Literals, classes, concatenation, alternation and repetition are exact;
-//! groups are transparent; look-behind, negative look-ahead, `\G`, `\K` and
-//! text-segment boundaries become empty; back references and calls become
-//! `(?s:.)*`; a positive look-ahead keeps its body where nothing consuming
-//! follows it and is dropped otherwise.
+//! over-approximation of it as regex-automata's HIR, its *seek*: wherever
+//! the pattern can match, the seek matches too (it may match in more
+//! places, never fewer). Literals, classes, concatenation, alternation and
+//! repetition are exact; groups are transparent; look-behind, negative
+//! look-ahead, `\G`, `\K` and text-segment boundaries become empty, except
+//! that a negative look at a class holding every ASCII word character
+//! becomes the ASCII half boundary it is contained in; back references and
+//! calls become `(?s:.)*`; a positive look-ahead keeps its body where
+//! nothing consuming follows it and is dropped otherwise. Classes are
+//! byte-based: the ASCII members are exact and any non-ASCII member stands
+//! for one UTF-8 sequence, which keeps the automata small; any character is
+//! an ASCII byte or such a sequence. A seek that matches at every position
+//! narrows nothing; its entry is searched on its own (`Seek::Everywhere`).
+//! The regex does not carry its seek: the scanner hands it to its set, and
+//! a pattern cache keeps one per distinct pattern.
 //!
-//! [`SetPrefilter`] compiles the HIRs of one set into a regex-automata meta
-//! regex, which finds the earliest position where any pattern of the set can
-//! match, and a lazy DFA, which says which patterns can match there. The
-//! RegSet (`regset_search_body_prefilter`) runs the VM only for those, in
-//! index order, anchored at that position. Patterns whose HIR matches at
-//! every position (`Seek::always`) are searched on their own with the
-//! ordinary per-entry search instead.
+//! [`SetPrefilter`] compiles the seeks of one set into a regex-automata meta
+//! regex, which finds the earliest position where any seek matches, and a
+//! lazy DFA over all seeks, which says which of them match at that position.
+//! The RegSet (`regset_search_body_prefilter`) attempts only those entries,
+//! anchored at that position, in index order; the first event decides, and
+//! without one the search goes on one character later. A set whose
+//! automata would exceed [`MAX_NFA_STATES`] builds none and keeps the
+//! position-lead search as it was.
 //!
-//! Switches: the `dfa-prefilter` feature compiles this module; the
-//! environment variable `FERRONI_DFA_PREFILTER=0` turns it off at run time
-//! (read once), and `FERRONI_DFA_PREFILTER_WB=0` drops word boundaries from
-//! the HIR instead of keeping them.
+//! The `dfa-prefilter` feature compiles this module, and
+//! `ScannerConfig::prefilter` switches it per scanner. A search under a
+//! limit of the caller's own keeps C's attempts (see `prefilter_decides` in
+//! `regset.rs`).
 
-use crate::oniguruma::{ONIGENC_CTYPE_WORD, OnigCodePoint};
+use crate::oniguruma::ONIGENC_CTYPE_WORD;
 use crate::regcomp::literal_alt_trie_index;
 use crate::regenc::OnigEncoding;
 use crate::regint::*;
@@ -32,146 +45,40 @@ use regex_automata::hybrid::dfa as hybrid;
 use regex_automata::nfa::thompson;
 use regex_automata::util::syntax;
 use regex_automata::{Anchored, Input, MatchErrorKind, MatchKind, PatternID, PatternSet};
-use regex_syntax::hir::{
-    Class, ClassBytes, ClassBytesRange, ClassUnicode, ClassUnicodeRange, Dot, Hir, HirKind, Look,
-    Repetition,
-};
-use std::sync::OnceLock;
+use regex_syntax::hir::{Class, ClassBytes, ClassBytesRange, Hir, HirKind, Look, Repetition};
 
 const MIB: usize = 1 << 20;
 /// Lazy DFA cache of the meta regex (fancy-regex: 64 MiB).
 const META_CACHE_CAPACITY: usize = 2 * MIB;
 /// Lazy DFA cache of the overlapping DFA (fancy-regex: 64 MiB).
 const OVERLAPPING_CACHE_CAPACITY: usize = MIB;
-/// NFA size limit per set, for both automata.
+/// Hard bound on the NFA size per set, for both automata.
 const NFA_SIZE_LIMIT: usize = 16 * MIB;
 /// Counted repetitions above this bound become unbounded ones.
 const MAX_COUNTED_REPEAT: u32 = 64;
+/// Sets whose NFA has more states than this get no pre-filter: a bound on
+/// what one set costs to build and keep, not a break-even. The largest set
+/// of the captured replays (PHP, 37,437 states, 4.2 MiB of automata, built
+/// in about 60 ms) takes 2% of its time with the pre-filter, and size does
+/// not tell which sets lose: C++ sets of 25,000 states take a quarter of
+/// their time, the hot SCSS set at 17,000 states 13% more (see ADR-008).
+pub(crate) const MAX_NFA_STATES: usize = 65_536;
 
-/// Whether the pre-filter is used at all (`FERRONI_DFA_PREFILTER`).
-pub(crate) fn enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        !matches!(
-            std::env::var("FERRONI_DFA_PREFILTER").as_deref(),
-            Ok("0") | Ok("off") | Ok("false") | Ok("no")
-        )
-    })
-}
-
-/// Whether word boundaries are kept in the HIR (`FERRONI_DFA_PREFILTER_WB`).
-fn keep_word_boundaries() -> bool {
-    static KEEP: OnceLock<bool> = OnceLock::new();
-    *KEEP.get_or_init(|| {
-        !matches!(
-            std::env::var("FERRONI_DFA_PREFILTER_WB").as_deref(),
-            Ok("0") | Ok("off") | Ok("false") | Ok("no")
-        )
-    })
-}
-
-/// Whether classes stay exact Unicode code point sets
-/// (`FERRONI_DFA_PREFILTER_UNICODE=1`). By default the HIR is byte-based:
-/// the ASCII part of a class is exact and any non-ASCII character is
-/// approximated by one UTF-8 sequence, which keeps the automata small.
-fn unicode_classes() -> bool {
-    static UNICODE: OnceLock<bool> = OnceLock::new();
-    *UNICODE.get_or_init(|| {
-        matches!(
-            std::env::var("FERRONI_DFA_PREFILTER_UNICODE").as_deref(),
-            Ok("1") | Ok("on") | Ok("true") | Ok("yes")
-        )
-    })
-}
-
-/// What the HIR approximates, as flags, for the census.
-pub mod approx {
-    /// A positive look-ahead whose body was kept in place.
-    pub const LOOKAHEAD_KEPT: u32 = 1 << 0;
-    /// A positive look-ahead dropped (something consuming follows it).
-    pub const LOOKAHEAD_DROPPED: u32 = 1 << 1;
-    /// A negative look-ahead (dropped).
-    pub const NEGATIVE_LOOKAHEAD: u32 = 1 << 2;
-    /// A look-behind, positive or negative (dropped).
-    pub const LOOKBEHIND: u32 = 1 << 3;
-    /// A back reference (`(?s:.)*`).
-    pub const BACKREF: u32 = 1 << 4;
-    /// A subexpression call (`(?s:.)*`).
-    pub const CALL: u32 = 1 << 5;
-    /// A conditional (both branches as an alternation).
-    pub const CONDITIONAL: u32 = 1 << 6;
-    /// `\G` (dropped).
-    pub const BEGIN_POSITION: u32 = 1 << 7;
-    /// `\y` / `\Y` (dropped).
-    pub const TEXT_SEGMENT: u32 = 1 << 8;
-    /// `\Z` (as `(?m:$)`).
-    pub const SEMI_END_BUF: u32 = 1 << 9;
-    /// A ctype other than `\w` or `.` (one code point).
-    pub const OTHER_CTYPE: u32 = 1 << 10;
-    /// A class with bits at or above 0x80 (one code point).
-    pub const CLASS_HIGH_BITS: u32 = 1 << 11;
-    /// A case-insensitive string the tuner left unraveled (`(?s:.)*`).
-    pub const IGNORECASE_STRING: u32 = 1 << 12;
-    /// A folded literal trie (rebuilt from its case-fold data).
-    pub const FOLDED_TRIE: u32 = 1 << 13;
-    /// A counted repetition above `MAX_COUNTED_REPEAT` (unbounded).
-    pub const REPEAT_CAPPED: u32 = 1 << 14;
-    /// Word boundaries dropped (`FERRONI_DFA_PREFILTER_WB=0`).
-    pub const WORD_BOUNDARY_DROPPED: u32 = 1 << 15;
-    /// A gimmick other than `(*FAIL)`: `\K`, absent-operator bookkeeping,
-    /// callouts (dropped).
-    pub const GIMMICK: u32 = 1 << 16;
-    /// A class with multi-character folds (`Alt(class, "ss", …)`) collapsed
-    /// into one repeated class.
-    pub const CLASS_ALT_COLLAPSED: u32 = 1 << 17;
-
-    /// Names of the flags, in bit order.
-    pub const NAMES: [&str; 18] = [
-        "lookahead kept",
-        "lookahead dropped",
-        "negative lookahead",
-        "lookbehind",
-        "backref",
-        "call",
-        "conditional",
-        "\\G",
-        "text segment",
-        "\\Z",
-        "other ctype",
-        "class high bits",
-        "ignorecase string",
-        "folded trie",
-        "repeat capped",
-        "word boundary dropped",
-        "gimmick",
-        "class alternation collapsed",
-    ];
-}
-
-/// The seek approximation of one compiled pattern.
-pub struct Seek {
-    /// The over-approximation.
-    pub hir: Hir,
-    /// The HIR matches at every position, so it cannot narrow anything: the
-    /// entry is searched on its own.
-    pub always: bool,
-    /// `approx` flags of what the HIR approximates.
-    pub approximated: u32,
-}
-
-impl std::fmt::Debug for Seek {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Seek")
-            .field("hir", &self.hir.to_string())
-            .field("always", &self.always)
-            .field("approximated", &self.approximated)
-            .finish()
-    }
+/// The seek approximation of one compiled pattern. A scanner passes it to
+/// its set, which builds the automata from it, and its pattern cache keeps
+/// it per distinct pattern (ADR-006); the regex itself does not carry it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Seek {
+    /// The approximation matches at every position, so it cannot narrow
+    /// anything: the entry is searched on its own.
+    Everywhere,
+    /// The approximation, for the set's automata.
+    Pattern(Hir),
 }
 
 /// The seek approximation of `reg`, whose tuned parse tree is `root`.
 /// `None` for an entry the pre-filter must not decide for: callouts observe
-/// every attempt, and the HIR models UTF-8 code points.
+/// every attempt, and the seek reads UTF-8.
 pub(crate) fn derive(root: &Node, reg: &RegexType) -> Option<Seek> {
     if reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0) {
         return None;
@@ -184,29 +91,28 @@ pub(crate) fn derive(root: &Node, reg: &RegexType) -> Option<Seek> {
     }
     let mut walk = Walk {
         reg,
-        approximated: 0,
         lookaheads_kept: 0,
-        word_boundaries: 0,
     };
     let hir = walk.item(root, true);
-    let always = matches_everywhere(&hir);
-    Some(Seek {
-        hir,
-        always,
-        approximated: walk.approximated,
-    })
+    if matches_everywhere(&hir) {
+        return Some(Seek::Everywhere);
+    }
+    Some(Seek::Pattern(hir))
 }
 
-/// One character, newline included.
+/// Any character, newline included: an ASCII byte or one UTF-8 sequence.
+/// One byte would not do: `.x` matches `éx` at the `é`, two bytes before
+/// the `x`.
 fn any_char() -> Hir {
-    Hir::dot(if unicode_classes() {
-        Dot::AnyChar
-    } else {
-        Dot::AnyByte
-    })
+    byte_class(u128::MAX, true)
 }
 
-/// `(?s:.)*`, for a node the HIR cannot express.
+/// Any character but a newline.
+fn any_char_except_newline() -> Hir {
+    byte_class(!(1u128 << b'\n'), true)
+}
+
+/// `(?s:.)*`, for a node the seek cannot express.
 fn placeholder() -> Hir {
     Hir::repetition(Repetition {
         min: 0,
@@ -218,17 +124,7 @@ fn placeholder() -> Hir {
 
 fn is_placeholder(hir: &Hir) -> bool {
     match hir.kind() {
-        HirKind::Repetition(rep) if rep.min == 0 && rep.max.is_none() => match rep.sub.kind() {
-            HirKind::Class(Class::Unicode(class)) => {
-                let ranges = class.ranges();
-                ranges.len() == 1 && ranges[0].start() == '\0' && ranges[0].end() == '\u{10FFFF}'
-            }
-            HirKind::Class(Class::Bytes(class)) => {
-                let ranges = class.ranges();
-                ranges.len() == 1 && ranges[0].start() == 0 && ranges[0].end() == 0xFF
-            }
-            _ => false,
-        },
+        HirKind::Repetition(rep) => rep.min == 0 && rep.max.is_none() && *rep.sub == any_char(),
         _ => false,
     }
 }
@@ -265,88 +161,200 @@ fn matches_everywhere(hir: &Hir) -> bool {
     first.is_some_and(is_placeholder)
 }
 
-/// A class over code point ranges (inclusive), negated or not.
+/// A class over code point ranges (inclusive), negated or not: the ASCII
+/// members exactly, and one UTF-8 sequence for any non-ASCII member.
+///
+/// One pass over the ranges fills an ASCII bitset and notes whether the
+/// class reaches past ASCII. A negated class reaches past ASCII unless one
+/// range held every code point from 0x80 up; a negated class that covers
+/// more of them than that keeps the sequence too, which admits more.
 fn class_hir(ranges: impl IntoIterator<Item = (u32, u32)>, negate: bool) -> Hir {
-    let mut out = Vec::new();
+    let mut ascii: u128 = 0;
+    let mut non_ascii = false;
+    let mut all_non_ascii = false;
     for (lo, hi) in ranges {
-        let hi = hi.min(0x10FFFF);
         if lo > hi {
             continue;
         }
-        // Surrogates are not scalar values; valid UTF-8 never holds them.
-        for (a, b) in [(lo, hi.min(0xD7FF)), (lo.max(0xE000), hi)] {
-            if a <= b {
-                if let (Some(a), Some(b)) = (char::from_u32(a), char::from_u32(b)) {
-                    out.push(ClassUnicodeRange::new(a, b));
-                }
-            }
+        if lo <= 0x7F {
+            ascii |= ascii_mask(lo as u8, hi.min(0x7F) as u8);
+        }
+        if hi >= 0x80 {
+            non_ascii = true;
+            all_non_ascii |= lo <= 0x80 && hi >= 0x10FFFF;
         }
     }
-    let mut class = ClassUnicode::new(out);
     if negate {
-        class.negate();
+        ascii = !ascii;
+        non_ascii = !all_non_ascii;
     }
-    if unicode_classes() {
-        return Hir::class(Class::Unicode(class));
-    }
-    // Byte mode: the ASCII members exactly, and one UTF-8 sequence for any
-    // non-ASCII member.
-    let ascii = ClassBytes::new(class.ranges().iter().filter_map(|range| {
-        let lo = range.start() as u32;
-        let hi = (range.end() as u32).min(0x7F);
-        (lo <= hi).then(|| ClassBytesRange::new(lo as u8, hi as u8))
-    }));
-    let non_ascii = class
-        .ranges()
-        .iter()
-        .any(|range| range.end() as u32 >= 0x80);
-    let ascii_hir = Hir::class(Class::Bytes(ascii));
-    if non_ascii {
-        Hir::alternation(vec![ascii_hir, non_ascii_char()])
+    byte_class(ascii, non_ascii)
+}
+
+/// The bits `lo..=hi` of an ASCII bitset.
+fn ascii_mask(lo: u8, hi: u8) -> u128 {
+    debug_assert!(lo <= hi && hi <= 0x7F);
+    let width = u32::from(hi - lo) + 1;
+    let run = if width == 128 {
+        u128::MAX
     } else {
-        ascii_hir
+        (1u128 << width) - 1
+    };
+    run << lo
+}
+
+/// The class of the ASCII bytes in `ascii`, and of any non-ASCII character
+/// when `non_ascii`.
+fn byte_class(ascii: u128, non_ascii: bool) -> Hir {
+    let mut ranges = Vec::new();
+    let mut byte = 0u32;
+    while byte <= 0x7F {
+        if ascii & (1u128 << byte) == 0 {
+            byte += 1;
+            continue;
+        }
+        let lo = byte;
+        while byte < 0x7F && ascii & (1u128 << (byte + 1)) != 0 {
+            byte += 1;
+        }
+        ranges.push(ClassBytesRange::new(lo as u8, byte as u8));
+        byte += 1;
+    }
+    match (ranges.is_empty(), non_ascii) {
+        (false, false) => Hir::class(Class::Bytes(ClassBytes::new(ranges))),
+        (false, true) => alternation(vec![
+            Hir::class(Class::Bytes(ClassBytes::new(ranges))),
+            non_ascii_char(),
+        ]),
+        (true, true) => non_ascii_char(),
+        (true, false) => Hir::fail(),
+    }
+}
+
+/// Whether the HIR never matches (an empty class).
+fn is_fail(hir: &Hir) -> bool {
+    match hir.kind() {
+        HirKind::Class(Class::Bytes(class)) => class.ranges().is_empty(),
+        HirKind::Class(Class::Unicode(class)) => class.ranges().is_empty(),
+        _ => false,
+    }
+}
+
+/// `Hir::concat` without the parts a never-matching part makes
+/// unreachable, which `Hir::concat` keeps.
+fn concat(parts: Vec<Hir>) -> Hir {
+    if parts.iter().any(is_fail) {
+        Hir::fail()
+    } else {
+        Hir::concat(parts)
+    }
+}
+
+/// `sub` repeated `min` to `max` times (`None`: unbounded), always greedy,
+/// since the automata only ask where a seek matches.
+///
+/// A repetition of a repetition is flattened: `(X{a,b}){c,d}` reads between
+/// `a·c` and `b·d` copies of `X`, so `X{a·c,b·d}` matches wherever it does
+/// and compiles to fewer states. Counted bounds above `MAX_COUNTED_REPEAT`
+/// become unbounded.
+fn repetition(mut min: u32, mut max: Option<u32>, sub: Hir) -> Hir {
+    let nested = match sub.kind() {
+        HirKind::Repetition(inner) => Some((inner.min, inner.max, (*inner.sub).clone())),
+        _ => None,
+    };
+    let sub = match nested {
+        Some((inner_min, inner_max, inner)) => {
+            min = min.saturating_mul(inner_min);
+            max = match (max, inner_max) {
+                (Some(outer), Some(inner)) => Some(outer.saturating_mul(inner)),
+                _ => None,
+            };
+            inner
+        }
+        None => sub,
+    };
+    if min > MAX_COUNTED_REPEAT || max.is_some_and(|max| max > MAX_COUNTED_REPEAT) {
+        min = min.min(MAX_COUNTED_REPEAT);
+        max = None;
+    }
+    Hir::repetition(Repetition {
+        min,
+        max,
+        greedy: true,
+        sub: Box::new(sub),
+    })
+}
+
+/// `Hir::alternation` without the branches that never match, which
+/// `Hir::alternation` keeps.
+fn alternation(mut branches: Vec<Hir>) -> Hir {
+    branches.retain(|branch| !is_fail(branch));
+    if branches.is_empty() {
+        Hir::fail()
+    } else {
+        Hir::alternation(branches)
     }
 }
 
 /// The `(from, to)` pairs of a code range buffer (`data[0]` is the count).
-fn code_ranges(bbuf: &BBuf) -> Vec<(u32, u32)> {
-    let words: Vec<u32> = bbuf
-        .data
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|chunk| u32::from_ne_bytes(*chunk))
-        .collect();
-    let n = words.first().copied().unwrap_or(0) as usize;
-    (0..n)
-        .filter_map(|i| Some((*words.get(1 + 2 * i)?, *words.get(2 + 2 * i)?)))
-        .collect()
-}
-
-/// The pairs of a Unicode ctype table (`CODE_RANGES`: pairs, no count).
-fn ctype_ranges(table: &[OnigCodePoint]) -> Vec<(u32, u32)> {
-    table
+fn code_ranges(bbuf: &BBuf) -> impl Iterator<Item = (u32, u32)> + '_ {
+    let words = bbuf.data.as_chunks::<4>().0;
+    let n = words.first().map_or(0, |chunk| u32::from_ne_bytes(*chunk)) as usize;
+    words[1..]
         .as_chunks::<2>()
         .0
         .iter()
-        .map(|pair| (pair[0], pair[1]))
-        .collect()
+        .take(n)
+        .map(|pair| (u32::from_ne_bytes(pair[0]), u32::from_ne_bytes(pair[1])))
 }
 
-/// A node that produces nothing in the HIR and consumes nothing, so a
+/// The ASCII half boundary a negative look stands for, where its body is
+/// one class that holds every ASCII word character: `(?<!\w)` and
+/// `(?<![-\w])` hold only where the previous character is not an ASCII word
+/// character (`\b{start-half}`), `(?!\w)` and `(?![.:\w])` only where the
+/// next one is not (`\b{end-half}`). Next to a non-ASCII character the
+/// half boundary holds and the look may not, which admits more. Without
+/// this, a keyword list behind `(?<![-\w])` would be a candidate inside
+/// every identifier that contains a keyword.
+fn word_class_look(an: &AnchorNode) -> Option<Look> {
+    let look = match an.anchor_type {
+        ANCR_LOOK_BEHIND_NOT => Look::WordStartHalfAscii,
+        ANCR_PREC_READ_NOT => Look::WordEndHalfAscii,
+        _ => return None,
+    };
+    let body = an.body.as_deref()?;
+    let word_bytes = (b'0'..=b'9')
+        .chain(b'A'..=b'Z')
+        .chain(b'a'..=b'z')
+        .chain(*b"_");
+    let holds_every_word_byte = match &body.inner {
+        NodeInner::CType(ct) => ct.ctype == ONIGENC_CTYPE_WORD as i32 && !ct.not,
+        NodeInner::CClass(cc) => {
+            let mut members = word_bytes.map(|byte| bitset_at(&cc.bs, byte as usize));
+            if cc.is_not() {
+                members.all(|member| !member)
+            } else {
+                members.all(|member| member)
+            }
+        }
+        _ => false,
+    };
+    holds_every_word_byte.then_some(look)
+}
+
+/// A node that produces nothing in the seek and consumes nothing, so a
 /// positive look-ahead before it may keep its body in place.
 fn droppable(node: &Node) -> bool {
     match &node.inner {
-        NodeInner::Anchor(an) => matches!(
-            an.anchor_type,
+        NodeInner::Anchor(an) => match an.anchor_type {
+            ANCR_PREC_READ_NOT | ANCR_LOOK_BEHIND_NOT => word_class_look(an).is_none(),
             ANCR_PREC_READ
-                | ANCR_PREC_READ_NOT
-                | ANCR_LOOK_BEHIND
-                | ANCR_LOOK_BEHIND_NOT
-                | ANCR_BEGIN_POSITION
-                | ANCR_TEXT_SEGMENT_BOUNDARY
-                | ANCR_NO_TEXT_SEGMENT_BOUNDARY
-        ),
+            | ANCR_LOOK_BEHIND
+            | ANCR_BEGIN_POSITION
+            | ANCR_TEXT_SEGMENT_BOUNDARY
+            | ANCR_NO_TEXT_SEGMENT_BOUNDARY => true,
+            _ => false,
+        },
         NodeInner::Gimmick(_) => true,
         NodeInner::String(sn) => sn.s.is_empty(),
         NodeInner::Quant(qn) => qn.upper == 0 || qn.body.as_deref().is_none_or(droppable),
@@ -442,19 +450,14 @@ fn cons_items(node: &Node) -> Vec<&Node> {
     items
 }
 
+/// One walk over a tuned parse tree, writing the seek HIR.
 struct Walk<'a> {
     reg: &'a RegexType,
-    approximated: u32,
+    /// Positive look-aheads whose body was kept in place so far.
     lookaheads_kept: u32,
-    /// Word boundaries met (kept or dropped).
-    word_boundaries: u32,
 }
 
 impl Walk<'_> {
-    fn note(&mut self, flag: u32) {
-        self.approximated |= flag;
-    }
-
     /// `node` as an element whose following siblings are all droppable
     /// when `rest_droppable`: a positive look-ahead then keeps its body.
     fn item(&mut self, node: &Node, rest_droppable: bool) -> Hir {
@@ -468,13 +471,11 @@ impl Walk<'_> {
 
     fn lookahead(&mut self, an: &AnchorNode, keep: bool) -> Hir {
         if keep {
-            self.note(approx::LOOKAHEAD_KEPT);
             self.lookaheads_kept += 1;
             an.body
                 .as_deref()
                 .map_or_else(Hir::empty, |body| self.item(body, true))
         } else {
-            self.note(approx::LOOKAHEAD_DROPPED);
             Hir::empty()
         }
     }
@@ -485,8 +486,9 @@ impl Walk<'_> {
         }
         match &node.inner {
             NodeInner::String(sn) => {
+                // The tuner unravels a case-insensitive string into exact
+                // alternatives; one it left stands for anything.
                 if node.has_status(ND_ST_IGNORECASE) && !sn.is_crude() {
-                    self.note(approx::IGNORECASE_STRING);
                     return placeholder();
                 }
                 if sn.s.is_empty() {
@@ -497,14 +499,7 @@ impl Walk<'_> {
             }
             NodeInner::CClass(cc) => self.cclass(cc),
             NodeInner::CType(ct) => self.ctype(node, ct),
-            NodeInner::BackRef(_) => {
-                self.note(approx::BACKREF);
-                placeholder()
-            }
-            NodeInner::Call(_) => {
-                self.note(approx::CALL);
-                placeholder()
-            }
+            NodeInner::BackRef(_) | NodeInner::Call(_) => placeholder(),
             NodeInner::Quant(qn) => {
                 let Some(body) = qn.body.as_deref() else {
                     return Hir::empty();
@@ -514,33 +509,23 @@ impl Walk<'_> {
                 // at most once keeps one.
                 let body_rest = rest_droppable && (0..=1).contains(&qn.upper);
                 let sub = self.item(body, body_rest);
-                let mut min = u32::try_from(qn.lower.max(0)).unwrap_or(u32::MAX);
-                let mut max = (qn.upper >= 0).then_some(qn.upper as u32);
-                if min > MAX_COUNTED_REPEAT || max.is_some_and(|max| max > MAX_COUNTED_REPEAT) {
-                    self.note(approx::REPEAT_CAPPED);
-                    min = min.min(MAX_COUNTED_REPEAT);
-                    max = None;
-                }
-                Hir::repetition(Repetition {
-                    min,
-                    max,
-                    greedy: qn.greedy,
-                    sub: Box::new(sub),
-                })
+                let min = u32::try_from(qn.lower.max(0)).unwrap_or(u32::MAX);
+                let max = (qn.upper >= 0).then_some(qn.upper as u32);
+                repetition(min, max, sub)
             }
             NodeInner::Bag(bn) => match &bn.bag_data {
+                // Both branches, whatever the condition decides.
                 BagData::IfElse {
                     then_node,
                     else_node,
                 } => {
-                    self.note(approx::CONDITIONAL);
                     let then = then_node
                         .as_deref()
                         .map_or_else(Hir::empty, |n| self.item(n, rest_droppable));
                     let otherwise = else_node
                         .as_deref()
                         .map_or_else(Hir::empty, |n| self.item(n, rest_droppable));
-                    Hir::alternation(vec![then, otherwise])
+                    alternation(vec![then, otherwise])
                 }
                 _ => bn
                     .body
@@ -568,7 +553,6 @@ impl Walk<'_> {
                         }
                     }
                     if let Some((min, max)) = lens {
-                        self.note(approx::CLASS_ALT_COLLAPSED);
                         return Hir::repetition(Repetition {
                             min: u32::try_from(min).unwrap_or(u32::MAX),
                             max: Some(u32::try_from(max).unwrap_or(u32::MAX)),
@@ -581,14 +565,14 @@ impl Walk<'_> {
                     .into_iter()
                     .map(|branch| self.item(branch, rest_droppable))
                     .collect();
-                Hir::alternation(branches)
+                alternation(branches)
             }
+            // `\K` and the absent operator's bookkeeping consume nothing;
+            // the absent operator's own `Fail` never matches (`(*FAIL)` is
+            // a callout, which leaves the pattern without a seek).
             NodeInner::Gimmick(gn) => match gn.gimmick_type {
                 GimmickType::Fail => Hir::fail(),
-                _ => {
-                    self.note(approx::GIMMICK);
-                    Hir::empty()
-                }
+                _ => Hir::empty(),
             },
         }
     }
@@ -599,7 +583,7 @@ impl Walk<'_> {
         let mut kept_before = false;
         for (k, item) in items.iter().enumerate() {
             // At most one look-ahead per list keeps its body: two of them
-            // hold at the same position, and in the HIR the second would
+            // hold at the same position, and in the seek the second would
             // follow the first's text.
             let rest =
                 rest_droppable && !kept_before && items[k + 1..].iter().all(|n| droppable(n));
@@ -609,43 +593,24 @@ impl Walk<'_> {
                 kept_before = true;
             }
         }
-        Hir::concat(parts)
+        concat(parts)
     }
 
     fn anchor(&mut self, an: &AnchorNode) -> Hir {
         match an.anchor_type {
-            // A look-ahead reaches here only where something consuming follows it.
-            ANCR_PREC_READ => {
-                self.note(approx::LOOKAHEAD_DROPPED);
-                Hir::empty()
-            }
-            ANCR_PREC_READ_NOT => {
-                self.note(approx::NEGATIVE_LOOKAHEAD);
-                Hir::empty()
-            }
-            ANCR_LOOK_BEHIND | ANCR_LOOK_BEHIND_NOT => {
-                self.note(approx::LOOKBEHIND);
-                Hir::empty()
+            // A look-ahead reaches here only where something consuming
+            // follows it. Look-behinds read what is before the position.
+            ANCR_PREC_READ | ANCR_LOOK_BEHIND => Hir::empty(),
+            ANCR_PREC_READ_NOT | ANCR_LOOK_BEHIND_NOT => {
+                word_class_look(an).map_or_else(Hir::empty, Hir::look)
             }
             ANCR_BEGIN_BUF => Hir::look(Look::Start),
             ANCR_END_BUF => Hir::look(Look::End),
-            ANCR_SEMI_END_BUF => {
-                self.note(approx::SEMI_END_BUF);
-                Hir::look(Look::EndLF)
-            }
+            // `\Z` holds before a final newline; `(?m:$)` before any.
+            ANCR_SEMI_END_BUF | ANCR_END_LINE => Hir::look(Look::EndLF),
             ANCR_BEGIN_LINE => Hir::look(Look::StartLF),
-            ANCR_END_LINE => Hir::look(Look::EndLF),
-            ANCR_BEGIN_POSITION => {
-                self.note(approx::BEGIN_POSITION);
-                Hir::empty()
-            }
-            ANCR_WORD_BOUNDARY | ANCR_NO_WORD_BOUNDARY | ANCR_WORD_BEGIN | ANCR_WORD_END
-                if !keep_word_boundaries() =>
-            {
-                self.word_boundaries += 1;
-                self.note(approx::WORD_BOUNDARY_DROPPED);
-                Hir::empty()
-            }
+            // `\G` depends on the search start.
+            ANCR_BEGIN_POSITION => Hir::empty(),
             ANCR_WORD_BOUNDARY | ANCR_NO_WORD_BOUNDARY | ANCR_WORD_BEGIN | ANCR_WORD_END
                 if an.ascii_mode =>
             {
@@ -664,7 +629,6 @@ impl Walk<'_> {
                 // boundary; next to a non-ASCII character it may hold, and
                 // the ASCII half boundaries (the previous or the next
                 // character is not an ASCII word character) admit that.
-                self.word_boundaries += 1;
                 Hir::alternation(vec![
                     Hir::look(match an.anchor_type {
                         ANCR_WORD_BOUNDARY => Look::WordAscii,
@@ -676,18 +640,16 @@ impl Walk<'_> {
                     Hir::look(Look::WordEndHalfAscii),
                 ])
             }
-            _ => {
-                self.note(approx::TEXT_SEGMENT);
-                Hir::empty()
-            }
+            // Text segment boundaries (`\y`, `\Y`).
+            _ => Hir::empty(),
         }
     }
 
     fn cclass(&mut self, cc: &CClassNode) -> Hir {
         let mut ranges: Vec<(u32, u32)> = Vec::new();
         for member in bitset_members(&cc.bs) {
+            // A bit at or above 0x80 stands for a byte, not a code point.
             if member >= 0x80 {
-                self.note(approx::CLASS_HIGH_BITS);
                 return any_char();
             }
             let member = member as u32;
@@ -704,34 +666,31 @@ impl Walk<'_> {
 
     fn ctype(&mut self, node: &Node, ct: &CtypeNode) -> Hir {
         if ct.ctype == CTYPE_ANYCHAR {
-            if node.has_status(ND_ST_MULTILINE) {
-                return any_char();
-            }
-            return Hir::dot(if unicode_classes() {
-                Dot::AnyCharExceptLF
+            return if node.has_status(ND_ST_MULTILINE) {
+                any_char()
             } else {
-                Dot::AnyByteExceptLF
-            });
+                any_char_except_newline()
+            };
         }
         if ct.ctype == ONIGENC_CTYPE_WORD as i32 {
-            if ct.ascii_mode {
-                return class_hir(
-                    [
-                        (b'0' as u32, b'9' as u32),
-                        (b'A' as u32, b'Z' as u32),
-                        (b'_' as u32, b'_' as u32),
-                        (b'a' as u32, b'z' as u32),
-                    ],
-                    ct.not,
-                );
-            }
-            if let Some(table) =
-                crate::unicode::onigenc_unicode_ctype_code_range(ONIGENC_CTYPE_WORD)
-            {
-                return class_hir(ctype_ranges(table), ct.not);
-            }
+            // The ASCII word characters are the same in both modes; the
+            // Unicode mode adds non-ASCII ones.
+            let ascii = [
+                (b'0' as u32, b'9' as u32),
+                (b'A' as u32, b'Z' as u32),
+                (b'_' as u32, b'_' as u32),
+                (b'a' as u32, b'z' as u32),
+            ];
+            let unicode = [(0x80, 0x10FFFF)];
+            let ranges = ascii.into_iter().chain(if ct.ascii_mode {
+                unicode[..0].iter().copied()
+            } else {
+                unicode[..].iter().copied()
+            });
+            return class_hir(ranges, ct.not);
         }
-        self.note(approx::OTHER_CTYPE);
+        // The parser turns the other ctypes into classes; a remaining one
+        // stands for any character.
         any_char()
     }
 
@@ -746,7 +705,7 @@ impl Walk<'_> {
         };
         let literals = trie.literals();
         if !trie.is_case_insensitive() {
-            return Hir::alternation(
+            return alternation(
                 literals
                     .iter()
                     .map(|literal| Hir::literal(literal.clone().into_boxed_slice()))
@@ -756,12 +715,11 @@ impl Walk<'_> {
         let Some(folds) = trie.folds() else {
             return placeholder();
         };
-        self.note(approx::FOLDED_TRIE);
         // Every literal as ASCII case classes: one byte class per letter.
         let mut branches: Vec<Hir> = literals
             .iter()
             .map(|literal| {
-                Hir::concat(
+                concat(
                     literal
                         .iter()
                         .map(|&c| {
@@ -812,14 +770,16 @@ impl Walk<'_> {
                     ClassBytesRange::new(0x00, 0x7F),
                 ])))),
             });
-            branches.push(Hir::concat(vec![ascii_prefix, Hir::alternation(non_ascii)]));
+            branches.push(concat(vec![ascii_prefix, alternation(non_ascii)]));
         }
-        Hir::alternation(branches)
+        alternation(branches)
     }
 }
 
-/// The automata of one set.
-pub struct SetPrefilter {
+/// The automata of one set: a meta regex over the covered seeks for the
+/// earliest candidate position, and an overlapping lazy DFA for the entries
+/// whose seek matches there.
+pub(crate) struct SetPrefilter {
     meta: regex_automata::meta::Regex,
     meta_cache: regex_automata::meta::Cache,
     dfa: hybrid::DFA,
@@ -831,10 +791,6 @@ pub struct SetPrefilter {
     own: Vec<u16>,
     /// Scratch for `candidates_at`.
     candidates: Vec<u16>,
-    /// Times the overlapping DFA gave up and every entry was a candidate.
-    pub dfa_quits: u64,
-    /// Nanoseconds the automata took to build.
-    pub build_nanos: u64,
 }
 
 impl std::fmt::Debug for SetPrefilter {
@@ -842,51 +798,41 @@ impl std::fmt::Debug for SetPrefilter {
         f.debug_struct("SetPrefilter")
             .field("entries", &self.entries.len())
             .field("own", &self.own.len())
+            .field("nfa_states", &self.nfa_states())
             .finish_non_exhaustive()
     }
 }
 
 impl SetPrefilter {
-    /// The automata over the seek HIRs of `regs` (in entry order), or `None`
-    /// when no entry can be pre-filtered or the automata do not build.
-    pub(crate) fn build<'a>(regs: impl Iterator<Item = &'a RegexType>) -> Option<Self> {
-        let started = std::time::Instant::now();
+    /// The automata over the seeks of the entries (in entry order, each with
+    /// its regex), or `None` when no entry can be pre-filtered, an entry has
+    /// callouts, or the automata would be too large (`MAX_NFA_STATES`) or do
+    /// not build.
+    pub(crate) fn build<'a>(
+        entries: impl Iterator<Item = (Option<&'a Seek>, &'a RegexType)>,
+    ) -> Option<Self> {
         let mut hirs: Vec<&Hir> = Vec::new();
-        let mut entries = Vec::new();
+        let mut covered = Vec::new();
         let mut own = Vec::new();
-        for (index, reg) in regs.enumerate() {
+        for (index, (seek, reg)) in entries.enumerate() {
             let index = u16::try_from(index).ok()?;
-            match &reg.seek {
-                Some(seek) if !seek.always => {
-                    hirs.push(&seek.hir);
-                    entries.push(index);
+            match seek {
+                Some(Seek::Pattern(hir)) => {
+                    hirs.push(hir);
+                    covered.push(index);
                 }
-                // Callouts observe every attempt; nothing in the set may skip one.
+                Some(Seek::Everywhere) => own.push(index),
+                // Callouts observe every attempt; nothing in the set may
+                // skip one. Patterns compiled without a seek are searched on
+                // their own.
                 None if reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0) => return None,
-                _ => own.push(index),
+                None => own.push(index),
             }
         }
-        if entries.is_empty() {
+        if covered.is_empty() {
             return None;
         }
-        let debug = std::env::var_os("FERRONI_DFA_PREFILTER_DEBUG").is_some();
-        let syntax = syntax::Config::new().utf8(false);
-        let meta = regex_automata::meta::Builder::new()
-            .syntax(syntax)
-            .configure(
-                regex_automata::meta::Config::new()
-                    .match_kind(MatchKind::LeftmostFirst)
-                    .utf8_empty(false)
-                    .nfa_size_limit(Some(NFA_SIZE_LIMIT))
-                    .hybrid_cache_capacity(META_CACHE_CAPACITY),
-            )
-            .build_many_from_hir(&hirs)
-            .inspect_err(|error| {
-                if debug {
-                    eprintln!("dfa-prefilter: meta regex not built: {error}");
-                }
-            })
-            .ok()?;
+        let entries = covered;
         let nfa = thompson::Compiler::new()
             .configure(
                 thompson::Config::new()
@@ -895,26 +841,32 @@ impl SetPrefilter {
                     .nfa_size_limit(Some(NFA_SIZE_LIMIT)),
             )
             .build_many_from_hir(&hirs)
-            .inspect_err(|error| {
-                if debug {
-                    eprintln!("dfa-prefilter: NFA not built: {error}");
-                }
-            })
             .ok()?;
+        if nfa.states().len() > MAX_NFA_STATES {
+            return None;
+        }
+        // The seeks use ASCII look-arounds only, so the DFA never quits.
         let dfa = hybrid::Builder::new()
             .configure(
                 hybrid::Config::new()
                     .match_kind(MatchKind::All)
-                    .unicode_word_boundary(true)
                     .cache_capacity(OVERLAPPING_CACHE_CAPACITY)
                     .skip_cache_capacity_check(true),
             )
             .build_from_nfa(nfa)
-            .inspect_err(|error| {
-                if debug {
-                    eprintln!("dfa-prefilter: overlapping DFA not built: {error}");
-                }
-            })
+            .ok()?;
+        // Only match starts are asked of the meta regex; with
+        // `WhichCaptures::None` it would have no group 0 to report them in.
+        let meta = regex_automata::meta::Builder::new()
+            .syntax(syntax::Config::new().utf8(false))
+            .configure(
+                regex_automata::meta::Config::new()
+                    .match_kind(MatchKind::LeftmostFirst)
+                    .utf8_empty(false)
+                    .nfa_size_limit(Some(NFA_SIZE_LIMIT))
+                    .hybrid_cache_capacity(META_CACHE_CAPACITY),
+            )
+            .build_many_from_hir(&hirs)
             .ok()?;
         let meta_cache = meta.create_cache();
         let dfa_cache = dfa.create_cache();
@@ -928,8 +880,6 @@ impl SetPrefilter {
             entries,
             own,
             candidates: Vec::new(),
-            dfa_quits: 0,
-            build_nanos: started.elapsed().as_nanos() as u64,
         })
     }
 
@@ -939,12 +889,12 @@ impl SetPrefilter {
     }
 
     /// Number of entries the automata cover.
-    pub fn covered(&self) -> usize {
+    pub(crate) fn covered(&self) -> usize {
         self.entries.len()
     }
 
     /// The earliest position at or after `from` where some covered entry's
-    /// HIR matches in `haystack`.
+    /// seek matches in `haystack`.
     #[inline]
     pub(crate) fn earliest(&mut self, haystack: &[u8], from: usize) -> Option<usize> {
         let input = Input::new(haystack).span(from..haystack.len());
@@ -953,7 +903,7 @@ impl SetPrefilter {
             .map(|m| m.start())
     }
 
-    /// The covered entries whose HIR matches at `at`, ascending; every
+    /// The covered entries whose seek matches at `at`, ascending; every
     /// covered entry when the DFA gives up.
     #[inline]
     pub(crate) fn candidates_at(&mut self, haystack: &[u8], at: usize) -> &[u16] {
@@ -979,100 +929,289 @@ impl SetPrefilter {
                     error.kind(),
                     MatchErrorKind::Quit { .. } | MatchErrorKind::GaveUp { .. }
                 ));
-                self.dfa_quits += 1;
                 self.candidates.extend_from_slice(&self.entries);
             }
         }
         &self.candidates
     }
 
-    /// Heap memory of the automata and their caches, in bytes.
-    pub fn memory_usage(&self) -> usize {
-        self.memory_breakdown().iter().sum()
-    }
-
     /// NFA states of the overlapping DFA (the meta regex holds about twice
     /// as many: a forward and a reverse NFA).
-    pub fn nfa_states(&self) -> usize {
+    pub(crate) fn nfa_states(&self) -> usize {
         self.dfa.get_nfa().states().len()
     }
 
+    /// Heap memory of the automata and their caches, in bytes.
+    pub(crate) fn memory_usage(&self) -> usize {
+        self.meta.memory_usage()
+            + self.meta_cache.memory_usage()
+            + self.dfa.memory_usage()
+            + self.dfa_cache.memory_usage()
+    }
+
     /// Times the overlapping DFA's cache was cleared because it filled up.
-    pub fn dfa_cache_clears(&self) -> usize {
+    pub(crate) fn cache_clears(&self) -> usize {
         self.dfa_cache.clear_count()
     }
-
-    /// Heap memory in bytes of the meta regex, its cache, the overlapping
-    /// DFA and its cache.
-    pub fn memory_breakdown(&self) -> [usize; 4] {
-        [
-            self.meta.memory_usage(),
-            self.meta_cache.memory_usage(),
-            self.dfa.memory_usage(),
-            self.dfa_cache.memory_usage(),
-        ]
-    }
-}
-
-/// What a scanner's pre-filter looks like, for the spike's census.
-#[derive(Debug, Clone, Default)]
-pub struct Report {
-    /// The set has automata.
-    pub built: bool,
-    /// Patterns the automata cover.
-    pub covered: usize,
-    /// Patterns searched on their own: no seek (callouts, encoding) or a
-    /// seek that matches everywhere.
-    pub own: Vec<usize>,
-    /// Per pattern, the seek HIR as regex syntax, or `None`.
-    pub seeks: Vec<Option<String>>,
-    /// Per pattern, the `approx` flags.
-    pub approximated: Vec<u32>,
-    /// Heap memory of the automata and caches, in bytes.
-    pub memory_usage: usize,
-    /// `memory_usage` split into the meta regex, its cache, the overlapping
-    /// DFA and its cache.
-    pub memory_breakdown: [usize; 4],
-    /// Nanoseconds the automata took to build.
-    pub build_nanos: u64,
-    /// Times the overlapping DFA gave up so far.
-    pub dfa_quits: u64,
-    /// NFA states of the overlapping DFA.
-    pub nfa_states: usize,
-    /// Times the overlapping DFA's cache was cleared so far.
-    pub dfa_cache_clears: usize,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::scanner::{Scanner, ScannerFindOptions};
+    use super::*;
+    use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+    use crate::oniguruma::{
+        ONIG_OPTION_CAPTURE_GROUP, ONIG_OPTION_IGNORECASE, ONIG_OPTION_WORD_IS_ASCII,
+        OnigOptionType,
+    };
+    use crate::regcomp::onig_new_for_scanner;
+    use crate::regsyntax::OnigSyntaxOniguruma;
+    use crate::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
 
-    fn find(patterns: &[&str], text: &str, start: usize) -> Option<(usize, Vec<(usize, usize)>)> {
-        let mut scanner = Scanner::new(patterns).unwrap();
-        for (i, seek) in scanner.dfa_prefilter_report().seeks.iter().enumerate() {
-            eprintln!("pattern {i}: {seek:?}");
-        }
-        scanner
-            .find_next_match(text, start, ScannerFindOptions::NONE)
-            .map(|m| {
-                (
-                    m.index,
-                    m.captures().iter().map(|c| (c.start, c.end)).collect(),
-                )
-            })
+    fn seek_with(
+        pattern: &str,
+        options: OnigOptionType,
+    ) -> Result<Option<Seek>, crate::error::RegexError> {
+        onig_new_for_scanner(
+            pattern.as_bytes(),
+            options,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+            false,
+            true,
+        )
+        .map(|(_, seek)| seek)
     }
 
+    fn seek(pattern: &str) -> Option<Seek> {
+        seek_with(pattern, ONIG_OPTION_CAPTURE_GROUP).unwrap()
+    }
+
+    /// The seek of `pattern` under `options` in regex syntax, or what it is
+    /// instead of a pattern.
+    fn seek_pattern_with(pattern: &str, options: OnigOptionType) -> String {
+        match seek_with(pattern, options) {
+            Ok(Some(Seek::Pattern(seek))) => seek.to_string(),
+            other => format!("{other:?}"),
+        }
+    }
+
+    fn seek_pattern(pattern: &str) -> String {
+        seek_pattern_with(pattern, ONIG_OPTION_CAPTURE_GROUP)
+    }
+
+    /// Each construct as the seek writes it. A seek matches wherever the
+    /// pattern can match; the approximations are the documented ones.
     #[test]
-    fn java_trace_call_35() {
-        let _limits = crate::regexec::shared_limits();
-        let patterns = [
-            r"\b((?:[A-Z_a-z]\w*\s*\.\s*)*[A-Z_]\w*)\b((?=\s*[\n$A-Z_a-z])|(?=\s*\.\.\.))",
-            ",",
+    fn seeks_approximate_each_construct() {
+        let cases: &[(&str, &str)] = &[
+            // Exact: literals, classes, concatenation, alternation,
+            // repetition; groups are transparent.
+            ("abc", "(?:abc)"),
+            ("[a-c]", "(?-u:[a-c])"),
+            ("a|bc", "(?:a|(?:bc))"),
+            ("ab{2,5}c", "(?:ab{2,5}c)"),
+            // Greediness decides which match is preferred, not where one
+            // exists, so every repetition is written greedy.
+            ("(?:ab)+?", "(?:ab)+"),
+            ("(a)(?:b)(?>c)d?", "(?:(?:abc)d?)"),
+            ("(?:a|bc){70}", "(?:a|(?:bc)){64,}"),
+            // A repetition of a repetition is flattened to a superset:
+            // regex-syntax would print `(?:ab)+?`, a lazy plus.
+            ("(?:(?:ab)+)?c", "(?:(?:ab)*c)"),
+            ("(?:(?:ab){2,3}){2}", "(?:ab){4,6}"),
+            ("(?:a*)+b", "(?:a*b)"),
+            (
+                "[^x]{2,70}",
+                "(?:(?-u:[\\x00-wy-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3})){2,}",
+            ),
+            // Classes are byte-based: ASCII exact, non-ASCII as one
+            // UTF-8 sequence.
+            ("[é]", "(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3})"),
+            (
+                "[^a]",
+                "(?:(?-u:[\\x00-`b-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))",
+            ),
+            (
+                "\\w",
+                "(?:(?-u:[0-9A-Z_a-z])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))",
+            ),
+            // Any character is an ASCII byte or one UTF-8 sequence.
+            (
+                ".",
+                "(?:(?-u:[\\x00-\\x09\\x0B-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))",
+            ),
+            (
+                "(?m:.)",
+                "(?:(?-u:[\\x00-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))",
+            ),
+            // Anchors.
+            ("\\Aa", "(?:\\Aa)"),
+            ("a\\z", "(?:a\\z)"),
+            ("a\\Z", "(?:a(?m:$))"),
+            ("^a$", "(?:(?m:^)a(?m:$))"),
+            (
+                "\\ba",
+                "(?:(?:(?-u:\\b)|(?-u:\\b{start-half})|(?-u:\\b{end-half}))a)",
+            ),
+            // Empty: look-behinds, negative look-aheads, `\G`, `\K`, `\y`.
+            ("(?<=x)a", "a"),
+            ("(?<!x)a", "a"),
+            // A negative look at a class with every ASCII word character
+            // is an ASCII half boundary.
+            ("(?<!\\w)a", "(?:(?-u:\\b{start-half})a)"),
+            (
+                "(?<![-\\w])a(?![-\\w])",
+                "(?:(?-u:\\b{start-half})a(?-u:\\b{end-half}))",
+            ),
+            ("(?<!\\W)a", "a"),
+            ("(?<![^\\w])a", "a"),
+            ("(?=ab)(?<!\\w)", "(?-u:\\b{start-half})"),
+            ("(?!x)a", "a"),
+            ("\\Ga", "a"),
+            ("a\\Kb", "(?:ab)"),
+            ("\\ya", "a"),
+            // A positive look-ahead keeps its body where nothing consuming
+            // follows it, and is dropped otherwise.
+            (
+                "\\s+(?=use\\b)",
+                "(?:(?:(?-u:[\\x09-\\x0D\\x20])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))+(?:use)(?:(?-u:\\b)|(?-u:\\b{start-half})|(?-u:\\b{end-half})))",
+            ),
+            ("(?=a)(?<=b)", "a"),
+            ("(?=a)b", "b"),
+            ("(?=a)(?=b)", "a"),
+            ("y(?:x(?=a))?", "(?:y(?:xa)?)"),
+            ("y(?:x(?=a))+", "(?:yx+)"),
+            ("(?:x(?=a))?y", "(?:x?y)"),
+            // Anything: back references and calls.
+            (
+                "(a)\\1",
+                "(?:a(?:(?-u:[\\x00-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))*)",
+            ),
+            (
+                "a\\g<1>|(b)",
+                "(?:(?:a(?:(?-u:[\\x00-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))*)|b)",
+            ),
+            // Both branches of a conditional.
+            ("(a)?(?(1)b|c)", "(?:a?[bc])"),
+            // Case-insensitive strings as the tuner unravels them.
+            ("(?i)ab", "(?:(?-u:[Aa])(?-u:[Bb]))"),
+            (
+                "(?i)[k]",
+                "(?:(?-u:[Kk])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))",
+            ),
+            // Literal tries: the literals, or their ASCII case variants
+            // with an escape for the non-ASCII folds the trie accepts.
+            (
+                "(?:error|warn|fatal|panic)",
+                "(?:(?:error)|(?:warn)|(?:fatal)|(?:panic))",
+            ),
+            (
+                "(?i)(?:ab|cd|ef|gh)",
+                "(?:(?:(?-u:[Aa])(?-u:[Bb]))|(?:(?-u:[Cc])(?-u:[Dd]))|(?:(?-u:[Ee])(?-u:[Ff]))|(?:(?-u:[Gg])(?-u:[Hh]))|(?:(?-u:[\\x00-\\x7F])?[KSks\u{17f}\u{212a}]))",
+            ),
+            (
+                "(?i)(?:kb|ss|st|xy)",
+                "(?:(?:(?-u:[Kk])(?-u:[Bb]))|(?:(?-u:[Ss])(?-u:[Ss]))|(?:(?-u:[Ss])(?-u:[Tt]))|(?:(?-u:[Xx])(?-u:[Yy]))|(?:(?-u:[\\x00-\\x7F])?[KSks\u{df}\u{17f}\u{1e9e}\u{212a}\u{fb05}\u{fb06}\u{1df95}]))",
+            ),
         ];
-        let text = "    record Order(String customer, BigDecimal amount, boolean completed) {}\n";
+        let mismatches: Vec<String> = cases
+            .iter()
+            .filter(|(pattern, expected)| seek_pattern(pattern) != *expected)
+            .map(|(pattern, _)| format!("{pattern:?} => {:?}", seek_pattern(pattern)))
+            .collect();
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+        // ASCII word characters and boundaries.
+        let ascii_word = ONIG_OPTION_CAPTURE_GROUP | ONIG_OPTION_WORD_IS_ASCII;
+        assert_eq!(seek_pattern_with(r"\w", ascii_word), "(?-u:[0-9A-Z_a-z])");
+        assert_eq!(seek_pattern_with(r"\ba", ascii_word), "(?:(?-u:\\b)a)");
+    }
+
+    /// A seek that matches at every position narrows nothing.
+    #[test]
+    fn seeks_that_match_everywhere_leave_the_entry_on_its_own() {
+        for pattern in [
+            "",
+            r"(?<=\))",
+            r"(?!\s*\[)",
+            "a*",
+            r"(a)?\1",
+            r"\G ?",
+            r"(?<=}|%>)\s*",
+            r"(?i)x*",
+            // The absent operator reads any characters first.
+            r"(?~abc)d",
+        ] {
+            assert_eq!(seek(pattern), Some(Seek::Everywhere), "{pattern}");
+        }
+        // Nullable with a look assertion: the assertion narrows.
+        assert_eq!(seek_pattern("^"), "(?m:^)");
         assert_eq!(
-            find(&patterns, text, 17),
-            Some((0, vec![(17, 23), (17, 23), (23, 23)]))
+            seek_pattern(r"\b"),
+            "(?:(?-u:\\b)|(?-u:\\b{start-half})|(?-u:\\b{end-half}))"
         );
+    }
+
+    /// Patterns compiled for a scanner without the pre-filter, with
+    /// callouts, or under another encoding have no seek.
+    #[test]
+    fn no_seek_without_the_prefilter_or_with_callouts() {
+        let plain = onig_new_for_scanner(
+            b"abc",
+            ONIG_OPTION_CAPTURE_GROUP,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(plain.1, None);
+        // `(*FAIL)` and `(*MAX{n})` are built-in callouts.
+        assert_eq!(seek("(*FAIL)"), None);
+        assert_eq!(seek("(*MAX{1})a"), None);
+        assert_eq!(
+            seek_pattern_with("abc", ONIG_OPTION_IGNORECASE),
+            "(?:(?-u:[Aa])(?-u:[Bb])(?-u:[Cc]))"
+        );
+        let ascii = onig_new_for_scanner(
+            b"abc",
+            ONIG_OPTION_CAPTURE_GROUP,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII,
+            &OnigSyntaxOniguruma,
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(ascii.1, None);
+    }
+
+    /// A set whose automata would exceed `MAX_NFA_STATES` keeps the
+    /// position-lead search, and answers alike.
+    #[test]
+    fn sets_over_the_state_cutoff_build_no_automata() {
+        let _limits = crate::regexec::shared_limits();
+        // 16 branches of 64 class states each, per pattern.
+        let branches: Vec<String> = (0..16)
+            .map(|i| format!("[{}{}]{{64}}{i:x}", (b'a' + i) as char, (b'A' + i) as char))
+            .collect();
+        let pattern = format!("(?:{})", branches.join("|"));
+        let patterns: Vec<&str> = std::iter::repeat_n(pattern.as_str(), 70)
+            .chain(["2"])
+            .collect();
+        let text = format!("1 {}0 2", "a".repeat(64));
+        let config = ScannerConfig::default();
+        let mut big = Scanner::with_config(&patterns, &config).unwrap();
+        assert!(!big.prefilter_stats().built);
+        let mut little = Scanner::with_config(&patterns[69..], &config).unwrap();
+        let stats = little.prefilter_stats();
+        assert!(stats.built && stats.covered == 2 && stats.nfa_states < MAX_NFA_STATES);
+        let found = |scanner: &mut Scanner, start: usize| {
+            scanner
+                .find_next_match(&text, start, ScannerFindOptions::NONE)
+                .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
+        };
+        assert_eq!(found(&mut big, 0), Some((0, 2, 67)));
+        assert_eq!(found(&mut big, 3), Some((70, 68, 69)));
+        assert_eq!(found(&mut little, 0), Some((0, 2, 67)));
+        assert_eq!(found(&mut little, 3), Some((1, 68, 69)));
     }
 }

@@ -767,10 +767,6 @@ pub struct RegexType {
     /// Rust-only (ADR-008): literals one of which every match contains,
     /// for RegSet fallback searches (`crate::required_literals`).
     pub(crate) required_literals: Option<Box<crate::required_literals::RequiredLiterals>>,
-    /// Spike (refs #252): the seek over-approximation of the expression for
-    /// the RegSet DFA pre-filter (`crate::dfa_prefilter`).
-    #[cfg(feature = "dfa-prefilter")]
-    pub(crate) seek: Option<Box<crate::dfa_prefilter::Seek>>,
 }
 
 /// The ASCII bytes of an optimizer map as at most [`MapAsciiRanges::MAX`]

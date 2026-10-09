@@ -290,9 +290,10 @@
 pub mod api;
 pub mod backtrack_lint;
 pub mod backtrack_rewrite;
-// Spike (refs #252): DFA candidate pre-filter for the scanner's RegSet.
+// Crate-private (ADR-008): the scanner's DFA pre-filter. The feature also
+// carries its regex-automata and regex-syntax dependencies (ADR-009).
 #[cfg(feature = "dfa-prefilter")]
-pub mod dfa_prefilter;
+mod dfa_prefilter;
 // C port: the C API mirrors oniguruma.h and is documented upstream
 // (https://github.com/kkos/oniguruma/blob/master/doc/API), so its items are
 // exempt from `missing_docs`. The C API types do not implement Debug yet.

@@ -151,8 +151,9 @@ pub struct OnigRegSet {
     has_gated: bool,
     /// Some gated table entry has callouts.
     has_gated_callouts: bool,
-    /// Spike (refs #252): the DFA candidate pre-filter of a scanner's set
-    /// (`crate::dfa_prefilter`), built with the table and dropped with it.
+    /// Rust-only (ADR-008): the DFA pre-filter of a scanner's set
+    /// (`crate::dfa_prefilter`), built by `onig_regset_new_shared` and
+    /// dropped with the first-byte table.
     #[cfg(feature = "dfa-prefilter")]
     prefilter: Option<Box<crate::dfa_prefilter::SetPrefilter>>,
 }
@@ -550,13 +551,6 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
     }
 
     build_first_byte_table(&mut set);
-    // Spike (refs #252): the DFA pre-filter of a scanner's set.
-    #[cfg(feature = "dfa-prefilter")]
-    if crate::dfa_prefilter::enabled() {
-        set.prefilter =
-            crate::dfa_prefilter::SetPrefilter::build(set.entries.iter().map(|entry| &*entry.reg))
-                .map(Box::new);
-    }
 
     (Some(set), ONIG_NORMAL)
 }
@@ -567,7 +561,16 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
 /// pattern share its compiled regex. Each set still builds its own entries:
 /// regions, memos, gates, start filters and first-instruction tests are
 /// never shared, and a search only reads the regex.
-pub(crate) fn onig_regset_new_shared(regs: Vec<Arc<RegexType>>) -> (Option<Box<OnigRegSet>>, i32) {
+///
+/// `seeks` holds each regex's seek approximation (ADR-008,
+/// `crate::dfa_prefilter`), from which the set builds its DFA pre-filter;
+/// a set without one for any entry, without the feature, or whose automata
+/// would be too large searches as before.
+pub(crate) fn onig_regset_new_shared(
+    regs: Vec<Arc<RegexType>>,
+    seeks: &[SharedSeek],
+) -> (Option<Box<OnigRegSet>>, i32) {
+    debug_assert_eq!(regs.len(), seeks.len());
     let mut set = regset_alloc();
 
     for reg in regs {
@@ -578,16 +581,24 @@ pub(crate) fn onig_regset_new_shared(regs: Vec<Arc<RegexType>>) -> (Option<Box<O
     }
 
     build_first_byte_table(&mut set);
-    // Spike (refs #252): the DFA pre-filter of a scanner's set.
     #[cfg(feature = "dfa-prefilter")]
-    if crate::dfa_prefilter::enabled() {
-        set.prefilter =
-            crate::dfa_prefilter::SetPrefilter::build(set.entries.iter().map(|entry| &*entry.reg))
-                .map(Box::new);
+    {
+        let entries =
+            (set.entries.iter().zip(seeks)).map(|(entry, seek)| (seek.as_deref(), &*entry.reg));
+        set.prefilter = crate::dfa_prefilter::SetPrefilter::build(entries).map(Box::new);
     }
 
     (Some(set), ONIG_NORMAL)
 }
+
+/// A scanner pattern's seek approximation as scanners share it: the pattern
+/// cache keeps one per distinct pattern (ADR-006), and every set built from
+/// it reads the same. Nothing without the `dfa-prefilter` feature.
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) type SharedSeek = Option<Arc<crate::dfa_prefilter::Seek>>;
+/// See the definition with the `dfa-prefilter` feature.
+#[cfg(not(feature = "dfa-prefilter"))]
+pub(crate) type SharedSeek = ();
 
 /// An empty set, as `onig_regset_new` allocates it before adding regexes.
 fn regset_alloc() -> Box<OnigRegSet> {
@@ -874,7 +885,7 @@ pub(crate) fn onig_regset_last_match_len(set: &OnigRegSet) -> i32 {
     set.last_match_len
 }
 
-/// Spike (refs #252): the set's DFA pre-filter, if it has one.
+/// Rust-only (ADR-008): the set's DFA pre-filter, if it built one.
 #[cfg(feature = "dfa-prefilter")]
 pub(crate) fn onig_regset_prefilter(
     set: &OnigRegSet,
@@ -2063,6 +2074,8 @@ pub(crate) fn onig_regset_entry_search(
 /// `onig_regset_entry_search` as a decision, for a search whose match start
 /// range is `range`, with the scratch limits refreshed and `subject_utf8`
 /// set by the caller.
+// The entry searches take the search's bounds as `onig_regset_entry_search`
+// does.
 #[allow(clippy::too_many_arguments)]
 fn regset_entry_decision(
     set: &mut OnigRegSet,
@@ -2097,16 +2110,41 @@ fn regset_entry_decision(
     decision
 }
 
-/// Spike (refs #252): the position-lead search with the DFA pre-filter.
+/// Rust-only (ADR-008): whether the DFA pre-filter decides this search.
+///
+/// The pre-filter leaves out attempts that cannot match, whose backtracks
+/// a limit would count; C makes them and may stop at the limit. So it
+/// decides only a search under Ferroni's defaults (10,000,000 retries per
+/// match, no search retry budget, stack or time limit), and a search under
+/// a limit of the caller's own, or without any, keeps C's attempts. It
+/// stays off for FIND_LONGEST as the other skips do, and reads the subject
+/// as UTF-8 (scanner searches).
+#[cfg(feature = "dfa-prefilter")]
+#[inline]
+fn prefilter_decides(set: &OnigRegSet, limits: FallbackMemoLimits, option: OnigOptionType) -> bool {
+    set.prefilter.is_some()
+        && set.subject_utf8
+        && limits.retry_limit_in_match == DEFAULT_RETRY_LIMIT_IN_MATCH
+        && limits.retry_limit_in_search == 0
+        && limits.match_stack_limit == 0
+        && limits.time_limit == 0
+        && !opton_find_longest(option)
+}
+
+/// Rust-only (ADR-008): the position-lead search decided by the DFA
+/// pre-filter.
 ///
 /// Entries the automata do not cover are searched on their own first, as
-/// the per-regex route does (`regset_entry_decision`). Then the meta regex
-/// finds the earliest position at or after `start` where some covered
-/// entry's seek HIR matches, the overlapping DFA names the entries whose HIR
-/// matches there, and those are attempted in index order at that position
-/// (`attempt_entry_at`), the first event deciding; without one the search
-/// goes on one character later. Every attempt left out would fail: the HIR
-/// matches wherever the entry can.
+/// the per-regex route does (`regset_entry_decision`), without the fallback
+/// memo. Then the meta regex finds the earliest position at or after `start`
+/// where some covered entry's seek matches, the overlapping DFA names the
+/// entries whose seek matches there, and those are attempted in index order
+/// at that position (`attempt_entry_at`), the first event deciding; without
+/// one the search goes on one character later. Every attempt left out would
+/// fail: the seek matches wherever the entry can. The result is therefore
+/// the one `regset_search_body_position_lead` finds without the pre-filter,
+/// which a search under a limit of the caller's own still takes
+/// (`prefilter_decides`).
 #[cfg(feature = "dfa-prefilter")]
 fn regset_search_body_prefilter(
     set: &mut OnigRegSet,
@@ -2162,6 +2200,12 @@ fn regset_search_body_prefilter(
         if at > range {
             break;
         }
+        // No match starts inside a character, where only a seek with a raw
+        // byte can: the search goes on at the next character.
+        if at < end && (str_data[at] & 0xC0) == 0x80 {
+            s = at + 1;
+            continue;
+        }
         if decision
             .map(decision_position_and_index)
             .is_some_and(|(position, _)| at > position as usize)
@@ -2199,13 +2243,14 @@ fn regset_search_body_prefilter(
     decision
 }
 
-/// Spike (refs #252): one attempt of entry `index` at `position` in a
-/// position-lead search from `search_start`, as that search would make it:
-/// an any-char-star entry only at the first position or after a newline,
-/// and a fallback or gated entry only where C's optimizer admits the
-/// position (`entry_search_range`, asked after an attempt with an event, as
+/// One attempt of entry `index` at `position` in a position-lead search
+/// from `search_start`, as that search would make it: an any-char-star
+/// entry only at the first position or after a newline, and a fallback or
+/// gated entry only where C's optimizer admits the position
+/// (`entry_search_range`, asked after an attempt with an event, as
 /// `attempt_fallback_entry_at_start` does).
 #[cfg(feature = "dfa-prefilter")]
+// The attempt takes the search's bounds as the fallback attempts do.
 #[allow(clippy::too_many_arguments)]
 fn attempt_entry_at(
     set: &mut OnigRegSet,
@@ -2345,16 +2390,11 @@ fn regset_search_body_position_lead(
     fallback_memo_id: Option<FallbackMemoIdentity>,
 ) -> (i32, i32) {
     let limits = refresh_scratch_limits(set);
-    // Spike (refs #252): the DFA pre-filter decides which entries attempt
-    // which positions. It leaves out attempts, so it stays off where a limit
-    // could observe them, and reads the subject as UTF-8 (scanner calls).
+    // Rust-only (ADR-008): the DFA pre-filter decides which entries attempt
+    // which positions; the rest of this function is the search it stands
+    // in for.
     #[cfg(feature = "dfa-prefilter")]
-    if set.prefilter.is_some()
-        && set.subject_utf8
-        && limits.retry_limit_in_search == 0
-        && limits.time_limit == 0
-        && limits.match_stack_limit == 0
-    {
+    if prefilter_decides(set, limits, option) {
         let decision = regset_search_body_prefilter(set, str_data, end, start, range, option);
         return regset_decision_result(set, decision);
     }

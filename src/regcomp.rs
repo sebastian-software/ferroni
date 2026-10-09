@@ -10515,13 +10515,41 @@ pub(crate) fn onig_compile_einfo(
 /// Compile `pattern` into `reg`. On failure, also returns the name the
 /// error refers to, or `None` when none was recorded (C's NULL `einfo->par`).
 fn compile_recording_name(reg: &mut RegexType, pattern: &[u8]) -> (i32, Option<Vec<u8>>) {
-    compile_recording_name_with_optimization(reg, pattern, false)
+    compile_recording_name_with_choices(
+        reg,
+        pattern,
+        RustOnlyCompile::default(),
+        &mut ScannerSeek::default(),
+    )
 }
 
-fn compile_recording_name_with_optimization(
+/// The Rust-only compilation choices (ADR-008) a caller makes beside C's
+/// options. The C-compatible API makes none of them.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct RustOnlyCompile {
+    /// The experimental AST rewrites of `crate::backtrack_rewrite`.
+    pub(crate) optimize_backtracking: bool,
+    /// Derive the seek approximation for the scanner's DFA pre-filter
+    /// (`crate::dfa_prefilter`). Only scanner patterns pay for it.
+    pub(crate) seek: bool,
+}
+
+/// What a scanner pattern's compilation hands back beside the regex: the
+/// seek approximation for the DFA pre-filter (ADR-008), read from the
+/// tuned tree, which is gone after compilation. The regex itself does not
+/// carry it: the scanner passes it to its set and the pattern cache keeps
+/// it per distinct pattern. Nothing without the feature.
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) type ScannerSeek = Option<crate::dfa_prefilter::Seek>;
+/// See the definition with the `dfa-prefilter` feature.
+#[cfg(not(feature = "dfa-prefilter"))]
+pub(crate) type ScannerSeek = ();
+
+fn compile_recording_name_with_choices(
     reg: &mut RegexType,
     pattern: &[u8],
-    optimize_backtracking: bool,
+    choices: RustOnlyCompile,
+    seek: &mut ScannerSeek,
 ) -> (i32, Option<Vec<u8>>) {
     // Clear previous bytecode
     reg.ops.clear();
@@ -10564,7 +10592,7 @@ fn compile_recording_name_with_optimization(
         group_max_len: Vec::new(),
     };
 
-    let r = compile_parsed(reg, pattern, &mut env, optimize_backtracking);
+    let r = compile_parsed(reg, pattern, &mut env, choices, seek);
     // C's parse_and_tune() `err:` label
     let par = if r != 0 { env.error.take() } else { None };
     (r, par)
@@ -10576,7 +10604,8 @@ fn compile_parsed(
     reg: &mut RegexType,
     pattern: &[u8],
     env: &mut ParseEnv,
-    optimize_backtracking: bool,
+    choices: RustOnlyCompile,
+    seek: &mut ScannerSeek,
 ) -> i32 {
     let mut root = match crate::regparse::onig_parse_tree(pattern, reg, env) {
         Ok(node) => node,
@@ -10619,7 +10648,7 @@ fn compile_parsed(
 
     // Rust-only, opt-in (ADR-008): preserve the original warning list and
     // capture structure while removing retries whose exits cannot match.
-    if optimize_backtracking
+    if choices.optimize_backtracking
         && std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
     {
         reg.backtrack_rewrites =
@@ -10805,16 +10834,14 @@ fn compile_parsed(
     // Rust-only (ADR-008): literals every match contains, for RegSet
     // fallback searches. Read from the tuned tree, which is gone afterwards.
     reg.required_literals = crate::required_literals::derive(&root, reg, env).map(Box::new);
-    // Spike (refs #252): the seek over-approximation for the RegSet DFA
-    // pre-filter, read from the same tuned tree.
+    // Rust-only (ADR-008): the seek approximation for the scanner's DFA
+    // pre-filter, read from the same tuned tree, for scanner patterns only.
     #[cfg(feature = "dfa-prefilter")]
-    {
-        reg.seek = if crate::dfa_prefilter::enabled() {
-            crate::dfa_prefilter::derive(&root, reg).map(Box::new)
-        } else {
-            None
-        };
+    if choices.seek {
+        *seek = crate::dfa_prefilter::derive(&root, reg);
     }
+    #[cfg(not(feature = "dfa-prefilter"))]
+    let _ = seek;
 
     0
 }
@@ -11017,6 +11044,39 @@ pub(crate) fn onig_new_with_backtracking_optimization(
     syntax: &OnigSyntaxType,
     optimize_backtracking: bool,
 ) -> Result<RegexType, crate::error::RegexError> {
+    let choices = RustOnlyCompile {
+        optimize_backtracking,
+        seek: false,
+    };
+    onig_new_with_choices(pattern, option, enc, syntax, choices).map(|(reg, _)| reg)
+}
+
+/// [`onig_new_with_backtracking_optimization`] for a scanner pattern: with
+/// `prefilter`, it also hands back the seek approximation the scanner's DFA
+/// pre-filter reads (ADR-008, `crate::dfa_prefilter`).
+pub(crate) fn onig_new_for_scanner(
+    pattern: &[u8],
+    option: OnigOptionType,
+    enc: OnigEncoding,
+    syntax: &OnigSyntaxType,
+    optimize_backtracking: bool,
+    prefilter: bool,
+) -> Result<(RegexType, ScannerSeek), crate::error::RegexError> {
+    let choices = RustOnlyCompile {
+        optimize_backtracking,
+        seek: prefilter,
+    };
+    onig_new_with_choices(pattern, option, enc, syntax, choices)
+}
+
+/// `onig_new` with the Rust-only compilation choices.
+fn onig_new_with_choices(
+    pattern: &[u8],
+    option: OnigOptionType,
+    enc: OnigEncoding,
+    syntax: &OnigSyntaxType,
+    choices: RustOnlyCompile,
+) -> Result<(RegexType, ScannerSeek), crate::error::RegexError> {
     // Validate options
     if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP)
         && option.intersects(ONIG_OPTION_CAPTURE_GROUP)
@@ -11097,17 +11157,17 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         search_start_map: None,
         search_jump: None,
         required_literals: None,
-        #[cfg(feature = "dfa-prefilter")]
-        seek: None,
     };
 
-    let (r, par) =
-        compile_recording_name_with_optimization(&mut reg, pattern, optimize_backtracking);
+    // Without the `dfa-prefilter` feature the seek is `()`.
+    #[allow(clippy::let_unit_value)]
+    let mut seek = ScannerSeek::default();
+    let (r, par) = compile_recording_name_with_choices(&mut reg, pattern, choices, &mut seek);
     if r != 0 {
         return Err(crate::error::RegexError::from_error_name(r, par.as_deref()));
     }
 
-    Ok(reg)
+    Ok((reg, seek))
 }
 
 // ============================================================================
@@ -11589,8 +11649,6 @@ mod tests {
             search_start_map: None,
             search_jump: None,
             required_literals: None,
-            #[cfg(feature = "dfa-prefilter")]
-            seek: None,
         };
         let env = ParseEnv {
             options: OnigOptionType::empty(),
