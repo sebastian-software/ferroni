@@ -169,6 +169,10 @@ pub struct OnigRegSet {
     /// searches it with the fallback memo.
     #[cfg(feature = "dfa-prefilter")]
     prefilter_own_fallback: bool,
+    /// The pre-filter was dropped because its overlapping DFA gave up on
+    /// its cache (`retire_prefilter`).
+    #[cfg(feature = "dfa-prefilter")]
+    prefilter_retired: bool,
     /// The next search takes the position-lead path although the set has
     /// automata (`self_check_prefilter_decision`).
     #[cfg(feature = "prefilter-self-check")]
@@ -578,6 +582,7 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
         set.prefilter = None;
         set.prefilter_pending = None;
         set.prefilter_own_fallback = false;
+        set.prefilter_retired = false;
     }
     set.has_gated = set.entries.iter().any(|entry| entry.gated);
     set.has_gated_callouts = set
@@ -689,6 +694,22 @@ fn build_prefilter(set: &mut OnigRegSet) -> bool {
     true
 }
 
+/// Rust-only (ADR-008): drops the set's DFA pre-filter for good, once its
+/// overlapping DFA gave up on its cache (`dfa_prefilter::MIN_CACHE_CLEARS`):
+/// the set searches as the position-lead search searches it from then on,
+/// which is the search the pre-filter stood in for, so nothing observable
+/// changes but the time.
+#[cfg(feature = "dfa-prefilter")]
+fn retire_prefilter(set: &mut OnigRegSet) {
+    set.prefilter = None;
+    set.prefilter_pending = None;
+    set.prefilter_own_fallback = false;
+    set.prefilter_retired = true;
+    for entry in &mut set.entries {
+        entry.prefilter_covered = false;
+    }
+}
+
 /// A scanner pattern's seek approximation as scanners share it: the pattern
 /// cache keeps one per distinct pattern (ADR-006), and every set built from
 /// it reads the same. Nothing without the `dfa-prefilter` feature.
@@ -746,6 +767,8 @@ fn regset_alloc() -> Box<OnigRegSet> {
         prefilter_pending: None,
         #[cfg(feature = "dfa-prefilter")]
         prefilter_own_fallback: false,
+        #[cfg(feature = "dfa-prefilter")]
+        prefilter_retired: false,
         #[cfg(feature = "prefilter-self-check")]
         prefilter_bypass: false,
         #[cfg(feature = "prefilter-self-check")]
@@ -805,6 +828,7 @@ pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) 
         set.prefilter = None;
         set.prefilter_pending = None;
         set.prefilter_own_fallback = false;
+        set.prefilter_retired = false;
     }
     set.fallback_memo_key = None;
     set.fallback_memos.resize_with(set.entries.len(), Vec::new);
@@ -1023,6 +1047,13 @@ pub(crate) fn onig_regset_prefilter(
 #[cfg(feature = "dfa-prefilter")]
 pub(crate) fn onig_regset_prefilter_pending(set: &OnigRegSet) -> Option<&PendingPrefilter> {
     set.prefilter_pending.as_deref()
+}
+
+/// Rust-only (ADR-008): the set dropped its DFA pre-filter because its
+/// cache thrashed (`retire_prefilter`).
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) fn onig_regset_prefilter_retired(set: &OnigRegSet) -> bool {
+    set.prefilter_retired
 }
 
 #[derive(Clone, Copy)]
@@ -2477,7 +2508,7 @@ fn regset_search_body_prefilter(
     /// first window, so an own event inside it never costs a read past it.
     const OWN_EVENT_WALKS: usize = FIRST_OWN_WINDOW;
     let mut prefilter = set.prefilter.take()?;
-    prefilter.begin_search();
+    prefilter.begin_search(subject, start);
     let mut decision: Option<RegSetDecision> = None;
     let mut failed_positions = 0u32;
     let has_own = !prefilter.own().is_empty();
@@ -3324,7 +3355,7 @@ fn regset_search_body_position_lead(
         if set.prefilter_own_fallback {
             prepare_fallback_memo(set, memo_key);
         }
-        if let Some(decision) = regset_search_body_prefilter(
+        let decision = regset_search_body_prefilter(
             set,
             str_data,
             end,
@@ -3335,7 +3366,15 @@ fn regset_search_body_position_lead(
             fallback_memo_id
                 .filter(|_| range == end)
                 .map(|identity| (identity, end)),
-        ) {
+        );
+        if set
+            .prefilter
+            .as_ref()
+            .is_some_and(|prefilter| prefilter.gave_up())
+        {
+            retire_prefilter(set);
+        }
+        if let Some(decision) = decision {
             let result = regset_decision_result(set, decision);
             #[cfg(feature = "prefilter-self-check")]
             self_check_prefilter_decision(

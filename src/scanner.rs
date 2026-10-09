@@ -748,7 +748,8 @@ pub struct ScannerStats {
 /// then `built` is `false` while `covered` and `own` already say what they
 /// will cover. A scanner built without the pre-filter, without the
 /// `dfa-prefilter` feature, or whose automata would be too large reports
-/// `built == false` and every pattern as `own`.
+/// `built == false` and every pattern as `own`, and so does one that
+/// `retired` them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PrefilterStats {
@@ -771,6 +772,10 @@ pub struct PrefilterStats {
     pub cache_memory_usage: usize,
     /// Times the overlapping automaton's cache filled up and was cleared.
     pub cache_clears: usize,
+    /// The scanner dropped its automata for good: their cache kept filling
+    /// faster than it could be reused, so the scanner searches without the
+    /// pre-filter from then on, as one built without it does.
+    pub retired: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1092,6 +1097,7 @@ impl Scanner {
                     memory_usage: prefilter.memory_usage(),
                     cache_memory_usage: prefilter.cache_memory_usage(),
                     cache_clears: prefilter.cache_clears(),
+                    retired: false,
                 };
             }
             if let Some(pending) = crate::regset::onig_regset_prefilter_pending(&self.regset) {
@@ -1105,6 +1111,8 @@ impl Scanner {
         }
         PrefilterStats {
             own: onig_regset_number_of_regex(&self.regset) as usize,
+            #[cfg(feature = "dfa-prefilter")]
+            retired: crate::regset::onig_regset_prefilter_retired(&self.regset),
             ..PrefilterStats::default()
         }
     }
