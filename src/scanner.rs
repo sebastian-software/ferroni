@@ -1162,8 +1162,9 @@ impl Scanner {
         // the RegSet route. The per-regex route has no pre-filter, and an
         // attempt the pre-filter leaves out can reach the retry limit there,
         // so the routes could answer an identical call differently.
-        let use_regset = onig_regset_prefilter_decides(&mut self.regset, onig_opts)
-            || self.should_use_regset_for_cache(str_id, options.0, start_position);
+        let use_regset =
+            onig_regset_prefilter_decides(&mut self.regset, onig_opts, str_data, start_position)
+                || self.should_use_regset_for_cache(str_id, options.0, start_position);
         // So does every call while a search retry budget makes a result
         // depend on where its search began (see `search_per_regex`).
         let limit_revision = if use_regset {

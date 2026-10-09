@@ -7,7 +7,9 @@
 //! their `x2`, `x3`, `n` and `e` helpers (and the `_syn` variants, compiled
 //! in the default syntax here). The options of compat_options.rs are the
 //! compile options of both scanners; pairs with search-time options the
-//! scanner has no equivalent for are left out.
+//! scanner has no equivalent for are left out. A second test composes each
+//! accepted pattern with a literal before and after it, which puts the
+//! pattern's optimizer at a distance from the match start.
 
 use ferroni::oniguruma::*;
 use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
@@ -219,10 +221,10 @@ fn bounds(found: Option<ferroni::scanner::ScannerMatch>) -> Option<(usize, Vec<(
     })
 }
 
-/// Every pattern/text pair of the compat files the scanner accepts answers
-/// the same with the pre-filter as without, from every character boundary.
-#[test]
-fn compat_pairs_answer_alike_with_and_without_the_prefilter() {
+/// Compares the scanner with and without the pre-filter over the cases,
+/// each pattern composed by `compose`, from every byte offset of the text.
+/// Returns (pairs, accepted, covered, calls) and the mismatches.
+fn differences(compose: impl Fn(&str) -> String) -> ((usize, usize, usize, u64), Vec<String>) {
     let mut pairs = 0;
     let mut accepted = 0;
     let mut covered = 0;
@@ -237,16 +239,18 @@ fn compat_pairs_answer_alike_with_and_without_the_prefilter() {
             ) else {
                 continue;
             };
+            let pattern = compose(pattern);
             let config = ScannerConfig::default().options(case.options);
-            let plain = Scanner::with_config(&[pattern], &config.clone().prefilter(false));
-            let filtered = Scanner::with_config(&[pattern], &config);
+            let plain = Scanner::with_config(&[&pattern], &config.clone().prefilter(false));
+            let filtered = Scanner::with_config(&[&pattern], &config);
             let (Ok(mut plain), Ok(mut filtered)) = (plain, filtered) else {
                 continue;
             };
             accepted += 1;
             covered += usize::from(filtered.prefilter_stats().covered == 1);
-            let starts = (0..=text.len()).filter(|&at| text.is_char_boundary(at));
-            for start in starts {
+            // Every byte offset: a start inside a character takes the
+            // position-lead path, and has to answer the same.
+            for start in 0..=text.len() {
                 calls += 1;
                 let want = bounds(plain.find_next_match(text, start, ScannerFindOptions::NONE));
                 let got = bounds(filtered.find_next_match(text, start, ScannerFindOptions::NONE));
@@ -259,6 +263,14 @@ fn compat_pairs_answer_alike_with_and_without_the_prefilter() {
             }
         }
     }
+    ((pairs, accepted, covered, calls), mismatches)
+}
+
+/// Every pattern/text pair of the compat files the scanner accepts answers
+/// the same with the pre-filter as without, from every byte offset.
+#[test]
+fn compat_pairs_answer_alike_with_and_without_the_prefilter() {
+    let ((pairs, accepted, covered, calls), mismatches) = differences(str::to_owned);
     println!(
         "{pairs} pairs, {accepted} accepted by the scanner, {covered} covered by the pre-filter, {calls} calls compared"
     );
@@ -267,4 +279,25 @@ fn compat_pairs_answer_alike_with_and_without_the_prefilter() {
         "the compat files hold more pairs than {pairs}"
     );
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+}
+
+/// The same with a literal appended to and prepended to each pattern,
+/// which puts C's optimizer string at a distance from the match start
+/// (`(?(a)(?:b|c))!` on `ac!` is attempted at 2 only).
+#[test]
+fn composed_compat_patterns_answer_alike_with_and_without_the_prefilter() {
+    let appended = |pattern: &str| format!("{pattern}!");
+    let prepended = |pattern: &str| format!("!{pattern}");
+    for (name, (pairs, accepted, covered, calls), mismatches) in [
+        ("appended", differences(appended)),
+        ("prepended", differences(prepended)),
+    ]
+    .into_iter()
+    .map(|(name, (counts, mismatches))| (name, counts, mismatches))
+    {
+        println!(
+            "{name}: {pairs} pairs, {accepted} accepted by the scanner, {covered} covered by the pre-filter, {calls} calls compared"
+        );
+        assert!(mismatches.is_empty(), "{name}: {}", mismatches.join("\n"));
+    }
 }

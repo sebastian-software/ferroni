@@ -80,6 +80,25 @@ fn explicit_subexpression_call_limit_disables_skipping() {
     );
 }
 
+/// The second review's `compare`: from a given start.
+fn compare_from(patterns: &[&str], text: &str, start: usize, expected: (usize, usize, usize)) {
+    let mut off =
+        Scanner::with_config(patterns, &ScannerConfig::default().prefilter(false)).unwrap();
+    let mut on = Scanner::new(patterns).unwrap();
+    let want = bounds(off.find_next_match(text, start, ScannerFindOptions::NONE));
+    let got = bounds(on.find_next_match(text, start, ScannerFindOptions::NONE));
+    assert_eq!(want, Some(expected));
+    assert_eq!(got, want);
+}
+
+fn interior_byte_offset() {
+    compare_from(&["."], "é", 1, (0, 1, 2));
+}
+
+fn conditional_optimizer_admission() {
+    compare_from(&[r"(?(a)(?:b|c))!", "!"], "ac!", 0, (0, 2, 3));
+}
+
 #[test]
 fn review_findings_of_the_prefilter() {
     unicode_non_word_is_not_ascii_only();
@@ -87,5 +106,7 @@ fn review_findings_of_the_prefilter() {
     folded_trie_reaches_the_following_anchor();
     conditional_preserves_the_consumed_condition();
     identical_default_limit_searches_have_identical_results();
+    interior_byte_offset();
+    conditional_optimizer_admission();
     explicit_subexpression_call_limit_disables_skipping();
 }

@@ -44,7 +44,7 @@ use crate::regparse_types::*;
 use regex_automata::hybrid::dfa as hybrid;
 use regex_automata::nfa::thompson;
 use regex_automata::util::syntax;
-use regex_automata::{Anchored, Input, MatchErrorKind, MatchKind, PatternID, PatternSet};
+use regex_automata::{Anchored, Input, MatchKind, PatternID, PatternSet};
 use regex_syntax::hir::{Class, ClassBytes, ClassBytesRange, Hir, HirKind, Look, Repetition};
 
 const MIB: usize = 1 << 20;
@@ -56,6 +56,11 @@ const OVERLAPPING_CACHE_CAPACITY: usize = MIB;
 const NFA_SIZE_LIMIT: usize = 16 * MIB;
 /// Counted repetitions above this bound become unbounded ones.
 const MAX_COUNTED_REPEAT: u32 = 64;
+/// Bytes the anchored candidate scan reads past a position before it
+/// declares every covered entry a candidate there. A seek such as `\w+`
+/// stays alive to the end of a word run, and the scan would otherwise read
+/// it again from every position of the run.
+pub(crate) const CANDIDATE_SCAN_BYTES: usize = 256;
 /// Sets whose NFA has more states than this get no pre-filter: a bound on
 /// what one set costs to build and keep, not a break-even. The largest set
 /// of the captured replays (PHP, 37,437 states, 4.2 MiB of automata, built
@@ -928,36 +933,71 @@ impl SetPrefilter {
             .map(|m| m.start())
     }
 
-    /// The covered entries whose seek matches at `at`, ascending; every
-    /// covered entry when the DFA gives up.
+    /// The covered entries whose seek matches at `at`, ascending: the
+    /// patterns of every match state the overlapping DFA reaches from `at`,
+    /// within `CANDIDATE_SCAN_BYTES`. Every covered entry where the DFA is
+    /// still alive at that bound, gives up or quits, which admits more.
     #[inline]
     pub(crate) fn candidates_at(&mut self, haystack: &[u8], at: usize) -> &[u16] {
         self.candidates.clear();
         self.patset.clear();
-        let input = Input::new(haystack)
-            .span(at..haystack.len())
-            .anchored(Anchored::Yes);
-        match self
-            .dfa
-            .try_which_overlapping_matches(&mut self.dfa_cache, &input, &mut self.patset)
-        {
-            Ok(()) => {
-                let entries = &self.entries;
-                self.candidates.extend(
-                    self.patset
-                        .iter()
-                        .map(|id: PatternID| entries[id.as_usize()]),
-                );
-            }
-            Err(error) => {
-                debug_assert!(matches!(
-                    error.kind(),
-                    MatchErrorKind::Quit { .. } | MatchErrorKind::GaveUp { .. }
-                ));
-                self.candidates.extend_from_slice(&self.entries);
-            }
+        if self.scan_candidates(haystack, at).is_none() {
+            self.candidates.extend_from_slice(&self.entries);
+            return &self.candidates;
         }
+        let entries = &self.entries;
+        self.candidates.extend(
+            self.patset
+                .iter()
+                .map(|id: PatternID| entries[id.as_usize()]),
+        );
         &self.candidates
+    }
+
+    /// The candidates the last `candidates_at` found.
+    #[inline]
+    pub(crate) fn candidates(&self) -> &[u16] {
+        &self.candidates
+    }
+
+    /// The anchored scan of `candidates_at`, filling `patset`; `None` where
+    /// the DFA could not decide within the bound.
+    fn scan_candidates(&mut self, haystack: &[u8], at: usize) -> Option<()> {
+        let end = haystack.len();
+        let input = Input::new(haystack).span(at..end).anchored(Anchored::Yes);
+        let cache = &mut self.dfa_cache;
+        let mut sid = self.dfa.start_state_forward(cache, &input).ok()?;
+        let cut = end.min(at.saturating_add(CANDIDATE_SCAN_BYTES));
+        let mut i = at;
+        loop {
+            if sid.is_dead() {
+                return Some(());
+            }
+            if sid.is_quit() {
+                return None;
+            }
+            // A match state stands for the matches that ended before the
+            // byte it was reached by (or at the end of the haystack).
+            if sid.is_match() {
+                for k in 0..self.dfa.match_len(cache, sid) {
+                    self.patset.insert(self.dfa.match_pattern(cache, sid, k));
+                }
+            }
+            if i == end {
+                let eoi = self.dfa.next_eoi_state(cache, sid).ok()?;
+                if eoi.is_match() {
+                    for k in 0..self.dfa.match_len(cache, eoi) {
+                        self.patset.insert(self.dfa.match_pattern(cache, eoi, k));
+                    }
+                }
+                return Some(());
+            }
+            if i == cut {
+                return None;
+            }
+            sid = self.dfa.next_state(cache, sid, haystack[i]).ok()?;
+            i += 1;
+        }
     }
 
     /// NFA states of the overlapping DFA (the meta regex holds about twice

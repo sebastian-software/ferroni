@@ -2121,11 +2121,28 @@ fn regset_entry_decision(
 /// per match, no search retry budget, stack, time or subexpression call
 /// limit), and a search under a limit of the caller's own, or without any,
 /// keeps C's attempts. It stays off for FIND_LONGEST as the other skips do,
-/// and reads the subject as UTF-8 (scanner searches).
+/// and reads the subject as UTF-8 (scanner searches), from a character
+/// boundary: the seeks read whole characters, and a search that starts
+/// inside one (`find_next_match` takes any byte offset) attempts that
+/// position as C does.
 #[cfg(feature = "dfa-prefilter")]
 #[inline]
-fn prefilter_decides(set: &OnigRegSet, limits: FallbackMemoLimits, option: OnigOptionType) -> bool {
-    set.subject_utf8 && prefilter_admits(set, limits, option)
+fn prefilter_decides(
+    set: &OnigRegSet,
+    limits: FallbackMemoLimits,
+    option: OnigOptionType,
+    str_data: &[u8],
+    start: usize,
+) -> bool {
+    set.subject_utf8 && starts_a_character(str_data, start) && prefilter_admits(set, limits, option)
+}
+
+/// Whether `start` is the end of the subject or the first byte of a
+/// character (not a UTF-8 continuation byte).
+#[cfg(feature = "dfa-prefilter")]
+#[inline]
+fn starts_a_character(str_data: &[u8], start: usize) -> bool {
+    str_data.get(start).is_none_or(|&byte| byte & 0xC0 != 0x80)
 }
 
 /// `prefilter_decides` apart from the subject: the set has the automata and
@@ -2147,21 +2164,40 @@ fn prefilter_admits(set: &OnigRegSet, limits: FallbackMemoLimits, option: OnigOp
 /// such a call on the RegSet route: its per-regex route has no pre-filter,
 /// and a skipped attempt can reach the retry limit there, so the two routes
 /// could answer an identical call differently.
-pub(crate) fn onig_regset_prefilter_decides(set: &mut OnigRegSet, option: OnigOptionType) -> bool {
+pub(crate) fn onig_regset_prefilter_decides(
+    set: &mut OnigRegSet,
+    option: OnigOptionType,
+    str_data: &[u8],
+    start: usize,
+) -> bool {
     #[cfg(feature = "dfa-prefilter")]
     {
         let limits = refresh_scratch_limits(set);
-        prefilter_admits(set, limits, option)
+        starts_a_character(str_data, start) && prefilter_admits(set, limits, option)
     }
     #[cfg(not(feature = "dfa-prefilter"))]
     {
-        let _ = (set, option);
+        let _ = (set, option, str_data, start);
         false
     }
 }
 
+/// Candidate positions in a row whose attempts all fail before the DFA
+/// pre-filter gives the search up to the position-lead search. The
+/// candidate scan reads from each candidate position again (at most
+/// `CANDIDATE_SCAN_BYTES`), and a seek that matches at every position of a
+/// long run (`\w+` for `(?<=\.)\w+`) would make a failing search cost a
+/// multiple of its length; the budget keeps it at a constant plus the
+/// search without the pre-filter. Over the captured replays the longest
+/// such run is 21 (PHP; C++ 13, Java 10, SCSS and C 6), so the budget is
+/// never reached there (see ADR-008).
+#[cfg(feature = "dfa-prefilter")]
+const PREFILTER_FAILED_POSITIONS: u32 = 64;
+
 /// Rust-only (ADR-008): the position-lead search decided by the DFA
-/// pre-filter.
+/// pre-filter, or `None` where the pre-filter gave it up
+/// (`PREFILTER_FAILED_POSITIONS`) and the position-lead search takes it
+/// from the start.
 ///
 /// Entries the automata do not cover are searched on their own first, as
 /// the per-regex route does (`regset_entry_decision`), without the fallback
@@ -2182,9 +2218,10 @@ fn regset_search_body_prefilter(
     start: usize,
     range: usize,
     option: OnigOptionType,
-) -> Option<RegSetDecision> {
+) -> Option<Option<RegSetDecision>> {
     let mut prefilter = set.prefilter.take()?;
     let mut decision: Option<RegSetDecision> = None;
+    let mut failed_positions = 0u32;
 
     for &index in prefilter.own() {
         let index = index as usize;
@@ -2223,25 +2260,37 @@ fn regset_search_body_prefilter(
     let mut msa = take_scratch_msa(set, option, start);
     let mut s = start;
     while s <= range {
-        let Some(at) = prefilter.earliest(haystack, s) else {
-            break;
+        // The candidates at `s` itself first: the anchored scan is bounded,
+        // and where some seek matches at `s` the meta regex would only
+        // confirm that, at the cost of finding where its match ends. Only
+        // where none does, the meta regex finds the next position where one
+        // does, past any stretch where none can.
+        let at = if prefilter.candidates_at(haystack, s).is_empty() {
+            let Some(at) = prefilter.earliest(haystack, s) else {
+                break;
+            };
+            if at > range {
+                break;
+            }
+            // No match starts inside a character, where only a seek with a
+            // raw byte can: the search goes on at the next character.
+            if at < end && (str_data[at] & 0xC0) == 0x80 {
+                s = at + 1;
+                continue;
+            }
+            if decision
+                .map(decision_position_and_index)
+                .is_some_and(|(position, _)| at > position as usize)
+            {
+                break;
+            }
+            prefilter.candidates_at(haystack, at);
+            at
+        } else {
+            s
         };
-        if at > range {
-            break;
-        }
-        // No match starts inside a character, where only a seek with a raw
-        // byte can: the search goes on at the next character.
-        if at < end && (str_data[at] & 0xC0) == 0x80 {
-            s = at + 1;
-            continue;
-        }
-        if decision
-            .map(decision_position_and_index)
-            .is_some_and(|(position, _)| at > position as usize)
-        {
-            break;
-        }
-        for &index in prefilter.candidates_at(haystack, at) {
+        let mut decided_here = false;
+        for &index in prefilter.candidates() {
             let index = index as usize;
             if decision
                 .map(decision_position_and_index)
@@ -2253,7 +2302,23 @@ fn regset_search_body_prefilter(
                 set, index, str_data, end, at, start, range, option, &mut msa,
             ) {
                 record_regset_decision(set, &mut decision, found);
+                decided_here = true;
                 break;
+            }
+        }
+        if decided_here {
+            failed_positions = 0;
+        } else {
+            failed_positions += 1;
+            if failed_positions > PREFILTER_FAILED_POSITIONS {
+                // The position-lead search takes the search from the start:
+                // leave no match of this one behind.
+                if let Some(RegSetDecision::Match(found)) = decision {
+                    clear_regset_entry_region(set, found.index);
+                }
+                set.scratch_msa = Some(msa);
+                set.prefilter = Some(prefilter);
+                return None;
             }
         }
         if decision
@@ -2269,15 +2334,17 @@ fn regset_search_body_prefilter(
     }
     set.scratch_msa = Some(msa);
     set.prefilter = Some(prefilter);
-    decision
+    Some(decision)
 }
 
 /// One attempt of entry `index` at `position` in a position-lead search
-/// from `search_start`, as that search would make it: an any-char-star
-/// entry only at the first position or after a newline, and a fallback or
-/// gated entry only where C's optimizer admits the position
-/// (`entry_search_range`, asked after an attempt with an event, as
-/// `attempt_fallback_entry_at_start` does).
+/// from `search_start`, as that search would make it: a table entry only
+/// where the first-byte table dispatches it (its optimizer's first byte
+/// or start map; every table entry at the end), an any-char-star entry
+/// only at the first position or after a newline, and a fallback or gated
+/// entry only where C's optimizer admits the position (`entry_search_range`,
+/// kept per search in `gates` and asked after an attempt with an event, as
+/// the table scan and `attempt_fallback_entry_at_start` do).
 #[cfg(feature = "dfa-prefilter")]
 // The attempt takes the search's bounds as the fallback attempts do.
 #[allow(clippy::too_many_arguments)]
@@ -2294,6 +2361,13 @@ fn attempt_entry_at(
 ) -> Option<RegSetDecision> {
     let subject_utf8 = set.subject_utf8;
     let anychar_inf = set.anychar_inf;
+    if !set.entries[index].fallback && position < end {
+        let byte = str_data[position];
+        let start_bytes = table_start_bytes(set, index);
+        if (start_bytes[byte as usize / 64] >> (byte % 64)) & 1 == 0 {
+            return None;
+        }
+    }
     let entry = &mut set.entries[index];
     let anchor = entry.reg.anchor;
     if anychar_inf
@@ -2344,22 +2418,14 @@ fn attempt_entry_at(
         msa,
     );
     let decision = fallback_attempt_decision(result, index, position, msa)?;
-    let admitted = if entry.fallback || entry.gated {
-        match entry_search_range(&entry.reg, subject_utf8, str_data, end, position, range) {
-            None => false,
-            Some(EntrySearchRange::AllRange { .. }) => true,
-            Some(EntrySearchRange::LowHigh { low, .. }) => position >= low,
-        }
-    } else {
-        true
-    };
-    if admitted {
+    let optimizer_decides = entry.fallback || entry.gated;
+    if !optimizer_decides
+        || table_gate_admits(set, index, str_data, end, search_start, range, position)
+    {
         Some(decision)
     } else {
         // C never made this attempt: leave no match behind.
-        if let Some(region) = entry.region.as_mut() {
-            region.clear();
-        }
+        clear_regset_entry_region(set, index as i32);
         None
     }
 }
@@ -2419,15 +2485,13 @@ fn regset_search_body_position_lead(
     fallback_memo_id: Option<FallbackMemoIdentity>,
 ) -> (i32, i32) {
     let limits = refresh_scratch_limits(set);
-    // Rust-only (ADR-008): the DFA pre-filter decides which entries attempt
-    // which positions; the rest of this function is the search it stands
-    // in for.
+    // The gates keep each gated entry's optimizer range per subject; the
+    // DFA pre-filter keeps every fallback entry's there as well.
     #[cfg(feature = "dfa-prefilter")]
-    if prefilter_decides(set, limits, option) {
-        let decision = regset_search_body_prefilter(set, str_data, end, start, range, option);
-        return regset_decision_result(set, decision);
-    }
-    if set.has_gated {
+    let keeps_gates = set.has_gated || set.prefilter.is_some();
+    #[cfg(not(feature = "dfa-prefilter"))]
+    let keeps_gates = set.has_gated;
+    if keeps_gates {
         let subject = fallback_memo_id
             .filter(|_| range == end)
             .map(|identity| (identity, end));
@@ -2438,6 +2502,17 @@ fn regset_search_body_position_lead(
                 set.gates.fill(EntryGate::STALE);
                 set.gate_generation = 1;
             }
+        }
+    }
+    // Rust-only (ADR-008): the DFA pre-filter decides which entries attempt
+    // which positions; the rest of this function is the search it stands
+    // in for, and takes over a search the pre-filter gives up.
+    #[cfg(feature = "dfa-prefilter")]
+    if prefilter_decides(set, limits, option, str_data, start) {
+        if let Some(decision) =
+            regset_search_body_prefilter(set, str_data, end, start, range, option)
+        {
+            return regset_decision_result(set, decision);
         }
     }
 
