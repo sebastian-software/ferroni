@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.0.0](https://github.com/sebastian-software/ferroni/compare/v1.10.0...v2.0.0) (2026-10-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* regint and regparse_types are no longer public; RegexType is re-exported from ferroni::oniguruma, and internal parser/compiler items are crate-private. The public surface is the Rust API plus the C API of oniguruma.h.
+* **scanner:** Build ScannerConfig with ScannerConfig::default() and the options and syntax setters instead of a struct literal. Refs #287
+* **regparse:** the nesting default drops from 4,096 units (2,048 groups) to 256 units (128 groups), so deeper patterns now fail with ParseDepthLimitOver. onig_set_parse_depth_limit no longer raises the expression budget, so callers that raised it for wide alternations must also call onig_set_ast_node_limit.
+
+### Features
+
+* **api:** implement Debug for the scanner, builder and iterator types ([#301](https://github.com/sebastian-software/ferroni/issues/301)) ([2a5afad](https://github.com/sebastian-software/ferroni/commit/2a5afad83d60b16612e7445ca6f8807f90f8675c))
+* make the C-internal modules crate-private ([#310](https://github.com/sebastian-software/ferroni/issues/310)) ([bcfa53e](https://github.com/sebastian-software/ferroni/commit/bcfa53ec152b29cc70e5737c41ac997793a7ad1b))
+* **scanner:** make the scanner config, match and error types extensible ([#309](https://github.com/sebastian-software/ferroni/issues/309)) ([7dd6654](https://github.com/sebastian-software/ferroni/commit/7dd66542def546c0b547fe1e82a7ce79616b9465))
+* **unicode:** move the Unicode tables to Unicode 18.0 ([#307](https://github.com/sebastian-software/ferroni/issues/307)) ([ba840e5](https://github.com/sebastian-software/ferroni/commit/ba840e52c46a5fb3277cbe86705a52a7e2285922))
+
+
+### Bug Fixes
+
+* **deps:** update ardo to v5 ([#284](https://github.com/sebastian-software/ferroni/issues/284)) ([6289200](https://github.com/sebastian-software/ferroni/commit/62892008bbf59e3d06b9c8599a4decdf1e8ba979))
+* **deps:** update GitHub Actions and CI tool pins ([#278](https://github.com/sebastian-software/ferroni/issues/278)) ([90e2c77](https://github.com/sebastian-software/ferroni/commit/90e2c778800c673d5dadec8908e6aacfc874612d))
+* **deps:** update pnpm to v12 and jdx/mise-action to v5 ([#282](https://github.com/sebastian-software/ferroni/issues/282)) ([31b7138](https://github.com/sebastian-software/ferroni/commit/31b7138cbb4c472cdf556dff81015b1c545bfe4d))
+* **deps:** update the docs site's vite, eslint, lucide-react and OXC toolchain ([#280](https://github.com/sebastian-software/ferroni/issues/280)) ([d8197a0](https://github.com/sebastian-software/ferroni/commit/d8197a09a15390eff17e2166b6756a99920269a5))
+* **regcomp:** make onig_set_default_case_fold_flag affect onig_new as in C ([f089842](https://github.com/sebastian-software/ferroni/commit/f0898424bebe70f56ed0a955adb97de40303b569))
+* **regparse:** bound nesting depth so deep patterns fail before the stack overflows ([#308](https://github.com/sebastian-software/ferroni/issues/308)) ([7d5ed8c](https://github.com/sebastian-software/ferroni/commit/7d5ed8c64c5de10b256eec320ceaa64882236b3d))
+
+
+### Performance Improvements
+
+* **scanner:** build the pre-filter lazily and share it through the pattern cache ([#323](https://github.com/sebastian-software/ferroni/issues/323)) ([a38768b](https://github.com/sebastian-software/ferroni/commit/a38768bc80121a1bd72e3e280f12063dc407bc04)), closes [#252](https://github.com/sebastian-software/ferroni/issues/252)
+* **scanner:** retire the pre-filter where its cache thrashes, keep walks of a repeated subject ([#324](https://github.com/sebastian-software/ferroni/issues/324)) ([b93c6d2](https://github.com/sebastian-software/ferroni/commit/b93c6d2035f4919480f43d9b7d4134541e4cb9b5)), closes [#252](https://github.com/sebastian-software/ferroni/issues/252)
+* **scanner:** store OnigString offsets as u32, plus audit cleanups ([#300](https://github.com/sebastian-software/ferroni/issues/300)) ([b6b5e21](https://github.com/sebastian-software/ferroni/commit/b6b5e2130d8a0b50de980d54360868e9d0ff3f51))
+
 ## [1.10.0](https://github.com/sebastian-software/ferroni/compare/v1.9.2...v1.10.0) (2026-10-08)
 
 
