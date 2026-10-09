@@ -29,10 +29,14 @@ release builds, as users run them.
       --engines times only the named engines next to Ferroni, for local runs
   compare-engines.py report SUMMARY.md DIR...
       merges the measurements of several runs, one table set per host
-  compare-engines.py figures RUN_DIR OUT.json
-      condenses one published run into the README and home page figures
-  compare-engines.py tables RUN_DIR
+  compare-engines.py figures RUN_DIR... OUT.json
+      condenses the published runs into the README and home page figures
+  compare-engines.py tables RUN_DIR...
       prints the per-case tables of docs/app/routes/perf/engine-comparison.mdx
+
+figures and tables take several published runs in order: a later run's case
+sets replace the earlier run's, so a case set measured again after a fix is
+published without editing numbers by hand.
 """
 from __future__ import annotations
 
@@ -482,72 +486,137 @@ def factor_text(factor):
     return f'{magnitude:.0f}×' if magnitude >= 10 else f'{magnitude:.1f}×'
 
 
+def load_runs(directories):
+    """The measurements of the published runs, in order, per runner profile.
+
+    Every run must cover both runner profiles with the same case sets. A later
+    run's case sets replace the earlier run's, notes included. Returns the
+    hosts (host record, mean ns per case and engine, unsupported notes) and
+    one record per run: its directory, commit, URL, date and case sets."""
+    hosts, runs = {}, []
+    for directory in directories:
+        directory = Path(directory)
+        run = {'data': directory.as_posix(), 'commits': set(), 'urls': set(), 'sets': {}}
+        date = re.search(r'(\d{4}-\d{2}-\d{2})', directory.name)
+        run['measured'] = date.group(1) if date else None
+        for path in sorted(directory.rglob('measurements.json')):
+            data = json.loads(path.read_text())
+            host = data['host']
+            entry = hosts.setdefault(host['runner_profile'], {'host': host, 'sets': {}})
+            for case_set, cases in data['results'].items():
+                timing = {case: {engine: row['mean_ns'] for engine, row in result['timing'].items()}
+                          for case, result in cases.items()}
+                ids = {variant(case, engine) for case in cases for engine in ENGINES}
+                entry['sets'][case_set] = {
+                    'timing': timing,
+                    'unsupported': {i: note for i, note in data['notes']['unsupported'].items() if i in ids},
+                }
+                run['sets'].setdefault(host['runner_profile'], set()).add(case_set)
+            run['commits'].add(data['build']['git_commit'])
+            run['urls'].add(host['run_url'])
+        if (set(run['sets']) != set(HOST_LABELS) or len({frozenset(s) for s in run['sets'].values()}) != 1
+                or len(run['commits']) != 1 or len(run['urls']) != 1):
+            raise SystemExit(f'{directory}: a run must cover both runner profiles with the same case sets')
+        case_sets = sorted(next(iter(run['sets'].values())), key=list(CASES).index)
+        runs.append({'data': run['data'], 'commit': run['commits'].pop(), 'run': run['urls'].pop(),
+                     'measured': run['measured'], 'cases': case_sets})
+    for entry in hosts.values():
+        entry['timing'] = {case: timing for s in entry['sets'].values() for case, timing in s['timing'].items()}
+        entry['unsupported'] = {i: note for s in entry['sets'].values() for i, note in s['unsupported'].items()}
+    return hosts, runs
+
+
+# fancy-regex runs in three configurations. The summary quotes the fastest one
+# per workload and names it in a footnote; the comparison page shows all three.
+FANCY_REGEX = {'fancy_regex': 'default', 'fancy_regex_seek': 'seek mode', 'fancy_regex_set': 'RegexSet'}
+
+
+def configuration_note(cells):
+    """The footnote naming fancy-regex's quoted configuration per workload."""
+    by_configuration = {}
+    for workload in WORKLOADS:
+        cell = cells[workload['id']]
+        if 'configuration' in cell:
+            by_configuration.setdefault(cell['configuration'], []).append(workload['label'].lower())
+    parts = []
+    for configuration, labels in by_configuration.items():
+        joined = labels[0] if len(labels) == 1 else ', '.join(labels[:-1]) + ' and ' + labels[-1]
+        parts.append(f'{configuration} for {joined}')
+    return 'fancy-regex is quoted in its fastest configuration per column: ' + '; '.join(parts) + '.'
+
+
 def figures(args):
     """Geometric mean of (engine time / Ferroni time) per workload and host."""
-    hosts, notes, commits, dates, runs = {}, {'unsupported': {}}, set(), set(), set()
-    for path in sorted(Path(args.run).rglob('measurements.json')):
-        data = json.loads(path.read_text())
-        host = data['host']
-        entry = hosts.setdefault(host['runner_profile'], {'host': host, 'timing': {}})
-        for cases in data['results'].values():
-            for case, result in cases.items():
-                entry['timing'][case] = {engine: row['mean_ns'] for engine, row in result['timing'].items()}
-        notes['unsupported'].update(data['notes']['unsupported'])
-        commits.add(data['build']['git_commit'])
-        runs.add(host['run_url'])
-    if set(hosts) != set(HOST_LABELS) or len(commits) != 1 or len(runs) != 1:
-        raise SystemExit('figures needs one complete run of both runner profiles')
-    date = re.search(r'(\d{4}-\d{2}-\d{2})', Path(args.run).name)
+    hosts, runs = load_runs(args.runs)
+    unsupported = {i: note for entry in hosts.values() for i, note in entry['unsupported'].items()}
     order = list(HOST_LABELS)
+
+    def figure_cell(engine, workload):
+        per_host = {}
+        for host_id in order:
+            timing = hosts[host_id]['timing']
+            ratios = [timing[case][engine] / timing[case]['rust'] for case in workload['cases']
+                      if engine in timing[case]]
+            per_host[host_id] = (math.exp(sum(map(math.log, ratios)) / len(ratios)) if ratios else None,
+                                 len(ratios))
+        runs_cases = per_host[order[0]][1]
+        total = len(workload['cases'])
+        missing = [case for case in workload['cases'] if variant(case, engine) in unsupported]
+        cell = {'cases': runs_cases, 'of': total}
+        if runs_cases == 0:
+            cell['text'] = 'n/a' if missing else '–'
+            if missing:
+                cell['note'] = 'cannot run these cases'
+        elif workload['require_all'] and runs_cases < total:
+            grammar_notes = []
+            for case in missing:
+                reason = unsupported[variant(case, engine)]['reason']
+                verb = 'rejects' if reason.startswith(('scanner', 'compile')) else 'differs on'
+                grammar_notes.append(f'{verb} {GRAMMARS[case.split("/")[0]]}')
+            cell.update(text='n/a', note=', '.join(grammar_notes),
+                        grammars=[GRAMMARS[case.split('/')[0]] for case in missing])
+        else:
+            cell['factors'] = {host_id: round(per_host[host_id][0], 3) for host_id in order}
+            # One figure per cell: the geometric mean over both hosts. The
+            # per-host values stay in `factors` and on the comparison page.
+            combined = math.exp(sum(math.log(per_host[host_id][0]) for host_id in order) / len(order))
+            cell['factor'] = round(combined, 3)
+            cell['text'] = factor_text(combined)
+            cell['direction'] = 'faster' if combined >= 1 else 'slower'
+        return cell
+
     engines = []
     for engine in FIGURE_ENGINES:
         cells = {}
         for workload in WORKLOADS:
-            per_host = {}
-            for host_id in order:
-                timing = hosts[host_id]['timing']
-                ratios = [timing[case][engine] / timing[case]['rust'] for case in workload['cases']
-                          if engine in timing[case]]
-                per_host[host_id] = (math.exp(sum(map(math.log, ratios)) / len(ratios)) if ratios else None,
-                                     len(ratios))
-            runs_cases = per_host[order[0]][1]
-            total = len(workload['cases'])
-            missing = [case for case in workload['cases'] if variant(case, engine) in notes['unsupported']]
-            cell = {'cases': runs_cases, 'of': total}
-            if runs_cases == 0:
-                cell['text'] = 'n/a' if missing else '–'
-                if missing:
-                    cell['note'] = 'cannot run these cases'
-            elif workload['require_all'] and runs_cases < total:
-                grammar_notes = []
-                for case in missing:
-                    reason = notes['unsupported'][variant(case, engine)]['reason']
-                    verb = 'rejects' if reason.startswith(('scanner', 'compile')) else 'differs on'
-                    grammar_notes.append(f'{verb} {GRAMMARS[case.split("/")[0]]}')
-                cell.update(text='n/a', note=', '.join(grammar_notes),
-                            grammars=[GRAMMARS[case.split('/')[0]] for case in missing])
+            if engine == 'fancy_regex':
+                # The fastest configuration: the lowest ratio to Ferroni among
+                # those that ran the workload, the default where none did.
+                candidates = {name: figure_cell(name, workload) for name in FANCY_REGEX}
+                measured = {name: cell for name, cell in candidates.items() if 'factor' in cell}
+                name = min(measured, key=lambda n: measured[n]['factor']) if measured else 'fancy_regex'
+                cells[workload['id']] = candidates[name] | ({'configuration': FANCY_REGEX[name]} if measured else {})
             else:
-                cell['factors'] = {host_id: round(per_host[host_id][0], 3) for host_id in order}
-                # One figure per cell: the geometric mean over both hosts. The
-                # per-host values stay in `factors` and on the comparison page.
-                combined = math.exp(sum(math.log(per_host[host_id][0]) for host_id in order) / len(order))
-                cell['factor'] = round(combined, 3)
-                cell['text'] = factor_text(combined)
-                cell['direction'] = 'faster' if combined >= 1 else 'slower'
-            cells[workload['id']] = cell
+                cells[workload['id']] = figure_cell(engine, workload)
         engines.append({'id': engine, 'label': FIGURE_LABELS[engine], 'cells': cells})
+    fancy = next(engine for engine in engines if engine['id'] == 'fancy_regex')
+    latest = runs[-1]
     out = {
-        'measured': date.group(1) if date else None,
-        'commit': commits.pop(),
-        'run': runs.pop(),
-        'data': Path(args.run).as_posix(),
+        'measured': latest['measured'],
+        'commit': latest['commit'],
+        'run': latest['run'],
+        'data': latest['data'],
+        # Every run the figures draw on, oldest first; a later run's case sets
+        # replace the earlier run's. The fields above are the latest run's.
+        'runs': runs,
         'hosts': [{'id': host_id, 'label': HOST_LABELS[host_id], 'machine': hosts[host_id]['host']['cpu'],
                    'cpus': hosts[host_id]['host']['cpus'], 'runner': hosts[host_id]['host']['runner_label']}
                   for host_id in order],
         'workloads': [{key: workload[key] for key in ('id', 'label', 'short', 'unit', 'detail')}
                       | {'cases': len(workload['cases'])}
                       for workload in WORKLOADS],
-        'notes': {'partial': PARTIAL_NOTE, 'absent': ABSENT_NOTE},
+        'notes': {'partial': PARTIAL_NOTE, 'absent': ABSENT_NOTE,
+                  'configurations': configuration_note(fancy['cells'])},
         'engines': engines,
     }
     args.output.write_text(json.dumps(out, indent=2, ensure_ascii=False) + '\n')
@@ -580,6 +649,8 @@ def readme_table(figures_data):
         footnotes.append(f'\\* {figures_data["notes"]["partial"]}')
     if any(cell['text'] == '–' for cell in cells):
         footnotes.append(f'– {figures_data["notes"]["absent"]}')
+    if figures_data['notes'].get('configurations'):
+        footnotes.append(figures_data['notes']['configurations'])
     for footnote in footnotes:
         lines += ['', footnote]
     return '\n'.join(lines)
@@ -614,17 +685,10 @@ def doc_label(case):
 
 def tables(args):
     """Per-case tables, Apple Silicon above x86-64 in every cell."""
-    hosts, unsupported = {}, {}
-    for path in sorted(Path(args.run).rglob('measurements.json')):
-        data = json.loads(path.read_text())
-        timing = hosts.setdefault(data['host']['runner_profile'], {})
-        for cases in data['results'].values():
-            for case, result in cases.items():
-                timing[case] = {engine: row['mean_ns'] for engine, row in result['timing'].items()}
-        unsupported.update(data['notes']['unsupported'])
+    loaded, _ = load_runs(args.runs)
+    hosts = {host_id: entry['timing'] for host_id, entry in loaded.items()}
+    unsupported = {i: note for entry in loaded.values() for i, note in entry['unsupported'].items()}
     order = list(HOST_LABELS)
-    if set(hosts) != set(order):
-        raise SystemExit('tables needs both runner profiles')
 
     def time(value):
         for unit, scale in (('s', 1e9), ('ms', 1e6), ('µs', 1e3)):
@@ -686,11 +750,11 @@ def main():
     report_parser = commands.add_parser('report', help='merge the measurements of several runs')
     report_parser.add_argument('summary', type=Path)
     report_parser.add_argument('directories', nargs='+', type=Path)
-    figures_parser = commands.add_parser('figures', help='condense one run for the README and home page')
-    figures_parser.add_argument('run', type=Path)
+    figures_parser = commands.add_parser('figures', help='condense the published runs for the README and home page')
+    figures_parser.add_argument('runs', nargs='+', type=Path, help='run directories, a later one overriding its case sets')
     figures_parser.add_argument('output', type=Path)
     tables_parser = commands.add_parser('tables', help='print the per-case tables of the engine comparison page')
-    tables_parser.add_argument('run', type=Path)
+    tables_parser.add_argument('runs', nargs='+', type=Path, help='run directories, a later one overriding its case sets')
     args = parser.parse_args()
     if args.command == 'figures':
         figures(args)

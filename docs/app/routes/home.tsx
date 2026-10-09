@@ -74,7 +74,7 @@ const cCells = cRow.cells as Record<string, FigureCell>;
 const cFactors = workloads.flatMap((workload) => Object.values(cCells[workload.id].factors ?? {}));
 const aheadOfC = cFactors.length > 0 && cFactors.every((factor) => factor > 1);
 
-/* The narrowest and widest lead over C, as the table states them: "1.4× to 3.8×". */
+/* The narrowest and widest lead over C, as the table states them: "1.4× to 12×". */
 const cTexts = workloads
   .map((workload) => cCells[workload.id])
   .sort((a, b) => (a.factor ?? 0) - (b.factor ?? 0))
@@ -248,6 +248,8 @@ const allCells = engineComparison.engines.flatMap((engine) =>
 const tableNotes = [
   ...(allCells.some((cell) => partial(cell)) ? [`* ${engineComparison.notes.partial}`] : []),
   ...(allCells.some((cell) => cell.text === "–") ? [`– ${engineComparison.notes.absent}`] : []),
+  // Which of fancy-regex's configurations each column quotes.
+  engineComparison.notes.configurations,
 ];
 
 function SpeedSection() {
