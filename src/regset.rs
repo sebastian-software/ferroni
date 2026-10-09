@@ -164,6 +164,13 @@ pub struct OnigRegSet {
     /// searches it with the fallback memo.
     #[cfg(feature = "dfa-prefilter")]
     prefilter_own_fallback: bool,
+    /// The next search takes the position-lead path although the set has
+    /// automata (`self_check_prefilter_decision`).
+    #[cfg(feature = "prefilter-self-check")]
+    prefilter_bypass: bool,
+    /// The patterns of a scanner's set, for the self-check's panic message.
+    #[cfg(feature = "prefilter-self-check")]
+    self_check_patterns: Vec<String>,
 }
 
 /// A fallback entry as the position-lead search walks it on every call.
@@ -666,7 +673,18 @@ fn regset_alloc() -> Box<OnigRegSet> {
         prefilter: None,
         #[cfg(feature = "dfa-prefilter")]
         prefilter_own_fallback: false,
+        #[cfg(feature = "prefilter-self-check")]
+        prefilter_bypass: false,
+        #[cfg(feature = "prefilter-self-check")]
+        self_check_patterns: Vec::new(),
     })
+}
+
+/// Records the patterns of a scanner's set for the self-check's panic
+/// message (`self_check_prefilter_decision`).
+#[cfg(feature = "prefilter-self-check")]
+pub(crate) fn onig_regset_set_self_check_patterns(set: &mut OnigRegSet, patterns: Vec<String>) {
+    set.self_check_patterns = patterns;
 }
 
 /// Add a compiled regex to the set. Returns ONIG_NORMAL on success.
@@ -2173,6 +2191,10 @@ fn prefilter_decides(
     str_data: &[u8],
     start: usize,
 ) -> bool {
+    #[cfg(feature = "prefilter-self-check")]
+    if set.prefilter_bypass {
+        return false;
+    }
     set.subject_utf8 && starts_a_character(str_data, start) && prefilter_admits(set, limits, option)
 }
 
@@ -2219,6 +2241,84 @@ pub(crate) fn onig_regset_prefilter_decides(
         let _ = (set, option, str_data, start);
         false
     }
+}
+
+/// Validation (ADR-008, feature `prefilter-self-check`): the search the
+/// DFA pre-filter just decided (`filtered`, with the set's `last_match_len`
+/// and the winner's region) run again by the position-lead search alone,
+/// on the same set with `prefilter_bypass` set, and the two decisions
+/// compared, captures included. The set is left as the pre-filter left it.
+///
+/// One difference is by design (see ADR-008, _Observability_): an attempt
+/// the pre-filter leaves out can exhaust the default retry limit on the
+/// position-lead search, which then reports the limit error. Anything else
+/// panics with the pattern set, the subject, the start and the options.
+#[cfg(feature = "prefilter-self-check")]
+#[allow(clippy::too_many_arguments)]
+fn self_check_prefilter_decision(
+    set: &mut OnigRegSet,
+    filtered: (i32, i32),
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+    skip_region_for_nomem: bool,
+    fallback_memo_id: Option<FallbackMemoIdentity>,
+) {
+    /// What the scanner reads of a decision: the index and position, the
+    /// match length, and the winner's registers.
+    fn outcome(set: &OnigRegSet, result: (i32, i32)) -> (i32, i32, i32, Vec<(i32, i32)>) {
+        let registers = usize::try_from(result.0)
+            .ok()
+            .and_then(|index| set.entries.get(index))
+            .and_then(|entry| entry.region.as_ref())
+            .map_or_else(Vec::new, |region| {
+                let num_regs = usize::try_from(region.num_regs).unwrap_or(0);
+                region.beg[..num_regs]
+                    .iter()
+                    .zip(&region.end[..num_regs])
+                    .map(|(&beg, &end)| (beg, end))
+                    .collect()
+            });
+        (result.0, result.1, set.last_match_len, registers)
+    }
+    let filtered_outcome = outcome(set, filtered);
+    let filtered_region = usize::try_from(filtered.0)
+        .ok()
+        .and_then(|index| set.entries.get(index))
+        .and_then(|entry| entry.region.clone());
+    set.prefilter_bypass = true;
+    let unfiltered = regset_search_body_position_lead(
+        set,
+        str_data,
+        end,
+        start,
+        range,
+        option,
+        skip_region_for_nomem,
+        fallback_memo_id,
+    );
+    set.prefilter_bypass = false;
+    let unfiltered_outcome = outcome(set, unfiltered);
+    set.last_match_len = filtered_outcome.2;
+    if let Some(region) = filtered_region {
+        set.entries[filtered.0 as usize].region = Some(region);
+    }
+    if unfiltered.0 == ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+        && filtered.0 != ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+    {
+        return;
+    }
+    assert!(
+        filtered_outcome == unfiltered_outcome,
+        "the DFA pre-filter decided a search differently from the position-lead search\n\
+         patterns: {:?}\nsubject: {:?}\nstart: {start}, range: {range}, options: {option:?}\n\
+         with the pre-filter (index, position, length, registers): {filtered_outcome:?}\n\
+         without:                                                   {unfiltered_outcome:?}",
+        set.self_check_patterns,
+        String::from_utf8_lossy(&str_data[..end]),
+    );
 }
 
 /// Candidate positions in a row whose attempts all fail before the DFA
@@ -3132,7 +3232,20 @@ fn regset_search_body_position_lead(
                 .filter(|_| range == end)
                 .map(|identity| (identity, end)),
         ) {
-            return regset_decision_result(set, decision);
+            let result = regset_decision_result(set, decision);
+            #[cfg(feature = "prefilter-self-check")]
+            self_check_prefilter_decision(
+                set,
+                result,
+                str_data,
+                end,
+                start,
+                range,
+                option,
+                skip_region_for_nomem,
+                fallback_memo_id,
+            );
+            return result;
         }
     }
     prepare_fallback_memo(set, memo_key);

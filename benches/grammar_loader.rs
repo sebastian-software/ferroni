@@ -6,7 +6,7 @@
 // pins and file hashes live in benches/battle_inputs.toml.
 
 use ferroni::scanner::Scanner;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const TYPESCRIPT_JSON: &str = include_str!("grammars/typescript.json");
 #[allow(dead_code)]
@@ -63,6 +63,152 @@ fn extract_patterns(json: &str) -> Vec<String> {
         .into_iter()
         .filter(|p| Scanner::new(&[p.as_str()]).is_ok())
         .collect()
+}
+
+/// Every rule's pattern list of a TextMate grammar JSON, as vscode-textmate
+/// compiles the rule's scanner: a rule is any object with a `patterns`
+/// array (the grammar itself, a repository entry, a `begin`/`end` rule, a
+/// bare group, a capture with patterns); its list holds the rule's `end`
+/// (or `while`) pattern first, then the `match` or `begin` of each entry of
+/// its `patterns`, with `include`s of the grammar's own repository
+/// (`#name`), of the grammar itself (`$self`, `$base`) and of bare groups
+/// resolved, each once. An include of another grammar is left out, as are
+/// the patterns the Scanner rejects (an `end` with a back reference to its
+/// `begin`, which vscode-textmate substitutes); lists left empty are
+/// dropped.
+#[allow(dead_code)]
+pub fn rule_pattern_lists(json: &str) -> Vec<Vec<String>> {
+    let root: serde_json::Value = serde_json::from_str(json).expect("invalid grammar JSON");
+    let mut repository = HashMap::new();
+    collect_repositories(&root, &mut repository);
+    let mut rules = Vec::new();
+    collect_rules(&root, &mut rules);
+    let mut lists = Vec::new();
+    for rule in rules {
+        let mut list = Vec::new();
+        let mut seen = HashSet::new();
+        if let Some(end) = rule
+            .get("end")
+            .or_else(|| rule.get("while"))
+            .and_then(|v| v.as_str())
+        {
+            seen.insert(end.to_string());
+            list.push(end.to_string());
+        }
+        let mut visited = HashSet::new();
+        if let Some(entries) = rule.get("patterns").and_then(|v| v.as_array()) {
+            collect_rule_patterns(
+                entries,
+                &root,
+                &repository,
+                &mut visited,
+                &mut seen,
+                &mut list,
+            );
+        }
+        list.retain(|p| Scanner::new(&[p.as_str()]).is_ok());
+        if !list.is_empty() {
+            lists.push(list);
+        }
+    }
+    lists
+}
+
+/// Every `repository` object of the grammar merged into one map, the outer
+/// ones taking precedence.
+fn collect_repositories<'a>(
+    value: &'a serde_json::Value,
+    out: &mut HashMap<String, &'a serde_json::Value>,
+) {
+    if let Some(repo) = value.get("repository").and_then(|v| v.as_object()) {
+        for (key, entry) in repo {
+            out.entry(key.clone()).or_insert(entry);
+        }
+    }
+    match value {
+        serde_json::Value::Object(map) => {
+            for (_, child) in map {
+                collect_repositories(child, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_repositories(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Every object of the grammar with a `patterns` array.
+fn collect_rules<'a>(value: &'a serde_json::Value, out: &mut Vec<&'a serde_json::Value>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.get("patterns").is_some_and(|v| v.is_array()) {
+                out.push(value);
+            }
+            for (_, child) in map {
+                collect_rules(child, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_rules(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The scanner patterns of a `patterns` array, includes resolved.
+fn collect_rule_patterns<'a>(
+    entries: &'a [serde_json::Value],
+    root: &'a serde_json::Value,
+    repository: &HashMap<String, &'a serde_json::Value>,
+    visited: &mut HashSet<String>,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<String>,
+) {
+    for entry in entries {
+        let own = entry
+            .get("match")
+            .or_else(|| entry.get("begin"))
+            .and_then(|v| v.as_str());
+        if let Some(pattern) = own {
+            if seen.insert(pattern.to_string()) {
+                out.push(pattern.to_string());
+            }
+            continue;
+        }
+        let included = match entry.get("include").and_then(|v| v.as_str()) {
+            Some(name) if name == "$self" || name == "$base" => {
+                visited.insert("$self".to_string()).then_some(root)
+            }
+            Some(name) => match name.strip_prefix('#') {
+                Some(key) => visited
+                    .insert(key.to_string())
+                    .then(|| repository.get(key).copied())
+                    .flatten(),
+                // Another grammar.
+                None => None,
+            },
+            None => Some(entry),
+        };
+        let Some(rule) = included else {
+            continue;
+        };
+        if let Some(pattern) = rule
+            .get("match")
+            .or_else(|| rule.get("begin"))
+            .and_then(|v| v.as_str())
+        {
+            if seen.insert(pattern.to_string()) {
+                out.push(pattern.to_string());
+            }
+        } else if let Some(nested) = rule.get("patterns").and_then(|v| v.as_array()) {
+            collect_rule_patterns(nested, root, repository, visited, seen, out);
+        }
+    }
 }
 
 /// Recursively collect `match` and `begin` fields from a pattern entry.

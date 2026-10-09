@@ -23,7 +23,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [pattern-compile, pattern-match, scanner-api]
+        target: [pattern-compile, pattern-match, scanner-api, prefilter-differential]
+        include:
+          # A scanner search that reaches the default retry limit (which
+          # the pre-filter needs, ADR-008) takes about ten seconds in the
+          # instrumented build; the target ends a case after one such search
+          # (`SLOW_SEARCH`), so one input costs at most that.
+          - target: prefilter-differential
+            timeout: 60
     # cargo-fuzz needs nightly; rust-toolchain.toml pins the local default to
     # stable, so RUSTUP_TOOLCHAIN keeps this job on the toolchain it asked for.
     env:
@@ -38,6 +45,14 @@ jobs:
           workspaces: fuzz
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Seed the pre-filter corpus from the compat pairs
+        # The long run starts from the pattern/text pairs of the compat files
+        # and the review regressions, written in the target's raw layout
+        # (fuzz/README.md); the smoke run gets by with the dictionary.
+        if: matrix.target == 'prefilter-differential' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        env:
+          FERRONI_FUZZ_SEED_DIR: fuzz/corpus/prefilter-differential
+        run: cargo test --locked --test compat_prefilter_differential write_fuzz_seeds -- --ignored
       - name: Fuzz ${{ matrix.target }}
         # Pull requests and pushes get a smoke run that only has to catch an
         # obviously broken target; the weekly schedule does the real work.
@@ -48,7 +63,7 @@ jobs:
           -dict=fuzz/ferroni.dict
           -max_total_time="$MAX_TOTAL_TIME"
           -max_len=16384
-          -timeout=10
+          -timeout=${{ matrix.timeout || 10 }}
           -rss_limit_mb=2048
       - name: Upload crash artifacts
         if: failure()

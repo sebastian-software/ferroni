@@ -921,10 +921,20 @@ impl Scanner {
         if r != ONIG_NORMAL {
             return Err(r.into());
         }
+        #[allow(unused_mut)]
+        let mut regset = regset.unwrap();
+        #[cfg(feature = "prefilter-self-check")]
+        crate::regset::onig_regset_set_self_check_patterns(
+            &mut regset,
+            patterns
+                .iter()
+                .map(|pattern| (*pattern).to_owned())
+                .collect(),
+        );
 
         Ok(Scanner {
             caches,
-            regset: regset.unwrap(),
+            regset,
             stats: ScannerStats::default(),
             cache_route: CacheRouteState::default(),
             limit_revision: None,

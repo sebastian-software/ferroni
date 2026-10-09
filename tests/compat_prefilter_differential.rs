@@ -281,6 +281,128 @@ fn compat_pairs_answer_alike_with_and_without_the_prefilter() {
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
 }
 
+/// The compile options of a case as the inline option group the fuzz
+/// target's default compile can take (`(?iW)`), or `None` for an option
+/// without an inline form.
+fn inline_options(options: OnigOptionType) -> Option<String> {
+    let mut letters = String::new();
+    let mut rest = options;
+    for (option, letter) in [
+        (ONIG_OPTION_IGNORECASE, 'i'),
+        (ONIG_OPTION_EXTEND, 'x'),
+        (ONIG_OPTION_WORD_IS_ASCII, 'W'),
+        (ONIG_OPTION_DIGIT_IS_ASCII, 'D'),
+        (ONIG_OPTION_SPACE_IS_ASCII, 'S'),
+        (ONIG_OPTION_POSIX_IS_ASCII, 'P'),
+    ] {
+        if rest.contains(option) {
+            letters.push(letter);
+            rest.remove(option);
+        }
+    }
+    if rest != ONIG_OPTION_NONE {
+        return None;
+    }
+    Some(if letters.is_empty() {
+        String::new()
+    } else {
+        format!("(?{letters})")
+    })
+}
+
+/// The pattern sets and texts of the review findings of PR #321 (the
+/// regressions of tests/scanner_prefilter_regressions.rs and the shapes of
+/// the tokenizing-loop test), as seeds. The retry-limit regression goes in
+/// over a run short enough to stay under the limit: a search that reaches
+/// it takes seconds in the instrumented fuzz build, and the target ends
+/// such a case after one (see `SLOW_SEARCH` there).
+const REVIEW_SEEDS: &[(&[&str], &str)] = &[
+    (&[r"\W", "a"], "😀a"),
+    (&[r"\W", "x"], "éx"),
+    (&[r"(?i)(?:kelvin|street|fiat|xyz)!", "!"], "Kelvin!"),
+    (&[r"(?i)(?:kelvin|street|fiat|xyz)$", "!"], "Kelvin"),
+    (&[r"(?i)(?:kelvin|street|fiat|xyz)\b", "!"], "Kelvin ſtreet"),
+    (&[r"(?(a)b|c)", "b"], "ab"),
+    (&[r"((?(a)b|c))(\1)"], "abab"),
+    (&[r"(?(a)(?:b|c))!", "!"], "ac!"),
+    (&[r"(a+)+b", "c"], "aaaaaaaaaaaac b"),
+    (&[r"x(?<n>a){0}(?=\g<n>\g<n>)[ab]+[cd]", "c"], "xaaa! c"),
+    (&["."], "é"),
+    (&[r"[^[^[^İ]\S]]", "a"], " a"),
+    (
+        &[r"(?<![-\w])(?:kelvin|street)(?![.:\w])", "k"],
+        "street kelvin",
+    ),
+    (&[r"(?<=\.)\w+", "z"], "aaaaaaaa"),
+    (&["a", r"(?<=z)"], "aaaaaaaa"),
+    (&["a", r".*(?<=z)"], "aaaaaaaa"),
+    (&[r"\G ?", "a"], "aaaa"),
+    (&[r"(?<=b)a?", r"a[ab]{2}a"], "babababa"),
+    (&[r"(?<=z)a[ab]*a", "a"], "babababa"),
+    (&[r"(?<=\.)\w+", r"\w+:", r"\d+", "a"], "aaaaaaaa"),
+    (&[r"(?<=/)[^/]+", r"[^/]+/", "a"], "aaaaaaaa"),
+];
+
+/// Writes the compat pairs and the review regressions as seeds for the
+/// `prefilter-differential` fuzz target (fuzz/README.md) into the directory
+/// `FERRONI_FUZZ_SEED_DIR` names, in the target's raw layout: a non-zero
+/// first byte, the patterns separated by NULs, a NUL, then the text. A case
+/// with compile options goes in with their inline form in front of the
+/// pattern; one whose options have none, or that the scanner rejects, is
+/// left out.
+#[test]
+#[ignore = "writes the fuzz seed corpus to FERRONI_FUZZ_SEED_DIR"]
+fn write_fuzz_seeds() {
+    let Some(dir) = std::env::var_os("FERRONI_FUZZ_SEED_DIR") else {
+        println!("FERRONI_FUZZ_SEED_DIR is not set; nothing written");
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut written = 0;
+    let mut write = |name: &str, patterns: &[&str], text: &[u8]| {
+        if patterns
+            .iter()
+            .any(|pattern| Scanner::new(&[pattern]).is_err())
+        {
+            return;
+        }
+        let mut seed = vec![1u8];
+        for pattern in patterns {
+            seed.extend_from_slice(pattern.as_bytes());
+            seed.push(0);
+        }
+        seed.extend_from_slice(text);
+        std::fs::write(dir.join(name), seed).unwrap();
+        written += 1;
+    };
+    for (file, source) in SOURCES {
+        let stem = file.strip_suffix(".rs").unwrap_or(file);
+        for case in cases(file, source) {
+            let (Ok(pattern), Some(prefix)) = (
+                std::str::from_utf8(&case.pattern),
+                inline_options(case.options),
+            ) else {
+                continue;
+            };
+            if pattern.contains('\0') || case.text.contains(&0) {
+                continue;
+            }
+            let pattern = format!("{prefix}{pattern}");
+            write(
+                &format!("compat-{stem}-{}", case.line),
+                &[&pattern],
+                &case.text,
+            );
+        }
+    }
+    for (n, (patterns, text)) in REVIEW_SEEDS.iter().enumerate() {
+        write(&format!("review-{n}"), patterns, text.as_bytes());
+    }
+    println!("{written} seeds written to {}", dir.display());
+    assert!(written > 2_000, "only {written} seeds");
+}
+
 /// The same with a literal appended to and prepended to each pattern,
 /// which puts C's optimizer string at a distance from the match start
 /// (`(?(a)(?:b|c))!` on `ac!` is attempted at 2 only).
