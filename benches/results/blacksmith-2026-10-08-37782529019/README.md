@@ -1,7 +1,10 @@
 # Blacksmith engine comparison, 2026-10-08, run 37782529019
 
-Raw data behind [Engine Comparison](https://ferroni.dev/perf/engine-comparison):
-workflow run
+Superseded on 2026-10-09 by
+[`blacksmith-2026-10-09-37989957431`](../blacksmith-2026-10-09-37989957431/README.md)
+and [`blacksmith-2026-10-09-37999607702`](../blacksmith-2026-10-09-37999607702/README.md),
+the same case sets on later commits with the scanner's DFA pre-filter. This
+run is the last one without it. Raw data of workflow run
 [37782529019](https://github.com/sebastian-software/ferroni/actions/runs/37782529019)
 of `.github/workflows/blacksmith-comparison.yml` on Ferroni
 `62892008bbf59e3d06b9c8599a4decdf1e8ba979`, with every case set on both runner
