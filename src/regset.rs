@@ -2278,6 +2278,7 @@ fn regset_search_body_prefilter(
     /// first window, so an own event inside it never costs a read past it.
     const OWN_EVENT_WALKS: usize = FIRST_OWN_WINDOW;
     let mut prefilter = set.prefilter.take()?;
+    prefilter.begin_search();
     let mut decision: Option<RegSetDecision> = None;
     let mut failed_positions = 0u32;
     let has_own = !prefilter.own().is_empty();
@@ -2308,19 +2309,20 @@ fn regset_search_body_prefilter(
         let mut decided_here = false;
         let mut seek_matches_here = false;
         if !has_own {
-            seek_matches_here = prefilter
-                .candidates_at(haystack, s, &mut |index, position| {
-                    covered_entry_admits_at(
-                        set,
-                        index as usize,
-                        str_data,
-                        end,
-                        start,
-                        range,
-                        position,
-                    )
-                })
-                .is_some();
+            seek_matches_here = prefilter.walked_at() == Some(s)
+                || prefilter
+                    .candidates_at(haystack, s, &mut |index, position| {
+                        covered_entry_admits_at(
+                            set,
+                            index as usize,
+                            str_data,
+                            end,
+                            start,
+                            range,
+                            position,
+                        )
+                    })
+                    .is_some();
             if seek_matches_here {
                 decided_here = attempt_candidates_at(
                     set,
@@ -2356,19 +2358,20 @@ fn regset_search_body_prefilter(
                     memo_enabled,
                 );
             if !decided_here {
-                seek_matches_here = prefilter
-                    .candidates_at(haystack, s, &mut |index, position| {
-                        covered_entry_admits_at(
-                            set,
-                            index as usize,
-                            str_data,
-                            end,
-                            start,
-                            range,
-                            position,
-                        )
-                    })
-                    .is_some();
+                seek_matches_here = prefilter.walked_at() == Some(s)
+                    || prefilter
+                        .candidates_at(haystack, s, &mut |index, position| {
+                            covered_entry_admits_at(
+                                set,
+                                index as usize,
+                                str_data,
+                                end,
+                                start,
+                                range,
+                                position,
+                            )
+                        })
+                        .is_some();
                 decided_here = attempt_merged_at(
                     set,
                     &prefilter.own()[own_ahead..],
@@ -2397,6 +2400,7 @@ fn regset_search_body_prefilter(
         }
         let next = s + enclen(set.enc, str_data, s);
         own_table_to = own_table_to.max(next);
+        prefilter.note_position(subject, s, seek_matches_here, next);
         if seek_matches_here {
             // Every attempt at `s` failed where a seek matched. The
             // anchored scan is bounded, and where some seek matches at the
@@ -2520,25 +2524,17 @@ fn regset_search_body_prefilter(
         // per subject; otherwise within the window, up to the own event,
         // reading no further (`candidate_in`). The own entries are searched
         // over the stretch up to the find.
-        let (at, covered_to) = if subject.is_some() {
-            let at = match prefilter.earliest_memo(haystack, next, subject) {
-                Some(at) if at <= range => Some(at),
-                _ => None,
-            };
-            (at, range)
-        } else {
-            let mut until = window_last + 1;
-            if let Some(event) = event {
-                until = until.min(event + 1);
-            }
-            while until < end && (str_data[until] & 0xC0) == 0x80 {
-                until += 1;
-            }
-            let at = prefilter.candidate_in(haystack, next, until, &mut |index, position| {
-                covered_entry_admits_at(set, index as usize, str_data, end, start, range, position)
-            });
-            (at, until - 1)
-        };
+        let mut until = window_last + 1;
+        if let Some(event) = event {
+            until = until.min(event + 1);
+        }
+        while until < end && (str_data[until] & 0xC0) == 0x80 {
+            until += 1;
+        }
+        let at = prefilter.candidate_in(haystack, next, until, subject, &mut |index, position| {
+            covered_entry_admits_at(set, index as usize, str_data, end, start, range, position)
+        });
+        let covered_to = until - 1;
         let stretch_to = at.unwrap_or(covered_to);
         if has_own_fallback && own_searched_to.is_none_or(|searched| searched < stretch_to) {
             let own_window = own_searched_to.map_or(FIRST_OWN_WINDOW, |searched| {
@@ -3132,7 +3128,9 @@ fn regset_search_body_position_lead(
             range,
             option,
             memo_enabled,
-            fallback_memo_id.map(|identity| (identity, end)),
+            fallback_memo_id
+                .filter(|_| range == end)
+                .map(|identity| (identity, end)),
         ) {
             return regset_decision_result(set, decision);
         }

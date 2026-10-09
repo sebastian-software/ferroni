@@ -89,7 +89,7 @@ pub(crate) const MAX_NFA_STATES: usize = 65_536;
 #[cfg(test)]
 thread_local! {
     /// Searches of a set's meta regex on this thread, for tests that bound
-    /// the pre-filter's work.
+    /// the pre-filter's work (`search_in`).
     pub(crate) static EARLIEST_CALLS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Bytes the candidate scans read on this thread.
     pub(crate) static SCAN_STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -865,19 +865,26 @@ pub(crate) struct SetPrefilter {
     /// admissible at the position.
     admissible: Vec<u32>,
     stamp: u32,
-    /// Scratch for `candidates_at`.
+    /// Scratch for `candidates_at`, and the position it holds the
+    /// candidates of in the current search.
     candidates: Vec<u16>,
+    walked_at: Option<usize>,
     /// The last meta regex result for a subject (`earliest_memo`).
     meta_memo: Option<MetaMemo>,
 }
 
-/// A meta regex result, reusable by every later search of the same subject:
-/// no covered seek matches in `[from, at)`, and one matches at `at` (none
-/// to the end of the subject where `at` is `None`).
+/// What the covered searches of a subject found, reusable by every later
+/// search of it from a position at or after `from`: no covered entry can
+/// decide in `[from, at)` and one can at `at`, or, with `at` `None`, none
+/// in `[from, until)` (to the end of the subject once the windows reached
+/// it). The facts are start-independent: the loop head looks at a search's
+/// first position itself, and admission elsewhere depends on the subject
+/// and the position only (the gate cache serves later starts alike).
 #[derive(Clone, Copy)]
 struct MetaMemo {
     subject: (crate::regset::FallbackMemoIdentity, usize),
     from: usize,
+    until: usize,
     at: Option<usize>,
 }
 
@@ -999,6 +1006,7 @@ impl SetPrefilter {
             admissible,
             stamp: 0,
             candidates: Vec::new(),
+            walked_at: None,
             meta_memo: None,
         })
     }
@@ -1045,79 +1053,120 @@ impl SetPrefilter {
         self.entries.len()
     }
 
-    /// The earliest position at or after `from` where some covered entry's
-    /// seek matches in `haystack`.
-    #[inline]
-    pub(crate) fn earliest(&mut self, haystack: &[u8], from: usize) -> Option<usize> {
-        #[cfg(test)]
-        EARLIEST_CALLS.with(|calls| calls.set(calls.get() + 1));
-        if from > haystack.len() {
-            return None;
-        }
-        let input = Input::new(haystack).span(from..haystack.len());
-        let at = self
-            .meta
-            .search_with(&mut self.meta_cache, &input)
-            .map(|m| m.start());
-        #[cfg(test)]
-        META_BYTES.with(|bytes| {
-            bytes.set(bytes.get() + (at.unwrap_or(haystack.len()) - from) as u64);
-        });
-        at
-    }
-
-    /// `earliest`, with the result kept for the subject (a stable identity
-    /// and the subject's length) so that a later search of it from a
-    /// position the result covers does not read the subject again: one
-    /// meta regex search per subject where a scanner tokenizes a line in
-    /// order.
-    #[inline]
-    pub(crate) fn earliest_memo(
+    /// The earliest position in `[from, until)` where some covered entry
+    /// can decide, reading the subject only up to `until` plus the bounded
+    /// seeks' length (`search_in`), and for a stable `subject` through the
+    /// memo of what earlier searches found: a span already known to hold
+    /// nothing is not read again, and a window past it is searched from
+    /// where the known span ends.
+    pub(crate) fn candidate_in(
         &mut self,
         haystack: &[u8],
         from: usize,
+        until: usize,
         subject: Option<(crate::regset::FallbackMemoIdentity, usize)>,
+        admits: &mut dyn FnMut(u16, usize) -> bool,
     ) -> Option<usize> {
+        let mut search_from = from;
+        let mut memo_from = from;
         if let (Some(subject), Some(memo)) = (subject, self.meta_memo) {
-            if memo.subject == subject && from >= memo.from && memo.at.is_none_or(|at| from <= at) {
-                return memo.at;
+            if memo.subject == subject && from >= memo.from {
+                match memo.at {
+                    Some(at) if from <= at => return (at < until).then_some(at),
+                    None if until <= memo.until => return None,
+                    None if from <= memo.until => {
+                        search_from = memo.until;
+                        memo_from = memo.from;
+                    }
+                    _ => {}
+                }
             }
         }
-        let at = self.earliest(haystack, from);
+        let at = self.search_in(haystack, search_from, until, admits);
         if let Some(subject) = subject {
-            self.meta_memo = Some(MetaMemo { subject, from, at });
+            self.meta_memo = Some(MetaMemo {
+                subject,
+                from: memo_from,
+                until,
+                at,
+            });
         }
         at
     }
 
-    /// The earliest position in `[from, until)` where some covered entry's
-    /// seek matches, reading the subject only up to `until` plus the
-    /// bounded seeks' length: the meta regex over that span finds every
-    /// bounded seek's match that starts in the window (its match ends
+    /// Records what the loop head found at `at` for `subject`'s memo, where
+    /// the known span ends there: a candidate, or nothing up to `next`.
+    #[inline]
+    pub(crate) fn note_position(
+        &mut self,
+        subject: Option<(crate::regset::FallbackMemoIdentity, usize)>,
+        at: usize,
+        candidate: bool,
+        next: usize,
+    ) {
+        if let (Some(subject), Some(memo)) = (subject, self.meta_memo.as_mut()) {
+            if memo.subject == subject && memo.at.is_none() && memo.until == at {
+                if candidate {
+                    memo.at = Some(at);
+                } else {
+                    memo.until = next;
+                }
+            }
+        }
+    }
+
+    /// The earliest position in `[from, until)` where some covered entry
+    /// can decide, reading the subject only up to `until` plus the bounded
+    /// seeks' length. The position `from` by a walk first: a greedy seek
+    /// that matches there would make the meta regex read on to its match
+    /// end to report that start. Then the meta regex over the span finds
+    /// every bounded seek's match that starts in the window (its match ends
     /// inside the span), and the long seeks, whose matches may end past it,
     /// are walked at the positions up to the meta regex's find where their
     /// bytes dispatch (`candidates_at`, with its bound and admission stop).
-    pub(crate) fn candidate_in(
+    fn search_in(
         &mut self,
         haystack: &[u8],
         from: usize,
         until: usize,
         admits: &mut dyn FnMut(u16, usize) -> bool,
     ) -> Option<usize> {
+        if from >= until || from > haystack.len() {
+            return None;
+        }
+        // Only a long seek can make the meta regex read far for a start
+        // here; a set without one is spared the walk, and the meta regex
+        // looks at `from` itself.
+        let mut next = from;
+        if !self.long.is_empty() {
+            if self
+                .candidates_at(haystack, from, admits)
+                .is_some_and(|candidates| !candidates.is_empty())
+            {
+                return Some(from);
+            }
+            next = from + 1;
+            while next < haystack.len() && (haystack[next] & 0xC0) == 0x80 {
+                next += 1;
+            }
+        }
         let span_end = haystack.len().min(until.saturating_add(self.settle));
         // An empty span at the end still holds the empty matches there.
-        let found = if from <= span_end {
-            let input = Input::new(haystack).span(from..span_end);
-            let found = self
-                .meta
-                .search_with(&mut self.meta_cache, &input)
-                .map(|m| m.start())
-                .filter(|&at| at < until);
+        let found = if next <= span_end {
+            #[cfg(test)]
+            EARLIEST_CALLS.with(|calls| calls.set(calls.get() + 1));
+            let input = Input::new(haystack).span(next..span_end);
+            let found = self.meta.search_with(&mut self.meta_cache, &input);
             #[cfg(test)]
             META_BYTES.with(|bytes| {
-                bytes.set(bytes.get() + (found.unwrap_or(span_end) - from) as u64);
+                // The forward scan to the match end, and the reverse scan
+                // back to its start; the whole span without a match.
+                let read = found.map_or(span_end - next, |m| {
+                    (m.end() - next) + (m.end() - m.start())
+                });
+                bytes.set(bytes.get() + read as u64);
             });
-            found
+            found.map(|m| m.start()).filter(|&at| at < until)
         } else {
             None
         };
@@ -1126,7 +1175,7 @@ impl SetPrefilter {
         }
         let dispatch = self.long_dispatch;
         let limit = found.unwrap_or(until);
-        let mut p = from;
+        let mut p = next;
         while p < limit {
             let admitted = haystack
                 .get(p)
@@ -1167,6 +1216,7 @@ impl SetPrefilter {
     ) -> Option<&[u16]> {
         self.candidates.clear();
         self.patset.clear();
+        self.walked_at = Some(at);
         let (end, asked) = self.scan_candidates(haystack, at, admits);
         self.ask_early = end == ScanEnd::Bound || (asked && end == ScanEnd::Settled);
         if end == ScanEnd::Finished && self.patset.is_empty() {
@@ -1202,6 +1252,20 @@ impl SetPrefilter {
     #[inline]
     pub(crate) fn candidates(&self) -> &[u16] {
         &self.candidates
+    }
+
+    /// The position `candidates` holds the candidates of in the current
+    /// search, so a walk the stretch search made at the position the loop
+    /// goes on at is not made again.
+    #[inline]
+    pub(crate) fn walked_at(&self) -> Option<usize> {
+        self.walked_at
+    }
+
+    /// Forgets the candidates of the previous search.
+    #[inline]
+    pub(crate) fn begin_search(&mut self) {
+        self.walked_at = None;
     }
 
     /// The anchored walk of `candidates_at`, filling `patset`: how it ended,

@@ -3250,9 +3250,12 @@ mod tests {
     /// is ruled out (270× for `\w+:` without a `:`), an own entry behind
     /// the winner attempted first (`.*(?<=z)`: 3,400×), the meta regex
     /// reading the rest of the line before a nearby own match
-    /// (`[(?<=b)a?, a[ab]{2}a]` on `ba…`: 125×), and the same with the own
+    /// (`[(?<=b)a?, a[ab]{2}a]` on `ba…`: 125×), the same with the own
     /// match a hundred positions away and no stable id, where the meta
-    /// regex read the rest of the line on every call.
+    /// regex read the rest of the line on every call, and a greedy seek
+    /// ahead of the winner (`[(?<=z)a[ab]*a, a]` on `ba…`: 3,500× with a
+    /// stable id, the meta regex reading to the end of the line to report
+    /// a start one byte away).
     #[test]
     fn own_entries_cost_linear_work_over_a_tokenizing_loop() {
         let _limits = crate::regexec::shared_limits();
@@ -3261,10 +3264,10 @@ mod tests {
         let gaps = format!("{}ba", "x".repeat(100)).repeat(20);
         // (patterns, text, meta regex searches the pre-filter may make with
         // a stable id)
-        let variants: [(&[&str], &str, u64); 10] = [
+        let variants: [(&[&str], &str, u64); 11] = [
             (&["a", r"(?<=z)"], &word, 0),
             (&[r"(?<=a)", "b"], &word, 0),
-            (&[r"(?<=z)", "b"], &word, 1),
+            (&[r"(?<=z)", "b"], &word, 8),
             (&[r"\G ?", "a"], &word, 0),
             (&[r"(?<=\))(?!\w)", "a"], &word, 0),
             (&[r"(?<=\.)\w+", r"\w+:", r"\d+", "a"], &word, 0),
@@ -3272,6 +3275,7 @@ mod tests {
             (&["a", r".*(?<=z)"], &word, 0),
             (&[r"(?<=b)a?", r"a[ab]{2}a"], &pairs, 0),
             (&[r"(?<=b)a?", r"a[ab]{2}a"], &gaps, 0),
+            (&[r"(?<=z)a[ab]*a", "a"], &pairs, 0),
         ];
         #[derive(Clone, Copy, Debug)]
         enum Api {
