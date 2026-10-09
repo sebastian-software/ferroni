@@ -858,6 +858,9 @@ pub(crate) struct SetPrefilter {
     /// Per pattern ID, the bytes the set's first-byte table dispatches its
     /// entry on (every byte for a fallback entry).
     dispatch: Vec<[u64; 4]>,
+    /// The bytes any long seek's entry is dispatched on, and any entry's.
+    long_dispatch: [u64; 4],
+    any_dispatch: [u64; 4],
     /// Per pattern ID, the `stamp` of the last walk that found its entry
     /// admissible at the position.
     admissible: Vec<u32>,
@@ -991,6 +994,8 @@ impl SetPrefilter {
             settle,
             ask_early: false,
             dispatch,
+            long_dispatch: [0; 4],
+            any_dispatch: [0; 4],
             admissible,
             stamp: 0,
             candidates: Vec::new(),
@@ -1004,6 +1009,25 @@ impl SetPrefilter {
         for (pid, &index) in self.entries.iter().enumerate() {
             self.dispatch[pid] = bytes(index);
         }
+        let union = |pids: &mut dyn Iterator<Item = usize>| {
+            pids.fold([0u64; 4], |mut bits, pid| {
+                for (word, dispatch) in bits.iter_mut().zip(self.dispatch[pid]) {
+                    *word |= dispatch;
+                }
+                bits
+            })
+        };
+        let long_dispatch = union(&mut self.long.iter().map(|&pid| pid as usize));
+        let any_dispatch = union(&mut (0..self.entries.len()));
+        self.long_dispatch = long_dispatch;
+        self.any_dispatch = any_dispatch;
+    }
+
+    /// The bytes any covered entry is dispatched on: a position whose byte
+    /// is not among them has no candidate.
+    #[inline]
+    pub(crate) fn any_dispatch(&self) -> [u64; 4] {
+        self.any_dispatch
     }
 
     /// Entries the automata do not cover, in index order.
@@ -1066,6 +1090,62 @@ impl SetPrefilter {
         at
     }
 
+    /// The earliest position in `[from, until)` where some covered entry's
+    /// seek matches, reading the subject only up to `until` plus the
+    /// bounded seeks' length: the meta regex over that span finds every
+    /// bounded seek's match that starts in the window (its match ends
+    /// inside the span), and the long seeks, whose matches may end past it,
+    /// are walked at the positions up to the meta regex's find where their
+    /// bytes dispatch (`candidates_at`, with its bound and admission stop).
+    pub(crate) fn candidate_in(
+        &mut self,
+        haystack: &[u8],
+        from: usize,
+        until: usize,
+        admits: &mut dyn FnMut(u16, usize) -> bool,
+    ) -> Option<usize> {
+        let span_end = haystack.len().min(until.saturating_add(self.settle));
+        // An empty span at the end still holds the empty matches there.
+        let found = if from <= span_end {
+            let input = Input::new(haystack).span(from..span_end);
+            let found = self
+                .meta
+                .search_with(&mut self.meta_cache, &input)
+                .map(|m| m.start())
+                .filter(|&at| at < until);
+            #[cfg(test)]
+            META_BYTES.with(|bytes| {
+                bytes.set(bytes.get() + (found.unwrap_or(span_end) - from) as u64);
+            });
+            found
+        } else {
+            None
+        };
+        if self.long.is_empty() {
+            return found;
+        }
+        let dispatch = self.long_dispatch;
+        let limit = found.unwrap_or(until);
+        let mut p = from;
+        while p < limit {
+            let admitted = haystack
+                .get(p)
+                .is_none_or(|&byte| (dispatch[byte as usize / 64] >> (byte % 64)) & 1 == 1);
+            if admitted
+                && self
+                    .candidates_at(haystack, p, admits)
+                    .is_some_and(|candidates| !candidates.is_empty())
+            {
+                return Some(p);
+            }
+            p += 1;
+            while p < limit && p < haystack.len() && (haystack[p] & 0xC0) == 0x80 {
+                p += 1;
+            }
+        }
+        found
+    }
+
     /// The covered entries whose seek matches at `at`, ascending, or `None`
     /// where none does: the patterns of every match state the overlapping
     /// DFA reaches from `at`, within `CANDIDATE_SCAN_BYTES`. The walk stops
@@ -1083,7 +1163,7 @@ impl SetPrefilter {
         &mut self,
         haystack: &[u8],
         at: usize,
-        admits: &mut dyn FnMut(u16) -> bool,
+        admits: &mut dyn FnMut(u16, usize) -> bool,
     ) -> Option<&[u16]> {
         self.candidates.clear();
         self.patset.clear();
@@ -1131,7 +1211,7 @@ impl SetPrefilter {
         &mut self,
         haystack: &[u8],
         at: usize,
-        admits: &mut dyn FnMut(u16) -> bool,
+        admits: &mut dyn FnMut(u16, usize) -> bool,
     ) -> (ScanEnd, bool) {
         let Self {
             dfa,
@@ -1227,7 +1307,7 @@ impl SetPrefilter {
             {
                 continue;
             }
-            if admits(entries[pid as usize]) {
+            if admits(entries[pid as usize], at) {
                 stamps[pid as usize] = *stamp;
                 needed += 1;
             }

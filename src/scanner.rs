@@ -3237,25 +3237,31 @@ mod tests {
         assert!(differences.is_empty(), "{}", differences.join("\n"));
     }
 
-    /// Tokenizing a run in order with a stable id costs the same work with
-    /// the pre-filter as without, in VM attempts and in the bytes the VM,
-    /// the optimizer's forward searches, the candidate walks and the meta
-    /// regex read, each within a constant of the text's length; the meta
-    /// regex is asked at most once per subject. The shapes are the review
-    /// findings: entries the automata do not cover searched to the end of
-    /// the subject before the covered ones (4,200× the time for
+    /// Tokenizing a run in order costs the same work with the pre-filter
+    /// as without, with and without a stable id and through the UTF-16
+    /// API: in VM attempts and in the bytes the VM, the optimizer's forward
+    /// searches, the candidate walks and the meta regex read, against what
+    /// the VM, the forward searches and the table scans read without it,
+    /// each within a constant of the text's length; with a stable id the
+    /// meta regex is asked at most once per subject. The shapes are the
+    /// review findings: entries the automata do not cover searched to the
+    /// end of the subject before the covered ones (4,200× the time for
     /// `["a", "(?<=z)"]`), a seek alive through a word run while its entry
     /// is ruled out (270× for `\w+:` without a `:`), an own entry behind
-    /// the winner attempted first (`.*(?<=z)`: 3,400×), and the meta regex
+    /// the winner attempted first (`.*(?<=z)`: 3,400×), the meta regex
     /// reading the rest of the line before a nearby own match
-    /// (`[(?<=b)a?, a[ab]{2}a]` on `ba…`: 125×).
+    /// (`[(?<=b)a?, a[ab]{2}a]` on `ba…`: 125×), and the same with the own
+    /// match a hundred positions away and no stable id, where the meta
+    /// regex read the rest of the line on every call.
     #[test]
     fn own_entries_cost_linear_work_over_a_tokenizing_loop() {
         let _limits = crate::regexec::shared_limits();
         let word = "a".repeat(2_000);
         let pairs = "ba".repeat(1_000);
-        // (patterns, text, meta regex searches the pre-filter may make)
-        let variants: [(&[&str], &str, u64); 9] = [
+        let gaps = format!("{}ba", "x".repeat(100)).repeat(20);
+        // (patterns, text, meta regex searches the pre-filter may make with
+        // a stable id)
+        let variants: [(&[&str], &str, u64); 10] = [
             (&["a", r"(?<=z)"], &word, 0),
             (&[r"(?<=a)", "b"], &word, 0),
             (&[r"(?<=z)", "b"], &word, 1),
@@ -3265,7 +3271,14 @@ mod tests {
             (&[r"(?<=/)[^/]+", r"[^/]+/", "a"], &word, 0),
             (&["a", r".*(?<=z)"], &word, 0),
             (&[r"(?<=b)a?", r"a[ab]{2}a"], &pairs, 0),
+            (&[r"(?<=b)a?", r"a[ab]{2}a"], &gaps, 0),
         ];
+        #[derive(Clone, Copy, Debug)]
+        enum Api {
+            Id,
+            Plain,
+            Utf16,
+        }
         #[cfg(feature = "dfa-prefilter")]
         fn automata_work() -> [u64; 3] {
             [
@@ -3279,8 +3292,8 @@ mod tests {
             [0; 3]
         }
         // VM attempts, VM bytes, forward-search bytes, meta regex searches,
-        // meta regex bytes, candidate walk bytes.
-        let work = || -> [u64; 6] {
+        // meta regex bytes, candidate walk bytes, table scan bytes.
+        let work = || -> [u64; 7] {
             let automata = automata_work();
             [
                 crate::regexec::VM_ATTEMPTS.with(|c| c.get()),
@@ -3289,61 +3302,96 @@ mod tests {
                 automata[0],
                 automata[1],
                 automata[2],
+                crate::regset::TABLE_SCAN_BYTES.with(|c| c.get()),
             ]
         };
         for (patterns, text, max_earliest) in variants {
-            let run = |prefilter: bool| {
-                let config = ScannerConfig::default().prefilter(prefilter);
-                let mut scanner = Scanner::with_config(patterns, &config).unwrap();
-                let before = work();
-                let results: Vec<_> = (0..text.len())
-                    .map(|at| {
-                        scanner
-                            .find_next_match_with_id(text, 7, at, ScannerFindOptions::NONE)
-                            .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
-                    })
-                    .collect();
-                let after = work();
-                let spent: [u64; 6] = std::array::from_fn(|i| after[i] - before[i]);
-                (spent, results)
-            };
-            let n = text.len() as u64;
-            let (without, plain) = run(false);
-            let (with, filtered) = run(true);
-            assert_eq!(filtered, plain, "{patterns:?}");
-            assert!(
-                with[0] <= 2 * without[0] + n,
-                "{patterns:?}: {} VM attempts with the pre-filter, {} without",
-                with[0],
-                without[0]
-            );
-            assert!(
-                with[1] <= 2 * without[1] + 8 * n,
-                "{patterns:?}: {} VM bytes with the pre-filter, {} without",
-                with[1],
-                without[1]
-            );
-            assert!(
-                with[2] <= 2 * without[2] + 8 * n,
-                "{patterns:?}: {} forward-search bytes with the pre-filter, {} without",
-                with[2],
-                without[2]
-            );
-            assert!(
-                with[3] <= max_earliest,
-                "{patterns:?}: {} meta regex searches, at most {max_earliest}",
-                with[3]
-            );
-            assert!(
-                with[4] <= 8 * n,
-                "{patterns:?}: {} meta regex bytes over {n} bytes of text",
-                with[4]
-            );
-            assert!(
-                with[5] <= 8 * n,
-                "{patterns:?}: {} candidate walk bytes over {n} bytes of text",
-                with[5]
-            );
+            for api in [Api::Id, Api::Plain, Api::Utf16] {
+                let run = |prefilter: bool| {
+                    let config = ScannerConfig::default().prefilter(prefilter);
+                    let mut scanner = Scanner::with_config(patterns, &config).unwrap();
+                    let string = OnigString::new(text);
+                    let before = work();
+                    let results: Vec<_> = (0..text.len())
+                        .map(|at| {
+                            let found = match api {
+                                Api::Id => scanner.find_next_match_with_id(
+                                    text,
+                                    7,
+                                    at,
+                                    ScannerFindOptions::NONE,
+                                ),
+                                Api::Plain => {
+                                    scanner.find_next_match(text, at, ScannerFindOptions::NONE)
+                                }
+                                Api::Utf16 => scanner.find_next_match_utf16_with_id(
+                                    &string,
+                                    7,
+                                    at,
+                                    ScannerFindOptions::NONE,
+                                ),
+                            };
+                            found.map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
+                        })
+                        .collect();
+                    let after = work();
+                    let spent: [u64; 7] = std::array::from_fn(|i| after[i] - before[i]);
+                    (spent, results)
+                };
+                let n = text.len() as u64;
+                let (without, plain) = run(false);
+                let (with, filtered) = run(true);
+                assert_eq!(filtered, plain, "{patterns:?} {api:?}");
+                assert!(
+                    with[0] <= 2 * without[0] + n,
+                    "{patterns:?} {api:?}: {} VM attempts with the pre-filter, {} without",
+                    with[0],
+                    without[0]
+                );
+                assert!(
+                    with[1] <= 2 * without[1] + 8 * n,
+                    "{patterns:?} {api:?}: {} VM bytes with the pre-filter, {} without",
+                    with[1],
+                    without[1]
+                );
+                assert!(
+                    with[2] <= 2 * without[2] + 8 * n,
+                    "{patterns:?} {api:?}: {} forward-search bytes with the pre-filter, {} without",
+                    with[2],
+                    without[2]
+                );
+                // What the automata read, against what the table scans and
+                // the forward searches read without them.
+                let read_without = without[2] + without[6];
+                assert!(
+                    with[5] <= 2 * read_without + 8 * n,
+                    "{patterns:?} {api:?}: {} candidate walk bytes, {read_without} read without the pre-filter",
+                    with[5]
+                );
+                if matches!(api, Api::Plain) {
+                    assert!(
+                        with[3] <= 4 * n,
+                        "{patterns:?} {api:?}: {} meta regex searches over {n} calls",
+                        with[3]
+                    );
+                    assert!(
+                        with[4] <= 4 * read_without + 8 * n,
+                        "{patterns:?} {api:?}: {} meta regex bytes, {read_without} read without the pre-filter",
+                        with[4]
+                    );
+                } else {
+                    assert!(
+                        with[3] <= max_earliest,
+                        "{patterns:?} {api:?}: {} meta regex searches, at most {max_earliest}",
+                        with[3]
+                    );
+                    assert!(
+                        with[4] <= 8 * n,
+                        "{patterns:?} {api:?}: {} meta regex bytes over {n} bytes of text",
+                        with[4]
+                    );
+                }
+            }
         }
     }
 

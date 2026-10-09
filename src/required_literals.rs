@@ -202,8 +202,12 @@ impl RequiredLiterals {
             Searcher::Literal(finder) => finder.find(hay),
             Searcher::Literals(automaton) => automaton.find(hay).map(|m| m.start()),
             Searcher::Unavailable => Some(0),
-        }?;
-        Some(from + at)
+        };
+        #[cfg(test)]
+        crate::regexec::FORWARD_SEARCH_BYTES.with(|bytes| {
+            bytes.set(bytes.get() + at.unwrap_or(hay.len()) as u64);
+        });
+        Some(from + at?)
     }
 }
 
