@@ -47,7 +47,13 @@ fn main() {
     let rss_loaded = max_rss_bytes();
 
     let started = Instant::now();
-    let mut scanners = corpus.scanners();
+    // `FERRONI_REPLAY_CACHED=1` builds the scanners through one pattern
+    // cache, as a grammar loader does (ADR-006).
+    let mut scanners = if std::env::var_os("FERRONI_REPLAY_CACHED").is_some() {
+        corpus.cached_scanners()
+    } else {
+        corpus.scanners()
+    };
     let construction = started.elapsed();
     let rss_built = max_rss_bytes();
 
@@ -58,6 +64,41 @@ fn main() {
     }
     let elapsed = started.elapsed();
     let rss_replayed = max_rss_bytes();
+    #[cfg(feature = "dfa-prefilter")]
+    {
+        let mut rows: Vec<(usize, usize, usize, usize, u64, usize)> = scanners
+            .iter()
+            .enumerate()
+            .map(|(i, scanner)| {
+                let r = scanner.dfa_prefilter_report();
+                (
+                    r.memory_usage,
+                    i,
+                    r.nfa_states,
+                    r.dfa_cache_clears,
+                    r.dfa_quits,
+                    corpus.patterns[i].len(),
+                )
+            })
+            .collect();
+        let memory: usize = rows.iter().map(|r| r.0).sum();
+        let states: usize = rows.iter().map(|r| r.2).sum();
+        let clears: usize = rows.iter().map(|r| r.3).sum();
+        let quits: u64 = rows.iter().map(|r| r.4).sum();
+        rows.sort_unstable_by(|a, b| b.cmp(a));
+        println!(
+            "after replay: automata memory {:.1} MiB, NFA states {states} (max {}), overlapping cache clears {clears} in {} sets, DFA quits {quits}",
+            memory as f64 / (1 << 20) as f64,
+            rows.iter().map(|r| r.2).max().unwrap_or(0),
+            rows.iter().filter(|r| r.3 > 0).count(),
+        );
+        for (memory, i, states, clears, quits, patterns) in rows.iter().take(6) {
+            println!(
+                "  set {i}: {:.2} MiB, {states} NFA states, {clears} clears, {quits} quits, {patterns} patterns",
+                *memory as f64 / (1 << 20) as f64
+            );
+        }
+    }
     println!(
         "{path}: {} scanners built in {:.1} ms; {} calls x {iterations} iterations in {:.1} ms ({:.2} ms per iteration); max RSS loaded {:.1} MiB, built {:.1} MiB, replayed {:.1} MiB",
         scanners.len(),

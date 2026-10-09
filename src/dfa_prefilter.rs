@@ -121,9 +121,12 @@ pub mod approx {
     /// A gimmick other than `(*FAIL)`: `\K`, absent-operator bookkeeping,
     /// callouts (dropped).
     pub const GIMMICK: u32 = 1 << 16;
+    /// A class with multi-character folds (`Alt(class, "ss", …)`) collapsed
+    /// into one repeated class.
+    pub const CLASS_ALT_COLLAPSED: u32 = 1 << 17;
 
     /// Names of the flags, in bit order.
-    pub const NAMES: [&str; 17] = [
+    pub const NAMES: [&str; 18] = [
         "lookahead kept",
         "lookahead dropped",
         "negative lookahead",
@@ -141,6 +144,7 @@ pub mod approx {
         "repeat capped",
         "word boundary dropped",
         "gimmick",
+        "class alternation collapsed",
     ];
 }
 
@@ -182,6 +186,7 @@ pub(crate) fn derive(root: &Node, reg: &RegexType) -> Option<Seek> {
         reg,
         approximated: 0,
         lookaheads_kept: 0,
+        word_boundaries: 0,
     };
     let hir = walk.item(root, true);
     let always = matches_everywhere(&hir);
@@ -360,6 +365,61 @@ fn droppable(node: &Node) -> bool {
     }
 }
 
+/// The code points of a node that is a class, a string, or a list,
+/// alternation or group of those, added to `ranges`, with the fewest and
+/// most characters it reads. `None` for any other node.
+fn class_union(node: &Node, ranges: &mut Vec<(u32, u32)>) -> Option<(usize, usize)> {
+    match &node.inner {
+        NodeInner::CClass(cc) => {
+            if cc.is_not() {
+                return None;
+            }
+            for member in bitset_members(&cc.bs) {
+                if member >= 0x80 {
+                    return None;
+                }
+                ranges.push((member as u32, member as u32));
+            }
+            if let Some(mbuf) = &cc.mbuf {
+                ranges.extend(code_ranges(mbuf));
+            }
+            Some((1, 1))
+        }
+        NodeInner::String(sn) => {
+            if node.has_status(ND_ST_IGNORECASE) && !sn.is_crude() {
+                return None;
+            }
+            let text = std::str::from_utf8(&sn.s).ok()?;
+            let mut count = 0;
+            for c in text.chars() {
+                ranges.push((c as u32, c as u32));
+                count += 1;
+            }
+            Some((count, count))
+        }
+        NodeInner::List(_) => {
+            let mut lens = (0, 0);
+            for item in cons_items(node) {
+                let (lo, hi) = class_union(item, ranges)?;
+                lens = (lens.0 + lo, lens.1 + hi);
+            }
+            Some(lens)
+        }
+        NodeInner::Alt(_) => {
+            let mut lens = (usize::MAX, 0);
+            for item in cons_items(node) {
+                let (lo, hi) = class_union(item, ranges)?;
+                lens = (lens.0.min(lo), lens.1.max(hi));
+            }
+            Some(lens)
+        }
+        NodeInner::Bag(bn) if !matches!(bn.bag_data, BagData::IfElse { .. }) => {
+            class_union(bn.body.as_deref()?, ranges)
+        }
+        _ => None,
+    }
+}
+
 /// The elements of a List or Alt chain.
 fn cons_items(node: &Node) -> Vec<&Node> {
     let mut items = Vec::new();
@@ -386,6 +446,8 @@ struct Walk<'a> {
     reg: &'a RegexType,
     approximated: u32,
     lookaheads_kept: u32,
+    /// Word boundaries met (kept or dropped).
+    word_boundaries: u32,
 }
 
 impl Walk<'_> {
@@ -488,7 +550,34 @@ impl Walk<'_> {
             NodeInner::Anchor(an) => self.anchor(an),
             NodeInner::List(_) => self.list(node, rest_droppable),
             NodeInner::Alt(_) => {
-                let branches = cons_items(node)
+                let branches = cons_items(node);
+                // `(?i)` turns a class with multi-character folds into
+                // `Alt(class, "ss", "fi", …)`, and such classes repeat in a
+                // pattern: the union of their characters, repeated as often
+                // as the longest branch reads, stands for all of them.
+                if branches.len() >= 2 && matches!(branches[0].inner, NodeInner::CClass(_)) {
+                    let mut ranges = Vec::new();
+                    let mut lens: Option<(usize, usize)> = Some((usize::MAX, 0));
+                    for branch in &branches {
+                        match class_union(branch, &mut ranges) {
+                            Some((lo, hi)) => lens = lens.map(|(a, b)| (a.min(lo), b.max(hi))),
+                            None => {
+                                lens = None;
+                                break;
+                            }
+                        }
+                    }
+                    if let Some((min, max)) = lens {
+                        self.note(approx::CLASS_ALT_COLLAPSED);
+                        return Hir::repetition(Repetition {
+                            min: u32::try_from(min).unwrap_or(u32::MAX),
+                            max: Some(u32::try_from(max).unwrap_or(u32::MAX)),
+                            greedy: true,
+                            sub: Box::new(class_hir(ranges, false)),
+                        });
+                    }
+                }
+                let branches = branches
                     .into_iter()
                     .map(|branch| self.item(branch, rest_droppable))
                     .collect();
@@ -524,7 +613,6 @@ impl Walk<'_> {
     }
 
     fn anchor(&mut self, an: &AnchorNode) -> Hir {
-        let word = |unicode: Look, ascii: Look| if an.ascii_mode { ascii } else { unicode };
         match an.anchor_type {
             // A look-ahead reaches here only where something consuming follows it.
             ANCR_PREC_READ => {
@@ -554,15 +642,40 @@ impl Walk<'_> {
             ANCR_WORD_BOUNDARY | ANCR_NO_WORD_BOUNDARY | ANCR_WORD_BEGIN | ANCR_WORD_END
                 if !keep_word_boundaries() =>
             {
+                self.word_boundaries += 1;
                 self.note(approx::WORD_BOUNDARY_DROPPED);
                 Hir::empty()
             }
-            ANCR_WORD_BOUNDARY => Hir::look(word(Look::WordUnicode, Look::WordAscii)),
-            ANCR_NO_WORD_BOUNDARY => {
-                Hir::look(word(Look::WordUnicodeNegate, Look::WordAsciiNegate))
+            ANCR_WORD_BOUNDARY | ANCR_NO_WORD_BOUNDARY | ANCR_WORD_BEGIN | ANCR_WORD_END
+                if an.ascii_mode =>
+            {
+                // ASCII word boundaries need no quit bytes.
+                Hir::look(match an.anchor_type {
+                    ANCR_WORD_BOUNDARY => Look::WordAscii,
+                    ANCR_NO_WORD_BOUNDARY => Look::WordAsciiNegate,
+                    ANCR_WORD_BEGIN => Look::WordStartAscii,
+                    _ => Look::WordEndAscii,
+                })
             }
-            ANCR_WORD_BEGIN => Hir::look(word(Look::WordStartUnicode, Look::WordStartAscii)),
-            ANCR_WORD_END => Hir::look(word(Look::WordEndUnicode, Look::WordEndAscii)),
+            ANCR_WORD_BOUNDARY | ANCR_NO_WORD_BOUNDARY | ANCR_WORD_BEGIN | ANCR_WORD_END => {
+                // A Unicode word boundary makes a lazy DFA quit at non-ASCII
+                // bytes, after which the meta regex falls back to its slow
+                // engines. Between two ASCII characters it is the ASCII
+                // boundary; next to a non-ASCII character it may hold, and
+                // the ASCII half boundaries (the previous or the next
+                // character is not an ASCII word character) admit that.
+                self.word_boundaries += 1;
+                Hir::alternation(vec![
+                    Hir::look(match an.anchor_type {
+                        ANCR_WORD_BOUNDARY => Look::WordAscii,
+                        ANCR_NO_WORD_BOUNDARY => Look::WordAsciiNegate,
+                        ANCR_WORD_BEGIN => Look::WordStartAscii,
+                        _ => Look::WordEndAscii,
+                    }),
+                    Hir::look(Look::WordStartHalfAscii),
+                    Hir::look(Look::WordEndHalfAscii),
+                ])
+            }
             _ => {
                 self.note(approx::TEXT_SEGMENT);
                 Hir::empty()
@@ -644,59 +757,63 @@ impl Walk<'_> {
             return placeholder();
         };
         self.note(approx::FOLDED_TRIE);
-        let letter_class = |c: u8| -> Hir {
-            if !c.is_ascii_alphabetic() {
-                return Hir::literal([c]);
-            }
-            let lower = c.to_ascii_lowercase();
-            let mut ranges = vec![
-                (lower as u32, lower as u32),
-                (c.to_ascii_uppercase() as u32, c.to_ascii_uppercase() as u32),
-            ];
-            ranges.extend(
-                folds
-                    .class_members
-                    .iter()
-                    .filter(|&&(_, letter)| letter == lower)
-                    .map(|&(code, _)| (code, code)),
-            );
-            class_hir(ranges, false)
-        };
-        let branches = literals
+        // Every literal as ASCII case classes: one byte class per letter.
+        let mut branches: Vec<Hir> = literals
             .iter()
-            .enumerate()
-            .map(|(li, literal)| {
-                let segments = folds.segments.get(li).map_or(&[][..], Vec::as_slice);
-                let mut parts = Vec::new();
-                let mut pos = 0;
-                while pos < literal.len() {
-                    if let Some(&(_, len, accepted)) =
-                        segments.iter().find(|&&(start, _, _)| start == pos)
-                    {
-                        let len = len.max(1).min(literal.len() - pos);
-                        let mut alternatives: Vec<Hir> = folds
-                            .accepted
-                            .get(accepted)
-                            .map_or(&[][..], Vec::as_slice)
-                            .iter()
-                            .map(|s| Hir::literal(s.clone().into_boxed_slice()))
-                            .collect();
-                        alternatives.push(Hir::concat(
-                            literal[pos..pos + len]
-                                .iter()
-                                .map(|&c| letter_class(c))
-                                .collect(),
-                        ));
-                        parts.push(Hir::alternation(alternatives));
-                        pos += len;
-                    } else {
-                        parts.push(letter_class(literal[pos]));
-                        pos += 1;
-                    }
-                }
-                Hir::concat(parts)
+            .map(|literal| {
+                Hir::concat(
+                    literal
+                        .iter()
+                        .map(|&c| {
+                            if c.is_ascii_alphabetic() {
+                                Hir::class(Class::Bytes(ClassBytes::new([
+                                    ClassBytesRange::new(
+                                        c.to_ascii_lowercase(),
+                                        c.to_ascii_lowercase(),
+                                    ),
+                                    ClassBytesRange::new(
+                                        c.to_ascii_uppercase(),
+                                        c.to_ascii_uppercase(),
+                                    ),
+                                ])))
+                            } else {
+                                Hir::literal([c])
+                            }
+                        })
+                        .collect(),
+                )
             })
             .collect();
+        // A folded match that reads a non-ASCII character (a class member
+        // such as the Kelvin sign for `k`, or a ligature such as `ß` for
+        // `ss`) reads at most `longest - 1` ASCII characters before it: one
+        // escape alternative per trie admits those matches.
+        let mut non_ascii: Vec<Hir> = folds
+            .class_members
+            .iter()
+            .filter_map(|&(code, _)| char::from_u32(code))
+            .map(|c| Hir::literal(c.to_string().into_bytes().into_boxed_slice()))
+            .chain(
+                folds
+                    .ligatures
+                    .iter()
+                    .map(|(bytes, _)| Hir::literal(bytes.clone().into_boxed_slice())),
+            )
+            .collect();
+        if !non_ascii.is_empty() {
+            non_ascii.sort_by_key(|a| a.to_string());
+            non_ascii.dedup_by(|a, b| a.to_string() == b.to_string());
+            let longest = literals.iter().map(Vec::len).max().unwrap_or(1).max(1);
+            let ascii_prefix = Hir::repetition(Repetition {
+                min: 0,
+                max: Some(u32::try_from(longest - 1).unwrap_or(u32::MAX)),
+                greedy: true,
+                sub: Box::new(Hir::class(Class::Bytes(ClassBytes::new([
+                    ClassBytesRange::new(0x00, 0x7F),
+                ])))),
+            });
+            branches.push(Hir::concat(vec![ascii_prefix, Hir::alternation(non_ascii)]));
+        }
         Hir::alternation(branches)
     }
 }
@@ -874,6 +991,17 @@ impl SetPrefilter {
         self.memory_breakdown().iter().sum()
     }
 
+    /// NFA states of the overlapping DFA (the meta regex holds about twice
+    /// as many: a forward and a reverse NFA).
+    pub fn nfa_states(&self) -> usize {
+        self.dfa.get_nfa().states().len()
+    }
+
+    /// Times the overlapping DFA's cache was cleared because it filled up.
+    pub fn dfa_cache_clears(&self) -> usize {
+        self.dfa_cache.clear_count()
+    }
+
     /// Heap memory in bytes of the meta regex, its cache, the overlapping
     /// DFA and its cache.
     pub fn memory_breakdown(&self) -> [usize; 4] {
@@ -909,6 +1037,10 @@ pub struct Report {
     pub build_nanos: u64,
     /// Times the overlapping DFA gave up so far.
     pub dfa_quits: u64,
+    /// NFA states of the overlapping DFA.
+    pub nfa_states: usize,
+    /// Times the overlapping DFA's cache was cleared so far.
+    pub dfa_cache_clears: usize,
 }
 
 #[cfg(test)]

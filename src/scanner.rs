@@ -911,6 +911,8 @@ impl Scanner {
                 report.memory_breakdown = prefilter.memory_breakdown();
                 report.build_nanos = prefilter.build_nanos;
                 report.dfa_quits = prefilter.dfa_quits;
+                report.nfa_states = prefilter.nfa_states();
+                report.dfa_cache_clears = prefilter.dfa_cache_clears();
             }
             None => report.own = (0..n).collect(),
         }

@@ -154,6 +154,45 @@ fn main() {
             let shown: String = pattern.chars().take(100).collect();
             println!("  [{reason}] {shown}");
         }
+        if std::env::var_os("FERRONI_DFA_PREFILTER_TOP").is_some() {
+            // NFA states of each distinct pattern's seek HIR on its own.
+            let syntax = regex_automata::util::syntax::Config::new().utf8(false);
+            let mut sizes: Vec<(usize, &str, usize)> = Vec::new();
+            let mut seen = std::collections::BTreeSet::new();
+            for (scanner, patterns) in scanners.iter().zip(&patterns) {
+                let report = scanner.dfa_prefilter_report();
+                for (i, pattern) in patterns.iter().enumerate() {
+                    if !seen.insert(pattern.as_str()) {
+                        continue;
+                    }
+                    let Some(seek) = report.seeks[i].as_deref() else {
+                        continue;
+                    };
+                    let states = regex_automata::nfa::thompson::Compiler::new()
+                        .syntax(syntax)
+                        .configure(
+                            regex_automata::nfa::thompson::Config::new()
+                                .utf8(false)
+                                .which_captures(regex_automata::nfa::thompson::WhichCaptures::None),
+                        )
+                        .build(seek)
+                        .map_or(usize::MAX, |nfa| nfa.states().len());
+                    sizes.push((states, pattern, seek.len()));
+                }
+            }
+            sizes.sort_unstable_by(|a, b| b.cmp(a));
+            println!("largest seek NFAs (distinct patterns):");
+            for (states, pattern, seek_len) in sizes.iter().take(12) {
+                let shown: String = pattern.chars().take(110).collect();
+                println!("  {states:7} states, seek {seek_len:6} chars: {shown}");
+            }
+            let total: usize = sizes
+                .iter()
+                .filter(|r| r.0 != usize::MAX)
+                .map(|r| r.0)
+                .sum();
+            println!("  all distinct patterns: {total} states");
+        }
         if std::env::var_os("FERRONI_DFA_PREFILTER_SEEKS").is_some() {
             println!("seek HIRs (distinct, first 40):");
             let mut seen = std::collections::BTreeSet::new();
