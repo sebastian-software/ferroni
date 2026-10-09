@@ -14,6 +14,7 @@
 * **api:** implement Debug for the scanner, builder and iterator types ([#301](https://github.com/sebastian-software/ferroni/issues/301)) ([2a5afad](https://github.com/sebastian-software/ferroni/commit/2a5afad83d60b16612e7445ca6f8807f90f8675c))
 * make the C-internal modules crate-private ([#310](https://github.com/sebastian-software/ferroni/issues/310)) ([bcfa53e](https://github.com/sebastian-software/ferroni/commit/bcfa53ec152b29cc70e5737c41ac997793a7ad1b))
 * **scanner:** make the scanner config, match and error types extensible ([#309](https://github.com/sebastian-software/ferroni/issues/309)) ([7dd6654](https://github.com/sebastian-software/ferroni/commit/7dd66542def546c0b547fe1e82a7ce79616b9465))
+* **scanner:** pre-filter RegSet searches with a multi-pattern DFA ([#321](https://github.com/sebastian-software/ferroni/issues/321)) ([e349fac](https://github.com/sebastian-software/ferroni/commit/e349faca188e71e3235e19df76af2d0898d73305))
 * **unicode:** move the Unicode tables to Unicode 18.0 ([#307](https://github.com/sebastian-software/ferroni/issues/307)) ([ba840e5](https://github.com/sebastian-software/ferroni/commit/ba840e52c46a5fb3277cbe86705a52a7e2285922))
 
 
