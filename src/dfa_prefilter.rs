@@ -74,6 +74,8 @@ thread_local! {
     /// Searches of a set's meta regex on this thread, for tests that bound
     /// the pre-filter's work.
     pub(crate) static EARLIEST_CALLS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Bytes the candidate scans read on this thread.
+    pub(crate) static SCAN_STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// The seek approximation of one compiled pattern. A scanner passes it to
@@ -952,8 +954,11 @@ impl SetPrefilter {
 
     /// The covered entries whose seek matches at `at`, ascending: the
     /// patterns of every match state the overlapping DFA reaches from `at`,
-    /// within `CANDIDATE_SCAN_BYTES`. Every covered entry where the DFA is
-    /// still alive at that bound, gives up or quits, which admits more.
+    /// within `CANDIDATE_SCAN_BYTES` or until every covered entry has been
+    /// recorded (nothing more can be learned then: a word run would
+    /// otherwise be read to the bound from every position). Every covered
+    /// entry where the DFA is still alive at that bound, gives up or quits,
+    /// which admits more.
     #[inline]
     pub(crate) fn candidates_at(&mut self, haystack: &[u8], at: usize) -> &[u16] {
         self.candidates.clear();
@@ -999,6 +1004,9 @@ impl SetPrefilter {
                 for k in 0..self.dfa.match_len(cache, sid) {
                     self.patset.insert(self.dfa.match_pattern(cache, sid, k));
                 }
+                if self.patset.is_full() {
+                    return Some(());
+                }
             }
             if i == end {
                 let eoi = self.dfa.next_eoi_state(cache, sid).ok()?;
@@ -1012,6 +1020,8 @@ impl SetPrefilter {
             if i == cut {
                 return None;
             }
+            #[cfg(test)]
+            SCAN_STEPS.with(|steps| steps.set(steps.get() + 1));
             sid = self.dfa.next_state(cache, sid, haystack[i]).ok()?;
             i += 1;
         }
