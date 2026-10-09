@@ -36,7 +36,7 @@ backtracking, and an idiomatic Rust API.
   keeps Oniguruma's parser, compiler and optimizer, so a pattern behaves as it
   does in C ([how compatibility is checked](https://ferroni.dev/guide/compatibility)).
 - **Easy to add.** `cargo add ferroni` is the whole setup: no C toolchain, no
-  bindgen, four common dependencies. An idiomatic API of `Regex`, `Captures`
+  bindgen, six common dependencies. An idiomatic API of `Regex`, `Captures`
   and match iterators sits on top, and a compiled `Regex` is `Send + Sync`
   ([getting started](https://ferroni.dev/guide/getting-started)).
 - **Safe with untrusted input.** Memory-safe Rust with `unsafe` confined to

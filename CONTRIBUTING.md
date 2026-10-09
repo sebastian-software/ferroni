@@ -281,6 +281,20 @@ cargo bench --locked --bench scanner_compile_bench
 
 JSON loading and pattern-list preparation are excluded from this measurement.
 Set `FERRONI_SCSS_TRACE` to reuse the same SCSS fixture on an older checkout.
+
+The scanner replays and the compile bench build their scanners with the DFA
+pre-filter of [ADR-008](https://ferroni.dev/adr/008-rust-only-optimizations)
+as every scanner does by default; `FERRONI_BENCH_PREFILTER=0` builds them
+without it, so one binary measures both (ABBA runs). What the pre-filter
+covers and costs per trace, per scanner group, and in a fixed-iteration
+replay for `/usr/bin/time -l`:
+
+```sh
+cargo build --release --example prefilter_census
+target/release/examples/prefilter_census census
+target/release/examples/prefilter_census groups benches/scss_scanner/trace.json
+/usr/bin/time -l target/release/examples/prefilter_census replay benches/cpp_scanner/trace.json 10 on
+```
 The [post-#204 comparison](benches/highlighting_results/post-204/README.md)
 retains two complete 20-format highlighting runs, compiler measurements, and
 native CPU profiles. Its performance target is the faster of Shiki's WASM and
