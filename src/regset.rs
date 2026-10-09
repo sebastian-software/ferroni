@@ -156,10 +156,15 @@ pub struct OnigRegSet {
     /// Some gated table entry has callouts.
     has_gated_callouts: bool,
     /// Rust-only (ADR-008): the DFA pre-filter of a scanner's set
-    /// (`crate::dfa_prefilter`), built by `onig_regset_new_shared` and
-    /// dropped with the first-byte table.
+    /// (`crate::dfa_prefilter`), built from `prefilter_pending` by the
+    /// first search it decides (`build_prefilter`) and dropped with the
+    /// first-byte table.
     #[cfg(feature = "dfa-prefilter")]
     prefilter: Option<Box<crate::dfa_prefilter::SetPrefilter>>,
+    /// What `onig_regset_new_shared` keeps for the pre-filter until it is
+    /// built: the entries' seeks and the automata handle the set shares.
+    #[cfg(feature = "dfa-prefilter")]
+    prefilter_pending: Option<Box<PendingPrefilter>>,
     /// Some fallback entry is not covered by the pre-filter, which then
     /// searches it with the fallback memo.
     #[cfg(feature = "dfa-prefilter")]
@@ -171,6 +176,32 @@ pub struct OnigRegSet {
     /// The patterns of a scanner's set, for the self-check's panic message.
     #[cfg(feature = "prefilter-self-check")]
     self_check_patterns: Vec<String>,
+}
+
+/// A set's DFA pre-filter before it is built: a set that is never searched
+/// costs no more than this. The seeks are shared with the pattern cache
+/// the set came from, and the automata with every set that cache built
+/// over the same pattern list (ADR-006).
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) struct PendingPrefilter {
+    seeks: Box<[SharedSeek]>,
+    automata: SharedAutomata,
+}
+
+#[cfg(feature = "dfa-prefilter")]
+impl PendingPrefilter {
+    /// Entries whose seek the automata will cover, if they build.
+    pub(crate) fn covered(&self) -> usize {
+        self.seeks
+            .iter()
+            .filter(|seek| {
+                matches!(
+                    seek.as_deref(),
+                    Some(crate::dfa_prefilter::Seek::Pattern(_))
+                )
+            })
+            .count()
+    }
 }
 
 /// A fallback entry as the position-lead search walks it on every call.
@@ -545,6 +576,7 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     #[cfg(feature = "dfa-prefilter")]
     {
         set.prefilter = None;
+        set.prefilter_pending = None;
         set.prefilter_own_fallback = false;
     }
     set.has_gated = set.entries.iter().any(|entry| entry.gated);
@@ -582,12 +614,15 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
 /// never shared, and a search only reads the regex.
 ///
 /// `seeks` holds each regex's seek approximation (ADR-008,
-/// `crate::dfa_prefilter`), from which the set builds its DFA pre-filter;
-/// a set without one for any entry, without the feature, or whose automata
-/// would be too large searches as before.
+/// `crate::dfa_prefilter`) and `automata` the handle on the automata the
+/// set builds from them on the first search the pre-filter decides, or
+/// finds built by another set over the same patterns; a set without a seek
+/// for any entry, without the feature, or whose automata would be too
+/// large searches as before.
 pub(crate) fn onig_regset_new_shared(
     regs: Vec<Arc<RegexType>>,
-    seeks: &[SharedSeek],
+    seeks: Vec<SharedSeek>,
+    automata: SharedAutomata,
 ) -> (Option<Box<OnigRegSet>>, i32) {
     debug_assert_eq!(regs.len(), seeks.len());
     let mut set = regset_alloc();
@@ -602,29 +637,56 @@ pub(crate) fn onig_regset_new_shared(
     build_first_byte_table(&mut set);
     #[cfg(feature = "dfa-prefilter")]
     {
-        let entries =
-            (set.entries.iter().zip(seeks)).map(|(entry, seek)| (seek.as_deref(), &*entry.reg));
-        set.prefilter = crate::dfa_prefilter::SetPrefilter::build(entries).map(Box::new);
-        if let Some(mut prefilter) = set.prefilter.take() {
-            for &index in prefilter.covered_entries() {
-                set.entries[index as usize].prefilter_covered = true;
-            }
-            set.prefilter_own_fallback = prefilter
-                .own()
-                .iter()
-                .any(|&index| set.entries[index as usize].fallback);
-            prefilter.set_dispatch(|index| {
-                if set.entries[index as usize].fallback {
-                    [u64::MAX; 4]
-                } else {
-                    table_start_bytes(&mut set, index as usize)
-                }
-            });
-            set.prefilter = Some(prefilter);
+        let pending = PendingPrefilter {
+            seeks: seeks.into_boxed_slice(),
+            automata,
+        };
+        if pending.covered() > 0 {
+            set.prefilter_pending = Some(Box::new(pending));
         }
     }
+    #[cfg(not(feature = "dfa-prefilter"))]
+    let _ = (seeks, automata);
 
     (Some(set), ONIG_NORMAL)
+}
+
+/// Rust-only (ADR-008): builds the set's DFA pre-filter from its pending
+/// seeks, or takes the automata another set over the same patterns built,
+/// on the first search the pre-filter decides. Whether the set has the
+/// pre-filter afterwards: a pattern list whose automata do not build
+/// (nothing to cover, callouts, too large) leaves it without.
+#[cfg(feature = "dfa-prefilter")]
+#[inline(never)]
+fn build_prefilter(set: &mut OnigRegSet) -> bool {
+    let Some(pending) = set.prefilter_pending.take() else {
+        return false;
+    };
+    let automata = pending.automata.get_or_build(|| {
+        let entries = (set.entries.iter().zip(&pending.seeks))
+            .map(|(entry, seek)| (seek.as_deref(), &*entry.reg));
+        crate::dfa_prefilter::Automata::build(entries)
+    });
+    let Some(automata) = automata else {
+        return false;
+    };
+    let mut prefilter = crate::dfa_prefilter::SetPrefilter::new(&automata);
+    for &index in prefilter.covered_entries() {
+        set.entries[index as usize].prefilter_covered = true;
+    }
+    set.prefilter_own_fallback = prefilter
+        .own()
+        .iter()
+        .any(|&index| set.entries[index as usize].fallback);
+    prefilter.set_dispatch(|index| {
+        if set.entries[index as usize].fallback {
+            [u64::MAX; 4]
+        } else {
+            table_start_bytes(set, index as usize)
+        }
+    });
+    set.prefilter = Some(Box::new(prefilter));
+    true
 }
 
 /// A scanner pattern's seek approximation as scanners share it: the pattern
@@ -635,6 +697,15 @@ pub(crate) type SharedSeek = Option<Arc<crate::dfa_prefilter::Seek>>;
 /// See the definition with the `dfa-prefilter` feature.
 #[cfg(not(feature = "dfa-prefilter"))]
 pub(crate) type SharedSeek = ();
+
+/// The handle on a set's pre-filter automata, which the pattern cache keeps
+/// per distinct pattern list (ADR-006) so that every set it builds over the
+/// same list shares them. Nothing without the `dfa-prefilter` feature.
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) type SharedAutomata = crate::dfa_prefilter::AutomataCell;
+/// See the definition with the `dfa-prefilter` feature.
+#[cfg(not(feature = "dfa-prefilter"))]
+pub(crate) type SharedAutomata = ();
 
 /// An empty set, as `onig_regset_new` allocates it before adding regexes.
 fn regset_alloc() -> Box<OnigRegSet> {
@@ -671,6 +742,8 @@ fn regset_alloc() -> Box<OnigRegSet> {
         has_gated_callouts: false,
         #[cfg(feature = "dfa-prefilter")]
         prefilter: None,
+        #[cfg(feature = "dfa-prefilter")]
+        prefilter_pending: None,
         #[cfg(feature = "dfa-prefilter")]
         prefilter_own_fallback: false,
         #[cfg(feature = "prefilter-self-check")]
@@ -730,6 +803,7 @@ pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) 
     #[cfg(feature = "dfa-prefilter")]
     {
         set.prefilter = None;
+        set.prefilter_pending = None;
         set.prefilter_own_fallback = false;
     }
     set.fallback_memo_key = None;
@@ -942,6 +1016,13 @@ pub(crate) fn onig_regset_prefilter(
     set: &OnigRegSet,
 ) -> Option<&crate::dfa_prefilter::SetPrefilter> {
     set.prefilter.as_deref()
+}
+
+/// Rust-only (ADR-008): the set's DFA pre-filter before its first search
+/// builds it, if it will have one.
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) fn onig_regset_prefilter_pending(set: &OnigRegSet) -> Option<&PendingPrefilter> {
+    set.prefilter_pending.as_deref()
 }
 
 #[derive(Clone, Copy)]
@@ -2181,11 +2262,12 @@ fn regset_entry_decision(
 /// and reads the subject as UTF-8 (scanner searches), from a character
 /// boundary: the seeks read whole characters, and a search that starts
 /// inside one (`find_next_match` takes any byte offset) attempts that
-/// position as C does.
+/// position as C does. The first search it decides builds the pre-filter
+/// (`build_prefilter`).
 #[cfg(feature = "dfa-prefilter")]
 #[inline]
 fn prefilter_decides(
-    set: &OnigRegSet,
+    set: &mut OnigRegSet,
     limits: FallbackMemoLimits,
     option: OnigOptionType,
     str_data: &[u8],
@@ -2206,18 +2288,26 @@ fn starts_a_character(str_data: &[u8], start: usize) -> bool {
     str_data.get(start).is_none_or(|&byte| byte & 0xC0 != 0x80)
 }
 
-/// `prefilter_decides` apart from the subject: the set has the automata and
-/// the limits and options admit them.
+/// `prefilter_decides` apart from the subject: the set has the automata, or
+/// builds them now, and the limits and options admit them. A set whose
+/// pre-filter is pending builds it only once a search admits it
+/// (`build_prefilter`), so a set never searched under the defaults never
+/// pays for it.
 #[cfg(feature = "dfa-prefilter")]
 #[inline]
-fn prefilter_admits(set: &OnigRegSet, limits: FallbackMemoLimits, option: OnigOptionType) -> bool {
-    set.prefilter.is_some()
+fn prefilter_admits(
+    set: &mut OnigRegSet,
+    limits: FallbackMemoLimits,
+    option: OnigOptionType,
+) -> bool {
+    (set.prefilter.is_some() || set.prefilter_pending.is_some())
         && limits.retry_limit_in_match == DEFAULT_RETRY_LIMIT_IN_MATCH
         && limits.retry_limit_in_search == 0
         && limits.match_stack_limit == 0
         && limits.time_limit == 0
         && limits.subexp_call_limit_in_search == 0
         && !opton_find_longest(option)
+        && (set.prefilter.is_some() || build_prefilter(set))
 }
 
 /// Rust-only (ADR-008): whether the DFA pre-filter would decide a search of
@@ -3181,10 +3271,15 @@ fn regset_search_body_position_lead(
     fallback_memo_id: Option<FallbackMemoIdentity>,
 ) -> (i32, i32) {
     let limits = refresh_scratch_limits(set);
+    // Rust-only (ADR-008): whether the DFA pre-filter decides this search,
+    // which builds it on the first one it decides; its own search runs
+    // below, after the gate bookkeeping that serves both.
+    #[cfg(feature = "dfa-prefilter")]
+    let prefilter_decides = prefilter_decides(set, limits, option, str_data, start);
     // The gates keep each gated entry's optimizer range per subject; the
     // DFA pre-filter keeps every fallback entry's there as well.
     #[cfg(feature = "dfa-prefilter")]
-    let keeps_gates = set.has_gated || set.prefilter.is_some();
+    let keeps_gates = set.has_gated || set.prefilter.is_some() || set.prefilter_pending.is_some();
     #[cfg(not(feature = "dfa-prefilter"))]
     let keeps_gates = set.has_gated;
     if keeps_gates {
@@ -3223,7 +3318,7 @@ fn regset_search_body_position_lead(
     // which positions; the rest of this function is the search it stands
     // in for, and takes over a search the pre-filter gives up.
     #[cfg(feature = "dfa-prefilter")]
-    if prefilter_decides(set, limits, option, str_data, start) {
+    if prefilter_decides {
         // The memo serves the fallback entries the pre-filter does not
         // cover; a set without those keeps it untouched.
         if set.prefilter_own_fallback {
