@@ -598,7 +598,7 @@ pub(crate) fn onig_regset_new_shared(
         let entries =
             (set.entries.iter().zip(seeks)).map(|(entry, seek)| (seek.as_deref(), &*entry.reg));
         set.prefilter = crate::dfa_prefilter::SetPrefilter::build(entries).map(Box::new);
-        if let Some(prefilter) = &set.prefilter {
+        if let Some(mut prefilter) = set.prefilter.take() {
             for &index in prefilter.covered_entries() {
                 set.entries[index as usize].prefilter_covered = true;
             }
@@ -606,6 +606,14 @@ pub(crate) fn onig_regset_new_shared(
                 .own()
                 .iter()
                 .any(|&index| set.entries[index as usize].fallback);
+            prefilter.set_dispatch(|index| {
+                if set.entries[index as usize].fallback {
+                    [u64::MAX; 4]
+                } else {
+                    table_start_bytes(&mut set, index as usize)
+                }
+            });
+            set.prefilter = Some(prefilter);
         }
     }
 
@@ -2284,8 +2292,12 @@ fn regset_search_body_prefilter(
             && decision
                 .map(decision_position_and_index)
                 .is_some_and(|(_, index)| index < i32::from(prefilter.covered_entries()[0]));
-        let seek_matches_here =
-            !own_decided_ahead && !prefilter.candidates_at(haystack, s).is_empty();
+        let seek_matches_here = !own_decided_ahead
+            && prefilter
+                .candidates_at(haystack, s, |index| {
+                    covered_entry_admits_at(set, index as usize, str_data, end, start, range, s)
+                })
+                .is_some();
         if seek_matches_here {
             decided_here |= attempt_candidates_at(
                 set,
@@ -2581,8 +2593,6 @@ fn attempt_entry_at(
     option: OnigOptionType,
     msa: &mut MatchArg,
 ) -> Option<RegSetDecision> {
-    let subject_utf8 = set.subject_utf8;
-    let anychar_inf = set.anychar_inf;
     if !set.entries[index].fallback && position < end {
         let byte = str_data[position];
         let start_bytes = table_start_bytes(set, index);
@@ -2590,30 +2600,10 @@ fn attempt_entry_at(
             return None;
         }
     }
+    if entry_skips_position(set, index, str_data, end, position, search_start) {
+        return None;
+    }
     let entry = &mut set.entries[index];
-    let anchor = entry.reg.anchor;
-    if anychar_inf
-        && (anchor & ANCR_ANYCHAR_INF) != 0
-        && position > search_start
-        && str_data[position - 1] != b'\n'
-    {
-        return None;
-    }
-    if (anchor & ANCR_BEGIN_POSITION) != 0 && position != search_start {
-        return None;
-    }
-    if end - position < entry.reg.threshold_len.max(0) as usize {
-        return None;
-    }
-    if position < end
-        && entry
-            .start_filter
-            .as_deref()
-            .is_some_and(|filter| filter[str_data[position] as usize] == 0)
-        && (subject_utf8 || start_map_may_skip(&entry.reg, str_data, position))
-    {
-        return None;
-    }
     let fill = EntryRegion::of(&entry.reg, option, msa);
     msa.retry_limit_in_search_counter = 0;
     let skips = may_skip_first_op_failures(msa, option);
@@ -2650,6 +2640,72 @@ fn attempt_entry_at(
         clear_regset_entry_region(set, index as i32);
         None
     }
+}
+
+/// Whether entry `index` skips `position` in a position-lead search from
+/// `search_start` before any attempt: an any-char-star entry attempts only
+/// the first position and those after a newline, a `\G` entry only the
+/// first, an entry needs its threshold length, and a start filter excludes
+/// the byte.
+#[cfg(feature = "dfa-prefilter")]
+#[inline(always)]
+fn entry_skips_position(
+    set: &OnigRegSet,
+    index: usize,
+    str_data: &[u8],
+    end: usize,
+    position: usize,
+    search_start: usize,
+) -> bool {
+    let entry = &set.entries[index];
+    let anchor = entry.reg.anchor;
+    if set.anychar_inf
+        && (anchor & ANCR_ANYCHAR_INF) != 0
+        && position > search_start
+        && str_data[position - 1] != b'\n'
+    {
+        return true;
+    }
+    if (anchor & ANCR_BEGIN_POSITION) != 0 && position != search_start {
+        return true;
+    }
+    if end - position < entry.reg.threshold_len.max(0) as usize {
+        return true;
+    }
+    position < end
+        && entry
+            .start_filter
+            .as_deref()
+            .is_some_and(|filter| filter[str_data[position] as usize] == 0)
+        && (set.subject_utf8 || start_map_may_skip(&entry.reg, str_data, position))
+}
+
+/// Whether a position-lead search from `start` attempts covered entry
+/// `index` at `s`, a table entry the first-byte table dispatches on the
+/// byte there: `attempt_entry_at`'s admission, decided ahead of the
+/// attempt. No entry that skips the position (`entry_skips_position`), and
+/// a fallback or gated entry only where C's optimizer admits `s` (the
+/// per-search gate cache, which the positions visit in increasing order
+/// as the attempts do).
+#[cfg(feature = "dfa-prefilter")]
+#[allow(clippy::too_many_arguments)]
+fn covered_entry_admits_at(
+    set: &mut OnigRegSet,
+    index: usize,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    s: usize,
+) -> bool {
+    if entry_skips_position(set, index, str_data, end, s, start) {
+        return false;
+    }
+    let entry = &set.entries[index];
+    if !(entry.fallback || entry.gated) {
+        return true;
+    }
+    table_gate_admits(set, index, str_data, end, start, range, s)
 }
 
 /// The bytes that dispatch table entry `index`.

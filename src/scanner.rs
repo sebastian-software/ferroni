@@ -3250,12 +3250,14 @@ mod tests {
         let text = "a".repeat(2_000);
         let calls = text.len() as u64;
         // (patterns, meta regex searches the pre-filter may make over the loop)
-        let variants: [(&[&str], u64); 5] = [
+        let variants: [(&[&str], u64); 7] = [
             (&["a", r"(?<=z)"], 0),
             (&[r"(?<=a)", "b"], 1),
             (&[r"(?<=z)", "b"], calls),
             (&[r"\G ?", "a"], 0),
             (&[r"(?<=\))(?!\w)", "a"], 0),
+            (&[r"(?<=\.)\w+", r"\w+:", r"\d+", "a"], 0),
+            (&[r"(?<=/)[^/]+", r"[^/]+/", "a"], 0),
         ];
         for (patterns, max_earliest) in variants {
             let run = |prefilter: bool| {
@@ -3294,44 +3296,54 @@ mod tests {
     }
 
     /// The candidate scan stops as soon as every covered entry is a
-    /// candidate: tokenizing a word run in order with `[(?<=\.)\w+, a]`
-    /// reads one byte per call, not `CANDIDATE_SCAN_BYTES` (the lead's
-    /// finding after the third review: 17× the time without the
-    /// pre-filter, linear but from every position to the bound).
+    /// candidate, or every one the search admits at the position:
+    /// tokenizing a word run in order with `[(?<=\.)\w+, a]` reads one byte
+    /// per call, not `CANDIDATE_SCAN_BYTES` (the lead's finding after the
+    /// third review: 17× the time without the pre-filter, linear but from
+    /// every position to the bound), and so does one where a seek the
+    /// optimizer rules out (`\w+:` without a `:`) stays alive through the
+    /// run (170–300×).
     #[cfg(feature = "dfa-prefilter")]
     #[test]
-    fn candidate_scans_stop_once_every_covered_entry_is_a_candidate() {
+    fn candidate_scans_stop_once_every_admissible_entry_is_a_candidate() {
         let _limits = crate::regexec::shared_limits();
         let text = "a".repeat(2_000);
         let calls = text.len() as u64;
-        let patterns: &[&str] = &[r"(?<=\.)\w+", "a"];
-        let run = |prefilter: bool| {
-            let config = ScannerConfig::default().prefilter(prefilter);
-            let mut scanner = Scanner::with_config(patterns, &config).unwrap();
-            let steps_before = crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get());
-            let attempts_before = crate::regexec::VM_ATTEMPTS.with(|c| c.get());
-            let results: Vec<_> = (0..text.len())
-                .map(|at| {
-                    scanner
-                        .find_next_match_with_id(&text, 7, at, ScannerFindOptions::NONE)
-                        .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
-                })
-                .collect();
-            let steps = crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get()) - steps_before;
-            let attempts = crate::regexec::VM_ATTEMPTS.with(|c| c.get()) - attempts_before;
-            (steps, attempts, results)
-        };
-        let (_, without, plain) = run(false);
-        let (steps, with, filtered) = run(true);
-        assert_eq!(filtered, plain);
-        assert!(
-            with <= 2 * without + calls,
-            "{with} VM attempts with the pre-filter, {without} without"
-        );
-        assert!(
-            steps <= 2 * calls,
-            "{steps} bytes read by the candidate scans over {calls} calls"
-        );
+        let sets: [&[&str]; 3] = [
+            &[r"(?<=\.)\w+", "a"],
+            &[r"(?<=\.)\w+", r"\w+:", r"\d+", "a"],
+            &[r"(?<=/)[^/]+", r"[^/]+/", "a"],
+        ];
+        for patterns in sets {
+            let run = |prefilter: bool| {
+                let config = ScannerConfig::default().prefilter(prefilter);
+                let mut scanner = Scanner::with_config(patterns, &config).unwrap();
+                let steps_before = crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get());
+                let attempts_before = crate::regexec::VM_ATTEMPTS.with(|c| c.get());
+                let results: Vec<_> = (0..text.len())
+                    .map(|at| {
+                        scanner
+                            .find_next_match_with_id(&text, 7, at, ScannerFindOptions::NONE)
+                            .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
+                    })
+                    .collect();
+                let steps = crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get()) - steps_before;
+                let attempts = crate::regexec::VM_ATTEMPTS.with(|c| c.get()) - attempts_before;
+                (steps, attempts, results)
+            };
+            let (_, without, plain) = run(false);
+            let (steps, with, filtered) = run(true);
+            assert_eq!(filtered, plain, "{patterns:?}");
+            assert!(
+                with <= 2 * without + calls,
+                "{patterns:?}: {with} VM attempts with the pre-filter, {without} without"
+            );
+            // One byte settles `a`, one more asks about the long seeks.
+            assert!(
+                steps <= 3 * calls,
+                "{patterns:?}: {steps} bytes read by the candidate scans over {calls} calls"
+            );
+        }
     }
 
     /// Scanners built from one pattern cache answer every call exactly as

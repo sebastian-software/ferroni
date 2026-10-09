@@ -61,6 +61,23 @@ const MAX_COUNTED_REPEAT: u32 = 64;
 /// stays alive to the end of a word run, and the scan would otherwise read
 /// it again from every position of the run.
 pub(crate) const CANDIDATE_SCAN_BYTES: usize = 256;
+
+/// A seek whose matches are at most this long settles within that many
+/// bytes of a candidate walk: it has matched or its states are dead. The
+/// longer and the unbounded seeks (`\w+:`) are the ones that can keep a
+/// walk alive past that, and a walk asks which of their entries the
+/// search admits at the position: an entry the search would not attempt
+/// never decides there, so a walk that has recorded every admissible one
+/// stops. Asking costs about as much as a long walk, so a walk asks right
+/// after the bounded seeks settled only while the set's walks keep
+/// running to the bound or ending by such an ask (`ask_early`: every
+/// position of a word run a seek like `\w+:` sits in while its entry is
+/// ruled out), and otherwise only after `LONG_WALK_BYTES` (see ADR-008).
+pub(crate) const LONG_SEEK_BYTES: usize = 16;
+
+/// Bytes after which a walk asks about the long seeks in any case.
+pub(crate) const LONG_WALK_BYTES: usize = 64;
+
 /// Sets whose NFA has more states than this get no pre-filter: a bound on
 /// what one set costs to build and keep, not a break-even. The largest set
 /// of the captured replays (PHP, 37,437 states, 4.2 MiB of automata, built
@@ -828,8 +845,35 @@ pub(crate) struct SetPrefilter {
     entries: Vec<u16>,
     /// Entries searched on their own, in index order.
     own: Vec<u16>,
+    /// The pattern IDs of the seeks that can keep a walk alive past
+    /// `settle`: unbounded or longer than `LONG_SEEK_BYTES`.
+    long: Vec<u16>,
+    /// Bytes after which every other seek has settled.
+    settle: usize,
+    /// The last walk ran to the bound or ended by asking: the next one
+    /// asks as soon as the bounded seeks have settled.
+    ask_early: bool,
+    /// Per pattern ID, the bytes the set's first-byte table dispatches its
+    /// entry on (every byte for a fallback entry).
+    dispatch: Vec<[u64; 4]>,
+    /// Per pattern ID, the `stamp` of the last walk that found its entry
+    /// admissible at the position.
+    admissible: Vec<u32>,
+    stamp: u32,
     /// Scratch for `candidates_at`.
     candidates: Vec<u16>,
+}
+
+/// How a candidate walk ended.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScanEnd {
+    /// The DFA died or the haystack ended: every seek match is recorded.
+    Finished,
+    /// Stopped early: every entry that can decide at the position is
+    /// recorded.
+    Settled,
+    /// The bound, or the DFA gave up or quit: the DFA is still alive.
+    Bound,
 }
 
 impl std::fmt::Debug for SetPrefilter {
@@ -910,6 +954,17 @@ impl SetPrefilter {
         let meta_cache = meta.create_cache();
         let dfa_cache = dfa.create_cache();
         let patset = PatternSet::new(entries.len());
+        let mut long = Vec::new();
+        let mut settle = 0;
+        for (pid, hir) in hirs.iter().enumerate() {
+            match hir.properties().maximum_len() {
+                // A match state is entered by the byte after the match.
+                Some(len) if len < LONG_SEEK_BYTES => settle = settle.max(len + 1),
+                _ => long.push(pid as u16),
+            }
+        }
+        let admissible = vec![0; entries.len()];
+        let dispatch = vec![[u64::MAX; 4]; entries.len()];
         Some(SetPrefilter {
             meta,
             meta_cache,
@@ -918,8 +973,22 @@ impl SetPrefilter {
             patset,
             entries,
             own,
+            long,
+            settle,
+            ask_early: false,
+            dispatch,
+            admissible,
+            stamp: 0,
             candidates: Vec::new(),
         })
+    }
+
+    /// Records, per covered entry, the bytes the set's first-byte table
+    /// dispatches it on, for the admission a walk asks about.
+    pub(crate) fn set_dispatch(&mut self, mut bytes: impl FnMut(u16) -> [u64; 4]) {
+        for (pid, &index) in self.entries.iter().enumerate() {
+            self.dispatch[pid] = bytes(index);
+        }
     }
 
     /// Entries the automata do not cover, in index order.
@@ -952,28 +1021,56 @@ impl SetPrefilter {
             .map(|m| m.start())
     }
 
-    /// The covered entries whose seek matches at `at`, ascending: the
-    /// patterns of every match state the overlapping DFA reaches from `at`,
-    /// within `CANDIDATE_SCAN_BYTES` or until every covered entry has been
-    /// recorded (nothing more can be learned then: a word run would
-    /// otherwise be read to the bound from every position). Every covered
-    /// entry where the DFA is still alive at that bound, gives up or quits,
-    /// which admits more.
+    /// The covered entries whose seek matches at `at`, ascending, or `None`
+    /// where none does: the patterns of every match state the overlapping
+    /// DFA reaches from `at`, within `CANDIDATE_SCAN_BYTES`. The walk stops
+    /// as soon as every covered entry has been recorded. Once the bounded
+    /// seeks have settled (`settle`, right away while `ask_early`, after
+    /// `LONG_WALK_BYTES` otherwise), it asks which entries of the long
+    /// seeks the search attempts at `at` (`admits`, for those not recorded
+    /// and dispatched on the byte at `at`), and stops as soon as every one
+    /// of those has been recorded: the others never decide there, so
+    /// nothing more can be learned. At the bound, or where the DFA gives
+    /// up or quits, the recorded entries and the admissible long ones are
+    /// the candidates, every covered one where nothing was asked.
     #[inline]
-    pub(crate) fn candidates_at(&mut self, haystack: &[u8], at: usize) -> &[u16] {
+    pub(crate) fn candidates_at(
+        &mut self,
+        haystack: &[u8],
+        at: usize,
+        admits: impl FnMut(u16) -> bool,
+    ) -> Option<&[u16]> {
         self.candidates.clear();
         self.patset.clear();
-        if self.scan_candidates(haystack, at).is_none() {
-            self.candidates.extend_from_slice(&self.entries);
-            return &self.candidates;
+        let (end, asked) = self.scan_candidates(haystack, at, admits);
+        self.ask_early = end == ScanEnd::Bound || (asked && end == ScanEnd::Settled);
+        if end == ScanEnd::Finished && self.patset.is_empty() {
+            return None;
         }
         let entries = &self.entries;
-        self.candidates.extend(
-            self.patset
-                .iter()
-                .map(|id: PatternID| entries[id.as_usize()]),
-        );
-        &self.candidates
+        if end == ScanEnd::Bound {
+            let stamps = &self.admissible;
+            let stamp = self.stamp;
+            let patset = &self.patset;
+            self.candidates.extend(
+                entries
+                    .iter()
+                    .enumerate()
+                    .filter(|&(pid, _)| {
+                        !asked
+                            || stamps[pid] == stamp
+                            || patset.contains(PatternID::new_unchecked(pid))
+                    })
+                    .map(|(_, &index)| index),
+            );
+        } else {
+            self.candidates.extend(
+                self.patset
+                    .iter()
+                    .map(|id: PatternID| entries[id.as_usize()]),
+            );
+        }
+        Some(&self.candidates)
     }
 
     /// The candidates the last `candidates_at` found.
@@ -982,48 +1079,149 @@ impl SetPrefilter {
         &self.candidates
     }
 
-    /// The anchored scan of `candidates_at`, filling `patset`; `None` where
-    /// the DFA could not decide within the bound.
-    fn scan_candidates(&mut self, haystack: &[u8], at: usize) -> Option<()> {
+    /// The anchored walk of `candidates_at`, filling `patset`: how it ended,
+    /// and whether it asked `admits` (then `admissible[pid] == stamp` marks
+    /// the admissible long seeks).
+    fn scan_candidates(
+        &mut self,
+        haystack: &[u8],
+        at: usize,
+        mut admits: impl FnMut(u16) -> bool,
+    ) -> (ScanEnd, bool) {
+        let Self {
+            dfa,
+            dfa_cache: cache,
+            patset,
+            entries,
+            long,
+            settle,
+            ask_early,
+            dispatch,
+            admissible: stamps,
+            stamp,
+            ..
+        } = self;
         let end = haystack.len();
         let input = Input::new(haystack).span(at..end).anchored(Anchored::Yes);
-        let cache = &mut self.dfa_cache;
-        let mut sid = self.dfa.start_state_forward(cache, &input).ok()?;
+        let Ok(mut sid) = dfa.start_state_forward(cache, &input) else {
+            return (ScanEnd::Bound, false);
+        };
         let cut = end.min(at.saturating_add(CANDIDATE_SCAN_BYTES));
+        // The position at which the walk asks about the long seeks.
+        let ask_at = if *ask_early {
+            *settle
+        } else {
+            (*settle).max(LONG_WALK_BYTES)
+        };
+        let ask_i = at.saturating_add(ask_at);
+        macro_rules! record {
+            ($state:expr) => {
+                for k in 0..dfa.match_len(cache, $state) {
+                    patset.insert(dfa.match_pattern(cache, $state, k));
+                }
+            };
+        }
+        macro_rules! at_end {
+            ($asked:expr) => {
+                if let Ok(eoi) = dfa.next_eoi_state(cache, sid) {
+                    if eoi.is_match() {
+                        record!(eoi);
+                    }
+                    return (ScanEnd::Finished, $asked);
+                }
+                return (ScanEnd::Bound, $asked);
+            };
+        }
         let mut i = at;
+        // Up to `ask_i`, the plain walk.
         loop {
             if sid.is_dead() {
-                return Some(());
+                return (ScanEnd::Finished, false);
             }
             if sid.is_quit() {
-                return None;
+                return (ScanEnd::Bound, false);
             }
             // A match state stands for the matches that ended before the
             // byte it was reached by (or at the end of the haystack).
             if sid.is_match() {
-                for k in 0..self.dfa.match_len(cache, sid) {
-                    self.patset.insert(self.dfa.match_pattern(cache, sid, k));
-                }
-                if self.patset.is_full() {
-                    return Some(());
+                record!(sid);
+                if patset.is_full() {
+                    return (ScanEnd::Settled, false);
                 }
             }
             if i == end {
-                let eoi = self.dfa.next_eoi_state(cache, sid).ok()?;
-                if eoi.is_match() {
-                    for k in 0..self.dfa.match_len(cache, eoi) {
-                        self.patset.insert(self.dfa.match_pattern(cache, eoi, k));
-                    }
-                }
-                return Some(());
+                at_end!(false);
             }
             if i == cut {
-                return None;
+                return (ScanEnd::Bound, false);
+            }
+            if i >= ask_i {
+                break;
             }
             #[cfg(test)]
             SCAN_STEPS.with(|steps| steps.set(steps.get() + 1));
-            sid = self.dfa.next_state(cache, sid, haystack[i]).ok()?;
+            sid = match dfa.next_state(cache, sid, haystack[i]) {
+                Ok(sid) => sid,
+                Err(_) => return (ScanEnd::Bound, false),
+            };
             i += 1;
+        }
+        // The bounded seeks have settled: only an admissible long seek not
+        // yet recorded can add a candidate.
+        *stamp = stamp.wrapping_add(1);
+        if *stamp == 0 {
+            stamps.fill(0);
+            *stamp = 1;
+        }
+        let byte = haystack[at];
+        let mut needed = 0usize;
+        for &pid in long.iter() {
+            let bits = dispatch[pid as usize];
+            if patset.contains(PatternID::new_unchecked(pid as usize))
+                || (bits[byte as usize / 64] >> (byte % 64)) & 1 == 0
+            {
+                continue;
+            }
+            if admits(entries[pid as usize]) {
+                stamps[pid as usize] = *stamp;
+                needed += 1;
+            }
+        }
+        if needed == 0 {
+            return (ScanEnd::Settled, true);
+        }
+        // On, until every admissible long seek has been recorded.
+        loop {
+            #[cfg(test)]
+            SCAN_STEPS.with(|steps| steps.set(steps.get() + 1));
+            sid = match dfa.next_state(cache, sid, haystack[i]) {
+                Ok(sid) => sid,
+                Err(_) => return (ScanEnd::Bound, true),
+            };
+            i += 1;
+            if sid.is_dead() {
+                return (ScanEnd::Finished, true);
+            }
+            if sid.is_quit() {
+                return (ScanEnd::Bound, true);
+            }
+            if sid.is_match() {
+                for k in 0..dfa.match_len(cache, sid) {
+                    let pid = dfa.match_pattern(cache, sid, k);
+                    if patset.insert(pid) && stamps[pid.as_usize()] == *stamp {
+                        needed -= 1;
+                    }
+                }
+                if needed == 0 || patset.is_full() {
+                    return (ScanEnd::Settled, true);
+                }
+            }
+            if i == end {
+                at_end!(true);
+            }
+            if i == cut {
+                return (ScanEnd::Bound, true);
+            }
         }
     }
 
