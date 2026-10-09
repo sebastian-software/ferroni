@@ -2267,11 +2267,20 @@ fn self_check_prefilter_decision(
     fallback_memo_id: Option<FallbackMemoIdentity>,
 ) {
     /// What the scanner reads of a decision: the index and position, the
-    /// match length, and the winner's registers.
-    fn outcome(set: &OnigRegSet, result: (i32, i32)) -> (i32, i32, i32, Vec<(i32, i32)>) {
+    /// match length, and the winner's registers where the scanner reads
+    /// them. A winner without capture groups or `\K` is rebuilt from the
+    /// position and the length, and the position-lead search leaves its
+    /// region unwritten (`region_is_redundant`, `skip_region_for_nomem`)
+    /// where the pre-filter's attempt fills it.
+    fn outcome(
+        set: &OnigRegSet,
+        result: (i32, i32),
+        skip_region_for_nomem: bool,
+    ) -> (i32, i32, i32, Vec<(i32, i32)>) {
         let registers = usize::try_from(result.0)
             .ok()
             .and_then(|index| set.entries.get(index))
+            .filter(|entry| !(skip_region_for_nomem && region_is_redundant(&entry.reg)))
             .and_then(|entry| entry.region.as_ref())
             .map_or_else(Vec::new, |region| {
                 let num_regs = usize::try_from(region.num_regs).unwrap_or(0);
@@ -2283,7 +2292,7 @@ fn self_check_prefilter_decision(
             });
         (result.0, result.1, set.last_match_len, registers)
     }
-    let filtered_outcome = outcome(set, filtered);
+    let filtered_outcome = outcome(set, filtered, skip_region_for_nomem);
     let filtered_region = usize::try_from(filtered.0)
         .ok()
         .and_then(|index| set.entries.get(index))
@@ -2300,7 +2309,7 @@ fn self_check_prefilter_decision(
         fallback_memo_id,
     );
     set.prefilter_bypass = false;
-    let unfiltered_outcome = outcome(set, unfiltered);
+    let unfiltered_outcome = outcome(set, unfiltered, skip_region_for_nomem);
     set.last_match_len = filtered_outcome.2;
     if let Some(region) = filtered_region {
         set.entries[filtered.0 as usize].region = Some(region);

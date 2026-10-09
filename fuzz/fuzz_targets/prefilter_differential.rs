@@ -6,11 +6,13 @@ use ferroni::oniguruma::{
     ONIG_OPTION_NOT_BEGIN_STRING, ONIG_OPTION_NOT_END_STRING, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER,
 };
 use ferroni::regcomp::onig_new;
+use ferroni::regexec::onig_set_time_limit;
 use ferroni::regset::{OnigRegSetLead, onig_regset_new, onig_regset_search};
 use ferroni::regsyntax::OnigSyntaxOniguruma;
 use ferroni::scanner::{OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch};
 use libfuzzer_sys::arbitrary::Unstructured;
 use libfuzzer_sys::fuzz_target;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 const MAX_INPUT_BYTES: usize = 4 * 1024;
@@ -23,14 +25,22 @@ const MAX_DEPTH: u32 = 3;
 /// Comparing stops after this long, so that a case of many offsets or
 /// slow searches does not turn into a libFuzzer timeout.
 const TIME_BUDGET: Duration = Duration::from_secs(1);
-/// A search without the pre-filter that takes longer than this ends its
-/// case before the scanner with the pre-filter is asked: a nested
-/// quantifier over a run of its own character spends the default retry
-/// limit on one attempt (ADR-008 keeps the pre-filter off under any other
-/// limit), seconds in an instrumented build, and the search with the
-/// pre-filter would run that attempt again in its self-check, as would the
-/// oracle of `retry_limit_reached`.
-const SLOW_SEARCH: Duration = Duration::from_millis(200);
+/// The searches without the pre-filter run under this time limit
+/// (milliseconds, process-global) in the first phase, and one that reaches
+/// it ends its case before the scanner with the pre-filter is asked: a
+/// nested quantifier over a run of its own character spends the default
+/// retry limit on one attempt, seconds in an instrumented build, and the
+/// search with the pre-filter would run that attempt again in its
+/// self-check, as would the oracle of `retry_limit_reached`. The limit is
+/// reset before every search with the pre-filter, which ADR-008 keeps off
+/// under any limit of the caller's own. The later phases run without it,
+/// since a limit change invalidates the cache route's entries, and keep
+/// the timing of `SLOW_SEARCH` instead: a case that reaches them had no
+/// slow search from any offset under any option.
+const PLAIN_TIME_LIMIT_MS: u64 = 200;
+/// A search without the pre-filter that takes longer than this, in the
+/// phases without the time limit, ends its case.
+const SLOW_SEARCH: Duration = Duration::from_millis(PLAIN_TIME_LIMIT_MS);
 /// Calls with the same start and a stable id, so that the cache route
 /// probes its per-regex path (`ROUTE_PROBE_EVERY`).
 const REPEATED_CALLS: usize = 3;
@@ -66,8 +76,14 @@ fuzz_target!(|data: &[u8]| {
         raw(rest)
     };
     let patterns: Vec<&str> = patterns.iter().map(String::as_str).collect();
+    // `FERRONI_FUZZ_SHOW` prints the case a replayed artifact decodes to.
+    if *SHOW.get_or_init(|| std::env::var_os("FERRONI_FUZZ_SHOW").is_some()) {
+        eprintln!("patterns: {patterns:?}\ntext: {text:?}");
+    }
     compare(&patterns, &text);
 });
+
+static SHOW: OnceLock<bool> = OnceLock::new();
 
 /// Raw mode: the patterns up to the last NUL, separated by NULs, then the
 /// text.
@@ -563,9 +579,11 @@ fn compare(patterns: &[&str], text: &str) {
     for bits in 0..8 {
         let options = ScannerFindOptions::from_bits(bits);
         for start in 0..=text.len() {
+            onig_set_time_limit(PLAIN_TIME_LIMIT_MS);
             let before = Instant::now();
             let want = bounds(plain.find_next_match(text, start, options));
-            if before.elapsed() > SLOW_SEARCH {
+            onig_set_time_limit(0);
+            if before.elapsed() >= SLOW_SEARCH {
                 return;
             }
             let got = bounds(filtered.find_next_match(text, start, options));

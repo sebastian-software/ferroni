@@ -24,13 +24,6 @@ jobs:
       fail-fast: false
       matrix:
         target: [pattern-compile, pattern-match, scanner-api, prefilter-differential]
-        include:
-          # A scanner search that reaches the default retry limit (which
-          # the pre-filter needs, ADR-008) takes about ten seconds in the
-          # instrumented build; the target ends a case after one such search
-          # (`SLOW_SEARCH`), so one input costs at most that.
-          - target: prefilter-differential
-            timeout: 60
     # cargo-fuzz needs nightly; rust-toolchain.toml pins the local default to
     # stable, so RUSTUP_TOOLCHAIN keeps this job on the toolchain it asked for.
     env:
@@ -63,7 +56,7 @@ jobs:
           -dict=fuzz/ferroni.dict
           -max_total_time="$MAX_TOTAL_TIME"
           -max_len=16384
-          -timeout=${{ matrix.timeout || 10 }}
+          -timeout=10
           -rss_limit_mb=2048
       - name: Upload crash artifacts
         if: failure()

@@ -69,8 +69,11 @@ difference ADR-008 accepts, the search without the pre-filter reaching the
 default retry limit in an attempt the pre-filter leaves out (`(a+)+b` before
 `c` on a run of `a`), the target tells apart through the C API's set, which
 runs the same search and keeps the error code. Such a search takes seconds in
-the instrumented build, so the target ends a case after one of them, and the
-workflow gives this target a longer per-input timeout than the others.
+the instrumented build, so the searches without the pre-filter run under a
+short time limit in the first phase (reset before every search with the
+pre-filter, which needs the default limits), and one that reaches it ends its
+case. `FERRONI_FUZZ_SHOW` prints the patterns and the text a replayed artifact
+decodes to.
 
 `.github/workflows/fuzz.yml` runs a 60-second smoke test per target on pull
 requests and a longer run every week, seeded as above for
