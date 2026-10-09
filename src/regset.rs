@@ -13,8 +13,8 @@ use crate::regexec::{
     FirstOpTest, MatchArg, OnigMatchParam, first_op_fails, first_op_test, forward_search,
     map_search_bypassed_for, may_skip_first_op_failures, onig_get_global_limit_revision,
     onig_get_match_stack_limit, onig_get_retry_limit_in_match, onig_get_retry_limit_in_search,
-    onig_get_time_limit, onig_match, onig_match_with_msa_start, search_in_range,
-    two_pass_capture_fill_pays,
+    onig_get_subexp_call_limit_in_search, onig_get_time_limit, onig_match,
+    onig_match_with_msa_start, search_in_range, two_pass_capture_fill_pays,
 };
 use crate::regint::*;
 use std::sync::Arc;
@@ -224,6 +224,7 @@ struct FallbackMemoKey {
     retry_limit_in_search: u64,
     match_stack_limit: u32,
     time_limit: u64,
+    subexp_call_limit_in_search: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -232,6 +233,7 @@ struct FallbackMemoLimits {
     retry_limit_in_search: u64,
     match_stack_limit: u32,
     time_limit: u64,
+    subexp_call_limit_in_search: u64,
 }
 
 impl FallbackMemoLimits {
@@ -241,6 +243,7 @@ impl FallbackMemoLimits {
             retry_limit_in_search: onig_get_retry_limit_in_search(),
             match_stack_limit: onig_get_match_stack_limit(),
             time_limit: onig_get_time_limit(),
+            subexp_call_limit_in_search: onig_get_subexp_call_limit_in_search(),
         }
     }
 }
@@ -2113,22 +2116,48 @@ fn regset_entry_decision(
 /// Rust-only (ADR-008): whether the DFA pre-filter decides this search.
 ///
 /// The pre-filter leaves out attempts that cannot match, whose backtracks
-/// a limit would count; C makes them and may stop at the limit. So it
-/// decides only a search under Ferroni's defaults (10,000,000 retries per
-/// match, no search retry budget, stack or time limit), and a search under
-/// a limit of the caller's own, or without any, keeps C's attempts. It
-/// stays off for FIND_LONGEST as the other skips do, and reads the subject
-/// as UTF-8 (scanner searches).
+/// and calls a limit would count; C makes them and may stop at the limit.
+/// So it decides only a search under Ferroni's defaults (10,000,000 retries
+/// per match, no search retry budget, stack, time or subexpression call
+/// limit), and a search under a limit of the caller's own, or without any,
+/// keeps C's attempts. It stays off for FIND_LONGEST as the other skips do,
+/// and reads the subject as UTF-8 (scanner searches).
 #[cfg(feature = "dfa-prefilter")]
 #[inline]
 fn prefilter_decides(set: &OnigRegSet, limits: FallbackMemoLimits, option: OnigOptionType) -> bool {
+    set.subject_utf8 && prefilter_admits(set, limits, option)
+}
+
+/// `prefilter_decides` apart from the subject: the set has the automata and
+/// the limits and options admit them.
+#[cfg(feature = "dfa-prefilter")]
+#[inline]
+fn prefilter_admits(set: &OnigRegSet, limits: FallbackMemoLimits, option: OnigOptionType) -> bool {
     set.prefilter.is_some()
-        && set.subject_utf8
         && limits.retry_limit_in_match == DEFAULT_RETRY_LIMIT_IN_MATCH
         && limits.retry_limit_in_search == 0
         && limits.match_stack_limit == 0
         && limits.time_limit == 0
+        && limits.subexp_call_limit_in_search == 0
         && !opton_find_longest(option)
+}
+
+/// Rust-only (ADR-008): whether the DFA pre-filter would decide a search of
+/// a UTF-8 subject under `option` and the current limits. The scanner keeps
+/// such a call on the RegSet route: its per-regex route has no pre-filter,
+/// and a skipped attempt can reach the retry limit there, so the two routes
+/// could answer an identical call differently.
+pub(crate) fn onig_regset_prefilter_decides(set: &mut OnigRegSet, option: OnigOptionType) -> bool {
+    #[cfg(feature = "dfa-prefilter")]
+    {
+        let limits = refresh_scratch_limits(set);
+        prefilter_admits(set, limits, option)
+    }
+    #[cfg(not(feature = "dfa-prefilter"))]
+    {
+        let _ = (set, option);
+        false
+    }
 }
 
 /// Rust-only (ADR-008): the position-lead search decided by the DFA
@@ -2438,6 +2467,7 @@ fn regset_search_body_position_lead(
             retry_limit_in_search: limits.retry_limit_in_search,
             match_stack_limit: limits.match_stack_limit,
             time_limit: limits.time_limit,
+            subexp_call_limit_in_search: limits.subexp_call_limit_in_search,
         };
         if set.fallback_memo_key != Some(key) {
             set.fallback_memo_key = Some(key);

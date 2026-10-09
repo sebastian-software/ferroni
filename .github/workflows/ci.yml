@@ -61,6 +61,12 @@ jobs:
         run: cargo test --test compat_options
       - name: Test compat_regset
         run: cargo test --test compat_regset
+      # The scanner's DFA pre-filter against the search without it: the
+      # review findings and the compat files' pattern/text pairs (ADR-008).
+      - name: Test scanner_prefilter_regressions
+        run: cargo test --test scanner_prefilter_regressions
+      - name: Test compat_prefilter_differential
+        run: cargo test --test compat_prefilter_differential
       - name: Test compat_utf8
         run: cargo test --test compat_utf8 -- --test-threads=1
         env:
@@ -196,7 +202,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Test lib, api and RegSet compat without the feature
-        run: cargo test --lib --test api_test --test compat_regset --no-default-features
+        run: cargo test --lib --test api_test --test compat_regset --test scanner_prefilter_regressions --test compat_prefilter_differential --no-default-features
 
   docs:
     name: Rustdoc

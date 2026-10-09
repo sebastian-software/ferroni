@@ -173,6 +173,50 @@ fn groups(path: &str, reps: usize) {
 /// A fixed number of replays of every call of the trace, for
 /// `/usr/bin/time -l`: the construction and replay times and the maximum RSS
 /// after each.
+/// `replay_trace` through `find_next_match_utf16_with_id` with the subject's
+/// index as the string id, the cache route a grammar loader takes for the
+/// lines of a document, where the scanner may switch to its per-regex route.
+fn replay_trace_with_ids(path: &str, iterations: usize, prefilter: bool) {
+    let corpus = load(path);
+    let calls = corpus.selected(None);
+    let config = ScannerConfig::default().prefilter(prefilter);
+    let mut scanners = corpus.scanners_with(&config);
+    let started = Instant::now();
+    let mut per_iteration = Vec::with_capacity(iterations);
+    for _ in 0..iterations {
+        let strings = corpus.strings();
+        let iteration = Instant::now();
+        for call in &calls {
+            std::hint::black_box(scanners[call.scanner].find_next_match_utf16_with_id(
+                &strings[call.subject],
+                call.subject as u64 + 1,
+                call.start_utf16,
+                call.options,
+            ));
+        }
+        per_iteration.push(iteration.elapsed().as_secs_f64() * 1e3);
+    }
+    let elapsed = started.elapsed();
+    let shown: Vec<String> = per_iteration.iter().map(|ms| format!("{ms:.2}")).collect();
+    println!("per iteration ms: {}", shown.join(" "));
+    let stats = scanners.iter().fold((0u64, 0u64), |sum, scanner| {
+        let stats = scanner.stats();
+        (
+            sum.0 + stats.route_cache_regset_calls,
+            sum.1 + stats.route_cache_per_regex_calls,
+        )
+    });
+    println!(
+        "{path}: pre-filter {}; {} calls x {iterations} iterations with string ids in {:.1} ms ({:.2} ms per iteration); RegSet route {} calls, per-regex route {} calls",
+        if prefilter { "on" } else { "off" },
+        calls.len(),
+        elapsed.as_secs_f64() * 1e3,
+        elapsed.as_secs_f64() * 1e3 / iterations.max(1) as f64,
+        stats.0,
+        stats.1,
+    );
+}
+
 fn replay_trace(path: &str, iterations: usize, prefilter: bool, group: Option<usize>) {
     let corpus = load(path);
     let calls = corpus.selected(group);
@@ -236,6 +280,15 @@ fn main() {
             };
             let group = args.get(4).map(|g| g.parse().expect("integer GROUP"));
             replay_trace(&args[1], iterations, prefilter, group);
+        }
+        Some("replay-id") if args.len() == 4 => {
+            let iterations = args[2].parse().expect("integer ITERATIONS");
+            let prefilter = match args[3].as_str() {
+                "on" => true,
+                "off" => false,
+                _ => panic!("{USAGE}"),
+            };
+            replay_trace_with_ids(&args[1], iterations, prefilter);
         }
         _ => panic!("{USAGE}"),
     }

@@ -308,6 +308,23 @@ fn code_ranges(bbuf: &BBuf) -> impl Iterator<Item = (u32, u32)> + '_ {
         .map(|pair| (u32::from_ne_bytes(pair[0]), u32::from_ne_bytes(pair[1])))
 }
 
+/// The members of a class node, as the matcher reads them over UTF-8: the
+/// bits below 0x80 decide a single-byte character and the code ranges from
+/// 0x80 up a multibyte one, and nothing else is read. Nested negations
+/// (`[^[^[^İ]\S]]`) leave the other side with entries the matcher never
+/// consults: bits at 0x80 and up, and code ranges below 0x80.
+fn class_members(cc: &CClassNode) -> impl Iterator<Item = (u32, u32)> + '_ {
+    let bits = bitset_members(&cc.bs)
+        .filter(|&member| member < 0x80)
+        .map(|member| (member as u32, member as u32));
+    let ranges = cc
+        .mbuf
+        .iter()
+        .flat_map(code_ranges)
+        .filter_map(|(lo, hi)| (hi >= 0x80).then_some((lo.max(0x80), hi)));
+    bits.chain(ranges)
+}
+
 /// The ASCII half boundary a negative look stands for, where its body is
 /// one class that holds every ASCII word character: `(?<!\w)` and
 /// `(?<![-\w])` hold only where the previous character is not an ASCII word
@@ -342,10 +359,17 @@ fn word_class_look(an: &AnchorNode) -> Option<Look> {
     holds_every_word_byte.then_some(look)
 }
 
+/// A group-number condition (`(?(1)…)`, `(?(<name>)…)`): a back reference
+/// that only checks whether the group captured.
+fn is_capture_check(node: &Node) -> bool {
+    matches!(node.inner, NodeInner::BackRef(_)) && node.has_status(ND_ST_CHECKER)
+}
+
 /// A node that produces nothing in the seek and consumes nothing, so a
 /// positive look-ahead before it may keep its body in place.
 fn droppable(node: &Node) -> bool {
     match &node.inner {
+        NodeInner::BackRef(_) => is_capture_check(node),
         NodeInner::Anchor(an) => match an.anchor_type {
             ANCR_PREC_READ_NOT | ANCR_LOOK_BEHIND_NOT => word_class_look(an).is_none(),
             ANCR_PREC_READ
@@ -363,7 +387,8 @@ fn droppable(node: &Node) -> bool {
                 then_node,
                 else_node,
             } => {
-                then_node.as_deref().is_none_or(droppable)
+                bn.body.as_deref().is_none_or(droppable)
+                    && then_node.as_deref().is_none_or(droppable)
                     && else_node.as_deref().is_none_or(droppable)
             }
             _ => bn.body.as_deref().is_none_or(droppable),
@@ -382,15 +407,7 @@ fn class_union(node: &Node, ranges: &mut Vec<(u32, u32)>) -> Option<(usize, usiz
             if cc.is_not() {
                 return None;
             }
-            for member in bitset_members(&cc.bs) {
-                if member >= 0x80 {
-                    return None;
-                }
-                ranges.push((member as u32, member as u32));
-            }
-            if let Some(mbuf) = &cc.mbuf {
-                ranges.extend(code_ranges(mbuf));
-            }
+            ranges.extend(class_members(cc));
             Some((1, 1))
         }
         NodeInner::String(sn) => {
@@ -514,18 +531,25 @@ impl Walk<'_> {
                 repetition(min, max, sub)
             }
             NodeInner::Bag(bn) => match &bn.bag_data {
-                // Both branches, whatever the condition decides.
+                // The condition runs first and, where it holds, the then
+                // branch goes on after what the condition consumed; where
+                // it fails, the else branch runs from the start. A
+                // group-number condition (`(?(1)…)`) is a zero-width check.
                 BagData::IfElse {
                     then_node,
                     else_node,
                 } => {
+                    let condition = bn
+                        .body
+                        .as_deref()
+                        .map_or_else(Hir::empty, |cond| self.condition(cond));
                     let then = then_node
                         .as_deref()
                         .map_or_else(Hir::empty, |n| self.item(n, rest_droppable));
                     let otherwise = else_node
                         .as_deref()
                         .map_or_else(Hir::empty, |n| self.item(n, rest_droppable));
-                    alternation(vec![then, otherwise])
+                    alternation(vec![concat(vec![condition, then]), otherwise])
                 }
                 _ => bn
                     .body
@@ -574,6 +598,17 @@ impl Walk<'_> {
                 GimmickType::Fail => Hir::fail(),
                 _ => Hir::empty(),
             },
+        }
+    }
+
+    /// The condition of a conditional: a group-number condition is a
+    /// zero-width check of the group's capture; any other reads text as the
+    /// expression it is.
+    fn condition(&mut self, cond: &Node) -> Hir {
+        if is_capture_check(cond) {
+            Hir::empty()
+        } else {
+            self.item(cond, false)
         }
     }
 
@@ -646,22 +681,7 @@ impl Walk<'_> {
     }
 
     fn cclass(&mut self, cc: &CClassNode) -> Hir {
-        let mut ranges: Vec<(u32, u32)> = Vec::new();
-        for member in bitset_members(&cc.bs) {
-            // A bit at or above 0x80 stands for a byte, not a code point.
-            if member >= 0x80 {
-                return any_char();
-            }
-            let member = member as u32;
-            match ranges.last_mut() {
-                Some((_, hi)) if *hi + 1 == member => *hi = member,
-                _ => ranges.push((member, member)),
-            }
-        }
-        if let Some(mbuf) = &cc.mbuf {
-            ranges.extend(code_ranges(mbuf));
-        }
-        class_hir(ranges, cc.is_not())
+        class_hir(class_members(cc), cc.is_not())
     }
 
     fn ctype(&mut self, node: &Node, ct: &CtypeNode) -> Hir {
@@ -674,20 +694,20 @@ impl Walk<'_> {
         }
         if ct.ctype == ONIGENC_CTYPE_WORD as i32 {
             // The ASCII word characters are the same in both modes; the
-            // Unicode mode adds non-ASCII ones.
-            let ascii = [
-                (b'0' as u32, b'9' as u32),
-                (b'A' as u32, b'Z' as u32),
-                (b'_' as u32, b'_' as u32),
-                (b'a' as u32, b'z' as u32),
-            ];
-            let unicode = [(0x80, 0x10FFFF)];
-            let ranges = ascii.into_iter().chain(if ct.ascii_mode {
-                unicode[..0].iter().copied()
+            // Unicode mode adds non-ASCII ones, which stand for any
+            // non-ASCII character. `\W` is the complement of the exact ASCII
+            // set plus any non-ASCII character: every one of them in ASCII
+            // mode, all but the Unicode word characters otherwise.
+            // Complementing the widened set would leave them all out.
+            let word = ascii_mask(b'0', b'9')
+                | ascii_mask(b'A', b'Z')
+                | ascii_mask(b'_', b'_')
+                | ascii_mask(b'a', b'z');
+            return if ct.not {
+                byte_class(!word, true)
             } else {
-                unicode[..].iter().copied()
-            });
-            return class_hir(ranges, ct.not);
+                byte_class(word, !ct.ascii_mode)
+            };
         }
         // The parser turns the other ctypes into classes; a remaining one
         // stands for any character.
@@ -744,8 +764,12 @@ impl Walk<'_> {
             .collect();
         // A folded match that reads a non-ASCII character (a class member
         // such as the Kelvin sign for `k`, or a ligature such as `ß` for
-        // `ss`) reads at most `longest - 1` ASCII characters before it: one
-        // escape alternative per trie admits those matches.
+        // `ss`) reads at most `longest - 1` ASCII characters before it and,
+        // since every remaining literal character reads at least one text
+        // character, at most `longest - 1` characters of any kind after it:
+        // one escape alternative per trie admits those matches, and ends
+        // where the literal can end, so what follows the trie is read from
+        // there.
         let mut non_ascii: Vec<Hir> = folds
             .class_members
             .iter()
@@ -762,15 +786,16 @@ impl Walk<'_> {
             non_ascii.sort_by_key(|a| a.to_string());
             non_ascii.dedup_by(|a, b| a.to_string() == b.to_string());
             let longest = literals.iter().map(Vec::len).max().unwrap_or(1).max(1);
-            let ascii_prefix = Hir::repetition(Repetition {
-                min: 0,
-                max: Some(u32::try_from(longest - 1).unwrap_or(u32::MAX)),
-                greedy: true,
-                sub: Box::new(Hir::class(Class::Bytes(ClassBytes::new([
-                    ClassBytesRange::new(0x00, 0x7F),
-                ])))),
-            });
-            branches.push(concat(vec![ascii_prefix, alternation(non_ascii)]));
+            let rest = u32::try_from(longest - 1).unwrap_or(u32::MAX);
+            let ascii_prefix = repetition(
+                0,
+                Some(rest),
+                Hir::class(Class::Bytes(ClassBytes::new([ClassBytesRange::new(
+                    0x00, 0x7F,
+                )]))),
+            );
+            let suffix = repetition(0, Some(rest), any_char());
+            branches.push(concat(vec![ascii_prefix, alternation(non_ascii), suffix]));
         }
         alternation(branches)
     }
@@ -1093,6 +1118,19 @@ mod tests {
             ),
             // Both branches of a conditional.
             ("(a)?(?(1)b|c)", "(?:a?[bc])"),
+            ("(?(a)b|c)", "(?:(?:ab)|c)"),
+            // The matcher reads a class's bits for single-byte characters
+            // and its code ranges for multibyte ones; nested negations leave
+            // entries on the other side (a code range for the space here).
+            (
+                "[^[^[^İ]\\S]]",
+                "(?:(?-u:[\\x00-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))",
+            ),
+            ("[^[^İ]\\S]", "[a&&b]"),
+            (
+                "\\W",
+                "(?:(?-u:[\\x00-/:-@\\[-\\^`\\{-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))",
+            ),
             // Case-insensitive strings as the tuner unravels them.
             ("(?i)ab", "(?:(?-u:[Aa])(?-u:[Bb]))"),
             (
@@ -1107,11 +1145,11 @@ mod tests {
             ),
             (
                 "(?i)(?:ab|cd|ef|gh)",
-                "(?:(?:(?-u:[Aa])(?-u:[Bb]))|(?:(?-u:[Cc])(?-u:[Dd]))|(?:(?-u:[Ee])(?-u:[Ff]))|(?:(?-u:[Gg])(?-u:[Hh]))|(?:(?-u:[\\x00-\\x7F])?[KSks\u{17f}\u{212a}]))",
+                "(?:(?:(?-u:[Aa])(?-u:[Bb]))|(?:(?-u:[Cc])(?-u:[Dd]))|(?:(?-u:[Ee])(?-u:[Ff]))|(?:(?-u:[Gg])(?-u:[Hh]))|(?:(?-u:[\\x00-\\x7F])?[KSks\u{17f}\u{212a}](?:(?-u:[\\x00-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))?))",
             ),
             (
                 "(?i)(?:kb|ss|st|xy)",
-                "(?:(?:(?-u:[Kk])(?-u:[Bb]))|(?:(?-u:[Ss])(?-u:[Ss]))|(?:(?-u:[Ss])(?-u:[Tt]))|(?:(?-u:[Xx])(?-u:[Yy]))|(?:(?-u:[\\x00-\\x7F])?[KSks\u{df}\u{17f}\u{1e9e}\u{212a}\u{fb05}\u{fb06}\u{1df95}]))",
+                "(?:(?:(?-u:[Kk])(?-u:[Bb]))|(?:(?-u:[Ss])(?-u:[Ss]))|(?:(?-u:[Ss])(?-u:[Tt]))|(?:(?-u:[Xx])(?-u:[Yy]))|(?:(?-u:[\\x00-\\x7F])?[KSks\u{df}\u{17f}\u{1e9e}\u{212a}\u{fb05}\u{fb06}\u{1df95}](?:(?-u:[\\x00-\\x7F])|(?:(?-u:[\\xC2-\\xF4])(?-u:[\\x80-\\xBF]){1,3}))?))",
             ),
         ];
         let mismatches: Vec<String> = cases

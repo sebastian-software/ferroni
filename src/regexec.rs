@@ -462,6 +462,9 @@ pub fn onig_get_subexp_call_limit_in_search() -> u64 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_subexp_call_limit_in_search(n: u64) -> i32 {
     SUBEXP_CALL_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed);
+    // Rust-only: the RegSet caches the limits it reads (ADR-008's DFA
+    // pre-filter stays off under a call budget) and reloads them on the bump.
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
     ONIG_NORMAL
 }
 

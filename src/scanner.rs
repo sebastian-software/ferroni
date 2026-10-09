@@ -19,8 +19,8 @@ use crate::regint::{ANCR_ANYCHAR_INF, RegexType};
 use crate::regset::{
     FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, SharedSeek,
     onig_regset_entry_search, onig_regset_get_regex, onig_regset_last_match_len,
-    onig_regset_new_shared, onig_regset_number_of_regex, onig_regset_search_utf8,
-    onig_regset_swap_region,
+    onig_regset_new_shared, onig_regset_number_of_regex, onig_regset_prefilter_decides,
+    onig_regset_search_utf8, onig_regset_swap_region,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -1158,7 +1158,12 @@ impl Scanner {
             return self.search_regset(str_data, end, start_position, onig_opts, fallback_memo_id);
         }
 
-        let use_regset = self.should_use_regset_for_cache(str_id, options.0, start_position);
+        // Rust-only (ADR-008): a call the DFA pre-filter decides stays on
+        // the RegSet route. The per-regex route has no pre-filter, and an
+        // attempt the pre-filter leaves out can reach the retry limit there,
+        // so the routes could answer an identical call differently.
+        let use_regset = onig_regset_prefilter_decides(&mut self.regset, onig_opts)
+            || self.should_use_regset_for_cache(str_id, options.0, start_position);
         // So does every call while a search retry budget makes a result
         // depend on where its search began (see `search_per_regex`).
         let limit_revision = if use_regset {
@@ -1594,7 +1599,10 @@ mod tests {
     fn cache_mode_regset_probe_is_counted() {
         // A search retry budget disables this route; exclude global-limit tests.
         let _limits = crate::regexec::shared_limits();
-        let mut scanner = Scanner::new(&["a"]).unwrap();
+        // The DFA pre-filter keeps a call it decides on the RegSet route, so
+        // the per-regex route is only reached without it (ADR-008).
+        let config = ScannerConfig::default().prefilter(false);
+        let mut scanner = Scanner::with_config(&["a"], &config).unwrap();
         for _ in 0..20 {
             let _ = scanner.find_next_match_with_id("ba", 1, 0, ScannerFindOptions::NONE);
         }
@@ -1608,7 +1616,10 @@ mod tests {
     fn optional_prefix_match_agrees_after_cache_route_switches() {
         // A search retry budget disables this route; exclude global-limit tests.
         let _limits = crate::regexec::shared_limits();
-        let mut scanner = Scanner::new(&["a?bc", "q"]).unwrap();
+        // The DFA pre-filter keeps a call it decides on the RegSet route, so
+        // the route switches happen only without it (ADR-008).
+        let config = ScannerConfig::default().prefilter(false);
+        let mut scanner = Scanner::with_config(&["a?bc", "q"], &config).unwrap();
 
         for _ in 0..25 {
             let matched = scanner
@@ -2725,7 +2736,9 @@ mod tests {
         // A search retry budget disables this route; exclude global-limit tests.
         let _limits = crate::regexec::shared_limits();
         // Exercises per-regex cache reuse: need ≥8 same-start calls to trigger probe
-        let mut scanner = Scanner::new(&["foo", "bar", "baz"]).unwrap();
+        // (without the DFA pre-filter, which keeps its calls on the RegSet route).
+        let config = ScannerConfig::default().prefilter(false);
+        let mut scanner = Scanner::with_config(&["foo", "bar", "baz"], &config).unwrap();
         let input = "xxfooxxbarxxbaz";
 
         // Do 9 calls from same start to trigger per-regex probe (ROUTE_MIN_SAME_START_FOR_PROBE=8)
@@ -2750,8 +2763,10 @@ mod tests {
         // A search retry budget disables this route; exclude global-limit tests.
         let _limits = crate::regexec::shared_limits();
         // Exercises cache path where a pattern previously found no match
-        // Need repeated same-start calls to trigger per-regex mode
-        let mut scanner = Scanner::new(&["zzz", "a"]).unwrap();
+        // Need repeated same-start calls to trigger per-regex mode (without
+        // the DFA pre-filter, which keeps its calls on the RegSet route).
+        let config = ScannerConfig::default().prefilter(false);
+        let mut scanner = Scanner::with_config(&["zzz", "a"], &config).unwrap();
         let input = "aaa";
 
         // 30 calls from same start → triggers per-regex mode and cache reuse
@@ -3077,7 +3092,7 @@ mod tests {
     /// approximates (look-arounds, anchors, `\G`, `\K`, back references,
     /// calls, conditionals, the absent operator, case folding, Unicode
     /// classes, nested and empty repetitions) next to plain table entries.
-    const PREFILTER_PATTERN_SETS: [&[&str]; 7] = [
+    const PREFILTER_PATTERN_SETS: [&[&str]; 8] = [
         // The last pattern of a set must not match at every position, or
         // it would win every call and mask the others.
         &[
@@ -3150,11 +3165,25 @@ mod tests {
             r"\\u[0-9A-Fa-f]{4}",
         ],
         &[r".x", r"\s*$"],
+        // The review findings: `\W` past ASCII, a folded trie followed by
+        // a consuming node and by an anchor, a consuming condition.
+        &[
+            r"\W",
+            r"(?i)(?:kelvin|street|fiat|xyz)!",
+            r"(?i)(?:kelvin|street|fiat|xyz)$",
+            r"(?i)(?:kelvin|street|fiat|xyz)\b",
+            r"(?(a)b|c)",
+            r"((?(a)b|c))(\1)",
+            r"(a)?(?(1)b|c)",
+            r"a",
+        ],
     ];
 
-    const PREFILTER_SUBJECTS: [&str; 10] = [
+    const PREFILTER_SUBJECTS: [&str; 12] = [
         "",
         "aéx bêx ﬁx small all-x",
+        "😀a \u{212A}elvin! \u{212A}elvin kelvin! STRASSE",
+        "ab abab cb a",
         "int main() { return 0; } // done\n",
         "  #include <stdio.h>",
         "let x = \"a\\\"b\"; use std::io; use",
