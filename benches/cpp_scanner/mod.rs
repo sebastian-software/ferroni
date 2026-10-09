@@ -27,6 +27,14 @@ fn index(v: &Value) -> usize {
     usize::try_from(v.as_u64().expect("fixture integer")).expect("index fits usize")
 }
 
+/// The scanner configuration the benches build with: the default, or with
+/// the DFA pre-filter off when `FERRONI_BENCH_PREFILTER=0` is set, so that
+/// one binary measures both (ABBA runs).
+pub fn bench_config() -> ScannerConfig {
+    let off = std::env::var_os("FERRONI_BENCH_PREFILTER").is_some_and(|value| value == "0");
+    ScannerConfig::default().prefilter(!off)
+}
+
 pub fn normalized(matched: Option<ScannerMatch>) -> Match {
     matched.map(|m| {
         (
@@ -115,12 +123,18 @@ impl Corpus {
         }
     }
 
+    /// The scanners of the trace, built with [`bench_config`].
     pub fn scanners(&self) -> Vec<Scanner> {
+        self.scanners_with(&bench_config())
+    }
+
+    /// The scanners of the trace, built with `config`.
+    pub fn scanners_with(&self, config: &ScannerConfig) -> Vec<Scanner> {
         self.patterns
             .iter()
             .map(|patterns| {
                 let refs: Vec<_> = patterns.iter().map(String::as_str).collect();
-                Scanner::new(&refs).expect("captured patterns compile")
+                Scanner::with_config(&refs, config).expect("captured patterns compile")
             })
             .collect()
     }
@@ -128,7 +142,7 @@ impl Corpus {
     /// The scanners built from one pattern cache, as a grammar loader that
     /// shares compiled patterns builds them.
     pub fn cached_scanners(&self) -> Vec<Scanner> {
-        let config = ScannerConfig::default();
+        let config = bench_config();
         let mut cache = ScannerPatternCache::new();
         self.patterns
             .iter()

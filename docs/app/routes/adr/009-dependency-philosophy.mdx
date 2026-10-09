@@ -15,7 +15,7 @@ Ferroni is a pure-Rust regex engine that ships as a single crate. The question i
 
 ## Decision
 
-Ferroni uses **four runtime dependencies**, each chosen because it solves a specific problem better than hand-rolling:
+Ferroni uses **four runtime dependencies** without features, each chosen because it solves a specific problem better than hand-rolling, and two more behind the default `dfa-prefilter` feature (see the [amendment](#amendment-regex-automata-and-regex-syntax) below):
 
 | Crate                                                   | Purpose                                                             | Transitive deps |
 | ------------------------------------------------------- | ------------------------------------------------------------------- | --------------: |
@@ -30,6 +30,24 @@ Each was selected because:
 2. **Battle-tested in the Rust ecosystem.** Used by `regex`, `ripgrep`, `serde`, and other foundational crates.
 3. **Solves a specific problem better than hand-rolling.** `aho-corasick` provides a production-grade Aho-Corasick automaton with Teddy SIMD prefilters for single-pass multi-pattern matching — hand-rolling this correctly for all architectures is non-trivial; `memchr` provides SIMD dispatch across architectures; `bitflags` provides compile-time flag safety; `smallvec` eliminates heap allocation for the common case.
 4. **No feature creep.** Each crate does one thing.
+
+### Amendment: `regex-automata` and `regex-syntax`
+
+The scanner's DFA pre-filter ([ADR-008](./008-rust-only-optimizations)) builds, per set of patterns, a multi-pattern lazy DFA and a meta regex from an over-approximation of each pattern. These come from two more crates, behind the `dfa-prefilter` feature, which is on by default:
+
+| Crate                                                       | Purpose                                                                                                                             |                                                Transitive deps |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------: |
+| [`regex-automata`](https://crates.io/crates/regex-automata) | Thompson NFA, lazy DFA and meta regex over the seek approximations; features `std`, `syntax`, `meta`, `nfa-thompson`, `hybrid` only | `aho-corasick`, `memchr`, `regex-syntax` (all already present) |
+| [`regex-syntax`](https://crates.io/crates/regex-syntax)     | The HIR the approximations are written in; features `std` only                                                                      |                                                              0 |
+
+Against the criteria above:
+
+1. **Transitive dependencies**: none new. `regex-automata` depends on `aho-corasick` and `memchr`, which Ferroni already uses, and on `regex-syntax`. Neither crate needs its Unicode tables here: the approximations are byte-based and use ASCII look-arounds only, so the `unicode-*` features stay off.
+2. **Battle-tested**: they are the `regex` crate's engine and parser, split out so that they can be used without its public API, and are what `ripgrep` and the `regex` crate itself run on.
+3. **Solves a specific problem better than hand-rolling**: an overlapping lazy DFA over hundreds of patterns, with cache management, start-state handling for look-around context and a leftmost-first meta engine with its own prefilters, is the `regex` crate's core competence; writing one inside Ferroni would duplicate it with less testing.
+4. **No feature creep**: each does one thing, and the pre-filter uses them for that one thing.
+
+The feature exists so that the dependency stays a choice: `default-features = false` drops both crates, and the scanner then runs the position-lead search alone, with the same results. `ScannerConfig::prefilter(false)` switches the pre-filter off per scanner without changing the dependency graph.
 
 ### Dev dependencies
 
@@ -47,6 +65,6 @@ Every dependency is a trust decision. A convenience crate that saves 20 lines of
 
 ## Consequences
 
-- Adding a new runtime dependency requires explicit justification against the criteria above.
-- The total dependency tree for `cargo build` (no features) stays minimal and auditable.
+- Adding a new runtime dependency requires explicit justification against the criteria above; the amendment for `regex-automata` and `regex-syntax` is the form such a justification takes.
+- The total dependency tree for `cargo build` (no features) stays minimal and auditable; with the default features it adds the two crates above and nothing transitive.
 - No framework-style dependencies, no proc-macro dependencies at runtime, no `build.rs` in normal builds.

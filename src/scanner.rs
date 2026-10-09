@@ -13,13 +13,14 @@ use crate::api::Syntax;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
-use crate::regcomp::onig_new_with_backtracking_optimization;
+use crate::regcomp::onig_new_for_scanner;
 use crate::regexec::{onig_get_global_limit_revision, onig_get_retry_limit_in_search};
 use crate::regint::{ANCR_ANYCHAR_INF, RegexType};
 use crate::regset::{
-    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, onig_regset_entry_search,
-    onig_regset_get_regex, onig_regset_last_match_len, onig_regset_new_shared,
-    onig_regset_number_of_regex, onig_regset_search_utf8, onig_regset_swap_region,
+    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, SharedSeek,
+    onig_regset_entry_search, onig_regset_get_regex, onig_regset_last_match_len,
+    onig_regset_new_shared, onig_regset_number_of_regex, onig_regset_prefilter_decides,
+    onig_regset_search_utf8, onig_regset_swap_region,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -159,9 +160,10 @@ pub type ScannerSyntax = Syntax;
 /// named groups, matching vscode-oniguruma's default `CaptureGroup` option.
 ///
 /// Build a configuration from [`ScannerConfig::default`] and the chainable
-/// [`options`](Self::options) and [`syntax`](Self::syntax) setters. The struct
-/// is `#[non_exhaustive]`, so a struct literal cannot be written outside this
-/// crate, and new settings can be added without a breaking change.
+/// [`options`](Self::options), [`syntax`](Self::syntax) and
+/// [`prefilter`](Self::prefilter) setters. The struct is `#[non_exhaustive]`,
+/// so a struct literal cannot be written outside this crate, and new settings
+/// can be added without a breaking change.
 ///
 /// ```
 /// use ferroni::api::Syntax;
@@ -178,6 +180,9 @@ pub struct ScannerConfig {
     pub options: OnigOptionType,
     /// Regex syntax variant to use.
     pub syntax: ScannerSyntax,
+    /// Whether the scanner pre-filters its searches with a multi-pattern
+    /// DFA. Defaults to `true`. See [`prefilter`](Self::prefilter).
+    pub prefilter: bool,
 }
 
 impl Default for ScannerConfig {
@@ -185,6 +190,7 @@ impl Default for ScannerConfig {
         ScannerConfig {
             options: ONIG_OPTION_CAPTURE_GROUP,
             syntax: ScannerSyntax::default(),
+            prefilter: true,
         }
     }
 }
@@ -218,6 +224,36 @@ impl ScannerConfig {
     /// ```
     pub const fn syntax(mut self, syntax: ScannerSyntax) -> Self {
         self.syntax = syntax;
+        self
+    }
+
+    /// Switch the multi-pattern DFA pre-filter of the scanner's searches.
+    /// The default is `true`.
+    ///
+    /// With the pre-filter, a search first runs an automaton over the whole
+    /// set that decides which patterns can match where, and attempts only
+    /// those; without it, every pattern is attempted at the positions its
+    /// own optimizer admits. Both find the same match, in the same time
+    /// order, with the same captures. The pre-filter costs more time and
+    /// memory per scanner at construction, and brings the `regex-automata`
+    /// dependency (Cargo feature `dfa-prefilter`, on by default); without
+    /// that feature this setting has no effect. A search under a retry,
+    /// stack or time limit of your own
+    /// ([untrusted input](https://ferroni.dev/guide/untrusted-input)) does
+    /// not use the pre-filter, so limit errors stay the ones C Oniguruma
+    /// reports. See
+    /// [ADR-008](https://ferroni.dev/adr/008-rust-only-optimizations).
+    ///
+    /// ```
+    /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
+    ///
+    /// let config = ScannerConfig::default().prefilter(false);
+    /// let mut scanner = Scanner::with_config(&[r"\d+", r"\w+"], &config).unwrap();
+    /// let m = scanner.find_next_match("hello42", 0, ScannerFindOptions::NONE).unwrap();
+    /// assert_eq!(m.index, 1);
+    /// ```
+    pub const fn prefilter(mut self, prefilter: bool) -> Self {
+        self.prefilter = prefilter;
         self
     }
 }
@@ -300,8 +336,9 @@ pub struct ScannerPatternCache {
     compiled: Vec<(PatternSettings, CompiledPatterns)>,
 }
 
-/// Compiled programs by pattern text, for one `PatternSettings`.
-type CompiledPatterns = HashMap<Box<str>, Arc<RegexType>>;
+/// Compiled programs by pattern text, for one `PatternSettings`, each with
+/// its seek approximation for the DFA pre-filter (ADR-008).
+type CompiledPatterns = HashMap<Box<str>, (Arc<RegexType>, SharedSeek)>;
 
 impl ScannerPatternCache {
     /// Create an empty cache.
@@ -348,11 +385,11 @@ impl ScannerPatternCache {
         let compiled = &mut self.compiled[at].1;
         let mut added = Vec::new();
         let scanner = Scanner::compile(patterns, settings, |pattern| {
-            if let Some(reg) = compiled.get(pattern) {
-                return Ok(Arc::clone(reg));
+            if let Some(compiled) = compiled.get(pattern) {
+                return Ok(compiled.clone());
             }
             let reg = settings.compile(pattern)?;
-            compiled.insert(pattern.into(), Arc::clone(&reg));
+            compiled.insert(pattern.into(), reg.clone());
             added.push(pattern);
             Ok(reg)
         });
@@ -383,6 +420,9 @@ struct PatternSettings {
     options: OnigOptionType,
     syntax: ScannerSyntax,
     optimize_backtracking: bool,
+    /// The pattern carries the seek approximation the DFA pre-filter reads
+    /// (ADR-008); a pattern compiled without one is searched on its own.
+    prefilter: bool,
 }
 
 impl PatternSettings {
@@ -391,18 +431,23 @@ impl PatternSettings {
             options: config.options,
             syntax: config.syntax,
             optimize_backtracking,
+            prefilter: config.prefilter,
         }
     }
 
-    fn compile(self, pattern: &str) -> Result<Arc<RegexType>, RegexError> {
-        onig_new_with_backtracking_optimization(
+    /// The compiled pattern and its seek approximation, each shared.
+    fn compile(self, pattern: &str) -> Result<(Arc<RegexType>, SharedSeek), RegexError> {
+        let (reg, seek) = onig_new_for_scanner(
             pattern.as_bytes(),
             self.options,
             &ONIG_ENCODING_UTF8,
             self.syntax.as_onig_syntax(),
             self.optimize_backtracking,
-        )
-        .map(Arc::new)
+            self.prefilter,
+        )?;
+        #[cfg(feature = "dfa-prefilter")]
+        let seek = seek.map(Arc::new);
+        Ok((Arc::new(reg), seek))
     }
 }
 
@@ -635,6 +680,30 @@ pub struct ScannerStats {
     pub vm_search_calls: u64,
 }
 
+/// What a scanner's DFA pre-filter covers, from [`Scanner::prefilter_stats`].
+///
+/// The pre-filter is described at [`ScannerConfig::prefilter`]. A scanner
+/// built without it, without the `dfa-prefilter` feature, or whose automata
+/// would be too large reports `built == false` and every pattern as `own`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PrefilterStats {
+    /// The scanner has the automata.
+    pub built: bool,
+    /// Patterns the automata decide for.
+    pub covered: usize,
+    /// Patterns searched on their own: their approximation matches at every
+    /// position, or they were compiled without one.
+    pub own: usize,
+    /// States of the NFA the automata are built from; sets above a bound
+    /// get no pre-filter.
+    pub nfa_states: usize,
+    /// Heap memory of the automata and their caches, in bytes.
+    pub memory_usage: usize,
+    /// Times the overlapping automaton's cache filled up and was cleared.
+    pub cache_clears: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum CacheRoute {
     #[default]
@@ -823,29 +892,32 @@ impl Scanner {
         cache.scanner(patterns, PatternSettings::of(config, true))
     }
 
-    /// Build a scanner from the compiled form of each pattern, which
-    /// `regex` provides in pattern order. `settings` are the ones `regex`
-    /// compiles with.
+    /// Build a scanner from the compiled form of each pattern and its seek
+    /// approximation, which `regex` provides in pattern order. `settings`
+    /// are the ones `regex` compiles with. The seeks go into the set's
+    /// pre-filter and are not kept beyond that.
     fn compile<'p>(
         patterns: &[&'p str],
         settings: PatternSettings,
-        mut regex: impl FnMut(&'p str) -> Result<Arc<RegexType>, RegexError>,
+        mut regex: impl FnMut(&'p str) -> Result<(Arc<RegexType>, SharedSeek), RegexError>,
     ) -> Result<Scanner, RegexError> {
         let mut caches = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
+        let mut seeks = Vec::with_capacity(patterns.len());
 
         let mut warnings = Vec::with_capacity(patterns.len());
         let mut rewrites = Vec::with_capacity(patterns.len());
 
         for pattern in patterns {
-            let reg = regex(pattern)?;
+            let (reg, seek) = regex(pattern)?;
             rewrites.push(reg.backtrack_rewrites.clone());
             warnings.push(reg.backtrack_warnings.clone());
             caches.push(CacheEntry::new(pattern, reg.anchor));
             regset_regs.push(reg);
+            seeks.push(seek);
         }
 
-        let (regset, r) = onig_regset_new_shared(regset_regs);
+        let (regset, r) = onig_regset_new_shared(regset_regs, &seeks);
         if r != ONIG_NORMAL {
             return Err(r.into());
         }
@@ -888,6 +960,39 @@ impl Scanner {
     /// Get current scanner counters.
     pub fn stats(&self) -> ScannerStats {
         self.stats
+    }
+
+    /// What the scanner's DFA pre-filter covers
+    /// ([`ScannerConfig::prefilter`]).
+    ///
+    /// ```
+    /// use ferroni::scanner::Scanner;
+    ///
+    /// let scanner = Scanner::new(&[r"\d+", r"[a-z]+", r"(?<=\))"]).unwrap();
+    /// let stats = scanner.prefilter_stats();
+    /// assert_eq!(stats.covered + stats.own, 3);
+    /// // The look-behind reads nothing at its position, so that pattern is
+    /// // searched on its own. Without the `dfa-prefilter` feature, all are.
+    /// if stats.built {
+    ///     assert_eq!((stats.covered, stats.own), (2, 1));
+    /// }
+    /// ```
+    pub fn prefilter_stats(&self) -> PrefilterStats {
+        #[cfg(feature = "dfa-prefilter")]
+        if let Some(prefilter) = crate::regset::onig_regset_prefilter(&self.regset) {
+            return PrefilterStats {
+                built: true,
+                covered: prefilter.covered(),
+                own: prefilter.own().len(),
+                nfa_states: prefilter.nfa_states(),
+                memory_usage: prefilter.memory_usage(),
+                cache_clears: prefilter.cache_clears(),
+            };
+        }
+        PrefilterStats {
+            own: onig_regset_number_of_regex(&self.regset) as usize,
+            ..PrefilterStats::default()
+        }
     }
 
     /// Reset scanner counters.
@@ -1053,7 +1158,13 @@ impl Scanner {
             return self.search_regset(str_data, end, start_position, onig_opts, fallback_memo_id);
         }
 
-        let use_regset = self.should_use_regset_for_cache(str_id, options.0, start_position);
+        // Rust-only (ADR-008): a call the DFA pre-filter decides stays on
+        // the RegSet route. The per-regex route has no pre-filter, and an
+        // attempt the pre-filter leaves out can reach the retry limit there,
+        // so the routes could answer an identical call differently.
+        let use_regset =
+            onig_regset_prefilter_decides(&mut self.regset, onig_opts, str_data, start_position)
+                || self.should_use_regset_for_cache(str_id, options.0, start_position);
         // So does every call while a search retry budget makes a result
         // depend on where its search began (see `search_per_regex`).
         let limit_revision = if use_regset {
@@ -1489,7 +1600,10 @@ mod tests {
     fn cache_mode_regset_probe_is_counted() {
         // A search retry budget disables this route; exclude global-limit tests.
         let _limits = crate::regexec::shared_limits();
-        let mut scanner = Scanner::new(&["a"]).unwrap();
+        // The DFA pre-filter keeps a call it decides on the RegSet route, so
+        // the per-regex route is only reached without it (ADR-008).
+        let config = ScannerConfig::default().prefilter(false);
+        let mut scanner = Scanner::with_config(&["a"], &config).unwrap();
         for _ in 0..20 {
             let _ = scanner.find_next_match_with_id("ba", 1, 0, ScannerFindOptions::NONE);
         }
@@ -1503,7 +1617,10 @@ mod tests {
     fn optional_prefix_match_agrees_after_cache_route_switches() {
         // A search retry budget disables this route; exclude global-limit tests.
         let _limits = crate::regexec::shared_limits();
-        let mut scanner = Scanner::new(&["a?bc", "q"]).unwrap();
+        // The DFA pre-filter keeps a call it decides on the RegSet route, so
+        // the route switches happen only without it (ADR-008).
+        let config = ScannerConfig::default().prefilter(false);
+        let mut scanner = Scanner::with_config(&["a?bc", "q"], &config).unwrap();
 
         for _ in 0..25 {
             let matched = scanner
@@ -2620,7 +2737,9 @@ mod tests {
         // A search retry budget disables this route; exclude global-limit tests.
         let _limits = crate::regexec::shared_limits();
         // Exercises per-regex cache reuse: need ≥8 same-start calls to trigger probe
-        let mut scanner = Scanner::new(&["foo", "bar", "baz"]).unwrap();
+        // (without the DFA pre-filter, which keeps its calls on the RegSet route).
+        let config = ScannerConfig::default().prefilter(false);
+        let mut scanner = Scanner::with_config(&["foo", "bar", "baz"], &config).unwrap();
         let input = "xxfooxxbarxxbaz";
 
         // Do 9 calls from same start to trigger per-regex probe (ROUTE_MIN_SAME_START_FOR_PROBE=8)
@@ -2645,8 +2764,10 @@ mod tests {
         // A search retry budget disables this route; exclude global-limit tests.
         let _limits = crate::regexec::shared_limits();
         // Exercises cache path where a pattern previously found no match
-        // Need repeated same-start calls to trigger per-regex mode
-        let mut scanner = Scanner::new(&["zzz", "a"]).unwrap();
+        // Need repeated same-start calls to trigger per-regex mode (without
+        // the DFA pre-filter, which keeps its calls on the RegSet route).
+        let config = ScannerConfig::default().prefilter(false);
+        let mut scanner = Scanner::with_config(&["zzz", "a"], &config).unwrap();
         let input = "aaa";
 
         // 30 calls from same start → triggers per-regex mode and cache reuse
@@ -2731,6 +2852,7 @@ mod tests {
             let config = ScannerConfig {
                 options: ONIG_OPTION_NONE,
                 syntax,
+                ..Default::default()
             };
             // Simple literal pattern should work in all syntaxes
             let scanner = Scanner::with_config(&["hello"], &config);
@@ -2967,6 +3089,367 @@ mod tests {
         differences
     }
 
+    /// Pattern sets for the pre-filter comparison: the constructs the seek
+    /// approximates (look-arounds, anchors, `\G`, `\K`, back references,
+    /// calls, conditionals, the absent operator, case folding, Unicode
+    /// classes, nested and empty repetitions) next to plain table entries.
+    const PREFILTER_PATTERN_SETS: [&[&str]; 9] = [
+        // The last pattern of a set must not match at every position, or
+        // it would win every call and mask the others.
+        &[
+            r"(?<=\))\s*\(",
+            r"(?<![-\w])(?:accent-color|align-content|align-items|all)(?![-\w])",
+            r"(?!\s*\[)[A-Za-z_]\w*",
+            r"\G\s+",
+            r"^\s*#\s*(include)\b",
+            r"\b(?:fn|let|first|loop)\b",
+            r"(?=\s*:)\w+",
+            r"\s+(?=use\b)",
+            r"\A\s*$",
+            r"\n?$",
+            r".*;",
+            r"x\Z",
+        ],
+        &[
+            r"(?i)(?:kelvin|straße|fiat|xyz)",
+            r"(?i)[k]+",
+            r"\p{Greek}+",
+            r"[^\x00-\x7F]+",
+            r"\w+ing\b",
+            r"[é-ü]",
+            r"(?i)résumé",
+            r"\bσ\w*",
+            r"(?i)(?<![-\w])(?:a|abbr|acronym|address|applet)(?![-\w])",
+            r"\d+",
+        ],
+        &[
+            r"(\w)\1",
+            r"<(\w+)[^>]*>.*?</\1>",
+            r"(?<n>\()(?:[^()]|\g<n>)*\)",
+            r"(a)?(?(1)b|c)",
+            r"(?~\*/)\*/",
+            r".+\K,",
+            r"(?>a+)b",
+            r"a++b",
+            r"(?i)(ab|cd|ef|gh)\1",
+            r"\s*(;)",
+        ],
+        &[
+            r"(?:(?:ab)+)?c",
+            r"(?:a*)+b",
+            r"(?:x(?=a))?y",
+            r"(?m:.)x",
+            r".x",
+            r"\h+",
+            r"(?:(?=a)|(?<=b))c",
+            r"(?<!\w)(?:all|small|x)(?!\w)",
+            r"(?<![-\w])all(?![-\w])",
+            r"..x",
+            r"[^a-z]x",
+        ],
+        &[
+            r"(?:\s*(?:/\*(?:[^*]|\*+(?!/))*\*/))+|\s+|(?<=\W)|(?=\W)|^|\n?$|\A|\Z",
+            r"()",
+            r"\s*$",
+            r"^",
+        ],
+        &[
+            r"[0-9]+(?:\.[0-9]+)?",
+            r"[A-Za-z_][A-Za-z0-9_]*",
+            r"\s+",
+            r"//.*",
+            r"/\*",
+            r"[{}()\[\]]",
+            r"==|!=|<=|>=|[<>=]",
+            r"\$\{[^}]*\}",
+            r"'(?:[^'\\]|\\.)*'",
+            r"\\u[0-9A-Fa-f]{4}",
+        ],
+        &[r".x", r"\s*$"],
+        // Word boundaries next to multibyte characters: an ASCII half
+        // boundary holds inside them, where no match may start.
+        &[r"\b", r"\B", r"x"],
+        // The review findings: `\W` past ASCII, a folded trie followed by
+        // a consuming node and by an anchor, a consuming condition.
+        &[
+            r"\W",
+            r"(?i)(?:kelvin|street|fiat|xyz)!",
+            r"(?i)(?:kelvin|street|fiat|xyz)$",
+            r"(?i)(?:kelvin|street|fiat|xyz)\b",
+            r"(?(a)b|c)",
+            r"((?(a)b|c))(\1)",
+            r"(a)?(?(1)b|c)",
+            r"a",
+        ],
+    ];
+
+    const PREFILTER_SUBJECTS: [&str; 13] = [
+        "",
+        "aéx bêx ﬁx small all-x",
+        "d日Σ\\x ü日a 日",
+        "😀a \u{212A}elvin! \u{212A}elvin kelvin! STRASSE",
+        "ab abab cb a",
+        "int main() { return 0; } // done\n",
+        "  #include <stdio.h>",
+        "let x = \"a\\\"b\"; use std::io; use",
+        "<a href=\"x\">t</a> ((a)(b)) /* c */ x",
+        "\n!c1 1,é1 zfoo ſtraße KELVIN Fiat ﬁat\n",
+        "αβγ fn foo.bar 12_34.56 σίσυφος",
+        "aaaaaaaaaaaaaaaaaaaa\u{1F4BB}c b, ab; abab abababc",
+        "accent-color: all; Abbr.address xyz\n\n",
+    ];
+
+    /// With the pre-filter a scanner answers every call exactly as one
+    /// without it does, on every route and with every find option, over the
+    /// constructs the seek approximates. The limits are the defaults, where
+    /// the pre-filter decides the search.
+    #[test]
+    fn prefilter_matches_the_position_lead_search_on_every_route() {
+        let _limits = crate::regexec::shared_limits();
+        let with = ScannerConfig::default();
+        let without = ScannerConfig::default().prefilter(false);
+        let every_option: Vec<_> = (0..8).map(ScannerFindOptions::from_bits).collect();
+        let sets: Vec<&[&str]> = (PREFILTER_PATTERN_SETS.iter().copied())
+            .chain(CACHED_PATTERN_SETS.iter().copied())
+            .collect();
+        let subjects: Vec<&str> = (PREFILTER_SUBJECTS.iter().copied())
+            .chain(CACHED_PATTERN_SUBJECTS.iter().copied())
+            .collect();
+        let mut filtered: Vec<[Scanner; 4]> = sets
+            .iter()
+            .map(|patterns| route_scanners(|| Scanner::with_config(patterns, &with).unwrap()))
+            .collect();
+        let mut plain: Vec<[Scanner; 4]> = sets
+            .iter()
+            .map(|patterns| route_scanners(|| Scanner::with_config(patterns, &without).unwrap()))
+            .collect();
+        for (patterns, (filtered, plain)) in sets.iter().zip(filtered.iter().zip(&plain)) {
+            let stats = filtered[0].prefilter_stats();
+            // Only the set with the callout pattern builds no automata.
+            let callouts = patterns.iter().any(|pattern| pattern.contains("(*MAX"));
+            let built = cfg!(feature = "dfa-prefilter") && !callouts;
+            assert_eq!(stats.built, built, "{patterns:?}: {stats:?}");
+            assert!(!plain[0].prefilter_stats().built);
+            assert_eq!(stats.covered + stats.own, patterns.len());
+        }
+        let differences =
+            cached_and_uncached_differences(&mut filtered, &mut plain, &subjects, &every_option);
+        assert!(differences.is_empty(), "{}", differences.join("\n"));
+    }
+
+    /// Tokenizing a run in order costs the same work with the pre-filter
+    /// as without, with and without a stable id and through the UTF-16
+    /// API: in VM attempts and in the bytes the VM, the optimizer's forward
+    /// searches, the candidate walks and the meta regex read, against what
+    /// the VM, the forward searches and the table scans read without it,
+    /// each within a constant of the text's length; with a stable id the
+    /// meta regex is asked at most once per subject. The shapes are the
+    /// review findings: entries the automata do not cover searched to the
+    /// end of the subject before the covered ones (4,200× the time for
+    /// `["a", "(?<=z)"]`), a seek alive through a word run while its entry
+    /// is ruled out (270× for `\w+:` without a `:`), an own entry behind
+    /// the winner attempted first (`.*(?<=z)`: 3,400×), the meta regex
+    /// reading the rest of the line before a nearby own match
+    /// (`[(?<=b)a?, a[ab]{2}a]` on `ba…`: 125×), the same with the own
+    /// match a hundred positions away and no stable id, where the meta
+    /// regex read the rest of the line on every call, and a greedy seek
+    /// ahead of the winner (`[(?<=z)a[ab]*a, a]` on `ba…`: 3,500× with a
+    /// stable id, the meta regex reading to the end of the line to report
+    /// a start one byte away).
+    #[test]
+    fn own_entries_cost_linear_work_over_a_tokenizing_loop() {
+        let _limits = crate::regexec::shared_limits();
+        let word = "a".repeat(2_000);
+        let pairs = "ba".repeat(1_000);
+        let gaps = format!("{}ba", "x".repeat(100)).repeat(20);
+        // (patterns, text, meta regex searches the pre-filter may make with
+        // a stable id)
+        let variants: [(&[&str], &str, u64); 11] = [
+            (&["a", r"(?<=z)"], &word, 0),
+            (&[r"(?<=a)", "b"], &word, 0),
+            (&[r"(?<=z)", "b"], &word, 8),
+            (&[r"\G ?", "a"], &word, 0),
+            (&[r"(?<=\))(?!\w)", "a"], &word, 0),
+            (&[r"(?<=\.)\w+", r"\w+:", r"\d+", "a"], &word, 0),
+            (&[r"(?<=/)[^/]+", r"[^/]+/", "a"], &word, 0),
+            (&["a", r".*(?<=z)"], &word, 0),
+            (&[r"(?<=b)a?", r"a[ab]{2}a"], &pairs, 0),
+            (&[r"(?<=b)a?", r"a[ab]{2}a"], &gaps, 0),
+            (&[r"(?<=z)a[ab]*a", "a"], &pairs, 0),
+        ];
+        #[derive(Clone, Copy, Debug)]
+        enum Api {
+            Id,
+            Plain,
+            Utf16,
+        }
+        #[cfg(feature = "dfa-prefilter")]
+        fn automata_work() -> [u64; 3] {
+            [
+                crate::dfa_prefilter::EARLIEST_CALLS.with(|c| c.get()),
+                crate::dfa_prefilter::META_BYTES.with(|c| c.get()),
+                crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get()),
+            ]
+        }
+        #[cfg(not(feature = "dfa-prefilter"))]
+        fn automata_work() -> [u64; 3] {
+            [0; 3]
+        }
+        // VM attempts, VM bytes, forward-search bytes, meta regex searches,
+        // meta regex bytes, candidate walk bytes, table scan bytes.
+        let work = || -> [u64; 7] {
+            let automata = automata_work();
+            [
+                crate::regexec::VM_ATTEMPTS.with(|c| c.get()),
+                crate::regexec::VM_BYTES.with(|c| c.get()),
+                crate::regexec::FORWARD_SEARCH_BYTES.with(|c| c.get()),
+                automata[0],
+                automata[1],
+                automata[2],
+                crate::regset::TABLE_SCAN_BYTES.with(|c| c.get()),
+            ]
+        };
+        for (patterns, text, max_earliest) in variants {
+            for api in [Api::Id, Api::Plain, Api::Utf16] {
+                let run = |prefilter: bool| {
+                    let config = ScannerConfig::default().prefilter(prefilter);
+                    let mut scanner = Scanner::with_config(patterns, &config).unwrap();
+                    let string = OnigString::new(text);
+                    let before = work();
+                    let results: Vec<_> = (0..text.len())
+                        .map(|at| {
+                            let found = match api {
+                                Api::Id => scanner.find_next_match_with_id(
+                                    text,
+                                    7,
+                                    at,
+                                    ScannerFindOptions::NONE,
+                                ),
+                                Api::Plain => {
+                                    scanner.find_next_match(text, at, ScannerFindOptions::NONE)
+                                }
+                                Api::Utf16 => scanner.find_next_match_utf16_with_id(
+                                    &string,
+                                    7,
+                                    at,
+                                    ScannerFindOptions::NONE,
+                                ),
+                            };
+                            found.map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
+                        })
+                        .collect();
+                    let after = work();
+                    let spent: [u64; 7] = std::array::from_fn(|i| after[i] - before[i]);
+                    (spent, results)
+                };
+                let n = text.len() as u64;
+                let (without, plain) = run(false);
+                let (with, filtered) = run(true);
+                assert_eq!(filtered, plain, "{patterns:?} {api:?}");
+                assert!(
+                    with[0] <= 2 * without[0] + n,
+                    "{patterns:?} {api:?}: {} VM attempts with the pre-filter, {} without",
+                    with[0],
+                    without[0]
+                );
+                assert!(
+                    with[1] <= 2 * without[1] + 8 * n,
+                    "{patterns:?} {api:?}: {} VM bytes with the pre-filter, {} without",
+                    with[1],
+                    without[1]
+                );
+                assert!(
+                    with[2] <= 2 * without[2] + 8 * n,
+                    "{patterns:?} {api:?}: {} forward-search bytes with the pre-filter, {} without",
+                    with[2],
+                    without[2]
+                );
+                // What the automata read, against what the table scans and
+                // the forward searches read without them.
+                let read_without = without[2] + without[6];
+                assert!(
+                    with[5] <= 2 * read_without + 8 * n,
+                    "{patterns:?} {api:?}: {} candidate walk bytes, {read_without} read without the pre-filter",
+                    with[5]
+                );
+                if matches!(api, Api::Plain) {
+                    assert!(
+                        with[3] <= 4 * n,
+                        "{patterns:?} {api:?}: {} meta regex searches over {n} calls",
+                        with[3]
+                    );
+                    assert!(
+                        with[4] <= 4 * read_without + 8 * n,
+                        "{patterns:?} {api:?}: {} meta regex bytes, {read_without} read without the pre-filter",
+                        with[4]
+                    );
+                } else {
+                    assert!(
+                        with[3] <= max_earliest,
+                        "{patterns:?} {api:?}: {} meta regex searches, at most {max_earliest}",
+                        with[3]
+                    );
+                    assert!(
+                        with[4] <= 8 * n,
+                        "{patterns:?} {api:?}: {} meta regex bytes over {n} bytes of text",
+                        with[4]
+                    );
+                }
+            }
+        }
+    }
+
+    /// The candidate scan stops as soon as every covered entry is a
+    /// candidate, or every one the search admits at the position:
+    /// tokenizing a word run in order with `[(?<=\.)\w+, a]` reads one byte
+    /// per call, not `CANDIDATE_SCAN_BYTES` (the lead's finding after the
+    /// third review: 17× the time without the pre-filter, linear but from
+    /// every position to the bound), and so does one where a seek the
+    /// optimizer rules out (`\w+:` without a `:`) stays alive through the
+    /// run (170–300×).
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn candidate_scans_stop_once_every_admissible_entry_is_a_candidate() {
+        let _limits = crate::regexec::shared_limits();
+        let text = "a".repeat(2_000);
+        let calls = text.len() as u64;
+        let sets: [&[&str]; 3] = [
+            &[r"(?<=\.)\w+", "a"],
+            &[r"(?<=\.)\w+", r"\w+:", r"\d+", "a"],
+            &[r"(?<=/)[^/]+", r"[^/]+/", "a"],
+        ];
+        for patterns in sets {
+            let run = |prefilter: bool| {
+                let config = ScannerConfig::default().prefilter(prefilter);
+                let mut scanner = Scanner::with_config(patterns, &config).unwrap();
+                let steps_before = crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get());
+                let attempts_before = crate::regexec::VM_ATTEMPTS.with(|c| c.get());
+                let results: Vec<_> = (0..text.len())
+                    .map(|at| {
+                        scanner
+                            .find_next_match_with_id(&text, 7, at, ScannerFindOptions::NONE)
+                            .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
+                    })
+                    .collect();
+                let steps = crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get()) - steps_before;
+                let attempts = crate::regexec::VM_ATTEMPTS.with(|c| c.get()) - attempts_before;
+                (steps, attempts, results)
+            };
+            let (_, without, plain) = run(false);
+            let (steps, with, filtered) = run(true);
+            assert_eq!(filtered, plain, "{patterns:?}");
+            assert!(
+                with <= 2 * without + calls,
+                "{patterns:?}: {with} VM attempts with the pre-filter, {without} without"
+            );
+            // One byte settles `a`, one more asks about the long seeks.
+            assert!(
+                steps <= 3 * calls,
+                "{patterns:?}: {steps} bytes read by the candidate scans over {calls} calls"
+            );
+        }
+    }
+
     /// Scanners built from one pattern cache answer every call exactly as
     /// scanners compiled on their own do, on every route, with every find
     /// option, with and without backtracking optimization, and under the
@@ -3185,7 +3668,7 @@ mod tests {
                 .compiled
                 .iter()
                 .flat_map(|(_, patterns)| patterns.iter())
-                .map(|(pattern, reg)| (pattern.to_string(), Arc::as_ptr(reg)))
+                .map(|(pattern, (reg, _))| (pattern.to_string(), Arc::as_ptr(reg)))
                 .collect();
             entries.sort();
             (cache.compiled.len(), entries)
@@ -3241,7 +3724,7 @@ mod tests {
         let mut first = Scanner::with_pattern_cache(&["x(y)", "z"], &config, &mut cache).unwrap();
         let second = Scanner::with_pattern_cache(&["z"], &config, &mut cache).unwrap();
         let references = |cache: &ScannerPatternCache, pattern: &str| {
-            Arc::strong_count(&cache.compiled[0].1[pattern])
+            Arc::strong_count(&cache.compiled[0].1[pattern].0)
         };
         assert_eq!(
             (references(&cache, "x(y)"), references(&cache, "z")),

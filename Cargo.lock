@@ -237,6 +237,8 @@ dependencies = [
  "memchr",
  "pcre2-sys",
  "regex",
+ "regex-automata",
+ "regex-syntax",
  "serde_json",
  "smallvec",
 ]

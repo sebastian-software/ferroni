@@ -91,8 +91,13 @@ turns a limit off for that search. Out of the box, Ferroni uses Oniguruma's
 defaults: at most 10,000,000 backtracks per start position, no limit for the
 search as a whole, and no time limit. Unlike C, the backtracking stack never
 grows past 10,000,000 entries when no stack limit is set, so one hostile line
-cannot exhaust memory. A stack limit of your own also turns off some search
-optimizations, so leave it unset unless you need a smaller bound.
+cannot exhaust memory. A limit of your own also turns off the search
+optimizations whose skipped attempts a limit could observe, among them a
+scanner's pre-filter ([ADR-008](../adr/008-rust-only-optimizations)): a retry
+limit per match other than the default, a search retry budget, a stack limit
+or a timeout make the engine attempt what C Oniguruma attempts, so the limit
+stops the search where C's does. Set them where untrusted input calls for it,
+and leave them unset where it does not.
 
 The process-wide values can be changed for every search at once with
 `onig_set_time_limit`, `onig_set_retry_limit_in_match`,

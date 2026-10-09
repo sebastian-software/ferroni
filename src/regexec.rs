@@ -462,6 +462,9 @@ pub fn onig_get_subexp_call_limit_in_search() -> u64 {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_subexp_call_limit_in_search(n: u64) -> i32 {
     SUBEXP_CALL_LIMIT_IN_SEARCH.store(n, Ordering::Relaxed);
+    // Rust-only: the RegSet caches the limits it reads (ADR-008's DFA
+    // pre-filter stays off under a call budget) and reloads them on the bump.
+    GLOBAL_LIMIT_REVISION.fetch_add(1, Ordering::Release);
     ONIG_NORMAL
 }
 
@@ -3698,6 +3701,18 @@ fn retry_limit_of_attempt(msa: &MatchArg) -> u64 {
     retry_limit_in_match
 }
 
+#[cfg(test)]
+thread_local! {
+    /// VM attempts (`match_at`) on this thread, for tests that bound the
+    /// work of a search.
+    pub(crate) static VM_ATTEMPTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Bytes the VM moved over on this thread (forward and back), for tests
+    /// that bound the work of a search.
+    pub(crate) static VM_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Bytes the optimizer's forward searches read on this thread.
+    pub(crate) static FORWARD_SEARCH_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 fn match_at_impl<const TRACK_CAPTURES: bool>(
     reg: &RegexType,
     str_data: &[u8],
@@ -3707,6 +3722,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     msa: &mut MatchArg,
     mut scan: Option<&mut ForwardScan<'_>>,
 ) -> i32 {
+    #[cfg(test)]
+    VM_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
     let mut p: usize = 0; // bytecode index into reg.ops
     let mut s: usize = sstart; // current string position
     let mut right_range: usize = in_right_range;
@@ -3882,7 +3899,14 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     }
 
     // ---- Main dispatch loop ----
+    #[cfg(test)]
+    let mut vm_previous = s;
     loop {
+        #[cfg(test)]
+        {
+            VM_BYTES.with(|bytes| bytes.set(bytes.get() + s.abs_diff(vm_previous) as u64));
+            vm_previous = s;
+        }
         if p >= reg.ops.len() {
             break;
         }
@@ -6969,6 +6993,22 @@ fn onigenc_get_right_adjust_char_head(
 /// Forward search using optimization strategy.
 /// Returns Some((low, high)) if a candidate was found, None otherwise.
 pub(crate) fn forward_search(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+) -> Option<(usize, usize)> {
+    let found = forward_search_impl(reg, str_data, end, start, range);
+    #[cfg(test)]
+    FORWARD_SEARCH_BYTES.with(|bytes| {
+        let read = found.map_or(range, |(_, high)| high).saturating_sub(start);
+        bytes.set(bytes.get() + read as u64);
+    });
+    found
+}
+
+fn forward_search_impl(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
