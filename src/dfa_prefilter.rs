@@ -64,6 +64,19 @@ const META_CACHE_CAPACITY: usize = 2 * MIB;
 const OVERLAPPING_CACHE_CAPACITY: usize = MIB;
 /// Hard bound on the NFA size per set, for both automata.
 const NFA_SIZE_LIMIT: usize = 16 * MIB;
+/// The overlapping DFA gives up once its cache has been cleared this many
+/// times and it searched fewer than `MIN_BYTES_PER_STATE` bytes per state
+/// it holds: it is creating states faster than it can reuse them (every
+/// state of a set over a hundred case-insensitive keyword lists holds
+/// thousands of NFA states, so a 1 MiB cache holds a few hundred of them,
+/// and a walk at every position of a long identifier rebuilt them all
+/// every few searches: 100 µs a search against 0.4 without the pre-filter
+/// on the flat CSS grammar set). The set then drops its pre-filter for
+/// good (`retire_prefilter` in `regset.rs`). regex-automata's meta regex
+/// uses the same two numbers for its own lazy DFAs.
+const MIN_CACHE_CLEARS: usize = 3;
+/// See `MIN_CACHE_CLEARS`.
+const MIN_BYTES_PER_STATE: usize = 20;
 /// Counted repetitions above this bound become unbounded ones.
 const MAX_COUNTED_REPEAT: u32 = 64;
 /// Bytes the anchored candidate scan reads past a position before it
@@ -1130,6 +1143,14 @@ pub(crate) struct SetPrefilter {
     /// The last walk ran to the bound or ended by asking: the next one
     /// asks as soon as the bounded seeks have settled.
     ask_early: bool,
+    /// The overlapping DFA gave up on its cache (`MIN_CACHE_CLEARS`): the
+    /// set retires the pre-filter after the search.
+    gave_up: bool,
+    /// Bytes the walks of the current search read, which the DFA cache's
+    /// efficiency check counts: one progress span per search, updated
+    /// after each walk (a span per walk cost the captured C replay 8% of
+    /// its instructions).
+    walked: usize,
     /// Per pattern ID, the bytes the set's first-byte table dispatches its
     /// entry on (every byte for a fallback entry).
     dispatch: Vec<[u64; 4]>,
@@ -1146,6 +1167,96 @@ pub(crate) struct SetPrefilter {
     walked_at: Option<usize>,
     /// The last meta regex result for a subject (`earliest_memo`).
     meta_memo: Option<MetaMemo>,
+    /// The walks of a subject searched again.
+    candidate_memo: CandidateMemo,
+}
+
+/// What the walks of a subject found (`candidates_at`), per position, for
+/// the searches of that subject after its first: a walk reads the subject
+/// from its position and asks admission there, both of which depend on the
+/// subject only (see `MetaMemo`), so a later search reuses it where it
+/// walks a position again, the way the position-lead search reuses its
+/// fallback memo. A line tokenized again (an editor re-tokenizing it, a
+/// benchmark) walks every position again; a tokenizing pass walks a
+/// position the previous search's window walked. The memo holds at most
+/// `CANDIDATE_MEMO_POSITIONS` positions, kept sorted (the loop walks
+/// forwards), and is cleared when the subject changes. Recording starts
+/// once a search of the subject starts at or before the previous one's
+/// start, which a tokenizing pass never does (every call starts at the
+/// last match's end), so a line tokenized once pays nothing: recording
+/// every walk cost the captured C replay 10% of its instructions.
+#[derive(Default)]
+struct CandidateMemo {
+    subject: Option<(crate::regset::FallbackMemoIdentity, usize)>,
+    /// The subject was searched again from no later than before: record
+    /// and reuse.
+    active: bool,
+    /// Where the last search of the subject started.
+    last_start: usize,
+    /// The positions walked, ascending, each with its candidates' span in
+    /// `store` and whether a seek matched there (`Some` from
+    /// `candidates_at`).
+    at: Vec<u32>,
+    spans: Vec<(u32, u16, bool)>,
+    store: Vec<u16>,
+}
+
+/// Positions a `CandidateMemo` holds at most.
+const CANDIDATE_MEMO_POSITIONS: usize = 4096;
+
+impl CandidateMemo {
+    /// The memo's state for a search of `subject` from `start`: the
+    /// previous subject's walks are dropped, and recording starts once a
+    /// search of the subject starts no later than the previous one.
+    #[inline]
+    fn begin(
+        &mut self,
+        subject: Option<(crate::regset::FallbackMemoIdentity, usize)>,
+        start: usize,
+    ) {
+        if subject.is_some() && subject == self.subject {
+            if start <= self.last_start {
+                self.active = true;
+            }
+            self.last_start = start;
+            return;
+        }
+        self.subject = subject;
+        self.active = false;
+        self.last_start = start;
+        self.at.clear();
+        self.spans.clear();
+        self.store.clear();
+    }
+
+    /// The candidates a walk at `at` found, and whether a seek matched.
+    fn get(&self, at: usize) -> Option<(&[u16], bool)> {
+        let at = u32::try_from(at).ok()?;
+        let i = self.at.binary_search(&at).ok()?;
+        let (start, len, some) = self.spans[i];
+        Some((
+            &self.store[start as usize..start as usize + len as usize],
+            some,
+        ))
+    }
+
+    /// Records a walk at `at`.
+    fn insert(&mut self, at: usize, candidates: &[u16], some: bool) {
+        if self.at.len() >= CANDIDATE_MEMO_POSITIONS {
+            return;
+        }
+        let (Ok(at), Ok(len)) = (u32::try_from(at), u16::try_from(candidates.len())) else {
+            return;
+        };
+        let start = self.store.len() as u32;
+        self.store.extend_from_slice(candidates);
+        let i = match self.at.binary_search(&at) {
+            Ok(_) => return,
+            Err(i) => i,
+        };
+        self.at.insert(i, at);
+        self.spans.insert(i, (start, len, some));
+    }
 }
 
 /// What the covered searches of a subject found, reusable by every later
@@ -1171,8 +1282,11 @@ enum ScanEnd {
     /// Stopped early: every entry that can decide at the position is
     /// recorded.
     Settled,
-    /// The bound, or the DFA gave up or quit: the DFA is still alive.
+    /// The bound, or the DFA quit: the DFA is still alive.
     Bound,
+    /// The DFA gave up on its cache: as `Bound`, and the set retires the
+    /// pre-filter after the search.
+    GaveUp,
 }
 
 impl std::fmt::Debug for SetPrefilter {
@@ -1233,7 +1347,9 @@ impl Automata {
                 hybrid::Config::new()
                     .match_kind(MatchKind::All)
                     .cache_capacity(OVERLAPPING_CACHE_CAPACITY)
-                    .skip_cache_capacity_check(true),
+                    .skip_cache_capacity_check(true)
+                    .minimum_cache_clear_count(Some(MIN_CACHE_CLEARS))
+                    .minimum_bytes_per_state(Some(MIN_BYTES_PER_STATE)),
             )
             .build_from_nfa(nfa)
             .ok()?;
@@ -1298,6 +1414,8 @@ impl SetPrefilter {
             long: automata.long.clone(),
             settle: automata.settle,
             ask_early: false,
+            gave_up: false,
+            walked: 0,
             dispatch: vec![[u64::MAX; 4]; covered],
             long_dispatch: [0; 4],
             any_dispatch: [0; 4],
@@ -1306,6 +1424,7 @@ impl SetPrefilter {
             candidates: Vec::new(),
             walked_at: None,
             meta_memo: None,
+            candidate_memo: CandidateMemo::default(),
         }
     }
 
@@ -1513,11 +1632,20 @@ impl SetPrefilter {
         admits: &mut dyn FnMut(u16, usize) -> bool,
     ) -> Option<&[u16]> {
         self.candidates.clear();
-        self.patset.clear();
         self.walked_at = Some(at);
+        if self.candidate_memo.active {
+            if let Some((memo, some)) = self.candidate_memo.get(at) {
+                self.candidates.extend_from_slice(memo);
+                return some.then_some(&self.candidates);
+            }
+        }
+        self.patset.clear();
         let (end, asked) = self.scan_candidates(haystack, at, admits);
         self.ask_early = end == ScanEnd::Bound || (asked && end == ScanEnd::Settled);
         if end == ScanEnd::Finished && self.patset.is_empty() {
+            if self.candidate_memo.active {
+                self.candidate_memo.insert(at, &[], false);
+            }
             return None;
         }
         let entries = &self.entries;
@@ -1543,6 +1671,9 @@ impl SetPrefilter {
                     .map(|id: PatternID| entries[id.as_usize()]),
             );
         }
+        if self.candidate_memo.active {
+            self.candidate_memo.insert(at, &self.candidates, true);
+        }
         Some(&self.candidates)
     }
 
@@ -1560,15 +1691,25 @@ impl SetPrefilter {
         self.walked_at
     }
 
-    /// Forgets the candidates of the previous search.
+    /// Forgets the candidates of the previous search, and readies the
+    /// walk memo for a search of `subject` from `start`.
     #[inline]
-    pub(crate) fn begin_search(&mut self) {
+    pub(crate) fn begin_search(
+        &mut self,
+        subject: Option<(crate::regset::FallbackMemoIdentity, usize)>,
+        start: usize,
+    ) {
         self.walked_at = None;
+        self.candidate_memo.begin(subject, start);
+        self.walked = 0;
+        self.dfa_cache.search_start(0);
     }
 
     /// The anchored walk of `candidates_at`, filling `patset`: how it ended,
     /// and whether it asked `admits` (then `admissible[pid] == stamp` marks
-    /// the admissible long seeks).
+    /// the admissible long seeks). The bytes walked are recorded for the
+    /// DFA's cache efficiency check (`MIN_CACHE_CLEARS`); a walk the DFA
+    /// gave up on ends as at the bound and marks the set for retirement.
     fn scan_candidates(
         &mut self,
         haystack: &[u8],
@@ -1583,24 +1724,63 @@ impl SetPrefilter {
             long,
             settle,
             ask_early,
+            gave_up,
+            walked,
             dispatch,
             admissible: stamps,
             stamp,
             ..
         } = self;
+        let mut i = at;
+        let (end, asked) = Self::walk(
+            dfa, cache, patset, entries, long, *settle, *ask_early, dispatch, stamps, stamp,
+            haystack, at, &mut i, admits,
+        );
+        *walked += i - at;
+        cache.search_update(*walked);
+        if end == ScanEnd::GaveUp {
+            *gave_up = true;
+            return (ScanEnd::Bound, asked);
+        }
+        (end, asked)
+    }
+
+    /// `scan_candidates` from `at`, leaving the position it read up to in
+    /// `i`.
+    #[allow(clippy::too_many_arguments)]
+    fn walk(
+        dfa: &hybrid::DFA,
+        cache: &mut hybrid::Cache,
+        patset: &mut PatternSet,
+        entries: &[u16],
+        long: &[u16],
+        settle: usize,
+        ask_early: bool,
+        dispatch: &[[u64; 4]],
+        stamps: &mut [u32],
+        stamp: &mut u32,
+        haystack: &[u8],
+        at: usize,
+        i: &mut usize,
+        admits: &mut dyn FnMut(u16, usize) -> bool,
+    ) -> (ScanEnd, bool) {
         let end = haystack.len();
         let input = Input::new(haystack).span(at..end).anchored(Anchored::Yes);
         let Ok(mut sid) = dfa.start_state_forward(cache, &input) else {
-            return (ScanEnd::Bound, false);
+            return (ScanEnd::GaveUp, false);
         };
         let cut = end.min(at.saturating_add(CANDIDATE_SCAN_BYTES));
         // The position at which the walk asks about the long seeks.
-        let ask_at = if *ask_early {
-            *settle
+        let ask_at = if ask_early {
+            settle
         } else {
-            (*settle).max(LONG_WALK_BYTES)
+            settle.max(LONG_WALK_BYTES)
         };
         let ask_i = at.saturating_add(ask_at);
+        // A match state stands for its patterns wherever the walk reaches
+        // it; a run of word characters keeps the walk in one match state
+        // for every identifier-like seek, which is recorded once.
+        let mut recorded = None;
         macro_rules! record {
             ($state:expr) => {
                 for k in 0..dfa.match_len(cache, $state) {
@@ -1616,10 +1796,9 @@ impl SetPrefilter {
                     }
                     return (ScanEnd::Finished, $asked);
                 }
-                return (ScanEnd::Bound, $asked);
+                return (ScanEnd::GaveUp, $asked);
             };
         }
-        let mut i = at;
         // Up to `ask_i`, the plain walk.
         loop {
             if sid.is_dead() {
@@ -1630,28 +1809,29 @@ impl SetPrefilter {
             }
             // A match state stands for the matches that ended before the
             // byte it was reached by (or at the end of the haystack).
-            if sid.is_match() {
+            if sid.is_match() && recorded != Some(sid) {
+                recorded = Some(sid);
                 record!(sid);
                 if patset.is_full() {
                     return (ScanEnd::Settled, false);
                 }
             }
-            if i == end {
+            if *i == end {
                 at_end!(false);
             }
-            if i == cut {
+            if *i == cut {
                 return (ScanEnd::Bound, false);
             }
-            if i >= ask_i {
+            if *i >= ask_i {
                 break;
             }
             #[cfg(test)]
             SCAN_STEPS.with(|steps| steps.set(steps.get() + 1));
-            sid = match dfa.next_state(cache, sid, haystack[i]) {
+            sid = match dfa.next_state(cache, sid, haystack[*i]) {
                 Ok(sid) => sid,
-                Err(_) => return (ScanEnd::Bound, false),
+                Err(_) => return (ScanEnd::GaveUp, false),
             };
-            i += 1;
+            *i += 1;
         }
         // The bounded seeks have settled: only an admissible long seek not
         // yet recorded can add a candidate.
@@ -1681,18 +1861,19 @@ impl SetPrefilter {
         loop {
             #[cfg(test)]
             SCAN_STEPS.with(|steps| steps.set(steps.get() + 1));
-            sid = match dfa.next_state(cache, sid, haystack[i]) {
+            sid = match dfa.next_state(cache, sid, haystack[*i]) {
                 Ok(sid) => sid,
-                Err(_) => return (ScanEnd::Bound, true),
+                Err(_) => return (ScanEnd::GaveUp, true),
             };
-            i += 1;
+            *i += 1;
             if sid.is_dead() {
                 return (ScanEnd::Finished, true);
             }
             if sid.is_quit() {
                 return (ScanEnd::Bound, true);
             }
-            if sid.is_match() {
+            if sid.is_match() && recorded != Some(sid) {
+                recorded = Some(sid);
                 for k in 0..dfa.match_len(cache, sid) {
                     let pid = dfa.match_pattern(cache, sid, k);
                     if patset.insert(pid) && stamps[pid.as_usize()] == *stamp {
@@ -1703,13 +1884,19 @@ impl SetPrefilter {
                     return (ScanEnd::Settled, true);
                 }
             }
-            if i == end {
+            if *i == end {
                 at_end!(true);
             }
-            if i == cut {
+            if *i == cut {
                 return (ScanEnd::Bound, true);
             }
         }
+    }
+
+    /// The overlapping DFA gave up on its cache during the last search
+    /// (`MIN_CACHE_CLEARS`): the set should retire the pre-filter.
+    pub(crate) fn gave_up(&self) -> bool {
+        self.gave_up
     }
 
     /// NFA states of the overlapping DFA (the meta regex holds about twice
@@ -1983,6 +2170,139 @@ mod tests {
             patterns.len()
         );
         assert!(bytes / codes < 1024, "{bytes} bytes over {codes} seeks");
+    }
+
+    /// The `match` and `begin` patterns of a TextMate grammar JSON, as
+    /// `benches/grammar_loader.rs` extracts them for the flat scanners of
+    /// `battle_bench`, those the scanner compiles.
+    fn flat_grammar_patterns(json: &str) -> Vec<String> {
+        fn collect(value: &serde_json::Value, out: &mut Vec<String>) {
+            match value {
+                serde_json::Value::Object(map) => {
+                    for key in ["match", "begin"] {
+                        if let Some(pattern) = map.get(key).and_then(|v| v.as_str()) {
+                            if !out.iter().any(|p| p == pattern) {
+                                out.push(pattern.to_owned());
+                            }
+                        }
+                    }
+                    for (_, value) in map {
+                        collect(value, out);
+                    }
+                }
+                serde_json::Value::Array(items) => {
+                    for item in items {
+                        collect(item, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let root: serde_json::Value = serde_json::from_str(json).unwrap();
+        let mut patterns = Vec::new();
+        collect(&root, &mut patterns);
+        patterns
+            .into_iter()
+            .filter(|pattern| Scanner::new(&[pattern.as_str()]).is_ok())
+            .collect()
+    }
+
+    fn tokenize(
+        scanner: &mut Scanner,
+        line: &crate::scanner::OnigString,
+    ) -> Vec<(usize, usize, usize)> {
+        let len = line.utf16_len();
+        let mut pos = 0;
+        let mut tokens = Vec::new();
+        while pos < len {
+            let Some(m) = scanner.find_next_match_utf16(line, pos, ScannerFindOptions::NONE) else {
+                break;
+            };
+            let end = m.captures()[0].end;
+            tokens.push((m.index, m.captures()[0].start, end));
+            pos = if end > pos { end } else { pos + 1 };
+        }
+        tokens
+    }
+
+    /// A set whose overlapping DFA cannot reuse its cache retires the
+    /// pre-filter and answers as before: the flat scanner over every
+    /// pattern of the CSS grammar, whose 116 case-insensitive property
+    /// lists in one automaton make every DFA state hold thousands of NFA
+    /// states, tokenizing a stylesheet where a `\G`-anchored zero-width
+    /// entry wins at every position (`battle_bench`, see ADR-008).
+    #[test]
+    fn a_set_whose_cache_thrashes_retires_the_prefilter() {
+        let _limits = crate::regexec::shared_limits();
+        let json = std::fs::read_to_string(format!(
+            "{}/benches/grammars/css.json",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let patterns = flat_grammar_patterns(&json);
+        let refs: Vec<&str> = patterns.iter().map(String::as_str).collect();
+        let mut filtered = Scanner::new(&refs).unwrap();
+        let mut plain =
+            Scanner::with_config(&refs, &ScannerConfig::default().prefilter(false)).unwrap();
+        let stylesheet = ".navbar-primary > .nav-item:first-child {\n\
+            background-color: oklch(0.65 0.15 250);\n\
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n\
+            transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);\n\
+            --custom-property: var(--color-primary, #3b82f6);\n\
+            @media (min-width: 768px) and (prefers-color-scheme: dark) {\n}\n";
+        let line = crate::scanner::OnigString::new(stylesheet);
+        let stats = filtered.prefilter_stats();
+        assert!(stats.covered > 100 && !stats.retired, "{stats:?}");
+        let want = tokenize(&mut plain, &line);
+        let got = tokenize(&mut filtered, &line);
+        assert_eq!(got, want);
+        assert!(got.len() > 200);
+        let stats = filtered.prefilter_stats();
+        assert!(
+            stats.retired && !stats.built && stats.own == refs.len(),
+            "{stats:?}"
+        );
+        // Retired for good: the next pass answers alike without automata.
+        assert_eq!(tokenize(&mut filtered, &line), want);
+        assert!(filtered.prefilter_stats().retired);
+    }
+
+    /// A subject tokenized again reuses the walks (`CandidateMemo`): the
+    /// first pass over a string records nothing and the second, which
+    /// starts over, records, so the third walks a fraction of the steps; a
+    /// string of the same content with another identity walks them all,
+    /// and every pass answers alike.
+    #[test]
+    fn walks_of_a_subject_searched_again_are_kept() {
+        let _limits = crate::regexec::shared_limits();
+        let patterns = [r"[a-z]+:", r"\d+", r"[a-z]+\(", "b", "a"];
+        let mut filtered = Scanner::new(&patterns).unwrap();
+        let mut plain =
+            Scanner::with_config(&patterns, &ScannerConfig::default().prefilter(false)).unwrap();
+        let text = "abc: 12 foo(bar) a b xyz: 7 quux(1) ba";
+        let line = crate::scanner::OnigString::new(text);
+        let steps = || SCAN_STEPS.with(|c| c.get());
+        let want = tokenize(&mut plain, &line);
+        let before = steps();
+        assert_eq!(tokenize(&mut filtered, &line), want);
+        let first = steps() - before;
+        assert!(first > 0);
+        // The second pass starts over: it records, and walks as the first.
+        let before = steps();
+        assert_eq!(tokenize(&mut filtered, &line), want);
+        assert_eq!(steps() - before, first);
+        let before = steps();
+        assert_eq!(tokenize(&mut filtered, &line), want);
+        let third = steps() - before;
+        assert!(third < first / 4, "{third} steps after {first}");
+        let before = steps();
+        assert_eq!(tokenize(&mut filtered, &line), want);
+        assert_eq!(steps() - before, third);
+        // Another identity with the same content walks everything again.
+        let other = crate::scanner::OnigString::new(text);
+        let before = steps();
+        assert_eq!(tokenize(&mut filtered, &other), want);
+        assert_eq!(steps() - before, first);
     }
 
     /// Patterns compiled for a scanner without the pre-filter, with
