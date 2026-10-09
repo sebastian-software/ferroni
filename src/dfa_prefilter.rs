@@ -93,6 +93,8 @@ thread_local! {
     pub(crate) static EARLIEST_CALLS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Bytes the candidate scans read on this thread.
     pub(crate) static SCAN_STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Bytes the meta regex searches read on this thread.
+    pub(crate) static META_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// The seek approximation of one compiled pattern. A scanner passes it to
@@ -862,6 +864,18 @@ pub(crate) struct SetPrefilter {
     stamp: u32,
     /// Scratch for `candidates_at`.
     candidates: Vec<u16>,
+    /// The last meta regex result for a subject (`earliest_memo`).
+    meta_memo: Option<MetaMemo>,
+}
+
+/// A meta regex result, reusable by every later search of the same subject:
+/// no covered seek matches in `[from, at)`, and one matches at `at` (none
+/// to the end of the subject where `at` is `None`).
+#[derive(Clone, Copy)]
+struct MetaMemo {
+    subject: (crate::regset::FallbackMemoIdentity, usize),
+    from: usize,
+    at: Option<usize>,
 }
 
 /// How a candidate walk ended.
@@ -980,6 +994,7 @@ impl SetPrefilter {
             admissible,
             stamp: 0,
             candidates: Vec::new(),
+            meta_memo: None,
         })
     }
 
@@ -1016,9 +1031,39 @@ impl SetPrefilter {
             return None;
         }
         let input = Input::new(haystack).span(from..haystack.len());
-        self.meta
+        let at = self
+            .meta
             .search_with(&mut self.meta_cache, &input)
-            .map(|m| m.start())
+            .map(|m| m.start());
+        #[cfg(test)]
+        META_BYTES.with(|bytes| {
+            bytes.set(bytes.get() + (at.unwrap_or(haystack.len()) - from) as u64);
+        });
+        at
+    }
+
+    /// `earliest`, with the result kept for the subject (a stable identity
+    /// and the subject's length) so that a later search of it from a
+    /// position the result covers does not read the subject again: one
+    /// meta regex search per subject where a scanner tokenizes a line in
+    /// order.
+    #[inline]
+    pub(crate) fn earliest_memo(
+        &mut self,
+        haystack: &[u8],
+        from: usize,
+        subject: Option<(crate::regset::FallbackMemoIdentity, usize)>,
+    ) -> Option<usize> {
+        if let (Some(subject), Some(memo)) = (subject, self.meta_memo) {
+            if memo.subject == subject && from >= memo.from && memo.at.is_none_or(|at| from <= at) {
+                return memo.at;
+            }
+        }
+        let at = self.earliest(haystack, from);
+        if let Some(subject) = subject {
+            self.meta_memo = Some(MetaMemo { subject, from, at });
+        }
+        at
     }
 
     /// The covered entries whose seek matches at `at`, ascending, or `None`
@@ -1038,7 +1083,7 @@ impl SetPrefilter {
         &mut self,
         haystack: &[u8],
         at: usize,
-        admits: impl FnMut(u16) -> bool,
+        admits: &mut dyn FnMut(u16) -> bool,
     ) -> Option<&[u16]> {
         self.candidates.clear();
         self.patset.clear();
@@ -1086,7 +1131,7 @@ impl SetPrefilter {
         &mut self,
         haystack: &[u8],
         at: usize,
-        mut admits: impl FnMut(u16) -> bool,
+        admits: &mut dyn FnMut(u16) -> bool,
     ) -> (ScanEnd, bool) {
         let Self {
             dfa,

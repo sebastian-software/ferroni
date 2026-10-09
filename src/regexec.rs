@@ -3706,6 +3706,11 @@ thread_local! {
     /// VM attempts (`match_at`) on this thread, for tests that bound the
     /// work of a search.
     pub(crate) static VM_ATTEMPTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Bytes the VM moved over on this thread (forward and back), for tests
+    /// that bound the work of a search.
+    pub(crate) static VM_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Bytes the optimizer's forward searches read on this thread.
+    pub(crate) static FORWARD_SEARCH_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 fn match_at_impl<const TRACK_CAPTURES: bool>(
@@ -3894,7 +3899,14 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     }
 
     // ---- Main dispatch loop ----
+    #[cfg(test)]
+    let mut vm_previous = s;
     loop {
+        #[cfg(test)]
+        {
+            VM_BYTES.with(|bytes| bytes.set(bytes.get() + s.abs_diff(vm_previous) as u64));
+            vm_previous = s;
+        }
         if p >= reg.ops.len() {
             break;
         }
@@ -6981,6 +6993,22 @@ fn onigenc_get_right_adjust_char_head(
 /// Forward search using optimization strategy.
 /// Returns Some((low, high)) if a candidate was found, None otherwise.
 pub(crate) fn forward_search(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+) -> Option<(usize, usize)> {
+    let found = forward_search_impl(reg, str_data, end, start, range);
+    #[cfg(test)]
+    FORWARD_SEARCH_BYTES.with(|bytes| {
+        let read = found.map_or(range, |(_, high)| high).saturating_sub(start);
+        bytes.set(bytes.get() + read as u64);
+    });
+    found
+}
+
+fn forward_search_impl(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,

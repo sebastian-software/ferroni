@@ -3238,59 +3238,111 @@ mod tests {
     }
 
     /// Tokenizing a run in order with a stable id costs the same work with
-    /// the pre-filter as without, in VM attempts, and the meta regex is
-    /// asked at most once per call, and not at all where an entry the
-    /// automata do not cover decides at the position: those entries are
-    /// attempted position by position and bounded by the current best,
-    /// never searched from the position to the end of the subject (the
-    /// third review's finding: 4,200× the time for `["a", "(?<=z)"]`).
+    /// the pre-filter as without, in VM attempts and in the bytes the VM,
+    /// the optimizer's forward searches, the candidate walks and the meta
+    /// regex read, each within a constant of the text's length; the meta
+    /// regex is asked at most once per subject. The shapes are the review
+    /// findings: entries the automata do not cover searched to the end of
+    /// the subject before the covered ones (4,200× the time for
+    /// `["a", "(?<=z)"]`), a seek alive through a word run while its entry
+    /// is ruled out (270× for `\w+:` without a `:`), an own entry behind
+    /// the winner attempted first (`.*(?<=z)`: 3,400×), and the meta regex
+    /// reading the rest of the line before a nearby own match
+    /// (`[(?<=b)a?, a[ab]{2}a]` on `ba…`: 125×).
     #[test]
     fn own_entries_cost_linear_work_over_a_tokenizing_loop() {
         let _limits = crate::regexec::shared_limits();
-        let text = "a".repeat(2_000);
-        let calls = text.len() as u64;
-        // (patterns, meta regex searches the pre-filter may make over the loop)
-        let variants: [(&[&str], u64); 7] = [
-            (&["a", r"(?<=z)"], 0),
-            (&[r"(?<=a)", "b"], 1),
-            (&[r"(?<=z)", "b"], calls),
-            (&[r"\G ?", "a"], 0),
-            (&[r"(?<=\))(?!\w)", "a"], 0),
-            (&[r"(?<=\.)\w+", r"\w+:", r"\d+", "a"], 0),
-            (&[r"(?<=/)[^/]+", r"[^/]+/", "a"], 0),
+        let word = "a".repeat(2_000);
+        let pairs = "ba".repeat(1_000);
+        // (patterns, text, meta regex searches the pre-filter may make)
+        let variants: [(&[&str], &str, u64); 9] = [
+            (&["a", r"(?<=z)"], &word, 0),
+            (&[r"(?<=a)", "b"], &word, 0),
+            (&[r"(?<=z)", "b"], &word, 1),
+            (&[r"\G ?", "a"], &word, 0),
+            (&[r"(?<=\))(?!\w)", "a"], &word, 0),
+            (&[r"(?<=\.)\w+", r"\w+:", r"\d+", "a"], &word, 0),
+            (&[r"(?<=/)[^/]+", r"[^/]+/", "a"], &word, 0),
+            (&["a", r".*(?<=z)"], &word, 0),
+            (&[r"(?<=b)a?", r"a[ab]{2}a"], &pairs, 0),
         ];
-        for (patterns, max_earliest) in variants {
+        #[cfg(feature = "dfa-prefilter")]
+        fn automata_work() -> [u64; 3] {
+            [
+                crate::dfa_prefilter::EARLIEST_CALLS.with(|c| c.get()),
+                crate::dfa_prefilter::META_BYTES.with(|c| c.get()),
+                crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get()),
+            ]
+        }
+        #[cfg(not(feature = "dfa-prefilter"))]
+        fn automata_work() -> [u64; 3] {
+            [0; 3]
+        }
+        // VM attempts, VM bytes, forward-search bytes, meta regex searches,
+        // meta regex bytes, candidate walk bytes.
+        let work = || -> [u64; 6] {
+            let automata = automata_work();
+            [
+                crate::regexec::VM_ATTEMPTS.with(|c| c.get()),
+                crate::regexec::VM_BYTES.with(|c| c.get()),
+                crate::regexec::FORWARD_SEARCH_BYTES.with(|c| c.get()),
+                automata[0],
+                automata[1],
+                automata[2],
+            ]
+        };
+        for (patterns, text, max_earliest) in variants {
             let run = |prefilter: bool| {
                 let config = ScannerConfig::default().prefilter(prefilter);
                 let mut scanner = Scanner::with_config(patterns, &config).unwrap();
-                let attempts_before = crate::regexec::VM_ATTEMPTS.with(|c| c.get());
-                #[cfg(feature = "dfa-prefilter")]
-                let earliest_before = crate::dfa_prefilter::EARLIEST_CALLS.with(|c| c.get());
+                let before = work();
                 let results: Vec<_> = (0..text.len())
                     .map(|at| {
                         scanner
-                            .find_next_match_with_id(&text, 7, at, ScannerFindOptions::NONE)
+                            .find_next_match_with_id(text, 7, at, ScannerFindOptions::NONE)
                             .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
                     })
                     .collect();
-                let attempts = crate::regexec::VM_ATTEMPTS.with(|c| c.get()) - attempts_before;
-                #[cfg(feature = "dfa-prefilter")]
-                let earliest =
-                    crate::dfa_prefilter::EARLIEST_CALLS.with(|c| c.get()) - earliest_before;
-                #[cfg(not(feature = "dfa-prefilter"))]
-                let earliest = 0;
-                (attempts, earliest, results)
+                let after = work();
+                let spent: [u64; 6] = std::array::from_fn(|i| after[i] - before[i]);
+                (spent, results)
             };
-            let (without, _, plain) = run(false);
-            let (with, earliest, filtered) = run(true);
+            let n = text.len() as u64;
+            let (without, plain) = run(false);
+            let (with, filtered) = run(true);
             assert_eq!(filtered, plain, "{patterns:?}");
             assert!(
-                with <= 2 * without + calls,
-                "{patterns:?}: {with} VM attempts with the pre-filter, {without} without"
+                with[0] <= 2 * without[0] + n,
+                "{patterns:?}: {} VM attempts with the pre-filter, {} without",
+                with[0],
+                without[0]
             );
             assert!(
-                earliest <= max_earliest,
-                "{patterns:?}: {earliest} meta regex searches, at most {max_earliest}"
+                with[1] <= 2 * without[1] + 8 * n,
+                "{patterns:?}: {} VM bytes with the pre-filter, {} without",
+                with[1],
+                without[1]
+            );
+            assert!(
+                with[2] <= 2 * without[2] + 8 * n,
+                "{patterns:?}: {} forward-search bytes with the pre-filter, {} without",
+                with[2],
+                without[2]
+            );
+            assert!(
+                with[3] <= max_earliest,
+                "{patterns:?}: {} meta regex searches, at most {max_earliest}",
+                with[3]
+            );
+            assert!(
+                with[4] <= 8 * n,
+                "{patterns:?}: {} meta regex bytes over {n} bytes of text",
+                with[4]
+            );
+            assert!(
+                with[5] <= 8 * n,
+                "{patterns:?}: {} candidate walk bytes over {n} bytes of text",
+                with[5]
             );
         }
     }
