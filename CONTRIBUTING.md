@@ -47,6 +47,42 @@ cargo test --test compat_regset
 RUST_MIN_STACK=268435456 cargo test --test compat_back -- --test-threads=1
 ```
 
+### The DFA pre-filter
+
+The scanner's DFA pre-filter
+([ADR-008](https://ferroni.dev/adr/008-rust-only-optimizations)) must find
+what the position-lead search finds. Three checks hold it to that, beyond
+the unit tests and `tests/compat_prefilter_differential.rs`:
+
+- The `prefilter-self-check` Cargo feature (not a default; it implies
+  `dfa-prefilter`) makes every search the pre-filter decides also run the
+  position-lead search on the same set, and panic with the pattern set, the
+  subject, the start and the options unless both decide alike, captures
+  included. CI runs the scanner suites with it; locally:
+
+  ```bash
+  cargo test --features prefilter-self-check --lib --test api_test --test compat_prefilter_differential --test scanner_prefilter_regressions
+  ```
+
+- The `prefilter-differential` fuzz target compares a scanner with the
+  pre-filter against one without it over generated and raw pattern sets;
+  [fuzz/README.md](fuzz/README.md) describes it and how to seed its corpus
+  from the compat pairs.
+
+- `tests/ferriki_corpus_differential.rs` does the same over a TextMate
+  grammar corpus: every rule's pattern list of every grammar JSON in
+  `FERRONI_GRAMMAR_DIR`, tokenizing the sample files in `FERRONI_SAMPLE_DIR`
+  line by line, from every match end, with the pre-filter on and off. The
+  grammars and samples are not part of this repository; Ferriki's checkout
+  carries them (its `assets/upstream/textmate-grammars-themes/grammars` and
+  the fixtures under `node/benchmarks`). The test is ignored and meant for a
+  release build; it prints the grammar, scanner, pattern and call counts:
+
+  ```bash
+  FERRONI_GRAMMAR_DIR=/path/to/grammars FERRONI_SAMPLE_DIR=/path/to/fixtures \
+    cargo test --release --test ferriki_corpus_differential -- --ignored --nocapture
+  ```
+
 Test counts are derived from the tree by `./scripts/count-tests.sh`; the
 README quotes the total in its
 [Correctness and safety](README.md#correctness-and-safety) section, and the

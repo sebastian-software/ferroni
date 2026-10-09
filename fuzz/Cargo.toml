@@ -11,8 +11,12 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 
+# Every scanner search the DFA pre-filter decides also runs the position-lead
+# search and panics on a different decision (ADR-008), so the two scanner
+# targets check the pre-filter on every search they make.
 [dependencies.ferroni]
 path = ".."
+features = ["prefilter-self-check"]
 
 [[bin]]
 name = "pattern-compile"
@@ -31,6 +35,13 @@ bench = false
 [[bin]]
 name = "scanner-api"
 path = "fuzz_targets/scanner_api.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prefilter-differential"
+path = "fuzz_targets/prefilter_differential.rs"
 test = false
 doc = false
 bench = false

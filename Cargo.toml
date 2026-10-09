@@ -46,6 +46,11 @@ default = ["dfa-prefilter"]
 # regex-automata and regex-syntax dependencies (ADR-009); without the feature
 # the scanner runs the position-lead search alone, with the same results.
 dfa-prefilter = ["dep:regex-automata", "dep:regex-syntax"]
+# Validation of the pre-filter (ADR-008): every search it decides also runs
+# the position-lead search on the same set and panics unless both find the
+# same match, captures included. For the fuzz targets and the differential
+# tests; it doubles the cost of every scanner search.
+prefilter-self-check = ["dfa-prefilter"]
 # Benchmark-comparison harness: links a local upstream Oniguruma checkout
 # (scripts/prepare-oniguruma-sources.sh or FERRONI_ONIGURUMA_DIR) for the
 # in-repo C-vs-Rust benches. Not needed to use the library.

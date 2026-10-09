@@ -4,8 +4,8 @@
 //! call budget.
 //!
 //! The call budget is process-wide, so this file holds a single test that
-//! runs the six reproductions in order and sets and restores the budget
-//! last, as tests/subexp_call_limits.rs does.
+//! runs the reproductions in order and sets and restores the budget last,
+//! as tests/subexp_call_limits.rs does.
 use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
 
 fn bounds(found: Option<ferroni::scanner::ScannerMatch>) -> Option<(usize, usize, usize)> {
@@ -99,6 +99,18 @@ fn conditional_optimizer_admission() {
     compare_from(&[r"(?(a)(?:b|c))!", "!"], "ac!", 0, (0, 2, 3));
 }
 
+/// The `prefilter-differential` fuzz target's first finding, through the
+/// self-check: a winner without capture groups or `\K` is rebuilt from the
+/// attempt position and the match length, and the position-lead search
+/// leaves its region unwritten where the pre-filter's attempt fills it.
+/// The scanner never reads that region, so both routes report the match
+/// alike, and the self-check compares registers only where they are read.
+fn winner_without_captures_on_a_long_subject() {
+    let text = format!("dd\n{}\ndda>$\nbcaa\naaaabc", "y".repeat(250));
+    let last_line = text.rfind('\n').unwrap() + 1;
+    compare_from(&[r".+abc"], &text, 1, (0, last_line, last_line + 6));
+}
+
 #[test]
 fn review_findings_of_the_prefilter() {
     unicode_non_word_is_not_ascii_only();
@@ -108,5 +120,6 @@ fn review_findings_of_the_prefilter() {
     identical_default_limit_searches_have_identical_results();
     interior_byte_offset();
     conditional_optimizer_admission();
+    winner_without_captures_on_a_long_subject();
     explicit_subexpression_call_limit_disables_skipping();
 }

@@ -204,6 +204,24 @@ jobs:
       - name: Test lib, api and RegSet compat without the feature
         run: cargo test --lib --test api_test --test compat_regset --test scanner_prefilter_regressions --test compat_prefilter_differential --no-default-features
 
+  prefilter-self-check:
+    name: Test with the pre-filter self-check
+    runs-on: ubuntu-latest
+    # `prefilter-self-check` (ADR-008) runs the position-lead search after
+    # every search the DFA pre-filter decides and panics on a different
+    # decision, captures included, so the suites that drive the scanner run
+    # once more with it.
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Test lib, api and the pre-filter suites with the self-check
+        run: cargo test --features prefilter-self-check --lib --test api_test --test compat_prefilter_differential --test scanner_prefilter_regressions
+
   docs:
     name: Rustdoc
     runs-on: ubuntu-latest
