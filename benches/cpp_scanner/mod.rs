@@ -142,13 +142,21 @@ impl Corpus {
     /// The scanners built from one pattern cache, as a grammar loader that
     /// shares compiled patterns builds them.
     pub fn cached_scanners(&self) -> Vec<Scanner> {
-        let config = bench_config();
-        let mut cache = ScannerPatternCache::new();
+        self.cached_scanners_with(&bench_config(), &mut ScannerPatternCache::new())
+    }
+
+    /// The scanners of the trace, built with `config` through `cache`.
+    #[allow(dead_code)]
+    pub fn cached_scanners_with(
+        &self,
+        config: &ScannerConfig,
+        cache: &mut ScannerPatternCache,
+    ) -> Vec<Scanner> {
         self.patterns
             .iter()
             .map(|patterns| {
                 let refs: Vec<_> = patterns.iter().map(String::as_str).collect();
-                Scanner::with_pattern_cache(&refs, &config, &mut cache)
+                Scanner::with_pattern_cache(&refs, config, cache)
                     .expect("captured patterns compile")
             })
             .collect()

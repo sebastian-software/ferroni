@@ -17,7 +17,7 @@ use crate::regcomp::onig_new_for_scanner;
 use crate::regexec::{onig_get_global_limit_revision, onig_get_retry_limit_in_search};
 use crate::regint::{ANCR_ANYCHAR_INF, RegexType};
 use crate::regset::{
-    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, SharedSeek,
+    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, SharedAutomata, SharedSeek,
     onig_regset_entry_search, onig_regset_get_regex, onig_regset_last_match_len,
     onig_regset_new_shared, onig_regset_number_of_regex, onig_regset_prefilter_decides,
     onig_regset_search_utf8, onig_regset_swap_region,
@@ -334,11 +334,27 @@ pub struct ScannerPatternCache {
     /// The compiled patterns of each compile setting, in first-use order.
     /// A grammar usually compiles all its patterns with one setting.
     compiled: Vec<(PatternSettings, CompiledPatterns)>,
+    /// The DFA pre-filter automata of every pattern list a scanner was
+    /// built over (ADR-008), by the ids of its patterns: scanners over the
+    /// same list share them, and the first of them to search builds them.
+    #[cfg(feature = "dfa-prefilter")]
+    automata: HashMap<Box<[u32]>, SharedAutomata>,
+    /// The id the next compiled pattern gets.
+    next_id: u32,
 }
 
-/// Compiled programs by pattern text, for one `PatternSettings`, each with
-/// its seek approximation for the DFA pre-filter (ADR-008).
-type CompiledPatterns = HashMap<Box<str>, (Arc<RegexType>, SharedSeek)>;
+/// Compiled programs by pattern text, for one `PatternSettings`.
+type CompiledPatterns = HashMap<Box<str>, CachedPattern>;
+
+/// A compiled program, its seek approximation for the DFA pre-filter
+/// (ADR-008), and its id in the cache, which keys the automata of the
+/// pattern lists it occurs in.
+#[derive(Clone)]
+struct CachedPattern {
+    reg: Arc<RegexType>,
+    seek: SharedSeek,
+    id: u32,
+}
 
 impl ScannerPatternCache {
     /// Create an empty cache.
@@ -362,10 +378,14 @@ impl ScannerPatternCache {
             .all(|(_, patterns)| patterns.is_empty())
     }
 
-    /// Drop the cache's references to every compiled pattern. Scanners
+    /// Drop the cache's references to every compiled pattern, and to the
+    /// pre-filter automata of every pattern list built from it. Scanners
     /// built from it keep theirs.
     pub fn clear(&mut self) {
         self.compiled.clear();
+        #[cfg(feature = "dfa-prefilter")]
+        self.automata.clear();
+        self.next_id = 0;
     }
 
     /// Build a scanner from the cached patterns, compiling and adding the
@@ -384,15 +404,55 @@ impl ScannerPatternCache {
         };
         let compiled = &mut self.compiled[at].1;
         let mut added = Vec::new();
-        let scanner = Scanner::compile(patterns, settings, |pattern| {
-            if let Some(compiled) = compiled.get(pattern) {
-                return Ok(compiled.clone());
+        let mut parts = Vec::with_capacity(patterns.len());
+        let mut ids = Vec::with_capacity(patterns.len());
+        let mut failed = None;
+        for pattern in patterns {
+            let cached = match compiled.get(*pattern) {
+                Some(cached) => cached.clone(),
+                None => match settings.compile(pattern) {
+                    Ok((reg, seek)) => {
+                        let cached = CachedPattern {
+                            reg,
+                            seek,
+                            id: self.next_id,
+                        };
+                        self.next_id += 1;
+                        compiled.insert((*pattern).into(), cached.clone());
+                        added.push(*pattern);
+                        cached
+                    }
+                    Err(error) => {
+                        failed = Some(error);
+                        break;
+                    }
+                },
+            };
+            ids.push(cached.id);
+            parts.push((cached.reg, cached.seek));
+        }
+        let scanner = match failed {
+            Some(error) => Err(error),
+            None => {
+                #[cfg(feature = "dfa-prefilter")]
+                let automata = self
+                    .automata
+                    .get(ids.as_slice())
+                    .cloned()
+                    .unwrap_or_default();
+                #[cfg(feature = "dfa-prefilter")]
+                let scanner = Scanner::assemble(patterns, settings, parts, automata.clone());
+                #[cfg(not(feature = "dfa-prefilter"))]
+                let scanner = Scanner::assemble(patterns, settings, parts, ());
+                #[cfg(feature = "dfa-prefilter")]
+                if scanner.is_ok() {
+                    self.automata
+                        .entry(ids.into_boxed_slice())
+                        .or_insert(automata);
+                }
+                scanner
             }
-            let reg = settings.compile(pattern)?;
-            compiled.insert(pattern.into(), reg.clone());
-            added.push(pattern);
-            Ok(reg)
-        });
+        };
         if scanner.is_err() {
             for pattern in added {
                 compiled.remove(pattern);
@@ -682,9 +742,13 @@ pub struct ScannerStats {
 
 /// What a scanner's DFA pre-filter covers, from [`Scanner::prefilter_stats`].
 ///
-/// The pre-filter is described at [`ScannerConfig::prefilter`]. A scanner
-/// built without it, without the `dfa-prefilter` feature, or whose automata
-/// would be too large reports `built == false` and every pattern as `own`.
+/// The pre-filter is described at [`ScannerConfig::prefilter`]. Its automata
+/// are built by the first search they decide (one under the default limits,
+/// from a character boundary), not when the scanner is constructed: until
+/// then `built` is `false` while `covered` and `own` already say what they
+/// will cover. A scanner built without the pre-filter, without the
+/// `dfa-prefilter` feature, or whose automata would be too large reports
+/// `built == false` and every pattern as `own`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PrefilterStats {
@@ -696,10 +760,15 @@ pub struct PrefilterStats {
     /// position, or they were compiled without one.
     pub own: usize,
     /// States of the NFA the automata are built from; sets above a bound
-    /// get no pre-filter.
+    /// get no pre-filter. Zero until they are built.
     pub nfa_states: usize,
-    /// Heap memory of the automata and their caches, in bytes.
+    /// Heap memory of the automata and of the scanner's caches, in bytes.
+    /// Scanners built from one [`ScannerPatternCache`] over the same
+    /// patterns share the automata, so each of them reports that part.
     pub memory_usage: usize,
+    /// The part of `memory_usage` that is the scanner's own: its lazy DFA
+    /// caches, which fill as it searches.
+    pub cache_memory_usage: usize,
     /// Times the overlapping automaton's cache filled up and was cleared.
     pub cache_clears: usize,
 }
@@ -894,12 +963,33 @@ impl Scanner {
 
     /// Build a scanner from the compiled form of each pattern and its seek
     /// approximation, which `regex` provides in pattern order. `settings`
-    /// are the ones `regex` compiles with. The seeks go into the set's
-    /// pre-filter and are not kept beyond that.
+    /// are the ones `regex` compiles with. The set holds the seeks until
+    /// its first pre-filtered search builds the automata from them.
     fn compile<'p>(
         patterns: &[&'p str],
         settings: PatternSettings,
         mut regex: impl FnMut(&'p str) -> Result<(Arc<RegexType>, SharedSeek), RegexError>,
+    ) -> Result<Scanner, RegexError> {
+        let parts = patterns
+            .iter()
+            .map(|pattern| regex(pattern))
+            .collect::<Result<Vec<_>, _>>()?;
+        #[cfg(feature = "dfa-prefilter")]
+        let automata = SharedAutomata::default();
+        #[cfg(not(feature = "dfa-prefilter"))]
+        let automata = ();
+        Self::assemble(patterns, settings, parts, automata)
+    }
+
+    /// Build a scanner from the compiled form of each pattern and its seek
+    /// approximation, in pattern order, over `automata`: the handle on the
+    /// pre-filter automata the scanner shares with every other built over
+    /// the same patterns from one pattern cache.
+    fn assemble(
+        patterns: &[&str],
+        settings: PatternSettings,
+        parts: Vec<(Arc<RegexType>, SharedSeek)>,
+        automata: SharedAutomata,
     ) -> Result<Scanner, RegexError> {
         let mut caches = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
@@ -908,8 +998,7 @@ impl Scanner {
         let mut warnings = Vec::with_capacity(patterns.len());
         let mut rewrites = Vec::with_capacity(patterns.len());
 
-        for pattern in patterns {
-            let (reg, seek) = regex(pattern)?;
+        for (pattern, (reg, seek)) in patterns.iter().zip(parts) {
             rewrites.push(reg.backtrack_rewrites.clone());
             warnings.push(reg.backtrack_warnings.clone());
             caches.push(CacheEntry::new(pattern, reg.anchor));
@@ -917,7 +1006,7 @@ impl Scanner {
             seeks.push(seek);
         }
 
-        let (regset, r) = onig_regset_new_shared(regset_regs, &seeks);
+        let (regset, r) = onig_regset_new_shared(regset_regs, seeks, automata);
         if r != ONIG_NORMAL {
             return Err(r.into());
         }
@@ -976,11 +1065,15 @@ impl Scanner {
     /// ([`ScannerConfig::prefilter`]).
     ///
     /// ```
-    /// use ferroni::scanner::Scanner;
+    /// use ferroni::scanner::{Scanner, ScannerFindOptions};
     ///
-    /// let scanner = Scanner::new(&[r"\d+", r"[a-z]+", r"(?<=\))"]).unwrap();
+    /// let mut scanner = Scanner::new(&[r"\d+", r"[a-z]+", r"(?<=\))"]).unwrap();
     /// let stats = scanner.prefilter_stats();
     /// assert_eq!(stats.covered + stats.own, 3);
+    /// // The automata are built by the first search, not the constructor.
+    /// assert!(!stats.built);
+    /// scanner.find_next_match("f(x) 1", 0, ScannerFindOptions::NONE);
+    /// let stats = scanner.prefilter_stats();
     /// // The look-behind reads nothing at its position, so that pattern is
     /// // searched on its own. Without the `dfa-prefilter` feature, all are.
     /// if stats.built {
@@ -989,15 +1082,26 @@ impl Scanner {
     /// ```
     pub fn prefilter_stats(&self) -> PrefilterStats {
         #[cfg(feature = "dfa-prefilter")]
-        if let Some(prefilter) = crate::regset::onig_regset_prefilter(&self.regset) {
-            return PrefilterStats {
-                built: true,
-                covered: prefilter.covered(),
-                own: prefilter.own().len(),
-                nfa_states: prefilter.nfa_states(),
-                memory_usage: prefilter.memory_usage(),
-                cache_clears: prefilter.cache_clears(),
-            };
+        {
+            if let Some(prefilter) = crate::regset::onig_regset_prefilter(&self.regset) {
+                return PrefilterStats {
+                    built: true,
+                    covered: prefilter.covered(),
+                    own: prefilter.own().len(),
+                    nfa_states: prefilter.nfa_states(),
+                    memory_usage: prefilter.memory_usage(),
+                    cache_memory_usage: prefilter.cache_memory_usage(),
+                    cache_clears: prefilter.cache_clears(),
+                };
+            }
+            if let Some(pending) = crate::regset::onig_regset_prefilter_pending(&self.regset) {
+                let covered = pending.covered();
+                return PrefilterStats {
+                    covered,
+                    own: onig_regset_number_of_regex(&self.regset) as usize - covered,
+                    ..PrefilterStats::default()
+                };
+            }
         }
         PrefilterStats {
             own: onig_regset_number_of_regex(&self.regset) as usize,
@@ -3233,6 +3337,15 @@ mod tests {
             .iter()
             .map(|patterns| route_scanners(|| Scanner::with_config(patterns, &without).unwrap()))
             .collect();
+        for (patterns, filtered) in sets.iter().zip(&filtered) {
+            // The automata are built by the first search, not here.
+            let stats = filtered[0].prefilter_stats();
+            assert!(!stats.built, "{patterns:?}: {stats:?}");
+            assert_eq!(stats.covered + stats.own, patterns.len());
+        }
+        let differences =
+            cached_and_uncached_differences(&mut filtered, &mut plain, &subjects, &every_option);
+        assert!(differences.is_empty(), "{}", differences.join("\n"));
         for (patterns, (filtered, plain)) in sets.iter().zip(filtered.iter().zip(&plain)) {
             let stats = filtered[0].prefilter_stats();
             // Only the set with the callout pattern builds no automata.
@@ -3242,9 +3355,6 @@ mod tests {
             assert!(!plain[0].prefilter_stats().built);
             assert_eq!(stats.covered + stats.own, patterns.len());
         }
-        let differences =
-            cached_and_uncached_differences(&mut filtered, &mut plain, &subjects, &every_option);
-        assert!(differences.is_empty(), "{}", differences.join("\n"));
     }
 
     /// Tokenizing a run in order costs the same work with the pre-filter
@@ -3678,7 +3788,7 @@ mod tests {
                 .compiled
                 .iter()
                 .flat_map(|(_, patterns)| patterns.iter())
-                .map(|(pattern, (reg, _))| (pattern.to_string(), Arc::as_ptr(reg)))
+                .map(|(pattern, cached)| (pattern.to_string(), Arc::as_ptr(&cached.reg)))
                 .collect();
             entries.sort();
             (cache.compiled.len(), entries)
@@ -3734,7 +3844,7 @@ mod tests {
         let mut first = Scanner::with_pattern_cache(&["x(y)", "z"], &config, &mut cache).unwrap();
         let second = Scanner::with_pattern_cache(&["z"], &config, &mut cache).unwrap();
         let references = |cache: &ScannerPatternCache, pattern: &str| {
-            Arc::strong_count(&cache.compiled[0].1[pattern].0)
+            Arc::strong_count(&cache.compiled[0].1[pattern].reg)
         };
         assert_eq!(
             (references(&cache, "x(y)"), references(&cache, "z")),

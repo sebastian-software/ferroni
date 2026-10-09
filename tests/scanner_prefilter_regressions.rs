@@ -16,12 +16,13 @@ fn compare(patterns: &[&str], text: &str, expected: (usize, usize, usize)) {
     let mut plain =
         Scanner::with_config(patterns, &ScannerConfig::default().prefilter(false)).unwrap();
     let mut filtered = Scanner::new(patterns).unwrap();
+    let want = bounds(plain.find_next_match(text, 0, ScannerFindOptions::NONE));
+    let got = bounds(filtered.find_next_match(text, 0, ScannerFindOptions::NONE));
+    // The first search built the automata.
     assert_eq!(
         filtered.prefilter_stats().built,
         cfg!(feature = "dfa-prefilter")
     );
-    let want = bounds(plain.find_next_match(text, 0, ScannerFindOptions::NONE));
-    let got = bounds(filtered.find_next_match(text, 0, ScannerFindOptions::NONE));
     assert_eq!(want, Some(expected));
     assert_eq!(got, want, "patterns={patterns:?}, text={text:?}");
 }

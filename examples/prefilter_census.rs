@@ -4,22 +4,28 @@
 //!
 //! ```sh
 //! cargo build --release --example prefilter_census
-//! # Coverage, automata sizes and construction cost per trace.
-//! target/release/examples/prefilter_census census [TRACE.json ...]
+//! # Construction time and live heap per trace, uncached and through one
+//! # pattern cache, with and without the pre-filter; the first replay,
+//! # which builds the automata; what the automata and the seeks hold.
+//! target/release/examples/prefilter_census census [REPS] [TRACE.json ...]
 //! # Per scanner group with calls: NFA states against the replay time with
 //! # and without the pre-filter (min of REPS).
 //! target/release/examples/prefilter_census groups TRACE.json [REPS]
 //! # One replay for `/usr/bin/time -l` (instructions retired, max RSS), with
-//! # the time of each iteration (the first ones warm the lazy DFAs up),
-//! # optionally of one scanner group's calls.
-//! /usr/bin/time -l target/release/examples/prefilter_census replay TRACE.json ITERATIONS on|off [GROUP]
+//! # the time of each iteration (the first one builds the automata and
+//! # warms the lazy DFAs up), optionally of one scanner group's calls, and
+//! # optionally through one pattern cache.
+//! /usr/bin/time -l target/release/examples/prefilter_census replay TRACE.json ITERATIONS on|off [--group N] [--cached]
 //! ```
 
 #[path = "../benches/cpp_scanner/mod.rs"]
 mod scanner_replay;
 
-use ferroni::scanner::{Scanner, ScannerConfig};
+use ferroni::scanner::{PrefilterStats, Scanner, ScannerConfig, ScannerPatternCache};
 use scanner_replay::{Corpus, replay};
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 const TRACES: [&str; 5] = [
@@ -30,10 +36,65 @@ const TRACES: [&str; 5] = [
     "benches/php_scanner/trace.json",
 ];
 
-const USAGE: &str = "usage: prefilter_census census [TRACE.json ...] | groups TRACE.json [REPS] | replay TRACE.json ITERATIONS on|off [GROUP]";
+const USAGE: &str = "usage: prefilter_census census [REPS] [TRACE.json ...] | groups TRACE.json [REPS] | replay TRACE.json ITERATIONS on|off [--group N] [--cached] | replay-id TRACE.json ITERATIONS on|off";
+
+/// The system allocator, counting the bytes that are live.
+struct Counting;
+
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+
+// SAFETY: every method forwards to `System` with the layout it was given
+// and only keeps a count of the bytes handed out.
+unsafe impl GlobalAlloc for Counting {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: the caller's contract is forwarded unchanged.
+        let p = unsafe { System.alloc(layout) };
+        if !p.is_null() {
+            LIVE.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        p
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: the caller's contract is forwarded unchanged.
+        let p = unsafe { System.alloc_zeroed(layout) };
+        if !p.is_null() {
+            LIVE.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        p
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+        // SAFETY: the caller's contract is forwarded unchanged.
+        unsafe { System.dealloc(ptr, layout) }
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // SAFETY: the caller's contract is forwarded unchanged.
+        let p = unsafe { System.realloc(ptr, layout, new_size) };
+        if !p.is_null() {
+            LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+            LIVE.fetch_add(new_size, Ordering::Relaxed);
+        }
+        p
+    }
+}
+
+#[global_allocator]
+static GLOBAL: Counting = Counting;
+
+/// Live heap bytes.
+fn live() -> usize {
+    LIVE.load(Ordering::Relaxed)
+}
 
 fn mib(bytes: usize) -> f64 {
     bytes as f64 / (1 << 20) as f64
+}
+
+fn kib(bytes: usize) -> f64 {
+    bytes as f64 / 1024.0
 }
 
 #[cfg(unix)]
@@ -60,54 +121,198 @@ fn load(path: &str) -> Corpus {
     Corpus::from_json(&std::fs::read_to_string(path).expect("trace exists"))
 }
 
-/// Coverage, automata sizes and construction cost of every scanner of each
-/// trace, with the pre-filter and without.
-fn census(traces: &[String]) {
+/// The minimum over `reps` constructions, in milliseconds, and the heap the
+/// last one holds above `base`, with its scanners.
+fn construction(
+    reps: usize,
+    base: usize,
+    mut build: impl FnMut() -> Vec<Scanner>,
+) -> (f64, usize, Vec<Scanner>) {
+    let mut best = f64::MAX;
+    let mut scanners = Vec::new();
+    for _ in 0..reps {
+        drop(std::mem::take(&mut scanners));
+        let started = Instant::now();
+        scanners = build();
+        best = best.min(started.elapsed().as_secs_f64() * 1e3);
+    }
+    (best, live() - base, scanners)
+}
+
+/// What the automata of `scanners` hold: sets with automata, their memory
+/// (each distinct pattern list once, since scanners built from one cache
+/// over the same patterns share theirs), the scanners' own caches, and the
+/// cache clears.
+struct Automata {
+    built: usize,
+    unique: usize,
+    caches: usize,
+    /// The largest cache of one scanner, and how many scanners hold more
+    /// than 256 KiB, 512 KiB and 1 MiB in theirs.
+    largest_cache: usize,
+    caches_over: [usize; 3],
+    clears: usize,
+    largest: usize,
+}
+
+fn automata(corpus: &Corpus, scanners: &[Scanner], shared: bool) -> Automata {
+    let stats: Vec<PrefilterStats> = scanners.iter().map(Scanner::prefilter_stats).collect();
+    let mut seen = HashSet::new();
+    let mut unique = 0;
+    for (patterns, stats) in corpus.patterns.iter().zip(&stats) {
+        let own = stats.memory_usage - stats.cache_memory_usage;
+        if !shared || seen.insert(patterns) {
+            unique += own;
+        }
+    }
+    let over = |bytes: usize| {
+        stats
+            .iter()
+            .filter(|s| s.cache_memory_usage > bytes)
+            .count()
+    };
+    Automata {
+        built: stats.iter().filter(|s| s.built).count(),
+        unique,
+        caches: stats.iter().map(|s| s.cache_memory_usage).sum(),
+        largest_cache: stats
+            .iter()
+            .map(|s| s.cache_memory_usage)
+            .max()
+            .unwrap_or(0),
+        caches_over: [over(256 << 10), over(512 << 10), over(1 << 20)],
+        clears: stats.iter().map(|s| s.cache_clears).sum(),
+        largest: stats.iter().map(|s| s.nfa_states).max().unwrap_or(0),
+    }
+}
+
+impl Automata {
+    fn caches_shown(&self) -> String {
+        format!(
+            "caches {:.1} MiB (largest {:.0} KiB; {} over 256 KiB, {} over 512 KiB, {} over 1 MiB), {} cache clears",
+            mib(self.caches),
+            kib(self.largest_cache),
+            self.caches_over[0],
+            self.caches_over[1],
+            self.caches_over[2],
+            self.clears,
+        )
+    }
+}
+
+/// One replay of every call, in milliseconds.
+fn one_replay(corpus: &Corpus, scanners: &mut [Scanner]) -> f64 {
+    let calls = corpus.selected(None);
+    let strings = corpus.strings();
+    let started = Instant::now();
+    replay(scanners, &strings, &calls);
+    started.elapsed().as_secs_f64() * 1e3
+}
+
+/// Construction time and live heap of every scanner of each trace, uncached
+/// and through one pattern cache, with the pre-filter and without; the
+/// first replay, which builds the automata of the sets it touches, and
+/// what they hold; what the seeks cost in the cache.
+fn census(reps: usize, traces: &[String]) {
     let with = ScannerConfig::default();
     let without = ScannerConfig::default().prefilter(false);
     for path in traces {
         let corpus = load(path);
-        let rss_before = max_rss_bytes();
-        let started = Instant::now();
-        let plain = corpus.scanners_with(&without);
-        let plain_construction = started.elapsed();
-        drop(plain);
-        let started = Instant::now();
-        let scanners = corpus.scanners_with(&with);
-        let construction = started.elapsed();
-        let rss_after = max_rss_bytes();
-
-        let stats: Vec<_> = scanners.iter().map(Scanner::prefilter_stats).collect();
-        let built = stats.iter().filter(|s| s.built).count();
-        let covered: usize = stats.iter().map(|s| s.covered).sum();
-        let own: usize = stats.iter().filter(|s| s.built).map(|s| s.own).sum();
         let patterns: usize = corpus.patterns.iter().map(Vec::len).sum();
-        let memory: usize = stats.iter().map(|s| s.memory_usage).sum();
-        let max_states = stats.iter().map(|s| s.nfa_states).max().unwrap_or(0);
-        let skipped: Vec<String> = stats
+        let distinct_lists = corpus.patterns.iter().collect::<HashSet<_>>().len();
+        let distinct: HashSet<&str> = corpus
+            .patterns
             .iter()
-            .enumerate()
-            .filter(|(_, s)| !s.built)
-            .map(|(i, _)| format!("{i} ({} patterns)", corpus.patterns[i].len()))
+            .flatten()
+            .map(String::as_str)
             .collect();
         println!("== {path}");
         println!(
-            "scanners {} (automata built for {built}), patterns {patterns}, covered {covered} ({:.1}%), own {own} in sets with automata",
-            scanners.len(),
-            100.0 * covered as f64 / patterns.max(1) as f64,
+            "sets {} ({distinct_lists} distinct pattern lists), patterns {patterns} ({} distinct), calls {}; min of {reps} constructions",
+            corpus.patterns.len(),
+            distinct.len(),
+            corpus.calls.len(),
         );
+        let base = live();
+
+        // Uncached, without the pre-filter.
+        let (ms, heap, scanners) = construction(reps, base, || corpus.scanners_with(&without));
         println!(
-            "construction {:.1} ms with the pre-filter, {:.1} ms without ({:.2}x); automata memory {:.2} MiB, largest set {max_states} NFA states; RSS {:.1} -> {:.1} MiB",
-            construction.as_secs_f64() * 1e3,
-            plain_construction.as_secs_f64() * 1e3,
-            construction.as_secs_f64() / plain_construction.as_secs_f64().max(1e-9),
-            mib(memory),
-            mib(rss_before as usize),
-            mib(rss_after as usize),
+            "uncached, pre-filter off: {ms:>7.1} ms, heap {:>6.1} MiB",
+            mib(heap)
         );
-        if !skipped.is_empty() {
-            println!("sets without automata: {}", skipped.join(", "));
-        }
+        drop(scanners);
+
+        // Uncached, with the pre-filter.
+        let (ms, heap, mut scanners) = construction(reps, base, || corpus.scanners_with(&with));
+        let first = one_replay(&corpus, &mut scanners);
+        let second = one_replay(&corpus, &mut scanners);
+        let heap_replayed = live() - base;
+        let a = automata(&corpus, &scanners, false);
+        println!(
+            "uncached, pre-filter on:  {ms:>7.1} ms, heap {:>6.1} MiB; first replay {first:.1} ms (second {second:.1} ms), heap {:.1} MiB; automata built for {} sets: {:.1} MiB, {}, largest set {} NFA states",
+            mib(heap),
+            mib(heap_replayed),
+            a.built,
+            mib(a.unique),
+            a.caches_shown(),
+            a.largest,
+        );
+        drop(scanners);
+
+        // Through one pattern cache, without the pre-filter.
+        let mut cache = ScannerPatternCache::new();
+        let (ms, heap, scanners) = construction(reps, base, || {
+            cache.clear();
+            corpus.cached_scanners_with(&without, &mut cache)
+        });
+        drop(scanners);
+        let cache_off = live() - base;
+        println!(
+            "cached, pre-filter off:   {ms:>7.1} ms, heap {:>6.1} MiB (the cache alone {:.1} MiB)",
+            mib(heap),
+            mib(cache_off),
+        );
+        drop(cache);
+
+        // Through one pattern cache, with the pre-filter.
+        let mut cache = ScannerPatternCache::new();
+        let (ms, heap, mut scanners) = construction(reps, base, || {
+            cache.clear();
+            corpus.cached_scanners_with(&with, &mut cache)
+        });
+        // The cache alone, with the scanners never searched: the patterns
+        // and their seeks, no automata.
+        let cache_on = {
+            let probe = ScannerPatternCache::new();
+            let mut rebuilt = ScannerPatternCache::new();
+            drop(probe);
+            let before = live();
+            let scanners = corpus.cached_scanners_with(&with, &mut rebuilt);
+            drop(scanners);
+            let alone = live() - before;
+            drop(rebuilt);
+            alone
+        };
+        let first = one_replay(&corpus, &mut scanners);
+        let second = one_replay(&corpus, &mut scanners);
+        let heap_replayed = live() - base;
+        let a = automata(&corpus, &scanners, true);
+        drop(scanners);
+        let cache_after = live() - base;
+        println!(
+            "cached, pre-filter on:    {ms:>7.1} ms, heap {:>6.1} MiB (the cache alone {:.1} MiB: seeks {:.1} MiB, {:.1} KiB per distinct pattern); first replay {first:.1} ms (second {second:.1} ms), heap {:.1} MiB; automata built for {} sets: {:.1} MiB over the distinct lists, {}; the cache alone after the replay {:.1} MiB",
+            mib(heap),
+            mib(cache_on),
+            mib(cache_on.saturating_sub(cache_off)),
+            kib(cache_on.saturating_sub(cache_off)) / distinct.len().max(1) as f64,
+            mib(heap_replayed),
+            a.built,
+            mib(a.unique),
+            a.caches_shown(),
+            mib(cache_after),
+        );
+        drop(cache);
     }
 }
 
@@ -170,9 +375,6 @@ fn groups(path: &str, reps: usize) {
     }
 }
 
-/// A fixed number of replays of every call of the trace, for
-/// `/usr/bin/time -l`: the construction and replay times and the maximum RSS
-/// after each.
 /// `replay_trace` through `find_next_match_utf16_with_id` with the subject's
 /// index as the string id, the cache route a grammar loader takes for the
 /// lines of a document, where the scanner may switch to its per-regex route.
@@ -217,15 +419,31 @@ fn replay_trace_with_ids(path: &str, iterations: usize, prefilter: bool) {
     );
 }
 
-fn replay_trace(path: &str, iterations: usize, prefilter: bool, group: Option<usize>) {
+/// A fixed number of replays of every call of the trace, for
+/// `/usr/bin/time -l`: the construction and replay times, the live heap and
+/// the maximum RSS after each.
+fn replay_trace(
+    path: &str,
+    iterations: usize,
+    prefilter: bool,
+    group: Option<usize>,
+    cached: bool,
+) {
     let corpus = load(path);
     let calls = corpus.selected(group);
     let config = ScannerConfig::default().prefilter(prefilter);
     let rss_loaded = max_rss_bytes();
+    let heap_loaded = live();
+    let mut cache = ScannerPatternCache::new();
     let started = Instant::now();
-    let mut scanners = corpus.scanners_with(&config);
+    let mut scanners = if cached {
+        corpus.cached_scanners_with(&config, &mut cache)
+    } else {
+        corpus.scanners_with(&config)
+    };
     let construction = started.elapsed();
     let rss_built = max_rss_bytes();
+    let heap_built = live() - heap_loaded;
     let started = Instant::now();
     let mut per_iteration = Vec::with_capacity(iterations);
     for _ in 0..iterations {
@@ -238,57 +456,81 @@ fn replay_trace(path: &str, iterations: usize, prefilter: bool, group: Option<us
     let shown: Vec<String> = per_iteration.iter().map(|ms| format!("{ms:.2}")).collect();
     println!("per iteration ms: {}", shown.join(" "));
     let rss_replayed = max_rss_bytes();
-    let stats: Vec<_> = scanners.iter().map(Scanner::prefilter_stats).collect();
-    let memory: usize = stats.iter().map(|s| s.memory_usage).sum();
-    let clears: usize = stats.iter().map(|s| s.cache_clears).sum();
+    let heap_replayed = live() - heap_loaded;
+    let a = automata(&corpus, &scanners, cached);
     println!(
-        "{path}: pre-filter {}; {} scanners built in {:.1} ms; {} calls x {iterations} iterations in {:.1} ms ({:.2} ms per iteration); automata {:.1} MiB, {clears} cache clears; max RSS loaded {:.1} MiB, built {:.1} MiB, replayed {:.1} MiB",
+        "{path}: pre-filter {}, {}; {} scanners built in {:.1} ms; {} calls x {iterations} iterations in {:.1} ms ({:.2} ms per iteration); automata built for {} sets: {:.1} MiB, {}; heap built {:.1} MiB, replayed {:.1} MiB; max RSS loaded {:.1} MiB, built {:.1} MiB, replayed {:.1} MiB",
         if prefilter { "on" } else { "off" },
+        if cached {
+            "through one pattern cache"
+        } else {
+            "uncached"
+        },
         scanners.len(),
         construction.as_secs_f64() * 1e3,
         calls.len(),
         elapsed.as_secs_f64() * 1e3,
         elapsed.as_secs_f64() * 1e3 / iterations.max(1) as f64,
-        mib(memory),
+        a.built,
+        mib(a.unique),
+        a.caches_shown(),
+        mib(heap_built),
+        mib(heap_replayed),
         mib(rss_loaded as usize),
         mib(rss_built as usize),
         mib(rss_replayed as usize),
     );
+    drop(scanners);
+    drop(cache);
+}
+
+fn on_or_off(arg: &str) -> bool {
+    match arg {
+        "on" => true,
+        "off" => false,
+        _ => panic!("{USAGE}"),
+    }
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("census") => {
-            let traces: Vec<String> = if args.len() > 1 {
-                args[1..].to_vec()
-            } else {
-                TRACES.iter().map(|&t| t.to_owned()).collect()
+            let (reps, rest) = match args.get(1).and_then(|n| n.parse::<usize>().ok()) {
+                Some(reps) => (reps, &args[2..]),
+                None => (3, &args[1..]),
             };
-            census(&traces);
+            let traces: Vec<String> = if rest.is_empty() {
+                TRACES.iter().map(|&t| t.to_owned()).collect()
+            } else {
+                rest.to_vec()
+            };
+            census(reps, &traces);
         }
         Some("groups") if args.len() >= 2 => {
             let reps = args.get(2).map_or(5, |n| n.parse().expect("integer REPS"));
             groups(&args[1], reps);
         }
-        Some("replay") if args.len() == 4 || args.len() == 5 => {
+        Some("replay") if args.len() >= 4 => {
             let iterations = args[2].parse().expect("integer ITERATIONS");
-            let prefilter = match args[3].as_str() {
-                "on" => true,
-                "off" => false,
-                _ => panic!("{USAGE}"),
-            };
-            let group = args.get(4).map(|g| g.parse().expect("integer GROUP"));
-            replay_trace(&args[1], iterations, prefilter, group);
+            let prefilter = on_or_off(&args[3]);
+            let mut group = None;
+            let mut cached = false;
+            let mut rest = args[4..].iter();
+            while let Some(flag) = rest.next() {
+                match flag.as_str() {
+                    "--group" => {
+                        group = Some(rest.next().expect("GROUP").parse().expect("integer GROUP"));
+                    }
+                    "--cached" => cached = true,
+                    _ => panic!("{USAGE}"),
+                }
+            }
+            replay_trace(&args[1], iterations, prefilter, group, cached);
         }
         Some("replay-id") if args.len() == 4 => {
             let iterations = args[2].parse().expect("integer ITERATIONS");
-            let prefilter = match args[3].as_str() {
-                "on" => true,
-                "off" => false,
-                _ => panic!("{USAGE}"),
-            };
-            replay_trace_with_ids(&args[1], iterations, prefilter);
+            replay_trace_with_ids(&args[1], iterations, on_or_off(&args[3]));
         }
         _ => panic!("{USAGE}"),
     }

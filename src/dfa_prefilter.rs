@@ -20,16 +20,22 @@
 //! an ASCII byte or such a sequence. A seek that matches at every position
 //! narrows nothing; its entry is searched on its own (`Seek::Everywhere`).
 //! The regex does not carry its seek: the scanner hands it to its set, and
-//! a pattern cache keeps one per distinct pattern.
+//! a pattern cache keeps one per distinct pattern, in a compact encoding
+//! ([`SeekCode`]) that is decoded when the automata are built.
 //!
-//! [`SetPrefilter`] compiles the seeks of one set into a regex-automata meta
-//! regex, which finds the earliest position where any seek matches, and a
-//! lazy DFA over all seeks, which says which of them match at that position.
-//! The RegSet (`regset_search_body_prefilter`) attempts only those entries,
-//! anchored at that position, in index order; the first event decides, and
-//! without one the search goes on one character later. A set whose
-//! automata would exceed [`MAX_NFA_STATES`] builds none and keeps the
-//! position-lead search as it was.
+//! [`Automata`] compiles the seeks of one pattern list into a
+//! regex-automata meta regex, which finds the earliest position where any
+//! seek matches, and a lazy DFA over all seeks, which says which of them
+//! match at that position. They are built on a set's first pre-filtered
+//! search, not when the set is constructed, and every set built from one
+//! pattern cache over the same pattern list shares them ([`AutomataCell`]);
+//! [`SetPrefilter`] is a set's own part: the lazy DFA caches and the
+//! search's scratch state. The RegSet (`regset_search_body_prefilter`)
+//! attempts only the entries the automata name, anchored at that position,
+//! in index order; the first event decides, and without one the search
+//! goes on one character later. A pattern list whose automata would exceed
+//! [`MAX_NFA_STATES`] builds none and its sets keep the position-lead
+//! search as it was.
 //!
 //! The `dfa-prefilter` feature compiles this module, and
 //! `ScannerConfig::prefilter` switches it per scanner. A search under a
@@ -45,7 +51,11 @@ use regex_automata::hybrid::dfa as hybrid;
 use regex_automata::nfa::thompson;
 use regex_automata::util::syntax;
 use regex_automata::{Anchored, Input, MatchKind, PatternID, PatternSet};
-use regex_syntax::hir::{Class, ClassBytes, ClassBytesRange, Hir, HirKind, Look, Repetition};
+use regex_syntax::hir::{
+    Class, ClassBytes, ClassBytesRange, ClassUnicode, ClassUnicodeRange, Hir, HirKind, Look,
+    Repetition,
+};
+use std::sync::{Arc, OnceLock};
 
 const MIB: usize = 1 << 20;
 /// Lazy DFA cache of the meta regex (fancy-regex: 64 MiB).
@@ -105,8 +115,8 @@ pub(crate) enum Seek {
     /// The approximation matches at every position, so it cannot narrow
     /// anything: the entry is searched on its own.
     Everywhere,
-    /// The approximation, for the set's automata.
-    Pattern(Hir),
+    /// The approximation, for the automata.
+    Pattern(SeekCode),
 }
 
 /// The seek approximation of `reg`, whose tuned parse tree is `root`.
@@ -130,7 +140,228 @@ pub(crate) fn derive(root: &Node, reg: &RegexType) -> Option<Seek> {
     if matches_everywhere(&hir) {
         return Some(Seek::Everywhere);
     }
-    Some(Seek::Pattern(hir))
+    // A node the encoding has no tag for leaves the entry on its own, which
+    // is always right; the walk writes none.
+    let code = SeekCode::encode(&hir)?;
+    debug_assert_eq!(code.decode(), hir, "the seek code round-trips");
+    Some(Seek::Pattern(code))
+}
+
+/// A seek's HIR in a compact encoding, kept per distinct pattern until the
+/// automata are built: the tree in pre-order, each node a tag byte and its
+/// data. An HIR node carries a boxed property block and its own
+/// allocations, some 20–30 KiB per seek over the captured grammars; the
+/// code is a few hundred bytes. Decoding rebuilds the tree through the
+/// smart constructors that built it (`Hir::concat`, `Hir::alternation`,
+/// `Hir::class`, ...), whose simplifications are stable on their own
+/// output, so the decoded HIR equals the original (`derive` asserts it in
+/// debug builds, and a test checks it over every seek of the captured
+/// grammars).
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct SeekCode(Box<[u8]>);
+
+/// The node tags of a `SeekCode`.
+mod tag {
+    pub(super) const EMPTY: u8 = 0;
+    /// Length, then the bytes.
+    pub(super) const LITERAL: u8 = 1;
+    /// Range count, then each range as two bytes.
+    pub(super) const BYTES: u8 = 2;
+    /// Range count, then each range as two code points.
+    pub(super) const UNICODE: u8 = 3;
+    /// `Look::as_repr`.
+    pub(super) const LOOK: u8 = 4;
+    /// Minimum, maximum plus one (0 for unbounded), greediness, the body.
+    pub(super) const REPETITION: u8 = 5;
+    /// Count, then the parts.
+    pub(super) const CONCAT: u8 = 6;
+    /// Count, then the branches.
+    pub(super) const ALTERNATION: u8 = 7;
+}
+
+impl SeekCode {
+    /// `hir` encoded, or `None` for a node kind the walk never writes
+    /// (a capture).
+    fn encode(hir: &Hir) -> Option<SeekCode> {
+        let mut out = Vec::new();
+        Self::write(hir, &mut out)?;
+        Some(SeekCode(out.into_boxed_slice()))
+    }
+
+    fn write(hir: &Hir, out: &mut Vec<u8>) -> Option<()> {
+        match hir.kind() {
+            HirKind::Empty => out.push(tag::EMPTY),
+            HirKind::Literal(literal) => {
+                out.push(tag::LITERAL);
+                Self::varint(literal.0.len(), out);
+                out.extend_from_slice(&literal.0);
+            }
+            HirKind::Class(Class::Bytes(class)) => {
+                out.push(tag::BYTES);
+                Self::varint(class.ranges().len(), out);
+                for range in class.ranges() {
+                    out.push(range.start());
+                    out.push(range.end());
+                }
+            }
+            HirKind::Class(Class::Unicode(class)) => {
+                out.push(tag::UNICODE);
+                Self::varint(class.ranges().len(), out);
+                for range in class.ranges() {
+                    Self::varint(range.start() as usize, out);
+                    Self::varint(range.end() as usize, out);
+                }
+            }
+            HirKind::Look(look) => {
+                out.push(tag::LOOK);
+                Self::varint(look.as_repr() as usize, out);
+            }
+            HirKind::Repetition(rep) => {
+                out.push(tag::REPETITION);
+                Self::varint(rep.min as usize, out);
+                Self::varint(rep.max.map_or(0, |max| max as usize + 1), out);
+                out.push(u8::from(rep.greedy));
+                Self::write(&rep.sub, out)?;
+            }
+            HirKind::Concat(parts) => {
+                out.push(tag::CONCAT);
+                Self::varint(parts.len(), out);
+                for part in parts {
+                    Self::write(part, out)?;
+                }
+            }
+            HirKind::Alternation(branches) => {
+                out.push(tag::ALTERNATION);
+                Self::varint(branches.len(), out);
+                for branch in branches {
+                    Self::write(branch, out)?;
+                }
+            }
+            HirKind::Capture(_) => return None,
+        }
+        Some(())
+    }
+
+    /// LEB128.
+    fn varint(mut value: usize, out: &mut Vec<u8>) {
+        while value >= 0x80 {
+            out.push((value as u8) | 0x80);
+            value >>= 7;
+        }
+        out.push(value as u8);
+    }
+
+    /// The HIR the code was made from.
+    pub(crate) fn decode(&self) -> Hir {
+        let mut reader = SeekReader {
+            code: &self.0,
+            at: 0,
+        };
+        let hir = reader.hir();
+        debug_assert_eq!(reader.at, self.0.len(), "the seek code is read whole");
+        hir
+    }
+
+    /// Bytes of the code.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+/// A cursor over a `SeekCode`, decoding it.
+struct SeekReader<'a> {
+    code: &'a [u8],
+    at: usize,
+}
+
+impl SeekReader<'_> {
+    fn byte(&mut self) -> u8 {
+        let b = self.code[self.at];
+        self.at += 1;
+        b
+    }
+
+    fn varint(&mut self) -> usize {
+        let mut value = 0usize;
+        let mut shift = 0;
+        loop {
+            let b = self.byte();
+            value |= usize::from(b & 0x7F) << shift;
+            if b & 0x80 == 0 {
+                return value;
+            }
+            shift += 7;
+        }
+    }
+
+    fn hir(&mut self) -> Hir {
+        match self.byte() {
+            tag::EMPTY => Hir::empty(),
+            tag::LITERAL => {
+                let len = self.varint();
+                let bytes = &self.code[self.at..self.at + len];
+                self.at += len;
+                Hir::literal(bytes)
+            }
+            tag::BYTES => {
+                let count = self.varint();
+                let ranges: Vec<ClassBytesRange> = (0..count)
+                    .map(|_| {
+                        let lo = self.byte();
+                        let hi = self.byte();
+                        ClassBytesRange::new(lo, hi)
+                    })
+                    .collect();
+                Hir::class(Class::Bytes(ClassBytes::new(ranges)))
+            }
+            tag::UNICODE => {
+                let count = self.varint();
+                let ranges: Vec<ClassUnicodeRange> = (0..count)
+                    .map(|_| {
+                        let lo = char::from_u32(self.varint() as u32).expect("a code point");
+                        let hi = char::from_u32(self.varint() as u32).expect("a code point");
+                        ClassUnicodeRange::new(lo, hi)
+                    })
+                    .collect();
+                Hir::class(Class::Unicode(ClassUnicode::new(ranges)))
+            }
+            tag::LOOK => Hir::look(Look::from_repr(self.varint() as u32).expect("a look")),
+            tag::REPETITION => {
+                let min = self.varint() as u32;
+                let max = match self.varint() {
+                    0 => None,
+                    max => Some(max as u32 - 1),
+                };
+                let greedy = self.byte() != 0;
+                let sub = Box::new(self.hir());
+                Hir::repetition(Repetition {
+                    min,
+                    max,
+                    greedy,
+                    sub,
+                })
+            }
+            tag::CONCAT => {
+                let count = self.varint();
+                Hir::concat((0..count).map(|_| self.hir()).collect())
+            }
+            tag::ALTERNATION => {
+                let count = self.varint();
+                Hir::alternation((0..count).map(|_| self.hir()).collect())
+            }
+            _ => unreachable!("a seek code tag"),
+        }
+    }
+}
+
+/// The decoded seek in regex syntax.
+impl std::fmt::Debug for SeekCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SeekCode")
+            .field(&self.decode().to_string())
+            .finish()
+    }
 }
 
 /// Any character, newline included: an ASCII byte or one UTF-8 sequence.
@@ -834,10 +1065,54 @@ impl Walk<'_> {
     }
 }
 
-/// The automata of one set: a meta regex over the covered seeks for the
-/// earliest candidate position, and an overlapping lazy DFA for the entries
-/// whose seek matches there.
+/// The automata of one pattern list: a meta regex over the covered seeks
+/// for the earliest candidate position, and an overlapping lazy DFA for the
+/// entries whose seek matches there. Both are read-only once built (their
+/// lazy DFA caches are the set's, in `SetPrefilter`), so every set over
+/// the same pattern list can hold the same `Automata`.
+pub(crate) struct Automata {
+    meta: regex_automata::meta::Regex,
+    dfa: hybrid::DFA,
+    /// The entry index each pattern ID stands for, ascending.
+    entries: Vec<u16>,
+    /// Entries searched on their own, in index order.
+    own: Vec<u16>,
+    /// The pattern IDs of the seeks that can keep a walk alive past
+    /// `settle`: unbounded or longer than `LONG_SEEK_BYTES`.
+    long: Vec<u16>,
+    /// Bytes after which every other seek has settled.
+    settle: usize,
+}
+
+/// A set's handle on its automata: built by the first set that searches
+/// with the pre-filter, and shared with every set built from one pattern
+/// cache over the same pattern list (ADR-006). Holds `None` once a build
+/// found nothing to cover, an entry with callouts, or too much
+/// (`MAX_NFA_STATES`): those sets keep the position-lead search.
+#[derive(Clone, Default)]
+pub(crate) struct AutomataCell(Arc<OnceLock<Option<Arc<Automata>>>>);
+
+impl AutomataCell {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// The automata, built by `build` unless a set has built them already.
+    pub(crate) fn get_or_build(
+        &self,
+        build: impl FnOnce() -> Option<Automata>,
+    ) -> Option<Arc<Automata>> {
+        self.0.get_or_init(|| build().map(Arc::new)).clone()
+    }
+}
+
+/// A set's part of the pre-filter: its lazy DFA caches over the shared
+/// [`Automata`], and the scratch state of its searches.
 pub(crate) struct SetPrefilter {
+    /// The automata of the set's pattern list: clones of the shared
+    /// [`Automata`]'s, which keep their NFAs, strategies and prefilters
+    /// behind `Arc`s, so a search reads them as the set's own, without an
+    /// indirection, and the heavy parts are held once.
     meta: regex_automata::meta::Regex,
     meta_cache: regex_automata::meta::Cache,
     dfa: hybrid::DFA,
@@ -910,7 +1185,7 @@ impl std::fmt::Debug for SetPrefilter {
     }
 }
 
-impl SetPrefilter {
+impl Automata {
     /// The automata over the seeks of the entries (in entry order, each with
     /// its regex), or `None` when no entry can be pre-filtered, an entry has
     /// callouts, or the automata would be too large (`MAX_NFA_STATES`) or do
@@ -918,14 +1193,14 @@ impl SetPrefilter {
     pub(crate) fn build<'a>(
         entries: impl Iterator<Item = (Option<&'a Seek>, &'a RegexType)>,
     ) -> Option<Self> {
-        let mut hirs: Vec<&Hir> = Vec::new();
+        let mut hirs: Vec<Hir> = Vec::new();
         let mut covered = Vec::new();
         let mut own = Vec::new();
         for (index, (seek, reg)) in entries.enumerate() {
             let index = u16::try_from(index).ok()?;
             match seek {
-                Some(Seek::Pattern(hir)) => {
-                    hirs.push(hir);
+                Some(Seek::Pattern(code)) => {
+                    hirs.push(code.decode());
                     covered.push(index);
                 }
                 Some(Seek::Everywhere) => own.push(index),
@@ -975,9 +1250,6 @@ impl SetPrefilter {
             )
             .build_many_from_hir(&hirs)
             .ok()?;
-        let meta_cache = meta.create_cache();
-        let dfa_cache = dfa.create_cache();
-        let patset = PatternSet::new(entries.len());
         let mut long = Vec::new();
         let mut settle = 0;
         for (pid, hir) in hirs.iter().enumerate() {
@@ -987,28 +1259,54 @@ impl SetPrefilter {
                 _ => long.push(pid as u16),
             }
         }
-        let admissible = vec![0; entries.len()];
-        let dispatch = vec![[u64::MAX; 4]; entries.len()];
-        Some(SetPrefilter {
+        Some(Automata {
             meta,
-            meta_cache,
             dfa,
-            dfa_cache,
-            patset,
             entries,
             own,
             long,
             settle,
+        })
+    }
+
+    /// NFA states of the overlapping DFA (the meta regex holds about twice
+    /// as many: a forward and a reverse NFA).
+    pub(crate) fn nfa_states(&self) -> usize {
+        self.dfa.get_nfa().states().len()
+    }
+
+    /// Heap memory of the automata, in bytes, without any cache.
+    pub(crate) fn memory_usage(&self) -> usize {
+        self.meta.memory_usage() + self.dfa.memory_usage()
+    }
+}
+
+impl SetPrefilter {
+    /// A set's pre-filter over `automata`, with fresh caches.
+    pub(crate) fn new(automata: &Automata) -> Self {
+        let meta_cache = automata.meta.create_cache();
+        let dfa_cache = automata.dfa.create_cache();
+        let covered = automata.entries.len();
+        SetPrefilter {
+            meta: automata.meta.clone(),
+            meta_cache,
+            dfa: automata.dfa.clone(),
+            dfa_cache,
+            patset: PatternSet::new(covered),
+            entries: automata.entries.clone(),
+            own: automata.own.clone(),
+            long: automata.long.clone(),
+            settle: automata.settle,
             ask_early: false,
-            dispatch,
+            dispatch: vec![[u64::MAX; 4]; covered],
             long_dispatch: [0; 4],
             any_dispatch: [0; 4],
-            admissible,
+            admissible: vec![0; covered],
             stamp: 0,
             candidates: Vec::new(),
             walked_at: None,
             meta_memo: None,
-        })
+        }
     }
 
     /// Records, per covered entry, the bytes the set's first-byte table
@@ -1420,12 +1718,15 @@ impl SetPrefilter {
         self.dfa.get_nfa().states().len()
     }
 
-    /// Heap memory of the automata and their caches, in bytes.
+    /// Heap memory of the automata (shared with every set over the same
+    /// pattern list) and of this set's caches, in bytes.
     pub(crate) fn memory_usage(&self) -> usize {
-        self.meta.memory_usage()
-            + self.meta_cache.memory_usage()
-            + self.dfa.memory_usage()
-            + self.dfa_cache.memory_usage()
+        self.meta.memory_usage() + self.dfa.memory_usage() + self.cache_memory_usage()
+    }
+
+    /// Heap memory of this set's lazy DFA caches, in bytes.
+    pub(crate) fn cache_memory_usage(&self) -> usize {
+        self.meta_cache.memory_usage() + self.dfa_cache.memory_usage()
     }
 
     /// Times the overlapping DFA's cache was cleared because it filled up.
@@ -1469,7 +1770,7 @@ mod tests {
     /// instead of a pattern.
     fn seek_pattern_with(pattern: &str, options: OnigOptionType) -> String {
         match seek_with(pattern, options) {
-            Ok(Some(Seek::Pattern(seek))) => seek.to_string(),
+            Ok(Some(Seek::Pattern(seek))) => seek.decode().to_string(),
             other => format!("{other:?}"),
         }
     }
@@ -1643,6 +1944,47 @@ mod tests {
         );
     }
 
+    /// The seek code of every distinct pattern of the captured grammars
+    /// decodes to the HIR it was made from (`derive` asserts that in debug
+    /// builds as well), encodes to the same code again, and holds a few
+    /// hundred bytes where the HIR held tens of KiB.
+    #[test]
+    fn seek_codes_round_trip_over_the_captured_grammars() {
+        let mut patterns = std::collections::BTreeSet::new();
+        for name in ["cpp", "java", "scss", "c", "php"] {
+            let path = format!(
+                "{}/benches/{name}_scanner/trace.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let trace: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            for set in trace["scanners"].as_array().unwrap() {
+                for pattern in set.as_array().unwrap() {
+                    patterns.insert(pattern.as_str().unwrap().to_owned());
+                }
+            }
+        }
+        let mut codes = 0usize;
+        let mut bytes = 0usize;
+        for pattern in &patterns {
+            let Some(Seek::Pattern(code)) = seek(pattern) else {
+                continue;
+            };
+            let hir = code.decode();
+            let again = SeekCode::encode(&hir).expect("the walk's nodes encode");
+            assert_eq!(again, code, "{pattern}");
+            assert_eq!(again.decode(), hir, "{pattern}");
+            codes += 1;
+            bytes += code.len();
+        }
+        assert!(
+            codes > 600,
+            "{codes} seeks over {} patterns",
+            patterns.len()
+        );
+        assert!(bytes / codes < 1024, "{bytes} bytes over {codes} seeks");
+    }
+
     /// Patterns compiled for a scanner without the pre-filter, with
     /// callouts, or under another encoding have no seek.
     #[test]
@@ -1692,10 +2034,12 @@ mod tests {
         let text = format!("1 {}0 2", "a".repeat(64));
         let config = ScannerConfig::default();
         let mut big = Scanner::with_config(&patterns, &config).unwrap();
-        assert!(!big.prefilter_stats().built);
         let mut little = Scanner::with_config(&patterns[69..], &config).unwrap();
-        let stats = little.prefilter_stats();
-        assert!(stats.built && stats.covered == 2 && stats.nfa_states < MAX_NFA_STATES);
+        // The automata are built by the first search.
+        for scanner in [&big, &little] {
+            let stats = scanner.prefilter_stats();
+            assert!(!stats.built && stats.nfa_states == 0, "{stats:?}");
+        }
         let found = |scanner: &mut Scanner, start: usize| {
             scanner
                 .find_next_match(&text, start, ScannerFindOptions::NONE)
@@ -1705,5 +2049,12 @@ mod tests {
         assert_eq!(found(&mut big, 3), Some((70, 68, 69)));
         assert_eq!(found(&mut little, 0), Some((0, 2, 67)));
         assert_eq!(found(&mut little, 3), Some((1, 68, 69)));
+        let stats = big.prefilter_stats();
+        assert!(
+            !stats.built && stats.covered == 0 && stats.own == 71,
+            "{stats:?}"
+        );
+        let stats = little.prefilter_stats();
+        assert!(stats.built && stats.covered == 2 && stats.nfa_states < MAX_NFA_STATES);
     }
 }
