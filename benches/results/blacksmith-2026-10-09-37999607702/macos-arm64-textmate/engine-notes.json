@@ -1,0 +1,80 @@
+{
+  "unsupported": {
+    "cpp_scanner/document_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/document_pcre2_jit",
+      "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/document_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/document_pcre2",
+      "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/document_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/document_onigmo",
+      "reason": "scanner 0, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "cpp_scanner/group_78_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "cpp_scanner/group_78_pcre2_jit",
+      "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_78_pcre2": {
+      "engine": "pcre2",
+      "id": "cpp_scanner/group_78_pcre2",
+      "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+    },
+    "cpp_scanner/group_78_onigmo": {
+      "engine": "onigmo",
+      "id": "cpp_scanner/group_78_onigmo",
+      "reason": "scanner 78, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+    },
+    "scss_scanner/document_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "scss_scanner/document_pcre2_jit",
+      "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+    },
+    "scss_scanner/document_pcre2": {
+      "engine": "pcre2",
+      "id": "scss_scanner/document_pcre2",
+      "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+    },
+    "scss_scanner/group_8_pcre2_jit": {
+      "engine": "pcre2_jit",
+      "id": "scss_scanner/group_8_pcre2_jit",
+      "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+    },
+    "scss_scanner/group_8_pcre2": {
+      "engine": "pcre2",
+      "id": "scss_scanner/group_8_pcre2",
+      "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+    }
+  },
+  "equivalent": {
+    "cpp_scanner/document_shiki_js": {
+      "id": "cpp_scanner/document_shiki_js",
+      "engine": "shiki_js",
+      "engine_version": "4.5.0",
+      "calls": 4862,
+      "empty_capture_differences": 96,
+      "status": "ok"
+    },
+    "java_scanner/document_shiki_js": {
+      "id": "java_scanner/document_shiki_js",
+      "engine": "shiki_js",
+      "engine_version": "4.5.0",
+      "calls": 3920,
+      "empty_capture_differences": 16,
+      "status": "ok"
+    },
+    "java_scanner/group_15_shiki_js": {
+      "id": "java_scanner/group_15_shiki_js",
+      "engine": "shiki_js",
+      "engine_version": "4.5.0",
+      "calls": 592,
+      "empty_capture_differences": 16,
+      "status": "ok"
+    }
+  }
+}

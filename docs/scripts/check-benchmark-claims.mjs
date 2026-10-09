@@ -58,6 +58,7 @@ function expectedReadmeTable() {
   const cells = engines.flatMap((engine) => workloads.map((workload) => engine.cells[workload.id]));
   if (cells.some((cell) => partial(cell))) lines.push("", `\\* ${notes.partial}`);
   if (cells.some((cell) => cell.text === "–")) lines.push("", `– ${notes.absent}`);
+  if (notes.configurations) lines.push("", notes.configurations);
   return lines.join("\n");
 }
 
