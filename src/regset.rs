@@ -160,6 +160,10 @@ pub struct OnigRegSet {
     /// dropped with the first-byte table.
     #[cfg(feature = "dfa-prefilter")]
     prefilter: Option<Box<crate::dfa_prefilter::SetPrefilter>>,
+    /// Some fallback entry is not covered by the pre-filter, which then
+    /// searches it with the fallback memo.
+    #[cfg(feature = "dfa-prefilter")]
+    prefilter_own_fallback: bool,
 }
 
 /// A fallback entry as the position-lead search walks it on every call.
@@ -534,6 +538,7 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     #[cfg(feature = "dfa-prefilter")]
     {
         set.prefilter = None;
+        set.prefilter_own_fallback = false;
     }
     set.has_gated = set.entries.iter().any(|entry| entry.gated);
     set.has_gated_callouts = set
@@ -597,6 +602,10 @@ pub(crate) fn onig_regset_new_shared(
             for &index in prefilter.covered_entries() {
                 set.entries[index as usize].prefilter_covered = true;
             }
+            set.prefilter_own_fallback = prefilter
+                .own()
+                .iter()
+                .any(|&index| set.entries[index as usize].fallback);
         }
     }
 
@@ -647,6 +656,8 @@ fn regset_alloc() -> Box<OnigRegSet> {
         has_gated_callouts: false,
         #[cfg(feature = "dfa-prefilter")]
         prefilter: None,
+        #[cfg(feature = "dfa-prefilter")]
+        prefilter_own_fallback: false,
     })
 }
 
@@ -693,6 +704,7 @@ pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) 
     #[cfg(feature = "dfa-prefilter")]
     {
         set.prefilter = None;
+        set.prefilter_own_fallback = false;
     }
     set.fallback_memo_key = None;
     set.fallback_memos.resize_with(set.entries.len(), Vec::new);
@@ -2239,10 +2251,8 @@ fn regset_search_body_prefilter(
     let mut prefilter = set.prefilter.take()?;
     let mut decision: Option<RegSetDecision> = None;
     let mut failed_positions = 0u32;
-    let has_own_fallback = prefilter
-        .own()
-        .iter()
-        .any(|&index| set.entries[index as usize].fallback);
+    let has_own = !prefilter.own().is_empty();
+    let has_own_fallback = set.prefilter_own_fallback;
     let has_own_table = prefilter
         .own()
         .iter()
@@ -2255,25 +2265,28 @@ fn regset_search_body_prefilter(
     let mut s = start;
     while s <= range {
         // The own entries at `s`, then the covered candidates at `s`.
-        let mut decided_here = attempt_own_entries_at(
-            set,
-            &prefilter,
-            str_data,
-            end,
-            s,
-            start,
-            range,
-            option,
-            &mut msa,
-            &mut decision,
-        );
+        let mut decided_here = has_own
+            && attempt_own_entries_at(
+                set,
+                &prefilter,
+                str_data,
+                end,
+                s,
+                start,
+                range,
+                option,
+                &mut msa,
+                &mut decision,
+            );
         // An own entry that decided at `s` ahead of every covered index
         // leaves the covered candidates at `s` nothing to win.
         let own_decided_ahead = decided_here
             && decision
                 .map(decision_position_and_index)
                 .is_some_and(|(_, index)| index < i32::from(prefilter.covered_entries()[0]));
-        if !own_decided_ahead && !prefilter.candidates_at(haystack, s).is_empty() {
+        let seek_matches_here =
+            !own_decided_ahead && !prefilter.candidates_at(haystack, s).is_empty();
+        if seek_matches_here {
             decided_here |= attempt_candidates_at(
                 set,
                 &prefilter,
@@ -2287,29 +2300,47 @@ fn regset_search_body_prefilter(
                 &mut decision,
             );
         }
-        if decision
-            .map(decision_position_and_index)
-            .is_some_and(|(position, _)| position as usize <= s)
+        if decided_here
+            || decision
+                .map(decision_position_and_index)
+                .is_some_and(|(position, _)| position as usize <= s)
+            || s >= end
         {
             break;
         }
-        // The next position where a seek matches, past any stretch where
-        // none does; the own entries are searched over that stretch.
-        let at = if decided_here || s >= end {
-            // An own entry decided at `s`; a covered candidate at `s` was
-            // ruled out above, so the decision stands.
-            None
-        } else {
-            match prefilter.earliest(haystack, s + enclen(set.enc, str_data, s)) {
-                Some(at) if at <= range => Some(at),
-                _ => None,
+        let next = s + enclen(set.enc, str_data, s);
+        if seek_matches_here {
+            // Every attempt at `s` failed where a seek matched. The
+            // anchored scan is bounded, and where some seek matches at the
+            // next character too the meta regex would only confirm that,
+            // at the cost of finding where its match ends: the search goes
+            // on one character later and asks the DFA there first.
+            failed_positions += 1;
+            if failed_positions > PREFILTER_FAILED_POSITIONS {
+                // The position-lead search takes the search from the start:
+                // leave no match of this one behind.
+                if let Some(RegSetDecision::Match(found)) = decision {
+                    clear_regset_entry_region(set, found.index);
+                }
+                set.scratch_msa = Some(msa);
+                set.prefilter = Some(prefilter);
+                return None;
             }
+            s = next;
+            continue;
+        }
+        if next > range {
+            break;
+        }
+        // No seek matches at `s`: the meta regex finds the next position
+        // where one does, past any stretch where none does; the own entries
+        // are searched over that stretch.
+        let at = match prefilter.earliest(haystack, next) {
+            Some(at) if at <= range => Some(at),
+            _ => None,
         };
         let stretch_to = at.unwrap_or(range);
-        if has_own_fallback
-            && stretch_to > s
-            && own_searched_to.is_none_or(|searched| stretch_to > searched)
-        {
+        if has_own_fallback && own_searched_to.is_none_or(|searched| stretch_to > searched) {
             let window = own_searched_to.map_or(FIRST_OWN_WINDOW, |searched| {
                 (searched - start).saturating_mul(4)
             });
@@ -2330,9 +2361,10 @@ fn regset_search_body_prefilter(
             );
             msa = take_scratch_msa(set, option, start);
         }
-        if has_own_table && stretch_to > s {
-            let mut p = s + enclen(set.enc, str_data, s);
-            while p <= stretch_to && p <= end {
+        if has_own_table {
+            // Up to `at`, where the next round attempts every own entry.
+            let mut p = next;
+            while p <= range.min(end) && at.is_none_or(|at| p < at) {
                 if decision
                     .map(decision_position_and_index)
                     .is_some_and(|(position, _)| (position as usize) < p)
@@ -2351,9 +2383,6 @@ fn regset_search_body_prefilter(
                     &mut msa,
                     &mut decision,
                 );
-                if p >= end {
-                    break;
-                }
                 p += enclen(set.enc, str_data, p);
             }
         }
@@ -2376,55 +2405,7 @@ fn regset_search_body_prefilter(
         {
             break;
         }
-        prefilter.candidates_at(haystack, at);
-        let decided_at = attempt_own_entries_at(
-            set,
-            &prefilter,
-            str_data,
-            end,
-            at,
-            start,
-            range,
-            option,
-            &mut msa,
-            &mut decision,
-        ) | attempt_candidates_at(
-            set,
-            &prefilter,
-            str_data,
-            end,
-            at,
-            start,
-            range,
-            option,
-            &mut msa,
-            &mut decision,
-        );
-        if decided_at {
-            failed_positions = 0;
-        } else {
-            failed_positions += 1;
-            if failed_positions > PREFILTER_FAILED_POSITIONS {
-                // The position-lead search takes the search from the start:
-                // leave no match of this one behind.
-                if let Some(RegSetDecision::Match(found)) = decision {
-                    clear_regset_entry_region(set, found.index);
-                }
-                set.scratch_msa = Some(msa);
-                set.prefilter = Some(prefilter);
-                return None;
-            }
-        }
-        if decision
-            .map(decision_position_and_index)
-            .is_some_and(|(position, _)| position as usize <= at)
-        {
-            break;
-        }
-        if at >= end {
-            break;
-        }
-        s = at + enclen(set.enc, str_data, at);
+        s = at;
     }
     set.scratch_msa = Some(msa);
     set.prefilter = Some(prefilter);
@@ -2436,6 +2417,7 @@ fn regset_search_body_prefilter(
 #[cfg(feature = "dfa-prefilter")]
 // The attempts take the search's bounds as `attempt_entry_at` does.
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn attempt_own_entries_at(
     set: &mut OnigRegSet,
     prefilter: &crate::dfa_prefilter::SetPrefilter,
@@ -2468,6 +2450,7 @@ fn attempt_own_entries_at(
 #[cfg(feature = "dfa-prefilter")]
 // The attempts take the search's bounds as `attempt_entry_at` does.
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn attempt_own_table_entries_at(
     set: &mut OnigRegSet,
     prefilter: &crate::dfa_prefilter::SetPrefilter,
@@ -2499,6 +2482,7 @@ fn attempt_own_table_entries_at(
 #[cfg(feature = "dfa-prefilter")]
 // The attempts take the search's bounds as `attempt_entry_at` does.
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn attempt_candidates_at(
     set: &mut OnigRegSet,
     prefilter: &crate::dfa_prefilter::SetPrefilter,
@@ -2532,6 +2516,7 @@ fn attempt_candidates_at(
 #[cfg(feature = "dfa-prefilter")]
 // The attempts take the search's bounds as `attempt_entry_at` does.
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn attempt_entries_at(
     set: &mut OnigRegSet,
     indexes: &[u16],
@@ -2747,8 +2732,9 @@ fn regset_search_body_position_lead(
         && range == end
         && limits.retry_limit_in_search == 0
         && !set.fallback_search_candidates.is_empty();
-    if let Some(identity) = fallback_memo_id.filter(|_| memo_enabled) {
-        let key = FallbackMemoKey {
+    let memo_key = fallback_memo_id
+        .filter(|_| memo_enabled)
+        .map(|identity| FallbackMemoKey {
             identity,
             end,
             option,
@@ -2757,32 +2743,25 @@ fn regset_search_body_position_lead(
             match_stack_limit: limits.match_stack_limit,
             time_limit: limits.time_limit,
             subexp_call_limit_in_search: limits.subexp_call_limit_in_search,
-        };
-        if set.fallback_memo_key != Some(key) {
-            set.fallback_memo_key = Some(key);
-            for memos in &mut set.fallback_memos {
-                memos.clear();
-            }
-            for candidate in &mut set.fallback_search_candidates {
-                candidate.no_match_from = usize::MAX;
-                candidate.exact_miss = usize::MAX;
-                candidate.match_from = usize::MAX;
-                candidate.match_at = usize::MAX;
-            }
-        }
-    }
+        });
 
     // Rust-only (ADR-008): the DFA pre-filter decides which entries attempt
     // which positions; the rest of this function is the search it stands
     // in for, and takes over a search the pre-filter gives up.
     #[cfg(feature = "dfa-prefilter")]
     if prefilter_decides(set, limits, option, str_data, start) {
+        // The memo serves the fallback entries the pre-filter does not
+        // cover; a set without those keeps it untouched.
+        if set.prefilter_own_fallback {
+            prepare_fallback_memo(set, memo_key);
+        }
         if let Some(decision) =
             regset_search_body_prefilter(set, str_data, end, start, range, option, memo_enabled)
         {
             return regset_decision_result(set, decision);
         }
     }
+    prepare_fallback_memo(set, memo_key);
 
     if set.fallback_search_candidates.is_empty() {
         let decision = regset_search_body_position_lead_table(
@@ -3139,6 +3118,26 @@ fn search_fallback_entries(
         set.scratch_msa = fallback_msa;
     }
     decision
+}
+
+/// Readies the fallback memo for a search under `memo_key`: a key other
+/// than the one the memos were recorded under drops them.
+fn prepare_fallback_memo(set: &mut OnigRegSet, memo_key: Option<FallbackMemoKey>) {
+    let Some(key) = memo_key else {
+        return;
+    };
+    if set.fallback_memo_key != Some(key) {
+        set.fallback_memo_key = Some(key);
+        for memos in &mut set.fallback_memos {
+            memos.clear();
+        }
+        for candidate in &mut set.fallback_search_candidates {
+            candidate.no_match_from = usize::MAX;
+            candidate.exact_miss = usize::MAX;
+            candidate.match_from = usize::MAX;
+            candidate.match_at = usize::MAX;
+        }
+    }
 }
 
 /// Regex-lead search: iterate regexes, find earliest match.
