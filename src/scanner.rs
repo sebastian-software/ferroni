@@ -3093,7 +3093,7 @@ mod tests {
     /// approximates (look-arounds, anchors, `\G`, `\K`, back references,
     /// calls, conditionals, the absent operator, case folding, Unicode
     /// classes, nested and empty repetitions) next to plain table entries.
-    const PREFILTER_PATTERN_SETS: [&[&str]; 8] = [
+    const PREFILTER_PATTERN_SETS: [&[&str]; 9] = [
         // The last pattern of a set must not match at every position, or
         // it would win every call and mask the others.
         &[
@@ -3166,6 +3166,9 @@ mod tests {
             r"\\u[0-9A-Fa-f]{4}",
         ],
         &[r".x", r"\s*$"],
+        // Word boundaries next to multibyte characters: an ASCII half
+        // boundary holds inside them, where no match may start.
+        &[r"\b", r"\B", r"x"],
         // The review findings: `\W` past ASCII, a folded trie followed by
         // a consuming node and by an anchor, a consuming condition.
         &[
@@ -3180,9 +3183,10 @@ mod tests {
         ],
     ];
 
-    const PREFILTER_SUBJECTS: [&str; 12] = [
+    const PREFILTER_SUBJECTS: [&str; 13] = [
         "",
         "aéx bêx ﬁx small all-x",
+        "d日Σ\\x ü日a 日",
         "😀a \u{212A}elvin! \u{212A}elvin kelvin! STRASSE",
         "ab abab cb a",
         "int main() { return 0; } // done\n",
@@ -3231,6 +3235,62 @@ mod tests {
         let differences =
             cached_and_uncached_differences(&mut filtered, &mut plain, &subjects, &every_option);
         assert!(differences.is_empty(), "{}", differences.join("\n"));
+    }
+
+    /// Tokenizing a run in order with a stable id costs the same work with
+    /// the pre-filter as without, in VM attempts, and the meta regex is
+    /// asked at most once per call, and not at all where an entry the
+    /// automata do not cover decides at the position: those entries are
+    /// attempted position by position and bounded by the current best,
+    /// never searched from the position to the end of the subject (the
+    /// third review's finding: 4,200× the time for `["a", "(?<=z)"]`).
+    #[test]
+    fn own_entries_cost_linear_work_over_a_tokenizing_loop() {
+        let _limits = crate::regexec::shared_limits();
+        let text = "a".repeat(2_000);
+        let calls = text.len() as u64;
+        // (patterns, meta regex searches the pre-filter may make over the loop)
+        let variants: [(&[&str], u64); 5] = [
+            (&["a", r"(?<=z)"], 0),
+            (&[r"(?<=a)", "b"], 1),
+            (&[r"(?<=z)", "b"], calls),
+            (&[r"\G ?", "a"], 0),
+            (&[r"(?<=\))(?!\w)", "a"], 0),
+        ];
+        for (patterns, max_earliest) in variants {
+            let run = |prefilter: bool| {
+                let config = ScannerConfig::default().prefilter(prefilter);
+                let mut scanner = Scanner::with_config(patterns, &config).unwrap();
+                let attempts_before = crate::regexec::VM_ATTEMPTS.with(|c| c.get());
+                #[cfg(feature = "dfa-prefilter")]
+                let earliest_before = crate::dfa_prefilter::EARLIEST_CALLS.with(|c| c.get());
+                let results: Vec<_> = (0..text.len())
+                    .map(|at| {
+                        scanner
+                            .find_next_match_with_id(&text, 7, at, ScannerFindOptions::NONE)
+                            .map(|m| (m.index, m.captures()[0].start, m.captures()[0].end))
+                    })
+                    .collect();
+                let attempts = crate::regexec::VM_ATTEMPTS.with(|c| c.get()) - attempts_before;
+                #[cfg(feature = "dfa-prefilter")]
+                let earliest =
+                    crate::dfa_prefilter::EARLIEST_CALLS.with(|c| c.get()) - earliest_before;
+                #[cfg(not(feature = "dfa-prefilter"))]
+                let earliest = 0;
+                (attempts, earliest, results)
+            };
+            let (without, _, plain) = run(false);
+            let (with, earliest, filtered) = run(true);
+            assert_eq!(filtered, plain, "{patterns:?}");
+            assert!(
+                with <= 2 * without + calls,
+                "{patterns:?}: {with} VM attempts with the pre-filter, {without} without"
+            );
+            assert!(
+                earliest <= max_earliest,
+                "{patterns:?}: {earliest} meta regex searches, at most {max_earliest}"
+            );
+        }
     }
 
     /// Scanners built from one pattern cache answer every call exactly as

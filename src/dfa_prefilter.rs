@@ -69,6 +69,13 @@ pub(crate) const CANDIDATE_SCAN_BYTES: usize = 256;
 /// their time, the hot SCSS set at 17,000 states 13% more (see ADR-008).
 pub(crate) const MAX_NFA_STATES: usize = 65_536;
 
+#[cfg(test)]
+thread_local! {
+    /// Searches of a set's meta regex on this thread, for tests that bound
+    /// the pre-filter's work.
+    pub(crate) static EARLIEST_CALLS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 /// The seek approximation of one compiled pattern. A scanner passes it to
 /// its set, which builds the automata from it, and its pattern cache keeps
 /// it per distinct pattern (ADR-006); the regex itself does not carry it.
@@ -918,6 +925,11 @@ impl SetPrefilter {
         &self.own
     }
 
+    /// Entries the automata cover, in index order.
+    pub(crate) fn covered_entries(&self) -> &[u16] {
+        &self.entries
+    }
+
     /// Number of entries the automata cover.
     pub(crate) fn covered(&self) -> usize {
         self.entries.len()
@@ -927,6 +939,11 @@ impl SetPrefilter {
     /// seek matches in `haystack`.
     #[inline]
     pub(crate) fn earliest(&mut self, haystack: &[u8], from: usize) -> Option<usize> {
+        #[cfg(test)]
+        EARLIEST_CALLS.with(|calls| calls.set(calls.get() + 1));
+        if from > haystack.len() {
+            return None;
+        }
         let input = Input::new(haystack).span(from..haystack.len());
         self.meta
             .search_with(&mut self.meta_cache, &input)

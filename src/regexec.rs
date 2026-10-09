@@ -3701,6 +3701,13 @@ fn retry_limit_of_attempt(msa: &MatchArg) -> u64 {
     retry_limit_in_match
 }
 
+#[cfg(test)]
+thread_local! {
+    /// VM attempts (`match_at`) on this thread, for tests that bound the
+    /// work of a search.
+    pub(crate) static VM_ATTEMPTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 fn match_at_impl<const TRACK_CAPTURES: bool>(
     reg: &RegexType,
     str_data: &[u8],
@@ -3710,6 +3717,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
     msa: &mut MatchArg,
     mut scan: Option<&mut ForwardScan<'_>>,
 ) -> i32 {
+    #[cfg(test)]
+    VM_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
     let mut p: usize = 0; // bytecode index into reg.ops
     let mut s: usize = sstart; // current string position
     let mut right_range: usize = in_right_range;
