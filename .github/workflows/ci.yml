@@ -176,6 +176,27 @@ jobs:
       # command line: command-line flags outrank the manifest, so a lint denied
       # here would silently override the table.
       - run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      # Without the default `dfa-prefilter` feature the scanner runs the
+      # position-lead search alone; its cfg-gated code has to stay clean too.
+      - run: cargo clippy --all-targets --no-default-features --locked -- -D warnings
+
+  no-prefilter:
+    name: Test without the DFA pre-filter
+    runs-on: ubuntu-latest
+    # `default-features = false` drops regex-automata and regex-syntax and the
+    # scanner's pre-filter with them (ADR-008, ADR-009). The scanner has to
+    # answer the same without it, so the suites that exercise it run once
+    # more in that configuration.
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Test lib, api and RegSet compat without the feature
+        run: cargo test --lib --test api_test --test compat_regset --no-default-features
 
   docs:
     name: Rustdoc
