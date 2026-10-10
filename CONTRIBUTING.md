@@ -262,6 +262,10 @@ differently prints an `UNSUPPORTED` line with the reason instead of a timing.
 `benches/shiki_js` replays the same Shiki calls through Shiki's JavaScript
 engine in Node, and its `capture.mjs` records new traces from Shiki itself: the
 C and PHP replays (`shiki_scanner_bench`) come from it and run in every engine.
+The JSON and Astro replays (`ferriki_scanner_bench`, `benches/json_scanner`
+and `benches/astro_scanner`) were recorded from Ferriki's own tokenizer and
+keep the simple grammars, where the pre-filter has the least to save, in the
+comparison.
 
 `scripts/compare-engines.py` validates and times a selection of cases for
 every engine in an ordinary release build. The `shared` set holds everyday text
@@ -269,7 +273,7 @@ processing the `regex` crate also runs (`benches/regex_tasks.rs`: markup, logs,
 chat with emoji, Markdown, JSON, CSV, and a few patterns at the limit of the
 engines), the `oniguruma` set the same kind of work with Oniguruma syntax, the
 `micro` set short single searches and compilation, and the `textmate` set the
-grammar scanners of `battle_bench` and the Shiki scanner replays. The
+grammar scanners of `battle_bench` and the scanner replays. The
 [Blacksmith comparison](.github/workflows/blacksmith-comparison.yml)
 workflow runs each set as its own job on `blacksmith-6vcpu-macos-26` and
 `blacksmith-4vcpu-ubuntu-2404` and merges them into one summary per host.

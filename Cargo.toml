@@ -132,3 +132,7 @@ harness = false
 [[bench]]
 name = "shiki_scanner_bench"
 harness = false
+
+[[bench]]
+name = "ferriki_scanner_bench"
+harness = false

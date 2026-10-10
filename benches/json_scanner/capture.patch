@@ -1,0 +1,132 @@
+--- a/crates/ferriki-textmate/src/regexp.rs
++++ b/crates/ferriki-textmate/src/regexp.rs
+@@ -21,6 +21,41 @@
+     pub(crate) length: usize,
+ }
+ 
++// ---- Diagnostic trace capture (Ferroni's benches/json_scanner/capture.patch) ----
++// Every scanner call is appended as one JSON line to the file named by the
++// FERRIKI_TRACE environment variable, in the layout of
++// benches/cpp_scanner/capture.patch in Ferroni: scanner id, its pattern list
++// as handed to Ferroni, the subject's identity and content, the UTF-16 start,
++// the option bits, Ferroni's raw result and the elapsed time of the call.
++static NEXT_TRACE_SCANNER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
++static NEXT_TRACE_SUBJECT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
++
++std::thread_local! {
++    /// OnigString address -> identity, registered where Ferriki creates one.
++    static TRACE_SUBJECTS: std::cell::RefCell<std::collections::HashMap<usize, u64>> =
++        std::cell::RefCell::new(std::collections::HashMap::new());
++}
++
++/// Registers a freshly created `OnigString`: a new identity for its address,
++/// replacing whatever previously lived there.
++pub(crate) fn trace_register(string: &OnigString) {
++    let id = NEXT_TRACE_SUBJECT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++    TRACE_SUBJECTS.with(|map| {
++        map.borrow_mut()
++            .insert(string as *const OnigString as usize, id);
++    });
++}
++
++fn trace_subject_id(string: &OnigString) -> u64 {
++    TRACE_SUBJECTS.with(|map| {
++        *map.borrow_mut()
++            .entry(string as *const OnigString as usize)
++            .or_insert_with(|| {
++                NEXT_TRACE_SUBJECT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
++            })
++    })
++}
++
+ #[cfg(test)]
+ std::thread_local! {
+     // Count actual regex searches, including injections and capture retokenization.
+@@ -524,6 +559,8 @@
+     rules: Vec<T>,
+     backtracking_warnings: Vec<CompiledBacktrackingWarning<T>>,
+     backtracking_warnings_recorded: OnceLock<()>,
++    trace_id: u64,
++    trace_patterns: Vec<String>,
+ }
+ 
+ struct CompiledBacktrackingWarning<T> {
+@@ -550,6 +587,7 @@
+             .options(ONIG_OPTION_CAPTURE_GROUP)
+             .syntax(ScannerSyntax::Oniguruma);
+         let scanner = Scanner::with_config(&scanner_reg_exps, &config).map_err(RegexError::new)?;
++        let trace_patterns = compiled_reg_exps.clone();
+         let mut backtracking_warnings = Vec::new();
+         for (index, warnings) in scanner.warnings().iter().enumerate() {
+             for warning in warnings {
+@@ -566,6 +604,8 @@
+             rules,
+             backtracking_warnings,
+             backtracking_warnings_recorded: OnceLock::new(),
++            trace_id: NEXT_TRACE_SCANNER_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
++            trace_patterns,
+         })
+     }
+ 
+@@ -592,11 +632,40 @@
+     ) -> Option<FindNextMatchResult<T>> {
+         #[cfg(test)]
+         SCANNER_CALL_COUNT.with(|count| count.set(count.get() + 1));
++        let started = std::time::Instant::now();
+         let matched = self
+             .scanner
+             .lock()
+             .expect("compiled scanner lock poisoned")
+-            .find_next_match_utf16(string, start_position, options)?;
++            .find_next_match_utf16(string, start_position, options);
++        let elapsed = started.elapsed().as_nanos();
++        if let Ok(path) = std::env::var("FERRIKI_TRACE") {
++            use std::io::Write;
++            assert_eq!(options, ScannerFindOptions::NONE, "Ferriki passes NONE only");
++            let expected = matched.as_ref().map(|m| {
++                serde_json::json!({
++                    "index": m.index,
++                    "captures": m.captures().iter().map(|c| [c.start, c.end]).collect::<Vec<_>>()
++                })
++            });
++            let event = serde_json::json!({
++                "scanner": self.trace_id,
++                "patterns": self.trace_patterns,
++                "subject_id": trace_subject_id(string),
++                "subject": string.content(),
++                "start": start_position,
++                "options": 0u32,
++                "expected": expected,
++                "elapsed_ns": elapsed,
++            });
++            let mut file = std::fs::OpenOptions::new()
++                .create(true)
++                .append(true)
++                .open(path)
++                .expect("trace file opens");
++            writeln!(file, "{event}").expect("trace line written");
++        }
++        let matched = matched?;
+ 
+         // Ferroni reports line-guard matches at the synthetic end position
+         // used by TextMate's line scanner. These guards are valid at the
+--- a/crates/ferriki-textmate/src/grammar.rs
++++ b/crates/ferriki-textmate/src/grammar.rs
+@@ -371,6 +371,7 @@
+ 
+         let line_text = format!("{line_text}\n");
+         let onig_line_text = OnigString::new(&line_text);
++        crate::regexp::trace_register(&onig_line_text);
+         let line_length = onig_line_text.utf16_len();
+         let mut line_tokens = LineTokens::new(
+             !matches!(output, TokenOutput::Scopes),
+--- a/crates/ferriki-textmate/src/tokenize_string.rs
++++ b/crates/ferriki-textmate/src/tokenize_string.rs
+@@ -564,6 +564,7 @@
+             );
+             let prefix = utf16_prefix(line_text_content, capture_index.end);
+             let substring = OnigString::new(prefix);
++            crate::regexp::trace_register(&substring);
+             tokenize_string(
+                 grammar,
+                 &substring,

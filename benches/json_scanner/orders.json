@@ -1,0 +1,27 @@
+{
+  "service": "München <team> & café",
+  "version": 1,
+  "enabled": true,
+  "limits": { "requests": 1000, "timeout": 2.5e1 },
+  "orders": [
+    {
+      "id": "ORD-0042",
+      "customer": { "id": "C-01", "name": "café", "tags": ["EU", "priority"] },
+      "items": [
+        { "sku": "BOOK-α", "quantity": 2, "price": 19.95 },
+        { "sku": "PEN", "quantity": 1, "price": 2.5 }
+      ],
+      "paid": true,
+      "note": "Escaped quote: \"yes\"; path: C:\\orders",
+      "shippedAt": null
+    },
+    {
+      "id": "ORD-0043",
+      "customer": { "id": "C-02", "name": "München", "tags": [] },
+      "items": [{ "sku": "CARD", "quantity": 1, "price": 12.5 }],
+      "paid": false,
+      "note": "Line one\nLine two",
+      "shippedAt": null
+    }
+  ]
+}

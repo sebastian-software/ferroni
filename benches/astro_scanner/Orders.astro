@@ -1,0 +1,31 @@
+---
+interface Order { id: string; customer: string; total: number; paid: boolean }
+interface Props { title: string; orders: Order[] }
+const { title, orders } = Astro.props;
+const paid = orders.filter((order) => order.paid);
+const total = paid.reduce((sum, order) => sum + order.total, 0);
+const label = `€${total.toFixed(2)}`;
+---
+<!-- Frontmatter TypeScript, HTML expressions, CSS and browser JavaScript. -->
+<section class="orders" aria-label={title}>
+  <h1>{title} · München &amp; café</h1>
+  <ul>
+    {orders.map(({ id, customer, total, paid }) => (
+      <li data-id={id} class:list={{ paid }}>
+        <strong>{customer}</strong><span>€{total.toFixed(2)}</span>
+      </li>
+    ))}
+  </ul>
+  <output>{label}</output>
+  <button id="refresh">Refresh &lt;orders&gt;</button>
+</section>
+<style>
+  .orders { display: grid; gap: 1rem; }
+  .paid { color: #2563eb; }
+  @media (width < 40rem) { .orders { font-size: 0.9rem; } }
+</style>
+<script>
+  document.querySelector("#refresh")?.addEventListener("click", () => {
+    console.log(/ORD-\d+/.test("ORD-42"));
+  });
+</script>

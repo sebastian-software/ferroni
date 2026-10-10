@@ -72,6 +72,25 @@ impl ScannerMatch {
     pub fn captures(&self) -> &[CaptureIndex] {
         &self.capture_indices
     }
+
+    /// The capture groups of the match as an owned vector, consuming the
+    /// match. Index 0 is the full match. A match with more groups than the
+    /// inline buffer holds moves its heap buffer out; a smaller one is
+    /// copied into one allocation. For a caller that keeps the captures
+    /// past the match, instead of copying [`captures`](Self::captures).
+    ///
+    /// ```
+    /// use ferroni::scanner::{Scanner, ScannerFindOptions};
+    ///
+    /// let mut scanner = Scanner::new(&[r"(\d)(\d)"]).unwrap();
+    /// let m = scanner.find_next_match("x42", 0, ScannerFindOptions::NONE).unwrap();
+    /// let captures = m.into_captures();
+    /// assert_eq!(captures.len(), 3);
+    /// assert_eq!((captures[1].start, captures[1].end), (1, 2));
+    /// ```
+    pub fn into_captures(self) -> Vec<CaptureIndex> {
+        self.capture_indices.into_vec()
+    }
 }
 
 /// Options for `Scanner::find_next_match`, matching vscode-oniguruma's `FindOption`.
@@ -160,8 +179,9 @@ pub type ScannerSyntax = Syntax;
 /// named groups, matching vscode-oniguruma's default `CaptureGroup` option.
 ///
 /// Build a configuration from [`ScannerConfig::default`] and the chainable
-/// [`options`](Self::options), [`syntax`](Self::syntax) and
-/// [`prefilter`](Self::prefilter) setters. The struct is `#[non_exhaustive]`,
+/// [`options`](Self::options), [`syntax`](Self::syntax),
+/// [`prefilter`](Self::prefilter) and
+/// [`prefilter_warmup`](Self::prefilter_warmup) setters. The struct is `#[non_exhaustive]`,
 /// so a struct literal cannot be written outside this crate, and new settings
 /// can be added without a breaking change.
 ///
@@ -183,7 +203,14 @@ pub struct ScannerConfig {
     /// Whether the scanner pre-filters its searches with a multi-pattern
     /// DFA. Defaults to `true`. See [`prefilter`](Self::prefilter).
     pub prefilter: bool,
+    /// Searches the scanner answers without its pre-filter before it
+    /// builds the automata. Defaults to 32. See
+    /// [`prefilter_warmup`](Self::prefilter_warmup).
+    pub prefilter_warmup: u32,
 }
+
+/// The default of [`ScannerConfig::prefilter_warmup`].
+const PREFILTER_WARMUP: u32 = 32;
 
 impl Default for ScannerConfig {
     fn default() -> Self {
@@ -191,6 +218,7 @@ impl Default for ScannerConfig {
             options: ONIG_OPTION_CAPTURE_GROUP,
             syntax: ScannerSyntax::default(),
             prefilter: true,
+            prefilter_warmup: PREFILTER_WARMUP,
         }
     }
 }
@@ -254,6 +282,36 @@ impl ScannerConfig {
     /// ```
     pub const fn prefilter(mut self, prefilter: bool) -> Self {
         self.prefilter = prefilter;
+        self
+    }
+
+    /// Searches the scanner answers without its pre-filter before it
+    /// builds the automata. The default is 32.
+    ///
+    /// Building the automata of a pattern list takes about as long as a
+    /// hundred searches of a typical line, and a TextMate highlighter
+    /// compiles many scanners it searches only once or twice: an `end`
+    /// rule whose back references resolve to new text is recompiled each
+    /// time. Those never build the automata. Scanners built from one
+    /// [`ScannerPatternCache`] over the same pattern list share the
+    /// automata once one of them has built them. With `0` the first search
+    /// builds the automata, and a pattern list too small to narrow what
+    /// the first-byte table decides as cheaply (at most 12 patterns over
+    /// at most 128 NFA states), which otherwise gets none, builds them too:
+    /// for scanners known to live long, and for tests of the pre-filter.
+    ///
+    /// ```
+    /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
+    ///
+    /// let config = ScannerConfig::default().prefilter_warmup(0);
+    /// let mut scanner = Scanner::with_config(&[r"\d+", r"[a-z]+"], &config).unwrap();
+    /// scanner.find_next_match("hello42", 0, ScannerFindOptions::NONE);
+    /// let stats = scanner.prefilter_stats();
+    /// // Built by the first search; without the `dfa-prefilter` feature, never.
+    /// assert_eq!(stats.built, stats.covered > 0);
+    /// ```
+    pub const fn prefilter_warmup(mut self, searches: u32) -> Self {
+        self.prefilter_warmup = searches;
         self
     }
 }
@@ -483,6 +541,10 @@ struct PatternSettings {
     /// The pattern carries the seek approximation the DFA pre-filter reads
     /// (ADR-008); a pattern compiled without one is searched on its own.
     prefilter: bool,
+    /// Searches before a set builds its automata, and whether a tiny set
+    /// builds them at all (`ScannerConfig::prefilter_warmup`): sets that
+    /// differ in it do not share automata.
+    prefilter_warmup: u32,
 }
 
 impl PatternSettings {
@@ -492,6 +554,7 @@ impl PatternSettings {
             syntax: config.syntax,
             optimize_backtracking,
             prefilter: config.prefilter,
+            prefilter_warmup: config.prefilter_warmup,
         }
     }
 
@@ -743,11 +806,13 @@ pub struct ScannerStats {
 /// What a scanner's DFA pre-filter covers, from [`Scanner::prefilter_stats`].
 ///
 /// The pre-filter is described at [`ScannerConfig::prefilter`]. Its automata
-/// are built by the first search they decide (one under the default limits,
-/// from a character boundary), not when the scanner is constructed: until
-/// then `built` is `false` while `covered` and `own` already say what they
-/// will cover. A scanner built without the pre-filter, without the
-/// `dfa-prefilter` feature, or whose automata would be too large reports
+/// are built once [`ScannerConfig::prefilter_warmup`] searches it would
+/// have decided (ones under the default limits, from a character boundary)
+/// have passed, by the next such search, not when the scanner is
+/// constructed: until then `built` is `false` while `covered` and `own`
+/// already say what they will cover. A scanner built without the
+/// pre-filter, without the `dfa-prefilter` feature, or whose automata
+/// would be too large, or too small to pay with a warm-up, reports
 /// `built == false` and every pattern as `own`, and so does one that
 /// `retired` them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1011,7 +1076,8 @@ impl Scanner {
             seeks.push(seek);
         }
 
-        let (regset, r) = onig_regset_new_shared(regset_regs, seeks, automata);
+        let (regset, r) =
+            onig_regset_new_shared(regset_regs, seeks, automata, settings.prefilter_warmup);
         if r != ONIG_NORMAL {
             return Err(r.into());
         }
@@ -3141,6 +3207,112 @@ mod tests {
     ];
 
     /// The address of each pattern's compiled program in `scanner`.
+    /// Keyword lists and runs, as a grammar's scanner has them: more NFA
+    /// states than a tiny set (`dfa_prefilter::TINY_SET_NFA_STATES`).
+    const KEYWORD_SET: &[&str] = &[
+        r"\b(?:abstract|boolean|break|byte|case|catch|char|class|const|continue)\b",
+        r"\b(?:debugger|default|delete|do|double|else|enum|export|extends|final)\b",
+        r"\b(?:finally|float|for|function|goto|if|implements|import|in|instanceof)\b",
+        r"[A-Za-z_]\w*",
+        r"\d+",
+        r"//.*$",
+    ];
+
+    /// A JSON grammar's object scanner from the issue #327 replays: literals
+    /// and small classes, whose attempts the first-byte table dispatches and
+    /// the first-instruction tests reject as cheaply as a walk of the
+    /// automata would.
+    const TINY_JSON_SET: &[&str] = &[
+        "}",
+        "\"",
+        r"/\*\*(?!/)",
+        r"/\*",
+        r"(//).*$\n?",
+        ":",
+        r"[^}\s]",
+    ];
+
+    /// The automata are built by the search after the warm-up, and the
+    /// searches before and after it decide alike.
+    #[test]
+    fn prefilter_builds_after_the_warmup() {
+        let text = "let x = class Foo extends Bar { const y = 1; } // done\n";
+        let config = ScannerConfig::default().prefilter_warmup(3);
+        let mut scanner = Scanner::with_config(KEYWORD_SET, &config).unwrap();
+        let mut plain =
+            Scanner::with_config(KEYWORD_SET, &config.clone().prefilter(false)).unwrap();
+        for (i, at) in (0..8).enumerate() {
+            let want = plain.find_next_match(text, at, ScannerFindOptions::NONE);
+            let got = scanner.find_next_match(text, at, ScannerFindOptions::NONE);
+            assert_eq!(got, want, "search {i}");
+            let stats = scanner.prefilter_stats();
+            // Three searches pass without the pre-filter; the fourth builds it.
+            assert_eq!(
+                stats.built,
+                cfg!(feature = "dfa-prefilter") && i >= 3,
+                "search {i}: {stats:?}"
+            );
+        }
+        #[cfg(feature = "dfa-prefilter")]
+        {
+            let stats = scanner.prefilter_stats();
+            assert!(
+                stats.nfa_states > crate::dfa_prefilter::TINY_SET_NFA_STATES,
+                "{stats:?}"
+            );
+        }
+        assert!(!plain.prefilter_stats().built);
+    }
+
+    /// A tiny pattern list gets no automata unless the scanner asks for the
+    /// pre-filter from the first search, and searches alike either way.
+    #[test]
+    fn tiny_sets_build_no_automata_unless_eager() {
+        let lines = [
+            "{\n",
+            "  \"service\": \"München <team> & café\",\n",
+            "  \"version\": 1,\n",
+            "  \"limits\": { \"requests\": 1000, \"timeout\": 2.5e1 }\n",
+            "}\n",
+        ];
+        let lazy = ScannerConfig::default().prefilter_warmup(1);
+        let eager = ScannerConfig::default().prefilter_warmup(0);
+        let mut lazy_scanner = Scanner::with_config(TINY_JSON_SET, &lazy).unwrap();
+        let mut eager_scanner = Scanner::with_config(TINY_JSON_SET, &eager).unwrap();
+        let mut plain =
+            Scanner::with_config(TINY_JSON_SET, &lazy.clone().prefilter(false)).unwrap();
+        for line in lines {
+            let string = OnigString::new(line);
+            let mut at = 0;
+            loop {
+                let want = plain.find_next_match_utf16(&string, at, ScannerFindOptions::NONE);
+                assert_eq!(
+                    lazy_scanner.find_next_match_utf16(&string, at, ScannerFindOptions::NONE),
+                    want
+                );
+                assert_eq!(
+                    eager_scanner.find_next_match_utf16(&string, at, ScannerFindOptions::NONE),
+                    want
+                );
+                match want {
+                    Some(m) if m.captures()[0].end > at => at = m.captures()[0].end,
+                    _ => break,
+                }
+            }
+        }
+        let stats = lazy_scanner.prefilter_stats();
+        assert!(!stats.built, "{stats:?}");
+        assert_eq!(stats.own, TINY_JSON_SET.len(), "{stats:?}");
+        let stats = eager_scanner.prefilter_stats();
+        assert_eq!(stats.built, cfg!(feature = "dfa-prefilter"), "{stats:?}");
+        #[cfg(feature = "dfa-prefilter")]
+        assert!(
+            stats.covered <= crate::dfa_prefilter::TINY_SET_ENTRIES
+                && stats.nfa_states <= crate::dfa_prefilter::TINY_SET_NFA_STATES,
+            "{stats:?}"
+        );
+    }
+
     fn compiled_addresses(scanner: &Scanner) -> Vec<*const RegexType> {
         (0..onig_regset_number_of_regex(&scanner.regset) as usize)
             .map(|i| onig_regset_get_regex(&scanner.regset, i).unwrap() as *const RegexType)
@@ -3328,7 +3500,7 @@ mod tests {
     #[test]
     fn prefilter_matches_the_position_lead_search_on_every_route() {
         let _limits = crate::regexec::shared_limits();
-        let with = ScannerConfig::default();
+        let with = ScannerConfig::default().prefilter_warmup(0);
         let without = ScannerConfig::default().prefilter(false);
         let every_option: Vec<_> = (0..8).map(ScannerFindOptions::from_bits).collect();
         let sets: Vec<&[&str]> = (PREFILTER_PATTERN_SETS.iter().copied())
@@ -3440,7 +3612,9 @@ mod tests {
         for (patterns, text, max_earliest) in variants {
             for api in [Api::Id, Api::Plain, Api::Utf16] {
                 let run = |prefilter: bool| {
-                    let config = ScannerConfig::default().prefilter(prefilter);
+                    let config = ScannerConfig::default()
+                        .prefilter(prefilter)
+                        .prefilter_warmup(0);
                     let mut scanner = Scanner::with_config(patterns, &config).unwrap();
                     let string = OnigString::new(text);
                     let before = work();
@@ -3548,7 +3722,9 @@ mod tests {
         ];
         for patterns in sets {
             let run = |prefilter: bool| {
-                let config = ScannerConfig::default().prefilter(prefilter);
+                let config = ScannerConfig::default()
+                    .prefilter(prefilter)
+                    .prefilter_warmup(0);
                 let mut scanner = Scanner::with_config(patterns, &config).unwrap();
                 let steps_before = crate::dfa_prefilter::SCAN_STEPS.with(|c| c.get());
                 let attempts_before = crate::regexec::VM_ATTEMPTS.with(|c| c.get());
@@ -3587,7 +3763,7 @@ mod tests {
     fn pattern_cache_scanners_match_uncached_scanners() {
         // The routes and limit outcomes read the process-wide limits.
         let _limits = crate::regexec::exclusive_limits();
-        let config = ScannerConfig::default();
+        let config = ScannerConfig::default().prefilter_warmup(0);
         let every_option: Vec<_> = (0..8).map(ScannerFindOptions::from_bits).collect();
         let distinct: std::collections::HashSet<&str> = CACHED_PATTERN_SETS
             .iter()
@@ -3733,7 +3909,7 @@ mod tests {
     #[test]
     fn pattern_cache_keeps_settings_apart() {
         let _limits = crate::regexec::shared_limits();
-        let plain = ScannerConfig::default();
+        let plain = ScannerConfig::default().prefilter_warmup(0);
         let ignore_case = ScannerConfig {
             options: plain.options | ONIG_OPTION_IGNORECASE,
             ..plain.clone()
@@ -3788,7 +3964,7 @@ mod tests {
     /// in it are taken out again.
     #[test]
     fn failed_construction_leaves_the_pattern_cache_unchanged() {
-        let config = ScannerConfig::default();
+        let config = ScannerConfig::default().prefilter_warmup(0);
         let mut cache = ScannerPatternCache::new();
         let kept = Scanner::with_pattern_cache(&["a", "b"], &config, &mut cache).unwrap();
         let snapshot = |cache: &ScannerPatternCache| {
@@ -3846,7 +4022,7 @@ mod tests {
     #[test]
     fn pattern_cache_and_scanners_drop_in_any_order() {
         let _limits = crate::regexec::shared_limits();
-        let config = ScannerConfig::default();
+        let config = ScannerConfig::default().prefilter_warmup(0);
         let mut cache = ScannerPatternCache::new();
         assert!(cache.is_empty());
         let mut first = Scanner::with_pattern_cache(&["x(y)", "z"], &config, &mut cache).unwrap();
@@ -3905,7 +4081,7 @@ mod tests {
             "WARN: the legend ends here, zbaz",
             "\u{1F4BB} fatal\tpanic   friend",
         ];
-        let config = ScannerConfig::default();
+        let config = ScannerConfig::default().prefilter_warmup(0);
         let mut reference = Scanner::with_config(patterns, &config).unwrap();
         let expected: Vec<Vec<Option<ScannerMatch>>> = subjects
             .iter()
@@ -3967,7 +4143,7 @@ mod tests {
                     set.iter().map(|p| p.as_str().unwrap()).collect()
                 })
                 .collect();
-            let config = ScannerConfig::default();
+            let config = ScannerConfig::default().prefilter_warmup(0);
             let mut cache = ScannerPatternCache::new();
             let mut scanners: Vec<Scanner> = pattern_sets
                 .iter()

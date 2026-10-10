@@ -240,7 +240,9 @@ fn differences(compose: impl Fn(&str) -> String) -> ((usize, usize, usize, u64),
                 continue;
             };
             let pattern = compose(pattern);
-            let config = ScannerConfig::default().options(case.options);
+            let config = ScannerConfig::default()
+                .options(case.options)
+                .prefilter_warmup(0);
             let plain = Scanner::with_config(&[&pattern], &config.clone().prefilter(false));
             let filtered = Scanner::with_config(&[&pattern], &config);
             let (Ok(mut plain), Ok(mut filtered)) = (plain, filtered) else {

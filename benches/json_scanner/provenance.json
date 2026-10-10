@@ -1,0 +1,43 @@
+{
+  "format_version": 1,
+  "ferroni_commit": "90f948e0ef78a9b4a25cbdf395f1fc1434624a90",
+  "ferriki_commit": "75bef63cb5186396ec1103ed9a2f8af2790fcea4",
+  "capture": "benches/json_scanner/capture.patch on Ferriki's scanner adapter and capture.rs as examples/trace_curated.rs: Highlighter::highlight_with_options, lang=json, theme=github-dark, tokenizeTimeLimit 500, the second (warm) pass of the document",
+  "capture_command": "cargo run --release --example trace_curated -- assets/shiki json node/benchmarks/curated/fixtures/orders.json 16 /tmp/json.jsonl && python3 benches/cpp_scanner/compact.py /tmp/json.jsonl trace.json (hot groups trimmed to three)",
+  "compile_options": "ONIG_OPTION_CAPTURE_GROUP, ScannerSyntax::Oniguruma, backtracking optimization off",
+  "find_api": "find_next_match_utf16 (without caller-provided cache ID)",
+  "grammar_source": "@shikijs/langs via Ferriki's assets/upstream/textmate-grammars-themes (MIT), from shikijs/textmate-grammars-themes; the JSON grammar upstream is microsoft/vscode-JSON.tmLanguage (MIT)",
+  "grammar_paths": {
+    "assets/upstream/textmate-grammars-themes/grammars/json.json": "f726cfcd953e00567c714a93c15a6227ef7bdb92c939cb07217e036ef5716dc0",
+    "assets/shiki/languages/json.fkgram": "ea14414513bc4c28cbf19967ebc593146e68e5bcad876333be75462d3adaf618"
+  },
+  "document": "orders.json",
+  "document_origin": "sebastian-software/ferriki node/benchmarks/curated/fixtures/orders.json at 75bef63cb5186396ec1103ed9a2f8af2790fcea4 (MIT or Apache-2.0)",
+  "source_sha256": "11231ab1ba5ec9cbabc259cc75ecec4c3c612d59fd6e22170cea6738e418e76c",
+  "copies": 16,
+  "document_sha256": "58852239e36a9dcd855284e28921c6f99f5a803b3a9ef28b37260e151fb1c1b8",
+  "document_bytes": 12176,
+  "document_lines": 432,
+  "calls": 3840,
+  "scanners": 6,
+  "distinct_pattern_lists": 5,
+  "subjects": 432,
+  "hot_groups": [
+    {
+      "id": 3,
+      "calls": 1136,
+      "patterns": 10
+    },
+    {
+      "id": 1,
+      "calls": 1504,
+      "patterns": 7
+    },
+    {
+      "id": 2,
+      "calls": 544,
+      "patterns": 3
+    }
+  ],
+  "trace_sha256": "d8ce5a123a13c5adb53b6905a24ab2cbdc5b6095eea78a91b778ba27f0529ddb"
+}

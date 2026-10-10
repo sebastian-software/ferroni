@@ -173,6 +173,16 @@ pub struct OnigRegSet {
     /// its cache (`retire_prefilter`).
     #[cfg(feature = "dfa-prefilter")]
     prefilter_retired: bool,
+    /// Searches the pending pre-filter would have decided, counted until
+    /// `prefilter_warmup` of them have passed and the next one builds the
+    /// automata (`prefilter_due`).
+    #[cfg(feature = "dfa-prefilter")]
+    prefilter_requests: u32,
+    /// Searches the set answers without its pre-filter before it builds
+    /// the automata (`ScannerConfig::prefilter_warmup`); with 0, a pattern
+    /// list the automata would leave alone as too small gets them too.
+    #[cfg(feature = "dfa-prefilter")]
+    prefilter_warmup: u32,
     /// The next search takes the position-lead path although the set has
     /// automata (`self_check_prefilter_decision`).
     #[cfg(feature = "prefilter-self-check")]
@@ -583,6 +593,7 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
         set.prefilter_pending = None;
         set.prefilter_own_fallback = false;
         set.prefilter_retired = false;
+        set.prefilter_requests = 0;
     }
     set.has_gated = set.entries.iter().any(|entry| entry.gated);
     set.has_gated_callouts = set
@@ -620,14 +631,16 @@ pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i
 ///
 /// `seeks` holds each regex's seek approximation (ADR-008,
 /// `crate::dfa_prefilter`) and `automata` the handle on the automata the
-/// set builds from them on the first search the pre-filter decides, or
-/// finds built by another set over the same patterns; a set without a seek
-/// for any entry, without the feature, or whose automata would be too
-/// large searches as before.
+/// set builds from them once `warmup` searches the pre-filter would have
+/// decided have passed (`ScannerConfig::prefilter_warmup`), or finds built
+/// by another set over the same patterns; a set without a seek for any
+/// entry, without the feature, or whose automata would be too large or,
+/// with a warm-up, too small to pay searches as before.
 pub(crate) fn onig_regset_new_shared(
     regs: Vec<Arc<RegexType>>,
     seeks: Vec<SharedSeek>,
     automata: SharedAutomata,
+    warmup: u32,
 ) -> (Option<Box<OnigRegSet>>, i32) {
     debug_assert_eq!(regs.len(), seeks.len());
     let mut set = regset_alloc();
@@ -649,9 +662,10 @@ pub(crate) fn onig_regset_new_shared(
         if pending.covered() > 0 {
             set.prefilter_pending = Some(Box::new(pending));
         }
+        set.prefilter_warmup = warmup;
     }
     #[cfg(not(feature = "dfa-prefilter"))]
-    let _ = (seeks, automata);
+    let _ = (seeks, automata, warmup);
 
     (Some(set), ONIG_NORMAL)
 }
@@ -670,7 +684,7 @@ fn build_prefilter(set: &mut OnigRegSet) -> bool {
     let automata = pending.automata.get_or_build(|| {
         let entries = (set.entries.iter().zip(&pending.seeks))
             .map(|(entry, seek)| (seek.as_deref(), &*entry.reg));
-        crate::dfa_prefilter::Automata::build(entries)
+        crate::dfa_prefilter::Automata::build(entries, set.prefilter_warmup > 0)
     });
     let Some(automata) = automata else {
         return false;
@@ -769,6 +783,10 @@ fn regset_alloc() -> Box<OnigRegSet> {
         prefilter_own_fallback: false,
         #[cfg(feature = "dfa-prefilter")]
         prefilter_retired: false,
+        #[cfg(feature = "dfa-prefilter")]
+        prefilter_requests: 0,
+        #[cfg(feature = "dfa-prefilter")]
+        prefilter_warmup: 0,
         #[cfg(feature = "prefilter-self-check")]
         prefilter_bypass: false,
         #[cfg(feature = "prefilter-self-check")]
@@ -829,6 +847,7 @@ pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) 
         set.prefilter_pending = None;
         set.prefilter_own_fallback = false;
         set.prefilter_retired = false;
+        set.prefilter_requests = 0;
     }
     set.fallback_memo_key = None;
     set.fallback_memos.resize_with(set.entries.len(), Vec::new);
@@ -2308,7 +2327,9 @@ fn prefilter_decides(
     if set.prefilter_bypass {
         return false;
     }
-    set.subject_utf8 && starts_a_character(str_data, start) && prefilter_admits(set, limits, option)
+    set.subject_utf8
+        && starts_a_character(str_data, start)
+        && prefilter_admits(set, limits, option, true)
 }
 
 /// Whether `start` is the end of the subject or the first byte of a
@@ -2321,15 +2342,18 @@ fn starts_a_character(str_data: &[u8], start: usize) -> bool {
 
 /// `prefilter_decides` apart from the subject: the set has the automata, or
 /// builds them now, and the limits and options admit them. A set whose
-/// pre-filter is pending builds it only once a search admits it
-/// (`build_prefilter`), so a set never searched under the defaults never
-/// pays for it.
+/// pre-filter is pending builds it only once `prefilter_warmup` searches
+/// that admit it have passed (`prefilter_due`), so a set never searched
+/// under the defaults never pays for it, and one searched a few times and
+/// dropped pays only the searches. `search` counts the search toward the
+/// warm-up; a route decision asks ahead of its search without counting.
 #[cfg(feature = "dfa-prefilter")]
 #[inline]
 fn prefilter_admits(
     set: &mut OnigRegSet,
     limits: FallbackMemoLimits,
     option: OnigOptionType,
+    search: bool,
 ) -> bool {
     (set.prefilter.is_some() || set.prefilter_pending.is_some())
         && limits.retry_limit_in_match == DEFAULT_RETRY_LIMIT_IN_MATCH
@@ -2338,7 +2362,21 @@ fn prefilter_admits(
         && limits.time_limit == 0
         && limits.subexp_call_limit_in_search == 0
         && !opton_find_longest(option)
-        && (set.prefilter.is_some() || build_prefilter(set))
+        && (set.prefilter.is_some() || prefilter_due(set, search))
+}
+
+/// Whether a pending pre-filter is due: a search counts toward the warm-up
+/// and, past it, builds the automata (`build_prefilter`, which may find
+/// nothing to build); a route decision answers for the search that
+/// follows it.
+#[cfg(feature = "dfa-prefilter")]
+#[inline]
+fn prefilter_due(set: &mut OnigRegSet, search: bool) -> bool {
+    if !search {
+        return set.prefilter_requests >= set.prefilter_warmup;
+    }
+    set.prefilter_requests = set.prefilter_requests.saturating_add(1);
+    set.prefilter_requests > set.prefilter_warmup && build_prefilter(set)
 }
 
 /// Rust-only (ADR-008): whether the DFA pre-filter would decide a search of
@@ -2355,7 +2393,7 @@ pub(crate) fn onig_regset_prefilter_decides(
     #[cfg(feature = "dfa-prefilter")]
     {
         let limits = refresh_scratch_limits(set);
-        starts_a_character(str_data, start) && prefilter_admits(set, limits, option)
+        starts_a_character(str_data, start) && prefilter_admits(set, limits, option, false)
     }
     #[cfg(not(feature = "dfa-prefilter"))]
     {

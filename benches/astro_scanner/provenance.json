@@ -1,0 +1,41 @@
+{
+  "format_version": 1,
+  "ferroni_commit": "90f948e0ef78a9b4a25cbdf395f1fc1434624a90",
+  "ferriki_commit": "75bef63cb5186396ec1103ed9a2f8af2790fcea4",
+  "capture": "benches/json_scanner/capture.patch on Ferriki's scanner adapter and benches/json_scanner/capture.rs as examples/trace_curated.rs: Highlighter::highlight_with_options, lang=astro (embedded json, javascript, typescript, css, postcss, tsx through Ferriki's loader), theme=github-dark, tokenizeTimeLimit 500, the second (warm) pass of the document",
+  "capture_command": "cargo run --release --example trace_curated -- assets/shiki astro node/benchmarks/curated/fixtures/Orders.astro 16 /tmp/astro.jsonl && python3 benches/cpp_scanner/compact.py /tmp/astro.jsonl trace.json (hot groups trimmed to three)",
+  "compile_options": "ONIG_OPTION_CAPTURE_GROUP, ScannerSyntax::Oniguruma, backtracking optimization off",
+  "find_api": "find_next_match_utf16 (without caller-provided cache ID)",
+  "grammar_source": "@shikijs/langs via Ferriki's assets/upstream/textmate-grammars-themes (MIT), from shikijs/textmate-grammars-themes; the Astro grammar upstream is withastro/language-tools (MIT), the embedded TypeScript, TSX and JavaScript grammars microsoft/TypeScript-TmLanguage (MIT), CSS microsoft/vscode (MIT), JSON microsoft/vscode-JSON.tmLanguage (MIT), PostCSS hudochenkov/Syntax-highlighting-for-PostCSS (MIT)",
+  "grammar_paths": {
+    "assets/upstream/textmate-grammars-themes/grammars/astro.json": "5010d2ffa28bb711283a768dc25651bc32566067760af7e19dc3e0851865aa65",
+    "assets/shiki/languages/astro.fkgram": "707fd24ca02296ea4c1326ba6920b4fa7ece69e7a8de4acdce7376e5c8369966"
+  },
+  "document": "Orders.astro",
+  "document_origin": "sebastian-software/ferriki node/benchmarks/curated/fixtures/Orders.astro at 75bef63cb5186396ec1103ed9a2f8af2790fcea4 (MIT or Apache-2.0)",
+  "source_sha256": "04e99d8d655a8fbf782ed2ed5b83b5d4a50d320e603506c0dcf2f8ee3c56eb62",
+  "copies": 16,
+  "document_sha256": "da5a7282ea903baa625018f108de791d7050a41ea8d13e30d916fb0a0c31b7f2",
+  "document_bytes": 17296,
+  "document_lines": 496,
+  "calls": 7151,
+  "scanners": 153,
+  "distinct_pattern_lists": 76,
+  "scanners_created_during_the_pass": 64,
+  "subjects": 960,
+  "hot_groups": [
+    {
+      "id": 23,
+      "calls": 643
+    },
+    {
+      "id": 22,
+      "calls": 735
+    },
+    {
+      "id": 34,
+      "calls": 379
+    }
+  ],
+  "trace_sha256": "1c7259d2b80bd03b1a7b6e132a304cd4edba9c699b217bccd847ea109189872c"
+}

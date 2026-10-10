@@ -15,7 +15,8 @@ fn bounds(found: Option<ferroni::scanner::ScannerMatch>) -> Option<(usize, usize
 fn compare(patterns: &[&str], text: &str, expected: (usize, usize, usize)) {
     let mut plain =
         Scanner::with_config(patterns, &ScannerConfig::default().prefilter(false)).unwrap();
-    let mut filtered = Scanner::new(patterns).unwrap();
+    let mut filtered =
+        Scanner::with_config(patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
     let want = bounds(plain.find_next_match(text, 0, ScannerFindOptions::NONE));
     let got = bounds(filtered.find_next_match(text, 0, ScannerFindOptions::NONE));
     // The first search built the automata.
@@ -70,7 +71,8 @@ fn explicit_subexpression_call_limit_disables_skipping() {
     let text = "xaaa! c";
     let mut plain =
         Scanner::with_config(&patterns, &ScannerConfig::default().prefilter(false)).unwrap();
-    let mut filtered = Scanner::new(&patterns).unwrap();
+    let mut filtered =
+        Scanner::with_config(&patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
     let want = bounds(plain.find_next_match(text, 0, ScannerFindOptions::NONE));
     let got = bounds(filtered.find_next_match(text, 0, ScannerFindOptions::NONE));
     ferroni::regexec::onig_set_subexp_call_limit_in_search(saved);
@@ -85,7 +87,8 @@ fn explicit_subexpression_call_limit_disables_skipping() {
 fn compare_from(patterns: &[&str], text: &str, start: usize, expected: (usize, usize, usize)) {
     let mut off =
         Scanner::with_config(patterns, &ScannerConfig::default().prefilter(false)).unwrap();
-    let mut on = Scanner::new(patterns).unwrap();
+    let mut on =
+        Scanner::with_config(patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
     let want = bounds(off.find_next_match(text, start, ScannerFindOptions::NONE));
     let got = bounds(on.find_next_match(text, start, ScannerFindOptions::NONE));
     assert_eq!(want, Some(expected));
