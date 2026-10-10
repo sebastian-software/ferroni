@@ -55,23 +55,30 @@ fn conditional_preserves_the_consumed_condition() {
 /// Identical calls through the cache route, which probes the per-regex
 /// route after a run of same-start calls, answer alike under the default
 /// retry limit, which `(a+)+b` exhausts on this text wherever it is
-/// attempted. What it covers: the two patterns are a tiny set (ADR-008,
-/// _Warm-up and tiny sets_), so under the default configuration the scanner
-/// never builds the pre-filter, and all 20 calls search without it and
-/// answer no match. It no longer exercises the route a call the pre-filter
-/// decides stays on (`onig_regset_prefilter_decides`), and it does not cross
-/// the end of a warm-up, where a set past the tiny bound changes its answer
-/// to such calls once (ADR-008, _Observability_).
+/// attempted. Two scanners: under the default configuration the two
+/// patterns are a tiny set (ADR-008, _Warm-up and tiny sets_), so it never
+/// builds the pre-filter and every call answers no match; with the
+/// `dfa-prefilter` feature and `prefilter_warmup(0)` it builds the pre-filter
+/// at once, every call stays
+/// on the route the pre-filter decides (`onig_regset_prefilter_decides`)
+/// and answers `c`. Neither crosses the end of a warm-up, where a set past
+/// the tiny bound changes its answer to such calls once (ADR-008,
+/// _Observability_).
 fn identical_default_limit_searches_have_identical_results() {
-    let mut scanner = Scanner::new(&[r"(a+)+b", "c"]).unwrap();
     let text = format!("{}c b", "a".repeat(27));
-    let found: Vec<_> = (0..20)
-        .map(|_| bounds(scanner.find_next_match_with_id(&text, 7, 0, ScannerFindOptions::NONE)))
-        .collect();
-    assert!(
-        found.iter().all(|got| *got == found[0]),
-        "identical searches returned different results: {found:?}"
-    );
+    for config in [
+        ScannerConfig::default(),
+        ScannerConfig::default().prefilter_warmup(0),
+    ] {
+        let mut scanner = Scanner::with_config(&[r"(a+)+b", "c"], &config).unwrap();
+        let found: Vec<_> = (0..20)
+            .map(|_| bounds(scanner.find_next_match_with_id(&text, 7, 0, ScannerFindOptions::NONE)))
+            .collect();
+        assert!(
+            found.iter().all(|got| *got == found[0]),
+            "identical searches returned different results ({config:?}): {found:?}"
+        );
+    }
 }
 
 fn explicit_subexpression_call_limit_disables_skipping() {
