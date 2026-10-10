@@ -109,6 +109,20 @@ pub(crate) const LONG_WALK_BYTES: usize = 64;
 /// their time, the hot SCSS set at 17,000 states 13% more (see ADR-008).
 pub(crate) const MAX_NFA_STATES: usize = 65_536;
 
+/// Sets whose automata would cover at most this many entries with at most
+/// `TINY_SET_NFA_STATES` NFA states get no pre-filter unless the scanner
+/// asks for it from the first search (`ScannerConfig::prefilter_warmup`
+/// of 0): such patterns are literals and small classes, whose attempts
+/// the first-byte table dispatches and the first-instruction tests reject
+/// as cheaply as a walk of the automata would, so the pre-filter has
+/// nothing to save there and costs its walks and meta regex searches on
+/// every call (the six sets of the JSON grammar, 3 to 11 patterns over 24
+/// to 104 states, took 1.5 to 2.5 times their time with it, and no set of
+/// the captured replays within these bounds gains; see ADR-008).
+pub(crate) const TINY_SET_ENTRIES: usize = 12;
+/// See `TINY_SET_ENTRIES`.
+pub(crate) const TINY_SET_NFA_STATES: usize = 128;
+
 #[cfg(test)]
 thread_local! {
     /// Searches of a set's meta regex on this thread, for tests that bound
@@ -1302,10 +1316,11 @@ impl std::fmt::Debug for SetPrefilter {
 impl Automata {
     /// The automata over the seeks of the entries (in entry order, each with
     /// its regex), or `None` when no entry can be pre-filtered, an entry has
-    /// callouts, or the automata would be too large (`MAX_NFA_STATES`) or do
-    /// not build.
+    /// callouts, the automata would be too large (`MAX_NFA_STATES`) or do
+    /// not build, or, with `skip_tiny`, too small to pay (`TINY_SET_ENTRIES`).
     pub(crate) fn build<'a>(
         entries: impl Iterator<Item = (Option<&'a Seek>, &'a RegexType)>,
+        skip_tiny: bool,
     ) -> Option<Self> {
         let mut hirs: Vec<Hir> = Vec::new();
         let mut covered = Vec::new();
@@ -1339,6 +1354,12 @@ impl Automata {
             .build_many_from_hir(&hirs)
             .ok()?;
         if nfa.states().len() > MAX_NFA_STATES {
+            return None;
+        }
+        if skip_tiny
+            && entries.len() <= TINY_SET_ENTRIES
+            && nfa.states().len() <= TINY_SET_NFA_STATES
+        {
             return None;
         }
         // The seeks use ASCII look-arounds only, so the DFA never quits.
@@ -2241,7 +2262,8 @@ mod tests {
         .unwrap();
         let patterns = flat_grammar_patterns(&json);
         let refs: Vec<&str> = patterns.iter().map(String::as_str).collect();
-        let mut filtered = Scanner::new(&refs).unwrap();
+        let mut filtered =
+            Scanner::with_config(&refs, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
         let mut plain =
             Scanner::with_config(&refs, &ScannerConfig::default().prefilter(false)).unwrap();
         let stylesheet = ".navbar-primary > .nav-item:first-child {\n\
@@ -2276,7 +2298,8 @@ mod tests {
     fn walks_of_a_subject_searched_again_are_kept() {
         let _limits = crate::regexec::shared_limits();
         let patterns = [r"[a-z]+:", r"\d+", r"[a-z]+\(", "b", "a"];
-        let mut filtered = Scanner::new(&patterns).unwrap();
+        let mut filtered =
+            Scanner::with_config(&patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
         let mut plain =
             Scanner::with_config(&patterns, &ScannerConfig::default().prefilter(false)).unwrap();
         let text = "abc: 12 foo(bar) a b xyz: 7 quux(1) ba";
@@ -2352,7 +2375,7 @@ mod tests {
             .chain(["2"])
             .collect();
         let text = format!("1 {}0 2", "a".repeat(64));
-        let config = ScannerConfig::default();
+        let config = ScannerConfig::default().prefilter_warmup(0);
         let mut big = Scanner::with_config(&patterns, &config).unwrap();
         let mut little = Scanner::with_config(&patterns[69..], &config).unwrap();
         // The automata are built by the first search.

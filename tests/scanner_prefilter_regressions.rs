@@ -15,7 +15,8 @@ fn bounds(found: Option<ferroni::scanner::ScannerMatch>) -> Option<(usize, usize
 fn compare(patterns: &[&str], text: &str, expected: (usize, usize, usize)) {
     let mut plain =
         Scanner::with_config(patterns, &ScannerConfig::default().prefilter(false)).unwrap();
-    let mut filtered = Scanner::new(patterns).unwrap();
+    let mut filtered =
+        Scanner::with_config(patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
     let want = bounds(plain.find_next_match(text, 0, ScannerFindOptions::NONE));
     let got = bounds(filtered.find_next_match(text, 0, ScannerFindOptions::NONE));
     // The first search built the automata.
@@ -51,16 +52,33 @@ fn conditional_preserves_the_consumed_condition() {
     compare(&[r"(?(a)b|c)", "b"], "ab", (0, 0, 2));
 }
 
+/// Identical calls through the cache route, which probes the per-regex
+/// route after a run of same-start calls, answer alike under the default
+/// retry limit, which `(a+)+b` exhausts on this text wherever it is
+/// attempted. Two scanners: under the default configuration the two
+/// patterns are a tiny set (ADR-008, _Warm-up and tiny sets_), so it never
+/// builds the pre-filter and every call answers no match; with the
+/// `dfa-prefilter` feature and `prefilter_warmup(0)` it builds the pre-filter
+/// at once, every call stays
+/// on the route the pre-filter decides (`onig_regset_prefilter_decides`)
+/// and answers `c`. Neither crosses the end of a warm-up, where a set past
+/// the tiny bound changes its answer to such calls once (ADR-008,
+/// _Observability_).
 fn identical_default_limit_searches_have_identical_results() {
-    let mut scanner = Scanner::new(&[r"(a+)+b", "c"]).unwrap();
     let text = format!("{}c b", "a".repeat(27));
-    let found: Vec<_> = (0..20)
-        .map(|_| bounds(scanner.find_next_match_with_id(&text, 7, 0, ScannerFindOptions::NONE)))
-        .collect();
-    assert!(
-        found.iter().all(|got| *got == found[0]),
-        "identical searches returned different results: {found:?}"
-    );
+    for config in [
+        ScannerConfig::default(),
+        ScannerConfig::default().prefilter_warmup(0),
+    ] {
+        let mut scanner = Scanner::with_config(&[r"(a+)+b", "c"], &config).unwrap();
+        let found: Vec<_> = (0..20)
+            .map(|_| bounds(scanner.find_next_match_with_id(&text, 7, 0, ScannerFindOptions::NONE)))
+            .collect();
+        assert!(
+            found.iter().all(|got| *got == found[0]),
+            "identical searches returned different results ({config:?}): {found:?}"
+        );
+    }
 }
 
 fn explicit_subexpression_call_limit_disables_skipping() {
@@ -70,7 +88,8 @@ fn explicit_subexpression_call_limit_disables_skipping() {
     let text = "xaaa! c";
     let mut plain =
         Scanner::with_config(&patterns, &ScannerConfig::default().prefilter(false)).unwrap();
-    let mut filtered = Scanner::new(&patterns).unwrap();
+    let mut filtered =
+        Scanner::with_config(&patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
     let want = bounds(plain.find_next_match(text, 0, ScannerFindOptions::NONE));
     let got = bounds(filtered.find_next_match(text, 0, ScannerFindOptions::NONE));
     ferroni::regexec::onig_set_subexp_call_limit_in_search(saved);
@@ -85,7 +104,8 @@ fn explicit_subexpression_call_limit_disables_skipping() {
 fn compare_from(patterns: &[&str], text: &str, start: usize, expected: (usize, usize, usize)) {
     let mut off =
         Scanner::with_config(patterns, &ScannerConfig::default().prefilter(false)).unwrap();
-    let mut on = Scanner::new(patterns).unwrap();
+    let mut on =
+        Scanner::with_config(patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
     let want = bounds(off.find_next_match(text, start, ScannerFindOptions::NONE));
     let got = bounds(on.find_next_match(text, start, ScannerFindOptions::NONE));
     assert_eq!(want, Some(expected));

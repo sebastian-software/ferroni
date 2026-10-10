@@ -195,7 +195,7 @@ fn ferriki_corpus_answers_alike_with_and_without_the_prefilter() {
         .collect();
 
     let plain_config = ScannerConfig::default().prefilter(false);
-    let filtered_config = ScannerConfig::default();
+    let filtered_config = ScannerConfig::default().prefilter_warmup(0);
     let mut counts = Counts {
         grammars: 0,
         scanners: 0,

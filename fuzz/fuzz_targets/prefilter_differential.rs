@@ -570,7 +570,9 @@ fn compare(patterns: &[&str], text: &str) {
     let Ok(mut plain) = Scanner::with_config(patterns, &plain_config) else {
         return;
     };
-    let Ok(mut filtered) = Scanner::with_config(patterns, &ScannerConfig::default()) else {
+    let Ok(mut filtered) =
+        Scanner::with_config(patterns, &ScannerConfig::default().prefilter_warmup(0))
+    else {
         return;
     };
     let deadline = Instant::now() + TIME_BUDGET;

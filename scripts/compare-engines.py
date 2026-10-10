@@ -12,7 +12,7 @@ Linux machine with the pinned Oniguruma and Onigmo sources. Case sets:
              calls, the absent operator, conditionals, grapheme clusters
   micro      one search on a short string, and compiling single patterns
   textmate   the TypeScript, CSS and Rust grammar scanners of battle_bench and
-             replays of real Shiki scanner calls (benches/*_scanner)
+             replays of real Shiki and Ferriki scanner calls (benches/*_scanner)
 
 Engines: Ferroni, C Oniguruma (the vscode-oniguruma scanner for the replays),
 Ruby's Onigmo (`onigmo` feature), PCRE2 with and without JIT, fancy-regex in
@@ -128,12 +128,19 @@ CASES = {
         'c_scanner/group_12',
         'php_scanner/document',
         'php_scanner/group_13',
+        # Recorded from Ferriki's tokenizer (benches/json_scanner/capture.patch):
+        # simple grammars, where the pre-filter has the least to save.
+        'json_scanner/document',
+        'json_scanner/group_1',
+        'astro_scanner/document',
+        'astro_scanner/group_22',
     ],
 }
 # Criterion group prefix -> bench target; everything else is battle_bench.
 BENCHES = {'cpp_scanner': 'cpp_scanner_bench', 'java_scanner': 'java_scanner_bench',
            'scss_scanner': 'scss_scanner_bench', 'c_scanner': 'shiki_scanner_bench',
-           'php_scanner': 'shiki_scanner_bench'}
+           'php_scanner': 'shiki_scanner_bench', 'json_scanner': 'ferriki_scanner_bench',
+           'astro_scanner': 'ferriki_scanner_bench'}
 ENGINES = ('rust', 'c', 'onigmo', 'pcre2_jit', 'pcre2', 'fancy_regex', 'fancy_regex_seek', 'fancy_regex_set',
            'regex', 'shiki_js')
 LABELS = {'rust': 'Ferroni', 'c': 'C', 'onigmo': 'Onigmo', 'pcre2_jit': 'PCRE2 JIT', 'pcre2': 'PCRE2',
