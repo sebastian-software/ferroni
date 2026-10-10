@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/sebastian-software/ferroni/compare/v2.1.0...v2.1.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency vite to v8.3.3 ([#333](https://github.com/sebastian-software/ferroni/issues/333)) ([8a5867c](https://github.com/sebastian-software/ferroni/commit/8a5867cffd86a6f4db3e48074090cc340f2188fc))
+
 ## [2.1.0](https://github.com/sebastian-software/ferroni/compare/v2.0.0...v2.1.0) (2026-10-10)
 
 
