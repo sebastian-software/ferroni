@@ -67,7 +67,8 @@ smallvec = "1"
 # The scanner's DFA pre-filter (feature `dfa-prefilter`, ADR-009): the regex
 # crate's automata, without its public API. The seeks are byte-based and
 # use ASCII look-arounds only, so no Unicode tables are needed.
-regex-automata = { version = "0.4", optional = true, default-features = false, features = ["std", "syntax", "meta", "nfa-thompson", "hybrid"] }
+# perf-literal and perf-inline give the meta regex the literal prefilters and inlining the benches got through dev-dependency unification.
+regex-automata = { version = "0.4", optional = true, default-features = false, features = ["std", "syntax", "meta", "nfa-thompson", "hybrid", "perf-literal", "perf-inline"] }
 regex-syntax = { version = "0.8", optional = true, default-features = false, features = ["std"] }
 
 [build-dependencies]

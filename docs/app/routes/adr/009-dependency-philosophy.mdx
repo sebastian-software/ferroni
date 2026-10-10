@@ -35,10 +35,10 @@ Each was selected because:
 
 The scanner's DFA pre-filter ([ADR-008](./008-rust-only-optimizations)) builds, per set of patterns, a multi-pattern lazy DFA and a meta regex from an over-approximation of each pattern. These come from two more crates, behind the `dfa-prefilter` feature, which is on by default:
 
-| Crate                                                       | Purpose                                                                                                                             |                                                Transitive deps |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------: |
-| [`regex-automata`](https://crates.io/crates/regex-automata) | Thompson NFA, lazy DFA and meta regex over the seek approximations; features `std`, `syntax`, `meta`, `nfa-thompson`, `hybrid` only | `aho-corasick`, `memchr`, `regex-syntax` (all already present) |
-| [`regex-syntax`](https://crates.io/crates/regex-syntax)     | The HIR the approximations are written in; features `std` only                                                                      |                                                              0 |
+| Crate                                                       | Purpose                                                                                                                                                                                                                                            |                                                Transitive deps |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------: |
+| [`regex-automata`](https://crates.io/crates/regex-automata) | Thompson NFA, lazy DFA and meta regex over the seek approximations; features `std`, `syntax`, `meta`, `nfa-thompson`, `hybrid`, and `perf-literal` and `perf-inline` for the meta regex's literal prefilters (through `memchr` and `aho-corasick`) | `aho-corasick`, `memchr`, `regex-syntax` (all already present) |
+| [`regex-syntax`](https://crates.io/crates/regex-syntax)     | The HIR the approximations are written in; features `std` only                                                                                                                                                                                     |                                                              0 |
 
 Against the criteria above:
 
