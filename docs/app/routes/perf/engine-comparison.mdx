@@ -163,6 +163,8 @@ batches rather than with Criterion.
 These engines were not built for highlighting, which puts many patterns in one
 search. The replays show what that costs when an application uses them for it.
 
+Ferroni's scanner pre-filter was inspired by [Keith Hall](https://github.com/keith-hall)'s [seek-filter proposal](https://github.com/fancy-regex/fancy-regex/issues/101#issuecomment-3146668829) and his [implementation in fancy-regex](https://github.com/fancy-regex/fancy-regex/pull/246), with fancy-regex's `RegexSet` informing the multi-pattern design. The shared idea is to find candidate positions with a conservative regular approximation, then let the backtracking engine verify the full pattern. [ADR-008](/adr/008-rust-only-optimizations) describes Ferroni's adaptation.
+
 Ferroni's lead here is new. Before the pre-filter, in
 [run 37839952403](https://github.com/sebastian-software/ferroni/actions/runs/37839952403)
 on the branch of [#316](https://github.com/sebastian-software/ferroni/pull/316)
