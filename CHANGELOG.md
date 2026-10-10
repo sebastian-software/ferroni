@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/sebastian-software/ferroni/compare/v2.0.0...v2.1.0) (2026-10-10)
+
+
+### Features
+
+* **scanner:** build the pre-filter after a warm-up, skip tiny sets, add into_captures ([#328](https://github.com/sebastian-software/ferroni/issues/328)) ([5ce6aab](https://github.com/sebastian-software/ferroni/commit/5ce6aabc4e8747f7240cbee6a5f97730499195ea)), closes [#327](https://github.com/sebastian-software/ferroni/issues/327)
+
 ## [2.0.0](https://github.com/sebastian-software/ferroni/compare/v1.10.0...v2.0.0) (2026-10-09)
 
 
