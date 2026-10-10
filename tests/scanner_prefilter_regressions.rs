@@ -52,6 +52,16 @@ fn conditional_preserves_the_consumed_condition() {
     compare(&[r"(?(a)b|c)", "b"], "ab", (0, 0, 2));
 }
 
+/// Identical calls through the cache route, which probes the per-regex
+/// route after a run of same-start calls, answer alike under the default
+/// retry limit, which `(a+)+b` exhausts on this text wherever it is
+/// attempted. What it covers: the two patterns are a tiny set (ADR-008,
+/// _Warm-up and tiny sets_), so under the default configuration the scanner
+/// never builds the pre-filter, and all 20 calls search without it and
+/// answer no match. It no longer exercises the route a call the pre-filter
+/// decides stays on (`onig_regset_prefilter_decides`), and it does not cross
+/// the end of a warm-up, where a set past the tiny bound changes its answer
+/// to such calls once (ADR-008, _Observability_).
 fn identical_default_limit_searches_have_identical_results() {
     let mut scanner = Scanner::new(&[r"(a+)+b", "c"]).unwrap();
     let text = format!("{}c b", "a".repeat(27));
