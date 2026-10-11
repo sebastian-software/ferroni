@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.1](https://github.com/sebastian-software/ferroni/compare/v2.1.0...v2.1.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jdx/mise to v2026.10.7 ([9c56459](https://github.com/sebastian-software/ferroni/commit/9c5645944ee022de39ff922255ea0b7e80951b3f))
+* **deps:** update dependency vite to v8.3.3 ([#333](https://github.com/sebastian-software/ferroni/issues/333)) ([8a5867c](https://github.com/sebastian-software/ferroni/commit/8a5867cffd86a6f4db3e48074090cc340f2188fc))
+* **deps:** update docs site ([828dd1e](https://github.com/sebastian-software/ferroni/commit/828dd1eb064d36774dc70bbf9f5bdb6288897417))
+* **deps:** update github actions ([613d54b](https://github.com/sebastian-software/ferroni/commit/613d54b36f49a3f5755f265cb153798232c359b4))
+
 ## [2.1.0](https://github.com/sebastian-software/ferroni/compare/v2.0.0...v2.1.0) (2026-10-10)
 
 
