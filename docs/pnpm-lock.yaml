@@ -168,7 +168,7 @@ importers:
     dependencies:
       ardo:
         specifier: ^5.0.0
-        version: 5.0.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.52.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
+        version: 5.0.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.53.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
       ferramenta-family:
         specifier: ^2.0.0
         version: 2.0.0(react@19.3.0)
@@ -177,7 +177,7 @@ importers:
         version: 5.2.2
       lucide-react:
         specifier: ^1.52.0
-        version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.53.0(@types/react@19.3.0)(react@19.3.0)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -190,7 +190,7 @@ importers:
     devDependencies:
       '@react-router/dev':
         specifier: ^8.4.0
-        version: 8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
+        version: 8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
       '@sebastian-software/standards':
         specifier: 0.13.0
         version: 0.13.0
@@ -220,7 +220,7 @@ importers:
         version: 6.0.3
       vite:
         specifier: ^8.3.2
-        version: 8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
+        version: 8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
 
 packages:
 
@@ -3520,8 +3520,8 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lucide-react@1.52.0:
-    resolution: {integrity: sha512-TUgPtl5ZI9WgxOcbu4ckaC5B3l1qxPQrCMgb6OfUB9owx/OvSJfcf93SMgUWAxRw5/1XDfh9uI5F5iNGXCcGDQ==}
+  lucide-react@1.53.0:
+    resolution: {integrity: sha512-OxJ7elNku+iqVzOolk5caxq2LM8Mck6lhA6uZx3g2PlZ53+FvBnT6PlJxGCukCa6oF5wQwgSatn9cH1b4olWmQ==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -4460,8 +4460,8 @@ packages:
       yaml:
         optional: true
 
-  vite@8.3.3:
-    resolution: {integrity: sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg==}
+  vite@8.3.4:
+    resolution: {integrity: sha512-IftLE8phJhdNRIGNEV4JCCvfNScoZQVfcXaN8TQropWGJtOHcu+iAB9pHcuGvmEb/kddw0LBe/jS8ztdC6xdiQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -5566,7 +5566,7 @@ snapshots:
 
   '@pkgr/core@0.3.6': {}
 
-  '@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))':
+  '@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
       '@babel/core': 7.29.7(supports-color@9.4.0)
       '@babel/generator': 7.29.8
@@ -5592,7 +5592,7 @@ snapshots:
       semver: 7.8.5
       tinyglobby: 0.2.17
       valibot: 1.5.0(typescript@6.0.3)
-      vite: 8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
     optionalDependencies:
       typescript: 6.0.3
     transitivePeerDependencies:
@@ -6059,7 +6059,7 @@ snapshots:
     dependencies:
       '@vanilla-extract/css': 1.21.2
       '@vanilla-extract/integration': 8.0.10(supports-color@9.4.0)
-      vite: 8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
       vite-node: 3.2.4(@types/node@26.6.2)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@9.4.0)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@types/node'
@@ -6125,11 +6125,11 @@ snapshots:
     dependencies:
       '@vanilla-extract/css': 1.21.2
 
-  '@vanilla-extract/vite-plugin@5.2.6(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@9.4.0)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))(yaml@2.9.0)':
+  '@vanilla-extract/vite-plugin@5.2.6(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@9.4.0)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))(yaml@2.9.0)':
     dependencies:
       '@vanilla-extract/compiler': 0.7.2(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@9.4.0)(yaml@2.9.0)
       '@vanilla-extract/integration': 8.0.10(supports-color@9.4.0)
-      vite: 8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@types/node'
       - '@vitejs/devtools'
@@ -6147,10 +6147,10 @@ snapshots:
       - tsx
       - yaml
 
-  '@vitejs/plugin-react@6.1.1(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))':
+  '@vitejs/plugin-react@6.1.1(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
 
   '@vitest/eslint-plugin@1.6.27(@typescript-eslint/eslint-plugin@8.70.1(@typescript-eslint/parser@8.70.1(eslint@10.12.0(jiti@2.7.0)(supports-color@9.4.0))(supports-color@9.4.0)(typescript@6.0.3))(eslint@10.12.0(jiti@2.7.0)(supports-color@9.4.0))(supports-color@9.4.0)(typescript@6.0.3))(eslint@10.12.0(jiti@2.7.0)(supports-color@9.4.0))(supports-color@9.4.0)(typescript@6.0.3)':
     dependencies:
@@ -6194,20 +6194,20 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  ardo@5.0.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.52.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)):
+  ardo@5.0.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.53.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)):
     dependencies:
       '@base-ui/react': 1.7.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ferriki/core': 0.10.0
       '@jridgewell/sourcemap-codec': 1.5.5
-      '@react-router/dev': 8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
+      '@react-router/dev': 8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
       '@resvg/resvg-js': 2.6.2
       '@vanilla-extract/css': 1.21.2
       '@vanilla-extract/esbuild-plugin': 2.3.22(esbuild@0.27.3)(supports-color@9.4.0)
       '@vanilla-extract/recipes': 0.5.7(@vanilla-extract/css@1.21.2)
-      '@vanilla-extract/vite-plugin': 5.2.6(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@9.4.0)(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))(yaml@2.9.0)
-      '@vitejs/plugin-react': 6.1.1(vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
+      '@vanilla-extract/vite-plugin': 5.2.6(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@9.4.0)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))(yaml@2.9.0)
+      '@vitejs/plugin-react': 6.1.1(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
       ferromark: 3.1.1
-      lucide-react: 1.52.0(@types/react@19.3.0)(react@19.3.0)
+      lucide-react: 1.53.0(@types/react@19.3.0)(react@19.3.0)
       magic-string: 0.30.21
       minisearch: 7.2.0
       oxc-parser: 0.127.0
@@ -6216,7 +6216,7 @@ snapshots:
       react-router: 8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       read-package-up: 12.0.0
       typedoc: 0.28.20(typescript@6.0.3)
-      vite: 8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)
       yaml: 2.9.0
     transitivePeerDependencies:
       - '@date-fns/tz'
@@ -7812,7 +7812,7 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  lucide-react@1.52.0(@types/react@19.3.0)(react@19.3.0):
+  lucide-react@1.53.0(@types/react@19.3.0)(react@19.3.0):
     dependencies:
       react: 19.3.0
     optionalDependencies:
@@ -9149,7 +9149,7 @@ snapshots:
       lightningcss: 1.33.0
       yaml: 2.9.0
 
-  vite@8.3.3(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0):
+  vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
