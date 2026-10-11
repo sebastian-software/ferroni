@@ -404,6 +404,33 @@ setting. Dropping or clearing the cache never affects scanners already built.
 `Scanner::new` and `Scanner::with_config` still compile every pattern they are
 given.
 
+[Ferriki's TextMate runtime](https://github.com/sebastian-software/ferriki/pull/235)
+uses `Scanner::with_pattern_cache` with one caller-owned `ScannerPatternCache`
+per `SyncRegistry`, shared across grammar and injection scanners behind a
+mutex. Registry invalidation (grammar registration or injection changes) and
+disposal clear the cache; directly constructed grammars get an isolated cache.
+
+Scanner lists containing dynamically resolved TextMate backreferences bypass
+shared caching so document-specific `end` and `while` variants are not retained.
+They keep the existing per-rule cache, which invalidates resolved variants when
+captures change. Sharing is all-or-nothing per scanner list, so static members
+of a mixed static/dynamic list also bypass it. The current API was sufficient
+for adoption. Selective reuse of those static members is an optional API
+candidate, not an adoption blocker or a commitment for this guide update.
+
+The [October 10, 2026 measurement report](https://github.com/sebastian-software/ferriki/blob/dc84a14ae618b0606e4916a4cf58f83cc881a6fe/node/benchmarks/scanner-pattern-cache/2026-10-10/README.md)
+compares nine fresh-process samples per language on an Apple M1 Ultra. Median
+time from native addon require to first HTML fell by 71.2% for TypeScript,
+69.3% for TSX, and 63.3% for Astro; C++ and JSON fell by 1.9% and 3.8%.
+Warmed HTML medians stayed within 3.4% of baseline. These are first-render
+gains on the measured fixtures, not a general warmed-throughput improvement.
+
+After loading and highlighting all five grammars, median process RSS snapshots
+were 102.3 MiB without sharing and 68.4 MiB with it. These are coarse
+whole-process snapshots, not cache-allocation or peak-memory measurements;
+allocator retention from the addon hash guard's temporary buffer can also
+affect RSS.
+
 ## Handling errors
 
 Compilation returns `Result<_, RegexError>`. The error groups Oniguruma's
