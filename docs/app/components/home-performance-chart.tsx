@@ -11,7 +11,13 @@ const ratio = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 2 });
 export function PerformanceChart() {
   return (
     <figure className="fr-speed-chart">
-      <figcaption>Relative throughput · C Oniguruma = 1×</figcaption>
+      <figcaption>Relative throughput</figcaption>
+      <div className="fr-speed-key">
+        <span>
+          <i aria-hidden="true" /> C Oniguruma = 1×
+        </span>
+        <span>Higher is faster</span>
+      </div>
       <ul>
         {workloads.map((workload, index) => {
           const factor = factors[index];
@@ -28,8 +34,8 @@ export function PerformanceChart() {
         })}
       </ul>
       <p className="fam-note">
-        The marker is C Oniguruma at 1×. Higher means more throughput on these workloads; ratios are
-        geometric means across tasks and both hosts.
+        Ratios are geometric means across tasks and both hosts. The dashed marker shows C Oniguruma
+        at 1× on the same scale.
       </p>
     </figure>
   );

@@ -169,40 +169,83 @@
   display: block;
 }
 
+.fr-speed-chart {
+  margin-top: 0;
+}
+
+.fr-speed-chart figcaption {
+  font-size: 1.125rem;
+  margin-bottom: 0.75rem;
+}
+
+.fr-speed-key {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+.fr-speed-key > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fr-speed-key i {
+  height: 1rem;
+  border-left: 2px dashed var(--ink);
+}
+
 .fr-speed-chart ul {
   list-style: none;
   padding: 0;
+  margin-block: 1rem;
   display: grid;
-  gap: 1rem;
 }
 
 .fr-speed-chart li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 4rem;
+  grid-template-columns: 11rem minmax(0, 1fr) 3.25rem;
+  align-items: center;
   gap: 0.5rem 1rem;
+  padding-block: 1rem;
+  border-bottom: 1px solid var(--line);
 }
 
 .fr-speed-chart li > span {
-  grid-column: 1 / -1;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+.fr-speed-chart strong {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--rust);
 }
 
 .fr-speed-track {
   position: relative;
   background: var(--bg-dim);
-  height: 1.5rem;
+  height: 1.125rem;
 }
 
 .fr-speed-track span {
   display: block;
   height: 100%;
-  background: var(--ink-soft);
+  background: var(--rust);
+  box-shadow: inset 0 -1px 0 var(--rust-deep);
 }
 
 .fr-speed-track i {
   position: absolute;
-  top: -0.25rem;
-  bottom: -0.25rem;
+  top: -0.2rem;
+  bottom: -0.2rem;
   border-left: 2px dashed var(--ink);
+  box-shadow: 0 0 0 1px var(--bg);
 }
 
 .fr-patterns {
@@ -271,5 +314,50 @@
 @media (max-width: 42rem) {
   .ferroni-home section[id] {
     scroll-margin-top: 8rem;
+  }
+}
+
+/* Keep display type for the forge identity, with a smaller scale for reading. */
+.ferroni-home {
+  --h2-size: 2.75rem;
+  --section-space: 4.5rem;
+}
+
+.ferroni-home .fam-heading {
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.ferroni-home .fam-split .fam-heading {
+  font-size: 2.375rem;
+  max-width: 20ch;
+}
+
+.ferroni-home .fam-intro {
+  line-height: 1.6;
+}
+
+.ferroni-home .fam-split {
+  gap: 2rem 3rem;
+}
+
+@media (max-width: 54rem) {
+  .fr-speed-chart li {
+    grid-template-columns: minmax(0, 1fr) 3.25rem;
+  }
+
+  .fr-speed-chart li > span {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 42rem) {
+  .ferroni-home {
+    --h2-size: 2rem;
+    --section-space: 3rem;
+  }
+
+  .ferroni-home .fam-split .fam-heading {
+    font-size: var(--h2-size);
   }
 }
