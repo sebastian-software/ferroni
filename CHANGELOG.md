@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.1.2](https://github.com/sebastian-software/ferroni/compare/v2.1.1...v2.1.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency lucide-react to v1.54.0 ([e1853be](https://github.com/sebastian-software/ferroni/commit/e1853be06e5f379b5c0aa2956cb2fdfa54aab36d))
+* **deps:** update toolchain pins ([392da50](https://github.com/sebastian-software/ferroni/commit/392da500403870dc81ceaaa4af2e31757f72eabd))
+* **docs:** highlight and balance the Rust run sample ([01ac25e](https://github.com/sebastian-software/ferroni/commit/01ac25e498c3d7a8ca4c240ee6e4714051cbe78f))
+* **docs:** highlight regex patterns and clarify matching examples ([0700e5d](https://github.com/sebastian-software/ferroni/commit/0700e5d14075b8c80ad3f95c1405b142fb9d3179))
+* **docs:** unify homepage Rust syntax highlighting ([8583a57](https://github.com/sebastian-software/ferroni/commit/8583a571470fd7648aa725861f8924af94d7164c))
+
+
+### Performance Improvements
+
+* cache ASCII compatibility in untracked dot-star loops ([50fc264](https://github.com/sebastian-software/ferroni/commit/50fc2644b06e7d38d680a7baabd888c42ca3910a))
+* continue captured zero-distance map searches ([961c724](https://github.com/sebastian-software/ferroni/commit/961c7240fee1e4a988e64ad399885cbe57bebae2))
+* optimize bounded lookbehind searches ([1375050](https://github.com/sebastian-software/ferroni/commit/13750505bb86d12cf345b0c54562f4d2db25c31e))
+
 ## [2.1.1](https://github.com/sebastian-software/ferroni/compare/v2.1.0...v2.1.1) (2026-10-11)
 
 
