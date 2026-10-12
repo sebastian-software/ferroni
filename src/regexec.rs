@@ -3310,6 +3310,52 @@ fn greedy_char_loop(
     s
 }
 
+/// Cache ASCII compatibility for one dot-star run while retaining every
+/// original backtrack entry and encoded-character boundary.
+#[inline(never)]
+fn greedy_anychar_loop(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    enc: OnigEncoding,
+    text: &[u8],
+    start: usize,
+    limit: usize,
+) -> usize {
+    let ascii_compatible =
+        dot_star_ascii_cache_enabled() && onigenc_is_ascii_compatible_encoding(enc);
+    let mut at = start;
+    while at < limit {
+        let len = if ascii_compatible && text[at] < 0x80 {
+            1
+        } else {
+            enclen(enc, text, at)
+        };
+        if at + len > limit {
+            break;
+        }
+        stack.push(StackEntry::Alt {
+            pcode,
+            pstr: at,
+            zid: -1,
+            is_super: false,
+        });
+        at += len;
+    }
+    at
+}
+
+#[inline(always)]
+fn dot_star_ascii_cache_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !DOT_STAR_ASCII_CACHE_DISABLED.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
 /// Push one backtrack entry per character boundary of `start..run_end`, as
 /// the unoptimized loop does. Only reached for malformed multibyte input.
 ///
@@ -3742,6 +3788,8 @@ thread_local! {
     static OPTIMIZER_WINDOW_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Differential reference for captured zero-distance map searches.
     static CAPTURE_MAP_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Runs dot stars with the original per-character encoding queries.
+    static DOT_STAR_ASCII_CACHE_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[inline(always)]
@@ -4456,35 +4504,43 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else {
                     s
                 };
-                while s < nl_limit {
-                    let n = enclen(enc, str_data, s);
-                    if s + n > nl_limit {
-                        break;
+                if TRACK_CAPTURES {
+                    while s < nl_limit {
+                        let n = enclen(enc, str_data, s);
+                        if s + n > nl_limit {
+                            break;
+                        }
+                        stack.push(StackEntry::Alt {
+                            pcode: p + 1,
+                            pstr: s,
+                            zid: -1,
+                            is_super: false,
+                        });
+                        s += n;
                     }
-                    stack.push(StackEntry::Alt {
-                        pcode: p + 1,
-                        pstr: s,
-                        zid: -1,
-                        is_super: false,
-                    });
-                    s += n;
+                } else {
+                    s = greedy_anychar_loop(&mut stack, p + 1, enc, str_data, s, nl_limit);
                 }
                 p += 1;
             }
 
             OpCode::AnyCharMlStar => {
-                while s < right_range {
-                    let n = enclen(enc, str_data, s);
-                    if s + n > right_range {
-                        break;
+                if TRACK_CAPTURES {
+                    while s < right_range {
+                        let n = enclen(enc, str_data, s);
+                        if s + n > right_range {
+                            break;
+                        }
+                        stack.push(StackEntry::Alt {
+                            pcode: p + 1,
+                            pstr: s,
+                            zid: -1,
+                            is_super: false,
+                        });
+                        s += n;
                     }
-                    stack.push(StackEntry::Alt {
-                        pcode: p + 1,
-                        pstr: s,
-                        zid: -1,
-                        is_super: false,
-                    });
-                    s += n;
+                } else {
+                    s = greedy_anychar_loop(&mut stack, p + 1, enc, str_data, s, right_range);
                 }
                 p += 1;
             }
@@ -9239,6 +9295,116 @@ fn finish_longest_search(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn dot_star_ascii_cache_preserves_searches_captures_and_limits() {
+        let _limits = shared_limits();
+        let patterns = [
+            r"\A(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[^0-9A-Za-z\s]).{8,64}\z",
+            r"\A(?=.*[ab])(?=.*[cd]).{0,16}\z",
+            r"(?=.*[ab])(.*)[cd]",
+            r"(.*)(.*)[ab]",
+            r"(?m)(.*)[ab]",
+            r"(?!(.*)[ab])(.*)",
+            r"(?<=a).*[ab]",
+            r".*(?:a|bc)",
+            r".*",
+            r"(?m).*",
+            r"(.*)\1",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"ab",
+            b"aaabcb",
+            b"a\nb",
+            b"a\r\nb\n",
+            b"1234aA!x",
+            b"xx a1A!z b",
+            b"ab\xffcd",
+            b"\xc2b",
+            b"\xe2\x82b",
+            b"\x80\x80a",
+            b"\0a\0b",
+            "éaKb".as_bytes(),
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let reg = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack) in [
+                                        (0, 0, 0),
+                                        (1, 0, 0),
+                                        (2, 0, 0),
+                                        (0, 1, 0),
+                                        (0, 2, 0),
+                                        (0, 7, 0),
+                                        (0, 0, 1),
+                                        (0, 0, 8),
+                                    ] {
+                                        let mp = OnigMatchParam {
+                                            retry_limit_in_match: retry,
+                                            retry_limit_in_search: search_retry,
+                                            match_stack_limit: stack,
+                                            ..onig_new_match_param()
+                                        };
+                                        for with_region in [false, true] {
+                                            let run = |disabled| {
+                                                DOT_STAR_ASCII_CACHE_DISABLED
+                                                    .with(|v| v.set(disabled));
+                                                let mut msa = MatchArg::from_param(
+                                                    &reg,
+                                                    option,
+                                                    with_region.then(OnigRegion::new),
+                                                    start,
+                                                    &mp,
+                                                );
+                                                let result = search_in_range_inner(
+                                                    &reg, input, end, start, range, end, &mut msa,
+                                                );
+                                                (
+                                                    result,
+                                                    msa.region.map(|r| (r.num_regs, r.beg, r.end)),
+                                                    msa.retry_limit_in_search_counter,
+                                                )
+                                            };
+                                            assert_eq!(
+                                                run(false),
+                                                run(true),
+                                                "{} {pattern} {input:?} end={end} start={start} range={range} option={option:?} limits={retry}/{search_retry}/{stack} region={with_region}",
+                                                enc.name()
+                                            );
+                                            DOT_STAR_ASCII_CACHE_DISABLED.with(|v| v.set(false));
+                                            comparisons += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} dot-star result/capture/retry-counter comparisons");
+    }
 
     #[test]
     fn captured_map_continuation_preserves_searches_captures_and_limits() {
