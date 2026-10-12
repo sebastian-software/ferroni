@@ -3790,6 +3790,20 @@ thread_local! {
     static CAPTURE_MAP_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Runs dot stars with the original per-character encoding queries.
     static DOT_STAR_ASCII_CACHE_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Differential reference for one-byte BackRef1 comparisons.
+    static SINGLE_BYTE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
+}
+
+#[inline(always)]
+fn single_byte_backrefs_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !SINGLE_BYTE_BACKREFS_DISABLED.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
 }
 
 #[inline(always)]
@@ -5270,8 +5284,14 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     get_mem_end(reg, &stack, mem_end_stk, 1),
                 ) {
                     let ref_len = me.saturating_sub(ms); // C: a negative n matches empty
+                    // Rust-only (ADR-008): a one-byte capture needs no
+                    // general slice comparison. Longer captures retain it.
                     if right_range.saturating_sub(s) < ref_len
-                        || str_data[s..s + ref_len] != str_data[ms..ms + ref_len]
+                        || if ref_len == 1 && single_byte_backrefs_enabled() {
+                            str_data[s] != str_data[ms]
+                        } else {
+                            str_data[s..s + ref_len] != str_data[ms..ms + ref_len]
+                        }
                     {
                         goto_fail = true;
                     } else {
@@ -9295,6 +9315,122 @@ fn finish_longest_search(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn single_byte_backrefs_preserve_searches_captures_and_limits() {
+        let _limits = shared_limits();
+        let patterns = [
+            r#"(["'])(?:\\.|(?!\1)[^\\\n])*\1"#,
+            r"(.)\1",
+            r"(a?)\1",
+            r"(a|bc)\1",
+            r"(.*)\1",
+            r"(a|b)+\1",
+            r"(?!(.)\1)..",
+            r"(?=(.)\1).",
+            r#"(?<q>["'])(?:\\.|(?!\k<q>)[^\\\n])*\k<q>"#,
+            r"(a)?\1",
+            r"(?<=(a))\1",
+            r"(a|)\1b",
+            r"((.)\1)*",
+            r"(a)(b)\2\1",
+            r"(?i:(a)\1)",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"aa",
+            b"ab",
+            b"bcbc",
+            b"aabba",
+            b"'ab'",
+            b"\"a\\\"b\"",
+            b"'a\nb'",
+            b"'a\r\nb'",
+            b"'ab",
+            b"\xff\xffa",
+            b"\xc2b",
+            b"\xe2\x82b",
+            b"\0\0ab",
+            "ééa".as_bytes(),
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let reg = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack) in [
+                                        (0, 0, 0),
+                                        (1, 0, 0),
+                                        (2, 0, 0),
+                                        (0, 1, 0),
+                                        (0, 2, 0),
+                                        (0, 7, 0),
+                                        (0, 0, 1),
+                                        (0, 0, 8),
+                                    ] {
+                                        let mp = OnigMatchParam {
+                                            retry_limit_in_match: retry,
+                                            retry_limit_in_search: search_retry,
+                                            match_stack_limit: stack,
+                                            ..onig_new_match_param()
+                                        };
+                                        for with_region in [false, true] {
+                                            let run = |disabled| {
+                                                SINGLE_BYTE_BACKREFS_DISABLED
+                                                    .with(|v| v.set(disabled));
+                                                let mut msa = MatchArg::from_param(
+                                                    &reg,
+                                                    option,
+                                                    with_region.then(OnigRegion::new),
+                                                    start,
+                                                    &mp,
+                                                );
+                                                let result = search_in_range_inner(
+                                                    &reg, input, end, start, range, end, &mut msa,
+                                                );
+                                                (
+                                                    result,
+                                                    msa.region.map(|r| (r.num_regs, r.beg, r.end)),
+                                                    msa.retry_limit_in_search_counter,
+                                                )
+                                            };
+                                            assert_eq!(
+                                                run(false),
+                                                run(true),
+                                                "{} {pattern} {input:?} end={end} start={start} range={range} option={option:?} limits={retry}/{search_retry}/{stack} region={with_region}",
+                                                enc.name()
+                                            );
+                                            SINGLE_BYTE_BACKREFS_DISABLED.with(|v| v.set(false));
+                                            comparisons += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} single-byte backref result/capture/retry-counter comparisons");
+    }
 
     #[test]
     fn dot_star_ascii_cache_preserves_searches_captures_and_limits() {
