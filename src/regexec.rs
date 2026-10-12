@@ -3368,6 +3368,33 @@ fn match_literal_trie(
     Some(len)
 }
 
+/// Batch short ASCII suffixes for the VM's initial look-behind step.
+/// Out of line to keep the batch checks out of the VM dispatch layout.
+/// The shared character walker keeps its original one-character path.
+#[inline(never)]
+fn step_back_look_behind(
+    enc: OnigEncoding,
+    start: usize,
+    s: usize,
+    data: &[u8],
+    n: usize,
+) -> Option<usize> {
+    // ASCII bytes advance one at a time in an ASCII-compatible encoding.
+    // The head check also excludes a suffix beginning on an ASCII-valued
+    // trail byte, as Shift_JIS and Big5 can have. Limit the extra inspection
+    // to short look-behind steps; mixed text keeps the original walk.
+    if (2..=16).contains(&n)
+        && let Some(target) = s.checked_sub(n)
+        && target >= start
+        && data.get(target..s).is_some_and(<[u8]>::is_ascii)
+        && onigenc_is_ascii_compatible_encoding(enc)
+        && enc.left_adjust_char_head(start, target, data) == target
+    {
+        return Some(target);
+    }
+    onigenc_step_back(enc, start, s, data, n)
+}
+
 /// `LookBehindOp`: STEP_BACK_START by `char_len` characters from `s`, then
 /// the body instruction `body` at that position; where the body ends if it
 /// matches. Out of line: code added to
@@ -3711,6 +3738,20 @@ thread_local! {
     pub(crate) static VM_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Bytes the optimizer's forward searches read on this thread.
     pub(crate) static FORWARD_SEARCH_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Keeps the original per-attempt calls for bounded optimizer windows.
+    static OPTIMIZER_WINDOW_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[inline(always)]
+fn optimizer_window_scans_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !OPTIMIZER_WINDOW_SCANS_DISABLED.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
 }
 
 fn match_at_impl<const TRACK_CAPTURES: bool>(
@@ -6011,7 +6052,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                     let initial = initial as usize;
                     // Step back 'initial' characters (encoding-aware)
                     if initial != 0 {
-                        match onigenc_step_back(enc, 0, s, str_data, initial) {
+                        match step_back_look_behind(enc, 0, s, str_data, initial) {
                             Some(new_s) => {
                                 s = new_s;
                             }
@@ -7756,8 +7797,50 @@ fn onig_search_inner_core(
     )
 }
 
+// Separate the bounded-window variant so single-position optimizer windows
+// retain the original search loop without scan state or its per-attempt branch.
+#[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn onig_search_inner_core_with_right_range(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    right_range: usize,
+    find_longest_across_positions: bool,
+    start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
+    msa: &mut MatchArg,
+) -> i32 {
+    if reg.dist_max != INFINITE_LEN && reg.dist_max > reg.dist_min {
+        onig_search_inner_core_impl::<true>(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            find_longest_across_positions,
+            start_filter,
+            msa,
+        )
+    } else {
+        onig_search_inner_core_impl::<false>(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            find_longest_across_positions,
+            start_filter,
+            msa,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
@@ -8142,6 +8225,34 @@ fn onig_search_inner_core_with_right_range(
                 if s < low {
                     s = low;
                 }
+                // Keep the optimizer's bounded attempt window, but reuse the
+                // existing in-VM forward scan between its failed attempts.
+                // This leaves every admitted position and limit count intact.
+                let mut window_scan = (WINDOW_SCAN
+                    && high > s
+                    && high < end
+                    && optimizer_window_scans_enabled()
+                    && !find_longest
+                    && reg.num_mem == 0
+                    && !reg.needs_capture_tracking
+                    && !reg.anychar_run
+                    && reg.leading_run.is_none()
+                    && search_jump.is_none()
+                    && window_start_map.is_none()
+                    && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0))
+                .then(|| ForwardScan {
+                    end,
+                    cur_range: high,
+                    data_range,
+                    find_longest: false,
+                    ascii_compatible: onigenc_is_ascii_compatible_encoding(enc),
+                    search_jump: None,
+                    class_prefix: None,
+                    class_prefix_end: s,
+                    start_filter: None,
+                    filters: false,
+                    at: s,
+                });
                 while s <= high {
                     if let Some(map) = window_start_map {
                         if s < end
@@ -8154,7 +8265,15 @@ fn onig_search_inner_core_with_right_range(
                     }
                     msa.best_len = ONIG_MISMATCH;
                     msa.best_s = 0;
-                    let r = match_at(reg, str_data, end, data_range, s, msa);
+                    let r = if let Some(scan) = window_scan.as_mut() {
+                        scan.at = s;
+                        let result =
+                            match_at_in_scan(reg, str_data, end, data_range, s, msa, Some(scan));
+                        s = scan.at;
+                        result
+                    } else {
+                        match_at(reg, str_data, end, data_range, s, msa)
+                    };
                     if r != ONIG_MISMATCH {
                         if r < 0 {
                             return r;
@@ -8995,6 +9114,189 @@ fn finish_longest_search(
 
 #[cfg(test)]
 mod tests {
+
+    fn character_walk(
+        enc: OnigEncoding,
+        start: usize,
+        mut at: usize,
+        text: &[u8],
+        count: usize,
+    ) -> Option<usize> {
+        for _ in 0..count {
+            if at <= start {
+                return None;
+            }
+            at = enc.left_adjust_char_head(start, at - 1, text);
+        }
+        Some(at)
+    }
+
+    #[test]
+    fn ascii_batches_preserve_every_backward_character_boundary() {
+        use crate::encodings::{ONIG_ENCODING_ASCII, ONIG_ENCODING_UTF8};
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"a",
+            b"0123456789abcdefghijklmnopqrstuv",
+            "éabc €abcdef 👩🏽‍💻abcdefghi".as_bytes(),
+            b"\0abcdefghi\x7f",
+            b"\x80abcdefgh",
+            b"\xc2abcdefgh",
+            b"ab\xe2\x82cdefgh",
+            b"abcdef\xffghijkl",
+            b"\xf5\x80\x80\x80abcdefgh",
+            b"\x80\x80\x80\x80abcdef",
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &ONIG_ENCODING_UTF8 as OnigEncoding,
+            &ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for &text in inputs {
+                for start in 0..=text.len() {
+                    for at in start..=text.len() {
+                        for count in (0..=18).chain([31, 32, 64]) {
+                            assert_eq!(
+                                step_back_look_behind(enc, start, at, text, count),
+                                character_walk(enc, start, at, text, count),
+                                "{} start={start} at={at} count={count} text={text:?}",
+                                enc.name()
+                            );
+                            comparisons += 1;
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} backward character-boundary comparisons");
+    }
+
+    #[test]
+    fn bounded_optimizer_windows_preserve_search_results_and_limits() {
+        let _limits = shared_limits();
+
+        let diagnostic_reg = regcomp::onig_new(
+            r"(?<=\b(?:price|total):\s{0,3})[$€£]?[0-9]+(?:[.,][0-9]{2})?".as_bytes(),
+            ONIG_OPTION_NONE,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        let text = b"other:12 other:34 other:56 price: $78";
+        let count_entries = |disabled| {
+            OPTIMIZER_WINDOW_SCANS_DISABLED.with(|v| v.set(disabled));
+            VM_ATTEMPTS.with(|v| v.set(0));
+            let result = onig_search(
+                &diagnostic_reg,
+                text,
+                text.len(),
+                0,
+                text.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            (result.0, VM_ATTEMPTS.with(std::cell::Cell::get))
+        };
+        let reference_entries = count_entries(true);
+        let scan_entries = count_entries(false);
+        assert_eq!(scan_entries.0, reference_entries.0);
+        assert!(
+            scan_entries.1 < reference_entries.1,
+            "{scan_entries:?} vs {reference_entries:?}"
+        );
+        let patterns = [
+            r"(?<=\b(?:price|total):\s{0,3})[$]?[0-9]+(?:[.,][0-9]{2})?",
+            r"(?<=a{1,3})b?c[0-9]",
+            r"(?<!a{1,3})b?c[0-9]",
+            r"(?:a|bc)?[0-9]{2}",
+            r"(?<=a|bc).?z",
+            r"a{0,3}z",
+            r"\b(?:a|b)?[0-9]",
+            r"(a?)[0-9]",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"1",
+            b"a1bc22",
+            b"aaabc1bc2",
+            b"price: $12",
+            b"total:   34",
+            b"xx:12 price:56",
+            b"aazbcz",
+            b"\xc2a1bc2",
+            b"a\xff1bc2",
+            b"ab\xe2\x82z1",
+            b"\xc2\xa1a12",
+            b"ab\0a9",
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let reg = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                ] {
+                                    for (retry, search_retry, stack) in [
+                                        (0, 0, 0),
+                                        (1, 0, 0),
+                                        (2, 0, 0),
+                                        (0, 1, 0),
+                                        (0, 0, 1),
+                                        (0, 0, 8),
+                                    ] {
+                                        let mut mp = onig_new_match_param();
+                                        mp.retry_limit_in_match = retry;
+                                        mp.retry_limit_in_search = search_retry;
+                                        mp.match_stack_limit = stack;
+                                        let search = |disabled| {
+                                            OPTIMIZER_WINDOW_SCANS_DISABLED
+                                                .with(|v| v.set(disabled));
+                                            let (pos, region) = onig_search_with_param(
+                                                &reg,
+                                                input,
+                                                end,
+                                                start,
+                                                range,
+                                                Some(OnigRegion::new()),
+                                                option,
+                                                &mp,
+                                            );
+                                            (pos, region.map(|r| (r.num_regs, r.beg, r.end)))
+                                        };
+                                        let expected = search(true);
+                                        let actual = search(false);
+                                        assert_eq!(
+                                            actual,
+                                            expected,
+                                            "{} {pattern} {input:?} end={end} start={start} range={range} option={option:?} limits={retry}/{search_retry}/{stack}",
+                                            enc.name()
+                                        );
+                                        comparisons += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} bounded optimizer-window comparisons");
+    }
     use super::*;
     use crate::regcomp;
     use crate::regparse;
