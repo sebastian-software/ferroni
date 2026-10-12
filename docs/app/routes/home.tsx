@@ -9,7 +9,6 @@ import {
   Principles,
   ProjectHero,
   Relations,
-  RunSample,
   Section,
   WorkWithUs,
 } from "ferramenta-family";
@@ -18,8 +17,8 @@ import config from "virtual:ardo/config";
 
 import { FitSection, StatusSection, SyntaxSection } from "../components/home-examples";
 import { PerformanceChart } from "../components/home-performance-chart";
+import { HomeRunSample } from "../components/home-run-sample";
 import engineComparison from "../data/engine-comparison.json";
-import sample from "../data/regex-sample.json";
 import {
   ClosingSection,
   CoverageSection,
@@ -182,19 +181,7 @@ function SampleSection() {
         </a>
       }
     >
-      <RunSample
-        input={sample.input}
-        inputCaption="website_sample.rs"
-        inputKind="Rust source"
-        output={sample.output}
-        outputCaption={`Ferroni ${sample.version} · stdout`}
-      />
-      <details className="fr-sample-output">
-        <summary>Read the output as text</summary>
-        <pre tabIndex={0}>
-          <code>{sample.stdout}</code>
-        </pre>
-      </details>
+      <HomeRunSample />
     </Section>
   );
 }

@@ -3,22 +3,44 @@
  * Imported in root.tsx after landing.css and before chrome.css.
  */
 
-.fr-sample-output {
-  margin-top: 1rem;
-  color: var(--ink-soft);
+/* Give the Rust source more room while keeping stdout compact and aligned. */
+.fr-run {
+  grid-template-columns: minmax(0, 2fr) auto minmax(0, 1fr);
 }
 
-.fr-sample-output summary {
-  cursor: pointer;
-  width: fit-content;
-  padding-block: 0.5rem;
+.fr-run figcaption {
+  line-height: 1.4;
 }
 
-.fr-sample-output pre {
-  padding: 1rem;
-  overflow: auto;
-  background: var(--bg-dim);
-  color: var(--ink);
+.fr-run pre {
+  margin: 0;
+  padding: 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.fr-run .fam-code pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fr-run .fam-code pre.shiki {
+  background: var(--iron) !important;
+}
+
+.fr-run .fam-run-output pre {
+  overflow-x: auto;
+}
+
+.fr-run .fam-run-output code {
+  font-size: 1em;
+}
+
+@media (max-width: 54rem) {
+  .fr-run {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Ferroni-specific match, scanner and throughput illustrations. */
