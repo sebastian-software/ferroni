@@ -3695,9 +3695,9 @@ fn match_at_in_scan(
         || reg.needs_capture_tracking
         || (msa.match_stack_limit != 0 && (reg.push_mem_start | reg.push_mem_end) != 0)
     {
-        match_at_impl::<true>(reg, str_data, end, in_right_range, sstart, msa, scan)
+        match_at_impl::<true, false>(reg, str_data, end, in_right_range, sstart, msa, scan)
     } else {
-        match_at_impl::<false>(reg, str_data, end, in_right_range, sstart, msa, scan)
+        match_at_impl::<false, false>(reg, str_data, end, in_right_range, sstart, msa, scan)
     }
 }
 
@@ -3740,6 +3740,8 @@ thread_local! {
     pub(crate) static FORWARD_SEARCH_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Keeps the original per-attempt calls for bounded optimizer windows.
     static OPTIMIZER_WINDOW_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Differential reference for captured zero-distance map searches.
+    static CAPTURE_MAP_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[inline(always)]
@@ -3754,7 +3756,9 @@ fn optimizer_window_scans_enabled() -> bool {
     }
 }
 
-fn match_at_impl<const TRACK_CAPTURES: bool>(
+// A separate map-continuation instantiation keeps its candidate-step checks
+// out of the ordinary VM dispatch and preserves the existing ForwardScan layout.
+fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
@@ -3892,7 +3896,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool>(
                 // C's match_at_end, then the search loop's step.
                 msa.retry_limit_in_search_counter += retry_in_match_counter;
                 retry_in_match_counter = 0;
-                match scan.after_attempt(reg, msa, str_data, sstart) {
+                match scan.after_attempt::<OPTIMIZER_MAP>(reg, msa, str_data, sstart) {
                     Ok(Some(next)) => {
                         // Positions only grow, so this start runs with the
                         // same capture tracking as the scan's first one.
@@ -7687,17 +7691,29 @@ fn onig_search_inner_two_pass(
     // there, the common case of a scanner search, needs no second pass.
     // Later attempts run untracked.
     msa.capture_position = Some(start);
-    let match_start = onig_search_inner_core_with_right_range(
+    let match_start = capture_map_search(
         reg,
         str_data,
         end,
         start,
         range,
         right_range,
-        find_longest_across_positions,
         start_filter,
         msa,
-    );
+    )
+    .unwrap_or_else(|| {
+        onig_search_inner_core_with_right_range(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            find_longest_across_positions,
+            start_filter,
+            msa,
+        )
+    });
     msa.capture_position = None;
     if match_start < 0 || match_start as usize == start {
         return match_start;
@@ -7737,6 +7753,101 @@ fn onig_search_inner_two_pass(
     }
 
     match_start
+}
+
+#[inline(always)]
+fn capture_map_scans_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !CAPTURE_MAP_SCANS_DISABLED.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
+/// Continue a captured zero-distance map search on C's admitted positions.
+/// The winning attempt still runs again to record its captures.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn capture_map_search(
+    reg: &RegexType,
+    text: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    right_range: usize,
+    start_filter: Option<&[u8; CHAR_MAP_SIZE]>,
+    msa: &mut MatchArg,
+) -> Option<i32> {
+    if !capture_map_scans_enabled()
+        || reg.optimize != OptimizeType::Map
+        || map_search_bypassed(reg)
+        || reg.ac_alt.is_some()
+        || reg.needs_capture_tracking
+        || reg.dist_min != 0
+        || reg.dist_max != 0
+        || reg.anchor != 0
+        || reg.sub_anchor != 0
+        || reg.anychar_run
+        || reg.leading_run.is_some()
+        || reg.search_jump.is_some()
+        || reg.search_start_map.is_some()
+        || start_filter.is_some()
+        || opton_find_longest(msa.options)
+        || msa.match_stack_limit != 0
+    {
+        return None;
+    }
+    let enc = reg.enc;
+    if opton_check_validity_of_string(msa.options) && !enc.is_valid_mbc_string(&text[..end]) {
+        return Some(ONIGERR_INVALID_WIDE_CHAR_VALUE);
+    }
+    if let Some(region) = msa.region.as_mut() {
+        region.resize_clear(reg.num_mem + 1);
+    }
+    if (end as i32 - start as i32) < reg.threshold_len {
+        return Some(ONIG_MISMATCH);
+    }
+    let Some(mut at) = map_search(enc, reg, text, start, range) else {
+        return Some(ONIG_MISMATCH);
+    };
+    let mut scan = ForwardScan {
+        end,
+        cur_range: range,
+        data_range: right_range,
+        find_longest: false,
+        ascii_compatible: onigenc_is_ascii_compatible_encoding(enc),
+        search_jump: None,
+        class_prefix: None,
+        class_prefix_end: at,
+        start_filter: None,
+        filters: false,
+        at,
+    };
+    loop {
+        msa.best_len = ONIG_MISMATCH;
+        msa.best_s = 0;
+        // The first candidate may be the attempt that records captures.
+        let result = if msa.capture_position == Some(at) {
+            match_at(reg, text, end, right_range, at, msa)
+        } else {
+            scan.at = at;
+            let result =
+                match_at_impl::<false, true>(reg, text, end, right_range, at, msa, Some(&mut scan));
+            at = scan.at;
+            result
+        };
+        if result != ONIG_MISMATCH {
+            return Some(if result < 0 { result } else { at as i32 });
+        }
+        match scan.after_attempt::<true>(reg, msa, text, at) {
+            Ok(Some(next)) => at = next,
+            Ok(None) => return Some(ONIG_MISMATCH),
+            Err(err) => return Some(err),
+        }
+    }
 }
 
 fn search_in_range_inner(
@@ -8498,7 +8609,7 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
                     return s as i32;
                 }
             }
-            match scan.after_attempt(reg, msa, str_data, s) {
+            match scan.after_attempt::<false>(reg, msa, str_data, s) {
                 Ok(Some(next)) => s = next,
                 Ok(None) => break,
                 Err(err) => return err,
@@ -8532,7 +8643,7 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
 /// as it was.
 pub(crate) struct ForwardScan<'a> {
     end: usize,
-    /// Starts are attempted up to and including this position.
+    /// Inclusive in ordinary scans, exclusive for optimizer map candidates.
     cur_range: usize,
     data_range: usize,
     find_longest: bool,
@@ -8601,7 +8712,7 @@ impl ForwardScan<'_> {
     /// FIND_LONGEST): the start of the next attempt, `None` at the end of
     /// the range, or the search retry limit error.
     #[inline(always)]
-    fn after_attempt(
+    fn after_attempt<const OPTIMIZER_MAP: bool>(
         &mut self,
         reg: &RegexType,
         msa: &MatchArg,
@@ -8635,6 +8746,9 @@ impl ForwardScan<'_> {
         if msa.skip_search > s {
             s = msa.skip_search;
         }
+        if OPTIMIZER_MAP {
+            return Ok(next_optimizer_map_start(reg, str_data, s, self.cur_range));
+        }
         if self.filters {
             s = self.attempt_start(reg, msa, str_data, s);
         }
@@ -8651,6 +8765,17 @@ impl ForwardScan<'_> {
             advance_char_to_end(enc, str_data, s, self.end)
         }
     }
+}
+
+/// Keep the map scan out of the VM's attempt-failure dispatch.
+#[inline(never)]
+fn next_optimizer_map_start(
+    reg: &RegexType,
+    text: &[u8],
+    start: usize,
+    range: usize,
+) -> Option<usize> {
+    map_search(reg.enc, reg, text, start, range)
 }
 
 /// A leading atomic `[class]+literal` has only one possible exit from its
@@ -9114,6 +9239,141 @@ fn finish_longest_search(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn captured_map_continuation_preserves_searches_captures_and_limits() {
+        let _limits = shared_limits();
+        let utf8: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        let ascii: OnigEncoding = &crate::encodings::ascii::ONIG_ENCODING_ASCII;
+        let diagnostic = compile_full(r#"\b([a-z-]+)=(?:"[^"]*+"|'[^']*+'|[^\s>]++)"#.as_bytes());
+        let text = b"letters words text data-kind='x' more text class=valid";
+        let count = |disabled| {
+            CAPTURE_MAP_SCANS_DISABLED.with(|v| v.set(disabled));
+            VM_ATTEMPTS.with(|v| v.set(0));
+            let result = onig_search(
+                &diagnostic,
+                text,
+                text.len(),
+                0,
+                text.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            (result.0, VM_ATTEMPTS.with(Cell::get))
+        };
+        let reference = count(true);
+        let continued = count(false);
+        assert_eq!(continued.0, reference.0);
+        assert!(continued.1 < reference.1, "{continued:?} vs {reference:?}");
+
+        let patterns = [
+            r#"\b([a-z-]+)=(?:"[^"]*+"|'[^']*+'|[^\s>]++)"#,
+            r"\b([a-z-]+)=",
+            r"([a-z]+)x",
+            r"([a-z]*)z?",
+            r"((?:[a-f]+|[0-9]+))=",
+            r"(\b([a-z]+))=",
+            r"(?i)([a-z]+)=",
+            r"([éa-z]+)=",
+            r"([^\n]+)=",
+            r"^([a-z]+)=",
+            r"\A([a-z]+)=",
+            r"(\G[a-z]+)=",
+            r"((?<=a)[a-z]+)=",
+            r"(?<=a{0,2})([a-z]+)=",
+            r"([a-z]+)=.*",
+            r"([a-z])\1=",
+            r"(alpha|beta|gamma|delta)=",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b" a ",
+            b"ab=",
+            b"word first=one x second='two'",
+            b"a=1\n ab=23\n A=X",
+            b"a=\"unterminated",
+            b"aa=a ab=x",
+            b"\xc2a=1 ab=2",
+            b"ab\xffc=2",
+            b"x\xe2\x82=3",
+            b"\x80\x80aa=1",
+            b"a=\0a9",
+            "éa=2 K=x".as_bytes(),
+        ];
+        let mut comparisons = 0;
+        for enc in [utf8, ascii] {
+            for pattern in patterns {
+                let Ok(reg) = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                ) else {
+                    continue;
+                };
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack) in [
+                                        (0, 0, 0),
+                                        (1, 0, 0),
+                                        (2, 0, 0),
+                                        (0, 1, 0),
+                                        (0, 2, 0),
+                                        (0, 7, 0),
+                                        (0, 0, 1),
+                                        (0, 0, 8),
+                                    ] {
+                                        let mp = OnigMatchParam {
+                                            retry_limit_in_match: retry,
+                                            retry_limit_in_search: search_retry,
+                                            match_stack_limit: stack,
+                                            ..onig_new_match_param()
+                                        };
+                                        let run = |disabled| {
+                                            CAPTURE_MAP_SCANS_DISABLED.with(|v| v.set(disabled));
+                                            let mut msa = MatchArg::from_param(
+                                                &reg,
+                                                option,
+                                                Some(OnigRegion::new()),
+                                                start,
+                                                &mp,
+                                            );
+                                            let result = search_in_range_inner(
+                                                &reg, input, end, start, range, end, &mut msa,
+                                            );
+                                            (
+                                                result,
+                                                msa.region.map(|r| (r.num_regs, r.beg, r.end)),
+                                                msa.retry_limit_in_search_counter,
+                                            )
+                                        };
+                                        let expected = run(true);
+                                        let actual = run(false);
+                                        assert_eq!(
+                                            actual,
+                                            expected,
+                                            "{} {pattern} {input:?} end={end} start={start} range={range} option={option:?} limits={retry}/{search_retry}/{stack}",
+                                            enc.name()
+                                        );
+                                        comparisons += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} captured-map result/capture/retry-counter comparisons");
+    }
 
     fn character_walk(
         enc: OnigEncoding,

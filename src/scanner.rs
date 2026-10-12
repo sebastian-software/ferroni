@@ -3236,6 +3236,7 @@ mod tests {
     /// searches before and after it decide alike.
     #[test]
     fn prefilter_builds_after_the_warmup() {
+        let _limits = crate::regexec::shared_limits();
         let text = "let x = class Foo extends Bar { const y = 1; } // done\n";
         let config = ScannerConfig::default().prefilter_warmup(3);
         let mut scanner = Scanner::with_config(KEYWORD_SET, &config).unwrap();
@@ -3268,6 +3269,7 @@ mod tests {
     /// pre-filter from the first search, and searches alike either way.
     #[test]
     fn tiny_sets_build_no_automata_unless_eager() {
+        let _limits = crate::regexec::shared_limits();
         let lines = [
             "{\n",
             "  \"service\": \"München <team> & café\",\n",
