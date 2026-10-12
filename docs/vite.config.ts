@@ -31,7 +31,11 @@ function sampleHighlight(): Plugin {
       ) {
         throw new Error("The committed sample must contain Rust source in input.");
       }
-      const html = await highlightCode(sample.input, "rust", { theme: "gruvbox-dark-hard" });
+      const html = await highlightCode(
+        sample.input.replaceAll(/^\/\/!.*\n/gm, "").trimStart(),
+        "rust",
+        { theme: "gruvbox-dark-hard" },
+      );
       const snippets = await Promise.all(
         Object.entries(examples).map(async ([name, code]) => {
           const highlighted = await highlightCode(code, "rust", { theme: "gruvbox-dark-hard" });
