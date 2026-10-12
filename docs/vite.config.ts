@@ -4,11 +4,12 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 
 import examples from "./app/data/home-code.json";
+import walkthrough from "./app/data/regex-walkthrough.json";
 
 const cargoToml = readFileSync("../Cargo.toml", "utf8");
 const version = /^version\s*=\s*"(.+)"/m.exec(cargoToml)?.[1] ?? "0.0.0";
 
-// Use one Rust grammar and theme for every home-page code example.
+// Use one theme for Rust examples and regular-expression patterns on the home page.
 function sampleHighlight(): Plugin {
   const virtualId = "virtual:ferroni-sample";
   const resolvedId = `\0${virtualId}`;
@@ -37,7 +38,12 @@ function sampleHighlight(): Plugin {
           return `export const ${name}Html = ${JSON.stringify(highlighted)};`;
         }),
       );
-      return `export default ${JSON.stringify(html)};\n${snippets.join("\n")}`;
+      const patterns = await Promise.all(
+        walkthrough.syntax.map(async (example) =>
+          highlightCode(example.pattern, "regexp", { theme: "gruvbox-dark-hard" }),
+        ),
+      );
+      return `export default ${JSON.stringify(html)};\n${snippets.join("\n")}\nexport const patternHtml = ${JSON.stringify(patterns)};`;
     },
   };
 }
