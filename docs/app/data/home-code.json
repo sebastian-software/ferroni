@@ -1,0 +1,5 @@
+{
+  "scanner": "use ferroni::prelude::*;\n\nlet mut scanner = Scanner::new(&[\n    r\"\\b(function|const|let|var)\\b\",\n    r#\"\"[^\"]*\"\"#,\n    r\"//.*$\",\n]).unwrap();\n\nlet m = scanner\n    .find_next_match(r#\"const x = \"hello\"\"#, 0, ScannerFindOptions::NONE)\n    .unwrap();\nassert_eq!(m.index, 0); // \"const\" matched first",
+  "limits": "use std::time::Duration;\nuse ferroni::prelude::*;\n\nlet re = Regex::new(r\"(a+)+b\").unwrap();\nlet options = SearchOptions::new()\n    .timeout(Duration::from_millis(50));\n\nlet hostile = \"a\".repeat(40);\nlet result = re.find_with(&hostile, options);\nassert!(matches!(result, Err(RegexError::TimeLimitOver)));",
+  "lint": "use ferroni::prelude::*;\n\nlet re = Regex::new(r\"(a+)+$\").unwrap();\nfor warning in re.backtracking_warnings() {\n    eprintln!(\"{warning}\"); // nested unbounded repeat: \u2026\n}\n\n// Refuse risky patterns that users supply.\nlet strict = Regex::builder(r\"(a+)+$\")\n    .reject_backtracking_risks(true)\n    .build();\nassert!(strict.is_err());"
+}

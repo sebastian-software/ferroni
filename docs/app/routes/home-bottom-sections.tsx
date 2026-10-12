@@ -1,44 +1,13 @@
-import {
-  ClosingAction,
-  CodePanel,
-  EvidenceFigures,
-  Ledger,
-  Mark,
-  Section,
-} from "ferramenta-family";
+import { ClosingAction, EvidenceFigures, Ledger, Mark, Section } from "ferramenta-family";
 import { Link } from "react-router";
+import { limitsHtml, lintHtml, scannerHtml } from "virtual:ferroni-sample";
 
+import { HighlightedRust } from "../components/highlighted-rust";
 import { ScannerWalkthrough } from "../components/home-examples";
 
 /* -------------------------------------------------- */
 /*  Scanner                                           */
 /* -------------------------------------------------- */
-
-function ScannerExample() {
-  return (
-    <CodePanel caption="highlight.rs">
-      <span className="kw">use</span> <span className="ty">ferroni::prelude::*</span>;{"\n"}
-      {"\n"}
-      <span className="kw">let mut</span> scanner = <span className="ty">Scanner</span>::
-      <span className="fn">new</span>(&amp;[{"\n"}
-      {"    "}
-      <span className="str">r"\b(function|const|let|var)\b"</span>,{"\n"}
-      {"    "}
-      <span className="str">r#""[^"]*""#</span>,{"\n"}
-      {"    "}
-      <span className="str">r"&#47;&#47;.*$"</span>,{"\n"}
-      ]).unwrap();{"\n"}
-      {"\n"}
-      <span className="kw">let</span> m = scanner{"\n"}
-      {"    "}.<span className="fn">find_next_match</span>(
-      <span className="str">r#"const x = "hello""#</span>, 0,{" "}
-      <span className="ty">ScannerFindOptions</span>::NONE){"\n"}
-      {"    "}.unwrap();{"\n"}
-      <span className="mc">assert_eq!</span>(m.index, 0);{" "}
-      <span className="cm">&#47;&#47; "const" matched first</span>
-    </CodePanel>
-  );
-}
 
 export function ScannerSection() {
   return (
@@ -55,7 +24,7 @@ export function ScannerSection() {
         </>
       }
     >
-      <ScannerExample />
+      <HighlightedRust caption="highlight.rs" html={scannerHtml} />
       <ScannerWalkthrough />
     </Section>
   );
@@ -64,58 +33,6 @@ export function ScannerSection() {
 /* -------------------------------------------------- */
 /*  Untrusted input                                   */
 /* -------------------------------------------------- */
-
-function LimitsExample() {
-  return (
-    <CodePanel caption="limits.rs">
-      <span className="kw">use</span> <span className="ty">std::time::Duration</span>;{"\n"}
-      <span className="kw">use</span> <span className="ty">ferroni::prelude::*</span>;{"\n"}
-      {"\n"}
-      <span className="kw">let</span> re = <span className="ty">Regex</span>::
-      <span className="fn">new</span>(<span className="str">r"(a+)+b"</span>).unwrap();{"\n"}
-      <span className="kw">let</span> options = <span className="ty">SearchOptions</span>::
-      <span className="fn">new</span>(){"\n"}
-      {"    "}.<span className="fn">timeout</span>(<span className="ty">Duration</span>::
-      <span className="fn">from_millis</span>(50));{"\n"}
-      {"\n"}
-      <span className="kw">let</span> hostile = <span className="str">"a"</span>.
-      <span className="fn">repeat</span>(40);{"\n"}
-      <span className="kw">let</span> result = re.<span className="fn">find_with</span>
-      (&amp;hostile, options);{"\n"}
-      <span className="mc">assert!</span>(<span className="mc">matches!</span>(result,{" "}
-      <span className="ty">Err</span>(<span className="ty">RegexError</span>::TimeLimitOver)));
-    </CodePanel>
-  );
-}
-
-function LintExample() {
-  return (
-    <CodePanel caption="lint.rs">
-      <span className="kw">use</span> <span className="ty">ferroni::prelude::*</span>;{"\n"}
-      {"\n"}
-      <span className="kw">let</span> re = <span className="ty">Regex</span>::
-      <span className="fn">new</span>(<span className="str">r"(a+)+$"</span>).unwrap();{"\n"}
-      <span className="kw">for</span> warning <span className="kw">in</span> re.
-      <span className="fn">backtracking_warnings</span>() {"{"}
-      {"\n"}
-      {"    "}
-      <span className="mc">eprintln!</span>(<span className="str">"{"{warning}"}"</span>);{" "}
-      <span className="cm">&#47;&#47; nested unbounded repeat: …</span>
-      {"\n"}
-      {"}"}
-      {"\n"}
-      {"\n"}
-      <span className="cm">&#47;&#47; Refuse risky patterns that users supply.</span>
-      {"\n"}
-      <span className="kw">let</span> strict = <span className="ty">Regex</span>::
-      <span className="fn">builder</span>(<span className="str">r"(a+)+$"</span>){"\n"}
-      {"    "}.<span className="fn">reject_backtracking_risks</span>(
-      <span className="kw">true</span>){"\n"}
-      {"    "}.<span className="fn">build</span>();{"\n"}
-      <span className="mc">assert!</span>(strict.<span className="fn">is_err</span>());
-    </CodePanel>
-  );
-}
 
 export function SafetySection() {
   return (
@@ -141,8 +58,8 @@ export function SafetySection() {
       }
     >
       <div className="fam-code-grid">
-        <LimitsExample />
-        <LintExample />
+        <HighlightedRust caption="limits.rs" html={limitsHtml} />
+        <HighlightedRust caption="lint.rs" html={lintHtml} />
       </div>
     </Section>
   );

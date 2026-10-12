@@ -2,23 +2,14 @@ import { Mark } from "ferramenta-family";
 import highlightedInput from "virtual:ferroni-sample";
 
 import sample from "../data/regex-sample.json";
-
-function RustSource() {
-  return (
-    <figure className="fam-code">
-      <figcaption>website_sample.rs</figcaption>
-      {/* oxlint-disable-next-line react/no-danger -- trusted HTML produced by the build's Rust highlighter. */}
-      <div dangerouslySetInnerHTML={{ __html: highlightedInput }} />
-    </figure>
-  );
-}
+import { HighlightedRust } from "./highlighted-rust";
 
 export function HomeRunSample() {
   return (
     <div className="fam-run fr-run">
       <div className="fam-run-input">
         <div className="fam-run-wide">
-          <RustSource />
+          <HighlightedRust caption="website_sample.rs" html={highlightedInput} />
         </div>
         <details className="fam-run-narrow">
           <summary>
@@ -26,7 +17,7 @@ export function HomeRunSample() {
             <small>Rust source</small>
             <Mark name="chev" className="icon" size={16} />
           </summary>
-          <RustSource />
+          <HighlightedRust caption="website_sample.rs" html={highlightedInput} />
         </details>
       </div>
       <Mark name="arrow" className="icon fam-run-arrow" />
