@@ -39,13 +39,12 @@ export function SafetySection() {
     <Section
       id="fr-safety"
       tone="dim"
-      title="Safe with untrusted input"
+      title="Put limits on untrusted input"
       intro={
         <>
-          Memory-safe Rust replaces the C code behind Oniguruma&rsquo;s CVEs, and{" "}
-          <code>unsafe</code> stays confined to the links between parse-tree nodes. For text and
-          patterns you did not write, a search can carry a timeout or a retry limit and report it as
-          an error, and a compile-time check flags patterns that backtrack catastrophically.
+          Ferroni is memory-safe, but matching uses backtracking. Set a timeout or retry limit for
+          untrusted input, and use the compile-time warnings to reject risky patterns. Memory safety
+          does not guarantee bounded matching time.
         </>
       }
       note={
@@ -98,8 +97,8 @@ export function ProofSection() {
     <Section
       id="fr-proof"
       layout="split"
-      title="Compatibility, with the evidence attached"
-      intro="The port keeps Oniguruma’s module structure, function names and control flow, so it can be checked against C test by test. Every upstream test that targets UTF-8 passes."
+      title="Compatibility you can verify"
+      intro="Ferroni carries Oniguruma forward after its C project closed in April 2025. The port preserves module structure, function names and control flow, and passes every upstream UTF-8 test. Unicode tables and the Rust API extend that foundation."
       note={
         <>
           Line coverage is gated in CI, and every benchmark case first has to reproduce C
@@ -196,11 +195,9 @@ export function ClosingSection() {
       }
     >
       <p className="fam-intro">
-        Oniguruma&rsquo;s engine and the vscode-oniguruma scanner in one pure-Rust crate. The guide
-        takes you from <code>cargo add ferroni</code> to your first match, a tokenizer loop, and
-        searches that are safe to run on untrusted input. Ferroni is feature-complete for its scope
-        and maintained, with no feature work planned; the{" "}
-        <a href="#project-status">project status</a> says what is and is not covered.
+        Install with <code>cargo add ferroni</code>. The guide walks through your first match,
+        captures, scanner loops and per-search limits. For existing applications, start with the{" "}
+        <Link to="/guide/compatibility">compatibility guide</Link>.
       </p>
     </ClosingAction>
   );

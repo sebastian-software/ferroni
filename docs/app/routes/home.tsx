@@ -2,11 +2,9 @@ import {
   type ComparisonCell,
   type ComparisonRow,
   ComparisonTable,
-  EvidenceFigures,
   family,
   Mark,
   Measured,
-  Principles,
   ProjectHero,
   Relations,
   Section,
@@ -16,6 +14,7 @@ import { Link, type MetaFunction } from "react-router";
 import config from "virtual:ardo/config";
 
 import { FitSection, StatusSection, SyntaxSection } from "../components/home-examples";
+import { HomeNavigation } from "../components/home-navigation";
 import { PerformanceChart } from "../components/home-performance-chart";
 import { HomeRunSample } from "../components/home-run-sample";
 import engineComparison from "../data/engine-comparison.json";
@@ -74,13 +73,6 @@ const cCells = cRow.cells as Record<string, FigureCell>;
 const cFactors = workloads.flatMap((workload) => Object.values(cCells[workload.id].factors ?? {}));
 const aheadOfC = cFactors.length > 0 && cFactors.every((factor) => factor > 1);
 
-/* The narrowest and widest lead over C, as the table states them: "1.4× to 12×". */
-const cTexts = workloads
-  .map((workload) => cCells[workload.id])
-  .sort((a, b) => (a.factor ?? 0) - (b.factor ?? 0))
-  .map((cell) => cell.text);
-const cRange = `${cTexts[0]} to ${cTexts.at(-1)}`;
-
 /*
  * What it succeeds and what it is checked against come from the registry; the
  * release is the version this site was built from, read from Cargo.toml.
@@ -95,17 +87,15 @@ function HeroSection() {
       what="Oniguruma's regex engine, modernized in Rust."
       lede={
         <>
-          Look-behind, backreferences, Unicode properties and the multi-pattern scanner that
-          TextMate grammars run on, in one pure-Rust crate. No C compiler, memory-safe
-          {aheadOfC
-            ? ", and faster than the C original."
-            : ", and measured against the C original."}
+          Run TextMate grammars and patterns with look-behind or backreferences in pure Rust. No C
+          compiler. Verified against Oniguruma&rsquo;s upstream tests.
+          {aheadOfC ? " Faster than C in our measured workloads." : " Benchmarked against C."}
         </>
       }
       actions={
         <>
           <Link to="/guide/getting-started" className="fam-btn fam-btn-primary">
-            Get started <Mark name="arrow" className="icon" size={18} />
+            Read the quickstart <Mark name="arrow" className="icon" size={18} />
           </Link>
           <a href="https://github.com/sebastian-software/ferroni" className="fam-btn fam-btn-ghost">
             <Mark name="github" className="icon" size={18} /> GitHub
@@ -122,47 +112,6 @@ function HeroSection() {
   );
 }
 
-const pillars = [
-  {
-    heading: "Same engine, verified",
-    text: "A line-by-line port of Oniguruma's parser, compiler and optimizer. All 2,974 upstream UTF-8 test cases pass, so a pattern behaves as it does in C.",
-  },
-  {
-    heading: "Easy to add",
-    text: (
-      <>
-        <code>cargo add ferroni</code> and build: no C compiler, no bindgen. An idiomatic{" "}
-        <code>Regex</code> API on top, <code>Send + Sync</code> for sharing across threads.
-      </>
-    ),
-  },
-  {
-    heading: "Safe with untrusted input",
-    text: "Memory-safe Rust, with unsafe confined to the links between parse-tree nodes. Timeouts and retry limits per search, a compile-time backtracking check, and continuous fuzzing.",
-  },
-  aheadOfC
-    ? {
-        heading: "Faster than the original",
-        text: `Ahead of C Oniguruma in every measured workload: ${cRange} faster, from everyday patterns to syntax highlighting, with inputs and raw data published.`,
-      }
-    : {
-        heading: "Measured against C",
-        text: "Every workload is timed against C Oniguruma on two hosts, with the inputs, versions and raw data published.",
-      },
-];
-
-function ForwardSection() {
-  return (
-    <Section
-      id="fr-forward"
-      title="Same engine. Modern Rust."
-      intro="Oniguruma’s C project closed on April 24, 2025, after more than twenty years as the engine TextMate grammars are written for. Ferroni carries it forward, and adds what C Oniguruma never shipped: Unicode 18.0, the vscode-oniguruma scanner, a backtracking check and an idiomatic Rust API."
-    >
-      <Principles items={pillars} />
-    </Section>
-  );
-}
-
 function SampleSection() {
   return (
     <Section
@@ -170,9 +119,8 @@ function SampleSection() {
       title="Familiar Rust, full Oniguruma syntax"
       intro={
         <>
-          The look-behind that selects this date is syntax Rust&rsquo;s <code>regex</code> crate
-          does not run; the named groups and the API around them are the ones you already know. The
-          output is what the example printed, committed with the site.
+          Select a date with look-behind, then read its named captures with a familiar Rust API. The
+          output below comes from running this example.
         </>
       }
       note={
@@ -218,16 +166,6 @@ const comparisonRows: ComparisonRow[] = engineComparison.engines.map((engine) =>
   };
 });
 
-/* The C original's factor per workload, stamped on plates above the full table. */
-const cFigures = workloads.map((workload) => {
-  const cell = cCells[workload.id];
-  return {
-    label: workload.label,
-    value: cell.direction === "slower" ? `${cell.text} slower` : cell.text,
-    detail: workload.detail,
-  };
-});
-
 /* The footnotes the table needs, worded once in compare-engines.py. */
 const allCells = engineComparison.engines.flatMap((engine) =>
   workloads.map((workload) => (engine.cells as Record<string, FigureCell>)[workload.id]),
@@ -247,38 +185,38 @@ function SpeedSection() {
     <Section
       id="fr-evidence"
       layout="split"
-      title={aheadOfC ? "Faster than the C original" : "Measured against the C original"}
+      title={aheadOfC ? "Faster in the measured workloads" : "Measured against C Oniguruma"}
       intro={
         <>
-          How much faster Ferroni is than C Oniguruma on three kinds of work, as the geometric mean
-          over every task and two test machines. The table adds six more engines. Each one first has
-          to reproduce Oniguruma&rsquo;s results, or the results Shiki produced for highlighting,
-          before it is timed.
+          Three workloads, two hosts. The chart shows relative throughput against C Oniguruma,
+          averaged geometrically across tasks and hosts. Each case must reproduce the reference
+          matches before it is timed.
         </>
       }
       note={
         <>
-          Where Ferroni is behind, the table says so. When patterns fit their syntax, Rust&rsquo;s{" "}
-          <code>regex</code> crate and PCRE2&rsquo;s JIT win most text tasks; neither finds the
-          earliest match among many patterns in one search, as a highlighter needs. C Oniguruma wins
-          a few individual tasks, and grammar compilation is mixed.
+          Rust&rsquo;s <code>regex</code> crate and PCRE2 JIT win most text tasks they support. C
+          Oniguruma wins some individual tasks, and compilation results are mixed. Compare engines
+          for the syntax and workloads your application needs.
         </>
       }
     >
-      <EvidenceFigures figures={cFigures} />
       <PerformanceChart />
-      <ComparisonTable
-        align="end"
-        caption="How much faster or slower Ferroni is than each engine."
-        subject="Compared with"
-        contenders={workloads.map((workload) => ({ id: workload.id, label: workload.short }))}
-        rows={comparisonRows}
-      />
-      {tableNotes.map((note) => (
-        <p key={note} className="fam-note">
-          {note}
-        </p>
-      ))}
+      <details className="fr-comparison-details">
+        <summary>Compare all seven engines</summary>
+        <ComparisonTable
+          align="end"
+          caption="How much faster or slower Ferroni is than each engine."
+          subject="Compared with"
+          contenders={workloads.map((workload) => ({ id: workload.id, label: workload.short }))}
+          rows={comparisonRows}
+        />
+        {tableNotes.map((note) => (
+          <p key={note} className="fam-note">
+            {note}
+          </p>
+        ))}
+      </details>
       <Measured
         on={engineComparison.measured}
         machine={`Blacksmith runners. ${hosts}`}
@@ -306,8 +244,8 @@ export default function HomePage() {
   return (
     <div className="fam-page ferroni-home">
       <HeroSection />
+      <HomeNavigation />
       <FitSection />
-      <ForwardSection />
       <SampleSection />
       <SyntaxSection />
       <SpeedSection />
