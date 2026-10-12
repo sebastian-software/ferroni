@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 
+import examples from "./app/data/home-code.json";
+
 const cargoToml = readFileSync("../Cargo.toml", "utf8");
 const version = /^version\s*=\s*"(.+)"/m.exec(cargoToml)?.[1] ?? "0.0.0";
 
-// Render the committed Rust sample with the site's existing Ferriki highlighter.
+// Use one Rust grammar and theme for every home-page code example.
 function sampleHighlight(): Plugin {
   const virtualId = "virtual:ferroni-sample";
   const resolvedId = `\0${virtualId}`;
@@ -29,7 +31,13 @@ function sampleHighlight(): Plugin {
         throw new Error("The committed sample must contain Rust source in input.");
       }
       const html = await highlightCode(sample.input, "rust", { theme: "gruvbox-dark-hard" });
-      return `export default ${JSON.stringify(html)};`;
+      const snippets = await Promise.all(
+        Object.entries(examples).map(async ([name, code]) => {
+          const highlighted = await highlightCode(code, "rust", { theme: "gruvbox-dark-hard" });
+          return `export const ${name}Html = ${JSON.stringify(highlighted)};`;
+        }),
+      );
+      return `export default ${JSON.stringify(html)};\n${snippets.join("\n")}`;
     },
   };
 }
