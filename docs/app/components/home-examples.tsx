@@ -1,8 +1,10 @@
 // cspell:words subexpression Onigmo syntect
 import { Ledger, Principles, Section } from "ferramenta-family";
 import { Link } from "react-router";
+import { patternHtml } from "virtual:ferroni-sample";
 
 import walkthrough from "../data/regex-walkthrough.json";
+import { PatternExample } from "./pattern-example";
 
 export function FitSection() {
   return (
@@ -59,29 +61,8 @@ export function SyntaxSection() {
       intro="Each highlighted match below comes from running Ferroni. Look-behind and backreferences extend the syntax available in Rust’s regex crate; Unicode properties are useful in both engines."
     >
       <div className="fr-examples">
-        {walkthrough.syntax.map((example) => (
-          <article className="fr-example" key={example.title}>
-            <h3>{example.title}</h3>
-            <p>{example.explanation}</p>
-            <dl>
-              <dt>Pattern</dt>
-              <dd>
-                <code>{example.pattern}</code>
-              </dd>
-              <dt>Input</dt>
-              <dd>
-                <code>
-                  {example.before}
-                  <mark>{example.matched}</mark>
-                  {example.after}
-                </code>
-              </dd>
-              <dt>Match</dt>
-              <dd>
-                <code>{example.matched}</code>
-              </dd>
-            </dl>
-          </article>
+        {walkthrough.syntax.map((example, index) => (
+          <PatternExample key={example.title} example={example} html={patternHtml[index]} />
         ))}
       </div>
       <p className="fam-note">
