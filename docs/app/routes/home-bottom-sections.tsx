@@ -8,6 +8,8 @@ import {
 } from "ferramenta-family";
 import { Link } from "react-router";
 
+import { ScannerWalkthrough } from "../components/home-examples";
+
 /* -------------------------------------------------- */
 /*  Scanner                                           */
 /* -------------------------------------------------- */
@@ -54,6 +56,7 @@ export function ScannerSection() {
       }
     >
       <ScannerExample />
+      <ScannerWalkthrough />
     </Section>
   );
 }
@@ -280,8 +283,7 @@ export function ClosingSection() {
         takes you from <code>cargo add ferroni</code> to your first match, a tokenizer loop, and
         searches that are safe to run on untrusted input. Ferroni is feature-complete for its scope
         and maintained, with no feature work planned; the{" "}
-        <a href="https://github.com/sebastian-software/ferroni#project-status">project status</a>{" "}
-        says what is and is not covered.
+        <a href="#project-status">project status</a> says what is and is not covered.
       </p>
     </ClosingAction>
   );

@@ -2,9 +2,9 @@
 #
 # Count the `#[test]` functions in the tree.
 #
-# This is the single source of truth for the test counts quoted in README.md
-# ("Correctness and safety") and CONTRIBUTING.md. The README quotes the grand
-# total rounded down to the hundred, so routine additions need no README edit;
+# This is the single source of truth for the test count in the compatibility
+# guide. It quotes the grand total rounded down to the hundred, so routine
+# additions need no documentation edit;
 # scripts/check-readme-figures.sh (run in CI) fails when the rounded figure moves.
 #
 # Note: the parity table in docs/app/routes/guide/compatibility.mdx counts

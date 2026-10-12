@@ -30,7 +30,7 @@ release builds, as users run them.
   compare-engines.py report SUMMARY.md DIR...
       merges the measurements of several runs, one table set per host
   compare-engines.py figures RUN_DIR... OUT.json
-      condenses the published runs into the README and home page figures
+      condenses the published runs into the website figures and a Markdown summary
   compare-engines.py tables RUN_DIR...
       prints the per-case tables of docs/app/routes/perf/engine-comparison.mdx
 
@@ -456,7 +456,7 @@ def report(args):
     print(args.summary.read_text())
 
 
-# The README and home page condense a run into three workloads. Highlighting
+# The website figures condense a run into three workloads. Highlighting
 # needs every grammar: a highlighter that cannot load one is not a candidate.
 # Searches may miss a case; the figure is then taken over the cases the engine
 # ran, and the summary marks it with a footnote instead of spelling out counts.
@@ -476,7 +476,7 @@ WORKLOADS = [
      'detail': 'the scanner calls Shiki makes for whole C, Java and PHP documents, in grammars every engine runs',
      'cases': ['c_scanner/document', 'java_scanner/document', 'php_scanner/document']},
 ]
-# The footnotes under the summary table, in the README and on the home page.
+# The footnotes under the summary table, on the home page and in the Markdown summary.
 PARTIAL_NOTE = ('Ran only some of the tasks: the engine rejects a pattern or finds different matches. '
                 'The figure covers the tasks it ran.')
 ABSENT_NOTE = 'Not measured: the engine lacks the syntax, or the multi-pattern API the workload needs.'
@@ -631,7 +631,7 @@ def figures(args):
 
 
 def readme_cell(cell):
-    """A README cell: "2.2× faster", with a footnote mark when cases were left out."""
+    """A Markdown summary cell: "2.2× faster", with a footnote mark when cases were left out."""
     if 'factor' not in cell:
         return cell['text'] + (f' ({cell["note"]})' if cell.get('note') else '')
     mark = '\\*' if cell['cases'] < cell['of'] else ''
@@ -639,7 +639,7 @@ def readme_cell(cell):
 
 
 def readme_table(figures_data):
-    """The README block; docs/scripts/check-benchmark-claims.mjs compares it."""
+    """An optional Markdown summary of the website figures."""
     workloads = figures_data['workloads']
     engines = figures_data['engines']
     lines = ['| Ferroni compared with | ' + ' | '.join(w['label'] for w in workloads) + ' |',
@@ -757,7 +757,7 @@ def main():
     report_parser = commands.add_parser('report', help='merge the measurements of several runs')
     report_parser.add_argument('summary', type=Path)
     report_parser.add_argument('directories', nargs='+', type=Path)
-    figures_parser = commands.add_parser('figures', help='condense the published runs for the README and home page')
+    figures_parser = commands.add_parser('figures', help='condense the published runs for the website')
     figures_parser.add_argument('runs', nargs='+', type=Path, help='run directories, a later one overriding its case sets')
     figures_parser.add_argument('output', type=Path)
     tables_parser = commands.add_parser('tables', help='print the per-case tables of the engine comparison page')

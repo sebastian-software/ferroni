@@ -83,19 +83,16 @@ the unit tests and `tests/compat_prefilter_differential.rs`:
     cargo test --release --test ferriki_corpus_differential -- --ignored --nocapture
   ```
 
-Test counts are derived from the tree by `./scripts/count-tests.sh`; the
-README quotes the total in its
-[Correctness and safety](README.md#correctness-and-safety) section, and the
+Test counts are derived from the tree by `./scripts/count-tests.sh`. The
 [compatibility guide](https://ferroni.dev/guide/compatibility#test-parity)
-carries the per-file parity table. The README quotes that total rounded down to
-the hundred, and `scripts/check-readme-figures.sh` (run in CI) enforces it.
+quotes the total rounded down to the hundred and carries the per-file parity
+table. `scripts/check-readme-figures.sh` (run in CI) enforces the total.
 
 The `unsafe` figures in the "Current State" section of
-[ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy) are derived the same
-way, by `./scripts/count-unsafe.sh`. Run it after changing `unsafe` code and
-update that section from its output. The README quotes the site count exactly;
-`scripts/check-readme-figures.sh` (run in CI) enforces it for the README and
-that section.
+[ADR-002](https://ferroni.dev/adr/002-unsafe-code-policy) are derived by
+`./scripts/count-unsafe.sh`. Run it after changing `unsafe` code and update
+that section from its output. `scripts/check-readme-figures.sh` also enforces
+that section's exact site count.
 
 ### Code samples in the docs
 
@@ -170,15 +167,19 @@ pnpm format:check   # pnpm format rewrites
 pnpm verify         # lint, typecheck, format, benchmark claims, and production build
 ```
 
-The home page's run sample is generated from `examples/website_sample.rs`.
-After changing the example, run `pnpm sample:write` from `docs/` and commit
-`docs/app/data/regex-sample.json`. `pnpm sample:check` runs the example again
-and compares its source and actual stdout with the committed artifact. The
-output caption retains the Ferroni version that originally generated it.
+The home page's run sample is generated from `examples/website_sample.rs`
+into `docs/app/data/regex-sample.json`. Its highlighted syntax examples and
+scanner steps are generated from `examples/website_walkthrough.rs` into
+`docs/app/data/regex-walkthrough.json`.
+
+After changing either example, run `pnpm sample:write` and `pnpm format` from
+`docs/`, then commit the generated artifacts. `pnpm sample:check` runs both
+examples again: it compares the run sample's source and stdout, and the
+walkthrough's matching results, with the committed artifacts. The run sample's
+caption retains the Ferroni version that originally generated it.
 CI runs the same comparison in the `sample` job of
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml), as
-`node docs/scripts/render-regex-sample.mjs --check`, so a changed example
-without a regenerated artifact fails the build.
+`node docs/scripts/render-regex-sample.mjs --check`.
 
 CI also runs a `standards drift` lane that executes
 `@sebastian-software/standards check`. Its version is pinned in
@@ -429,7 +430,7 @@ so a change has to keep the structural parity with C Oniguruma that ADR-001
 describes. The `help wanted` label marks the issues that are waiting for a
 contributor. Report a suspected vulnerability privately, as
 [SECURITY.md](SECURITY.md) describes, and not in a public issue. The
-[project status](README.md#project-status) lists what the project maintains and
+[project status](https://ferroni.dev/#project-status) lists what the project maintains and
 what is not planned.
 
 ## License
