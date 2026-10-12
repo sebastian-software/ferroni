@@ -1,5 +1,5 @@
 /* Shared layout, materials, and components belong to ferramenta-family.
- * Only Ferroni's plain-text sample disclosure lives here.
+ * Ferroni-specific sample disclosures and illustrations live here.
  * Imported in root.tsx after landing.css and before chrome.css.
  */
 
@@ -19,4 +19,125 @@
   overflow: auto;
   background: var(--bg-dim);
   color: var(--ink);
+}
+
+/* Ferroni-specific match, scanner and throughput illustrations. */
+.fr-examples {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 2rem;
+}
+
+.fr-example {
+  min-width: 0;
+  border-top: 2px solid var(--ink-soft);
+  padding-top: 1rem;
+}
+
+.fr-example h3 {
+  margin-top: 0;
+}
+
+.fr-example p,
+.fr-example dd {
+  overflow-wrap: anywhere;
+}
+
+.fr-example dl {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.fr-example dt {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.fr-example dd {
+  margin: 0 0 0.5rem;
+}
+
+.fr-example mark,
+.fr-scanner-walkthrough mark {
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 0.2rem;
+  padding-block: 0.15rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.fr-scanner-walkthrough,
+.fr-speed-chart {
+  min-width: 0;
+  margin: 2rem 0 0;
+}
+
+.fr-scanner-walkthrough figcaption,
+.fr-speed-chart figcaption {
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.fr-scanner-walkthrough pre {
+  overflow: auto;
+  padding: 1rem;
+  background: var(--bg-dim);
+}
+
+.fr-patterns,
+.fr-steps {
+  padding-left: 1.5rem;
+}
+
+.fr-patterns li,
+.fr-steps li {
+  padding-block: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.fr-patterns strong {
+  display: block;
+}
+
+.fr-speed-chart ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.fr-speed-chart li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4rem;
+  gap: 0.5rem 1rem;
+}
+
+.fr-speed-chart li > span {
+  grid-column: 1 / -1;
+}
+
+.fr-speed-track {
+  position: relative;
+  background: var(--bg-dim);
+  height: 1.5rem;
+}
+
+.fr-speed-track span {
+  display: block;
+  height: 100%;
+  background: var(--ink-soft);
+}
+
+.fr-speed-track i {
+  position: absolute;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  border-left: 2px dashed var(--ink);
+}
+
+.fr-patterns {
+  list-style: none;
+  padding-left: 0;
 }

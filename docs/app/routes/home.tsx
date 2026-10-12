@@ -16,6 +16,8 @@ import {
 import { Link, type MetaFunction } from "react-router";
 import config from "virtual:ardo/config";
 
+import { FitSection, StatusSection, SyntaxSection } from "../components/home-examples";
+import { PerformanceChart } from "../components/home-performance-chart";
 import engineComparison from "../data/engine-comparison.json";
 import sample from "../data/regex-sample.json";
 import {
@@ -25,7 +27,6 @@ import {
   SafetySection,
   ScannerSection,
 } from "./home-bottom-sections";
-
 // React Router requires `meta` as a named route export.
 // oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export const meta: MetaFunction = () => [
@@ -131,9 +132,8 @@ const pillars = [
     heading: "Easy to add",
     text: (
       <>
-        <code>cargo add ferroni</code> and build: no C compiler, no bindgen, four common
-        dependencies. An idiomatic <code>Regex</code> API on top, <code>Send + Sync</code> for
-        sharing across threads.
+        <code>cargo add ferroni</code> and build: no C compiler, no bindgen. An idiomatic{" "}
+        <code>Regex</code> API on top, <code>Send + Sync</code> for sharing across threads.
       </>
     ),
   },
@@ -279,6 +279,7 @@ function SpeedSection() {
       }
     >
       <EvidenceFigures figures={cFigures} />
+      <PerformanceChart />
       <ComparisonTable
         align="end"
         caption="How much faster or slower Ferroni is than each engine."
@@ -318,13 +319,16 @@ export default function HomePage() {
   return (
     <div className="fam-page ferroni-home">
       <HeroSection />
+      <FitSection />
       <ForwardSection />
       <SampleSection />
+      <SyntaxSection />
       <SpeedSection />
       <ScannerSection />
       <SafetySection />
       <ProofSection />
       <CoverageSection />
+      <StatusSection />
       <RelationsSection />
       <ClosingSection />
       <WorkWithUs />

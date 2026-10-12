@@ -1,0 +1,58 @@
+{
+  "scanner": {
+    "input": "const x = \"hello\" // greeting",
+    "patterns": ["\\b(function|const|let|var)\\b", "\"[^\"]*\"", "//.*$"],
+    "steps": [
+      {
+        "end": 5,
+        "from": 0,
+        "index": 0,
+        "matched": "const",
+        "start": 0
+      },
+      {
+        "end": 17,
+        "from": 5,
+        "index": 1,
+        "matched": "\"hello\"",
+        "start": 10
+      },
+      {
+        "end": 29,
+        "from": 17,
+        "index": 2,
+        "matched": "// greeting",
+        "start": 18
+      }
+    ]
+  },
+  "syntax": [
+    {
+      "after": "",
+      "before": "Date: ",
+      "explanation": "Require the Date: prefix without including it in the match.",
+      "input": "Date: 2026-09-26",
+      "matched": "2026-09-26",
+      "pattern": "(?<=Date: )\\d{4}-\\d{2}-\\d{2}",
+      "title": "Look-behind"
+    },
+    {
+      "after": " repeated word.",
+      "before": "Find ",
+      "explanation": "Match a word followed by the same word, using the first capture again.",
+      "input": "Find the the repeated word.",
+      "matched": "the the",
+      "pattern": "\\b(\\w+)\\s+\\1\\b",
+      "title": "Backreferences"
+    },
+    {
+      "after": "!",
+      "before": "Hello, ",
+      "explanation": "Select Greek letters by their Unicode property instead of listing characters.",
+      "input": "Hello, κόσμος!",
+      "matched": "κόσμος",
+      "pattern": "\\p{Greek}+",
+      "title": "Unicode properties"
+    }
+  ]
+}

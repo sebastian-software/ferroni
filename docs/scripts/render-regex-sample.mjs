@@ -33,3 +33,24 @@ if (process.argv.includes("--check")) {
   writeFileSync(artifact, `${JSON.stringify({ version, input, stdout, output }, null, 2)}\n`);
   console.log("Wrote docs/app/data/regex-sample.json from cargo run --example website_sample.");
 }
+
+// Keep the visual walkthrough tied to the engine's actual results too.
+const walkthroughPath = resolve(root, "docs/app/data/regex-walkthrough.json");
+const walkthrough = JSON.parse(
+  execFileSync("cargo", ["run", "--locked", "--quiet", "--example", "website_walkthrough"], {
+    cwd: root,
+    encoding: "utf8",
+  }),
+);
+const walkthroughJson = `${JSON.stringify(walkthrough, null, 2)}\n`;
+if (process.argv.includes("--check")) {
+  if (
+    JSON.stringify(JSON.parse(readFileSync(walkthroughPath, "utf8"))) !==
+    JSON.stringify(walkthrough)
+  ) {
+    throw new Error("The visual walkthrough changed. Run pnpm sample:write.");
+  }
+  console.log("The highlighted matches and scanner steps match Ferroni's actual results.");
+} else {
+  writeFileSync(walkthroughPath, walkthroughJson);
+}

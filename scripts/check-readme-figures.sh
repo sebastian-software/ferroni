@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 #
-# Check that the figures quoted in README.md.src and in the "Current State" of
+# Check that the figures quoted in the compatibility guide and in the "Current State" of
 # ADR-002 match the counts derived from the tree.
 #
 # - The `#[test]` total is quoted rounded down to the nearest hundred, as
 #   "at least N `#[test]` functions": a total of 2,526 is quoted as "at least
 #   2,500". Routine test additions leave it alone; it moves only when the
 #   rounded total does.
-# - The unsafe site count is quoted exactly, from count-unsafe.sh: "N sites"
-#   in README.md.src and "N `unsafe` sites" in ADR-002. A change in that
-#   number is meant to be a conscious edit.
+# - The unsafe site count is quoted exactly, from count-unsafe.sh: "N `unsafe` sites"
+#   in ADR-002. A change in that number is meant to be a conscious edit.
 #
 # A failure names the file, the phrase expected and the line found, so the
 # sentence to edit is clear. CI runs this script in the README themes job.
@@ -18,10 +17,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-readme=README.md.src
+compatibility=docs/app/routes/guide/compatibility.mdx
 adr=docs/app/routes/adr/002-unsafe-code-policy.mdx
 
-# Thousands separators as the README writes them: 2500 -> 2,500.
+# Thousands separators as the compatibility guide writes them: 2500 -> 2,500.
 with_commas() {
   local value=$1 groups="" chunk
   while ((value >= 1000)); do
@@ -64,14 +63,9 @@ fail() {
   echo "  line:     $(locate "$1" "$2")" >&2
 }
 
-if ! grep -q -F -- "$expected_tests" "$readme"; then
-  fail "$readme" '`#[test]` functions' "the test total" \
+if ! grep -q -F -- "$expected_tests" "$compatibility"; then
+  fail "$compatibility" '`#[test]` functions' "the test total" \
     "$expected_tests (count-tests.sh reports $tests, rounded down to the hundred)"
-fi
-
-if ! grep -q -E "(^|[^0-9,])${sites} sites" "$readme"; then
-  fail "$readme" 'remaining `unsafe`' "the unsafe site count" \
-    "$sites sites (count-unsafe.sh reports $sites)"
 fi
 
 if ! grep -q -F -- "${sites} \`unsafe\` sites in \`src/\`" "$adr"; then
@@ -84,4 +78,4 @@ if ((failures > 0)); then
   exit 1
 fi
 
-echo "check-readme-figures: $tests tests (quoted as $expected_tests), $sites unsafe sites: README and ADR-002 match."
+echo "check-readme-figures: $tests tests (quoted as $expected_tests), $sites unsafe sites: the compatibility guide and ADR-002 match."
