@@ -1,0 +1,89 @@
+---
+order: 1
+title: "Regex Workloads"
+---
+
+# Regex Workloads
+
+The general regex comparison uses identifiable production patterns and explicit
+operation contracts. It separates basic expressions, complex expressions and
+advanced Oniguruma features. TextMate Scanner replays and Ferriki's complete
+highlighting have separate workload boundaries.
+
+The new corpus and runner are ready for measurement. This page documents their
+scope; it makes no new performance claim. Superseded measurement pages and
+artifacts are available through the repository's Git history.
+
+## Patterns with a source
+
+The checked-in
+[catalog](https://github.com/sebastian-software/ferroni/blob/main/benches/production_regex/catalog.json)
+records each original pattern, pinned source/hash, flags, dialect recipe,
+operation, fixture source, oracle runtime, expected byte output and license.
+
+| Application                                                                                                                                 | Measured regex work                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [validator.js](https://github.com/validatorjs/validator.js/blob/9ff342479591ca5a43cb30000195bcf55c1bbed9/src/lib/isUUID.js)                 | UUID loose shape and v4, IPv4 and IPv6 boolean steps                |
+| [node-semver](https://github.com/npm/node-semver/blob/6e05b7637396ac66522cff8731f07cfe0ef49a29/internal/re.js)                              | Safe FULL version captures and HYPHENRANGE captures                 |
+| [Jinja](https://github.com/pallets/jinja/blob/5ef70112a1ff19c05324ff889dd30405b1002044/src/jinja2/lexer.py)                                 | String, integer and float token match at the lexer candidate offset |
+| [Django](https://github.com/django/django/blob/9014ca519c1cc825709a8fce0934f9919861ffb9/django/core/validators.py)                          | Email local-part/domain and URL regex steps                         |
+| [Fluent Bit](https://github.com/fluent/fluent-bit/blob/daf00526b97c36f33b027d60e3bf8a3934577a0e/conf/parsers.conf)                          | Apache and NGINX field captures on actual log test records          |
+| [Rails](https://github.com/rails/rails/blob/3235827585d87661942c91bc81f64f56d710f0b2/activesupport/lib/active_support/inflector/methods.rb) | Underscore boundary replacement, including zero-width matches       |
+| [Mastodon](https://github.com/mastodon/mastodon/blob/7f5bc79930136abe1a4aeb0f4530be1b08f9dbbb/app/models/tag.rb)                            | Hashtag regex matches and captures                                  |
+| [Python-Markdown](https://github.com/Python-Markdown/markdown/blob/d9c8431e404d614812e39a11109afbe9981bba13/markdown/inlinepatterns.py)     | Smart emphasis capture matches at candidate positions               |
+| [WordPress](https://github.com/WordPress/wordpress-develop/blob/5744bc5803c71ad1bf3d4da5f8fc580bf4f995b9/src/wp-includes/shortcodes.php)    | Shortcode matches and all six captures                              |
+| [Symfony String](https://github.com/symfony/string/blob/02470500a9cddcebc6d6092fc7f97bb673ed9d7d/UnicodeString.php)                         | Grapheme chunk strings on already normalized input                  |
+
+These are isolated regex steps. They do not time the complete validators,
+parsers, templates, entity extraction or rendering applications. The 513
+upstream-derived inputs establish expected semantics, not a production traffic
+distribution. Four additional literal probes vary match position explicitly on
+a controlled derivative of a real log record.
+
+Linkify-it's UTF-16 HTTP-tail expression and PHP-CS-Fixer's recursive type
+grammar remain documented candidates. The former needs a faithful native UTF-8
+translation. The latter already exposes a consumed recursive-capture difference;
+whole-match agreement would not be enough to admit it.
+
+## Comparable work before comparable speed
+
+An engine must reproduce every fixture's defined output before timing: boolean,
+first span, captures with unset groups preserved, all captures, replacement string
+or grapheme chunks. Missing syntax, semantic differences, execution errors and
+timeouts have separate statuses. A missing result is not a slow timing or a
+negative match.
+
+Patterns share one documented dialect recipe. Python strict-end anchors,
+ECMAScript ASCII digits and PHP ASCII word classes are explicit. Match-at-offset
+preserves the complete subject when lookbehind needs preceding context. Future
+alternative solutions to the same task need their own profile and must include
+necessary preprocessing and output work.
+
+Ferroni uses its public `Regex` API. The comparators are C Oniguruma, pinned Ruby
+Onigmo, PCRE2 interpreter/JIT, fancy-regex in Oniguruma mode with seek off/on,
+and Rust regex. Construction includes each profile's contexts and selected JIT.
+PCRE2's bundled source is pinned through the locked `pcre2-sys` dependency.
+Replacement/output assembly stays within the operation boundary.
+
+## Measurement and interpretation
+
+Compile, compile-plus-first-use and steady reuse are separate lanes. First use
+concerns the first fixture, while steady reuse executes the complete fixture
+batch. These are fresh-pattern costs in a warmed process; they do not measure
+OS-process startup. Memory, where selected, is whole-process peak RSS including
+runtime, catalog, allocator and output, rather than isolated pattern storage.
+
+The runner starts with three independent processes per pair, 30 Criterion
+samples per lane and three seconds measurement. It rotates/reverses engine order,
+keeps raw samples and intervals, and reports inconsistent differences as
+inconclusive. Short diagnostic runs cannot establish publication claims. Review
+host conditions and stability before interpreting a publication candidate.
+
+Each comparison lists its exact common tasks. Families carry equal aggregate
+weight regardless of fixture or variant count. Aggregates with different supported
+task pools do not establish an engine ranking. ARM and x86 results are reported
+separately.
+
+The [corpus guide](https://github.com/sebastian-software/ferroni/blob/main/benches/regex_corpus.md)
+contains runnable commands, the earlier patterns' dispositions, measured
+boundaries, current coverage limits and the requirements for adding cases.

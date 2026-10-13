@@ -17,7 +17,7 @@ during compilation can avoid repeating that work for every subject. Optimizing
 only compilation latency can therefore leave useful execution gains unrealized.
 This applies to ordinary regex use as well as syntax highlighting.
 
-The [compiled literal finder evaluation](/perf/simple-pattern-profiling)
+The [compiled literal finder evaluation](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/simple-pattern-profiling.mdx)
 demonstrates the tradeoff: repeated literal and URL searches improve, while
 compilation and memory costs increase. A separate case-insensitive execution
 regression also remains. These costs need distinct treatment.

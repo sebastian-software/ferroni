@@ -1,88 +1,47 @@
 /**
- * Check that the website's benchmark data agrees with the retained measurement
- * context, the home page reads that data, and the README links to the evidence.
- * Run with `pnpm check:numbers`; `pnpm build` runs it first.
+ * Keep the public workload description aligned with the source-backed corpus.
+ * No performance figures are published until repeated-run evidence is reviewed.
  */
-
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const here = import.meta.dirname;
-const figuresPath = resolve(here, "../app/data/engine-comparison.json");
-const readmePath = resolve(here, "../../README.md.src");
-const pagePath = resolve(here, "../app/routes/perf/engine-comparison.mdx");
-const homePath = resolve(here, "../app/routes/home.tsx");
-
-const figures = JSON.parse(readFileSync(figuresPath, "utf8"));
-const readme = readFileSync(readmePath, "utf8");
-const page = readFileSync(pagePath, "utf8");
-const home = readFileSync(homePath, "utf8");
-
+const root = resolve(import.meta.dirname, "../..");
+const catalog = JSON.parse(
+  readFileSync(resolve(root, "benches/production_regex/catalog.json"), "utf8"),
+);
+const page = readFileSync(resolve(root, "docs/app/routes/perf/regex-workloads.mdx"), "utf8");
+const home = readFileSync(resolve(root, "docs/app/routes/home.tsx"), "utf8");
+const readme = readFileSync(resolve(root, "README.md.src"), "utf8");
 const errors = [];
 
-// The README summarizes the same figures and links to the full evidence.
-if (!readme.includes("https://ferroni.dev/perf/engine-comparison")) {
-  errors.push("README.md.src must link to the benchmark evidence.");
+const productionInputs = catalog.cases
+  .filter((entry) => entry.pattern_origin === "production" && !entry.pending_reason)
+  .reduce((total, entry) => total + entry.inputs.length, 0);
+if (!page.includes(`The ${productionInputs}\nupstream-derived inputs`)) {
+  errors.push("Update the workload page's fixture count from catalog.json.");
 }
-if (/<!-- \/?engine-comparison -->/.test(readme)) {
-  errors.push(
-    "Keep benchmark tables on the website rather than duplicating them in README.md.src.",
-  );
-}
-
-const summary = /## Measured performance\n([\s\S]*?)(?=\n## )/.exec(readme)?.[1];
-const summaryText = summary?.replaceAll(/\s+/g, " ");
-const measuredDate = new Date(`${figures.measured}T00:00:00Z`).toLocaleDateString("en-US", {
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-  timeZone: "UTC",
-});
-const c = figures.engines.find((engine) => engine.id === "c").cells;
-const jit = figures.engines.find((engine) => engine.id === "pcre2_jit").cells;
-const phrase = (cell) => `${cell.text} ${cell.direction}`;
-for (const expected of [
-  measuredDate,
-  `commit \`${figures.commit.slice(0, 8)}\``,
-  `${phrase(c.shared)} than C Oniguruma on everyday patterns`,
-  `${phrase(c.oniguruma)} on advanced patterns`,
-  `${phrase(c.highlighting)} on three portable highlighting documents`,
-  `${phrase(jit.shared)} on compatible everyday patterns`,
-  `${phrase(jit.oniguruma)} on compatible advanced patterns`,
-  `${phrase(jit.highlighting)} on those scanner replays`,
+for (const [name, content] of [
+  ["README", readme],
+  ["homepage", home],
 ]) {
-  if (!summaryText?.includes(expected)) {
-    errors.push(`README.md.src benchmark summary must include: ${expected}`);
+  if (!content.includes("/perf/regex-workloads")) {
+    errors.push(`${name} must link to the current regex workload scope.`);
+  }
+  if (/\/perf\/(?:engine-comparison|benchmark-results)/.test(content)) {
+    errors.push(`${name} must not link to retired measurement pages.`);
   }
 }
-
-for (const [field, label, pattern] of [
-  ["commit", "Ferroni commit", /Ferroni commit\s*\| `([^`]+)`/],
-  ["measured", "Measurement date", /Measurement date\s*\| `([^`]+)`/],
-]) {
-  const value = pattern.exec(page)?.[1];
-  if (value === undefined) {
-    errors.push(`perf/engine-comparison.mdx: "${label}" is missing from the measurement context.`);
-  } else if (value !== figures[field]) {
-    errors.push(
-      `perf/engine-comparison.mdx names ${label} ${value}, the figures name ${figures[field]}.`,
-    );
-  }
+const sources = new Set(Object.values(catalog.sources).map((source) => source.url));
+for (const [url] of page.matchAll(/https:\/\/github\.com\/[^)\s]+\/blob\/[a-f0-9]{40}\/[^)\s]+/g)) {
+  if (!sources.has(url)) errors.push(`Workload source link is not in the pinned catalog: ${url}`);
 }
-if (!home.includes('from "../data/engine-comparison.json"')) {
-  errors.push("home.tsx no longer renders app/data/engine-comparison.json.");
+if (!page.includes("it makes no new performance claim")) {
+  errors.push("Do not replace the measurement-status note without reviewed publication evidence.");
 }
-
-if (errors.length > 0) {
-  console.error("Benchmark claims do not match their source:\n");
-  for (const error of errors) console.error(`  - ${error}`);
-  console.error(
-    "\nRegenerate with `scripts/compare-engines.py figures <run> docs/app/data/engine-comparison.json`" +
-      ".",
-  );
+if (errors.length) {
+  console.error(errors.join("\n"));
   process.exit(1);
 }
-
 console.log(
-  `Benchmark claims check: ${figures.engines.length} engines match the ${figures.measured} run.`,
+  `Workload claims check: ${productionInputs} production inputs and pinned source links match the corpus.`,
 );

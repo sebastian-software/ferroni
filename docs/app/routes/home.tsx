@@ -1,23 +1,10 @@
-import {
-  type ComparisonCell,
-  type ComparisonRow,
-  ComparisonTable,
-  family,
-  Mark,
-  Measured,
-  ProjectHero,
-  Relations,
-  Section,
-  WorkWithUs,
-} from "ferramenta-family";
+import { family, Mark, ProjectHero, Relations, Section, WorkWithUs } from "ferramenta-family";
 import { Link, type MetaFunction } from "react-router";
 import config from "virtual:ardo/config";
 
 import { FitSection, StatusSection, SyntaxSection } from "../components/home-examples";
 import { HomeNavigation } from "../components/home-navigation";
-import { PerformanceChart } from "../components/home-performance-chart";
 import { HomeRunSample } from "../components/home-run-sample";
-import engineComparison from "../data/engine-comparison.json";
 import {
   ClosingSection,
   CoverageSection,
@@ -32,7 +19,7 @@ export const meta: MetaFunction = () => [
   {
     name: "description",
     content:
-      "Full Oniguruma syntax for Rust, with the vscode-oniguruma scanner that TextMate grammars run on. One cargo add, no C compiler, memory-safe, verified against the upstream tests, and measured against the C original.",
+      "Oniguruma-compatible matching, extraction and replacement in Rust, including lookaround and backreferences. No C compiler, verified against upstream tests, with a TextMate Scanner API for grammar consumers.",
   },
 ];
 
@@ -41,34 +28,6 @@ function ferroni() {
   if (tool === undefined) throw new Error("Ferroni is missing from the family registry.");
   return tool;
 }
-
-type FigureCell = {
-  cases: number;
-  of: number;
-  /** Per host; the summary shows only `factor`, their geometric mean. */
-  factors?: Record<string, number>;
-  factor?: number;
-};
-
-const factorFormat = new Intl.NumberFormat("en-US", {
-  minimumSignificantDigits: 2,
-  maximumSignificantDigits: 2,
-});
-
-const workloads = engineComparison.workloads;
-
-/* The C original's row: the figures the speed claims on this page rest on. */
-const cRow = engineComparison.engines.find((engine) => engine.id === "c");
-if (cRow === undefined) throw new Error("engine-comparison.json has no row for Oniguruma (C).");
-const cCells = cRow.cells as Record<string, FigureCell>;
-
-/*
- * "Faster than the original" is only said while it holds: on every host, in
- * every workload of the retained run. A run where C wins a workload turns the
- * headline into a plain "measured against".
- */
-const cFactors = workloads.flatMap((workload) => Object.values(cCells[workload.id].factors ?? {}));
-const aheadOfC = cFactors.length > 0 && cFactors.every((factor) => factor > 1);
 
 /*
  * What it succeeds and what it is checked against come from the registry; the
@@ -84,9 +43,9 @@ function HeroSection() {
       what="Oniguruma's regex engine, modernized in Rust."
       lede={
         <>
-          Run TextMate grammars and patterns with look-behind or backreferences in pure Rust. No C
-          compiler. Verified against Oniguruma&rsquo;s upstream tests.
-          {aheadOfC ? " Faster than C in our measured workloads." : " Benchmarked against C."}
+          Match, extract and replace text with Oniguruma patterns in pure Rust, including
+          look-behind and backreferences. No C compiler. Verified against Oniguruma&rsquo;s upstream
+          tests.
         </>
       }
       actions={
@@ -131,109 +90,30 @@ function SampleSection() {
   );
 }
 
-function figureValue(cell: FigureCell, unit: string): ComparisonCell {
-  if (cell.factor === undefined) {
-    return (
-      <span className="fr-comparison-value">
-        <span aria-hidden="true">–</span>
-        <small>Not measured</small>
-      </span>
-    );
-  }
-  return (
-    <span
-      className="fr-comparison-value"
-      data-speed={cell.factor > 1 ? "faster" : cell.factor < 1 ? "slower" : "equal"}
-    >
-      <strong>{factorFormat.format(cell.factor)}×</strong>
-      <small>
-        {cell.cases}/{cell.of} {unit}
-      </small>
-    </span>
-  );
-}
-
-const comparisonRows: ComparisonRow[] = engineComparison.engines.map((engine) => {
-  const cells = engine.cells as Record<string, FigureCell>;
-  const measured = workloads.flatMap((workload) => Object.values(cells[workload.id].factors ?? {}));
-  return {
-    label: engine.id === "shiki_js" ? "Shiki JS engine" : engine.label,
-    values: Object.fromEntries(
-      workloads.map((workload) => [workload.id, figureValue(cells[workload.id], workload.unit)]),
-    ),
-    // Ferroni is slower in every workload this engine was measured in.
-    behind: measured.length > 0 && measured.every((factor) => factor < 1),
-  };
-});
-
-const tableNotes = [
-  "Coverage appears below each factor. Patterns an engine rejects or answers differently are excluded; the detailed results explain each exclusion.",
-  engineComparison.notes.configurations,
-];
-
-function EngineComparisonTable() {
-  return (
-    <details className="fr-comparison-details">
-      <summary>Compare all seven engines</summary>
-      <ComparisonTable
-        align="end"
-        caption="Ferroni’s relative throughput. 1× is equal; higher is faster. 0.50× means half the throughput, 2.0× means twice the throughput."
-        subject="Compared with"
-        contenders={workloads.map((workload) => ({
-          id: workload.id,
-          label: workload.id === "highlighting" ? "Scanner replays" : workload.short,
-        }))}
-        rows={comparisonRows}
-      />
-      <p className="fam-note">
-        Scanner replays measure recorded engine calls for C, Java and PHP documents. They exclude
-        tokenization, themes and HTML rendering. Shiki JS runs in Node; C Oniguruma is native.
-        Shiki&rsquo;s WASM engine supplies reference results but is not timed.
-      </p>
-      {tableNotes.map((note) => (
-        <p key={note} className="fam-note">
-          {note}
-        </p>
-      ))}
-    </details>
-  );
-}
-
 function SpeedSection() {
-  const hosts = engineComparison.hosts
-    .map((host) => `${host.label}: ${host.machine}, ${host.cpus} vCPUs`)
-    .join("; ");
   return (
     <Section
       id="fr-evidence"
       layout="split"
-      title={aheadOfC ? "Faster in the measured workloads" : "Measured against C Oniguruma"}
+      title="Compare the work your application needs"
       intro={
         <>
-          Three workloads, two hosts. The chart shows relative throughput against C Oniguruma,
-          averaged geometrically across tasks and hosts. Each case must reproduce the reference
-          matches before it is timed.
+          Our regex corpus separates simple expressions, complex expressions and advanced Oniguruma
+          features. Patterns come from identifiable projects, with pinned sources, explicit
+          operation boundaries and checked results. TextMate Scanner replays have their own
+          workload.
         </>
       }
       note={
         <>
-          Rust&rsquo;s <code>regex</code> crate and PCRE2 JIT win most text tasks they support. C
-          Oniguruma wins some individual tasks, and compilation results are mixed. Compare engines
-          for the syntax and workloads your application needs.
+          The source-backed suite is ready for measurement. New performance claims will use repeated
+          runs of these workloads, with unsupported cases and differing results listed explicitly.
         </>
       }
     >
-      <PerformanceChart />
-      <EngineComparisonTable />
-      <Measured
-        on={engineComparison.measured}
-        machine={`Blacksmith runners. ${hosts}`}
-        revision={<code>{engineComparison.commit.slice(0, 8)}</code>}
-      >
-        <Link to="/perf/engine-comparison">
-          Per-host figures, publication history and the raw data
-        </Link>
-      </Measured>
+      <p>
+        <Link to="/perf/regex-workloads">Inspect the regex workloads and measurement rules</Link>
+      </p>
     </Section>
   );
 }

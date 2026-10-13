@@ -14,8 +14,9 @@ Ferroni ports Oniguruma's parser, compiler and optimizer line by line,
 verifies UTF-8 behavior against the upstream test suite, and adds an
 idiomatic Rust API. No C compiler or bindgen required.
 
-Use it for TextMate grammars, patterns with look-around or backreferences,
-or replacing C Oniguruma in a Rust application.
+Use it to match, extract and replace text with patterns that need look-around
+or backreferences, or to replace C Oniguruma in a Rust application. The
+TextMate Scanner API is also available for grammar consumers such as Ferriki.
 
 **[Explore Ferroni →](https://ferroni.dev)** — matching examples, a visual
 scanner walkthrough, compatibility evidence and measured performance.
@@ -50,25 +51,11 @@ and [untrusted input](https://ferroni.dev/guide/untrusted-input).
 When your patterns fit Rust's [`regex`](https://crates.io/crates/regex)
 crate, prefer its guaranteed linear-time matching.
 
-## Measured performance
-
-The [October 13, 2026 Blacksmith comparison](https://ferroni.dev/perf/engine-comparison)
-measures merged commit `d791bf1b` on virtual M4 Pro and x86-64
-runners. Across accepted tasks and both hosts, Ferroni is
-2.3× faster than C Oniguruma on everyday patterns,
-1.5× faster on advanced patterns and
-12× faster on three portable highlighting documents.
-Against PCRE2 JIT, it is 2.0× slower on compatible everyday
-patterns and 3.1× slower on compatible advanced patterns,
-but 9.9× faster on those scanner replays.
-These geometric means describe the measured workloads and adapters;
-the comparison page retains coverage, per-host results and raw evidence.
-
 ## Documentation
 
 - [Getting started](https://ferroni.dev/guide/getting-started) — captures, iteration, options, errors and the Scanner API.
 - [API reference](https://docs.rs/ferroni) — every public type and function.
-- [Benchmarks](https://ferroni.dev/perf/engine-comparison) — workloads, comparison engines, measurement conditions and raw data.
+- [Regex workloads](https://ferroni.dev/perf/regex-workloads) — source-backed patterns, operation contracts and comparison methodology; TextMate Scanner is a separate workload.
 - [Migrating to 2.0](https://ferroni.dev/guide/migrating-to-2) — breaking changes with before and after code.
 
 ## Project status and contributing

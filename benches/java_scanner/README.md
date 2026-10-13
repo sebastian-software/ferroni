@@ -26,13 +26,9 @@ cargo bench --locked --bench java_scanner_bench -- --baseline java-before
 
 ## Baseline diagnosis
 
-On merged Ferroni `0ae2500`, all 3,920 scanner results and capture ranges
-match pinned C Oniguruma `f95747b`. Two ordinary release runs use 30 samples,
-one-second warmup and three-second measurement per case. The document means
-are 12.15 and 11.97 ms; group 15 is 2.97/2.99 ms, group 19 is 2.88/2.82 ms,
-and group 5 is 2.42/2.37 ms. The raw samples and estimates live in `results/`.
-These scanner timings are not HTML timings and do not change the six
-remaining HTML misses in the curated comparison.
+All 3,920 scanner results and capture ranges are checked against pinned C
+Oniguruma before timing. Retired measurements are available in Git history;
+new timing comparisons need independent repeated runs and equivalent boundaries.
 
 Independent per-pattern searches, with each result also validated against C,
 identify two unsuccessful lookaheads in groups 15 and 19:

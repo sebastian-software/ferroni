@@ -46,8 +46,8 @@ Detects alternations consisting entirely of literal strings and replaces them at
 - **Optimizer**: the trie node carries the alternation's byte length range and start bytes. A folded trie also carries each literal as `unravel_case_fold_string` would expand it (runs of plain bytes, letter classes, multi-character segments), and C's optimizer pass reads that form (`optimize_unravelled`), so the expression keeps C's optimizer: in `(?i)(?<=\s)(align|…|zero)(?=\s=)` C searches for the `=` 4 to 15 bytes ahead rather than for the words' first letters. Where that form leaves C without a map, the Rust-only start maps take the trie's start bytes. Over the 573 Shiki patterns with a folded trie, 445 now get C's optimizer and 125 a Rust-only start map where C has none (before: 329 and 124, with 120 deviating from C); the remaining 3 put a folded trie beside other branches, whose maps C merges in branch order. Compiling all Shiki patterns takes 0.8% more instructions.
 - **Impact**: CSS tokenization 35% faster (3.76x → 2.46x vs JS); CSS `codeToHtml` reaches JS parity (1.65x → 1.04x)
 - **Bounds**: `MAX_NESTED_TRIE_PATHS = 8192` caps path extraction; CClass expansion limited to ≤16 single-byte members per class
-- **Detailed analysis**: [`/perf/html-entity-trie-optimization`](/perf/html-entity-trie-optimization)
-- **Negative-lookahead extension**: On the captured C++ workload, scanner replay takes 40–44% less time and finished inline HTML takes 35–36% less time. Uncached C++ scanner construction plus teardown costs 3–5% more. The [isolated comparison](https://github.com/sebastian-software/ferroni/tree/main/benches/highlighting_results/negative-lookahead-literal-tries) retains the paired 20-format HTML measurements, focused outlier repeats, compiler costs, and parity checks. Trie storage remains bounded by the accepted literal input and uses the existing construction and matching paths.
+- **Detailed analysis**: [`/perf/html-entity-trie-optimization`](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/html-entity-trie-optimization.mdx)
+- **Negative-lookahead extension**: On the captured C++ workload, scanner replay takes 40–44% less time and finished inline HTML takes 35–36% less time. Uncached C++ scanner construction plus teardown costs 3–5% more. The [isolated comparison](https://github.com/sebastian-software/ferroni/tree/88b27c12ddaad6f8f411766f6cb39f84fa393d86/benches/highlighting_results/negative-lookahead-literal-tries) retains the paired 20-format HTML measurements, focused outlier repeats, compiler costs, and parity checks. Trie storage remains bounded by the accepted literal input and uses the existing construction and matching paths.
 
 #### RegSet first-byte dispatch and skip needle (`src/regset.rs`)
 
@@ -65,21 +65,21 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Trigger**: the existing optimizer selects `StrFast` with an exact string longer than one byte.
 - **Execution**: compilation creates an owned `memchr::memmem::Finder`, reused by forward literal searches. The optimizer's string, distance bounds, search slice, candidate positions, and VM attempts remain unchanged. Single-byte searches still use `memchr`; backward and encoding-step searches keep their existing paths.
 - **Bounds**: one optional pointer per compiled regex; eligible expressions additionally own a boxed finder and a copy of the exact string, bounded by `OPT_EXACT_MAXLEN` (24 bytes). Search adds no allocation or shared mutable state. No new dependency or unsafe code.
-- **Validation and measurements**: [simple-pattern profiling](/perf/simple-pattern-profiling), including bounded-search and limit comparisons against the previous search path, cache/C parity, compilation costs, memory layout, and repeated workload measurements.
+- **Validation and measurements**: [simple-pattern profiling](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/simple-pattern-profiling.mdx), including bounded-search and limit comparisons against the previous search path, cache/C parity, compilation costs, memory layout, and repeated workload measurements.
 
 #### Unicode class range lookup (`src/regexec.rs`)
 
 - **Trigger**: multibyte character classes with more than four sorted intervals.
 - **Execution**: after the existing table-length and endpoint checks, `is_in_code_range` views the range words as pairs and searches for the containing interval. It returns immediately for an inclusive hit; otherwise it searches the left or right subslice, excluding the tested midpoint. Each iteration strictly shrinks the slice. This preserves C's membership result for sorted, disjoint intervals without requiring its lower-bound search to finish at a leaf. Small-table fast paths remain unchanged.
 - **Bounds**: logarithmic search, constant auxiliary space, no allocations, new metadata, generated-table changes, dependencies, or unsafe code. Encoding, byte consumption, backtracking, and limits keep their existing paths.
-- **Validation and measurements**: [Unicode interval search refinement](/perf/unicode-range-lookup-refinement), including an exhaustive Unicode-range sweep, malformed table bounds, cache/plain/C checks, rejected alternatives, and a repeated 41-case before/after matrix. The earlier partition-search evaluations remain linked as historical evidence.
+- **Validation and measurements**: [Unicode interval search refinement](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/unicode-range-lookup-refinement.mdx), including an exhaustive Unicode-range sweep, malformed table bounds, cache/plain/C checks, rejected alternatives, and a repeated 41-case before/after matrix. The earlier partition-search evaluations remain linked as historical evidence.
 
 #### Adjacent ASCII class runs (`src/regcomp.rs`, `src/regexec.rs`)
 
 - **Trigger**: consecutive identical, non-negated `CClass` instructions whose bitsets contain only ASCII bytes, with an ASCII-compatible encoding. Existing equality/case-pair fast paths remain unchanged.
 - **Execution**: a post-compile pass marks each eligible prefix with `CClassRun`. All instruction addresses remain valid, including branches into a suffix. Each dispatch checks at most 255 bytes and preserves the failure position. Fused one-instruction look-behinds still evaluate only their original class. Backward searches whose matching range extends past the logical end execute classes one at a time to preserve the existing clamp.
 - **Bounds**: one linear pass over bytecode, existing bitsets reused, no extra heap allocation, dependency, or unsafe code. Longer runs continue at their remaining suffix.
-- **Validation and measurements**: [ASCII class run evaluation](/perf/ascii-class-runs). Tests compare raw results, captures, and deterministic limit outcomes against unbatched instructions, including malformed UTF-8 and backward or bounded searches. The opt-in cache and C differential suite also exercise the new opcode.
+- **Validation and measurements**: [ASCII class run evaluation](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/ascii-class-runs.mdx). Tests compare raw results, captures, and deterministic limit outcomes against unbatched instructions, including malformed UTF-8 and backward or bounded searches. The opt-in cache and C differential suite also exercise the new opcode.
 
 #### Leading atomic ASCII class search filter (`src/regexec.rs`)
 
@@ -87,7 +87,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Execution**: a class run ending at the wrong delimiter cannot match from any suffix, so the filter skips that run. A run ending at the right delimiter still enters the VM, including every interior start if the tail fails. The run end is remembered to avoid repeating the prefix scan.
 - **Fallbacks**: a per-match retry limit of one, any search retry budget, stack or time limit, or callouts disables the filter. Every skipped prefix would consume exactly one retry and cannot enter its tail; higher per-match limits therefore keep their original outcomes.
 - **Bounds**: constant scratch space, linear prefix scanning, no new compiled metadata, opcode, allocation, dependency, or unsafe code. Backward and equal-endpoint searches retain their existing paths.
-- **Validation and measurements**: [atomic class prefix evaluation](/perf/atomic-class-prefix), including 500,736 exact original-path comparisons, C/cache differential cases, repeated general workloads, and broader scanner/search/compilation checks.
+- **Validation and measurements**: [atomic class prefix evaluation](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/atomic-class-prefix.mdx), including 500,736 exact original-path comparisons, C/cache differential cases, repeated general workloads, and broader scanner/search/compilation checks.
 
 #### Leading class runs and bytecode start bytes (`src/leading_run.rs`, `src/regexec.rs`)
 
@@ -101,7 +101,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Malformed UTF-8**: the reverse scan needs a valid UTF-8 segment, and falls back to attempting each position otherwise. A malformed lead byte lets the VM's run step over a byte the scan stops at. The forward scan steps like the VM's star loops and stops early where the VM could decide differently.
 - **Bounds**: one boxed plan and one boxed 256-byte map per eligible expression. The scans are linear; the reverse scan never passes the previous occurrence. The paths are out of line. No new dependency or unsafe code.
 - **Impact**: email-like scans 22–31×, number extraction 11×, `[a-z]+ing\b`, `\w+ing\b` and captured log fields 2.6–2.9×. Other expressions change by −1.5% to +1.4% in instructions, and TextMate scanner searches by at most ±0.2%.
-- **Validation and measurements**: [leading-run skips](/perf/leading-run-skips). Tests compare results, capture bounds and limit errors with the original path, exhaustively on small inputs with malformed UTF-8 and on 4,000 generated expressions.
+- **Validation and measurements**: [leading-run skips](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/leading-run-skips.mdx). Tests compare results, capture bounds and limit errors with the original path, exhaustively on small inputs with malformed UTF-8 and on 4,000 generated expressions.
 
 #### RegSet failed-run skips (`src/leading_run.rs`, `src/regset.rs`)
 
@@ -109,7 +109,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Whole assertions**: a sole positive lookahead can also plan `\w?C*` when the class contains every ASCII word byte. The optional word, compiled program, grammar expression and C optimizer stay unchanged. Its scan stops before non-ASCII bytes. A restored attempt position followed by a consuming suffix has no plan: `(?=[a-z]*a)b` must still try the later `b` in `aba`.
 - **Guards**: callouts, start-sensitive instructions, back references, capture-aware empty checks, FIND_LONGEST, search retry budgets, stack and time limits retain the original path. FIND_NOT_EMPTY disables assertion skips because it may reject an already successful assertion after its cut. With a per-match retry limit, an optional-word assertion only skips after an ASCII word start: that failed attempt tried both prefix paths and bounds later attempts' retries. Nested leading marks disable the optional-word extension.
 - **Bounds**: reuse the existing boxed plan and add two flags. At most eight scans of the compiled instructions inspect leading marks; no pattern expansion, opcode, dependency or unsafe code is added. A runtime scan stays within the subject. Crossing a competing match's start bound finishes only that fallback entry.
-- **Impact**: the captured Java document replay takes 35.5% / 36.7% less time in two ABBA pairs. Finished Java inline HTML takes 17.6% / 23.0% less time on the large curated fixture and beats both Shiki backends in both sizes and runs. The full 20-format comparison gains one format (14/20 to 15/20), with no repeated large regression. Source-pinned reports and ordinary build receipts are retained in `benches/highlighting_results/java-regset-run-skips/`.
+- **Impact**: the captured Java document replay takes 35.5% / 36.7% less time in two ABBA pairs. Finished Java inline HTML takes 17.6% / 23.0% less time on the large curated fixture and beats both Shiki backends in both sizes and runs. The full 20-format comparison gains one format (14/20 to 15/20), with no repeated large regression. Source-pinned reports and ordinary build receipts are available in the [Git history](https://github.com/sebastian-software/ferroni/tree/88b27c12ddaad6f8f411766f6cb39f84fa393d86/benches/highlighting_results/java-regset-run-skips).
 - **Validation**: the Java replay validates every winner and capture against C. The RegSet matrix compares the original path with skips over bounded starts, Unicode and malformed input, captures, competing patterns, memoized and plain searches, and deterministic match/search/stack limits. The individual-search assertion regression covers restored starts.
 
 #### RegSet required literals (`src/required_literals.rs`, `src/regset.rs`)
@@ -153,8 +153,8 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Observability**: every position a jump passes would fail its first check with exactly one backtrack. The jumps share the leading-run gates: they stay off for FIND_LONGEST, a search retry budget, stack or time limits, a per-match limit of one, and callouts. A jump over bytes that are not valid UTF-8 is not taken, and a jump in a range-bounded position loop never passes that loop's last attempt.
 - **Not applied**: expressions whose C optimizer already searches a string at the match start (for `^`, with its line-anchor check). Also bare alternations, which take `ac_alt`.
 - **Bounds**: at most 16 leading classes per expression, and one lazily built automaton per alternation. The scans are linear, and no new dependency or unsafe code is added.
-- **Impact**: `\s*,\s*` 14×, `\b\w+\(` 11×, `(?i)regex` 9.2×, `^\s*//` 6.9×, `(?i)regular expression` 4.4×, keyword alternations 3.2×; look-behind literals ([2026-09 iteration round](/perf/iteration-and-fused-loops)): `(?<=took=)\d+` 21×. Other expressions change by −1.4% to +2.2% in instructions. TextMate scanner searches change by at most ±0.2%, and their compilation by at most +0.6%.
-- **Validation and measurements**: [leading-check jumps](/perf/leading-check-jumps).
+- **Impact**: `\s*,\s*` 14×, `\b\w+\(` 11×, `(?i)regex` 9.2×, `^\s*//` 6.9×, `(?i)regular expression` 4.4×, keyword alternations 3.2×; look-behind literals ([2026-09 iteration round](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/iteration-and-fused-loops.mdx)): `(?<=took=)\d+` 21×. Other expressions change by −1.4% to +2.2% in instructions. TextMate scanner searches change by at most ±0.2%, and their compilation by at most +0.6%.
+- **Validation and measurements**: [leading-check jumps](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/leading-check-jumps.mdx).
 
 #### Case-insensitive literal alternations (`src/leading_run.rs`, `src/literal_trie.rs`)
 
@@ -163,7 +163,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Observability**: the gates of the leading-check jumps.
 - **Bounds**: one lazily built automaton of at most 64 prefixes per trie, plus 32 bytes per folded trie. The scan runs in windows of 256 bytes, then twice as large each time, so a search scans in proportion to the distance it moves. No new dependency or unsafe code.
 - **Impact**: `(?i)(?:error|warn|fatal|panic)` over a log 9.2× (from 19× to 2.1× behind `regex`), over prose 3.0×, keyword alternations over code 1.7×, mostly non-ASCII text 3.2×.
-- **Validation and measurements**: [case-insensitive alternations and grammar compilation](/perf/folded-alternations-and-grammar-compilation).
+- **Validation and measurements**: [case-insensitive alternations and grammar compilation](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/folded-alternations-and-grammar-compilation.mdx).
 
 #### Line starts after `.*` (`src/regexec.rs`)
 
@@ -171,7 +171,7 @@ Pre-computes a 256-entry lookup table mapping each possible input byte to the su
 - **Execution**: after a failed attempt, `memchr` finds the next newline instead of the character loop. It applies where the bytes up to the newline are valid UTF-8 or the encoding is single-byte, so the character steps would land on the same position. Otherwise the loop steps as before. The skip runs out of line; inlined, it changed the code of the other position loops in the same function.
 - **Bounds**: a `memchr` and a UTF-8 check over the skipped bytes, no new data.
 - **Impact**: `^.*status.*$` −51% instructions.
-- **Validation and measurements**: [case-insensitive alternations and grammar compilation](/perf/folded-alternations-and-grammar-compilation).
+- **Validation and measurements**: [case-insensitive alternations and grammar compilation](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/folded-alternations-and-grammar-compilation.mdx).
 
 #### ASCII fast paths in VM execution (`src/regexec.rs`)
 
@@ -189,7 +189,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Untracked push captures**: `MEM_START_PUSH` / `MEM_END_PUSH` skip their bookkeeping when no region is requested and captures cannot influence matching; kept when a match stack limit is set. A search with a region (`onig_search`, RegSet fallback entries) tracks captures only in its attempt at the start position, the common case of a scanner match; the other attempts run untracked, and a match among them runs again with tracking to fill the region. That second pass does not count against the retry limits. Tracking every attempt would cost a failing attempt its capture pushes; running the start attempt untracked as well would repeat every match at the start, which doubled the cost of a capture in a loop such as `(.)*`. The other attempts run untracked only where the repeated match should cost less than tracking every attempt (`two_pass_capture_fill_pays`): with push captures, unless the optimizer finds a literal at the match start, whose candidates often match; without them, which leaves an untracked attempt little to save, unless `.` repeats without an upper bound (`.*?`, `(.)+`) and a match may run to the end of the line. Otherwise every attempt records its captures, as in C. Liquid's `\((.(?!\.\.))+\)` goes from 1.78× to 1.18× C's instructions and vyper's `\s*([^#(.\\_[:alpha:]\s].*?)(?=#|$)` from 1.86× to 1.25×. A length bound alone is not enough: tracking every attempt of `\s*\b(case|match)` or of keyword alternations behind a look-behind costs 5–10% more than repeating their short matches.
 - **Range-driven case-fold expansion**: `(?i)` classes are expanded by walking their ranges through the sorted fold keys.
 - **Impact**: CSS tokenize -79%, TypeScript documents tokenized line by line -25%, CSS grammar compile -11% (wall clock).
-- **Detailed analysis**: [`/perf/performance-structure-analysis`](/perf/performance-structure-analysis)
+- **Detailed analysis**: [`/perf/performance-structure-analysis`](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/performance-structure-analysis.mdx)
 
 #### Second 2026-09 pass (`src/regset.rs`, `src/first_bytes.rs`, `src/regcomp.rs`, `src/regexec.rs`, `src/regparse.rs`, `src/literal_trie.rs`)
 
@@ -202,7 +202,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Guarded backtrack pushes** (`src/first_bytes.rs`): a post-compile pass turns a `Push` whose main path can only start with some bytes into `PushOrJumpExact1` (one byte, upstream's instruction) or the Rust-only `PushOrJumpByteSet`, so the VM skips the push when the current byte rules the main path out. The derivation only passes instructions whose effects backtracking undoes and gives up after 64 instructions. The skipped push still counts the backtracks the push would take against the retry and time limits: a loop that grows the stack without consuming input is bounded only by those limits, and without the count it pushed three times as many entries as C before the limit tripped. The count is derived at compile time by running the main path on a model of the backtracking stack; the model follows negative look-arounds whose body cannot consume the current byte. Where the count depends on the position (a look-behind or check in front of nested pushes; at most six checks), the guard counts the largest count, but only while nothing but the retry limit in match reads the count; if that upper bound trips the limit, the attempt starts over with those guards pushing, which counts exactly. With a search budget, a time limit, callouts or FIND_LONGEST such guards always push.
 - **Fast-path census**: `grammar_fast_path_census` asserts how many grammar patterns reach each of these paths, fused look-behinds and push guards included.
 - **Impact**: warm TypeScript line -57%, TypeScript document -44%, Rust document -37%, CSS document -33%, CSS grammar compile -25%, TypeScript compile -15% (wall clock).
-- **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](/perf/performance-structure-analysis#second-pass)
+- **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/performance-structure-analysis.mdx#second-pass)
 
 #### Match bounds without a region (`src/api.rs`, `src/regexec.rs`)
 
@@ -210,7 +210,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Execution**: the search runs without a region (`onig_search_bounds`). The match ends at its attempt position plus the match length, which `OP_END` records in the `MatchArg`. The iterator keeps one `MatchArg` for all its searches instead of taking and resetting the thread's cached one per match. Expressions with groups also skip the tracked second pass that filled the region.
 - **Also**: as in C, the inner search functions return the position and leave the region in the `MatchArg`; the entry points take it out once.
 - **Impact**: iterating `\d+`, `\w+`, identifiers and whitespace splits takes 22–24% fewer instructions.
-- **Validation and measurements**: [match iteration, lazy loops and look-behind anchors](/perf/iteration-and-fused-loops).
+- **Validation and measurements**: [match iteration, lazy loops and look-behind anchors](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/iteration-and-fused-loops.mdx).
 
 #### Fused lazy `.*?c` loop (`src/regexec.rs`)
 
@@ -241,7 +241,7 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Output**: unchanged. Tests compare each cache with the path it replaces, on first and repeated use, and the map operations with the byte loops.
 - **Bounds**: per thread, at most 32 ctype entries and 32 expansions, each the size of the class it stands for (a few KiB for `\w`). Lookups compare the whole key.
 - **Impact**: grammar compilation −38% instructions for CSS, −15% for TypeScript, −6% for Rust (CSS 25.6 → 17.3 ms).
-- **Measurements**: [case-insensitive alternations and grammar compilation](/perf/folded-alternations-and-grammar-compilation#grammar-compilation).
+- **Measurements**: [case-insensitive alternations and grammar compilation](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/folded-alternations-and-grammar-compilation.mdx#grammar-compilation).
 
 #### Single-byte star loops (`src/regcomp.rs`)
 

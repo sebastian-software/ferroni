@@ -94,6 +94,11 @@ harness = false
 required-features = ["ffi"]
 
 [[bench]]
+name = "production_regex_bench"
+harness = false
+required-features = ["ffi"]
+
+[[bench]]
 name = "regression_bench"
 harness = false
 

@@ -146,6 +146,12 @@ jobs:
       # feature (battle_bench, battle_mem_onig).
       - name: Check ffi feature
         run: cargo check --features ffi --all-targets
+      - name: Check source-backed regex corpus and comparison rules
+        run: |
+          python3 scripts/check-production-corpus.py
+          python3 -m unittest discover -s scripts/tests -p 'test_production*.py'
+      - name: Validate production regex tasks against source oracles
+        run: python3 scripts/compare-production.py validate "$RUNNER_TEMP/production-validation" --engines rust,c,pcre2_jit,pcre2,fancy_regex,fancy_regex_seek,regex
       # The original breakage only showed in the published layout (benches/
       # and scripts/ are excluded from the crate), so also check the packaged
       # artifact with the sources supplied via FERRONI_ONIGURUMA_DIR.
