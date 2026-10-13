@@ -1,0 +1,19 @@
+{
+  "expected_main_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7",
+  "merge_pr": 357,
+  "source_tree": "5f4870a97b7a7eeedf3d05e16a327627a492144f",
+  "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+  "inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+  "run_id": 38439201637,
+  "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637",
+  "inputs": {
+    "platform": "both",
+    "cases": "all",
+    "measure_seconds": "5"
+  },
+  "baseline_runs": [
+    37989957431,
+    37999607702
+  ],
+  "previous_run": 38410640392
+}

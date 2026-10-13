@@ -1,0 +1,50 @@
+{
+  "unsupported": {
+    "oniguruma_features/fancy_regex/subexp_call_balanced": {
+      "engine": "fancy_regex",
+      "id": "oniguruma_features/fancy_regex/subexp_call_balanced",
+      "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+    },
+    "oniguruma_features/fancy_regex_seek/subexp_call_balanced": {
+      "engine": "fancy_regex_seek",
+      "id": "oniguruma_features/fancy_regex_seek/subexp_call_balanced",
+      "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+    },
+    "oniguruma_features/pcre2_jit/absent_comments": {
+      "engine": "pcre2_jit",
+      "id": "oniguruma_features/pcre2_jit/absent_comments",
+      "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+    },
+    "oniguruma_features/pcre2/absent_comments": {
+      "engine": "pcre2",
+      "id": "oniguruma_features/pcre2/absent_comments",
+      "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+    },
+    "oniguruma_features/fancy_regex_seek/conditional_brackets": {
+      "engine": "fancy_regex_seek",
+      "id": "oniguruma_features/fancy_regex_seek/conditional_brackets",
+      "reason": "match 1: [(68, 87), (68, 69)], Oniguruma [(26, 41), (-1, -1)]"
+    },
+    "regex_tasks/fancy_regex/emoji_graphemes": {
+      "engine": "fancy_regex",
+      "id": "regex_tasks/fancy_regex/emoji_graphemes",
+      "reason": "compile: Parsing error at position 52: Invalid escape: \\X"
+    },
+    "regex_tasks/fancy_regex_seek/emoji_graphemes": {
+      "engine": "fancy_regex_seek",
+      "id": "regex_tasks/fancy_regex_seek/emoji_graphemes",
+      "reason": "compile: Parsing error at position 52: Invalid escape: \\X"
+    },
+    "regex_tasks/fancy_regex_seek/json_objects_recursive": {
+      "engine": "fancy_regex_seek",
+      "id": "regex_tasks/fancy_regex_seek/json_objects_recursive",
+      "reason": "match 0: [(136, 152)], Oniguruma [(4, 208)]"
+    },
+    "regex_tasks/onigmo/variable_lookbehind": {
+      "engine": "onigmo",
+      "id": "regex_tasks/onigmo/variable_lookbehind",
+      "reason": "compile: Onigmo error -122"
+    }
+  },
+  "equivalent": {}
+}

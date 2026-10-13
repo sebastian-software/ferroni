@@ -1,0 +1,932 @@
+[
+  {
+    "profile": "linux-x86-64",
+    "group": "oniguruma",
+    "host": {
+      "runner_profile": "linux-x86-64",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "system": "Linux",
+      "machine": "x86_64",
+      "cpu": "AMD EPYC",
+      "cpu_features": "avx2 avx512bw avx512f bmi2 sse4_2",
+      "cpus": 4,
+      "memory_bytes": 16555134976,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "6.6.141",
+      "image": {
+        "ImageOS": "ubuntu24",
+        "ImageVersion": "20260819_203438"
+      },
+      "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38410640392"
+    },
+    "build": {
+      "git_commit": "88b27c12ddaad6f8f411766f6cb39f84fa393d86",
+      "git_status": "",
+      "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+      "onigmo_dir": ".cache/upstream/onigmo-ruby",
+      "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+      "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+      "binaries": {
+        "battle_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-484558f3a99ab49b",
+          "sha256": "c7c59a373a7a94e6593674015bb3587d82f9d7de682bf80d6dc2d4f4015389e2"
+        }
+      },
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "build_command": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--features",
+        "onigmo",
+        "--no-run",
+        "--message-format=json",
+        "--bench",
+        "battle_bench"
+      ],
+      "build_environment": {
+        "PCRE2_SYS_STATIC": "1"
+      }
+    },
+    "notes": {
+      "unsupported": {
+        "oniguruma_features/fancy_regex/subexp_call_balanced": {
+          "engine": "fancy_regex",
+          "id": "oniguruma_features/fancy_regex/subexp_call_balanced",
+          "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+        },
+        "oniguruma_features/fancy_regex_seek/subexp_call_balanced": {
+          "engine": "fancy_regex_seek",
+          "id": "oniguruma_features/fancy_regex_seek/subexp_call_balanced",
+          "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+        },
+        "oniguruma_features/pcre2_jit/absent_comments": {
+          "engine": "pcre2_jit",
+          "id": "oniguruma_features/pcre2_jit/absent_comments",
+          "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+        },
+        "oniguruma_features/pcre2/absent_comments": {
+          "engine": "pcre2",
+          "id": "oniguruma_features/pcre2/absent_comments",
+          "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+        },
+        "oniguruma_features/fancy_regex_seek/conditional_brackets": {
+          "engine": "fancy_regex_seek",
+          "id": "oniguruma_features/fancy_regex_seek/conditional_brackets",
+          "reason": "match 1: [(68, 87), (68, 69)], Oniguruma [(26, 41), (-1, -1)]"
+        },
+        "regex_tasks/fancy_regex/emoji_graphemes": {
+          "engine": "fancy_regex",
+          "id": "regex_tasks/fancy_regex/emoji_graphemes",
+          "reason": "compile: Parsing error at position 52: Invalid escape: \\X"
+        },
+        "regex_tasks/fancy_regex_seek/emoji_graphemes": {
+          "engine": "fancy_regex_seek",
+          "id": "regex_tasks/fancy_regex_seek/emoji_graphemes",
+          "reason": "compile: Parsing error at position 52: Invalid escape: \\X"
+        },
+        "regex_tasks/fancy_regex_seek/json_objects_recursive": {
+          "engine": "fancy_regex_seek",
+          "id": "regex_tasks/fancy_regex_seek/json_objects_recursive",
+          "reason": "match 0: [(136, 152)], Oniguruma [(4, 208)]"
+        },
+        "regex_tasks/onigmo/variable_lookbehind": {
+          "engine": "onigmo",
+          "id": "regex_tasks/onigmo/variable_lookbehind",
+          "reason": "compile: Onigmo error -122"
+        }
+      },
+      "equivalent": {}
+    },
+    "settings": {
+      "measure_seconds": 5.0,
+      "warm_up_seconds": 0.5,
+      "sample_size": 30
+    }
+  },
+  {
+    "profile": "linux-x86-64",
+    "group": "shared",
+    "host": {
+      "runner_profile": "linux-x86-64",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "system": "Linux",
+      "machine": "x86_64",
+      "cpu": "AMD EPYC",
+      "cpu_features": "avx2 avx512bw avx512f bmi2 sse4_2",
+      "cpus": 4,
+      "memory_bytes": 16555134976,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "6.6.141",
+      "image": {
+        "ImageOS": "ubuntu24",
+        "ImageVersion": "20260819_203438"
+      },
+      "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38410640392"
+    },
+    "build": {
+      "git_commit": "88b27c12ddaad6f8f411766f6cb39f84fa393d86",
+      "git_status": "",
+      "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+      "onigmo_dir": ".cache/upstream/onigmo-ruby",
+      "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+      "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+      "binaries": {
+        "battle_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-484558f3a99ab49b",
+          "sha256": "06b86f64e3659f592d4010b1001ed8f12f9c35d512c613eb901b7744d8842874"
+        }
+      },
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "build_command": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--features",
+        "onigmo",
+        "--no-run",
+        "--message-format=json",
+        "--bench",
+        "battle_bench"
+      ],
+      "build_environment": {
+        "PCRE2_SYS_STATIC": "1"
+      }
+    },
+    "notes": {
+      "unsupported": {
+        "regex_tasks/regex/unicode_case_folding": {
+          "engine": "regex",
+          "id": "regex_tasks/regex/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        },
+        "regex_tasks/pcre2_jit/unicode_case_folding": {
+          "engine": "pcre2_jit",
+          "id": "regex_tasks/pcre2_jit/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        },
+        "regex_tasks/pcre2/unicode_case_folding": {
+          "engine": "pcre2",
+          "id": "regex_tasks/pcre2/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        },
+        "regex_tasks/fancy_regex/unicode_case_folding": {
+          "engine": "fancy_regex",
+          "id": "regex_tasks/fancy_regex/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        },
+        "regex_tasks/fancy_regex_seek/unicode_case_folding": {
+          "engine": "fancy_regex_seek",
+          "id": "regex_tasks/fancy_regex_seek/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        }
+      },
+      "equivalent": {}
+    },
+    "settings": {
+      "measure_seconds": 5.0,
+      "warm_up_seconds": 0.5,
+      "sample_size": 30
+    }
+  },
+  {
+    "profile": "linux-x86-64",
+    "group": "textmate",
+    "host": {
+      "runner_profile": "linux-x86-64",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "system": "Linux",
+      "machine": "x86_64",
+      "cpu": "AMD EPYC",
+      "cpu_features": "avx2 avx512bw avx512f bmi2 sse4_2",
+      "cpus": 4,
+      "memory_bytes": 16555134976,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "6.6.141",
+      "image": {
+        "ImageOS": "ubuntu24",
+        "ImageVersion": "20260819_203438"
+      },
+      "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38410640392"
+    },
+    "build": {
+      "git_commit": "88b27c12ddaad6f8f411766f6cb39f84fa393d86",
+      "git_status": "",
+      "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+      "onigmo_dir": ".cache/upstream/onigmo-ruby",
+      "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+      "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+      "binaries": {
+        "cpp_scanner_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/cpp_scanner_bench-0815b71a4d0f6034",
+          "sha256": "eba7ab7a0e06e5037c96cab727abeb12fe12c2d777b9ede755312e4a23e262fa"
+        },
+        "scss_scanner_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/scss_scanner_bench-fd4630f4bda7ca35",
+          "sha256": "9fc3c7acb3c4d1616895db1eeeb48752788f9be11ec2179e710290640234b5bb"
+        },
+        "shiki_scanner_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/shiki_scanner_bench-8ba094858080c9b4",
+          "sha256": "f499835d4aca7850ff0ed2e8bf1bdf589573557a4d64175a6c206e1bd87e1234"
+        },
+        "battle_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-484558f3a99ab49b",
+          "sha256": "f765a4fafb12693d21a2ab43488a240a9b870f478863195b46368f1fc0b92dea"
+        },
+        "ferriki_scanner_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/ferriki_scanner_bench-24f965b11d1eaf45",
+          "sha256": "e720626b6e8de2ed85de62362141e45a04618406ecc8b48d8a3dd75246aa3245"
+        },
+        "java_scanner_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/java_scanner_bench-068deeb3e29640d2",
+          "sha256": "89f5d018303f6d0ae30acb5b89af6d7f026770f8fc25e89b39383182445b0411"
+        }
+      },
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "build_command": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--features",
+        "onigmo",
+        "--no-run",
+        "--message-format=json",
+        "--bench",
+        "battle_bench",
+        "--bench",
+        "cpp_scanner_bench",
+        "--bench",
+        "ferriki_scanner_bench",
+        "--bench",
+        "java_scanner_bench",
+        "--bench",
+        "scss_scanner_bench",
+        "--bench",
+        "shiki_scanner_bench"
+      ],
+      "build_environment": {
+        "PCRE2_SYS_STATIC": "1"
+      },
+      "node": "v24.21.0",
+      "shiki_js_lock_sha256": "c6f10d9a1909d6c16226d957a0eafc6011ef9899f43006ed4fa0a521761b5b7f"
+    },
+    "notes": {
+      "unsupported": {
+        "cpp_scanner/document_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "cpp_scanner/document_pcre2_jit",
+          "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+        },
+        "cpp_scanner/document_pcre2": {
+          "engine": "pcre2",
+          "id": "cpp_scanner/document_pcre2",
+          "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+        },
+        "cpp_scanner/document_onigmo": {
+          "engine": "onigmo",
+          "id": "cpp_scanner/document_onigmo",
+          "reason": "scanner 0, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+        },
+        "cpp_scanner/group_78_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "cpp_scanner/group_78_pcre2_jit",
+          "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+        },
+        "cpp_scanner/group_78_pcre2": {
+          "engine": "pcre2",
+          "id": "cpp_scanner/group_78_pcre2",
+          "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+        },
+        "cpp_scanner/group_78_onigmo": {
+          "engine": "onigmo",
+          "id": "cpp_scanner/group_78_onigmo",
+          "reason": "scanner 78, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+        },
+        "scss_scanner/document_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "scss_scanner/document_pcre2_jit",
+          "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+        },
+        "scss_scanner/document_pcre2": {
+          "engine": "pcre2",
+          "id": "scss_scanner/document_pcre2",
+          "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+        },
+        "scss_scanner/group_8_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "scss_scanner/group_8_pcre2_jit",
+          "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+        },
+        "scss_scanner/group_8_pcre2": {
+          "engine": "pcre2",
+          "id": "scss_scanner/group_8_pcre2",
+          "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+        },
+        "astro_scanner/document_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "astro_scanner/document_pcre2_jit",
+          "reason": "scanner 60, pattern \"\\\\\\u{ffff}\\\\uFEFF?(?i:(?=\\\\s*@charset\\\\b))\": PCRE2 at offset 6: PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"
+        },
+        "astro_scanner/document_pcre2": {
+          "engine": "pcre2",
+          "id": "astro_scanner/document_pcre2",
+          "reason": "scanner 60, pattern \"\\\\\\u{ffff}\\\\uFEFF?(?i:(?=\\\\s*@charset\\\\b))\": PCRE2 at offset 6: PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"
+        },
+        "astro_scanner/document_fancy_regex": {
+          "engine": "fancy_regex",
+          "id": "astro_scanner/document_fancy_regex",
+          "reason": "call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/document_fancy_regex_seek": {
+          "engine": "fancy_regex_seek",
+          "id": "astro_scanner/document_fancy_regex_seek",
+          "reason": "call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/document_fancy_regex_set": {
+          "engine": "fancy_regex_set",
+          "id": "astro_scanner/document_fancy_regex_set",
+          "reason": "call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/document_onigmo": {
+          "engine": "onigmo",
+          "id": "astro_scanner/document_onigmo",
+          "reason": "scanner 8, pattern \"(?!(?<![$_[:alnum:]])(?:(?<=\\\\.\\\\.\\\\.)|(?<!\\\\.))(?:\\\\b(export)\\\\s+)?(?:\\\\b(declare)\\\\s+)?\\\\b(const(?!\\\\s+enum\\\\b))(?![$_[:alnum:]])(?:(?=\\\\.\\\\.\\\\.)|(?!\\\\.)))((?=^|[;}]|((?<![$_[:alnum:]])(?:(?<=\\\\.\\\\.\\\\.)|(?<!\\\\.))(of|in)\\\\s+)|;|^\\\\s*$|^\\\\s*(?:abstract|async|\\\\bawait\\\\s+\\\\busing(?=\\\\s+(?!in\\\\b|of\\\\b(?!\\\\s*(?:of\\\\b|=)))[$_[:alpha:]])\\\\b\\\\b|break|case|catch|class|const|continue|declare|do|else|enum|export|finally|function|for|goto|if|import|interface|let|module|namespace|switch|return|throw|try|type|\\\\busing(?=\\\\s+(?!in\\\\b|of\\\\b(?!\\\\s*(?:of\\\\b|=)))[$_[:alpha:]])\\\\b|var|while)\\\\b)|((?<!(?:^|[^$._[:alnum:]])const)(?=\\\\s*$)))\": Onigmo error -122"
+        },
+        "astro_scanner/group_22_fancy_regex": {
+          "engine": "fancy_regex",
+          "id": "astro_scanner/group_22_fancy_regex",
+          "reason": "call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/group_22_fancy_regex_seek": {
+          "engine": "fancy_regex_seek",
+          "id": "astro_scanner/group_22_fancy_regex_seek",
+          "reason": "call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/group_22_fancy_regex_set": {
+          "engine": "fancy_regex_set",
+          "id": "astro_scanner/group_22_fancy_regex_set",
+          "reason": "call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        }
+      },
+      "equivalent": {
+        "cpp_scanner/document_shiki_js": {
+          "id": "cpp_scanner/document_shiki_js",
+          "engine": "shiki_js",
+          "engine_version": "4.5.0",
+          "calls": 4862,
+          "empty_capture_differences": 96,
+          "status": "ok"
+        },
+        "java_scanner/document_shiki_js": {
+          "id": "java_scanner/document_shiki_js",
+          "engine": "shiki_js",
+          "engine_version": "4.5.0",
+          "calls": 3920,
+          "empty_capture_differences": 16,
+          "status": "ok"
+        },
+        "java_scanner/group_15_shiki_js": {
+          "id": "java_scanner/group_15_shiki_js",
+          "engine": "shiki_js",
+          "engine_version": "4.5.0",
+          "calls": 592,
+          "empty_capture_differences": 16,
+          "status": "ok"
+        }
+      }
+    },
+    "settings": {
+      "measure_seconds": 5.0,
+      "warm_up_seconds": 0.5,
+      "sample_size": 30
+    }
+  },
+  {
+    "profile": "macos-arm64",
+    "group": "micro",
+    "host": {
+      "runner_profile": "macos-arm64",
+      "runner_label": "blacksmith-6vcpu-macos-26",
+      "system": "Darwin",
+      "machine": "arm64",
+      "cpu": "Apple M4 Pro (Virtual)",
+      "cpu_features": "",
+      "cpus": 6,
+      "memory_bytes": 25769803776,
+      "os": "macOS 26.3",
+      "kernel": "25.3.0",
+      "image": {
+        "ImageOS": "macos26",
+        "ImageVersion": "133416"
+      },
+      "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38410640392"
+    },
+    "build": {
+      "git_commit": "88b27c12ddaad6f8f411766f6cb39f84fa393d86",
+      "git_status": "",
+      "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+      "onigmo_dir": ".cache/upstream/onigmo-ruby",
+      "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+      "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+      "binaries": {
+        "battle_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-354a193bac4c33bd",
+          "sha256": "9ec54740e9cc99d7fdaad6a569895759571ec9c8a23222dbe709562b8fba3938"
+        }
+      },
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cc": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+      "build_command": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--features",
+        "onigmo",
+        "--no-run",
+        "--message-format=json",
+        "--bench",
+        "battle_bench"
+      ],
+      "build_environment": {
+        "PCRE2_SYS_STATIC": "1"
+      }
+    },
+    "notes": {
+      "unsupported": {},
+      "equivalent": {}
+    },
+    "settings": {
+      "measure_seconds": 5.0,
+      "warm_up_seconds": 0.5,
+      "sample_size": 30
+    }
+  },
+  {
+    "profile": "macos-arm64",
+    "group": "oniguruma",
+    "host": {
+      "runner_profile": "macos-arm64",
+      "runner_label": "blacksmith-6vcpu-macos-26",
+      "system": "Darwin",
+      "machine": "arm64",
+      "cpu": "Apple M4 Pro (Virtual)",
+      "cpu_features": "",
+      "cpus": 6,
+      "memory_bytes": 25769803776,
+      "os": "macOS 26.3",
+      "kernel": "25.3.0",
+      "image": {
+        "ImageOS": "macos26",
+        "ImageVersion": "133416"
+      },
+      "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38410640392"
+    },
+    "build": {
+      "git_commit": "88b27c12ddaad6f8f411766f6cb39f84fa393d86",
+      "git_status": "",
+      "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+      "onigmo_dir": ".cache/upstream/onigmo-ruby",
+      "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+      "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+      "binaries": {
+        "battle_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-354a193bac4c33bd",
+          "sha256": "9ec54740e9cc99d7fdaad6a569895759571ec9c8a23222dbe709562b8fba3938"
+        }
+      },
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cc": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+      "build_command": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--features",
+        "onigmo",
+        "--no-run",
+        "--message-format=json",
+        "--bench",
+        "battle_bench"
+      ],
+      "build_environment": {
+        "PCRE2_SYS_STATIC": "1"
+      }
+    },
+    "notes": {
+      "unsupported": {
+        "oniguruma_features/fancy_regex/subexp_call_balanced": {
+          "engine": "fancy_regex",
+          "id": "oniguruma_features/fancy_regex/subexp_call_balanced",
+          "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+        },
+        "oniguruma_features/fancy_regex_seek/subexp_call_balanced": {
+          "engine": "fancy_regex_seek",
+          "id": "oniguruma_features/fancy_regex_seek/subexp_call_balanced",
+          "reason": "match 0: [(4, 21), (17, 21)], Oniguruma [(4, 21), (4, 21)]"
+        },
+        "oniguruma_features/pcre2_jit/absent_comments": {
+          "engine": "pcre2_jit",
+          "id": "oniguruma_features/pcre2_jit/absent_comments",
+          "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+        },
+        "oniguruma_features/pcre2/absent_comments": {
+          "engine": "pcre2",
+          "id": "oniguruma_features/pcre2/absent_comments",
+          "reason": "compile: PCRE2 at offset 5: unrecognized character after (? or (?-"
+        },
+        "oniguruma_features/fancy_regex_seek/conditional_brackets": {
+          "engine": "fancy_regex_seek",
+          "id": "oniguruma_features/fancy_regex_seek/conditional_brackets",
+          "reason": "match 1: [(68, 87), (68, 69)], Oniguruma [(26, 41), (-1, -1)]"
+        },
+        "regex_tasks/fancy_regex/emoji_graphemes": {
+          "engine": "fancy_regex",
+          "id": "regex_tasks/fancy_regex/emoji_graphemes",
+          "reason": "compile: Parsing error at position 52: Invalid escape: \\X"
+        },
+        "regex_tasks/fancy_regex_seek/emoji_graphemes": {
+          "engine": "fancy_regex_seek",
+          "id": "regex_tasks/fancy_regex_seek/emoji_graphemes",
+          "reason": "compile: Parsing error at position 52: Invalid escape: \\X"
+        },
+        "regex_tasks/fancy_regex_seek/json_objects_recursive": {
+          "engine": "fancy_regex_seek",
+          "id": "regex_tasks/fancy_regex_seek/json_objects_recursive",
+          "reason": "match 0: [(136, 152)], Oniguruma [(4, 208)]"
+        },
+        "regex_tasks/onigmo/variable_lookbehind": {
+          "engine": "onigmo",
+          "id": "regex_tasks/onigmo/variable_lookbehind",
+          "reason": "compile: Onigmo error -122"
+        }
+      },
+      "equivalent": {}
+    },
+    "settings": {
+      "measure_seconds": 5.0,
+      "warm_up_seconds": 0.5,
+      "sample_size": 30
+    }
+  },
+  {
+    "profile": "macos-arm64",
+    "group": "shared",
+    "host": {
+      "runner_profile": "macos-arm64",
+      "runner_label": "blacksmith-6vcpu-macos-26",
+      "system": "Darwin",
+      "machine": "arm64",
+      "cpu": "Apple M4 Pro (Virtual)",
+      "cpu_features": "",
+      "cpus": 6,
+      "memory_bytes": 25769803776,
+      "os": "macOS 26.3",
+      "kernel": "25.3.0",
+      "image": {
+        "ImageOS": "macos26",
+        "ImageVersion": "133416"
+      },
+      "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38410640392"
+    },
+    "build": {
+      "git_commit": "88b27c12ddaad6f8f411766f6cb39f84fa393d86",
+      "git_status": "",
+      "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+      "onigmo_dir": ".cache/upstream/onigmo-ruby",
+      "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+      "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+      "binaries": {
+        "battle_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-354a193bac4c33bd",
+          "sha256": "9ec54740e9cc99d7fdaad6a569895759571ec9c8a23222dbe709562b8fba3938"
+        }
+      },
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cc": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+      "build_command": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--features",
+        "onigmo",
+        "--no-run",
+        "--message-format=json",
+        "--bench",
+        "battle_bench"
+      ],
+      "build_environment": {
+        "PCRE2_SYS_STATIC": "1"
+      }
+    },
+    "notes": {
+      "unsupported": {
+        "regex_tasks/regex/unicode_case_folding": {
+          "engine": "regex",
+          "id": "regex_tasks/regex/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        },
+        "regex_tasks/pcre2_jit/unicode_case_folding": {
+          "engine": "pcre2_jit",
+          "id": "regex_tasks/pcre2_jit/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        },
+        "regex_tasks/pcre2/unicode_case_folding": {
+          "engine": "pcre2",
+          "id": "regex_tasks/pcre2/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        },
+        "regex_tasks/fancy_regex/unicode_case_folding": {
+          "engine": "fancy_regex",
+          "id": "regex_tasks/fancy_regex/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        },
+        "regex_tasks/fancy_regex_seek/unicode_case_folding": {
+          "engine": "fancy_regex_seek",
+          "id": "regex_tasks/fancy_regex_seek/unicode_case_folding",
+          "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+        }
+      },
+      "equivalent": {}
+    },
+    "settings": {
+      "measure_seconds": 5.0,
+      "warm_up_seconds": 0.5,
+      "sample_size": 30
+    }
+  },
+  {
+    "profile": "linux-x86-64",
+    "group": "micro",
+    "host": {
+      "runner_profile": "linux-x86-64",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "system": "Linux",
+      "machine": "x86_64",
+      "cpu": "AMD EPYC",
+      "cpu_features": "avx2 avx512bw avx512f bmi2 sse4_2",
+      "cpus": 4,
+      "memory_bytes": 16555134976,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "6.6.141",
+      "image": {
+        "ImageOS": "ubuntu24",
+        "ImageVersion": "20260819_203438"
+      },
+      "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38410640392"
+    },
+    "build": {
+      "git_commit": "88b27c12ddaad6f8f411766f6cb39f84fa393d86",
+      "git_status": "",
+      "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+      "onigmo_dir": ".cache/upstream/onigmo-ruby",
+      "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+      "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+      "binaries": {
+        "battle_bench": {
+          "path": "/home/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-484558f3a99ab49b",
+          "sha256": "474554a74eb8050229e4833e68bbf038dfaf40d93f8245eb257eba141879c1c4"
+        }
+      },
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "build_command": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--features",
+        "onigmo",
+        "--no-run",
+        "--message-format=json",
+        "--bench",
+        "battle_bench"
+      ],
+      "build_environment": {
+        "PCRE2_SYS_STATIC": "1"
+      }
+    },
+    "notes": {
+      "unsupported": {},
+      "equivalent": {}
+    },
+    "settings": {
+      "measure_seconds": 5.0,
+      "warm_up_seconds": 0.5,
+      "sample_size": 30
+    }
+  },
+  {
+    "profile": "macos-arm64",
+    "group": "textmate",
+    "host": {
+      "runner_profile": "macos-arm64",
+      "runner_label": "blacksmith-6vcpu-macos-26",
+      "system": "Darwin",
+      "machine": "arm64",
+      "cpu": "Apple M4 Pro (Virtual)",
+      "cpu_features": "",
+      "cpus": 6,
+      "memory_bytes": 25769803776,
+      "os": "macOS 26.3",
+      "kernel": "25.3.0",
+      "image": {
+        "ImageOS": "macos26",
+        "ImageVersion": "133416"
+      },
+      "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38410640392"
+    },
+    "build": {
+      "git_commit": "88b27c12ddaad6f8f411766f6cb39f84fa393d86",
+      "git_status": "",
+      "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+      "onigmo_dir": ".cache/upstream/onigmo-ruby",
+      "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+      "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+      "binaries": {
+        "scss_scanner_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/scss_scanner_bench-4b2837d3fbcbd1cf",
+          "sha256": "0bcd05b0386273fe23aae9ef4f3a3eccd6390dd275321be4ce51e2c390e445b6"
+        },
+        "java_scanner_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/java_scanner_bench-c613b6d507afd81f",
+          "sha256": "e787cf4b9473428fafdae1efc2737db6b49924a6c65995c0c96e319ef25f0c87"
+        },
+        "ferriki_scanner_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/ferriki_scanner_bench-88e58ca59d1c3024",
+          "sha256": "bbe7ce26ab06f96a563f165b92077d818c06d01156e5021ca2ac869417207bea"
+        },
+        "cpp_scanner_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/cpp_scanner_bench-5f974710e77c54b1",
+          "sha256": "4e1210b3289a0c19808c35604d1d768d48b1be9373e44aae30d810ede100cce3"
+        },
+        "shiki_scanner_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/shiki_scanner_bench-ed09b3250a0ec82b",
+          "sha256": "e010a9e8cd6bd669af67fd84508486220e5c6720734f959857ff700aa585752f"
+        },
+        "battle_bench": {
+          "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-354a193bac4c33bd",
+          "sha256": "9ec54740e9cc99d7fdaad6a569895759571ec9c8a23222dbe709562b8fba3938"
+        }
+      },
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cc": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+      "build_command": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--features",
+        "onigmo",
+        "--no-run",
+        "--message-format=json",
+        "--bench",
+        "battle_bench",
+        "--bench",
+        "cpp_scanner_bench",
+        "--bench",
+        "ferriki_scanner_bench",
+        "--bench",
+        "java_scanner_bench",
+        "--bench",
+        "scss_scanner_bench",
+        "--bench",
+        "shiki_scanner_bench"
+      ],
+      "build_environment": {
+        "PCRE2_SYS_STATIC": "1"
+      },
+      "node": "v24.21.0",
+      "shiki_js_lock_sha256": "c6f10d9a1909d6c16226d957a0eafc6011ef9899f43006ed4fa0a521761b5b7f"
+    },
+    "notes": {
+      "unsupported": {
+        "scss_scanner/document_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "scss_scanner/document_pcre2_jit",
+          "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+        },
+        "scss_scanner/document_pcre2": {
+          "engine": "pcre2",
+          "id": "scss_scanner/document_pcre2",
+          "reason": "call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"
+        },
+        "scss_scanner/group_8_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "scss_scanner/group_8_pcre2_jit",
+          "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+        },
+        "scss_scanner/group_8_pcre2": {
+          "engine": "pcre2",
+          "id": "scss_scanner/group_8_pcre2",
+          "reason": "call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"
+        },
+        "astro_scanner/document_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "astro_scanner/document_pcre2_jit",
+          "reason": "scanner 60, pattern \"\\\\\\u{ffff}\\\\uFEFF?(?i:(?=\\\\s*@charset\\\\b))\": PCRE2 at offset 6: PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"
+        },
+        "astro_scanner/document_pcre2": {
+          "engine": "pcre2",
+          "id": "astro_scanner/document_pcre2",
+          "reason": "scanner 60, pattern \"\\\\\\u{ffff}\\\\uFEFF?(?i:(?=\\\\s*@charset\\\\b))\": PCRE2 at offset 6: PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"
+        },
+        "astro_scanner/document_fancy_regex": {
+          "engine": "fancy_regex",
+          "id": "astro_scanner/document_fancy_regex",
+          "reason": "call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/document_fancy_regex_seek": {
+          "engine": "fancy_regex_seek",
+          "id": "astro_scanner/document_fancy_regex_seek",
+          "reason": "call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/document_fancy_regex_set": {
+          "engine": "fancy_regex_set",
+          "id": "astro_scanner/document_fancy_regex_set",
+          "reason": "call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/document_onigmo": {
+          "engine": "onigmo",
+          "id": "astro_scanner/document_onigmo",
+          "reason": "scanner 8, pattern \"(?!(?<![$_[:alnum:]])(?:(?<=\\\\.\\\\.\\\\.)|(?<!\\\\.))(?:\\\\b(export)\\\\s+)?(?:\\\\b(declare)\\\\s+)?\\\\b(const(?!\\\\s+enum\\\\b))(?![$_[:alnum:]])(?:(?=\\\\.\\\\.\\\\.)|(?!\\\\.)))((?=^|[;}]|((?<![$_[:alnum:]])(?:(?<=\\\\.\\\\.\\\\.)|(?<!\\\\.))(of|in)\\\\s+)|;|^\\\\s*$|^\\\\s*(?:abstract|async|\\\\bawait\\\\s+\\\\busing(?=\\\\s+(?!in\\\\b|of\\\\b(?!\\\\s*(?:of\\\\b|=)))[$_[:alpha:]])\\\\b\\\\b|break|case|catch|class|const|continue|declare|do|else|enum|export|finally|function|for|goto|if|import|interface|let|module|namespace|switch|return|throw|try|type|\\\\busing(?=\\\\s+(?!in\\\\b|of\\\\b(?!\\\\s*(?:of\\\\b|=)))[$_[:alpha:]])\\\\b|var|while)\\\\b)|((?<!(?:^|[^$._[:alnum:]])const)(?=\\\\s*$)))\": Onigmo error -122"
+        },
+        "astro_scanner/group_22_fancy_regex": {
+          "engine": "fancy_regex",
+          "id": "astro_scanner/group_22_fancy_regex",
+          "reason": "call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/group_22_fancy_regex_seek": {
+          "engine": "fancy_regex_seek",
+          "id": "astro_scanner/group_22_fancy_regex_seek",
+          "reason": "call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "astro_scanner/group_22_fancy_regex_set": {
+          "engine": "fancy_regex_set",
+          "id": "astro_scanner/group_22_fancy_regex_set",
+          "reason": "call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"
+        },
+        "cpp_scanner/document_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "cpp_scanner/document_pcre2_jit",
+          "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+        },
+        "cpp_scanner/document_pcre2": {
+          "engine": "pcre2",
+          "id": "cpp_scanner/document_pcre2",
+          "reason": "scanner 0, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\A|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 89: quantifier does not follow a repeatable item"
+        },
+        "cpp_scanner/document_onigmo": {
+          "engine": "onigmo",
+          "id": "cpp_scanner/document_onigmo",
+          "reason": "scanner 0, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+        },
+        "cpp_scanner/group_78_pcre2_jit": {
+          "engine": "pcre2_jit",
+          "id": "cpp_scanner/group_78_pcre2_jit",
+          "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+        },
+        "cpp_scanner/group_78_pcre2": {
+          "engine": "pcre2",
+          "id": "cpp_scanner/group_78_pcre2",
+          "reason": "scanner 78, pattern \"^((((?:\\\\s*+/\\\\*(?:[^*]++|\\\\*+(?!/))*+\\\\*/\\\\s*+)+)|\\\\s++|(?<=\\\\W)|(?=\\\\W)|^|\\\\n?$|\\\\\\u{ffff}|\\\\Z)(#)\\\\s+{0,1}pragma\\\\s+mark)\\\\s+(.*)\": PCRE2 at offset 91: quantifier does not follow a repeatable item"
+        },
+        "cpp_scanner/group_78_onigmo": {
+          "engine": "onigmo",
+          "id": "cpp_scanner/group_78_onigmo",
+          "reason": "scanner 78, pattern \"^\\\\s+{1,0}(//[!/]+)\": Onigmo error -202"
+        }
+      },
+      "equivalent": {
+        "cpp_scanner/document_shiki_js": {
+          "id": "cpp_scanner/document_shiki_js",
+          "engine": "shiki_js",
+          "engine_version": "4.5.0",
+          "calls": 4862,
+          "empty_capture_differences": 96,
+          "status": "ok"
+        },
+        "java_scanner/document_shiki_js": {
+          "id": "java_scanner/document_shiki_js",
+          "engine": "shiki_js",
+          "engine_version": "4.5.0",
+          "calls": 3920,
+          "empty_capture_differences": 16,
+          "status": "ok"
+        },
+        "java_scanner/group_15_shiki_js": {
+          "id": "java_scanner/group_15_shiki_js",
+          "engine": "shiki_js",
+          "engine_version": "4.5.0",
+          "calls": 592,
+          "empty_capture_differences": 16,
+          "status": "ok"
+        }
+      }
+    },
+    "settings": {
+      "measure_seconds": 5.0,
+      "warm_up_seconds": 0.5,
+      "sample_size": 30
+    }
+  }
+]

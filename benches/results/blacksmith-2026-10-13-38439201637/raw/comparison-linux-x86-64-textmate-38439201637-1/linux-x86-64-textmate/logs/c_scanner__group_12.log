@@ -1,0 +1,71 @@
+Gnuplot not found, using plotters backend
+Benchmarking c_scanner/group_12
+Benchmarking c_scanner/group_12: Warming up for 500.00 ms
+Benchmarking c_scanner/group_12: Collecting 30 samples in estimated 5.0705 s (15k iterations)
+Benchmarking c_scanner/group_12: Analyzing
+c_scanner/group_12      time:   [280.18 µs 284.93 µs 290.05 µs]
+                        thrpt:  [3.8614 Melem/s 3.9309 Melem/s 3.9974 Melem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking c_scanner/group_12_c
+Benchmarking c_scanner/group_12_c: Warming up for 500.00 ms
+Benchmarking c_scanner/group_12_c: Collecting 30 samples in estimated 6.9707 s (1395 iterations)
+Benchmarking c_scanner/group_12_c: Analyzing
+c_scanner/group_12_c    time:   [4.5327 ms 4.5708 ms 4.6156 ms]
+                        thrpt:  [242.66 Kelem/s 245.03 Kelem/s 247.10 Kelem/s]
+Benchmarking c_scanner/group_12_pcre2_jit
+Benchmarking c_scanner/group_12_pcre2_jit: Warming up for 500.00 ms
+Benchmarking c_scanner/group_12_pcre2_jit: Collecting 30 samples in estimated 6.6130 s (1860 iterations)
+Benchmarking c_scanner/group_12_pcre2_jit: Analyzing
+c_scanner/group_12_pcre2_jit
+                        time:   [3.6255 ms 3.6772 ms 3.7246 ms]
+                        thrpt:  [300.70 Kelem/s 304.58 Kelem/s 308.92 Kelem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking c_scanner/group_12_pcre2
+Benchmarking c_scanner/group_12_pcre2: Warming up for 500.00 ms
+
+Warning: Unable to complete 30 samples in 5.0s. You may wish to increase target time to 8.1s, enable flat sampling, or reduce sample count to 10.
+Benchmarking c_scanner/group_12_pcre2: Collecting 30 samples in estimated 8.1348 s (465 iterations)
+Benchmarking c_scanner/group_12_pcre2: Analyzing
+c_scanner/group_12_pcre2
+                        time:   [16.943 ms 17.203 ms 17.520 ms]
+                        thrpt:  [63.926 Kelem/s 65.105 Kelem/s 66.105 Kelem/s]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) high severe
+Benchmarking c_scanner/group_12_fancy_regex
+Benchmarking c_scanner/group_12_fancy_regex: Warming up for 500.00 ms
+Benchmarking c_scanner/group_12_fancy_regex: Collecting 30 samples in estimated 5.2029 s (60 iterations)
+Benchmarking c_scanner/group_12_fancy_regex: Analyzing
+c_scanner/group_12_fancy_regex
+                        time:   [84.418 ms 86.729 ms 89.597 ms]
+                        thrpt:  [12.500 Kelem/s 12.914 Kelem/s 13.267 Kelem/s]
+Found 3 outliers among 30 measurements (10.00%)
+  1 (3.33%) high mild
+  2 (6.67%) high severe
+Benchmarking c_scanner/group_12_fancy_regex_seek
+Benchmarking c_scanner/group_12_fancy_regex_seek: Warming up for 500.00 ms
+Benchmarking c_scanner/group_12_fancy_regex_seek: Collecting 30 samples in estimated 6.4881 s (930 iterations)
+Benchmarking c_scanner/group_12_fancy_regex_seek: Analyzing
+c_scanner/group_12_fancy_regex_seek
+                        time:   [6.7785 ms 6.9937 ms 7.2791 ms]
+                        thrpt:  [153.86 Kelem/s 160.14 Kelem/s 165.23 Kelem/s]
+Benchmarking c_scanner/group_12_fancy_regex_set
+Benchmarking c_scanner/group_12_fancy_regex_set: Warming up for 500.00 ms
+Benchmarking c_scanner/group_12_fancy_regex_set: Collecting 30 samples in estimated 5.0356 s (5580 iterations)
+Benchmarking c_scanner/group_12_fancy_regex_set: Analyzing
+c_scanner/group_12_fancy_regex_set
+                        time:   [859.99 µs 891.49 µs 920.75 µs]
+                        thrpt:  [1.2164 Melem/s 1.2563 Melem/s 1.3023 Melem/s]
+Benchmarking c_scanner/group_12_onigmo
+Benchmarking c_scanner/group_12_onigmo: Warming up for 500.00 ms
+
+Warning: Unable to complete 30 samples in 5.0s. You may wish to increase target time to 8.0s, enable flat sampling, or reduce sample count to 10.
+Benchmarking c_scanner/group_12_onigmo: Collecting 30 samples in estimated 8.0140 s (465 iterations)
+Benchmarking c_scanner/group_12_onigmo: Analyzing
+c_scanner/group_12_onigmo
+                        time:   [15.650 ms 16.010 ms 16.469 ms]
+                        thrpt:  [68.006 Kelem/s 69.956 Kelem/s 71.565 Kelem/s]
+Found 3 outliers among 30 measurements (10.00%)
+  3 (10.00%) high mild
+

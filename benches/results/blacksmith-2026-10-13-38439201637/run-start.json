@@ -1,0 +1,1125 @@
+{
+  "conclusion": "",
+  "createdAt": "2026-10-13T17:30:24Z",
+  "databaseId": 38439201637,
+  "event": "workflow_dispatch",
+  "headBranch": "main",
+  "headSha": "d791bf1b011f6e98619969872a4d7cb7161912a7",
+  "jobs": [
+    {
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "databaseId": 115441071005,
+      "name": "macos-arm64 / oniguruma",
+      "startedAt": "2026-10-13T17:30:46Z",
+      "status": "in_progress",
+      "steps": [
+        {
+          "completedAt": "2026-10-13T17:30:49Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-13T17:30:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:49Z",
+          "conclusion": "success",
+          "name": "Set up runner",
+          "number": 2,
+          "startedAt": "2026-10-13T17:30:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:51Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-13T17:30:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:57Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f",
+          "number": 4,
+          "startedAt": "2026-10-13T17:30:51Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:58Z",
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 5,
+          "startedAt": "2026-10-13T17:30:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:01Z",
+          "conclusion": "success",
+          "name": "Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 6,
+          "startedAt": "2026-10-13T17:30:58Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:05Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 7,
+          "startedAt": "2026-10-13T17:31:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:05Z",
+          "conclusion": "skipped",
+          "name": "Install Shiki's JavaScript engine",
+          "number": 8,
+          "startedAt": "2026-10-13T17:31:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:08Z",
+          "conclusion": "success",
+          "name": "Prepare Oniguruma and Onigmo sources",
+          "number": 9,
+          "startedAt": "2026-10-13T17:31:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Validate and measure",
+          "number": 10,
+          "startedAt": "2026-10-13T17:31:08Z",
+          "status": "in_progress"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Keep the measurements",
+          "number": 11,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 18,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 19,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 20,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 21,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Complete runner",
+          "number": 22,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        }
+      ],
+      "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637/job/115441071005"
+    },
+    {
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "databaseId": 115441071297,
+      "name": "macos-arm64 / textmate",
+      "startedAt": "2026-10-13T17:30:44Z",
+      "status": "in_progress",
+      "steps": [
+        {
+          "completedAt": "2026-10-13T17:30:48Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-13T17:30:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:49Z",
+          "conclusion": "success",
+          "name": "Set up runner",
+          "number": 2,
+          "startedAt": "2026-10-13T17:30:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:50Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-13T17:30:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:56Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f",
+          "number": 4,
+          "startedAt": "2026-10-13T17:30:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:57Z",
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 5,
+          "startedAt": "2026-10-13T17:30:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:01Z",
+          "conclusion": "success",
+          "name": "Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 6,
+          "startedAt": "2026-10-13T17:30:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:05Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 7,
+          "startedAt": "2026-10-13T17:31:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:05Z",
+          "conclusion": "success",
+          "name": "Install Shiki's JavaScript engine",
+          "number": 8,
+          "startedAt": "2026-10-13T17:31:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:08Z",
+          "conclusion": "success",
+          "name": "Prepare Oniguruma and Onigmo sources",
+          "number": 9,
+          "startedAt": "2026-10-13T17:31:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Validate and measure",
+          "number": 10,
+          "startedAt": "2026-10-13T17:31:08Z",
+          "status": "in_progress"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Keep the measurements",
+          "number": 11,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 18,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 19,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 20,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 21,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Complete runner",
+          "number": 22,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        }
+      ],
+      "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637/job/115441071297"
+    },
+    {
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "databaseId": 115441071346,
+      "name": "linux-x86-64 / oniguruma",
+      "startedAt": "2026-10-13T17:30:38Z",
+      "status": "in_progress",
+      "steps": [
+        {
+          "completedAt": "2026-10-13T17:30:43Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-13T17:30:39Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:43Z",
+          "conclusion": "success",
+          "name": "Set up runner",
+          "number": 2,
+          "startedAt": "2026-10-13T17:30:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:46Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-13T17:30:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:55Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f",
+          "number": 4,
+          "startedAt": "2026-10-13T17:30:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:56Z",
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 5,
+          "startedAt": "2026-10-13T17:30:55Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:01Z",
+          "conclusion": "success",
+          "name": "Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 6,
+          "startedAt": "2026-10-13T17:30:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:05Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 7,
+          "startedAt": "2026-10-13T17:31:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:05Z",
+          "conclusion": "skipped",
+          "name": "Install Shiki's JavaScript engine",
+          "number": 8,
+          "startedAt": "2026-10-13T17:31:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:10Z",
+          "conclusion": "success",
+          "name": "Prepare Oniguruma and Onigmo sources",
+          "number": 9,
+          "startedAt": "2026-10-13T17:31:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Validate and measure",
+          "number": 10,
+          "startedAt": "2026-10-13T17:31:10Z",
+          "status": "in_progress"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Keep the measurements",
+          "number": 11,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 18,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 19,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 20,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 21,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Complete runner",
+          "number": 22,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        }
+      ],
+      "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637/job/115441071346"
+    },
+    {
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "databaseId": 115441071354,
+      "name": "linux-x86-64 / micro",
+      "startedAt": "2026-10-13T17:30:36Z",
+      "status": "in_progress",
+      "steps": [
+        {
+          "completedAt": "2026-10-13T17:30:40Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-13T17:30:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:40Z",
+          "conclusion": "success",
+          "name": "Set up runner",
+          "number": 2,
+          "startedAt": "2026-10-13T17:30:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:42Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-13T17:30:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:49Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f",
+          "number": 4,
+          "startedAt": "2026-10-13T17:30:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:50Z",
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 5,
+          "startedAt": "2026-10-13T17:30:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:53Z",
+          "conclusion": "success",
+          "name": "Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 6,
+          "startedAt": "2026-10-13T17:30:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:57Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 7,
+          "startedAt": "2026-10-13T17:30:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:57Z",
+          "conclusion": "skipped",
+          "name": "Install Shiki's JavaScript engine",
+          "number": 8,
+          "startedAt": "2026-10-13T17:30:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:01Z",
+          "conclusion": "success",
+          "name": "Prepare Oniguruma and Onigmo sources",
+          "number": 9,
+          "startedAt": "2026-10-13T17:30:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Validate and measure",
+          "number": 10,
+          "startedAt": "2026-10-13T17:31:01Z",
+          "status": "in_progress"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Keep the measurements",
+          "number": 11,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 18,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 19,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 20,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 21,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Complete runner",
+          "number": 22,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        }
+      ],
+      "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637/job/115441071354"
+    },
+    {
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "databaseId": 115441071387,
+      "name": "linux-x86-64 / shared",
+      "startedAt": "2026-10-13T17:30:37Z",
+      "status": "in_progress",
+      "steps": [
+        {
+          "completedAt": "2026-10-13T17:30:42Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-13T17:30:38Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:42Z",
+          "conclusion": "success",
+          "name": "Set up runner",
+          "number": 2,
+          "startedAt": "2026-10-13T17:30:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:44Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-13T17:30:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:52Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f",
+          "number": 4,
+          "startedAt": "2026-10-13T17:30:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:54Z",
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 5,
+          "startedAt": "2026-10-13T17:30:52Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:59Z",
+          "conclusion": "success",
+          "name": "Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 6,
+          "startedAt": "2026-10-13T17:30:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:03Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 7,
+          "startedAt": "2026-10-13T17:30:59Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:03Z",
+          "conclusion": "skipped",
+          "name": "Install Shiki's JavaScript engine",
+          "number": 8,
+          "startedAt": "2026-10-13T17:31:03Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:06Z",
+          "conclusion": "success",
+          "name": "Prepare Oniguruma and Onigmo sources",
+          "number": 9,
+          "startedAt": "2026-10-13T17:31:03Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Validate and measure",
+          "number": 10,
+          "startedAt": "2026-10-13T17:31:06Z",
+          "status": "in_progress"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Keep the measurements",
+          "number": 11,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 18,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 19,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 20,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 21,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Complete runner",
+          "number": 22,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        }
+      ],
+      "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637/job/115441071387"
+    },
+    {
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "databaseId": 115441071400,
+      "name": "macos-arm64 / micro",
+      "startedAt": "2026-10-13T17:30:45Z",
+      "status": "in_progress",
+      "steps": [
+        {
+          "completedAt": "2026-10-13T17:30:50Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-13T17:30:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:50Z",
+          "conclusion": "success",
+          "name": "Set up runner",
+          "number": 2,
+          "startedAt": "2026-10-13T17:30:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:52Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-13T17:30:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:58Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f",
+          "number": 4,
+          "startedAt": "2026-10-13T17:30:52Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:00Z",
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 5,
+          "startedAt": "2026-10-13T17:30:58Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:04Z",
+          "conclusion": "success",
+          "name": "Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 6,
+          "startedAt": "2026-10-13T17:31:00Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:08Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 7,
+          "startedAt": "2026-10-13T17:31:04Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:08Z",
+          "conclusion": "skipped",
+          "name": "Install Shiki's JavaScript engine",
+          "number": 8,
+          "startedAt": "2026-10-13T17:31:08Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:11Z",
+          "conclusion": "success",
+          "name": "Prepare Oniguruma and Onigmo sources",
+          "number": 9,
+          "startedAt": "2026-10-13T17:31:08Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Validate and measure",
+          "number": 10,
+          "startedAt": "2026-10-13T17:31:11Z",
+          "status": "in_progress"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Keep the measurements",
+          "number": 11,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 18,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 19,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 20,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 21,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Complete runner",
+          "number": 22,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        }
+      ],
+      "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637/job/115441071400"
+    },
+    {
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "databaseId": 115441071470,
+      "name": "macos-arm64 / shared",
+      "startedAt": "2026-10-13T17:30:50Z",
+      "status": "in_progress",
+      "steps": [
+        {
+          "completedAt": "2026-10-13T17:30:53Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-13T17:30:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:54Z",
+          "conclusion": "success",
+          "name": "Set up runner",
+          "number": 2,
+          "startedAt": "2026-10-13T17:30:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:55Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-13T17:30:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:01Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f",
+          "number": 4,
+          "startedAt": "2026-10-13T17:30:55Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:03Z",
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 5,
+          "startedAt": "2026-10-13T17:31:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:06Z",
+          "conclusion": "success",
+          "name": "Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 6,
+          "startedAt": "2026-10-13T17:31:03Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:10Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 7,
+          "startedAt": "2026-10-13T17:31:06Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:10Z",
+          "conclusion": "skipped",
+          "name": "Install Shiki's JavaScript engine",
+          "number": 8,
+          "startedAt": "2026-10-13T17:31:10Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:12Z",
+          "conclusion": "success",
+          "name": "Prepare Oniguruma and Onigmo sources",
+          "number": 9,
+          "startedAt": "2026-10-13T17:31:10Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Validate and measure",
+          "number": 10,
+          "startedAt": "2026-10-13T17:31:12Z",
+          "status": "in_progress"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Keep the measurements",
+          "number": 11,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 18,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 19,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 20,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 21,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Complete runner",
+          "number": 22,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        }
+      ],
+      "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637/job/115441071470"
+    },
+    {
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "databaseId": 115441071557,
+      "name": "linux-x86-64 / textmate",
+      "startedAt": "2026-10-13T17:30:40Z",
+      "status": "in_progress",
+      "steps": [
+        {
+          "completedAt": "2026-10-13T17:30:45Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-13T17:30:41Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:45Z",
+          "conclusion": "success",
+          "name": "Set up runner",
+          "number": 2,
+          "startedAt": "2026-10-13T17:30:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:47Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-13T17:30:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:56Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f",
+          "number": 4,
+          "startedAt": "2026-10-13T17:30:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:30:58Z",
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 5,
+          "startedAt": "2026-10-13T17:30:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:01Z",
+          "conclusion": "success",
+          "name": "Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 6,
+          "startedAt": "2026-10-13T17:30:58Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:05Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 7,
+          "startedAt": "2026-10-13T17:31:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:05Z",
+          "conclusion": "success",
+          "name": "Install Shiki's JavaScript engine",
+          "number": 8,
+          "startedAt": "2026-10-13T17:31:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-13T17:31:08Z",
+          "conclusion": "success",
+          "name": "Prepare Oniguruma and Onigmo sources",
+          "number": 9,
+          "startedAt": "2026-10-13T17:31:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Validate and measure",
+          "number": 10,
+          "startedAt": "2026-10-13T17:31:08Z",
+          "status": "in_progress"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Keep the measurements",
+          "number": 11,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 18,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
+          "number": 19,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+          "number": 20,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 21,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        },
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "name": "Complete runner",
+          "number": 22,
+          "startedAt": "0001-01-01T00:00:00Z",
+          "status": "pending"
+        }
+      ],
+      "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637/job/115441071557"
+    }
+  ],
+  "status": "in_progress",
+  "updatedAt": "2026-10-13T17:30:51Z",
+  "url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637"
+}

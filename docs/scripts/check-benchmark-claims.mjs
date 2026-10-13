@@ -20,7 +20,7 @@ const home = readFileSync(homePath, "utf8");
 
 const errors = [];
 
-// The README delegates all benchmark figures to the website.
+// The README summarizes the same figures and links to the full evidence.
 if (!readme.includes("https://ferroni.dev/perf/engine-comparison")) {
   errors.push("README.md.src must link to the benchmark evidence.");
 }
@@ -28,6 +28,32 @@ if (/<!-- \/?engine-comparison -->/.test(readme)) {
   errors.push(
     "Keep benchmark tables on the website rather than duplicating them in README.md.src.",
   );
+}
+
+const summary = /## Measured performance\n([\s\S]*?)(?=\n## )/.exec(readme)?.[1];
+const summaryText = summary?.replaceAll(/\s+/g, " ");
+const measuredDate = new Date(`${figures.measured}T00:00:00Z`).toLocaleDateString("en-US", {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  timeZone: "UTC",
+});
+const c = figures.engines.find((engine) => engine.id === "c").cells;
+const jit = figures.engines.find((engine) => engine.id === "pcre2_jit").cells;
+const phrase = (cell) => `${cell.text} ${cell.direction}`;
+for (const expected of [
+  measuredDate,
+  `commit \`${figures.commit.slice(0, 8)}\``,
+  `${phrase(c.shared)} than C Oniguruma on everyday patterns`,
+  `${phrase(c.oniguruma)} on advanced patterns`,
+  `${phrase(c.highlighting)} on three portable highlighting documents`,
+  `${phrase(jit.shared)} on compatible everyday patterns`,
+  `${phrase(jit.oniguruma)} on compatible advanced patterns`,
+  `${phrase(jit.highlighting)} on those scanner replays`,
+]) {
+  if (!summaryText?.includes(expected)) {
+    errors.push(`README.md.src benchmark summary must include: ${expected}`);
+  }
 }
 
 for (const [field, label, pattern] of [

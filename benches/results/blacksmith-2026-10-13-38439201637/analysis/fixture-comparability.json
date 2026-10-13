@@ -1,0 +1,98 @@
+[
+  {
+    "path": "benches/regex_tasks.rs",
+    "current_sha256": "eede6ae10276fba52fa20c09e37d4c3fb1f179e676766944491cc7d3052a3bdf",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/core-input-comparability.json"
+  },
+  {
+    "path": "benches/general_regex.rs",
+    "current_sha256": "b88397fff5f2d54c9a956b816fef0662d552d8bb55531d3484b40c43c4c614a5",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/core-input-comparability.json"
+  },
+  {
+    "path": "benches/engines.rs",
+    "current_sha256": "5fbf90bacdd8e8bf3d3aa1ee4e7573947acf3293bde50f4be07020c427608662",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/core-input-comparability.json"
+  },
+  {
+    "path": "benches/battle_inputs.toml",
+    "current_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/core-input-comparability.json"
+  },
+  {
+    "path": "benches/cpp_scanner/trace.json",
+    "current_sha256": "44276a8387359c14676eda1a1a3f880d5810de5369c7934c0c078c1571b5d4eb",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/scanner-input-comparability.json"
+  },
+  {
+    "path": "benches/java_scanner/trace.json",
+    "current_sha256": "c8ca55d21795fbc7dc81021b886b2807e98a8efd14e09774cb6fec151be645f5",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/scanner-input-comparability.json"
+  },
+  {
+    "path": "benches/scss_scanner/trace.json",
+    "current_sha256": "b72b52075c97aaac0f1e91df1affed15552652df44d0744169279372523f2d80",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/scanner-input-comparability.json"
+  },
+  {
+    "path": "benches/c_scanner/trace.json",
+    "current_sha256": "0085561781cf2c8b3c383b681b064435f4b6c47852991957a62ed22fc794fff9",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/scanner-input-comparability.json"
+  },
+  {
+    "path": "benches/php_scanner/trace.json",
+    "current_sha256": "53b64553a1ee7d6639a9a1d717270f410787998bb499e3fd0f2f4ea0d3a6a7b6",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/scanner-input-comparability.json"
+  },
+  {
+    "path": "benches/regex_tasks.rs",
+    "current_sha256": "eede6ae10276fba52fa20c09e37d4c3fb1f179e676766944491cc7d3052a3bdf",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/source-comparability.json"
+  },
+  {
+    "path": "benches/general_regex.rs",
+    "current_sha256": "b88397fff5f2d54c9a956b816fef0662d552d8bb55531d3484b40c43c4c614a5",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/source-comparability.json"
+  },
+  {
+    "path": "benches/engines.rs",
+    "current_sha256": "5fbf90bacdd8e8bf3d3aa1ee4e7573947acf3293bde50f4be07020c427608662",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/source-comparability.json"
+  },
+  {
+    "path": "benches/battle_inputs.toml",
+    "current_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/source-comparability.json"
+  },
+  {
+    "path": "benches/shiki_js/pnpm-lock.yaml",
+    "current_sha256": "c6f10d9a1909d6c16226d957a0eafc6011ef9899f43006ed4fa0a521761b5b7f",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/source-comparability.json"
+  },
+  {
+    "path": "scripts/compare-engines.py",
+    "current_sha256": "7d37ce2977ca7c77beac9a9491dc4e0771777c2700b2716bf6f4cbed6a0b556f",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/source-comparability.json"
+  },
+  {
+    "path": "Cargo.lock",
+    "current_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+    "identical_to_pre_css_optimization": true,
+    "baseline_record": "38410640392/analysis/source-comparability.json"
+  }
+]

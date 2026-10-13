@@ -1,0 +1,26 @@
+{
+  "conclusion": "cancelled",
+  "databaseId": 38440957101,
+  "headSha": "d791bf1b011f6e98619969872a4d7cb7161912a7",
+  "jobs": [
+    {
+      "name": "macos-arm64 / oniguruma",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "databaseId": 115451994658
+    },
+    {
+      "name": "linux-x86-64 / oniguruma",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "databaseId": 115451995271
+    },
+    {
+      "name": "Summary",
+      "status": "completed",
+      "conclusion": "failure",
+      "databaseId": 115452743298
+    }
+  ],
+  "status": "completed"
+}

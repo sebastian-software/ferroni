@@ -5,316 +5,335 @@ title: "Engine Comparison"
 
 # Engine Comparison
 
-Ferroni next to seven other engines on two cloud hosts: C Oniguruma, Ruby's
-Onigmo, PCRE2 with and without JIT, fancy-regex in three configurations (its
-default, seek mode and RegexSet), Rust's `regex` crate and, for highlighting,
-Shiki's JavaScript engine. The focus is everyday regular
-expressions on realistic text; highlighting counts only grammars every engine
-can run. The run comes from the manually dispatched
-[Blacksmith comparison](https://github.com/sebastian-software/ferroni/actions/workflows/blacksmith-comparison.yml)
-workflow, so anyone can repeat it on the same runner types.
+Ferroni next to seven other engines on two Blacksmith runner profiles:
+C Oniguruma, Ruby's Onigmo, PCRE2 with and without JIT, fancy-regex in
+three configurations (default, seek mode and RegexSet), Rust's `regex`
+crate and, for highlighting, Shiki's JavaScript engine.
 
-Every engine first has to reproduce Oniguruma's matches and capture bounds for
-a case, or every captured Shiki result for a highlighting replay. Only then is
-it timed. Where an engine rejects a pattern or answers differently, the table
-says `n/a` and [the reason is listed](#cases-an-engine-cannot-run). A dash means
-the engine has no variant for that case: the `regex` crate lacks the syntax, or
-the case uses an API (Oniguruma's RegSet, the grammar loader) the engine does
-not have.
+This full run measures **85 cases per host** on the merged runtime commit
+`d791bf1b011f6e98619969872a4d7cb7161912a7`. All sixteen builds (the original full run and its repeat) used that exact commit in clean
+checkouts. Their build receipts, input hashes and toolchains are retained in
+[the full-run data](https://github.com/sebastian-software/ferroni/tree/main/benches/results/blacksmith-2026-10-13-38439201637)
+and [full repeat](https://github.com/sebastian-software/ferroni/tree/main/benches/results/blacksmith-2026-10-13-38442515829).
+The full suite was repeated after large x86 control shifts in the first
+run. Its complete case set replaces the original run on both hosts;
+both runs remain available.
 
-## How to read the tables
+## How to read the numbers
 
-Each cell holds the **Apple Silicon** value on top and the **x86-64** value
-below it. The Ferroni column is the Criterion mean. Every other column is that
-engine's time divided by Ferroni's, the same convention as "C / Ferroni" on the
-other pages: **above 1.00, Ferroni is faster**; below 1.00, the other engine is.
+Each table cell shows **Apple Silicon above x86-64**. Ferroni's column is
+the Criterion mean; other columns divide that engine's time by Ferroni's.
+**Above 1.00, Ferroni is faster; below 1.00, the other engine is faster.**
+The summary uses equally weighted geometric means across accepted tasks and
+both hosts. Coverage differs between engines, so a mean over fewer compatible
+cases does not establish a ranking over the complete workload.
 
-These are point estimates from one run with 30 samples over 3 seconds per case
-and engine. Differences within about 10% are not a ranking. The raw estimates,
-confidence intervals and logs are kept with the run data
-([text processing and short searches](https://github.com/sebastian-software/ferroni/tree/main/benches/results/blacksmith-2026-10-09-37989957431),
-[highlighting](https://github.com/sebastian-software/ferroni/tree/main/benches/results/blacksmith-2026-10-09-37999607702));
-[Measurement context](#measurement-context) says why there are two runs.
+Every engine must first reproduce the reference matches and capture bounds,
+or the recorded scanner results. Rejected patterns and different answers get
+`n/a`, with reasons below. A dash means the engine has no variant for that API
+or syntax. Compilation and preparation have separate rows and stay outside
+execution timings. These are point estimates from one full run; differences
+within about 10% should not be read as a ranking.
+
+The workflow requests five seconds, 30 samples and 500 ms warmup. The existing
+`battle_bench` groups override measurement time to four seconds; the captured
+scanner replays use five seconds. Shiki JS uses its existing Node batch timer.
+The raw estimates, individual 95% confidence intervals and logs remain in the
+run data. Those intervals describe samples within a job and do not include
+between-run VM variation. Physical placement and scheduling are uncontrolled.
+
+PCRE2 JIT is 2.0× faster than Ferroni across 31/32 everyday tasks and
+3.1× faster across 16/17 advanced tasks.
+For the three portable whole-document scanner replays,
+Ferroni is 9.9× faster than PCRE2 JIT.
+Those replays compare Ferroni's multi-pattern scanner with PCRE2's
+pattern-by-pattern adapter; they do not imply the same result for a single regex.
 
 ## Text processing
 
-Each task collects every match with its captures over one generated document,
-or checks a batch of inputs
-([`benches/regex_tasks.rs`](https://github.com/sebastian-software/ferroni/blob/main/benches/regex_tasks.rs),
-[`benches/general_regex.rs`](https://github.com/sebastian-software/ferroni/blob/main/benches/general_regex.rs)):
-an HTML page of 88 KB, a server log of 74 KB, a chat log with emoji of 27 KB,
-Markdown of 55 KB, JSON of 53 KB, CSV of 30 KB and JavaScript-like source of
-58 KB. The patterns range from tags, emails and timestamps to whole-grammar
-expressions: the RFC 5322 address syntax, every IPv6 notation, RFC 3986 URLs
-and a 200-word alternation. These tables and the short searches are within
-noise of the previous publication (run 37782529019, before the pre-filter,
-which touches only the scanner): every engine's geometric mean moved by less
-than 10%, except Onigmo on the ten-branch alternation of the short searches,
-and the counts below by one or two tasks.
+Tasks collect every match and capture over generated documents, or check a
+batch of inputs: HTML, server logs, chat with emoji, Markdown, JSON, CSV and
+source code. See the unchanged
+[`regex_tasks` harness](https://github.com/sebastian-software/ferroni/blob/d791bf1b011f6e98619969872a4d7cb7161912a7/benches/regex_tasks.rs)
+and [`general_regex` harness](https://github.com/sebastian-software/ferroni/blob/d791bf1b011f6e98619969872a4d7cb7161912a7/benches/general_regex.rs).
 
 ### Shared syntax
 
-Patterns the `regex` crate also runs. Ferroni is faster than C Oniguruma in 28
-of 32 tasks, by up to 33x on email extraction; C is faster on the RFC 5322 and
-IPv6 expressions, and two tasks are split between the hosts. Against Onigmo it
-is ahead in 30 tasks, and the PCRE2 interpreter is mixed. PCRE2's JIT is faster
-than Ferroni in 27 tasks and the `regex` crate in 23. The automaton-based
-engines, `regex` and fancy-regex (which hands most of these patterns to
-`regex`), run the RFC 5322 and IPv6 expressions 14x to 31x faster than Ferroni
-and 1.7x to 6.5x faster than PCRE2's JIT. fancy-regex's seek mode changes only
-the patterns it runs in its own backtracking engine, and closes most of their
-gap: hex colors go from 51x to 63x slower than Ferroni to 2.7x,
-case-insensitive keywords from 26x to 39x slower to 0.9x to 1.3x, URLs from 19x
-to 40x slower to 0.9x to 1.1x. Only Oniguruma, Ferroni and Onigmo apply full
-Unicode case folding, so only they find `STRASSE` for `straße`.
+These 32 tasks use syntax the `regex` crate also runs. Only Ferroni,
+C Oniguruma and Onigmo apply the full Unicode folding that matches
+`straße` with `STRASSE`; the other engines cannot reproduce that case.
 
 | Case                           |              Ferroni |    Oniguruma (C) |           Onigmo |      PCRE2 JIT |            PCRE2 |      fancy-regex | fancy-regex (seek) |          regex |
 | ------------------------------ | -------------------: | ---------------: | ---------------: | -------------: | ---------------: | ---------------: | -----------------: | -------------: |
-| `html_tags`                    |   297 µs<br />452 µs |   1.68<br />1.26 |   1.86<br />1.36 | 0.46<br />0.34 |   0.92<br />0.72 |   2.88<br />2.39 |     3.93<br />2.02 | 3.75<br />1.78 |
-| `html_attributes`              |   489 µs<br />546 µs |   3.01<br />3.07 |   4.06<br />3.72 | 0.38<br />0.32 |   2.10<br />2.16 |   0.56<br />0.62 |     0.57<br />0.64 | 0.43<br />0.46 |
-| `html_comments`                | 18.4 µs<br />25.5 µs |   3.48<br />2.90 |   3.28<br />3.09 | 0.66<br />0.75 |   6.68<br />5.49 |   6.68<br />5.59 |     6.63<br />5.77 | 6.52<br />5.35 |
-| `hex_colors`                   | 15.5 µs<br />22.3 µs |   4.16<br />6.41 | 23.73<br />14.91 | 0.69<br />0.68 |   1.01<br />0.99 | 63.32<br />51.05 |     2.70<br />2.68 | 0.71<br />0.86 |
-| `email_addresses`              | 37.1 µs<br />44.8 µs | 33.14<br />32.71 | 61.41<br />49.51 | 2.99<br />1.76 | 30.95<br />26.17 |   0.65<br />0.73 |     0.64<br />0.73 | 0.42<br />0.51 |
-| `emoji`                        |   104 µs<br />134 µs |   2.89<br />2.46 |   3.87<br />3.35 | 0.75<br />0.72 |   4.85<br />4.34 |   0.75<br />0.73 |     0.75<br />0.71 | 0.54<br />0.53 |
-| `ascii_emoticons`              | 60.7 µs<br />77.4 µs |   1.74<br />1.25 |   2.08<br />1.76 | 0.32<br />0.34 |   0.83<br />0.76 |   0.67<br />1.13 |     0.66<br />1.10 | 0.52<br />0.89 |
-| `hashtags_mentions`            | 63.7 µs<br />80.6 µs |   2.55<br />2.58 |   2.07<br />2.58 | 0.56<br />0.59 |   1.04<br />1.34 |   1.42<br />1.72 |     1.43<br />1.84 | 0.89<br />1.02 |
-| `ipv4_addresses`               |   170 µs<br />256 µs |   1.48<br />1.45 |   3.06<br />2.76 | 1.13<br />0.93 |   5.95<br />5.47 | 20.93<br />21.33 |     5.95<br />6.07 | 5.25<br />5.38 |
-| `iso_timestamps`               |  68.5 µs<br />141 µs |   2.06<br />1.41 |   4.91<br />3.02 | 0.38<br />0.29 |   6.72<br />6.00 | 24.79<br />25.00 |     2.35<br />1.95 | 0.85<br />0.65 |
-| `log_keywords_ignorecase`      |    79 µs<br />112 µs |   2.87<br />4.30 |   5.06<br />5.35 | 0.96<br />1.05 |   2.17<br />2.63 | 25.82<br />39.17 |     0.85<br />1.26 | 0.56<br />0.86 |
-| `markdown_links`               | 43.7 µs<br />84.8 µs |   3.12<br />2.65 |   5.73<br />3.80 | 0.83<br />0.65 |   1.54<br />1.38 |   5.99<br />3.85 |     5.95<br />3.92 | 5.63<br />3.57 |
-| `semantic_versions`            |   224 µs<br />347 µs |   1.22<br />1.07 |   1.66<br />1.11 | 0.28<br />0.20 |   0.74<br />0.58 |   5.07<br />4.22 |     0.59<br />0.45 | 0.33<br />0.38 |
-| `json_strings`                 |   300 µs<br />371 µs |   2.03<br />1.73 |   1.47<br />1.45 | 0.50<br />0.58 |   2.20<br />1.87 |   1.25<br />1.37 |     1.23<br />1.33 | 0.70<br />0.92 |
-| `csv_fields`                   |   182 µs<br />222 µs |   2.10<br />1.82 |   1.53<br />1.58 | 0.45<br />0.51 |   1.75<br />1.54 |   1.14<br />1.42 |     1.15<br />1.50 | 0.85<br />1.00 |
-| `rfc5322_emails`               | 3.14 ms<br />4.28 ms |   0.75<br />0.67 |   1.86<br />1.76 | 0.10<br />0.06 |   1.53<br />0.98 |   0.04<br />0.03 |     0.04<br />0.03 | 0.04<br />0.03 |
-| `ipv6_addresses`               |  1.7 ms<br />1.75 ms |   0.61<br />0.64 |   1.40<br />1.47 | 0.41<br />0.38 |   2.63<br />2.25 |   0.07<br />0.07 |     0.07<br />0.07 | 0.06<br />0.07 |
-| `rfc3986_urls`                 |   76.7 µs<br />80 µs |   1.66<br />1.86 |   1.99<br />2.30 | 0.73<br />0.71 |   2.35<br />2.11 | 19.08<br />40.49 |     0.87<br />1.13 | 0.52<br />0.63 |
-| `keyword_alternation_200`      |  742 µs<br />1.07 ms |   3.94<br />4.30 |   4.96<br />4.46 | 0.56<br />0.65 |  10.99<br />8.51 | 22.36<br />22.23 |     4.08<br />4.13 | 0.46<br />0.59 |
-| `csv_last_column_backtracking` |   118 µs<br />257 µs |   1.27<br />0.89 |   1.45<br />1.04 | 0.29<br />0.16 |   0.62<br />0.42 |   0.85<br />0.60 |     1.52<br />0.94 | 1.24<br />0.78 |
-| `unicode_case_folding`         |   135 µs<br />235 µs |   3.40<br />3.05 |   1.06<br />0.81 |            n/a |              n/a |              n/a |                n/a |            n/a |
-| `email_validation`             | 4.22 µs<br />8.34 µs |   1.95<br />0.96 |   2.08<br />1.17 | 0.35<br />0.18 |   1.18<br />0.59 |   0.30<br />0.20 |     0.30<br />0.22 | 0.22<br />0.15 |
-| `uuid_validation`              | 3.38 µs<br />4.84 µs |   3.08<br />2.16 |   3.69<br />3.20 | 0.41<br />0.36 |   0.87<br />0.73 |   0.43<br />0.46 |     0.43<br />0.47 | 0.31<br />0.33 |
-| `number_validation`            | 4.03 µs<br />4.88 µs |   2.12<br />1.56 |   1.69<br />1.87 | 0.36<br />0.39 |   2.47<br />1.86 |   0.24<br />0.29 |     0.24<br />0.31 | 0.17<br />0.17 |
-| `access_log_captures`          | 17.7 µs<br />26.2 µs |   1.21<br />1.04 |   1.53<br />1.21 | 0.27<br />0.18 |   0.74<br />0.52 |   1.55<br />1.18 |     1.74<br />1.39 | 1.32<br />1.15 |
-| `url_extraction`               | 5.27 µs<br />6.34 µs |   2.58<br />2.16 |   2.55<br />2.56 | 0.56<br />0.62 |   1.37<br />1.23 |   1.92<br />2.06 |     1.93<br />2.05 | 1.57<br />1.56 |
-| `unicode_words`                | 29.1 µs<br />45.5 µs |   2.12<br />1.68 |   1.29<br />1.44 | 0.39<br />0.48 |   1.06<br />1.03 |   1.01<br />1.28 |     1.02<br />1.23 | 0.67<br />0.87 |
-| `email_redaction`              | 14.5 µs<br />28.1 µs |   4.15<br />3.21 |   6.47<br />5.00 | 0.59<br />0.42 |   3.73<br />2.85 |   0.81<br />0.80 |     0.81<br />0.84 | 0.61<br />0.58 |
-| `literal_50k`                  | 37.9 ns<br />43.9 ns |   2.42<br />1.99 |   0.67<br />0.61 | 0.34<br />0.43 |   0.84<br />0.97 |   0.25<br />0.32 |     0.26<br />0.33 | 0.18<br />0.23 |
-| `no_match_50k`                 |   959 ns<br />753 ns |   5.23<br />9.91 |   5.19<br />9.69 | 1.20<br />1.37 |   0.79<br />0.36 |   0.99<br />1.08 |     0.99<br />1.09 | 0.99<br />0.95 |
-| `field_extract_50k`            | 39.8 ns<br />53.9 ns |   2.63<br />1.53 |   1.03<br />1.03 | 0.48<br />0.51 |   1.26<br />1.18 |   0.83<br />1.01 |     0.83<br />0.95 | 0.81<br />0.89 |
-| `timestamp_50k`                |     59 ns<br />68 ns |   1.83<br />1.70 |   1.69<br />2.15 | 0.42<br />0.53 |   0.91<br />1.12 |   0.67<br />0.91 |     0.66<br />0.92 | 0.59<br />0.84 |
+| `html_tags`                    |   302 µs<br />362 µs |   1.69<br />1.43 |   1.89<br />1.71 | 0.47<br />0.38 |   0.93<br />0.86 |   2.87<br />2.88 |     3.94<br />2.44 | 3.99<br />1.85 |
+| `html_attributes`              |   510 µs<br />568 µs |   3.21<br />2.88 |   4.20<br />3.78 | 0.39<br />0.31 |   2.14<br />2.22 |   0.57<br />0.58 |     0.60<br />0.58 | 0.47<br />0.47 |
+| `html_comments`                | 20.3 µs<br />23.3 µs |   3.71<br />2.82 |   3.36<br />3.00 | 0.70<br />0.68 |   6.76<br />5.06 |   6.94<br />5.65 |     7.01<br />5.57 | 7.34<br />5.41 |
+| `hex_colors`                   | 16.5 µs<br />22.1 µs |   5.05<br />6.25 | 25.48<br />15.31 | 0.84<br />0.67 |   1.24<br />1.20 | 71.33<br />69.68 |     3.08<br />2.72 | 0.88<br />0.97 |
+| `email_addresses`              | 46.1 µs<br />45.7 µs | 30.92<br />32.62 | 57.29<br />57.77 | 2.69<br />1.87 | 27.20<br />29.28 |   0.55<br />0.81 |     0.55<br />0.78 | 0.40<br />0.55 |
+| `emoji`                        |   114 µs<br />151 µs |   2.83<br />2.74 |   4.30<br />3.49 | 0.79<br />0.74 |   4.98<br />4.07 |   0.84<br />0.68 |     0.84<br />0.65 | 0.57<br />0.54 |
+| `ascii_emoticons`              |  67.2 µs<br />105 µs |   1.81<br />1.03 |   2.14<br />1.34 | 0.33<br />0.30 |   0.89<br />0.62 |   0.70<br />0.84 |     0.69<br />0.87 | 0.52<br />0.70 |
+| `hashtags_mentions`            | 75.5 µs<br />79.6 µs |   2.43<br />2.21 |   1.76<br />2.26 | 0.53<br />0.60 |   0.98<br />1.08 |   1.15<br />1.47 |     1.14<br />1.56 | 0.86<br />0.94 |
+| `ipv4_addresses`               |   154 µs<br />223 µs |   1.63<br />1.40 |   3.39<br />2.33 | 1.26<br />0.80 |   6.48<br />4.38 | 23.38<br />17.92 |     6.55<br />5.52 | 5.79<br />4.82 |
+| `iso_timestamps`               | 68.7 µs<br />85.6 µs |   2.06<br />1.85 |   4.71<br />4.39 | 0.38<br />0.38 |   6.72<br />8.73 | 24.47<br />29.38 |     2.31<br />2.47 | 0.85<br />0.77 |
+| `log_keywords_ignorecase`      | 79.7 µs<br />86.6 µs |   2.78<br />4.11 |   4.92<br />6.54 | 0.91<br />1.28 |   2.12<br />2.67 | 24.68<br />40.16 |     0.83<br />1.20 | 0.55<br />0.95 |
+| `markdown_links`               | 42.2 µs<br />70.7 µs |   3.04<br />2.48 |   5.78<br />4.13 | 0.84<br />0.56 |   1.59<br />1.27 |   6.06<br />4.13 |     6.04<br />3.93 | 5.70<br />3.49 |
+| `semantic_versions`            |   206 µs<br />294 µs |   1.06<br />1.14 |   1.78<br />1.67 | 0.31<br />0.21 |   0.81<br />0.69 |   5.53<br />5.17 |     0.64<br />0.59 | 0.36<br />0.29 |
+| `json_strings`                 |   292 µs<br />403 µs |   1.99<br />1.88 |   1.50<br />1.27 | 0.51<br />0.54 |   2.26<br />2.06 |   1.14<br />1.43 |     1.14<br />1.36 | 0.74<br />0.91 |
+| `csv_fields`                   |   181 µs<br />210 µs |   2.13<br />1.89 |   1.53<br />1.70 | 0.45<br />0.59 |   1.78<br />1.72 |   1.15<br />1.54 |     1.14<br />1.55 | 0.86<br />1.04 |
+| `rfc5322_emails`               | 3.12 ms<br />4.44 ms |   0.75<br />0.79 |   2.27<br />2.20 | 0.10<br />0.07 |   1.52<br />1.20 |   0.04<br />0.03 |     0.05<br />0.03 | 0.04<br />0.03 |
+| `ipv6_addresses`               | 1.79 ms<br />2.13 ms |   0.65<br />0.75 |   1.46<br />1.37 | 0.45<br />0.36 |   2.86<br />2.36 |   0.07<br />0.06 |     0.07<br />0.06 | 0.07<br />0.06 |
+| `rfc3986_urls`                 | 80.3 µs<br />80.3 µs |   1.76<br />1.66 |   2.07<br />2.24 | 0.80<br />0.74 |   2.41<br />2.14 | 19.00<br />22.56 |     0.91<br />1.06 | 0.55<br />0.59 |
+| `keyword_alternation_200`      |   802 µs<br />924 µs |   4.33<br />4.46 |   5.17<br />5.03 | 0.61<br />0.66 |  11.46<br />9.63 | 24.24<br />19.59 |     4.19<br />4.81 | 0.48<br />0.57 |
+| `csv_last_column_backtracking` |   139 µs<br />170 µs |   1.13<br />0.93 |   1.35<br />1.44 | 0.27<br />0.25 |   0.61<br />0.51 |   0.85<br />0.68 |     1.50<br />1.19 | 1.18<br />0.98 |
+| `unicode_case_folding`         |   134 µs<br />201 µs |   3.44<br />3.05 |   1.11<br />0.90 |            n/a |              n/a |              n/a |                n/a |            n/a |
+| `email_validation`             | 4.84 µs<br />7.73 µs |   2.02<br />1.24 |   1.96<br />1.51 | 0.33<br />0.28 |   1.14<br />0.77 |   0.29<br />0.25 |     0.28<br />0.27 | 0.22<br />0.25 |
+| `uuid_validation`              | 3.63 µs<br />5.22 µs |   3.13<br />2.13 |   3.66<br />2.96 | 0.40<br />0.40 |   0.86<br />0.77 |   0.42<br />0.41 |     0.42<br />0.41 | 0.32<br />0.30 |
+| `number_validation`            | 4.14 µs<br />5.23 µs |   2.26<br />1.36 |   1.81<br />1.56 | 0.39<br />0.36 |   2.69<br />1.76 |   0.27<br />0.26 |     0.24<br />0.26 | 0.16<br />0.17 |
+| `access_log_captures`          | 17.5 µs<br />25.7 µs |   1.36<br />1.05 |   1.78<br />1.51 | 0.32<br />0.20 |   0.83<br />0.52 |   1.73<br />1.29 |     2.01<br />1.50 | 1.57<br />1.18 |
+| `url_extraction`               | 5.78 µs<br />6.35 µs |   2.72<br />2.05 |   2.65<br />2.36 | 0.56<br />0.56 |   1.34<br />1.29 |   1.98<br />2.05 |     1.95<br />1.98 | 1.58<br />1.51 |
+| `unicode_words`                | 31.7 µs<br />38.1 µs |   1.97<br />1.64 |   1.31<br />1.33 | 0.42<br />0.55 |   1.15<br />1.13 |   1.05<br />1.20 |     1.05<br />1.34 | 0.70<br />0.87 |
+| `email_redaction`              | 16.5 µs<br />19.2 µs |   4.17<br />4.26 |   6.52<br />7.40 | 0.61<br />0.65 |   3.81<br />4.31 |   0.83<br />1.13 |     0.85<br />1.14 | 0.63<br />0.79 |
+| `literal_50k`                  |   42.3 ns<br />44 ns |   2.92<br />2.20 |   0.73<br />0.58 | 0.37<br />0.43 |   0.94<br />0.97 |   0.27<br />0.31 |     0.28<br />0.31 | 0.18<br />0.28 |
+| `no_match_50k`                 |  1.12 µs<br />780 ns |   5.68<br />8.59 |   5.66<br />8.87 | 1.15<br />1.10 |   0.79<br />0.35 |   0.99<br />1.01 |     0.98<br />1.21 | 0.96<br />0.82 |
+| `field_extract_50k`            | 42.8 ns<br />55.9 ns |   2.96<br />1.81 |   1.11<br />0.81 | 0.53<br />0.45 |   1.37<br />1.28 |   0.91<br />1.03 |     0.92<br />0.90 | 0.89<br />0.92 |
+| `timestamp_50k`                | 65.9 ns<br />62.9 ns |   2.00<br />1.47 |   1.70<br />2.36 | 0.44<br />0.50 |   0.96<br />1.16 |   0.70<br />0.98 |     0.67<br />0.96 | 0.60<br />0.82 |
 
 ### Oniguruma syntax
 
-Element pairs through backreferences, possessive and atomic groups, lookbehind,
-quoted strings with either quote, grapheme clusters, password rules with four
-lookaheads, recursion through `\g<0>`, the absent operator and conditionals.
-Ferroni is faster than C Oniguruma in 12 of 17 tasks; the other five are split
-between the hosts, with C up to 1.3x faster on one of them. PCRE2's JIT is
-faster than Ferroni in every task it can run. fancy-regex runs all but two in
-its Oniguruma mode, 1.5x to 15x slower than Ferroni except on the password
-rules, where it is 1.8x faster. Its seek mode answers two more tasks
-differently (the conditional and the recursive JSON object, listed
-[below](#cases-an-engine-cannot-run)). On the 13 it runs it is faster than the
-default in ten and faster than Ferroni in three, but it takes about 1,600x
-Ferroni's time on the recursive div pattern, whose many matches in one document
-make each seek search scan to the end of the input, and 15x to 17x on the
-absent expression.
+These 17 tasks cover lookaround, backreferences, possessive and atomic groups,
+subexpression calls, absent expressions, conditionals and grapheme clusters.
+PCRE2 JIT remains faster on the geometric mean of its compatible cases.
+The HTML pair, attribute, password, quoted-string and look-behind optimizations
+are included in this measured commit.
 
 | Case                         |              Ferroni |  Oniguruma (C) |         Onigmo |      PCRE2 JIT |          PCRE2 |      fancy-regex |   fancy-regex (seek) |
 | ---------------------------- | -------------------: | -------------: | -------------: | -------------: | -------------: | ---------------: | -------------------: |
-| `html_element_pairs`         |   439 µs<br />525 µs | 1.05<br />1.15 | 1.59<br />1.26 | 0.28<br />0.19 | 1.45<br />1.28 |   3.26<br />2.55 |       4.93<br />3.36 |
-| `html_attribute_values`      |   914 µs<br />950 µs | 1.03<br />0.92 | 1.31<br />1.09 | 0.22<br />0.15 | 0.89<br />0.81 |   2.22<br />2.09 |       0.92<br />0.74 |
-| `prices_lookbehind`          |   244 µs<br />240 µs | 1.60<br />1.48 | 2.40<br />2.09 | 0.26<br />0.23 | 1.12<br />0.87 |   7.78<br />7.81 |       1.76<br />1.93 |
-| `quoted_strings`             |   290 µs<br />346 µs | 1.26<br />1.12 | 1.52<br />1.10 | 0.24<br />0.21 | 1.46<br />1.25 |   4.83<br />3.79 |       2.67<br />2.15 |
-| `camel_case_words`           |   807 µs<br />773 µs | 2.12<br />1.78 | 1.31<br />1.50 | 0.40<br />0.52 | 0.83<br />0.94 |   2.52<br />2.42 |       1.66<br />1.75 |
-| `markdown_emphasis`          |   199 µs<br />206 µs | 1.17<br />0.90 | 1.81<br />1.45 | 0.27<br />0.22 | 0.90<br />0.95 |  10.57<br />9.33 |       1.42<br />1.30 |
-| `emoji_graphemes`            |   181 µs<br />183 µs | 2.32<br />2.29 | 3.50<br />3.35 | 0.53<br />0.61 | 4.14<br />3.97 |              n/a |                  n/a |
-| `password_rules`             | 20.3 µs<br />20.6 µs | 1.16<br />0.91 | 1.54<br />1.65 | 0.21<br />0.17 | 1.35<br />1.18 |   0.53<br />0.57 |       0.51<br />0.54 |
-| `json_objects_recursive`     |   313 µs<br />372 µs | 1.47<br />1.05 | 2.82<br />2.20 | 0.28<br />0.15 | 2.85<br />2.20 |   2.49<br />2.16 |                  n/a |
-| `html_nested_divs_recursive` | 67.5 µs<br />68.8 µs | 2.23<br />1.95 | 3.05<br />2.77 | 0.37<br />0.29 | 2.70<br />2.15 | 15.43<br />14.19 | 1570.26<br />1676.65 |
-| `variable_lookbehind`        | 1.23 ms<br />1.25 ms | 1.12<br />1.12 |            n/a | 0.17<br />0.14 | 0.66<br />0.60 |   1.52<br />1.64 |       0.41<br />0.48 |
-| `atomic_possessive_strings`  |   23 µs<br />25.5 µs | 1.60<br />1.24 | 1.14<br />1.16 | 0.33<br />0.30 | 1.19<br />0.91 |   3.16<br />2.85 |       2.69<br />2.46 |
-| `subexp_call_balanced`       | 32.9 µs<br />35.1 µs | 1.36<br />1.01 | 1.62<br />1.40 | 0.31<br />0.33 | 1.80<br />1.92 |              n/a |                  n/a |
-| `absent_comments`            | 28.3 µs<br />29.2 µs | 1.14<br />0.78 | 0.67<br />0.68 |            n/a |            n/a |   1.57<br />1.55 |     14.78<br />17.22 |
-| `conditional_brackets`       | 40.8 µs<br />44.6 µs | 1.26<br />1.43 | 1.38<br />1.56 | 0.33<br />0.38 | 1.17<br />1.38 |   3.31<br />3.10 |                  n/a |
-| `backref_ignorecase`         | 72.3 µs<br />84.4 µs | 0.97<br />1.07 | 1.08<br />1.03 | 0.27<br />0.31 | 0.95<br />1.16 |   1.81<br />1.87 |       1.57<br />1.59 |
-| `lookbehind_alternation`     | 14.4 µs<br />17.8 µs | 3.58<br />3.45 | 1.37<br />1.27 | 0.71<br />0.66 | 5.83<br />4.06 |   5.14<br />4.90 |       1.61<br />1.66 |
+| `html_element_pairs`         |   178 µs<br />244 µs | 2.61<br />2.52 | 3.73<br />3.00 | 0.62<br />0.53 | 3.33<br />3.71 |   7.69<br />8.21 |      11.18<br />8.66 |
+| `html_attribute_values`      |   646 µs<br />778 µs | 1.57<br />1.80 | 1.83<br />1.50 | 0.29<br />0.27 | 1.21<br />1.12 |   2.99<br />2.93 |       1.27<br />0.98 |
+| `prices_lookbehind`          |   217 µs<br />257 µs | 1.69<br />1.55 | 2.60<br />1.96 | 0.26<br />0.24 | 1.14<br />0.90 |   7.74<br />7.37 |       1.76<br />2.08 |
+| `quoted_strings`             |   248 µs<br />337 µs | 1.30<br />1.27 | 1.60<br />1.34 | 0.24<br />0.26 | 1.44<br />1.51 |   5.01<br />4.17 |       2.84<br />2.79 |
+| `camel_case_words`           |  719 µs<br />1.19 ms | 2.11<br />1.67 | 1.34<br />1.31 | 0.39<br />0.42 | 0.80<br />0.73 |   2.52<br />2.01 |       1.77<br />1.47 |
+| `markdown_emphasis`          |   176 µs<br />308 µs | 1.27<br />0.83 | 1.91<br />1.11 | 0.32<br />0.19 | 1.00<br />0.82 |  11.14<br />8.02 |       1.49<br />1.03 |
+| `emoji_graphemes`            |   184 µs<br />226 µs | 2.16<br />1.86 | 3.04<br />3.65 | 0.50<br />0.59 | 3.78<br />3.57 |              n/a |                  n/a |
+| `password_rules`             | 15.1 µs<br />26.3 µs | 1.32<br />0.98 | 2.05<br />1.53 | 0.25<br />0.16 | 1.67<br />1.02 |   0.65<br />0.44 |       0.68<br />0.52 |
+| `json_objects_recursive`     |   329 µs<br />347 µs | 1.36<br />1.24 | 2.51<br />2.35 | 0.25<br />0.19 | 2.56<br />2.38 |   2.28<br />2.59 |                  n/a |
+| `html_nested_divs_recursive` |   63 µs<br />71.1 µs | 2.15<br />1.94 | 3.30<br />3.19 | 0.38<br />0.29 | 2.74<br />2.17 | 16.06<br />14.13 | 1703.86<br />1767.37 |
+| `variable_lookbehind`        | 1.03 ms<br />1.24 ms | 1.43<br />1.51 |            n/a | 0.22<br />0.21 | 0.84<br />0.71 |   1.93<br />1.99 |       0.51<br />0.62 |
+| `atomic_possessive_strings`  | 23.2 µs<br />33.8 µs | 1.69<br />1.27 | 1.02<br />1.21 | 0.31<br />0.32 | 1.10<br />0.93 |   2.88<br />2.73 |       2.46<br />2.41 |
+| `subexp_call_balanced`       | 29.2 µs<br />50.8 µs | 1.33<br />1.05 | 1.61<br />1.00 | 0.30<br />0.28 | 1.71<br />1.60 |              n/a |                  n/a |
+| `absent_comments`            | 23.6 µs<br />34.8 µs | 1.11<br />0.74 | 0.70<br />0.63 |            n/a |            n/a |   1.66<br />1.87 |     15.08<br />16.46 |
+| `conditional_brackets`       | 35.6 µs<br />49.1 µs | 1.40<br />1.55 | 1.71<br />1.36 | 0.36<br />0.37 | 1.23<br />1.20 |   3.58<br />3.15 |                  n/a |
+| `backref_ignorecase`         | 68.7 µs<br />82.5 µs | 1.08<br />1.17 | 1.13<br />1.35 | 0.28<br />0.34 | 0.97<br />1.39 |   1.85<br />2.51 |       1.61<br />2.33 |
+| `lookbehind_alternation`     | 14.3 µs<br />19.5 µs | 4.12<br />3.86 | 1.45<br />1.35 | 0.88<br />0.78 | 6.59<br />4.95 |   5.58<br />5.34 |       1.80<br />1.81 |
 
 ## Highlighting
 
-The highlighting replays play back the scanner calls Shiki makes for a whole
-document, recorded from Shiki's Oniguruma (WASM) engine with
-[`benches/shiki_js/capture.mjs`](https://github.com/sebastian-software/ferroni/blob/main/benches/shiki_js/capture.mjs).
-Each document is the TIOBE "Orders" program repeated 16 times, about 14 to 18 KB.
-Ferroni and C use Oniguruma's RegSet scanner (C through the scanner wrapper of
-vscode-oniguruma); Ferroni's scanner first narrows each search with the DFA
-pre-filter of [ADR-008](/adr/008-rust-only-optimizations), which decides before
-any attempt which patterns can match where. Onigmo and PCRE2 have no RegSet and
-search pattern by pattern, which is what vscode-oniguruma itself does on lines
-of 1,000 bytes or more. fancy-regex has a `RegexSet`, which the replays run as its own
-configuration: one set per scanner, built once, returning the earliest match
-and, among the patterns that start there, the lowest pattern index with its
-captures. The other two fancy-regex configurations search pattern by pattern:
-the default, and seek mode, which enables fancy-regex's seek pre-filter for
-backtracking patterns (off by default). Shiki JS is
-`@shikijs/engine-javascript` 4.5.0 with its defaults, timed in Node over 1 ms
-batches rather than with Criterion.
+Replays run recorded scanner calls with their original pattern priority and
+captures. C, Java, PHP, C++ and SCSS come from Shiki's Oniguruma engine;
+JSON and Astro come from Ferriki's tokenizer. The per-corpus READMEs retain
+capture provenance and workload boundaries.
 
-These engines were not built for highlighting, which puts many patterns in one
-search. The replays show what that costs when an application uses them for it.
+Ferroni and C use the Oniguruma RegSet scanner API; Ferroni can narrow the
+candidate positions with the conservative DFA pre-filter in
+[ADR-008](/adr/008-rust-only-optimizations). PCRE2 and Onigmo search pattern
+by pattern. fancy-regex's RegexSet is a separate configuration built once per
+scanner, while its default and seek modes also search pattern by pattern.
+Shiki JS is `@shikijs/engine-javascript` 4.5.0, timed in Node over 1 ms batches.
+Scanners and input construction remain outside timing.
 
-Ferroni's scanner pre-filter was inspired by [Keith Hall](https://github.com/keith-hall)'s [seek-filter proposal](https://github.com/fancy-regex/fancy-regex/issues/101#issuecomment-3146668829) and his [implementation in fancy-regex](https://github.com/fancy-regex/fancy-regex/pull/246), with fancy-regex's `RegexSet` informing the multi-pattern design. The shared idea is to find candidate positions with a conservative regular approximation, then let the backtracking engine verify the full pattern. [ADR-008](/adr/008-rust-only-optimizations) describes Ferroni's adaptation.
-
-Ferroni's lead here is new. Before the pre-filter, in
-[run 37839952403](https://github.com/sebastian-software/ferroni/actions/runs/37839952403)
-on the branch of [#316](https://github.com/sebastian-software/ferroni/pull/316)
-(the last comparison without it; its x86-64 runner was an Intel Xeon),
-fancy-regex's `RegexSet` was faster than Ferroni on the geometric mean of the
-ten replays, 1.5x on Apple Silicon and 1.6x on x86-64, while C Oniguruma and
-Shiki JS were 5.1x and 2.4x slower than Ferroni. With the pre-filter, Ferroni
-is 1.9x faster than the `RegexSet` on the same mean (2.0x on Apple Silicon,
-1.8x on x86-64; from parity on the Java scanner group to 3.8x on the C++
-document), 15x faster than C Oniguruma (8.5x to 33x) and 7.3x faster than
-Shiki JS (2.7x to 15x).
+Ferroni's pre-filter was inspired by Keith Hall's
+[seek-filter proposal](https://github.com/fancy-regex/fancy-regex/issues/101#issuecomment-3146668829)
+and [fancy-regex implementation](https://github.com/fancy-regex/fancy-regex/pull/246).
+The replays describe these adapters and workloads, rather than a universal
+speed claim about the underlying engines.
 
 ### Portable grammars
 
-C, Java and PHP use no syntax another engine rejects or reads differently;
-every engine reproduces every captured result. Ferroni is 8.5x to 20x faster
-than C Oniguruma and 4.9x to 19x faster than PCRE2's JIT here. fancy-regex's
-`RegexSet` comes closest: on the Java replays and the PHP document it is within
-1.0x to 1.3x of Ferroni, on the C replays and the PHP scanner group 2.0x to
-3.7x behind. Its other two configurations search pattern by pattern and are
-10x to 28x (seek mode) and 51x to 382x (default) slower. Shiki's JavaScript
-engine is 2.9x to 12x slower.
+C, Java and PHP reproduce every recorded result in all measured engines.
+Only their three whole-document rows form the homepage highlighting summary;
+individual hot scanner groups are shown separately here.
 
 | Case                    |              Ferroni |    Oniguruma (C) |           Onigmo |        PCRE2 JIT |            PCRE2 |        fancy-regex | fancy-regex (seek) | fancy-regex (RegexSet) |         Shiki JS |
 | ----------------------- | -------------------: | ---------------: | ---------------: | ---------------: | ---------------: | -----------------: | -----------------: | ---------------------: | ---------------: |
-| Java replay, document   |  1.08 ms<br />939 µs |   8.54<br />9.96 | 29.52<br />31.93 |  9.96<br />10.48 | 33.67<br />36.55 |   78.27<br />91.64 |   10.17<br />10.92 |         1.32<br />1.30 |   6.74<br />6.97 |
-| Java replay, scanner 15 |   124 µs<br />145 µs | 13.20<br />11.32 | 48.90<br />38.09 | 14.88<br />12.11 | 52.26<br />40.14 |  126.09<br />99.48 |   14.65<br />12.63 |         1.18<br />0.99 | 11.86<br />11.16 |
-| C replay, document      | 1.09 ms<br />1.02 ms | 14.52<br />17.58 | 43.96<br />40.95 | 12.61<br />18.82 | 49.26<br />44.76 | 248.78<br />244.49 |   22.12<br />22.14 |         2.25<br />1.98 |  9.90<br />10.89 |
-| C replay, scanner 12    |   196 µs<br />245 µs | 19.83<br />16.65 | 83.93<br />54.15 | 15.22<br />13.11 | 89.33<br />61.95 | 381.76<br />281.09 |   28.12<br />24.49 |         3.73<br />2.91 | 11.79<br />10.58 |
-| PHP replay, document    |  1.4 ms<br />1.43 ms | 10.08<br />12.08 | 29.39<br />32.30 |   4.87<br />6.78 | 11.95<br />13.45 |   50.83<br />56.36 |   10.84<br />13.28 |         1.09<br />1.21 |   2.92<br />3.63 |
-| PHP replay, scanner 13  |   166 µs<br />202 µs | 19.60<br />18.51 | 91.53<br />62.68 | 10.09<br />10.27 | 28.50<br />26.22 | 130.03<br />119.13 |   26.48<br />21.54 |         2.50<br />2.20 |   6.76<br />7.23 |
+| Java replay, document   |   916 µs<br />1.1 ms |   8.91<br />9.30 | 33.53<br />29.19 | 10.31<br />11.02 | 36.48<br />37.13 |   84.10<br />93.31 |   10.85<br />10.41 |         1.46<br />1.26 |   7.57<br />9.13 |
+| Java replay, scanner 15 |   114 µs<br />142 µs | 13.57<br />13.19 | 49.46<br />41.96 | 16.18<br />13.13 | 51.23<br />48.12 | 133.14<br />117.09 |   16.61<br />13.55 |         1.30<br />1.08 | 11.89<br />15.40 |
+| C replay, document      |  974 µs<br />1.09 ms | 15.98<br />16.69 | 47.44<br />43.10 | 13.55<br />17.30 | 57.90<br />46.38 | 270.68<br />333.44 |   21.09<br />25.68 |         2.29<br />2.45 | 10.12<br />10.88 |
+| C replay, scanner 12    |   220 µs<br />253 µs | 20.02<br />16.55 | 68.49<br />57.05 | 15.18<br />13.40 | 88.32<br />60.77 | 375.35<br />284.23 |   27.53<br />22.08 |         3.37<br />2.84 | 12.13<br />12.00 |
+| PHP replay, document    | 1.64 ms<br />1.62 ms | 10.47<br />12.00 | 30.22<br />31.41 |   5.40<br />6.36 | 13.01<br />11.42 |   57.16<br />61.79 |   13.07<br />12.66 |         1.13<br />1.10 |   3.16<br />3.70 |
+| PHP replay, scanner 13  |   195 µs<br />193 µs | 20.13<br />20.33 | 74.67<br />78.02 | 10.06<br />12.78 | 29.37<br />32.55 | 132.07<br />168.91 |   25.61<br />22.96 |         2.17<br />2.38 |   7.11<br />7.82 |
 
 ### Grammars with Oniguruma-only syntax
 
-TextMate grammars are written for Oniguruma, and many use its particular
-syntax. The C++ grammar writes quantifiers such as `\s+{0,1}` that PCRE2
-rejects and that Onigmo rejects as `\s+{1,0}`. The SCSS grammar uses `\h`,
-a hex digit in Oniguruma and a horizontal space in PCRE2. A scan of all 260
-Shiki grammars finds these constructs in most large ones. These replays show
-what highlighting with such grammars costs in the engines that run them:
-Ferroni is 9.8x to 33x faster than C Oniguruma, 16x to 19x faster than Onigmo
-on SCSS and 1.4x to 3.8x faster than fancy-regex's `RegexSet`; Shiki JS is 2.7x
-to 15x slower.
+PCRE2 rejects C++ stacked quantifiers such as `\s+{0,1}`; SCSS's `\h`
+and nested classes have different meanings. Onigmo also rejects parts of C++.
+These cases stay out of the portable summary.
 
 | Case                   |              Ferroni |    Oniguruma (C) |           Onigmo | PCRE2 JIT | PCRE2 |        fancy-regex | fancy-regex (seek) | fancy-regex (RegexSet) |         Shiki JS |
 | ---------------------- | -------------------: | ---------------: | ---------------: | --------: | ----: | -----------------: | -----------------: | ---------------------: | ---------------: |
-| C++ replay, document   | 2.81 ms<br />3.25 ms |  10.35<br />9.76 |              n/a |       n/a |   n/a | 338.27<br />294.74 |   24.42<br />19.64 |         3.79<br />2.58 |  12.01<br />9.70 |
-| C++ replay, scanner 78 |  1.4 ms<br />1.19 ms | 12.63<br />14.41 |              n/a |       n/a |   n/a | 473.55<br />475.53 |   27.87<br />25.88 |         3.12<br />2.73 | 14.08<br />14.60 |
-| SCSS replay, document  | 1.36 ms<br />1.26 ms | 25.50<br />28.75 | 16.52<br />16.72 |       n/a |   n/a |  98.19<br />112.66 |    9.87<br />10.58 |         1.76<br />1.68 |   2.67<br />3.46 |
-| SCSS replay, scanner 8 |   536 µs<br />603 µs | 32.69<br />27.81 | 19.23<br />15.96 |       n/a |   n/a |  116.31<br />89.45 |   12.74<br />10.80 |         1.57<br />1.37 |   4.47<br />4.52 |
+| C++ replay, document   | 2.72 ms<br />4.55 ms |  10.33<br />8.67 |              n/a |       n/a |   n/a | 363.30<br />252.93 |   32.56<br />34.62 |         3.56<br />2.61 |  12.15<br />8.82 |
+| C++ replay, scanner 78 | 1.33 ms<br />1.22 ms | 13.43<br />13.98 |              n/a |       n/a |   n/a | 487.77<br />556.65 |   28.38<br />31.44 |         3.19<br />3.62 | 12.95<br />18.12 |
+| SCSS replay, document  | 1.17 ms<br />1.29 ms | 30.68<br />30.15 | 18.49<br />16.60 |       n/a |   n/a | 111.01<br />135.02 |   10.40<br />11.22 |         1.99<br />1.87 |   2.73<br />3.41 |
+| SCSS replay, scanner 8 |   517 µs<br />537 µs | 31.99<br />30.97 | 18.41<br />17.74 |       n/a |   n/a | 107.76<br />108.96 |   11.67<br />11.41 |         1.46<br />1.56 |   4.11<br />4.95 |
+
+### Ferriki tokenizer replays
+
+JSON uses small, simple scanner sets. Astro embeds several languages and
+includes short-lived end-rule instances. The replay compiles all instances once
+and measures steady-state search; construction and first-search costs of those
+instances are outside this boundary. These four cases were added after the
+October 9 baseline, so they carry no historical improvement claim.
+
+| Case                     |              Ferroni |  Oniguruma (C) |         Onigmo |      PCRE2 JIT |          PCRE2 |      fancy-regex | fancy-regex (seek) | fancy-regex (RegexSet) |       Shiki JS |
+| ------------------------ | -------------------: | -------------: | -------------: | -------------: | -------------: | ---------------: | -----------------: | ---------------------: | -------------: |
+| JSON replay, document    |   243 µs<br />237 µs | 6.15<br />4.26 | 6.22<br />5.80 | 2.00<br />1.86 | 3.28<br />3.25 |  9.23<br />10.87 |     5.09<br />6.27 |         2.92<br />3.51 | 3.38<br />3.58 |
+| JSON replay, scanner 1   | 80.1 µs<br />70.5 µs | 7.45<br />4.99 | 6.56<br />6.67 | 2.46<br />2.35 | 3.85<br />3.71 | 10.11<br />11.34 |     4.83<br />6.03 |         2.24<br />2.89 | 3.37<br />3.51 |
+| Astro replay, document   | 1.65 ms<br />1.69 ms | 7.11<br />6.55 |            n/a |            n/a |            n/a |              n/a |                n/a |                    n/a | 7.39<br />7.75 |
+| Astro replay, scanner 22 |   131 µs<br />157 µs | 4.59<br />4.29 | 4.65<br />3.86 | 2.99<br />3.42 | 5.54<br />3.65 |              n/a |                n/a |                    n/a | 3.28<br />3.91 |
 
 ### Grammar scanners
 
-The complete Shiki grammars for TypeScript, CSS and Rust: compiling a grammar,
-re-scanning one line, and tokenizing a document line by line. Only Ferroni and
-C Oniguruma have a grammar loader and a RegSet scanner here. Ferroni scans 16x
-to 74x faster. C compiles the TypeScript and Rust grammars 1.2x to 2.8x faster,
-Ferroni the CSS grammar 1.1x to 1.5x faster; part of Ferroni's compile time now
-goes into the seek each scanner pattern derives for the pre-filter. The flat
-CSS scanner, 117 patterns in one set, is a set on which the pre-filter retires
-itself within its first pass (ADR-008); the earlier run of the same day, before
-[#324](https://github.com/sebastian-software/ferroni/pull/324) taught it to,
-had its scan rows at 11 to 16 ms.
+The complete TypeScript, CSS and Rust pattern lists are flattened into one
+RegSet each. Document rows scan distinct lines, preserving the scanner's cold
+line behavior. This is a flat grammar benchmark, rather than a complete TextMate
+state-machine replay. Only Ferroni and C have these loader and RegSet variants.
+The CSS pre-filter retires itself when its DFA cache thrashes, as it already did
+in the later October 9 run after [#324](https://github.com/sebastian-software/ferroni/pull/324).
 
 | Case                             |              Ferroni |    Oniguruma (C) |
 | -------------------------------- | -------------------: | ---------------: |
-| TypeScript grammar, compile      | 16.1 ms<br />20.3 ms |   0.83<br />0.48 |
-| CSS grammar, compile             | 10.5 ms<br />12.7 ms |   1.53<br />1.13 |
-| Rust grammar, compile            |   384 µs<br />496 µs |   0.36<br />0.37 |
-| TypeScript grammar, re-scan line | 2.64 µs<br />3.03 µs | 50.26<br />52.46 |
-| CSS grammar, re-scan line        |   149 µs<br />143 µs | 48.61<br />74.37 |
-| Rust grammar, re-scan line       | 1.54 µs<br />1.79 µs | 33.12<br />33.34 |
-| TypeScript document, 28 lines    | 83.3 µs<br />93.8 µs | 23.22<br />25.28 |
-| CSS document, 19 lines           | 72.6 µs<br />75.5 µs | 27.98<br />32.33 |
-| Rust document, 31 lines          | 42.1 µs<br />43.9 µs | 15.84<br />18.59 |
+| TypeScript grammar, compile      | 16.7 ms<br />19.8 ms |   0.83<br />0.54 |
+| CSS grammar, compile             | 10.3 ms<br />13.5 ms |   1.50<br />1.13 |
+| Rust grammar, compile            |   390 µs<br />566 µs |   0.37<br />0.32 |
+| TypeScript grammar, re-scan line | 2.91 µs<br />3.75 µs | 51.15<br />40.52 |
+| CSS grammar, re-scan line        |   167 µs<br />151 µs | 48.45<br />68.83 |
+| Rust grammar, re-scan line       | 1.62 µs<br />2.42 µs | 34.29<br />28.82 |
+| TypeScript document, 28 lines    |  94.7 µs<br />113 µs | 23.71<br />22.50 |
+| CSS document, 19 lines           | 76.4 µs<br />97.5 µs | 25.23<br />27.44 |
+| Rust document, 31 lines          | 38.7 µs<br />50.4 µs | 17.31<br />18.48 |
 
 ## Short searches and compilation
 
-One search on a string of about 60 bytes, and compiling single patterns. These
-mostly measure call overhead and setup, so they are kept out of the summary on
-the home page and in the README.
+These rows search short strings or compile individual patterns. Their setup
+and call costs stay outside the execution summaries on the homepage and README.
 
 | Case                      |              Ferroni |  Oniguruma (C) |          Onigmo |      PCRE2 JIT |          PCRE2 |       fancy-regex | fancy-regex (seek) |            regex |
 | ------------------------- | -------------------: | -------------: | --------------: | -------------: | -------------: | ----------------: | -----------------: | ---------------: |
-| `literal_exact`           |   46.1 ns<br />37 ns | 2.47<br />2.25 |  0.79<br />0.75 | 0.32<br />0.46 | 0.91<br />1.08 |    0.26<br />0.36 |     0.25<br />0.35 |   0.17<br />0.28 |
-| `quantifier_greedy`       | 46.7 ns<br />37.6 ns | 3.20<br />2.50 |  1.49<br />1.38 | 0.45<br />0.56 | 0.94<br />1.02 |    1.16<br />1.32 |     1.03<br />1.37 |   0.91<br />1.19 |
-| `alternation_2_branch`    | 45.4 ns<br />40.8 ns | 2.50<br />1.74 |  1.14<br />0.75 | 0.35<br />0.40 | 1.20<br />1.17 |    0.80<br />1.18 |     0.75<br />1.12 |   0.68<br />0.84 |
-| `alternation_10_branch`   | 25.9 ns<br />33.3 ns | 6.48<br />5.11 | 14.76<br />3.38 | 0.74<br />0.72 | 8.07<br />5.31 |    0.74<br />0.69 |     0.69<br />0.66 |   0.52<br />0.53 |
-| `case_insensitive_phrase` |   62 ns<br />94.4 ns | 2.43<br />1.53 |  0.79<br />0.80 | 0.26<br />0.23 | 0.73<br />0.58 |    0.60<br />0.67 |     0.59<br />0.72 |   0.61<br />0.60 |
-| `named_capture_date`      | 60.4 ns<br />97.2 ns | 3.50<br />2.89 |  1.81<br />1.28 | 0.73<br />0.48 | 4.44<br />3.52 |    0.51<br />0.52 |     0.51<br />0.56 |   0.44<br />0.51 |
-| `unicode_greek`           |  56.8 ns<br />112 ns | 2.95<br />1.97 |  3.27<br />2.08 | 0.51<br />0.38 | 2.26<br />1.88 |    0.63<br />0.66 |     0.66<br />0.61 |   0.60<br />0.62 |
-| `lookaround_combined`     | 51.4 ns<br />86.1 ns | 3.91<br />3.09 |  1.19<br />0.95 | 0.46<br />0.40 | 4.76<br />3.47 |    3.93<br />3.54 |     1.72<br />1.59 |                – |
-| `backref_simple`          | 58.5 ns<br />86.7 ns | 2.08<br />1.58 |  0.92<br />1.10 | 0.30<br />0.37 | 0.88<br />0.85 |    1.30<br />1.53 |     1.61<br />1.96 |                – |
-| `regset_position_lead`    |  69.8 ns<br />103 ns | 3.42<br />2.68 |               – |              – |              – |                 – |                  – |                – |
-| compile `literal`         |   540 ns<br />861 ns | 0.60<br />0.56 |  0.57<br />0.52 | 3.32<br />8.77 | 0.53<br />0.55 |    4.18<br />4.30 |     4.17<br />4.20 |   2.90<br />3.23 |
-| compile `named_capture`   | 2.61 µs<br />3.88 µs | 1.54<br />1.16 |  2.00<br />1.09 | 1.38<br />2.26 | 0.22<br />0.18 |  62.81<br />49.85 |   62.17<br />43.75 | 56.81<br />51.75 |
-| compile `lookbehind`      | 1.42 µs<br />1.96 µs | 0.31<br />0.27 |  0.26<br />0.19 | 1.53<br />1.96 | 0.18<br />0.16 | 109.36<br />95.70 | 212.47<br />215.81 |                – |
+| `literal_exact`           | 33.2 ns<br />44.8 ns | 3.11<br />2.17 |  1.20<br />0.80 | 0.45<br />0.48 | 1.19<br />1.22 |    0.31<br />0.38 |     0.33<br />0.41 |   0.22<br />0.30 |
+| `quantifier_greedy`       |   43 ns<br />46.5 ns | 3.47<br />2.43 |  1.56<br />1.47 | 0.51<br />0.52 | 0.97<br />1.05 |    1.14<br />1.34 |     1.13<br />1.33 |   1.07<br />1.18 |
+| `alternation_2_branch`    | 39.6 ns<br />49.4 ns | 2.98<br />1.47 |  1.22<br />0.92 | 0.39<br />0.45 | 1.33<br />1.44 |    0.84<br />1.21 |     0.79<br />1.15 |   0.79<br />0.87 |
+| `alternation_10_branch`   | 25.2 ns<br />45.6 ns | 6.18<br />3.68 | 14.66<br />3.14 | 0.76<br />0.66 | 7.86<br />4.04 |    0.69<br />0.61 |     0.67<br />0.57 |   0.49<br />0.46 |
+| `case_insensitive_phrase` | 57.2 ns<br />92.1 ns | 2.37<br />1.60 |  0.88<br />0.85 | 0.32<br />0.25 | 0.93<br />0.61 |    0.74<br />0.76 |     0.70<br />0.86 |   0.65<br />0.73 |
+| `named_capture_date`      |  62.5 ns<br />106 ns | 3.38<br />2.37 |  1.76<br />1.41 | 0.72<br />0.53 | 4.59<br />3.79 |    0.52<br />0.51 |     0.51<br />0.53 |   0.46<br />0.49 |
+| `unicode_greek`           |  58.2 ns<br />109 ns | 3.15<br />2.14 |  3.49<br />1.92 | 0.55<br />0.34 | 2.39<br />1.96 |    0.72<br />0.74 |     0.71<br />0.73 |   0.66<br />0.65 |
+| `lookaround_combined`     |   60 ns<br />97.4 ns | 3.48<br />2.29 |  1.06<br />0.65 | 0.44<br />0.31 | 4.41<br />2.79 |    3.56<br />2.29 |     1.43<br />1.13 |                – |
+| `backref_simple`          | 60.6 ns<br />70.1 ns | 2.07<br />1.59 |  1.06<br />0.94 | 0.30<br />0.34 | 0.87<br />0.87 |    1.36<br />1.38 |     1.83<br />1.91 |                – |
+| `regset_position_lead`    |   86.6 ns<br />86 ns | 3.75<br />2.53 |               – |              – |              – |                 – |                  – |                – |
+| compile `literal`         |   636 ns<br />731 ns | 0.56<br />0.52 |  0.48<br />0.46 | 3.24<br />5.94 | 0.48<br />0.41 |    3.70<br />3.95 |     3.65<br />3.68 |   2.92<br />2.89 |
+| compile `named_capture`   |  2.62 µs<br />2.9 µs | 1.55<br />1.31 |  1.83<br />1.51 | 1.16<br />2.03 | 0.19<br />0.20 |  54.08<br />60.47 |   54.63<br />58.08 | 53.99<br />60.62 |
+| compile `lookbehind`      | 1.31 µs<br />1.47 µs | 0.29<br />0.46 |  0.25<br />0.34 | 1.44<br />3.00 | 0.17<br />0.20 | 99.21<br />131.83 | 198.65<br />270.03 |                – |
+
+## CSS and the October 9 baseline
+
+| Host             | Oct 9, µs | Before CSS PR, µs | Current, µs | Current vs. before | C-relative vs. before |
+| ---------------- | --------- | ----------------- | ----------- | ------------------ | --------------------- |
+| M4 Pro (virtual) | 72.62     | 73.81             | 76.44       | -3.56%             | +3.42%                |
+| Linux x86-64     | 75.54     | 78.94             | 97.54       | -23.57%            | -5.65%                |
+
+Positive percentages mean less execution time. The C-relative companion is
+`100 × (1 - (new_Ferroni / new_C) / (old_Ferroni / old_C))`; it is a diagnostic
+for changes shared with the reference engine, not a causal correction.
+The current full run and its repeat used the expected current main SHA, with unchanged fixtures
+and harnesses. Their VM scheduling and physical hosts can still differ. The first full run's
+x86 shared job reported an Intel Xeon without AVX-512, unlike the preceding
+AMD EPYC jobs. The same runner label therefore does not guarantee the same CPU.
+The receipts retain the processor and feature flags for every case set.
+
+The local same-host investigation on an M1 Ultra did not reproduce a material
+October 9 regression: 102.409 → 101.873 µs (+0.52%). The CSS PR's paired local
+native comparison saved 5.33%; independent fixed-work lanes saved 4.76% for one
+copy and 5.19% for four. Those local results do not establish the same gain on a
+virtual M4. [PR #357](https://github.com/sebastian-software/ferroni/pull/357)
+retains the complete measurement description and controls.
+
+The historical comparison uses full run
+[37989957431](https://github.com/sebastian-software/ferroni/actions/runs/37989957431)
+for text processing and micro cases, and the later
+[37999607702](https://github.com/sebastian-software/ferroni/actions/runs/37999607702)
+for highlighting. The earlier CSS result predates pre-filter retirement and
+would overstate the accumulated gain. The full-run report retains all 162 matched
+historical comparisons; JSON and Astro are excluded from those averages.
 
 ## Cases an engine cannot run
 
-Both hosts report exactly the same cases. The raw messages are in the run data.
+Both hosts report the same compatibility exclusions. Every raw message is
+retained in `engine-notes.json` next to its measurements.
 
-| Case                     | Engines                                | Why                                                                                                             |
-| ------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `unicode_case_folding`   | `regex`, PCRE2, PCRE2 JIT, fancy-regex | Simple case folding only: `straße` does not match `STRASSE`                                                     |
-| `emoji_graphemes`        | fancy-regex                            | No `\X` grapheme clusters                                                                                       |
-| `variable_lookbehind`    | Onigmo                                 | Rejects the lookbehind of variable length (error -122)                                                          |
-| `absent_comments`        | PCRE2, PCRE2 JIT                       | No absent operator `(?~...)`                                                                                    |
-| `subexp_call_balanced`   | fancy-regex, fancy-regex (seek)        | After the recursive call, group 1 holds the innermost match (`17..21`); Oniguruma keeps the outermost (`4..21`) |
-| `json_objects_recursive` | fancy-regex (seek)                     | Seek mode skips the outer `\g<0>` match and reports the inner object (`136..152` instead of `4..208`)           |
-| `conditional_brackets`   | fancy-regex (seek)                     | Seek mode requires the conditional's then-branch even where its group is unset, so it skips the second match    |
-| C++ replay               | PCRE2, PCRE2 JIT                       | The stacked quantifier `\s+{0,1}` is a syntax error                                                             |
-| C++ replay               | Onigmo                                 | `\s+{1,0}`, a possessive repeat in Oniguruma, is an error (-202); several lookbehinds are rejected (-122)       |
-| SCSS replay              | PCRE2, PCRE2 JIT                       | `\h` and nested classes such as `[a-z[^\x00-\x7F]]` read differently, so some calls match another pattern       |
+| Case                          | Engines                                | Why                                                                                                             |
+| ----------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `unicode_case_folding`        | `regex`, PCRE2, PCRE2 JIT, fancy-regex | Simple case folding only: `straße` does not match `STRASSE`                                                     |
+| `emoji_graphemes`             | fancy-regex                            | No `\X` grapheme clusters                                                                                       |
+| `variable_lookbehind`         | Onigmo                                 | Rejects the lookbehind of variable length (error -122)                                                          |
+| `absent_comments`             | PCRE2, PCRE2 JIT                       | No absent operator `(?~...)`                                                                                    |
+| `subexp_call_balanced`        | fancy-regex, fancy-regex (seek)        | After the recursive call, group 1 holds the innermost match (`17..21`); Oniguruma keeps the outermost (`4..21`) |
+| `json_objects_recursive`      | fancy-regex (seek)                     | Seek mode skips the outer `\g<0>` match and reports the inner object (`136..152` instead of `4..208`)           |
+| `conditional_brackets`        | fancy-regex (seek)                     | Seek mode requires the conditional's then-branch even where its group is unset, so it skips the second match    |
+| C++ replay                    | PCRE2, PCRE2 JIT                       | The stacked quantifier `\s+{0,1}` is a syntax error                                                             |
+| C++ replay                    | Onigmo                                 | `\s+{1,0}`, a possessive repeat in Oniguruma, is an error (-202); several lookbehinds are rejected (-122)       |
+| SCSS replay                   | PCRE2, PCRE2 JIT                       | `\h` and nested classes such as `[a-z[^\x00-\x7F]]` read differently, so some calls match another pattern       |
+| Astro document                | PCRE2, PCRE2 JIT                       | A scanner pattern uses a Unicode escape PCRE2 rejects                                                           |
+| Astro document                | Onigmo                                 | Rejects a look-behind (error -122)                                                                              |
+| Astro document and scanner 22 | fancy-regex (all configurations)       | Reports an empty match where the recorded result is no match                                                    |
 
-Shiki JS reports 96 C++ calls and 16 Java calls with an empty capture group as
-unset or the reverse. vscode-textmate skips zero-length captures, so those
-calls count as equal; no other engine needs this.
+Shiki JS has empty-capture differences in C++ and Java. vscode-textmate skips
+zero-length captures, so only those explicitly recorded differences count as
+equivalent. The validation notes retain their counts.
 
 ## Measurement context
 
-| Field            | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ferroni commit   | `b93c6d2035f4919480f43d9b7d4134541e4cb9b5` for highlighting; `a38768bc80121a1bd72e3e280f12063dc407bc04`, the commit before it, for text processing and short searches                                                                                                                                                                                                                                                                                                                                                                                                |
-| Measurement date | `2026-10-09`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Workflow runs    | [37989957431](https://github.com/sebastian-software/ferroni/actions/runs/37989957431) measured every case set on `a38768b`. [37999607702](https://github.com/sebastian-software/ferroni/actions/runs/37999607702) measured the highlighting set again on `b93c6d2`, after [#324](https://github.com/sebastian-software/ferroni/pull/324) retired the pre-filter on sets whose DFA cache thrashes: the first run's CSS grammar rows had shown that regression (11 to 16 ms instead of 73 to 149 µs). #324 changes nothing the other case sets measure, so they stand. |
-| Apple Silicon    | `blacksmith-6vcpu-macos-26`: Apple M4 Pro (virtual), 6 vCPUs, 24 GB, macOS 26.3, Apple clang 21.0.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| x86-64           | `blacksmith-4vcpu-ubuntu-2404`: AMD EPYC with AVX-512, 4 vCPUs, 16 GB, Ubuntu 24.04.4, GCC 13.3.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `rustc`          | `1.99.0 (b940084d7 2026-09-28)`, release profile with thin LTO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| regex-automata   | 0.4.18, with `perf-literal` and `perf-inline` through the benchmarks' dev-dependencies. Ferroni 2.0.0 as a dependency did not enable them, and in a crate depending on it the C, SCSS and C++ replays ran 10%, 5% and 3% slower than measured here (PHP within noise); the release after 2.0.0 enables them ([#328](https://github.com/sebastian-software/ferroni/pull/328)).                                                                                                                                                                                        |
-| Criterion        | 0.8.2: 30 samples, 3 s measurement, 0.5 s warm-up                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Oniguruma        | `f95747b462de672b6f8dbdeb478245ddf061ca53`, `-O3`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Onigmo           | Ruby `v4.0.7` (`229531a6`), `st.c` from k-takata/Onigmo `1d7ee878`, Ruby syntax                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| PCRE2            | 10.46, bundled by `pcre2-sys` 0.2.10; UTF, UCP and multiline, subject not re-validated (`PCRE2_NO_UTF_CHECK`)                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| fancy-regex      | 0.19.2, Oniguruma mode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `regex`          | 1.13.1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Shiki            | `@shikijs/engine-javascript` and `shiki` 4.5.0 on Node 24.21.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Field               | Value                                                                                                                                                                                                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ferroni commit      | `d791bf1b011f6e98619969872a4d7cb7161912a7`                                                                                                                                                                                                                                                  |
+| Measurement date    | `2026-10-13`                                                                                                                                                                                                                                                                                |
+| Workflow runs       | [38439201637](https://github.com/sebastian-software/ferroni/actions/runs/38439201637), all four case sets on both hosts; [38442515829](https://github.com/sebastian-software/ferroni/actions/runs/38442515829), all four case sets repeated on both hosts; all jobs and summaries succeeded |
+| Source verification | Same measured commit in all sixteen clean build receipts; pinned input and lockfile hashes match                                                                                                                                                                                            |
+| Apple Silicon       | `blacksmith-6vcpu-macos-26`: Apple M4 Pro (Virtual), 6 vCPUs, 24 GB, macOS 26.3, Apple clang 21.0.0                                                                                                                                                                                         |
+| x86-64              | `blacksmith-4vcpu-ubuntu-2404`: AMD EPYC, 4 vCPUs, 16 GB, Ubuntu 24.04.4, GCC 13.3.0; per-case CPU features are in the receipts                                                                                                                                                             |
+| `rustc`             | `1.99.0 (b940084d7 2026-09-28)`, ordinary release profile with thin LTO                                                                                                                                                                                                                     |
+| regex-automata      | 0.4.18; the default `dfa-prefilter` dependency enables `perf-literal` and `perf-inline` in regular library builds as well as these benchmarks                                                                                                                                               |
+| Ferroni features    | Default features plus `onigmo` (which includes `ffi`); default target CPU, with no host-specific Rust flags                                                                                                                                                                                 |
+| Oniguruma           | Pinned `f95747b4`, Oniguruma syntax                                                                                                                                                                                                                                                         |
+| Onigmo              | Ruby `v4.0.7` (`229531a6`), `st.c` from k-takata/Onigmo `1d7ee878`, Ruby syntax                                                                                                                                                                                                             |
+| PCRE2               | 10.46 bundled by `pcre2-sys` 0.2.10; UTF, UCP and multiline; known-valid subjects use `PCRE2_NO_UTF_CHECK`; JIT compilation is outside execution timing                                                                                                                                     |
+| fancy-regex         | 0.19.2, Oniguruma mode; all three configurations appear above                                                                                                                                                                                                                               |
+| `regex`             | 1.13.1                                                                                                                                                                                                                                                                                      |
+| Shiki               | `@shikijs/engine-javascript` and `shiki` 4.5.0 on Node 24.21.0                                                                                                                                                                                                                              |
+
+### Runner per case set
+
+| Platform     | Case set  | Reported CPU           | Reported x86 flags / architecture | vCPUs |
+| ------------ | --------- | ---------------------- | --------------------------------- | ----- |
+| linux-x86-64 | micro     | AMD EPYC               | avx2 avx512bw avx512f bmi2 sse4_2 | 4     |
+| linux-x86-64 | oniguruma | AMD EPYC               | avx2 avx512bw avx512f bmi2 sse4_2 | 4     |
+| linux-x86-64 | shared    | AMD EPYC               | avx2 avx512bw avx512f bmi2 sse4_2 | 4     |
+| linux-x86-64 | textmate  | AMD EPYC               | avx2 avx512bw avx512f bmi2 sse4_2 | 4     |
+| macos-arm64  | micro     | Apple M4 Pro (Virtual) | arm64                             | 6     |
+| macos-arm64  | oniguruma | Apple M4 Pro (Virtual) | arm64                             | 6     |
+| macos-arm64  | shared    | Apple M4 Pro (Virtual) | arm64                             | 6     |
+| macos-arm64  | textmate  | Apple M4 Pro (Virtual) | arm64                             | 6     |
 
 ## Reproducing
 
 ```bash
+git checkout d791bf1b011f6e98619969872a4d7cb7161912a7
 ./scripts/prepare-oniguruma-sources.sh
 ./scripts/prepare-onigmo-sources.sh
 pnpm install --frozen-lockfile --dir benches/shiki_js
-./scripts/compare-engines.py run /tmp/ferroni-compare --cases shared oniguruma micro textmate
+./scripts/compare-engines.py run /tmp/ferroni-compare --cases shared oniguruma micro textmate --measure-seconds 5
 ./scripts/compare-engines.py report /tmp/ferroni-compare.md /tmp/ferroni-compare
 ```
 
-Or dispatch the workflow:
-`gh workflow run blacksmith-comparison.yml --ref main -f platform=both -f cases=all`.
-The tables on this page come from
-`./scripts/compare-engines.py tables benches/results/blacksmith-2026-10-09-37989957431 benches/results/blacksmith-2026-10-09-37999607702`,
-the second run replacing the highlighting set of the first.
+Or dispatch `blacksmith-comparison.yml` with `--ref main`, `platform=both`,
+`cases=all` and `measure_seconds=5`. Verify the returned run's head SHA and every
+build receipt before publishing it. Tables are generated with
+`./scripts/compare-engines.py tables benches/results/blacksmith-2026-10-13-38439201637 benches/results/blacksmith-2026-10-13-38442515829`;
+homepage figures with `./scripts/compare-engines.py figures benches/results/blacksmith-2026-10-13-38439201637 benches/results/blacksmith-2026-10-13-38442515829 docs/app/data/engine-comparison.json`.
