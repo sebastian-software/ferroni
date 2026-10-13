@@ -2880,9 +2880,6 @@ fn advance_char_to_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize)
 /// Case-insensitive string comparison using encoding-aware case folding.
 /// Compares `mblen` bytes starting at `s1_pos` with bytes starting at `*s2_pos`.
 /// Advances `*s2_pos` past consumed bytes on success. Returns true if equal.
-/// Case-insensitive string comparison for backref matching at nested levels.
-/// Only reachable via `\k<name+level>` with ignore-case in recursive patterns.
-#[cfg_attr(coverage_nightly, coverage(off))]
 fn string_cmp_ic(
     enc: OnigEncoding,
     case_fold_flag: OnigCaseFoldType,
@@ -2891,13 +2888,38 @@ fn string_cmp_ic(
     s2_pos: &mut usize,
     mblen: usize,
 ) -> bool {
-    let mut buf1 = [0u8; ONIGENC_MBC_CASE_FOLD_MAXLEN];
-    let mut buf2 = [0u8; ONIGENC_MBC_CASE_FOLD_MAXLEN];
     let end1 = s1_pos + mblen;
     let end2 = *s2_pos + mblen;
     let mut p1 = s1_pos;
     let mut p2 = *s2_pos;
 
+    // These built-in encodings fold ASCII bytes through the same lowercase
+    // table. Preserve C's byte limits and resume its fold loop at the first
+    // non-ASCII pair; a failed comparison must not advance the caller's cursor.
+    if ascii_case_insensitive_backrefs_enabled()
+        && (std::ptr::addr_eq(enc, &crate::encodings::ONIG_ENCODING_UTF8 as OnigEncoding)
+            || std::ptr::addr_eq(enc, &crate::encodings::ONIG_ENCODING_ASCII as OnigEncoding))
+    {
+        while p1 < end1 {
+            let c1 = data[p1];
+            let c2 = data[p2];
+            if c1 >= 0x80 || c2 >= 0x80 {
+                break;
+            }
+            if onigenc_ascii_code_to_lower_case(c1) != onigenc_ascii_code_to_lower_case(c2) {
+                return false;
+            }
+            p1 += 1;
+            p2 += 1;
+        }
+        if p1 == end1 {
+            *s2_pos = p2;
+            return true;
+        }
+    }
+
+    let mut buf1 = [0u8; ONIGENC_MBC_CASE_FOLD_MAXLEN];
+    let mut buf2 = [0u8; ONIGENC_MBC_CASE_FOLD_MAXLEN];
     while p1 < end1 {
         let len1 = enc.mbc_case_fold(case_fold_flag, &mut p1, end1, data, &mut buf1);
         let len2 = enc.mbc_case_fold(case_fold_flag, &mut p2, end2, data, &mut buf2);
@@ -3792,6 +3814,20 @@ thread_local! {
     static DOT_STAR_ASCII_CACHE_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Differential reference for one-byte BackRef1 comparisons.
     static SINGLE_BYTE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
+    /// Differential reference for ASCII case-insensitive backref comparisons.
+    static ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
+}
+
+#[inline(always)]
+fn ascii_case_insensitive_backrefs_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
 }
 
 #[inline(always)]
@@ -9315,6 +9351,221 @@ fn finish_longest_search(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn ascii_case_insensitive_backrefs_preserve_folded_bytes_and_cursor() {
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for flag in [
+                0,
+                ONIGENC_CASE_FOLD_MIN,
+                ONIGENC_CASE_FOLD_ASCII_ONLY,
+                ONIGENC_CASE_FOLD_TURKISH_AZERI,
+            ] {
+                for c1 in 0u8..0x80 {
+                    for c2 in 0u8..0x80 {
+                        let data = [c1, c2];
+                        let run = |disabled| {
+                            ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED.with(|v| v.set(disabled));
+                            let mut next = 1;
+                            let matched = string_cmp_ic(enc, flag, &data, 0, &mut next, 1);
+                            (matched, next)
+                        };
+                        let actual = run(false);
+                        assert_eq!(actual, run(true), "{} {flag} {data:?}", enc.name());
+                        let equal = c1.eq_ignore_ascii_case(&c2);
+                        assert_eq!(actual, (equal, if equal { 2 } else { 1 }));
+                        comparisons += 1;
+                    }
+                }
+            }
+        }
+        ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED.with(|v| v.set(false));
+        println!("{comparisons} ASCII byte-pair result/cursor comparisons");
+    }
+
+    #[test]
+    fn ascii_case_insensitive_backrefs_preserve_searches_captures_and_limits() {
+        let _limits = shared_limits();
+        let patterns = [
+            r"(?i)\b(\w+)\s+\1\b",
+            r"(?i)(.)\1",
+            r"(?i)(a?)\1",
+            r"(?i)(a|bc)\1",
+            r"(?i)(.*)\1",
+            r"(?i)(a|b)+\1",
+            r"(?i)(?!(.)\1)..",
+            r"(?i)(?=(.)\1).",
+            r"(?i)(?<n>kk)\k<n>",
+            r"(?i)(?:(?<n>kk)|(?<n>ss))\k<n>",
+            r"(?i)(a)?\1",
+            r"(?i)(?<=(a))\1",
+            r"(?i)(a|)\1b",
+            r"(?i)((.)\1)*",
+            r"(?i)(a)(b)\2\1",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"aa",
+            b"aA",
+            b"Ab",
+            b"bcBC",
+            b"aABbA",
+            b"The the",
+            b"\xff\xffA",
+            b"\xc2A",
+            b"\xe2\x82A",
+            b"\0\0aA",
+            "éÉ".as_bytes(),
+            "aéAÉ".as_bytes(),
+            "kkkK".as_bytes(),
+            "ssẞ".as_bytes(),
+            "ßß".as_bytes(),
+            "ﬀff".as_bytes(),
+            "sſ".as_bytes(),
+            "Iı".as_bytes(),
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let reg = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack) in [
+                                        (0, 0, 0),
+                                        (1, 0, 0),
+                                        (2, 0, 0),
+                                        (0, 1, 0),
+                                        (0, 2, 0),
+                                        (0, 7, 0),
+                                        (0, 0, 1),
+                                        (0, 0, 8),
+                                    ] {
+                                        let mp = OnigMatchParam {
+                                            retry_limit_in_match: retry,
+                                            retry_limit_in_search: search_retry,
+                                            match_stack_limit: stack,
+                                            ..onig_new_match_param()
+                                        };
+                                        for with_region in [false, true] {
+                                            let run = |disabled| {
+                                                ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED
+                                                    .with(|v| v.set(disabled));
+                                                let mut msa = MatchArg::from_param(
+                                                    &reg,
+                                                    option,
+                                                    with_region.then(OnigRegion::new),
+                                                    start,
+                                                    &mp,
+                                                );
+                                                let result = search_in_range_inner(
+                                                    &reg, input, end, start, range, end, &mut msa,
+                                                );
+                                                (
+                                                    result,
+                                                    msa.region.map(|r| (r.num_regs, r.beg, r.end)),
+                                                    msa.retry_limit_in_search_counter,
+                                                )
+                                            };
+                                            assert_eq!(
+                                                run(false),
+                                                run(true),
+                                                "{} {pattern} {input:?} end={end} start={start} range={range} option={option:?} limits={retry}/{search_retry}/{stack} region={with_region}",
+                                                enc.name()
+                                            );
+                                            ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED
+                                                .with(|v| v.set(false));
+                                            comparisons += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!(
+            "{comparisons} ASCII case-insensitive backref result/capture/retry-counter comparisons"
+        );
+    }
+
+    #[test]
+    fn ascii_case_insensitive_backrefs_preserve_nested_levels() {
+        let _limits = shared_limits();
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in [
+                r"(?i)(?<n>..)\k<n+0>",
+                r"(?i)(?<n>(?:a|b)(?:\g<n>)?)\k<n+0>",
+            ] {
+                let reg = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                for input in ["", "aA", "abAB", "aabb", "éÉ", "aéAÉ", "kkkK", "ssẞ", "ßß"]
+                {
+                    for option in [
+                        ONIG_OPTION_NONE,
+                        ONIG_OPTION_FIND_LONGEST,
+                        ONIG_OPTION_FIND_NOT_EMPTY,
+                    ] {
+                        for with_region in [false, true] {
+                            let run = |disabled| {
+                                ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED.with(|v| v.set(disabled));
+                                let mut msa = MatchArg::new(
+                                    &reg,
+                                    option,
+                                    with_region.then(OnigRegion::new),
+                                    0,
+                                );
+                                let result = search_in_range_inner(
+                                    &reg,
+                                    input.as_bytes(),
+                                    input.len(),
+                                    0,
+                                    input.len(),
+                                    input.len(),
+                                    &mut msa,
+                                );
+                                (result, msa.region.map(|r| (r.num_regs, r.beg, r.end)))
+                            };
+                            assert_eq!(run(false), run(true), "{} {pattern} {input:?}", enc.name());
+                            ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED.with(|v| v.set(false));
+                            comparisons += 1;
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} nested-level result/capture comparisons");
+    }
 
     #[test]
     fn single_byte_backrefs_preserve_searches_captures_and_limits() {
