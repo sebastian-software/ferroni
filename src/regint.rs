@@ -574,6 +574,8 @@ pub(crate) enum OperationPayload {
         char_len: u32,
         /// `(?<!...)` rather than `(?<=...)`.
         not: bool,
+        /// Fixed encoding property, cached for the short ASCII backward walk.
+        ascii_compatible: bool,
     },
     PushOrJumpByteSet {
         addr: RelAddrType,

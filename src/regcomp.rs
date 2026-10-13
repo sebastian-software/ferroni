@@ -2533,12 +2533,14 @@ fn compile_anchor_node(
     let at = an.anchor_type;
 
     if let Some(body) = fused_look_behind_body(an, reg, env) {
+        let ascii_compatible = onigenc_is_ascii_compatible_encoding(reg.enc);
         add_op(
             reg,
             OpCode::LookBehindOp,
             OperationPayload::LookBehindOp {
                 char_len: an.char_min_len,
                 not: at == ANCR_LOOK_BEHIND_NOT,
+                ascii_compatible,
             },
         );
         return compile_tree(body, reg, env);

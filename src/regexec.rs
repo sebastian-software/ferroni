@@ -3468,6 +3468,7 @@ fn step_back_look_behind(
 /// matches. Out of line: code added to
 /// `match_at_impl` shifts its layout (see the performance analysis).
 #[inline(never)]
+#[allow(clippy::too_many_arguments)]
 fn look_behind_body_end(
     body: &Operation,
     char_len: u32,
@@ -3476,9 +3477,23 @@ fn look_behind_body_end(
     s: usize,
     right_range: usize,
     end: usize,
+    ascii_compatible: bool,
 ) -> Option<usize> {
-    onigenc_step_back(enc, 0, s, str_data, char_len as usize)
-        .and_then(|at| single_op_end(body, enc, str_data, at, right_range, end))
+    // Batch the same short ASCII suffixes as STEP_BACK_START, without
+    // another helper call. The head check excludes ASCII-valued trail
+    // bytes in multibyte encodings; one-character bodies keep their walk.
+    let at = if fused_look_behind_ascii_batches_enabled()
+        && (2..=16).contains(&char_len)
+        && let Some(at) = s.checked_sub(char_len as usize)
+        && str_data.get(at..s).is_some_and(<[u8]>::is_ascii)
+        && ascii_compatible
+        && enc.left_adjust_char_head(0, at, str_data) == at
+    {
+        Some(at)
+    } else {
+        onigenc_step_back(enc, 0, s, str_data, char_len as usize)
+    };
+    at.and_then(|at| single_op_end(body, enc, str_data, at, right_range, end))
 }
 
 /// Whether a guarded push with `skipped_retries` may jump. One whose count
@@ -3639,7 +3654,11 @@ pub(crate) enum FirstOpTest {
     /// `BeginLine`.
     BeginLine,
     /// `LookBehindOp` with its one-instruction body at `ops[1]`.
-    LookBehind { char_len: u32, not: bool },
+    LookBehind {
+        char_len: u32,
+        not: bool,
+        ascii_compatible: bool,
+    },
 }
 
 /// The test for `reg`'s first instruction, if it is one a RegSet position
@@ -3658,11 +3677,18 @@ pub(crate) fn first_op_test(reg: &RegexType) -> Option<FirstOpTest> {
             Some(FirstOpTest::WordBoundary { mode, not: true })
         }
         (OpCode::BeginLine, _) => Some(FirstOpTest::BeginLine),
-        (OpCode::LookBehindOp, &OperationPayload::LookBehindOp { char_len, not })
-            if reg.ops.len() > 1 =>
-        {
-            Some(FirstOpTest::LookBehind { char_len, not })
-        }
+        (
+            OpCode::LookBehindOp,
+            &OperationPayload::LookBehindOp {
+                char_len,
+                not,
+                ascii_compatible,
+            },
+        ) if reg.ops.len() > 1 => Some(FirstOpTest::LookBehind {
+            char_len,
+            not,
+            ascii_compatible,
+        }),
         _ => None,
     }
 }
@@ -3697,8 +3723,23 @@ pub(crate) fn first_op_fails(
                 true
             }
         }
-        FirstOpTest::LookBehind { char_len, not } => {
-            look_behind_body_end(&reg.ops[1], char_len, enc, str_data, s, end, end).is_some() == not
+        FirstOpTest::LookBehind {
+            char_len,
+            not,
+            ascii_compatible,
+        } => {
+            look_behind_body_end(
+                &reg.ops[1],
+                char_len,
+                enc,
+                str_data,
+                s,
+                end,
+                end,
+                ascii_compatible,
+            )
+            .is_some()
+                == not
         }
     }
 }
@@ -3816,6 +3857,20 @@ thread_local! {
     static SINGLE_BYTE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
     /// Differential reference for ASCII case-insensitive backref comparisons.
     static ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
+    /// Differential reference for fused look-behind character walks.
+    static FUSED_LOOK_BEHIND_ASCII_BATCHES_DISABLED: Cell<bool> = const { Cell::new(false) };
+}
+
+#[inline(always)]
+fn fused_look_behind_ascii_batches_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !FUSED_LOOK_BEHIND_ASCII_BATCHES_DISABLED.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
 }
 
 #[inline(always)]
@@ -6159,7 +6214,12 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Rust-only (ADR-008): a look-behind with a one-instruction body
             // ================================================================
             OpCode::LookBehindOp => {
-                if let OperationPayload::LookBehindOp { char_len, not } = reg.ops[p].payload {
+                if let OperationPayload::LookBehindOp {
+                    char_len,
+                    not,
+                    ascii_compatible,
+                } = reg.ops[p].payload
+                {
                     let body_end = look_behind_body_end(
                         &reg.ops[p + 1],
                         char_len,
@@ -6168,6 +6228,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         s,
                         right_range,
                         end,
+                        ascii_compatible,
                     );
                     match body_end {
                         // C: CUT_TO_MARK without restoring the position, so
@@ -10086,6 +10147,342 @@ mod tests {
     }
 
     #[test]
+    fn fused_ascii_look_behinds_preserve_body_endpoints() {
+        let _limits = shared_limits();
+        let bodies: Vec<_> = (1..=18)
+            .map(|n| "a".repeat(n))
+            .chain(["[a-z]", "[^a]", "[aé]", "[^é]"].map(String::from))
+            .collect();
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"a",
+            b"aaaaaaaaaaaaaaaaaaaab",
+            b"\0aaaaaaaaaaaaaaaa\x7f",
+            "éaaaaaaaaaaaaaaaaaéb".as_bytes(),
+            b"\x80aaaaaaaaaaaaaaaaa",
+            b"\xc2aaaaaaaaaaaaaaaaa",
+            b"aaaa\xe2\x82aaaaaaaaaaaa",
+            b"\xf5\x80\x80\x80aaaaaaaaaaaaaaaaa",
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for body in &bodies {
+                let reg = regcomp::onig_new(
+                    format!("(?<={body})").as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                let (index, char_len) = reg
+                    .ops
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, op)| match op.payload {
+                        OperationPayload::LookBehindOp { char_len, .. } => Some((i, char_len)),
+                        _ => None,
+                    })
+                    .expect("one-instruction look-behind body");
+                let op = &reg.ops[index + 1];
+                for &text in inputs {
+                    for end in 0..=text.len() {
+                        for at in 0..=end {
+                            for right_range in [at, end] {
+                                let expected = character_walk(enc, 0, at, text, char_len as usize)
+                                    .and_then(|start| {
+                                        single_op_end(op, enc, text, start, right_range, end)
+                                    });
+                                assert_eq!(
+                                    look_behind_body_end(
+                                        op,
+                                        char_len,
+                                        enc,
+                                        text,
+                                        at,
+                                        right_range,
+                                        end,
+                                        onigenc_is_ascii_compatible_encoding(enc)
+                                    ),
+                                    expected,
+                                    "{} {body} {text:?} end={end} at={at} right_range={right_range}",
+                                    enc.name()
+                                );
+                                comparisons += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} fused look-behind body-endpoint comparisons");
+    }
+
+    #[test]
+    fn fused_ascii_look_behinds_do_not_start_on_ascii_valued_trail_bytes() {
+        use crate::regenc::Encoding;
+
+        // A small ASCII-compatible encoding whose 0x81 lead consumes an
+        // ASCII-valued trail byte. Other operations delegate to UTF-8;
+        // this test exercises only backward heads and literal bodies.
+        struct TrailEncoding;
+        impl Encoding for TrailEncoding {
+            fn mbc_enc_len(&self, p: &[u8]) -> usize {
+                if p.first() == Some(&0x81) { 2 } else { 1 }
+            }
+            fn name(&self) -> &str {
+                "ASCII-trail test encoding"
+            }
+            fn max_enc_len(&self) -> usize {
+                2
+            }
+            fn min_enc_len(&self) -> usize {
+                1
+            }
+            fn is_mbc_newline(&self, p: &[u8], end: usize) -> bool {
+                crate::encodings::ONIG_ENCODING_UTF8.is_mbc_newline(p, end)
+            }
+            fn mbc_to_code(&self, p: &[u8], end: usize) -> OnigCodePoint {
+                crate::encodings::ONIG_ENCODING_UTF8.mbc_to_code(p, end)
+            }
+            fn code_to_mbclen(&self, code: OnigCodePoint) -> i32 {
+                crate::encodings::ONIG_ENCODING_UTF8.code_to_mbclen(code)
+            }
+            fn code_to_mbc(&self, code: OnigCodePoint, buf: &mut [u8]) -> i32 {
+                crate::encodings::ONIG_ENCODING_UTF8.code_to_mbc(code, buf)
+            }
+            fn mbc_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                pp: &mut usize,
+                end: usize,
+                source: &[u8],
+                buf: &mut [u8],
+            ) -> i32 {
+                crate::encodings::ONIG_ENCODING_UTF8.mbc_case_fold(flag, pp, end, source, buf)
+            }
+            fn apply_all_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+            ) -> i32 {
+                crate::encodings::ONIG_ENCODING_UTF8.apply_all_case_fold(flag, f)
+            }
+            fn get_case_fold_codes_by_str(
+                &self,
+                flag: OnigCaseFoldType,
+                p: &[u8],
+                end: usize,
+                items: &mut [OnigCaseFoldCodeItem],
+            ) -> i32 {
+                crate::encodings::ONIG_ENCODING_UTF8.get_case_fold_codes_by_str(flag, p, end, items)
+            }
+            fn property_name_to_ctype(&self, p: &[u8]) -> i32 {
+                crate::encodings::ONIG_ENCODING_UTF8.property_name_to_ctype(p)
+            }
+            fn is_code_ctype(&self, code: OnigCodePoint, ctype: u32) -> bool {
+                crate::encodings::ONIG_ENCODING_UTF8.is_code_ctype(code, ctype)
+            }
+            fn get_ctype_code_range(
+                &self,
+                ctype: u32,
+                sb_out: &mut OnigCodePoint,
+            ) -> Option<&'static [OnigCodePoint]> {
+                crate::encodings::ONIG_ENCODING_UTF8.get_ctype_code_range(ctype, sb_out)
+            }
+            fn left_adjust_char_head(&self, start: usize, at: usize, data: &[u8]) -> usize {
+                if at > start && data[at - 1] == 0x81 {
+                    at - 1
+                } else {
+                    at
+                }
+            }
+            fn is_allowed_reverse_match(&self, p: &[u8]) -> bool {
+                crate::encodings::ONIG_ENCODING_UTF8.is_allowed_reverse_match(p)
+            }
+            fn is_valid_mbc_string(&self, s: &[u8]) -> bool {
+                crate::encodings::ONIG_ENCODING_UTF8.is_valid_mbc_string(s)
+            }
+            fn flag(&self) -> u32 {
+                crate::regenc::ENC_FLAG_ASCII_COMPATIBLE
+            }
+        }
+        static ENCODING: TrailEncoding = TrailEncoding;
+        let _limits = shared_limits();
+        let mut comparisons = 0;
+        for width in 2..=18 {
+            let body = "a".repeat(width);
+            let reg = regcomp::onig_new(
+                format!("(?<={body})").as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let (index, char_len) = reg
+                .ops
+                .iter()
+                .enumerate()
+                .find_map(|(i, op)| match op.payload {
+                    OperationPayload::LookBehindOp { char_len, .. } => Some((i, char_len)),
+                    _ => None,
+                })
+                .unwrap();
+            for text in [
+                [vec![0x81], vec![b'a'; 20]].concat(),
+                [vec![b'a', 0x81, b'a'], vec![b'a'; 20]].concat(),
+            ] {
+                // The ASCII-looking suffix begins on the trail byte. The
+                // true character walk lands one byte earlier than subtraction.
+                let from = text.iter().position(|&b| b == 0x81).unwrap() + 1;
+                let at = from + width;
+                assert_ne!(character_walk(&ENCODING, 0, at, &text, width), Some(from));
+                for end in at..=text.len() {
+                    let expected =
+                        character_walk(&ENCODING, 0, at, &text, width).and_then(|start| {
+                            single_op_end(&reg.ops[index + 1], &ENCODING, &text, start, end, end)
+                        });
+                    assert_eq!(
+                        look_behind_body_end(
+                            &reg.ops[index + 1],
+                            char_len,
+                            &ENCODING,
+                            &text,
+                            at,
+                            end,
+                            end,
+                            true
+                        ),
+                        expected,
+                        "width={width} end={end} {text:?}"
+                    );
+                    comparisons += 1;
+                }
+            }
+        }
+        println!("{comparisons} ASCII-valued trail-byte comparisons");
+    }
+
+    #[test]
+    fn fused_ascii_look_behinds_preserve_searches_captures_and_limits() {
+        let _limits = shared_limits();
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"ab",
+            b"aaaaaaaaaaaaaaaaab",
+            b"xaaaaaaaaab aaaaaaaab",
+            b"@charset x @charsetb",
+            "éaaaaaaaab éaaaaaaaaab".as_bytes(),
+            b"\xc2aaaaaaaaab",
+            b"\x80aaaaaaaab",
+            b"aa\xe2\x82aaaaaaab",
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for body in [1, 2, 8, 9, 16, 17]
+                .map(|n| "a".repeat(n))
+                .into_iter()
+                .chain(["@charset".to_string(), "@charset ".to_string()])
+            {
+                for not in ["", "!"] {
+                    let pattern = if not.is_empty() {
+                        format!("(?<={body})(b?)|x")
+                    } else {
+                        format!("(?<!{body})(b?)|x")
+                    };
+                    let reg = regcomp::onig_new(
+                        pattern.as_bytes(),
+                        ONIG_OPTION_NONE,
+                        enc,
+                        &crate::regsyntax::OnigSyntaxOniguruma,
+                    )
+                    .unwrap();
+                    assert!(reg.ops.iter().any(|op| op.opcode == OpCode::LookBehindOp));
+                    for &input in inputs {
+                        for end in [0, input.len().saturating_sub(1), input.len()] {
+                            for start in 0..=end {
+                                for range in [start, end] {
+                                    for option in [
+                                        ONIG_OPTION_NONE,
+                                        ONIG_OPTION_FIND_LONGEST,
+                                        ONIG_OPTION_FIND_NOT_EMPTY,
+                                        ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                    ] {
+                                        for (retry, search_retry, stack, time) in [
+                                            (0, 0, 0, 0),
+                                            (1, 0, 0, 0),
+                                            (2, 0, 0, 0),
+                                            (0, 1, 0, 0),
+                                            (0, 9, 0, 0),
+                                            (0, 0, 1, 0),
+                                            (0, 0, 8, 0),
+                                            (0, 0, 0, 1),
+                                        ] {
+                                            for with_region in [false, true] {
+                                                let run = |disabled| {
+                                                    FUSED_LOOK_BEHIND_ASCII_BATCHES_DISABLED
+                                                        .with(|v| v.set(disabled));
+                                                    let mp = OnigMatchParam {
+                                                        retry_limit_in_match: retry,
+                                                        retry_limit_in_search: search_retry,
+                                                        match_stack_limit: stack,
+                                                        time_limit: time,
+                                                        ..onig_new_match_param()
+                                                    };
+                                                    let mut msa = MatchArg::from_param(
+                                                        &reg,
+                                                        option,
+                                                        with_region.then(OnigRegion::new),
+                                                        start,
+                                                        &mp,
+                                                    );
+                                                    if time != 0 {
+                                                        // Deterministic deadline; never compare wall-clock races.
+                                                        msa.time_end = Some(Instant::now());
+                                                        msa.time_counter = CHECK_TIME_INTERVAL - 1;
+                                                    }
+                                                    let result = search_in_range_inner(
+                                                        &reg, input, end, start, range, end,
+                                                        &mut msa,
+                                                    );
+                                                    (
+                                                        result,
+                                                        msa.region
+                                                            .map(|r| (r.num_regs, r.beg, r.end)),
+                                                        msa.retry_limit_in_search_counter,
+                                                        msa.time_counter,
+                                                    )
+                                                };
+                                                let expected = run(true);
+                                                let actual = run(false);
+                                                FUSED_LOOK_BEHIND_ASCII_BATCHES_DISABLED
+                                                    .with(|v| v.set(false));
+                                                assert_eq!(
+                                                    actual,
+                                                    expected,
+                                                    "{} {pattern} {input:?} end={end} start={start} range={range} option={option:?} limits={retry}/{search_retry}/{stack}/{time} region={with_region}",
+                                                    enc.name()
+                                                );
+                                                comparisons += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} fused look-behind result/capture/retry/time-counter comparisons");
+    }
+
+    #[test]
     fn bounded_optimizer_windows_preserve_search_results_and_limits() {
         let _limits = shared_limits();
 
@@ -11060,6 +11457,7 @@ mod tests {
                                     FirstOpTest::LookBehind {
                                         char_len,
                                         not: false,
+                                        ascii_compatible,
                                     } => {
                                         let body_end = look_behind_body_end(
                                             &reg.ops[1],
@@ -11069,6 +11467,7 @@ mod tests {
                                             s,
                                             end,
                                             end,
+                                            ascii_compatible,
                                         )
                                         .expect("the look-behind holds");
                                         body_end as i32 - s as i32
