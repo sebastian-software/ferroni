@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.3](https://github.com/sebastian-software/ferroni/compare/v2.1.2...v2.1.3) (2026-10-13)
+
+
+### Performance Improvements
+
+* compare ASCII case-insensitive backrefs directly ([746b371](https://github.com/sebastian-software/ferroni/commit/746b371f1232819227395325082788bccbf243e3))
+* compare one-byte BackRef1 captures directly ([68d833f](https://github.com/sebastian-software/ferroni/commit/68d833f35d4845017f3e8de1e2a9b8009ab5f56d))
+
 ## [2.1.2](https://github.com/sebastian-software/ferroni/compare/v2.1.1...v2.1.2) (2026-10-12)
 
 
