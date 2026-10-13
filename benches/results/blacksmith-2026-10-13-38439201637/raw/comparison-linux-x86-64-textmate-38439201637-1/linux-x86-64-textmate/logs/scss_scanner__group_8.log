@@ -1,0 +1,58 @@
+Gnuplot not found, using plotters backend
+UNSUPPORTED {"engine":"pcre2_jit","id":"scss_scanner/document_pcre2_jit","reason":"call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"}
+UNSUPPORTED {"engine":"pcre2","id":"scss_scanner/document_pcre2","reason":"call 12 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"}
+Benchmarking scss_scanner/group_8
+Benchmarking scss_scanner/group_8: Warming up for 500.00 ms
+Benchmarking scss_scanner/group_8: Collecting 30 samples in estimated 5.1060 s (7440 iterations)
+Benchmarking scss_scanner/group_8: Analyzing
+scss_scanner/group_8    time:   [631.18 µs 653.99 µs 677.72 µs]
+                        thrpt:  [1.8651 Melem/s 1.9327 Melem/s 2.0026 Melem/s]
+Benchmarking scss_scanner/group_8_c
+Benchmarking scss_scanner/group_8_c: Warming up for 500.00 ms
+
+Warning: Unable to complete 30 samples in 5.0s. You may wish to increase target time to 9.8s, enable flat sampling, or reduce sample count to 10.
+Benchmarking scss_scanner/group_8_c: Collecting 30 samples in estimated 9.7799 s (465 iterations)
+Benchmarking scss_scanner/group_8_c: Analyzing
+scss_scanner/group_8_c  time:   [21.682 ms 22.342 ms 22.872 ms]
+                        thrpt:  [55.264 Kelem/s 56.575 Kelem/s 58.296 Kelem/s]
+UNSUPPORTED {"engine":"pcre2_jit","id":"scss_scanner/group_8_pcre2_jit","reason":"call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"}
+UNSUPPORTED {"engine":"pcre2","id":"scss_scanner/group_8_pcre2","reason":"call 51 (scanner 8): Some((36, [(5, 5)])), Shiki Some((21, [(4, 22), (4, 5), (5, 22)]))"}
+Benchmarking scss_scanner/group_8_fancy_regex
+Benchmarking scss_scanner/group_8_fancy_regex: Warming up for 500.00 ms
+Benchmarking scss_scanner/group_8_fancy_regex: Collecting 30 samples in estimated 6.8023 s (90 iterations)
+Benchmarking scss_scanner/group_8_fancy_regex: Analyzing
+scss_scanner/group_8_fancy_regex
+                        time:   [76.402 ms 79.002 ms 81.811 ms]
+                        thrpt:  [15.450 Kelem/s 16.000 Kelem/s 16.544 Kelem/s]
+Benchmarking scss_scanner/group_8_fancy_regex_seek
+Benchmarking scss_scanner/group_8_fancy_regex_seek: Warming up for 500.00 ms
+Benchmarking scss_scanner/group_8_fancy_regex_seek: Collecting 30 samples in estimated 8.2003 s (930 iterations)
+Benchmarking scss_scanner/group_8_fancy_regex_seek: Analyzing
+scss_scanner/group_8_fancy_regex_seek
+                        time:   [7.7818 ms 8.0684 ms 8.3969 ms]
+                        thrpt:  [150.53 Kelem/s 156.66 Kelem/s 162.43 Kelem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking scss_scanner/group_8_fancy_regex_set
+Benchmarking scss_scanner/group_8_fancy_regex_set: Warming up for 500.00 ms
+Benchmarking scss_scanner/group_8_fancy_regex_set: Collecting 30 samples in estimated 5.2113 s (4650 iterations)
+Benchmarking scss_scanner/group_8_fancy_regex_set: Analyzing
+scss_scanner/group_8_fancy_regex_set
+                        time:   [1.1164 ms 1.1573 ms 1.2067 ms]
+                        thrpt:  [1.0475 Melem/s 1.0922 Melem/s 1.1322 Melem/s]
+Benchmarking scss_scanner/group_8_onigmo
+Benchmarking scss_scanner/group_8_onigmo: Warming up for 500.00 ms
+
+Warning: Unable to complete 30 samples in 5.0s. You may wish to increase target time to 5.1s, enable flat sampling, or reduce sample count to 20.
+Benchmarking scss_scanner/group_8_onigmo: Collecting 30 samples in estimated 5.0546 s (465 iterations)
+Benchmarking scss_scanner/group_8_onigmo: Analyzing
+scss_scanner/group_8_onigmo
+                        time:   [12.102 ms 12.862 ms 13.764 ms]
+                        thrpt:  [91.833 Kelem/s 98.274 Kelem/s 104.44 Kelem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+UNSUPPORTED {"engine":"pcre2_jit","id":"scss_scanner/group_6_pcre2_jit","reason":"call 2 (scanner 6): Some((17, [(9, 14), (0, 0), (0, 0)])), Shiki Some((16, [(8, 15), (8, 9)]))"}
+UNSUPPORTED {"engine":"pcre2","id":"scss_scanner/group_6_pcre2","reason":"call 2 (scanner 6): Some((17, [(9, 14), (0, 0), (0, 0)])), Shiki Some((16, [(8, 15), (8, 9)]))"}
+UNSUPPORTED {"engine":"pcre2_jit","id":"scss_scanner/group_5_pcre2_jit","reason":"call 0 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"}
+UNSUPPORTED {"engine":"pcre2","id":"scss_scanner/group_5_pcre2","reason":"call 0 (scanner 5): Some((12, [(10, 14), (0, 0), (0, 0)])), Shiki Some((11, [(9, 16), (9, 10)]))"}
+

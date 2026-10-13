@@ -1,0 +1,64 @@
+Gnuplot not found, using plotters backend
+Benchmarking java_scanner/group_15
+Benchmarking java_scanner/group_15: Warming up for 500.00 ms
+Benchmarking java_scanner/group_15: Collecting 30 samples in estimated 5.0226 s (36k iterations)
+Benchmarking java_scanner/group_15: Analyzing
+java_scanner/group_15   time:   [120.77 µs 122.19 µs 123.70 µs]
+                        thrpt:  [4.7857 Melem/s 4.8450 Melem/s 4.9019 Melem/s]
+Benchmarking java_scanner/group_15_c
+Benchmarking java_scanner/group_15_c: Warming up for 500.00 ms
+Benchmarking java_scanner/group_15_c: Collecting 30 samples in estimated 5.1838 s (3255 iterations)
+Benchmarking java_scanner/group_15_c: Analyzing
+java_scanner/group_15_c time:   [1.5150 ms 1.5436 ms 1.5755 ms]
+                        thrpt:  [375.76 Kelem/s 383.51 Kelem/s 390.75 Kelem/s]
+Benchmarking java_scanner/group_15_pcre2_jit
+Benchmarking java_scanner/group_15_pcre2_jit: Warming up for 500.00 ms
+Benchmarking java_scanner/group_15_pcre2_jit: Collecting 30 samples in estimated 5.1166 s (2790 iterations)
+Benchmarking java_scanner/group_15_pcre2_jit: Analyzing
+java_scanner/group_15_pcre2_jit
+                        time:   [1.8210 ms 1.8331 ms 1.8453 ms]
+                        thrpt:  [320.81 Kelem/s 322.95 Kelem/s 325.10 Kelem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking java_scanner/group_15_pcre2
+Benchmarking java_scanner/group_15_pcre2: Warming up for 500.00 ms
+Benchmarking java_scanner/group_15_pcre2: Collecting 30 samples in estimated 5.5717 s (930 iterations)
+Benchmarking java_scanner/group_15_pcre2: Analyzing
+java_scanner/group_15_pcre2
+                        time:   [5.9012 ms 5.9594 ms 6.0206 ms]
+                        thrpt:  [98.329 Kelem/s 99.339 Kelem/s 100.32 Kelem/s]
+Benchmarking java_scanner/group_15_fancy_regex
+Benchmarking java_scanner/group_15_fancy_regex: Warming up for 500.00 ms
+
+Warning: Unable to complete 30 samples in 5.0s. You may wish to increase target time to 6.7s, enable flat sampling, or reduce sample count to 10.
+Benchmarking java_scanner/group_15_fancy_regex: Collecting 30 samples in estimated 6.7465 s (465 iterations)
+Benchmarking java_scanner/group_15_fancy_regex: Analyzing
+java_scanner/group_15_fancy_regex
+                        time:   [14.284 ms 14.430 ms 14.592 ms]
+                        thrpt:  [40.570 Kelem/s 41.027 Kelem/s 41.445 Kelem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking java_scanner/group_15_fancy_regex_seek
+Benchmarking java_scanner/group_15_fancy_regex_seek: Warming up for 500.00 ms
+Benchmarking java_scanner/group_15_fancy_regex_seek: Collecting 30 samples in estimated 5.4425 s (3255 iterations)
+Benchmarking java_scanner/group_15_fancy_regex_seek: Analyzing
+java_scanner/group_15_fancy_regex_seek
+                        time:   [1.7149 ms 1.7388 ms 1.7643 ms]
+                        thrpt:  [335.54 Kelem/s 340.46 Kelem/s 345.21 Kelem/s]
+Benchmarking java_scanner/group_15_fancy_regex_set
+Benchmarking java_scanner/group_15_fancy_regex_set: Warming up for 500.00 ms
+Benchmarking java_scanner/group_15_fancy_regex_set: Collecting 30 samples in estimated 5.0170 s (36k iterations)
+Benchmarking java_scanner/group_15_fancy_regex_set: Analyzing
+java_scanner/group_15_fancy_regex_set
+                        time:   [139.76 µs 141.61 µs 143.47 µs]
+                        thrpt:  [4.1262 Melem/s 4.1805 Melem/s 4.2358 Melem/s]
+Benchmarking java_scanner/group_15_onigmo
+Benchmarking java_scanner/group_15_onigmo: Warming up for 500.00 ms
+Benchmarking java_scanner/group_15_onigmo: Collecting 30 samples in estimated 5.8269 s (930 iterations)
+Benchmarking java_scanner/group_15_onigmo: Analyzing
+java_scanner/group_15_onigmo
+                        time:   [6.1510 ms 6.2130 ms 6.2855 ms]
+                        thrpt:  [94.185 Kelem/s 95.284 Kelem/s 96.245 Kelem/s]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) high mild
+

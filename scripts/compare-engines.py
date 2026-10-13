@@ -440,7 +440,8 @@ def report(args):
             data = json.loads(path.read_text())
             key = data['host']['runner_profile'] or f'{data["host"]["system"]} {data["host"]["cpu"]}'
             entry = hosts.setdefault(key, {'host': data['host'], 'commits': set(), 'results': {},
-                                           'notes': {'unsupported': {}, 'equivalent': {}}})
+                                           'notes': {'unsupported': {}, 'equivalent': {}}, 'cpu_names': set()})
+            entry['cpu_names'].add(data['host']['cpu'])
             entry['commits'].add(data['build']['git_commit'])
             entry['results'].update(data['results'])
             for kind in entry['notes']:
@@ -451,7 +452,8 @@ def report(args):
     for entry in hosts.values():
         if len(entry['commits']) != 1:
             raise SystemExit(f'Runs for one host measured different commits: {sorted(entry["commits"])}')
-        sections.append(render_summary(entry['host'], entry['commits'].pop(), entry['results'], entry['notes']))
+        host = entry['host'] | {'cpu': ' / '.join(sorted(entry['cpu_names']))}
+        sections.append(render_summary(host, entry['commits'].pop(), entry['results'], entry['notes']))
     args.summary.write_text('\n'.join(sections) + '\n')
     print(args.summary.read_text())
 
@@ -484,7 +486,7 @@ FIGURE_ENGINES = ('c', 'shiki_js', 'onigmo', 'pcre2', 'pcre2_jit', 'fancy_regex'
 FIGURE_LABELS = {**LABELS, 'c': 'Oniguruma (C)'}
 HOST_LABELS = {'macos-arm64': 'macOS arm64', 'linux-x86-64': 'Linux x86-64'}
 GRAMMARS = {'cpp_scanner': 'C++', 'java_scanner': 'Java', 'scss_scanner': 'SCSS', 'c_scanner': 'C',
-            'php_scanner': 'PHP'}
+            'php_scanner': 'PHP', 'json_scanner': 'JSON', 'astro_scanner': 'Astro'}
 
 
 def factor_text(factor):
@@ -515,6 +517,7 @@ def load_runs(directories):
                           for case, result in cases.items()}
                 ids = {variant(case, engine) for case in cases for engine in ENGINES}
                 entry['sets'][case_set] = {
+                    'host': host,
                     'timing': timing,
                     'unsupported': {i: note for i, note in data['notes']['unsupported'].items() if i in ids},
                 }
@@ -616,7 +619,8 @@ def figures(args):
         # Every run the figures draw on, oldest first; a later run's case sets
         # replace the earlier run's. The fields above are the latest run's.
         'runs': runs,
-        'hosts': [{'id': host_id, 'label': HOST_LABELS[host_id], 'machine': hosts[host_id]['host']['cpu'],
+        'hosts': [{'id': host_id, 'label': HOST_LABELS[host_id],
+                   'machine': ' / '.join(sorted({s['host']['cpu'] for s in hosts[host_id]['sets'].values()})),
                    'cpus': hosts[host_id]['host']['cpus'], 'runner': hosts[host_id]['host']['runner_label']}
                   for host_id in order],
         'workloads': [{key: workload[key] for key in ('id', 'label', 'short', 'unit', 'detail')}
@@ -670,6 +674,8 @@ DOC_TABLES = [
                                          if case.split('/')[0] in ('c_scanner', 'java_scanner', 'php_scanner')]),
     ('Highlighting, grammars with Oniguruma-only syntax', [case for case in CASES['textmate']
                                                           if case.split('/')[0] in ('cpp_scanner', 'scss_scanner')]),
+    ('Highlighting, Ferriki tokenizer replays', [case for case in CASES['textmate']
+                                                if case.split('/')[0] in ('json_scanner', 'astro_scanner')]),
     ('Grammar scanners', [case for case in CASES['textmate'] if case.startswith('scanner_')]),
     ('Short searches and compilation', CASES['micro']),
 ]

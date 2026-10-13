@@ -1,0 +1,2790 @@
+{
+  "host": {
+    "runner_profile": "macos-arm64",
+    "runner_label": "blacksmith-6vcpu-macos-26",
+    "system": "Darwin",
+    "machine": "arm64",
+    "cpu": "Apple M4 Pro (Virtual)",
+    "cpu_features": "",
+    "cpus": 6,
+    "memory_bytes": 25769803776,
+    "os": "macOS 26.3",
+    "kernel": "25.3.0",
+    "image": {
+      "ImageOS": "macos26",
+      "ImageVersion": "133416"
+    },
+    "run_url": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637"
+  },
+  "build": {
+    "git_commit": "d791bf1b011f6e98619969872a4d7cb7161912a7",
+    "git_status": "",
+    "oniguruma_dir": ".cache/upstream/oniguruma-orig",
+    "onigmo_dir": ".cache/upstream/onigmo-ruby",
+    "battle_inputs_sha256": "157f572261adff2a888354bc4ece2c30ea5d5a1185934eacf522c2f13690d7af",
+    "lockfile_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+    "binaries": {
+      "battle_bench": {
+        "path": "/Users/runner/_work/ferroni/ferroni/target/compare-engines/release/deps/battle_bench-354a193bac4c33bd",
+        "sha256": "abed2502b082df78b4d05406bcb2ce811566d0ad7ac02bfa02aeb76a90b00a57"
+      }
+    },
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+    "cc": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+    "build_command": [
+      "cargo",
+      "bench",
+      "--locked",
+      "--features",
+      "onigmo",
+      "--no-run",
+      "--message-format=json",
+      "--bench",
+      "battle_bench"
+    ],
+    "build_environment": {
+      "PCRE2_SYS_STATIC": "1"
+    }
+  },
+  "settings": {
+    "measure_seconds": 5.0,
+    "warm_up_seconds": 0.5,
+    "sample_size": 30
+  },
+  "results": {
+    "shared": {
+      "regex_tasks/rust/html_tags": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/html_tags",
+            "mean_ns": 296201.6431384265,
+            "median_ns": 297755.0043103448,
+            "mean_ci_ns": [
+              292155.81224503706,
+              300123.3836251634
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/html_tags",
+            "mean_ns": 494817.47313743056,
+            "median_ns": 492656.9447115385,
+            "mean_ci_ns": [
+              490362.12611677765,
+              499647.1716631392
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/html_tags",
+            "mean_ns": 559059.9423098237,
+            "median_ns": 558288.9248575498,
+            "mean_ci_ns": [
+              551613.1773223563,
+              566727.5938398773
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/html_tags",
+            "mean_ns": 153025.1569165958,
+            "median_ns": 150062.44894736842,
+            "mean_ci_ns": [
+              150277.80678798797,
+              156143.15692685
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/html_tags",
+            "mean_ns": 287273.2032382531,
+            "median_ns": 289145.65607210627,
+            "mean_ci_ns": [
+              283606.03029748466,
+              290867.6674205724
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/html_tags",
+            "mean_ns": 878788.0817366163,
+            "median_ns": 880694.9275362319,
+            "mean_ci_ns": [
+              865327.8498387063,
+              890940.0534812849
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/html_tags",
+            "mean_ns": 1125582.1587459655,
+            "median_ns": 1120493.4411458333,
+            "mean_ci_ns": [
+              1111134.6568613632,
+              1140385.3608297545
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/html_tags",
+            "mean_ns": 1157570.327502663,
+            "median_ns": 1158598.2337740385,
+            "mean_ci_ns": [
+              1143787.5343894188,
+              1171617.2744787731
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/html_attributes": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/html_attributes",
+            "mean_ns": 487404.2966107658,
+            "median_ns": 489052.26851851854,
+            "mean_ci_ns": [
+              480376.9724791878,
+              494640.8017255774
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/html_attributes",
+            "mean_ns": 1562663.1827923185,
+            "median_ns": 1554086.4933035714,
+            "mean_ci_ns": [
+              1533198.6342045094,
+              1593996.655518667
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/html_attributes",
+            "mean_ns": 2174094.5108256605,
+            "median_ns": 2129341.5267857146,
+            "mean_ci_ns": [
+              2125854.3350452357,
+              2237819.3034450985
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/html_attributes",
+            "mean_ns": 203593.32816504352,
+            "median_ns": 202819.37605676329,
+            "mean_ci_ns": [
+              199162.02931052606,
+              208224.0633195437
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/html_attributes",
+            "mean_ns": 1109634.4576098523,
+            "median_ns": 1107200.625,
+            "mean_ci_ns": [
+              1096802.3245848014,
+              1122747.6089933412
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/html_attributes",
+            "mean_ns": 290176.9254644065,
+            "median_ns": 289033.9842375367,
+            "mean_ci_ns": [
+              286464.6722107612,
+              294121.43836732925
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/html_attributes",
+            "mean_ns": 289854.4702192007,
+            "median_ns": 288251.7667050691,
+            "mean_ci_ns": [
+              285843.5391924083,
+              294254.9572296896
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/html_attributes",
+            "mean_ns": 238176.78962280674,
+            "median_ns": 233352.70105682604,
+            "mean_ci_ns": [
+              232153.41295016365,
+              245283.25668019784
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/html_comments": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/html_comments",
+            "mean_ns": 20508.564095541336,
+            "median_ns": 20483.360545655894,
+            "mean_ci_ns": [
+              20311.951144187402,
+              20713.61486194607
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/html_comments",
+            "mean_ns": 77886.80309021698,
+            "median_ns": 77568.28142201835,
+            "mean_ci_ns": [
+              77193.35650023677,
+              78714.43093367026
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/html_comments",
+            "mean_ns": 71080.24972032609,
+            "median_ns": 71262.29555333333,
+            "mean_ci_ns": [
+              70324.00179571068,
+              71834.63227807597
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/html_comments",
+            "mean_ns": 14237.439087188242,
+            "median_ns": 14157.161868209052,
+            "mean_ci_ns": [
+              13973.262749883623,
+              14500.114909408068
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/html_comments",
+            "mean_ns": 150093.4111218707,
+            "median_ns": 147475.00998803828,
+            "mean_ci_ns": [
+              147133.3976967401,
+              153405.71183217643
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/html_comments",
+            "mean_ns": 143315.51858304103,
+            "median_ns": 142752.22356739306,
+            "mean_ci_ns": [
+              140736.27719475023,
+              146297.23763408285
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/html_comments",
+            "mean_ns": 144463.53759099636,
+            "median_ns": 143851.22672287392,
+            "mean_ci_ns": [
+              142357.1833905686,
+              146795.2201303208
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/html_comments",
+            "mean_ns": 145160.06656143043,
+            "median_ns": 143279.35082720587,
+            "mean_ci_ns": [
+              143267.5906602721,
+              147188.526397919
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/hex_colors": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/hex_colors",
+            "mean_ns": 16645.40553376314,
+            "median_ns": 16689.518300229734,
+            "mean_ci_ns": [
+              16369.345977862822,
+              16898.794807105343
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/hex_colors",
+            "mean_ns": 84312.05907727432,
+            "median_ns": 84146.74564270153,
+            "mean_ci_ns": [
+              82954.14770265573,
+              85738.84514178733
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/hex_colors",
+            "mean_ns": 429505.52935658273,
+            "median_ns": 432126.32317546586,
+            "mean_ci_ns": [
+              420947.4490622153,
+              438840.7441090205
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/hex_colors",
+            "mean_ns": 12972.293106556872,
+            "median_ns": 12969.20212050367,
+            "mean_ci_ns": [
+              12858.719087349396,
+              13085.87099453043
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/hex_colors",
+            "mean_ns": 18602.419423955846,
+            "median_ns": 18537.270927546804,
+            "mean_ci_ns": [
+              18421.064115269513,
+              18785.046429708684
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/hex_colors",
+            "mean_ns": 1120861.6933884611,
+            "median_ns": 1118071.6177248678,
+            "mean_ci_ns": [
+              1110692.311296144,
+              1131763.9533531882
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/hex_colors",
+            "mean_ns": 48826.515817294945,
+            "median_ns": 48384.14640652557,
+            "mean_ci_ns": [
+              48172.86765087224,
+              49536.27602259647
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/hex_colors",
+            "mean_ns": 13017.757864330542,
+            "median_ns": 12931.031352386217,
+            "mean_ci_ns": [
+              12818.4286991276,
+              13288.473452737117
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/email_addresses": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/email_addresses",
+            "mean_ns": 42451.65738755448,
+            "median_ns": 42117.35932343234,
+            "mean_ci_ns": [
+              41565.6391793333,
+              43389.93066370114
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/email_addresses",
+            "mean_ns": 1405690.8009645317,
+            "median_ns": 1373492.6312358277,
+            "mean_ci_ns": [
+              1364001.1686036745,
+              1453633.1973625282
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/email_addresses",
+            "mean_ns": 2520507.638439023,
+            "median_ns": 2497352.73125,
+            "mean_ci_ns": [
+              2484251.3178914636,
+              2563716.8448321368
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/email_addresses",
+            "mean_ns": 125655.6398822879,
+            "median_ns": 125940.53,
+            "mean_ci_ns": [
+              124300.1224641807,
+              126905.48119374727
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/email_addresses",
+            "mean_ns": 1292090.1162097722,
+            "median_ns": 1285374.9251700682,
+            "mean_ci_ns": [
+              1277632.3734233184,
+              1306922.7085559207
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/email_addresses",
+            "mean_ns": 24859.497999447147,
+            "median_ns": 25092.5822503201,
+            "mean_ci_ns": [
+              24498.91157155582,
+              25206.28320372598
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/email_addresses",
+            "mean_ns": 24760.930394309482,
+            "median_ns": 24469.78663446055,
+            "mean_ci_ns": [
+              24394.29168130412,
+              25142.790337878454
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/email_addresses",
+            "mean_ns": 17663.75943005761,
+            "median_ns": 17646.92320171411,
+            "mean_ci_ns": [
+              17550.96396838209,
+              17779.84899594114
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/emoji": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/emoji",
+            "mean_ns": 114140.4896896044,
+            "median_ns": 115139.62837837837,
+            "mean_ci_ns": [
+              112983.6513174338,
+              115293.3054656758
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/emoji",
+            "mean_ns": 344053.57714651147,
+            "median_ns": 337216.4436521739,
+            "mean_ci_ns": [
+              335785.74367255345,
+              355294.33252700785
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/emoji",
+            "mean_ns": 483797.9262280243,
+            "median_ns": 483523.57262552937,
+            "mean_ci_ns": [
+              477927.1418830453,
+              490690.223592185
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/emoji",
+            "mean_ns": 88033.07891156264,
+            "median_ns": 87871.61885964911,
+            "mean_ci_ns": [
+              86885.78557479843,
+              89312.48486619156
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/emoji",
+            "mean_ns": 584717.1131626362,
+            "median_ns": 585426.6004807693,
+            "mean_ci_ns": [
+              577344.7967274104,
+              592087.6265486336
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/emoji",
+            "mean_ns": 98591.62893691118,
+            "median_ns": 98106.58796352585,
+            "mean_ci_ns": [
+              97221.37270290797,
+              100133.82208327742
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/emoji",
+            "mean_ns": 97564.29028400223,
+            "median_ns": 97449.15674603175,
+            "mean_ci_ns": [
+              96580.59327234297,
+              98600.08826679242
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/emoji",
+            "mean_ns": 66062.92335980103,
+            "median_ns": 66064.67109512625,
+            "mean_ci_ns": [
+              65313.279836909,
+              66811.74343568992
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/ascii_emoticons": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/ascii_emoticons",
+            "mean_ns": 64450.42528217065,
+            "median_ns": 63743.21575767841,
+            "mean_ci_ns": [
+              63660.56320077916,
+              65305.40635138091
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/ascii_emoticons",
+            "mean_ns": 119336.2310220522,
+            "median_ns": 118982.43341991342,
+            "mean_ci_ns": [
+              118000.88499327829,
+              120686.80981881454
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/ascii_emoticons",
+            "mean_ns": 136641.49989236734,
+            "median_ns": 136990.93840727175,
+            "mean_ci_ns": [
+              135358.74852658896,
+              137943.46559773383
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/ascii_emoticons",
+            "mean_ns": 22765.187469323973,
+            "median_ns": 22830.595461243734,
+            "mean_ci_ns": [
+              22537.915324000987,
+              22976.80440708866
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/ascii_emoticons",
+            "mean_ns": 56449.17503917337,
+            "median_ns": 56162.397351900974,
+            "mean_ci_ns": [
+              55960.3027420957,
+              56948.460092124726
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/ascii_emoticons",
+            "mean_ns": 44287.93742023826,
+            "median_ns": 44106.132496075355,
+            "mean_ci_ns": [
+              43881.24913240505,
+              44713.15343307621
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/ascii_emoticons",
+            "mean_ns": 43695.52545763265,
+            "median_ns": 43828.46085858586,
+            "mean_ci_ns": [
+              43367.36536645955,
+              44019.235535814754
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/ascii_emoticons",
+            "mean_ns": 34910.82567443031,
+            "median_ns": 34672.62534597948,
+            "mean_ci_ns": [
+              34539.41800032021,
+              35290.23099376988
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/hashtags_mentions": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/hashtags_mentions",
+            "mean_ns": 70393.173549683,
+            "median_ns": 70472.68112947658,
+            "mean_ci_ns": [
+              69616.52126090534,
+              71185.2682411061
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/hashtags_mentions",
+            "mean_ns": 177781.6450630642,
+            "median_ns": 177884.26799140708,
+            "mean_ci_ns": [
+              176187.11633347956,
+              179340.59393348175
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/hashtags_mentions",
+            "mean_ns": 150952.62212912517,
+            "median_ns": 151240.05668756532,
+            "mean_ci_ns": [
+              148588.6514119813,
+              153242.93447024457
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/hashtags_mentions",
+            "mean_ns": 39145.199765008736,
+            "median_ns": 39129.33574646075,
+            "mean_ci_ns": [
+              38615.15034679456,
+              39683.29921746135
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/hashtags_mentions",
+            "mean_ns": 73122.16193974072,
+            "median_ns": 73330.9301874596,
+            "mean_ci_ns": [
+              72360.14249655088,
+              73862.69556854347
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/hashtags_mentions",
+            "mean_ns": 90430.39689960756,
+            "median_ns": 89966.8889569161,
+            "mean_ci_ns": [
+              89564.61286682577,
+              91394.49483050095
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/hashtags_mentions",
+            "mean_ns": 92028.28790001935,
+            "median_ns": 92319.00876144962,
+            "mean_ci_ns": [
+              90863.19640405176,
+              93069.23608898679
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/hashtags_mentions",
+            "mean_ns": 62219.213660544105,
+            "median_ns": 62262.497329409205,
+            "mean_ci_ns": [
+              61449.556123967435,
+              62975.29086118861
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/ipv4_addresses": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/ipv4_addresses",
+            "mean_ns": 178509.1314382676,
+            "median_ns": 180698.6564009662,
+            "mean_ci_ns": [
+              174645.66469836293,
+              182077.90743922823
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/ipv4_addresses",
+            "mean_ns": 274803.7064936441,
+            "median_ns": 266199.15528711485,
+            "mean_ci_ns": [
+              267229.3432695065,
+              283506.2031916884
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/ipv4_addresses",
+            "mean_ns": 520683.946479167,
+            "median_ns": 520670.3031417113,
+            "mean_ci_ns": [
+              519812.6211339925,
+              521573.28458270937
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/ipv4_addresses",
+            "mean_ns": 199893.72634249082,
+            "median_ns": 200071.44734848483,
+            "mean_ci_ns": [
+              198774.51656960434,
+              201040.7358058357
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/ipv4_addresses",
+            "mean_ns": 1031893.0252716776,
+            "median_ns": 1027571.2166666667,
+            "mean_ci_ns": [
+              1025870.3256259094,
+              1040288.1887802203
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/ipv4_addresses",
+            "mean_ns": 3645750.1414292958,
+            "median_ns": 3654273.8583333334,
+            "mean_ci_ns": [
+              3625029.162892526,
+              3668048.0728319106
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/ipv4_addresses",
+            "mean_ns": 1015202.9459742438,
+            "median_ns": 1014882.0349616858,
+            "mean_ci_ns": [
+              1013828.6816738957,
+              1016849.0660602567
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/ipv4_addresses",
+            "mean_ns": 930298.8564306888,
+            "median_ns": 923125.6666666666,
+            "mean_ci_ns": [
+              922579.5854711322,
+              938655.1417676486
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/iso_timestamps": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/iso_timestamps",
+            "mean_ns": 68767.48548787758,
+            "median_ns": 68520.36292016806,
+            "mean_ci_ns": [
+              68490.82413345303,
+              69043.91478550214
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/iso_timestamps",
+            "mean_ns": 143031.01078750068,
+            "median_ns": 142718.3117454195,
+            "mean_ci_ns": [
+              142580.96424914338,
+              143637.73492933996
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/iso_timestamps",
+            "mean_ns": 399833.7248604844,
+            "median_ns": 399808.90234765236,
+            "mean_ci_ns": [
+              397158.25662481005,
+              402393.37583965313
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/iso_timestamps",
+            "mean_ns": 26995.425937472963,
+            "median_ns": 27000.808472644378,
+            "mean_ci_ns": [
+              26770.585077672655,
+              27224.51378581311
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/iso_timestamps",
+            "mean_ns": 467056.624074531,
+            "median_ns": 466165.34301270416,
+            "mean_ci_ns": [
+              465679.4865577232,
+              468492.01755737996
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/iso_timestamps",
+            "mean_ns": 1777953.0539966559,
+            "median_ns": 1759992.2977777778,
+            "mean_ci_ns": [
+              1757354.4133162694,
+              1805909.9758128037
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/iso_timestamps",
+            "mean_ns": 186038.5445566055,
+            "median_ns": 186479.88060606061,
+            "mean_ci_ns": [
+              183382.64257470047,
+              188525.15259129053
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/iso_timestamps",
+            "mean_ns": 58692.7753573438,
+            "median_ns": 58444.223280098275,
+            "mean_ci_ns": [
+              58428.30352892056,
+              58998.235781010895
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/log_keywords_ignorecase": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/log_keywords_ignorecase",
+            "mean_ns": 92096.85636722478,
+            "median_ns": 92994.50258799172,
+            "mean_ci_ns": [
+              89988.44172465616,
+              94330.87699519508
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/log_keywords_ignorecase",
+            "mean_ns": 251344.1393090179,
+            "median_ns": 250712.75560007285,
+            "mean_ci_ns": [
+              249357.5028806009,
+              253368.48286782557
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/log_keywords_ignorecase",
+            "mean_ns": 431678.1739878579,
+            "median_ns": 427200.00140056026,
+            "mean_ci_ns": [
+              426768.69306063635,
+              437025.61146054976
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/log_keywords_ignorecase",
+            "mean_ns": 83113.82093607311,
+            "median_ns": 82775.97343750001,
+            "mean_ci_ns": [
+              82625.5232256632,
+              83628.755535721
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/log_keywords_ignorecase",
+            "mean_ns": 187118.72961822877,
+            "median_ns": 186197.59073842305,
+            "mean_ci_ns": [
+              185237.79966327143,
+              189023.38055959763
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/log_keywords_ignorecase",
+            "mean_ns": 2174110.889055442,
+            "median_ns": 2166443.7375,
+            "mean_ci_ns": [
+              2157461.692866879,
+              2192608.7191042346
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/log_keywords_ignorecase",
+            "mean_ns": 73510.75517511419,
+            "median_ns": 73282.52691622105,
+            "mean_ci_ns": [
+              72392.25917091589,
+              74618.06089045836
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/log_keywords_ignorecase",
+            "mean_ns": 53365.048344850395,
+            "median_ns": 52153.61115151516,
+            "mean_ci_ns": [
+              52098.0172711158,
+              54787.02536983934
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/markdown_links": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/markdown_links",
+            "mean_ns": 43661.335909418165,
+            "median_ns": 43602.415012190875,
+            "mean_ci_ns": [
+              43324.60083974327,
+              44007.057717546086
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/markdown_links",
+            "mean_ns": 152319.35620843907,
+            "median_ns": 151669.7977003643,
+            "mean_ci_ns": [
+              150169.11125013587,
+              154600.91592624137
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/markdown_links",
+            "mean_ns": 275215.0013454322,
+            "median_ns": 280461.9067199248,
+            "mean_ci_ns": [
+              270051.83816057583,
+              280200.98431127565
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/markdown_links",
+            "mean_ns": 41337.31979222588,
+            "median_ns": 41479.17877906977,
+            "mean_ci_ns": [
+              40910.25920011543,
+              41774.90038346006
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/markdown_links",
+            "mean_ns": 78929.84287815863,
+            "median_ns": 78675.29396024464,
+            "mean_ci_ns": [
+              78074.42341232294,
+              79846.23765405065
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/markdown_links",
+            "mean_ns": 297727.7709293976,
+            "median_ns": 298486.5233514821,
+            "mean_ci_ns": [
+              294311.4933235669,
+              301135.1052253993
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/markdown_links",
+            "mean_ns": 283737.31364234874,
+            "median_ns": 280056.77068965515,
+            "mean_ci_ns": [
+              279854.5910923903,
+              287918.9925786944
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/markdown_links",
+            "mean_ns": 277372.55249532184,
+            "median_ns": 275533.0073313783,
+            "mean_ci_ns": [
+              272369.10629314673,
+              283144.6982906162
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/semantic_versions": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/semantic_versions",
+            "mean_ns": 240916.42839421128,
+            "median_ns": 238663.34311594203,
+            "mean_ci_ns": [
+              236793.475314097,
+              245219.14365340472
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/semantic_versions",
+            "mean_ns": 262720.5983452083,
+            "median_ns": 261872.39781788795,
+            "mean_ci_ns": [
+              261175.82218841714,
+              264330.45531741274
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/semantic_versions",
+            "mean_ns": 372732.1188729637,
+            "median_ns": 372130.975180426,
+            "mean_ci_ns": [
+              371950.68486987456,
+              373559.9086305669
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/semantic_versions",
+            "mean_ns": 75220.14955370514,
+            "median_ns": 72496.73170807454,
+            "mean_ci_ns": [
+              72469.93373271206,
+              78032.78840346576
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/semantic_versions",
+            "mean_ns": 166977.57481591325,
+            "median_ns": 165892.1994047619,
+            "mean_ci_ns": [
+              165471.58465043613,
+              168823.4647849238
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/semantic_versions",
+            "mean_ns": 1121193.2921162525,
+            "median_ns": 1119165.6511752137,
+            "mean_ci_ns": [
+              1117466.7039878783,
+              1125400.966314404
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/semantic_versions",
+            "mean_ns": 130963.13684719629,
+            "median_ns": 130700.29866850321,
+            "mean_ci_ns": [
+              130501.84274503578,
+              131536.18048203815
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/semantic_versions",
+            "mean_ns": 78133.03183290681,
+            "median_ns": 77308.50200320513,
+            "mean_ci_ns": [
+              76738.69271040271,
+              79738.13000441287
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/json_strings": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/json_strings",
+            "mean_ns": 291198.66050689504,
+            "median_ns": 290412.2472222223,
+            "mean_ci_ns": [
+              290290.2659646264,
+              292222.0130929251
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/json_strings",
+            "mean_ns": 607757.7275620296,
+            "median_ns": 604230.411111111,
+            "mean_ci_ns": [
+              605106.383638967,
+              610754.31502124
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/json_strings",
+            "mean_ns": 439374.26333982946,
+            "median_ns": 438516.25,
+            "mean_ci_ns": [
+              438191.3499476896,
+              440674.9370485097
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/json_strings",
+            "mean_ns": 148548.3658470256,
+            "median_ns": 148540.9356725146,
+            "mean_ci_ns": [
+              147661.85092697578,
+              149461.2441504777
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/json_strings",
+            "mean_ns": 659797.3451509855,
+            "median_ns": 658943.4099190284,
+            "mean_ci_ns": [
+              658302.1543439014,
+              661373.7781509103
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/json_strings",
+            "mean_ns": 334202.69221612543,
+            "median_ns": 333315.4660256411,
+            "mean_ci_ns": [
+              332103.2505636595,
+              336522.3774828632
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/json_strings",
+            "mean_ns": 334868.62409206136,
+            "median_ns": 330090.50135975133,
+            "mean_ci_ns": [
+              330192.4231497329,
+              343507.535469003
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/json_strings",
+            "mean_ns": 213181.04805406096,
+            "median_ns": 211258.09819347318,
+            "mean_ci_ns": [
+              210534.6867208197,
+              216032.17881259165
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/csv_fields": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/csv_fields",
+            "mean_ns": 182459.80480571513,
+            "median_ns": 182772.34929078014,
+            "mean_ci_ns": [
+              181501.88442421443,
+              183382.29156062263
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/csv_fields",
+            "mean_ns": 381961.8166669172,
+            "median_ns": 381191.77018633543,
+            "mean_ci_ns": [
+              380773.8444760105,
+              383305.57402238343
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/csv_fields",
+            "mean_ns": 278024.39436015254,
+            "median_ns": 277845.7957589286,
+            "mean_ci_ns": [
+              277543.16456387733,
+              278576.4075274723
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/csv_fields",
+            "mean_ns": 81306.73424899783,
+            "median_ns": 81151.95025311527,
+            "mean_ci_ns": [
+              80693.6539453522,
+              81974.67647149679
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/csv_fields",
+            "mean_ns": 324111.15983827197,
+            "median_ns": 325113.16872427985,
+            "mean_ci_ns": [
+              322367.74522712134,
+              325820.96199006925
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/csv_fields",
+            "mean_ns": 206689.90228960614,
+            "median_ns": 206277.65384615384,
+            "mean_ci_ns": [
+              205770.82214673728,
+              207768.8665299885
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/csv_fields",
+            "mean_ns": 205948.91628257412,
+            "median_ns": 204895.16399040236,
+            "mean_ci_ns": [
+              204879.46213871887,
+              207233.22492239717
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/csv_fields",
+            "mean_ns": 152169.9348675771,
+            "median_ns": 151468.621818555,
+            "mean_ci_ns": [
+              151417.24372005093,
+              153220.25680360632
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/rfc5322_emails": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/rfc5322_emails",
+            "mean_ns": 3179188.815388548,
+            "median_ns": 3131813.4166666665,
+            "mean_ci_ns": [
+              3142298.096941913,
+              3219796.560504221
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/rfc5322_emails",
+            "mean_ns": 2361772.724794916,
+            "median_ns": 2353390.3694852944,
+            "mean_ci_ns": [
+              2353939.046302894,
+              2370603.3413995802
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/rfc5322_emails",
+            "mean_ns": 6901437.824376048,
+            "median_ns": 6919753.5,
+            "mean_ci_ns": [
+              6820415.293498169,
+              6988490.66038878
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/rfc5322_emails",
+            "mean_ns": 318235.48928344814,
+            "median_ns": 313345.41964285716,
+            "mean_ci_ns": [
+              314409.0376017259,
+              324116.46638825006
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/rfc5322_emails",
+            "mean_ns": 4846374.314827491,
+            "median_ns": 4768006.155128205,
+            "mean_ci_ns": [
+              4789053.947474766,
+              4915375.14510121
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/rfc5322_emails",
+            "mean_ns": 152976.7811624815,
+            "median_ns": 154666.6228937729,
+            "mean_ci_ns": [
+              150810.45886311005,
+              155036.3237205298
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/rfc5322_emails",
+            "mean_ns": 157170.68928275246,
+            "median_ns": 156649.61574822236,
+            "mean_ci_ns": [
+              155460.28768849804,
+              159233.1126520708
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/rfc5322_emails",
+            "mean_ns": 128969.46914433259,
+            "median_ns": 129005.87954075776,
+            "mean_ci_ns": [
+              128753.52873816284,
+              129155.84022922032
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/ipv6_addresses": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/ipv6_addresses",
+            "mean_ns": 1848564.7634210368,
+            "median_ns": 1846130.4198863637,
+            "mean_ci_ns": [
+              1832202.7299522432,
+              1864919.5578657363
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/ipv6_addresses",
+            "mean_ns": 1163723.579022824,
+            "median_ns": 1154330.0376082251,
+            "mean_ci_ns": [
+              1146892.8479261496,
+              1180761.8347521306
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/ipv6_addresses",
+            "mean_ns": 2971076.564443478,
+            "median_ns": 3044877.777777778,
+            "mean_ci_ns": [
+              2920139.4691766407,
+              3019015.323225316
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/ipv6_addresses",
+            "mean_ns": 817167.4149437074,
+            "median_ns": 824328.9377705627,
+            "mean_ci_ns": [
+              806481.5613200787,
+              827624.8934627625
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/ipv6_addresses",
+            "mean_ns": 4998889.857730484,
+            "median_ns": 4966270.854166667,
+            "mean_ci_ns": [
+              4918191.345019738,
+              5085123.2752309255
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/ipv6_addresses",
+            "mean_ns": 135415.990955437,
+            "median_ns": 135636.1431697613,
+            "mean_ci_ns": [
+              134799.10601839493,
+              136030.3577755689
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/ipv6_addresses",
+            "mean_ns": 140195.0682069322,
+            "median_ns": 138607.96072443182,
+            "mean_ci_ns": [
+              138252.6355462619,
+              142248.33433115372
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/ipv6_addresses",
+            "mean_ns": 129095.24331141017,
+            "median_ns": 130263.6974679803,
+            "mean_ci_ns": [
+              127644.94049050349,
+              130514.11879817006
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/rfc3986_urls": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/rfc3986_urls",
+            "mean_ns": 86785.77463874054,
+            "median_ns": 86612.24568421053,
+            "mean_ci_ns": [
+              86101.79121737016,
+              87472.23744433552
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/rfc3986_urls",
+            "mean_ns": 148292.74516836766,
+            "median_ns": 147997.38306974334,
+            "mean_ci_ns": [
+              146792.42892244607,
+              149931.2117720535
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/rfc3986_urls",
+            "mean_ns": 167166.0464234353,
+            "median_ns": 166174.28698224854,
+            "mean_ci_ns": [
+              165249.3677078877,
+              169157.79742076952
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/rfc3986_urls",
+            "mean_ns": 66324.27030592866,
+            "median_ns": 65953.14174352218,
+            "mean_ci_ns": [
+              65364.29502175217,
+              67333.0221949221
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/rfc3986_urls",
+            "mean_ns": 196883.84851736354,
+            "median_ns": 196986.08005366725,
+            "mean_ci_ns": [
+              194535.8899582206,
+              199587.58347997026
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/rfc3986_urls",
+            "mean_ns": 1722908.182074496,
+            "median_ns": 1723914.6778846155,
+            "mean_ci_ns": [
+              1702785.9931372623,
+              1743368.1492346104
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/rfc3986_urls",
+            "mean_ns": 76535.8859306464,
+            "median_ns": 76285.70782312925,
+            "mean_ci_ns": [
+              75514.5012896255,
+              77557.60354533646
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/rfc3986_urls",
+            "mean_ns": 47122.56665060606,
+            "median_ns": 47154.615935570546,
+            "mean_ci_ns": [
+              46798.902544836055,
+              47417.230751024035
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/keyword_alternation_200": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/keyword_alternation_200",
+            "mean_ns": 850554.0997880506,
+            "median_ns": 847215.3074686256,
+            "mean_ci_ns": [
+              843299.0191154259,
+              858501.1028889487
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/keyword_alternation_200",
+            "mean_ns": 3263001.13300157,
+            "median_ns": 3258618.5185185187,
+            "mean_ci_ns": [
+              3245023.924438597,
+              3283569.837673113
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/keyword_alternation_200",
+            "mean_ns": 4215981.316115483,
+            "median_ns": 4198025.3271604935,
+            "mean_ci_ns": [
+              4137757.116376424,
+              4292713.356068936
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/keyword_alternation_200",
+            "mean_ns": 484889.74184534216,
+            "median_ns": 484262.43106995884,
+            "mean_ci_ns": [
+              479807.9247989007,
+              490602.2272317345
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/keyword_alternation_200",
+            "mean_ns": 9311415.39319697,
+            "median_ns": 9221130.835511982,
+            "mean_ci_ns": [
+              9202407.764171038,
+              9455401.997343183
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/keyword_alternation_200",
+            "mean_ns": 19005343.447619047,
+            "median_ns": 19033244.07142857,
+            "mean_ci_ns": [
+              18785782.02142857,
+              19226813.6427381
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/keyword_alternation_200",
+            "mean_ns": 3412342.2681177813,
+            "median_ns": 3387223.2962962966,
+            "mean_ci_ns": [
+              3371469.9439112423,
+              3454155.0372414542
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/keyword_alternation_200",
+            "mean_ns": 396657.40106218774,
+            "median_ns": 394670.1722027972,
+            "mean_ci_ns": [
+              393114.3993563425,
+              400448.496913335
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/csv_last_column_backtracking": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/csv_last_column_backtracking",
+            "mean_ns": 142191.3515241532,
+            "median_ns": 142655.6638370119,
+            "mean_ci_ns": [
+              140662.3750644229,
+              143688.2105615624
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/csv_last_column_backtracking",
+            "mean_ns": 164181.4755094436,
+            "median_ns": 165484.3514712489,
+            "mean_ci_ns": [
+              162725.7215924717,
+              165490.02967183432
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/csv_last_column_backtracking",
+            "mean_ns": 190916.43169549791,
+            "median_ns": 190039.0651322751,
+            "mean_ci_ns": [
+              189339.27152296228,
+              192612.72265206123
+            ]
+          },
+          "pcre2_jit": {
+            "id": "regex_tasks/pcre2_jit/csv_last_column_backtracking",
+            "mean_ns": 37821.72996052627,
+            "median_ns": 37669.12408405173,
+            "mean_ci_ns": [
+              37394.01084140264,
+              38263.16368645449
+            ]
+          },
+          "pcre2": {
+            "id": "regex_tasks/pcre2/csv_last_column_backtracking",
+            "mean_ns": 81283.73378565542,
+            "median_ns": 79344.8519206114,
+            "mean_ci_ns": [
+              79594.35856829597,
+              83121.51076845074
+            ]
+          },
+          "fancy_regex": {
+            "id": "regex_tasks/fancy_regex/csv_last_column_backtracking",
+            "mean_ns": 111317.55567919786,
+            "median_ns": 109826.40866433871,
+            "mean_ci_ns": [
+              110155.31575027842,
+              112679.61703608678
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "regex_tasks/fancy_regex_seek/csv_last_column_backtracking",
+            "mean_ns": 193095.8678927904,
+            "median_ns": 193073.18174603174,
+            "mean_ci_ns": [
+              192173.86405489247,
+              193995.54442050355
+            ]
+          },
+          "regex": {
+            "id": "regex_tasks/regex/csv_last_column_backtracking",
+            "mean_ns": 165631.1397675547,
+            "median_ns": 164450.5401234568,
+            "mean_ci_ns": [
+              163484.02368212465,
+              167839.24791919184
+            ]
+          }
+        }
+      },
+      "regex_tasks/rust/unicode_case_folding": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo"
+        ],
+        "timing": {
+          "rust": {
+            "id": "regex_tasks/rust/unicode_case_folding",
+            "mean_ns": 140914.7222590347,
+            "median_ns": 141616.35098039213,
+            "mean_ci_ns": [
+              139643.14963135766,
+              142149.89253919164
+            ]
+          },
+          "c": {
+            "id": "regex_tasks/c/unicode_case_folding",
+            "mean_ns": 509559.4330670776,
+            "median_ns": 507814.80602240894,
+            "mean_ci_ns": [
+              506097.5951046767,
+              513069.51762636803
+            ]
+          },
+          "onigmo": {
+            "id": "regex_tasks/onigmo/unicode_case_folding",
+            "mean_ns": 156414.1715839737,
+            "median_ns": 156616.95827505828,
+            "mean_ci_ns": [
+              155166.54491328905,
+              157667.2459510189
+            ]
+          }
+        }
+      },
+      "general_regex/rust/email_validation": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "general_regex/rust/email_validation",
+            "mean_ns": 4669.61281060754,
+            "median_ns": 4671.4437330439505,
+            "mean_ci_ns": [
+              4630.630677215935,
+              4707.607409933621
+            ]
+          },
+          "c": {
+            "id": "general_regex/c/email_validation",
+            "mean_ns": 9314.70240845759,
+            "median_ns": 9278.54131426521,
+            "mean_ci_ns": [
+              9227.423424916598,
+              9402.802774160613
+            ]
+          },
+          "onigmo": {
+            "id": "general_regex/onigmo/email_validation",
+            "mean_ns": 9357.120481571323,
+            "median_ns": 9347.905727335306,
+            "mean_ci_ns": [
+              9267.95532520839,
+              9447.712718957499
+            ]
+          },
+          "pcre2_jit": {
+            "id": "general_regex/pcre2_jit/email_validation",
+            "mean_ns": 1608.9895207049547,
+            "median_ns": 1610.448595393423,
+            "mean_ci_ns": [
+              1586.925983957209,
+              1634.70469503433
+            ]
+          },
+          "pcre2": {
+            "id": "general_regex/pcre2/email_validation",
+            "mean_ns": 5389.859097460529,
+            "median_ns": 5339.2755602240895,
+            "mean_ci_ns": [
+              5322.000740115185,
+              5464.0225775360195
+            ]
+          },
+          "fancy_regex": {
+            "id": "general_regex/fancy_regex/email_validation",
+            "mean_ns": 1531.4118820745819,
+            "median_ns": 1613.8818138259371,
+            "mean_ci_ns": [
+              1480.98133845352,
+              1578.7116172487165
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "general_regex/fancy_regex_seek/email_validation",
+            "mean_ns": 1362.4954748641708,
+            "median_ns": 1354.2172646410286,
+            "mean_ci_ns": [
+              1351.714553494505,
+              1373.7923109976523
+            ]
+          },
+          "regex": {
+            "id": "general_regex/regex/email_validation",
+            "mean_ns": 1012.9407782051568,
+            "median_ns": 1007.1887804172616,
+            "mean_ci_ns": [
+              1006.5301500907937,
+              1019.5136387660822
+            ]
+          }
+        }
+      },
+      "general_regex/rust/uuid_validation": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "general_regex/rust/uuid_validation",
+            "mean_ns": 3766.17239995842,
+            "median_ns": 3808.4803807563676,
+            "mean_ci_ns": [
+              3679.1686380753313,
+              3852.0020991739116
+            ]
+          },
+          "c": {
+            "id": "general_regex/c/uuid_validation",
+            "mean_ns": 11406.630234273363,
+            "median_ns": 11388.947696921092,
+            "mean_ci_ns": [
+              11315.784953818393,
+              11503.123915781238
+            ]
+          },
+          "onigmo": {
+            "id": "general_regex/onigmo/uuid_validation",
+            "mean_ns": 12509.398436113403,
+            "median_ns": 12507.233053646934,
+            "mean_ci_ns": [
+              12485.995468176696,
+              12540.634169325576
+            ]
+          },
+          "pcre2_jit": {
+            "id": "general_regex/pcre2_jit/uuid_validation",
+            "mean_ns": 1486.1419473974513,
+            "median_ns": 1487.0255032924877,
+            "mean_ci_ns": [
+              1473.0096506416335,
+              1499.9494576351008
+            ]
+          },
+          "pcre2": {
+            "id": "general_regex/pcre2/uuid_validation",
+            "mean_ns": 2980.968880459574,
+            "median_ns": 2985.522169182169,
+            "mean_ci_ns": [
+              2971.4687148154826,
+              2990.1004890594527
+            ]
+          },
+          "fancy_regex": {
+            "id": "general_regex/fancy_regex/uuid_validation",
+            "mean_ns": 1457.566192142487,
+            "median_ns": 1456.6729468395642,
+            "mean_ci_ns": [
+              1455.0725174856182,
+              1460.237084762514
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "general_regex/fancy_regex_seek/uuid_validation",
+            "mean_ns": 1456.238969288133,
+            "median_ns": 1451.9061015813631,
+            "mean_ci_ns": [
+              1452.1238449888353,
+              1461.2462756895457
+            ]
+          },
+          "regex": {
+            "id": "general_regex/regex/uuid_validation",
+            "mean_ns": 1162.5205960587086,
+            "median_ns": 1152.5892150845607,
+            "mean_ci_ns": [
+              1152.0942393010191,
+              1174.049507062897
+            ]
+          }
+        }
+      },
+      "general_regex/rust/number_validation": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "general_regex/rust/number_validation",
+            "mean_ns": 3976.5017588583414,
+            "median_ns": 3955.5945938081936,
+            "mean_ci_ns": [
+              3956.464960227891,
+              3998.293673220089
+            ]
+          },
+          "c": {
+            "id": "general_regex/c/number_validation",
+            "mean_ns": 8496.220262394825,
+            "median_ns": 8444.6292970912,
+            "mean_ci_ns": [
+              8460.082160448495,
+              8540.197903337767
+            ]
+          },
+          "onigmo": {
+            "id": "general_regex/onigmo/number_validation",
+            "mean_ns": 8096.098936607377,
+            "median_ns": 8095.012275110789,
+            "mean_ci_ns": [
+              8040.603008804718,
+              8153.874641818733
+            ]
+          },
+          "pcre2_jit": {
+            "id": "general_regex/pcre2_jit/number_validation",
+            "mean_ns": 1479.8448063146673,
+            "median_ns": 1473.3465550038995,
+            "mean_ci_ns": [
+              1470.1816635636594,
+              1491.5699967581722
+            ]
+          },
+          "pcre2": {
+            "id": "general_regex/pcre2/number_validation",
+            "mean_ns": 9917.231189308928,
+            "median_ns": 9901.562140546368,
+            "mean_ci_ns": [
+              9875.377059187718,
+              9958.348861395194
+            ]
+          },
+          "fancy_regex": {
+            "id": "general_regex/fancy_regex/number_validation",
+            "mean_ns": 1043.6581448802003,
+            "median_ns": 1036.59390248663,
+            "mean_ci_ns": [
+              1021.0047767956576,
+              1067.0395227073707
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "general_regex/fancy_regex_seek/number_validation",
+            "mean_ns": 1094.5325786718224,
+            "median_ns": 1090.9948968691438,
+            "mean_ci_ns": [
+              1084.6957402327082,
+              1104.8710694504273
+            ]
+          },
+          "regex": {
+            "id": "general_regex/regex/number_validation",
+            "mean_ns": 667.2935347355801,
+            "median_ns": 667.0969600460742,
+            "mean_ci_ns": [
+              665.58845934794,
+              669.4246865076223
+            ]
+          }
+        }
+      },
+      "general_regex/rust/access_log_captures": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "general_regex/rust/access_log_captures",
+            "mean_ns": 19799.900988971254,
+            "median_ns": 19714.25814318783,
+            "mean_ci_ns": [
+              19585.625276998933,
+              20026.993989914477
+            ]
+          },
+          "c": {
+            "id": "general_regex/c/access_log_captures",
+            "mean_ns": 26459.57798617079,
+            "median_ns": 26212.992269316732,
+            "mean_ci_ns": [
+              26039.798935194154,
+              26897.91911525126
+            ]
+          },
+          "onigmo": {
+            "id": "general_regex/onigmo/access_log_captures",
+            "mean_ns": 30462.229437858405,
+            "median_ns": 29745.33091646141,
+            "mean_ci_ns": [
+              29886.45413385981,
+              31080.140983131307
+            ]
+          },
+          "pcre2_jit": {
+            "id": "general_regex/pcre2_jit/access_log_captures",
+            "mean_ns": 5370.76375710578,
+            "median_ns": 5383.467535595475,
+            "mean_ci_ns": [
+              5291.245855237278,
+              5449.473423154036
+            ]
+          },
+          "pcre2": {
+            "id": "general_regex/pcre2/access_log_captures",
+            "mean_ns": 14235.968082260853,
+            "median_ns": 14176.594126724764,
+            "mean_ci_ns": [
+              14119.790167897954,
+              14369.013002720727
+            ]
+          },
+          "fancy_regex": {
+            "id": "general_regex/fancy_regex/access_log_captures",
+            "mean_ns": 29436.790506067588,
+            "median_ns": 29455.041340508807,
+            "mean_ci_ns": [
+              29244.92290150862,
+              29636.263235356066
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "general_regex/fancy_regex_seek/access_log_captures",
+            "mean_ns": 34694.449544143004,
+            "median_ns": 34501.971439137786,
+            "mean_ci_ns": [
+              34025.11498404725,
+              35404.25564241238
+            ]
+          },
+          "regex": {
+            "id": "general_regex/regex/access_log_captures",
+            "mean_ns": 25485.813339391836,
+            "median_ns": 25052.32064516129,
+            "mean_ci_ns": [
+              25007.911765927554,
+              26201.606345805405
+            ]
+          }
+        }
+      },
+      "general_regex/rust/url_extraction": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "general_regex/rust/url_extraction",
+            "mean_ns": 5319.901940699184,
+            "median_ns": 5307.464696223317,
+            "mean_ci_ns": [
+              5254.747867276458,
+              5388.544785961755
+            ]
+          },
+          "c": {
+            "id": "general_regex/c/url_extraction",
+            "mean_ns": 14935.60209265318,
+            "median_ns": 14957.525766188828,
+            "mean_ci_ns": [
+              14809.665502244248,
+              15061.065455504666
+            ]
+          },
+          "onigmo": {
+            "id": "general_regex/onigmo/url_extraction",
+            "mean_ns": 13438.932883727182,
+            "median_ns": 13389.981945168956,
+            "mean_ci_ns": [
+              13326.266475293176,
+              13561.12618286762
+            ]
+          },
+          "pcre2_jit": {
+            "id": "general_regex/pcre2_jit/url_extraction",
+            "mean_ns": 3412.910274074963,
+            "median_ns": 3424.807053398058,
+            "mean_ci_ns": [
+              3387.8204858839636,
+              3437.512486053832
+            ]
+          },
+          "pcre2": {
+            "id": "general_regex/pcre2/url_extraction",
+            "mean_ns": 8222.124310391475,
+            "median_ns": 8178.832164531937,
+            "mean_ci_ns": [
+              8146.571549102998,
+              8299.188337237923
+            ]
+          },
+          "fancy_regex": {
+            "id": "general_regex/fancy_regex/url_extraction",
+            "mean_ns": 11812.237280822988,
+            "median_ns": 11727.986031870943,
+            "mean_ci_ns": [
+              11688.264184057178,
+              11941.649040833976
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "general_regex/fancy_regex_seek/url_extraction",
+            "mean_ns": 11126.966984518787,
+            "median_ns": 11134.472886232845,
+            "mean_ci_ns": [
+              10941.60921950753,
+              11316.932776261305
+            ]
+          },
+          "regex": {
+            "id": "general_regex/regex/url_extraction",
+            "mean_ns": 8800.878364477381,
+            "median_ns": 8842.141953502414,
+            "mean_ci_ns": [
+              8703.272859911549,
+              8906.12082159818
+            ]
+          }
+        }
+      },
+      "general_regex/rust/unicode_words": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "general_regex/rust/unicode_words",
+            "mean_ns": 28156.27487836431,
+            "median_ns": 28048.252891326025,
+            "mean_ci_ns": [
+              27974.02919638338,
+              28349.026340843193
+            ]
+          },
+          "c": {
+            "id": "general_regex/c/unicode_words",
+            "mean_ns": 53285.66374466073,
+            "median_ns": 53187.533230452675,
+            "mean_ci_ns": [
+              53103.357875937174,
+              53499.21892821208
+            ]
+          },
+          "onigmo": {
+            "id": "general_regex/onigmo/unicode_words",
+            "mean_ns": 36994.25610596891,
+            "median_ns": 37072.380134886575,
+            "mean_ci_ns": [
+              36832.02576767222,
+              37152.518695020066
+            ]
+          },
+          "pcre2_jit": {
+            "id": "general_regex/pcre2_jit/unicode_words",
+            "mean_ns": 11084.093043060133,
+            "median_ns": 11024.51457734168,
+            "mean_ci_ns": [
+              11012.413722348472,
+              11163.174851354803
+            ]
+          },
+          "pcre2": {
+            "id": "general_regex/pcre2/unicode_words",
+            "mean_ns": 30829.631530642608,
+            "median_ns": 30810.174910394264,
+            "mean_ci_ns": [
+              30736.532347421784,
+              30930.99273046373
+            ]
+          },
+          "fancy_regex": {
+            "id": "general_regex/fancy_regex/unicode_words",
+            "mean_ns": 29124.507439213052,
+            "median_ns": 29083.835317460318,
+            "mean_ci_ns": [
+              29055.250539062392,
+              29196.642480139464
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "general_regex/fancy_regex_seek/unicode_words",
+            "mean_ns": 29151.158798508848,
+            "median_ns": 29101.186686686684,
+            "mean_ci_ns": [
+              29028.205505533322,
+              29279.500148763367
+            ]
+          },
+          "regex": {
+            "id": "general_regex/regex/unicode_words",
+            "mean_ns": 18836.92479649432,
+            "median_ns": 18784.4583107089,
+            "mean_ci_ns": [
+              18754.251305787937,
+              18932.535180546012
+            ]
+          }
+        }
+      },
+      "general_regex/rust/email_redaction": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "general_regex/rust/email_redaction",
+            "mean_ns": 14171.646381757342,
+            "median_ns": 14159.428724852518,
+            "mean_ci_ns": [
+              14125.387399076057,
+              14218.714630300195
+            ]
+          },
+          "c": {
+            "id": "general_regex/c/email_redaction",
+            "mean_ns": 59678.021676459146,
+            "median_ns": 59576.58098776966,
+            "mean_ci_ns": [
+              59500.13970330401,
+              59881.64526440885
+            ]
+          },
+          "onigmo": {
+            "id": "general_regex/onigmo/email_redaction",
+            "mean_ns": 92777.994309507,
+            "median_ns": 92730.93943412909,
+            "mean_ci_ns": [
+              92618.55034043074,
+              92959.09827072574
+            ]
+          },
+          "pcre2_jit": {
+            "id": "general_regex/pcre2_jit/email_redaction",
+            "mean_ns": 8600.724788991809,
+            "median_ns": 8538.944238813157,
+            "mean_ci_ns": [
+              8542.60518259979,
+              8667.808210042715
+            ]
+          },
+          "pcre2": {
+            "id": "general_regex/pcre2/email_redaction",
+            "mean_ns": 53538.016725738395,
+            "median_ns": 53503.46095387841,
+            "mean_ci_ns": [
+              53355.792277352084,
+              53732.579489790616
+            ]
+          },
+          "fancy_regex": {
+            "id": "general_regex/fancy_regex/email_redaction",
+            "mean_ns": 11721.20596232915,
+            "median_ns": 11680.84158531124,
+            "mean_ci_ns": [
+              11684.398361527341,
+              11763.488023013995
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "general_regex/fancy_regex_seek/email_redaction",
+            "mean_ns": 11703.629324251544,
+            "median_ns": 11668.930609265319,
+            "mean_ci_ns": [
+              11669.086135939115,
+              11741.178862765664
+            ]
+          },
+          "regex": {
+            "id": "general_regex/regex/email_redaction",
+            "mean_ns": 8575.410354751642,
+            "median_ns": 8505.626893004115,
+            "mean_ci_ns": [
+              8523.31702395604,
+              8633.475469089046
+            ]
+          }
+        }
+      },
+      "text_scanning/rust/literal_50k": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "text_scanning/rust/literal_50k",
+            "mean_ns": 35.45242876830918,
+            "median_ns": 34.68935727090226,
+            "mean_ci_ns": [
+              34.94819882646168,
+              36.02656487892874
+            ]
+          },
+          "c": {
+            "id": "text_scanning/c/literal_50k",
+            "mean_ns": 113.32223396540893,
+            "median_ns": 112.88953335566669,
+            "mean_ci_ns": [
+              112.13362439333811,
+              114.57313863570657
+            ]
+          },
+          "onigmo": {
+            "id": "text_scanning/onigmo/literal_50k",
+            "mean_ns": 28.964933055266247,
+            "median_ns": 28.89635036970399,
+            "mean_ci_ns": [
+              28.61149978654142,
+              29.340473694546176
+            ]
+          },
+          "pcre2_jit": {
+            "id": "text_scanning/pcre2_jit/literal_50k",
+            "mean_ns": 15.129333639104713,
+            "median_ns": 15.005142973450742,
+            "mean_ci_ns": [
+              14.973415629951226,
+              15.302268040587363
+            ]
+          },
+          "pcre2": {
+            "id": "text_scanning/pcre2/literal_50k",
+            "mean_ns": 36.081824936017334,
+            "median_ns": 35.5442222423683,
+            "mean_ci_ns": [
+              35.57188612776093,
+              36.63865700510388
+            ]
+          },
+          "fancy_regex": {
+            "id": "text_scanning/fancy_regex/literal_50k",
+            "mean_ns": 11.440532052013545,
+            "median_ns": 11.003343439956934,
+            "mean_ci_ns": [
+              11.078395851901416,
+              11.806987410373344
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "text_scanning/fancy_regex_seek/literal_50k",
+            "mean_ns": 11.245313032535286,
+            "median_ns": 11.216075492323702,
+            "mean_ci_ns": [
+              11.050289694672413,
+              11.441098306397182
+            ]
+          },
+          "regex": {
+            "id": "text_scanning/regex/literal_50k",
+            "mean_ns": 7.703210855488337,
+            "median_ns": 7.668756748953021,
+            "mean_ci_ns": [
+              7.631808992852445,
+              7.792684196272274
+            ]
+          }
+        }
+      },
+      "text_scanning/rust/no_match_50k": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "text_scanning/rust/no_match_50k",
+            "mean_ns": 1035.9725875573042,
+            "median_ns": 1037.7201917815496,
+            "mean_ci_ns": [
+              1029.486915380948,
+              1042.7239617253663
+            ]
+          },
+          "c": {
+            "id": "text_scanning/c/no_match_50k",
+            "mean_ns": 6072.512866148108,
+            "median_ns": 6051.172475472601,
+            "mean_ci_ns": [
+              6007.774994679121,
+              6142.444052038249
+            ]
+          },
+          "onigmo": {
+            "id": "text_scanning/onigmo/no_match_50k",
+            "mean_ns": 5862.475848246443,
+            "median_ns": 5841.662967180383,
+            "mean_ci_ns": [
+              5808.777536720942,
+              5924.227211530018
+            ]
+          },
+          "pcre2_jit": {
+            "id": "text_scanning/pcre2_jit/no_match_50k",
+            "mean_ns": 1296.3246671864663,
+            "median_ns": 1293.9110128126906,
+            "mean_ci_ns": [
+              1283.9138857350536,
+              1308.879102511907
+            ]
+          },
+          "pcre2": {
+            "id": "text_scanning/pcre2/no_match_50k",
+            "mean_ns": 827.5166385959487,
+            "median_ns": 823.1703694485924,
+            "mean_ci_ns": [
+              820.0750188215936,
+              835.4169541239313
+            ]
+          },
+          "fancy_regex": {
+            "id": "text_scanning/fancy_regex/no_match_50k",
+            "mean_ns": 1066.6774392320538,
+            "median_ns": 1064.0490086560067,
+            "mean_ci_ns": [
+              1056.942291028901,
+              1076.3934476030336
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "text_scanning/fancy_regex_seek/no_match_50k",
+            "mean_ns": 1071.2013160078923,
+            "median_ns": 1071.0409280048182,
+            "mean_ci_ns": [
+              1057.4700716226523,
+              1084.9124948123645
+            ]
+          },
+          "regex": {
+            "id": "text_scanning/regex/no_match_50k",
+            "mean_ns": 1023.8708744546507,
+            "median_ns": 1024.5057128125263,
+            "mean_ci_ns": [
+              1014.1935273129941,
+              1033.3402060134633
+            ]
+          }
+        }
+      },
+      "text_scanning/rust/field_extract_50k": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "text_scanning/rust/field_extract_50k",
+            "mean_ns": 43.48747003715123,
+            "median_ns": 43.732369770733015,
+            "mean_ci_ns": [
+              42.88552204686498,
+              44.07707030101637
+            ]
+          },
+          "c": {
+            "id": "text_scanning/c/field_extract_50k",
+            "mean_ns": 122.21028177353111,
+            "median_ns": 121.24692783515928,
+            "mean_ci_ns": [
+              120.58612423160488,
+              124.09174666740829
+            ]
+          },
+          "onigmo": {
+            "id": "text_scanning/onigmo/field_extract_50k",
+            "mean_ns": 45.442356611313876,
+            "median_ns": 45.052090579287785,
+            "mean_ci_ns": [
+              44.8084934784584,
+              46.280969752442786
+            ]
+          },
+          "pcre2_jit": {
+            "id": "text_scanning/pcre2_jit/field_extract_50k",
+            "mean_ns": 22.641019399229734,
+            "median_ns": 22.301598840969653,
+            "mean_ci_ns": [
+              22.236379883083984,
+              23.165792387567
+            ]
+          },
+          "pcre2": {
+            "id": "text_scanning/pcre2/field_extract_50k",
+            "mean_ns": 61.46976194163211,
+            "median_ns": 61.02862526141399,
+            "mean_ci_ns": [
+              60.50197731497777,
+              62.47196177252538
+            ]
+          },
+          "fancy_regex": {
+            "id": "text_scanning/fancy_regex/field_extract_50k",
+            "mean_ns": 38.553909344974365,
+            "median_ns": 38.197477961162484,
+            "mean_ci_ns": [
+              38.171009483299244,
+              38.96844675368249
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "text_scanning/fancy_regex_seek/field_extract_50k",
+            "mean_ns": 39.59335380081191,
+            "median_ns": 39.30024329814698,
+            "mean_ci_ns": [
+              39.12591416948888,
+              40.08331699076434
+            ]
+          },
+          "regex": {
+            "id": "text_scanning/regex/field_extract_50k",
+            "mean_ns": 38.28387974915133,
+            "median_ns": 37.9577104745797,
+            "mean_ci_ns": [
+              37.862002330393,
+              38.71700494144752
+            ]
+          }
+        }
+      },
+      "text_scanning/rust/timestamp_50k": {
+        "engines": [
+          "rust",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "timing": {
+          "rust": {
+            "id": "text_scanning/rust/timestamp_50k",
+            "mean_ns": 65.50440626712681,
+            "median_ns": 65.1154142336373,
+            "mean_ci_ns": [
+              64.87592793708659,
+              66.25632188149245
+            ]
+          },
+          "c": {
+            "id": "text_scanning/c/timestamp_50k",
+            "mean_ns": 121.85932131736296,
+            "median_ns": 121.60054081656052,
+            "mean_ci_ns": [
+              119.81877140133282,
+              123.83244022594543
+            ]
+          },
+          "onigmo": {
+            "id": "text_scanning/onigmo/timestamp_50k",
+            "mean_ns": 114.1307369448235,
+            "median_ns": 113.93428775618065,
+            "mean_ci_ns": [
+              112.7582792016351,
+              115.53367028952655
+            ]
+          },
+          "pcre2_jit": {
+            "id": "text_scanning/pcre2_jit/timestamp_50k",
+            "mean_ns": 28.205148391318563,
+            "median_ns": 28.28815781124471,
+            "mean_ci_ns": [
+              27.88607239533492,
+              28.520436861446047
+            ]
+          },
+          "pcre2": {
+            "id": "text_scanning/pcre2/timestamp_50k",
+            "mean_ns": 61.82536531066955,
+            "median_ns": 61.65490826711191,
+            "mean_ci_ns": [
+              61.077145094310914,
+              62.57629583285586
+            ]
+          },
+          "fancy_regex": {
+            "id": "text_scanning/fancy_regex/timestamp_50k",
+            "mean_ns": 45.01314918540116,
+            "median_ns": 45.04336795422469,
+            "mean_ci_ns": [
+              44.534416027192876,
+              45.509035581199726
+            ]
+          },
+          "fancy_regex_seek": {
+            "id": "text_scanning/fancy_regex_seek/timestamp_50k",
+            "mean_ns": 44.23776776668297,
+            "median_ns": 43.95195380236716,
+            "mean_ci_ns": [
+              43.88259639097414,
+              44.61247168486965
+            ]
+          },
+          "regex": {
+            "id": "text_scanning/regex/timestamp_50k",
+            "mean_ns": 39.13644431499473,
+            "median_ns": 38.777044631262385,
+            "mean_ci_ns": [
+              38.61441790240595,
+              39.65742523348352
+            ]
+          }
+        }
+      }
+    }
+  },
+  "notes": {
+    "unsupported": {
+      "regex_tasks/regex/unicode_case_folding": {
+        "engine": "regex",
+        "id": "regex_tasks/regex/unicode_case_folding",
+        "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+      },
+      "regex_tasks/pcre2_jit/unicode_case_folding": {
+        "engine": "pcre2_jit",
+        "id": "regex_tasks/pcre2_jit/unicode_case_folding",
+        "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+      },
+      "regex_tasks/pcre2/unicode_case_folding": {
+        "engine": "pcre2",
+        "id": "regex_tasks/pcre2/unicode_case_folding",
+        "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+      },
+      "regex_tasks/fancy_regex/unicode_case_folding": {
+        "engine": "fancy_regex",
+        "id": "regex_tasks/fancy_regex/unicode_case_folding",
+        "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+      },
+      "regex_tasks/fancy_regex_seek/unicode_case_folding": {
+        "engine": "fancy_regex_seek",
+        "id": "regex_tasks/fancy_regex_seek/unicode_case_folding",
+        "reason": "match 0: [(374, 381)], Oniguruma [(211, 218)]"
+      }
+    },
+    "equivalent": {}
+  }
+}

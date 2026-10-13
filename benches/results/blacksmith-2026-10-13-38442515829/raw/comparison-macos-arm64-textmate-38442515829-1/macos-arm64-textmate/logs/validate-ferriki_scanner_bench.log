@@ -1,0 +1,58 @@
+Gnuplot not found, using plotters backend
+Testing json_scanner/document
+Success
+Testing json_scanner/document_c
+Success
+Testing json_scanner/document_pcre2_jit
+Success
+Testing json_scanner/document_pcre2
+Success
+Testing json_scanner/document_fancy_regex
+Success
+Testing json_scanner/document_fancy_regex_seek
+Success
+Testing json_scanner/document_fancy_regex_set
+Success
+Testing json_scanner/document_onigmo
+Success
+Testing json_scanner/group_1
+Success
+Testing json_scanner/group_1_c
+Success
+Testing json_scanner/group_1_pcre2_jit
+Success
+Testing json_scanner/group_1_pcre2
+Success
+Testing json_scanner/group_1_fancy_regex
+Success
+Testing json_scanner/group_1_fancy_regex_seek
+Success
+Testing json_scanner/group_1_fancy_regex_set
+Success
+Testing json_scanner/group_1_onigmo
+Success
+
+Testing astro_scanner/document
+Success
+Testing astro_scanner/document_c
+Success
+UNSUPPORTED {"engine":"pcre2_jit","id":"astro_scanner/document_pcre2_jit","reason":"scanner 60, pattern \"\\\\\\u{ffff}\\\\uFEFF?(?i:(?=\\\\s*@charset\\\\b))\": PCRE2 at offset 6: PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"}
+UNSUPPORTED {"engine":"pcre2","id":"astro_scanner/document_pcre2","reason":"scanner 60, pattern \"\\\\\\u{ffff}\\\\uFEFF?(?i:(?=\\\\s*@charset\\\\b))\": PCRE2 at offset 6: PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"}
+UNSUPPORTED {"engine":"fancy_regex","id":"astro_scanner/document_fancy_regex","reason":"call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"fancy_regex_seek","id":"astro_scanner/document_fancy_regex_seek","reason":"call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"fancy_regex_set","id":"astro_scanner/document_fancy_regex_set","reason":"call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"onigmo","id":"astro_scanner/document_onigmo","reason":"scanner 8, pattern \"(?!(?<![$_[:alnum:]])(?:(?<=\\\\.\\\\.\\\\.)|(?<!\\\\.))(?:\\\\b(export)\\\\s+)?(?:\\\\b(declare)\\\\s+)?\\\\b(const(?!\\\\s+enum\\\\b))(?![$_[:alnum:]])(?:(?=\\\\.\\\\.\\\\.)|(?!\\\\.)))((?=^|[;}]|((?<![$_[:alnum:]])(?:(?<=\\\\.\\\\.\\\\.)|(?<!\\\\.))(of|in)\\\\s+)|;|^\\\\s*$|^\\\\s*(?:abstract|async|\\\\bawait\\\\s+\\\\busing(?=\\\\s+(?!in\\\\b|of\\\\b(?!\\\\s*(?:of\\\\b|=)))[$_[:alpha:]])\\\\b\\\\b|break|case|catch|class|const|continue|declare|do|else|enum|export|finally|function|for|goto|if|import|interface|let|module|namespace|switch|return|throw|try|type|\\\\busing(?=\\\\s+(?!in\\\\b|of\\\\b(?!\\\\s*(?:of\\\\b|=)))[$_[:alpha:]])\\\\b|var|while)\\\\b)|((?<!(?:^|[^$._[:alnum:]])const)(?=\\\\s*$)))\": Onigmo error -122"}
+Testing astro_scanner/group_22
+Success
+Testing astro_scanner/group_22_c
+Success
+Testing astro_scanner/group_22_pcre2_jit
+Success
+Testing astro_scanner/group_22_pcre2
+Success
+UNSUPPORTED {"engine":"fancy_regex","id":"astro_scanner/group_22_fancy_regex","reason":"call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"fancy_regex_seek","id":"astro_scanner/group_22_fancy_regex_seek","reason":"call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"fancy_regex_set","id":"astro_scanner/group_22_fancy_regex_set","reason":"call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+Testing astro_scanner/group_22_onigmo
+Success
+

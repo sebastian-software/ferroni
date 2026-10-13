@@ -1,22 +1,22 @@
 {
-  "measured": "2026-10-09",
-  "commit": "b93c6d2035f4919480f43d9b7d4134541e4cb9b5",
-  "run": "https://github.com/sebastian-software/ferroni/actions/runs/37999607702",
-  "data": "benches/results/blacksmith-2026-10-09-37999607702",
+  "measured": "2026-10-13",
+  "commit": "d791bf1b011f6e98619969872a4d7cb7161912a7",
+  "run": "https://github.com/sebastian-software/ferroni/actions/runs/38442515829",
+  "data": "benches/results/blacksmith-2026-10-13-38442515829",
   "runs": [
     {
-      "data": "benches/results/blacksmith-2026-10-09-37989957431",
-      "commit": "a38768bc80121a1bd72e3e280f12063dc407bc04",
-      "run": "https://github.com/sebastian-software/ferroni/actions/runs/37989957431",
-      "measured": "2026-10-09",
+      "data": "benches/results/blacksmith-2026-10-13-38439201637",
+      "commit": "d791bf1b011f6e98619969872a4d7cb7161912a7",
+      "run": "https://github.com/sebastian-software/ferroni/actions/runs/38439201637",
+      "measured": "2026-10-13",
       "cases": ["shared", "oniguruma", "micro", "textmate"]
     },
     {
-      "data": "benches/results/blacksmith-2026-10-09-37999607702",
-      "commit": "b93c6d2035f4919480f43d9b7d4134541e4cb9b5",
-      "run": "https://github.com/sebastian-software/ferroni/actions/runs/37999607702",
-      "measured": "2026-10-09",
-      "cases": ["textmate"]
+      "data": "benches/results/blacksmith-2026-10-13-38442515829",
+      "commit": "d791bf1b011f6e98619969872a4d7cb7161912a7",
+      "run": "https://github.com/sebastian-software/ferroni/actions/runs/38442515829",
+      "measured": "2026-10-13",
+      "cases": ["shared", "oniguruma", "micro", "textmate"]
     }
   ],
   "hosts": [
@@ -75,32 +75,32 @@
           "cases": 32,
           "of": 32,
           "factors": {
-            "macos-arm64": 2.386,
-            "linux-x86-64": 2.12
+            "macos-arm64": 2.456,
+            "linux-x86-64": 2.163
           },
-          "factor": 2.249,
-          "text": "2.2×",
+          "factor": 2.305,
+          "text": "2.3×",
           "direction": "faster"
         },
         "oniguruma": {
           "cases": 17,
           "of": 17,
           "factors": {
-            "macos-arm64": 1.455,
-            "linux-x86-64": 1.282
+            "macos-arm64": 1.639,
+            "linux-x86-64": 1.453
           },
-          "factor": 1.365,
-          "text": "1.4×",
+          "factor": 1.543,
+          "text": "1.5×",
           "direction": "faster"
         },
         "highlighting": {
           "cases": 3,
           "of": 3,
           "factors": {
-            "macos-arm64": 10.773,
-            "linux-x86-64": 12.835
+            "macos-arm64": 11.425,
+            "linux-x86-64": 12.303
           },
-          "factor": 11.759,
+          "factor": 11.856,
           "text": "12×",
           "direction": "faster"
         }
@@ -124,11 +124,11 @@
           "cases": 3,
           "of": 3,
           "factors": {
-            "macos-arm64": 5.795,
-            "linux-x86-64": 6.508
+            "macos-arm64": 6.228,
+            "linux-x86-64": 7.159
           },
-          "factor": 6.141,
-          "text": "6.1×",
+          "factor": 6.677,
+          "text": "6.7×",
           "direction": "faster"
         }
       }
@@ -141,33 +141,33 @@
           "cases": 32,
           "of": 32,
           "factors": {
-            "macos-arm64": 2.739,
-            "linux-x86-64": 2.464
+            "macos-arm64": 2.82,
+            "linux-x86-64": 2.601
           },
-          "factor": 2.598,
-          "text": "2.6×",
+          "factor": 2.708,
+          "text": "2.7×",
           "direction": "faster"
         },
         "oniguruma": {
           "cases": 16,
           "of": 17,
           "factors": {
-            "macos-arm64": 1.613,
-            "linux-x86-64": 1.479
+            "macos-arm64": 1.799,
+            "linux-x86-64": 1.569
           },
-          "factor": 1.545,
-          "text": "1.5×",
+          "factor": 1.68,
+          "text": "1.7×",
           "direction": "faster"
         },
         "highlighting": {
           "cases": 3,
           "of": 3,
           "factors": {
-            "macos-arm64": 33.663,
-            "linux-x86-64": 34.824
+            "macos-arm64": 36.362,
+            "linux-x86-64": 34.059
           },
-          "factor": 34.239,
-          "text": "34×",
+          "factor": 35.192,
+          "text": "35×",
           "direction": "faster"
         }
       }
@@ -180,33 +180,33 @@
           "cases": 31,
           "of": 32,
           "factors": {
-            "macos-arm64": 1.881,
-            "linux-x86-64": 1.605
+            "macos-arm64": 1.943,
+            "linux-x86-64": 1.705
           },
-          "factor": 1.737,
-          "text": "1.7×",
+          "factor": 1.82,
+          "text": "1.8×",
           "direction": "faster"
         },
         "oniguruma": {
           "cases": 16,
           "of": 17,
           "factors": {
-            "macos-arm64": 1.494,
-            "linux-x86-64": 1.367
+            "macos-arm64": 1.646,
+            "linux-x86-64": 1.485
           },
-          "factor": 1.429,
-          "text": "1.4×",
+          "factor": 1.564,
+          "text": "1.6×",
           "direction": "faster"
         },
         "highlighting": {
           "cases": 3,
           "of": 3,
           "factors": {
-            "macos-arm64": 27.063,
-            "linux-x86-64": 28.024
+            "macos-arm64": 30.178,
+            "linux-x86-64": 26.995
           },
-          "factor": 27.539,
-          "text": "28×",
+          "factor": 28.542,
+          "text": "29×",
           "direction": "faster"
         }
       }
@@ -219,33 +219,33 @@
           "cases": 31,
           "of": 32,
           "factors": {
-            "macos-arm64": 0.501,
-            "linux-x86-64": 0.454
+            "macos-arm64": 0.518,
+            "linux-x86-64": 0.476
           },
-          "factor": 0.477,
-          "text": "2.1×",
+          "factor": 0.497,
+          "text": "2.0×",
           "direction": "slower"
         },
         "oniguruma": {
           "cases": 16,
           "of": 17,
           "factors": {
-            "macos-arm64": 0.304,
-            "linux-x86-64": 0.27
+            "macos-arm64": 0.339,
+            "linux-x86-64": 0.309
           },
-          "factor": 0.287,
-          "text": "3.5×",
+          "factor": 0.324,
+          "text": "3.1×",
           "direction": "slower"
         },
         "highlighting": {
           "cases": 3,
           "of": 3,
           "factors": {
-            "macos-arm64": 8.486,
-            "linux-x86-64": 11.016
+            "macos-arm64": 9.107,
+            "linux-x86-64": 10.664
           },
-          "factor": 9.669,
-          "text": "9.7×",
+          "factor": 9.855,
+          "text": "9.9×",
           "direction": "faster"
         }
       }
@@ -258,10 +258,10 @@
           "cases": 31,
           "of": 32,
           "factors": {
-            "macos-arm64": 0.948,
-            "linux-x86-64": 0.963
+            "macos-arm64": 0.972,
+            "linux-x86-64": 0.986
           },
-          "factor": 0.956,
+          "factor": 0.979,
           "text": "1.0×",
           "direction": "slower",
           "configuration": "seek mode"
@@ -270,11 +270,11 @@
           "cases": 13,
           "of": 17,
           "factors": {
-            "macos-arm64": 3.01,
-            "linux-x86-64": 2.923
+            "macos-arm64": 3.501,
+            "linux-x86-64": 3.366
           },
-          "factor": 2.966,
-          "text": "3.0×",
+          "factor": 3.433,
+          "text": "3.4×",
           "direction": "faster",
           "configuration": "seek mode"
         },
@@ -282,10 +282,10 @@
           "cases": 3,
           "of": 3,
           "factors": {
-            "macos-arm64": 1.479,
-            "linux-x86-64": 1.46
+            "macos-arm64": 1.559,
+            "linux-x86-64": 1.505
           },
-          "factor": 1.469,
+          "factor": 1.532,
           "text": "1.5×",
           "direction": "faster",
           "configuration": "RegexSet"
@@ -300,10 +300,10 @@
           "cases": 31,
           "of": 32,
           "factors": {
-            "macos-arm64": 0.646,
-            "linux-x86-64": 0.662
+            "macos-arm64": 0.672,
+            "linux-x86-64": 0.673
           },
-          "factor": 0.654,
+          "factor": 0.672,
           "text": "1.5×",
           "direction": "slower"
         },

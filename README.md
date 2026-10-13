@@ -52,6 +52,20 @@ and [untrusted input](https://ferroni.dev/guide/untrusted-input).
 When your patterns fit Rust's [`regex`](https://crates.io/crates/regex)
 crate, prefer its guaranteed linear-time matching.
 
+## Measured performance
+
+The [October 13, 2026 Blacksmith comparison](https://ferroni.dev/perf/engine-comparison)
+measures merged commit `d791bf1b` on virtual M4 Pro and x86-64
+runners. Across accepted tasks and both hosts, Ferroni is
+2.3× faster than C Oniguruma on everyday patterns,
+1.5× faster on advanced patterns and
+12× faster on three portable highlighting documents.
+Against PCRE2 JIT, it is 2.0× slower on compatible everyday
+patterns and 3.1× slower on compatible advanced patterns,
+but 9.9× faster on those scanner replays.
+These geometric means describe the measured workloads and adapters;
+the comparison page retains coverage, per-host results and raw evidence.
+
 ## Documentation
 
 - [Getting started](https://ferroni.dev/guide/getting-started) — captures, iteration, options, errors and the Scanner API.

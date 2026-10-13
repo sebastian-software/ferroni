@@ -1,0 +1,165 @@
+{
+  "total_count": 8,
+  "artifacts": [
+    {
+      "id": 11836286828,
+      "node_id": "MDg6QXJ0aWZhY3QxMTgzNjI4NjgyOA==",
+      "name": "comparison-linux-x86-64-shared-38439201637-1",
+      "size_in_bytes": 195950,
+      "url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11836286828",
+      "archive_download_url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11836286828/zip",
+      "expired": false,
+      "digest": "sha256:27b07715494e90d298cf1338c6c0d86ec31d6301a49d20a57441fd5950a021b7",
+      "created_at": "2026-10-13T17:53:50Z",
+      "updated_at": "2026-10-13T17:53:50Z",
+      "expires_at": "2027-01-11T17:30:26Z",
+      "workflow_run": {
+        "id": 38439201637,
+        "repository_id": 1153370454,
+        "head_repository_id": 1153370454,
+        "head_branch": "main",
+        "head_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7"
+      }
+    },
+    {
+      "id": 11835807340,
+      "node_id": "MDg6QXJ0aWZhY3QxMTgzNTgwNzM0MA==",
+      "name": "comparison-linux-x86-64-textmate-38439201637-1",
+      "size_in_bytes": 85274,
+      "url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11835807340",
+      "archive_download_url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11835807340/zip",
+      "expired": false,
+      "digest": "sha256:38e92906614cb9ec5f50b78e3e3965a04d4138a0fc74b7348a170e04af46996b",
+      "created_at": "2026-10-13T17:51:39Z",
+      "updated_at": "2026-10-13T17:51:39Z",
+      "expires_at": "2027-01-11T17:30:26Z",
+      "workflow_run": {
+        "id": 38439201637,
+        "repository_id": 1153370454,
+        "head_repository_id": 1153370454,
+        "head_branch": "main",
+        "head_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7"
+      }
+    },
+    {
+      "id": 11835590867,
+      "node_id": "MDg6QXJ0aWZhY3QxMTgzNTU5MDg2Nw==",
+      "name": "comparison-macos-arm64-oniguruma-38439201637-1",
+      "size_in_bytes": 105440,
+      "url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11835590867",
+      "archive_download_url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11835590867/zip",
+      "expired": false,
+      "digest": "sha256:be39ea050bb18ed3cd6cfc42408d7b878c6fd109529123dc7a06da98504b662d",
+      "created_at": "2026-10-13T17:40:34Z",
+      "updated_at": "2026-10-13T17:40:34Z",
+      "expires_at": "2027-01-11T17:30:26Z",
+      "workflow_run": {
+        "id": 38439201637,
+        "repository_id": 1153370454,
+        "head_repository_id": 1153370454,
+        "head_branch": "main",
+        "head_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7"
+      }
+    },
+    {
+      "id": 11835218087,
+      "node_id": "MDg6QXJ0aWZhY3QxMTgzNTIxODA4Nw==",
+      "name": "comparison-macos-arm64-shared-38439201637-1",
+      "size_in_bytes": 195114,
+      "url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11835218087",
+      "archive_download_url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11835218087/zip",
+      "expired": false,
+      "digest": "sha256:a474b07a1a9f798f66754658d09c9cbcbd062f59aa52795348a6b3f40676f3ec",
+      "created_at": "2026-10-13T17:51:59Z",
+      "updated_at": "2026-10-13T17:51:59Z",
+      "expires_at": "2027-01-11T17:30:26Z",
+      "workflow_run": {
+        "id": 38439201637,
+        "repository_id": 1153370454,
+        "head_repository_id": 1153370454,
+        "head_branch": "main",
+        "head_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7"
+      }
+    },
+    {
+      "id": 11834948437,
+      "node_id": "MDg6QXJ0aWZhY3QxMTgzNDk0ODQzNw==",
+      "name": "comparison-macos-arm64-textmate-38439201637-1",
+      "size_in_bytes": 84889,
+      "url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11834948437",
+      "archive_download_url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11834948437/zip",
+      "expired": false,
+      "digest": "sha256:96fb396e0fc62ee91e0c6bae108ffca0169654821821a92a1d5ac08d5578e722",
+      "created_at": "2026-10-13T17:50:02Z",
+      "updated_at": "2026-10-13T17:50:02Z",
+      "expires_at": "2027-01-11T17:30:26Z",
+      "workflow_run": {
+        "id": 38439201637,
+        "repository_id": 1153370454,
+        "head_repository_id": 1153370454,
+        "head_branch": "main",
+        "head_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7"
+      }
+    },
+    {
+      "id": 11834917205,
+      "node_id": "MDg6QXJ0aWZhY3QxMTgzNDkxNzIwNQ==",
+      "name": "comparison-linux-x86-64-oniguruma-38439201637-1",
+      "size_in_bytes": 105539,
+      "url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11834917205",
+      "archive_download_url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11834917205/zip",
+      "expired": false,
+      "digest": "sha256:a9fcbb4d69f39564e5531818062b2402046542632e261aa0bc1c7a5285c65a03",
+      "created_at": "2026-10-13T17:40:51Z",
+      "updated_at": "2026-10-13T17:40:51Z",
+      "expires_at": "2027-01-11T17:30:26Z",
+      "workflow_run": {
+        "id": 38439201637,
+        "repository_id": 1153370454,
+        "head_repository_id": 1153370454,
+        "head_branch": "main",
+        "head_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7"
+      }
+    },
+    {
+      "id": 11834812014,
+      "node_id": "MDg6QXJ0aWZhY3QxMTgzNDgxMjAxNA==",
+      "name": "comparison-macos-arm64-micro-38439201637-1",
+      "size_in_bytes": 80387,
+      "url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11834812014",
+      "archive_download_url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11834812014/zip",
+      "expired": false,
+      "digest": "sha256:8b46a571c5476d96b104a6a23eb7b408c4f71fe50329e060171804051e070309",
+      "created_at": "2026-10-13T17:39:21Z",
+      "updated_at": "2026-10-13T17:39:21Z",
+      "expires_at": "2027-01-11T17:30:26Z",
+      "workflow_run": {
+        "id": 38439201637,
+        "repository_id": 1153370454,
+        "head_repository_id": 1153370454,
+        "head_branch": "main",
+        "head_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7"
+      }
+    },
+    {
+      "id": 11834791911,
+      "node_id": "MDg6QXJ0aWZhY3QxMTgzNDc5MTkxMQ==",
+      "name": "comparison-linux-x86-64-micro-38439201637-1",
+      "size_in_bytes": 80421,
+      "url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11834791911",
+      "archive_download_url": "https://api.github.com/repos/sebastian-software/ferroni/actions/artifacts/11834791911/zip",
+      "expired": false,
+      "digest": "sha256:cb7a981cc1e551b9408f2ae83319f2669d38647a150c7ab54d3bc26e48e442b4",
+      "created_at": "2026-10-13T17:39:02Z",
+      "updated_at": "2026-10-13T17:39:02Z",
+      "expires_at": "2027-01-11T17:30:26Z",
+      "workflow_run": {
+        "id": 38439201637,
+        "repository_id": 1153370454,
+        "head_repository_id": 1153370454,
+        "head_branch": "main",
+        "head_sha": "d791bf1b011f6e98619969872a4d7cb7161912a7"
+      }
+    }
+  ]
+}

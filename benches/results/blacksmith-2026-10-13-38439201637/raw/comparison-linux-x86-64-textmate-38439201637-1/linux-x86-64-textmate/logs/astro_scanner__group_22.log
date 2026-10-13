@@ -1,0 +1,50 @@
+Gnuplot not found, using plotters backend
+UNSUPPORTED {"engine":"pcre2_jit","id":"astro_scanner/document_pcre2_jit","reason":"scanner 60, pattern \"\\\\\\u{ffff}\\\\uFEFF?(?i:(?=\\\\s*@charset\\\\b))\": PCRE2 at offset 6: PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"}
+UNSUPPORTED {"engine":"pcre2","id":"astro_scanner/document_pcre2","reason":"scanner 60, pattern \"\\\\\\u{ffff}\\\\uFEFF?(?i:(?=\\\\s*@charset\\\\b))\": PCRE2 at offset 6: PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"}
+UNSUPPORTED {"engine":"fancy_regex","id":"astro_scanner/document_fancy_regex","reason":"call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"fancy_regex_seek","id":"astro_scanner/document_fancy_regex_seek","reason":"call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"fancy_regex_set","id":"astro_scanner/document_fancy_regex_set","reason":"call 575 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"onigmo","id":"astro_scanner/document_onigmo","reason":"scanner 8, pattern \"(?!(?<![$_[:alnum:]])(?:(?<=\\\\.\\\\.\\\\.)|(?<!\\\\.))(?:\\\\b(export)\\\\s+)?(?:\\\\b(declare)\\\\s+)?\\\\b(const(?!\\\\s+enum\\\\b))(?![$_[:alnum:]])(?:(?=\\\\.\\\\.\\\\.)|(?!\\\\.)))((?=^|[;}]|((?<![$_[:alnum:]])(?:(?<=\\\\.\\\\.\\\\.)|(?<!\\\\.))(of|in)\\\\s+)|;|^\\\\s*$|^\\\\s*(?:abstract|async|\\\\bawait\\\\s+\\\\busing(?=\\\\s+(?!in\\\\b|of\\\\b(?!\\\\s*(?:of\\\\b|=)))[$_[:alpha:]])\\\\b\\\\b|break|case|catch|class|const|continue|declare|do|else|enum|export|finally|function|for|goto|if|import|interface|let|module|namespace|switch|return|throw|try|type|\\\\busing(?=\\\\s+(?!in\\\\b|of\\\\b(?!\\\\s*(?:of\\\\b|=)))[$_[:alpha:]])\\\\b|var|while)\\\\b)|((?<!(?:^|[^$._[:alnum:]])const)(?=\\\\s*$)))\": Onigmo error -122"}
+Benchmarking astro_scanner/group_22
+Benchmarking astro_scanner/group_22: Warming up for 500.00 ms
+Benchmarking astro_scanner/group_22: Collecting 30 samples in estimated 5.0035 s (26k iterations)
+Benchmarking astro_scanner/group_22: Analyzing
+astro_scanner/group_22  time:   [141.15 µs 144.69 µs 149.08 µs]
+                        thrpt:  [4.9302 Melem/s 5.0799 Melem/s 5.2072 Melem/s]
+Benchmarking astro_scanner/group_22_c
+Benchmarking astro_scanner/group_22_c: Warming up for 500.00 ms
+Benchmarking astro_scanner/group_22_c: Collecting 30 samples in estimated 5.2629 s (9300 iterations)
+Benchmarking astro_scanner/group_22_c: Analyzing
+astro_scanner/group_22_c
+                        time:   [587.73 µs 598.18 µs 609.38 µs]
+                        thrpt:  [1.2061 Melem/s 1.2287 Melem/s 1.2506 Melem/s]
+Benchmarking astro_scanner/group_22_pcre2_jit
+Benchmarking astro_scanner/group_22_pcre2_jit: Warming up for 500.00 ms
+Benchmarking astro_scanner/group_22_pcre2_jit: Collecting 30 samples in estimated 5.0471 s (13k iterations)
+Benchmarking astro_scanner/group_22_pcre2_jit: Analyzing
+astro_scanner/group_22_pcre2_jit
+                        time:   [364.94 µs 379.53 µs 392.11 µs]
+                        thrpt:  [1.8745 Melem/s 1.9366 Melem/s 2.0141 Melem/s]
+Benchmarking astro_scanner/group_22_pcre2
+Benchmarking astro_scanner/group_22_pcre2: Warming up for 500.00 ms
+Benchmarking astro_scanner/group_22_pcre2: Collecting 30 samples in estimated 5.1715 s (11k iterations)
+Benchmarking astro_scanner/group_22_pcre2: Analyzing
+astro_scanner/group_22_pcre2
+                        time:   [478.72 µs 500.29 µs 524.50 µs]
+                        thrpt:  [1.4013 Melem/s 1.4691 Melem/s 1.5353 Melem/s]
+Found 4 outliers among 30 measurements (13.33%)
+  1 (3.33%) high mild
+  3 (10.00%) high severe
+UNSUPPORTED {"engine":"fancy_regex","id":"astro_scanner/group_22_fancy_regex","reason":"call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"fancy_regex_seek","id":"astro_scanner/group_22_fancy_regex_seek","reason":"call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+UNSUPPORTED {"engine":"fancy_regex_set","id":"astro_scanner/group_22_fancy_regex_set","reason":"call 37 (scanner 22): Some((12, [(39, 39)])), Shiki None"}
+Benchmarking astro_scanner/group_22_onigmo
+Benchmarking astro_scanner/group_22_onigmo: Warming up for 500.00 ms
+Benchmarking astro_scanner/group_22_onigmo: Collecting 30 samples in estimated 5.1357 s (7905 iterations)
+Benchmarking astro_scanner/group_22_onigmo: Analyzing
+astro_scanner/group_22_onigmo
+                        time:   [643.41 µs 658.67 µs 676.36 µs]
+                        thrpt:  [1.0867 Melem/s 1.1159 Melem/s 1.1423 Melem/s]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high severe
+
