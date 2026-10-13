@@ -17,12 +17,16 @@ int ferroni_onigmo_init(void) {
 
 /* Ruby syntax, which Oniguruma's own syntax descends from. */
 ferroni_onigmo_regex *ferroni_onigmo_new(const unsigned char *pattern, size_t length,
-                                         int ignorecase, int capture_group, int *error) {
+                                         int ignorecase, int capture_group,
+                                         int multiline, int dotall, int extended, int *error) {
   OnigErrorInfo info;
   OnigOptionType options = ONIG_OPTION_NONE;
   ferroni_onigmo_regex *regex = malloc(sizeof(*regex));
   if (ignorecase) options |= ONIG_OPTION_IGNORECASE;
   if (capture_group) options |= ONIG_OPTION_CAPTURE_GROUP;
+  if (!multiline) options |= ONIG_OPTION_SINGLELINE;
+  if (dotall) options |= ONIG_OPTION_MULTILINE;
+  if (extended) options |= ONIG_OPTION_EXTEND;
   *error = onig_new(&regex->reg, pattern, pattern + length, options, ONIG_ENCODING_UTF8,
                     ONIG_SYNTAX_RUBY, &info);
   if (*error != ONIG_NORMAL) {

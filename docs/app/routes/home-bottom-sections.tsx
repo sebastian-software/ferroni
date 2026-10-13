@@ -180,7 +180,7 @@ export function ClosingSection() {
           <Link to="/guide/getting-started" className="fam-btn fam-btn-primary">
             Read the guide <Mark name="arrow" className="icon" size={18} />
           </Link>
-          <Link to="/perf/engine-comparison" className="fam-btn fam-btn-ghost">
+          <Link to="/perf/regex-workloads" className="fam-btn fam-btn-ghost">
             Benchmarks
           </Link>
         </>

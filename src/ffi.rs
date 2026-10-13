@@ -292,18 +292,29 @@ impl CRegion {
 
     /// Copy capture bounds for differential tests and benchmark validation.
     pub fn capture_ranges(&self) -> Vec<(i32, i32)> {
+        let (beg, end) = self.capture_bounds();
+        beg.iter().copied().zip(end.iter().copied()).collect()
+    }
+
+    /// Whole-match bounds without allocating a vector of subgroup captures.
+    pub fn match_range(&self) -> Option<(i32, i32)> {
+        let (beg, end) = self.capture_bounds();
+        Some((*beg.first()?, *end.first()?))
+    }
+
+    fn capture_bounds(&self) -> (&[i32], &[i32]) {
         // SAFETY: this wrapper owns the live region. Oniguruma initializes
         // both arrays for num_regs entries; an empty region can have null
         // arrays, so do not construct slices until its length is positive.
         unsafe {
             let region = &*self.raw;
             if region.num_regs <= 0 {
-                return Vec::new();
+                return (&[], &[]);
             }
             let len = region.num_regs as usize;
             let beg = std::slice::from_raw_parts(region.beg, len);
             let end = std::slice::from_raw_parts(region.end, len);
-            beg.iter().copied().zip(end.iter().copied()).collect()
+            (beg, end)
         }
     }
 }

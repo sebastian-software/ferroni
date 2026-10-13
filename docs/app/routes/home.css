@@ -136,14 +136,12 @@
   text-underline-offset: 0.2em;
 }
 
-.fr-scanner-walkthrough,
-.fr-speed-chart {
+.fr-scanner-walkthrough {
   min-width: 0;
   margin: 2rem 0 0;
 }
 
-.fr-scanner-walkthrough figcaption,
-.fr-speed-chart figcaption {
+.fr-scanner-walkthrough figcaption {
   font-weight: 700;
   margin-bottom: 1rem;
 }
@@ -167,85 +165,6 @@
 
 .fr-patterns strong {
   display: block;
-}
-
-.fr-speed-chart {
-  margin-top: 0;
-}
-
-.fr-speed-chart figcaption {
-  font-size: 1.125rem;
-  margin-bottom: 0.75rem;
-}
-
-.fr-speed-key {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem 1.5rem;
-  color: var(--ink-soft);
-  font-size: 0.8125rem;
-}
-
-.fr-speed-key > span:first-child {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.fr-speed-key i {
-  height: 1rem;
-  border-left: 2px dashed var(--ink);
-}
-
-.fr-speed-chart ul {
-  list-style: none;
-  padding: 0;
-  margin-block: 1rem;
-  display: grid;
-}
-
-.fr-speed-chart li {
-  display: grid;
-  grid-template-columns: 11rem minmax(0, 1fr) 3.25rem;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  padding-block: 1rem;
-  border-bottom: 1px solid var(--line);
-}
-
-.fr-speed-chart li > span {
-  font-size: 0.9375rem;
-  line-height: 1.4;
-}
-
-.fr-speed-chart strong {
-  text-align: right;
-  font-family: var(--mono);
-  font-size: 1.125rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--rust);
-}
-
-.fr-speed-track {
-  position: relative;
-  background: var(--bg-dim);
-  height: 1.125rem;
-}
-
-.fr-speed-track span {
-  display: block;
-  height: 100%;
-  background: var(--rust);
-  box-shadow: inset 0 -1px 0 var(--rust-deep);
-}
-
-.fr-speed-track i {
-  position: absolute;
-  top: -0.2rem;
-  bottom: -0.2rem;
-  border-left: 2px dashed var(--ink);
-  box-shadow: 0 0 0 1px var(--bg);
 }
 
 .fr-patterns {
@@ -293,108 +212,9 @@
   scroll-margin-top: 6rem;
 }
 
-.fr-comparison-details {
-  margin-block: 2rem;
-  border-block: 1px solid var(--line);
-  padding-block: 0.75rem;
-}
-
-.fr-comparison-details summary {
-  cursor: pointer;
-  padding-block: 0.5rem;
-  font-weight: 700;
-}
-
-.fr-comparison-details summary:focus-visible,
 .fr-jump a:focus-visible {
   outline: 2px solid var(--rust);
   outline-offset: 4px;
-}
-
-/* The factor carries its meaning without color; tints add a quiet scan cue. */
-.fr-comparison-value {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 5rem;
-  max-width: 100%;
-  box-sizing: border-box;
-  padding: 0.4rem 0.5rem;
-  border-radius: 0.25rem;
-}
-
-.fr-comparison-value strong {
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.fr-comparison-value small {
-  color: var(--ink-soft);
-  font-size: 0.75rem;
-}
-
-.fr-comparison-value[data-speed="faster"] {
-  color: #356047;
-  background: color-mix(in oklch, #527862 10%, transparent);
-}
-
-.fr-comparison-value[data-speed="slower"] {
-  color: #8a514b;
-  background: color-mix(in oklch, #985b54 10%, transparent);
-}
-
-/* All three workloads stay visible together, including on a narrow screen. */
-.fr-comparison-details .fam-compare-table,
-.fr-benchmark-history .fam-compare-table {
-  min-width: 0;
-  table-layout: fixed;
-}
-
-.fr-comparison-details .fam-compare-table th:first-child,
-.fr-benchmark-history .fam-compare-table th:first-child {
-  width: 28%;
-  min-width: 0;
-}
-
-.fr-comparison-details .fam-compare[data-align="end"] .fam-compare-table th,
-.fr-comparison-details .fam-compare[data-align="end"] .fam-compare-table td,
-.fr-benchmark-history .fam-compare[data-align="end"] .fam-compare-table th,
-.fr-benchmark-history .fam-compare[data-align="end"] .fam-compare-table td {
-  padding-inline: 0.4rem;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.fr-benchmark-history .fr-factor-change {
-  display: block;
-  font-variant-numeric: tabular-nums;
-}
-
-.fr-benchmark-history .fr-factor-change small {
-  display: block;
-  margin-top: 0.25rem;
-}
-
-@media (max-width: 42rem) {
-  .fr-comparison-details .fam-compare-table,
-  .fr-benchmark-history .fam-compare-table {
-    font-size: 0.8125rem;
-  }
-
-  .fr-comparison-details .fam-compare-table thead th,
-  .fr-benchmark-history .fam-compare-table thead th {
-    font-size: 0.6875rem;
-    letter-spacing: 0.04em;
-  }
-
-  .fr-comparison-value {
-    min-width: 0;
-    padding-inline: 0.3rem;
-  }
-
-  .fr-comparison-value small {
-    font-size: 0.6875rem;
-  }
 }
 
 @media (max-width: 42rem) {
@@ -425,16 +245,6 @@
 
 .ferroni-home .fam-split {
   gap: 2rem 3rem;
-}
-
-@media (max-width: 54rem) {
-  .fr-speed-chart li {
-    grid-template-columns: minmax(0, 1fr) 3.25rem;
-  }
-
-  .fr-speed-chart li > span {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 42rem) {

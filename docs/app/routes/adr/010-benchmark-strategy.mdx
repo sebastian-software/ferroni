@@ -7,55 +7,100 @@ title: "Benchmark Strategy"
 
 ## Status
 
-Accepted
+Accepted; revised for source-backed regex tasks and separate scanner workloads.
 
 ## Context
 
-Ferroni's performance claims need reproducible evidence. The question is what to benchmark, how to measure, and how to prevent regressions.
+Comparing regex engines requires the same observable work. Extra syntax does
+not automatically make a useful workload. The earlier suite mixes demonstration
+expressions, generated documents, flattened grammar scans and scanner-call
+replays. Its retired reports are available in Git history and cannot establish
+performance of the revised corpus.
 
 ## Decision
 
-A two-suite benchmark architecture:
+### General regex comparison
 
-### Reference suite: `battle_bench`
+`production_regex_bench` is the source-backed publication candidate. It separates
+basic expressions, complex expressions and advanced Oniguruma features, without
+requiring support for every feature to participate in other cases. Selection
+and input construction precede examination of performance winners.
 
-Real-world scenarios that produce the numbers we publish. Always Ferroni vs Oniguruma at `-O3`.
+The [catalog](https://github.com/sebastian-software/ferroni/blob/main/benches/production_regex/catalog.json)
+records pinned sources/hashes, original patterns, dialect recipes, operation
+boundaries, fixtures, original-step oracles, expected output and licenses. The
+[corpus guide](https://github.com/sebastian-software/ferroni/blob/main/benches/regex_corpus.md)
+records retained/replaced cases and coverage limits. Source regression fixtures
+establish semantics. Production traffic distributions and large-document
+coverage require additional separately identified inputs.
 
-| Category            | What is measured                                                                                                                                                 |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Syntax highlighting | Full, unmodified Shiki grammars -- TypeScript (279 patterns), CSS (117 patterns), Rust (81 patterns). Compile time, first-match latency, full-line tokenization. |
-| Text search         | Literal search, no-match rejection, field extraction, timestamp matching on 10-50 KB log inputs.                                                                 |
-| Pattern matching    | One representative pattern per regex feature (quantifiers, lookaround, Unicode, backreferences, alternation, named captures).                                    |
-| Compilation         | Simple to complex patterns, measuring compile latency.                                                                                                           |
+The core comparators are Ferroni, C Oniguruma, pinned Ruby Onigmo, PCRE2 JIT and
+interpreter, fancy-regex with seek off/on, and Rust regex. Ferroni uses its public
+`Regex` API. Each profile's flags, Unicode policy, contexts, required processing
+and output allocation are explicit. C Oniguruma is compiled at `-O3`. Other
+language runtimes can be added as separately identified profiles.
 
-Key rule: **benchmark against complete, unmodified production grammars** -- no cherry-picked subsets. The Shiki grammars are committed as-is in `benches/grammars/`.
+Each task defines its required output: boolean, first span, captures, all captures,
+replacement or chunk strings. It does not run every operation against every
+pattern. Each engine must reproduce every source-oracle fixture before timing.
+Pending candidates, rejected syntax, semantic differences, execution errors and
+timeouts are distinct; none becomes an ordinary negative match. Unset and empty
+captures remain distinguishable.
 
-### Internal suite: `regression_bench`
+One documented dialect recipe applies to all engines in the main case. Future
+equivalent-task alternatives have separate IDs/profiles, preserve the output
+contract, and include preprocessing/postprocessing. Unsupported patterns are
+not silently simplified for one engine.
 
-Ferroni-only micro-benchmarks measured locally with Criterion. Compare saved baselines to check for performance regressions before merging changes. They are intentionally internal-facing: useful for optimizing parser, executor, scanner, RegSet, and public API paths, but not meant for README marketing tables.
+Compile, compile-plus-first-use and steady reuse have separate lanes. The first
+two create fresh patterns in a warmed process, including contexts/JIT, with
+destruction outside timing. Steady reuse executes the complete fixture batch
+using a reused object, including output assembly/destruction. These lanes do not
+measure OS-process startup. Runtime is primary; optional memory rows use a named
+metric on selected tasks. Whole-process peak RSS is not compiled-pattern size.
 
-### Tooling
+### TextMate Scanner and full highlighting
 
-- **Criterion.rs** for local measurement and HTML reports (`target/criterion/report/index.html`).
-- **C comparison** via optional `ffi` feature. The `cc` crate builds Oniguruma from a pinned local source snapshot prepared on demand for head-to-head measurement.
-- **Pinned battle inputs** in `benches/battle_inputs.toml`. This records the exact external artifacts behind the publishable suite.
+TextMate Scanner is a separate application workload for the API Ferroni provides.
+Publication candidates use complete captured document calls, including failed
+calls and original pattern order, for C, Java, PHP, C++, SCSS, JSON and Astro.
+Hot scanner groups remain diagnostics. Input preparation, start-offset
+conversion and output materialization need equivalent boundaries before new
+cross-engine claims.
 
-### Build profile
+Full grammar execution and highlighting belong to Ferriki's separate benchmark.
+A flattened expression list with deduplication or compile failures filtered out
+is not full TextMate execution. Its old measurements remain engine diagnostics.
 
-Both `release` and `bench` profiles use `lto = "thin"` to allow cross-crate inlining (especially for `memchr`) without the compile-time cost of full LTO. This matches realistic deployment conditions.
+### Internal diagnostics
 
-## Rationale
+`regression_bench` and compiler/executor/scanner microbenchmarks remain internal
+regression tools. `battle_bench` remains an internal diagnostic tool. Synthetic demonstrations can test mechanisms without being presented
+as production workloads. Superseded measurement pages and stored result artifacts are removed from the
+current tree; Git history retains them.
 
-- **Real grammars prevent overfitting.** Benchmarking against subsets risks optimizing for patterns that don't matter.
-- **C comparison keeps claims honest.** Every speedup number is relative to the same engine at `-O3`, not a strawman.
-- **Two suites separate concerns.** `battle_bench` is small, stable, and publishable; `regression_bench` is free to optimize for regression coverage and engineering feedback.
-- **Compilation is part of the workload.** Syntax highlighters compile grammars at startup. Ignoring compile time gives an incomplete picture.
-- **README numbers should stay human-scale.** The README intentionally rounds values; exact raw numbers live in `/perf/benchmark-results`.
+### Measurement and publication
+
+Use the existing Criterion harness and thin LTO release/bench profiles. The
+`compare-production.py` runner starts with at least three independent processes
+per engine/case/platform, 30 samples per lane and three seconds measurement. It
+uses seeded case order and rotated/reversed engine order. Retain logs, raw
+samples, intervals, eligibility reasons, corpus, Cargo lock, C source pins,
+binary hash, flags, toolchain and host context. Short runs require
+`--diagnostic`. Expand or repeat unstable comparisons before publication.
+
+Every ratio/aggregate names its common task set. Families have equal weight
+regardless of variant or fixture count. Different supported subsets are not an
+overall ranking. ARM and x86 are separate reports. Inconsistent run intervals
+are inconclusive; this conservative screening rule is not a cross-process
+statistical significance test. Review host load, power and thermal conditions
+and raw evidence before publication.
 
 ## Consequences
 
-- Shiki grammar JSON files are committed to the repository (`benches/grammars/`). These are updated when Shiki releases new grammar versions.
-- The `ffi` feature adds a C build step. Running `./scripts/prepare-oniguruma-sources.sh && cargo bench --features ffi --bench battle_bench` requires a C compiler; `cargo bench` (without `ffi`) runs the Rust-only internal suite.
-- Exact external input revisions for `battle_bench` live in `benches/battle_inputs.toml`; each published measurement run should also record machine and toolchain details in `/perf/benchmark-results`.
-- Reference benchmark results are documented in `/perf/benchmark-results.md` and summarized in `README`.
-- New optimizations should be validated against the internal suite first; user-facing claims should cite the reference suite.
+- New general-purpose claims require revised contracts and retained repeated-run
+  evidence. Retired numbers cannot stand in for the new corpus.
+- Native C build inputs remain pinned in `benches/battle_inputs.toml` and
+  prepared by the existing scripts; `ffi`/`onigmo` require a C compiler.
+- Scanner and highlighter measurements have their own scope and publication.
+- Homepage, README and result pages describe the current workload methodology. New claims require new reviewed evidence.

@@ -214,6 +214,29 @@ exclude this project from sibling links and include sibling descriptions.
 
 ## Running Benchmarks
 
+The general regex publication workload is now the
+[source-backed corpus](benches/regex_corpus.md). Regex tasks, TextMate Scanner
+replays, and Ferriki end-to-end highlighting have separate boundaries. The
+earlier `battle_bench` corpus remains an internal diagnostic tool. Superseded
+published measurements and stored artifacts are retained in Git history.
+
+```sh
+./scripts/prepare-oniguruma-sources.sh
+./scripts/prepare-onigmo-sources.sh
+python3 scripts/check-production-corpus.py
+# Independent source regex-step replay; needs Node, Ruby and libpcre2-8
+python3 scripts/verify-production-oracles.py
+python3 -m unittest discover -s scripts/tests -p 'test_production*.py'
+python3 scripts/compare-production.py validate /tmp/production-validation
+python3 scripts/compare-production.py run /tmp/production-results
+```
+
+Use a fresh output directory. The runner retains per-engine eligibility reasons,
+source/corpus/build context, three process repetitions, balanced execution order,
+and Criterion raw samples and intervals. Short runs require `--diagnostic` and
+cannot support publication. See the corpus guide for filters, optional memory
+measurements, operation contracts and interpretation limits.
+
 The agreed 20-format selection for the next Ferriki highlighting corpus is
 recorded in [`benches/highlighting_corpus.md`](benches/highlighting_corpus.md),
 including its rationale and fixture requirements.
@@ -225,7 +248,6 @@ including its rationale and fixture requirements.
 cargo bench --features ffi --bench battle_bench
 # General-purpose validation, extraction, Unicode, and redaction tasks
 cargo bench --features ffi --bench battle_bench -- general_regex
-python3 scripts/gen_battle_tables.py --general-only
 # Short and long Unicode class workloads, with C-validated capture traces
 cargo bench --locked --features ffi --bench battle_bench -- unicode_classes
 # Same document workloads through the scanner
@@ -238,12 +260,9 @@ no capture output from either Ferroni or C; scanner timings include captures.
 The `general_regex` group validates mixed accepted/rejected batches and full
 capture traces against both C and the `regex` crate. Extraction materializes
 all matches; redaction uses an identical output builder for each engine.
-Generated tables use Ferroni versus Oniguruma as the primary comparison.
-They retain `regex` results in a separate shared-syntax appendix: `regex` does
-not support lookarounds or backreferences, so those timings cannot rank the
-engines by their complete feature sets.
+These diagnostic tasks do not supply the public source-backed comparison.
 
-Exact external input revisions for the publishable battle suite are pinned in
+Exact external input revisions for the native build and diagnostic inputs are pinned in
 [`benches/battle_inputs.toml`](benches/battle_inputs.toml).
 
 The `oniguruma_features` group covers syntax only Oniguruma runs (atomic and
@@ -274,11 +293,7 @@ processing the `regex` crate also runs (`benches/regex_tasks.rs`: markup, logs,
 chat with emoji, Markdown, JSON, CSV, and a few patterns at the limit of the
 engines), the `oniguruma` set the same kind of work with Oniguruma syntax, the
 `micro` set short single searches and compilation, and the `textmate` set the
-grammar scanners of `battle_bench` and the scanner replays. The
-[Blacksmith comparison](.github/workflows/blacksmith-comparison.yml)
-workflow runs each set as its own job on `blacksmith-6vcpu-macos-26` and
-`blacksmith-4vcpu-ubuntu-2404` and merges them into one summary per host.
-CPU profiles are a local job; see the scanner READMEs below.
+grammar scanners of `battle_bench` and the scanner replays. CPU profiles are a local job; see the scanner READMEs below.
 
 ```bash
 ./scripts/prepare-onigmo-sources.sh
@@ -336,10 +351,6 @@ target/release/examples/prefilter_census census
 target/release/examples/prefilter_census groups benches/scss_scanner/trace.json
 /usr/bin/time -l target/release/examples/prefilter_census replay benches/cpp_scanner/trace.json 10 on
 ```
-The [post-#204 comparison](benches/highlighting_results/post-204/README.md)
-retains two complete 20-format highlighting runs, compiler measurements, and
-native CPU profiles. Its performance target is the faster of Shiki's WASM and
-JavaScript backends for each format and API.
 
 ## Regenerating Unicode Tables
 

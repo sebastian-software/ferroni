@@ -15,6 +15,16 @@
 /// Raw capture bounds as Oniguruma reports them; -1 marks an unset group.
 pub type Captures = Vec<(i32, i32)>;
 
+/// Explicit matching flags for source-backed production workloads.
+#[derive(Clone, Copy, Default)]
+pub struct CompileOptions {
+    pub ignore_case: bool,
+    pub multiline: bool,
+    pub dotall: bool,
+    pub extended: bool,
+    pub capture_group: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Engine {
     Pcre2Jit,
@@ -76,16 +86,33 @@ impl Engine {
         ignore_case: bool,
         capture_group: bool,
     ) -> Result<Compiled, String> {
+        self.compile_with_options(
+            pattern,
+            CompileOptions {
+                ignore_case,
+                multiline: true,
+                capture_group,
+                ..CompileOptions::default()
+            },
+        )
+    }
+
+    pub fn compile_with_options(
+        self,
+        pattern: &str,
+        options: CompileOptions,
+    ) -> Result<Compiled, String> {
         match self {
             Engine::Pcre2Jit | Engine::Pcre2 => {
-                pcre2::Regex::new(pattern, ignore_case, self == Engine::Pcre2Jit)
-                    .map(Compiled::Pcre2)
+                pcre2::Regex::new(pattern, options, self == Engine::Pcre2Jit).map(Compiled::Pcre2)
             }
             Engine::Fancy | Engine::FancySeek => fancy_regex::RegexBuilder::new(pattern)
                 .oniguruma_mode(true)
-                .multi_line(true)
-                .case_insensitive(ignore_case)
-                .ignore_numbered_groups_when_named_groups_exist(!capture_group)
+                .multi_line(options.multiline)
+                .dot_matches_new_line(options.dotall)
+                .ignore_whitespace(options.extended)
+                .case_insensitive(options.ignore_case)
+                .ignore_numbered_groups_when_named_groups_exist(!options.capture_group)
                 .seek(self == Engine::FancySeek)
                 .build()
                 .map(Compiled::Fancy)
@@ -94,8 +121,7 @@ impl Engine {
                 Err("a RegexSet searches a whole scanner, not one pattern".to_owned())
             }
             #[cfg(feature = "onigmo")]
-            Engine::Onigmo => onigmo::Regex::new(pattern.as_bytes(), ignore_case, capture_group)
-                .map(Compiled::Onigmo),
+            Engine::Onigmo => onigmo::Regex::new(pattern.as_bytes(), options).map(Compiled::Onigmo),
         }
     }
 }
@@ -108,6 +134,35 @@ pub enum Compiled {
 }
 
 impl Compiled {
+    /// First match span, without materializing subgroup captures.
+    pub fn find(&self, text: &str, start: usize) -> Result<Option<(usize, usize)>, String> {
+        match self {
+            Compiled::Pcre2(regex) => regex.search(text, start, |v| (v[0], v[1])),
+            Compiled::Fancy(regex) => regex
+                .find_from_pos(text, start)
+                .map(|found| found.map(|m| (m.start(), m.end())))
+                .map_err(|error| error.to_string()),
+            #[cfg(feature = "onigmo")]
+            Compiled::Onigmo(regex) => regex
+                .search(text.as_bytes(), start, true)
+                .map(|found| found.map(|_| regex.match_span())),
+        }
+    }
+
+    /// Native replacement where the library provides it. C engines use the
+    /// documented adapter because their public API has no replacement method.
+    pub fn native_replace(&self, text: &str, replacement: &str) -> Option<Result<String, String>> {
+        match self {
+            Compiled::Fancy(regex) => Some(
+                regex
+                    .try_replacen(text, 0, replacement)
+                    .map(|output| output.into_owned())
+                    .map_err(|error| error.to_string()),
+            ),
+            _ => None,
+        }
+    }
+
     /// Start of the first match at or after `start`, without capture output.
     pub fn search(&self, text: &str, start: usize) -> Result<Option<usize>, String> {
         match self {
@@ -211,10 +266,17 @@ mod pcre2 {
 
     impl Regex {
         /// UTF-8 with Unicode classes and line anchors, as Oniguruma matches.
-        pub fn new(pattern: &str, ignore_case: bool, jit: bool) -> Result<Self, String> {
-            let mut options = PCRE2_UTF | PCRE2_UCP | PCRE2_MULTILINE;
-            if ignore_case {
-                options |= PCRE2_CASELESS;
+        pub fn new(pattern: &str, flags: super::CompileOptions, jit: bool) -> Result<Self, String> {
+            let mut options = PCRE2_UTF | PCRE2_UCP;
+            for (enabled, flag) in [
+                (flags.ignore_case, PCRE2_CASELESS),
+                (flags.multiline, PCRE2_MULTILINE),
+                (flags.dotall, PCRE2_DOTALL),
+                (flags.extended, PCRE2_EXTENDED),
+            ] {
+                if enabled {
+                    options |= flag;
+                }
             }
             let (mut error, mut offset) = (0, 0);
             // SAFETY: the pattern pointer and length describe a live slice;
@@ -337,6 +399,9 @@ mod onigmo {
             length: usize,
             ignorecase: c_int,
             capture_group: c_int,
+            multiline: c_int,
+            dotall: c_int,
+            extended: c_int,
             error: *mut c_int,
         ) -> *mut c_void;
         fn ferroni_onigmo_free(regex: *mut c_void);
@@ -358,7 +423,7 @@ mod onigmo {
     pub struct Regex(*mut c_void);
 
     impl Regex {
-        pub fn new(pattern: &[u8], ignore_case: bool, capture_group: bool) -> Result<Self, String> {
+        pub fn new(pattern: &[u8], options: super::CompileOptions) -> Result<Self, String> {
             // SAFETY: initialization takes no arguments and runs once.
             INIT.call_once(|| assert_eq!(unsafe { ferroni_onigmo_init() }, 0));
             let mut error = 0;
@@ -368,8 +433,11 @@ mod onigmo {
                 ferroni_onigmo_new(
                     pattern.as_ptr(),
                     pattern.len(),
-                    c_int::from(ignore_case),
-                    c_int::from(capture_group),
+                    c_int::from(options.ignore_case),
+                    c_int::from(options.capture_group),
+                    c_int::from(options.multiline),
+                    c_int::from(options.dotall),
+                    c_int::from(options.extended),
                     &mut error,
                 )
             };
@@ -417,6 +485,17 @@ mod onigmo {
                         )
                     })
                     .collect()
+            }
+        }
+
+        pub fn match_span(&self) -> (usize, usize) {
+            // SAFETY: a successful region-producing search populated group 0
+            // on this owned regex before this method is called.
+            unsafe {
+                (
+                    ferroni_onigmo_beg(self.0, 0) as usize,
+                    ferroni_onigmo_end(self.0, 0) as usize,
+                )
             }
         }
     }

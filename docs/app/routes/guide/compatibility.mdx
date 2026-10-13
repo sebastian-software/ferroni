@@ -115,10 +115,10 @@ derives from the tree. The test strategy is recorded in
 - **Fuzzing.** Three cargo-fuzz targets cover pattern compilation, matching
   and the Scanner API. Each runs briefly on every pull request and for 15
   minutes every week.
-- **Results before timings.** Every benchmark case first has to reproduce C
-  Oniguruma's matches and capture bounds before it is timed, so each benchmark
-  run is also a comparison with C
-  ([engine comparison](../perf/engine-comparison)).
+- **Results before timings.** Every production regex case must reproduce its
+  source-runtime oracle before timing. C Oniguruma also runs the admitted tasks;
+  all engines share explicit operation contracts
+  ([regex workloads](../perf/regex-workloads)).
 
 The bugs found while porting, and what they teach about C-to-Rust ports, are
 collected in [ADR-014](../adr/014-porting-bugs-lessons-learned).
