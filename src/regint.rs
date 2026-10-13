@@ -348,6 +348,8 @@ pub(crate) enum OpCode {
     CClassPossessiveStar = 98,
     /// Rust-only (ADR-008): decimal prefix reserving the final digit for its tail.
     DecimalTailPrefix = 99,
+    /// Rust-only (ADR-008): lazy dot push across a plain capture end to a literal.
+    PushLazyAnyChar = 100,
 }
 
 // === SaveType ===

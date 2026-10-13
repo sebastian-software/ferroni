@@ -5770,6 +5770,36 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 }
             }
 
+            // Rust-only (ADR-008): the original lazy push, with a seek over
+            // failed literal attempts across the following capture end.
+            OpCode::PushLazyAnyChar => {
+                if let OperationPayload::Push { addr } = reg.ops[p].payload {
+                    if stack.len() + 1 < stack_cap {
+                        if let Some(at) = lazy_captured_any_char_stop(
+                            reg,
+                            p,
+                            str_data,
+                            s,
+                            right_range,
+                            &mut retry_in_match_counter,
+                            retry_limit_in_match,
+                            msa,
+                        ) {
+                            s = at;
+                        }
+                    }
+                    stack.push(StackEntry::Alt {
+                        pcode: (p as i32 + addr) as usize,
+                        pstr: s,
+                        zid: -1,
+                        is_super: false,
+                    });
+                    p += 1;
+                } else {
+                    goto_fail = true;
+                }
+            }
+
             // ================================================================
             // OP_POP - discard top stack entry
             // ================================================================
@@ -7373,7 +7403,7 @@ fn lazy_any_char_step(
     }
     let (jumps, at) = match lazy_any_char_stop(reg.enc, str_data, s, right_range, c, multiline) {
         LazyStop::At(at, jumps) => (jumps, Some(at)),
-        LazyStop::Fails(jumps) => (jumps, None),
+        LazyStop::Fails(_, jumps) => (jumps, None),
         LazyStop::Unknown => return LazyStep::Stay,
     };
     if let Err(err) = count_retries_at_once(
@@ -7390,6 +7420,77 @@ fn lazy_any_char_step(
     }
 }
 
+/// Seek across failed literal attempts of `AnyChar; Push(-1); MemEnd;
+/// Str`. The capture end is overwritten at the returned stop before another
+/// instruction can read it. Newline and range stops still execute the
+/// original literal attempt. If a budget could expire inside the skipped
+/// attempts, keep the original instructions and state.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn lazy_captured_any_char_stop(
+    reg: &RegexType,
+    p: usize,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    retry_in_match_counter: &mut u64,
+    retry_limit_in_match: u64,
+    msa: &mut MatchArg,
+) -> Option<usize> {
+    #[cfg(test)]
+    if LAZY_STOP_DISABLED.with(|disabled| disabled.get()) {
+        return None;
+    }
+    if msa.time_limit != 0
+        || !(std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
+            || std::ptr::addr_eq(reg.enc, &crate::encodings::ascii::ONIG_ENCODING_ASCII))
+    {
+        return None;
+    }
+    let multiline = match p.checked_sub(1).map(|body| reg.ops[body].opcode) {
+        Some(OpCode::AnyChar) => false,
+        Some(OpCode::AnyCharMl) => true,
+        _ => return None,
+    };
+    if reg.ops.get(p + 1)?.opcode != OpCode::MemEnd {
+        return None;
+    }
+    let literal = reg.ops.get(p + 2)?;
+    let c = match (&literal.opcode, &literal.payload) {
+        (
+            OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,
+            OperationPayload::Exact { s },
+        ) => s[0],
+        (OpCode::StrN, OperationPayload::ExactN { s, .. }) => *s.first()?,
+        _ => return None,
+    };
+    // Bound speculative reads when malformed input makes the seek decline.
+    // A complete UTF-8 prefix ends at a character boundary; otherwise the
+    // original character instruction runs, including its malformed-byte rules.
+    let seek_range = right_range.min(s.saturating_add(4096));
+    let (at, jumps) = match lazy_any_char_stop(reg.enc, str_data, s, seek_range, c, multiline) {
+        LazyStop::At(at, jumps) => (at, jumps),
+        // Still execute the literal attempt and dot failure at this stop,
+        // so capture state and both final retries remain instruction-exact.
+        LazyStop::Fails(at, jumps) => (at, jumps - 1),
+        LazyStop::Unknown => return None,
+    };
+    // A skipped literal fails once per character. Falling back before any
+    // limit can trip preserves the capture end at the failing instruction.
+    if (retry_limit_in_match != 0
+        && jumps >= retry_limit_in_match.saturating_sub(*retry_in_match_counter))
+        || (msa.retry_limit_in_search != 0
+            && jumps
+                >= msa
+                    .retry_limit_in_search
+                    .saturating_sub(msa.retry_limit_in_search_counter))
+    {
+        return None;
+    }
+    count_retries_at_once(jumps, retry_in_match_counter, retry_limit_in_match, msa).ok()?;
+    Some(at)
+}
+
 /// Where the lazy loop `L: AnyChar; PushOrJumpExact1(c, L)` entered at
 /// its `PushOrJumpExact1` from `s` stops: at the first `c` it reaches, or
 /// failing at a newline (unless `multiline`) or at `right_range`.
@@ -7398,7 +7499,7 @@ enum LazyStop {
     /// this many times.
     At(usize, u64),
     /// `AnyChar` fails before any `c`, after this many jumps.
-    Fails(u64),
+    Fails(usize, u64),
     /// The character steps could land elsewhere: the bytes are not valid
     /// UTF-8 in a multibyte encoding, or `c` is not ASCII.
     Unknown,
@@ -7442,7 +7543,7 @@ fn lazy_any_char_stop(
         Some(_) if str_data[stop] == c => LazyStop::At(stop, jumps),
         // A newline, or the range's end: the instruction jumps once more,
         // and `AnyChar` fails there.
-        _ => LazyStop::Fails(jumps + 1),
+        _ => LazyStop::Fails(stop, jumps + 1),
     }
 }
 
@@ -10311,6 +10412,199 @@ mod tests {
             }
         }
         assert!(compared > 20_000, "{compared}");
+    }
+
+    #[test]
+    fn captured_lazy_dots_preserve_searches_captures_and_limits() {
+        let _limits = shared_limits();
+        let patterns = [
+            r"<([a-z][a-z0-9]*)\b[^>]*>(.*?)</\1>",
+            r"(.*?)</",
+            r"(?m)(.*?)</",
+            r"(.*?)xyz",
+            r"(.*?)abcdef",
+            r"(.*?)\n",
+            r"(.*?)é",
+            r"(?=(.*?)xx)",
+            r"(?:(.*?)</x|(.))+\2",
+            r"(?:((.*?)</)a|b\2)",
+        ];
+        let inputs: &[&[u8]] = &[
+            b"",
+            b"x",
+            b"</",
+            b"abc</",
+            b"<a>x</a>",
+            b"<a><b>x</b></a>",
+            b"<a>x\n</a>",
+            b"<a>x</b>",
+            b"x</x</a",
+            b"abcxyzabcdef",
+            b"abc\n</",
+            b"abc\nxyz",
+            b"abcxx",
+            b"abc\0</",
+            b"a\xff</",
+            b"a\xc3</",
+            b"a\xe2\x82</",
+            "aé€</".as_bytes(),
+            "aéxyz".as_bytes(),
+        ];
+        let mut comparisons = 0;
+        let mut planned = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let reg = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                planned += usize::from(has_opcode(&reg, OpCode::PushLazyAnyChar));
+                for &input in inputs {
+                    for end in 0..=input.len() {
+                        for start in 0..=end {
+                            for range in [0, start, (start + 2).min(end), end] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                    ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+                                ] {
+                                    for (retry, search_retry, stack, time) in [
+                                        (0, 0, 0, 0),
+                                        (1, 0, 0, 0),
+                                        (3, 0, 0, 0),
+                                        (0, 1, 0, 0),
+                                        (0, 7, 0, 0),
+                                        (4, 10, 0, 0),
+                                        (0, 0, 1, 0),
+                                        (0, 0, 3, 0),
+                                        (0, 0, 8, 0),
+                                        (0, 0, 0, 1000),
+                                    ] {
+                                        let mp = OnigMatchParam {
+                                            retry_limit_in_match: retry,
+                                            retry_limit_in_search: search_retry,
+                                            match_stack_limit: stack,
+                                            time_limit: time,
+                                            ..onig_new_match_param()
+                                        };
+                                        for with_region in [false, true] {
+                                            let run = |disabled| {
+                                                LAZY_STOP_DISABLED.with(|v| v.set(disabled));
+                                                let mut msa = MatchArg::from_param(
+                                                    &reg,
+                                                    option,
+                                                    with_region.then(OnigRegion::new),
+                                                    start,
+                                                    &mp,
+                                                );
+                                                let result = search_in_range_inner(
+                                                    &reg, input, end, start, range, end, &mut msa,
+                                                );
+                                                (
+                                                    result,
+                                                    msa.region.map(|r| (r.num_regs, r.beg, r.end)),
+                                                    msa.retry_limit_in_search_counter,
+                                                    msa.time_counter,
+                                                )
+                                            };
+                                            assert_eq!(
+                                                run(false),
+                                                run(true),
+                                                "{} {pattern} {input:?} end={end} start={start} range={range} option={option:?} limits={retry}/{search_retry}/{stack}/{time} region={with_region}",
+                                                enc.name()
+                                            );
+                                            LAZY_STOP_DISABLED.with(|v| v.set(false));
+                                            comparisons += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(planned >= 12, "{planned} planned captured lazy loops");
+        println!("{comparisons} captured-lazy result/capture/retry/time comparisons");
+    }
+
+    #[test]
+    fn captured_lazy_dots_preserve_long_and_malformed_subjects() {
+        let _limits = shared_limits();
+        let mut comparisons = 0;
+        for pattern in [r"(.*?)</", r"(?m)(.*?)</", r"(?:((.*?)</)x|a\2)"] {
+            let reg = compile_regex(pattern.as_bytes());
+            for len in [4094, 4095, 4096, 4097, 8192] {
+                for tail in [
+                    b"</".as_slice(),
+                    b"",
+                    b"\n</",
+                    "é</".as_bytes(),
+                    b"\xc3</",
+                    b"\xff",
+                ] {
+                    let mut text = vec![b'a'; len];
+                    text.extend_from_slice(tail);
+                    for option in [ONIG_OPTION_NONE, ONIG_OPTION_FIND_LONGEST] {
+                        for (retry, search_retry, stack) in [
+                            (0, 0, 0),
+                            (len as u64, 0, 0),
+                            (len as u64 + 1, 0, 0),
+                            (0, len as u64 + 2, 0),
+                            (0, 0, 2),
+                        ] {
+                            let mp = OnigMatchParam {
+                                retry_limit_in_match: retry,
+                                retry_limit_in_search: search_retry,
+                                match_stack_limit: stack,
+                                time_limit: 0,
+                                ..onig_new_match_param()
+                            };
+                            let run = |disabled| {
+                                LAZY_STOP_DISABLED.with(|v| v.set(disabled));
+                                let mut msa = MatchArg::from_param(
+                                    &reg,
+                                    option,
+                                    Some(OnigRegion::new()),
+                                    0,
+                                    &mp,
+                                );
+                                // One anchored attempt keeps the missing-literal case bounded.
+                                let result = search_in_range_inner(
+                                    &reg,
+                                    &text,
+                                    text.len(),
+                                    0,
+                                    0,
+                                    text.len(),
+                                    &mut msa,
+                                );
+                                (
+                                    result,
+                                    msa.region.map(|r| (r.num_regs, r.beg, r.end)),
+                                    msa.retry_limit_in_search_counter,
+                                )
+                            };
+                            assert_eq!(
+                                run(false),
+                                run(true),
+                                "{pattern} {len} {tail:?} {option:?} {retry}/{search_retry}/{stack}"
+                            );
+                            LAZY_STOP_DISABLED.with(|v| v.set(false));
+                            comparisons += 1;
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} long captured-lazy comparisons");
     }
 
     /// `after_next_newline` stops where the character loop it replaces

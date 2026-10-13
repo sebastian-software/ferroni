@@ -10928,6 +10928,34 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
         else {
             continue;
         };
+        // A plain capture end keeps state after backtracking, so the generic
+        // guard cannot skip it. A lazy dot loop can still batch failed literal
+        // attempts: its next capture end overwrites the skipped values. Keep
+        // every original instruction and address for bounded fallback runs.
+        if addr == -1
+            && pc > 0
+            && matches!(reg.ops[pc - 1].opcode, OpCode::AnyChar | OpCode::AnyCharMl)
+            && reg
+                .ops
+                .get(pc + 1)
+                .is_some_and(|op| op.opcode == OpCode::MemEnd)
+            && reg.ops.get(pc + 2).is_some_and(|op| {
+                matches!(
+                    op.opcode,
+                    OpCode::Str1
+                        | OpCode::Str2
+                        | OpCode::Str3
+                        | OpCode::Str4
+                        | OpCode::Str5
+                        | OpCode::StrN
+                )
+            })
+            && (std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
+                || std::ptr::addr_eq(reg.enc, &crate::encodings::ascii::ONIG_ENCODING_ASCII))
+        {
+            reg.ops[pc].opcode = OpCode::PushLazyAnyChar;
+            continue;
+        }
         // Most branches start with a literal (only string instructions carry
         // these payloads), whose first byte is the whole guard.
         let head = match &reg.ops[pc + 1].payload {
