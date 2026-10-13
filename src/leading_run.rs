@@ -1194,6 +1194,7 @@ pub(crate) fn plan_jump(reg: &RegexType) -> Option<SearchJump> {
         Some(OperationPayload::LookBehindOp {
             char_len,
             not: false,
+            ..
         }),
         Some(literal),
     ) = (
