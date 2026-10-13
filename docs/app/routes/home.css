@@ -311,6 +311,92 @@
   outline-offset: 4px;
 }
 
+/* The factor carries its meaning without color; tints add a quiet scan cue. */
+.fr-comparison-value {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 5rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.fr-comparison-value strong {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fr-comparison-value small {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.fr-comparison-value[data-speed="faster"] {
+  color: #356047;
+  background: color-mix(in oklch, #527862 10%, transparent);
+}
+
+.fr-comparison-value[data-speed="slower"] {
+  color: #8a514b;
+  background: color-mix(in oklch, #985b54 10%, transparent);
+}
+
+/* All three workloads stay visible together, including on a narrow screen. */
+.fr-comparison-details .fam-compare-table,
+.fr-benchmark-history .fam-compare-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.fr-comparison-details .fam-compare-table th:first-child,
+.fr-benchmark-history .fam-compare-table th:first-child {
+  width: 28%;
+  min-width: 0;
+}
+
+.fr-comparison-details .fam-compare[data-align="end"] .fam-compare-table th,
+.fr-comparison-details .fam-compare[data-align="end"] .fam-compare-table td,
+.fr-benchmark-history .fam-compare[data-align="end"] .fam-compare-table th,
+.fr-benchmark-history .fam-compare[data-align="end"] .fam-compare-table td {
+  padding-inline: 0.4rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.fr-benchmark-history .fr-factor-change {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-benchmark-history .fr-factor-change small {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 42rem) {
+  .fr-comparison-details .fam-compare-table,
+  .fr-benchmark-history .fam-compare-table {
+    font-size: 0.8125rem;
+  }
+
+  .fr-comparison-details .fam-compare-table thead th,
+  .fr-benchmark-history .fam-compare-table thead th {
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+  }
+
+  .fr-comparison-value {
+    min-width: 0;
+    padding-inline: 0.3rem;
+  }
+
+  .fr-comparison-value small {
+    font-size: 0.6875rem;
+  }
+}
+
 @media (max-width: 42rem) {
   .ferroni-home section[id] {
     scroll-margin-top: 8rem;

@@ -3,6 +3,8 @@ order: 1
 title: "Engine Comparison"
 ---
 
+import { EngineComparisonHistory } from "../../components/engine-comparison-history";
+
 # Engine Comparison
 
 Ferroni next to seven other engines on two Blacksmith runner profiles:
@@ -37,7 +39,9 @@ within about 10% should not be read as a ranking.
 
 The workflow requests five seconds, 30 samples and 500 ms warmup. The existing
 `battle_bench` groups override measurement time to four seconds; the captured
-scanner replays use five seconds. Shiki JS uses its existing Node batch timer.
+scanner replays use five seconds. Shiki JS warms up for one second and uses its existing Node batch timer.
+Within each case-set job, engines run consecutively on the same VM for each
+case; they do not compete in parallel. The four case sets use separate VMs per host profile.
 The raw estimates, individual 95% confidence intervals and logs remain in the
 run data. Those intervals describe samples within a job and do not include
 between-run VM variation. Physical placement and scheduling are uncontrolled.
@@ -48,6 +52,36 @@ For the three portable whole-document scanner replays,
 Ferroni is 9.9× faster than PCRE2 JIT.
 Those replays compare Ferroni's multi-pattern scanner with PCRE2's
 pattern-by-pattern adapter; they do not imply the same result for a single regex.
+
+## Previous published measurements
+
+The previous homepage figures came from the October 9 measurement snapshot,
+published in [PR #325](https://github.com/sebastian-software/ferroni/pull/325)
+at **2026-10-09 22:57 UTC** (October 10, 00:57 in Berlin). The text-processing
+figures used runtime `a38768bc` in
+[run 37989957431](https://github.com/sebastian-software/ferroni/actions/runs/37989957431);
+the highlighting figures used the later runtime `b93c6d20` in
+[run 37999607702](https://github.com/sebastian-software/ferroni/actions/runs/37999607702).
+Measurement dates on this page use UTC. Publication time and measurement time
+are separate: the current snapshot was published in
+[PR #358](https://github.com/sebastian-software/ferroni/pull/358) at
+**2026-10-13 18:45 UTC** (20:45 in Berlin).
+
+<EngineComparisonHistory />
+
+The compatible case counts and headline workloads are unchanged between these
+snapshots. Each percentage is the change in Ferroni's throughput relative to
+that comparison engine, calculated as `current factor / previous factor - 1`.
+It is not an absolute same-machine speedup between Ferroni versions: the old
+and current runs used separate VMs. The raw per-host ratios and all matched
+case timings remain in the retained run data. Small changes can reflect
+between-run variation.
+
+For advanced patterns, the PCRE2 JIT ratio changed from 0.287× to 0.324×,
+about 13% more relative throughput. The earlier wording expressed the same
+change as 3.5× slower → 3.1× slower. The C Oniguruma ratio in that workload
+rose from 1.365× to 1.543×, also about 13%. Portable scanner replays remain
+close to 12× C Oniguruma's throughput in the two-host summary.
 
 ## Text processing
 
@@ -139,7 +173,17 @@ candidate positions with the conservative DFA pre-filter in
 by pattern. fancy-regex's RegexSet is a separate configuration built once per
 scanner, while its default and seek modes also search pattern by pattern.
 Shiki JS is `@shikijs/engine-javascript` 4.5.0, timed in Node over 1 ms batches.
-Scanners and input construction remain outside timing.
+Scanner compilation and fixture loading remain outside timing. The Node replay
+creates fresh engine strings inside its loop; the Rust replay prepares its
+strings outside the timed closure. These adapter boundaries are retained in the
+harnesses and should be considered when interpreting their ratios.
+
+Shiki's **Oniguruma WASM engine is not timed** in this comparison. It was used
+to capture the C, Java, PHP, C++ and SCSS reference traces. The Oniguruma (C)
+column times the native vscode-oniguruma scanner adapter; it does not stand in
+for a Shiki WASM measurement. Shiki JS means the JavaScript regex engine and
+its scanner adapter in Node, not the whole Shiki highlighter. All replay rows
+exclude the TextMate tokenizer, theme processing and HTML rendering.
 
 Ferroni's pre-filter was inspired by Keith Hall's
 [seek-filter proposal](https://github.com/fancy-regex/fancy-regex/issues/101#issuecomment-3146668829)

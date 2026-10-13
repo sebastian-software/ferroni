@@ -43,20 +43,17 @@ function ferroni() {
 }
 
 type FigureCell = {
-  text: string;
-  note?: string;
-  grammars?: string[];
   cases: number;
   of: number;
   /** Per host; the summary shows only `factor`, their geometric mean. */
   factors?: Record<string, number>;
   factor?: number;
-  /** "faster" or "slower": which way `text` reads. */
-  direction?: string;
 };
 
-/* The cell covers only the cases the engine could run: footnoted, not spelled out. */
-const partial = (cell: FigureCell) => cell.factor !== undefined && cell.cases < cell.of;
+const factorFormat = new Intl.NumberFormat("en-US", {
+  minimumSignificantDigits: 2,
+  maximumSignificantDigits: 2,
+});
 
 const workloads = engineComparison.workloads;
 
@@ -134,48 +131,73 @@ function SampleSection() {
   );
 }
 
-function figureValue(cell: FigureCell): ComparisonCell {
+function figureValue(cell: FigureCell, unit: string): ComparisonCell {
   if (cell.factor === undefined) {
-    return cell.grammars === undefined ? undefined : { mark: "no", note: cell.grammars.join(", ") };
+    return (
+      <span className="fr-comparison-value">
+        <span aria-hidden="true">–</span>
+        <small>Not measured</small>
+      </span>
+    );
   }
   return (
-    <>
-      {cell.text} <small>{cell.direction}</small>
-      {partial(cell) && (
-        <>
-          <sup aria-hidden="true">*</sup>
-          <span className="fam-sr-only">, some tasks left out</span>
-        </>
-      )}
-    </>
+    <span
+      className="fr-comparison-value"
+      data-speed={cell.factor > 1 ? "faster" : cell.factor < 1 ? "slower" : "equal"}
+    >
+      <strong>{factorFormat.format(cell.factor)}×</strong>
+      <small>
+        {cell.cases}/{cell.of} {unit}
+      </small>
+    </span>
   );
 }
 
-/* Every figure comes from docs/app/data/engine-comparison.json, which
- * `scripts/compare-engines.py figures` derives from the retained run. */
 const comparisonRows: ComparisonRow[] = engineComparison.engines.map((engine) => {
   const cells = engine.cells as Record<string, FigureCell>;
   const measured = workloads.flatMap((workload) => Object.values(cells[workload.id].factors ?? {}));
   return {
-    label: engine.label,
+    label: engine.id === "shiki_js" ? "Shiki JS engine" : engine.label,
     values: Object.fromEntries(
-      workloads.map((workload) => [workload.id, figureValue(cells[workload.id])]),
+      workloads.map((workload) => [workload.id, figureValue(cells[workload.id], workload.unit)]),
     ),
     // Ferroni is slower in every workload this engine was measured in.
     behind: measured.length > 0 && measured.every((factor) => factor < 1),
   };
 });
 
-/* The footnotes the table needs, worded once in compare-engines.py. */
-const allCells = engineComparison.engines.flatMap((engine) =>
-  workloads.map((workload) => (engine.cells as Record<string, FigureCell>)[workload.id]),
-);
 const tableNotes = [
-  ...(allCells.some((cell) => partial(cell)) ? [`* ${engineComparison.notes.partial}`] : []),
-  ...(allCells.some((cell) => cell.text === "–") ? [`– ${engineComparison.notes.absent}`] : []),
-  // Which of fancy-regex's configurations each column quotes.
+  "Coverage appears below each factor. Patterns an engine rejects or answers differently are excluded; the detailed results explain each exclusion.",
   engineComparison.notes.configurations,
 ];
+
+function EngineComparisonTable() {
+  return (
+    <details className="fr-comparison-details">
+      <summary>Compare all seven engines</summary>
+      <ComparisonTable
+        align="end"
+        caption="Ferroni’s relative throughput. 1× is equal; higher is faster. 0.50× means half the throughput, 2.0× means twice the throughput."
+        subject="Compared with"
+        contenders={workloads.map((workload) => ({
+          id: workload.id,
+          label: workload.id === "highlighting" ? "Scanner replays" : workload.short,
+        }))}
+        rows={comparisonRows}
+      />
+      <p className="fam-note">
+        Scanner replays measure recorded engine calls for C, Java and PHP documents. They exclude
+        tokenization, themes and HTML rendering. Shiki JS runs in Node; C Oniguruma is native.
+        Shiki&rsquo;s WASM engine supplies reference results but is not timed.
+      </p>
+      {tableNotes.map((note) => (
+        <p key={note} className="fam-note">
+          {note}
+        </p>
+      ))}
+    </details>
+  );
+}
 
 function SpeedSection() {
   const hosts = engineComparison.hosts
@@ -202,27 +224,15 @@ function SpeedSection() {
       }
     >
       <PerformanceChart />
-      <details className="fr-comparison-details">
-        <summary>Compare all seven engines</summary>
-        <ComparisonTable
-          align="end"
-          caption="How much faster or slower Ferroni is than each engine."
-          subject="Compared with"
-          contenders={workloads.map((workload) => ({ id: workload.id, label: workload.short }))}
-          rows={comparisonRows}
-        />
-        {tableNotes.map((note) => (
-          <p key={note} className="fam-note">
-            {note}
-          </p>
-        ))}
-      </details>
+      <EngineComparisonTable />
       <Measured
         on={engineComparison.measured}
         machine={`Blacksmith runners. ${hosts}`}
         revision={<code>{engineComparison.commit.slice(0, 8)}</code>}
       >
-        <Link to="/perf/engine-comparison">Per-host figures, every task and the raw data</Link>
+        <Link to="/perf/engine-comparison">
+          Per-host figures, publication history and the raw data
+        </Link>
       </Measured>
     </Section>
   );
