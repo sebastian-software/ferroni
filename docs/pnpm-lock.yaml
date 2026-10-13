@@ -168,7 +168,7 @@ importers:
     dependencies:
       ardo:
         specifier: ^5.0.0
-        version: 5.0.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.54.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
+        version: 5.0.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.55.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
       ferramenta-family:
         specifier: ^2.0.0
         version: 2.0.0(react@19.3.0)
@@ -177,7 +177,7 @@ importers:
         version: 5.2.2
       lucide-react:
         specifier: ^1.52.0
-        version: 1.54.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -3520,8 +3520,8 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lucide-react@1.54.0:
-    resolution: {integrity: sha512-kVmnVCBoLztTGe3S76xu8utwxijRLOinknNq9e8btZ0R2fm6WCgxY+weaLiA50odo/yi+apm/4B2A/LsFZhTrw==}
+  lucide-react@1.55.0:
+    resolution: {integrity: sha512-bSozQHiI3/8q7JvgoqVRGOYUi7fYT3siAZwmZsljjsOH2Husp/2ODdFf/leD+ZC/2yKfn7r8oh6yeoR3ITR5vA==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -6194,7 +6194,7 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  ardo@5.0.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.54.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)):
+  ardo@5.0.0(@react-router/dev@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.6.2)(@types/react@19.3.0)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(lucide-react@1.55.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)(supports-color@9.4.0)(typescript@6.0.3)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0)):
     dependencies:
       '@base-ui/react': 1.7.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ferriki/core': 0.10.0
@@ -6207,7 +6207,7 @@ snapshots:
       '@vanilla-extract/vite-plugin': 5.2.6(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@9.4.0)(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))(yaml@2.9.0)
       '@vitejs/plugin-react': 6.1.1(vite@8.3.4(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(yaml@2.9.0))
       ferromark: 3.1.1
-      lucide-react: 1.54.0(@types/react@19.3.0)(react@19.3.0)
+      lucide-react: 1.55.0(@types/react@19.3.0)(react@19.3.0)
       magic-string: 0.30.21
       minisearch: 7.2.0
       oxc-parser: 0.127.0
@@ -7812,7 +7812,7 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  lucide-react@1.54.0(@types/react@19.3.0)(react@19.3.0):
+  lucide-react@1.55.0(@types/react@19.3.0)(react@19.3.0):
     dependencies:
       react: 19.3.0
     optionalDependencies:
