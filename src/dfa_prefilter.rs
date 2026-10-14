@@ -23,10 +23,11 @@
 //! a pattern cache keeps one per distinct pattern, in a compact encoding
 //! ([`SeekCode`]) that is decoded when the automata are built.
 //!
-//! [`Automata`] compiles the seeks of one pattern list into a
-//! regex-automata meta regex, which finds the earliest position where any
-//! seek matches, and a lazy DFA over all seeks, which says which of them
-//! match at that position. They are built on a set's first pre-filtered
+//! [`Automata`] compiles the seeks of one pattern list into a forward and a
+//! reverse lazy DFA, which find the earliest position where any seek matches
+//! (the strategy of regex-automata's meta regex), and a lazy DFA over all
+//! seeks, which says which of them match at that position. They are built on
+//! a set's first pre-filtered
 //! search, not when the set is constructed, and every set built from one
 //! pattern cache over the same pattern list shares them ([`AutomataCell`]);
 //! [`SetPrefilter`] is a set's own part: the lazy DFA caches and the
@@ -48,8 +49,8 @@ use crate::regenc::OnigEncoding;
 use crate::regint::*;
 use crate::regparse_types::*;
 use regex_automata::hybrid::dfa as hybrid;
+use regex_automata::hybrid::regex as hybrid_regex;
 use regex_automata::nfa::thompson;
-use regex_automata::util::syntax;
 use regex_automata::{Anchored, Input, MatchKind, PatternID};
 use regex_syntax::hir::{
     Class, ClassBytes, ClassBytesRange, ClassUnicode, ClassUnicodeRange, Hir, HirKind, Look,
@@ -58,8 +59,11 @@ use regex_syntax::hir::{
 use std::sync::{Arc, OnceLock};
 
 const MIB: usize = 1 << 20;
-/// Lazy DFA cache of the meta regex (fancy-regex: 64 MiB).
-const META_CACHE_CAPACITY: usize = 2 * MIB;
+/// Lazy DFA cache of the search DFAs (fancy-regex: 64 MiB).
+const SEARCH_CACHE_CAPACITY: usize = 2 * MIB;
+/// The search DFAs' efficiency check: regex-automata's meta regex gives its
+/// own lazy DFAs the same clear count (`MIN_CACHE_CLEARS`) and this.
+const SEARCH_MIN_BYTES_PER_STATE: usize = 10;
 /// Lazy DFA cache of the overlapping DFA (fancy-regex: 64 MiB).
 const OVERLAPPING_CACHE_CAPACITY: usize = MIB;
 /// Hard bound on the NFA size per set, for both automata.
@@ -73,7 +77,7 @@ const NFA_SIZE_LIMIT: usize = 16 * MIB;
 /// every few searches: 100 µs a search against 0.4 without the pre-filter
 /// on the flat CSS grammar set). The set then drops its pre-filter for
 /// good (`retire_prefilter` in `regset.rs`). regex-automata's meta regex
-/// uses the same two numbers for its own lazy DFAs.
+/// gives its own lazy DFAs the same clear count.
 const MIN_CACHE_CLEARS: usize = 3;
 /// See `MIN_CACHE_CLEARS`.
 const MIN_BYTES_PER_STATE: usize = 20;
@@ -115,7 +119,7 @@ pub(crate) const MAX_NFA_STATES: usize = 65_536;
 /// of 0): such patterns are literals and small classes, whose attempts
 /// the first-byte table dispatches and the first-instruction tests reject
 /// as cheaply as a walk of the automata would, so the pre-filter has
-/// nothing to save there and costs its walks and meta regex searches on
+/// nothing to save there and costs its walks and search DFA searches on
 /// every call (the six sets of the JSON grammar, 3 to 11 patterns over 24
 /// to 104 states, took 1.5 to 2.5 times their time with it, and no set of
 /// the captured replays within these bounds gains; see ADR-008).
@@ -125,12 +129,12 @@ pub(crate) const TINY_SET_NFA_STATES: usize = 128;
 
 #[cfg(test)]
 thread_local! {
-    /// Searches of a set's meta regex on this thread, for tests that bound
+    /// Searches of a set's search DFAs on this thread, for tests that bound
     /// the pre-filter's work (`search_in`).
     pub(crate) static EARLIEST_CALLS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Bytes the candidate scans read on this thread.
     pub(crate) static SCAN_STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-    /// Bytes the meta regex searches read on this thread.
+    /// Bytes the search DFAs read on this thread.
     pub(crate) static META_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
@@ -950,8 +954,8 @@ impl Walk<'_> {
             }
             ANCR_WORD_BOUNDARY | ANCR_NO_WORD_BOUNDARY | ANCR_WORD_BEGIN | ANCR_WORD_END => {
                 // A Unicode word boundary makes a lazy DFA quit at non-ASCII
-                // bytes, after which the meta regex falls back to its slow
-                // engines. Between two ASCII characters it is the ASCII
+                // bytes, after which a search gives up on the DFA (see
+                // `candidate_in`). Between two ASCII characters it is the ASCII
                 // boundary; next to a non-ASCII character it may hold, and
                 // the ASCII half boundaries (the previous or the next
                 // character is not an ASCII word character) admit that.
@@ -1092,13 +1096,13 @@ impl Walk<'_> {
     }
 }
 
-/// The automata of one pattern list: a meta regex over the covered seeks
-/// for the earliest candidate position, and an overlapping lazy DFA for the
-/// entries whose seek matches there. Both are read-only once built (their
-/// lazy DFA caches are the set's, in `SetPrefilter`), so every set over
-/// the same pattern list can hold the same `Automata`.
+/// The automata of one pattern list: forward and reverse lazy DFAs over the
+/// covered seeks for the earliest candidate position, and an overlapping
+/// lazy DFA for the entries whose seek matches there. Both are read-only
+/// once built (their lazy DFA caches are the set's, in `SetPrefilter`), so
+/// every set over the same pattern list can hold the same `Automata`.
 pub(crate) struct Automata {
-    meta: regex_automata::meta::Regex,
+    search: Arc<hybrid_regex::Regex>,
     dfa: hybrid::DFA,
     /// The entry index each pattern ID stands for, ascending.
     entries: Vec<u16>,
@@ -1137,11 +1141,11 @@ impl AutomataCell {
 /// [`Automata`], and the scratch state of its searches.
 pub(crate) struct SetPrefilter {
     /// The automata of the set's pattern list: clones of the shared
-    /// [`Automata`]'s, which keep their NFAs, strategies and prefilters
-    /// behind `Arc`s, so a search reads them as the set's own, without an
+    /// [`Automata`]'s, which keep their NFAs and transition tables behind
+    /// `Arc`s, so a search reads them as the set's own, without an
     /// indirection, and the heavy parts are held once.
-    meta: regex_automata::meta::Regex,
-    meta_cache: regex_automata::meta::Cache,
+    search: Arc<hybrid_regex::Regex>,
+    search_cache: hybrid_regex::Cache,
     dfa: hybrid::DFA,
     dfa_cache: hybrid::Cache,
     patset: PatternBits,
@@ -1157,8 +1161,8 @@ pub(crate) struct SetPrefilter {
     /// The last walk ran to the bound or ended by asking: the next one
     /// asks as soon as the bounded seeks have settled.
     ask_early: bool,
-    /// The overlapping DFA gave up on its cache (`MIN_CACHE_CLEARS`): the
-    /// set retires the pre-filter after the search.
+    /// The overlapping DFA or a search DFA gave up on its cache
+    /// (`MIN_CACHE_CLEARS`): the set retires the pre-filter after the search.
     gave_up: bool,
     /// Bytes the walks of the current search read, which the DFA cache's
     /// efficiency check counts: one progress span per search, updated
@@ -1179,8 +1183,8 @@ pub(crate) struct SetPrefilter {
     /// candidates of in the current search.
     candidates: Vec<u16>,
     walked_at: Option<usize>,
-    /// The last meta regex result for a subject (`earliest_memo`).
-    meta_memo: Option<MetaMemo>,
+    /// The last search result for a subject (`earliest_memo`).
+    search_memo: Option<SearchMemo>,
     /// The walks of a subject searched again.
     candidate_memo: CandidateMemo,
 }
@@ -1188,7 +1192,7 @@ pub(crate) struct SetPrefilter {
 /// What the walks of a subject found (`candidates_at`), per position, for
 /// the searches of that subject after its first: a walk reads the subject
 /// from its position and asks admission there, both of which depend on the
-/// subject only (see `MetaMemo`), so a later search reuses it where it
+/// subject only (see `SearchMemo`), so a later search reuses it where it
 /// walks a position again, the way the position-lead search reuses its
 /// fallback memo. A line tokenized again (an editor re-tokenizing it, a
 /// benchmark) walks every position again; a tokenizing pass walks a
@@ -1359,7 +1363,7 @@ impl CandidateMemo {
 /// first position itself, and admission elsewhere depends on the subject
 /// and the position only (the gate cache serves later starts alike).
 #[derive(Clone, Copy)]
-struct MetaMemo {
+struct SearchMemo {
     subject: (crate::regset::FallbackMemoIdentity, usize),
     from: usize,
     until: usize,
@@ -1440,6 +1444,25 @@ impl Automata {
         {
             return None;
         }
+        // The earliest match start is found as regex-automata's meta regex
+        // finds it (its lazy DFA strategy): a leftmost-first forward search
+        // for the end, then a reverse search from there for the start. The
+        // searches report no captures, so both DFAs run over NFAs without
+        // capture states. The forward NFA is the one the overlapping DFA
+        // runs on, shared rather than compiled again (Rust-only, ADR-008).
+        let nfarev = thompson::Compiler::new()
+            .configure(
+                thompson::Config::new()
+                    .utf8(false)
+                    .reverse(true)
+                    .which_captures(thompson::WhichCaptures::None)
+                    .nfa_size_limit(Some(NFA_SIZE_LIMIT)),
+            )
+            .build_many_from_hir(&hirs)
+            .ok()?;
+        let forward = search_dfa(nfa.clone(), MatchKind::LeftmostFirst)?;
+        let reverse = search_dfa(nfarev, MatchKind::All)?;
+        let search = Arc::new(hybrid_regex::Builder::new().build_from_dfas(forward, reverse));
         // The seeks use ASCII look-arounds only, so the DFA never quits.
         let dfa = hybrid::Builder::new()
             .configure(
@@ -1452,19 +1475,6 @@ impl Automata {
             )
             .build_from_nfa(nfa)
             .ok()?;
-        // Only match starts are asked of the meta regex; with
-        // `WhichCaptures::None` it would have no group 0 to report them in.
-        let meta = regex_automata::meta::Builder::new()
-            .syntax(syntax::Config::new().utf8(false))
-            .configure(
-                regex_automata::meta::Config::new()
-                    .match_kind(MatchKind::LeftmostFirst)
-                    .utf8_empty(false)
-                    .nfa_size_limit(Some(NFA_SIZE_LIMIT))
-                    .hybrid_cache_capacity(META_CACHE_CAPACITY),
-            )
-            .build_many_from_hir(&hirs)
-            .ok()?;
         let mut long = Vec::new();
         let mut settle = 0;
         for (pid, hir) in hirs.iter().enumerate() {
@@ -1475,7 +1485,7 @@ impl Automata {
             }
         }
         Some(Automata {
-            meta,
+            search,
             dfa,
             entries,
             own,
@@ -1484,7 +1494,7 @@ impl Automata {
         })
     }
 
-    /// NFA states of the overlapping DFA (the meta regex holds about twice
+    /// NFA states of the overlapping DFA (the search DFAs hold about twice
     /// as many: a forward and a reverse NFA).
     pub(crate) fn nfa_states(&self) -> usize {
         self.dfa.get_nfa().states().len()
@@ -1492,19 +1502,46 @@ impl Automata {
 
     /// Heap memory of the automata, in bytes, without any cache.
     pub(crate) fn memory_usage(&self) -> usize {
-        self.meta.memory_usage() + self.dfa.memory_usage()
+        automata_memory_usage(&self.dfa, &self.search)
     }
+}
+
+/// Heap memory of the automata's NFAs and DFAs, in bytes, without any cache.
+/// The forward NFA is shared by the overlapping DFA and the forward search
+/// DFA, and counted once.
+fn automata_memory_usage(dfa: &hybrid::DFA, search: &hybrid_regex::Regex) -> usize {
+    dfa.get_nfa().memory_usage()
+        + search.reverse().get_nfa().memory_usage()
+        + search.forward().memory_usage()
+        + search.reverse().memory_usage()
+        + dfa.memory_usage()
+}
+
+/// A lazy DFA over the seeks' NFA for one of the search DFAs, with the
+/// cache capacity and the give-up checks regex-automata's meta regex gives
+/// its own lazy DFAs. `None` where it does not build.
+fn search_dfa(nfa: thompson::NFA, match_kind: MatchKind) -> Option<hybrid::DFA> {
+    hybrid::Builder::new()
+        .configure(
+            hybrid::Config::new()
+                .match_kind(match_kind)
+                .cache_capacity(SEARCH_CACHE_CAPACITY)
+                .minimum_cache_clear_count(Some(MIN_CACHE_CLEARS))
+                .minimum_bytes_per_state(Some(SEARCH_MIN_BYTES_PER_STATE)),
+        )
+        .build_from_nfa(nfa)
+        .ok()
 }
 
 impl SetPrefilter {
     /// A set's pre-filter over `automata`, with fresh caches.
     pub(crate) fn new(automata: &Automata) -> Self {
-        let meta_cache = automata.meta.create_cache();
+        let search_cache = automata.search.create_cache();
         let dfa_cache = automata.dfa.create_cache();
         let covered = automata.entries.len();
         SetPrefilter {
-            meta: automata.meta.clone(),
-            meta_cache,
+            search: automata.search.clone(),
+            search_cache,
             dfa: automata.dfa.clone(),
             dfa_cache,
             patset: PatternBits::new(covered),
@@ -1522,7 +1559,7 @@ impl SetPrefilter {
             stamp: 0,
             candidates: Vec::new(),
             walked_at: None,
-            meta_memo: None,
+            search_memo: None,
             candidate_memo: CandidateMemo::default(),
         }
     }
@@ -1585,7 +1622,7 @@ impl SetPrefilter {
     ) -> Option<usize> {
         let mut search_from = from;
         let mut memo_from = from;
-        if let (Some(subject), Some(memo)) = (subject, self.meta_memo) {
+        if let (Some(subject), Some(memo)) = (subject, self.search_memo) {
             if memo.subject == subject && from >= memo.from {
                 match memo.at {
                     Some(at) if from <= at => return (at < until).then_some(at),
@@ -1600,7 +1637,7 @@ impl SetPrefilter {
         }
         let at = self.search_in(haystack, search_from, until, admits);
         if let Some(subject) = subject {
-            self.meta_memo = Some(MetaMemo {
+            self.search_memo = Some(SearchMemo {
                 subject,
                 from: memo_from,
                 until,
@@ -1620,7 +1657,7 @@ impl SetPrefilter {
         candidate: bool,
         next: usize,
     ) {
-        if let (Some(subject), Some(memo)) = (subject, self.meta_memo.as_mut()) {
+        if let (Some(subject), Some(memo)) = (subject, self.search_memo.as_mut()) {
             if memo.subject == subject && memo.at.is_none() && memo.until == at {
                 if candidate {
                     memo.at = Some(at);
@@ -1634,12 +1671,15 @@ impl SetPrefilter {
     /// The earliest position in `[from, until)` where some covered entry
     /// can decide, reading the subject only up to `until` plus the bounded
     /// seeks' length. The position `from` by a walk first: a greedy seek
-    /// that matches there would make the meta regex read on to its match
-    /// end to report that start. Then the meta regex over the span finds
-    /// every bounded seek's match that starts in the window (its match ends
+    /// that matches there would make the search read on to its match end
+    /// to report that start. Then the search DFAs over the span find every
+    /// bounded seek's match that starts in the window (its match ends
     /// inside the span), and the long seeks, whose matches may end past it,
-    /// are walked at the positions up to the meta regex's find where their
+    /// are walked at the positions up to the search's find where their
     /// bytes dispatch (`candidates_at`, with its bound and admission stop).
+    /// Where a search DFA gives up, `from` is returned: a position no later
+    /// than the earliest one, which only costs walks, and the set retires
+    /// the pre-filter after the search (`gave_up`).
     fn search_in(
         &mut self,
         haystack: &[u8],
@@ -1650,9 +1690,9 @@ impl SetPrefilter {
         if from >= until || from > haystack.len() {
             return None;
         }
-        // Only a long seek can make the meta regex read far for a start
-        // here; a set without one is spared the walk, and the meta regex
-        // looks at `from` itself.
+        // Only a long seek can make the search read far for a start here;
+        // a set without one is spared the walk, and the search looks at
+        // `from` itself.
         let mut next = from;
         if !self.long.is_empty() {
             if self
@@ -1672,7 +1712,15 @@ impl SetPrefilter {
             #[cfg(test)]
             EARLIEST_CALLS.with(|calls| calls.set(calls.get() + 1));
             let input = Input::new(haystack).span(next..span_end);
-            let found = self.meta.search_with(&mut self.meta_cache, &input);
+            let Ok(found) = self.search.try_search(&mut self.search_cache, &input) else {
+                // The lazy DFAs give up only on their cache's efficiency
+                // (`MIN_CACHE_CLEARS`) and quit only on non-ASCII look-arounds,
+                // which the seeks do not have: `from` is the earliest
+                // position the search can name, and the set drops its
+                // pre-filter after this search.
+                self.gave_up = true;
+                return Some(from);
+            };
             #[cfg(test)]
             META_BYTES.with(|bytes| {
                 // The forward scan to the match end, and the reverse scan
@@ -1995,7 +2043,7 @@ impl SetPrefilter {
         self.gave_up
     }
 
-    /// NFA states of the overlapping DFA (the meta regex holds about twice
+    /// NFA states of the overlapping DFA (the search DFAs hold about twice
     /// as many: a forward and a reverse NFA).
     pub(crate) fn nfa_states(&self) -> usize {
         self.dfa.get_nfa().states().len()
@@ -2004,12 +2052,12 @@ impl SetPrefilter {
     /// Heap memory of the automata (shared with every set over the same
     /// pattern list) and of this set's caches, in bytes.
     pub(crate) fn memory_usage(&self) -> usize {
-        self.meta.memory_usage() + self.dfa.memory_usage() + self.cache_memory_usage()
+        automata_memory_usage(&self.dfa, &self.search) + self.cache_memory_usage()
     }
 
     /// Heap memory of this set's lazy DFA caches, in bytes.
     pub(crate) fn cache_memory_usage(&self) -> usize {
-        self.meta_cache.memory_usage() + self.dfa_cache.memory_usage()
+        self.search_cache.memory_usage() + self.dfa_cache.memory_usage()
     }
 
     /// Times the overlapping DFA's cache was cleared because it filled up.
