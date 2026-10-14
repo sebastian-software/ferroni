@@ -152,17 +152,13 @@ impl Lint {
                 }
             }
             NodeInner::List(_) => {
-                let mut items = Vec::new();
-                collect_chain(node, &mut items);
-                let last = items.len() - 1;
-                for (i, item) in items.into_iter().enumerate() {
-                    self.visit(item, tail && i == last);
+                let mut items = chain_items(node).peekable();
+                while let Some(item) = items.next() {
+                    self.visit(item, tail && items.peek().is_none());
                 }
             }
             NodeInner::Alt(_) => {
-                let mut items = Vec::new();
-                collect_chain(node, &mut items);
-                for item in items {
+                for item in chain_items(node) {
                     self.visit(item, tail);
                 }
             }
@@ -325,10 +321,8 @@ impl Lint {
                 (_, Some(body)) => out = self.first(body),
             },
             NodeInner::List(_) => {
-                let mut items = Vec::new();
-                collect_chain(node, &mut items);
                 out.nullable = true;
-                for item in items {
+                for item in chain_items(node) {
                     let first = self.first(item);
                     out.set.union(&first.set);
                     if !first.nullable {
@@ -338,9 +332,7 @@ impl Lint {
                 }
             }
             NodeInner::Alt(_) => {
-                let mut branches = Vec::new();
-                collect_chain(node, &mut branches);
-                for branch in branches {
+                for branch in chain_items(node) {
                     let first = self.first(branch);
                     out.set.union(&first.set);
                     out.nullable |= first.nullable;
@@ -371,13 +363,23 @@ fn has_look_around(node: &Node) -> bool {
         }
         NodeInner::Quant(q) => q.body.as_deref().is_some_and(has_look_around),
         NodeInner::Bag(b) => b.body.as_deref().is_some_and(has_look_around),
-        NodeInner::List(_) | NodeInner::Alt(_) => {
-            let mut items = Vec::new();
-            collect_chain(node, &mut items);
-            items.into_iter().any(has_look_around)
-        }
+        NodeInner::List(_) | NodeInner::Alt(_) => chain_items(node).any(has_look_around),
         _ => false,
     }
+}
+
+/// The items of a List or Alt chain, in order, without collecting them.
+/// Rust-only (ADR-008): the first-byte and look-around checks walk chains
+/// many times, and each walk allocated a Vec.
+fn chain_items(node: &Node) -> impl Iterator<Item = &Node> {
+    std::iter::successors(Some(node), |n| match &n.inner {
+        NodeInner::List(c) | NodeInner::Alt(c) => c.cdr.as_deref(),
+        _ => None,
+    })
+    .map(|n| match &n.inner {
+        NodeInner::List(c) | NodeInner::Alt(c) => &*c.car,
+        _ => n,
+    })
 }
 
 fn collect_chain<'a>(node: &'a Node, out: &mut Vec<&'a Node>) {
