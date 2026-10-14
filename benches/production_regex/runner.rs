@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use crate::engines::{CompileOptions, Compiled, Engine};
 
 const CATALOG: &str = include_str!("catalog.json");
+const TOKENIZER_CATALOG: &str = include_str!("../tokenizer_regex/catalog.json");
 type Bounds = Vec<Option<(usize, usize)>>;
 
 #[derive(Debug, PartialEq)]
@@ -21,6 +22,7 @@ enum Output {
     Match(Option<(usize, usize)>),
     Captures(Option<Bounds>),
     Matches(Vec<Bounds>),
+    Spans(Vec<(usize, usize)>),
     Text(String),
     Chunks(Vec<String>),
 }
@@ -118,6 +120,19 @@ fn parse_output(operation: &str, value: &Value) -> Output {
         "all_captures" => {
             Output::Matches(value.as_array().unwrap().iter().map(parse_bounds).collect())
         }
+        "all_matches" => Output::Spans(
+            value
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|span| {
+                    (
+                        span[0].as_u64().unwrap() as usize,
+                        span[1].as_u64().unwrap() as usize,
+                    )
+                })
+                .collect(),
+        ),
         "replace" => Output::Text(value.as_str().unwrap().to_owned()),
         "graphemes" => Output::Chunks(
             value
@@ -141,6 +156,15 @@ enum Library {
 impl Library {
     fn compile(engine: &str, case: &Case) -> Result<Self, String> {
         let flags = case.flags;
+        if engine.starts_with("regexr")
+            && !case.slice_at_start
+            && case.inputs.iter().any(|input| input.start != 0)
+        {
+            return Err(
+                "API unsupported: regexr's public Regex has no preserved-context offset search"
+                    .to_owned(),
+            );
+        }
         match engine {
             "rust" | "rust_erroraware" => Regex::builder(&case.pattern)
                 .case_insensitive(flags.ignore_case)
@@ -178,6 +202,7 @@ impl Library {
                 .map_err(|error| error.to_string()),
             _ => Engine::PER_PATTERN
                 .iter()
+                .chain(Engine::PRODUCTION_EXTRA)
                 .find(|candidate| candidate.id() == engine)
                 .ok_or_else(|| format!("engine {engine} was not built"))?
                 .compile_with_options(&case.pattern, flags)
@@ -264,6 +289,19 @@ impl Library {
     }
 
     fn all_captures(&self, input: &Input) -> Result<Vec<Bounds>, String> {
+        if let Self::Other(regex) = self {
+            if let Some(captures) = regex.native_all_captures(&input.text) {
+                return Ok(captures
+                    .into_iter()
+                    .map(|groups| {
+                        groups
+                            .into_iter()
+                            .map(|(s, e)| (s >= 0).then_some((s as usize, e as usize)))
+                            .collect()
+                    })
+                    .collect());
+            }
+        }
         match self {
             Self::Ferroni(regex, true) => regex
                 .captures_iter_with(&input.text, Self::options())
@@ -311,6 +349,53 @@ impl Library {
                 Ok(result)
             }
         }
+    }
+
+    fn all_matches(&self, input: &Input) -> Result<Vec<(usize, usize)>, String> {
+        match self {
+            Self::Ferroni(regex, false) => {
+                return Ok(regex
+                    .find_iter(&input.text)
+                    .map(|m| (m.start(), m.end()))
+                    .collect());
+            }
+            Self::Ferroni(regex, true) => {
+                return regex
+                    .find_iter_with(&input.text, Self::options())
+                    .map(|result| {
+                        result
+                            .map(|m| (m.start(), m.end()))
+                            .map_err(|error| error.to_string())
+                    })
+                    .collect();
+            }
+            Self::Regex(regex) => {
+                return Ok(regex
+                    .find_iter(&input.text)
+                    .map(|m| (m.start(), m.end()))
+                    .collect());
+            }
+            Self::Other(regex) => {
+                if let Some(matches) = regex.native_all_matches(&input.text) {
+                    return matches;
+                }
+            }
+            Self::C(_, _) => {}
+        }
+        let mut spans = Vec::new();
+        let mut start = input.start;
+        while let Some((begin, end)) = self.find(&input.text, start)? {
+            spans.push((begin, end));
+            if begin == end {
+                let Some(next) = next_boundary(&input.text, end) else {
+                    break;
+                };
+                start = next;
+            } else {
+                start = end;
+            }
+        }
+        Ok(spans)
     }
 
     fn replace(&self, input: &Input, replacement: &str) -> Result<String, String> {
@@ -374,7 +459,7 @@ impl Library {
                         .map_err(|e| e.to_string())?,
                     Self::Ferroni(regex, false) => regex.is_match(&input.text),
                     Self::Regex(regex) => regex.is_match(&input.text),
-                    Self::Other(regex) => regex.search(&input.text, input.start)?.is_some(),
+                    Self::Other(regex) => regex.is_match(&input.text, input.start)?,
                     Self::C(regex, _) => {
                         let position = regex.search(
                             input.text.as_bytes(),
@@ -396,6 +481,7 @@ impl Library {
                 Ok(Output::Captures(self.captures(&input.text, input.start)?))
             }
             "all_captures" => Ok(Output::Matches(self.all_captures(input)?)),
+            "all_matches" => Ok(Output::Spans(self.all_matches(input)?)),
             "replace" => Ok(Output::Text(self.replace(input, &case.replacement)?)),
             "graphemes" => {
                 let captures = self.all_captures(input)?;
@@ -444,13 +530,26 @@ fn eligibility(engine: &str, case: &Case) -> Result<Library, Value> {
     if case.inputs.is_empty() {
         return Err(failure("pending", "no oracle fixtures".to_owned()));
     }
-    let library =
-        Library::compile(engine, case).map_err(|reason| failure("syntax_rejected", reason))?;
+    let library = Library::compile(engine, case).map_err(|reason| {
+        failure(
+            if reason.starts_with("API unsupported:") {
+                "api_unsupported"
+            } else {
+                "syntax_rejected"
+            },
+            reason,
+        )
+    })?;
     // Plain public APIs can report a limit as no match. Validate the same
     // fixtures through the fallible profile before admitting their timings.
     let error_check = (engine == "rust")
         .then(|| Library::compile("rust_erroraware", case).expect("same Ferroni compiler"));
     for (index, input) in case.inputs.iter().enumerate() {
+        if let Library::Other(regex) = &library {
+            regex
+                .check_execution(&input.text)
+                .map_err(|reason| failure("execution_error", reason))?;
+        }
         if let Some(check) = &error_check {
             check
                 .execute(case, input)
@@ -474,7 +573,12 @@ fn eligibility(engine: &str, case: &Case) -> Result<Library, Value> {
 
 fn engines() -> Vec<&'static str> {
     let mut result = vec!["rust", "rust_erroraware", "c", "regex"];
-    result.extend(Engine::PER_PATTERN.iter().map(|engine| engine.id()));
+    result.extend(
+        Engine::PER_PATTERN
+            .iter()
+            .chain(Engine::PRODUCTION_EXTRA)
+            .map(|engine| engine.id()),
+    );
     result
 }
 
@@ -483,8 +587,13 @@ fn selected(value: &str, variable: &str) -> bool {
 }
 
 pub fn main() {
+    let source = if std::env::var("PRODUCTION_CORPUS").as_deref() == Ok("tokenizer") {
+        TOKENIZER_CATALOG
+    } else {
+        CATALOG
+    };
     let catalog: Value =
-        serde_json::from_str(CATALOG).expect("production catalog must be valid JSON");
+        serde_json::from_str(source).expect("production catalog must be valid JSON");
     let args: Vec<_> = std::env::args().collect();
     if args.iter().any(|arg| arg == "--catalog") {
         println!("{catalog}");
@@ -529,7 +638,7 @@ pub fn main() {
                         }
                         println!(
                             "{}",
-                            json!({"case":case.id,"engine":engine,"status":"eligible","inputs":case.inputs.len(),"bytes":case.bytes()})
+                            json!({"case":case.id,"engine":engine,"status":"eligible","inputs":case.inputs.len(),"bytes":case.bytes(), "backend": match &library { Library::Other(regex) => regex.backend(), _ => None }})
                         );
                         black_box(library);
                     }

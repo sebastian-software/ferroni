@@ -250,8 +250,24 @@ cargo test --locked --features ffi,onigmo --test regex_feature_matrix
 ```
 
 The matrix covers the illustrated native syntax, not all possible task-equivalent
-rewrites. An unsupported cell must fail compilation; an accepted cell must return
-the expected UTF-8 span. Execution failures cannot count as missing syntax.
+rewrites. An unsupported cell must reject the illustrated syntax or demonstrate
+the recorded semantic difference; an accepted cell must return the expected
+UTF-8 span. Execution failures cannot count as a missing feature.
+
+The additional comparison runs regexr with JIT off/on against a fresh Ferroni
+baseline, keeping its paired timings separate from the earlier measurement.
+The tokenizer corpus compares all profiles on the current tiktoken patterns:
+
+```sh
+python3 scripts/compare-production.py validate /tmp/regexr-check --engines rust,regexr,regexr_jit
+python3 scripts/compare-production.py validate /tmp/tokenizer-check --corpus tokenizer
+python3 scripts/publish-additional-comparisons.py --check
+```
+
+To replay the original tokenizer oracles, install `regex==2026.1.15` in an
+isolated Python environment and run `scripts/verify-tokenizer-oracles.py`.
+[Comparator notes](benches/comparator-notes.md) record the library source review,
+Unicode settings, JIT fallback and API limits.
 
 `battle_bench` requires a local Oniguruma source snapshot for comparison:
 

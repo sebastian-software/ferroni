@@ -6,6 +6,7 @@ in Git; regenerate every displayed estimate and comparison from those inputs.
 """
 
 import argparse
+import ast
 import hashlib
 import importlib.util
 import json
@@ -25,6 +26,7 @@ RESULTS = ROOT / "benches/production_results"
 DATA = ROOT / "docs/app/data/production-comparison.json"
 SUMMARY = ROOT / "docs/app/data/production-summary.json"
 PROFILES = {"macos-arm64": ("arm64", "macOS"), "linux-x86-64": ("x86_64", "Linux")}
+BASE_ENGINES = ("rust", "rust_erroraware", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex")
 spec = importlib.util.spec_from_file_location("production_comparison", ROOT / "scripts/compare-production.py")
 comparison = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(comparison)
@@ -56,18 +58,19 @@ def equivalent(left, right):
     return left == right
 
 
-def verify_context(context, catalog, receipt, profile):
+def verify_context(context, catalog, receipt, profile, engines=BASE_ENGINES):
     require(context["diagnostic"] is False, "Diagnostic evidence cannot be published")
     require(not context["git_status"], "The measured checkout must be clean")
     require(context["commit"] == receipt["head_sha"], "Measured revision differs from the workflow revision")
     machine, platform = PROFILES[profile]
     require(context["machine"] == machine and context["platform"].startswith(platform), "Unexpected runner architecture/OS")
-    require(context["engines"] == list(comparison.ENGINES), "Publication requires every engine profile")
+    require(context["engines"] == list(engines), "Publication requires the declared engine profiles")
     require(context["cases"] == [case["id"] for case in catalog["cases"]], "Publication requires the complete corpus")
     require(context["repetitions"] >= 3 and context["samples"] >= 30
             and context["measure_seconds"] >= 3 and context["warmup_seconds"] >= 1,
             "Publication requires the agreed measurement budget")
-    require(context["build_profile"] == "bench, thin LTO, features onigmo", "Unexpected build profile")
+    features = "onigmo" if "onigmo" in engines else "ffi"
+    require(context["build_profile"] == f"bench, thin LTO, features {features}", "Unexpected build profile")
     require(context["pcre2_build"] == "PCRE2_SYS_STATIC=1; bundled source from locked pcre2-sys", "Unverified PCRE2 build")
     require(str(receipt["id"]) in context["host_note"], "Workflow identity is missing from the host note")
     require(context["rustflags"] == "", "Unexpected RUSTFLAGS override")
@@ -95,18 +98,48 @@ def verify_raw(directory, record, lane, estimate, samples):
     require(math.isclose(sample_mean, estimate["ns"], rel_tol=1e-10), "Mean estimate differs from the normalized raw samples")
 
 
-def verify(directory, receipt, profile):
+def verify_lock_additions(retained, current):
+    """Keep prior evidence valid only when existing packages remain unchanged."""
+    blocks = lambda text: {re.search(r'^name = "([^"]+)"', block, re.M)[1] + "@" + re.search(r'^version = "([^"]+)"', block, re.M)[1]: block for block in text.split("\n[[package]]\n")[1:]}
+    before, after = blocks(retained), blocks(current)
+    for key, old in before.items():
+        require(key in after, "A retained dependency is missing from the current lock")
+        new = after[key]
+        if key.startswith("ferroni@"):
+            pattern = r'dependencies = \[\n(.*?)\n\]'
+            old_deps, new_deps = (set(re.search(pattern, block, re.S)[1].splitlines()) for block in (old, new))
+            require(old_deps <= new_deps and new_deps - old_deps <= {' "regexr",'}, "The retained root dependencies changed beyond the added comparator")
+            require(re.sub(pattern, "", old, flags=re.S) == re.sub(pattern, "", new, flags=re.S), "The retained root package changed")
+        else:
+            require(old == new, f"The retained dependency {key} changed")
+
+
+def verify_method(retained):
+    """Profile/corpus additions must not silently change prior ratio interpretation."""
+    functions = lambda source: {node.name: ast.dump(node, include_attributes=False) for node in ast.parse(source).body if isinstance(node, ast.FunctionDef)}
+    before, after = functions(retained), functions((ROOT / "scripts/compare-production.py").read_text())
+    for name in ("summarize_pair", "ordered_pairs", "fatal_preflight"):
+        require(before[name] == after[name], f"The measured interpretation function {name} changed")
+
+
+def verify(directory, receipt, profile, catalog_path=None, engines=BASE_ENGINES, current_lock=False):
+    catalog_path = catalog_path or ROOT / "benches/production_regex/catalog.json"
     context, catalog = read(directory / "context.json"), read(directory / "catalog.json")
-    verify_context(context, catalog, receipt, profile)
-    require(catalog == read(ROOT / "benches/production_regex/catalog.json"), "The retained corpus differs from the current corpus")
+    verify_context(context, catalog, receipt, profile, engines)
+    require(catalog == read(catalog_path), "The retained corpus differs from the current corpus")
     for filename, key in (("Cargo.lock", "cargo_lock_sha256"), ("source-snapshot.tar.gz", "source_snapshot_sha256")):
         require(sha256(directory / filename) == context[key], f"Checksum mismatch: {filename}")
-    require(sha256(ROOT / "benches/production_regex/catalog.json") == context["corpus_sha256"], "Corpus checksum mismatch")
-    require(sha256(ROOT / "Cargo.lock") == context["cargo_lock_sha256"], "The retained dependency lock differs from the current lock")
+    require(sha256(catalog_path) == context["corpus_sha256"], "Corpus checksum mismatch")
+    if current_lock:
+        require(sha256(ROOT / "Cargo.lock") == context["cargo_lock_sha256"], "The retained dependency lock differs from the current lock")
+    else:
+        verify_lock_additions((directory / "Cargo.lock").read_text(), (ROOT / "Cargo.lock").read_text())
     require((directory / "engine-inputs.toml").read_bytes() == (ROOT / "benches/battle_inputs.toml").read_bytes(), "Native engine pins differ from the current pins")
     with tarfile.open(directory / "source-snapshot.tar.gz") as archive:
-        require(archive.extractfile("scripts/compare-production.py").read() == (ROOT / "scripts/compare-production.py").read_bytes(),
-                "The interpretation script differs from the measured source snapshot")
+        verify_method(archive.extractfile("scripts/compare-production.py").read().decode())
+        for member in archive.getmembers():
+            if member.isfile() and member.name.startswith("src/"):
+                require(archive.extractfile(member).read() == (ROOT / member.name).read_bytes(), "The retained Ferroni implementation differs from the current source")
         pins = (directory / "engine-inputs.toml").read_text()
         for name, cache in (("oniguruma", "oniguruma-orig"), ("onigmo", "onigmo-ruby")):
             section = re.search(rf"\[{name}\]\n(.*?)(?=\n\[|\Z)", pins, re.S)[1]
@@ -119,7 +152,7 @@ def verify(directory, receipt, profile):
     require(len(eligibility) == len(expected_pairs)
             and {(row["case"], row["engine"]) for row in eligibility} == expected_pairs, "Incomplete or duplicate eligibility records")
     require(not comparison.fatal_preflight(eligibility), "Fatal preflight result")
-    require(all(row["status"] in ("eligible", "pending", "syntax_rejected", "semantic_difference") for row in eligibility), "Unknown eligibility status")
+    require(all(row["status"] in ("eligible", "pending", "syntax_rejected", "semantic_difference", "api_unsupported") for row in eligibility), "Unknown eligibility status")
     eligible = {(row["case"], row["engine"]) for row in eligibility if row["status"] == "eligible"}
     records = read(directory / "measurements.json")
     expected = {(case, engine, rep) for case, engine in eligible for rep in range(context["repetitions"])}
@@ -184,11 +217,15 @@ def document(data):
     return "\n".join(lines)
 
 
-def generate(directories, receipt):
+def generate(directories, receipt, catalog_path=None, engines=None, current_lock=False):
+    catalog_path = catalog_path or ROOT / "benches/production_regex/catalog.json"
+    if engines is None:
+        engines = tuple(read(directories[next(iter(PROFILES))] / "context.json")["engines"])
+        require(engines in (BASE_ENGINES, comparison.ENGINES), "Publication requires every engine profile")
     validate_receipt(receipt)
-    platforms = [verify(directories[profile], receipt, profile) for profile in PROFILES]
+    platforms = [verify(directories[profile], receipt, profile, catalog_path, engines, current_lock) for profile in PROFILES]
     require(platforms[0]["context"]["corpus_sha256"] == platforms[1]["context"]["corpus_sha256"], "Platforms measured different corpora")
-    catalog = read(ROOT / "benches/production_regex/catalog.json")
+    catalog = read(catalog_path)
     cases = [{"id": case["id"], "family": case["family"], "tier": case["tier"], "operation": case["operation"],
               "pattern_origin": case["pattern_origin"], "input_count": len(case["inputs"]),
               "scope": case.get("scope", case.get("source_boundary", "Not timed: " + case.get("pending_reason", ""))),

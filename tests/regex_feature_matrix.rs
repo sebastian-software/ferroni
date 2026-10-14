@@ -12,6 +12,30 @@ use serde_json::Value;
 #[path = "../benches/engines.rs"]
 mod engines;
 
+#[test]
+fn comparison_profiles_use_unicode_shorthand_classes() {
+    for profile in [
+        engines::Engine::Pcre2,
+        engines::Engine::Pcre2Jit,
+        engines::Engine::Regexr,
+        engines::Engine::RegexrJit,
+    ] {
+        for (pattern, input, span) in [
+            (r"\A\w+\z", "κόσμος", (0, 12)),
+            (r"\A\d+\z", "٣٤", (0, 4)),
+            (r"\A\s+\z", "\u{2003}", (0, 3)),
+        ] {
+            let regex = profile.compile(pattern, false, false).unwrap();
+            assert_eq!(
+                regex.find(input, 0).unwrap(),
+                Some(span),
+                "{} / {pattern}",
+                profile.id()
+            );
+        }
+    }
+}
+
 fn compiled_match(
     engine: &str,
     pattern: &str,
@@ -47,6 +71,7 @@ fn compiled_match(
                 "pcre2" => engines::Engine::Pcre2,
                 "pcre2_jit" => engines::Engine::Pcre2Jit,
                 "fancy_regex" => engines::Engine::Fancy,
+                "regexr" => engines::Engine::Regexr,
                 "onigmo" => engines::Engine::Onigmo,
                 _ => panic!("Unknown matrix engine: {other}"),
             };
@@ -81,6 +106,13 @@ fn published_feature_matrix_matches_the_pinned_engines() {
                 let result = compiled_match(profile, pattern, input);
                 if supported {
                     assert_eq!(result.unwrap(), expected, "{} / {profile}", feature["id"]);
+                } else if feature["failures"][id].as_str() == Some("semantic_difference") {
+                    assert_ne!(
+                        result.unwrap(),
+                        expected,
+                        "{} / {profile} now matches the required semantics; update the matrix",
+                        feature["id"]
+                    );
                 } else {
                     assert!(
                         result.is_err(),

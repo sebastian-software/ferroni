@@ -12,6 +12,22 @@ spec.loader.exec_module(publication)
 
 
 class PublicationTests(unittest.TestCase):
+    def test_existing_dependencies_cannot_change_when_adding_a_comparator(self):
+        original = '\n[[package]]\nname = "regex"\nversion = "1.13.1"\nchecksum = "old"\n'
+        extra = '\n[[package]]\nname = "regexr"\nversion = "0.6.1"\nchecksum = "new"\n'
+        publication.verify_lock_additions(original, original + extra)
+        with self.assertRaisesRegex(ValueError, "changed"):
+            publication.verify_lock_additions(original, original.replace('"old"', '"altered"') + extra)
+        with self.assertRaisesRegex(ValueError, "missing"):
+            publication.verify_lock_additions(original, extra)
+
+    def test_paired_ratio_method_cannot_change_during_profile_expansion(self):
+        source = (publication.ROOT / "scripts/compare-production.py").read_text()
+        publication.verify_method(source)
+        changed = source.replace('other["ns"] / base["ns"]', 'base["ns"] / other["ns"]')
+        with self.assertRaisesRegex(ValueError, "summarize_pair"):
+            publication.verify_method(changed)
+
     def test_homepage_summary_uses_production_pairs_without_probes_or_pending_cases(self):
         production_pair = {"engine": "c", "lane": "steady", "case_count": 1, "family_count": 1,
                            "family_weighted_ratio": 1.25,

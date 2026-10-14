@@ -36,7 +36,7 @@ def check(catalog, directory=CATALOG.parent):
         assert case["pattern"] and case["inputs"]
         assert hashlib.sha256(case["original_pattern"].encode()).hexdigest() == case["original_pattern_sha256"]
         operation = case["operation"]
-        assert operation in ("is_match", "find", "captures", "captures_at", "all_captures", "replace", "graphemes")
+        assert operation in ("is_match", "find", "captures", "captures_at", "all_captures", "all_matches", "replace", "graphemes")
         if case.get("anchor_mode") == "slice":
             assert case["pattern"].startswith(r"\A")
             assert case["id"] in ("jinja_string_token", "jinja_integer_token")

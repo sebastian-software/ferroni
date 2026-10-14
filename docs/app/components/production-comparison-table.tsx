@@ -2,7 +2,6 @@ import { BenchmarkFactor } from "./benchmark-factor";
 import {
   type CaseEntry,
   type Comparison,
-  data,
   engineLanguages,
   engineNames,
   type Estimate,
@@ -118,6 +117,10 @@ function WorkloadRow({ entry, platform, comparison, lane, engine }: RowProps) {
     platform.eligibility.find((row) => row.case === entry.id && row.engine === engine),
   );
   const pair = comparison.cases.find((row) => row.case === entry.id);
+  const backend =
+    "backend" in eligibility && typeof eligibility.backend === "string"
+      ? eligibility.backend
+      : undefined;
   const estimate = (engineId: string) =>
     platform.estimates.find(
       (row) => row.case === entry.id && row.engine === engineId && row.lane === lane,
@@ -140,6 +143,7 @@ function WorkloadRow({ entry, platform, comparison, lane, engine }: RowProps) {
             ? eligibility.status.replaceAll("_", " ")
             : interpretation(pair.conclusion)}
         </strong>
+        {backend !== undefined && <small>Selected backend: {backend}</small>}
         <ScopeDetails
           entry={entry}
           pair={pair}
@@ -154,6 +158,7 @@ function WorkloadRow({ entry, platform, comparison, lane, engine }: RowProps) {
 }
 
 type TableProps = {
+  cases: CaseEntry[];
   platform: Platform;
   comparison: Comparison;
   lane: string;
@@ -183,7 +188,7 @@ function TableHeading({ engine }: { engine: string }) {
   );
 }
 
-export function CaseTable({ platform, comparison, lane, engine, id }: TableProps) {
+export function CaseTable({ cases, platform, comparison, lane, engine, id }: TableProps) {
   return (
     <>
       <p className="production-scroll-note" id={`${id}-scroll`}>
@@ -202,7 +207,7 @@ export function CaseTable({ platform, comparison, lane, engine, id }: TableProps
           </caption>
           <TableHeading engine={engine} />
           <tbody>
-            {data.cases.map((entry) => (
+            {cases.map((entry) => (
               <WorkloadRow
                 key={entry.id}
                 entry={entry}
