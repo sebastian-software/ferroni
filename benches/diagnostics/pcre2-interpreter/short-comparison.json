@@ -1,0 +1,227 @@
+[
+  {
+    "case": "django_email_domain",
+    "version": "short-before",
+    "rep": 0,
+    "ns": 305085.1384615385,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 304820.7916666667,
+      "upper_bound": 305839.58472222224
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-before-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-short-before-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "short-after",
+    "rep": 0,
+    "ns": 269630.48908492824,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 268955.6342592592,
+      "upper_bound": 269919.78990800865
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-after-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-short-after-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "pcre2",
+    "rep": 0,
+    "ns": 26592.263852767494,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 26565.28227595386,
+      "upper_bound": 26667.092118285444
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-before-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-pcre2-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "pcre2",
+    "rep": 1,
+    "ns": 26765.4808865048,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 26657.48441155118,
+      "upper_bound": 26853.109233158146
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-before-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-pcre2-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "short-after",
+    "rep": 1,
+    "ns": 270122.8020833334,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 269449.4262931035,
+      "upper_bound": 270944.5177266082
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-after-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-short-after-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "short-before",
+    "rep": 1,
+    "ns": 305478.1975238095,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 304989.79285714286,
+      "upper_bound": 305963.3412280702
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-before-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-short-before-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "short-before",
+    "rep": 2,
+    "ns": 306066.21638176637,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 305469.6892857143,
+      "upper_bound": 306566.8055555555
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-before-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-short-before-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "short-after",
+    "rep": 2,
+    "ns": 269575.6951388889,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 268887.63455882354,
+      "upper_bound": 269989.67017663043
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-after-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-short-after-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "pcre2",
+    "rep": 2,
+    "ns": 26661.858321388754,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 26611.18447204969,
+      "upper_bound": 26739.65335403727
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/short-before-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-short-pcre2-2",
+      "/steady/"
+    ]
+  }
+]
