@@ -1,0 +1,89 @@
+{
+  "format_version": 1,
+  "started_utc": "2026-10-14T14:01:50.749667+00:00",
+  "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "cpu_count": 4,
+  "corpus": "tokenizer",
+  "host_note": "Dedicated Blacksmith VM; host power/thermal state unavailable. Workflow 38571723690, attempt 1. Separate LLM pre-tokenization corpus.",
+  "commit": "7b9933c07d5f888c816793d97449012fd7f872ba",
+  "git_status": "",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+  "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+  "build_profile": "bench, thin LTO, features onigmo",
+  "binary_sha256": "8b55a65c5d603aab285f0a3b40318dc2a76246bf03f00c2d9e5583a380d9ecd9",
+  "corpus_sha256": "9b7e054f118ff51fcef0a5ccd4d5812eaa96ed21d43a409c502da371dc7abcfc",
+  "cargo_lock_sha256": "53d79979e4c2c35e320ba06653782920e9cfb935442dc56989db1781c2336cf3",
+  "rustflags": "",
+  "engines": [
+    "rust",
+    "rust_erroraware",
+    "c",
+    "onigmo",
+    "pcre2_jit",
+    "pcre2",
+    "fancy_regex",
+    "fancy_regex_seek",
+    "regex",
+    "regexr",
+    "regexr_jit"
+  ],
+  "profiles": {
+    "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
+    "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
+    "c": "C Oniguruma UTF-8/Oniguruma syntax, -O3; public C API plus output adapters",
+    "onigmo": "pinned Ruby Onigmo standalone build; public C API plus output adapters",
+    "pcre2_jit": "PCRE2 UTF/UCP, JIT required, NO_UTF_CHECK on trusted &str subjects",
+    "pcre2": "PCRE2 UTF/UCP interpreter, NO_UTF_CHECK on trusted &str subjects",
+    "fancy_regex": "fancy-regex Oniguruma mode, seek off, explicit source flags",
+    "fancy_regex_seek": "fancy-regex Oniguruma mode, seek on, explicit source flags",
+    "regex": "Rust regex public API with explicit source flags; default limits",
+    "regexr": "regexr 0.6.1 public Regex API; (?u) Unicode shorthand classes; default SIMD; JIT off; fallible first-match/capture preflight",
+    "regexr_jit": "regexr 0.6.1 public Regex API; (?u) Unicode shorthand classes; default SIMD; jit(true); selected backend recorded, non-JIT fallback allowed"
+  },
+  "cases": [
+    "tiktoken_cl100k_base",
+    "tiktoken_o200k_base"
+  ],
+  "repetitions": 3,
+  "samples": 30,
+  "measure_seconds": 3.0,
+  "warmup_seconds": 1,
+  "timeout": 120.0,
+  "seed": 20261013,
+  "diagnostic": false,
+  "command": [
+    "scripts/compare-production.py",
+    "run",
+    "/home/runner/_work/_temp/tokenizers",
+    "--corpus",
+    "tokenizer",
+    "--measure-seconds",
+    "3",
+    "--timeout",
+    "120",
+    "--host-note",
+    "Dedicated Blacksmith VM; host power/thermal state unavailable. Workflow 38571723690, attempt 1. Separate LLM pre-tokenization corpus."
+  ],
+  "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions",
+  "engine_source_overrides": {
+    "FERRONI_ONIGURUMA_DIR": null,
+    "FERRONI_ONIGMO_DIR": null,
+    "CC": null,
+    "CFLAGS": null,
+    "CARGO_PROFILE_BENCH_LTO": null
+  },
+  "pcre2_build": "PCRE2_SYS_STATIC=1; bundled source from locked pcre2-sys",
+  "source_snapshot_sha256": "e3b41d13f3e05ad1f86e93cefcb881e3553b2f4b78782b2dfd05a2028d0bb73b",
+  "native_sources": {
+    "oniguruma": {
+      "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+      "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+    },
+    "onigmo": {
+      "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+      "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+    }
+  }
+}

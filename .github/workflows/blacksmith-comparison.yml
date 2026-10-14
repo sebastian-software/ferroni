@@ -87,11 +87,12 @@ jobs:
             --measure-seconds "$MEASURE_SECONDS" --timeout 120 \
             --host-note "Dedicated Blacksmith VM; host power/thermal state unavailable. Workflow $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT." \
             "${arguments[@]}"
-          if [[ "$COMPARISON" == "regexr-and-tokenizers" ]]; then
-            python3 scripts/compare-production.py run "$RUNNER_TEMP/tokenizers" \
-              --corpus tokenizer --measure-seconds "$MEASURE_SECONDS" --timeout 120 \
-              --host-note "Dedicated Blacksmith VM; host power/thermal state unavailable. Workflow $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT. Separate LLM pre-tokenization corpus."
-          fi
+      - name: Validate and measure separate tokenizer cases
+        if: inputs.comparison == 'regexr-and-tokenizers'
+        run: |
+          python3 scripts/compare-production.py run "$RUNNER_TEMP/tokenizers" \
+            --corpus tokenizer --measure-seconds "$MEASURE_SECONDS" --timeout 120 \
+            --host-note "Dedicated Blacksmith VM; host power/thermal state unavailable. Workflow $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT. Separate LLM pre-tokenization corpus."
       - name: Retain complete evidence, including unsuccessful calls
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
