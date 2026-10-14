@@ -3,6 +3,7 @@ import { useId } from "react";
 
 import data from "../data/production-summary.json";
 import additionalResults from "../data/regexr-summary.json";
+import tokenizer from "../data/tokenizer-highlights.json";
 import { BenchmarkFactor } from "./benchmark-factor";
 import "./production-summary.css";
 
@@ -146,6 +147,22 @@ function RunNote() {
   );
 }
 
+function TokenizerNote() {
+  const throughput = (profile: string) => {
+    const result = tokenizer.platforms.find((entry) => entry.profile === profile);
+    if (result === undefined) throw new Error("Tokenizer evidence is incomplete.");
+    return (1 / result.regexr_ratio).toFixed(2);
+  };
+  return (
+    <p className="production-summary-note">
+      In the separate <a href="/perf/regex-workloads">o200k_base pre-tokenization case</a>,
+      regexr&rsquo;s JIT-off profile reaches {throughput("macos-arm64")}× Ferroni&rsquo;s throughput
+      on ARM and {throughput("linux-x86-64")}× on Linux. These tokenizer results have their own
+      scope and do not enter the 21-task aggregate above.
+    </p>
+  );
+}
+
 export function ProductionSummary() {
   return (
     <div className="production-summary">
@@ -164,6 +181,7 @@ export function ProductionSummary() {
       </p>
       <CostNotes />
       <RunNote />
+      <TokenizerNote />
       {additional !== undefined && (
         <p className="production-summary-note">
           regexr uses a <a href={additional.run.html_url}>separate paired Blacksmith run</a> with a

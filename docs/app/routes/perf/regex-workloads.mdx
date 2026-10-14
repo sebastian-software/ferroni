@@ -107,6 +107,8 @@ The other comparators are C Oniguruma, pinned Ruby
 Onigmo, PCRE2 interpreter/JIT, fancy-regex in Oniguruma mode with seek off/on,
 and Rust regex. Construction includes each profile's contexts and selected JIT.
 PCRE2's bundled source is pinned through the locked `pcre2-sys` dependency.
+Both PCRE2 profiles enable UTF and UCP. Skipping repeated UTF-8 validation for
+already-valid Rust strings does not disable Unicode character classes.
 Replacement/output assembly stays within the operation boundary.
 
 regexr 0.6.1 adds separate JIT-off and JIT-enabled profiles. Both use its default
@@ -143,6 +145,13 @@ octal escapes by default and offers `RegexBuilder::octal(true)`; its rejection
 of Django's email local-part expression in this profile is a dialect-option
 difference. Other configurations or task-equivalent expressions need separate,
 named profiles with the same checked output contract.
+
+A different result is not necessarily a missing feature or a library defect.
+For example, regexr joins an Indic consonant cluster that the retained Symfony
+grapheme oracle separates. Its implementation includes the Unicode
+[GB9c grapheme rule](https://www.unicode.org/reports/tr29/#GB9c).
+The feature matrix still shows grapheme support; the workload requires the
+specific retained output, so that result cannot enter its timing comparison.
 
 ## Measurement and interpretation
 

@@ -115,6 +115,8 @@ function RunnerContext({ context, engine }: { context: Platform["context"]; engi
 }
 
 function EvidenceLinks({ run }: { run: Dataset["run"] }) {
+  const directory =
+    run.head_sha === data.run.head_sha ? "production_results" : "additional_results";
   return (
     <p>
       Measured revision{" "}
@@ -124,7 +126,7 @@ function EvidenceLinks({ run }: { run: Dataset["run"] }) {
       {" · "}
       <a href={run.html_url}>Blacksmith workflow and job logs</a>
       {" · "}
-      <a href="https://github.com/sebastian-software/ferroni/tree/main/benches/production_results">
+      <a href={`https://github.com/sebastian-software/ferroni/tree/main/benches/${directory}`}>
         Retained raw evidence and generated tables
       </a>
     </p>

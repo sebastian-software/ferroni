@@ -1,0 +1,17 @@
+{
+  "run": {
+    "head_sha": "7b9933c07d5f888c816793d97449012fd7f872ba",
+    "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38571723690"
+  },
+  "case": "tiktoken_o200k_base",
+  "platforms": [
+    {
+      "profile": "macos-arm64",
+      "regexr_ratio": 0.8309313975210832
+    },
+    {
+      "profile": "linux-x86-64",
+      "regexr_ratio": 0.8281611659051136
+    }
+  ]
+}

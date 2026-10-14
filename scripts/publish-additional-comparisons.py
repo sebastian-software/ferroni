@@ -45,6 +45,16 @@ def generate(directories, receipt):
             for scope, (_, catalog, engines, _) in SCOPES.items()}
 
 
+def tokenizer_highlights(data):
+    """Keep the homepage's case-specific evidence small and outside its aggregate."""
+    platforms = []
+    for platform in data["platforms"]:
+        pair = next(row for row in platform["comparisons"] if row["engine"] == "regexr" and row["lane"] == "steady")
+        case = next(row for row in pair["cases"] if row["case"] == "tiktoken_o200k_base")
+        platforms.append({"profile": platform["profile"], "regexr_ratio": case["ratio_median"]})
+    return {"run": {key: data["run"][key] for key in ("head_sha", "html_url")}, "case": "tiktoken_o200k_base", "platforms": platforms}
+
+
 def write_data(datasets):
     formatter = ROOT / "docs/node_modules/.bin/oxfmt"
     publication.require(formatter.is_file(), "Install documentation dependencies before publication")
@@ -58,6 +68,9 @@ def write_data(datasets):
             summary = ROOT / "docs/app/data/regexr-summary.json"
             summary.write_text(publication.encoded(publication.overview(data)))
             paths.append(str(summary))
+    highlights = ROOT / "docs/app/data/tokenizer-highlights.json"
+    highlights.write_text(publication.encoded(tokenizer_highlights(datasets["tokenizers"])))
+    paths.append(str(highlights))
     subprocess.run([str(formatter), "--write", *paths], cwd=ROOT / "docs", check=True)
     (RESULTS / "README.md").write_text(document(datasets))
 
@@ -87,6 +100,7 @@ def check():
     for scope, (_, _, _, name) in SCOPES.items():
         publication.require(publication.equivalent(publication.read(ROOT / f"docs/app/data/{name}-comparison.json"), datasets[scope]), f"{scope} public data has drifted")
     publication.require(publication.equivalent(publication.read(ROOT / "docs/app/data/regexr-summary.json"), publication.overview(datasets["regexr"])), "regexr summary has drifted")
+    publication.require(publication.equivalent(publication.read(ROOT / "docs/app/data/tokenizer-highlights.json"), tokenizer_highlights(datasets["tokenizers"])), "Tokenizer homepage evidence has drifted")
     publication.require((RESULTS / "README.md").read_text() == document(datasets), "Additional result tables have drifted")
     print("Additional publication check: paired baselines, both platforms, raw samples and website data agree.")
 
