@@ -132,7 +132,7 @@ fn parse_output(operation: &str, value: &Value) -> Output {
 }
 
 enum Library {
-    Ferroni(Regex),
+    Ferroni(Regex, bool),
     C(CRegex, RefCell<CRegion>),
     Regex(regex::Regex),
     Other(Compiled),
@@ -142,14 +142,14 @@ impl Library {
     fn compile(engine: &str, case: &Case) -> Result<Self, String> {
         let flags = case.flags;
         match engine {
-            "rust" => Regex::builder(&case.pattern)
+            "rust" | "rust_erroraware" => Regex::builder(&case.pattern)
                 .case_insensitive(flags.ignore_case)
                 .multi_line_anchors(flags.multiline)
                 .dot_matches_newline(flags.dotall)
                 .extended(flags.extended)
                 .capture_group(true)
                 .build()
-                .map(Self::Ferroni)
+                .map(|regex| Self::Ferroni(regex, engine == "rust_erroraware"))
                 .map_err(|error| error.to_string()),
             "c" => {
                 let mut options = ONIG_OPTION_CAPTURE_GROUP;
@@ -193,10 +193,16 @@ impl Library {
 
     fn find(&self, text: &str, start: usize) -> Result<Option<(usize, usize)>, String> {
         match self {
-            Self::Ferroni(regex) => regex
-                .find_at_with(text, start, Self::options())
-                .map(|found| found.map(|m| (m.start(), m.end())))
-                .map_err(|error| error.to_string()),
+            Self::Ferroni(regex, error_aware) => {
+                let found = if *error_aware {
+                    regex
+                        .find_at_with(text, start, Self::options())
+                        .map_err(|error| error.to_string())?
+                } else {
+                    regex.find_at(text, start)
+                };
+                Ok(found.map(|m| (m.start(), m.end())))
+            }
             Self::Regex(regex) => Ok(regex.find_at(text, start).map(|m| (m.start(), m.end()))),
             Self::Other(regex) => regex.find(text, start),
             Self::C(regex, region) => {
@@ -223,16 +229,20 @@ impl Library {
                 .collect()
         };
         match self {
-            Self::Ferroni(regex) => regex
-                .captures_at_with(text, start, Self::options())
-                .map(|found| {
-                    found.map(|caps| {
-                        caps.iter()
-                            .map(|m| m.map(|m| (m.start(), m.end())))
-                            .collect()
-                    })
-                })
-                .map_err(|error| error.to_string()),
+            Self::Ferroni(regex, error_aware) => {
+                let found = if *error_aware {
+                    regex
+                        .captures_at_with(text, start, Self::options())
+                        .map_err(|error| error.to_string())?
+                } else {
+                    regex.captures_at(text, start)
+                };
+                Ok(found.map(|caps| {
+                    caps.iter()
+                        .map(|m| m.map(|m| (m.start(), m.end())))
+                        .collect()
+                }))
+            }
             Self::Regex(regex) => Ok(regex.captures_at(text, start).map(|caps| {
                 caps.iter()
                     .map(|m| m.map(|m| (m.start(), m.end())))
@@ -255,7 +265,7 @@ impl Library {
 
     fn all_captures(&self, input: &Input) -> Result<Vec<Bounds>, String> {
         match self {
-            Self::Ferroni(regex) => regex
+            Self::Ferroni(regex, true) => regex
                 .captures_iter_with(&input.text, Self::options())
                 .map(|result| {
                     result
@@ -267,6 +277,14 @@ impl Library {
                         .map_err(|error| error.to_string())
                 })
                 .collect(),
+            Self::Ferroni(regex, false) => Ok(regex
+                .captures_iter(&input.text)
+                .map(|caps| {
+                    caps.iter()
+                        .map(|m| m.map(|m| (m.start(), m.end())))
+                        .collect()
+                })
+                .collect()),
             Self::Regex(regex) => Ok(regex
                 .captures_iter(&input.text)
                 .map(|caps| {
@@ -297,7 +315,7 @@ impl Library {
 
     fn replace(&self, input: &Input, replacement: &str) -> Result<String, String> {
         match self {
-            Self::Ferroni(regex) => Ok(regex
+            Self::Ferroni(regex, _) => Ok(regex
                 .replace_all(&input.text, ferroni::NoExpand(replacement))
                 .into_owned()),
             Self::Regex(regex) => Ok(regex
@@ -351,9 +369,10 @@ impl Library {
         match case.operation.as_str() {
             "is_match" => {
                 let matched = match self {
-                    Self::Ferroni(regex) => regex
+                    Self::Ferroni(regex, true) => regex
                         .is_match_with(&input.text, Self::options())
                         .map_err(|e| e.to_string())?,
+                    Self::Ferroni(regex, false) => regex.is_match(&input.text),
                     Self::Regex(regex) => regex.is_match(&input.text),
                     Self::Other(regex) => regex.search(&input.text, input.start)?.is_some(),
                     Self::C(regex, _) => {
@@ -427,7 +446,16 @@ fn eligibility(engine: &str, case: &Case) -> Result<Library, Value> {
     }
     let library =
         Library::compile(engine, case).map_err(|reason| failure("syntax_rejected", reason))?;
+    // Plain public APIs can report a limit as no match. Validate the same
+    // fixtures through the fallible profile before admitting their timings.
+    let error_check = (engine == "rust")
+        .then(|| Library::compile("rust_erroraware", case).expect("same Ferroni compiler"));
     for (index, input) in case.inputs.iter().enumerate() {
+        if let Some(check) = &error_check {
+            check
+                .execute(case, input)
+                .map_err(|reason| failure("execution_error", reason))?;
+        }
         let actual = library
             .execute(case, input)
             .map_err(|reason| failure("execution_error", reason))?;
@@ -445,7 +473,7 @@ fn eligibility(engine: &str, case: &Case) -> Result<Library, Value> {
 }
 
 fn engines() -> Vec<&'static str> {
-    let mut result = vec!["rust", "c", "regex"];
+    let mut result = vec!["rust", "rust_erroraware", "c", "regex"];
     result.extend(Engine::PER_PATTERN.iter().map(|engine| engine.id()));
     result
 }
