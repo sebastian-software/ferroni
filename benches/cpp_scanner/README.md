@@ -23,8 +23,8 @@ fixture and may change after recapture.
 
 ## Measurement boundary
 
-Scanners compile once, before measurement. JSON parsing and full trace
-validation also happen before measurement. Every iteration creates fresh
+Warm cases compile scanners once, before measurement. JSON parsing and full
+trace validation also happen before measurement. Every iteration creates fresh
 OnigString wrappers outside Criterion's timed closure, then replays the exact
 ordered calls through `find_next_match_utf16`, without a caller cache ID.
 Scanner state remains reusable across documents as in Ferriki. Fresh string
@@ -32,6 +32,13 @@ identities prevent fallback memo hits from an earlier document. Returned
 captures are materialized and consumed with `black_box`; result destruction
 is part of scanner replay. There is no theme lookup, token assembly, rendering,
 Node bridge, trace instrumentation, or runtime engine modification.
+
+The `cold_document` case is the one-shot counterpart. Each iteration compiles
+fresh scanners from the parsed trace and replays the whole document once, so
+its time includes compilation, the pre-filter warm-up and its build, and that
+replay. String wrappers and scanner teardown stay outside the timed section,
+and `FERRONI_BENCH_PREFILTER=0` applies to it too. Run only the cold cases with
+`cargo bench --locked --bench cpp_scanner_bench -- cold`.
 
 The document case preserves the complete call order. Group cases retain that
 scanner's own ordered calls, allowing concentrated profiles without unrelated

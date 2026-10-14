@@ -24,6 +24,15 @@ cargo bench --locked --bench java_scanner_bench -- --save-baseline java-before
 cargo bench --locked --bench java_scanner_bench -- --baseline java-before
 ```
 
+## Measurement boundary
+
+Warm cases reuse scanners compiled before measurement, as described above. The
+`cold_document` case compiles fresh scanners in each iteration and replays the
+whole document once, so its time includes compilation, the pre-filter warm-up
+and build, and that replay. String wrappers and scanner teardown stay outside
+the timed section, and `FERRONI_BENCH_PREFILTER=0` applies to it too. Run only
+the cold cases with `cargo bench --locked --bench java_scanner_bench -- cold`.
+
 ## Baseline diagnosis
 
 All 3,920 scanner results and capture ranges are checked against pinned C
