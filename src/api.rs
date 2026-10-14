@@ -2347,6 +2347,44 @@ mod tests {
         assert_eq!(keep.find("one two").map(|m| m.range()), Some(1..3));
     }
 
+    /// Iteration over an unbounded map optimizer, where the next search starts
+    /// on a candidate byte or before one. The expected ranges are the
+    /// leftmost-first matches, whatever path finds them.
+    #[test]
+    fn find_iter_map_candidates_at_and_after_the_start() {
+        let _limits = crate::regexec::shared_limits();
+        // The start is a candidate (`a`) after each match: the search starts there.
+        let re = Regex::new(r"a+|b").unwrap();
+        let ranges: Vec<_> = re.find_iter("aabxba").map(|m| m.range()).collect();
+        assert_eq!(ranges, vec![0..2, 2..3, 4..5, 5..6]);
+        // The first byte is no candidate: the search scans on to the `a`.
+        let ranges: Vec<_> = re.find_iter("xa").map(|m| m.range()).collect();
+        assert_eq!(ranges, vec![1..2]);
+        // Multibyte characters hold no candidate byte of `a+|b`: the match is
+        // the `a` after them.
+        let ranges: Vec<_> = re.find_iter("éaé").map(|m| m.range()).collect();
+        assert_eq!(ranges, vec![2..3]);
+        let re = Regex::new(r"é+|a").unwrap();
+        let ranges: Vec<_> = re.find_iter("éaé").map(|m| m.range()).collect();
+        assert_eq!(ranges, vec![0..2, 2..3, 3..5]);
+        // A start on a character boundary, where the match starts at once.
+        assert_eq!(re.find_at("éaé", 2).map(|m| m.range()), Some(2..3));
+        // No candidate from the start: no match.
+        assert!(re.find_at("éaé", 5).is_none());
+        // Empty matches still step one character at a time.
+        let re = Regex::new(r"x*|a").unwrap();
+        let ranges: Vec<_> = re.find_iter("ab").map(|m| m.range()).collect();
+        assert_eq!(ranges, vec![0..0, 1..1, 2..2]);
+        // Look-behind at the boundary of the previous match.
+        let re = Regex::new(r"(?<=a)b|c+").unwrap();
+        let ranges: Vec<_> = re.find_iter("abcc b").map(|m| m.range()).collect();
+        assert_eq!(ranges, vec![1..2, 2..4]);
+        // \G anchors each search at its own start.
+        let re = Regex::new(r"\Ga|b").unwrap();
+        let ranges: Vec<_> = re.find_iter("aba").map(|m| m.range()).collect();
+        assert_eq!(ranges, vec![0..1, 1..2, 2..3]);
+    }
+
     #[test]
     fn regex_new_and_find() {
         let _limits = crate::regexec::shared_limits();

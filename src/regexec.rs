@@ -7977,7 +7977,16 @@ pub(crate) fn onig_search_bounds(
     if let Some(found) = pure_literal_first(reg, text, end, start, end, end, reg.options) {
         return Ok(found);
     }
-    let r = search_in_range_inner(reg, text, end, start, end, end, msa);
+    // Rust-only (ADR-008): the search runs the core directly. With no region
+    // `search_in_range_inner` only clamps the bounds (already `end`) and
+    // takes the core's `right_range == end`; a start past `end` is no match.
+    let r = if start > end {
+        ONIG_MISMATCH
+    } else if can_use_two_pass_capture_fill(reg, start, end, msa) {
+        search_in_range_inner(reg, text, end, start, end, end, msa)
+    } else {
+        onig_search_inner_core_with_right_range(reg, text, end, start, end, end, true, None, msa)
+    };
     release_oversized_stack(msa);
     match r {
         r if r >= 0 => Ok(Some((r as usize, r as usize + msa.match_len as usize))),
@@ -8088,6 +8097,23 @@ pub fn onig_search_with_param(
 #[inline]
 pub(crate) fn map_search_bypassed(reg: &RegexType) -> bool {
     map_search_bypassed_for(reg, false)
+}
+
+/// Rust-only (ADR-008): whether the map optimizer's check from `start` (the
+/// `forward_search` call of an unbounded search) finds `start` itself, so
+/// that the call would return `Some` with `low == high == start` and read no
+/// bytes. The map has a candidate at `start` when its byte is set; the
+/// distance and sub-anchor checks then pass at `start`. Only then is the
+/// search called away.
+#[inline]
+fn map_candidate_at(reg: &RegexType, str_data: &[u8], start: usize, range: usize) -> bool {
+    reg.optimize == OptimizeType::Map
+        && reg.dist_min == 0
+        && reg.dist_max == INFINITE_LEN
+        && reg.sub_anchor == 0
+        && start < range
+        && start < str_data.len()
+        && reg.map[str_data[start] as usize] != 0
 }
 
 /// `map_search_bypassed` for a subject that is (`subject_utf8`) or may not
@@ -8938,7 +8964,9 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
             );
         } else {
             // Infinite dist_max: just check once, then fall through to normal loop
-            if forward_search(reg, str_data, end, s, sch_range).is_none() {
+            if !map_candidate_at(reg, str_data, s, sch_range)
+                && forward_search(reg, str_data, end, s, sch_range).is_none()
+            {
                 return finish_search(
                     find_longest,
                     best_start,
