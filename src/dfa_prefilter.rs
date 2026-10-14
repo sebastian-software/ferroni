@@ -50,7 +50,7 @@ use crate::regparse_types::*;
 use regex_automata::hybrid::dfa as hybrid;
 use regex_automata::nfa::thompson;
 use regex_automata::util::syntax;
-use regex_automata::{Anchored, Input, MatchKind, PatternID, PatternSet};
+use regex_automata::{Anchored, Input, MatchKind, PatternID};
 use regex_syntax::hir::{
     Class, ClassBytes, ClassBytesRange, ClassUnicode, ClassUnicodeRange, Hir, HirKind, Look,
     Repetition,
@@ -1144,7 +1144,7 @@ pub(crate) struct SetPrefilter {
     meta_cache: regex_automata::meta::Cache,
     dfa: hybrid::DFA,
     dfa_cache: hybrid::Cache,
-    patset: PatternSet,
+    patset: PatternBits,
     /// The entry index each pattern ID stands for, ascending.
     entries: Vec<u16>,
     /// Entries searched on their own, in index order.
@@ -1213,6 +1213,84 @@ struct CandidateMemo {
     at: Vec<u32>,
     spans: Vec<(u32, u16, bool)>,
     store: Vec<u16>,
+}
+
+/// The covered entries a walk recorded, as a bitset over their pattern IDs.
+/// `regex_automata::PatternSet` keeps one bool per pattern, which a walk
+/// pays for in every `clear` and every ascending scan of the set;
+/// membership and insertion here are one word access, and `iter` yields the
+/// IDs ascending by `trailing_zeros`, so the candidates keep their order.
+/// Rust-only (ADR-008): the same set of IDs, in the same order.
+struct PatternBits {
+    words: Box<[u64]>,
+    /// The bits set.
+    len: usize,
+    capacity: usize,
+}
+
+impl PatternBits {
+    fn new(capacity: usize) -> Self {
+        PatternBits {
+            words: vec![0; capacity.div_ceil(64)].into_boxed_slice(),
+            len: 0,
+            capacity,
+        }
+    }
+
+    /// Empties the set; a set that holds nothing is left as it is.
+    #[inline]
+    fn clear(&mut self) {
+        if self.len > 0 {
+            self.words.fill(0);
+            self.len = 0;
+        }
+    }
+
+    #[inline]
+    fn contains(&self, pid: PatternID) -> bool {
+        let i = pid.as_usize();
+        i < self.capacity && (self.words[i / 64] >> (i % 64)) & 1 == 1
+    }
+
+    /// Adds `pid`, and reports whether it was not in the set.
+    #[inline]
+    fn insert(&mut self, pid: PatternID) -> bool {
+        let i = pid.as_usize();
+        assert!(i < self.capacity, "pattern ID {i} outside the set");
+        let word = &mut self.words[i / 64];
+        let bit = 1u64 << (i % 64);
+        if *word & bit != 0 {
+            return false;
+        }
+        *word |= bit;
+        self.len += 1;
+        true
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    #[inline]
+    fn is_full(&self) -> bool {
+        self.len == self.capacity
+    }
+
+    /// The pattern IDs in the set, ascending.
+    #[inline]
+    fn iter(&self) -> impl Iterator<Item = usize> + '_ {
+        self.words.iter().enumerate().flat_map(|(w, &word)| {
+            let mut bits = word;
+            std::iter::from_fn(move || {
+                (bits != 0).then(|| {
+                    let b = bits.trailing_zeros() as usize;
+                    bits &= bits - 1;
+                    w * 64 + b
+                })
+            })
+        })
+    }
 }
 
 /// Positions a `CandidateMemo` holds at most.
@@ -1429,7 +1507,7 @@ impl SetPrefilter {
             meta_cache,
             dfa: automata.dfa.clone(),
             dfa_cache,
-            patset: PatternSet::new(covered),
+            patset: PatternBits::new(covered),
             entries: automata.entries.clone(),
             own: automata.own.clone(),
             long: automata.long.clone(),
@@ -1686,11 +1764,8 @@ impl SetPrefilter {
                     .map(|(_, &index)| index),
             );
         } else {
-            self.candidates.extend(
-                self.patset
-                    .iter()
-                    .map(|id: PatternID| entries[id.as_usize()]),
-            );
+            self.candidates
+                .extend(self.patset.iter().map(|pid| entries[pid]));
         }
         if self.candidate_memo.active {
             self.candidate_memo.insert(at, &self.candidates, true);
@@ -1772,7 +1847,7 @@ impl SetPrefilter {
     fn walk(
         dfa: &hybrid::DFA,
         cache: &mut hybrid::Cache,
-        patset: &mut PatternSet,
+        patset: &mut PatternBits,
         entries: &[u16],
         long: &[u16],
         settle: usize,
