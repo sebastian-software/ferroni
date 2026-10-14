@@ -4208,17 +4208,24 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     }
 
     // ---- Main dispatch loop ----
+    // Rust-only (ADR-008): the operation is fetched once per opcode, with one
+    // bounds check, and the arms read the fetched one instead of indexing
+    // `reg.ops[p]` again.
+    let ops = &reg.ops[..];
     #[cfg(test)]
     let mut vm_previous = s;
+    // Not a `while let`: the test-only byte count below must run before the
+    // end-of-program check, as it did when this loop began with that check.
+    #[allow(clippy::while_let_loop)]
     loop {
         #[cfg(test)]
         {
             VM_BYTES.with(|bytes| bytes.set(bytes.get() + s.abs_diff(vm_previous) as u64));
             vm_previous = s;
         }
-        if p >= reg.ops.len() {
+        let Some(op) = ops.get(p) else {
             break;
-        }
+        };
 
         // Stack limit check (checked once per opcode, like C's STACK_PUSH macro)
         if stack.len() >= stack_cap {
@@ -4226,7 +4233,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             break;
         }
 
-        let opcode = reg.ops[p].opcode;
+        let opcode = op.opcode;
         let mut goto_fail = false;
 
         match opcode {
@@ -4310,7 +4317,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str1 => {
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s] {
                         goto_fail = true;
                     } else {
@@ -4325,7 +4332,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str2 => {
                 if right_range.saturating_sub(s) < 2 {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s] || exact[1] != str_data[s + 1] {
                         goto_fail = true;
                     } else {
@@ -4340,7 +4347,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str3 => {
                 if right_range.saturating_sub(s) < 3 {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s]
                         || exact[1] != str_data[s + 1]
                         || exact[2] != str_data[s + 2]
@@ -4358,7 +4365,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str4 => {
                 if right_range.saturating_sub(s) < 4 {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s]
                         || exact[1] != str_data[s + 1]
                         || exact[2] != str_data[s + 2]
@@ -4377,7 +4384,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str5 => {
                 if right_range.saturating_sub(s) < 5 {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s]
                         || exact[1] != str_data[s + 1]
                         || exact[2] != str_data[s + 2]
@@ -4395,7 +4402,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::StrN => {
-                if let OperationPayload::ExactN { s: ref exact, n } = reg.ops[p].payload {
+                if let OperationPayload::ExactN { s: ref exact, n } = op.payload {
                     let n = n as usize;
                     if right_range.saturating_sub(s) < n || !exact_eq_at(str_data, s, exact, n) {
                         goto_fail = true;
@@ -4418,7 +4425,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 // Multi-byte string comparison. ExactLenN.n = total byte count.
                 if let OperationPayload::ExactLenN {
                     s: ref exact, n, ..
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let byte_len = n as usize;
                     if right_range.saturating_sub(s) < byte_len
@@ -4438,7 +4445,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_CCLASS / OP_CCLASS_NOT - character class matching
             // ================================================================
             OpCode::CClassRun => {
-                if let OperationPayload::CClassRun { ref bsp, len } = reg.ops[p].payload {
+                if let OperationPayload::CClassRun { ref bsp, len } = op.payload {
                     // A backward search can extend past the logical end
                     // when its start is a truncated multibyte character.
                     // Keep the original per-instruction clamp in that mode.
@@ -4474,7 +4481,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else if let OperationPayload::CClass {
                     ref bsp,
                     ascii_fast,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     match ascii_fast {
                         CClassAsciiFastKind::Eq(c) => {
@@ -4515,7 +4522,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else if let OperationPayload::CClass {
                     ref bsp,
                     ascii_fast,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     match ascii_fast {
                         CClassAsciiFastKind::Eq(c) => {
@@ -4555,7 +4562,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::CClassMb => {
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                } else if let OperationPayload::CClassMb { ref mb } = op.payload {
                     let b = str_data[s];
                     if b < 0x80 {
                         if !is_in_code_range(mb, b as OnigCodePoint) {
@@ -4588,7 +4595,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::CClassMbNot => {
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                } else if let OperationPayload::CClassMb { ref mb } = op.payload {
                     let b = str_data[s];
                     if b < 0x80 {
                         if is_in_code_range(mb, b as OnigCodePoint) {
@@ -4630,7 +4637,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 let not = opcode == OpCode::CClassMixNot;
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
+                } else if let OperationPayload::CClassMix { ref bsp, ref mb } = op.payload {
                     let b = str_data[s];
                     if b < 0x80 {
                         let in_class = bitset_at(bsp, b as usize);
@@ -4762,7 +4769,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::AnyCharStarPeekNext => {
-                if let OperationPayload::AnyCharStarPeekNext { c } = reg.ops[p].payload {
+                if let OperationPayload::AnyCharStarPeekNext { c } = op.payload {
                     // Find newline boundary with SIMD
                     // See AnyCharStar: right_range can be below s here.
                     let nl_limit = if s < right_range {
@@ -4812,7 +4819,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::AnyCharMlStarPeekNext => {
-                if let OperationPayload::AnyCharStarPeekNext { c } = reg.ops[p].payload {
+                if let OperationPayload::AnyCharStarPeekNext { c } = op.payload {
                     if c < 0x80 {
                         // ASCII peek byte: use SIMD to find all occurrences directly.
                         // No newline check needed in multiline mode.
@@ -4858,7 +4865,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Opt-in decimal prefix: reserve the final digit for the original
             // tail and record only the last successful repeated-body captures.
             OpCode::DecimalTailPrefix => {
-                if let OperationPayload::DecimalTailPrefix { ref captures } = reg.ops[p].payload {
+                if let OperationPayload::DecimalTailPrefix { ref captures } = op.payload {
                     let (prefix_end, last) = decimal_tail_prefix_bounds(str_data, right_range, s);
                     s = prefix_end;
                     if TRACK_CAPTURES {
@@ -4884,7 +4891,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // first character is compiled separately, just like [class]+.
             // No alternative is created, so no mark or cut is needed.
             OpCode::CClassPossessiveStar => {
-                if let OperationPayload::CClass { ref bsp, .. } = reg.ops[p].payload {
+                if let OperationPayload::CClass { ref bsp, .. } = op.payload {
                     while s < right_range && bitset_at(bsp, str_data[s] as usize) {
                         s += 1;
                     }
@@ -4898,7 +4905,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::CClass {
                     ref bsp,
                     ascii_fast,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let start = s;
                     match ascii_fast {
@@ -4945,7 +4952,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CClassMixStar => {
-                if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
+                if let OperationPayload::CClassMix { ref bsp, ref mb } = op.payload {
                     let start = s;
                     let mut exact_heads = true;
                     while s < right_range {
@@ -4992,7 +4999,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CClassMbStar => {
-                if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                if let OperationPayload::CClassMb { ref mb } = op.payload {
                     let start = s;
                     let mut exact_heads = true;
                     while s < right_range {
@@ -5033,7 +5040,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::CClass {
                     ref bsp,
                     ascii_fast,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let excluded = |b: u8| match ascii_fast {
                         CClassAsciiFastKind::Eq(c) => b == c,
@@ -5060,7 +5067,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CClassMbNotStar => {
-                if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                if let OperationPayload::CClassMb { ref mb } = op.payload {
                     s = greedy_char_loop(
                         &mut stack,
                         p + 1,
@@ -5092,7 +5099,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CClassMixNotStar => {
-                if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
+                if let OperationPayload::CClassMix { ref bsp, ref mb } = op.payload {
                     s = greedy_char_loop(
                         &mut stack,
                         p + 1,
@@ -5223,7 +5230,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // PeekNext star variants - only backtrack to positions matching peek byte
             // ================================================================
             OpCode::CClassStarPeekNext => {
-                if let OperationPayload::CClassStarPeekNext { ref bsp, c } = reg.ops[p].payload {
+                if let OperationPayload::CClassStarPeekNext { ref bsp, c } = op.payload {
                     let start = s;
                     while s < right_range {
                         let ch = str_data[s];
@@ -5248,7 +5255,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::WordAsciiStarPeekNext => {
-                if let OperationPayload::WordAsciiStarPeekNext { c } = reg.ops[p].payload {
+                if let OperationPayload::WordAsciiStarPeekNext { c } = op.payload {
                     let start = s;
                     while s < right_range {
                         if !is_word_ascii(str_data[s]) {
@@ -5314,7 +5321,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Word boundary opcodes
             // ================================================================
             OpCode::WordBoundary => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                let mode = if let OperationPayload::WordBoundary { mode } = op.payload {
                     mode
                 } else {
                     0
@@ -5327,7 +5334,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::NoWordBoundary => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                let mode = if let OperationPayload::WordBoundary { mode } = op.payload {
                     mode
                 } else {
                     0
@@ -5340,7 +5347,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::WordBegin => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                let mode = if let OperationPayload::WordBoundary { mode } = op.payload {
                     mode
                 } else {
                     0
@@ -5353,7 +5360,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::WordEnd => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                let mode = if let OperationPayload::WordBoundary { mode } = op.payload {
                     mode
                 } else {
                     0
@@ -5366,9 +5373,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::TextSegmentBoundary => {
-                if let OperationPayload::TextSegmentBoundary { boundary_type, not } =
-                    reg.ops[p].payload
-                {
+                if let OperationPayload::TextSegmentBoundary { boundary_type, not } = op.payload {
                     let is_break = match boundary_type {
                         TextSegmentBoundaryType::ExtendedGraphemeCluster => {
                             crate::unicode::onigenc_egcb_is_break_position(enc, str_data, s, 0, end)
@@ -5453,7 +5458,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CheckPosition => {
-                if let OperationPayload::CheckPosition { check_type } = reg.ops[p].payload {
+                if let OperationPayload::CheckPosition { check_type } = op.payload {
                     match check_type {
                         CheckPositionType::SearchStart => {
                             if s != msa.start || opton_not_begin_position(options) {
@@ -5531,7 +5536,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefN => {
-                if let OperationPayload::BackRefN { n1 } = reg.ops[p].payload {
+                if let OperationPayload::BackRefN { n1 } = op.payload {
                     let n1 = n1 as usize;
                     if n1 > num_mem {
                         goto_fail = true;
@@ -5561,7 +5566,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefNIc => {
-                if let OperationPayload::BackRefN { n1 } = reg.ops[p].payload {
+                if let OperationPayload::BackRefN { n1 } = op.payload {
                     let n1 = n1 as usize;
                     if n1 > num_mem {
                         goto_fail = true;
@@ -5598,7 +5603,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefMulti => {
-                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &op.payload {
                     let tlen = *num as usize;
                     let mut matched = false;
                     let mut participated = false;
@@ -5641,7 +5646,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefMultiIc => {
-                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &op.payload {
                     let tlen = *num as usize;
                     let mut matched = false;
                     let mut participated = false;
@@ -5692,7 +5697,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefCheck => {
-                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &op.payload {
                     let tlen = *num as usize;
                     let mut found = false;
                     for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
@@ -5721,9 +5726,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     num,
                     ns,
                     nest_level,
-                } = &reg.ops[p].payload
+                } = &op.payload
                 {
-                    let ignore_case = reg.ops[p].opcode == OpCode::BackRefWithLevelIc;
+                    let ignore_case = op.opcode == OpCode::BackRefWithLevelIc;
                     if backref_match_at_nested_level(
                         reg,
                         &stack,
@@ -5750,7 +5755,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     num,
                     ns,
                     nest_level,
-                } = &reg.ops[p].payload
+                } = &op.payload
                 {
                     let found = if backref_check_at_nested_level(&stack, *nest_level, *num, ns) {
                         true
@@ -5788,7 +5793,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Memory (capture group) operations
             // ================================================================
             OpCode::MemStart => {
-                if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryStart { num } = op.payload {
                     // C sets only the start (regexec.c OP_MEM_START); the end
                     // of an earlier pass stays in place until MEM_END, so a
                     // capture can read as start > end if the pass fails.
@@ -5802,7 +5807,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::MemStartPush => {
-                if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryStart { num } = op.payload {
                     // The pushed entry only restores this capture on
                     // backtracking. Opcodes that read captures while matching
                     // force TRACK_CAPTURES (see `needs_capture_tracking`), so
@@ -5828,7 +5833,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::MemEnd => {
-                if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryEnd { num } = op.payload {
                     if TRACK_CAPTURES {
                         let num = num as usize;
                         mem_end_stk[num] = MemPtr::pos(s);
@@ -5840,7 +5845,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::MemEndPush => {
-                if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryEnd { num } = op.payload {
                     // See OpCode::MemStartPush for why untracked runs skip this.
                     if TRACK_CAPTURES {
                         let num = num as usize;
@@ -5864,7 +5869,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::MemEndPushRec => {
                 // Recursive capture end (push variant): find matching MEM_START,
                 // push MEM_END, update start/end tracking
-                if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryEnd { num } = op.payload {
                     let mem = num as usize;
                     let (start_ptr, _) =
                         stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
@@ -5886,7 +5891,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::MemEndRec => {
                 // Recursive capture end (non-push variant): find matching MEM_START,
                 // update start/end, push MemEndMark for level tracking
-                if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryEnd { num } = op.payload {
                     let mem = num as usize;
                     mem_end_stk[mem] = MemPtr::pos(s);
                     let (start_ptr, _) =
@@ -5910,7 +5915,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_JUMP - unconditional jump
             // ================================================================
             OpCode::Jump => {
-                if let OperationPayload::Jump { addr } = reg.ops[p].payload {
+                if let OperationPayload::Jump { addr } = op.payload {
                     p = (p as i32 + addr) as usize;
                 } else {
                     goto_fail = true;
@@ -5921,9 +5926,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_PUSH / OP_PUSH_SUPER - push choice point (alternation)
             // ================================================================
             OpCode::Push | OpCode::PushSuper => {
-                if let OperationPayload::Push { addr } = reg.ops[p].payload {
+                if let OperationPayload::Push { addr } = op.payload {
                     let alt_target = (p as i32 + addr) as usize;
-                    let is_super = reg.ops[p].opcode == OpCode::PushSuper;
+                    let is_super = op.opcode == OpCode::PushSuper;
                     stack.push(StackEntry::Alt {
                         pcode: alt_target,
                         pstr: s,
@@ -5939,7 +5944,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Rust-only (ADR-008): the original lazy push, with a seek over
             // failed literal attempts across the following capture end.
             OpCode::PushLazyAnyChar => {
-                if let OperationPayload::Push { addr } = reg.ops[p].payload {
+                if let OperationPayload::Push { addr } = op.payload {
                     if stack.len() + 1 < stack_cap {
                         if let Some(at) = lazy_captured_any_char_stop(
                             reg,
@@ -5978,7 +5983,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_POP_TO_MARK - pop until Mark with matching id
             // ================================================================
             OpCode::PopToMark => {
-                if let OperationPayload::PopToMark { id } = reg.ops[p].payload {
+                if let OperationPayload::PopToMark { id } = op.payload {
                     stack_pop_to_mark(
                         &mut stack,
                         id as usize,
@@ -6000,7 +6005,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     addr,
                     c,
                     skipped_retries,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     // Rust-only (ADR-008): the lazy `.*?c` loop (`AnyChar`
                     // before this instruction, which jumps back to it) runs
@@ -6087,7 +6092,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     addr,
                     ref bsp,
                     skipped_retries,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     if (s < right_range && bitset_at(bsp, str_data[s] as usize))
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
@@ -6141,7 +6146,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_PUSH_IF_PEEK_NEXT - push only if next char matches
             // ================================================================
             OpCode::PushIfPeekNext => {
-                if let OperationPayload::PushIfPeekNext { addr, c } = reg.ops[p].payload {
+                if let OperationPayload::PushIfPeekNext { addr, c } = op.payload {
                     if s < right_range && str_data[s] == c {
                         let alt_target = (p as i32 + addr) as usize;
                         stack.push(StackEntry::Alt {
@@ -6161,7 +6166,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_REPEAT / OP_REPEAT_NG - initialize repeat counter
             // ================================================================
             OpCode::Repeat | OpCode::RepeatNg => {
-                if let OperationPayload::Repeat { id, addr } = reg.ops[p].payload {
+                if let OperationPayload::Repeat { id, addr } = op.payload {
                     let id = id as usize;
                     // Push initial repeat count = 0
                     stack.push(StackEntry::RepeatInc { zid: id, count: 0 });
@@ -6199,7 +6204,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_REPEAT_INC / OP_REPEAT_INC_NG - increment and check repeat
             // ================================================================
             OpCode::RepeatInc => {
-                if let OperationPayload::RepeatInc { id } = reg.ops[p].payload {
+                if let OperationPayload::RepeatInc { id } = op.payload {
                     let id = id as usize;
                     let count = stack_get_repeat_count(&stack, id) + 1;
                     let lower = reg.repeat_range[id].lower;
@@ -6229,7 +6234,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::RepeatIncNg => {
-                if let OperationPayload::RepeatInc { id } = reg.ops[p].payload {
+                if let OperationPayload::RepeatInc { id } = op.payload {
                     let id = id as usize;
                     let count = stack_get_repeat_count(&stack, id) + 1;
                     let lower = reg.repeat_range[id].lower;
@@ -6262,7 +6267,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_EMPTY_CHECK_START / END - detect empty match in loops
             // ================================================================
             OpCode::EmptyCheckStart => {
-                if let OperationPayload::EmptyCheckStart { mem } = reg.ops[p].payload {
+                if let OperationPayload::EmptyCheckStart { mem } = op.payload {
                     let mem = mem as usize;
                     stack.push(StackEntry::EmptyCheckStart { zid: mem, pstr: s });
                     p += 1;
@@ -6272,7 +6277,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::EmptyCheckEnd => {
-                if let OperationPayload::EmptyCheckEnd { mem, .. } = reg.ops[p].payload {
+                if let OperationPayload::EmptyCheckEnd { mem, .. } = op.payload {
                     let mem = mem as usize;
                     let is_empty = stack_empty_check(&stack, mem, s);
                     p += 1;
@@ -6291,7 +6296,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::EmptyCheckEnd {
                     mem,
                     empty_status_mem,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let is_empty = stack_empty_check_mem(&stack, mem as usize, s, empty_status_mem);
                     p += 1;
@@ -6308,7 +6313,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::EmptyCheckEnd {
                     mem,
                     empty_status_mem,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let mem = mem as usize;
                     let is_empty = stack_empty_check_mem_rec(&stack, mem, s, empty_status_mem);
@@ -6330,7 +6335,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_MOVE - move string position
             // ================================================================
             OpCode::Move => {
-                if let OperationPayload::Move { n } = reg.ops[p].payload {
+                if let OperationPayload::Move { n } = op.payload {
                     if n < 0 {
                         // Step back n characters (encoding-aware)
                         match onigenc_step_back(enc, 0, s, str_data, (-n) as usize) {
@@ -6367,7 +6372,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     char_len,
                     not,
                     ascii_compatible,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let body_end = look_behind_body_end(
                         &reg.ops[p + 1],
@@ -6403,7 +6408,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     initial,
                     remaining,
                     addr,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let initial = initial as usize;
                     // Step back 'initial' characters (encoding-aware)
@@ -6467,7 +6472,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_MARK - push a named checkpoint
             // ================================================================
             OpCode::Mark => {
-                if let OperationPayload::Mark { id, save_pos } = reg.ops[p].payload {
+                if let OperationPayload::Mark { id, save_pos } = op.payload {
                     let id = id as usize;
                     let pos = if save_pos { Some(s) } else { None };
                     stack.push(StackEntry::Mark { zid: id, pos });
@@ -6482,7 +6487,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // C always uses STACK_TO_VOID_TO_MARK (not POP_TO_MARK)
             // ================================================================
             OpCode::CutToMark => {
-                if let OperationPayload::CutToMark { id, restore_pos } = reg.ops[p].payload {
+                if let OperationPayload::CutToMark { id, restore_pos } = op.payload {
                     let id = id as usize;
                     let saved_pos = stack_void_to_mark(&mut stack, id);
                     if restore_pos {
@@ -6500,7 +6505,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_SAVE_VAL - save a value on the stack
             // ================================================================
             OpCode::SaveVal => {
-                if let OperationPayload::SaveVal { save_type, id } = reg.ops[p].payload {
+                if let OperationPayload::SaveVal { save_type, id } = op.payload {
                     let id = id as usize;
                     let v = match save_type {
                         SaveType::Keep => s,
@@ -6526,7 +6531,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     var_type,
                     id,
                     clear,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let id = id as usize;
                     match var_type {
@@ -6569,7 +6574,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_CALL / OP_RETURN - subroutine call/return
             // ================================================================
             OpCode::Call => {
-                if let OperationPayload::Call { addr } = reg.ops[p].payload {
+                if let OperationPayload::Call { addr } = op.payload {
                     if subexp_call_nest_counter
                         == onig_get_subexp_call_max_nest_level() as i64 as u64
                     {
@@ -6627,7 +6632,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::CalloutContents => {
                 // Callout of contents: always succeeds (we don't execute user code)
-                let num = match &reg.ops[p].payload {
+                let num = match &op.payload {
                     OperationPayload::CalloutContents { num } => *num,
                     _ => 0,
                 };
@@ -6645,7 +6650,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 p += 1;
             }
             OpCode::AltLiterals => {
-                if let OperationPayload::AltLiterals { trie_idx } = reg.ops[p].payload {
+                if let OperationPayload::AltLiterals { trie_idx } = op.payload {
                     let trie = &reg.literal_tries[trie_idx as usize];
                     if let Some(match_len) =
                         match_literal_trie(&mut stack, trie, str_data, s, right_range, p + 1)
@@ -6660,7 +6665,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 }
             }
             OpCode::CalloutName => {
-                let (num, id) = match &reg.ops[p].payload {
+                let (num, id) = match &op.payload {
                     OperationPayload::CalloutName { num, id } => (*num, *id),
                     _ => (0, 0),
                 };
