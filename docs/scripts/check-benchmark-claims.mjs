@@ -1,8 +1,9 @@
+import { spawnSync } from "node:child_process";
 /**
  * Keep the public workload description aligned with the source-backed corpus.
- * No performance figures are published until repeated-run evidence is reviewed.
+ * Published figures must regenerate from complete retained Blacksmith evidence.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -35,8 +36,20 @@ const sources = new Set(Object.values(catalog.sources).map((source) => source.ur
 for (const [url] of page.matchAll(/https:\/\/github\.com\/[^)\s]+\/blob\/[a-f0-9]{40}\/[^)\s]+/g)) {
   if (!sources.has(url)) errors.push(`Workload source link is not in the pinned catalog: ${url}`);
 }
-if (!page.includes("it makes no new performance claim")) {
-  errors.push("Do not replace the measurement-status note without reviewed publication evidence.");
+const publication = resolve(root, "benches/production_results/publication.json");
+if (existsSync(publication)) {
+  const check = spawnSync("python3", [resolve(root, "scripts/publish-production.py"), "--check"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (check.status !== 0) {
+    errors.push(`Published benchmark evidence did not verify: ${check.stderr || check.error}`);
+  }
+  if (!page.includes("<ProductionComparison />")) {
+    errors.push("The workload page must expose the generated per-case results.");
+  }
+} else if (!page.includes("it makes no new performance claim")) {
+  errors.push("Do not replace the measurement-status note without verified publication evidence.");
 }
 if (errors.length) {
   console.error(errors.join("\n"));

@@ -3,6 +3,8 @@ order: 1
 title: "Regex Workloads"
 ---
 
+import { ProductionComparison } from "../../components/production-comparison";
+
 # Regex Workloads
 
 The general regex comparison uses identifiable production patterns and explicit
@@ -10,9 +12,32 @@ operation contracts. It separates basic expressions, complex expressions and
 advanced Oniguruma features. TextMate Scanner replays and Ferriki's complete
 highlighting have separate workload boundaries.
 
-The new corpus and runner are ready for measurement. This page documents their
-scope; it makes no new performance claim. Superseded measurement pages and
-artifacts are available through the repository's Git history.
+The tables below use the complete Blacksmith run from October 14, 2026, on
+ARM64/macOS and x86-64/Linux. All 25 executable cases passed Ferroni's source
+oracles; comparator profiles are timed only when they reproduce the same output.
+Superseded measurement pages and artifacts remain in the repository's Git history.
+
+## Current measurements
+
+The per-case tables retain the cases that favor each engine and the inconclusive
+results. Choose a platform, phase and comparator to inspect the work that matters
+to your application.
+
+The baseline is Ferroni's **standard public API**. Select **Ferroni error-aware
+API** to compare it directly with fallible `*_with` searches using empty search
+options. Those searches currently create fresh match workspace instead of
+reusing the standard path's cache. Both profiles compile through the same builder
+and pass the same output checks. This is an API cost comparison on an unchanged
+engine implementation.
+
+<ProductionComparison />
+
+Some compile and first-use measurements vary substantially between processes;
+the displayed ranges include every run. Interval envelopes retain each process's
+95% Criterion confidence interval. They are a descriptive screening aid, not a
+cross-process significance test. Each platform used one VM,
+so these results do not establish consistency across independent hosts. Host
+power and thermal state were unavailable. This run did not measure memory.
 
 ## Patterns with a source
 
@@ -59,11 +84,44 @@ preserves the complete subject when lookbehind needs preceding context. Future
 alternative solutions to the same task need their own profile and must include
 necessary preprocessing and output work.
 
-Ferroni uses its public `Regex` API. The comparators are C Oniguruma, pinned Ruby
+The Ferroni baseline uses the standard public `Regex` methods, including
+`is_match`, `find_at`, `captures_at` and `captures_iter`. A separate **Ferroni
+error-aware API** profile uses the fallible `*_with` searches and iteration with
+`SearchOptions::new()`. Both use standard `replace_all` for replacement because
+there is no fallible replacement API. Both profiles must pass the source oracles;
+the baseline also receives a fallible preflight check to expose execution errors.
+
+The two API paths currently manage match state differently: standard searches
+can reuse the engine's cached workspace, while the parameterized searches create
+fresh workspace. This can affect reuse costs even with empty search options.
+Compilation uses the same builder in both profiles. The measured engine
+implementation is unchanged; these rows expose the API cost separately.
+
+The other comparators are C Oniguruma, pinned Ruby
 Onigmo, PCRE2 interpreter/JIT, fancy-regex in Oniguruma mode with seek off/on,
 and Rust regex. Construction includes each profile's contexts and selected JIT.
 PCRE2's bundled source is pinned through the locked `pcre2-sys` dependency.
 Replacement/output assembly stays within the operation boundary.
+
+Eligibility describes these configurations. Rust regex, for example, disables
+octal escapes by default and offers `RegexBuilder::octal(true)`; its rejection
+of Django's email local-part expression in this profile is a dialect-option
+difference. Other configurations or task-equivalent expressions need separate,
+named profiles with the same checked output contract.
+
+## Why the earlier headline does not carry over
+
+Most general tasks in the superseded suite already materialized all matches and
+capture bounds through direct engine calls; individual search probes requested
+only a position. The new corpus uses the public `Regex` API and different
+source-backed patterns, source-test inputs, operation contracts and family
+weights. These are different workload aggregates. Comparing their headlines
+cannot establish an engine regression or an improvement.
+
+An initial run of this corpus used only the error-aware Ferroni methods. The
+published run distinguishes both public API profiles on the same runners.
+Selecting an API profile is part of the comparison contract, alongside the
+pattern, output and input mix.
 
 ## Measurement and interpretation
 
@@ -83,6 +141,10 @@ Each comparison lists its exact common tasks. Families carry equal aggregate
 weight regardless of fixture or variant count. Aggregates with different supported
 task pools do not establish an engine ranking. ARM and x86 results are reported
 separately.
+
+The aggregate takes the geometric mean of the median case ratios within each
+family, then the geometric mean across families. It describes this selected
+corpus rather than a production traffic mix.
 
 The [corpus guide](https://github.com/sebastian-software/ferroni/blob/main/benches/regex_corpus.md)
 contains runnable commands, the earlier patterns' dispositions, measured

@@ -35,8 +35,12 @@ establish semantics. Production traffic distributions and large-document
 coverage require additional separately identified inputs.
 
 The core comparators are Ferroni, C Oniguruma, pinned Ruby Onigmo, PCRE2 JIT and
-interpreter, fancy-regex with seek off/on, and Rust regex. Ferroni uses its public
-`Regex` API. Each profile's flags, Unicode policy, contexts, required processing
+interpreter, fancy-regex with seek off/on, and Rust regex. Ferroni's baseline uses
+the standard public `Regex` methods. A separate profile uses fallible `*_with`
+searches/iteration with `SearchOptions::new()`; both use standard replacement
+because there is no fallible replacement API. Both profiles must reproduce the
+source oracles, and the baseline also receives a fallible preflight check.
+Each profile's flags, Unicode policy, contexts, required processing
 and output allocation are explicit. C Oniguruma is compiled at `-O3`. Other
 language runtimes can be added as separately identified profiles.
 

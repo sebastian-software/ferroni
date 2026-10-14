@@ -41,7 +41,9 @@ jobs:
     if: github.repository == 'sebastian-software/ferroni'
     name: ${{ matrix.profile }}
     runs-on: ${{ matrix.profile == 'macos-arm64' && 'blacksmith-6vcpu-macos-26' || 'blacksmith-4vcpu-ubuntu-2404' }}
-    timeout-minutes: 180
+    # Nine profiles need more than three hours at the five-second window.
+    # Keep the default budget shorter, but let the selected window finish.
+    timeout-minutes: ${{ inputs.measure_seconds == '5' && 240 || 180 }}
     strategy:
       fail-fast: false
       matrix:

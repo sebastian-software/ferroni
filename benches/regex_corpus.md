@@ -96,7 +96,17 @@ These are documented adapters, not invisible per-engine pattern optimizations.
 Future equivalent-task implementations must have separate IDs/profiles and
 include their preprocessing and postprocessing costs.
 
-Ferroni is measured through its public `Regex` API. Rust regex and fancy-regex
+Ferroni's baseline (`rust`) uses its standard public `Regex` methods. The separate
+`rust_erroraware` profile uses fallible `*_with` searches and iteration with
+`SearchOptions::new()`. Both use standard `replace_all` because there is no
+fallible replacement API. Both profiles pass the complete output oracle; the
+baseline additionally receives a fallible preflight check so execution errors
+cannot silently become negative matches.
+
+Standard searches can reuse the engine's cached match workspace. Parameterized
+searches currently create fresh workspace, even with empty options. The API
+profiles expose this cost without changing the engine implementation; both
+compile through the same builder. Rust regex and fancy-regex
 also use their library APIs; C libraries use their public C APIs through the
 existing safe wrappers. Capture outputs materialize every requested span. Native
 replacement APIs are used where available; C replacement loops search spans and
@@ -119,6 +129,21 @@ The main profiles use default public-library behavior plus source flags;
 fancy-regex's Oniguruma dialect is explicit. Seek mode and PCRE2 JIT are separate
 profiles. Syntax and Unicode policy differences remain visible rather than being
 papered over by changing the expected output.
+
+Earlier published aggregates are not a performance baseline for this corpus.
+Most general tasks already materialized all matches and capture bounds through
+direct engine calls; individual search probes requested only a position. The
+new corpus uses the public `Regex` API and different patterns, inputs, operation
+contracts and task weights. An initial new-corpus run used only Ferroni's
+fallible API; the published comparison measures both API profiles alongside the
+other engines on the same runners.
+
+Eligibility refers to the documented configuration, not every possible library
+configuration. In particular, Rust regex uses its default disabled octal syntax;
+it offers `RegexBuilder::octal(true)`. Its rejection of Django's email local-part
+expression is therefore a profile/dialect difference, not evidence that the
+library lacks an octal option. Task-equivalent alternatives and other profiles
+need separate measured rows and the same independent output oracle.
 
 ## Running and reporting
 
@@ -153,6 +178,26 @@ snapshot (including prepared native inputs), C source pins, machine and
 toolchain context, build hash/flags, eligibility reasons, process logs, raw samples,
 intervals, measured order and summaries. Record host load/power/thermal conditions
 with `--host-note`. ARM and x86 results remain separate directories/reports.
+
+The manual `blacksmith-comparison.yml` workflow runs the complete suite on both
+provider-managed platforms. After both jobs succeed, install the documentation
+dependencies, then retain and verify the run with:
+
+```sh
+pnpm install --frozen-lockfile --dir docs
+python3 scripts/publish-production.py --run-id <github-run-id>
+python3 scripts/publish-production.py --check
+```
+
+The publisher downloads the workflow artifacts with `gh`, rejects incomplete or
+diagnostic evidence, compares estimates against the original Criterion samples,
+and regenerates the website data and repository tables. It formats the generated
+website JSON with the repository's installed formatter. Verification with
+`--check` needs only Python's standard library. Complete evidence stays
+compressed in the current results directory so artifact expiry does not break
+reproduction. The public production aggregates exclude the four controlled
+literal probes; their individual results remain visible. Update the explanatory
+text after reviewing the generated results, then run the documentation checks.
 
 The runner pins PCRE2's bundled source through the locked `pcre2-sys` crate,
 using `PCRE2_SYS_STATIC=1` instead of whichever system PCRE2 happens to be
