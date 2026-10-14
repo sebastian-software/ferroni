@@ -3559,70 +3559,6 @@ fn guard_retries(skipped_retries: u32) -> u64 {
     u64::from(skipped_retries & !GUARD_RETRIES_BY_CHECKS)
 }
 
-/// Rust-only (ADR-008): execute a bounded chain of failed forward guards
-/// without returning to the main VM dispatch between alternatives. Fixed
-/// retry charges always qualify; check-dependent charges retain the existing
-/// upper-bound/restart guard. The original instructions and byte tests remain
-/// the semantic reference. No input or stack state changes.
-#[inline(never)]
-fn skip_failed_ascii_guards(
-    reg: &RegexType,
-    mut p: usize,
-    byte: Option<u8>,
-    by_checks_allowed: bool,
-    mut retry_budget: u64,
-) -> (usize, u64) {
-    #[cfg(test)]
-    if GUARD_CHAIN_BATCHING_DISABLED.with(Cell::get) {
-        return (p, 0);
-    }
-    if byte.is_some_and(|byte| byte >= 0x80) {
-        return (p, 0);
-    }
-    let mut retries = 0;
-    const MAX_BATCHED_GUARDS: usize = 1024;
-    for _ in 0..MAX_BATCHED_GUARDS {
-        let Some(op) = reg.ops.get(p) else { break };
-        let (addr, skipped) = match (&op.opcode, &op.payload) {
-            (
-                OpCode::PushOrJumpExact1,
-                OperationPayload::PushOrJumpExact1 {
-                    addr,
-                    c,
-                    skipped_retries,
-                    ..
-                },
-            ) if byte != Some(*c) => (*addr, *skipped_retries),
-            (
-                OpCode::PushOrJumpByteSet,
-                OperationPayload::PushOrJumpByteSet {
-                    addr,
-                    bsp,
-                    skipped_retries,
-                    ..
-                },
-            ) if byte.is_none_or(|byte| !bitset_at(bsp, byte as usize)) => {
-                (*addr, *skipped_retries)
-            }
-            _ => break,
-        };
-        if addr <= 0 || (skipped & GUARD_RETRIES_BY_CHECKS != 0 && !by_checks_allowed) {
-            break;
-        }
-        let charge = guard_retries(skipped);
-        // Leave the guard that reaches a limit to the original dispatcher.
-        // Combining charges across it could change which error wins when
-        // match and search limits are both active.
-        if charge >= retry_budget {
-            break;
-        }
-        retry_budget -= charge;
-        retries += charge;
-        p += addr as usize;
-    }
-    (p, retries)
-}
-
 /// Rust-only (ADR-008): the skip gate a guard refers to (`GuardSkipGate`).
 #[inline(always)]
 fn skip_gate_of(reg: &RegexType, index: Option<u32>) -> Option<&GuardSkipGate> {
@@ -3984,8 +3920,6 @@ thread_local! {
     static SINGLE_BYTE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
     /// Differential reference for ASCII case-insensitive backref comparisons.
     static ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
-    /// Differential reference for batching failed alternative guards.
-    static GUARD_CHAIN_BATCHING_DISABLED: Cell<bool> = const { Cell::new(false) };
     /// Differential reference for fused look-behind character walks.
     static FUSED_LOOK_BEHIND_ASCII_BATCHES_DISABLED: Cell<bool> = const { Cell::new(false) };
 }
@@ -4140,7 +4074,6 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     // Set once the attempt starts over because guards counted an upper
     // bound of their backtracks (see `guard_may_jump`).
     let mut exact_guard_retries = false;
-    let guard_upper_bounds_allowed = guards_may_count_upper_bounds(reg, msa);
     // Leaves the loop with a retry or time limit error. A retry limit that
     // an upper bound of the guards' backtracks reached may not be reached by
     // the exact count: the attempt then starts over from the same state with
@@ -6093,30 +6026,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     } else {
                         // Character doesn't match: jump
                         p = (p as i32 + addr) as usize;
-                        let (next, batched_retries) = if time_limit_ms == 0 {
-                            skip_failed_ascii_guards(
-                                reg,
-                                p,
-                                (s < right_range).then(|| str_data[s]),
-                                !exact_guard_retries && guard_upper_bounds_allowed,
-                                if retry_limit_in_match == 0 {
-                                    u64::MAX
-                                } else {
-                                    retry_limit_in_match.saturating_sub(
-                                        retry_in_match_counter
-                                            .saturating_add(guard_retries(skipped_retries)),
-                                    )
-                                },
-                            )
-                        } else {
-                            (p, 0)
-                        };
-                        p = next;
                         // A guarded `Push` counts the backtracks the push
                         // would take (see `guard_backtrack_pushes`).
-                        if skipped_retries != 0 || batched_retries != 0 {
+                        if skipped_retries != 0 {
                             if let Err(err) = count_retry(
-                                guard_retries(skipped_retries) + batched_retries,
+                                guard_retries(skipped_retries),
                                 &mut retry_in_match_counter,
                                 retry_limit_in_match,
                                 time_limit_ms,
@@ -6169,29 +6083,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         p += 1;
                     } else {
                         p = (p as i32 + addr) as usize;
-                        let (next, batched_retries) = if time_limit_ms == 0 {
-                            skip_failed_ascii_guards(
-                                reg,
-                                p,
-                                (s < right_range).then(|| str_data[s]),
-                                !exact_guard_retries && guard_upper_bounds_allowed,
-                                if retry_limit_in_match == 0 {
-                                    u64::MAX
-                                } else {
-                                    retry_limit_in_match.saturating_sub(
-                                        retry_in_match_counter
-                                            .saturating_add(guard_retries(skipped_retries)),
-                                    )
-                                },
-                            )
-                        } else {
-                            (p, 0)
-                        };
-                        p = next;
                         // Counts the backtracks the push would take (see
                         // `guard_backtrack_pushes`).
                         if let Err(err) = count_retry(
-                            guard_retries(skipped_retries) + batched_retries,
+                            guard_retries(skipped_retries),
                             &mut retry_in_match_counter,
                             retry_limit_in_match,
                             time_limit_ms,
@@ -9841,22 +9736,27 @@ fn finish_longest_search(
 mod tests {
 
     #[test]
-    fn guard_chain_batches_preserve_captures_unicode_and_retry_limits() {
+    fn guard_chain_skip_gates_preserve_captures_unicode_and_retry_limits() {
         let _limits = shared_limits();
         // Django's broad domain character class generates full case-fold
         // alternatives. The final class forces the greedy repeat to backtrack.
-        let reg = regcomp::onig_new(
-            r"\A([a-z¡-\x{ffff}0-9]{1,63})[a-z¡-\x{ffff}0-9]\z".as_bytes(),
-            ONIG_OPTION_IGNORECASE | ONIG_OPTION_CAPTURE_GROUP,
-            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            &crate::regsyntax::OnigSyntaxOniguruma,
-        )
-        .unwrap();
+        let compile = |gated: bool| {
+            regcomp::SKIP_GATES_DISABLED.with(|disabled| disabled.set(!gated));
+            let reg = regcomp::onig_new(
+                r"\A([a-z¡-\x{ffff}0-9]{1,63})[a-z¡-\x{ffff}0-9]\z".as_bytes(),
+                ONIG_OPTION_IGNORECASE | ONIG_OPTION_CAPTURE_GROUP,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            regcomp::SKIP_GATES_DISABLED.with(|disabled| disabled.set(false));
+            reg
+        };
+        let gated = compile(true);
+        let ungated = compile(false);
         assert!(
-            reg.ops.iter().enumerate().any(|(pc, _)| {
-                skip_failed_ascii_guards(&reg, pc, Some(b'a'), true, u64::MAX).0 != pc
-            }),
-            "the regression must exercise a batched chain"
+            !gated.skip_gates.is_empty() && ungated.skip_gates.is_empty(),
+            "the regression must exercise a gated chain"
         );
         let mut texts = vec![
             b"".to_vec(),
@@ -9887,10 +9787,9 @@ mod tests {
                             params.retry_limit_in_search = search;
                             params.match_stack_limit = stack;
                             params.time_limit = 0;
-                            let run = |disabled| {
-                                GUARD_CHAIN_BATCHING_DISABLED.with(|v| v.set(disabled));
+                            let run = |reg: &RegexType| {
                                 let (result, region) = onig_search_with_param(
-                                    &reg,
+                                    reg,
                                     &text,
                                     text.len(),
                                     0,
@@ -9899,7 +9798,6 @@ mod tests {
                                     option,
                                     &params,
                                 );
-                                GUARD_CHAIN_BATCHING_DISABLED.with(|v| v.set(false));
                                 let captures = region.map(|region| {
                                     (
                                         region.beg[..region.num_regs as usize].to_vec(),
@@ -9909,8 +9807,8 @@ mod tests {
                                 (result, captures)
                             };
                             assert_eq!(
-                                run(false),
-                                run(true),
+                                run(&gated),
+                                run(&ungated),
                                 "{text:?}, match={retry}, search={search}, stack={stack}, option={option:?}"
                             );
                         }
