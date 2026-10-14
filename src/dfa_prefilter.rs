@@ -47,6 +47,7 @@ use crate::regcomp::literal_alt_trie_index;
 use crate::regenc::OnigEncoding;
 use crate::regint::*;
 use crate::regparse_types::*;
+use regex_automata::hybrid::LazyStateID;
 use regex_automata::hybrid::dfa as hybrid;
 use regex_automata::nfa::thompson;
 use regex_automata::util::syntax;
@@ -1801,7 +1802,9 @@ impl SetPrefilter {
         // A match state stands for its patterns wherever the walk reaches
         // it; a run of word characters keeps the walk in one match state
         // for every identifier-like seek, which is recorded once.
-        let mut recorded = None;
+        // The match state last recorded, with the cache's clear count: a
+        // clear reassigns state IDs, so the same ID may name another state.
+        let mut recorded: Option<(LazyStateID, usize)> = None;
         macro_rules! record {
             ($state:expr) => {
                 for k in 0..dfa.match_len(cache, $state) {
@@ -1830,8 +1833,8 @@ impl SetPrefilter {
             }
             // A match state stands for the matches that ended before the
             // byte it was reached by (or at the end of the haystack).
-            if sid.is_match() && recorded != Some(sid) {
-                recorded = Some(sid);
+            if sid.is_match() && recorded != Some((sid, cache.clear_count())) {
+                recorded = Some((sid, cache.clear_count()));
                 record!(sid);
                 if patset.is_full() {
                     return (ScanEnd::Settled, false);
@@ -1893,8 +1896,8 @@ impl SetPrefilter {
             if sid.is_quit() {
                 return (ScanEnd::Bound, true);
             }
-            if sid.is_match() && recorded != Some(sid) {
-                recorded = Some(sid);
+            if sid.is_match() && recorded != Some((sid, cache.clear_count())) {
+                recorded = Some((sid, cache.clear_count()));
                 for k in 0..dfa.match_len(cache, sid) {
                     let pid = dfa.match_pattern(cache, sid, k);
                     if patset.insert(pid) && stamps[pid.as_usize()] == *stamp {
