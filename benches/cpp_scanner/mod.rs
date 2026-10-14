@@ -1,4 +1,5 @@
 //! Replay of real Ferriki scanner calls, with setup outside measurement.
+use criterion::{BatchSize, BenchmarkGroup, Throughput, measurement::WallTime};
 use ferroni::scanner::{
     OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch, ScannerPatternCache,
 };
@@ -293,6 +294,30 @@ pub fn replay(scanners: &mut [Scanner], strings: &[OnigString], calls: &[&Call])
             black_box(call.options),
         ));
     }
+}
+
+/// The cold lane: each iteration compiles fresh scanners and replays the whole
+/// document once. The timed section covers compilation, the pre-filter warm-up
+/// and its build (after `PREFILTER_WARMUP` searches per scanner), and one replay.
+/// JSON parsing, the string wrappers, and dropping the scanners stay outside
+/// the timed section, as in the warm lane.
+#[allow(dead_code)]
+pub fn bench_cold_document(group: &mut BenchmarkGroup<'_, WallTime>, corpus: &Corpus) {
+    let calls = corpus.selected(None);
+    let config = bench_config();
+    group.throughput(Throughput::Elements(calls.len() as u64));
+    group.bench_function("cold_document", |b| {
+        b.iter_batched(
+            || corpus.strings(),
+            |strings| {
+                let mut scanners = corpus.scanners_with(&config);
+                replay(&mut scanners, &strings, &calls);
+                // Returned, so that Criterion drops them after the timed section.
+                (scanners, strings)
+            },
+            BatchSize::PerIteration,
+        );
+    });
 }
 
 /// The same calls through the vscode-oniguruma C scanner

@@ -372,6 +372,15 @@ cargo bench --locked --features ffi --bench java_scanner_bench -- --test
 cargo bench --locked --bench java_scanner_bench
 ```
 
+The C++, SCSS and Java replays also have a `cold_document` case: each iteration
+compiles fresh scanners and replays the whole document once, so it measures
+one-shot highlighting, including the pre-filter warm-up and build. Run only the
+cold cases with, for example:
+
+```sh
+cargo bench --locked --bench cpp_scanner_bench -- cold
+```
+
 For construction and destruction of the captured C++, SCSS and Java scanner
 sets, uncached and through one `ScannerPatternCache` per set
 (`<name>_pattern_cache`), use:

@@ -10,7 +10,7 @@ mod scanner_replay;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 #[cfg(feature = "ffi")]
 use scanner_replay::CReplay;
-use scanner_replay::{Corpus, replay};
+use scanner_replay::{Corpus, bench_cold_document, replay};
 
 fn bench_java(c: &mut Criterion) {
     let corpus = Corpus::from_json(include_str!("java_scanner/trace.json"));
@@ -61,6 +61,7 @@ fn bench_java(c: &mut Criterion) {
             }
         }
     }
+    bench_cold_document(&mut group, &corpus);
     group.finish();
 }
 criterion_group!(benches, bench_java);

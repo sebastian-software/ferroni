@@ -5,7 +5,7 @@
 mod scanner_replay;
 #[cfg(feature = "ffi")]
 use scanner_replay::CReplay;
-use scanner_replay::{Corpus, replay};
+use scanner_replay::{Corpus, bench_cold_document, replay};
 #[path = "engine_replay.rs"]
 mod engine_replay;
 #[path = "engines.rs"]
@@ -61,6 +61,7 @@ fn bench_cpp(c: &mut Criterion) {
             }
         }
     }
+    bench_cold_document(&mut group, &corpus);
     group.finish();
 }
 criterion_group!(benches, bench_cpp);
