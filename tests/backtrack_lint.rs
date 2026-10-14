@@ -120,3 +120,50 @@ fn trailing_loops_count_when_the_search_is_exhaustive() {
         .unwrap();
     assert_eq!(re.backtracking_warnings().len(), 1);
 }
+
+/// Class and type first bytes, with and without negation and case folding.
+/// The expected findings were taken from the check before its first-byte
+/// sets were computed word-wise, so any drift in those sets shows here.
+#[test]
+fn class_and_type_first_bytes_keep_their_findings() {
+    use BacktrackRisk::{NestedQuantifier as N, OverlappingAlternation as O};
+    let cases: &[(&str, &[BacktrackRisk])] = &[
+        (r#"((?:a*|(?>[[:alpha:]])+)+*){1,}"#, &[N]),
+        (r#"(?:[^0-9]|(?i)[^a-c]|(?i)\w)+$"#, &[O]),
+        (r#"(?:[[:^digit:]]|\s|\S)+b"#, &[O]),
+        (r#"((?:.|\Sa)+){0}"#, &[O]),
+        (r#"(?:(?:.|[a-c])*|[^0-9]){2,}"#, &[O]),
+        (r#"(?:(?i)[a-c]|\h)*?\z"#, &[O]),
+        (r#"(?:[a-c]|\w)*b"#, &[O]),
+        (r#"(?:[\w_]|\\b|\h)*{0}"#, &[O]),
+        (r#"((?:(?>[^\w])+|x?)*){2}"#, &[N]),
+        (r#"(((?:[\d.]|[0-9]|(?i)[a-c])+)*){2}*+\z"#, &[N, O]),
+        (r#"(?:[[:word:]]|\p{L}){2,}\z"#, &[O]),
+        (r#"(?:[[:space:]]|[ß]++){0,3}"#, &[]),
+        (r#"(?:[[:space:]]|\S|[ab]){2}"#, &[]),
+        (r#"(?i)a[a-c]"#, &[]),
+        (r#"([^0-9]){2}"#, &[]),
+        (r#"\W[A-Z]"#, &[]),
+        (r#"([^\w]){1,}?"#, &[]),
+        (r#"([0-9])+*([^\w]){1,}"#, &[]),
+        (r#"(?>[^\w][\x00-\x7F]){2,}"#, &[]),
+        (r#"[A-Z](?>[^0-9])*{2}ss"#, &[]),
+        (r#"\d[\x{100}-\x{200}]"#, &[]),
+        (r#"(?:(?i)a|[^0-9]|\S)*"#, &[]),
+        (r#"(?:[ab]|\S|\x{e9})*+b"#, &[]),
+        (r#"[0-9]([A-Z])*\s"#, &[]),
+        (r#"(?:(?i)a|[a-z\x7F-\x{10FFFF}])*?"#, &[]),
+        (r#"(?:\d|\D)+x"#, &[]),
+        (r#"(?:[^\d]|\d)*x"#, &[]),
+        (r#"(?:\D|[^\D])*x"#, &[]),
+        (r#"(?:[[:^alpha:]]|[[:alpha:]])+x"#, &[]),
+        (r#"(?:[^a]|b)+x"#, &[]),
+        (r#"(?:\W|\w)+x"#, &[]),
+        (r#"(?:[^\w]|\s)+$"#, &[O]),
+        (r#"(?:\S|[^\w])*x"#, &[O]),
+        (r#"(?i)(?:[^a-c]|\w)*x"#, &[O]),
+    ];
+    for (pattern, expected) in cases {
+        assert_eq!(risks(pattern), *expected, "{pattern}");
+    }
+}
