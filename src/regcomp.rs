@@ -8461,11 +8461,15 @@ fn set_empty_status_check_trav(
             set_empty_status_check_trav(&cons.car, chain, env, found);
             chain.pop();
             let mut next = cons.cdr.as_deref();
+            // Rust-only (ADR-008): one buffer for every later cell, reset to
+            // the cell alone as before, instead of a new Vec per cell.
+            let mut cell_chain: Vec<*const Node> = Vec::new();
             while let Some(cell) = next {
                 let (NodeInner::List(c) | NodeInner::Alt(c)) = &cell.inner else {
                     break;
                 };
-                let mut cell_chain = vec![cell as *const Node];
+                cell_chain.clear();
+                cell_chain.push(cell as *const Node);
                 set_empty_status_check_trav(&c.car, &mut cell_chain, env, found);
                 next = c.cdr.as_deref();
             }
@@ -8786,8 +8790,10 @@ pub(crate) fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
                 }
             }
 
-            // Merge adjacent string nodes with same flags and status
-            let mut merged: Vec<Node> = Vec::new();
+            // Merge adjacent string nodes with same flags and status.
+            // Rust-only (ADR-008): the bytes of a merged node are appended
+            // straight from it, and the output is sized up front.
+            let mut merged: Vec<Node> = Vec::with_capacity(items.len());
             for item in items {
                 if item.node_type() == NodeType::String {
                     let can_merge = if let Some(last) = merged.last() {
@@ -8803,9 +8809,11 @@ pub(crate) fn reduce_string_list(node: &mut Node, _enc: OnigEncoding) -> i32 {
                     };
 
                     if can_merge {
-                        let curr_bytes = item.as_str().unwrap().s.clone();
                         let last = merged.last_mut().unwrap();
-                        last.as_str_mut().unwrap().s.extend_from_slice(&curr_bytes);
+                        last.as_str_mut()
+                            .unwrap()
+                            .s
+                            .extend_from_slice(&item.as_str().unwrap().s);
                     } else {
                         merged.push(item);
                     }
