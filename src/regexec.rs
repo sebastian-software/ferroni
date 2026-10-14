@@ -7920,7 +7920,7 @@ pub(crate) fn search_in_range(
 // Box the cached state so each warm call moves only a pointer. Taking
 // ownership still leaves the cache available to re-entrant calls.
 thread_local! {
-    static CACHED_MSA: RefCell<Option<Box<MatchArg>>> = const { RefCell::new(None) };
+    static CACHED_MSA: Cell<Option<Box<MatchArg>>> = const { Cell::new(None) };
 }
 
 /// The thread's cached MatchArg, reset for a search under `limits` (`None`:
@@ -7936,11 +7936,7 @@ pub(crate) fn take_cached_msa(
     start: usize,
     limits: Option<SearchLimits>,
 ) -> Box<MatchArg> {
-    match CACHED_MSA
-        .try_with(|c| c.borrow_mut().take())
-        .ok()
-        .flatten()
-    {
+    match CACHED_MSA.try_with(Cell::take).ok().flatten() {
         Some(mut cached) => {
             cached.reset_with_limits(reg, option, region, start, limits);
             cached
@@ -7955,9 +7951,7 @@ pub(crate) fn cache_msa(mut msa: Box<MatchArg>) {
     release_oversized_stack(&mut msa);
     // Drop can run after this thread-local's destructor during thread
     // teardown; the MatchArg is then simply freed.
-    let _ = CACHED_MSA.try_with(|c| {
-        *c.borrow_mut() = Some(msa);
-    });
+    let _ = CACHED_MSA.try_with(|c| c.set(Some(msa)));
 }
 
 /// Rust-only (API layer): the bounds of the first match from `start` to the
