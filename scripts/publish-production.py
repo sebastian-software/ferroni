@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Otherwise future source snapshots would recursively include previous runs.
 RESULTS = ROOT / "benches/production_results"
 DATA = ROOT / "docs/app/data/production-comparison.json"
+SUMMARY = ROOT / "docs/app/data/production-summary.json"
 PROFILES = {"macos-arm64": ("arm64", "macOS"), "linux-x86-64": ("x86_64", "Linux")}
 spec = importlib.util.spec_from_file_location("production_comparison", ROOT / "scripts/compare-production.py")
 comparison = importlib.util.module_from_spec(spec)
@@ -200,6 +201,29 @@ def encoded(data):
     return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
 
+def overview(data):
+    """Derive a small homepage payload from the same verified production pairs."""
+    production = [case for case in data["cases"]
+                  if case["pattern_origin"] == "production" and not case["pending_reason"]]
+    platforms = []
+    for platform in data["platforms"]:
+        rows = []
+        for pair in platform["production_comparisons"]:
+            conclusions = [case["conclusion"] for case in pair["cases"]]
+            rows.append({key: pair[key] for key in
+                         ("engine", "lane", "case_count", "family_count", "family_weighted_ratio")} | {
+                "ferroni_cases": conclusions.count("Ferroni faster in every run interval"),
+                "comparator_cases": conclusions.count("comparator faster in every run interval"),
+                "inconclusive_cases": conclusions.count("inconclusive"),
+            })
+        platforms.append({"profile": platform["profile"],
+                          "repetitions": platform["context"]["repetitions"], "comparisons": rows})
+    return {"format_version": 1,
+            "run": {key: data["run"][key] for key in ("head_sha", "html_url", "created_at")},
+            "case_count": len(production), "input_count": sum(case["input_count"] for case in production),
+            "family_count": len({case["family"] for case in production}), "platforms": platforms}
+
+
 def fetch_run(run_id, destination):
     def github(endpoint):
         return json.loads(subprocess.check_output(["gh", "api", endpoint], cwd=ROOT, text=True))
@@ -238,7 +262,8 @@ def publish(artifacts, receipt):
     (RESULTS / "publication.json").write_text(encoded(data))
     (RESULTS / "README.md").write_text(document(data))
     DATA.write_text(encoded(data))
-    subprocess.run([str(formatter), "--write", str(DATA)], cwd=ROOT / "docs", check=True)
+    SUMMARY.write_text(encoded(overview(data)))
+    subprocess.run([str(formatter), "--write", str(DATA), str(SUMMARY)], cwd=ROOT / "docs", check=True)
     print(f"Verified both platforms; updated {DATA} and {RESULTS}.")
 
 
@@ -265,6 +290,7 @@ def main():
                     archive.extractall(directories[profile])
             data = generate(directories, receipt)
         require(equivalent(read(DATA), data) and equivalent(read(RESULTS / "publication.json"), data), "Generated public data has drifted")
+        require(equivalent(read(SUMMARY), overview(data)), "Generated homepage summary has drifted")
         require((RESULTS / "README.md").read_text() == document(data), "Generated result tables have drifted")
         print("Publication check: both complete Blacksmith runs, raw estimates, coverage and public tables agree.")
         return

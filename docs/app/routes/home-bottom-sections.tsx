@@ -14,13 +14,15 @@ export function ScannerSection() {
     <Section
       id="fr-scanner"
       layout="split"
-      title="Built for syntax highlighting"
+      title="A Scanner API for TextMate grammars"
       intro="A highlighter asks, at every position in a line, which of a grammar’s many patterns matches next. Ferroni’s Scanner answers with the API of vscode-oniguruma, the engine under vscode-textmate and Shiki, UTF-16 offsets included."
       note={
         <>
           Scanners built from one pattern cache compile each distinct pattern once, and a string id
           lets a scanner reuse what it learned about a line.{" "}
-          <Link to="/guide/getting-started#the-scanner-api">The Scanner API in the guide</Link>
+          <Link to="/guide/getting-started#the-scanner-api">The Scanner API in the guide</Link>.
+          Scanner performance and complete Ferriki highlighting have their own workload boundaries;
+          the regex measurements above cover neither.
         </>
       }
     >
@@ -101,9 +103,8 @@ export function ProofSection() {
       intro="Ferroni carries Oniguruma forward after its C project closed in April 2025. The port preserves module structure, function names and control flow, and passes every upstream UTF-8 test. Unicode tables and the Rust API extend that foundation."
       note={
         <>
-          Line coverage is gated in CI, and every benchmark case first has to reproduce C
-          Oniguruma&rsquo;s results.{" "}
-          <Link to="/guide/compatibility">How compatibility is checked</Link>
+          Line coverage is gated in CI. Benchmark comparisons require the same checked output before
+          timing. <Link to="/guide/compatibility">How compatibility is checked</Link>
         </>
       }
     >

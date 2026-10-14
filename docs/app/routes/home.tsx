@@ -1,3 +1,4 @@
+// cspell:words subexpression
 import { family, Mark, ProjectHero, Relations, Section, WorkWithUs } from "ferramenta-family";
 import { Link, type MetaFunction } from "react-router";
 import config from "virtual:ardo/config";
@@ -5,6 +6,7 @@ import config from "virtual:ardo/config";
 import { FitSection, StatusSection, SyntaxSection } from "../components/home-examples";
 import { HomeNavigation } from "../components/home-navigation";
 import { HomeRunSample } from "../components/home-run-sample";
+import { ProductionSummary } from "../components/production-summary";
 import {
   ClosingSection,
   CoverageSection,
@@ -15,11 +17,11 @@ import {
 // React Router requires `meta` as a named route export.
 // oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
 export const meta: MetaFunction = () => [
-  { title: "Ferroni — Oniguruma's regex engine, modernized in Rust" },
+  { title: "Ferroni — Oniguruma regex in pure Rust" },
   {
     name: "description",
     content:
-      "Oniguruma-compatible matching, extraction and replacement in Rust, including lookaround and backreferences. No C compiler, verified against upstream tests, with a TextMate Scanner API for grammar consumers.",
+      "Match, extract and replace UTF-8 text with Oniguruma patterns in pure Rust. Lookaround, backreferences, upstream compatibility tests and benchmarks from real projects. No C compiler required.",
   },
 ];
 
@@ -40,12 +42,12 @@ function HeroSection() {
     <ProjectHero
       icon="ferroni"
       title={<span translate="no">Ferroni</span>}
-      what="Oniguruma's regex engine, modernized in Rust."
+      what="Oniguruma regex in pure Rust."
       lede={
         <>
-          Match, extract and replace text with Oniguruma patterns in pure Rust, including
-          look-behind and backreferences. No C compiler. Verified against Oniguruma&rsquo;s upstream
-          tests.
+          Match, extract and replace UTF-8 text with look-behind, backreferences and subexpression
+          calls. Ferroni ports Oniguruma&rsquo;s engine to Rust, checked against its upstream tests.
+          Add it with Cargo; no C compiler required.
         </>
       }
       actions={
@@ -72,7 +74,7 @@ function SampleSection() {
   return (
     <Section
       id="fr-run"
-      title="Familiar Rust, full Oniguruma syntax"
+      title="Look-behind and named captures, in Rust"
       intro={
         <>
           Select a date with look-behind, then read its named captures with a familiar Rust API. The
@@ -90,31 +92,30 @@ function SampleSection() {
   );
 }
 
-function SpeedSection() {
+function PerformanceSection() {
   return (
     <Section
       id="fr-evidence"
-      layout="split"
-      title="Compare the work your application needs"
+      title="See how Ferroni compares"
       intro={
         <>
-          Our regex corpus separates simple expressions, complex expressions and advanced Oniguruma
-          features. Patterns come from identifiable projects, with pinned sources, explicit
-          operation boundaries and checked results. TextMate Scanner replays have their own
-          workload.
+          Measure the regex work your application needs: validation, capture extraction, replacement
+          and Unicode text processing. These comparisons use patterns and test inputs from projects
+          including Django, Fluent Bit, Rails and WordPress, covering simple expressions, complex
+          patterns and advanced Oniguruma features.
         </>
       }
       note={
         <>
-          Repeated Blacksmith measurements are available for ARM64/macOS and x86-64/Linux. Inspect
-          compile, first-use and steady-reuse costs, with run ranges, rejected syntax and differing
-          results listed explicitly.
+          The measured work is each project&rsquo;s regex step. Complete validators, parsers and
+          rendering pipelines include additional work.
         </>
       }
     >
+      <ProductionSummary />
       <p>
         <Link to="/perf/regex-workloads">
-          Inspect measured results, workloads and comparison rules
+          Inspect every case, preparation costs and measurement ranges
         </Link>
       </p>
     </Section>
@@ -141,7 +142,7 @@ export default function HomePage() {
       <FitSection />
       <SampleSection />
       <SyntaxSection />
-      <SpeedSection />
+      <PerformanceSection />
       <ScannerSection />
       <SafetySection />
       <ProofSection />

@@ -12,6 +12,27 @@ spec.loader.exec_module(publication)
 
 
 class PublicationTests(unittest.TestCase):
+    def test_homepage_summary_uses_production_pairs_without_probes_or_pending_cases(self):
+        production_pair = {"engine": "c", "lane": "steady", "case_count": 1, "family_count": 1,
+                           "family_weighted_ratio": 1.25,
+                           "cases": [{"conclusion": "Ferroni faster in every run interval"}]}
+        data = {
+            "run": {"head_sha": "a" * 40, "html_url": "https://example.com/run", "created_at": "2026-10-14"},
+            "cases": [
+                {"pattern_origin": "production", "pending_reason": None, "input_count": 3, "family": "logs"},
+                {"pattern_origin": "controlled", "pending_reason": None, "input_count": 4, "family": "literal"},
+                {"pattern_origin": "production", "pending_reason": "capture mismatch", "input_count": 2, "family": "types"},
+            ],
+            "platforms": [{"profile": "macos-arm64", "context": {"repetitions": 3},
+                           "production_comparisons": [production_pair],
+                           "comparisons": [dict(production_pair, case_count=2, family_weighted_ratio=20)]}],
+        }
+        summary = publication.overview(data)
+        self.assertEqual((summary["case_count"], summary["input_count"], summary["family_count"]), (1, 3, 1))
+        row = summary["platforms"][0]["comparisons"][0]
+        self.assertEqual((row["case_count"], row["family_weighted_ratio"]), (1, 1.25))
+        self.assertEqual((row["ferroni_cases"], row["comparator_cases"], row["inconclusive_cases"]), (1, 0, 0))
+
     def test_last_bit_platform_math_differences_are_tolerated(self):
         self.assertTrue(publication.equivalent({"ratio": 1.0000000000000002}, {"ratio": 1.0}))
         self.assertFalse(publication.equivalent({"ratio": 1.001}, {"ratio": 1.0}))

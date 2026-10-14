@@ -88,7 +88,7 @@ const sections: DocsSection[] = [
 ];
 
 // Keep the manually grouped Performance navigation in sync with the routes.
-const performancePages = [{ to: "/perf/regex-workloads", label: "Regex Workloads" }];
+const performancePages = [{ to: "/perf/regex-workloads", label: "Regex Benchmarks" }];
 const unlistedPerformancePages = Object.keys(import.meta.glob("./routes/perf/*.mdx"))
   .map((file) => `/perf/${file.slice("./routes/perf/".length, -".mdx".length)}`)
   .filter((to) => !performancePages.some((page) => page.to === to));

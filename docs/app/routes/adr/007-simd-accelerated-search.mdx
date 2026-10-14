@@ -31,9 +31,7 @@ The structural shape of the search pipeline is unchanged -- the same functions e
 
 ## Rationale
 
-- **Measurable impact:** The largest gains appear in full-text no-match scenarios where the engine must scan the entire haystack:
-  - 10 KB no-match: 381 ns vs 1.9 us (5x faster)
-  - 50 KB no-match: 1.5 us vs 9.3 us (6x faster)
+- **Search mechanism:** SIMD scans accelerate finding a candidate byte, including searches that must inspect the entire haystack before reporting no match. Their contribution depends on how much work the pattern's remaining matching steps require.
 - **Minimal code change:** The `memchr` crate is a single dependency with zero transitive dependencies and zero `unsafe` in its public API.
 - **No behavioral change:** The SIMD paths find the same bytes at the same positions. All existing tests pass unchanged.
 - **This is the kind of deviation ADR-001 allows:** The control flow and API are identical; only the inner scan loop implementation differs, similar to how a C compiler might auto-vectorize a loop.
@@ -41,7 +39,7 @@ The structural shape of the search pipeline is unchanged -- the same functions e
 ## Consequences
 
 - The `memchr` crate is a build dependency.
-- Benchmarks for literal and RegSet search are 20-60% faster than C. No-match full-text scans are 5-6x faster.
+- End-to-end regex comparisons include matching and required output work; scanner comparisons use separate workloads. The [current regex results](../../perf/regex-workloads) describe the measured cases rather than a universal SIMD speedup.
 - The Map search path (>3 distinct first bytes) still uses a 256-entry byte map, same as C. SIMD dispatch only covers 1-3 byte sets.
 - Thin LTO (`lto = "thin"` in release profile) is enabled to allow cross-crate inlining of `memchr` calls without the compile-time cost of full LTO.
 

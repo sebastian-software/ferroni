@@ -1,4 +1,4 @@
-# Ferroni — Oniguruma's regex engine, modernized in Rust
+# Ferroni — Oniguruma regex in pure Rust
 
 <!-- mdtheme:badges:start -->
 [![crates.io](https://img.shields.io/crates/v/ferroni?style=flat-square&logo=rust&label=crates.io)](https://crates.io/crates/ferroni)
@@ -9,17 +9,17 @@
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square)](https://github.com/sebastian-software/ferroni/blob/main/LICENSE)
 <!-- mdtheme:badges:end -->
 
-**Oniguruma-compatible regex matching and scanning in pure Rust.**
+**Match, extract and replace text with Oniguruma patterns in pure Rust.**
 Ferroni ports Oniguruma's parser, compiler and optimizer line by line,
 verifies UTF-8 behavior against the upstream test suite, and adds an
 idiomatic Rust API. No C compiler or bindgen required.
 
-Use it to match, extract and replace text with patterns that need look-around
-or backreferences, or to replace C Oniguruma in a Rust application. The
+Use it when your patterns need lookaround, backreferences or subexpression
+calls, or to replace C Oniguruma in a Rust application. The
 TextMate Scanner API is also available for grammar consumers such as Ferriki.
 
-**[Explore Ferroni →](https://ferroni.dev)** — matching examples, a visual
-scanner walkthrough, compatibility evidence and measured performance.
+**[Explore Ferroni →](https://ferroni.dev)** — matching examples, compatibility
+evidence, benchmarks from real projects and a separate TextMate Scanner walkthrough.
 
 ## Quick start
 
@@ -51,11 +51,29 @@ and [untrusted input](https://ferroni.dev/guide/untrusted-input).
 When your patterns fit Rust's [`regex`](https://crates.io/crates/regex)
 crate, prefer its guaranteed linear-time matching.
 
+## Performance
+
+The [regex benchmarks](https://ferroni.dev/perf/regex-workloads) compare patterns
+and test inputs from real projects, including Django, Fluent Bit, Rails and
+WordPress. Preparing a regex, its first use and repeated use are measured
+separately on ARM64/macOS and x86-64/Linux.
+
+Ferroni's standard API is competitive with C Oniguruma for repeated use in this
+corpus, with a stronger aggregate advantage on ARM and mixed results on Linux.
+PCRE2 JIT is faster in every source-backed reuse case; Rust `regex` is faster in the
+aggregate on its smaller supported subset. The tables include cases that favor
+each engine, unsupported patterns and inconclusive results. Ferroni's fallible
+API is a separate profile because its match-workspace allocation affects reuse
+costs.
+
+These measurements cover isolated regex steps. TextMate Scanner calls and
+Ferriki's complete highlighting are separate workloads.
+
 ## Documentation
 
 - [Getting started](https://ferroni.dev/guide/getting-started) — captures, iteration, options, errors and the Scanner API.
 - [API reference](https://docs.rs/ferroni) — every public type and function.
-- [Regex workloads and results](https://ferroni.dev/perf/regex-workloads) — repeated Blacksmith measurements on ARM64/macOS and x86-64/Linux, source-backed patterns and explicit operation contracts; TextMate Scanner is a separate workload.
+- [Regex benchmarks](https://ferroni.dev/perf/regex-workloads) — the results, original patterns, input sources, API profiles and comparison rules.
 - [Migrating to 2.0](https://ferroni.dev/guide/migrating-to-2) — breaking changes with before and after code.
 
 ## Project status and contributing

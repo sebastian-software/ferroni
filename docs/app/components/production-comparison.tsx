@@ -74,6 +74,10 @@ function ComparisonIntro({
         ratios are medians of the ratios paired by repetition. Run ranges retain every process
         result.
       </p>
+      <p>
+        Green factors favor Ferroni, red factors favor the comparator. Inconclusive cases stay
+        neutral even when their point estimate falls above or below 1.
+      </p>
     </>
   );
 }

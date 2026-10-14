@@ -1,0 +1,53 @@
+/* The factor keeps Ferroni as the reference; color adds the scan cue used on main. */
+.benchmark-factor {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-factor strong {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.benchmark-factor small {
+  color: inherit;
+  font-weight: 400;
+}
+
+.benchmark-factor[data-speed="faster"] {
+  color: #356047;
+  background: color-mix(in oklch, #527862 10%, transparent);
+}
+
+.benchmark-factor[data-speed="slower"] {
+  color: #8a514b;
+  background: color-mix(in oklch, #985b54 10%, transparent);
+}
+
+.benchmark-factor[data-speed="inconclusive"] {
+  color: inherit;
+  background: color-mix(in oklch, currentColor 7%, transparent);
+}
+
+.dark .benchmark-factor[data-speed="faster"]:not(.fam-page *) {
+  color: #91c2a0;
+}
+
+.dark .benchmark-factor[data-speed="slower"]:not(.fam-page *) {
+  color: #e2a299;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .benchmark-factor[data-speed="faster"]:not(.fam-page *) {
+    color: #91c2a0;
+  }
+
+  :root:not(.light) .benchmark-factor[data-speed="slower"]:not(.fam-page *) {
+    color: #e2a299;
+  }
+}
