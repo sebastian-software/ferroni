@@ -381,6 +381,18 @@ Each search of an iteration restarts from the previous match end. Two per-search
 - **Bounds**: no allocation and no compiled data.
 - **Impact** (callgrind instructions of the timed loop, net of the empty loop, `std` mode, baseline `regex-integration` against this branch): tiktoken (tokenizer catalog, 20 iterations, both cases) 490.5M → 424.9M, −13.4%. `mastodon_hashtag` all-captures 58.07M → 57.20M, −1.5%; `wordpress_shortcode` all-captures 33.20M → 32.56M, −1.9%. The single-search controls rise by 0.02% to 0.08% (uuid_v4 +0.06%, uuid_shape +0.06%, ipv4_validation +0.05%, fluent_bit_apache +0.08%, literal_first +0.08%); the extra check on each search costs a few instructions.
 
+#### Fixed costs of a search (`src/regexec.rs`, `src/regenc.rs`)
+
+Three per-search costs that every entry point pays are removed where no result can change.
+
+- **Trigger**: a captures search (`captures_at` and its relatives) of a pattern whose optimizer map is not the only start filter, and any search that steps over an ASCII byte in a UTF-8 subject.
+- **Capture-fill precheck**: the two-pass capture fill calls `capture_map_search` only where its first checks can pass: map optimizer, no anchor or sub-anchor, distance 0, no `ac_alt`, no capture tracking and no any-char run. The other patterns go straight to the core loop, as the call returned at once for them.
+- **Cached MatchArg in a `Cell`**: the thread's cached `MatchArg` is taken and put back whole, never borrowed, so the per-search take and store lose the borrow-flag checks of a `RefCell`.
+- **UTF-8 by address**: `onigenc_is_ascii_compatible_encoding` recognizes the UTF-8 static by its address before it calls the virtual `flag`. The UTF-8 flag includes the ASCII-compatible bit, so the answer is the same; other encodings still ask their flag. The check runs for every ASCII byte the matcher steps over (`enclen`), which is why match-heavy cases gain most.
+- **Observability**: none. Attempts, retry counts, limits and captures are unchanged; the full test suite and the prefilter self-check pass.
+- **Bounds**: no allocation and no compiled data.
+- **Impact** (callgrind instructions, `std` mode, 200 iterations, net of the empty loop; baseline `iter-restart` against this branch): uuid_v4 14.86M → 13.33M (−10.3%); uuid_shape 30.72M → 28.89M (−6.0%); jinja_string_token 5.79M → 5.52M (−4.6%); jinja_integer_token 12.29M → 11.73M (−4.6%); fluent_bit_apache 20.84M → 20.46M (−1.8%); fluent_bit_nginx 36.56M → 35.78M (−2.1%); ipv4_validation 26.71M → 26.08M (−2.4%); semver_hyphen_range_captures 35.68M → 35.35M (−0.9%). `_with` runs: uuid_v4 15.27M → 13.73M (−10.0%), jinja_string_token 6.14M → 5.87M (−4.3%). The tokenizer corpus (`all_matches`, 20 iterations) is unchanged within 0.02%, and the `literal` control moves by +0.14%.
+
 ## Rationale
 
 - **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.
