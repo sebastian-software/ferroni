@@ -23,7 +23,7 @@ import sys
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINES = ("rust", "rust_erroraware", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex")
+ENGINES = ("rust", "rust_erroraware", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex", "regexr", "regexr_jit")
 PROFILES = {
     "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
     "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
@@ -34,6 +34,8 @@ PROFILES = {
     "fancy_regex": "fancy-regex Oniguruma mode, seek off, explicit source flags",
     "fancy_regex_seek": "fancy-regex Oniguruma mode, seek on, explicit source flags",
     "regex": "Rust regex public API with explicit source flags; default limits",
+    "regexr": "regexr 0.6.1 public Regex API; (?u) Unicode shorthand classes; default SIMD; JIT off; fallible first-match/capture preflight",
+    "regexr_jit": "regexr 0.6.1 public Regex API; (?u) Unicode shorthand classes; default SIMD; jit(true); selected backend recorded, non-JIT fallback allowed",
 }
 LANES = ("steady", "compile", "first_use")
 
@@ -67,8 +69,8 @@ def snapshot_source(directory):
     """Retain current engine/harness code even for a diagnostic dirty checkout."""
     paths = ["Cargo.toml", "Cargo.lock", "build.rs", "rust-toolchain.toml", "README.md",
              ".cargo/config.toml", "LICENSE", "src", "benches/engines.rs", "benches/onigmo_shim.c",
-             "benches/production_regex_bench.rs", "benches/production_regex", "benches/battle_inputs.toml",
-             "scripts/compare-production.py", "scripts/check-production-corpus.py", "scripts/verify-production-oracles.py"]
+             "benches/production_regex_bench.rs", "benches/production_regex", "benches/tokenizer_regex", "benches/battle_inputs.toml",
+             "scripts/compare-production.py", "scripts/check-production-corpus.py", "scripts/verify-production-oracles.py", "scripts/verify-tokenizer-oracles.py"]
     archive = directory / "source-snapshot.tar.gz"
     native = {}
     with tarfile.open(archive, "w:gz") as bundle:
@@ -243,6 +245,7 @@ def main():
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--cases", help="comma-separated case IDs (default: complete catalog)")
     parser.add_argument("--engines", default=",".join(ENGINES))
+    parser.add_argument("--corpus", choices=("production", "tokenizer"), default="production")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--measure-seconds", type=float, default=3)
@@ -270,7 +273,10 @@ def main():
     spec = importlib.util.spec_from_file_location("corpus_check", ROOT / "scripts/check-production-corpus.py")
     checker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(checker)
-    checker.check(json.loads(checker.CATALOG.read_text()))
+    if args.corpus == "tokenizer":
+        checker.CATALOG = ROOT / "benches/tokenizer_regex/catalog.json"
+    os.environ["PRODUCTION_CORPUS"] = args.corpus
+    checker.check(json.loads(checker.CATALOG.read_text()), checker.CATALOG.parent)
     engines = args.engines.split(",")
     features = "onigmo" if "onigmo" in engines else "ffi"
     binary = args.binary.resolve() if args.binary else build(features)
@@ -283,7 +289,7 @@ def main():
     if not set(filter(None, args.memory_cases.split(","))) <= set(cases):
         parser.error("memory cases must be included in the selected cases")
     context = {"format_version": 1, "started_utc": datetime.now(timezone.utc).isoformat(),
-               "platform": platform.platform(), "machine": platform.machine(), "cpu_count": os.cpu_count(),
+               "platform": platform.platform(), "machine": platform.machine(), "cpu_count": os.cpu_count(), "corpus": args.corpus,
                "host_note": args.host_note, "commit": command_output(["git", "rev-parse", "HEAD"]),
                "git_status": command_output(["git", "status", "--porcelain"]),
                "rustc": command_output(["rustc", "-Vv"]), "cargo": command_output(["cargo", "-V"]),

@@ -76,6 +76,10 @@ for (const [name, content] of [
   }
 }
 const sources = new Set(Object.values(catalog.sources).map((source) => source.url));
+const tokenizerCatalog = JSON.parse(
+  readFileSync(resolve(root, "benches/tokenizer_regex/catalog.json"), "utf8"),
+);
+for (const source of Object.values(tokenizerCatalog.sources)) sources.add(source.url);
 for (const [url] of page.matchAll(/https:\/\/github\.com\/[^)\s]+\/blob\/[a-f0-9]{40}\/[^)\s]+/g)) {
   if (!sources.has(url)) errors.push(`Workload source link is not in the pinned catalog: ${url}`);
 }
@@ -94,6 +98,15 @@ if (existsSync(publication)) {
 } else if (!page.includes("it makes no new performance claim")) {
   errors.push("Do not replace the measurement-status note without verified publication evidence.");
 }
+const additional = spawnSync(
+  "python3",
+  [resolve(root, "scripts/publish-additional-comparisons.py"), "--check"],
+  { cwd: root, encoding: "utf8" },
+);
+if (additional.status !== 0)
+  errors.push(
+    `Additional benchmark evidence did not verify: ${additional.stderr || additional.error}`,
+  );
 if (errors.length) {
   console.error(errors.join("\n"));
   process.exit(1);

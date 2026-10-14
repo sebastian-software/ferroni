@@ -3,7 +3,7 @@ order: 1
 title: "Regex Benchmarks"
 ---
 
-import { ProductionComparison } from "../../components/production-comparison";
+import { ProductionComparison, TokenizerComparison } from "../../components/production-comparison";
 import { ProductionSummary } from "../../components/production-summary";
 import { RegexFeatureMatrix } from "../../components/regex-feature-matrix";
 
@@ -108,6 +108,35 @@ Onigmo, PCRE2 interpreter/JIT, fancy-regex in Oniguruma mode with seek off/on,
 and Rust regex. Construction includes each profile's contexts and selected JIT.
 PCRE2's bundled source is pinned through the locked `pcre2-sys` dependency.
 Replacement/output assembly stays within the operation boundary.
+
+regexr 0.6.1 adds separate JIT-off and JIT-enabled profiles. Both use its default
+SIMD feature and explicit `(?u)` Unicode mode. Its JIT-enabled selector may
+retain a non-JIT backend; the selected backend is recorded. Native public Regex
+methods, capture iteration and literal replacement are measured. Its public API
+has no context-preserving offset search, so those cases report an API gap.
+Fallible first-match/capture checks run before timing; native iteration and
+replacement do not expose every execution error. Each regexr ratio uses the
+Ferroni baseline from the same additional run.
+
+## LLM regex pre-tokenization
+
+The current [tiktoken patterns](https://github.com/openai/tiktoken/blob/4e71bbe0c078468e00fefbf94b39849389f346e5/tiktoken_ext/openai_public.py)
+for `cl100k_base` and `o200k_base` add a separate application family, inspired
+by regexr's tokenizer examples. Eleven shared upstream inputs per pattern cover
+whitespace, contractions, numbers, multilingual text, emoji and the original
+longer benchmark strings. Every complete match span is checked against Python
+`regex` 2026.1.15 using the original expression.
+
+The bounded possessive number quantifier in `cl100k_base` is written as an
+equivalent atomic group for the Oniguruma-family dialect. Its other constructs
+are preserved. Rejections and semantic differences remain visible; acceptance
+of an older tokenizer example does not establish support for the current pattern.
+
+These timings measure regex pre-tokenization, excluding BPE merges, vocabulary
+lookups, special tokens and complete tokenizer throughput. They have their own
+tables and aggregate and do not change the earlier 21-task aggregate.
+
+<TokenizerComparison />
 
 Eligibility describes these configurations. Rust regex, for example, disables
 octal escapes by default and offers `RegexBuilder::octal(true)`; its rejection

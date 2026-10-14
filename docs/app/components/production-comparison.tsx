@@ -1,14 +1,17 @@
-// cspell:ignore rustc
+// cspell:ignore rustc regexr
 import { useId, useState } from "react";
 
 import {
   type Comparison,
   data,
+  type Dataset,
   engineNames,
   laneNames,
   type Platform,
   ratio,
+  regexrData,
   required,
+  tokenizerData,
 } from "./production-comparison-model";
 import { CaseTable } from "./production-comparison-table";
 import "./production-comparison.css";
@@ -111,15 +114,15 @@ function RunnerContext({ context, engine }: { context: Platform["context"]; engi
   );
 }
 
-function EvidenceLinks() {
+function EvidenceLinks({ run }: { run: Dataset["run"] }) {
   return (
     <p>
       Measured revision{" "}
-      <a href={`https://github.com/sebastian-software/ferroni/commit/${data.run.head_sha}`}>
-        <code>{data.run.head_sha.slice(0, 7)}</code>
+      <a href={`https://github.com/sebastian-software/ferroni/commit/${run.head_sha}`}>
+        <code>{run.head_sha.slice(0, 7)}</code>
       </a>
       {" · "}
-      <a href={data.run.html_url}>Blacksmith workflow and job logs</a>
+      <a href={run.html_url}>Blacksmith workflow and job logs</a>
       {" · "}
       <a href="https://github.com/sebastian-software/ferroni/tree/main/benches/production_results">
         Retained raw evidence and generated tables
@@ -128,44 +131,114 @@ function EvidenceLinks() {
   );
 }
 
-export function ProductionComparison() {
+function comparisonOptions(dataset: Dataset) {
+  const available = new Set(dataset.platforms[0].comparisons.map((entry) => entry.engine));
+  if (dataset === data && regexrData) {
+    for (const entry of regexrData.platforms[0].comparisons) available.add(entry.engine);
+  }
+  return Object.fromEntries(Object.entries(engineNames).filter(([key]) => available.has(key)));
+}
+
+function selectedComparison(
+  dataset: Dataset,
+  { profile, engine, lane }: { profile: string; engine: string; lane: string },
+) {
+  const measured =
+    dataset === data && engine.startsWith("regexr") && regexrData ? regexrData : dataset;
+  const platform = required(measured.platforms.find((entry) => entry.profile === profile));
+  const matches = (entry: Comparison) => entry.engine === engine && entry.lane === lane;
+  const comparison = required(platform.comparisons.find(matches));
+  const production = required(platform.production_comparisons.find(matches));
+  return { measured, platform, comparison, production };
+}
+
+type ControlsProps = {
+  id: string;
+  profile: string;
+  lane: string;
+  engine: string;
+  options: Record<string, string>;
+  setProfile: (value: string) => void;
+  setLane: (value: string) => void;
+  setEngine: (value: string) => void;
+};
+
+function ComparisonControls({
+  id,
+  profile,
+  lane,
+  engine,
+  options,
+  setProfile,
+  setLane,
+  setEngine,
+}: ControlsProps) {
+  return (
+    <div className="production-controls">
+      <Choice
+        id={`${id}-platform`}
+        label="Platform"
+        value={profile}
+        options={{ "macos-arm64": "ARM64 · macOS", "linux-x86-64": "x86-64 · Linux" }}
+        onChange={setProfile}
+      />
+      <Choice id={`${id}-lane`} label="Phase" value={lane} options={laneNames} onChange={setLane} />
+      <Choice
+        id={`${id}-engine`}
+        label="Compare Ferroni standard API with"
+        value={engine}
+        options={options}
+        onChange={setEngine}
+      />
+    </div>
+  );
+}
+
+export function ProductionComparison({ dataset = data }: { dataset?: Dataset }) {
   const id = useId();
   const [profile, setProfile] = useState("macos-arm64");
   const [lane, setLane] = useState("steady");
   const [engine, setEngine] = useState("c");
-  const platform = required(data.platforms.find((entry) => entry.profile === profile));
-  const matches = (entry: Comparison) => entry.engine === engine && entry.lane === lane;
-  const comparison = required(platform.comparisons.find(matches));
-  const production = required(platform.production_comparisons.find(matches));
+  const { measured, platform, comparison, production } = selectedComparison(dataset, {
+    profile,
+    engine,
+    lane,
+  });
+  const options = comparisonOptions(dataset);
   return (
     <div className="production-comparison">
-      <div className="production-controls">
-        <Choice
-          id={`${id}-platform`}
-          label="Platform"
-          value={profile}
-          options={{ "macos-arm64": "ARM64 · macOS", "linux-x86-64": "x86-64 · Linux" }}
-          onChange={setProfile}
-        />
-        <Choice
-          id={`${id}-lane`}
-          label="Phase"
-          value={lane}
-          options={laneNames}
-          onChange={setLane}
-        />
-        <Choice
-          id={`${id}-engine`}
-          label="Compare Ferroni standard API with"
-          value={engine}
-          options={engineNames}
-          onChange={setEngine}
-        />
-      </div>
+      <ComparisonControls
+        id={id}
+        profile={profile}
+        lane={lane}
+        engine={engine}
+        options={options}
+        setProfile={setProfile}
+        setLane={setLane}
+        setEngine={setEngine}
+      />
       <ComparisonIntro production={production} repetitions={platform.context.repetitions} />
-      <CaseTable platform={platform} comparison={comparison} lane={lane} engine={engine} id={id} />
+      <CaseTable
+        cases={measured.cases}
+        platform={platform}
+        comparison={comparison}
+        lane={lane}
+        engine={engine}
+        id={id}
+      />
       <RunnerContext context={platform.context} engine={engine} />
-      <EvidenceLinks />
+      <EvidenceLinks run={measured.run} />
     </div>
+  );
+}
+
+export function TokenizerComparison() {
+  return tokenizerData ? (
+    <ProductionComparison dataset={tokenizerData} />
+  ) : (
+    <p>
+      The source-backed tokenizer cases are ready; Blacksmith measurements have not been published
+      yet.
+    </p>
   );
 }
