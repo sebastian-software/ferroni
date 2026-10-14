@@ -9388,13 +9388,37 @@ fn add_bitset_opt_map(m: &mut OptMap, bs: &BitSet, enc: OnigEncoding) {
     for word in 0..BITSET_REAL_SIZE {
         added[word] = bs[word] & !have[word];
     }
-    let mut value = 0;
-    for i in bit_members(&added) {
-        m.map[i] = 1;
-        value += map_position_value(enc, i);
+    // Rust-only: the position values from the table, byte 0 corrected for
+    // the encoding as in `alt_merge_opt_map`.
+    let mut value: i32 = bit_members(&added).map(|i| MAP_POSITION_VALUES[i]).sum();
+    if added[0] & 1 != 0 {
+        value += map_position_value(enc, 0) - MAP_POSITION_VALUES[0];
     }
     m.value += value;
+    // Rust-only: the map bytes of eight members at a time. Map bytes are 0
+    // or 1, and `added` holds only members the map lacks, so OR-ing in their
+    // bytes sets exactly those.
+    for (k, chunk) in m.map.as_chunks_mut::<8>().0.iter_mut().enumerate() {
+        let bits = (added[k / 4] >> ((k % 4) * 8)) as usize & 0xff;
+        *chunk = (u64::from_le_bytes(*chunk) | BIT_BYTES[bits]).to_le_bytes();
+    }
 }
+
+/// Rust-only: the byte `j` of `BIT_BYTES[b]` is bit `j` of `b`, so a map
+/// chunk takes the members of eight bits at once.
+const BIT_BYTES: [u64; 256] = {
+    let mut table = [0; 256];
+    let mut b = 0;
+    while b < 256 {
+        let mut j = 0;
+        while j < 8 {
+            table[b] |= (((b >> j) & 1) as u64) << (8 * j);
+            j += 1;
+        }
+        b += 1;
+    }
+    table
+};
 
 /// The codes below `range` (128 or 256) for which `enc.is_code_ctype` holds,
 /// as a bitset. Rust-only: `optimize_nodes` asks for the same few types
@@ -13882,6 +13906,52 @@ mod tests {
                 assert_eq!(fast.map, reference.map);
                 assert_eq!(fast.value, reference.value);
             }
+        }
+    }
+
+    /// `add_bitset_opt_map` against the per-byte rule it replaces, over
+    /// pseudo-random maps and sets under both encodings: byte 0 and the high
+    /// bytes take their own values, and members the map holds add nothing.
+    #[test]
+    fn add_bitset_opt_map_matches_per_byte_reference() {
+        use crate::encodings::ascii::ONIG_ENCODING_ASCII;
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for round in 0..2000 {
+            let enc: OnigEncoding = if round % 2 == 0 {
+                &ONIG_ENCODING_UTF8
+            } else {
+                &ONIG_ENCODING_ASCII
+            };
+            let mut fast = OptMap::new();
+            let mut reference = OptMap::new();
+            for i in 0..CHAR_MAP_SIZE {
+                if next() % 3 == 0 {
+                    fast.map[i] = 1;
+                    reference.map[i] = 1;
+                }
+            }
+            fast.value = (next() % 1000) as i32;
+            reference.value = fast.value;
+            let mut bs: BitSet = [0; BITSET_REAL_SIZE];
+            for word in bs.iter_mut() {
+                *word = next() as Bits & next() as Bits;
+            }
+            add_bitset_opt_map(&mut fast, &bs, enc);
+            for i in 0..CHAR_MAP_SIZE {
+                if bitset_at(&bs, i) && reference.map[i] == 0 {
+                    reference.map[i] = 1;
+                    reference.value += map_position_value(enc, i);
+                }
+            }
+            assert_eq!(fast.map, reference.map, "round {round}");
+            assert_eq!(fast.value, reference.value, "round {round}");
         }
     }
 }
