@@ -610,6 +610,8 @@ pub(crate) struct GuardSkipGate {
     /// Relative address, from this guard, of the first non-guard instruction
     /// the skip path reaches.
     pub(crate) addr: RelAddrType,
+    /// The number of guards the gate covers, this one included.
+    pub(crate) links: u32,
 }
 
 // === Callout constants ===

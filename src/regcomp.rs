@@ -11035,7 +11035,8 @@ thread_local! {
 /// into it walked that whole chain.
 ///
 /// Each guard of a chain gets a `GuardSkipGate` over the guards from it on
-/// (see `GuardSkipGate`). The gate's jump is what the walk would do: a
+/// (see `GuardSkipGate`), and a gate is attached to the guards of chains of at
+/// least `MIN_GATED_LINKS` guards. The gate's jump is what the walk would do: a
 /// guard whose byte is outside the gate's set misses, and the walk counts
 /// each skip before the instruction at the end of the chain runs. The VM
 /// takes the gate only where that count cannot reach a retry limit (see
@@ -11075,7 +11076,7 @@ fn attach_guard_skip_gates(reg: &mut RegexType) {
     };
     // The skip path from the link at `pc`, as far as it is composed: its
     // gate if it has one, else the link alone.
-    let skip_path = |reg: &RegexType, pc: usize| -> Option<(BitSet, u32, usize)> {
+    let skip_path = |reg: &RegexType, pc: usize| -> Option<(BitSet, u32, usize, u32)> {
         let (skip_gate, addr) = match &reg.ops[pc].payload {
             OperationPayload::PushOrJumpExact1 {
                 skip_gate, addr, ..
@@ -11090,10 +11091,11 @@ fn attach_guard_skip_gates(reg: &mut RegexType) {
                 gate.bsp,
                 gate.skipped_retries,
                 (pc as i64 + i64::from(gate.addr)) as usize,
+                gate.links,
             ));
         }
         let (bits, retries, _) = link(&reg.ops[pc])?;
-        Some((bits, retries, (pc as i64 + i64::from(addr)) as usize))
+        Some((bits, retries, (pc as i64 + i64::from(addr)) as usize, 1))
     };
     // Filled from the end, since a chain runs forward: each link's gate
     // extends the gate of the link its push and skip both lead to.
@@ -11106,7 +11108,7 @@ fn attach_guard_skip_gates(reg: &mut RegexType) {
         if succ >= reg.ops.len() || link(&reg.ops[succ]).is_none() {
             continue;
         }
-        let Some((next_bits, next_retries, target)) = skip_path(reg, succ) else {
+        let Some((next_bits, next_retries, target, next_links)) = skip_path(reg, succ) else {
             continue;
         };
         let Some(total) = next_retries.checked_add(retries) else {
@@ -11123,6 +11125,7 @@ fn attach_guard_skip_gates(reg: &mut RegexType) {
             bsp: union,
             skipped_retries: total,
             addr: (target as i64 - pc as i64) as RelAddrType,
+            links: next_links + 1,
         });
         if let OperationPayload::PushOrJumpExact1 { skip_gate, .. }
         | OperationPayload::PushOrJumpByteSet { skip_gate, .. } = &mut reg.ops[pc].payload
@@ -11130,7 +11133,40 @@ fn attach_guard_skip_gates(reg: &mut RegexType) {
             *skip_gate = Some(index);
         }
     }
+    // Rust-only (ADR-008): a gate saves dispatches only on a long chain. On a
+    // short one its check costs about what the walk saves, so the guards keep
+    // the walk. Composition above used every gate; only the attached ones
+    // remain, and the table keeps just those.
+    let keep: Vec<bool> = reg
+        .skip_gates
+        .iter()
+        .map(|gate| gate.links >= MIN_GATED_LINKS)
+        .collect();
+    let mut remap = vec![0u32; keep.len()];
+    let mut kept = 0u32;
+    for (slot, &keep) in remap.iter_mut().zip(&keep) {
+        if keep {
+            *slot = kept;
+            kept += 1;
+        }
+    }
+    let mut flags = keep.iter();
+    reg.skip_gates.retain(|_| *flags.next().unwrap_or(&false));
+    for op in &mut reg.ops {
+        if let OperationPayload::PushOrJumpExact1 { skip_gate, .. }
+        | OperationPayload::PushOrJumpByteSet { skip_gate, .. } = &mut op.payload
+        {
+            if let Some(index) = *skip_gate {
+                *skip_gate = keep[index as usize].then(|| remap[index as usize]);
+            }
+        }
+    }
 }
+
+/// Rust-only (ADR-008): the fewest guards a skip gate covers. The gate is
+/// built for every chain (composition needs it), and attached only to
+/// chains of at least this many guards.
+const MIN_GATED_LINKS: u32 = 8;
 
 /// Detect if a compiled regex is eligible for Aho-Corasick fast path.
 /// Returns `(trie_idx, has_capture)` if eligible.
