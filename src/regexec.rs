@@ -8195,17 +8195,23 @@ fn onig_search_inner_two_pass(
     // there, the common case of a scanner search, needs no second pass.
     // Later attempts run untracked.
     msa.capture_position = Some(start);
-    let match_start = capture_map_search(
-        reg,
-        str_data,
-        end,
-        start,
-        range,
-        right_range,
-        start_filter,
-        msa,
-    )
-    .unwrap_or_else(|| {
+    // Rust-only (ADR-008): the map search's own first checks, read here so
+    // that a pattern they reject does not pay for the call.
+    let mapped = if capture_map_may_apply(reg) {
+        capture_map_search(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            start_filter,
+            msa,
+        )
+    } else {
+        None
+    };
+    let match_start = mapped.unwrap_or_else(|| {
         onig_search_inner_core_with_right_range(
             reg,
             str_data,
@@ -8269,6 +8275,21 @@ fn capture_map_scans_enabled() -> bool {
     {
         true
     }
+}
+
+/// Rust-only (ADR-008): necessary conditions of `capture_map_search`, the
+/// fields it tests first and that do not change during a search. A pattern
+/// that fails one of them is searched by the core loop as before.
+#[inline(always)]
+fn capture_map_may_apply(reg: &RegexType) -> bool {
+    reg.optimize == OptimizeType::Map
+        && reg.anchor == 0
+        && reg.sub_anchor == 0
+        && reg.dist_min == 0
+        && reg.dist_max == 0
+        && reg.ac_alt.is_none()
+        && !reg.needs_capture_tracking
+        && !reg.anychar_run
 }
 
 /// Continue a captured zero-distance map search on C's admitted positions.
