@@ -7,6 +7,7 @@ import { FitSection, StatusSection, SyntaxSection } from "../components/home-exa
 import { HomeNavigation } from "../components/home-navigation";
 import { HomeRunSample } from "../components/home-run-sample";
 import { ProductionSummary } from "../components/production-summary";
+import { RegexFeatureMatrix } from "../components/regex-feature-matrix";
 import {
   ClosingSection,
   CoverageSection,
@@ -112,6 +113,7 @@ function PerformanceSection() {
         </>
       }
     >
+      <RegexFeatureMatrix />
       <ProductionSummary />
       <p>
         <Link to="/perf/regex-workloads">

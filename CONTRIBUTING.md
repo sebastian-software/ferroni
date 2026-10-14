@@ -241,6 +241,18 @@ The agreed 20-format selection for the next Ferriki highlighting corpus is
 recorded in [`benches/highlighting_corpus.md`](benches/highlighting_corpus.md),
 including its rationale and fixture requirements.
 
+The website's compact feature matrix is checked separately with untimed syntax
+examples. These are capability checks, not production benchmark cases or speed
+measurements. With the pinned C sources prepared, verify every advertised cell:
+
+```sh
+cargo test --locked --features ffi,onigmo --test regex_feature_matrix
+```
+
+The matrix covers the illustrated native syntax, not all possible task-equivalent
+rewrites. An unsupported cell must fail compilation; an accepted cell must return
+the expected UTF-8 span. Execution failures cannot count as missing syntax.
+
 `battle_bench` requires a local Oniguruma source snapshot for comparison:
 
 ```bash

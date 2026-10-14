@@ -8,12 +8,12 @@ type Platform = (typeof data.platforms)[number];
 type Comparison = Platform["comparisons"][number];
 
 const comparators = [
-  ["c", "C Oniguruma"],
-  ["pcre2_jit", "PCRE2 JIT"],
-  ["pcre2", "PCRE2 interpreter"],
-  ["regex", "Rust regex"],
-  ["fancy_regex", "fancy-regex, seek off"],
-  ["onigmo", "Ruby Onigmo"],
+  ["c", "C Oniguruma", "C"],
+  ["pcre2_jit", "PCRE2 JIT", "C"],
+  ["pcre2", "PCRE2 interpreter", "C"],
+  ["regex", "Rust regex", "Rust"],
+  ["fancy_regex", "fancy-regex, seek off", "Rust"],
+  ["onigmo", "Ruby Onigmo", "C"],
 ];
 
 function comparison(profile: string, engine: string, lane = "steady"): Comparison {
@@ -54,12 +54,15 @@ function ReuseTable() {
           </tr>
         </thead>
         <tbody>
-          {comparators.map(([engine, name]) => {
+          {comparators.map(([engine, name, language]) => {
             const armPair = comparison("macos-arm64", engine);
             const x86Pair = comparison("linux-x86-64", engine);
             return (
               <tr key={engine}>
-                <th scope="row">{name}</th>
+                <th scope="row">
+                  {name}
+                  <small>{language}</small>
+                </th>
                 <td>
                   <BenchmarkFactor value={armPair.family_weighted_ratio}>
                     <small>
