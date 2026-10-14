@@ -1,34 +1,37 @@
 ---
 order: 1
-title: "Regex Workloads"
+title: "Regex Benchmarks"
 ---
 
 import { ProductionComparison } from "../../components/production-comparison";
+import { ProductionSummary } from "../../components/production-summary";
 
-# Regex Workloads
+# Regex Benchmarks
 
-The general regex comparison uses identifiable production patterns and explicit
-operation contracts. It separates basic expressions, complex expressions and
-advanced Oniguruma features. TextMate Scanner replays and Ferriki's complete
-highlighting have separate workload boundaries.
+How quickly can each engine validate text, extract captures, replace matches or
+split graphemes? These comparisons use patterns and test inputs from real
+projects, from simple expressions to complex patterns and advanced Oniguruma
+features. Every engine has to return the required output before it is timed.
 
-The tables below use the complete Blacksmith run from October 14, 2026, on
-ARM64/macOS and x86-64/Linux. All 25 executable cases passed Ferroni's source
-oracles; comparator profiles are timed only when they reproduce the same output.
-Superseded measurement pages and artifacts remain in the repository's Git history.
+The results come from repeated Blacksmith measurements on ARM64/macOS and
+x86-64/Linux. They measure isolated regex steps. Complete applications,
+TextMate Scanner calls and Ferriki highlighting have separate boundaries.
 
-## Current measurements
+## Results at a glance
 
-The per-case tables retain the cases that favor each engine and the inconclusive
-results. Choose a platform, phase and comparator to inspect the work that matters
-to your application.
+<ProductionSummary />
+
+## Inspect individual cases
+
+Choose a platform, phase and comparator to inspect the work that matters to your
+application. **Compile** measures preparing one pattern. **Compile + first use**
+adds its first input. **Steady reuse** applies a prepared regex to the complete
+input batch. These phases measure different amounts of work; their absolute
+times cannot be compared as though each were one search.
 
 The baseline is Ferroni's **standard public API**. Select **Ferroni error-aware
-API** to compare it directly with fallible `*_with` searches using empty search
-options. Those searches currently create fresh match workspace instead of
-reusing the standard path's cache. Both profiles compile through the same builder
-and pass the same output checks. This is an API cost comparison on an unchanged
-engine implementation.
+API** to compare the fallible `*_with` methods directly. Unsupported syntax,
+different output and inconclusive timings remain visible in the tables.
 
 <ProductionComparison />
 
@@ -109,20 +112,6 @@ of Django's email local-part expression in this profile is a dialect-option
 difference. Other configurations or task-equivalent expressions need separate,
 named profiles with the same checked output contract.
 
-## Why the earlier headline does not carry over
-
-Most general tasks in the superseded suite already materialized all matches and
-capture bounds through direct engine calls; individual search probes requested
-only a position. The new corpus uses the public `Regex` API and different
-source-backed patterns, source-test inputs, operation contracts and family
-weights. These are different workload aggregates. Comparing their headlines
-cannot establish an engine regression or an improvement.
-
-An initial run of this corpus used only the error-aware Ferroni methods. The
-published run distinguishes both public API profiles on the same runners.
-Selecting an API profile is part of the comparison contract, alongside the
-pattern, output and input mix.
-
 ## Measurement and interpretation
 
 Compile, compile-plus-first-use and steady reuse are separate lanes. First use
@@ -147,5 +136,5 @@ family, then the geometric mean across families. It describes this selected
 corpus rather than a production traffic mix.
 
 The [corpus guide](https://github.com/sebastian-software/ferroni/blob/main/benches/regex_corpus.md)
-contains runnable commands, the earlier patterns' dispositions, measured
+contains runnable commands, case selection, measured
 boundaries, current coverage limits and the requirements for adding cases.

@@ -82,7 +82,7 @@ ADR-005 defines the idiomatic Rust API layer (`Regex`, `RegexBuilder`, `Match`, 
 ## Rationale
 
 - **Drop-in compatibility**: Shiki and other tools can switch from vscode-oniguruma (WASM) to Ferroni (native) with minimal API translation.
-- **Performance**: Native execution avoids WASM overhead. Combined with RegSet optimizations (first-byte dispatch, skip needle — see ADR-007), the Scanner achieves 4-6x match speedup and 215x compilation speedup compared to the WASM path.
+- **Execution**: The Scanner runs natively and uses RegSet's first-byte dispatch and skip needle (see ADR-007). Scanner comparisons need complete captured call sequences and their own operation boundaries; general regex measurements do not establish highlighting performance.
 - **Zero internal disruption**: The Scanner is purely additive — no C-ported control flow or function signature is modified; only the RegSet entry's ownership of its regex changed (`Arc` for `Box`) to let scanners share compiled patterns. The full 1,695-test C-parity suite passes unchanged.
 - **Cold start**: Sharing compiled patterns takes 80–90% out of constructing a grammar's scanners and leaves the search path as it was. It is an opt-in next to the vscode-oniguruma-shaped constructors, so that those keep their behavior and the caller decides how long compiled patterns live.
 

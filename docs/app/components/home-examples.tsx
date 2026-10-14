@@ -16,19 +16,10 @@ export function FitSection() {
       <Principles
         items={[
           {
-            heading: "Run TextMate grammars",
-            text: (
-              <>
-                Build editors and highlighters with the multi-pattern Scanner and UTF-16 offsets.{" "}
-                <a href="#fr-scanner">See how scanning works</a>.
-              </>
-            ),
-          },
-          {
             heading: "Use richer regex syntax",
             text: (
               <>
-                Use look-around, backreferences, conditionals and subexpression calls.{" "}
+                Use lookaround, backreferences, conditionals and subexpression calls.{" "}
                 <a href="#fr-syntax">Explore matching examples</a>.
               </>
             ),
@@ -37,8 +28,17 @@ export function FitSection() {
             heading: "Replace C Oniguruma",
             text: (
               <>
-                Keep UTF-8 pattern behavior while removing the C toolchain from your build.{" "}
-                <Link to="/guide/compatibility">Check compatibility and scope</Link>.
+                Keep compatible ASCII and UTF-8 patterns while removing the C toolchain from your
+                build. <Link to="/guide/compatibility">Check compatibility and scope</Link>.
+              </>
+            ),
+          },
+          {
+            heading: "Run TextMate grammars",
+            text: (
+              <>
+                Build editors and highlighters with the multi-pattern Scanner and UTF-16 offsets.{" "}
+                <a href="#fr-scanner">See how scanning works</a>.
               </>
             ),
           },

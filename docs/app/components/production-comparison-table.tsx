@@ -1,3 +1,4 @@
+import { BenchmarkFactor } from "./benchmark-factor";
 import {
   type CaseEntry,
   type Comparison,
@@ -90,17 +91,22 @@ function WorkloadHeading({ entry }: { entry: CaseEntry }) {
 }
 
 function RatioCell({ pair }: { pair: Pair | undefined }) {
+  const direction =
+    pair?.conclusion === "Ferroni faster in every run interval"
+      ? "faster"
+      : pair?.conclusion === "comparator faster in every run interval"
+        ? "slower"
+        : "inconclusive";
   return (
     <td className="production-number">
       {pair === undefined ? (
         "—"
       ) : (
-        <>
-          <strong>{ratio(pair.ratio_median)}</strong>
+        <BenchmarkFactor value={pair.ratio_median} direction={direction}>
           <small>
             Runs: {ratio(pair.ratio_range[0])}–{ratio(pair.ratio_range[1])}
           </small>
-        </>
+        </BenchmarkFactor>
       )}
     </td>
   );
@@ -181,7 +187,7 @@ export function CaseTable({ platform, comparison, lane, engine, id }: TableProps
                 {engineNames[engine]}
               </th>
               <th scope="col" className="production-number">
-                Ratio
+                Ferroni relative throughput
               </th>
               <th scope="col">Interpretation and scope</th>
             </tr>

@@ -1,7 +1,7 @@
 const destinations = [
   ["Examples", "fr-run"],
-  ["Scanner", "fr-scanner"],
   ["Performance", "fr-evidence"],
+  ["Scanner", "fr-scanner"],
   ["Safety", "fr-safety"],
   ["Compatibility", "fr-proof"],
   ["Project status", "project-status"],

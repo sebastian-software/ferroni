@@ -1,0 +1,91 @@
+.production-summary {
+  font-variant-numeric: tabular-nums;
+}
+
+.production-summary p {
+  max-width: 76ch;
+  margin-block: 0 1rem;
+}
+
+.production-summary p:last-child {
+  margin-bottom: 0;
+}
+
+.production-summary-scroll {
+  overflow-x: auto;
+  margin-block: 1.5rem;
+}
+
+.production-summary-scroll:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
+
+.production-summary-scroll table {
+  display: table;
+  overflow: visible;
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.production-summary-scroll caption {
+  text-align: left;
+  font-weight: 700;
+  padding-block: 0.75rem;
+}
+
+.production-summary-scroll th,
+.production-summary-scroll td {
+  padding: 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid currentColor;
+}
+
+.production-summary-scroll td,
+.production-summary-scroll th[scope="col"]:not(:first-child) {
+  text-align: right;
+}
+
+.production-summary-scroll th:first-child {
+  width: 40%;
+}
+
+.production-summary-scroll th[scope="row"] {
+  font-weight: 500;
+}
+
+.production-summary-scroll td strong {
+  font-size: 1.125rem;
+}
+
+.production-summary-scroll small {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  margin-top: 0.25rem;
+}
+
+.production-summary-note {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 42rem) {
+  .production-summary-scroll th,
+  .production-summary-scroll td {
+    padding-inline: 0.4rem;
+    font-size: 0.875rem;
+  }
+
+  .production-summary-scroll thead th,
+  .production-summary-scroll small {
+    font-size: 0.75rem;
+  }
+
+  .production-summary-scroll td strong {
+    font-size: 1rem;
+  }
+}
