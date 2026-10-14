@@ -18,6 +18,16 @@ export const laneNames: Record<string, string> = {
   compile: "Compile · one pattern",
   first_use: "Compile + first use · first fixture",
 };
+export const engineLanguages: Record<string, string> = {
+  rust_erroraware: "Rust",
+  c: "C",
+  onigmo: "C",
+  pcre2_jit: "C",
+  pcre2: "C",
+  fancy_regex: "Rust",
+  fancy_regex_seek: "Rust",
+  regex: "Rust",
+};
 export const operationNames: Record<string, string | undefined> = {
   is_match: "Boolean match",
   find: "First match span",

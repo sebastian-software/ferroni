@@ -20,6 +20,13 @@ Use it when your patterns need lookaround, backreferences or subexpression
 calls, or to replace C Oniguruma in a Rust application. The
 TextMate Scanner API is also available for grammar consumers such as Ferriki.
 
+Ferroni includes Oniguruma's absent repeaters and recursion-level backreferences,
+alongside Unicode grapheme matching with `\X`. PCRE2 also supports lookaround,
+backreferences and recursion, but uses C and a different regex dialect. Choose
+Ferroni when your application needs Oniguruma pattern behavior with a Rust-only
+build. The [feature matrix](https://ferroni.dev/perf/regex-workloads) compares
+selected syntax across the measured library configurations.
+
 **[Explore Ferroni →](https://ferroni.dev)** — matching examples, compatibility
 evidence, benchmarks from real projects and a separate TextMate Scanner walkthrough.
 

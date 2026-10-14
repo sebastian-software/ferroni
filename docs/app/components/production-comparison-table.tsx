@@ -3,6 +3,7 @@ import {
   type CaseEntry,
   type Comparison,
   data,
+  engineLanguages,
   engineNames,
   type Estimate,
   interpretation,
@@ -160,6 +161,28 @@ type TableProps = {
   id: string;
 };
 
+function TableHeading({ engine }: { engine: string }) {
+  return (
+    <thead>
+      <tr>
+        <th scope="col">Workload</th>
+        <th scope="col" className="production-number">
+          Ferroni standard API
+          <small>Rust</small>
+        </th>
+        <th scope="col" className="production-number">
+          {engineNames[engine]}
+          <small>{engineLanguages[engine]}</small>
+        </th>
+        <th scope="col" className="production-number">
+          Ferroni relative throughput
+        </th>
+        <th scope="col">Interpretation and scope</th>
+      </tr>
+    </thead>
+  );
+}
+
 export function CaseTable({ platform, comparison, lane, engine, id }: TableProps) {
   return (
     <>
@@ -177,21 +200,7 @@ export function CaseTable({ platform, comparison, lane, engine, id }: TableProps
           <caption>
             {platform.profile} · {laneNames[lane]} · Ferroni standard API and {engineNames[engine]}
           </caption>
-          <thead>
-            <tr>
-              <th scope="col">Workload</th>
-              <th scope="col" className="production-number">
-                Ferroni standard API
-              </th>
-              <th scope="col" className="production-number">
-                {engineNames[engine]}
-              </th>
-              <th scope="col" className="production-number">
-                Ferroni relative throughput
-              </th>
-              <th scope="col">Interpretation and scope</th>
-            </tr>
-          </thead>
+          <TableHeading engine={engine} />
           <tbody>
             {data.cases.map((entry) => (
               <WorkloadRow

@@ -1,0 +1,141 @@
+{
+  "engines": [
+    {
+      "id": "rust",
+      "label": "Ferroni",
+      "language": "Rust"
+    },
+    {
+      "id": "c",
+      "label": "Oniguruma",
+      "language": "C"
+    },
+    {
+      "id": "onigmo",
+      "label": "Ruby Onigmo",
+      "language": "C"
+    },
+    {
+      "id": "pcre2",
+      "label": "PCRE2",
+      "language": "C"
+    },
+    {
+      "id": "fancy_regex",
+      "label": "fancy-regex",
+      "language": "Rust"
+    },
+    {
+      "id": "regex",
+      "label": "Rust regex",
+      "language": "Rust"
+    }
+  ],
+  "features": [
+    {
+      "id": "unicode_properties",
+      "label": "Unicode character properties",
+      "pattern": "\\p{Greek}+",
+      "input": "κόσμος",
+      "span": [0, 12],
+      "support": {
+        "rust": true,
+        "c": true,
+        "onigmo": true,
+        "pcre2": true,
+        "fancy_regex": true,
+        "regex": true
+      }
+    },
+    {
+      "id": "lookaround",
+      "label": "Lookahead and lookbehind",
+      "pattern": "(?<=Date: )\\d{4}",
+      "input": "Date: 2026",
+      "span": [6, 10],
+      "support": {
+        "rust": true,
+        "c": true,
+        "onigmo": true,
+        "pcre2": true,
+        "fancy_regex": true,
+        "regex": false
+      }
+    },
+    {
+      "id": "backreference",
+      "label": "Backreferences",
+      "pattern": "\\b(\\w+)\\s+\\1\\b",
+      "input": "the the",
+      "span": [0, 7],
+      "support": {
+        "rust": true,
+        "c": true,
+        "onigmo": true,
+        "pcre2": true,
+        "fancy_regex": true,
+        "regex": false
+      }
+    },
+    {
+      "id": "subexpression",
+      "label": "Recursive subexpression calls",
+      "pattern": "\\A(?<p>\\((?:[^()]|\\g<p>)*\\))\\z",
+      "input": "(a(b)c)",
+      "span": [0, 7],
+      "support": {
+        "rust": true,
+        "c": true,
+        "onigmo": true,
+        "pcre2": true,
+        "fancy_regex": true,
+        "regex": false
+      }
+    },
+    {
+      "id": "grapheme",
+      "label": "Grapheme clusters · \\X",
+      "pattern": "\\X",
+      "input": "é",
+      "span": [0, 3],
+      "support": {
+        "rust": true,
+        "c": true,
+        "onigmo": true,
+        "pcre2": true,
+        "fancy_regex": false,
+        "regex": false
+      }
+    },
+    {
+      "id": "absent",
+      "label": "Absent repeater · (?~...)",
+      "pattern": "(?~ab)",
+      "input": "ccc",
+      "span": [0, 3],
+      "support": {
+        "rust": true,
+        "c": true,
+        "onigmo": true,
+        "pcre2": false,
+        "fancy_regex": true,
+        "regex": false
+      }
+    },
+    {
+      "id": "level_backreference",
+      "label": "Oniguruma recursion-level backreferences",
+      "pattern": "\\A(?<a>|.|(?:(?<b>.)\\g<a>\\k<b+0>))\\z",
+      "input": "reer",
+      "span": [0, 4],
+      "support": {
+        "rust": true,
+        "c": true,
+        "onigmo": true,
+        "pcre2": false,
+        "fancy_regex": false,
+        "regex": false
+      }
+    }
+  ]
+}

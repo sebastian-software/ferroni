@@ -1,0 +1,53 @@
+.regex-feature-matrix {
+  margin-block: 2rem 3rem;
+}
+
+.regex-feature-matrix h3 {
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+}
+
+.regex-feature-matrix p {
+  max-width: 76ch;
+  margin-block: 1rem;
+}
+
+.regex-feature-matrix .fam-compare {
+  margin-top: 1.5rem;
+}
+
+.regex-feature-matrix .fam-compare-table {
+  display: table;
+  overflow: visible;
+  min-width: 40rem;
+  table-layout: fixed;
+}
+
+.regex-feature-matrix .fam-compare-table th:first-child {
+  width: 28%;
+  min-width: 0;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.regex-feature-matrix .fam-compare-table th,
+.regex-feature-matrix .fam-compare-table td {
+  padding-inline: 0.4rem;
+}
+
+.regex-feature-matrix .fam-compare-table thead th {
+  font-size: 0.75rem;
+}
+
+.regex-feature-matrix thead th small {
+  display: block;
+  font-weight: 400;
+  margin-top: 0.25rem;
+}
+
+.regex-feature-note {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}

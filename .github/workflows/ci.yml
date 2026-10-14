@@ -188,6 +188,8 @@ jobs:
       # command line: command-line flags outrank the manifest, so a lint denied
       # here would silently override the table.
       - run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Verify public regex feature matrix
+        run: cargo test --all-features --locked --test regex_feature_matrix
       # Without the default `dfa-prefilter` feature the scanner runs the
       # position-lead search alone; its cfg-gated code has to stay clean too.
       - run: cargo clippy --all-targets --no-default-features --locked -- -D warnings
