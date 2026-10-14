@@ -133,6 +133,31 @@ thread_local! {
     pub(crate) static SCAN_STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Bytes the meta regex searches read on this thread.
     pub(crate) static META_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// The overlapping DFA's cache capacity for the automata built on this
+    /// thread, when a test sets one (`overlapping_config`).
+    pub(crate) static OVERLAPPING_CACHE_BYTES: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The configuration of the overlapping DFA. A test sets a cache capacity
+/// for its thread (`OVERLAPPING_CACHE_BYTES`): the lazy DFA then clears its
+/// cache as often as a walk needs, without the give-up that would retire the
+/// pre-filter before the walk reached the case under test.
+fn overlapping_config() -> hybrid::Config {
+    let config = hybrid::Config::new()
+        .match_kind(MatchKind::All)
+        .skip_cache_capacity_check(true);
+    #[cfg(test)]
+    if let Some(bytes) = OVERLAPPING_CACHE_BYTES.with(|bytes| bytes.get()) {
+        return config
+            .cache_capacity(bytes)
+            .minimum_cache_clear_count(None)
+            .minimum_bytes_per_state(None);
+    }
+    config
+        .cache_capacity(OVERLAPPING_CACHE_CAPACITY)
+        .minimum_cache_clear_count(Some(MIN_CACHE_CLEARS))
+        .minimum_bytes_per_state(Some(MIN_BYTES_PER_STATE))
 }
 
 /// The seek approximation of one compiled pattern. A scanner passes it to
@@ -1365,14 +1390,7 @@ impl Automata {
         }
         // The seeks use ASCII look-arounds only, so the DFA never quits.
         let dfa = hybrid::Builder::new()
-            .configure(
-                hybrid::Config::new()
-                    .match_kind(MatchKind::All)
-                    .cache_capacity(OVERLAPPING_CACHE_CAPACITY)
-                    .skip_cache_capacity_check(true)
-                    .minimum_cache_clear_count(Some(MIN_CACHE_CLEARS))
-                    .minimum_bytes_per_state(Some(MIN_BYTES_PER_STATE)),
-            )
+            .configure(overlapping_config())
             .build_from_nfa(nfa)
             .ok()?;
         // Only match starts are asked of the meta regex; with
@@ -2402,5 +2420,48 @@ mod tests {
         );
         let stats = little.prefilter_stats();
         assert!(stats.built && stats.covered == 2 && stats.nfa_states < MAX_NFA_STATES);
+    }
+
+    /// Sets the overlapping DFA's cache capacity on this thread while it
+    /// lives: the automata the thread builds then clear that cache as often
+    /// as the capacity needs (`overlapping_config`).
+    struct OverlappingCacheBytes;
+
+    impl OverlappingCacheBytes {
+        fn set(bytes: usize) -> Self {
+            OVERLAPPING_CACHE_BYTES.with(|cell| cell.set(Some(bytes)));
+            Self
+        }
+    }
+
+    impl Drop for OverlappingCacheBytes {
+        fn drop(&mut self) {
+            OVERLAPPING_CACHE_BYTES.with(|cell| cell.set(None));
+        }
+    }
+
+    /// A walk that clears the overlapping DFA's cache can reach a match
+    /// state that takes the ID of the match state it recorded before the
+    /// clear. Keyed by the ID alone, the walk took that state as already
+    /// recorded and dropped its patterns: here the `zz` at 4 was lost to
+    /// two `z` candidates, where the scanner without the pre-filter answers
+    /// `zz`. The 2 KiB cache is cleared twice by the search of this subject,
+    /// and the give-up, which would retire the pre-filter first, is off.
+    #[test]
+    fn a_walk_that_clears_the_cache_keeps_the_state_it_reaches() {
+        let _limits = crate::regexec::shared_limits();
+        let patterns = ["zz", "z", r"z\w*", "q:"];
+        let _cache = OverlappingCacheBytes::set(2048);
+        let mut filtered =
+            Scanner::with_config(&patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
+        let mut plain =
+            Scanner::with_config(&patterns, &ScannerConfig::default().prefilter(false)).unwrap();
+        let line = crate::scanner::OnigString::new("zqzzzz(");
+        let want = tokenize(&mut plain, &line);
+        let got = tokenize(&mut filtered, &line);
+        let stats = filtered.prefilter_stats();
+        assert!(stats.built && stats.cache_clears > 0, "{stats:?}");
+        assert_eq!(want, [(1, 0, 1), (0, 2, 4), (0, 4, 6)]);
+        assert_eq!(got, want);
     }
 }
