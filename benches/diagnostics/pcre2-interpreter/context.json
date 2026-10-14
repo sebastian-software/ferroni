@@ -1,5 +1,5 @@
 {
-  "kind": "local diagnostic; candidate rejected for general use",
+  "kind": "local diagnostic; guarded runtime implementation with a measured tradeoff",
   "base_commit": "cf95a8fafe7cba0ae1297d7e456efab19404c56b",
   "platform": "macOS-27.0.1-arm64-arm-64bit",
   "cpu": "Apple M1 Ultra",
@@ -57,5 +57,6 @@
     ],
     "context": "pattern and match data reused; Rust &str inputs are already valid UTF-8"
   },
-  "correctness": "Source oracle preflight passes both Ferroni API paths (25 eligible production/probe cases, 2 pending) and both tokenizers; the short subset passes Ferroni before/after and PCRE2. Candidate cargo test --release --all-features, focused retry/capture/Unicode differential regression, and clippy pass with the retained deterministic deadline fixture fix."
+  "correctness": "Source oracle preflight passes both Ferroni API paths (25 eligible production/probe cases, 2 pending) and both tokenizers; the short subset passes Ferroni before/after and PCRE2. Candidate cargo test --release --all-features, focused retry/capture/Unicode differential regression, and clippy pass with the retained deterministic deadline fixture fix.",
+  "implemented_regexec_sha256": "1e67badb9138d408b009b0303651eccd5b362c9282a58d4e80ed6f9909af9acc"
 }

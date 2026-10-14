@@ -122,13 +122,30 @@ def verify_method(retained):
         require(before[name] == after[name], f"The measured interpretation function {name} changed")
 
 
-def verify(directory, receipt, profile, catalog_path=None, engines=BASE_ENGINES, current_lock=False):
+def verify_source_snapshot(path, checksum, current_source=True):
+    """Retained results describe their hashed snapshot, even after engine updates.
+
+    Publishing a new run still requires byte-for-byte current implementation
+    equality. Checking existing tables verifies the measured snapshot instead.
+    """
+    require(sha256(path) == checksum, "Checksum mismatch: source-snapshot.tar.gz")
+    with tarfile.open(path) as archive:
+        sources = [member for member in archive.getmembers()
+                   if member.isfile() and member.name.startswith("src/")]
+        require(sources, "The measured implementation snapshot is missing")
+        if current_source:
+            for member in sources:
+                require(archive.extractfile(member).read() == (ROOT / member.name).read_bytes(),
+                        "The retained Ferroni implementation differs from the current source")
+
+
+def verify(directory, receipt, profile, catalog_path=None, engines=BASE_ENGINES, current_lock=False, current_source=True):
     catalog_path = catalog_path or ROOT / "benches/production_regex/catalog.json"
     context, catalog = read(directory / "context.json"), read(directory / "catalog.json")
     verify_context(context, catalog, receipt, profile, engines)
     require(catalog == read(catalog_path), "The retained corpus differs from the current corpus")
-    for filename, key in (("Cargo.lock", "cargo_lock_sha256"), ("source-snapshot.tar.gz", "source_snapshot_sha256")):
-        require(sha256(directory / filename) == context[key], f"Checksum mismatch: {filename}")
+    require(sha256(directory / "Cargo.lock") == context["cargo_lock_sha256"], "Checksum mismatch: Cargo.lock")
+    verify_source_snapshot(directory / "source-snapshot.tar.gz", context["source_snapshot_sha256"], current_source)
     require(sha256(catalog_path) == context["corpus_sha256"], "Corpus checksum mismatch")
     if current_lock:
         require(sha256(ROOT / "Cargo.lock") == context["cargo_lock_sha256"], "The retained dependency lock differs from the current lock")
@@ -137,9 +154,6 @@ def verify(directory, receipt, profile, catalog_path=None, engines=BASE_ENGINES,
     require((directory / "engine-inputs.toml").read_bytes() == (ROOT / "benches/battle_inputs.toml").read_bytes(), "Native engine pins differ from the current pins")
     with tarfile.open(directory / "source-snapshot.tar.gz") as archive:
         verify_method(archive.extractfile("scripts/compare-production.py").read().decode())
-        for member in archive.getmembers():
-            if member.isfile() and member.name.startswith("src/"):
-                require(archive.extractfile(member).read() == (ROOT / member.name).read_bytes(), "The retained Ferroni implementation differs from the current source")
         pins = (directory / "engine-inputs.toml").read_text()
         for name, cache in (("oniguruma", "oniguruma-orig"), ("onigmo", "onigmo-ruby")):
             section = re.search(rf"\[{name}\]\n(.*?)(?=\n\[|\Z)", pins, re.S)[1]
@@ -199,8 +213,9 @@ def validate_receipt(receipt):
 
 
 def document(data):
-    lines = ["# Current source-backed regex results", "",
+    lines = ["# Published source-backed regex results", "",
              f"Measured revision: `{data['run']['head_sha']}`. [Blacksmith run]({data['run']['html_url']}).", "",
+             "These timings describe that measured revision. Later engine changes are not included.", "",
              "The complete evidence for each platform is retained in `evidence.tar.gz`, including raw Criterion samples, logs, corpus, dependency lock, native source snapshots and execution order.", "",
              "The Ferroni baseline (`rust`) uses standard public Regex methods. `rust_erroraware` uses fallible *_with searches/iteration with SearchOptions::new(); both profiles use standard replacement because no fallible replacement API is available. Standard searches can reuse cached match workspace; parameterized searches currently create fresh workspace. Both profiles pass the source oracles, with fallible preflight checks also guarding the baseline.", "",
              "Ratios are comparator / Ferroni standard API: above 1 favors the standard API. Each row is a separate comparison over its listed common production cases. Families have equal weight. Controlled literal probes are excluded from these aggregates and remain in the per-case data. Rows with different case pools do not form a leaderboard.", "",
@@ -217,13 +232,13 @@ def document(data):
     return "\n".join(lines)
 
 
-def generate(directories, receipt, catalog_path=None, engines=None, current_lock=False):
+def generate(directories, receipt, catalog_path=None, engines=None, current_lock=False, current_source=True):
     catalog_path = catalog_path or ROOT / "benches/production_regex/catalog.json"
     if engines is None:
         engines = tuple(read(directories[next(iter(PROFILES))] / "context.json")["engines"])
         require(engines in (BASE_ENGINES, comparison.ENGINES), "Publication requires every engine profile")
     validate_receipt(receipt)
-    platforms = [verify(directories[profile], receipt, profile, catalog_path, engines, current_lock) for profile in PROFILES]
+    platforms = [verify(directories[profile], receipt, profile, catalog_path, engines, current_lock, current_source) for profile in PROFILES]
     require(platforms[0]["context"]["corpus_sha256"] == platforms[1]["context"]["corpus_sha256"], "Platforms measured different corpora")
     catalog = read(catalog_path)
     cases = [{"id": case["id"], "family": case["family"], "tier": case["tier"], "operation": case["operation"],
@@ -325,7 +340,7 @@ def main():
                         require(not path.is_absolute() and ".." not in path.parts
                                 and (member.isfile() or member.isdir()), "Unsafe evidence archive member")
                     archive.extractall(directories[profile])
-            data = generate(directories, receipt)
+            data = generate(directories, receipt, current_source=False)
         require(equivalent(read(DATA), data) and equivalent(read(RESULTS / "publication.json"), data), "Generated public data has drifted")
         require(equivalent(read(SUMMARY), overview(data)), "Generated homepage summary has drifted")
         require((RESULTS / "README.md").read_text() == document(data), "Generated result tables have drifted")

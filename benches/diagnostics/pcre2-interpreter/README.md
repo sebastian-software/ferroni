@@ -2,9 +2,10 @@
 
 I measured a repeatable local improvement in Ferroni's isolated Django domain
 regex. Batching failed alternative guards saves 11.6% of matching time on the
-57 ordinary upstream fixtures. I rejected the candidate for general use because
-it slows down other workloads. The production implementation and published
-Blacksmith data remain unchanged.
+57 ordinary upstream fixtures. The implementation is now enabled in the VM.
+I accept the measured tradeoff: 2.1% more time for the URL batch and 5.8% more
+for o200k. Published Blacksmith data still describe their recorded revision;
+these local measurements are not substituted into those tables.
 
 The measured baseline is commit `cf95a8f`, recorded in [context.json](context.json).
 Later changes on Main are outside this experiment.
@@ -23,7 +24,7 @@ one cause, or that removing Ferroni's case-fold alternatives would preserve its
 semantics. See the [pinned PCRE2 10.46 interpreter](https://github.com/PCRE2Project/pcre2/blob/pcre2-10.46/src/pcre2_match.c)
 and [PCRE2's performance documentation](https://www.pcre.org/current/doc/html/pcre2perform.html).
 
-The experimental patch preserves the original bytecode and tests. It batches
+The guarded implementation preserves the original bytecode and tests. It batches
 at most 1,024 failed forward guards without changing input or stack state. It
 retains the existing rules for check-dependent retry counts and falls back at
 retry-limit boundaries and with time limits. A differential regression covers
@@ -67,7 +68,7 @@ close that gap. See [short-comparison.json](short-comparison.json).
 
 Later screening experiments with dispatch tables, eligibility metadata, and
 separate VM instantiations did not establish an improvement without losses in
-the controls. I have not promoted any of them into the runtime. The next useful
+the controls. Only the measured guard-batching implementation is enabled. The next useful
 investigation is how to reject impossible case-fold alternatives earlier while
 keeping the full Unicode behavior and the ordinary VM inexpensive.
 
@@ -94,12 +95,14 @@ keeping the full Unicode behavior and the ordinary VM inexpensive.
 estimates, process logs, oracle validation, CPU profiles with symbol sidecars,
 short-subset harness and catalog, and diagnostic scripts.
 
-[candidate.patch](candidate.patch) contains the measured, rejected candidate.
+[candidate.patch](candidate.patch) records the measured guard-batching change,
+now applied to `src/regexec.rs` with standard formatting.
 [deadline-fixture.patch](deadline-fixture.patch) fixes a release-mode test race
 that I also reproduced on unchanged Main: setting an expired deadline to
 `Instant::now()` can still equal the next clock read. A deadline one second in
-the past makes the test's intended state deterministic. Both patches are kept
-as artifacts; neither is applied to the production source in this branch.
+the past makes the test's intended state deterministic. That fixture fix is
+also applied. The retained patches and raw measurements preserve the original
+experiment for independent reproduction.
 
 ## Isolated measurements and profiles
 

@@ -100,6 +100,12 @@ are inconclusive; this conservative screening rule is not a cross-process
 statistical significance test. Review host load, power and thermal conditions
 and raw evidence before publication.
 
+Published results name the measured commit. Their checks verify the retained
+source snapshot, raw samples, and generated tables after later engine changes;
+they do not certify the current revision's speed. Publishing a new run still
+requires its library source to match the current tree. Local improvements
+require new runner measurements before they change public Blacksmith numbers.
+
 ## Consequences
 
 - New general-purpose claims require revised contracts and retained repeated-run

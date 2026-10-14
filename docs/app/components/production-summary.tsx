@@ -139,10 +139,14 @@ function RunNote() {
   });
   return (
     <p className="production-summary-note">
-      <a href={data.run.html_url}>Blacksmith run: {date}</a>. {data.case_count} source-backed regex
-      tasks, {data.input_count} test inputs, {data.platforms[0].repetitions} process repetitions on
-      one VM per platform. Only engines that return the required output are timed. Scanner calls,
-      full highlighting and memory usage are outside this measurement.
+      <a href={data.run.html_url}>Blacksmith run: {date}</a>, measured at{" "}
+      <a href={`https://github.com/sebastian-software/ferroni/commit/${data.run.head_sha}`}>
+        {data.run.head_sha.slice(0, 7)}
+      </a>
+      . Later engine changes are outside these results. {data.case_count} source-backed regex tasks,{" "}
+      {data.input_count} test inputs, {data.platforms[0].repetitions} process repetitions on one VM
+      per platform. Only engines that return the required output are timed. Scanner calls, full
+      highlighting and memory usage are outside this measurement.
     </p>
   );
 }

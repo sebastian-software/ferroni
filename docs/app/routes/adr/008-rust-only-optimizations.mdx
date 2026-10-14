@@ -204,6 +204,14 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Impact**: warm TypeScript line -57%, TypeScript document -44%, Rust document -37%, CSS document -33%, CSS grammar compile -25%, TypeScript compile -15% (wall clock).
 - **Detailed analysis**: [`/perf/performance-structure-analysis#second-pass`](https://github.com/sebastian-software/ferroni/blob/88b27c12ddaad6f8f411766f6cb39f84fa393d86/docs/app/routes/perf/performance-structure-analysis.mdx#second-pass)
 
+#### Failed forward guard batching (`src/regexec.rs`)
+
+- **Trigger**: a failed `PushOrJumpExact1` or `PushOrJumpByteSet` jumps to another failed forward guard, at an ASCII byte or the end of the matching range.
+- **Execution**: a bounded helper executes the same byte tests and retry charges without returning to the VM dispatcher between alternatives. The original bytecode, input position, and stack remain unchanged. Check-dependent charges retain the existing upper-bound and exact-restart rules. A guard that reaches the retry-limit boundary stays with the original dispatcher, preserving error precedence. Time limits retain individual dispatch.
+- **Bounds**: at most 1,024 guards per helper call; no allocation, compiled metadata, dependencies, or unsafe code.
+- **Tradeoff**: local M1 Ultra measurements save 11.6% of matching time on 57 ordinary Django domain fixtures, with 2.1% more time for the Django URL batch and 5.8% more for tiktoken o200k. These costs are accepted; the local result is not a new Blacksmith measurement.
+- **Validation and measurements**: [PCRE2 interpreter investigation](https://github.com/sebastian-software/ferroni/tree/main/benches/diagnostics/pcre2-interpreter), including raw paired samples, CPU profiles, full release tests, and differential capture/Unicode/malformed-input/limit checks.
+
 #### Match bounds without a region (`src/api.rs`, `src/regexec.rs`)
 
 - **Trigger**: `Regex::find_iter`, `find_iter_bytes`, `find` and `find_bytes`, which return only match bounds, for expressions without `\K` and without FIND_LONGEST.

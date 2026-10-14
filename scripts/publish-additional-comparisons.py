@@ -39,9 +39,9 @@ def document(datasets):
     return "\n".join(lines)
 
 
-def generate(directories, receipt):
+def generate(directories, receipt, current_source=True):
     return {scope: publication.generate(directories[scope], receipt,
-                ROOT / f"benches/{catalog}/catalog.json", engines, current_lock=True)
+                ROOT / f"benches/{catalog}/catalog.json", engines, current_lock=True, current_source=current_source)
             for scope, (_, catalog, engines, _) in SCOPES.items()}
 
 
@@ -96,7 +96,7 @@ def check():
                         publication.require(not path.is_absolute() and ".." not in path.parts and (member.isfile() or member.isdir()), "Unsafe evidence archive member")
                     archive.extractall(destination)
                 directories[scope][profile] = destination
-        datasets = generate(directories, receipt)
+        datasets = generate(directories, receipt, current_source=False)
     for scope, (_, _, _, name) in SCOPES.items():
         publication.require(publication.equivalent(publication.read(ROOT / f"docs/app/data/{name}-comparison.json"), datasets[scope]), f"{scope} public data has drifted")
     publication.require(publication.equivalent(publication.read(ROOT / "docs/app/data/regexr-summary.json"), publication.overview(datasets["regexr"])), "regexr summary has drifted")
