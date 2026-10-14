@@ -25,6 +25,10 @@ class ComparisonTests(unittest.TestCase):
         records = [{"case": "case", "engine": "rust", "status": "semantic_difference"}]
         self.assertEqual(comparison.fatal_preflight(records), records)
 
+    def test_fallible_ferroni_profile_mismatch_also_stops_timings(self):
+        records = [{"case": "case", "engine": "rust_erroraware", "status": "semantic_difference"}]
+        self.assertEqual(comparison.fatal_preflight(records), records)
+
     def test_execution_errors_and_timeouts_stop_timings_for_any_engine(self):
         records = [{"case": "one", "engine": "c", "status": "timeout"},
                    {"case": "two", "engine": "regex", "status": "execution_error"}]

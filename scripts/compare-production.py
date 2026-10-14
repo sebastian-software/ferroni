@@ -23,9 +23,10 @@ import sys
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINES = ("rust", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex")
+ENGINES = ("rust", "rust_erroraware", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex")
 PROFILES = {
-    "rust": "Ferroni public Regex API; default optimizations; explicit source flags",
+    "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
+    "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
     "c": "C Oniguruma UTF-8/Oniguruma syntax, -O3; public C API plus output adapters",
     "onigmo": "pinned Ruby Onigmo standalone build; public C API plus output adapters",
     "pcre2_jit": "PCRE2 UTF/UCP, JIT required, NO_UTF_CHECK on trusted &str subjects",
@@ -117,7 +118,7 @@ def fatal_preflight(records):
     """Capability gaps are expected; broken execution must stop paid timings."""
     return [record for record in records
             if record["status"] in ("execution_error", "timeout")
-            or (record["engine"] == "rust" and record["status"] not in ("eligible", "pending"))]
+            or (record["engine"] in ("rust", "rust_erroraware") and record["status"] not in ("eligible", "pending"))]
 
 
 def memory_worker(binary, case, engine, mode, timeout):
