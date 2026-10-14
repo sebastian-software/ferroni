@@ -132,8 +132,10 @@ pub struct OnigRegSet {
     look_behind_reach: u32,
     /// The subject of the current search is valid UTF-8 (`MatchArg::subject_utf8`).
     subject_utf8: bool,
-    /// Reused MatchArg scratch space for position-lead searches.
-    scratch_msa: Option<MatchArg>,
+    /// Reused MatchArg scratch space for position-lead searches. Boxed, so
+    /// that taking it out of the set and putting it back copies a pointer
+    /// and not the struct (Rust-only, ADR-008).
+    scratch_msa: Option<Box<MatchArg>>,
     /// Match length from the last successful position-lead search.
     last_match_len: i32,
     /// Per table entry, the bytes whose `first_byte_candidates` slot holds
@@ -1812,7 +1814,7 @@ fn regset_table_scan<const EAGER_GATES: bool>(
         msa
     } else {
         let first_reg = &*set.entries[0].reg;
-        MatchArg::new(first_reg, option, None, start)
+        Box::new(MatchArg::new(first_reg, option, None, start))
     };
     // Search retry budgets start fresh for this public API call and then
     // accumulate independently per regex as position-lead advances. The
@@ -2077,10 +2079,10 @@ fn regset_table_scan<const EAGER_GATES: bool>(
 
 /// The scratch `MatchArg`, or a new one.
 #[inline(never)]
-fn take_scratch_msa(set: &mut OnigRegSet, option: OnigOptionType, start: usize) -> MatchArg {
+fn take_scratch_msa(set: &mut OnigRegSet, option: OnigOptionType, start: usize) -> Box<MatchArg> {
     set.scratch_msa
         .take()
-        .unwrap_or_else(|| MatchArg::new(&set.entries[0].reg, option, None, start))
+        .unwrap_or_else(|| Box::new(MatchArg::new(&set.entries[0].reg, option, None, start)))
 }
 
 /// Bring the scratch `MatchArg` in line with the process-global limits and
@@ -3554,7 +3556,7 @@ fn search_fallback_entries(
     uncovered_only: bool,
     mut decision: Option<RegSetDecision>,
 ) -> Option<RegSetDecision> {
-    let mut fallback_msa: Option<MatchArg> = None;
+    let mut fallback_msa: Option<Box<MatchArg>> = None;
     // The character head before the current decision's position, which
     // bounds every later-index entry. Cached per decision position.
     let mut before_decision: Option<(usize, Option<usize>)> = None;
