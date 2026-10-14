@@ -742,6 +742,7 @@ fn miss_retries(reg: &RegexType, bytes: &[u8; CHAR_MAP_SIZE]) -> Option<u64> {
                     addr,
                     bsp,
                     skipped_retries,
+                    ..
                 },
             ) if *skipped_retries & GUARD_RETRIES_BY_CHECKS == 0 && starts_only(bsp) => {
                 retries += u64::from(*skipped_retries);
@@ -753,6 +754,7 @@ fn miss_retries(reg: &RegexType, bytes: &[u8; CHAR_MAP_SIZE]) -> Option<u64> {
                     addr,
                     c,
                     skipped_retries,
+                    ..
                 },
             ) if *skipped_retries & GUARD_RETRIES_BY_CHECKS == 0 && bytes[*c as usize] != 0 => {
                 retries += u64::from(*skipped_retries);

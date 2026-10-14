@@ -2485,6 +2485,39 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(1));
     }
 
+    /// Rust-only (ADR-008): the skip gates of guard chains keep the retry
+    /// limit's boundary where the one-by-one walk puts it. With the gates off,
+    /// the smallest per-match limit that finds the match is found, and the
+    /// gated program gives the same result at that limit and one below it.
+    #[test]
+    fn skip_gates_keep_the_retry_limit_boundary() {
+        let _limits = crate::regexec::shared_limits();
+        let compile = |pattern: &str, gated: bool| {
+            crate::regcomp::SKIP_GATES_DISABLED.with(|disabled| disabled.set(!gated));
+            let re = Regex::new(pattern);
+            crate::regcomp::SKIP_GATES_DISABLED.with(|disabled| disabled.set(false));
+            re.unwrap()
+        };
+        let text = format!("{}ss!", "ß".repeat(4));
+        let plain = compile(r"(?i)^[[:word:]]{0,40}s!", false);
+        let gated = compile(r"(?i)^[[:word:]]{0,40}s!", true);
+        let at = |re: &Regex, limit: u64| {
+            re.find_with(&text, SearchOptions::new().retry_limit_in_match(limit))
+                .map(|m| m.map(|m| (m.start(), m.end())))
+        };
+        let boundary = (1..=100_000u64)
+            .find(|&limit| matches!(at(&plain, limit), Ok(Some(_))))
+            .expect("the match fits in the default limit");
+        assert!(boundary > 1, "the search backtracks");
+        for limit in [boundary - 1, boundary] {
+            assert_eq!(at(&gated, limit), at(&plain, limit), "limit {limit}");
+        }
+        assert!(matches!(
+            at(&plain, boundary - 1),
+            Err(RegexError::RetryLimitInMatchOver)
+        ));
+    }
+
     #[test]
     fn search_options_surface_retry_limit_errors() {
         let _limits = crate::regexec::shared_limits();

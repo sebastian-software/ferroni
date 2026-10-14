@@ -8094,6 +8094,7 @@ mod tests {
             extp: None,
             literal_tries: Vec::new(),
             check_dependent_guards: false,
+            skip_gates: Vec::new(),
             ac_alt: None,
             ac_alt_has_capture: false,
             leading_run: None,

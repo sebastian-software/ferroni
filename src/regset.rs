@@ -4525,6 +4525,7 @@ mod tests {
                     addr: 2,
                     c: b'a',
                     skipped_retries: 0,
+                    skip_gate: None,
                 },
                 _ => OperationPayload::PushIfPeekNext { addr: 2, c: b'a' },
             };

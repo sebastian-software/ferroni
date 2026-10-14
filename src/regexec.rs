@@ -3590,6 +3590,7 @@ fn skip_failed_ascii_guards(
                     addr,
                     c,
                     skipped_retries,
+                    ..
                 },
             ) if byte != Some(*c) => (*addr, *skipped_retries),
             (
@@ -3598,6 +3599,7 @@ fn skip_failed_ascii_guards(
                     addr,
                     bsp,
                     skipped_retries,
+                    ..
                 },
             ) if byte.is_none_or(|byte| !bitset_at(bsp, byte as usize)) => {
                 (*addr, *skipped_retries)
@@ -3619,6 +3621,35 @@ fn skip_failed_ascii_guards(
         p += addr as usize;
     }
     (p, retries)
+}
+
+/// Rust-only (ADR-008): the skip gate a guard refers to (`GuardSkipGate`).
+#[inline(always)]
+fn skip_gate_of(reg: &RegexType, index: Option<u32>) -> Option<&GuardSkipGate> {
+    index.and_then(|index| reg.skip_gates.get(index as usize))
+}
+
+/// Rust-only (ADR-008): whether a guard chain's skip gate jumps at `s`
+/// (`GuardSkipGate`). It does when the current byte is outside the gate's
+/// set. Then the walk would miss every guard of the chain and count their
+/// backtracks one by one, so the gate counts the sum at once. It does so only
+/// when no count can reach the retry limit in match or a time limit is set:
+/// `count_retry` then does no more than add, and the sum equals the one-by-one
+/// counts. Otherwise the guard runs as before.
+#[inline(always)]
+fn skip_gate_taken(
+    gate: &GuardSkipGate,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    retry_in_match_counter: u64,
+    retry_limit_in_match: u64,
+    time_limit_ms: u64,
+) -> bool {
+    (s >= right_range || !bitset_at(&gate.bsp, str_data[s] as usize))
+        && time_limit_ms == 0
+        && (retry_limit_in_match == 0
+            || retry_in_match_counter + u64::from(gate.skipped_retries) < retry_limit_in_match)
 }
 
 /// Where the single-character or string instruction `op` ends if it matches
@@ -6005,6 +6036,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     addr,
                     c,
                     skipped_retries,
+                    skip_gate,
                 } = op.payload
                 {
                     // Rust-only (ADR-008): the lazy `.*?c` loop (`AnyChar`
@@ -6031,6 +6063,21 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     }
                     if goto_fail {
                         // The loop's `AnyChar` fails before any `c`.
+                    } else if let Some(gate) = skip_gate_of(reg, skip_gate).filter(|gate| {
+                        skip_gate_taken(
+                            gate,
+                            str_data,
+                            s,
+                            right_range,
+                            retry_in_match_counter,
+                            retry_limit_in_match,
+                            time_limit_ms,
+                        )
+                    }) {
+                        // Rust-only (ADR-008): the rest of the chain misses
+                        // as well; see `skip_gate_taken`.
+                        p = (p as i32 + gate.addr) as usize;
+                        retry_in_match_counter += u64::from(gate.skipped_retries);
                     } else if (s < right_range && str_data[s] == c)
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
@@ -6092,9 +6139,25 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     addr,
                     ref bsp,
                     skipped_retries,
+                    skip_gate,
                 } = op.payload
                 {
-                    if (s < right_range && bitset_at(bsp, str_data[s] as usize))
+                    if let Some(gate) = skip_gate_of(reg, skip_gate).filter(|gate| {
+                        skip_gate_taken(
+                            gate,
+                            str_data,
+                            s,
+                            right_range,
+                            retry_in_match_counter,
+                            retry_limit_in_match,
+                            time_limit_ms,
+                        )
+                    }) {
+                        // Rust-only (ADR-008): the rest of the chain misses
+                        // as well; see `skip_gate_taken`.
+                        p = (p as i32 + gate.addr) as usize;
+                        retry_in_match_counter += u64::from(gate.skipped_retries);
+                    } else if (s < right_range && bitset_at(bsp, str_data[s] as usize))
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
                         stack.push(StackEntry::Alt {
@@ -11441,6 +11504,7 @@ mod tests {
             extp: None,
             literal_tries: Vec::new(),
             check_dependent_guards: false,
+            skip_gates: Vec::new(),
             ac_alt: None,
             ac_alt_has_capture: false,
             leading_run: None,

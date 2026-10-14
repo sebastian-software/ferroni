@@ -1606,6 +1606,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                             addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
                             c,
                             skipped_retries: 0,
+                            skip_gate: None,
                         },
                     );
                     let r = compile_quant_body_with_empty_check(
@@ -11000,6 +11001,7 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
                     addr,
                     c: c as u8,
                     skipped_retries,
+                    skip_gate: None,
                 },
             },
             _ => Operation {
@@ -11008,9 +11010,125 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
                     addr,
                     bsp: Box::new(bits),
                     skipped_retries,
+                    skip_gate: None,
                 },
             },
         };
+    }
+    attach_guard_skip_gates(reg);
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Leaves the guard chains without `GuardSkipGate`s, as the reference for
+    /// the composed skip path in differential tests.
+    pub(crate) static SKIP_GATES_DISABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Rust-only (ADR-008): compose the skip paths of guard chains. Every guard
+/// jumps to the next guard of its chain on a miss (`addr` is its push target
+/// and its skip target), so the VM walks a chain of guards that all miss one
+/// after another, one dispatch and one counted skip each. A case-fold class
+/// with multi-character folds turns into such a chain of about 45 string
+/// alternatives (`(?i)[[:word:]]` has 1795 instructions), and every backtrack
+/// into it walked that whole chain.
+///
+/// Each guard of a chain gets a `GuardSkipGate` over the guards from it on
+/// (see `GuardSkipGate`). The gate's jump is what the walk would do: a
+/// guard whose byte is outside the gate's set misses, and the walk counts
+/// each skip before the instruction at the end of the chain runs. The VM
+/// takes the gate only where that count cannot reach a retry limit (see
+/// `skip_gate_taken`); elsewhere it runs the guard as before. The gates use
+/// the guards' own bytes, counts and addresses, and no instruction changes.
+///
+/// Guards whose count depends on position checks (`GUARD_RETRIES_BY_CHECKS`)
+/// and guards with a non-forward address (lazy loops) end their chain.
+fn attach_guard_skip_gates(reg: &mut RegexType) {
+    #[cfg(test)]
+    if SKIP_GATES_DISABLED.with(|disabled| disabled.get()) {
+        return;
+    }
+    // A chain link's own byte set, count and address, if it is one.
+    let link = |op: &Operation| -> Option<(BitSet, u32, RelAddrType)> {
+        match &op.payload {
+            OperationPayload::PushOrJumpExact1 {
+                addr,
+                c,
+                skipped_retries,
+                ..
+            } if skipped_retries & GUARD_RETRIES_BY_CHECKS == 0 && *addr > 0 => {
+                let mut bits = [0; BITSET_REAL_SIZE];
+                bitset_set_bit(&mut bits, *c as usize);
+                Some((bits, *skipped_retries, *addr))
+            }
+            OperationPayload::PushOrJumpByteSet {
+                addr,
+                bsp,
+                skipped_retries,
+                ..
+            } if skipped_retries & GUARD_RETRIES_BY_CHECKS == 0 && *addr > 0 => {
+                Some((**bsp, *skipped_retries, *addr))
+            }
+            _ => None,
+        }
+    };
+    // The skip path from the link at `pc`, as far as it is composed: its
+    // gate if it has one, else the link alone.
+    let skip_path = |reg: &RegexType, pc: usize| -> Option<(BitSet, u32, usize)> {
+        let (skip_gate, addr) = match &reg.ops[pc].payload {
+            OperationPayload::PushOrJumpExact1 {
+                skip_gate, addr, ..
+            }
+            | OperationPayload::PushOrJumpByteSet {
+                skip_gate, addr, ..
+            } => (*skip_gate, *addr),
+            _ => return None,
+        };
+        if let Some(gate) = skip_gate.and_then(|index| reg.skip_gates.get(index as usize)) {
+            return Some((
+                gate.bsp,
+                gate.skipped_retries,
+                (pc as i64 + i64::from(gate.addr)) as usize,
+            ));
+        }
+        let (bits, retries, _) = link(&reg.ops[pc])?;
+        Some((bits, retries, (pc as i64 + i64::from(addr)) as usize))
+    };
+    // Filled from the end, since a chain runs forward: each link's gate
+    // extends the gate of the link its push and skip both lead to.
+    for pc in (0..reg.ops.len()).rev() {
+        let Some((bits, retries, addr)) = link(&reg.ops[pc]) else {
+            continue;
+        };
+        // Forward addresses only, and a successor that is itself a link.
+        let succ = pc + addr as usize;
+        if succ >= reg.ops.len() || link(&reg.ops[succ]).is_none() {
+            continue;
+        }
+        let Some((next_bits, next_retries, target)) = skip_path(reg, succ) else {
+            continue;
+        };
+        let Some(total) = next_retries.checked_add(retries) else {
+            continue;
+        };
+        let mut union = next_bits;
+        for (dst, src) in union.iter_mut().zip(bits.iter()) {
+            *dst |= *src;
+        }
+        let Ok(index) = u32::try_from(reg.skip_gates.len()) else {
+            return;
+        };
+        reg.skip_gates.push(GuardSkipGate {
+            bsp: union,
+            skipped_retries: total,
+            addr: (target as i64 - pc as i64) as RelAddrType,
+        });
+        if let OperationPayload::PushOrJumpExact1 { skip_gate, .. }
+        | OperationPayload::PushOrJumpByteSet { skip_gate, .. } = &mut reg.ops[pc].payload
+        {
+            *skip_gate = Some(index);
+        }
     }
 }
 
@@ -11219,6 +11337,7 @@ fn onig_new_with_choices(
         extp: None,
         literal_tries: Vec::new(),
         check_dependent_guards: false,
+        skip_gates: Vec::new(),
         ac_alt: None,
         ac_alt_has_capture: false,
         leading_run: None,
@@ -11712,6 +11831,7 @@ mod tests {
             extp: None,
             literal_tries: Vec::new(),
             check_dependent_guards: false,
+            skip_gates: Vec::new(),
             ac_alt: None,
             ac_alt_has_capture: false,
             leading_run: None,
@@ -13589,6 +13709,154 @@ mod tests {
             }
         }
         assert!(fused_count > 250, "only {fused_count} patterns fused");
+    }
+
+    /// Rust-only (ADR-008): the skip gates of guard chains (`GuardSkipGate`)
+    /// against the one-by-one walk they replace. For every start position of
+    /// every input, the gated and the ungated program agree on the result,
+    /// the region and the counted backtracks, and under retry limits in match
+    /// and in search near those counts.
+    #[test]
+    fn skip_gates_match_the_one_by_one_walk() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{MatchArg, onig_search_with_msa, shared_limits};
+
+        let _limits = shared_limits();
+        let compile = |pattern: &str, gated: bool| {
+            SKIP_GATES_DISABLED.with(|disabled| disabled.set(!gated));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            SKIP_GATES_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+        let gate_count = |reg: &RegexType| {
+            reg.ops
+                .iter()
+                .filter(|op| match &op.payload {
+                    OperationPayload::PushOrJumpExact1 { skip_gate, .. }
+                    | OperationPayload::PushOrJumpByteSet { skip_gate, .. } => skip_gate.is_some(),
+                    _ => false,
+                })
+                .count()
+        };
+        // The search from `start`: result, region and counted backtracks.
+        let run =
+            |reg: &RegexType, input: &[u8], start: usize, match_limit: u64, search_limit: u64| {
+                let mut msa = MatchArg::new(reg, ONIG_OPTION_NONE, Some(OnigRegion::new()), start);
+                msa.retry_limit_in_match = match_limit;
+                msa.retry_limit_in_search = search_limit;
+                let (r, region) =
+                    onig_search_with_msa(reg, input, input.len(), start, input.len(), &mut msa);
+                let spans: Vec<(i32, i32)> = region.map_or_else(Vec::new, |region| {
+                    region
+                        .beg
+                        .iter()
+                        .zip(&region.end)
+                        .take(region.num_regs as usize)
+                        .map(|(&b, &e)| (b, e))
+                        .collect()
+                });
+                (r, spans, msa.retry_limit_in_search_counter)
+            };
+
+        // Fold classes (several multi-character folds), classes in repeats
+        // with look-arounds around them, and the plain alternations the
+        // gates also apply to.
+        let patterns = [
+            "(?i)[[:word:]]",
+            "(?i)[¡-\\x{ffff}]",
+            "(?i)[a-zß]",
+            "(?i)[^a-z]",
+            "(?i)[a-zß]+s",
+            "(?i)[ß]+x",
+            "(?i)^[a-zß]{0,6}s",
+            "(?i)(?<=[a-zß])x",
+            "(?i)([\\w-]{0,4})(?<!s)\\.",
+            "(?i)(?:[ß]|x)y",
+            "(?i)[ﬀ-ﬃ]+",
+            "(?i)(a[ßi]{1,3}b)",
+            "(?i)[İi]+",
+            "(?i)[ͅι]",
+            "(?i)[ǰ]",
+            "(?i)[ß-ſ]+",
+            "(?i)[\\x{1F00}-\\x{1FFF}]",
+            "(?i)[k-s]",
+            "(?i)[ſ-ﬆ]",
+            "(?i)[[:alpha:]]",
+            "(?i)\\b[[:upper:]]+\\b",
+            "(?i)[a-zß]{0,61}[a-zß]",
+            "(?i)[a-z¡-\\x{ffff}0-9]{0,8}[a-z¡-\\x{ffff}0-9]",
+            "(?i)[^ßa-z]s",
+            "(?i)(?:x|[a-zß])\\z",
+            "(?i)[ß]\\s*(?=s)",
+            "(?i)[sß]{2,4}",
+            "(?i)(?<!-)[a-zß]{1,3}(?<!-)",
+            "(?i)[\\x{0370}-\\x{03FF}]+",
+            "(?i)[ΐ]",
+            "(?i)[ᾳ]",
+            "(?i)\\p{Lu}",
+            "(?i)[\\W]",
+            "(?i)[a-z]{3}[ß]?",
+            "(?i)(?>[a-zß]+)s",
+            "(?i)[a-zß]*?ss$",
+            "(?i)(?:ss|ß|ﬀ|x)+y",
+            "(?i)(?:[a-z]|ß){2,5}(?<=s)",
+            "(?i)(?<![\\w.])[a-zß.]{1,4}(?!\\w)",
+            "(?i)^[a-z¡-\\x{ffff}]{0,8}[a-z¡-\\x{ffff}-]{0,8}(?<!-)\\.",
+            "(?i)(?:a|ß|b|st|c)+d",
+            "[ab](?:x|y|z|w|v|u|t|s|r|q|p|o|n|m|l|k|j|i|h|g|f|e|d|c|b|a)",
+        ];
+        let inputs: [&[u8]; 14] = [
+            b"",
+            b"ss",
+            "SS ſs ẞ ß".as_bytes(),
+            "ﬀﬃ İi̇ İİ".as_bytes(),
+            "ι\u{0345}ᾳ ǰ".as_bytes(),
+            "Strasse, STRASSE; ssss".as_bytes(),
+            "aßb axxss-.ab.cd-".as_bytes(),
+            b"abcdefghijklmnopqrstuvwxyz",
+            b"zz zzzz -a.b-c..d AB CD",
+            "ΐΰ Ͱͱ ΑΒΓ x".as_bytes(),
+            b"abc.def.ghi-jkl",
+            b"0123456789 9876543210",
+            "xx x\u{00e9}\u{1ff3}".as_bytes(),
+            b"sssssssssssssssssss",
+        ];
+
+        let mut gated_patterns = 0;
+        for pattern in patterns {
+            let gated = compile(pattern, true);
+            let plain = compile(pattern, false);
+            assert_eq!(gate_count(&plain), 0, "{pattern}");
+            gated_patterns += usize::from(gate_count(&gated) > 0);
+            for input in inputs {
+                for start in 0..=input.len() {
+                    let reference = run(&plain, input, start, 0, 0);
+                    let counted = run(&gated, input, start, 0, 0);
+                    assert_eq!(counted, reference, "{pattern} on {input:x?} from {start}");
+                    let total = reference.2;
+                    let limits = (1..=12).chain([total.saturating_sub(1), total, total + 1]);
+                    for limit in limits.filter(|&limit| limit > 0) {
+                        for (match_limit, search_limit) in [(limit, 0), (0, limit)] {
+                            let want = run(&plain, input, start, match_limit, search_limit);
+                            let got = run(&gated, input, start, match_limit, search_limit);
+                            assert_eq!(
+                                (got.0, got.1),
+                                (want.0, want.1),
+                                "{pattern} on {input:x?} from {start} with limits \
+                                 {match_limit}/{search_limit}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // The gates exist where the fold classes make chains of guards.
+        assert!(gated_patterns >= 30, "only {gated_patterns} patterns gated");
     }
 
     #[test]
