@@ -25,6 +25,7 @@
 
 use std::fmt;
 
+use crate::regcomp::code_ctype_bitset;
 use crate::regenc::OnigEncoding;
 use crate::regint::*;
 use crate::regparse_types::*;
@@ -62,6 +63,13 @@ struct ByteSet([u128; 2]);
 impl ByteSet {
     fn add(&mut self, byte: u8) {
         self.0[(byte >> 7) as usize] |= 1u128 << (byte & 0x7f);
+    }
+
+    /// The ASCII members of `bits` (bit `b` is byte `b`, as in a bitset of
+    /// a character class or type). Rust-only (ADR-008): one word-wise
+    /// conversion instead of a test per byte.
+    fn from_ascii(bits: u128) -> ByteSet {
+        ByteSet([bits, 0])
     }
 
     fn union(&mut self, other: &ByteSet) {
@@ -289,20 +297,17 @@ impl Lint {
                 None => out.nullable = true,
             },
             NodeInner::CClass(c) => {
-                for byte in 0..0x80u8 {
-                    if bitset_at(&c.bs, byte as usize) != c.is_not() {
-                        out.set.add(byte);
-                    }
-                }
+                let bits = ascii_bits(&c.bs);
+                out.set = ByteSet::from_ascii(if c.is_not() { !bits } else { bits });
             }
             NodeInner::CType(t) => {
-                for byte in 0..0x80u8 {
-                    let hit = t.ctype == CTYPE_ANYCHAR
-                        || self.enc.is_code_ctype(byte as u32, t.ctype as u32) != t.not;
-                    if hit {
-                        out.set.add(byte);
-                    }
-                }
+                let bits = if t.ctype == CTYPE_ANYCHAR {
+                    u128::MAX
+                } else {
+                    let bits = ascii_bits(&code_ctype_bitset(self.enc, t.ctype as u32, 0x80));
+                    if t.not { !bits } else { bits }
+                };
+                out.set = ByteSet::from_ascii(bits);
             }
             NodeInner::Quant(q) => {
                 if let Some(body) = q.body.as_deref() {
@@ -349,6 +354,12 @@ impl Lint {
         }
         out
     }
+}
+
+/// The bits of codes 0 to 0x7f of a bitset, bit `b` for code `b`.
+fn ascii_bits(bs: &BitSet) -> u128 {
+    let [a, b, c, d, ..] = *bs;
+    u128::from(a) | u128::from(b) << 32 | u128::from(c) << 64 | u128::from(d) << 96
 }
 
 fn has_look_around(node: &Node) -> bool {

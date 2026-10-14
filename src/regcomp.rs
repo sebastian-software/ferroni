@@ -9400,7 +9400,7 @@ fn add_bitset_opt_map(m: &mut OptMap, bs: &BitSet, enc: OnigEncoding) {
 /// as a bitset. Rust-only: `optimize_nodes` asks for the same few types
 /// (`\w`, `\s`, `\d`) in grammar after grammar, one `is_code_ctype` call per
 /// code each time, so the answers are kept per thread.
-fn code_ctype_bitset(enc: OnigEncoding, ctype: u32, range: usize) -> BitSet {
+pub(crate) fn code_ctype_bitset(enc: OnigEncoding, ctype: u32, range: usize) -> BitSet {
     type Entry = (*const (), u32, usize, BitSet);
     thread_local! {
         static CACHE: std::cell::RefCell<Vec<Entry>> = const { std::cell::RefCell::new(Vec::new()) };
