@@ -403,6 +403,16 @@ Three per-search costs that every entry point pays are removed where no result c
 - **Bounds**: no allocation and no compiled data.
 - **Impact** (callgrind instructions, `std` mode, 200 iterations, net of the empty loop; baseline `iter-restart` against this branch): uuid_v4 14.86M → 13.33M (−10.3%); uuid_shape 30.72M → 28.89M (−6.0%); jinja_string_token 5.79M → 5.52M (−4.6%); jinja_integer_token 12.29M → 11.73M (−4.6%); fluent_bit_apache 20.84M → 20.46M (−1.8%); fluent_bit_nginx 36.56M → 35.78M (−2.1%); ipv4_validation 26.71M → 26.08M (−2.4%); semver_hyphen_range_captures 35.68M → 35.35M (−0.9%). `_with` runs: uuid_v4 15.27M → 13.73M (−10.0%), jinja_string_token 6.14M → 5.87M (−4.3%). The tokenizer corpus (`all_matches`, 20 iterations) is unchanged within 0.02%, and the `literal` control moves by +0.14%.
 
+#### Compile-path passes (`src/backtrack_lint.rs`, `src/regcomp.rs`, `src/leading_run.rs`)
+
+- **Shared finder**: a literal prefix whose bytes equal the exact-string needle clones that finder instead of building a second one (`GET`).
+- **Backtracking check**: the first-byte sets of classes and types come from their bitsets a word at a time, and types from the per-thread `code_ctype_bitset` cache; chains are walked without collecting them.
+- **Optimizer maps**: `add_bitset_opt_map` sums the position values from the table, with byte 0 corrected for the encoding as in `alt_merge_opt_map`, and sets the map bytes eight at a time from a 256-entry table.
+- **Allocations**: string reduction appends merged bytes straight from the node and reserves its output; the empty-repeat check reuses one chain buffer for the cells of a list.
+- **Output**: unchanged. A unit test compares the map operation with the per-byte rule, a golden test pins the findings for 34 class and type patterns, and a differential run of the check over 12,000 generated patterns gave identical warnings.
+- **Impact** (callgrind instructions, compile mode, 200 compiles; `django_email_domain` 20): the Apache log pattern −21%, `semver_version_parse` −13%, `ipv6_validation` −3%, `django_email_domain` −1%, `GET` −2%. The Apache log pattern in search mode moved by 0.3%.
+- **Bounds**: no memory beyond a 2 KiB constant table; no change to what is compiled.
+
 ## Rationale
 
 - **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.

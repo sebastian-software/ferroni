@@ -178,8 +178,15 @@ pub(crate) fn plan_literal_prefix(root: &Node, reg: &RegexType) -> Option<Litera
     if literal[0] >= 0x80 || bitset_at(&class, literal[0] as usize) {
         return None;
     }
+    // Rust-only (ADR-008): the exact-string finder of a pattern that is only
+    // this literal (`GET`) has the same needle, so reuse its search setup
+    // instead of building a second one.
+    let finder = match reg.exact_finder.as_deref() {
+        Some(exact) if exact.needle() == literal.as_slice() => exact.clone(),
+        _ => memchr::memmem::Finder::new(&literal).into_owned(),
+    };
     Some(LiteralPrefix {
-        finder: memchr::memmem::Finder::new(&literal).into_owned(),
+        finder,
         class,
         multibyte,
         // The literal's own failure, and the pops back to the bottom.
