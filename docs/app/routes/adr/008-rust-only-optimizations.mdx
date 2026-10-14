@@ -235,6 +235,13 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Execution**: after 16 bytes without a candidate, the search tests eight ASCII bytes at a time against the ranges (SWAR). Chunks holding a non-ASCII byte are walked character by character, as before.
 - **Impact**: `\d+` over prose and `[A-Z][A-Z_]+` over code take 42–44% fewer instructions. Searches with close matches stay at their cost because of the 16-byte start.
 
+#### Grapheme breaks between ASCII bytes (`src/unicode/mod.rs`)
+
+- **Trigger**: `onigenc_egcb_is_break_position` at a position strictly inside the logical end, with both the byte before it and the byte at it below 0x80, in the built-in UTF-8 or ASCII encoding (ADR-003). The check is by address: a user-defined ASCII-compatible encoding may have ASCII-valued trail bytes.
+- **Execution**: the answer is "no break" only for CR LF (GB3); every other ASCII pair breaks. No ASCII code point has a Grapheme_Cluster_Break class that GB6-GB13 act on, and a test checks the answer against the general rules for every ASCII pair and for mixed and invalid byte strings.
+- **Bounds**: a comparison of two bytes before the general rules; no memory.
+- **Impact**: an ASCII-only `\X{1}` scan takes 25% fewer instructions (callgrind, on a scratch ASCII text outside the catalog). Pairs that are not ASCII-only gain nothing: `symfony_grapheme` pays about 0.6% more (layout of the guard, measured).
+
 #### Bitmaps for Unicode ctypes (`src/unicode/mod.rs`)
 
 - **Trigger**: `onigenc_unicode_is_code_ctype` for a code below U+10000 and a table with at least 16 ranges.
