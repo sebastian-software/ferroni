@@ -1,6 +1,8 @@
-# Current source-backed regex results
+# Published source-backed regex results
 
 Measured revision: `1452dce543acb2f74b5988e713a57fb1d3615559`. [Blacksmith run](https://github.com/sebastian-software/ferroni/actions/runs/38531377256).
+
+These timings describe that measured revision. Later engine changes are not included.
 
 The complete evidence for each platform is retained in `evidence.tar.gz`, including raw Criterion samples, logs, corpus, dependency lock, native source snapshots and execution order.
 

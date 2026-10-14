@@ -1,0 +1,11 @@
+--- a/src/regexec.rs
++++ b/src/regexec.rs
+@@ -10443,7 +10443,7 @@
+                                                     );
+                                                     if time != 0 {
+                                                         // Deterministic deadline; never compare wall-clock races.
+-                                                        msa.time_end = Some(Instant::now());
++                                                        msa.time_end = Some(Instant::now() - std::time::Duration::from_secs(1));
+                                                         msa.time_counter = CHECK_TIME_INTERVAL - 1;
+                                                     }
+                                                     let result = search_in_range_inner(

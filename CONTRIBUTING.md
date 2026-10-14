@@ -237,6 +237,11 @@ and Criterion raw samples and intervals. Short runs require `--diagnostic` and
 cannot support publication. See the corpus guide for filters, optional memory
 measurements, operation contracts and interpretation limits.
 
+Published tables describe their linked measured commit. Publication requires
+the run's library source to match the current tree; `--check` verifies the
+retained snapshot and raw results after later engine changes. Local diagnostic
+improvements do not update public Blacksmith numbers.
+
 The agreed 20-format selection for the next Ferriki highlighting corpus is
 recorded in [`benches/highlighting_corpus.md`](benches/highlighting_corpus.md),
 including its rationale and fixture requirements.

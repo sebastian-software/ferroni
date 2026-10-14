@@ -24,6 +24,10 @@ use super::super::engines::{self, Compiled};
 use super::super::{c_compile, configure_battle_group, regex_compile, rust_compile};
 use super::{c_trace, engine_trace, regex_trace, rust_trace, trace_engines};
 
+#[path = "capture_history_ffi.rs"]
+mod capture_history_ffi;
+use capture_history_ffi::{CaptureHistoryNode, CaptureHistoryRegex};
+
 #[derive(Clone, Copy, PartialEq)]
 enum Syntax {
     /// The `regex` crate runs the pattern too.
@@ -820,8 +824,8 @@ fn assert_contiguous_tokens(trace: &super::Trace, text_len: usize, name: &str) {
     );
 }
 
-fn capture_history_node(node: &OnigCaptureTreeNode) -> ffi::CaptureHistoryNode {
-    ffi::CaptureHistoryNode {
+fn capture_history_node(node: &OnigCaptureTreeNode) -> CaptureHistoryNode {
+    CaptureHistoryNode {
         group: node.group,
         beg: node.beg,
         end: node.end,
@@ -833,7 +837,7 @@ fn capture_history_node(node: &OnigCaptureTreeNode) -> ffi::CaptureHistoryNode {
     }
 }
 
-fn rust_capture_history_trace(regex: &RegexType, text: &[u8]) -> Vec<ffi::CaptureHistoryNode> {
+fn rust_capture_history_trace(regex: &RegexType, text: &[u8]) -> Vec<CaptureHistoryNode> {
     let mut trace = Vec::new();
     let mut region = Some(OnigRegion::new());
     let mut start = 0;
@@ -862,32 +866,6 @@ fn rust_capture_history_trace(regex: &RegexType, text: &[u8]) -> Vec<ffi::Captur
     trace
 }
 
-fn c_capture_history_trace(regex: &ffi::CRegex, text: &[u8]) -> Vec<ffi::CaptureHistoryNode> {
-    let mut trace = Vec::new();
-    let mut region = ffi::CRegion::new();
-    let mut start = 0;
-    while start < text.len() {
-        let pos = regex.search(
-            text,
-            start,
-            text.len(),
-            Some(&mut region),
-            ffi::ONIG_OPTION_NONE,
-        );
-        assert!(pos >= -1, "C capture-history search failed: {pos}");
-        if pos < 0 {
-            break;
-        }
-        let node = region
-            .capture_tree()
-            .unwrap_or_else(|| panic!("C capture-history pattern returned no tree"));
-        assert!(node.end > node.beg && node.beg >= start as i32);
-        start = node.end as usize;
-        trace.push(node);
-    }
-    trace
-}
-
 /// Capture-history trees are a distinctive Oniguruma result shape, so this
 /// compares the full nested tree rather than only flat capture offsets.
 pub fn bench_capture_history(c: &mut Criterion) {
@@ -903,9 +881,9 @@ pub fn bench_capture_history(c: &mut Criterion) {
         &syntax,
     )
     .unwrap_or_else(|error| panic!("Ferroni capture-history compile failed: {error}"));
-    let c_regex = ffi::CRegex::new_capture_history(pattern.as_bytes(), ffi::ONIG_OPTION_NONE)
+    let c_regex = CaptureHistoryRegex::new(pattern.as_bytes(), ffi::ONIG_OPTION_NONE)
         .unwrap_or_else(|error| panic!("C capture-history compile failed: {error}"));
-    let expected = c_capture_history_trace(&c_regex, text.as_bytes());
+    let expected = c_regex.trace(text.as_bytes());
     assert_eq!(expected.len(), 200, "capture-history top-level sections");
     assert_eq!(
         rust_capture_history_trace(&rust, text.as_bytes()),
@@ -941,12 +919,7 @@ pub fn bench_capture_history(c: &mut Criterion) {
         });
     });
     group.bench_function("c/nested_markup", |b| {
-        b.iter(|| {
-            black_box(c_capture_history_trace(
-                &c_regex,
-                black_box(text.as_bytes()),
-            ))
-        });
+        b.iter(|| black_box(c_regex.trace(black_box(text.as_bytes()))));
     });
     group.finish();
 }

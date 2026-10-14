@@ -1,10 +1,13 @@
 """Publication must reject incomplete or altered benchmark evidence."""
 
 import importlib.util
+import io
 import json
 from pathlib import Path
+import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("publication", Path(__file__).resolve().parents[1] / "publish-production.py")
 publication = importlib.util.module_from_spec(spec)
@@ -12,6 +15,38 @@ spec.loader.exec_module(publication)
 
 
 class PublicationTests(unittest.TestCase):
+    def test_publishing_requires_current_code_but_recorded_results_keep_their_snapshot(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            source = root / "src/engine.rs"
+            source.parent.mkdir()
+            source.write_bytes(b"measured engine")
+            snapshot = root / "source-snapshot.tar.gz"
+            with tarfile.open(snapshot, "w:gz") as archive:
+                archive.add(source, arcname="src/engine.rs")
+            checksum = publication.sha256(snapshot)
+            with patch.object(publication, "ROOT", root):
+                publication.verify_source_snapshot(snapshot, checksum)
+                source.write_bytes(b"new engine")
+                with self.assertRaisesRegex(ValueError, "differs from the current source"):
+                    publication.verify_source_snapshot(snapshot, checksum)
+                publication.verify_source_snapshot(snapshot, checksum, current_source=False)
+                with tarfile.open(snapshot, "w:gz") as archive:
+                    archive.add(source, arcname="src/engine.rs")
+                for current_source in (True, False):
+                    with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
+                        publication.verify_source_snapshot(snapshot, checksum, current_source)
+
+    def test_recorded_results_require_an_implementation_snapshot(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            snapshot = Path(scratch) / "source-snapshot.tar.gz"
+            with tarfile.open(snapshot, "w:gz") as archive:
+                member = tarfile.TarInfo("README.md")
+                member.size = 4
+                archive.addfile(member, io.BytesIO(b"note"))
+            with self.assertRaisesRegex(ValueError, "snapshot is missing"):
+                publication.verify_source_snapshot(snapshot, publication.sha256(snapshot), current_source=False)
+
     def test_existing_dependencies_cannot_change_when_adding_a_comparator(self):
         original = '\n[[package]]\nname = "regex"\nversion = "1.13.1"\nchecksum = "old"\n'
         extra = '\n[[package]]\nname = "regexr"\nversion = "0.6.1"\nchecksum = "new"\n'

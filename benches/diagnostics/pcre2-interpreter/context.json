@@ -1,0 +1,62 @@
+{
+  "kind": "local diagnostic; guarded runtime implementation with a measured tradeoff",
+  "base_commit": "cf95a8fafe7cba0ae1297d7e456efab19404c56b",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "cpu": "Apple M1 Ultra",
+  "physical_cores": 20,
+  "ram_bytes": 68719476736,
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+  "samply": "samply 0.13.1",
+  "profile": "optimized level 3, thin LTO, debug info level 1, no stripping; default + ffi features",
+  "build_env": {
+    "PCRE2_SYS_STATIC": "1",
+    "PCRE2_SYS_DEBUG": "1",
+    "CARGO_PROFILE_BENCH_DEBUG": "1",
+    "CARGO_PROFILE_BENCH_STRIP": "none"
+  },
+  "short_build_env": {
+    "CARGO_PROFILE_RELEASE_DEBUG": "1",
+    "CARGO_PROFILE_RELEASE_STRIP": "none"
+  },
+  "samples": 30,
+  "process_repetitions": 3,
+  "warmup_seconds": 1,
+  "measurement_seconds": 2,
+  "order": "before/after, reversed in repetition 2; short subset includes PCRE2 and reverses all three profiles in repetition 2",
+  "metric": "Criterion median ns per full fixture batch; paired before/after ratios",
+  "known_limits": "Local host background activity and power/thermal state are not controlled; this is not Blacksmith publication evidence. Interpreter and JIT results are distinct. Compile and first-use costs are excluded.",
+  "corpus_sha256": "f15e973a92b6cb08c0e4e89f3810cb0cfbee5ded5c53d74e5c3217a2630926b2",
+  "tokenizer_corpus_sha256": "9b7e054f118ff51fcef0a5ccd4d5812eaa96ed21d43a409c502da371dc7abcfc",
+  "lockfile_sha256": "53d79979e4c2c35e320ba06653782920e9cfb935442dc56989db1781c2336cf3",
+  "runner_sha256": "29c0656bf07866a9fa2b56f9a3b64a862516c417de88b8a658f1890aa9fb5ae9",
+  "candidate_patch_sha256": "8559ba6364b22712e1c93dd1e44aea53c2d63b0ae3e4c8cbcfef02a1cade2c48",
+  "candidate_regexec_sha256": "cc7e737d6bbd9bb41caf18cfe53a960d3aab401867fdf1d2a97ca62b81d6239f",
+  "candidate_regexec_sha256_scope": "Candidate patch and deterministic deadline fixture applied; evidence/final-regexec.rs retains the candidate before the deadline fixture fix.",
+  "base_regexec_sha256": "b89f9881cf4a702ee61f51775ad27bef114cef0c608da13359d96af944d98c86",
+  "binaries": {
+    "baseline-bench": "35c76baf703f8504ab4c3fa377eeab1e3b1eaeae2968e5d7b2dbbc8c963d9ad9",
+    "final-bench": "2ceb3a06b5298ed4fb4a09ebf479f3b8078bd52dfc3b3ae82185afc80aabf6d8",
+    "short-before-bench": "009ed36d4ea5d177dccc67db2187b61053e48935313ac390dff48754e218d833",
+    "short-after-bench": "d5e25acb8417672f25e1bcf5709ccb800ab595535ec0b1dbcbd7a7cfb6c1879b"
+  },
+  "short_input_selection": {
+    "case": "django_email_domain",
+    "rule": "Keep original fixtures with <=320 Unicode characters. This excludes the single 6,403-character fixture; all 57 remaining original fixtures and expected results are unchanged.",
+    "input_count": 57,
+    "catalog_sha256": "6bf818ce6ffd43d99b4ff215f053e8afa536dc0a9d6f21f74245abcd9f2f0007"
+  },
+  "pcre2": {
+    "version": "10.46",
+    "mode": "interpreter; no JIT compilation",
+    "compile_flags": [
+      "PCRE2_UTF",
+      "PCRE2_UCP"
+    ],
+    "match_flags": [
+      "PCRE2_NO_UTF_CHECK"
+    ],
+    "context": "pattern and match data reused; Rust &str inputs are already valid UTF-8"
+  },
+  "correctness": "Source oracle preflight passes both Ferroni API paths (25 eligible production/probe cases, 2 pending) and both tokenizers; the short subset passes Ferroni before/after and PCRE2. Candidate cargo test --release --all-features, focused retry/capture/Unicode differential regression, and clippy pass with the retained deterministic deadline fixture fix.",
+  "implemented_regexec_sha256": "1e67badb9138d408b009b0303651eccd5b362c9282a58d4e80ed6f9909af9acc"
+}

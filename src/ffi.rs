@@ -45,50 +45,6 @@ pub struct OnigRegion {
     pub history_root: *mut c_void,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CaptureHistoryNode {
-    pub group: i32,
-    pub beg: i32,
-    pub end: i32,
-    pub children: Vec<CaptureHistoryNode>,
-}
-
-#[repr(C)]
-struct COnigCaptureTreeNode {
-    group: c_int,
-    beg: c_int,
-    end: c_int,
-    allocated: c_int,
-    num_childs: c_int,
-    childs: *mut *mut COnigCaptureTreeNode,
-}
-
-/// Copy the C-owned history tree into Rust-owned nodes before the region moves
-/// or is cleared.
-unsafe fn copy_capture_history(node: *const COnigCaptureTreeNode) -> CaptureHistoryNode {
-    // SAFETY: callers pass a live node from the C region's history tree.
-    let node = unsafe { &*node };
-    let children = if node.num_childs <= 0 {
-        Vec::new()
-    } else {
-        // SAFETY: Oniguruma's node layout guarantees `num_childs` pointers in
-        // `childs`; every child belongs to the same live region tree.
-        unsafe { std::slice::from_raw_parts(node.childs, node.num_childs as usize) }
-            .iter()
-            .map(|child| {
-                // SAFETY: the pointer is one of the live children above.
-                unsafe { copy_capture_history(*child) }
-            })
-            .collect()
-    };
-    CaptureHistoryNode {
-        group: node.group,
-        beg: node.beg,
-        end: node.end,
-        children,
-    }
-}
-
 // --- OnigErrorInfo ---
 
 #[repr(C)]
@@ -126,14 +82,6 @@ unsafe extern "C" {
         option: c_uint,
         enc: OnigEncoding,
         syntax: *const OnigSyntaxType,
-        einfo: *mut OnigErrorInfo,
-    ) -> c_int;
-
-    fn ferroni_onig_new_capture_history(
-        reg: *mut OnigRegex,
-        pattern: *const u8,
-        length: usize,
-        option: c_uint,
         einfo: *mut OnigErrorInfo,
     ) -> c_int;
 
@@ -270,31 +218,6 @@ impl CRegex {
         Ok(CRegex { raw: reg })
     }
 
-    pub fn new_capture_history(pattern: &[u8], option: c_uint) -> Result<Self, c_int> {
-        let _inst = COnigInstance::new();
-        let mut reg: OnigRegex = ptr::null_mut();
-        let mut einfo = OnigErrorInfo {
-            enc: ptr::null(),
-            par: ptr::null(),
-            par_end: ptr::null(),
-        };
-        // SAFETY: pattern is live for the call and the C helper compiles with
-        // a local syntax copy that enables capture history.
-        let r = unsafe {
-            ferroni_onig_new_capture_history(
-                &mut reg,
-                pattern.as_ptr(),
-                pattern.len(),
-                option,
-                &mut einfo,
-            )
-        };
-        if r != 0 {
-            return Err(r);
-        }
-        Ok(CRegex { raw: reg })
-    }
-
     pub fn search(
         &self,
         text: &[u8],
@@ -393,18 +316,6 @@ impl CRegion {
             let end = std::slice::from_raw_parts(region.end, len);
             (beg, end)
         }
-    }
-
-    /// Copy the capture history tree, when the pattern requests capture
-    /// history with `(?@...)`.
-    pub fn capture_tree(&self) -> Option<CaptureHistoryNode> {
-        // SAFETY: `self.raw` is the live region owned by this wrapper, and its
-        // history root and children remain valid until the region is cleared.
-        let root = unsafe { (*self.raw).history_root.cast::<COnigCaptureTreeNode>() };
-        (!root.is_null()).then(|| {
-            // SAFETY: `root` points to the C-owned history tree for this region.
-            unsafe { copy_capture_history(root) }
-        })
     }
 }
 

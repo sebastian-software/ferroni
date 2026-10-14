@@ -1,0 +1,602 @@
+[
+  {
+    "case": "django_email_domain",
+    "version": "baseline",
+    "rep": 0,
+    "ns": 373594.6026947464,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 372550.78472222225,
+      "upper_bound": 374592.0950854701
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_email_domain-baseline-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "final",
+    "rep": 0,
+    "ns": 341679.4028340081,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 340534.9104020979,
+      "upper_bound": 343386.3529891859
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_email_domain-final-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_url_regex",
+    "version": "baseline",
+    "rep": 0,
+    "ns": 2723314.7055555554,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 2711386.8928571427,
+      "upper_bound": 2763019.5
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_url_regex-baseline-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_url_regex",
+    "version": "final",
+    "rep": 0,
+    "ns": 2780538.0818713447,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 2766958.9107843135,
+      "upper_bound": 2794385.510714286
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_url_regex-final-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "ipv6_validation",
+    "version": "baseline",
+    "rep": 0,
+    "ns": 4725.502635486266,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 4708.844024220491,
+      "upper_bound": 4763.476045057392
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-ipv6_validation-baseline-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "ipv6_validation",
+    "version": "final",
+    "rep": 0,
+    "ns": 4728.139769754056,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 4718.681318681319,
+      "upper_bound": 4747.713103201147
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-ipv6_validation-final-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "tiktoken_o200k_base",
+    "version": "baseline",
+    "rep": 0,
+    "ns": 120801.36111111111,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 120576.27442002442,
+      "upper_bound": 121293.37606837606
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-tiktoken_o200k_base-baseline-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "tiktoken_o200k_base",
+    "version": "final",
+    "rep": 0,
+    "ns": 126619.10232843137,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 126247.89235294117,
+      "upper_bound": 127071.69411764706
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-tiktoken_o200k_base-final-0",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "final",
+    "rep": 1,
+    "ns": 344063.91083916085,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 343252.85989010986,
+      "upper_bound": 348066.6854043392
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_email_domain-final-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "baseline",
+    "rep": 1,
+    "ns": 375734.1691176471,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 374729.32963875204,
+      "upper_bound": 377452.0416666666
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_email_domain-baseline-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_url_regex",
+    "version": "final",
+    "rep": 1,
+    "ns": 2727876.4908026755,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 2721214.416666667,
+      "upper_bound": 2741712.9629629627
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_url_regex-final-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_url_regex",
+    "version": "baseline",
+    "rep": 1,
+    "ns": 2670597.2055555554,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 2657900.095238095,
+      "upper_bound": 2692489.560784314
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_url_regex-baseline-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "ipv6_validation",
+    "version": "final",
+    "rep": 1,
+    "ns": 4725.309671605927,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 4709.758840637501,
+      "upper_bound": 4738.292951541851
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-ipv6_validation-final-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "ipv6_validation",
+    "version": "baseline",
+    "rep": 1,
+    "ns": 4728.833260175579,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 4722.391396648045,
+      "upper_bound": 4737.54267287115
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-ipv6_validation-baseline-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "tiktoken_o200k_base",
+    "version": "final",
+    "rep": 1,
+    "ns": 127510.41045168067,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 127051.83048681542,
+      "upper_bound": 128010.34625668448
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-tiktoken_o200k_base-final-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "tiktoken_o200k_base",
+    "version": "baseline",
+    "rep": 1,
+    "ns": 120550.75947293447,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 120013.13291666667,
+      "upper_bound": 120891.57572751323
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-tiktoken_o200k_base-baseline-1",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "baseline",
+    "rep": 2,
+    "ns": 383096.34722222225,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 377028.58173076925,
+      "upper_bound": 386323.9291666667
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_email_domain-baseline-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_email_domain",
+    "version": "final",
+    "rep": 2,
+    "ns": 344000.9610805861,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 342477.78092006035,
+      "upper_bound": 344862.6373626374
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_email_domain-final-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_url_regex",
+    "version": "baseline",
+    "rep": 2,
+    "ns": 2751557.3125,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 2740495.5210526315,
+      "upper_bound": 2775605.195812808
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_url_regex-baseline-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "django_url_regex",
+    "version": "final",
+    "rep": 2,
+    "ns": 2786090.992647059,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 2779315.1125,
+      "upper_bound": 2796099.541666667
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-django_url_regex-final-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "ipv6_validation",
+    "version": "baseline",
+    "rep": 2,
+    "ns": 4731.320968166272,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 4716.4494915525665,
+      "upper_bound": 4737.241615975594
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-ipv6_validation-baseline-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "ipv6_validation",
+    "version": "final",
+    "rep": 2,
+    "ns": 4748.87008830022,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 4733.888188591211,
+      "upper_bound": 4756.94607773573
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-ipv6_validation-final-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "tiktoken_o200k_base",
+    "version": "baseline",
+    "rep": 2,
+    "ns": 120474.06259645062,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 119990.91030092593,
+      "upper_bound": 120925.90694444443
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/baseline-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-tiktoken_o200k_base-baseline-2",
+      "/steady/"
+    ]
+  },
+  {
+    "case": "tiktoken_o200k_base",
+    "version": "final",
+    "rep": 2,
+    "ns": 128665.49220779221,
+    "interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 128209.35664983165,
+      "upper_bound": 129435.74963924964
+    },
+    "command": [
+      "/private/tmp/ferroni-pcre-profiles/final-bench",
+      "--bench",
+      "--noplot",
+      "--sample-size",
+      "30",
+      "--measurement-time",
+      "2",
+      "--warm-up-time",
+      "1",
+      "--save-baseline",
+      "pcre-proof-tiktoken_o200k_base-final-2",
+      "/steady/"
+    ]
+  }
+]
