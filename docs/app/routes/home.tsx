@@ -106,13 +106,16 @@ function SpeedSection() {
       }
       note={
         <>
-          The source-backed suite is ready for measurement. New performance claims will use repeated
-          runs of these workloads, with unsupported cases and differing results listed explicitly.
+          Repeated Blacksmith measurements are available for ARM64/macOS and x86-64/Linux. Inspect
+          compile, first-use and steady-reuse costs, with run ranges, rejected syntax and differing
+          results listed explicitly.
         </>
       }
     >
       <p>
-        <Link to="/perf/regex-workloads">Inspect the regex workloads and measurement rules</Link>
+        <Link to="/perf/regex-workloads">
+          Inspect measured results, workloads and comparison rules
+        </Link>
       </p>
     </Section>
   );

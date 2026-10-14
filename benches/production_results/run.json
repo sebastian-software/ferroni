@@ -1,0 +1,53 @@
+{
+  "id": 38531377256,
+  "run_attempt": 1,
+  "head_sha": "1452dce543acb2f74b5988e713a57fb1d3615559",
+  "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38531377256",
+  "path": ".github/workflows/blacksmith-comparison.yml",
+  "event": "workflow_dispatch",
+  "conclusion": "success",
+  "created_at": "2026-10-14T07:53:59Z",
+  "updated_at": "2026-10-14T10:12:51Z",
+  "jobs": [
+    {
+      "id": 115743825638,
+      "name": "macos-arm64",
+      "conclusion": "success",
+      "labels": [
+        "blacksmith-6vcpu-macos-26"
+      ],
+      "runner_name": "blacksmith-6vcpu-macos-26-mdadksqzbsfa53p5",
+      "started_at": "2026-10-14T07:54:19Z",
+      "completed_at": "2026-10-14T10:12:50Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38531377256/job/115743825638"
+    },
+    {
+      "id": 115743825708,
+      "name": "linux-x86-64",
+      "conclusion": "success",
+      "labels": [
+        "blacksmith-4vcpu-ubuntu-2404"
+      ],
+      "runner_name": "blacksmith-4vcpu-ubuntu-2404-ozs47wojp5kfhqxo",
+      "started_at": "2026-10-14T07:54:11Z",
+      "completed_at": "2026-10-14T10:08:14Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38531377256/job/115743825708"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 11885017872,
+      "name": "production-macos-arm64-38531377256-1",
+      "digest": "sha256:b086886b1cb2b00b681e66888344e81d3411cb53778a30108d9601eb932a2621",
+      "size_in_bytes": 10022740,
+      "expired": false
+    },
+    {
+      "id": 11884633517,
+      "name": "production-linux-x86-64-38531377256-1",
+      "digest": "sha256:c608cc230cfcc0d797dbe74d0f72748f458838f215c875bae10747164498d38d",
+      "size_in_bytes": 10029080,
+      "expired": false
+    }
+  ]
+}

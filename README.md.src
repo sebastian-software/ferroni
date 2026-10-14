@@ -55,7 +55,7 @@ crate, prefer its guaranteed linear-time matching.
 
 - [Getting started](https://ferroni.dev/guide/getting-started) — captures, iteration, options, errors and the Scanner API.
 - [API reference](https://docs.rs/ferroni) — every public type and function.
-- [Regex workloads](https://ferroni.dev/perf/regex-workloads) — source-backed patterns, operation contracts and comparison methodology; TextMate Scanner is a separate workload.
+- [Regex workloads and results](https://ferroni.dev/perf/regex-workloads) — repeated Blacksmith measurements on ARM64/macOS and x86-64/Linux, source-backed patterns and explicit operation contracts; TextMate Scanner is a separate workload.
 - [Migrating to 2.0](https://ferroni.dev/guide/migrating-to-2) — breaking changes with before and after code.
 
 ## Project status and contributing
