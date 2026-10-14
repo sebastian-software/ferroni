@@ -29,8 +29,9 @@
   "tokenizer_corpus_sha256": "9b7e054f118ff51fcef0a5ccd4d5812eaa96ed21d43a409c502da371dc7abcfc",
   "lockfile_sha256": "53d79979e4c2c35e320ba06653782920e9cfb935442dc56989db1781c2336cf3",
   "runner_sha256": "29c0656bf07866a9fa2b56f9a3b64a862516c417de88b8a658f1890aa9fb5ae9",
-  "candidate_patch_sha256": "6c803beed924a4e5616a0e839aa14e51aaab5663af4a5f9fe3db643e1845a979",
+  "candidate_patch_sha256": "8559ba6364b22712e1c93dd1e44aea53c2d63b0ae3e4c8cbcfef02a1cade2c48",
   "candidate_regexec_sha256": "cc7e737d6bbd9bb41caf18cfe53a960d3aab401867fdf1d2a97ca62b81d6239f",
+  "candidate_regexec_sha256_scope": "Candidate patch and deterministic deadline fixture applied; evidence/final-regexec.rs retains the candidate before the deadline fixture fix.",
   "base_regexec_sha256": "b89f9881cf4a702ee61f51775ad27bef114cef0c608da13359d96af944d98c86",
   "binaries": {
     "baseline-bench": "35c76baf703f8504ab4c3fa377eeab1e3b1eaeae2968e5d7b2dbbc8c963d9ad9",

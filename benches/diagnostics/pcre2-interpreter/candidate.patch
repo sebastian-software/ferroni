@@ -3,7 +3,7 @@
 @@ -3527,6 +3527,68 @@
      u64::from(skipped_retries & !GUARD_RETRIES_BY_CHECKS)
  }
- 
+
 +/// Rust-only (ADR-008): execute a bounded chain of failed forward guards
 +/// without returning to the main VM dispatch between alternatives. Fixed
 +/// retry charges always qualify; check-dependent charges retain the existing
@@ -151,7 +151,7 @@
                              retry_limit_in_match,
                              time_limit_ms,
 @@ -9513,6 +9616,86 @@
- 
+
  #[cfg(test)]
  mod tests {
 +
@@ -234,6 +234,6 @@
 +            }
 +        }
 +    }
- 
+
      #[test]
      fn ascii_case_insensitive_backrefs_preserve_folded_bytes_and_cursor() {

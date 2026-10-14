@@ -6,6 +6,9 @@ regex. Batching failed alternative guards saves 11.6% of matching time on the
 it slows down other workloads. The production implementation and published
 Blacksmith data remain unchanged.
 
+The measured baseline is commit `cf95a8f`, recorded in [context.json](context.json).
+Later changes on Main are outside this experiment.
+
 ## Findings
 
 The source-backed Django domain pattern compiles to 9,008 Ferroni VM operations
@@ -35,7 +38,7 @@ Changes are median paired after/before ratios from three fresh processes,
 with reversed ordering in the second repetition. They are engine regex steps,
 not timings for the full upstream application.
 
-| Original workload | Inputs | Main | Candidate | Change in matching time |
+| Original workload | Inputs | Baseline | Candidate | Change in matching time |
 | --- | ---: | ---: | ---: | ---: |
 | Django email domain | 58 | 375.7 | 344.0 | −8.5% |
 | Django URL regex | 195 | 2,723.3 | 2,780.5 | +2.1% |
@@ -53,7 +56,7 @@ checks whether the improvement depends on an oversized engine-only test input.
 
 | Ordinary domain fixtures | Time per 57-input batch |
 | --- | ---: |
-| Ferroni Main | 305.5 µs |
+| Ferroni baseline | 305.5 µs |
 | Ferroni candidate | 269.6 µs |
 | PCRE2 interpreter | 26.7 µs |
 
