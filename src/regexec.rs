@@ -1518,6 +1518,44 @@ const FINISH_PCODE: usize = usize::MAX;
 // MatchArg - runtime match state (port of C's MatchArg)
 // ============================================================================
 
+/// Rust-only (ADR-008): the four limits one search applies. A search takes
+/// them from `OnigMatchParam` (`onig_search_with_param`) or, where a caller
+/// passes `None`, from the process-wide settings read when the search starts.
+/// Keeping them out of `OnigMatchParam` lets the per-search API reuse the
+/// thread-cached `MatchArg` without building the parameter block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SearchLimits {
+    pub(crate) match_stack_limit: u32,
+    pub(crate) retry_limit_in_match: u64,
+    pub(crate) retry_limit_in_search: u64,
+    pub(crate) time_limit: u64,
+}
+
+impl SearchLimits {
+    /// The process-wide limits, as `onig_initialize_match_param` reads them.
+    #[inline]
+    pub(crate) fn process_wide() -> Self {
+        SearchLimits {
+            match_stack_limit: MATCH_STACK_LIMIT.load(Ordering::Relaxed),
+            retry_limit_in_match: RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed),
+            retry_limit_in_search: RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed),
+            time_limit: TIME_LIMIT.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl From<&OnigMatchParam> for SearchLimits {
+    #[inline]
+    fn from(mp: &OnigMatchParam) -> Self {
+        SearchLimits {
+            match_stack_limit: mp.match_stack_limit,
+            retry_limit_in_match: mp.retry_limit_in_match,
+            retry_limit_in_search: mp.retry_limit_in_search,
+            time_limit: mp.time_limit,
+        }
+    }
+}
+
 pub(crate) struct MatchArg {
     pub options: OnigOptionType,
     pub region: Option<OnigRegion>,
@@ -1566,29 +1604,7 @@ impl MatchArg {
         region: Option<OnigRegion>,
         start: usize,
     ) -> Self {
-        let mut msa = MatchArg {
-            options: option | reg.options,
-            region,
-            start,
-            best_len: ONIG_MISMATCH,
-            best_s: 0,
-            skip_search: 0,
-            retry_limit_in_match: RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed),
-            retry_limit_in_search: RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed),
-            retry_limit_in_search_counter: 0,
-            match_stack_limit: MATCH_STACK_LIMIT.load(Ordering::Relaxed),
-            time_limit: TIME_LIMIT.load(Ordering::Relaxed),
-            time_counter: 0,
-            time_end: None,
-            subexp_call_in_search_counter: 0,
-            match_len: 0,
-            capture_position: None,
-            stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
-            mem_start_stk: Vec::new(),
-            mem_end_stk: Vec::new(),
-        };
-        msa.start_time_limit();
-        msa
+        Self::with_limits(reg, option, region, start, None)
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
@@ -1599,6 +1615,19 @@ impl MatchArg {
         start: usize,
         mp: &OnigMatchParam,
     ) -> Self {
+        Self::with_limits(reg, option, region, start, Some(SearchLimits::from(mp)))
+    }
+
+    /// A new MatchArg for a search under `limits`; `None` reads the
+    /// process-wide limits.
+    fn with_limits(
+        reg: &RegexType,
+        option: OnigOptionType,
+        region: Option<OnigRegion>,
+        start: usize,
+        limits: Option<SearchLimits>,
+    ) -> Self {
+        let limits = limits.unwrap_or_else(SearchLimits::process_wide);
         let mut msa = MatchArg {
             options: option | reg.options,
             region,
@@ -1606,11 +1635,11 @@ impl MatchArg {
             best_len: ONIG_MISMATCH,
             best_s: 0,
             skip_search: 0,
-            retry_limit_in_match: mp.retry_limit_in_match,
-            retry_limit_in_search: mp.retry_limit_in_search,
+            retry_limit_in_match: limits.retry_limit_in_match,
+            retry_limit_in_search: limits.retry_limit_in_search,
             retry_limit_in_search_counter: 0,
-            match_stack_limit: mp.match_stack_limit,
-            time_limit: mp.time_limit,
+            match_stack_limit: limits.match_stack_limit,
+            time_limit: limits.time_limit,
             time_counter: 0,
             time_end: None,
             subexp_call_in_search_counter: 0,
@@ -1624,26 +1653,29 @@ impl MatchArg {
         msa
     }
 
-    /// Full reset for thread-local reuse: re-reads global limits, keeps allocated buffers.
-    pub(crate) fn reset_full(
+    /// Full reset for thread-local reuse under `limits` (`None`: the
+    /// process-wide limits, re-read here). Keeps allocated buffers.
+    pub(crate) fn reset_with_limits(
         &mut self,
         reg: &RegexType,
         option: OnigOptionType,
         region: Option<OnigRegion>,
         start: usize,
+        limits: Option<SearchLimits>,
     ) {
+        let limits = limits.unwrap_or_else(SearchLimits::process_wide);
         self.options = option | reg.options;
         self.region = region;
         self.start = start;
         self.best_len = ONIG_MISMATCH;
         self.best_s = 0;
         self.skip_search = 0;
-        self.retry_limit_in_match = RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed);
-        self.retry_limit_in_search = RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed);
+        self.retry_limit_in_match = limits.retry_limit_in_match;
+        self.retry_limit_in_search = limits.retry_limit_in_search;
         self.retry_limit_in_search_counter = 0;
         self.subexp_call_in_search_counter = 0;
-        self.match_stack_limit = MATCH_STACK_LIMIT.load(Ordering::Relaxed);
-        self.time_limit = TIME_LIMIT.load(Ordering::Relaxed);
+        self.match_stack_limit = limits.match_stack_limit;
+        self.time_limit = limits.time_limit;
         self.start_time_limit();
     }
 
@@ -6778,7 +6810,7 @@ pub fn onig_match(
 
     let mut msa = match CACHED_MSA.with(|c| c.borrow_mut().take()) {
         Some(mut cached) => {
-            cached.reset_full(reg, option, region, at);
+            cached.reset_with_limits(reg, option, region, at, None);
             cached
         }
         None => Box::new(MatchArg::new(reg, option, region, at)),
@@ -7807,15 +7839,9 @@ pub(crate) fn search_in_range(
     data_range: usize,
     region: Option<OnigRegion>,
     option: OnigOptionType,
-    mp: Option<&OnigMatchParam>,
+    limits: Option<SearchLimits>,
 ) -> (i32, Option<OnigRegion>) {
-    if let Some(mp) = mp {
-        let mut msa = MatchArg::from_param(reg, option, region, start, mp);
-        let r = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
-        return (r, msa.region.take());
-    }
-
-    let mut msa = take_cached_msa(reg, option, region, start);
+    let mut msa = take_cached_msa(reg, option, region, start, limits);
     let r = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
     let region = msa.region.take();
     cache_msa(msa);
@@ -7828,15 +7854,18 @@ thread_local! {
     static CACHED_MSA: RefCell<Option<Box<MatchArg>>> = const { RefCell::new(None) };
 }
 
-/// The thread's cached MatchArg, reset for a search, or a new one. Reusing
-/// it avoids a heap allocation per search; `.take()` makes this safe for
-/// re-entrant calls (e.g. from callouts).
+/// The thread's cached MatchArg, reset for a search under `limits` (`None`:
+/// the process-wide limits), or a new one. Reusing it avoids a heap
+/// allocation per search; `.take()` makes this safe for re-entrant calls
+/// (e.g. from callouts). Every reset writes all four limits, so a search's
+/// limits never reach a later search that takes the cache.
 #[inline]
 pub(crate) fn take_cached_msa(
     reg: &RegexType,
     option: OnigOptionType,
     region: Option<OnigRegion>,
     start: usize,
+    limits: Option<SearchLimits>,
 ) -> Box<MatchArg> {
     match CACHED_MSA
         .try_with(|c| c.borrow_mut().take())
@@ -7844,10 +7873,10 @@ pub(crate) fn take_cached_msa(
         .flatten()
     {
         Some(mut cached) => {
-            cached.reset_full(reg, option, region, start);
+            cached.reset_with_limits(reg, option, region, start, limits);
             cached
         }
-        None => Box::new(MatchArg::new(reg, option, region, start)),
+        None => Box::new(MatchArg::with_limits(reg, option, region, start, limits)),
     }
 }
 
@@ -7864,9 +7893,10 @@ pub(crate) fn cache_msa(mut msa: Box<MatchArg>) {
 
 /// Rust-only (API layer): the bounds of the first match from `start` to the
 /// end of `text`, as `onig_search` with no options would find it, without a
-/// region. `msa` is reused across the searches of one iteration. Not for
-/// expressions whose match can start away from its attempt (`\K`) or with
-/// FIND_LONGEST, where only the region carries the match.
+/// region. `msa` is reused across the searches of one iteration and must be
+/// reset for this search first (`take_cached_msa` or `reset_with_limits`).
+/// Not for expressions whose match can start away from its attempt (`\K`) or
+/// with FIND_LONGEST, where only the region carries the match.
 pub(crate) fn onig_search_bounds(
     reg: &RegexType,
     text: &[u8],
@@ -7874,7 +7904,6 @@ pub(crate) fn onig_search_bounds(
     msa: &mut MatchArg,
 ) -> Result<Option<(usize, usize)>, i32> {
     debug_assert!(!reg.keep_moves_match_start && !opton_find_longest(reg.options));
-    msa.reset_full(reg, ONIG_OPTION_NONE, None, start);
     let end = text.len();
     let r = search_in_range_inner(reg, text, end, start, end, end, msa);
     release_oversized_stack(msa);
@@ -7975,7 +8004,7 @@ pub fn onig_search_with_param(
         data_range,
         region,
         option,
-        Some(mp),
+        Some(SearchLimits::from(mp)),
     )
 }
 

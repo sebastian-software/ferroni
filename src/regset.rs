@@ -10,11 +10,11 @@ use crate::regenc::{
     OnigEncoding, onigenc_get_prev_char_head, onigenc_is_ascii_compatible_encoding,
 };
 use crate::regexec::{
-    FirstOpTest, MatchArg, OnigMatchParam, first_op_fails, first_op_test, forward_search,
-    map_search_bypassed_for, may_skip_first_op_failures, onig_get_global_limit_revision,
-    onig_get_match_stack_limit, onig_get_retry_limit_in_match, onig_get_retry_limit_in_search,
-    onig_get_subexp_call_limit_in_search, onig_get_time_limit, onig_match,
-    onig_match_with_msa_start, search_in_range, two_pass_capture_fill_pays,
+    FirstOpTest, MatchArg, OnigMatchParam, SearchLimits, first_op_fails, first_op_test,
+    forward_search, map_search_bypassed_for, may_skip_first_op_failures,
+    onig_get_global_limit_revision, onig_get_match_stack_limit, onig_get_retry_limit_in_match,
+    onig_get_retry_limit_in_search, onig_get_subexp_call_limit_in_search, onig_get_time_limit,
+    onig_match, onig_match_with_msa_start, search_in_range, two_pass_capture_fill_pays,
 };
 use crate::regint::*;
 use std::sync::Arc;
@@ -4183,7 +4183,7 @@ pub fn onig_regset_search_with_param(
                 orig_range,
                 region,
                 option,
-                Some(&mps[i]),
+                Some(SearchLimits::from(&mps[i])),
             );
             entry.region = returned_region;
 

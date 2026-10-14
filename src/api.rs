@@ -16,8 +16,8 @@ use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::{onig_new, onig_new_with_backtracking_optimization};
 use crate::regexec::{
-    MatchArg, OnigMatchParam, cache_msa, onig_name_to_backref_number, onig_new_match_param,
-    onig_search, onig_search_bounds, onig_search_with_param, take_cached_msa,
+    MatchArg, SearchLimits, cache_msa, onig_name_to_backref_number, onig_search,
+    onig_search_bounds, search_in_range, take_cached_msa,
 };
 use crate::regint::RegexType;
 use crate::regparse_types::NameTable;
@@ -164,21 +164,28 @@ impl SearchOptions {
         self
     }
 
-    fn match_param(self) -> OnigMatchParam {
-        let mut match_param = onig_new_match_param();
-        if let Some(timeout) = self.timeout {
-            match_param.time_limit = timeout_to_millis(timeout);
+    /// The limits a search with these options applies, or `None` when every
+    /// limit is process-wide. `None` runs the same path as the standard methods.
+    #[inline]
+    fn limits(self) -> Option<SearchLimits> {
+        if self == Self::new() {
+            return None;
         }
-        if let Some(limit) = self.retry_limit_in_match {
-            match_param.retry_limit_in_match = limit;
-        }
-        if let Some(limit) = self.retry_limit_in_search {
-            match_param.retry_limit_in_search = limit;
-        }
-        if let Some(limit) = self.match_stack_limit {
-            match_param.match_stack_limit = limit;
-        }
-        match_param
+        let process_wide = SearchLimits::process_wide();
+        Some(SearchLimits {
+            match_stack_limit: self
+                .match_stack_limit
+                .unwrap_or(process_wide.match_stack_limit),
+            retry_limit_in_match: self
+                .retry_limit_in_match
+                .unwrap_or(process_wide.retry_limit_in_match),
+            retry_limit_in_search: self
+                .retry_limit_in_search
+                .unwrap_or(process_wide.retry_limit_in_search),
+            time_limit: self
+                .timeout
+                .map_or(process_wide.time_limit, timeout_to_millis),
+        })
     }
 }
 
@@ -399,43 +406,67 @@ impl Regex {
     /// with all of `text` visible.
     #[inline]
     fn find_from<'t>(&self, text: &'t [u8], start: usize) -> Option<Match<'t>> {
+        // A standard search reports a limit it reached as no match.
+        self.find_from_limited(text, start, None).ok().flatten()
+    }
+
+    /// The search behind the `find` family under `limits` (`None`: the
+    /// process-wide limits). Returns the code of a limit the search reached.
+    #[inline]
+    fn find_from_limited<'t>(
+        &self,
+        text: &'t [u8],
+        start: usize,
+        limits: Option<SearchLimits>,
+    ) -> Result<Option<Match<'t>>, i32> {
         // Only the bounds are returned: where they follow from the attempt
         // position and the match length, no region is needed (see
         // `find_iter_bytes`).
         if !self.program().keep_moves_match_start
             && !self.program().options.contains(ONIG_OPTION_FIND_LONGEST)
         {
-            let mut msa = take_cached_msa(self.program(), ONIG_OPTION_NONE, None, start);
+            let mut msa = take_cached_msa(self.program(), ONIG_OPTION_NONE, None, start, limits);
             let found = onig_search_bounds(self.program(), text, start, &mut msa);
             cache_msa(msa);
-            let (match_start, match_end) = found.ok()??;
-            return (match_end <= text.len()).then_some(Match {
+            let Some((match_start, match_end)) = found? else {
+                return Ok(None);
+            };
+            return Ok((match_end <= text.len()).then_some(Match {
                 text,
                 start: match_start,
                 end: match_end,
-            });
+            }));
         }
-        let (result, region) = onig_search(
+        let len = text.len();
+        let (result, region) = search_in_range(
             self.program(),
             text,
-            text.len(),
+            len,
             start,
-            text.len(),
+            len,
+            len,
             Some(take_cached_region()),
             ONIG_OPTION_NONE,
+            limits,
         );
-        let region = region?;
+        let Some(region) = region else {
+            return Ok(None);
+        };
         if result < 0 {
             cache_region(region);
-            return None;
+            return if result == ONIG_MISMATCH {
+                Ok(None)
+            } else {
+                Err(result)
+            };
         }
         if region.num_regs < 1 {
             cache_region(region);
-            return None;
+            return Ok(None);
         }
         let m = Match::from_region(text, region.beg[0], region.end[0]);
         cache_region(region);
-        m
+        Ok(m)
     }
 
     /// Return the first match in `text` under per-search `options`.
@@ -444,6 +475,7 @@ impl Regex {
     ///
     /// Returns the [`RegexError`] of a limit the search reached, such as
     /// [`RegexError::TimeLimitOver`], instead of treating it as "no match".
+    #[inline]
     pub fn find_with<'t>(
         &self,
         text: &'t str,
@@ -457,6 +489,7 @@ impl Regex {
     /// # Errors
     ///
     /// Returns the [`RegexError`] of a limit the search reached.
+    #[inline]
     pub fn find_bytes_with<'t>(
         &self,
         text: &'t [u8],
@@ -478,6 +511,7 @@ impl Regex {
     ///
     /// Panics if `start` is greater than `text.len()` or is not on a char
     /// boundary of `text`.
+    #[inline]
     pub fn find_at_with<'t>(
         &self,
         text: &'t str,
@@ -498,6 +532,7 @@ impl Regex {
     /// # Panics
     ///
     /// Panics if `start` is greater than `text.len()`.
+    #[inline]
     pub fn find_bytes_at_with<'t>(
         &self,
         text: &'t [u8],
@@ -514,18 +549,8 @@ impl Regex {
         start: usize,
         options: SearchOptions,
     ) -> Result<Option<Match<'t>>, RegexError> {
-        let (result, region) =
-            self.search_with(text, start, text.len(), Some(take_cached_region()), options)?;
-        let Some(region) = region else {
-            return Ok(None);
-        };
-        if result < 0 || region.num_regs < 1 {
-            cache_region(region);
-            return Ok(None);
-        }
-        let m = Match::from_region(text, region.beg[0], region.end[0]);
-        cache_region(region);
-        Ok(m)
+        self.find_from_limited(text, start, options.limits())
+            .map_err(RegexError::from)
     }
 
     /// Check whether `text` matches the pattern anywhere.
@@ -586,6 +611,7 @@ impl Regex {
     /// # Errors
     ///
     /// Returns the [`RegexError`] of a limit the search reached.
+    #[inline]
     pub fn is_match_with(&self, text: &str, options: SearchOptions) -> Result<bool, RegexError> {
         self.is_match_bytes_with(text.as_bytes(), options)
     }
@@ -595,6 +621,7 @@ impl Regex {
     /// # Errors
     ///
     /// Returns the [`RegexError`] of a limit the search reached.
+    #[inline]
     pub fn is_match_bytes_with(
         &self,
         text: &[u8],
@@ -614,6 +641,7 @@ impl Regex {
     ///
     /// Panics if `start` is greater than `text.len()` or is not on a char
     /// boundary of `text`.
+    #[inline]
     pub fn is_match_at_with(
         &self,
         text: &str,
@@ -634,6 +662,7 @@ impl Regex {
     /// # Panics
     ///
     /// Panics if `start` is greater than `text.len()`.
+    #[inline]
     pub fn is_match_bytes_at_with(
         &self,
         text: &[u8],
@@ -650,7 +679,21 @@ impl Regex {
         start: usize,
         options: SearchOptions,
     ) -> Result<bool, RegexError> {
-        let (result, _) = self.search_with(text, start, text.len(), None, options)?;
+        let len = text.len();
+        let (result, _) = search_in_range(
+            self.program(),
+            text,
+            len,
+            start,
+            len,
+            len,
+            None,
+            ONIG_OPTION_NONE,
+            options.limits(),
+        );
+        if result < 0 && result != ONIG_MISMATCH {
+            return Err(RegexError::from(result));
+        }
         Ok(result >= 0)
     }
 
@@ -733,6 +776,7 @@ impl Regex {
     /// # Errors
     ///
     /// Returns the [`RegexError`] of a limit the search reached.
+    #[inline]
     pub fn captures_with<'t>(
         &self,
         text: &'t str,
@@ -747,6 +791,7 @@ impl Regex {
     /// # Errors
     ///
     /// Returns the [`RegexError`] of a limit the search reached.
+    #[inline]
     pub fn captures_bytes_with<'t>(
         &self,
         text: &'t [u8],
@@ -766,6 +811,7 @@ impl Regex {
     ///
     /// Panics if `start` is greater than `text.len()` or is not on a char
     /// boundary of `text`.
+    #[inline]
     pub fn captures_at_with<'t>(
         &self,
         text: &'t str,
@@ -786,6 +832,7 @@ impl Regex {
     /// # Panics
     ///
     /// Panics if `start` is greater than `text.len()`.
+    #[inline]
     pub fn captures_bytes_at_with<'t>(
         &self,
         text: &'t [u8],
@@ -802,14 +849,28 @@ impl Regex {
         start: usize,
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
-        let (result, region) =
-            self.search_with(text, start, text.len(), Some(take_cached_region()), options)?;
+        let len = text.len();
+        let (result, region) = search_in_range(
+            self.program(),
+            text,
+            len,
+            start,
+            len,
+            len,
+            Some(take_cached_region()),
+            ONIG_OPTION_NONE,
+            options.limits(),
+        );
         let Some(region) = region else {
             return Ok(None);
         };
         if result < 0 {
             cache_region(region);
-            return Ok(None);
+            return if result == ONIG_MISMATCH {
+                Ok(None)
+            } else {
+                Err(RegexError::from(result))
+            };
         }
         Ok(Some(Captures {
             text,
@@ -831,6 +892,16 @@ impl Regex {
 
     /// Iterate over all non-overlapping matches in `text` (as bytes).
     pub fn find_iter_bytes<'r, 't>(&'r self, text: &'t [u8]) -> FindIter<'r, 't> {
+        self.find_iter_limited(text, None)
+    }
+
+    /// The iterator behind the `find_iter` family under `limits` (`None`: the
+    /// process-wide limits).
+    fn find_iter_limited<'r, 't>(
+        &'r self,
+        text: &'t [u8],
+        limits: Option<SearchLimits>,
+    ) -> FindIter<'r, 't> {
         // An iterator yields match bounds only. Where they follow from the
         // attempt position and the match length, it searches without a
         // region, reusing one MatchArg for all its searches.
@@ -845,7 +916,9 @@ impl Regex {
             } else {
                 take_cached_region()
             },
-            msa: bounds_only.then(|| take_cached_msa(self.program(), ONIG_OPTION_NONE, None, 0)),
+            msa: bounds_only
+                .then(|| take_cached_msa(self.program(), ONIG_OPTION_NONE, None, 0, limits)),
+            limits,
         }
     }
 
@@ -854,6 +927,7 @@ impl Regex {
     ///
     /// The options apply to each search the iterator runs. A search that
     /// reaches a limit yields its error once and ends the iteration.
+    #[inline]
     pub fn find_iter_with<'r, 't>(
         &'r self,
         text: &'t str,
@@ -864,17 +938,14 @@ impl Regex {
 
     /// Iterate over all non-overlapping matches in `text` (as bytes) under
     /// per-search `options`.
+    #[inline]
     pub fn find_iter_bytes_with<'r, 't>(
         &'r self,
         text: &'t [u8],
         options: SearchOptions,
     ) -> TryFindIter<'r, 't> {
         TryFindIter {
-            regex: self,
-            text,
-            cursor: MatchCursor::default(),
-            region: take_cached_region(),
-            options,
+            iter: self.find_iter_limited(text, options.limits()),
             finished: false,
         }
     }
@@ -909,6 +980,7 @@ impl Regex {
             text,
             cursor: MatchCursor::default(),
             region: take_cached_region(),
+            limits: None,
         }
     }
 
@@ -917,6 +989,7 @@ impl Regex {
     ///
     /// The options apply to each search the iterator runs. A search that
     /// reaches a limit yields its error once and ends the iteration.
+    #[inline]
     pub fn captures_iter_with<'r, 't>(
         &'r self,
         text: &'t str,
@@ -927,46 +1000,22 @@ impl Regex {
 
     /// Iterate over the capture groups of all non-overlapping matches in
     /// `text` (as bytes) under per-search `options`.
+    #[inline]
     pub fn captures_iter_bytes_with<'r, 't>(
         &'r self,
         text: &'t [u8],
         options: SearchOptions,
     ) -> TryCaptureMatches<'r, 't> {
         TryCaptureMatches {
-            regex: self,
-            text,
-            cursor: MatchCursor::default(),
-            region: take_cached_region(),
-            options,
+            iter: CaptureMatches {
+                regex: self,
+                text,
+                cursor: MatchCursor::default(),
+                region: take_cached_region(),
+                limits: options.limits(),
+            },
             finished: false,
         }
-    }
-
-    fn search_with(
-        &self,
-        text: &[u8],
-        start: usize,
-        range: usize,
-        region: Option<OnigRegion>,
-        options: SearchOptions,
-    ) -> Result<(i32, Option<OnigRegion>), RegexError> {
-        let (result, region) = onig_search_with_param(
-            self.program(),
-            text,
-            text.len(),
-            start,
-            range,
-            region,
-            ONIG_OPTION_NONE,
-            &options.match_param(),
-        );
-        if result < 0 && result != ONIG_MISMATCH {
-            if let Some(region) = region {
-                cache_region(region);
-            }
-            return Err(RegexError::from(result));
-        }
-        Ok((result, region))
     }
 
     /// Return the number of capture groups in the pattern (excluding group 0).
@@ -1759,55 +1808,90 @@ pub struct FindIter<'r, 't> {
     region: OnigRegion,
     /// Set when the searches need no region (`onig_search_bounds`).
     msa: Option<Box<MatchArg>>,
+    /// The limits of each search; `None` keeps the process-wide ones.
+    limits: Option<SearchLimits>,
+}
+
+impl<'r, 't> FindIter<'r, 't> {
+    /// The next match, or the code of a limit that a search reached.
+    fn try_next(&mut self) -> Result<Option<Match<'t>>, i32> {
+        loop {
+            if self.cursor.last_end > self.text.len() {
+                return Ok(None);
+            }
+            let program = self.regex.program();
+            let m = if let Some(msa) = self.msa.as_deref_mut() {
+                msa.reset_with_limits(
+                    program,
+                    ONIG_OPTION_NONE,
+                    None,
+                    self.cursor.last_end,
+                    self.limits,
+                );
+                let Some((start, end)) =
+                    onig_search_bounds(program, self.text, self.cursor.last_end, msa)?
+                else {
+                    return Ok(None);
+                };
+                if end > self.text.len() {
+                    return Ok(None);
+                }
+                Match {
+                    text: self.text,
+                    start,
+                    end,
+                }
+            } else {
+                let len = self.text.len();
+                let (result, region) = search_in_range(
+                    program,
+                    self.text,
+                    len,
+                    self.cursor.last_end,
+                    len,
+                    len,
+                    Some(std::mem::take(&mut self.region)),
+                    ONIG_OPTION_NONE,
+                    self.limits,
+                );
+                let Some(region) = region else {
+                    return Ok(None);
+                };
+                self.region = region;
+
+                if result < 0 {
+                    return if result == ONIG_MISMATCH {
+                        Ok(None)
+                    } else {
+                        Err(result)
+                    };
+                }
+                if self.region.num_regs < 1 {
+                    return Ok(None);
+                }
+
+                let Some(m) = Match::from_region(self.text, self.region.beg[0], self.region.end[0])
+                else {
+                    return Ok(None);
+                };
+                m
+            };
+
+            match self.cursor.accept(program, self.text, m.start, m.end) {
+                Verdict::Yield => return Ok(Some(m)),
+                Verdict::Retry => continue,
+                Verdict::Finish => return Ok(None),
+            }
+        }
+    }
 }
 
 impl<'r, 't> Iterator for FindIter<'r, 't> {
     type Item = Match<'t>;
 
     fn next(&mut self) -> Option<Match<'t>> {
-        if self.cursor.last_end > self.text.len() {
-            return None;
-        }
-
-        let m = if let Some(msa) = self.msa.as_deref_mut() {
-            let (start, end) =
-                onig_search_bounds(self.regex.program(), self.text, self.cursor.last_end, msa)
-                    .ok()??;
-            (end <= self.text.len()).then_some(Match {
-                text: self.text,
-                start,
-                end,
-            })?
-        } else {
-            let (result, region) = onig_search(
-                self.regex.program(),
-                self.text,
-                self.text.len(),
-                self.cursor.last_end,
-                self.text.len(),
-                Some(std::mem::take(&mut self.region)),
-                ONIG_OPTION_NONE,
-            );
-            self.region = region?;
-
-            if result < 0 {
-                return None;
-            }
-            if self.region.num_regs < 1 {
-                return None;
-            }
-
-            Match::from_region(self.text, self.region.beg[0], self.region.end[0])?
-        };
-
-        match self
-            .cursor
-            .accept(self.regex.program(), self.text, m.start, m.end)
-        {
-            Verdict::Yield => Some(m),
-            Verdict::Retry => self.next(),
-            Verdict::Finish => None,
-        }
+        // A standard iteration reports a limit as the end of the matches.
+        self.try_next().ok().flatten()
     }
 }
 
@@ -1831,11 +1915,7 @@ impl fmt::Debug for FindIter<'_, '_> {
 /// Created by [`Regex::find_iter_with`]. A search that reaches a limit is
 /// yielded once as `Err` and ends the iterator.
 pub struct TryFindIter<'r, 't> {
-    regex: &'r Regex,
-    text: &'t [u8],
-    cursor: MatchCursor,
-    region: OnigRegion,
-    options: SearchOptions,
+    iter: FindIter<'r, 't>,
     finished: bool,
 }
 
@@ -1843,66 +1923,24 @@ impl<'r, 't> Iterator for TryFindIter<'r, 't> {
     type Item = Result<Match<'t>, RegexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.finished || self.cursor.last_end > self.text.len() {
-            self.finished = true;
+        if self.finished {
             return None;
         }
-
-        let search = self.regex.search_with(
-            self.text,
-            self.cursor.last_end,
-            self.text.len(),
-            Some(std::mem::take(&mut self.region)),
-            self.options,
-        );
-        let (result, region) = match search {
-            Ok(result) => result,
-            Err(error) => {
-                self.finished = true;
-                return Some(Err(error));
-            }
-        };
-        let Some(region) = region else {
-            self.finished = true;
-            return None;
-        };
-        self.region = region;
-
-        if result < 0 {
-            self.finished = true;
-            return None;
-        }
-        if self.region.num_regs < 1 {
-            self.finished = true;
-            return None;
-        }
-
-        let Some(m) = Match::from_region(self.text, self.region.beg[0], self.region.end[0]) else {
-            self.finished = true;
-            return None;
-        };
-
-        match self
-            .cursor
-            .accept(self.regex.program(), self.text, m.start, m.end)
-        {
-            Verdict::Yield => Some(Ok(m)),
-            Verdict::Retry => self.next(),
-            Verdict::Finish => {
+        match self.iter.try_next() {
+            Ok(Some(m)) => Some(Ok(m)),
+            Ok(None) => {
                 self.finished = true;
                 None
+            }
+            Err(code) => {
+                self.finished = true;
+                Some(Err(RegexError::from(code)))
             }
         }
     }
 }
 
 impl std::iter::FusedIterator for TryFindIter<'_, '_> {}
-
-impl Drop for TryFindIter<'_, '_> {
-    fn drop(&mut self) {
-        cache_region(std::mem::take(&mut self.region));
-    }
-}
 
 impl fmt::Debug for TryFindIter<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1924,53 +1962,76 @@ pub struct CaptureMatches<'r, 't> {
     /// The region for the next search. Empty once a yielded [`Captures`] has
     /// taken it.
     region: OnigRegion,
+    /// The limits of each search; `None` keeps the process-wide ones.
+    limits: Option<SearchLimits>,
+}
+
+impl<'r, 't> CaptureMatches<'r, 't> {
+    /// The next match with its captures, or the code of a limit that a search
+    /// reached.
+    fn try_next(&mut self) -> Result<Option<Captures<'t>>, i32> {
+        loop {
+            if self.cursor.last_end > self.text.len() {
+                return Ok(None);
+            }
+
+            let program = self.regex.program();
+            let len = self.text.len();
+            let (result, region) = search_in_range(
+                program,
+                self.text,
+                len,
+                self.cursor.last_end,
+                len,
+                len,
+                Some(std::mem::take(&mut self.region)),
+                ONIG_OPTION_NONE,
+                self.limits,
+            );
+            let Some(region) = region else {
+                return Ok(None);
+            };
+            if result < 0 {
+                self.region = region;
+                return if result == ONIG_MISMATCH {
+                    Ok(None)
+                } else {
+                    Err(result)
+                };
+            }
+            if region.num_regs < 1 {
+                self.region = region;
+                return Ok(None);
+            }
+            let Some(m) = Match::from_region(self.text, region.beg[0], region.end[0]) else {
+                self.region = region;
+                return Ok(None);
+            };
+
+            match self.cursor.accept(program, self.text, m.start, m.end) {
+                Verdict::Yield => {
+                    return Ok(Some(Captures {
+                        text: self.text,
+                        region,
+                        compiled: Arc::clone(&self.regex.inner),
+                    }));
+                }
+                Verdict::Retry => self.region = region,
+                Verdict::Finish => {
+                    self.region = region;
+                    return Ok(None);
+                }
+            }
+        }
+    }
 }
 
 impl<'r, 't> Iterator for CaptureMatches<'r, 't> {
     type Item = Captures<'t>;
 
     fn next(&mut self) -> Option<Captures<'t>> {
-        if self.cursor.last_end > self.text.len() {
-            return None;
-        }
-
-        let (result, region) = onig_search(
-            self.regex.program(),
-            self.text,
-            self.text.len(),
-            self.cursor.last_end,
-            self.text.len(),
-            Some(std::mem::take(&mut self.region)),
-            ONIG_OPTION_NONE,
-        );
-        let region = region?;
-        if result < 0 || region.num_regs < 1 {
-            self.region = region;
-            return None;
-        }
-        let Some(m) = Match::from_region(self.text, region.beg[0], region.end[0]) else {
-            self.region = region;
-            return None;
-        };
-
-        match self
-            .cursor
-            .accept(self.regex.program(), self.text, m.start, m.end)
-        {
-            Verdict::Yield => Some(Captures {
-                text: self.text,
-                region,
-                compiled: Arc::clone(&self.regex.inner),
-            }),
-            Verdict::Retry => {
-                self.region = region;
-                self.next()
-            }
-            Verdict::Finish => {
-                self.region = region;
-                None
-            }
-        }
+        // A standard iteration reports a limit as the end of the matches.
+        self.try_next().ok().flatten()
     }
 }
 
@@ -1992,13 +2053,7 @@ impl fmt::Debug for CaptureMatches<'_, '_> {
 /// Created by [`Regex::captures_iter_with`]. A search that reaches a limit is
 /// yielded once as `Err` and ends the iterator.
 pub struct TryCaptureMatches<'r, 't> {
-    regex: &'r Regex,
-    text: &'t [u8],
-    cursor: MatchCursor,
-    /// The region for the next search. Empty once a yielded [`Captures`] has
-    /// taken it.
-    region: OnigRegion,
-    options: SearchOptions,
+    iter: CaptureMatches<'r, 't>,
     finished: bool,
 }
 
@@ -2006,69 +2061,24 @@ impl<'r, 't> Iterator for TryCaptureMatches<'r, 't> {
     type Item = Result<Captures<'t>, RegexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.finished || self.cursor.last_end > self.text.len() {
-            self.finished = true;
+        if self.finished {
             return None;
         }
-
-        let search = self.regex.search_with(
-            self.text,
-            self.cursor.last_end,
-            self.text.len(),
-            Some(std::mem::take(&mut self.region)),
-            self.options,
-        );
-        let (result, region) = match search {
-            Ok(result) => result,
-            Err(error) => {
+        match self.iter.try_next() {
+            Ok(Some(captures)) => Some(Ok(captures)),
+            Ok(None) => {
                 self.finished = true;
-                return Some(Err(error));
-            }
-        };
-        let Some(region) = region else {
-            self.finished = true;
-            return None;
-        };
-        if result < 0 || region.num_regs < 1 {
-            self.finished = true;
-            self.region = region;
-            return None;
-        }
-        let Some(m) = Match::from_region(self.text, region.beg[0], region.end[0]) else {
-            self.finished = true;
-            self.region = region;
-            return None;
-        };
-
-        match self
-            .cursor
-            .accept(self.regex.program(), self.text, m.start, m.end)
-        {
-            Verdict::Yield => Some(Ok(Captures {
-                text: self.text,
-                region,
-                compiled: Arc::clone(&self.regex.inner),
-            })),
-            Verdict::Retry => {
-                self.region = region;
-                self.next()
-            }
-            Verdict::Finish => {
-                self.finished = true;
-                self.region = region;
                 None
+            }
+            Err(code) => {
+                self.finished = true;
+                Some(Err(RegexError::from(code)))
             }
         }
     }
 }
 
 impl std::iter::FusedIterator for TryCaptureMatches<'_, '_> {}
-
-impl Drop for TryCaptureMatches<'_, '_> {
-    fn drop(&mut self) {
-        cache_region(std::mem::take(&mut self.region));
-    }
-}
 
 impl fmt::Debug for TryCaptureMatches<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -2303,6 +2313,7 @@ mod tests {
                     cursor: MatchCursor::default(),
                     region: OnigRegion::new(),
                     msa: None,
+                    limits: None,
                 };
                 let got: Vec<_> = bounds.map(|m| m.range()).collect();
                 let expected: Vec<_> = region_path.map(|m| m.range()).collect();
@@ -2438,6 +2449,103 @@ mod tests {
             ),
             Err(RegexError::RetryLimitInSearchOver)
         ));
+    }
+
+    /// A search under per-search limits leaves none behind: the standard
+    /// methods, which reuse the same thread-cached MatchArg, keep the
+    /// process-wide limits.
+    #[test]
+    fn search_options_limits_do_not_leak_into_standard_searches() {
+        let _limits = crate::regexec::shared_limits();
+        let re = Regex::new(r"a*?b").unwrap();
+        let text = format!("{}b", "a".repeat(50));
+        let tight = SearchOptions::new().retry_limit_in_match(3);
+
+        assert!(matches!(
+            re.find_with(&text, tight),
+            Err(RegexError::RetryLimitInMatchOver)
+        ));
+        assert!(matches!(
+            re.is_match_with(&text, tight),
+            Err(RegexError::RetryLimitInMatchOver)
+        ));
+        assert!(matches!(
+            re.captures_with(&text, tight),
+            Err(RegexError::RetryLimitInMatchOver)
+        ));
+        assert!(matches!(
+            re.find_iter_with(&text, tight).next(),
+            Some(Err(RegexError::RetryLimitInMatchOver))
+        ));
+        assert!(matches!(
+            re.captures_iter_with(&text, tight).next(),
+            Some(Err(RegexError::RetryLimitInMatchOver))
+        ));
+
+        assert_eq!(re.find(&text).map(|m| m.range()), Some(0..51));
+        assert!(re.is_match(&text));
+        assert!(re.captures(&text).is_some());
+        assert_eq!(re.find_iter(&text).count(), 1);
+        assert_eq!(
+            re.find_with(&text, SearchOptions::new())
+                .unwrap()
+                .map(|m| m.range()),
+            Some(0..51)
+        );
+    }
+
+    /// The bounds-only path (`find`, `find_iter`) and the region path
+    /// (`captures`) report the same limit errors for the same options, so
+    /// `find_with` may use the bounds-only path.
+    #[test]
+    fn bounds_and_region_paths_report_the_same_limit_errors() {
+        let _limits = crate::regexec::shared_limits();
+        let patterns = [
+            r"a*?b",
+            r"(a+)+b",
+            r"(?:a|aa)*c",
+            r"\w+\s+\w+x",
+            r"(\w+)@(\w+)\.com",
+            r"x*y|a+z",
+            r"(?>a+)b|a",
+        ];
+        // Short subjects: the catastrophic patterns run into their process-wide
+        // limits, and 16 bytes keep that cheap.
+        let texts = [
+            format!("{}b", "a".repeat(16)),
+            format!("{}c", "a".repeat(15)),
+            "a".repeat(16),
+            "one two three four five six".to_owned(),
+            "mail user@example.com and more".to_owned(),
+            format!("{}z", "a".repeat(20)),
+        ];
+        let limits = [
+            SearchOptions::new().retry_limit_in_match(1),
+            SearchOptions::new().retry_limit_in_match(3),
+            SearchOptions::new().retry_limit_in_match(20),
+            SearchOptions::new().retry_limit_in_search(5),
+            SearchOptions::new().retry_limit_in_search(50),
+            SearchOptions::new().match_stack_limit(4),
+            SearchOptions::new().match_stack_limit(40),
+        ];
+        for pattern in patterns {
+            let re = Regex::new(pattern).unwrap();
+            for text in &texts {
+                for options in limits {
+                    let bounds = re.find_with(text, options).map(|m| m.map(|m| m.range()));
+                    let region = re
+                        .captures_with(text, options)
+                        .map(|c| c.map(|c| c.get(0).unwrap().range()));
+                    assert_eq!(bounds, region, "{pattern:?} {text:?} {options:?}");
+                    let is_match = re.is_match_with(text, options);
+                    assert_eq!(
+                        is_match,
+                        bounds.as_ref().map(Option::is_some).map_err(Clone::clone),
+                        "{pattern:?} {text:?} {options:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
