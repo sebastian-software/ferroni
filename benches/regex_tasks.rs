@@ -1,7 +1,8 @@
 //! Everyday regex tasks on realistic text: markup, logs, chat with emoji,
-//! Markdown, JSON, CSV and source code. Each case collects every match with
-//! its captures over a document of a few dozen kilobytes, or validates a batch
-//! of inputs, so the timings measure matching rather than call overhead.
+//! Markdown, JSON, CSV, source code, templates, HTTP traffic, configuration
+//! files and authentication logs. Each case collects every match with its
+//! captures over a document of a few dozen kilobytes, or validates a batch of
+//! inputs, so the timings measure matching rather than call overhead.
 //!
 //! The documents are generated deterministically. Every engine is validated
 //! against C Oniguruma before it is timed; an engine that rejects a pattern or
@@ -12,7 +13,12 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
 use ferroni::ffi;
-use ferroni::oniguruma::ONIG_OPTION_NONE;
+use ferroni::oniguruma::{
+    ONIG_OPTION_NONE, ONIG_SYN_OP2_ATMARK_CAPTURE_HISTORY, OnigCaptureTreeNode, OnigRegion,
+    RegexType,
+};
+use ferroni::regexec::{onig_get_capture_tree, onig_search};
+use ferroni::regsyntax::OnigSyntaxOniguruma;
 
 use super::super::engines::{self, Compiled};
 use super::super::{c_compile, configure_battle_group, regex_compile, rust_compile};
@@ -22,7 +28,8 @@ use super::{c_trace, engine_trace, regex_trace, rust_trace, trace_engines};
 enum Syntax {
     /// The `regex` crate runs the pattern too.
     Shared,
-    /// Lookaround, backreferences, possessive or atomic groups, `\X`.
+    /// Lookaround, backreferences, possessive or atomic groups, `\X`, `\K`,
+    /// recursive subexpression calls and the absent operator.
     Oniguruma,
 }
 
@@ -35,6 +42,14 @@ enum Corpus {
     Json,
     Csv,
     Code,
+    Scripts,
+    Secrets,
+    Templates,
+    RustComments,
+    Http,
+    Config,
+    CsvNearMiss,
+    Markup,
 }
 
 struct Task {
@@ -234,6 +249,62 @@ fn tasks() -> Vec<Task> {
             Html,
             r"(?<=\b(?:price|total):\s{0,3})[$€£]?[0-9]+(?:[.,][0-9]{2})?",
             200,
+        ),
+        task(
+            "html_script_blocks_absent_operator",
+            Oniguruma,
+            Scripts,
+            r"(?i)<script\b[^>]*>(?~</script>)</script>",
+            100,
+        ),
+        task(
+            "template_interpolations_recursive",
+            Oniguruma,
+            Templates,
+            r"(?<interpolation>\$\{(?:[^{}]++|\g<interpolation>)*+\})",
+            500,
+        ),
+        task(
+            "api_secret_values_keep_start",
+            Oniguruma,
+            Secrets,
+            r"(?:\b(?:api_key|access_token|refresh_token)\s*[:=]\s*|\bBearer\s+)\K[A-Za-z0-9._~-]{8,}",
+            500,
+        ),
+        task(
+            "rust_nested_block_comments_recursive",
+            Oniguruma,
+            RustComments,
+            r"(?<comment>/\*(?:[^*/]++|/(?!\*)|\*(?!/)|\g<comment>)*+\*/)",
+            100,
+        ),
+        task(
+            "http_request_tokens_g_anchor",
+            Oniguruma,
+            Http,
+            r"\G(HTTP/1\.[01]|[A-Z]+|/[A-Za-z0-9._/-]+|\?[A-Za-z0-9._=&%-]+|[1-5][0-9]{2}|[ \t]+|\n)",
+            1000,
+        ),
+        task(
+            "http_request_lines_shared",
+            Shared,
+            Http,
+            r"(?m)^([A-Z]+) (/[^ ?\t]+)(?:\?([^ \t]+))? HTTP/1\.[01] ([1-5][0-9]{2})$",
+            200,
+        ),
+        task(
+            "environment_assignments_shared",
+            Shared,
+            Config,
+            r#"(?m)^([A-Za-z_][A-Za-z0-9_]*)=(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^\s#]+))$"#,
+            200,
+        ),
+        task(
+            "csv_rows_with_near_misses_shared",
+            Shared,
+            CsvNearMiss,
+            r#"(?m)^(?:[^,"\n]*|"(?:[^"]|"")*")(?:,(?:[^,"\n]*|"(?:[^"]|"")*")){5}$"#,
+            150,
         ),
     ]
 }
@@ -437,6 +508,114 @@ Requires v1.{minor}.{patch}-beta.{n}+build.{i} or 2.0.{patch}; *{word}* matters.
                 .unwrap();
             }
         }
+        Corpus::Scripts => {
+            for _ in 0..160 {
+                out.push_str(
+                    "<script type=\"module\" data-page=\"checkout\">\n\
+                     const label = `Order ${order.id}`;\n\
+                     const escapedClose = \"<\\/script>\";\n\
+                     mountCheckout();\n\
+                     </script>\n",
+                );
+            }
+        }
+        Corpus::Secrets => {
+            for i in 0..400 {
+                writeln!(
+                    out,
+                    "2026-10-{day:02}T{hour:02}:{minute:02}:00Z INFO POST /v1/session Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload-{i}.signature; api_key=sk_live_a91f22c4_{i:04}; refresh_token=0.AX4Xfa-{i}-long-secret-value",
+                    day = 1 + (i % 28),
+                    hour = i % 24,
+                    minute = i % 60,
+                )
+                .unwrap();
+            }
+        }
+        Corpus::Templates => {
+            const RECORDS: [&str; 4] = [
+                "const label = `Order ${order.id}: ${formatUser(user, `${user.firstName} ${user.lastName}`)}`;",
+                "const status = `Shipment ${shipment.id}: ${shipment.delivered ? `${shipment.carrier} ${shipment.trackingCode}` : \"in transit\"}`;",
+                "const destination = `Ship to ${formatAddress(address, `${address.city}, ${address.country}`)}`;",
+                "const summary = `Total ${currency.format(order.total * (1 + tax.rate))} ${currency.code}; ${items.length} items`;",
+            ];
+            for i in 0..320 {
+                writeln!(out, "{} // render record {i}", RECORDS[i % RECORDS.len()]).unwrap();
+            }
+        }
+        Corpus::RustComments => {
+            for i in 0..200 {
+                writeln!(
+                    out,
+                    "/* Parser note {i}: the outer comment stays open.\n\
+                     * /* Nested formatter note {i}: preserve this block too. */\n\
+                     * Parsing resumes after the outer comment.\n\
+                     */\nfn parse_record_{i}() {{}}"
+                )
+                .unwrap();
+            }
+        }
+        Corpus::Http => {
+            for i in 0..320 {
+                match i % 4 {
+                    0 => writeln!(
+                        out,
+                        "GET /api/v1/orders?page={page}&sort=created HTTP/1.1 200",
+                        page = i % 40
+                    )
+                    .unwrap(),
+                    1 => writeln!(out, "POST /api/v1/sessions HTTP/1.1 201").unwrap(),
+                    2 => writeln!(out, "PATCH /api/v1/items/{i} HTTP/1.1 204").unwrap(),
+                    _ => writeln!(out, "GET /health HTTP/1.0 304").unwrap(),
+                }
+            }
+        }
+        Corpus::Config => {
+            const ASSIGNMENTS: [&str; 5] = [
+                "SERVICE=checkout",
+                "DATABASE_URL=\"postgres://db.example.test/app?sslmode=require\"",
+                "WELCOME='Welcome to Ferroni'",
+                "FEATURE_FLAGS=\"search,export\\,preview\"",
+                "API_ORIGIN=https://api.example.test/v1",
+            ];
+            for _ in 0..240 {
+                for assignment in ASSIGNMENTS {
+                    writeln!(out, "{assignment}").unwrap();
+                }
+            }
+        }
+        Corpus::CsvNearMiss => {
+            for i in 0..320 {
+                if i % 2 == 0 {
+                    writeln!(
+                        out,
+                        "{i},\"Café shop {i}\",\"She said \"\"ready\"\"\",{amount}.50,2026-10-14,shipped",
+                        amount = 10 + i % 90
+                    )
+                    .unwrap();
+                } else {
+                    writeln!(
+                        out,
+                        "{i},\"Café shop {i}\",\"She said \"\"ready\"\"\",{amount}.50,2026-10-14,\"unclosed status",
+                        amount = 10 + i % 90
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        Corpus::Markup => {
+            for i in 0..200 {
+                writeln!(
+                    out,
+                    "<article data-order=\"{i}\"><section class=\"order\"><h2>Order {i}</h2>\
+                     <section class=\"customer\"><p>Customer {i}</p>\
+                     <section class=\"address\">City {city}, Country</section></section>\
+                     <section class=\"items\"><ul><li>Item {i}</li></ul></section>\
+                     </section></article>",
+                    city = ["Berlin", "São Paulo", "Tokyo", "Toronto"][i % 4],
+                )
+                .unwrap();
+            }
+        }
     }
     out
 }
@@ -488,6 +667,9 @@ pub fn bench_regex_tasks(c: &mut Criterion) {
             "{}",
             task.name
         );
+        if task.name == "http_request_tokens_g_anchor" {
+            assert_contiguous_tokens(&expected, text.len(), task.name);
+        }
         println!(
             "WORKLOAD {}",
             serde_json::json!({
@@ -509,6 +691,18 @@ pub fn bench_regex_tasks(c: &mut Criterion) {
         if task.syntax == Syntax::Shared {
             let regex = regex_compile(task.pattern.as_bytes(), false);
             let actual = regex_trace(&regex, text.as_bytes());
+            if matches!(
+                task.name,
+                "http_request_lines_shared"
+                    | "environment_assignments_shared"
+                    | "csv_rows_with_near_misses_shared"
+            ) {
+                assert_eq!(
+                    actual, expected,
+                    "{} must be supported by the regex crate",
+                    task.name
+                );
+            }
             if actual == expected {
                 group.bench_function(BenchmarkId::new("regex", task.name), |b| {
                     b.iter(|| black_box(regex_trace(&regex, black_box(text.as_bytes()))));
@@ -521,9 +715,30 @@ pub fn bench_regex_tasks(c: &mut Criterion) {
                 );
             }
         }
-        for (engine, compiled) in
-            trace_engines("regex_tasks", task.name, &task.pattern, &text, &expected)
-        {
+        let compatible_engines =
+            trace_engines("regex_tasks", task.name, &task.pattern, &text, &expected);
+        if matches!(
+            task.name,
+            "http_request_lines_shared"
+                | "environment_assignments_shared"
+                | "csv_rows_with_near_misses_shared"
+        ) {
+            for required in [
+                engines::Engine::Pcre2,
+                engines::Engine::Pcre2Jit,
+                engines::Engine::Fancy,
+            ] {
+                assert!(
+                    compatible_engines
+                        .iter()
+                        .any(|(engine, _)| *engine == required),
+                    "{} must be supported by {}",
+                    task.name,
+                    required.id()
+                );
+            }
+        }
+        for (engine, compiled) in compatible_engines {
             group.bench_function(BenchmarkId::new(engine.id(), task.name), |b| {
                 b.iter(|| black_box(engine_trace(&compiled, black_box(&text)).unwrap()));
             });
@@ -585,6 +800,154 @@ pub fn bench_regex_tasks(c: &mut Criterion) {
             })
         });
     }
+    group.finish();
+}
+
+fn assert_contiguous_tokens(trace: &super::Trace, text_len: usize, name: &str) {
+    assert!(!trace.is_empty(), "{name}: no tokens");
+    assert_eq!(
+        trace[0][0].0, 0,
+        "{name}: first token does not start at zero"
+    );
+    assert!(
+        trace.windows(2).all(|pair| pair[0][0].1 == pair[1][0].0),
+        "{name}: token stream contains a gap"
+    );
+    assert_eq!(
+        trace.last().unwrap()[0].1,
+        text_len as i32,
+        "{name}: token stream does not cover the document"
+    );
+}
+
+fn capture_history_node(node: &OnigCaptureTreeNode) -> ffi::CaptureHistoryNode {
+    ffi::CaptureHistoryNode {
+        group: node.group,
+        beg: node.beg,
+        end: node.end,
+        children: node
+            .childs
+            .iter()
+            .map(|child| capture_history_node(child))
+            .collect(),
+    }
+}
+
+fn rust_capture_history_trace(regex: &RegexType, text: &[u8]) -> Vec<ffi::CaptureHistoryNode> {
+    let mut trace = Vec::new();
+    let mut region = Some(OnigRegion::new());
+    let mut start = 0;
+    while start < text.len() {
+        let (pos, next_region) = onig_search(
+            regex,
+            text,
+            text.len(),
+            start,
+            text.len(),
+            region.take(),
+            ONIG_OPTION_NONE,
+        );
+        region = next_region;
+        assert!(pos >= -1, "Ferroni capture-history search failed: {pos}");
+        if pos < 0 {
+            break;
+        }
+        let history = onig_get_capture_tree(region.as_ref().unwrap())
+            .unwrap_or_else(|| panic!("capture-history pattern returned no tree"));
+        let node = capture_history_node(history);
+        assert!(node.end > node.beg && node.beg >= start as i32);
+        start = node.end as usize;
+        trace.push(node);
+    }
+    trace
+}
+
+fn c_capture_history_trace(regex: &ffi::CRegex, text: &[u8]) -> Vec<ffi::CaptureHistoryNode> {
+    let mut trace = Vec::new();
+    let mut region = ffi::CRegion::new();
+    let mut start = 0;
+    while start < text.len() {
+        let pos = regex.search(
+            text,
+            start,
+            text.len(),
+            Some(&mut region),
+            ffi::ONIG_OPTION_NONE,
+        );
+        assert!(pos >= -1, "C capture-history search failed: {pos}");
+        if pos < 0 {
+            break;
+        }
+        let node = region
+            .capture_tree()
+            .unwrap_or_else(|| panic!("C capture-history pattern returned no tree"));
+        assert!(node.end > node.beg && node.beg >= start as i32);
+        start = node.end as usize;
+        trace.push(node);
+    }
+    trace
+}
+
+/// Capture-history trees are a distinctive Oniguruma result shape, so this
+/// compares the full nested tree rather than only flat capture offsets.
+pub fn bench_capture_history(c: &mut Criterion) {
+    let pattern =
+        r"(?@<section><section\b[^>]*>(?:[^<]++|<(?!/?section\b)|\g<section>)*</section>)";
+    let text = document(Corpus::Markup);
+    let mut syntax = OnigSyntaxOniguruma.clone();
+    syntax.op2 |= ONIG_SYN_OP2_ATMARK_CAPTURE_HISTORY;
+    let rust = ferroni::regcomp::onig_new(
+        pattern.as_bytes(),
+        ONIG_OPTION_NONE,
+        &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+        &syntax,
+    )
+    .unwrap_or_else(|error| panic!("Ferroni capture-history compile failed: {error}"));
+    let c_regex = ffi::CRegex::new_capture_history(pattern.as_bytes(), ffi::ONIG_OPTION_NONE)
+        .unwrap_or_else(|error| panic!("C capture-history compile failed: {error}"));
+    let expected = c_capture_history_trace(&c_regex, text.as_bytes());
+    assert_eq!(expected.len(), 200, "capture-history top-level sections");
+    assert_eq!(
+        rust_capture_history_trace(&rust, text.as_bytes()),
+        expected,
+        "capture-history tree parity"
+    );
+    assert!(
+        expected
+            .iter()
+            .all(|root| root.group == 0 && !root.children.is_empty()),
+        "each section match should contain nested capture-history nodes"
+    );
+    println!(
+        "WORKLOAD {}",
+        serde_json::json!({
+            "name": "nested_markup_capture_history",
+            "pattern": pattern,
+            "bytes": text.len(),
+            "matches": expected.len(),
+            "boundary": "full nested capture-history tree compared against C Oniguruma",
+        })
+    );
+
+    let mut group = c.benchmark_group("capture_history");
+    configure_battle_group(&mut group);
+    group.throughput(Throughput::Bytes(text.len() as u64));
+    group.bench_function("rust/nested_markup", |b| {
+        b.iter(|| {
+            black_box(rust_capture_history_trace(
+                &rust,
+                black_box(text.as_bytes()),
+            ))
+        });
+    });
+    group.bench_function("c/nested_markup", |b| {
+        b.iter(|| {
+            black_box(c_capture_history_trace(
+                &c_regex,
+                black_box(text.as_bytes()),
+            ))
+        });
+    });
     group.finish();
 }
 
