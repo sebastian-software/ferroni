@@ -10836,6 +10836,9 @@ fn compile_parsed(
     // Rust-only (ADR-008): literals every match contains, for RegSet
     // fallback searches. Read from the tuned tree, which is gone afterwards.
     reg.required_literals = crate::required_literals::derive(&root, reg, env).map(Box::new);
+    // Rust-only (ADR-008): a program that is only its exact string answers
+    // the forward literal search (`pure_literal_first`).
+    reg.pure_literal = detect_pure_literal(reg);
     // Rust-only (ADR-008): the seek approximation for the scanner's DFA
     // pre-filter, read from the same tuned tree, for scanner patterns only.
     #[cfg(feature = "dfa-prefilter")]
@@ -11055,6 +11058,44 @@ fn detect_ac_eligible(reg: &RegexType) -> Option<(usize, bool)> {
     }
 }
 
+/// Rust-only (ADR-008): whether the program is exactly its optimizer string.
+/// The bytecode must be one string op and `End`, with no captures, anchors,
+/// distances or callouts, and the optimizer must search the same bytes with
+/// the forward literal search (`StrFast`). Then every occurrence of the string
+/// is a match, and an attempt at it never backtracks.
+fn detect_pure_literal(reg: &RegexType) -> bool {
+    if reg.anchor != 0
+        || reg.sub_anchor != 0
+        || reg.num_mem != 0
+        || reg.keep_moves_match_start
+        || reg.dist_min != 0
+        || reg.dist_max != 0
+        || reg.optimize != OptimizeType::StrFast
+        || reg.exact.is_empty()
+        || reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0)
+    {
+        return false;
+    }
+    let [literal, end] = reg.ops.as_slice() else {
+        return false;
+    };
+    if end.opcode != OpCode::End {
+        return false;
+    }
+    let bytes: &[u8] = match (&literal.opcode, &literal.payload) {
+        (
+            OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,
+            OperationPayload::Exact { s },
+        ) => &s[..literal.opcode as usize - OpCode::Str1 as usize + 1],
+        (OpCode::StrN, OperationPayload::ExactN { s, n }) => match s.get(..*n as usize) {
+            Some(bytes) => bytes,
+            None => return false,
+        },
+        _ => return false,
+    };
+    bytes == reg.exact.as_slice()
+}
+
 /// Create and compile a new regex - mirrors C's onig_new().
 /// This is the main public API entry point.
 pub fn onig_new(
@@ -11160,6 +11201,7 @@ fn onig_new_with_choices(
         sub_anchor: 0,
         exact: Vec::new(),
         exact_finder: None,
+        pure_literal: false,
         map: [0u8; CHAR_MAP_SIZE],
         map_offset: 0,
         map_bytes: [0u8; 3],
@@ -11652,6 +11694,7 @@ mod tests {
             sub_anchor: 0,
             exact: Vec::new(),
             exact_finder: None,
+            pure_literal: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],

@@ -8076,6 +8076,7 @@ mod tests {
             sub_anchor: 0,
             exact: Vec::new(),
             exact_finder: None,
+            pure_literal: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],

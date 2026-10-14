@@ -3943,6 +3943,8 @@ thread_local! {
     pub(crate) static FORWARD_SEARCH_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Keeps the original per-attempt calls for bounded optimizer windows.
     static OPTIMIZER_WINDOW_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Searches pure literal patterns with the VM, as before `pure_literal_first`.
+    static PURE_LITERAL_FAST_PATH_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Differential reference for captured zero-distance map searches.
     static CAPTURE_MAP_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Runs dot stars with the original per-character encoding queries.
@@ -3986,6 +3988,18 @@ fn single_byte_backrefs_enabled() -> bool {
     #[cfg(test)]
     {
         !SINGLE_BYTE_BACKREFS_DISABLED.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
+#[inline(always)]
+fn pure_literal_fast_path_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !PURE_LITERAL_FAST_PATH_DISABLED.with(std::cell::Cell::get)
     }
     #[cfg(not(test))]
     {
@@ -7391,6 +7405,56 @@ pub(crate) fn forward_search(
     found
 }
 
+/// Rust-only (ADR-008): the match bounds of a pure literal pattern
+/// (`RegexType::pure_literal`) from `start`, found by the forward literal
+/// search alone. `Some(None)` is no match and `None` leaves the search to the
+/// VM. Only a search whose attempts may consume the whole subject is
+/// answered (`right_range == end`), with a start before `range`. Then the
+/// first occurrence of the string at or after `start` is the match the
+/// optimizer loop would attempt first, and the attempt succeeds: nothing
+/// consumes or backtracks, and no failed attempt can count toward a limit.
+/// A later occurrence is never tried, as the first success ends the search.
+/// The options that change a success (FIND_LONGEST, FIND_NOT_EMPTY,
+/// MATCH_WHOLE_STRING) and the string validity check keep the VM.
+#[inline]
+pub(crate) fn pure_literal_first(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    right_range: usize,
+    options: OnigOptionType,
+) -> Option<Option<(usize, usize)>> {
+    if !reg.pure_literal
+        || right_range != end
+        || start >= range
+        || range > end
+        || opton_find_longest(options)
+        || opton_find_not_empty(options)
+        || opton_match_whole_string(options)
+        || opton_check_validity_of_string(options)
+        || !pure_literal_fast_path_enabled()
+    {
+        return None;
+    }
+    let haystack = str_data.get(start..end)?;
+    let literal = reg.exact.as_slice();
+    // The same finder as the optimizer's `StrFast` search (`sunday_quick_search`).
+    let at = if literal.len() == 1 {
+        memchr::memchr(literal[0], haystack)
+    } else if let Some(finder) = &reg.exact_finder {
+        finder.find(haystack)
+    } else {
+        memchr::memmem::find(haystack, literal)
+    };
+    Some(
+        at.map(|i| start + i)
+            .filter(|&pos| pos < range)
+            .map(|pos| (pos, pos + literal.len())),
+    )
+}
+
 fn forward_search_impl(
     reg: &RegexType,
     str_data: &[u8],
@@ -7905,6 +7969,9 @@ pub(crate) fn onig_search_bounds(
 ) -> Result<Option<(usize, usize)>, i32> {
     debug_assert!(!reg.keep_moves_match_start && !opton_find_longest(reg.options));
     let end = text.len();
+    if let Some(found) = pure_literal_first(reg, text, end, start, end, end, reg.options) {
+        return Ok(found);
+    }
     let r = search_in_range_inner(reg, text, end, start, end, end, msa);
     release_oversized_stack(msa);
     match r {
@@ -8437,6 +8504,22 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
             return ONIG_MISMATCH;
         }
         // backward search or find_longest: fall through to normal path
+    }
+
+    // Rust-only (ADR-008): a pure literal pattern is answered by the literal
+    // search, with the region filled as its one attempt would fill it.
+    if let Some(found) =
+        pure_literal_first(reg, str_data, end, start, range, right_range, msa.options)
+    {
+        let Some((match_start, match_end)) = found else {
+            return ONIG_MISMATCH;
+        };
+        msa.match_len = (match_end - match_start) as i32;
+        if let Some(ref mut r) = msa.region {
+            r.beg[0] = match_start as i32;
+            r.end[0] = match_end as i32;
+        }
+        return match_start as i32;
     }
 
     if start > range {
@@ -11292,6 +11375,7 @@ mod tests {
             sub_anchor: 0,
             exact: Vec::new(),
             exact_finder: None,
+            pure_literal: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],
@@ -13642,6 +13726,224 @@ mod tests {
             ONIG_OPTION_NONE,
         );
         assert_eq!(result, ONIG_MISMATCH);
+    }
+
+    /// Compiles `pattern` as UTF-8 with the given compile options.
+    fn compile_utf8(pattern: &[u8], option: OnigOptionType) -> RegexType {
+        regcomp::onig_new(
+            pattern,
+            option,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap()
+    }
+
+    /// Runs `search` with the pure literal fast path on or off.
+    fn with_pure_literal_fast_path<T>(enabled: bool, search: impl FnOnce() -> T) -> T {
+        PURE_LITERAL_FAST_PATH_DISABLED.with(|v| v.set(!enabled));
+        let out = search();
+        PURE_LITERAL_FAST_PATH_DISABLED.with(|v| v.set(false));
+        out
+    }
+
+    #[test]
+    fn pure_literal_flag_follows_the_program() {
+        let _limits = shared_limits();
+        let cases: &[(&[u8], OnigOptionType, bool)] = &[
+            (b"GET", ONIG_OPTION_NONE, true),
+            (b"a", ONIG_OPTION_NONE, true),
+            (b"12345678901", ONIG_OPTION_NONE, true),
+            // Multibyte string ops (`StrMb*`) keep the VM.
+            ("caf\u{e9}".as_bytes(), ONIG_OPTION_NONE, false),
+            (b"", ONIG_OPTION_NONE, false),
+            (b"GET", ONIG_OPTION_IGNORECASE, false),
+            (b"(?i)get", ONIG_OPTION_NONE, false),
+            (b"G.T", ONIG_OPTION_NONE, false),
+            (b"GET$", ONIG_OPTION_NONE, false),
+            (b"^GET", ONIG_OPTION_NONE, false),
+            (b"(GET)", ONIG_OPTION_NONE, false),
+            (b"GE+T", ONIG_OPTION_NONE, false),
+            (b"GET|PUT", ONIG_OPTION_NONE, false),
+            (b"GET(?=X)", ONIG_OPTION_NONE, false),
+            (b"GET\\b", ONIG_OPTION_NONE, false),
+            (b"G\\Ket", ONIG_OPTION_NONE, false),
+        ];
+        for &(pattern, option, expected) in cases {
+            let reg = compile_utf8(pattern, option);
+            assert_eq!(
+                reg.pure_literal,
+                expected,
+                "{}",
+                String::from_utf8_lossy(pattern)
+            );
+        }
+    }
+
+    #[test]
+    fn pure_literal_search_matches_the_vm_path() {
+        let _limits = shared_limits();
+        let patterns: &[&[u8]] = &[b"GET", b"a", b"aa", b"ab", b"12345678901"];
+        let subjects: &[&[u8]] = &[
+            b"",
+            b"G",
+            b"GET",
+            b"xGETGET",
+            b"GETGE",
+            b"aaaa",
+            b"aabaab",
+            b"12345678901 1234567890",
+            b"ab\xffab\xc3",
+        ];
+        let options = [
+            ONIG_OPTION_NONE,
+            ONIG_OPTION_FIND_LONGEST,
+            ONIG_OPTION_FIND_NOT_EMPTY,
+            ONIG_OPTION_MATCH_WHOLE_STRING,
+            ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+        ];
+        for pattern in patterns {
+            let reg = compile_utf8(pattern, ONIG_OPTION_NONE);
+            assert!(reg.pure_literal, "{}", String::from_utf8_lossy(pattern));
+            for subject in subjects {
+                // A subject cut at `end` checks the right range as well.
+                for end in 0..=subject.len() {
+                    let text = &subject[..end];
+                    for start in 0..=end {
+                        for range in 0..=end {
+                            for option in options {
+                                // A narrower start range with the whole subject as the
+                                // right range: the RegSet route (`onig_search_with_msa_and_right_range`).
+                                let narrowed = |enabled| {
+                                    with_pure_literal_fast_path(enabled, || {
+                                        let mut msa = MatchArg::new(
+                                            &reg,
+                                            option,
+                                            Some(OnigRegion::new()),
+                                            start,
+                                        );
+                                        let (result, region) = onig_search_with_msa_and_right_range(
+                                            &reg, text, end, start, range, end, None, &mut msa,
+                                        );
+                                        (result, region.map(|r| (r.num_regs, r.beg, r.end)))
+                                    })
+                                };
+                                assert_eq!(
+                                    narrowed(true),
+                                    narrowed(false),
+                                    "{} on {:?} end {end} start {start} range {range} option {option:?} narrowed",
+                                    String::from_utf8_lossy(pattern),
+                                    String::from_utf8_lossy(text),
+                                );
+                                // With and without a region, as `is_match` searches.
+                                for with_region in [true, false] {
+                                    let run = |enabled| {
+                                        with_pure_literal_fast_path(enabled, || {
+                                            let region = with_region.then(OnigRegion::new);
+                                            let (result, region) = onig_search(
+                                                &reg, text, end, start, range, region, option,
+                                            );
+                                            (result, region.map(|r| (r.num_regs, r.beg, r.end)))
+                                        })
+                                    };
+                                    assert_eq!(
+                                        run(true),
+                                        run(false),
+                                        "{} on {:?} end {end} start {start} range {range} option {option:?} region {with_region}",
+                                        String::from_utf8_lossy(pattern),
+                                        String::from_utf8_lossy(text),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pure_literal_bounds_and_region_match_the_vm_path() {
+        let _limits = shared_limits();
+        let reg = compile_utf8(b"GET", ONIG_OPTION_NONE);
+        let text = b"xGETGET GE";
+        for start in 0..=text.len() {
+            let bounds = |enabled| {
+                with_pure_literal_fast_path(enabled, || {
+                    let mut msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, start);
+                    onig_search_bounds(&reg, text, start, &mut msa).unwrap()
+                })
+            };
+            assert_eq!(bounds(true), bounds(false), "start {start}");
+        }
+    }
+
+    #[test]
+    fn pure_literal_bounds_keep_the_validity_check() {
+        let _limits = shared_limits();
+        // The validity option comes with the compile options, so the bounds
+        // search (which takes `reg.options`) sees it as well.
+        let reg = compile_utf8(b"ab", ONIG_OPTION_CHECK_VALIDITY_OF_STRING);
+        assert!(reg.pure_literal);
+        let text = b"ab\xff";
+        let bounds = |enabled| {
+            with_pure_literal_fast_path(enabled, || {
+                let mut msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, 0);
+                onig_search_bounds(&reg, text, 0, &mut msa)
+            })
+        };
+        assert_eq!(bounds(true), bounds(false));
+        assert_eq!(bounds(false), Err(ONIGERR_INVALID_WIDE_CHAR_VALUE));
+    }
+
+    #[test]
+    fn pure_literal_search_keeps_the_vm_for_limits_it_cannot_skip() {
+        let _limits = exclusive_limits();
+        let reg = compile_utf8(b"GET", ONIG_OPTION_NONE);
+        let text = b"xxGET";
+        // A matching search answers without an attempt in the VM.
+        VM_ATTEMPTS.with(|v| v.set(0));
+        let (result, _) = onig_search(
+            &reg,
+            text,
+            text.len(),
+            0,
+            text.len(),
+            None,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(result, 2);
+        assert_eq!(VM_ATTEMPTS.with(std::cell::Cell::get), 0);
+
+        // The disabled path runs the VM, which finds the same match.
+        VM_ATTEMPTS.with(|v| v.set(0));
+        let (result, _) = with_pure_literal_fast_path(false, || {
+            onig_search(
+                &reg,
+                text,
+                text.len(),
+                0,
+                text.len(),
+                None,
+                ONIG_OPTION_NONE,
+            )
+        });
+        assert_eq!(result, 2);
+        assert_eq!(VM_ATTEMPTS.with(std::cell::Cell::get), 1);
+
+        // Under a search retry limit, the answer is still the same.
+        onig_set_retry_limit_in_search(1);
+        let limited = onig_search(
+            &reg,
+            text,
+            text.len(),
+            0,
+            text.len(),
+            None,
+            ONIG_OPTION_NONE,
+        );
+        onig_set_retry_limit_in_search(0);
+        assert_eq!(limited.0, 2);
     }
 
     #[test]

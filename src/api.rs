@@ -17,7 +17,7 @@ use crate::oniguruma::*;
 use crate::regcomp::{onig_new, onig_new_with_backtracking_optimization};
 use crate::regexec::{
     MatchArg, SearchLimits, cache_msa, onig_name_to_backref_number, onig_search,
-    onig_search_bounds, search_in_range, take_cached_msa,
+    onig_search_bounds, pure_literal_first, search_in_range, take_cached_msa,
 };
 use crate::regint::RegexType;
 use crate::regparse_types::NameTable;
@@ -425,6 +425,23 @@ impl Regex {
         if !self.program().keep_moves_match_start
             && !self.program().options.contains(ONIG_OPTION_FIND_LONGEST)
         {
+            // Rust-only (ADR-008): a pure literal pattern skips the search state.
+            // It runs no attempt that could fail, so no limit can be reached.
+            if let Some(found) = pure_literal_first(
+                self.program(),
+                text,
+                text.len(),
+                start,
+                text.len(),
+                text.len(),
+                self.program().options,
+            ) {
+                return Ok(found.map(|(match_start, match_end)| Match {
+                    text,
+                    start: match_start,
+                    end: match_end,
+                }));
+            }
             let mut msa = take_cached_msa(self.program(), ONIG_OPTION_NONE, None, start, limits);
             let found = onig_search_bounds(self.program(), text, start, &mut msa);
             cache_msa(msa);

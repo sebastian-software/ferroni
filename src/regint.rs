@@ -687,6 +687,11 @@ pub struct RegexType {
     pub(crate) exact: Vec<u8>,
     /// Reuse the forward literal search plan across haystacks (ADR-008).
     pub(crate) exact_finder: Option<Box<memchr::memmem::Finder<'static>>>,
+    /// Rust-only (ADR-008): the whole program is `exact` (a string op and
+    /// `End`, no captures, anchors or distances), so the forward literal
+    /// search answers a search that sees all of its subject without entering
+    /// the VM (`pure_literal_first`). Set by `detect_pure_literal`.
+    pub(crate) pure_literal: bool,
     pub(crate) map: [u8; CHAR_MAP_SIZE],
     pub(crate) map_offset: i32,
     pub(crate) map_bytes: [u8; 3],
