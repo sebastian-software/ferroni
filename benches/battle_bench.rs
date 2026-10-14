@@ -987,6 +987,7 @@ criterion_group!(
     general_regex::bench_unicode_classes,
     general_regex::bench_oniguruma_features,
     general_regex::bench_regex_tasks,
+    general_regex::bench_capture_history,
     bench_scanner_highlighting,
     bench_scanner_documents,
     bench_text_scanning,

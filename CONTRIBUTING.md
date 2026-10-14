@@ -276,6 +276,12 @@ Unicode settings, JIT fallback and API limits.
 cargo bench --features ffi --bench battle_bench
 # General-purpose validation, extraction, Unicode, and redaction tasks
 cargo bench --features ffi --bench battle_bench -- general_regex
+# Practical extraction tasks, including recursive templates and log secrets
+cargo bench --features ffi --bench battle_bench -- regex_tasks
+# Nested capture-history trees in HTML-like markup
+cargo bench --features ffi --bench battle_bench -- capture_history
+# Complex syntax specific to Oniguruma
+cargo bench --features ffi --bench battle_bench -- oniguruma_features
 # Short and long Unicode class workloads, with C-validated capture traces
 cargo bench --locked --features ffi --bench battle_bench -- unicode_classes
 # Same document workloads through the scanner
@@ -293,9 +299,15 @@ These diagnostic tasks do not supply the public source-backed comparison.
 Exact external input revisions for the native build and diagnostic inputs are pinned in
 [`benches/battle_inputs.toml`](benches/battle_inputs.toml).
 
-The `oniguruma_features` group covers syntax only Oniguruma runs (atomic and
-possessive groups, subexpression calls, the absent operator, conditionals,
-case-insensitive backreferences, alternating lookbehind) against C.
+The `regex_tasks` group includes larger practical documents such as nested
+template interpolation, Rust comments, HTTP tokenization, HTML script blocks,
+CSV near-misses, and authentication logs. Its HTTP request, environment
+assignment, and CSV cases require matching captures from the `regex` crate,
+FancyRegex, and PCRE2 with and without JIT. The `capture_history` group compares
+the full nested capture tree for markup against C. The `oniguruma_features`
+group covers syntax only Oniguruma runs (atomic and possessive groups,
+recursive subexpression calls, the absent operator, conditionals,
+case-insensitive backreferences, and alternating lookbehind) against C.
 
 With `--features ffi`, the C++, Java and SCSS scanner replays add a `_c`
 case per replay: the same captured Shiki calls through the vscode-oniguruma C

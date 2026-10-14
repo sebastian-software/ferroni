@@ -159,13 +159,16 @@ fn build_oniguruma_c() {
         build.file(src_dir.join(file));
     }
 
-    // Also compile the vscode-oniguruma scanner wrapper (for benchmarks).
-    // The file is excluded from the published crate (benches/ is not
-    // packaged), so skip it when building from crates.io — only the
-    // in-repo benchmarks link against it.
+    // Compile benchmark-only C adapters, which are excluded from the
+    // published crate. In-repo benchmarks use them alongside the C sources.
     let bench_wrapper = std::path::Path::new("benches/vscode_scanner_native.c");
     if bench_wrapper.exists() {
         build.file(bench_wrapper);
+    }
+
+    let capture_history_wrapper = std::path::Path::new("benches/capture_history_native.c");
+    if capture_history_wrapper.exists() {
+        build.file(capture_history_wrapper);
     }
 
     build.compile("oniguruma");
