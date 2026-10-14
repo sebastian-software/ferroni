@@ -371,6 +371,15 @@ The `*_with` methods run their searches on the thread-cached `MatchArg` that the
 - **Bounds**: no new allocation or compiled data; one `SearchLimits` value per search and iterator.
 - **Impact** (callgrind instructions of the timed loop, 200 iterations, net of the empty loop; `_with` runs use `SearchOptions::new()`): uuid_v4 `is_match` 20.35M → 15.55M; jinja_string_token `captures_at` 9.96M → 6.11M; django_email_local_part `is_match` 105.5M → 80.2M; literal_first `find` 1.71M → 1.03M. Against the standard method in the same build, `_with` is +2.7%, +6.1%, +2.7% and −0.0% respectively. The standard methods move by +0.2%, +0.6%, +0.2% and −5.3%: `find` no longer resets its MatchArg twice.
 
+#### Iteration restart without the optimizer's scan (`src/regexec.rs`)
+
+Each search of an iteration restarts from the previous match end. Two per-search costs of that restart are removed where no result can change.
+
+- **Trigger**: a bounds-only search (`find`, `find_iter`) takes the core search directly, without the region-path wrappers, unless the two-pass capture fill applies. An unbounded search (`dist_max` infinite) whose map optimizer has its byte at the attempt start set skips the optimizer's check of that start, since the check would return that start at once.
+- **Execution**: the core search calls `map_candidate_at` before `forward_search`. The check holds only with a map optimizer, no minimum distance and no sub-anchor, and the byte at the start inside the map.
+- **Observability**: the skipped check returns the start with no bytes read, so the test-only forward-search byte count is unchanged. The attempts that follow are the same. `find_iter_map_candidates_at_and_after_the_start` checks the iteration results on candidate, non-candidate and multibyte starts, empty matches, look-behind and `\G`.
+- **Bounds**: no allocation and no compiled data.
+- **Impact** (callgrind instructions of the timed loop, net of the empty loop, `std` mode, baseline `regex-integration` against this branch): tiktoken (tokenizer catalog, 20 iterations, both cases) 490.5M → 424.9M, −13.4%. `mastodon_hashtag` all-captures 58.07M → 57.20M, −1.5%; `wordpress_shortcode` all-captures 33.20M → 32.56M, −1.9%. The single-search controls rise by 0.02% to 0.08% (uuid_v4 +0.06%, uuid_shape +0.06%, ipv4_validation +0.05%, fluent_bit_apache +0.08%, literal_first +0.08%); the extra check on each search costs a few instructions.
 
 ## Rationale
 
