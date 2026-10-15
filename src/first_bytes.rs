@@ -559,8 +559,16 @@ pub(crate) fn guard_skipped_retries(
                         | OpCode::CheckPosition,
                         _,
                     ) => check(pc, passes, checks)?.then_some(pc + 1),
+                    // A negative look-behind takes one backtrack either
+                    // way, as the upstream sequence does: its body fails
+                    // here and backtracks, or it matches and `Fail` does.
                     (OpCode::LookBehindOp, OperationPayload::LookBehindOp { not: true, .. }) => {
-                        check(pc, passes, checks)?.then_some(pc + 2)
+                        if check(pc, passes, checks)? {
+                            failures = failures.checked_add(1)?;
+                            Some(pc + 2)
+                        } else {
+                            None
+                        }
                     }
                     (OpCode::Fail, _) => None,
                     _ => return None,

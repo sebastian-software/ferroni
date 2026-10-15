@@ -2368,10 +2368,23 @@ fn fused_look_behind_body<'a>(
         return None;
     }
     let body = an.body.as_deref()?;
-    (matches!(body.inner, NodeInner::CClass(_) | NodeInner::String(_))
-        && !body.has_status(ND_ST_LITERAL_ALT)
+    (matches!(
+        body.inner,
+        NodeInner::CClass(_) | NodeInner::String(_) | NodeInner::CType(_)
+    ) && !body.has_status(ND_ST_LITERAL_ALT)
+        && fusable_look_behind_ctype(body)
         && compile_length_tree(body, reg, env) == SIZE_INC)
         .then_some(body)
+}
+
+/// Whether a character-type body is one a fused look-behind checks: `\w` and
+/// `\W` (`Word`, `WordAscii`, `NoWord`, `NoWordAscii`). The anychar type
+/// compiles to `AnyChar`, which the fused check does not evaluate.
+fn fusable_look_behind_ctype(body: &Node) -> bool {
+    match &body.inner {
+        NodeInner::CType(ct) => ct.ctype == ONIGENC_CTYPE_WORD as i32,
+        _ => true,
+    }
 }
 
 /// Calculate bytecode length for an anchor node.
@@ -13650,24 +13663,24 @@ mod tests {
         use crate::regexec::{onig_search, shared_limits};
 
         let _limits = shared_limits();
-        let compile = |pattern: &str, fused: bool| {
+        let compile = |pattern: &str, fused: bool, option: OnigOptionType| {
             FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(!fused));
             let reg = onig_new(
                 pattern.as_bytes(),
-                ONIG_OPTION_NONE,
+                option,
                 &crate::encodings::utf8::ONIG_ENCODING_UTF8,
                 &OnigSyntaxOniguruma,
             );
             FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(false));
             reg.unwrap()
         };
-        let search = |reg: &RegexType, input: &[u8], start: usize| {
+        let search = |reg: &RegexType, input: &[u8], start: usize, range: usize| {
             let (r, region) = onig_search(
                 reg,
                 input,
                 input.len(),
                 start,
-                input.len(),
+                range,
                 Some(OnigRegion::new()),
                 ONIG_OPTION_NONE,
             );
@@ -13702,6 +13715,8 @@ mod tests {
             "(?i:k)",
             "(?i:s)",
             "\\x{100}b",
+            "\\w",
+            "\\W",
         ];
         let contexts = [
             "{lb}x",
@@ -13747,12 +13762,22 @@ mod tests {
             .collect();
 
         let mut fused_count = 0;
-        for body in bodies {
+        // `\w` is ASCII-only under ONIG_OPTION_WORD_IS_ASCII, which gives
+        // the `WordAscii` and `NoWordAscii` bodies.
+        for (body, option) in bodies
+            .into_iter()
+            .map(|body| (body, ONIG_OPTION_NONE))
+            .chain(
+                ["\\w", "\\W"]
+                    .into_iter()
+                    .map(|body| (body, ONIG_OPTION_WORD_IS_ASCII)),
+            )
+        {
             for lb in [format!("(?<={body})"), format!("(?<!{body})")] {
                 for context in contexts {
                     let pattern = context.replace("{lb}", &lb);
-                    let fused = compile(&pattern, true);
-                    let reference = compile(&pattern, false);
+                    let fused = compile(&pattern, true, option);
+                    let reference = compile(&pattern, false, option);
                     assert!(
                         !reference
                             .ops
@@ -13766,11 +13791,15 @@ mod tests {
                             if start > input.len() {
                                 continue;
                             }
-                            assert_eq!(
-                                search(&fused, input, start),
-                                search(&reference, input, start),
-                                "{pattern} on {input:x?} from {start}"
-                            );
+                            // A range before the end of the input bounds the
+                            // step back as well (right_range).
+                            for range in [input.len(), input.len() / 2, start] {
+                                assert_eq!(
+                                    search(&fused, input, start, range),
+                                    search(&reference, input, start, range),
+                                    "{pattern} on {input:x?} from {start} to {range}"
+                                );
+                            }
                         }
                     }
                 }
@@ -13810,6 +13839,12 @@ mod tests {
                     _ => false,
                 })
                 .count()
+        };
+        // The search from `start` under a match stack limit: the result.
+        let stack_run = |reg: &RegexType, input: &[u8], start: usize, stack: u32| {
+            let mut msa = MatchArg::new(reg, ONIG_OPTION_NONE, Some(OnigRegion::new()), start);
+            msa.match_stack_limit = stack;
+            onig_search_with_msa(reg, input, input.len(), start, input.len(), &mut msa).0
         };
         // The search from `start`: result, region and counted backtracks.
         let run =
@@ -13906,6 +13941,15 @@ mod tests {
                     let reference = run(&plain, input, start, 0, 0);
                     let counted = run(&gated, input, start, 0, 0);
                     assert_eq!(counted, reference, "{pattern} on {input:x?} from {start}");
+                    // Under a match stack limit the gates push where the
+                    // walk pushes, so the limit trips at the same entry.
+                    for stack in 1..=24 {
+                        assert_eq!(
+                            stack_run(&gated, input, start, stack),
+                            stack_run(&plain, input, start, stack),
+                            "{pattern} on {input:x?} from {start} with stack limit {stack}"
+                        );
+                    }
                     let total = reference.2;
                     let limits = (1..=12).chain([total.saturating_sub(1), total, total + 1]);
                     for limit in limits.filter(|&limit| limit > 0) {
@@ -13927,6 +13971,151 @@ mod tests {
         assert!(gated_patterns >= 30, "only {gated_patterns} patterns gated");
     }
 
+    /// A fused look-behind must also give the upstream sequence's retry-limit
+    /// errors: the failing body of a negative look-behind counts the backtrack
+    /// the upstream instructions count (see ADR-008).
+    #[test]
+    fn fused_look_behinds_match_the_upstream_limits() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{exclusive_limits, onig_search, onig_set_retry_limit_in_match};
+
+        let _limits = exclusive_limits();
+        let compile = |pattern: &str, fused: bool| {
+            FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(!fused));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+        let patterns = [
+            r"(?<!\w)x",
+            r"(?<=\w)x",
+            r"(?<!\w)\w*",
+            r"(?:(?<!\w)a|b)+",
+            r"(?<![a-c])x",
+            r"(?<!\.)(?:x|y)*z",
+            r"(?<!\W)[a-z]+",
+        ];
+        let inputs: [&[u8]; 6] = [
+            b"aaaa x",
+            b"ab cd.x xx",
+            b"   ",
+            b"xxxxxxxxxxxxxxxxxxxxxxxxx",
+            b"zxyz.yx.z",
+            "\u{e9} a\u{e9}b x".as_bytes(),
+        ];
+        let search = |reg: &RegexType, input: &[u8]| {
+            let (r, _) = onig_search(
+                reg,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            r
+        };
+        for pattern in patterns {
+            let fused = compile(pattern, true);
+            let reference = compile(pattern, false);
+            for input in inputs {
+                for retry in 1..=24 {
+                    onig_set_retry_limit_in_match(retry);
+                    assert_eq!(
+                        search(&fused, input),
+                        search(&reference, input),
+                        "{pattern} on {input:?} with retry limit {retry}"
+                    );
+                }
+                onig_set_retry_limit_in_match(0);
+            }
+        }
+    }
+
+    /// Under a match stack limit a fused look-behind errors where the upstream
+    /// sequence does, at every limit: in particular at the least limit that
+    /// lets a search succeed and at the one below it (ADR-008). Guards of
+    /// alternations push under a limit, so the alternation is covered too.
+    #[test]
+    fn fused_look_behinds_match_the_upstream_stack_limit_boundary() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{
+            exclusive_limits, onig_search, onig_set_match_stack_limit,
+            onig_set_retry_limit_in_match,
+        };
+
+        let _limits = exclusive_limits();
+        onig_set_retry_limit_in_match(0);
+        let compile = |pattern: &str, fused: bool| {
+            FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(!fused));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            FUSED_LOOK_BEHIND_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+        // The search from `start` under `limit`, as the caller's result.
+        let search = |reg: &RegexType, input: &[u8], start: usize, limit: u32| {
+            onig_set_match_stack_limit(limit);
+            let (r, _) = onig_search(
+                reg,
+                input,
+                input.len(),
+                start,
+                input.len(),
+                Some(OnigRegion::new()),
+                ONIG_OPTION_NONE,
+            );
+            onig_set_match_stack_limit(0);
+            r
+        };
+        let patterns = [
+            r"(?<!\w)x",
+            r"(?<![a-c])x",
+            r"(?<=\w)x",
+            r"(?<!\W)x",
+            r"(?:(?<![a-c])a|b)+",
+        ];
+        let subjects: [&[u8]; 6] = [b"x", b"ax", b" x", b"abcx xb", b"aaaa bbb", b"cab a"];
+        let mut boundary_cases = 0;
+        for pattern in patterns {
+            let fused = compile(pattern, true);
+            let reference = compile(pattern, false);
+            for subject in subjects {
+                for start in 0..=subject.len() {
+                    let mut minimal = None;
+                    for limit in 1..=24 {
+                        let want = search(&reference, subject, start, limit);
+                        assert_eq!(
+                            search(&fused, subject, start, limit),
+                            want,
+                            "{pattern} on {subject:?} from {start} with stack limit {limit}"
+                        );
+                        if want >= 0 && minimal.is_none() {
+                            minimal = Some(limit);
+                        }
+                    }
+                    // The limit below the least succeeding one is an error,
+                    // so the boundary is exercised.
+                    if let Some(m) = minimal.filter(|&m| m > 1) {
+                        if search(&reference, subject, start, m - 1) < 0 {
+                            boundary_cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(boundary_cases > 20, "only {boundary_cases} boundary cases");
+    }
+
     #[test]
     fn guarded_pushes_match_unguarded_pushes() {
         use crate::oniguruma::OnigRegion;
@@ -13944,13 +14133,13 @@ mod tests {
             PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(false));
             reg.unwrap()
         };
-        let search = |reg: &RegexType, input: &[u8], start: usize| {
+        let search = |reg: &RegexType, input: &[u8], start: usize, range: usize| {
             let (r, region) = onig_search(
                 reg,
                 input,
                 input.len(),
                 start,
-                input.len(),
+                range,
                 Some(OnigRegion::new()),
                 ONIG_OPTION_NONE,
             );
@@ -14146,8 +14335,8 @@ mod tests {
                             continue;
                         }
                         assert_eq!(
-                            search(&guarded, input, start),
-                            search(&reference, input, start),
+                            search(&guarded, input, start, input.len()),
+                            search(&reference, input, start, input.len()),
                             "{pattern} on {input:x?} from {start}"
                         );
                         // A guard that jumps counts the backtracks the

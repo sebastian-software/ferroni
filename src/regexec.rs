@@ -3495,6 +3495,65 @@ fn step_back_look_behind(
     onigenc_step_back(enc, start, s, data, n)
 }
 
+/// Rust-only (ADR-008): decides a one-character look-behind whose body is a
+/// word type (`\w`, `\W`) or a single-byte class, when the character before
+/// `s` is ASCII. It gives what `look_behind_body_end` gives, without the
+/// general step back and instruction dispatch. `None` leaves the look-behind
+/// to `look_behind_body_end`: a longer look-behind, a multibyte encoding, a
+/// non-ASCII or malformed character, or another body. The common word-boundary
+/// and character-class tests of a grammar take this path.
+#[inline(never)]
+fn look_behind_ascii_end(
+    body: &Operation,
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    end: usize,
+) -> Option<Option<usize>> {
+    if s == 0 {
+        // Stepping back one character from the start fails.
+        return Some(None);
+    }
+    let at = s - 1;
+    let b = *str_data.get(at)?;
+    if b >= 0x80 || at >= right_range || at >= end {
+        return None;
+    }
+    // An ASCII byte is a character head in ASCII and UTF-8, so the step back
+    // stays at `at`; the check keeps the encoding's own rule.
+    if enc.left_adjust_char_head(0, at, str_data) != at {
+        return None;
+    }
+    // Results as `single_op_end` gives them for the one-byte character `b`:
+    // a one-byte step is `s`, a character advance is clamped to the end.
+    let word = is_word_ascii(b);
+    Some(match (body.opcode, &body.payload) {
+        (OpCode::Word, _) => word.then(|| s.min(end)),
+        (OpCode::NoWord | OpCode::NoWordAscii, _) => (!word).then(|| s.min(end)),
+        (OpCode::WordAscii, _) => word.then_some(s),
+        (OpCode::CClass | OpCode::CClassNot, OperationPayload::CClass { bsp, ascii_fast }) => {
+            let not = body.opcode == OpCode::CClassNot;
+            let (in_class, step) = match *ascii_fast {
+                CClassAsciiFastKind::Eq(c) => (b == c, !not),
+                CClassAsciiFastKind::EqFoldLower(lower) => ((b | 0x20) == lower, !not),
+                CClassAsciiFastKind::None => (bitset_at(bsp, b as usize), false),
+            };
+            (in_class != not).then(|| if step { s } else { s.min(end) })
+        }
+        // A class the bytecode pass fused with the classes after it: the
+        // look-behind evaluates only this one, as `single_op_end` does.
+        (OpCode::CClassRun, OperationPayload::CClassRun { bsp, .. }) => {
+            bitset_at(bsp, b as usize).then_some(s)
+        }
+        (OpCode::CClassMix | OpCode::CClassMixNot, OperationPayload::CClassMix { bsp, .. }) => {
+            let not = body.opcode == OpCode::CClassMixNot;
+            (bitset_at(bsp, b as usize) != not).then_some(s)
+        }
+        _ => return None,
+    })
+}
+
 /// `LookBehindOp`: STEP_BACK_START by `char_len` characters from `s`, then
 /// the body instruction `body` at that position; where the body ends if it
 /// matches. Out of line: code added to
@@ -3700,6 +3759,23 @@ fn single_op_end(
                 is_in_code_range(mb, code)
             };
             (in_class != not).then_some(s + len)
+        }
+        // `\w` and `\W` as the VM's `Word`, `NoWord`, `WordAscii` and
+        // `NoWordAscii` arms check and advance them.
+        (OpCode::Word | OpCode::NoWord, OperationPayload::None) => {
+            if available == 0 {
+                return None;
+            }
+            let word = op.opcode == OpCode::Word;
+            (is_word_char_at(enc, str_data, s, end) == word)
+                .then(|| advance_char_to_end(enc, str_data, s, end))
+        }
+        (OpCode::WordAscii, OperationPayload::None) => {
+            (available > 0 && is_word_ascii(str_data[s])).then_some(s + 1)
+        }
+        (OpCode::NoWordAscii, OperationPayload::None) => {
+            let non_word = available > 0 && !is_word_ascii(str_data[s]);
+            non_word.then(|| advance_char_to_end(enc, str_data, s, end))
         }
         _ => unreachable!("look-behind body is a single character or string instruction"),
     }
@@ -5909,7 +5985,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // failed literal attempts across the following capture end.
             OpCode::PushLazyAnyChar => {
                 if let OperationPayload::Push { addr } = op.payload {
-                    if stack.len() + 1 < stack_cap {
+                    // Rust-only (ADR-008): not under a match stack limit, where
+                    // the instruction pushes the entries the limit counts.
+                    if match_stack_limit == 0 && stack.len() + 1 < stack_cap {
                         if let Some(at) = lazy_captured_any_char_stop(
                             reg,
                             p,
@@ -5976,6 +6054,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     // before this instruction, which jumps back to it) runs
                     // to its next stop in one step.
                     if addr == -1
+                        && match_stack_limit == 0
                         && matches!(reg.ops[p - 1].opcode, OpCode::AnyChar | OpCode::AnyCharMl)
                     {
                         match lazy_any_char_step(
@@ -5997,21 +6076,26 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     if goto_fail {
                         // The loop's `AnyChar` fails before any `c`.
                     } else if let Some(gate) = skip_gate_of(reg, skip_gate).filter(|gate| {
-                        skip_gate_taken(
-                            gate,
-                            str_data,
-                            s,
-                            right_range,
-                            retry_in_match_counter,
-                            retry_limit_in_match,
-                            time_limit_ms,
-                        )
+                        match_stack_limit == 0
+                            && skip_gate_taken(
+                                gate,
+                                str_data,
+                                s,
+                                right_range,
+                                retry_in_match_counter,
+                                retry_limit_in_match,
+                                time_limit_ms,
+                            )
                     }) {
                         // Rust-only (ADR-008): the rest of the chain misses
                         // as well; see `skip_gate_taken`.
                         p = (p as i32 + gate.addr) as usize;
                         retry_in_match_counter += u64::from(gate.skipped_retries);
                     } else if (s < right_range && str_data[s] == c)
+                        // Rust-only (ADR-008): under a match stack limit the
+                        // guard pushes like its unguarded instruction, as a
+                        // skipped push would leave out an entry the limit counts.
+                        || match_stack_limit != 0
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
                         // Character matches: push alternative and continue
@@ -6057,21 +6141,24 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } = op.payload
                 {
                     if let Some(gate) = skip_gate_of(reg, skip_gate).filter(|gate| {
-                        skip_gate_taken(
-                            gate,
-                            str_data,
-                            s,
-                            right_range,
-                            retry_in_match_counter,
-                            retry_limit_in_match,
-                            time_limit_ms,
-                        )
+                        match_stack_limit == 0
+                            && skip_gate_taken(
+                                gate,
+                                str_data,
+                                s,
+                                right_range,
+                                retry_in_match_counter,
+                                retry_limit_in_match,
+                                time_limit_ms,
+                            )
                     }) {
                         // Rust-only (ADR-008): the rest of the chain misses
                         // as well; see `skip_gate_taken`.
                         p = (p as i32 + gate.addr) as usize;
                         retry_in_match_counter += u64::from(gate.skipped_retries);
                     } else if (s < right_range && bitset_at(bsp, str_data[s] as usize))
+                        // Rust-only (ADR-008): see the guard above.
+                        || match_stack_limit != 0
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
                         stack.push(StackEntry::Alt {
@@ -6332,16 +6419,50 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     ascii_compatible,
                 } = op.payload
                 {
-                    let body_end = look_behind_body_end(
-                        &reg.ops[p + 1],
-                        char_len,
-                        enc,
-                        str_data,
-                        s,
-                        right_range,
-                        end,
-                        ascii_compatible,
-                    );
+                    // Rust-only (ADR-008): the upstream sequence checks the
+                    // stack limit at its MARK, its PUSH (negative only) and
+                    // its STEP_BACK_START, where it holds one entry (two for
+                    // a negative look-behind). The first of those checks
+                    // fails when this count is reached.
+                    let pushed = if not { 2 } else { 1 };
+                    if stack.len() + pushed >= stack_cap {
+                        best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
+                        break;
+                    }
+                    // A one-character step over the class or type of a
+                    // one-byte look-behind, in an ASCII-compatible encoding.
+                    let short_body = char_len == 1
+                        && ascii_compatible
+                        && matches!(
+                            reg.ops[p + 1].opcode,
+                            OpCode::Word
+                                | OpCode::NoWord
+                                | OpCode::WordAscii
+                                | OpCode::NoWordAscii
+                                | OpCode::CClass
+                                | OpCode::CClassNot
+                                | OpCode::CClassRun
+                                | OpCode::CClassMix
+                                | OpCode::CClassMixNot
+                        );
+                    let decided = if short_body {
+                        look_behind_ascii_end(&reg.ops[p + 1], enc, str_data, s, right_range, end)
+                    } else {
+                        None
+                    };
+                    let body_end = match decided {
+                        Some(decided) => decided,
+                        None => look_behind_body_end(
+                            &reg.ops[p + 1],
+                            char_len,
+                            enc,
+                            str_data,
+                            s,
+                            right_range,
+                            end,
+                            ascii_compatible,
+                        ),
+                    };
                     match body_end {
                         // C: CUT_TO_MARK without restoring the position, so
                         // the match goes on where the body ended. Over valid
@@ -6350,7 +6471,27 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             s = body_end;
                             p += 2;
                         }
-                        None if not => p += 2,
+                        None if not => {
+                            // The body's failure backtracks once in the
+                            // upstream sequence; the count is the same.
+                            // count_retry(1) inline when no limit is near
+                            // and no time limit is set.
+                            if time_limit_ms == 0
+                                && (retry_limit_in_match == 0
+                                    || retry_in_match_counter + 1 < retry_limit_in_match)
+                            {
+                                retry_in_match_counter += 1;
+                            } else if let Err(err) = count_retry(
+                                1,
+                                &mut retry_in_match_counter,
+                                retry_limit_in_match,
+                                time_limit_ms,
+                                msa,
+                            ) {
+                                stop_at_limit!(err);
+                            }
+                            p += 2;
+                        }
                         _ => goto_fail = true,
                     }
                 } else {
@@ -11816,7 +11957,7 @@ mod tests {
             r"\w",
             r"(?:\b|x)",
             r"(?<=a|bc)",
-            r"(?<=\w)",
+            r"(?<=.)",
             r"(?=a)",
             r"(?!a)",
             r"\G\b",
@@ -11831,6 +11972,16 @@ mod tests {
             let reg = compile(pattern);
             assert_eq!(first_op_test(&reg), None, "{pattern}");
         }
+        // A `\w` look-behind is fused (`LookBehindOp`), so it is a test too.
+        let reg = compile(r"(?<!\w)");
+        assert_eq!(
+            first_op_test(&reg),
+            Some(FirstOpTest::LookBehind {
+                char_len: 1,
+                not: true,
+                ascii_compatible: true,
+            })
+        );
     }
 
     #[test]
