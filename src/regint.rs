@@ -350,6 +350,11 @@ pub(crate) enum OpCode {
     DecimalTailPrefix = 99,
     /// Rust-only (ADR-008): lazy dot push across a plain capture end to a literal.
     PushLazyAnyChar = 100,
+    /// Rust-only (ADR-008): pops the backtracking choices the star
+    /// instruction just before it pushed, which makes that star possessive.
+    /// Emitted only after a star `crate::possessify` proved never has to
+    /// give anything back.
+    PopStarChoices = 101,
 }
 
 // === SaveType ===

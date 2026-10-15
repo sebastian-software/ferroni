@@ -312,6 +312,7 @@ mod literal_trie;
 #[allow(missing_docs)]
 #[allow(missing_debug_implementations)]
 pub mod oniguruma;
+mod possessify;
 pub mod prelude;
 // C port: see the note on `encodings`.
 #[allow(missing_docs)]
