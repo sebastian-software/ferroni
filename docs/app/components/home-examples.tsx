@@ -50,7 +50,7 @@ export function SyntaxSection() {
         </>
       }
     >
-      <RegexFeatureMatrix compact />
+      <RegexFeatureMatrix />
     </Section>
   );
 }

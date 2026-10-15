@@ -1,19 +1,11 @@
 // cspell:words mbstring
-import {
-  EvidenceFigures,
-  family,
-  Mark,
-  Measured,
-  ProjectHero,
-  Section,
-  WorkWithUs,
-} from "ferramenta-family";
+import { EvidenceFigures, family, Mark, ProjectHero, Section, WorkWithUs } from "ferramenta-family";
 import { Link, type MetaFunction } from "react-router";
 import config from "virtual:ardo/config";
 
 import { comparison, factor, runDate, summary } from "../components/benchmark-summary";
 import { SyntaxSection } from "../components/home-examples";
-import { SpeedChart } from "../components/speed-chart";
+import { SpeedSummary } from "../components/speed-summary";
 import {
   ClosingSection,
   FitSection,
@@ -141,46 +133,6 @@ function WhySection() {
   );
 }
 
-/* The cost side of the speed claim: C prepares a pattern faster on both platforms. */
-function CompileTradeoff() {
-  const compile = [
-    comparison("macos-arm64", "c", "compile"),
-    comparison("linux-x86-64", "c", "compile"),
-  ]
-    .map((pair) => 1 / pair.family_weighted_ratio)
-    .sort((a, b) => a - b);
-  return (
-    <p className="fr-speed-tradeoff">
-      <strong>Where C still wins: compiling.</strong> C Oniguruma prepares a pattern{" "}
-      {compile[0].toFixed(1)}–{factor(compile[1])} faster, so a pattern used once favors C. Ferroni
-      pays off when a pattern runs many times, as in highlighters, parsers and validators.
-    </p>
-  );
-}
-
-function SpeedProvenance() {
-  return (
-    <Measured
-      on={runDate()}
-      machine="Blacksmith VMs, ARM64 macOS and x86-64 Linux"
-      revision={
-        <a href={`https://github.com/sebastian-software/ferroni/commit/${summary.run.head_sha}`}>
-          {summary.run.head_sha.slice(0, 7)}
-        </a>
-      }
-      more={[
-        { label: "Corpus", value: `${summary.case_count} tasks, ${summary.input_count} inputs` },
-        {
-          label: "Repetitions",
-          value: `${summary.platforms[0].repetitions} per platform, one VM each`,
-        },
-      ]}
-    >
-      <Link to="/perf/regex-workloads">Every task, phase and range</Link>
-    </Measured>
-  );
-}
-
 function SpeedSection() {
   const jitWins = [comparison("macos-arm64", "pcre2_jit"), comparison("linux-x86-64", "pcre2_jit")]
     .map((pair) => pair.ferroni_cases)
@@ -198,10 +150,9 @@ function SpeedSection() {
           {jitWins[0] === jitWins[1] ? jitWins[0] : jitWins.join(" to ")} of those tasks.
         </>
       }
+      note={<Link to="/perf/regex-workloads">How the benchmarks work</Link>}
     >
-      <SpeedChart />
-      <CompileTradeoff />
-      <SpeedProvenance />
+      <SpeedSummary />
     </Section>
   );
 }
