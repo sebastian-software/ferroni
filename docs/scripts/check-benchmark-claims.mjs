@@ -60,6 +60,15 @@ for (const platform of summary.platforms) {
       "Revise the README: Ferroni no longer leads C's shared reuse aggregate with no case favoring C.",
     );
   }
+  // The homepage says only PCRE2 JIT is faster; the checks above cover the other engines.
+  for (const engine of ["onigmo", "pcre2"]) {
+    const other = pair(engine);
+    if (!other || other.family_weighted_ratio <= 1) {
+      errors.push(
+        `Revise the homepage: ${engine} now leads the reuse aggregate, so PCRE2 JIT is no longer the only faster engine.`,
+      );
+    }
+  }
   const errorAware = pair("rust_erroraware");
   if (!errorAware || errorAware.family_weighted_ratio <= 1) {
     errors.push(
@@ -71,6 +80,19 @@ if (
   summary.platforms.some((platform) => platform.repetitions !== summary.platforms[0].repetitions)
 ) {
   errors.push("The overview must describe differing platform repetition counts.");
+}
+
+// The homepage names three source projects and counts the rest.
+const projects = new Set(
+  catalog.cases
+    .filter((entry) => entry.pattern_origin === "production" && !entry.pending_reason)
+    .map((entry) => catalog.sources[entry.source.file].repository),
+);
+if (
+  projects.size !== 10 ||
+  !home.replaceAll(/\s+/g, " ").includes("Django, Rails, WordPress and seven other projects")
+) {
+  errors.push("Update the homepage's project count from catalog.json.");
 }
 
 const productionInputs = catalog.cases

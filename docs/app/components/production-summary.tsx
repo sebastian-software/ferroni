@@ -1,11 +1,8 @@
 import { useId } from "react";
 
-import data from "../data/production-summary.json";
 import { BenchmarkFactor } from "./benchmark-factor";
+import { comparison, summary as data, type Profile, runDate } from "./benchmark-summary";
 import "./production-summary.css";
-
-type Platform = (typeof data.platforms)[number];
-type Comparison = Platform["comparisons"][number];
 
 const comparators = [
   ["c", "C Oniguruma", "C"],
@@ -16,15 +13,6 @@ const comparators = [
   ["fancy_regex_seek", "fancy-regex, seek on", "Rust"],
   ["onigmo", "Ruby Onigmo", "C"],
 ];
-
-function comparison(profile: string, engine: string, lane = "steady"): Comparison {
-  const platform = data.platforms.find((entry) => entry.profile === profile);
-  const pair = platform?.comparisons.find(
-    (entry) => entry.engine === engine && entry.lane === lane,
-  );
-  if (pair === undefined) throw new Error("Verified benchmark summary is incomplete.");
-  return pair;
-}
 
 function CComparison() {
   const arm = comparison("macos-arm64", "c");
@@ -87,11 +75,14 @@ function ReuseTable() {
   );
 }
 
+/* How much more reuse time the fallible API takes, in percent. */
+function extraTime(profile: Profile) {
+  return Math.round((comparison(profile, "rust_erroraware").family_weighted_ratio - 1) * 100);
+}
+
 function CostNotes() {
   const armCompile = comparison("macos-arm64", "c", "compile");
   const x86Compile = comparison("linux-x86-64", "c", "compile");
-  const extraTime = (profile: string) =>
-    Math.round((comparison(profile, "rust_erroraware").family_weighted_ratio - 1) * 100);
   return (
     <>
       <p>
@@ -119,12 +110,7 @@ function CostNotes() {
 }
 
 function RunNote() {
-  const date = new Date(data.run.created_at).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  const date = runDate();
   return (
     <p className="production-summary-note">
       <a href={data.run.html_url}>Blacksmith run: {date}</a>, measured at{" "}

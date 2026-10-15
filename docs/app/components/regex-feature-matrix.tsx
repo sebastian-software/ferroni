@@ -25,7 +25,38 @@ function MatrixSources() {
   );
 }
 
-export function RegexFeatureMatrix() {
+function FeatureTable() {
+  return (
+    <ComparisonTable
+      caption="Selected regex features · checked with untimed compatibility examples"
+      subject="Feature"
+      contenders={capabilities.engines.map((engine) => ({
+        id: engine.id,
+        label: (
+          <>
+            {engine.label}
+            <small>{engine.language}</small>
+          </>
+        ),
+        own: engine.id === "rust",
+      }))}
+      rows={rows}
+    />
+  );
+}
+
+/**
+ * The full matrix with its reading notes, or with `compact` the table alone
+ * for the home page, which links here for the notes.
+ */
+export function RegexFeatureMatrix({ compact = false }: { compact?: boolean }) {
+  if (compact) {
+    return (
+      <div className="regex-feature-matrix" data-compact="">
+        <FeatureTable />
+      </div>
+    );
+  }
   return (
     <div className="regex-feature-matrix">
       <h3>Choose the syntax your application needs</h3>
@@ -35,21 +66,7 @@ export function RegexFeatureMatrix() {
         differ. Rust <code>regex</code> offers guaranteed linear-time matching with a smaller
         syntax. These are selected features of the configurations used in the comparison.
       </p>
-      <ComparisonTable
-        caption="Selected regex features · checked with untimed compatibility examples"
-        subject="Feature"
-        contenders={capabilities.engines.map((engine) => ({
-          id: engine.id,
-          label: (
-            <>
-              {engine.label}
-              <small>{engine.language}</small>
-            </>
-          ),
-          own: engine.id === "rust",
-        }))}
-        rows={rows}
-      />
+      <FeatureTable />
       <p className="regex-feature-note">
         Yes means the illustrated syntax returns the expected match. No means that syntax is
         rejected or its behavior differs; a rewritten expression may solve the same task. PCRE2 uses

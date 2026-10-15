@@ -51,3 +51,7 @@
   font-size: 0.875rem;
   line-height: 1.6;
 }
+
+.regex-feature-matrix[data-compact] {
+  margin-block: 0;
+}

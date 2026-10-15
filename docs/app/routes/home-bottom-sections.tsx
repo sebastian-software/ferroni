@@ -1,9 +1,11 @@
-import { ClosingAction, EvidenceFigures, Ledger, Mark, Section } from "ferramenta-family";
+// cspell:words Onigmo onig
+import { ClosingAction, Ledger, Mark, Principles, Relations, Section } from "ferramenta-family";
 import { Link } from "react-router";
-import { limitsHtml, lintHtml, scannerHtml } from "virtual:ferroni-sample";
+import { limitsHtml, scannerHtml } from "virtual:ferroni-sample";
 
 import { HighlightedRust } from "../components/highlighted-rust";
 import { ScannerWalkthrough } from "../components/home-examples";
+import { HomeRunSample } from "../components/home-run-sample";
 
 /* -------------------------------------------------- */
 /*  Scanner                                           */
@@ -14,159 +16,205 @@ export function ScannerSection() {
     <Section
       id="fr-scanner"
       layout="split"
-      title="A Scanner API for TextMate grammars"
-      intro="A highlighter asks, at every position in a line, which of a grammar’s many patterns matches next. Ferroni’s Scanner answers with the API of vscode-oniguruma, the engine under vscode-textmate and Shiki, UTF-16 offsets included."
+      tone="dim"
+      title="The engine under your syntax highlighter"
+      intro={
+        <>
+          VS Code and Shiki highlight code with TextMate grammars, and those grammars are written
+          for Oniguruma. Ferroni&rsquo;s Scanner keeps vscode-oniguruma&rsquo;s API, UTF-16 offsets
+          included, and a multi-pattern DFA rules out patterns before any of them runs.
+        </>
+      }
       note={
         <>
-          Scanners built from one pattern cache compile each distinct pattern once, and a string id
-          lets a scanner reuse what it learned about a line.{" "}
-          <Link to="/guide/getting-started#the-scanner-api">The Scanner API in the guide</Link>.
-          Scanner performance and complete Ferriki highlighting have their own workload boundaries;
-          the regex measurements above cover neither.
+          <a href="https://ferriki.dev">Ferriki</a>, a Shiki-compatible highlighter in Rust, runs on
+          it. <Link to="/guide/getting-started#the-scanner-api">The Scanner API in the guide</Link>
         </>
       }
     >
       <HighlightedRust caption="highlight.rs" html={scannerHtml} />
       <ScannerWalkthrough />
+      <Relations current="ferroni" />
     </Section>
   );
 }
 
 /* -------------------------------------------------- */
-/*  Untrusted input                                   */
+/*  Memory safety and untrusted input                 */
 /* -------------------------------------------------- */
 
+/* The unsafe count is the output of scripts/count-unsafe.sh, as in ADR-002. */
 export function SafetySection() {
   return (
     <Section
       id="fr-safety"
-      tone="dim"
-      title="Put limits on untrusted input"
+      layout="split"
+      title="Memory-safe where C was not"
       intro={
         <>
-          Ferroni is memory-safe, but matching uses backtracking. Set a timeout or retry limit for
-          untrusted input, and use the compile-time warnings to reject risky patterns. Memory safety
-          does not guarantee bounded matching time.
+          C Oniguruma fixed five memory-safety CVEs in 2019. Ferroni&rsquo;s engine is safe Rust:
+          ten unsafe sites remain, all linking parse-tree nodes, none in buffer or string code. For
+          hostile input, give a search a time or retry limit, and let the compiler flag risky
+          patterns.
         </>
       }
       note={
         <>
-          Pattern compilation, matching and the scanner are fuzzed on every pull request.{" "}
-          <Link to="/guide/untrusted-input">Untrusted input in the guide</Link>
+          Fuzzers run compilation, matching and the scanner on every pull request.{" "}
+          <Link to="/guide/untrusted-input">Untrusted input</Link>
           {" · "}
           <Link to="/adr/002-unsafe-code-policy">The unsafe code policy</Link>
         </>
       }
     >
-      <div className="fam-code-grid">
-        <HighlightedRust caption="limits.rs" html={limitsHtml} />
-        <HighlightedRust caption="lint.rs" html={lintHtml} />
-      </div>
+      <HighlightedRust caption="limits.rs" html={limitsHtml} />
     </Section>
   );
 }
 
 /* -------------------------------------------------- */
-/*  Compatibility evidence                            */
+/*  First match                                       */
 /* -------------------------------------------------- */
 
-/* The parity counts are the totals of the table in guide/compatibility.mdx. */
-const proof = [
-  {
-    label: "Upstream C test cases",
-    value: "2,974 / 2,974",
-    detail: "Every UTF-8 test file of Oniguruma, ported case by case.",
-  },
-  {
-    label: "vscode-oniguruma tests",
-    value: "15 / 15",
-    detail: "The scanner's upstream suite, ported as 25 Rust tests.",
-  },
-  {
-    label: "Unicode data",
-    value: "18.0",
-    detail: "Generated from the Unicode Character Database; C Oniguruma ships 16.0.",
-  },
-  {
-    label: "Syntax modes",
-    value: "12",
-    detail: "Oniguruma, Ruby, Perl, Python, Java, POSIX and six more.",
-  },
-];
-
-export function ProofSection() {
+export function StartSection() {
   return (
     <Section
-      id="fr-proof"
-      layout="split"
-      title="Compatibility you can verify"
-      intro="Ferroni carries Oniguruma forward after its C project closed in April 2025. The port preserves module structure, function names and control flow, and passes every upstream UTF-8 test. Unicode tables and the Rust API extend that foundation."
-      note={
+      id="fr-run"
+      tone="dim"
+      title="From cargo add to first match"
+      intro={
         <>
-          Line coverage is gated in CI. Benchmark comparisons require the same checked output before
-          timing. <Link to="/guide/compatibility">How compatibility is checked</Link>
+          No C compiler, no bindgen: Cargo builds Ferroni like any other crate, and CI tests it on
+          Linux, macOS and Windows. Its <code>Regex</code> API will look familiar if you know the{" "}
+          <code>regex</code> crate.
         </>
       }
+      note={
+        <a href="https://github.com/sebastian-software/ferroni/blob/main/examples/website_sample.rs">
+          The output comes from running this example: cargo run --example website_sample
+        </a>
+      }
     >
-      <EvidenceFigures figures={proof} />
+      <HomeRunSample />
     </Section>
   );
 }
 
 /* -------------------------------------------------- */
-/*  Coverage ledger                                   */
+/*  Fit and scope                                     */
 /* -------------------------------------------------- */
 
-const coverage = [
+const fit = [
   {
-    who: "TextMate grammars, VS Code, Shiki",
+    name: "TextMate grammars, VS Code, Shiki",
     status: "Covered",
-    covered: true,
-    detail:
-      "vscode-oniguruma compiles every pattern as UTF-8. Ferroni's scanner keeps its API shape and its UTF-16 offsets.",
+    settled: true,
+    detail: "The Scanner keeps vscode-oniguruma's API and its UTF-16 offsets.",
   },
   {
-    who: "jq",
+    name: "Rust code on C Oniguruma",
     status: "Covered",
-    covered: true,
+    settled: true,
+    detail: (
+      <>
+        Same patterns, no C toolchain.{" "}
+        <Link to="/guide/coming-from-regex">Map an onig call to Ferroni</Link>.
+      </>
+    ),
+  },
+  {
+    name: "jq",
+    status: "Covered",
+    settled: true,
     detail: "jq matches on UTF-8 text, which Ferroni handles in full.",
   },
   {
-    who: "PHP mbregex",
+    name: "PHP mbregex",
     status: "UTF-8 only",
-    covered: false,
-    detail: "mb_ereg in Shift_JIS, EUC-JP or another non-UTF-8 encoding is not covered.",
+    detail: "Shift_JIS, EUC-JP and the other non-UTF-8 encodings are not covered.",
   },
   {
-    who: "Ruby",
+    name: "Ruby",
     status: "Not a target",
-    covered: false,
-    detail: "Ruby runs Onigmo, a fork of Oniguruma with its own history and encodings.",
+    detail: "Ruby runs Onigmo, a fork with its own history and encodings.",
+  },
+  {
+    name: "Untrusted patterns",
+    status: "Use regex",
+    detail:
+      "Limits bound Ferroni's backtracking; only Rust's regex crate guarantees linear-time matching.",
   },
 ];
 
-export function CoverageSection() {
+export function FitSection() {
   return (
     <Section
-      id="fr-coverage"
-      title="What it covers"
+      id="fr-fit"
+      title="Where Ferroni fits"
       intro={
         <>
-          Ferroni ports ASCII and UTF-8, two of Oniguruma&rsquo;s 29 encodings, and leaves out the
-          POSIX and GNU APIs (<Link to="/adr/003-encoding-scope-ascii-and-utf8-only">ADR-003</Link>,{" "}
-          <Link to="/adr/012-posix-and-gnu-api-not-ported">ADR-012</Link>). For the projects built
-          on Oniguruma&rsquo;s syntax, that means:
+          Ferroni covers ASCII and UTF-8, two of Oniguruma&rsquo;s 29 encodings, and leaves out the
+          POSIX and GNU APIs. <Link to="/guide/compatibility">Compatibility and scope</Link>
         </>
       }
     >
-      <Ledger
-        entries={coverage.map((row) => ({
-          name: row.who,
-          status: row.status,
-          settled: row.covered,
-          detail: row.detail,
-        }))}
-      />
+      <Ledger entries={fit} />
+    </Section>
+  );
+}
+
+/* -------------------------------------------------- */
+/*  Project status                                    */
+/* -------------------------------------------------- */
+
+const maintenance = [
+  {
+    heading: "Bug fixes",
+    text: "Bugs and differences from C Oniguruma get fixed.",
+  },
+  {
+    heading: "Unicode",
+    text: "The tables follow each annual Unicode Character Database release.",
+  },
+  {
+    heading: "Toolchain",
+    text: "The MSRV rises only when a fix or dependency needs it, with release notes.",
+  },
+  {
+    heading: "Security",
+    text: "Fixes target the latest release. Report vulnerabilities privately.",
+  },
+];
+
+export function StatusSection() {
+  return (
+    <Section
+      id="project-status"
+      tone="dim"
+      title="Feature-complete and maintained"
+      intro="The scope is complete: Oniguruma syntax for ASCII and UTF-8, plus the scanner. No feature work is planned; the upkeep continues."
+      note={
+        <>
+          Issues are welcome; pull requests keep{" "}
+          <Link to="/adr/001-one-to-one-parity-with-c-original">
+            structural parity with C Oniguruma
+          </Link>
+          .{" "}
+          <a href="https://github.com/sebastian-software/ferroni/blob/main/CONTRIBUTING.md">
+            Contributing
+          </a>
+          {" · "}
+          <a href="https://github.com/sebastian-software/ferroni/labels/help%20wanted">
+            Help wanted
+          </a>
+          {" · "}
+          <a href="https://github.com/sebastian-software/ferroni/blob/main/SECURITY.md">
+            Security policy
+          </a>
+        </>
+      }
+    >
+      <Principles items={maintenance} />
     </Section>
   );
 }
@@ -196,8 +244,8 @@ export function ClosingSection() {
       }
     >
       <p className="fam-intro">
-        Install with <code>cargo add ferroni</code>. The guide walks through your first match,
-        captures, scanner loops and per-search limits. For existing applications, start with the{" "}
+        The guide takes you from a first match to captures, scanner loops and per-search limits.
+        Moving an existing application? Start with the{" "}
         <Link to="/guide/compatibility">compatibility guide</Link>.
       </p>
     </ClosingAction>
