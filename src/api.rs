@@ -21,7 +21,8 @@ use crate::oniguruma::*;
 use crate::regcomp::{AcceptSeek, ScannerSeek, onig_new_for_single_seek};
 use crate::regexec::{
     MatchArg, SearchLimits, cache_msa, onig_name_to_backref_number, onig_search,
-    onig_search_bounds, pure_literal_first, search_in_range, take_cached_msa,
+    onig_search_bounds, pure_literal_first, release_oversized_stack, search_in_range,
+    search_in_range_inner, take_cached_msa,
 };
 use crate::regint::RegexType;
 use crate::regparse_types::NameTable;
@@ -1295,6 +1296,7 @@ impl Regex {
             && !self.program().options.contains(ONIG_OPTION_FIND_LONGEST);
         FindIter {
             regex: self,
+            program: self.program(),
             text,
             cursor: MatchCursor::default(),
             region: if bounds_only {
@@ -1361,13 +1363,7 @@ impl Regex {
     /// Iterate over the capture groups of all non-overlapping matches in
     /// `text` (as bytes).
     pub fn captures_iter_bytes<'r, 't>(&'r self, text: &'t [u8]) -> CaptureMatches<'r, 't> {
-        CaptureMatches {
-            regex: self,
-            text,
-            cursor: MatchCursor::default(),
-            region: take_cached_region(),
-            limits: None,
-        }
+        CaptureMatches::new(self, text, None)
     }
 
     /// Iterate over the capture groups of all non-overlapping matches in
@@ -1393,13 +1389,7 @@ impl Regex {
         options: SearchOptions,
     ) -> TryCaptureMatches<'r, 't> {
         TryCaptureMatches {
-            iter: CaptureMatches {
-                regex: self,
-                text,
-                cursor: MatchCursor::default(),
-                region: take_cached_region(),
-                limits: options.limits(),
-            },
+            iter: CaptureMatches::new(self, text, options.limits()),
             finished: false,
         }
     }
@@ -2268,6 +2258,8 @@ impl MatchCursor {
 /// Iterator over all non-overlapping matches in a text.
 pub struct FindIter<'r, 't> {
     regex: &'r Regex,
+    /// `regex`'s program, read once so that each search does not deref it.
+    program: &'r RegexType,
     text: &'t [u8],
     cursor: MatchCursor,
     region: OnigRegion,
@@ -2284,15 +2276,10 @@ impl<'r, 't> FindIter<'r, 't> {
             if self.cursor.last_end > self.text.len() {
                 return Ok(None);
             }
-            let program = self.regex.program();
+            let program = self.program;
             let m = if let Some(msa) = self.msa.as_deref_mut() {
-                msa.reset_with_limits(
-                    program,
-                    ONIG_OPTION_NONE,
-                    None,
-                    self.cursor.last_end,
-                    self.limits,
-                );
+                debug_assert!(msa.region.is_none(), "bounds-only searches keep no region");
+                msa.reset_for_iteration(program, self.cursor.last_end, self.limits);
                 let Some((start, end)) =
                     onig_search_bounds(program, self.text, self.cursor.last_end, msa)?
                 else {
@@ -2422,22 +2409,42 @@ impl fmt::Debug for TryFindIter<'_, '_> {
 /// [`Captures`].
 pub struct CaptureMatches<'r, 't> {
     regex: &'r Regex,
+    /// `regex`'s program, read once so that each search does not deref it.
+    program: &'r RegexType,
     text: &'t [u8],
     cursor: MatchCursor,
-    /// The region for the next search. Empty once a yielded [`Captures`] has
-    /// taken it.
-    region: OnigRegion,
+    /// Rust-only (ADR-008): the search state of every search of this
+    /// iterator, kept from one search to the next. Between searches it holds
+    /// the region of the next search, which a yielded [`Captures`] takes. It
+    /// returns to the thread cache when the iterator is dropped.
+    msa: Option<Box<MatchArg>>,
     /// The limits of each search; `None` keeps the process-wide ones.
     limits: Option<SearchLimits>,
 }
 
 impl<'r, 't> CaptureMatches<'r, 't> {
+    fn new(regex: &'r Regex, text: &'t [u8], limits: Option<SearchLimits>) -> Self {
+        let program = regex.program();
+        CaptureMatches {
+            regex,
+            program,
+            text,
+            cursor: MatchCursor::default(),
+            msa: Some(take_cached_msa(program, ONIG_OPTION_NONE, None, 0, limits)),
+            limits,
+        }
+    }
+
     /// The region for the next search. A yielded [`Captures`] takes this
     /// iterator's region, and returns it to the thread cache when it is
     /// dropped, so the search takes the cached region then, instead of
     /// allocating a new one (Rust-only, ADR-008).
     fn next_region(&mut self) -> OnigRegion {
-        let region = std::mem::take(&mut self.region);
+        let region = self
+            .msa
+            .as_deref_mut()
+            .and_then(|msa| msa.region.take())
+            .unwrap_or_default();
         if region.beg.capacity() == 0 {
             take_cached_region()
         } else {
@@ -2453,25 +2460,25 @@ impl<'r, 't> CaptureMatches<'r, 't> {
                 return Ok(None);
             }
 
-            let program = self.regex.program();
+            let program = self.program;
             let len = self.text.len();
+            let start = self.cursor.last_end;
             let region = self.next_region();
-            let (result, region) = search_in_range(
-                program,
-                self.text,
-                len,
-                self.cursor.last_end,
-                len,
-                len,
-                Some(region),
-                ONIG_OPTION_NONE,
-                self.limits,
-            );
+            let Some(msa) = self.msa.as_deref_mut() else {
+                return Ok(None);
+            };
+            // The same search as `search_in_range` runs with a cached
+            // `MatchArg`, which this iterator keeps instead (Rust-only, ADR-008).
+            msa.reset_for_iteration(program, start, self.limits);
+            msa.region = Some(region);
+            let result = search_in_range_inner(program, self.text, len, start, len, len, msa);
+            let region = msa.region.take();
+            release_oversized_stack(msa);
             let Some(region) = region else {
                 return Ok(None);
             };
             if result < 0 {
-                self.region = region;
+                msa.region = Some(region);
                 return if result == ONIG_MISMATCH {
                     Ok(None)
                 } else {
@@ -2479,11 +2486,11 @@ impl<'r, 't> CaptureMatches<'r, 't> {
                 };
             }
             if region.num_regs < 1 {
-                self.region = region;
+                msa.region = Some(region);
                 return Ok(None);
             }
             let Some(m) = Match::from_region(self.text, region.beg[0], region.end[0]) else {
-                self.region = region;
+                msa.region = Some(region);
                 return Ok(None);
             };
 
@@ -2495,9 +2502,9 @@ impl<'r, 't> CaptureMatches<'r, 't> {
                         compiled: Arc::clone(&self.regex.inner),
                     }));
                 }
-                Verdict::Retry => self.region = region,
+                Verdict::Retry => msa.region = Some(region),
                 Verdict::Finish => {
-                    self.region = region;
+                    msa.region = Some(region);
                     return Ok(None);
                 }
             }
@@ -2516,7 +2523,10 @@ impl<'r, 't> Iterator for CaptureMatches<'r, 't> {
 
 impl Drop for CaptureMatches<'_, '_> {
     fn drop(&mut self) {
-        cache_region(std::mem::take(&mut self.region));
+        if let Some(mut msa) = self.msa.take() {
+            cache_region(msa.region.take().unwrap_or_default());
+            cache_msa(msa);
+        }
     }
 }
 
@@ -3113,6 +3123,7 @@ mod tests {
                 assert!(bounds.msa.is_some(), "{pattern}");
                 let region_path = FindIter {
                     regex: &re,
+                    program: re.program(),
                     text: text.as_bytes(),
                     cursor: MatchCursor::default(),
                     region: OnigRegion::new(),
@@ -3852,6 +3863,38 @@ mod tests {
             let found: Vec<_> = re.captures_iter(text).map(|c| group_spans(&c)).collect();
             assert_eq!(found, expected, "{pattern:?} on {text:?}");
         }
+    }
+
+    /// An iterator reads the process-wide limits again for every search, so
+    /// a limit set between two matches applies to the next search, as it does
+    /// for a plain search (Rust-only, ADR-008: one `MatchArg` serves the
+    /// iterator's searches).
+    #[test]
+    fn find_iter_reads_the_process_wide_limits_for_each_search() {
+        let _limits = crate::regexec::exclusive_limits();
+        crate::regexec::onig_set_retry_limit_in_search(0);
+        let re = Regex::new(r"x|a+c").unwrap();
+        let mut matches = re.find_iter("x aabaac");
+        assert_eq!(matches.next().unwrap().range(), 0..1);
+
+        crate::regexec::onig_set_retry_limit_in_search(1);
+        // The search from offset 1 backtracks in `a+c` before it reaches
+        // `aac`, which it would find without the limit.
+        assert!(matches.next().is_none());
+    }
+
+    /// The captures iterator reads the process-wide limits for each search,
+    /// as `find_iter` does.
+    #[test]
+    fn captures_iter_reads_the_process_wide_limits_for_each_search() {
+        let _limits = crate::regexec::exclusive_limits();
+        crate::regexec::onig_set_retry_limit_in_search(0);
+        let re = Regex::new(r"(x)|(a+c)").unwrap();
+        let mut matches = re.captures_iter("x aabaac");
+        assert_eq!(matches.next().unwrap().get(0).unwrap().range(), 0..1);
+
+        crate::regexec::onig_set_retry_limit_in_search(1);
+        assert!(matches.next().is_none());
     }
 
     /// Each yielded `Captures` returns its region to the thread cache when it
