@@ -9,9 +9,11 @@
 //! The patterns are the production and tokenizer catalogs, fifty
 //! hand-written ones (anchors, multi-line anchors, case folding, non-ASCII
 //! classes, look-arounds, back references, atomic groups, absent operators,
-//! `\K`, `\G`), and random subjects of valid UTF-8 and random bytes. Every
-//! subject is searched from each character boundary and, through the bytes
-//! API, from each byte offset.
+//! `\K`, `\G`, and host-name shapes that get an accept seek), and random
+//! subjects of valid UTF-8 and random bytes. Every subject is searched from
+//! each character boundary and, through the bytes API, from each byte
+//! offset. With the `ffi` feature, the standard `is_match` of the catalog
+//! patterns is also compared with C Oniguruma.
 
 use ferroni::api::{Regex, RegexBuilder, SearchOptions};
 use serde_json::Value;
@@ -188,8 +190,41 @@ fn hand_written() -> Vec<Case> {
     cases.push(Case::new("[^é]").flags(false, false, None));
     cases.push(Case::new("\\b").flags(false, false, None));
     cases.push(Case::new("\\B\\w").flags(false, false, Some(false)));
+    // Inexact seeks with an accept seek (ADR-008): case folds of a class
+    // left out, one-character looks folded into the label classes, and a
+    // repetition `tune_next` made possessive.
+    cases.push(Case::new(r"\.(?!-)[a-z¡-￿0-9-]{1,63}(?<!-)").flags(true, false, Some(false)));
+    cases.push(
+        Case::new(r"\.(?!-)(?:[a-z¡-￿-]{2,4}|xn--[a-z0-9]{1,3})(?<!-)\.?\z").flags(
+            true,
+            false,
+            Some(false),
+        ),
+    );
+    cases.push(Case::new(r"^[a-zß¡-ÿ]+$").flags(true, false, None));
+    cases.push(Case::new(r"^(?!-)[a-z-]+(?<!-)$"));
+    cases.push(Case::new(r"[a-z]+@[a-z]+\.com"));
     cases
 }
+
+/// Subjects for the accept seeks: host names with the characters whose case
+/// folds are strings, the strings they fold to, and hyphens at label ends.
+const HOST_SUBJECTS: &[&str] = &[
+    "straße.de",
+    "STRASSE.DE",
+    "ſſ.de",
+    "x.ß",
+    "x.ss",
+    "ﬀ.com",
+    "a.ﬆ",
+    "a.st",
+    "xn--bcher.ch",
+    "-a.b",
+    "a-.b",
+    "a.-b",
+    "a.b-",
+    "john@doe.com",
+];
 
 /// The production and tokenizer catalogs: the pattern and flags of each
 /// case, and its inputs' texts (with the starts they are searched from).
@@ -321,6 +356,7 @@ fn hand_written_patterns_agree_with_the_matcher() {
             "ab\n",
         ]
         .iter()
+        .chain(HOST_SUBJECTS)
         .map(|s| (s.as_bytes().to_vec(), 0)),
     );
     let mut compiled = 0;
@@ -350,6 +386,7 @@ fn catalog_patterns_agree_with_the_matcher() {
     let random: Vec<(Vec<u8>, usize)> = (0..40).map(|_| (random_subject(&mut rng), 0)).collect();
     let mut subjects = inputs;
     subjects.extend(random);
+    subjects.extend(HOST_SUBJECTS.iter().map(|s| (s.as_bytes().to_vec(), 0)));
     let mut compared = 0;
     let mut compiled = 0;
     for case in &cases {
@@ -508,4 +545,57 @@ fn exact_seek_answers_match_where_the_retry_limit_stops_the_matcher() {
     assert!(!on.is_match_bytes(b"john@doe.org"));
     // The `*_with` methods run the matcher under the caller's limit.
     assert!(on.is_match_bytes_at_with(text, 0, tight).is_err());
+}
+
+/// The standard `is_match` of the catalog patterns against C Oniguruma, on
+/// the catalog inputs and the host subjects: equal wherever C completes.
+/// Where C stops at a limit, ADR-017 lets the seeks answer the result
+/// without it, which the comparisons above check against Ferroni's matcher.
+#[cfg(feature = "ffi")]
+#[test]
+fn catalog_is_match_agrees_with_c() {
+    use ferroni::ffi::CRegex;
+    use ferroni::oniguruma::*;
+
+    let (cases, inputs) = catalog_cases();
+    let mut subjects = inputs;
+    subjects.extend(HOST_SUBJECTS.iter().map(|s| (s.as_bytes().to_vec(), 0)));
+    let mut compared = 0;
+    for case in &cases {
+        let mut options = ONIG_OPTION_NONE;
+        for (enabled, flag) in [
+            (case.ignore_case, ONIG_OPTION_IGNORECASE),
+            (case.multiline == Some(true), ONIG_OPTION_NEGATE_SINGLELINE),
+            (case.multiline == Some(false), ONIG_OPTION_SINGLELINE),
+            (case.dotall, ONIG_OPTION_MULTILINE),
+            (case.extended, ONIG_OPTION_EXTEND),
+        ] {
+            if enabled {
+                options |= flag;
+            }
+        }
+        let (Ok(c), Some(re)) = (
+            CRegex::new(&case.pattern, options.bits()),
+            case.compile(true),
+        ) else {
+            continue;
+        };
+        for (text, start) in &subjects {
+            if *start > text.len() {
+                continue;
+            }
+            let result = c.search(text, *start, text.len(), None, ONIG_OPTION_NONE.bits());
+            if result >= 0 || result == ONIG_MISMATCH {
+                assert_eq!(
+                    re.is_match_bytes_at(text, *start),
+                    result >= 0,
+                    "{:?} on {:?} from {start}",
+                    String::from_utf8_lossy(&case.pattern),
+                    String::from_utf8_lossy(text)
+                );
+                compared += 1;
+            }
+        }
+    }
+    assert!(compared > 10_000, "{compared} comparisons");
 }

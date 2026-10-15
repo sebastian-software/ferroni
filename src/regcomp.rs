@@ -11028,6 +11028,7 @@ fn compile_recording_name(reg: &mut RegexType, pattern: &[u8]) -> (i32, Option<V
         pattern,
         RustOnlyCompile::default(),
         &mut ScannerSeek::default(),
+        &mut AcceptSeek::default(),
     )
 }
 
@@ -11056,11 +11057,22 @@ pub(crate) type ScannerSeek = Option<crate::dfa_prefilter::Seek>;
 #[cfg(not(feature = "dfa-prefilter"))]
 pub(crate) type ScannerSeek = ();
 
+/// What a single `Regex`'s compilation hands back beside its seek: the
+/// accept seek, an under-approximation read from the same tuned tree
+/// (ADR-008, `crate::dfa_prefilter::derive_accept`), for an inexact seek.
+/// Nothing without the feature.
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) type AcceptSeek = Option<crate::dfa_prefilter::AcceptCode>;
+/// See the definition with the `dfa-prefilter` feature.
+#[cfg(not(feature = "dfa-prefilter"))]
+pub(crate) type AcceptSeek = ();
+
 fn compile_recording_name_with_choices(
     reg: &mut RegexType,
     pattern: &[u8],
     choices: RustOnlyCompile,
     seek: &mut ScannerSeek,
+    accept: &mut AcceptSeek,
 ) -> (i32, Option<Vec<u8>>) {
     // Clear previous bytecode
     reg.ops.clear();
@@ -11104,7 +11116,7 @@ fn compile_recording_name_with_choices(
         group_max_len: Vec::new(),
     };
 
-    let r = compile_parsed(reg, pattern, &mut env, choices, seek);
+    let r = compile_parsed(reg, pattern, &mut env, choices, seek, accept);
     // C's parse_and_tune() `err:` label
     let par = if r != 0 { env.error.take() } else { None };
     (r, par)
@@ -11118,6 +11130,7 @@ fn compile_parsed(
     env: &mut ParseEnv,
     choices: RustOnlyCompile,
     seek: &mut ScannerSeek,
+    accept: &mut AcceptSeek,
 ) -> i32 {
     let mut root = match crate::regparse::onig_parse_tree(pattern, reg, env) {
         Ok(node) => node,
@@ -11361,9 +11374,16 @@ fn compile_parsed(
     #[cfg(feature = "dfa-prefilter")]
     if choices.seek {
         *seek = crate::dfa_prefilter::derive(&root, reg, choices.precise_seek);
+        // A single regex's inexact seek also gets the accept seek, whose
+        // matches are the pattern's (ADR-008).
+        if choices.precise_seek
+            && matches!(seek, Some(crate::dfa_prefilter::Seek::Pattern(code)) if !code.exact())
+        {
+            *accept = crate::dfa_prefilter::derive_accept(&root, reg);
+        }
     }
     #[cfg(not(feature = "dfa-prefilter"))]
-    let _ = seek;
+    let _ = (seek, accept);
 
     0
 }
@@ -11844,7 +11864,7 @@ pub(crate) fn onig_new_with_backtracking_optimization(
         seek: false,
         precise_seek: false,
     };
-    onig_new_with_choices(pattern, option, enc, syntax, choices).map(|(reg, _)| reg)
+    onig_new_with_choices(pattern, option, enc, syntax, choices).map(|(reg, _, _)| reg)
 }
 
 /// [`onig_new_with_backtracking_optimization`] for a scanner pattern: with
@@ -11863,13 +11883,13 @@ pub(crate) fn onig_new_for_scanner(
         seek: prefilter,
         precise_seek: false,
     };
-    onig_new_with_choices(pattern, option, enc, syntax, choices)
+    onig_new_with_choices(pattern, option, enc, syntax, choices).map(|(reg, seek, _)| (reg, seek))
 }
 
 /// [`onig_new_with_backtracking_optimization`] for a single `Regex` (ADR-008),
 /// which with `seek` also derives the precise seek of the tuned tree in the
-/// same compilation, for the automaton of `api.rs`. Without `seek` it is
-/// the same compilation with no seek at all.
+/// same compilation, and the accept seek of an inexact one, for the automata
+/// of `api.rs`. Without `seek` it is the same compilation with no seek at all.
 pub(crate) fn onig_new_for_single_seek(
     pattern: &[u8],
     option: OnigOptionType,
@@ -11877,7 +11897,7 @@ pub(crate) fn onig_new_for_single_seek(
     syntax: &OnigSyntaxType,
     optimize_backtracking: bool,
     seek: bool,
-) -> Result<(RegexType, ScannerSeek), crate::error::RegexError> {
+) -> Result<(RegexType, ScannerSeek, AcceptSeek), crate::error::RegexError> {
     let choices = RustOnlyCompile {
         optimize_backtracking,
         seek,
@@ -11893,7 +11913,7 @@ fn onig_new_with_choices(
     enc: OnigEncoding,
     syntax: &OnigSyntaxType,
     choices: RustOnlyCompile,
-) -> Result<(RegexType, ScannerSeek), crate::error::RegexError> {
+) -> Result<(RegexType, ScannerSeek, AcceptSeek), crate::error::RegexError> {
     // Validate options
     if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP)
         && option.intersects(ONIG_OPTION_CAPTURE_GROUP)
@@ -11982,12 +12002,15 @@ fn onig_new_with_choices(
     // Without the `dfa-prefilter` feature the seek is `()`.
     #[allow(clippy::let_unit_value)]
     let mut seek = ScannerSeek::default();
-    let (r, par) = compile_recording_name_with_choices(&mut reg, pattern, choices, &mut seek);
+    #[allow(clippy::let_unit_value)]
+    let mut accept = AcceptSeek::default();
+    let (r, par) =
+        compile_recording_name_with_choices(&mut reg, pattern, choices, &mut seek, &mut accept);
     if r != 0 {
         return Err(crate::error::RegexError::from_error_name(r, par.as_deref()));
     }
 
-    Ok((reg, seek))
+    Ok((reg, seek, accept))
 }
 
 // ============================================================================
