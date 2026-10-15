@@ -1060,8 +1060,10 @@ impl Walk<'_> {
                 // has no match in `abc`, its seek does. The bag `tune_next`
                 // makes for automatic possessification is the repetition
                 // itself, see `automatic_possessive`.
-                BagData::StopBacktrack => {
-                    if !automatic_possessive(node) {
+                BagData::StopBacktrack | BagData::TextSegment => {
+                    if !(matches!(bn.bag_data, BagData::StopBacktrack)
+                        && automatic_possessive(node))
+                    {
                         self.inexact = true;
                     }
                     bn.body

@@ -355,6 +355,11 @@ pub(crate) enum OpCode {
     /// Emitted only after a star `crate::possessify` proved never has to
     /// give anything back.
     PopStarChoices = 101,
+    /// Rust-only (ADR-008): `\X` outside look-behinds as one instruction. It
+    /// advances over one character and then to the next extended grapheme
+    /// cluster boundary, the steps of upstream's `\O(?:\Y\O)*` in one
+    /// dispatch, and never pushes a backtrack entry.
+    GraphemeCluster = 102,
 }
 
 // === SaveType ===
@@ -585,6 +590,13 @@ pub(crate) enum OperationPayload {
         /// Fixed encoding property, cached for the short ASCII backward walk.
         ascii_compatible: bool,
     },
+    /// Rust-only (ADR-008): `PushLazyAnyChar`. `c` is the byte that the
+    /// literal after the loop's capture end must start with (see
+    /// `lazy_literal_byte`).
+    PushLazyAnyChar {
+        addr: RelAddrType,
+        c: u8,
+    },
     PushOrJumpByteSet {
         addr: RelAddrType,
         /// The bytes the main path can consume first.
@@ -724,6 +736,12 @@ pub struct RegexType {
     /// search answers a search that sees all of its subject without entering
     /// the VM (`pure_literal_first`). Set by `detect_pure_literal`.
     pub(crate) pure_literal: bool,
+    /// Rust-only (ADR-008): the program has no `\G` (`CheckPosition`), no `\K`
+    /// and no callout, so a search from the end of an empty match finds that
+    /// same empty match again. The match iterators then step past it without
+    /// that search (`MatchCursor::accept`). Set by
+    /// `detect_skip_repeated_empty_search` when compilation ends.
+    pub(crate) skip_repeated_empty_search: bool,
     pub(crate) map: [u8; CHAR_MAP_SIZE],
     pub(crate) map_offset: i32,
     pub(crate) map_bytes: [u8; 3],

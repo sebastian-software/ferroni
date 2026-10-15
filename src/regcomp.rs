@@ -1956,6 +1956,65 @@ fn compile_range_repeat_node(
 // Bag (group) compilation
 // ============================================================================
 
+#[cfg(test)]
+thread_local! {
+    /// Compiles `\X` as upstream's atomic group, as the reference for
+    /// `GraphemeCluster` in differential tests.
+    pub(crate) static GRAPHEME_CLUSTER_DISABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Whether a bag is the `\X` group that the parser marks with
+/// [`BagData::TextSegment`] and that has the shape it builds, `(?>\O(?:\Y\O)*)`
+/// with `\O` the multiline any-character and `\Y` the negated extended
+/// grapheme cluster boundary. Rust-only (ADR-008): such a group compiles to
+/// one `GraphemeCluster` instruction. Any other shape keeps the atomic group.
+fn is_text_segment_cluster(bag: &BagNode) -> bool {
+    #[cfg(test)]
+    if GRAPHEME_CLUSTER_DISABLED.with(|disabled| disabled.get()) {
+        return false;
+    }
+    fn cells(node: &Node) -> Option<(&Node, Option<&Node>)> {
+        match &node.inner {
+            NodeInner::List(cons) => Some((&cons.car, cons.cdr.as_deref())),
+            _ => None,
+        }
+    }
+    fn multiline_anychar(node: &Node) -> bool {
+        matches!(&node.inner, NodeInner::CType(ct) if ct.ctype == CTYPE_ANYCHAR && !ct.not)
+            && node.has_status(ND_ST_MULTILINE)
+    }
+    fn shape(bag: &BagNode) -> Option<()> {
+        if bag.bag_type != BagType::StopBacktrack {
+            return None;
+        }
+        // (\O . (quant . nil))
+        let (first, rest) = cells(bag.body.as_deref()?)?;
+        let (quant, tail) = cells(rest?)?;
+        if !multiline_anychar(first) || tail.is_some() {
+            return None;
+        }
+        let NodeInner::Quant(qn) = &quant.inner else {
+            return None;
+        };
+        if !qn.greedy || qn.lower != 0 || !is_infinite_repeat(qn.upper) {
+            return None;
+        }
+        // (\Y . (\O . nil)), with the character boundary, not the word one.
+        let (boundary, after) = cells(qn.body.as_deref()?)?;
+        let NodeInner::Anchor(an) = &boundary.inner else {
+            return None;
+        };
+        let (loop_char, end) = cells(after?)?;
+        (an.anchor_type == ANCR_NO_TEXT_SEGMENT_BOUNDARY
+            && !boundary.has_status(ND_ST_TEXT_SEGMENT_WORD)
+            && multiline_anychar(loop_char)
+            && end.is_none())
+        .then_some(())
+    }
+    matches!(bag.bag_data, BagData::TextSegment) && shape(bag).is_some()
+}
+
 /// Calculate bytecode length for a bag node.
 fn compile_length_bag_node(
     bag: &BagNode,
@@ -1991,6 +2050,9 @@ fn compile_length_bag_node(
             len
         }
         BagType::StopBacktrack => {
+            if is_text_segment_cluster(bag) {
+                return SIZE_INC;
+            }
             if let Some(length) =
                 crate::backtrack_rewrite::lowering::compile_length(bag, node_status, reg, env)
             {
@@ -2203,6 +2265,10 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
     match bag.bag_type {
         BagType::Memory => compile_bag_memory_node(bag, node_status, reg, env),
         BagType::StopBacktrack => {
+            if is_text_segment_cluster(bag) {
+                add_op(reg, OpCode::GraphemeCluster, OperationPayload::None);
+                return 0;
+            }
             if let Some(result) =
                 crate::backtrack_rewrite::lowering::compile(bag, node_status, reg, env)
             {
@@ -4445,10 +4511,12 @@ fn node_char_len1(
                 /* can't optimize look-behind if capture exists. */
                 ci.min_is_sure = false;
             }
-            BagData::Option { .. } | BagData::StopBacktrack => match bn.body.as_deref() {
-                Some(body) => r = node_char_len1(body, reg, ci, env, marks, level),
-                None => mmcl_set(ci, 0),
-            },
+            BagData::Option { .. } | BagData::StopBacktrack | BagData::TextSegment => {
+                match bn.body.as_deref() {
+                    Some(body) => r = node_char_len1(body, reg, ci, env, marks, level),
+                    None => mmcl_set(ci, 0),
+                }
+            }
             BagData::IfElse {
                 then_node,
                 else_node,
@@ -8218,6 +8286,9 @@ struct BackrefPushScan {
     /// Per group number: the path to its capture node, and whether every
     /// container on it is linear.
     groups: Vec<Option<(Vec<TreeStep>, bool)>>,
+    /// Per group number: the first byte of its capture when the capture is a
+    /// plain, case-sensitive, non-empty string (Rust-only, ADR-008).
+    literal_first: Vec<Option<u8>>,
     /// Back references and conditions: group number and the path to them.
     reads: Vec<(usize, Vec<TreeStep>)>,
     /// Groups that need a push whatever their reads (capture seen twice,
@@ -8230,6 +8301,16 @@ struct BackrefPushScan {
 }
 
 impl BackrefPushScan {
+    /// Whether the read at `read` of group `g` always sees the capture of
+    /// `g` written on its path: the group is linear and occurs once, and the
+    /// read follows it (`read_follows_group`).
+    fn read_sees_group_set(&self, g: usize, read: &[TreeStep]) -> bool {
+        match self.groups.get(g) {
+            Some(Some((group, true))) => read_follows_group(group, read),
+            _ => false,
+        }
+    }
+
     fn enter(&mut self, container: usize, child: u32, ordered: bool, linear: bool) {
         self.path.push(TreeStep {
             container,
@@ -8296,6 +8377,11 @@ impl BackrefPushScan {
                             mem_status_on(&mut self.forced, g);
                         } else {
                             self.groups[g] = Some((self.path.clone(), self.non_linear == 0));
+                            if self.literal_first.len() <= g {
+                                self.literal_first.resize(g + 1, None);
+                            }
+                            self.literal_first[g] =
+                                bn.body.as_deref().and_then(plain_literal_first_byte);
                         }
                     }
                 }
@@ -8403,15 +8489,64 @@ fn backref_groups_needing_push(root: &Node, env: &ParseEnv) -> MemStatusType {
     }
     let mut needed = scan.forced;
     for (g, read) in &scan.reads {
-        let safe = match scan.groups.get(*g) {
-            Some(Some((group, true))) => read_follows_group(group, read),
-            _ => false,
-        };
-        if !safe {
+        if !scan.read_sees_group_set(*g, read) {
             mem_status_on(&mut needed, *g);
         }
     }
     needed & env.backrefed_mem
+}
+
+/// Rust-only (ADR-008): the first byte of each back-referenced group whose
+/// capture is a plain, case-sensitive, non-empty string, and whose every read
+/// sees the capture written on its path (the analysis of
+/// `backref_groups_needing_push`). Such a group reads the same bytes at every
+/// attempt: a back reference to it compares its first byte with the byte at
+/// the position first, so a failed comparison there is the whole failure.
+/// Index 0 and every other group are `None`.
+fn backref_literal_first_bytes(root: &Node, env: &ParseEnv) -> [Option<u8>; MEM_STATUS_BITS_NUM] {
+    let mut first = [None; MEM_STATUS_BITS_NUM];
+    if env.backrefed_mem == 0 || env.num_call > 0 {
+        return first;
+    }
+    let mut scan = BackrefPushScan {
+        backrefed: env.backrefed_mem,
+        ..BackrefPushScan::default()
+    };
+    scan.scan(root);
+    if scan.give_up {
+        return first;
+    }
+    let mut unsafe_reads: MemStatusType = 0;
+    for (g, read) in &scan.reads {
+        if !scan.read_sees_group_set(*g, read) {
+            mem_status_on(&mut unsafe_reads, *g);
+        }
+    }
+    for (g, slot) in first.iter_mut().enumerate().skip(1) {
+        if mem_status_at(scan.forced, g) || mem_status_at(unsafe_reads, g) {
+            continue;
+        }
+        if let Some(Some((_, true))) = scan.groups.get(g) {
+            *slot = scan.literal_first.get(g).copied().flatten();
+        }
+    }
+    first
+}
+
+/// The first byte of a group body that is a plain string: case-sensitive
+/// (no `(?i)` status, whose strings compile to folded instructions) and
+/// non-empty.
+fn plain_literal_first_byte(body: &Node) -> Option<u8> {
+    match &body.inner {
+        NodeInner::String(sn)
+            if !sn.s.is_empty()
+                && !body.has_status(ND_ST_IGNORECASE)
+                && !body.has_status(ND_ST_LITERAL_ALT) =>
+        {
+            Some(sn.s[0])
+        }
+        _ => None,
+    }
 }
 
 // ============================================================================
@@ -9362,6 +9497,76 @@ fn add_high_bytes_opt_map(m: &mut OptMap, enc: OnigEncoding) {
     m.value += added * map_position_value(enc, 0x80);
 }
 
+/// Whether the extra maps narrow multibyte class members to their lead bytes.
+#[cfg(test)]
+fn narrow_class_leads_enabled() -> bool {
+    !NARROW_CLASS_LEADS_DISABLED.with(|disabled| disabled.get())
+}
+
+#[cfg(not(test))]
+fn narrow_class_leads_enabled() -> bool {
+    true
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Keeps every byte from 0x80 up in the extra maps, as the reference for
+    /// `utf8_class_lead_bytes` in differential tests.
+    pub(crate) static NARROW_CLASS_LEADS_DISABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Most multibyte code points whose lead bytes `utf8_class_lead_bytes` takes
+/// one by one.
+const MAX_NARROWED_CLASS_CODES: usize = 16;
+
+/// Rust-only (ADR-008): the lead bytes a UTF-8 character of a non-negated
+/// class can start with, when the class's multibyte part is a small set of
+/// single code points (at most `MAX_NARROWED_CLASS_CODES`). `CClassMix` reads
+/// a lead byte that makes a character of its own (`enclen` 1) against the
+/// bitset, and a longer character against the code ranges, at the code that
+/// `mbc_to_code` decodes. The decoder masks every continuation byte to its
+/// low six bits, so a lead byte of length n reaches the codes from its base
+/// up to `base + 2^(6(n-1)) - 1`, overlong forms included: U+FF03 is reached
+/// from `EF` and from `F0 8F BC 83`. `None` for any other class or encoding,
+/// where the caller keeps every byte from 0x80 up.
+fn utf8_class_lead_bytes(cc: &CClassNode, enc: OnigEncoding) -> Option<BitSet> {
+    if cc.is_not() || !std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
+        return None;
+    }
+    let mut leads: BitSet = [0; BITSET_REAL_SIZE];
+    for lead in 0x80..0x100 {
+        if bitset_at(&cc.bs, lead) {
+            bitset_set_bit(&mut leads, lead);
+        }
+    }
+    // The buffer holds the number of ranges, then each range's bounds.
+    let ranges = cc.mbuf.as_ref().map_or(&[][..], |mbuf| &mbuf.data[..]);
+    let words = bbuf_to_u32_vec(ranges);
+    let count = words.first().map_or(0, |&n| n as usize);
+    if count > MAX_NARROWED_CLASS_CODES || words.len() < 1 + 2 * count {
+        return None;
+    }
+    for &[low, high] in words[1..1 + 2 * count].as_chunks::<2>().0 {
+        if low != high {
+            return None;
+        }
+        for lead in 0xC2..=0xF4_u8 {
+            let (len, mask_bits) = match lead {
+                0xC2..=0xDF => (2, 5),
+                0xE0..=0xEF => (3, 4),
+                _ => (4, 3),
+            };
+            let shift = 6 * (len - 1);
+            let base = (u32::from(lead) & ((1 << mask_bits) - 1)) << shift;
+            if (base..base + (1 << shift)).contains(&low) {
+                bitset_set_bit(&mut leads, lead as usize);
+            }
+        }
+    }
+    Some(leads)
+}
+
 /// The bytes of an optimizer map as a bitset. Rust-only: map bytes are 0 or
 /// 1 (every writer stores 1), so bit 0 of eight bytes at a time gathers into
 /// one byte of the result, and the map operations below visit only the
@@ -9916,6 +10121,9 @@ fn compute_group_max_lens(root: &Node, env: &ParseEnv) -> Vec<OnigLen> {
 /// there was one to add, that is, whether a pass with `extra` could differ.
 struct StartMaps {
     extra: bool,
+    /// Whether the pattern begins with a look-behind, so the extra maps take
+    /// the exact lead bytes of multibyte class members (`utf8_class_lead_bytes`).
+    narrow_leads: bool,
     skipped: std::cell::Cell<bool>,
 }
 
@@ -9923,6 +10131,7 @@ impl StartMaps {
     fn new(extra: bool) -> Self {
         StartMaps {
             extra,
+            narrow_leads: false,
             skipped: std::cell::Cell::new(false),
         }
     }
@@ -10025,9 +10234,17 @@ fn optimize_nodes(
                 let max = enc.max_enc_len() as OnigLen;
                 if start_maps.extra {
                     // The ASCII part of the map from the bitset; any lead
-                    // byte from 0x80 up may start a multibyte member.
+                    // byte from 0x80 up may start a multibyte member, unless
+                    // a leading look-behind asks for the exact lead bytes.
                     add_cclass_bitset_opt_map(&mut opt.map, cc, enc, 0x80);
-                    add_high_bytes_opt_map(&mut opt.map, enc);
+                    match start_maps
+                        .narrow_leads
+                        .then(|| utf8_class_lead_bytes(cc, enc))
+                        .flatten()
+                    {
+                        Some(leads) => add_bitset_opt_map(&mut opt.map, &leads, enc),
+                        None => add_high_bytes_opt_map(&mut opt.map, enc),
+                    }
                 } else {
                     start_maps.skipped.set(true);
                 }
@@ -10490,7 +10707,8 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
     {
         let mut start_mm = MinMaxLen::new();
         let mut start_opt = OptNode::new();
-        let extra_maps = StartMaps::new(true);
+        let mut extra_maps = StartMaps::new(true);
+        extra_maps.narrow_leads = reg.look_behind_reach > 0 && narrow_class_leads_enabled();
         if optimize_nodes(
             root,
             &mut start_opt,
@@ -10681,6 +10899,7 @@ fn compile_recording_name_with_choices(
         saves: None,
         unset_addr_list: None,
         parse_depth: 0,
+        look_behind_depth: 0,
         ast_node_count: 0,
         flags: 0,
         recursive_mem: Vec::new(),
@@ -10927,7 +11146,7 @@ fn compile_parsed(
     }
 
     refresh_capture_tracking_requirement(reg);
-    guard_backtrack_pushes(reg);
+    guard_backtrack_pushes(reg, &backref_literal_first_bytes(&root, env));
     fuse_ascii_class_runs(reg);
     crate::leading_run::plan(reg);
     reg.literal_prefix = crate::leading_run::plan_literal_prefix(&root, reg).map(Box::new);
@@ -10938,6 +11157,9 @@ fn compile_parsed(
     // Rust-only (ADR-008): a program that is only its exact string answers
     // the forward literal search (`pure_literal_first`).
     reg.pure_literal = detect_pure_literal(reg);
+    // Rust-only (ADR-008): whether the iterators may step past an empty match
+    // without searching again from its end.
+    reg.skip_repeated_empty_search = detect_skip_repeated_empty_search(reg);
     // Rust-only (ADR-008): the seek approximation for the scanner's DFA
     // pre-filter, read from the same tuned tree, for scanner patterns only.
     #[cfg(feature = "dfa-prefilter")]
@@ -11010,6 +11232,50 @@ thread_local! {
         const { std::cell::Cell::new(false) };
 }
 
+/// Rust-only (ADR-008): the byte that the path from `pc` must consume first,
+/// for the lazy dot loop of `PushLazyAnyChar`, which sits in front of `pc`.
+/// The path runs capture ends (`MemEnd`), then negative one-character
+/// look-behinds, and then a plain string, or a back reference to a literal
+/// group (`literal_first`). The capture ends come first: each position the
+/// loop visits then writes them, so the last write is the loop's stop, as in
+/// the instruction loop. A look-behind only rejects a position. `None` for
+/// anything else, including a back reference to the loop's own group.
+fn lazy_literal_byte(
+    reg: &RegexType,
+    mut pc: usize,
+    literal_first: &[Option<u8>; MEM_STATUS_BITS_NUM],
+) -> Option<u8> {
+    let mut look_behind = false;
+    loop {
+        let op = reg.ops.get(pc)?;
+        match (op.opcode, &op.payload) {
+            (OpCode::MemEnd, OperationPayload::MemoryEnd { .. }) if !look_behind => pc += 1,
+            (
+                OpCode::LookBehindOp,
+                OperationPayload::LookBehindOp {
+                    char_len: 1,
+                    not: true,
+                    ..
+                },
+            ) => {
+                look_behind = true;
+                pc += 2;
+            }
+            (
+                OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,
+                OperationPayload::Exact { s },
+            ) => return Some(s[0]),
+            (OpCode::StrN, OperationPayload::ExactN { s, .. }) => return s.first().copied(),
+            (OpCode::BackRef1, _) => return literal_first[1],
+            (OpCode::BackRef2, _) => return literal_first[2],
+            (OpCode::BackRefN, OperationPayload::BackRefN { n1 }) => {
+                return literal_first.get(*n1 as usize).copied().flatten();
+            }
+            _ => return None,
+        }
+    }
+}
+
 /// Rust-only (ADR-008): turn a `Push` whose main path can only start with
 /// some bytes into `PushOrJumpByteSet`, upstream's `PUSH_OR_JUMP_EXACT1`
 /// generalized to a byte set. When the current byte cannot start the main
@@ -11026,7 +11292,7 @@ thread_local! {
 /// a loop that grows the stack without consuming input, so a guard that
 /// skipped the count would let such a loop push several times as many
 /// entries as C before the limit trips.
-fn guard_backtrack_pushes(reg: &mut RegexType) {
+fn guard_backtrack_pushes(reg: &mut RegexType, literal_first: &[Option<u8>; MEM_STATUS_BITS_NUM]) {
     use crate::first_bytes::GuardRetries;
     #[cfg(test)]
     if PUSH_GUARDS_DISABLED.with(|disabled| disabled.get()) {
@@ -11050,22 +11316,16 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
                 .ops
                 .get(pc + 1)
                 .is_some_and(|op| op.opcode == OpCode::MemEnd)
-            && reg.ops.get(pc + 2).is_some_and(|op| {
-                matches!(
-                    op.opcode,
-                    OpCode::Str1
-                        | OpCode::Str2
-                        | OpCode::Str3
-                        | OpCode::Str4
-                        | OpCode::Str5
-                        | OpCode::StrN
-                )
-            })
             && (std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
                 || std::ptr::addr_eq(reg.enc, &crate::encodings::ascii::ONIG_ENCODING_ASCII))
         {
-            reg.ops[pc].opcode = OpCode::PushLazyAnyChar;
-            continue;
+            if let Some(c) = lazy_literal_byte(reg, pc + 1, literal_first) {
+                reg.ops[pc] = Operation {
+                    opcode: OpCode::PushLazyAnyChar,
+                    payload: OperationPayload::PushLazyAnyChar { addr, c },
+                };
+                continue;
+            }
         }
         // Most branches start with a literal (only string instructions carry
         // these payloads), whose first byte is the whole guard.
@@ -11355,6 +11615,22 @@ fn detect_pure_literal(reg: &RegexType) -> bool {
     bytes == reg.exact.as_slice()
 }
 
+/// Rust-only (ADR-008): whether a search from the end of an empty match can
+/// only find that match again, so an iterator may step past it. The match
+/// attempt at a position depends on the text and not on where the search
+/// started, unless the program reads the search start (`\G`), keeps a
+/// different match start (`\K`) or runs callouts, which observe every search.
+fn detect_skip_repeated_empty_search(reg: &RegexType) -> bool {
+    !reg.keep_moves_match_start
+        && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
+        && !reg.ops.iter().any(|op| {
+            matches!(
+                op.opcode,
+                OpCode::CheckPosition | OpCode::CalloutContents | OpCode::CalloutName
+            )
+        })
+}
+
 /// Create and compile a new regex - mirrors C's onig_new().
 /// This is the main public API entry point.
 pub fn onig_new(
@@ -11483,6 +11759,7 @@ fn onig_new_with_choices(
         exact: Vec::new(),
         exact_finder: None,
         pure_literal: false,
+        skip_repeated_empty_search: false,
         map: [0u8; CHAR_MAP_SIZE],
         map_offset: 0,
         map_bytes: [0u8; 3],
@@ -11980,6 +12257,7 @@ mod tests {
             exact: Vec::new(),
             exact_finder: None,
             pure_literal: false,
+            skip_repeated_empty_search: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],
@@ -12035,6 +12313,7 @@ mod tests {
             saves: None,
             unset_addr_list: None,
             parse_depth: 0,
+            look_behind_depth: 0,
             ast_node_count: 0,
             flags: 0,
             recursive_mem: Vec::new(),
@@ -13643,6 +13922,260 @@ mod tests {
             }
         }
         assert!(tries_used > 500, "only {tries_used} patterns used a trie");
+    }
+
+    /// `\X` outside look-behinds compiles to one `GraphemeCluster`
+    /// instruction. It must match exactly like upstream's atomic
+    /// `\O(?:\Y\O)*` from every start and up to every range end: on CRLF,
+    /// combining marks, ZWJ emoji, regional indicators, Hangul, prepended and
+    /// variation-selector code points, and malformed UTF-8. Look-behinds,
+    /// the word variant and `\X` in other syntaxes keep the upstream sequence.
+    #[test]
+    fn grapheme_cluster_matches_the_upstream_sequence() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{onig_search, shared_limits};
+
+        let _limits = shared_limits();
+        let compile = |pattern: &str, instruction: bool| {
+            GRAPHEME_CLUSTER_DISABLED.with(|disabled| disabled.set(!instruction));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            GRAPHEME_CLUSTER_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+        let uses_instruction = |reg: &RegexType| {
+            reg.ops
+                .iter()
+                .any(|op| op.opcode == OpCode::GraphemeCluster)
+        };
+
+        // The instruction is emitted where the sequence is outside look-behinds.
+        assert!(uses_instruction(&compile(r"\X", true)));
+        assert!(uses_instruction(&compile(r"(?:a|\X)+b", true)));
+        assert!(!uses_instruction(&compile(r"(?<=a\X)b", true)));
+        assert!(!uses_instruction(&compile(r"(?<!\X)b", true)));
+        assert!(!uses_instruction(&compile(r"(?y{w})\X", true)));
+
+        let patterns = [
+            r"\X",
+            r"\X+",
+            r"\X*?b",
+            r"\X{2}",
+            r"\X{1,3}\d",
+            r"(\X)",
+            r"(\X)\1",
+            r"(\X)+x",
+            r"(?:a|\X)+b",
+            r"(\X|x)\X",
+            r"(?>\X)\X",
+            r"\X\X$",
+            r"^\X",
+            r"\X$",
+            r"(?=\X)\X",
+            r"(?!\X)\X",
+            r"(?i)\X",
+            r"a\X(?<=\X)",
+            r"(?<=a)\X",
+            r"(?<=\r)\X",
+            r"\X\Z",
+            r"\X*",
+            r"(?y{w})\X",
+            r"(?y{w})\X\y",
+        ];
+        let subjects: [&[u8]; 15] = [
+            b"",
+            b"a",
+            b"\r\n",
+            b"a\r\nb\n\r\r\n",
+            b"e\xcc\x81x",
+            b"a\xcc\x88\xcc\x88b",
+            "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}x".as_bytes(),
+            "\u{1f1e9}\u{1f1ea}\u{1f1eb}\u{1f1f7}\u{1f1fa}".as_bytes(),
+            "\u{1100}\u{1161}\u{11a8}\u{ac00}\u{1100}".as_bytes(),
+            b"\xe3\x81",
+            b"a\x80\x80b\xcc",
+            b"\xff\xfe\xe3\x81\x82\xe3",
+            b"\xe0\xae\xa8\xe0\xae\xbf\xe0",
+            "\u{600}1\u{fe0f}\u{1f1e6}\u{1f1e8}\u{308}".as_bytes(),
+            "\u{e9}\u{200d}\u{1f600}\u{fe0f}\u{20e3}\u{ff3f}\u{3099}".as_bytes(),
+        ];
+        for pattern in patterns {
+            let with = compile(pattern, true);
+            let upstream = compile(pattern, false);
+            #[cfg(feature = "ffi")]
+            let c =
+                crate::ffi::CRegex::new(pattern.as_bytes(), crate::ffi::ONIG_OPTION_NONE).unwrap();
+            for subject in subjects {
+                for start in 0..=subject.len() {
+                    for range in start..=subject.len() {
+                        let search = |reg: &RegexType| {
+                            onig_search(
+                                reg,
+                                subject,
+                                subject.len(),
+                                start,
+                                range,
+                                Some(OnigRegion::new()),
+                                ONIG_OPTION_NONE,
+                            )
+                        };
+                        let (r, region) = search(&with);
+                        let (r_upstream, region_upstream) = search(&upstream);
+                        let context = format!("{pattern} on {subject:?} from {start} to {range}");
+                        assert_eq!(r, r_upstream, "{context}");
+                        if r >= 0 {
+                            let spans = |region: &OnigRegion| -> Vec<(i32, i32)> {
+                                region
+                                    .beg
+                                    .iter()
+                                    .zip(&region.end)
+                                    .take(region.num_regs as usize)
+                                    .map(|(&b, &e)| (b, e))
+                                    .collect()
+                            };
+                            assert_eq!(
+                                spans(&region.unwrap()),
+                                spans(&region_upstream.unwrap()),
+                                "{context}"
+                            );
+                        }
+                        // C matches a character past a zero-length range (its
+                        // match_at reads the subject end when range == start),
+                        // as `(?m).` does on malformed UTF-8 (#259 class). Both
+                        // paths agree there, so C is compared where range > start.
+                        #[cfg(feature = "ffi")]
+                        if range > start {
+                            let mut c_region = crate::ffi::CRegion::new();
+                            let c_r = c.search(subject, start, range, Some(&mut c_region), 0);
+                            assert_eq!(r, c_r, "C: {context}");
+                            if c_r >= 0 {
+                                let (_, region) = search(&with);
+                                let region = region.unwrap();
+                                let spans: Vec<(i32, i32)> = region
+                                    .beg
+                                    .iter()
+                                    .zip(&region.end)
+                                    .take(region.num_regs as usize)
+                                    .map(|(&b, &e)| (b, e))
+                                    .collect();
+                                assert_eq!(spans, c_region.capture_ranges(), "C: {context}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Rust-only (ADR-008): the extra start map of a pattern that begins with a
+    /// look-behind takes the exact lead bytes of its multibyte class members.
+    /// From every start of mixed text, each search matches the search whose
+    /// map keeps every byte from 0x80 up, and C where the ffi feature is on.
+    #[test]
+    fn narrowed_class_leads_match_the_full_high_bytes() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{onig_search, shared_limits};
+
+        let _limits = shared_limits();
+        let compile = |pattern: &str, narrow: bool| {
+            NARROW_CLASS_LEADS_DISABLED.with(|disabled| disabled.set(!narrow));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            NARROW_CLASS_LEADS_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+
+        // U+FF03 is reached from EF and, as the overlong `F0 8F BC 83`, from F0.
+        let narrowed = compile("(?<=a)[\u{ff03}]", true);
+        assert_eq!(narrowed.optimize, OptimizeType::Map);
+        let leads: Vec<usize> = (0x80..0x100).filter(|&b| narrowed.map[b] != 0).collect();
+        assert_eq!(leads, [0xEF, 0xF0]);
+
+        let patterns = [
+            "(?<=a)[\u{ff03}]",
+            "(?<=a)[\u{ff03}\u{e9}]",
+            "(?<=^|[[:space:]])[#\u{ff03}](([[:word:]_][[:word:]_\u{b7}\u{30fb}]*[[:alpha:]_\u{b7}\u{30fb}][[:word:]_\u{b7}\u{30fb}]*[[:word:]_])|([[:word:]_]*[[:alpha:]][[:word:]_]*))",
+            "(?<=\\s)[\u{ff21}\u{ff22}\u{65e5}\u{672c}\u{8a9e}]+",
+            "(?<!x)[\u{e9}#]",
+            "(?<=b)[\\x{80}\u{ff03}\u{1f600}]",
+            "(?<=b)[\u{ff03}\\x{85}]",
+            "(?<=b)[\\x{80}-\\x{ff}]",
+            "(?<=b)[^\u{ff03}]",
+            "(?<=b)[a\\x{10000}-\\x{10ffff}]",
+            "(?i)(?<=a)[\u{e9}\u{df}]",
+            "(?<=\\w)(?:[\u{ff03}]|x)",
+            "(?<=a)[\u{1f600}\u{ff03}]+",
+            "(?<=[ab])[\u{e9}\u{ff3f}]\\w*",
+        ];
+        let subjects: [&[u8]; 9] = [
+            "a\u{ff03}b #x \u{ff03}x  \u{e9}\u{ff03} \u{c9} \u{df} \u{65e5} \u{1f600} #y\u{ff03}\u{ff03}".as_bytes(),
+            b"a\xef\xbc\x83 b\xf0\x8f\xbc\x83x a\xf0\x0f\xbc\x83",
+            b"\xf0\x8f\xbc\x83\xef\xbc\x83\xef\xbc",
+            b"b\x80\x85\xff\xfe x\x85 b\xc2\x80 b\xe2\x80\x8d\xef\xbc\x83",
+            b"a\xf0\x9f\x98\x80b\xf0\x9f\x98\x80 a\xc3\xa9\xe9\x80\x83 b\xc3\xa9",
+            b"a\xef\xbc b\xef x\xf0\x8f\xbc",
+            "a\u{ff21}\u{ff22}\u{65e5}\u{672c}\u{8a9e} ab\u{ff3f}\u{e9}\u{301}x".as_bytes(),
+            "xa\u{1f600}\u{ff03}\u{1f600}\u{80}\u{ff}b\u{85}".as_bytes(),
+            b"ab\xc3\xa9\xe9\xc3\x89 ss\xc3\x9f b\xc2\xa0\xc2\x85",
+        ];
+        for pattern in patterns {
+            let with = compile(pattern, true);
+            let full = compile(pattern, false);
+            #[cfg(feature = "ffi")]
+            let c =
+                crate::ffi::CRegex::new(pattern.as_bytes(), crate::ffi::ONIG_OPTION_NONE).unwrap();
+            for subject in subjects {
+                for start in 0..=subject.len() {
+                    let search = |reg: &RegexType| {
+                        onig_search(
+                            reg,
+                            subject,
+                            subject.len(),
+                            start,
+                            subject.len(),
+                            Some(OnigRegion::new()),
+                            ONIG_OPTION_NONE,
+                        )
+                    };
+                    let (r, region) = search(&with);
+                    let (r_full, region_full) = search(&full);
+                    let context = format!("{pattern} on {subject:x?} from {start}");
+                    assert_eq!(r, r_full, "{context}");
+                    if r >= 0 {
+                        let spans = |region: &OnigRegion| -> Vec<(i32, i32)> {
+                            region
+                                .beg
+                                .iter()
+                                .zip(&region.end)
+                                .take(region.num_regs as usize)
+                                .map(|(&b, &e)| (b, e))
+                                .collect()
+                        };
+                        assert_eq!(
+                            spans(&region.unwrap()),
+                            spans(&region_full.unwrap()),
+                            "{context}"
+                        );
+                    }
+                    // C matches a character past a zero-length range, so C is
+                    // compared where the subject has a position left to start at.
+                    #[cfg(feature = "ffi")]
+                    if start < subject.len() {
+                        let mut c_region = crate::ffi::CRegion::new();
+                        let c_r = c.search(subject, start, subject.len(), Some(&mut c_region), 0);
+                        assert_eq!(r, c_r, "C: {context}");
+                    }
+                }
+            }
+        }
     }
 
     /// Over malformed UTF-8 a fixed-length positive look-behind steps back

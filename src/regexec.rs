@@ -1556,6 +1556,10 @@ impl From<&OnigMatchParam> for SearchLimits {
     }
 }
 
+/// The position `MatchArg::capture_position` holds before the first attempt of a
+/// two-pass search: that attempt records captures.
+const FIRST_ATTEMPT: usize = usize::MAX;
+
 pub(crate) struct MatchArg {
     pub options: OnigOptionType,
     pub region: Option<OnigRegion>,
@@ -1585,9 +1589,11 @@ pub(crate) struct MatchArg {
     /// this length (`onig_search_bounds`).
     pub(crate) match_len: i32,
     /// Rust-only: while set, a search with a region records captures only in
-    /// an attempt at this position. Other attempts run untracked and leave
-    /// the region alone; a match there runs again to record its captures
-    /// (`onig_search_inner_two_pass`).
+    /// one attempt: the attempt at this position, or, while it is
+    /// `FIRST_ATTEMPT`, the first attempt the search makes, which then sets
+    /// its own position. Other attempts run untracked and leave the region
+    /// alone; a match at a position that did not record its captures runs
+    /// again to record them (`onig_search_inner_two_pass`).
     pub(crate) capture_position: Option<usize>,
     // Reusable VM state (avoids heap allocation per match_at call)
     stack: Vec<StackEntry>,
@@ -2885,6 +2891,46 @@ pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
     false
 }
 
+/// Rust-only (ADR-008): where `\X` from `s` ends. The group is upstream's
+/// atomic `\O(?:\Y\O)*`, and this takes the same steps without the loop's
+/// instructions and backtrack entries. `\O` takes the first character, which
+/// fails where no whole character fits before `right_range`. Each further
+/// character is taken only where `\Y` passes (no extended grapheme cluster
+/// boundary at the position, judged against `end`) and `\O` fits before
+/// `right_range`. The loop ends at the first boundary, at `right_range` or
+/// where a character does not fit, and the atomic group keeps that position.
+#[inline]
+fn grapheme_cluster_end(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    end: usize,
+) -> Option<usize> {
+    if right_range.saturating_sub(s) < 1 {
+        return None;
+    }
+    let n = enclen(enc, str_data, s);
+    if right_range.saturating_sub(s) < n {
+        return None;
+    }
+    let mut s = s + n;
+    loop {
+        // `\O` cannot take a character at `right_range`, and `\Y` has no
+        // effect there, so the loop ends without asking for the boundary.
+        if s >= right_range
+            || crate::unicode::onigenc_egcb_is_break_position(enc, str_data, s, 0, end)
+        {
+            return Some(s);
+        }
+        let n = enclen(enc, str_data, s);
+        if right_range - s < n {
+            return Some(s);
+        }
+        s += n;
+    }
+}
+
 /// Get the character length at position s for the given encoding.
 #[inline]
 fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
@@ -3950,6 +3996,14 @@ fn match_at_in_scan(
     msa: &mut MatchArg,
     scan: Option<&mut ForwardScan<'_>>,
 ) -> i32 {
+    // Rust-only (ADR-008): the first attempt of a two-pass search records its
+    // captures and makes no further attempt. The scan goes on from its
+    // position as the search loop does, so the attempts after it stay
+    // untracked.
+    if msa.region.is_some() && reg.num_mem > 0 && msa.capture_position == Some(FIRST_ATTEMPT) {
+        msa.capture_position = Some(sstart);
+        return match_at_impl::<true, false>(reg, str_data, end, in_right_range, sstart, msa, None);
+    }
     // Untracked runs skip the MemStartPush/MemEndPush stack entries. With a
     // match stack limit configured that would change when the limit trips,
     // so such runs keep the bookkeeping to stay observably identical to C.
@@ -5454,6 +5508,19 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 }
             }
 
+            // ================================================================
+            // Rust-only (ADR-008): `\X` outside look-behinds, one instruction
+            // ================================================================
+            OpCode::GraphemeCluster => {
+                match grapheme_cluster_end(enc, str_data, s, right_range, end) {
+                    Some(at) => {
+                        s = at;
+                        p += 1;
+                    }
+                    None => goto_fail = true,
+                }
+            }
+
             OpCode::TextSegmentBoundary => {
                 if let OperationPayload::TextSegmentBoundary { boundary_type, not } = op.payload {
                     let is_break = match boundary_type {
@@ -6024,9 +6091,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             // Rust-only (ADR-008): the original lazy push, with a seek over
-            // failed literal attempts across the following capture end.
+            // failed literal attempts across the following capture ends and
+            // look-behinds.
             OpCode::PushLazyAnyChar => {
-                if let OperationPayload::Push { addr } = op.payload {
+                if let OperationPayload::PushLazyAnyChar { addr, c } = op.payload {
                     // Rust-only (ADR-008): not under a match stack limit, where
                     // the instruction pushes the entries the limit counts.
                     if match_stack_limit == 0 && stack.len() + 1 < stack_cap {
@@ -6036,6 +6104,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             str_data,
                             s,
                             right_range,
+                            c,
                             &mut retry_in_match_counter,
                             retry_limit_in_match,
                             msa,
@@ -6497,7 +6566,45 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                                 | OpCode::CClassMix
                                 | OpCode::CClassMixNot
                         );
-                    let decided = if short_body {
+                    // Rust-only (ADR-008): a negative one-character look-behind
+                    // over `\w` or a one-byte string (`Str1`), in UTF-8, is
+                    // decided inline, with `look_behind_ascii_end`'s decision:
+                    // the byte before `s` must be ASCII, which is its own
+                    // character head in UTF-8. `None` for `\w`, else the byte
+                    // of the string. Other cases take the general path.
+                    let inline_body = if not
+                        && char_len == 1
+                        && std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
+                    {
+                        match (reg.ops[p + 1].opcode, &reg.ops[p + 1].payload) {
+                            (OpCode::Word, _) => Some(None),
+                            (OpCode::Str1, OperationPayload::Exact { s: lit }) => {
+                                Some(Some(lit[0]))
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    let decided = if let Some(body_byte) = inline_body {
+                        if s == 0 {
+                            Some(None)
+                        } else {
+                            let before = (s - 1 < right_range && s - 1 < end)
+                                .then(|| str_data.get(s - 1).copied())
+                                .flatten();
+                            match before.filter(|&b| b < 0x80) {
+                                Some(b) => {
+                                    let body_matches = match body_byte {
+                                        Some(c) => c == b,
+                                        None => is_word_ascii(b),
+                                    };
+                                    Some(body_matches.then_some(s))
+                                }
+                                None => None,
+                            }
+                        }
+                    } else if short_body {
                         look_behind_ascii_end(&reg.ops[p + 1], enc, str_data, s, right_range, end)
                     } else {
                         None
@@ -7836,10 +7943,18 @@ fn lazy_any_char_step(
     }
 }
 
-/// Seek across failed literal attempts of `AnyChar; Push(-1); MemEnd;
-/// Str`. The capture end is overwritten at the returned stop before another
-/// instruction can read it. Newline and range stops still execute the
-/// original literal attempt. If a budget could expire inside the skipped
+/// Seek across failed literal attempts of `AnyChar; Push(-1); MemEnd; ...;
+/// c`, where the instructions after the `MemEnd` are capture ends,
+/// negative one-character look-behinds and the literal, which starts with
+/// `c` (`lazy_literal_byte` at compile time). Every position skipped fails
+/// at the literal: the look-behinds only reject, and a back reference to a
+/// literal group compares `c` first. The capture ends of a skipped position
+/// are written again by the attempt at the returned stop, before any other
+/// instruction reads them: that attempt runs the same capture ends first, and
+/// the loop's last visited position is always a stop. Newline and range stops
+/// still run the original attempt. Retries are counted for the loop's jumps
+/// only, as the attempts that fail at the look-behinds and back references
+/// need not be counted (ADR-017). If a budget could expire inside the skipped
 /// attempts, keep the original instructions and state.
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
@@ -7849,6 +7964,7 @@ fn lazy_captured_any_char_stop(
     str_data: &[u8],
     s: usize,
     right_range: usize,
+    c: u8,
     retry_in_match_counter: &mut u64,
     retry_limit_in_match: u64,
     msa: &mut MatchArg,
@@ -7866,18 +7982,6 @@ fn lazy_captured_any_char_stop(
     let multiline = match p.checked_sub(1).map(|body| reg.ops[body].opcode) {
         Some(OpCode::AnyChar) => false,
         Some(OpCode::AnyCharMl) => true,
-        _ => return None,
-    };
-    if reg.ops.get(p + 1)?.opcode != OpCode::MemEnd {
-        return None;
-    }
-    let literal = reg.ops.get(p + 2)?;
-    let c = match (&literal.opcode, &literal.payload) {
-        (
-            OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,
-            OperationPayload::Exact { s },
-        ) => s[0],
-        (OpCode::StrN, OperationPayload::ExactN { s, .. }) => *s.first()?,
         _ => return None,
     };
     // Bound speculative reads when malformed input makes the seek decline.
@@ -8336,10 +8440,10 @@ fn onig_search_inner_two_pass(
         );
     }
 
-    // The attempt at `start` records its captures as it matches: a match
-    // there, the common case of a scanner search, needs no second pass.
-    // Later attempts run untracked.
-    msa.capture_position = Some(start);
+    // The first attempt the search makes records its captures as it matches:
+    // a match there, the common case of a scanner search, needs no second
+    // pass. Later attempts run untracked.
+    msa.capture_position = Some(FIRST_ATTEMPT);
     // Rust-only (ADR-008): the map search's own first checks, read here so
     // that a pattern they reject does not pay for the call.
     let mapped = if capture_map_may_apply(reg) {
@@ -8369,8 +8473,8 @@ fn onig_search_inner_two_pass(
             msa,
         )
     });
-    msa.capture_position = None;
-    if match_start < 0 || match_start as usize == start {
+    let tracked_at = msa.capture_position.take();
+    if match_start < 0 || Some(match_start as usize) == tracked_at {
         return match_start;
     }
 
@@ -8500,7 +8604,10 @@ fn capture_map_search(
         msa.best_len = ONIG_MISMATCH;
         msa.best_s = 0;
         // The first candidate may be the attempt that records captures.
-        let result = if msa.capture_position == Some(at) {
+        let result = if msa
+            .capture_position
+            .is_some_and(|tracked| tracked == at || tracked == FIRST_ATTEMPT)
+        {
             match_at(reg, text, end, right_range, at, msa)
         } else {
             scan.at = at;
@@ -11414,6 +11521,221 @@ mod tests {
         assert!(compared > 20_000, "{compared}");
     }
 
+    /// `PushLazyAnyChar` with a literal seek (across capture ends,
+    /// negative one-character look-behinds and back references to literal
+    /// groups) gives the results and captures of the loop with the seek off,
+    /// and of a program compiled without push guards. Under limits (ADR-017)
+    /// the seek may leave out retries, so it finishes where the loop with
+    /// the seek off finishes, with the unlimited result, and it never stops
+    /// where the unlimited search finishes.
+    #[test]
+    fn lazy_literal_seek_matches_the_instruction_loop() {
+        let _limits = shared_limits();
+        let utf8: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        let ascii: OnigEncoding = &crate::encodings::ascii::ONIG_ENCODING_ASCII;
+        // (pattern, whether the seek is planned)
+        let patterns = [
+            // The Python-Markdown emphasis patterns: literal group `_`.
+            (r"(\_)\1(?!\1)(.+?)(?<!\w)\1(?!\1)(.+?)\1{3}(?!\w)", true),
+            (r"(?<!\w)(_)(?!_)(.+?)(?<!_)\1(?!\w)", true),
+            (r"(a)(.*?)(?<!\w)a", true),
+            (r"(a)(.*?)(?<!b)\1", true),
+            (r"(a)(.*?)x(?<!\w)\1", true),
+            (r"(a)(.*?)\1", true),
+            (r"(ab)(.*?)(?<!\w)\1", true),
+            (r"(abcdef)(.*?)(?<!b)\1", true),
+            (r"(?m)(.*?)(?<!\w)\n", true),
+            (r"(\n)(.*?)(?<!\w)\1", true),
+            (r"(é)(.*?)(?<!\w)\1", true),
+            (r"(a)(.*?)(?<!\w)\2", false),
+            // Not planned: case-insensitive groups and back references,
+            // a positive look-behind, empty, optional or alternative groups,
+            // a back reference to the loop's own group, a group that is not
+            // a literal, and a look-behind that is not one character.
+            (r"(?i)(a)(.*?)(?<!\w)\1", false),
+            (r"(a)(.*?)(?<!\w)(?i)\1", false),
+            (r"(a)(.*?)(?<=\w)\1", false),
+            (r"(|a)(.*?)(?<!\w)\1", false),
+            (r"()(.*?)(?<!\w)\1", false),
+            (r"(?:(a)|b)(.*?)(?<!\w)\1", false),
+            (r"(a)?(.*?)(?<!\w)\1", false),
+            (r"(.*?)(?<!\w)\1", false),
+            (r"(a)(.*?)(?<!\w)(b)\3", false),
+            (r"(a)(.*?)(?<!\w)(?:a|b)", false),
+            // A capture end after the look-behind: the seek needs the
+            // capture ends before it, so that every position writes them.
+            (r"(_)((.*?)(?<!\w))\1", false),
+            // A read before the group: the group may not be set there.
+            (r"(?:\1)?(_)(.*?)(?<!\w)\1", false),
+        ];
+        let edges: &[&[u8]] = &[
+            b"",
+            b"_",
+            b"__",
+            b"_a_",
+            b"a_b_c_",
+            b"a\n_",
+            "é_é_".as_bytes(),
+            "_é_".as_bytes(),
+            b"x_\n_x",
+            b"\xff_",
+            b"_\xc3",
+            b"____",
+            b"\n",
+            b"_\n",
+            b"a\n\na_a_",
+            "aé_".as_bytes(),
+            b"_\xe2\x82",
+            b"a_\xff_a",
+            b"aaaa",
+            b"aXa",
+            b"abab\n",
+            b"a\nb\na",
+            b"aa b a\xc3",
+        ];
+        let pieces: &[&[u8]] = &[
+            b"_",
+            b"a",
+            b"b",
+            b"x",
+            b"\n",
+            b" ",
+            "é".as_bytes(),
+            b"\xff",
+            b"\xc3",
+            b"\xe2\x82",
+            b"1",
+        ];
+        let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let search_all = |reg: &RegexType, text: &[u8], seek: bool, limits: (u64, u64, u32)| {
+            LAZY_STOP_DISABLED.with(|disabled| disabled.set(!seek));
+            let mut mp = onig_new_match_param();
+            (
+                mp.retry_limit_in_match,
+                mp.retry_limit_in_search,
+                mp.match_stack_limit,
+            ) = limits;
+            let mut out = Vec::new();
+            let mut start = 0;
+            while start <= text.len() {
+                let (r, region) = onig_search_with_param(
+                    reg,
+                    text,
+                    text.len(),
+                    start,
+                    text.len(),
+                    Some(OnigRegion::new()),
+                    ONIG_OPTION_NONE,
+                    &mp,
+                );
+                let region = region.unwrap();
+                out.push((r, region.beg.clone(), region.end.clone()));
+                if r < 0 {
+                    break;
+                }
+                let e = region.end[0] as usize;
+                start = if e > r as usize { e } else { r as usize + 1 };
+            }
+            LAZY_STOP_DISABLED.with(|disabled| disabled.set(false));
+            out
+        };
+        let is_limit_error = |out: &[(i32, Vec<i32>, Vec<i32>)]| {
+            out.last().is_some_and(|(r, _, _)| {
+                matches!(
+                    *r,
+                    ONIGERR_MATCH_STACK_LIMIT_OVER
+                        | ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+                        | ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER
+                )
+            })
+        };
+        let limit_sets = [
+            (1, 0, 0),
+            (2, 0, 0),
+            (4, 0, 0),
+            (9, 0, 0),
+            (0, 3, 0),
+            (0, 0, 1),
+            (0, 0, 3),
+        ];
+        let mut compared = 0;
+        let mut planned_patterns = 0;
+        for enc in [utf8, ascii] {
+            for (pattern, planned) in patterns {
+                let reg = crate::regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                // The reference: the same pattern compiled without push guards.
+                crate::regcomp::PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(true));
+                let plain = crate::regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                crate::regcomp::PUSH_GUARDS_DISABLED.with(|disabled| disabled.set(false));
+                assert_eq!(
+                    has_opcode(&reg, OpCode::PushLazyAnyChar),
+                    planned,
+                    "{} {pattern:?}",
+                    enc.name()
+                );
+                planned_patterns += usize::from(planned);
+                let mut subjects: Vec<Vec<u8>> = edges.iter().map(|e| e.to_vec()).collect();
+                for _ in 0..90 {
+                    subjects.push(
+                        (0..next(24))
+                            .flat_map(|_| pieces[next(pieces.len())].to_vec())
+                            .collect(),
+                    );
+                }
+                for text in &subjects {
+                    let unlimited = search_all(&plain, text, false, (0, 0, 0));
+                    assert_eq!(
+                        search_all(&reg, text, true, (0, 0, 0)),
+                        unlimited,
+                        "{} {pattern:?} {text:?} unlimited",
+                        enc.name()
+                    );
+                    for limits in limit_sets {
+                        let slow = search_all(&reg, text, false, limits);
+                        let fast = search_all(&reg, text, true, limits);
+                        if !is_limit_error(&slow) {
+                            assert_eq!(
+                                fast,
+                                unlimited,
+                                "{} {pattern:?} {text:?} {limits:?}",
+                                enc.name()
+                            );
+                        }
+                        if !is_limit_error(&fast) {
+                            assert_eq!(
+                                fast,
+                                unlimited,
+                                "{} {pattern:?} {text:?} {limits:?}",
+                                enc.name()
+                            );
+                        }
+                        compared += 1;
+                    }
+                }
+            }
+        }
+        assert!(planned_patterns >= 14, "{planned_patterns}");
+        assert!(compared > 25_000, "{compared}");
+    }
+
     #[test]
     fn captured_lazy_dots_preserve_searches_captures_and_limits() {
         let _limits = shared_limits();
@@ -11681,6 +12003,7 @@ mod tests {
             exact: Vec::new(),
             exact_finder: None,
             pure_literal: false,
+            skip_repeated_empty_search: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],
@@ -11736,6 +12059,7 @@ mod tests {
             saves: None,
             unset_addr_list: None,
             parse_depth: 0,
+            look_behind_depth: 0,
             ast_node_count: 0,
             flags: 0,
             recursive_mem: Vec::new(),
