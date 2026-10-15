@@ -2589,6 +2589,7 @@ mod tests {
     #[cfg(feature = "dfa-prefilter")]
     #[test]
     fn seek_is_built_with_the_regex() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"^[0-9A-F]{8}$").unwrap();
         assert!(re.seek_present());
         assert_eq!(re.seek_exact(), Some(true));
@@ -2627,6 +2628,7 @@ mod tests {
     #[cfg(feature = "dfa-prefilter")]
     #[test]
     fn exact_seek_answers_match_for_an_unbounded_repetition() {
+        let _limits = crate::regexec::shared_limits();
         let pattern = r"^[a-z@.]+@[a-z.]+\.com$";
         let re = Regex::new(pattern).unwrap();
         let matcher = RegexBuilder::new(pattern).dfa(false).build().unwrap();
@@ -2645,6 +2647,7 @@ mod tests {
     #[cfg(feature = "dfa-prefilter")]
     #[test]
     fn automatic_possessive_repeats_keep_the_seek_exact() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"^[a-z]+@[a-z]+\.com$").unwrap();
         assert_eq!(re.seek_exact(), Some(true));
         assert_eq!(re.seek_decides_is_match("john@doe.com"), Some(true));
@@ -2694,6 +2697,7 @@ mod tests {
     #[cfg(feature = "dfa-prefilter")]
     #[test]
     fn catalog_validators_have_exact_seeks() {
+        let _limits = crate::regexec::shared_limits();
         let cases: &[(&str, &str, bool, &str)] = &[
             (
                 "uuid_shape",
@@ -2742,6 +2746,7 @@ mod tests {
     #[cfg(feature = "dfa-prefilter")]
     #[test]
     fn seek_path_leaves_invalid_utf8_and_inner_starts_to_the_matcher() {
+        let _limits = crate::regexec::shared_limits();
         let re = Regex::new(r"[^a]").unwrap();
         let text = "é".as_bytes();
         for start in 0..=text.len() {
