@@ -1,0 +1,386 @@
+//! The single-pattern seek path (ADR-008) against the matcher: a `Regex` built
+//! with the seek (`RegexBuilder::dfa`, on by default) answers the standard
+//! `is_match*` and `find*` methods from its seek where the seek decides, and
+//! every answer must equal the one the matcher gives under
+//! `SearchOptions::new()`, which runs the same search without the path. The
+//! same patterns built with `dfa(false)` must equal the matcher too, and the
+//! two builds must agree on every standard answer, including matcher errors.
+//!
+//! The patterns are the production and tokenizer catalogs, fifty
+//! hand-written ones (anchors, multi-line anchors, case folding, non-ASCII
+//! classes, look-arounds, back references, atomic groups, absent operators,
+//! `\K`, `\G`), and random subjects of valid UTF-8 and random bytes. Every
+//! subject is searched from each character boundary and, through the bytes
+//! API, from each byte offset.
+
+use ferroni::api::{Regex, RegexBuilder, SearchOptions};
+use serde_json::Value;
+
+/// Deterministic pseudo-random numbers (a linear congruential generator).
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0 >> 33
+    }
+
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+}
+
+/// Characters random subjects are built from: ASCII that the patterns use,
+/// and non-ASCII characters whose folds and classes matter.
+const ALPHABET: &[&str] = &[
+    "a", "b", "c", "A", "B", "x", "0", "1", "9", "-", ".", ":", "@", "/", "_", " ", "\n", "(", ")",
+    "é", "É", "ß", "ss", "€", "😀", "\u{212A}", "İ", "ä", "k", "K", "\u{3042}", "\u{80}",
+];
+
+fn random_subject(rng: &mut Lcg) -> Vec<u8> {
+    let len = rng.below(14);
+    let mut text = String::new();
+    for _ in 0..len {
+        text.push_str(ALPHABET[rng.below(ALPHABET.len())]);
+    }
+    text.into_bytes()
+}
+
+fn random_bytes(rng: &mut Lcg) -> Vec<u8> {
+    let len = rng.below(10);
+    (0..len).map(|_| rng.next() as u8).collect()
+}
+
+/// A pattern with its flags: ignore case, dot matches newline, extended,
+/// multi-line anchors (`None` keeps the syntax's default).
+#[derive(Clone)]
+struct Case {
+    pattern: Vec<u8>,
+    ignore_case: bool,
+    dotall: bool,
+    extended: bool,
+    multiline: Option<bool>,
+}
+
+impl Case {
+    fn new(pattern: &str) -> Case {
+        Case {
+            pattern: pattern.as_bytes().to_vec(),
+            ignore_case: false,
+            dotall: false,
+            extended: false,
+            multiline: None,
+        }
+    }
+
+    fn flags(mut self, ignore_case: bool, dotall: bool, multiline: Option<bool>) -> Case {
+        self.ignore_case = ignore_case;
+        self.dotall = dotall;
+        self.multiline = multiline;
+        self
+    }
+
+    fn compile(&self, dfa: bool) -> Option<Regex> {
+        let mut builder = RegexBuilder::new_bytes(&self.pattern)
+            .case_insensitive(self.ignore_case)
+            .dot_matches_newline(self.dotall)
+            .extended(self.extended)
+            .dfa(dfa);
+        if let Some(multiline) = self.multiline {
+            builder = builder.multi_line_anchors(multiline);
+        }
+        builder.build().ok()
+    }
+}
+
+fn hand_written() -> Vec<Case> {
+    let plain = [
+        "^abc$",
+        r"\Aabc\z",
+        r"abc\Z",
+        r"^\d+$",
+        "^x",
+        r"a$",
+        "(?i)straße",
+        "(?i)k",
+        "(?i)ss",
+        "(?i)é",
+        "[é]x",
+        "[^a]b",
+        r"[^\x{0}-\x{7f}]+",
+        r"\w+@\w+",
+        r"\W",
+        r"\bfoo\b",
+        r"\Bo\B",
+        "(?<=a)b",
+        "(?<!a)b",
+        "a(?=b)",
+        "a(?!b)",
+        r"(\w)\1",
+        "(?<x>a)\\k<x>",
+        "(?>a+)b",
+        "a*?b",
+        "a{2,5}",
+        "(a|ab)*c",
+        "(a|aa)+$",
+        "(x+x+)+y|.*",
+        "(?>abc|ab)c",
+        "a++b",
+        "x|",
+        r"\d{3}-\d{4}",
+        "[[:alpha:]]+",
+        r"\s+\S",
+        ".+",
+        ".",
+        r"\G\w",
+        r"\Kfoo",
+        r"a\Kb",
+        "(x)?(?(1)a|b)",
+        "(?~abc)",
+        "(*FAIL)|a",
+        r"\p{L}+",
+        "[a-z&&[^aeiou]]+",
+        "[\u{3040}-\u{309F}]",
+        "ß",
+        r"\h+",
+        "(?i)[a-z]+",
+        r"\x{1F600}",
+        "(?:foo|bar|baz)+qux",
+        r"[^\n]*\n",
+        r"\A\s*\z",
+        "(?m:^)\\s*$",
+        r"\R\R",
+        r"\y\w",
+        "(?s).",
+        "ab|cd|é",
+        "[aeiou]{3}x",
+        "^",
+        "$",
+        "^$",
+        "\\n$",
+        "\\n^a",
+        "x\\n$",
+        "(?:^|x)a",
+        "(?:a$|b)",
+        "^a|^b\\n",
+        "(?m)^a$",
+        "(?m)a$|^$",
+    ];
+    let mut cases: Vec<Case> = plain.iter().map(|p| Case::new(p)).collect();
+    // The same patterns under the flags that change their meaning.
+    cases.push(Case::new("^abc$").flags(false, false, Some(false)));
+    cases.push(Case::new("a$|b$").flags(false, false, Some(false)));
+    cases.push(Case::new("\\w$").flags(false, false, Some(false)));
+    cases.push(Case::new("^\\d+$").flags(false, false, Some(false)));
+    cases.push(Case::new("a$b").flags(false, false, Some(false)));
+    cases.push(Case::new("(?:x|\\n)$").flags(false, false, Some(false)));
+    cases.push(Case::new("a$").flags(false, false, Some(true)));
+    cases.push(Case::new("^x").flags(false, false, Some(false)));
+    cases.push(Case::new("(?i)straße").flags(true, false, None));
+    cases.push(Case::new("[a-c]+x").flags(true, false, None));
+    cases.push(Case::new(".+").flags(false, true, None));
+    cases.push(Case::new("a.b").flags(false, true, None));
+    cases.push(Case::new("^\\w+$").flags(true, false, Some(false)));
+    cases.push(Case::new("(?i)é+").flags(true, false, None));
+    cases.push(Case::new("[^é]").flags(false, false, None));
+    cases.push(Case::new("\\b").flags(false, false, None));
+    cases.push(Case::new("\\B\\w").flags(false, false, Some(false)));
+    cases
+}
+
+/// The production and tokenizer catalogs: the pattern and flags of each
+/// case, and its inputs' texts (with the starts they are searched from).
+fn catalog_cases() -> (Vec<Case>, Vec<(Vec<u8>, usize)>) {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let mut cases = Vec::new();
+    let mut subjects = Vec::new();
+    for file in [
+        "benches/production_regex/catalog.json",
+        "benches/tokenizer_regex/catalog.json",
+    ] {
+        let text = std::fs::read_to_string(format!("{root}/{file}")).expect("catalog");
+        let catalog: Value = serde_json::from_str(&text).expect("catalog JSON");
+        for case in catalog["cases"].as_array().expect("cases") {
+            let pattern = case["pattern"].as_str().expect("pattern");
+            let flags = &case["flags"];
+            let flag = |name: &str| flags[name].as_bool() == Some(true);
+            let mut entry = Case::new(pattern).flags(
+                flag("ignore_case"),
+                flag("dotall"),
+                Some(flag("multiline")),
+            );
+            entry.extended = flag("extended");
+            cases.push(entry);
+            for input in case["inputs"].as_array().into_iter().flatten() {
+                let text = input["text"].as_str().unwrap_or("");
+                let start = input["start"].as_u64().unwrap_or(0) as usize;
+                subjects.push((text.as_bytes().to_vec(), start));
+            }
+        }
+    }
+    (cases, subjects)
+}
+
+/// Every answer of the standard methods on `text` from `start` equals the
+/// matcher's under `SearchOptions::new()`. Returns the number of
+/// comparisons made (a matcher error is not compared).
+fn check_search(re: &Regex, text: &[u8], start: usize) -> usize {
+    let options = SearchOptions::new();
+    let mut compared = 0;
+    if let Ok(expected) = re.is_match_bytes_at_with(text, start, options) {
+        assert_eq!(
+            re.is_match_bytes_at(text, start),
+            expected,
+            "is_match of {:?} from {start} on {:?}",
+            re.as_bytes(),
+            text
+        );
+        compared += 1;
+    }
+    if let Ok(expected) = re.find_bytes_at_with(text, start, options) {
+        let expected = expected.map(|m| m.range());
+        assert_eq!(
+            re.find_bytes_at(text, start).map(|m| m.range()),
+            expected,
+            "find of {:?} from {start} on {:?}",
+            re.as_bytes(),
+            text
+        );
+        compared += 1;
+    }
+    if let Ok(s) = std::str::from_utf8(text) {
+        if start <= s.len() && s.is_char_boundary(start) {
+            if let Ok(expected) = re.is_match_at_with(s, start, options) {
+                assert_eq!(re.is_match_at(s, start), expected, "str is_match");
+                compared += 1;
+            }
+            if let Ok(expected) = re.find_at_with(s, start, options) {
+                assert_eq!(
+                    re.find_at(s, start).map(|m| m.range()),
+                    expected.map(|m| m.range()),
+                    "str find"
+                );
+                compared += 1;
+            }
+        }
+    }
+    compared
+}
+
+/// Checks every subject from every start.
+///
+/// Long subjects (over `LONG_SUBJECT` bytes) are searched from every
+/// `LONG_STRIDE`th start, and from the first and the last one, to keep the
+/// debug build of the catalogs within a test run.
+fn check_regex(re: &Regex, subjects: &[(Vec<u8>, usize)], bytes_offsets: bool) -> usize {
+    let mut compared = 0;
+    for (text, _) in subjects {
+        let stride = if text.len() > LONG_SUBJECT {
+            LONG_STRIDE
+        } else {
+            1
+        };
+        for start in (0..=text.len())
+            .filter(|start| start % stride == 0 || *start == text.len() || stride == 1)
+        {
+            let boundary = text.get(start).is_none_or(|&b| (b as i8) >= -0x40);
+            if bytes_offsets || boundary {
+                compared += check_search(re, text, start);
+            }
+        }
+    }
+    compared
+}
+
+const LONG_SUBJECT: usize = 32;
+const LONG_STRIDE: usize = 13;
+
+#[test]
+fn hand_written_patterns_agree_with_the_matcher() {
+    let mut rng = Lcg(0x5eed_0001);
+    let mut subjects: Vec<(Vec<u8>, usize)> =
+        (0..200).map(|_| (random_subject(&mut rng), 0)).collect();
+    subjects.extend((0..60).map(|_| (random_bytes(&mut rng), 0)));
+    subjects.extend(
+        [
+            "",
+            "abc",
+            "ABC",
+            "a\nb",
+            "Straße STRASSE",
+            "é€😀",
+            "foo bar",
+            "x\nxa",
+            "\n",
+            "a\n",
+            "\n\n",
+            "\na",
+            "ab\n",
+        ]
+        .iter()
+        .map(|s| (s.as_bytes().to_vec(), 0)),
+    );
+    let mut compiled = 0;
+    let mut compared = 0;
+    for case in hand_written() {
+        for dfa in [true, false] {
+            let Some(re) = case.compile(dfa) else {
+                continue;
+            };
+            if dfa {
+                compiled += 1;
+            }
+            compared += check_regex(&re, &subjects, true);
+        }
+    }
+    assert!(
+        compiled >= 50,
+        "{compiled} of the hand-written patterns compile"
+    );
+    assert!(compared > 100_000, "{compared} comparisons");
+}
+
+#[test]
+fn catalog_patterns_agree_with_the_matcher() {
+    let (cases, inputs) = catalog_cases();
+    let mut rng = Lcg(0x5eed_0002);
+    let random: Vec<(Vec<u8>, usize)> = (0..40).map(|_| (random_subject(&mut rng), 0)).collect();
+    let mut subjects = inputs;
+    subjects.extend(random);
+    let mut compared = 0;
+    let mut compiled = 0;
+    for case in &cases {
+        for dfa in [true, false] {
+            let Some(re) = case.compile(dfa) else {
+                continue;
+            };
+            if dfa {
+                compiled += 1;
+            }
+            compared += check_regex(&re, &subjects, false);
+        }
+    }
+    assert!(compiled >= 27, "{compiled} catalog patterns compile");
+    assert!(compared > 10_000, "{compared} comparisons");
+}
+
+/// `(x+x+)+y|.*` on thirty `x`s: the seek finds the `.*` alternative, but the
+/// matcher takes a long backtracking path to it, so the pattern has no static
+/// retry bound and the seek must not answer. Both builds agree with the
+/// matcher, and with each other on the standard methods, errors included.
+#[test]
+fn unbounded_retries_are_left_to_the_matcher() {
+    let text = "x".repeat(30);
+    let text = text.as_bytes();
+    let on = Regex::new("(x+x+)+y|.*").unwrap();
+    let off = RegexBuilder::new("(x+x+)+y|.*").dfa(false).build().unwrap();
+    assert_eq!(on.is_match_bytes(text), off.is_match_bytes(text));
+    assert_eq!(
+        on.find_bytes(text).map(|m| m.range()),
+        off.find_bytes(text).map(|m| m.range())
+    );
+    let _ = check_search(&on, text, 0);
+}

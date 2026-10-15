@@ -10580,6 +10580,9 @@ pub(crate) struct RustOnlyCompile {
     /// Derive the seek approximation for the scanner's DFA pre-filter
     /// (`crate::dfa_prefilter`). Only scanner patterns pay for it.
     pub(crate) seek: bool,
+    /// With `seek`: derive the seek of a single `Regex` (ADR-008), which keeps
+    /// alternations exact where the scanner's seek shortcuts them.
+    pub(crate) precise_seek: bool,
 }
 
 /// What a scanner pattern's compilation hands back beside the regex: the
@@ -10889,7 +10892,7 @@ fn compile_parsed(
     // pre-filter, read from the same tuned tree, for scanner patterns only.
     #[cfg(feature = "dfa-prefilter")]
     if choices.seek {
-        *seek = crate::dfa_prefilter::derive(&root, reg);
+        *seek = crate::dfa_prefilter::derive(&root, reg, choices.precise_seek);
     }
     #[cfg(not(feature = "dfa-prefilter"))]
     let _ = seek;
@@ -11317,6 +11320,7 @@ pub(crate) fn onig_new_with_backtracking_optimization(
     let choices = RustOnlyCompile {
         optimize_backtracking,
         seek: false,
+        precise_seek: false,
     };
     onig_new_with_choices(pattern, option, enc, syntax, choices).map(|(reg, _)| reg)
 }
@@ -11335,6 +11339,27 @@ pub(crate) fn onig_new_for_scanner(
     let choices = RustOnlyCompile {
         optimize_backtracking,
         seek: prefilter,
+        precise_seek: false,
+    };
+    onig_new_with_choices(pattern, option, enc, syntax, choices)
+}
+
+/// [`onig_new_with_backtracking_optimization`] for a single `Regex` (ADR-008),
+/// which with `seek` also derives the precise seek of the tuned tree in the
+/// same compilation, for the automaton of `api.rs`. Without `seek` it is
+/// the same compilation with no seek at all.
+pub(crate) fn onig_new_for_single_seek(
+    pattern: &[u8],
+    option: OnigOptionType,
+    enc: OnigEncoding,
+    syntax: &OnigSyntaxType,
+    optimize_backtracking: bool,
+    seek: bool,
+) -> Result<(RegexType, ScannerSeek), crate::error::RegexError> {
+    let choices = RustOnlyCompile {
+        optimize_backtracking,
+        seek,
+        precise_seek: true,
     };
     onig_new_with_choices(pattern, option, enc, syntax, choices)
 }

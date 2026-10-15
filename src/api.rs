@@ -1,7 +1,7 @@
 //! The idiomatic Rust API. [`Regex`] compiles and searches a pattern,
 //! [`RegexBuilder`] sets its options and syntax, and [`Match`], [`Captures`] and
 //! [`FindIter`] report what a search found. It wraps the C-port functions
-//! [`onig_new`] and [`onig_search`].
+//! [`onig_new`](crate::regcomp::onig_new) and [`onig_search`].
 
 use std::cell::RefCell;
 use std::fmt;
@@ -11,10 +11,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(feature = "dfa-prefilter")]
+use crate::dfa_prefilter::SingleSeek;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
-use crate::regcomp::{onig_new, onig_new_with_backtracking_optimization};
+use crate::regcomp::{ScannerSeek, onig_new_for_single_seek};
 use crate::regexec::{
     MatchArg, SearchLimits, cache_msa, onig_name_to_backref_number, onig_search,
     onig_search_bounds, pure_literal_first, search_in_range, take_cached_msa,
@@ -189,14 +191,53 @@ impl SearchOptions {
     }
 }
 
-/// The immutable state behind a [`Regex`]: the compiled program and the
-/// pattern it was compiled from. Every clone of a `Regex`, and every
-/// [`Captures`] it returns, shares one value through an `Arc`.
+/// The immutable state behind a [`Regex`]: the compiled program, the pattern
+/// it was compiled from, and the single-pattern seek automaton. Every clone of
+/// a `Regex`, and every [`Captures`] it returns, shares one value through an
+/// `Arc`.
 struct Compiled {
     /// Wrapped in `AssertUnwindSafe`; the notes on [`Regex`] explain why the
     /// assertion holds.
     program: AssertUnwindSafe<RegexType>,
     pattern: Box<[u8]>,
+    /// Rust-only (ADR-008): the seek automaton that standard searches consult,
+    /// built with the regex when the builder's `dfa` option is on. Wrapped
+    /// like `program`: the lazy DFA's cache pool is not `RefUnwindSafe`.
+    #[cfg(feature = "dfa-prefilter")]
+    seek: AssertUnwindSafe<Option<Box<SingleSeek>>>,
+}
+
+/// Whether a builder and `Regex::new` build the seek automaton by default:
+/// with the `dfa-prefilter` feature, yes (ADR-008).
+const DFA_DEFAULT: bool = cfg!(feature = "dfa-prefilter");
+
+/// Whether the process-wide limits cannot stop the matcher short of the
+/// static bound `bound` on the attempts of a pattern (`dfa_prefilter::
+/// retry_bound`), so that a seek match is the matcher's match. The matcher
+/// reads each limit after counting: it stops when the retries of an attempt
+/// reach the retry limit, which is why the limit must exceed the bound, and
+/// when the stack of an attempt reaches the hard cap, which the bound stays
+/// under. The other limits must be the defaults. A retry limit of zero is no
+/// limit.
+#[cfg(feature = "dfa-prefilter")]
+fn process_wide_limits_allow(bound: u64) -> bool {
+    use crate::regint::{
+        DEFAULT_MATCH_STACK_LIMIT_SIZE, DEFAULT_RETRY_LIMIT_IN_SEARCH, DEFAULT_TIME_LIMIT_MSEC,
+        HARD_MATCH_STACK_CAP,
+    };
+    let limits = SearchLimits::process_wide();
+    limits.match_stack_limit == DEFAULT_MATCH_STACK_LIMIT_SIZE
+        && limits.retry_limit_in_search == DEFAULT_RETRY_LIMIT_IN_SEARCH
+        && limits.time_limit == DEFAULT_TIME_LIMIT_MSEC
+        && bound < HARD_MATCH_STACK_CAP as u64
+        && (limits.retry_limit_in_match == 0 || limits.retry_limit_in_match > bound)
+}
+
+/// Whether `start` is a character boundary of valid UTF-8 `text` (or the
+/// end of it). The seek reads characters from there.
+#[cfg(feature = "dfa-prefilter")]
+fn is_char_boundary(text: &[u8], start: usize) -> bool {
+    text.get(start).is_none_or(|&byte| (byte as i8) >= -0x40)
 }
 
 /// A compiled regular expression.
@@ -256,20 +297,36 @@ impl Regex {
     /// UTF-8 (encoded surrogates, for example), and [`Regex::as_str`] returns
     /// `None` for those.
     pub fn new_bytes(pattern: &[u8]) -> Result<Regex, RegexError> {
-        let program = onig_new(
+        let (program, seek) = onig_new_for_single_seek(
             pattern,
             ONIG_OPTION_NONE,
             &ONIG_ENCODING_UTF8,
             &OnigSyntaxOniguruma,
+            false,
+            DFA_DEFAULT,
         )?;
-        Ok(Self::from_parts(program, pattern.into()))
+        Ok(Self::from_parts(program, pattern.into(), seek))
     }
 
-    fn from_parts(program: RegexType, pattern: Box<[u8]>) -> Regex {
+    /// Wraps a compiled program and its seek. The seek is built with the
+    /// regex (ADR-008), so a clone or a search never builds it.
+    #[cfg_attr(not(feature = "dfa-prefilter"), allow(unused_variables))]
+    fn from_parts(program: RegexType, pattern: Box<[u8]>, seek: ScannerSeek) -> Regex {
+        // A pure literal is found by a literal search, so it has no automaton.
+        // The automaton is boxed: inline, it grew every compiled regex, and
+        // the compile and search costs of the others with it.
+        #[cfg(feature = "dfa-prefilter")]
+        let seek = AssertUnwindSafe(if program.pure_literal {
+            None
+        } else {
+            seek.as_ref().and_then(SingleSeek::build).map(Box::new)
+        });
         Regex {
             inner: Arc::new(Compiled {
                 program: AssertUnwindSafe(program),
                 pattern,
+                #[cfg(feature = "dfa-prefilter")]
+                seek,
             }),
         }
     }
@@ -277,6 +334,91 @@ impl Regex {
     /// The compiled program, shared by every clone of this regex.
     fn program(&self) -> &RegexType {
         &self.inner.program
+    }
+
+    /// The answer of the single-pattern seek (ADR-008) to a standard search
+    /// from `start`, when it decides one, and `None` for the matcher.
+    ///
+    /// `Some(false)` is "no match", given when no seek match starts in
+    /// `text[start..]`: the matcher can only find a match the seek describes,
+    /// so the answer is the matcher's under every limit, which can only turn
+    /// a match into "no match".
+    ///
+    /// `Some(true)` is "match", given with `accept` only when the seek is
+    /// exact (`SeekCode::exact`), the pattern has a static retry bound
+    /// (`SingleSeek::retry_bound`), and the process-wide limits cannot stop
+    /// the matcher short of that bound (`process_wide_limits_allow`). Then the
+    /// matcher finds the same match without a limit error, so the answer is
+    /// the matcher's. Every other case goes to the matcher. `find` does not
+    /// accept, since it needs the match's bounds.
+    ///
+    /// `utf8` says whether `text` is known to be valid UTF-8; otherwise it is
+    /// checked. A seek reads characters, so the answer is only the matcher's
+    /// for valid UTF-8 and a `start` on a character boundary. Searches under
+    /// the caller's own limits (`*_with`) do not come here, so their limit
+    /// errors are the matcher's.
+    #[cfg(feature = "dfa-prefilter")]
+    #[inline]
+    fn seek_answer(&self, text: &[u8], start: usize, utf8: bool, accept: bool) -> Option<bool> {
+        let seek = self.inner.seek.as_ref()?;
+        let found = seek.search(text, start)?;
+        if found {
+            let bound = seek.retry_bound()?;
+            if !(accept && seek.exact() && process_wide_limits_allow(bound)) {
+                return None;
+            }
+        }
+        if !(utf8 || std::str::from_utf8(text).is_ok()) || !is_char_boundary(text, start) {
+            return None;
+        }
+        Some(found)
+    }
+
+    #[cfg(not(feature = "dfa-prefilter"))]
+    #[inline]
+    fn seek_answer(&self, text: &[u8], start: usize, utf8: bool, accept: bool) -> Option<bool> {
+        let _ = (text, start, utf8, accept);
+        None
+    }
+
+    /// Whether a seek might answer a search. False when the regex has no seek
+    /// automaton (a pure literal, or a seek too large or matching everywhere),
+    /// which keeps such a pattern on the matcher's own path.
+    #[cfg(feature = "dfa-prefilter")]
+    #[inline(always)]
+    fn seek_may_answer(&self) -> bool {
+        self.inner.seek.is_some()
+    }
+
+    #[cfg(not(feature = "dfa-prefilter"))]
+    #[inline(always)]
+    fn seek_may_answer(&self) -> bool {
+        false
+    }
+
+    /// Whether the regex has a seek automaton. For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn seek_present(&self) -> bool {
+        self.inner.seek.is_some()
+    }
+
+    /// Whether the seek automaton is exact. For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn seek_exact(&self) -> Option<bool> {
+        self.inner.seek.as_deref().map(SingleSeek::exact)
+    }
+
+    /// The static retry bound of the seek. For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn seek_retry_bound(&self) -> Option<u64> {
+        self.inner.seek.as_ref()?.retry_bound()
+    }
+
+    /// The seek's answer to `is_match` on `text` from 0, accepting where it
+    /// may, as `is_match` asks. For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn seek_decides_is_match(&self, text: &str) -> Option<bool> {
+        self.seek_answer(text.as_bytes(), 0, true, true)
     }
 
     /// The pattern this regex was compiled from, or `None` if the pattern is
@@ -342,12 +484,12 @@ impl Regex {
     /// reported as no match. Use [`Regex::find_with`] with [`SearchOptions`] to tell
     /// the two apart.
     pub fn find<'t>(&self, text: &'t str) -> Option<Match<'t>> {
-        self.find_bytes(text.as_bytes())
+        self.find_from(text.as_bytes(), 0, true)
     }
 
     /// Return the first match in `text` (as bytes), or `None` if no match.
     pub fn find_bytes<'t>(&self, text: &'t [u8]) -> Option<Match<'t>> {
-        self.find_from(text, 0)
+        self.find_from(text, 0, false)
     }
 
     /// Return the first match in `text` at or after byte offset `start`, or
@@ -383,9 +525,10 @@ impl Regex {
     /// assert_eq!(re.find_at("ab", 1).unwrap().range(), 1..2);
     /// assert!(re.find_at("ab", 0).is_none());
     /// ```
+    #[inline]
     pub fn find_at<'t>(&self, text: &'t str, start: usize) -> Option<Match<'t>> {
         check_str_start(text, start);
-        self.find_from(text.as_bytes(), start)
+        self.find_from(text.as_bytes(), start, true)
     }
 
     /// Return the first match in `text` (as bytes) at or after byte offset
@@ -399,13 +542,16 @@ impl Regex {
     /// Panics if `start` is greater than `text.len()`.
     pub fn find_bytes_at<'t>(&self, text: &'t [u8], start: usize) -> Option<Match<'t>> {
         check_bytes_start(text, start);
-        self.find_from(text, start)
+        self.find_from(text, start, false)
     }
 
     /// The search behind the `find` family: the first match from `start`,
     /// with all of `text` visible.
     #[inline]
-    fn find_from<'t>(&self, text: &'t [u8], start: usize) -> Option<Match<'t>> {
+    fn find_from<'t>(&self, text: &'t [u8], start: usize, utf8: bool) -> Option<Match<'t>> {
+        if self.seek_may_answer() && self.seek_answer(text, start, utf8, false) == Some(false) {
+            return None;
+        }
         // A standard search reports a limit it reached as no match.
         self.find_from_limited(text, start, None).ok().flatten()
     }
@@ -576,12 +722,12 @@ impl Regex {
     /// reported as no match. Use [`Regex::is_match_with`] with [`SearchOptions`] to tell
     /// the two apart.
     pub fn is_match(&self, text: &str) -> bool {
-        self.is_match_bytes(text.as_bytes())
+        self.is_match_from(text.as_bytes(), 0, true)
     }
 
     /// Check whether `text` (as bytes) matches the pattern anywhere.
     pub fn is_match_bytes(&self, text: &[u8]) -> bool {
-        self.is_match_from(text, 0)
+        self.is_match_from(text, 0, false)
     }
 
     /// Check whether `text` has a match at or after byte offset `start`.
@@ -595,7 +741,7 @@ impl Regex {
     /// boundary of `text`.
     pub fn is_match_at(&self, text: &str, start: usize) -> bool {
         check_str_start(text, start);
-        self.is_match_from(text.as_bytes(), start)
+        self.is_match_from(text.as_bytes(), start, true)
     }
 
     /// Check whether `text` (as bytes) has a match at or after byte offset
@@ -606,11 +752,14 @@ impl Regex {
     /// Panics if `start` is greater than `text.len()`.
     pub fn is_match_bytes_at(&self, text: &[u8], start: usize) -> bool {
         check_bytes_start(text, start);
-        self.is_match_from(text, start)
+        self.is_match_from(text, start, false)
     }
 
     #[inline]
-    fn is_match_from(&self, text: &[u8], start: usize) -> bool {
+    fn is_match_from(&self, text: &[u8], start: usize, utf8: bool) -> bool {
+        if let Some(answer) = self.seek_answer(text, start, utf8, true) {
+            return answer;
+        }
         let (result, _) = onig_search(
             self.program(),
             text,
@@ -1130,6 +1279,7 @@ pub struct RegexBuilder {
     syntax: &'static OnigSyntaxType,
     reject_backtracking_risks: bool,
     optimize_backtracking: bool,
+    dfa: bool,
 }
 
 impl RegexBuilder {
@@ -1158,6 +1308,7 @@ impl RegexBuilder {
             syntax: &OnigSyntaxOniguruma,
             reject_backtracking_risks: false,
             optimize_backtracking: false,
+            dfa: DFA_DEFAULT,
         }
     }
 
@@ -1335,19 +1486,68 @@ impl RegexBuilder {
         self
     }
 
+    /// Enable or disable the single-pattern seek automaton for standard
+    /// searches (ADR-008).
+    ///
+    /// The default is on when the `dfa-prefilter` feature is enabled, which
+    /// it is by default, and off otherwise. With `true`, [`RegexBuilder::build`]
+    /// derives the seek from the compiled tree and builds its lazy DFA in the
+    /// same compilation, so the cost is paid once, and the clones and searches
+    /// of the returned [`Regex`] share the automaton. A standard search then
+    /// asks the automaton first. The automaton answers "no match" whenever
+    /// it can, and answers "match" only when the pattern has a static bound
+    /// on its retries that the process-wide retry limit cannot undercut. In
+    /// every other case the matcher answers, so the results, including the
+    /// limit errors of [`Regex::find_with`] and the other `*_with` methods,
+    /// are the same with the option on or off.
+    ///
+    /// The cost is compile time and memory. The seek is derived in the same
+    /// compilation as the program, so `build` does not compile the pattern
+    /// twice, but it does build the automaton: the compile time of a pattern
+    /// with the option on is higher than with it off by the time of that
+    /// build. The automaton's NFA is at most 16 MiB, and the seek is absent
+    /// for a pattern too large for it. Each thread that searches with the
+    /// regex keeps a lazy DFA cache of at most 1 MiB for the seek.
+    ///
+    /// Use `dfa(false)` for patterns that are compiled once and searched
+    /// rarely, or in a memory-constrained process; the results do not change.
+    ///
+    /// ```
+    /// use ferroni::api::Regex;
+    ///
+    /// // The automaton is built with the regex (the default with the feature).
+    /// let with = Regex::builder(r"\d{4}-\d{2}").dfa(true).build().unwrap();
+    /// // Without it, the matcher answers every search.
+    /// let without = Regex::builder(r"\d{4}-\d{2}").dfa(false).build().unwrap();
+    /// assert_eq!(with.find("on 2026-10").unwrap().as_str(), "2026-10");
+    /// assert_eq!(
+    ///     with.find("on 2026-10").map(|m| m.range()),
+    ///     without.find("on 2026-10").map(|m| m.range()),
+    /// );
+    /// ```
+    pub fn dfa(mut self, yes: bool) -> Self {
+        self.dfa = yes;
+        self
+    }
+
     /// Compile the pattern into a [`Regex`].
     pub fn build(self) -> Result<Regex, RegexError> {
-        let inner = onig_new_with_backtracking_optimization(
+        let (inner, seek) = onig_new_for_single_seek(
             &self.pattern,
             self.options,
             &ONIG_ENCODING_UTF8,
             self.syntax,
             self.optimize_backtracking,
+            self.dfa,
         )?;
         if self.reject_backtracking_risks && !inner.backtrack_warnings.is_empty() {
             return Err(ONIGERR_VERY_INEFFICIENT_PATTERN.into());
         }
-        Ok(Regex::from_parts(inner, self.pattern.into_boxed_slice()))
+        Ok(Regex::from_parts(
+            inner,
+            self.pattern.into_boxed_slice(),
+            seek,
+        ))
     }
 }
 
@@ -1379,6 +1579,7 @@ impl fmt::Debug for RegexBuilder {
             .field("syntax", &syntax)
             .field("reject_backtracking_risks", &self.reject_backtracking_risks)
             .field("optimize_backtracking", &self.optimize_backtracking)
+            .field("dfa", &self.dfa)
             .finish()
     }
 }
@@ -2120,6 +2321,151 @@ mod tests {
                 .as_ref()
                 .map(|region| (region.beg.as_ptr(), region.beg.capacity()))
         })
+    }
+
+    /// The seek automaton is built with the regex, once per compilation and
+    /// shared by its clones, for a pattern with a seek that can reject; a
+    /// pure literal and a seek that matches everywhere have none. The option
+    /// turns it off.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn seek_is_built_with_the_regex() {
+        let re = Regex::new(r"^[0-9A-F]{8}$").unwrap();
+        assert!(re.seek_present());
+        assert_eq!(re.seek_exact(), Some(true));
+        assert!(re.seek_retry_bound().is_some());
+        assert!(re.clone().seek_present());
+        assert!(!re.is_match("zzzz"));
+
+        // Case folding that reaches non-ASCII characters (the Kelvin sign for
+        // `k`) is listed exactly, so the seek stays exact.
+        let folded = RegexBuilder::new("^k+$")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        assert_eq!(folded.seek_exact(), Some(true));
+        assert!(!folded.is_match("xxx"));
+        assert!(folded.is_match("\u{212A}k"));
+
+        // A pure literal is answered by its own search, and a seek that
+        // matches everywhere rejects nothing.
+        for pattern in ["GET", "a*"] {
+            let re = Regex::new(pattern).unwrap();
+            assert!(!re.seek_present(), "{pattern}");
+            assert!(re.is_match("GET a"), "{pattern}");
+        }
+
+        let off = RegexBuilder::new(r"^[0-9A-F]{8}$")
+            .dfa(false)
+            .build()
+            .unwrap();
+        assert!(!off.seek_present());
+        assert!(off.is_match("0123ABCD"));
+    }
+
+    /// A pattern without a static retry bound never gets an accepting seek.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn unbounded_retries_have_no_static_bound() {
+        for pattern in ["(x+x+)+y|.*", r"[a-z0-9._%+-]+@[a-z0-9.-]+"] {
+            let re = Regex::new(pattern).unwrap();
+            assert_eq!(re.seek_retry_bound(), None, "{pattern}");
+        }
+    }
+
+    /// The static retry bound (ADR-008) is provable for the catalog's uuid
+    /// and IPv4 validators. It is not provable for the IPv6 validator, whose
+    /// path-count model exceeds the default retry limit (37,590,549 without
+    /// its unbounded zone-id suffix), nor for the django local part, which
+    /// has unbounded repeats. The values are printed for the ADR.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn catalog_validators_have_a_static_retry_bound() {
+        let cases: &[(&str, &str, bool)] = &[
+            (
+                "uuid_shape",
+                "^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$",
+                true,
+            ),
+            (
+                "uuid_v4",
+                "^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$",
+                true,
+            ),
+            (
+                "ipv4_validation",
+                "^((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$",
+                false,
+            ),
+            (
+                "ipv6_validation",
+                "^((?:(?:[0-9a-fA-F]{1,4}):){7}(?:(?:[0-9a-fA-F]{1,4})|:)|(?:(?:[0-9a-fA-F]{1,4}):){6}(?:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|:(?:[0-9a-fA-F]{1,4})|:)|(?:(?:[0-9a-fA-F]{1,4}):){5}(?::((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,2}|:)|(?:(?:[0-9a-fA-F]{1,4}):){4}(?:(:(?:[0-9a-fA-F]{1,4})){0,1}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,3}|:)|(?:(?:[0-9a-fA-F]{1,4}):){3}(?:(:(?:[0-9a-fA-F]{1,4})){0,2}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,4}|:)|(?:(?:[0-9a-fA-F]{1,4}):){2}(?:(:(?:[0-9a-fA-F]{1,4})){0,3}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,5}|:)|(?:(?:[0-9a-fA-F]{1,4}):){1}(?:(:(?:[0-9a-fA-F]{1,4})){0,4}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,6}|:)|(?::((?::(?:[0-9a-fA-F]{1,4})){0,5}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(?::(?:[0-9a-fA-F]{1,4})){1,7}|:)))(%[0-9a-zA-Z.]{1,})?$",
+                false,
+            ),
+            (
+                "django_email_local_part",
+                "(^[-!#$%&'*+/=?^_`{}|~0-9A-Z]+(\\.[-!#$%&'*+/=?^_`{}|~0-9A-Z]+)*\\z|^\"([\\001-\\010\\013\\014\\016-\\037!#-\\[\\]-\\177]|\\\\[\\001-\\011\\013\\014\\016-\\177])*\"\\z)",
+                true,
+            ),
+        ];
+        for &(name, pattern, ignore_case) in cases {
+            let re = RegexBuilder::new(pattern)
+                .case_insensitive(ignore_case)
+                .multi_line_anchors(false)
+                .build()
+                .unwrap();
+            eprintln!(
+                "{name}: retry bound {:?}, exact {:?}",
+                re.seek_retry_bound(),
+                re.seek_exact()
+            );
+            let provable = matches!(name, "uuid_shape" | "uuid_v4" | "ipv4_validation");
+            assert_eq!(re.seek_retry_bound().is_some(), provable, "{name}");
+        }
+    }
+
+    /// An exact seek accepts a match only when the process-wide retry limit
+    /// is no obstacle to the static bound; a rejection holds under any limit.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn exact_seek_accepts_only_when_the_limits_cannot_undercut_the_bound() {
+        let _limits = crate::regexec::exclusive_limits();
+        let old_retry = crate::regexec::onig_get_retry_limit_in_match();
+        let re = Regex::new(r"^[0-9A-F]{8}$").unwrap();
+        let bound = re.seek_retry_bound().unwrap();
+        assert_eq!(re.seek_decides_is_match("0123ABCD"), Some(true));
+        // A limit at the bound can stop the matcher, so the seek must not
+        // accept; one above it cannot.
+        crate::regexec::onig_set_retry_limit_in_match(bound);
+        let at_bound = re.seek_decides_is_match("0123ABCD");
+        crate::regexec::onig_set_retry_limit_in_match(bound + 1);
+        let above_bound = re.seek_decides_is_match("0123ABCD");
+        let rejected = re.seek_decides_is_match("0123ABCZ");
+        crate::regexec::onig_set_retry_limit_in_match(old_retry);
+        assert_eq!(at_bound, None);
+        assert_eq!(above_bound, Some(true));
+        assert_eq!(rejected, Some(false));
+    }
+
+    /// Text the seek reads as UTF-8 and the matcher may read otherwise is
+    /// left to the matcher: an invalid byte or a start inside a character.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn seek_path_leaves_invalid_utf8_and_inner_starts_to_the_matcher() {
+        let re = Regex::new(r"[^a]").unwrap();
+        let text = "é".as_bytes();
+        for start in 0..=text.len() {
+            let expected = re
+                .is_match_bytes_at_with(text, start, SearchOptions::new())
+                .unwrap();
+            assert_eq!(re.is_match_bytes_at(text, start), expected, "start {start}");
+        }
+        let invalid = [0xFF_u8];
+        let expected = re
+            .is_match_bytes_at_with(&invalid, 0, SearchOptions::new())
+            .unwrap();
+        assert_eq!(re.is_match_bytes(&invalid), expected);
+        assert_eq!(re.find_bytes(&invalid).is_some(), expected);
     }
 
     #[test]

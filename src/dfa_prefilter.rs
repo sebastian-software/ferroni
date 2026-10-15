@@ -43,7 +43,9 @@
 //! limit of the caller's own keeps C's attempts (see `prefilter_decides` in
 //! `regset.rs`).
 
-use crate::oniguruma::ONIGENC_CTYPE_WORD;
+use crate::oniguruma::{
+    ONIG_OPTION_FIND_NOT_EMPTY, ONIG_OPTION_NOTBOL, ONIG_OPTION_NOTEOL, ONIGENC_CTYPE_WORD,
+};
 use crate::regcomp::literal_alt_trie_index;
 use crate::regenc::OnigEncoding;
 use crate::regint::*;
@@ -52,6 +54,8 @@ use regex_automata::hybrid::LazyStateID;
 use regex_automata::hybrid::dfa as hybrid;
 use regex_automata::hybrid::regex as hybrid_regex;
 use regex_automata::nfa::thompson;
+use regex_automata::util::pool::Pool;
+
 use regex_automata::{Anchored, Input, MatchKind, PatternID};
 use regex_syntax::hir::{
     Class, ClassBytes, ClassBytesRange, ClassUnicode, ClassUnicodeRange, Hir, HirKind, Look,
@@ -179,7 +183,7 @@ pub(crate) enum Seek {
 /// The seek approximation of `reg`, whose tuned parse tree is `root`.
 /// `None` for an entry the pre-filter must not decide for: callouts observe
 /// every attempt, and the seek reads UTF-8.
-pub(crate) fn derive(root: &Node, reg: &RegexType) -> Option<Seek> {
+pub(crate) fn derive(root: &Node, reg: &RegexType, precise: bool) -> Option<Seek> {
     if reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0) {
         return None;
     }
@@ -189,24 +193,59 @@ pub(crate) fn derive(root: &Node, reg: &RegexType) -> Option<Seek> {
     if reg.enc.name() != utf8.name() || reg.enc.max_enc_len() != utf8.max_enc_len() {
         return None;
     }
+    // The static retry bound describes the matcher, not the seek, so it is
+    // taken from the tree whichever seek the walk writes (ADR-008).
+    let bound = if precise {
+        retry_bound(root).unwrap_or(0)
+    } else {
+        0
+    };
+    walk_seek(root, reg, precise, bound)
+}
+
+/// `derive` with the retry bound given. A precise seek whose automaton would
+/// be too large falls back to the scanner's seek, which is smaller.
+fn walk_seek(root: &Node, reg: &RegexType, precise: bool, bound: u64) -> Option<Seek> {
+    // The tail rewrite of `\Z` is exact, and the scanner's seeks keep their
+    // approximation of it (`$`), so only a single regex's seek takes it.
+    let mut tails = Vec::new();
+    if precise {
+        collect_tails(root, &mut tails);
+    }
     let mut walk = Walk {
         reg,
         lookaheads_kept: 0,
+        inexact: false,
+        tails,
+        precise,
     };
     let hir = walk.item(root, true);
     if matches_everywhere(&hir) {
         return Some(Seek::Everywhere);
     }
+    if precise && nfa_states_estimate(&hir) > MAX_NFA_STATES {
+        return walk_seek(root, reg, false, bound);
+    }
+    // Exact when the seek matches exactly where the pattern does, so that a
+    // match of the seek is a match of the pattern (`SeekCode::exact`). The
+    // line anchors and the options that change what a line start or end
+    // is, or what counts as a match, make the seek inexact.
+    let exact = !walk.inexact
+        && line_starts_exact(&hir)
+        && !reg
+            .options
+            .intersects(ONIG_OPTION_NOTBOL | ONIG_OPTION_NOTEOL | ONIG_OPTION_FIND_NOT_EMPTY);
     // A node the encoding has no tag for leaves the entry on its own, which
     // is always right; the walk writes none.
-    let code = SeekCode::encode(&hir)?;
+    let code = SeekCode::encode(&hir, exact, bound)?;
     debug_assert_eq!(code.decode(), hir, "the seek code round-trips");
     Some(Seek::Pattern(code))
 }
 
 /// A seek's HIR in a compact encoding, kept per distinct pattern until the
-/// automata are built: the tree in pre-order, each node a tag byte and its
-/// data. An HIR node carries a boxed property block and its own
+/// automata are built: a flag byte (whether the seek is exact, see
+/// [`SeekCode::exact`]), then the tree in pre-order, each node a tag byte and
+/// its data. An HIR node carries a boxed property block and its own
 /// allocations, some 20–30 KiB per seek over the captured grammars; the
 /// code is a few hundred bytes. Decoding rebuilds the tree through the
 /// smart constructors that built it (`Hir::concat`, `Hir::alternation`,
@@ -239,10 +278,33 @@ mod tag {
 impl SeekCode {
     /// `hir` encoded, or `None` for a node kind the walk never writes
     /// (a capture).
-    fn encode(hir: &Hir) -> Option<SeekCode> {
-        let mut out = Vec::new();
+    fn encode(hir: &Hir, exact: bool, bound: u64) -> Option<SeekCode> {
+        let mut out = vec![u8::from(exact)];
+        Self::varint(bound as usize, &mut out);
         Self::write(hir, &mut out)?;
         Some(SeekCode(out.into_boxed_slice()))
+    }
+
+    /// Whether the seek matches exactly where the pattern does, for the
+    /// purposes of existence: no construct was approximated, no line start
+    /// the matcher would not see is admitted, and no option changes a match
+    /// the seek describes. A match of an exact seek is a match of the
+    /// pattern, which is what a standard `is_match` may answer from it.
+    pub(crate) fn exact(&self) -> bool {
+        self.0[0] != 0
+    }
+
+    /// The static bound on the retries of one match attempt of the pattern
+    /// (`retry_bound`), or `None` when it is not provable.
+    pub(crate) fn retry_bound(&self) -> Option<u64> {
+        let mut reader = SeekReader {
+            code: &self.0,
+            at: 1,
+        };
+        match reader.varint() as u64 {
+            0 => None,
+            bound => Some(bound),
+        }
     }
 
     fn write(hir: &Hir, out: &mut Vec<u8>) -> Option<()> {
@@ -312,8 +374,9 @@ impl SeekCode {
     pub(crate) fn decode(&self) -> Hir {
         let mut reader = SeekReader {
             code: &self.0,
-            at: 0,
+            at: 1,
         };
+        reader.varint();
         let hir = reader.hir();
         debug_assert_eq!(reader.at, self.0.len(), "the seek code is read whole");
         hir
@@ -482,6 +545,81 @@ fn matches_everywhere(hir: &Hir) -> bool {
     first.is_some_and(is_placeholder)
 }
 
+/// Whether a class over these code point ranges is exact in the seek: its
+/// non-ASCII members are none, or every non-ASCII character, since `class_hir`
+/// writes them as one UTF-8 sequence, which is exact only then. A negation
+/// takes the complement of those, so the same condition covers it.
+fn class_exact(ranges: &[(u32, u32)]) -> bool {
+    ranges
+        .iter()
+        .all(|&(lo, hi)| lo > hi || hi < 0x80 || (lo.max(0x80) == 0x80 && hi >= 0x10FFFF))
+}
+
+/// The most non-ASCII members a class may list one by one (`explicit_class`).
+const EXPLICIT_MEMBERS: usize = 16;
+
+/// A positive class whose non-ASCII members are few, written exactly: its
+/// ASCII members as bytes and each non-ASCII member as its UTF-8 sequence. A
+/// case-insensitive class holds such members (the Kelvin sign for `k`, the
+/// long s for `s`), and listing them keeps the class exact where
+/// `class_hir` would approximate them. `None` when there are more than
+/// `EXPLICIT_MEMBERS`, which `class_hir` writes instead.
+fn explicit_class(ranges: &[(u32, u32)]) -> Option<Hir> {
+    let mut ascii: u128 = 0;
+    let mut members = Vec::new();
+    for &(lo, hi) in ranges {
+        if lo > hi {
+            continue;
+        }
+        if lo <= 0x7F {
+            ascii |= ascii_mask(lo as u8, hi.min(0x7F) as u8);
+        }
+        let lo = lo.max(0x80);
+        if hi < lo {
+            continue;
+        }
+        let count = (hi - lo) as usize + 1;
+        if members.len() + count > EXPLICIT_MEMBERS {
+            return None;
+        }
+        for code in lo..=hi {
+            // A surrogate is no character, and the matcher never reads one.
+            if let Some(c) = char::from_u32(code) {
+                members.push(Hir::literal(c.to_string().into_bytes().into_boxed_slice()));
+            }
+        }
+    }
+    members.insert(0, byte_class(ascii, false));
+    Some(alternation(members))
+}
+
+/// Whether every `^` (`Look::StartLF`) in the seek is one the matcher reads
+/// alike. The matcher holds `^` at the start of the subject and after a
+/// newline that is not the last byte, the seek after any newline; the two
+/// differ only where nothing follows the `^`. So a `^` must be followed by
+/// something that consumes a byte, in its own sequence or branch.
+fn line_starts_exact(hir: &Hir) -> bool {
+    if !hir.properties().look_set().contains(Look::StartLF) {
+        return true;
+    }
+    match hir.kind() {
+        HirKind::Concat(parts) => parts.iter().enumerate().all(|(k, part)| {
+            if matches!(part.kind(), HirKind::Look(Look::StartLF)) {
+                parts[k + 1..]
+                    .iter()
+                    .map(|rest| rest.properties().minimum_len().unwrap_or(0))
+                    .sum::<usize>()
+                    >= 1
+            } else {
+                line_starts_exact(part)
+            }
+        }),
+        HirKind::Alternation(branches) => branches.iter().all(line_starts_exact),
+        // A `^` under a repetition, a capture or alone is not judged here.
+        _ => false,
+    }
+}
+
 /// A class over code point ranges (inclusive), negated or not: the ASCII
 /// members exactly, and one UTF-8 sequence for any non-ASCII member.
 ///
@@ -578,7 +716,7 @@ fn concat(parts: Vec<Hir>) -> Hir {
 /// `a·c` and `b·d` copies of `X`, so `X{a·c,b·d}` matches wherever it does
 /// and compiles to fewer states. Counted bounds above `MAX_COUNTED_REPEAT`
 /// become unbounded.
-fn repetition(mut min: u32, mut max: Option<u32>, sub: Hir) -> Hir {
+fn repetition(mut min: u32, mut max: Option<u32>, sub: Hir, inexact: &mut bool) -> Hir {
     let nested = match sub.kind() {
         HirKind::Repetition(inner) => Some((inner.min, inner.max, (*inner.sub).clone())),
         _ => None,
@@ -595,6 +733,8 @@ fn repetition(mut min: u32, mut max: Option<u32>, sub: Hir) -> Hir {
         None => sub,
     };
     if min > MAX_COUNTED_REPEAT || max.is_some_and(|max| max > MAX_COUNTED_REPEAT) {
+        // A bound above the limit widens the repetition.
+        *inexact = true;
         min = min.min(MAX_COUNTED_REPEAT);
         max = None;
     }
@@ -788,11 +928,124 @@ fn cons_items(node: &Node) -> Vec<&Node> {
     items
 }
 
+/// Writes the `\Z` nodes that end the pattern: the last element of a list,
+/// a branch of an alternation in that position, or the body of a group there.
+/// Nothing follows such a node, so `\Z` holds exactly where the seek writes
+/// `(?:\n)?\z`: before the end or before a final newline. Elsewhere `\Z` is
+/// approximated by `$` (`Walk::anchor`). Addresses only, compared and never
+/// read.
+fn collect_tails(node: &Node, out: &mut Vec<*const Node>) {
+    match &node.inner {
+        NodeInner::List(_) => {
+            if let Some(&last) = cons_items(node).last() {
+                collect_tails(last, out);
+            }
+        }
+        NodeInner::Alt(_) => {
+            for branch in cons_items(node) {
+                collect_tails(branch, out);
+            }
+        }
+        NodeInner::Bag(bn) if !matches!(bn.bag_data, BagData::IfElse { .. }) => {
+            if let Some(body) = bn.body.as_deref() {
+                collect_tails(body, out);
+            }
+        }
+        NodeInner::Anchor(an) if an.anchor_type == ANCR_SEMI_END_BUF => {
+            out.push(node as *const Node);
+        }
+        _ => {}
+    }
+}
+
+/// Rust-only (ADR-008): a static upper bound on the retries one match
+/// attempt of the tuned tree can make, for a pattern the matcher can run
+/// without reaching the retry limit in match (the default is 10,000,000
+/// retries per start position). `None` when the bound is not provable: an
+/// unbounded repetition, a back reference, a call, a condition, a look-around,
+/// a literal trie, or a count that overflows.
+///
+/// Each retry of the matcher follows one failed path through the tree, and
+/// every path ends in one failure or in the match. So the paths bound the
+/// retries: a repetition with at most `n` iterations of a body with `p` paths
+/// has `1 + p + … + p^n`, a sequence of items has the product of its items'
+/// paths (the failure of a later item retries each path of the earlier ones),
+/// and an alternation the sum of its branches'.
+pub(crate) fn retry_bound(root: &Node) -> Option<u64> {
+    paths(root)
+}
+
+/// The paths of `node` (`retry_bound`), `None` when they are not provable.
+fn paths(node: &Node) -> Option<u64> {
+    if node.has_status(ND_ST_LITERAL_ALT) {
+        return None;
+    }
+    Some(match &node.inner {
+        NodeInner::String(_) | NodeInner::CClass(_) | NodeInner::CType(_) => 1,
+        NodeInner::Gimmick(_) => 1,
+        NodeInner::Anchor(an) => match an.anchor_type {
+            ANCR_PREC_READ | ANCR_PREC_READ_NOT | ANCR_LOOK_BEHIND | ANCR_LOOK_BEHIND_NOT => {
+                return None;
+            }
+            _ => 1,
+        },
+        NodeInner::BackRef(_) | NodeInner::Call(_) => return None,
+        NodeInner::Quant(qn) => {
+            if qn.upper < 0 {
+                return None;
+            }
+            let Some(body) = qn.body.as_deref() else {
+                return Some(1);
+            };
+            let body = paths(body)?;
+            // The iteration counts 0 to `upper`, each a sequence of bodies.
+            let mut total = 1u64;
+            let mut power = 1u64;
+            for _ in 0..qn.upper {
+                power = power.checked_mul(body)?;
+                total = total.checked_add(power)?;
+            }
+            total
+        }
+        NodeInner::Bag(bn) => {
+            if matches!(bn.bag_data, BagData::IfElse { .. }) {
+                return None;
+            }
+            match bn.body.as_deref() {
+                Some(body) => paths(body)?,
+                None => 1,
+            }
+        }
+        NodeInner::List(_) => {
+            let mut total = 1u64;
+            for item in cons_items(node) {
+                total = total.checked_mul(paths(item)?)?;
+            }
+            total
+        }
+        NodeInner::Alt(_) => {
+            let mut total = 0u64;
+            for branch in cons_items(node) {
+                total = total.checked_add(paths(branch)?)?;
+            }
+            total
+        }
+    })
+}
+
 /// One walk over a tuned parse tree, writing the seek HIR.
 struct Walk<'a> {
     reg: &'a RegexType,
     /// Positive look-aheads whose body was kept in place so far.
     lookaheads_kept: u32,
+    /// A construct the seek approximates was written (`SeekCode::exact`).
+    inexact: bool,
+    /// The `\Z` nodes that end the pattern (`collect_tails`), by address.
+    tails: Vec<*const Node>,
+    /// The seek of a single `Regex` (`derive`'s `precise`): alternations
+    /// are written branch by branch, where the scanner's seek shortcuts a
+    /// class-led alternation as a repetition of its class.
+    precise: bool,
 }
 
 impl Walk<'_> {
@@ -808,6 +1061,7 @@ impl Walk<'_> {
     }
 
     fn lookahead(&mut self, an: &AnchorNode, keep: bool) -> Hir {
+        self.inexact = true;
         if keep {
             self.lookaheads_kept += 1;
             an.body
@@ -826,8 +1080,11 @@ impl Walk<'_> {
             NodeInner::String(sn) => {
                 // The tuner unravels a case-insensitive string into exact
                 // alternatives; one it left stands for anything.
-                if node.has_status(ND_ST_IGNORECASE) && !sn.is_crude() {
-                    return placeholder();
+                if node.has_status(ND_ST_IGNORECASE) {
+                    self.inexact = true;
+                    if !sn.is_crude() {
+                        return placeholder();
+                    }
                 }
                 if sn.s.is_empty() {
                     Hir::empty()
@@ -837,7 +1094,10 @@ impl Walk<'_> {
             }
             NodeInner::CClass(cc) => self.cclass(cc),
             NodeInner::CType(ct) => self.ctype(node, ct),
-            NodeInner::BackRef(_) | NodeInner::Call(_) => placeholder(),
+            NodeInner::BackRef(_) | NodeInner::Call(_) => {
+                self.inexact = true;
+                placeholder()
+            }
             NodeInner::Quant(qn) => {
                 let Some(body) = qn.body.as_deref() else {
                     return Hir::empty();
@@ -849,7 +1109,7 @@ impl Walk<'_> {
                 let sub = self.item(body, body_rest);
                 let min = u32::try_from(qn.lower.max(0)).unwrap_or(u32::MAX);
                 let max = (qn.upper >= 0).then_some(qn.upper as u32);
-                repetition(min, max, sub)
+                repetition(min, max, sub, &mut self.inexact)
             }
             NodeInner::Bag(bn) => match &bn.bag_data {
                 // The condition runs first and, where it holds, the then
@@ -860,6 +1120,7 @@ impl Walk<'_> {
                     then_node,
                     else_node,
                 } => {
+                    self.inexact = true;
                     let condition = bn
                         .body
                         .as_deref()
@@ -872,12 +1133,27 @@ impl Walk<'_> {
                         .map_or_else(Hir::empty, |n| self.item(n, rest_droppable));
                     alternation(vec![concat(vec![condition, then]), otherwise])
                 }
+                // An atomic group keeps only the first way its body matches,
+                // which the seek, keeping every way, does not: `(?>abc|ab)c`
+                // has no match in `abc`, its seek does.
+                BagData::StopBacktrack => {
+                    self.inexact = true;
+                    bn.body
+                        .as_deref()
+                        .map_or_else(Hir::empty, |body| self.item(body, rest_droppable))
+                }
                 _ => bn
                     .body
                     .as_deref()
                     .map_or_else(Hir::empty, |body| self.item(body, rest_droppable)),
             },
-            NodeInner::Anchor(an) => self.anchor(an),
+            NodeInner::Anchor(an) => {
+                if self.tails.contains(&(node as *const Node)) {
+                    let newline = repetition(0, Some(1), Hir::literal(*b"\n"), &mut self.inexact);
+                    return concat(vec![newline, Hir::look(Look::End)]);
+                }
+                self.anchor(an)
+            }
             NodeInner::List(_) => self.list(node, rest_droppable),
             NodeInner::Alt(_) => {
                 let branches = cons_items(node);
@@ -885,7 +1161,10 @@ impl Walk<'_> {
                 // `Alt(class, "ss", "fi", …)`, and such classes repeat in a
                 // pattern: the union of their characters, repeated as often
                 // as the longest branch reads, stands for all of them.
-                if branches.len() >= 2 && matches!(branches[0].inner, NodeInner::CClass(_)) {
+                if !self.precise
+                    && branches.len() >= 2
+                    && matches!(branches[0].inner, NodeInner::CClass(_))
+                {
                     let mut ranges = Vec::new();
                     let mut lens: Option<(usize, usize)> = Some((usize::MAX, 0));
                     for branch in &branches {
@@ -898,6 +1177,7 @@ impl Walk<'_> {
                         }
                     }
                     if let Some((min, max)) = lens {
+                        self.inexact = true;
                         return Hir::repetition(Repetition {
                             min: u32::try_from(min).unwrap_or(u32::MAX),
                             max: Some(u32::try_from(max).unwrap_or(u32::MAX)),
@@ -915,10 +1195,25 @@ impl Walk<'_> {
             // `\K` and the absent operator's bookkeeping consume nothing;
             // the absent operator's own `Fail` never matches (`(*FAIL)` is
             // a callout, which leaves the pattern without a seek).
-            NodeInner::Gimmick(gn) => match gn.gimmick_type {
-                GimmickType::Fail => Hir::fail(),
-                _ => Hir::empty(),
-            },
+            NodeInner::Gimmick(gn) => {
+                // `\K` is exact for existence. The range cutter of the absent
+                // operator (a save and updates of the range, and a `Fail`)
+                // is not, and the other gimmicks are left out.
+                let keep = match gn.gimmick_type {
+                    GimmickType::Save => gn.detail_type == SaveType::Keep as i32,
+                    GimmickType::UpdateVar => {
+                        gn.detail_type == UpdateVarType::KeepFromStackLast as i32
+                    }
+                    _ => false,
+                };
+                if !keep {
+                    self.inexact = true;
+                }
+                match gn.gimmick_type {
+                    GimmickType::Fail => Hir::fail(),
+                    _ => Hir::empty(),
+                }
+            }
         }
     }
 
@@ -953,6 +1248,13 @@ impl Walk<'_> {
     }
 
     fn anchor(&mut self, an: &AnchorNode) -> Hir {
+        // Only `\A`, `\z`, `$` and `^` read the text the way the seek does.
+        if !matches!(
+            an.anchor_type,
+            ANCR_BEGIN_BUF | ANCR_END_BUF | ANCR_END_LINE | ANCR_BEGIN_LINE
+        ) {
+            self.inexact = true;
+        }
         match an.anchor_type {
             // A look-ahead reaches here only where something consuming
             // follows it. Look-behinds read what is before the position.
@@ -1002,7 +1304,16 @@ impl Walk<'_> {
     }
 
     fn cclass(&mut self, cc: &CClassNode) -> Hir {
-        class_hir(class_members(cc), cc.is_not())
+        let ranges: Vec<(u32, u32)> = class_members(cc).collect();
+        if self.precise && !cc.is_not() {
+            if let Some(hir) = explicit_class(&ranges) {
+                return hir;
+            }
+        }
+        if !class_exact(&ranges) {
+            self.inexact = true;
+        }
+        class_hir(ranges, cc.is_not())
     }
 
     fn ctype(&mut self, node: &Node, ct: &CtypeNode) -> Hir {
@@ -1012,6 +1323,11 @@ impl Walk<'_> {
             } else {
                 any_char_except_newline()
             };
+        }
+        // The non-ASCII part of a Unicode `\w` or `\W` is every non-ASCII
+        // character, which is exact only in ASCII mode (see below).
+        if !(ct.ctype == ONIGENC_CTYPE_WORD as i32 && ct.ascii_mode) {
+            self.inexact = true;
         }
         if ct.ctype == ONIGENC_CTYPE_WORD as i32 {
             // The ASCII word characters are the same in both modes; the
@@ -1039,9 +1355,10 @@ impl Walk<'_> {
     /// accepts for them (ASCII case pairs, the non-ASCII members of each
     /// letter's class, and the strings of each multi-character segment).
     fn trie(&mut self, node: &Node) -> Hir {
-        let Some(trie) =
-            literal_alt_trie_index(node).and_then(|idx| self.reg.literal_tries.get(idx))
+        let reg = self.reg;
+        let Some(trie) = literal_alt_trie_index(node).and_then(|idx| reg.literal_tries.get(idx))
         else {
+            self.inexact = true;
             return placeholder();
         };
         let literals = trie.literals();
@@ -1053,6 +1370,7 @@ impl Walk<'_> {
                     .collect(),
             );
         }
+        self.inexact = true;
         let Some(folds) = trie.folds() else {
             return placeholder();
         };
@@ -1114,8 +1432,9 @@ impl Walk<'_> {
                 Hir::class(Class::Bytes(ClassBytes::new([ClassBytesRange::new(
                     0x00, 0x7F,
                 )]))),
+                &mut self.inexact,
             );
-            let suffix = repetition(0, Some(rest), any_char());
+            let suffix = repetition(0, Some(rest), any_char(), &mut self.inexact);
             branches.push(concat(vec![ascii_prefix, alternation(non_ascii), suffix]));
         }
         alternation(branches)
@@ -2087,6 +2406,125 @@ impl SetPrefilter {
     }
 }
 
+/// Rust-only (ADR-008): the seek of one `Regex` as a lazy DFA, which answers
+/// whether any seek match starts in a subject from a position on. A `Regex`
+/// builds it with the pattern and searches with it from the first search
+/// (`RegexBuilder::dfa`).
+///
+/// Without an exact seek, "no seek match" proves "no match" and nothing else:
+/// a seek match leaves the answer to the matcher. An exact seek's match is a
+/// match of the pattern (`SeekCode::exact`). A search that the lazy DFA gives
+/// up on answers nothing, and the matcher runs.
+pub(crate) struct SingleSeek {
+    dfa: hybrid::DFA,
+    /// The lazy DFA's caches, one per thread that searches (the pool's owner
+    /// fast path), so a search takes no lock.
+    caches: Pool<hybrid::Cache, CacheMaker>,
+    exact: bool,
+    /// The static retry bound of the pattern (`retry_bound`).
+    retry_bound: Option<u64>,
+}
+
+/// The cache constructor of a `SingleSeek`'s pool.
+type CacheMaker = Box<dyn Fn() -> hybrid::Cache + Send + Sync>;
+
+/// Lazy DFA cache of a single `Regex`'s seek.
+const SINGLE_CACHE_CAPACITY: usize = MIB;
+
+/// An estimate of the NFA states `hir` compiles to, from above: a repetition
+/// counts its body once per copy its bound makes, and the parts add up.
+/// Saturating, so a nested bound cannot overflow it.
+fn nfa_states_estimate(hir: &Hir) -> usize {
+    match hir.kind() {
+        HirKind::Empty | HirKind::Look(_) => 1,
+        HirKind::Literal(literal) => literal.0.len() + 1,
+        HirKind::Class(_) => 2,
+        HirKind::Capture(capture) => nfa_states_estimate(&capture.sub) + 2,
+        HirKind::Repetition(rep) => {
+            let copies = rep.max.unwrap_or(rep.min).max(rep.min).max(1) as usize;
+            nfa_states_estimate(&rep.sub)
+                .saturating_mul(copies)
+                .saturating_add(2)
+        }
+        HirKind::Concat(parts) => parts.iter().fold(0usize, |sum, part| {
+            sum.saturating_add(nfa_states_estimate(part))
+        }),
+        HirKind::Alternation(branches) => branches.iter().fold(2usize, |sum, branch| {
+            sum.saturating_add(nfa_states_estimate(branch))
+        }),
+    }
+}
+
+impl SingleSeek {
+    /// The lazy DFA of `seek`, or `None` for a seek that matches everywhere
+    /// (it rejects nothing), one whose automaton would exceed
+    /// `MAX_NFA_STATES`, or one that does not build.
+    pub(crate) fn build(seek: &Seek) -> Option<Self> {
+        let Seek::Pattern(code) = seek else {
+            return None;
+        };
+        let hir = code.decode();
+        // Cut a seek that is clearly too large before compiling it: a compile
+        // of a seek with nested counted repetitions can take far longer than
+        // the automaton it would keep.
+        if nfa_states_estimate(&hir) > MAX_NFA_STATES {
+            return None;
+        }
+        // The seeks use ASCII look-arounds only, so the DFA never quits.
+        let nfa = thompson::Compiler::new()
+            .configure(
+                thompson::Config::new()
+                    .utf8(false)
+                    .which_captures(thompson::WhichCaptures::None)
+                    .nfa_size_limit(Some(NFA_SIZE_LIMIT)),
+            )
+            .build_from_hir(&hir)
+            .ok()?;
+        if nfa.states().len() > MAX_NFA_STATES {
+            return None;
+        }
+        let dfa = hybrid::Builder::new()
+            .configure(
+                hybrid::Config::new()
+                    .match_kind(MatchKind::LeftmostFirst)
+                    .cache_capacity(SINGLE_CACHE_CAPACITY),
+            )
+            .build_from_nfa(nfa)
+            .ok()?;
+        let make = dfa.clone();
+        let caches = Pool::new(Box::new(move || make.create_cache()) as CacheMaker);
+        Some(SingleSeek {
+            dfa,
+            caches,
+            exact: code.exact(),
+            retry_bound: code.retry_bound(),
+        })
+    }
+
+    /// Whether the seek matches somewhere in `text[start..]`, with the look
+    /// around `start` read from `text`, or `None` when the lazy DFA gives up.
+    /// The text must be valid UTF-8 and `start` a character boundary, as the
+    /// matcher reads them.
+    pub(crate) fn search(&self, text: &[u8], start: usize) -> Option<bool> {
+        let input = Input::new(text).span(start..text.len()).earliest(true);
+        let mut cache = self.caches.get();
+        self.dfa
+            .try_search_fwd(&mut cache, &input)
+            .ok()
+            .map(|found| found.is_some())
+    }
+
+    /// Whether the seek is exact (`SeekCode::exact`).
+    pub(crate) fn exact(&self) -> bool {
+        self.exact
+    }
+
+    /// The static retry bound of the pattern (`retry_bound`).
+    pub(crate) fn retry_bound(&self) -> Option<u64> {
+        self.retry_bound
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2129,6 +2567,106 @@ mod tests {
 
     fn seek_pattern(pattern: &str) -> String {
         seek_pattern_with(pattern, ONIG_OPTION_CAPTURE_GROUP)
+    }
+
+    /// Whether the seek of `pattern` under `options` is exact, as a single
+    /// regex's seek is derived (`onig_new_for_single_seek`).
+    fn exact_with(pattern: &str, options: OnigOptionType) -> Option<bool> {
+        let seek = crate::regcomp::onig_new_for_single_seek(
+            pattern.as_bytes(),
+            options,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+            false,
+            true,
+        )
+        .unwrap()
+        .1;
+        match seek {
+            Some(Seek::Pattern(code)) => Some(code.exact()),
+            _ => None,
+        }
+    }
+
+    /// The constructs whose seek is exact, and those whose seek approximates
+    /// the matcher (for existence): each `SeekCode::exact` is pinned.
+    #[test]
+    fn seeks_are_exact_exactly_where_the_matcher_reads_alike() {
+        let exact = [
+            "abc",
+            "[a-c]",
+            "a|bc",
+            "ab{2,5}c",
+            "[^a]",
+            ".",
+            "\u{3042}+",
+            "\\x{1F600}",
+            "x|$",
+            "a$",
+            "\\Aab\\z",
+            "a\\Kb",
+            "^a",
+            "^[0-9]{8}$",
+            "(?:^a|^b)c",
+            "(?i)[0-9a-f]+",
+            "(?i)k",
+            "(?i)s",
+            "[\u{e9}]",
+            "(a)(b)",
+        ];
+        let inexact = [
+            "(?>abc|ab)c",
+            "(?>a+)b",
+            "a++b",
+            "\\b",
+            "\\B",
+            "(?=a)b",
+            "(?<=a)b",
+            "a(?!b)",
+            "a(?<!b)",
+            "\\Zb",
+            "^",
+            "^$",
+            "(a)\\1",
+            "\\W",
+            "\\w",
+            "\\d+",
+            "[^\u{e9}]",
+            "\\G\\w",
+            "(?:ab|cd){100}",
+            "(x)?(?(1)a|b)",
+        ];
+        for pattern in exact {
+            assert_eq!(
+                exact_with(pattern, ONIG_OPTION_CAPTURE_GROUP),
+                Some(true),
+                "{pattern}"
+            );
+        }
+        for pattern in inexact {
+            assert_eq!(
+                exact_with(pattern, ONIG_OPTION_CAPTURE_GROUP),
+                Some(false),
+                "{pattern}"
+            );
+        }
+        // Without multi-line anchors `$` is `\Z`, which is exact at the end of
+        // the pattern (where it is `(?:\n)?\z`) and approximated elsewhere.
+        let singleline = ONIG_OPTION_CAPTURE_GROUP | crate::oniguruma::ONIG_OPTION_SINGLELINE;
+        assert_eq!(exact_with("^a$", singleline), Some(true));
+        assert_eq!(exact_with("a$|b$", singleline), Some(true));
+        assert_eq!(exact_with("(?:a|b)\\Z", singleline), Some(true));
+        assert_eq!(exact_with("a$b", singleline), Some(false));
+        assert_eq!(exact_with("a$", ONIG_OPTION_CAPTURE_GROUP), Some(true));
+        // The absent operator's range cutter has no seek of its own here, so
+        // the pattern is searched on its own (no exactness to speak of).
+        assert_eq!(exact_with("(?~abc)x", ONIG_OPTION_CAPTURE_GROUP), None);
+        // `(*FAIL)` is a callout, which leaves the pattern without a seek.
+        assert_eq!(exact_with("(*FAIL)|a", ONIG_OPTION_CAPTURE_GROUP), None);
+        // Options that change what a line start, a line end or a match is.
+        assert_eq!(exact_with("^a", ONIG_OPTION_NOTBOL), Some(false));
+        assert_eq!(exact_with("a$", ONIG_OPTION_NOTEOL), Some(false));
+        assert_eq!(exact_with("a", ONIG_OPTION_FIND_NOT_EMPTY), Some(false));
     }
 
     /// Each construct as the seek writes it. A seek matches wherever the
@@ -2323,7 +2861,8 @@ mod tests {
                 continue;
             };
             let hir = code.decode();
-            let again = SeekCode::encode(&hir).expect("the walk's nodes encode");
+            let again = SeekCode::encode(&hir, code.exact(), code.retry_bound().unwrap_or(0))
+                .expect("the walk's nodes encode");
             assert_eq!(again, code, "{pattern}");
             assert_eq!(again.decode(), hir, "{pattern}");
             codes += 1;

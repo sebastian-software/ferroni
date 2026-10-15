@@ -93,10 +93,13 @@ search as a whole, and no time limit. Unlike C, the backtracking stack never
 grows past 10,000,000 entries when no stack limit is set, so one hostile line
 cannot exhaust memory. A limit of your own also turns off the search
 optimizations whose skipped attempts a limit could observe, among them a
-scanner's pre-filter ([ADR-008](../adr/008-rust-only-optimizations)): a retry
-limit per match other than the default, a search retry budget, a stack limit
-or a timeout make the engine attempt what C Oniguruma attempts, so the limit
-stops the search where C's does. Set them where untrusted input calls for it,
+scanner's pre-filter. The standard methods of a `Regex` keep its
+single-pattern seek, which answers only where the process-wide retry limit
+cannot change the result, as [ADR-008](../adr/008-rust-only-optimizations)
+describes; the `*_with` methods never use it. A retry limit per match other
+than the default, a search retry budget, a stack limit or a timeout make the
+engine attempt what C Oniguruma attempts, so the limit stops the search where
+C's does. Set them where untrusted input calls for it,
 and leave them unset where it does not.
 
 The process-wide values can be changed for every search at once with
