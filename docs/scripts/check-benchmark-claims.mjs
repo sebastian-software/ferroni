@@ -90,6 +90,19 @@ for (const [name, content] of [
     errors.push(`${name} must not link to retired measurement pages.`);
   }
 }
+// The homepage computes its speedup over C from the summary; the README quotes it as text.
+const overC = summary.platforms
+  .map(
+    (platform) =>
+      platform.comparisons.find((entry) => entry.engine === "c" && entry.lane === "steady")
+        ?.family_weighted_ratio ?? 0,
+  )
+  .sort((a, b) => a - b)
+  .map((ratio) => ratio.toFixed(1));
+const speedup = `${overC[0]}–${overC.at(-1)}× faster than C Oniguruma`;
+if (!readme.replaceAll(/\s+/g, " ").includes(speedup)) {
+  errors.push(`Revise the README: Ferroni now matches ${speedup}.`);
+}
 const sources = new Set(Object.values(catalog.sources).map((source) => source.url));
 const tokenizerCatalog = JSON.parse(
   readFileSync(resolve(root, "benches/tokenizer_regex/catalog.json"), "utf8"),
