@@ -143,6 +143,13 @@ impl SearchOptions {
     /// The engine reads the clock every 512 backtracks, so the search can run
     /// slightly past the deadline. Durations are rounded up to whole
     /// milliseconds.
+    ///
+    /// `wasm32-unknown-unknown` has no clock: there a search with a time
+    /// limit, from this option or from
+    /// [`onig_set_time_limit`](crate::regexec::onig_set_time_limit), panics
+    /// when it starts. Bound the work with
+    /// [`retry_limit_in_search`](Self::retry_limit_in_search) on that target
+    /// instead. A search without a time limit never reads the clock.
     pub const fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self

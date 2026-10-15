@@ -230,6 +230,56 @@ jobs:
       - name: Test lib, api and the pre-filter suites with the self-check
         run: cargo test --features prefilter-self-check --lib --test api_test --test compat_prefilter_differential --test scanner_prefilter_regressions
 
+  wasm:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    # The library builds for wasm32-unknown-unknown, the browser target, with
+    # and without the default features. That target has no test runner
+    # without new dev-dependencies (ADR-009) and no clock, so a search with a
+    # time limit panics there (documented on SearchOptions::timeout). The tests
+    # run on wasm32-wasip1 under Wasmtime instead, which has a clock; the
+    # benches' Criterion and PCRE2 do not build for wasm, so Cargo.toml leaves
+    # them out on wasm targets.
+    env:
+      RUSTUP_TOOLCHAIN: stable
+      # The tests read benches/ fixtures by their absolute path, so Wasmtime
+      # maps the checkout to the same path inside the guest. Wasmtime lets
+      # wasm code use 512 KiB of native stack by default; the API tests expect
+      # the 2 MiB a std::thread gets (tests/api_test.rs), so it gets that.
+      # RUST_MIN_STACK (ADR-013) does not apply: the tests run on one thread.
+      CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime -W max-wasm-stack=2097152 --dir=${{ github.workspace }}::${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown, wasm32-wasip1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install Wasmtime
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: wasmtime
+      - name: Build for wasm32-unknown-unknown
+        run: cargo build --lib --locked --target wasm32-unknown-unknown
+      - name: Build for wasm32-unknown-unknown without the DFA pre-filter
+        run: cargo build --lib --locked --target wasm32-unknown-unknown --no-default-features
+      # wasm32-wasip1 cannot spawn threads, and a panic aborts the whole test
+      # binary there (libtest ignores the #[should_panic] tests by itself), so
+      # the tests that start a thread or catch a panic are skipped by name.
+      - name: Test lib and api on wasm32-wasip1
+        run: >-
+          cargo test --locked --target wasm32-wasip1 --lib --test api_test --
+          --exact
+          --skip api::tests::capture_gate_is_shared_and_thread_safe
+          --skip api::tests::result_drop_during_thread_local_teardown_does_not_panic
+          --skip scanner::tests::scanners_sharing_a_pattern_cache_search_on_several_threads
+          --skip nested_groups_above_depth_limit_fail_cleanly_on_two_mib_stack
+          --skip nested_groups_at_depth_limit_compile_on_two_mib_stack
+          --skip nested_classes_above_depth_limit_fail_cleanly_on_two_mib_stack
+          --skip nested_classes_at_depth_limit_compile_on_two_mib_stack
+          --skip flat_alternation_above_ast_node_limit_fails_cleanly_on_two_mib_stack
+          --skip start_checks_panic_for_every_at_method
+
   docs:
     name: Rustdoc
     runs-on: ubuntu-latest
