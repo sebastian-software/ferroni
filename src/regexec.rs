@@ -8514,6 +8514,88 @@ pub(crate) fn onig_search_bounds(
     }
 }
 
+/// Rust-only (ADR-008): the forward search of a standard capture method
+/// (`captures*`, which passes no options), with `region` the caller's cached
+/// region, returned with the result. A pattern that can match only at its start
+/// makes its one attempt directly (`anchored_captures_search`); every other
+/// search is `onig_search` over the whole subject, as before.
+#[inline]
+pub(crate) fn onig_search_captures(
+    reg: &RegexType,
+    text: &[u8],
+    start: usize,
+    region: OnigRegion,
+) -> (i32, Option<OnigRegion>) {
+    if anchored_captures_apply(reg, text.len(), start) {
+        return anchored_captures_search(reg, text, start, region);
+    }
+    onig_search(
+        reg,
+        text,
+        text.len(),
+        start,
+        text.len(),
+        Some(region),
+        ONIG_OPTION_NONE,
+    )
+}
+
+/// Whether `onig_search_captures` takes the direct path: `onig_search` reaches
+/// the start-anchor block of `onig_search_inner_core_impl` for this search, and
+/// the code before that block returns nothing for it. The search runs forward
+/// over the whole subject (`start < end`), so the empty-range and backward cases
+/// do not arise. The AC and pure-literal paths need `ac_alt` or `pure_literal`,
+/// and `ac_alt` is never set on an anchored pattern. FIND_LONGEST and the
+/// validity check come from the regex's options, since captures pass none. A
+/// `\A` anchor attempts only at 0, so any other start is left to the general
+/// path.
+#[inline(always)]
+fn anchored_captures_apply(reg: &RegexType, end: usize, start: usize) -> bool {
+    let anchored_here = (reg.anchor & ANCR_BEGIN_POSITION) != 0
+        || ((reg.anchor & ANCR_BEGIN_BUF) != 0 && start == 0);
+    start < end
+        && anchored_here
+        && reg.ac_alt.is_none()
+        && !reg.pure_literal
+        && !opton_find_longest(reg.options)
+        && !opton_check_validity_of_string(reg.options)
+        && anchored_start_applies(reg)
+}
+
+/// The search of `onig_search_captures` once `anchored_captures_apply` holds.
+/// `onig_search` reaches the same attempt through `search_in_range_inner`, the
+/// two-pass capture fill and the core loop. A single attempt needs none of
+/// those layers: it records the captures of a region with groups as the fill's
+/// first attempt does, and the fill has no second pass to make. The core loop
+/// clears the region before its attempt. A match rewrites every register it
+/// reports (`populate_region_for_match` writes `0..=num_mem`), so the clear is
+/// made here only when no match is found. `history_root` is emptied before the
+/// attempt, as that clear empties it.
+#[inline(never)]
+fn anchored_captures_search(
+    reg: &RegexType,
+    text: &[u8],
+    start: usize,
+    region: OnigRegion,
+) -> (i32, Option<OnigRegion>) {
+    let end = text.len();
+    let mut msa = take_cached_msa(reg, ONIG_OPTION_NONE, Some(region), start, None);
+    if let Some(ref mut r) = msa.region {
+        r.history_root = None;
+    }
+    let r = anchored_start_run(reg, text, end, start, end, &mut msa);
+    if r <= ONIG_MISMATCH
+        && let Some(ref mut region) = msa.region
+    {
+        // No match, or a limit error: the registers are left cleared, as the
+        // core loop leaves them.
+        region.resize_clear(reg.num_mem + 1);
+    }
+    let region = msa.region.take();
+    cache_msa(msa);
+    (r, region)
+}
+
 /// Search reusing a pre-allocated MatchArg. Preserves buffer capacity.
 pub(crate) fn onig_search_with_msa(
     reg: &RegexType,
@@ -9023,15 +9105,36 @@ fn anchored_start_search(
     data_range: usize,
     msa: &mut MatchArg,
 ) -> Option<i32> {
-    if !anchored_start_enabled()
-        || map_search_bypassed(reg)
-        || reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0)
-    {
+    if !anchored_start_applies(reg) {
         return None;
     }
+    Some(anchored_start_run(
+        reg, str_data, end, start, data_range, msa,
+    ))
+}
+
+/// Whether `anchored_start_run` may make the search's one attempt: the
+/// optimizer-independent conditions of `anchored_start_search`.
+#[inline(always)]
+fn anchored_start_applies(reg: &RegexType) -> bool {
+    anchored_start_enabled()
+        && !map_search_bypassed(reg)
+        && !reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0)
+}
+
+/// The attempt of `anchored_start_search` once `anchored_start_applies` holds.
+#[inline(always)]
+fn anchored_start_run(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    data_range: usize,
+    msa: &mut MatchArg,
+) -> i32 {
     // The threshold check of the general path (`map_search_bypassed` is off).
     if (end as i32 - start as i32) < reg.threshold_len {
-        return Some(ONIG_MISMATCH);
+        return ONIG_MISMATCH;
     }
     // The optimizer's answer on `start`, as the general loop's forward search
     // gives it. The attempt ends at `start + 1`, the bound that loop gives
@@ -9069,20 +9172,20 @@ fn anchored_start_search(
         }
     };
     if !admitted {
-        return Some(ONIG_MISMATCH);
+        return ONIG_MISMATCH;
     }
     msa.best_len = ONIG_MISMATCH;
     msa.best_s = 0;
     let r = match_at(reg, str_data, end, data_range, start, msa);
     if r != ONIG_MISMATCH {
-        return Some(if r < 0 { r } else { start as i32 });
+        return if r < 0 { r } else { start as i32 };
     }
     if msa.retry_limit_in_search != 0
         && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
     {
-        return Some(ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER);
+        return ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER;
     }
-    Some(ONIG_MISMATCH)
+    ONIG_MISMATCH
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -15258,6 +15361,140 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The result and the registers of a search that starts with a region
+    /// holding stale values, `primed`: the direct capture path, or `onig_search`
+    /// with the anchored-start path on or off (the test toggle).
+    fn capture_search(
+        reg: &RegexType,
+        subject: &[u8],
+        start: usize,
+        mode: CaptureSearch,
+    ) -> (i32, Vec<i32>, Vec<i32>, bool) {
+        let mut primed = OnigRegion::new();
+        primed.resize(6);
+        primed.beg.fill(7);
+        primed.end.fill(7);
+        primed.history_root = Some(Box::new(OnigCaptureTreeNode::new()));
+        let end = subject.len();
+        let (r, region) = match mode {
+            CaptureSearch::Direct => onig_search_captures(reg, subject, start, primed),
+            CaptureSearch::General | CaptureSearch::GeneralWithoutAnchor => {
+                ANCHORED_START_DISABLED
+                    .with(|v| v.set(mode == CaptureSearch::GeneralWithoutAnchor));
+                let found = onig_search(
+                    reg,
+                    subject,
+                    end,
+                    start,
+                    end,
+                    Some(primed),
+                    ONIG_OPTION_NONE,
+                );
+                ANCHORED_START_DISABLED.with(|v| v.set(false));
+                found
+            }
+        };
+        let region = region.expect("a capture search returns its region");
+        let len = region.num_regs as usize;
+        (
+            r,
+            region.beg[..len].to_vec(),
+            region.end[..len].to_vec(),
+            region.history_root.is_none(),
+        )
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum CaptureSearch {
+        Direct,
+        General,
+        GeneralWithoutAnchor,
+    }
+
+    /// The direct capture path (`onig_search_captures`) returns the match, every
+    /// register and the empty history of the general path, at every start, for
+    /// the anchored patterns and the subjects, over a region that holds stale
+    /// registers. The general path is `onig_search` with the anchored-start path,
+    /// and with it off (the test toggle).
+    #[test]
+    fn anchored_captures_match_the_general_path() {
+        let _limits = shared_limits();
+        for pattern in ANCHORED_PATTERNS {
+            let reg = compile_full(pattern.as_bytes());
+            for subject in ANCHORED_SUBJECTS {
+                for start in 0..=subject.len() {
+                    let direct = capture_search(&reg, subject, start, CaptureSearch::Direct);
+                    let general = capture_search(&reg, subject, start, CaptureSearch::General);
+                    let plain =
+                        capture_search(&reg, subject, start, CaptureSearch::GeneralWithoutAnchor);
+                    let context = format!("{pattern} on {subject:?} from {start}");
+                    assert_eq!(direct, general, "{context}");
+                    assert_eq!(direct, plain, "{context}");
+                }
+            }
+        }
+    }
+
+    /// `\A` at a later start is a mismatch that makes no attempt, as the general
+    /// path finds it: under a search retry limit an attempt would be counted and
+    /// reported as the limit's error.
+    #[test]
+    fn anchored_captures_at_a_later_begin_buf_make_no_attempt() {
+        let _limits = exclusive_limits();
+        let reg = compile_full(br"\Ab");
+        onig_set_retry_limit_in_search(1);
+        let (r, _) = onig_search_captures(&reg, b"ab", 1, OnigRegion::new());
+        assert_eq!(r, ONIG_MISMATCH);
+        let (general, _) = onig_search(
+            &reg,
+            b"ab",
+            2,
+            1,
+            2,
+            Some(OnigRegion::new()),
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(general, ONIG_MISMATCH);
+    }
+
+    /// A pattern compiled with FIND_LONGEST keeps the general path, as the
+    /// anchored-start path does for it; the direct path answers as that loop does.
+    #[test]
+    fn anchored_captures_of_a_find_longest_pattern_match_the_general_path() {
+        let _limits = shared_limits();
+        for pattern in [r"\Aab", r"\A(a|ab)", r"\A(a|ab)(c|bcd)?", r"\Gab|\Gabc"] {
+            let reg = crate::regcomp::onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_FIND_LONGEST,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .expect("pattern compiles");
+            for subject in [&b"ab"[..], b"abc", b"abcd", b"a", b""] {
+                for start in 0..=subject.len() {
+                    let direct = capture_search(&reg, subject, start, CaptureSearch::Direct);
+                    let general =
+                        capture_search(&reg, subject, start, CaptureSearch::GeneralWithoutAnchor);
+                    assert_eq!(direct, general, "{pattern} on {subject:?} from {start}");
+                }
+            }
+        }
+    }
+
+    /// A search with no match leaves the registers of the region cleared to
+    /// `ONIG_REGION_NOTPOS`, as the core loop leaves them. The direct path clears
+    /// only in that case, so a stale region must not show through.
+    #[test]
+    fn anchored_captures_clear_the_region_when_nothing_matches() {
+        let _limits = shared_limits();
+        let reg = compile_full(br"\A(a)(b)c");
+        let subject = b"xxxx";
+        let (r, beg, end, _) = capture_search(&reg, subject, 0, CaptureSearch::Direct);
+        assert_eq!(r, ONIG_MISMATCH);
+        assert_eq!(beg, vec![ONIG_REGION_NOTPOS; 3]);
+        assert_eq!(end, vec![ONIG_REGION_NOTPOS; 3]);
     }
 
     /// `\A` cannot match from a later start, and the fast path answers that

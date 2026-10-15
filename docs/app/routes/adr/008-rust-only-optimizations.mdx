@@ -485,6 +485,44 @@ A pattern that begins with `\A` or `\G` can match only at the search start (`ANC
 - **Bounds**: no allocation and no compiled data; one comparison of the anchor flags on every search.
 - **Impact**: see the table in the capture gate bullet above (the anchored column). The largest gains are on the captures patterns that start with `^` or `\A` and reject early (`fluent_bit_apache`, `fluent_bit_nginx`, the jinja tokens); `uuid_v4` and `python_markdown_smart_strong_em_re` are within half a percent. The tokenizer corpus has no anchored pattern and is unchanged.
 
+#### Direct anchored capture search (`src/regexec.rs`, `src/api.rs`)
+
+The start-anchored search above still reached its one attempt through the forward wrappers (`search_in_range`, `search_in_range_inner`, the two-pass capture fill and the core loop), which for such a search do nothing else. A standard capture method on a start-anchored pattern now makes that attempt directly, and the captures of jinja, semver and fluent-bit patterns, which reject or match at their start, pay for the wrappers no more.
+
+- **Trigger**: `captures`, `captures_at`, `captures_bytes` or `captures_bytes_at`, on a pattern whose anchor flags include `ANCR_BEGIN_POSITION`, or `ANCR_BEGIN_BUF` with a start of 0, searched forward from `start < text.len()`. The regex must have no AC automaton and no pure literal, and neither its options nor the search's (`NONE`) include FIND_LONGEST or the validity check. The anchored-start path must apply (no callouts, no bypassed map search; `anchored_start_applies`). Every other search, and every iterator and `*_with` method, runs `onig_search` as before.
+- **Execution**: `onig_search_captures` calls `anchored_captures_search`, which takes the thread's cached MatchArg with the region, empties `history_root` and makes the attempt of `anchored_start_run` (the body of `anchored_start_search`, split out so both paths share it). The attempt records the captures of a region with groups, as the two-pass fill's first attempt does, and the fill has no second pass to make. The core loop's resize and clear is deferred: a match rewrites every register `0..=num_mem` in `populate_region_for_match`, so the region is cleared only where no match is found (no match, or a limit error), and the registers are then left as the core loop leaves them.
+- **Observability**: results, registers, the empty history and the limit errors are the general path's. `anchored_captures_match_the_general_path` compares the direct path with `onig_search` (anchored path on and off) for 22 anchored patterns, 14 subjects and every start, over a region holding stale registers; `anchored_captures_match_the_general_path_through_the_api` compares the public methods with `captures_*_with` for seven patterns, two of them without groups, on nine subjects, sharing the thread's cached region; `anchored_captures_at_a_later_begin_buf_make_no_attempt` pins that `\A` at a later start makes no attempt, so a search retry limit does not report one; `anchored_captures_clear_the_region_when_nothing_matches` pins the clear; `anchored_captures_of_a_find_longest_pattern_match_the_general_path` covers FIND_LONGEST patterns. Mutation checks: dropping the start-0 check fails the retry-limit test; dropping the no-match clear and dropping the history reset each fail the match test. The FIND_LONGEST, pure-literal, AC and `start < text.len()` guards mirror the general path's early returns; no test distinguishes them, since they are result-equivalent for the patterns tried (an AC automaton is never built for an anchored pattern, `detect_ac_eligible` requires no anchor).
+- **Bounds**: no allocation and no compiled data. One predicate test per standard capture call, and no extra cache state.
+- **Impact**: callgrind instructions per batch, production catalog, steady lane, 20 batches, against `origin/main` built from the same tree; the tokenizer row 5 batches. The targets are the captures patterns above; the other rows are controls.
+
+| case                               | operation     |     base |   direct path |  change |
+| ---------------------------------- | ------------- | -------: | ------------: | ------: |
+| jinja_integer_token                | `captures_at` |   39,702 |        35,133 | -11.5%  |
+| jinja_string_token                 | `captures_at` |   22,313 |        19,667 | -11.9%  |
+| jinja_float_token                  | `captures_at` |   53,797 |        50,974 |  -5.2%  |
+| semver_version_parse               | `captures_at` |   95,956 |        88,004 |  -8.3%  |
+| semver_hyphen_range_captures       | `captures`    |   41,518 |        38,647 |  -6.9%  |
+| fluent_bit_apache                  | `captures_at` |   12,367 |        12,068 |  -2.4%  |
+| fluent_bit_nginx                   | `captures_at` |   15,290 |        14,969 |  -2.1%  |
+| wordpress_shortcode_captures       | `all_captures`|   44,317 |        43,987 |  -0.7%  |
+| python_markdown_smart_strong_em_re | `captures_at` |    9,031 |         8,628 |  -4.5%  |
+| python_markdown_smart_emphasis_re  | `captures_at` |   13,045 |        12,363 |  -5.2%  |
+| mastodon_hashtag_regex_step        | `all_captures`|   71,580 |        71,140 |  -0.6%  |
+| symfony_grapheme_chunks_1          | `graphemes`   |   22,315 |        22,073 |  -1.1%  |
+| symfony_grapheme_chunks_2          | `graphemes`   |    5,756 |         5,694 |  -1.1%  |
+| ipv4_validation                    | `is_match`    |    4,897 |         4,915 |  +0.4%  |
+| uuid_shape                         | `is_match`    |   10,389 |        10,424 |  +0.3%  |
+| ipv6_validation                    | `is_match`    |    6,747 |         6,747 |   0.0%  |
+| uuid_v4                            | `is_match`    |    5,271 |         5,269 |   0.0%  |
+| django_email_domain                | `is_match`    |   97,286 |        97,258 |   0.0%  |
+| django_email_local_part            | `is_match`    |   23,875 |        23,872 |   0.0%  |
+| django_url_regex                   | `is_match`    |  686,109 |       686,079 |   0.0%  |
+| rails_underscore_regex_step        | `replace`     |   57,033 |        57,061 |   0.0%  |
+| tiktoken_cl100k_base (5 batches)   | all matches   |2,182,677 |     2,184,369 |  +0.1%  |
+| tiktoken_o200k_base (5 batches)    | all matches   |2,072,470 |     2,073,880 |  +0.1%  |
+
+The eight target cases together go from 325,260 to 303,449 instructions (-6.7%). The direct path is the single-search captures path. The iterator (`all_captures`), `replace`, grapheme and `is_match` rows do not reach it, and their changes of -1.1% to +0.4% are layout noise. The `python_markdown_*` rows are `\G` captures that reach it. Per call the saving is the wrappers' frames and the cleared registers that a match overwrites; a captures call still pays the seek gate, the MatchArg and region handoffs, and the attempt, which dominates these patterns.
+
 #### Per-search limits on the cached MatchArg (`src/api.rs`, `src/regexec.rs`)
 
 The `*_with` methods run their searches on the thread-cached `MatchArg` that the standard methods use, under the limits of their `SearchOptions`. Before, each search built a fresh `MatchArg` and an `OnigMatchParam`. Options that set no limit take the standard path, and `find_with` and `find_iter_with` use the bounds-only path where the standard method does. Only a limit error that the standard methods discard is reported.
