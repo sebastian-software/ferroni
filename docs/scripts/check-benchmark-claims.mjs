@@ -82,7 +82,9 @@ if (
   errors.push("The overview must describe differing platform repetition counts.");
 }
 
-// The homepage names three source projects and counts the rest.
+// The homepage names three source projects and counts the rest; the
+// workload page states the total.
+const flat = (text) => text.replaceAll(/\s+/g, " ");
 const projects = new Set(
   catalog.cases
     .filter((entry) => entry.pattern_origin === "production" && !entry.pending_reason)
@@ -90,15 +92,16 @@ const projects = new Set(
 );
 if (
   projects.size !== 10 ||
-  !home.replaceAll(/\s+/g, " ").includes("Django, Rails, WordPress and seven other projects")
+  !flat(home).includes("Django, Rails, WordPress and seven other projects") ||
+  !flat(page).includes("taken from ten open-source projects")
 ) {
-  errors.push("Update the homepage's project count from catalog.json.");
+  errors.push("Update the homepage's and workload page's project counts from catalog.json.");
 }
 
 const productionInputs = catalog.cases
   .filter((entry) => entry.pattern_origin === "production" && !entry.pending_reason)
   .reduce((total, entry) => total + entry.inputs.length, 0);
-if (!page.includes(`The ${productionInputs}\nupstream-derived inputs`)) {
+if (!flat(page).includes(`The ${productionInputs} upstream-derived inputs`)) {
   errors.push("Update the workload page's fixture count from catalog.json.");
 }
 for (const [name, content] of [
@@ -129,8 +132,8 @@ if (existsSync(publication)) {
   if (check.status !== 0) {
     errors.push(`Published benchmark evidence did not verify: ${check.stderr || check.error}`);
   }
-  if (!page.includes("<ProductionComparison />")) {
-    errors.push("The workload page must expose the generated per-case results.");
+  if (!page.includes("benches/production_results/publication.json")) {
+    errors.push("The workload page must link to the per-case results in the repository.");
   }
 } else if (!page.includes("it makes no new performance claim")) {
   errors.push("Do not replace the measurement-status note without verified publication evidence.");
