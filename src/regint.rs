@@ -350,11 +350,16 @@ pub(crate) enum OpCode {
     DecimalTailPrefix = 99,
     /// Rust-only (ADR-008): lazy dot push across a plain capture end to a literal.
     PushLazyAnyChar = 100,
+    /// Rust-only (ADR-008): pops the backtracking choices the star
+    /// instruction just before it pushed, which makes that star possessive.
+    /// Emitted only after a star `crate::possessify` proved never has to
+    /// give anything back.
+    PopStarChoices = 101,
     /// Rust-only (ADR-008): `\X` outside look-behinds as one instruction. It
     /// advances over one character and then to the next extended grapheme
     /// cluster boundary, the steps of upstream's `\O(?:\Y\O)*` in one
     /// dispatch, and never pushes a backtrack entry.
-    GraphemeCluster = 101,
+    GraphemeCluster = 102,
 }
 
 // === SaveType ===

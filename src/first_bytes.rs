@@ -363,6 +363,9 @@ pub(crate) fn guard_byte_map(
                 walk.pending.push(pc + 2)
             }
             (OpCode::LookBehindOp, _) => return None,
+            // Reached only where the star before it consumed nothing, so it
+            // has no choices to pop.
+            (OpCode::PopStarChoices, _) => walk.pending.push(pc + 1),
             // Checks, and stack entries that backtracking pops again.
             (
                 OpCode::MemStartPush
@@ -549,6 +552,8 @@ pub(crate) fn guard_skipped_retries(
                     (OpCode::MemStartPush | OpCode::MemEndPush | OpCode::EmptyCheckStart, _) => {
                         Some(pc + 1)
                     }
+                    // After a star that consumed and pushed nothing.
+                    (OpCode::PopStarChoices, _) => Some(pc + 1),
                     (
                         OpCode::WordBoundary
                         | OpCode::NoWordBoundary
@@ -632,6 +637,7 @@ fn ends_with_the_look_around(reg: &RegexType, op: &Operation) -> bool {
             | OpCode::PushOrJumpExact1
             | OpCode::PushIfPeekNext
             | OpCode::Pop
+            | OpCode::PopStarChoices
             | OpCode::Mark
             | OpCode::PopToMark
             | OpCode::CutToMark
@@ -907,6 +913,7 @@ fn first_byte_map_from(
             | OpCode::EmptyCheckEndMemstPush
             | OpCode::Pop
             | OpCode::PopToMark
+            | OpCode::PopStarChoices
             | OpCode::SaveVal
             | OpCode::UpdateVar
             | OpCode::CalloutContents

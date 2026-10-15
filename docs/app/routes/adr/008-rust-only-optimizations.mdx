@@ -532,6 +532,32 @@ The `*_with` methods run their searches on the thread-cached `MatchArg` that the
 - **Impact** (callgrind instructions, compile mode, 200 compiles; `django_email_domain` 20): the Apache log pattern −21%, `semver_version_parse` −13%, `ipv6_validation` −3%, `django_email_domain` −1%, `GET` −2%. The Apache log pattern in search mode moved by 0.3%.
 - **Bounds**: no memory beyond a 2 KiB constant table; no change to what is compiled.
 
+#### Possessive stars across optional groups, alternations and end anchors (`src/possessify.rs`, `src/regcomp.rs`, `src/regexec.rs`)
+
+C's `tune_next` makes a greedy `X*` or `X+` possessive when the node right after it starts with a character `X` cannot match. It reads that one node only, so the star in `[^\s:@/]+(?::[^\s:@/]*)?@` (`django_url_regex`), whose next node is optional, keeps every choice: on a 64 KB host that is not followed by `@`, it gives the run back one character at a time and tries the rest at each position. PCRE2's automatic possessification looks further; this pass does too.
+
+- **Trigger**: a greedy `*` or `+` over one class, the word type or one ASCII byte that compiles to a plain star instruction (no peek-next byte), outside look-arounds, atomic groups and conditions, in an ASCII-compatible encoding, in a pattern without back references, subroutine calls or callouts. Its follower, what comes after it up to the end of the pattern through group ends, branch ends and the next pass of an enclosing repeat, must fail at every position whose character the body matches. The walk passes elements that can match only the empty string there: optional groups and repeats whose start the body excludes, alternations, look-aheads, word and line boundaries, `\K`. It stops with a proof at a character, class or string the body excludes (C's `is_exclusive`), at an alternation whose branches all do, at `\z`, and at `$` or `\Z` when the body cannot match a newline. A look-behind, back reference, call, condition, literal trie, gimmick or the end of the pattern stops it without one, and so do 256 visited nodes.
+- **Why results are unchanged**: the star gives back to a position `p` only after a further iteration matched there, so the character at `p` is one the body matches, and `p` lies before the end of the subject, where `\z` fails and `$` and `\Z` hold only at a newline. The follower cannot match from such a `p`, so the only run that can lead to a match is the longest, which the greedy star tries first. FIND_LONGEST and FIND_NOT_EMPTY only search on after a match, and the given-back positions hold none; NOTEOL and MATCH_WHOLE_STRING only make the follower fail more often.
+- **Execution**: the pass runs after `tune_tree` and marks the repeat (`QuantNode::possessive_star`); the tree keeps its shape, so the optimizer, the seek (its exactness included) and the other tree analyses read what they read before. The star instruction is followed by `PopStarChoices`, which pops the entries that resume at it, the choices the star just pushed. Unlike an atomic group's mark and cut, which leave the mark and the voided entries on the stack, it leaves nothing: the possessive star never needs more stack than its greedy form. The bytecode walks of `first_bytes` read it as an instruction that consumes nothing, which it is where they reach it: after a star that consumed nothing.
+- **Observability**: under [ADR-017](/adr/017-limit-outcomes-relative-to-c). The backtracks left out are not counted, so a retry or time limit that stops C (and the greedy program) can let Ferroni finish, with the result C gives without the limit; where C finishes, the results are identical.
+- **Not applied**: lazy and bounded repeats (the analysis found that an atomic rewrite of a bounded repeat over a case-fold alternation changes results), bodies with captures or of more than one character, and the end of the pattern, where the follower accepts and nothing is given back anyway.
+- **Validation**: `src/possessify/tests.rs` pins which stars qualify, the production patterns included, and compares the possessive program with the greedy one (a test toggle) and with C: 700 generated patterns of the covered shapes plus absent-operator and `\K` cases, under IGNORECASE, SINGLELINE, MULTILINE, FIND_LONGEST and FIND_NOT_EMPTY and the search options NOTEOL and MATCH_WHOLE_STRING, on subjects with multibyte, malformed and newline characters, from several starts, captures included (C only on valid UTF-8, where malformed input is outside this change). Hand-written cases where a shorter run would match, Perl's `$`, ADR-017's three cases against C under retry limits, and the stack of a repeated group complete it. Mutations of the newline rule, the repeated-body rule and the optional-repeat rule each fail these tests.
+- **Impact** (callgrind instructions per batch of the steady lane, `measure2.sh`, 20 batches, the tokenizer cases 5; baseline `main` at `2a692ca`; the benchmark's own validation compares each output with the oracle):
+
+| case                          |   baseline | possessive | change |
+| ----------------------------- | ---------: | ---------: | -----: |
+| `django_url_regex`            | 28,502,949 | 20,009,009 | -29.8% |
+| `django_email_domain`         |  2,279,618 |  2,279,622 |  +0.0% |
+| `mastodon_hashtag_regex_step` |    101,394 |    101,287 |  -0.1% |
+| `fluent_bit_apache`           |     21,168 |     21,115 |  -0.3% |
+| `semver_version_parse`        |    155,656 |    154,745 |  -0.6% |
+| `tiktoken_cl100k_base`        |  2,288,257 |  2,288,247 |  -0.0% |
+| `tiktoken_o200k_base`         |  2,072,888 |  2,072,888 |   0.0% |
+
+`django_url_regex` gains three possessive stars and `fluent_bit_apache` one (` +` before `\S*` and a quote); the other cases have none and move by code layout. `PopStarChoices` runs out of line: inline in the matcher's loop, it cost the controls 0.2% to 0.7%.
+
+- **Bounds**: one walk of the tuned tree per compilation, at most 256 follower nodes per candidate star, and one instruction per possessive star. Compiling `django_url_regex` (`measure.sh` compile mode, 20 compiles) takes 3,187,088,513 instructions before and 3,179,623,508 after (-0.2%).
+
 ## Rationale
 
 - **Upstream-first is impractical for workload-specific optimizations.** C Oniguruma's maintainer focuses on correctness and Unicode compliance, not TextMate grammar throughput. Contributing a Rust-inspired trie optimization to a C codebase with different constraints is not a productive use of either project's time.
