@@ -24,12 +24,16 @@ for (const platform of summary.platforms) {
   const pair = (engine, lane = "steady") =>
     platform.comparisons.find((entry) => entry.engine === engine && entry.lane === lane);
   const jit = pair("pcre2_jit");
-  if (!jit || jit.comparator_cases !== jit.case_count || jit.case_count === 0) {
-    errors.push("Revise the overview and README: PCRE2 JIT no longer leads every reuse case.");
+  if (!jit || jit.case_count === 0 || jit.ferroni_cases > 2 || jit.family_weighted_ratio >= 1) {
+    errors.push(
+      "Revise the overview and README: PCRE2 JIT no longer leads almost every reuse case.",
+    );
   }
   const fancy = pair("fancy_regex");
-  if (!fancy || Math.abs(fancy.family_weighted_ratio - 1) >= 0.02) {
-    errors.push("Revise the overview: fancy-regex aggregate reuse time is no longer within 2%.");
+  if (!fancy || fancy.family_weighted_ratio <= 1) {
+    errors.push(
+      "Revise the overview: Ferroni no longer takes less aggregate reuse time than fancy-regex.",
+    );
   }
   const compile = pair("c", "compile");
   if (!compile || compile.family_weighted_ratio >= 1) {
@@ -38,8 +42,14 @@ for (const platform of summary.platforms) {
     );
   }
   const regex = pair("regex");
-  if (!regex || regex.family_weighted_ratio >= 1 || regex.case_count >= summary.case_count) {
-    errors.push("Revise the README: Rust regex no longer leads on its shared reuse subset.");
+  if (
+    !regex ||
+    Math.abs(regex.family_weighted_ratio - 1) >= 0.1 ||
+    regex.case_count >= summary.case_count
+  ) {
+    errors.push(
+      "Revise the README: Rust regex is no longer about even on its shared reuse subset.",
+    );
   }
   const c = pair("c");
   if (!c || c.family_weighted_ratio <= 1) {

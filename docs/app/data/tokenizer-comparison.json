@@ -1,10 +1,3988 @@
 {
   "format_version": 1,
   "run": {
-    "head_sha": "",
-    "html_url": "",
-    "created_at": ""
+    "id": 38702442347,
+    "run_attempt": 1,
+    "head_sha": "a51a2fd917eb4eacd679d565842b0ec695e3d2e6",
+    "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347",
+    "path": ".github/workflows/blacksmith-comparison.yml",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-15T07:59:02Z",
+    "updated_at": "2026-10-15T08:30:10Z",
+    "jobs": [
+      {
+        "id": 116313646401,
+        "name": "macos-arm64 run 1",
+        "conclusion": "success",
+        "labels": ["blacksmith-6vcpu-macos-26"],
+        "runner_name": "blacksmith-6vcpu-macos-26-e4cslwd4op4ky7dg",
+        "started_at": "2026-10-15T07:59:22Z",
+        "completed_at": "2026-10-15T08:29:39Z",
+        "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347/job/116313646401"
+      },
+      {
+        "id": 116313646489,
+        "name": "macos-arm64 run 3",
+        "conclusion": "success",
+        "labels": ["blacksmith-6vcpu-macos-26"],
+        "runner_name": "blacksmith-6vcpu-macos-26-kft6ckh4ax63lilz",
+        "started_at": "2026-10-15T07:59:21Z",
+        "completed_at": "2026-10-15T08:29:39Z",
+        "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347/job/116313646489"
+      },
+      {
+        "id": 116313646601,
+        "name": "macos-arm64 run 2",
+        "conclusion": "success",
+        "labels": ["blacksmith-6vcpu-macos-26"],
+        "runner_name": "blacksmith-6vcpu-macos-26-rvguqmm5mxbkacka",
+        "started_at": "2026-10-15T07:59:24Z",
+        "completed_at": "2026-10-15T08:29:35Z",
+        "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347/job/116313646601"
+      },
+      {
+        "id": 116313646616,
+        "name": "linux-x86-64 run 1",
+        "conclusion": "success",
+        "labels": ["blacksmith-4vcpu-ubuntu-2404"],
+        "runner_name": "blacksmith-4vcpu-ubuntu-2404-xxvyogrzdsd76jri",
+        "started_at": "2026-10-15T07:59:09Z",
+        "completed_at": "2026-10-15T08:29:11Z",
+        "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347/job/116313646616"
+      },
+      {
+        "id": 116313646656,
+        "name": "linux-x86-64 run 2",
+        "conclusion": "success",
+        "labels": ["blacksmith-4vcpu-ubuntu-2404"],
+        "runner_name": "blacksmith-4vcpu-ubuntu-2404-gvpg4yeyevopuudr",
+        "started_at": "2026-10-15T07:59:10Z",
+        "completed_at": "2026-10-15T08:28:51Z",
+        "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347/job/116313646656"
+      },
+      {
+        "id": 116313646780,
+        "name": "linux-x86-64 run 3",
+        "conclusion": "success",
+        "labels": ["blacksmith-4vcpu-ubuntu-2404"],
+        "runner_name": "blacksmith-4vcpu-ubuntu-2404-or372iemyzheh2rm",
+        "started_at": "2026-10-15T07:59:11Z",
+        "completed_at": "2026-10-15T08:29:34Z",
+        "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347/job/116313646780"
+      },
+      {
+        "id": 116325605885,
+        "name": "merge macos-arm64",
+        "conclusion": "success",
+        "labels": ["ubuntu-latest"],
+        "runner_name": "GitHub Actions 1000187213",
+        "started_at": "2026-10-15T08:29:41Z",
+        "completed_at": "2026-10-15T08:30:09Z",
+        "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347/job/116325605885"
+      },
+      {
+        "id": 116325605966,
+        "name": "merge linux-x86-64",
+        "conclusion": "success",
+        "labels": ["ubuntu-latest"],
+        "runner_name": "GitHub Actions 1000187214",
+        "started_at": "2026-10-15T08:29:41Z",
+        "completed_at": "2026-10-15T08:30:09Z",
+        "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38702442347/job/116325605966"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": 11958796214,
+        "name": "shard-tokenizers-macos-arm64-run1-38702442347-1",
+        "digest": "sha256:6dd12d2df4de1e09fb674ea4199c209c9b6ca7676641de036d8f56496cebb1d4",
+        "size_in_bytes": 2011677,
+        "expired": false
+      },
+      {
+        "id": 11958776352,
+        "name": "shard-production-macos-arm64-run3-38702442347-1",
+        "digest": "sha256:0b9aee8695153696f08455001f46c993608a077214f4a2617efb7b17cec83046",
+        "size_in_bytes": 4534925,
+        "expired": false
+      },
+      {
+        "id": 11958746356,
+        "name": "shard-tokenizers-linux-x86-64-run1-38702442347-1",
+        "digest": "sha256:43ba5c30ca8a8929f6fe246d78739725ca7732373a5b19f2ac5012f1dd9f1b11",
+        "size_in_bytes": 2010472,
+        "expired": false
+      },
+      {
+        "id": 11958626650,
+        "name": "shard-tokenizers-macos-arm64-run2-38702442347-1",
+        "digest": "sha256:4aa59bb00e4aa6208292d77ee43f262df8646970aa32183df0e8f50ff79d71b9",
+        "size_in_bytes": 2011043,
+        "expired": false
+      },
+      {
+        "id": 11958611628,
+        "name": "shard-production-linux-x86-64-run1-38702442347-1",
+        "digest": "sha256:8ec0c4f9adbec258b6ae6acae1c1f55503a499e671bdea503ee4cc2e553edb71",
+        "size_in_bytes": 4541909,
+        "expired": false
+      },
+      {
+        "id": 11958551789,
+        "name": "shard-production-macos-arm64-run1-38702442347-1",
+        "digest": "sha256:106d865d7809fe0eefb97c19e11f28b5e939596f4341710cb39e028e19370f96",
+        "size_in_bytes": 4535347,
+        "expired": false
+      },
+      {
+        "id": 11958471801,
+        "name": "shard-tokenizers-linux-x86-64-run3-38702442347-1",
+        "digest": "sha256:28dc2b7e5a8031562933b90b8c53c3fd1a5cb00bec694f1bf1f4a729286ec408",
+        "size_in_bytes": 2011075,
+        "expired": false
+      },
+      {
+        "id": 11958436966,
+        "name": "shard-tokenizers-macos-arm64-run3-38702442347-1",
+        "digest": "sha256:5754d295e0f35e17616406ed17b10c38991f2d7cc5a42f74ceaf9dd8929c31de",
+        "size_in_bytes": 2010989,
+        "expired": false
+      },
+      {
+        "id": 11958372034,
+        "name": "shard-production-macos-arm64-run2-38702442347-1",
+        "digest": "sha256:e23786dc663c718d459ec0f618ec122a7c28dc0bee9bb6ed023853460fe0d819",
+        "size_in_bytes": 4534265,
+        "expired": false
+      },
+      {
+        "id": 11958142297,
+        "name": "shard-tokenizers-linux-x86-64-run2-38702442347-1",
+        "digest": "sha256:feb3e683ccdaacd0d5c9945109d028164d2fe256865857cc6747d5a3fb6c0eef",
+        "size_in_bytes": 2011506,
+        "expired": false
+      },
+      {
+        "id": 11958137602,
+        "name": "shard-production-linux-x86-64-run3-38702442347-1",
+        "digest": "sha256:d028510f9528d4eef35965027d8aa48e0dd181305a98ac0a8455ce553e0c7a4b",
+        "size_in_bytes": 4542162,
+        "expired": false
+      },
+      {
+        "id": 11958053492,
+        "name": "tokenizers-macos-arm64-38702442347-1",
+        "digest": "sha256:c94cd3a5661794e6402b1b65813101a79cd174139cf926f43b141139220f3739",
+        "size_in_bytes": 2440942,
+        "expired": false
+      },
+      {
+        "id": 11957948863,
+        "name": "production-linux-x86-64-38702442347-1",
+        "digest": "sha256:2d8318bbb5122ac737d844df9cd3eadb75feeb2d0e774523d3d87af569d68d13",
+        "size_in_bytes": 10058946,
+        "expired": false
+      },
+      {
+        "id": 11957784038,
+        "name": "tokenizers-linux-x86-64-38702442347-1",
+        "digest": "sha256:599a7ac9928fd0db66d243152e624dfc96c5f1df4c29b9d44b776ae347a70844",
+        "size_in_bytes": 2441648,
+        "expired": false
+      },
+      {
+        "id": 11957758998,
+        "name": "production-macos-arm64-38702442347-1",
+        "digest": "sha256:72e8e70a816fcba0c97cc4d14f7cd67a927439a3d939521477f09f4c61fb5d6b",
+        "size_in_bytes": 10035067,
+        "expired": false
+      },
+      {
+        "id": 11957559265,
+        "name": "shard-production-linux-x86-64-run2-38702442347-1",
+        "digest": "sha256:47320beb6ed11bf883589d18d8a00f632dbb59b9d04ef708b278b1c6f695a13a",
+        "size_in_bytes": 4543249,
+        "expired": false
+      }
+    ]
   },
-  "cases": [],
-  "platforms": []
+  "cases": [
+    {
+      "id": "tiktoken_cl100k_base",
+      "family": "llm_pre_tokenization",
+      "tier": "advanced",
+      "operation": "all_matches",
+      "pattern_origin": "production",
+      "input_count": 11,
+      "scope": "Non-overlapping UTF-8 spans from tiktoken cl100k_base regex pre-tokenization; excludes BPE merges, vocabulary lookup, special-token handling and whole-model tokenization.",
+      "source_url": "https://github.com/openai/tiktoken/blob/4e71bbe0c078468e00fefbf94b39849389f346e5/tiktoken_ext/openai_public.py",
+      "pending_reason": null
+    },
+    {
+      "id": "tiktoken_o200k_base",
+      "family": "llm_pre_tokenization",
+      "tier": "advanced",
+      "operation": "all_matches",
+      "pattern_origin": "production",
+      "input_count": 11,
+      "scope": "Non-overlapping UTF-8 spans from tiktoken o200k_base regex pre-tokenization; excludes BPE merges, vocabulary lookup, special-token handling and whole-model tokenization.",
+      "source_url": "https://github.com/openai/tiktoken/blob/4e71bbe0c078468e00fefbf94b39849389f346e5/tiktoken_ext/openai_public.py",
+      "pending_reason": null
+    }
+  ],
+  "platforms": [
+    {
+      "profile": "macos-arm64",
+      "context": {
+        "format_version": 1,
+        "started_utc": "2026-10-15T08:27:15.958231+00:00",
+        "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+        "machine": "arm64",
+        "cpu_count": 6,
+        "corpus": "tokenizer",
+        "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus.",
+        "commit": "a51a2fd917eb4eacd679d565842b0ec695e3d2e6",
+        "git_status": "",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+        "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+        "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
+        "build_profile": "bench, thin LTO, features onigmo",
+        "binary_sha256": "0d1bfabb770b622b97a79460fe68ef810be3af2e6a5768eba4370577c630af14",
+        "corpus_sha256": "7ddd65db06761271466aa0300e38ff35d333fc06b420b3aa71f14fd1019d3db8",
+        "cargo_lock_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+        "rustflags": "",
+        "engines": [
+          "rust",
+          "rust_erroraware",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "profiles": {
+          "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
+          "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
+          "c": "C Oniguruma UTF-8/Oniguruma syntax, -O3; public C API plus output adapters",
+          "onigmo": "pinned Ruby Onigmo standalone build; public C API plus output adapters",
+          "pcre2_jit": "PCRE2 UTF/UCP, JIT required, NO_UTF_CHECK on trusted &str subjects",
+          "pcre2": "PCRE2 UTF/UCP interpreter, NO_UTF_CHECK on trusted &str subjects",
+          "fancy_regex": "fancy-regex Oniguruma mode, seek off, explicit source flags",
+          "fancy_regex_seek": "fancy-regex Oniguruma mode, seek on, explicit source flags",
+          "regex": "Rust regex public API with explicit source flags; default limits"
+        },
+        "cases": ["tiktoken_cl100k_base", "tiktoken_o200k_base"],
+        "repetitions": 3,
+        "samples": 30,
+        "measure_seconds": 3.0,
+        "warmup_seconds": 1,
+        "lane_budgets": {
+          "steady": {
+            "warmup_seconds": 1,
+            "measure_seconds": 3.0
+          },
+          "compile": {
+            "warmup_seconds": 0.5,
+            "measure_seconds": 1
+          },
+          "first_use": {
+            "warmup_seconds": 0.5,
+            "measure_seconds": 1
+          }
+        },
+        "timeout": 120.0,
+        "seed": 20261013,
+        "diagnostic": false,
+        "command": [
+          "scripts/compare-production.py",
+          "run",
+          "/Users/runner/_work/_temp/tokenizers",
+          "--corpus",
+          "tokenizer",
+          "--only-run",
+          "1",
+          "--measure-seconds",
+          "3",
+          "--timeout",
+          "120",
+          "--host-note",
+          "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus."
+        ],
+        "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions",
+        "engine_source_overrides": {
+          "FERRONI_ONIGURUMA_DIR": null,
+          "FERRONI_ONIGMO_DIR": null,
+          "CC": null,
+          "CFLAGS": null,
+          "CARGO_PROFILE_BENCH_LTO": null
+        },
+        "pcre2_build": "PCRE2_SYS_STATIC=1; bundled source from locked pcre2-sys",
+        "source_snapshot_sha256": "0310433bc5ae33ee41c46047070e08f6c0df8a224369847e0d9abf02b70e7cef",
+        "native_sources": {
+          "oniguruma": {
+            "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+            "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+          },
+          "onigmo": {
+            "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+            "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+          }
+        },
+        "hosts": [
+          {
+            "only_run": 1,
+            "started_utc": "2026-10-15T08:27:15.958231+00:00",
+            "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+            "cpu_count": 6,
+            "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus.",
+            "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+            "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+            "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
+            "binary_sha256": "0d1bfabb770b622b97a79460fe68ef810be3af2e6a5768eba4370577c630af14",
+            "source_snapshot_sha256": "0310433bc5ae33ee41c46047070e08f6c0df8a224369847e0d9abf02b70e7cef",
+            "native_sources": {
+              "oniguruma": {
+                "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+                "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+              },
+              "onigmo": {
+                "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+                "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+              }
+            },
+            "command": [
+              "scripts/compare-production.py",
+              "run",
+              "/Users/runner/_work/_temp/tokenizers",
+              "--corpus",
+              "tokenizer",
+              "--only-run",
+              "1",
+              "--measure-seconds",
+              "3",
+              "--timeout",
+              "120",
+              "--host-note",
+              "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus."
+            ]
+          },
+          {
+            "only_run": 2,
+            "started_utc": "2026-10-15T08:27:11.156035+00:00",
+            "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+            "cpu_count": 6,
+            "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus.",
+            "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+            "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+            "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
+            "binary_sha256": "0d1bfabb770b622b97a79460fe68ef810be3af2e6a5768eba4370577c630af14",
+            "source_snapshot_sha256": "4cf47453d703368faac52d00c25f4a0ec9a07764364b3a211d56e8b22d2d600d",
+            "native_sources": {
+              "oniguruma": {
+                "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+                "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+              },
+              "onigmo": {
+                "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+                "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+              }
+            },
+            "command": [
+              "scripts/compare-production.py",
+              "run",
+              "/Users/runner/_work/_temp/tokenizers",
+              "--corpus",
+              "tokenizer",
+              "--only-run",
+              "2",
+              "--measure-seconds",
+              "3",
+              "--timeout",
+              "120",
+              "--host-note",
+              "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus."
+            ]
+          },
+          {
+            "only_run": 3,
+            "started_utc": "2026-10-15T08:27:18.156526+00:00",
+            "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+            "cpu_count": 6,
+            "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus.",
+            "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+            "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+            "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
+            "binary_sha256": "0d1bfabb770b622b97a79460fe68ef810be3af2e6a5768eba4370577c630af14",
+            "source_snapshot_sha256": "37617c9a765b2ce72bac448b11b261072eecda265fbe93f69993a0c58a3da2ef",
+            "native_sources": {
+              "oniguruma": {
+                "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+                "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+              },
+              "onigmo": {
+                "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+                "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+              }
+            },
+            "command": [
+              "scripts/compare-production.py",
+              "run",
+              "/Users/runner/_work/_temp/tokenizers",
+              "--corpus",
+              "tokenizer",
+              "--only-run",
+              "3",
+              "--measure-seconds",
+              "3",
+              "--timeout",
+              "120",
+              "--host-note",
+              "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus."
+            ]
+          }
+        ]
+      },
+      "eligibility": [
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust_erroraware",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "c",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "onigmo",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2_jit",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex_seek",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "regex",
+          "reason": "regex parse error:\n    '(?i:[sdmt]|ll|ve|re)|[^\\r\\n\\p{L}\\p{N}]?+\\p{L}++|(?>\\p{N}{1,3})| ?[^\\s\\p{L}\\p{N}]++[\\r\\n]*+|\\s++$|\\s*[\\r\\n]|\\s+(?!\\S)|\\s\n                                                       ^\nerror: unrecognized flag",
+          "status": "syntax_rejected"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "rust",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "rust_erroraware",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "c",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "onigmo",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2_jit",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex_seek",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "regex",
+          "reason": "regex parse error:\n    [^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+\n                                                                                                                                                                                                                                                                            ^^^\nerror: look-around, including look-ahead and look-behind, is not supported",
+          "status": "syntax_rejected"
+        }
+      ],
+      "estimates": [
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "c",
+          "lane": "steady",
+          "ns_median": 228905.58703916834,
+          "ns_range": [203386.12783868547, 257103.4513751838],
+          "interval_envelope_ns": [201717.90233073864, 262080.65853655772]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "c",
+          "lane": "compile",
+          "ns_median": 80714.07584460622,
+          "ns_range": [79512.22472257887, 86321.6035426914],
+          "interval_envelope_ns": [78583.21281692025, 88355.81322316854]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "c",
+          "lane": "first_use",
+          "ns_median": 86646.25445471768,
+          "ns_range": [81185.73825957376, 89237.00054078178],
+          "interval_envelope_ns": [79737.06109736417, 90777.86094699269]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "ns_median": 184849.09531055094,
+          "ns_range": [181138.85844094976, 204463.10614893291],
+          "interval_envelope_ns": [177545.15572616758, 208401.87394607897]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "ns_median": 605984.8478825924,
+          "ns_range": [591592.292026194, 608017.970686905],
+          "interval_envelope_ns": [578488.9052512445, 618354.0507516698]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "ns_median": 605190.8915034016,
+          "ns_range": [588836.6696934857, 638413.0316905789],
+          "interval_envelope_ns": [579557.3191361261, 646048.9804715149]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "ns_median": 241477.32615943285,
+          "ns_range": [239432.5436120324, 251499.05155638437],
+          "interval_envelope_ns": [236004.39770867402, 254040.15053120512]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "compile",
+          "ns_median": 1176568.2213395948,
+          "ns_range": [1072656.8102054852, 1176809.7852332492],
+          "interval_envelope_ns": [1051701.732067383, 1207007.552129918]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "first_use",
+          "ns_median": 1340078.6414112435,
+          "ns_range": [1313202.0529092825, 1379722.6310941835],
+          "interval_envelope_ns": [1290550.018611104, 1398498.2197408474]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "onigmo",
+          "lane": "steady",
+          "ns_median": 118350.69063433868,
+          "ns_range": [107544.4234532823, 123139.25526921522],
+          "interval_envelope_ns": [107249.46650714784, 126146.6938673359]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "onigmo",
+          "lane": "compile",
+          "ns_median": 79435.11025419031,
+          "ns_range": [74276.24376329705, 80391.80603784978],
+          "interval_envelope_ns": [74180.96801252768, 81636.05799526058]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "onigmo",
+          "lane": "first_use",
+          "ns_median": 76362.88325639209,
+          "ns_range": [75318.6269089488, 86209.65759348254],
+          "interval_envelope_ns": [74677.93136010454, 87829.40510841525]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2",
+          "lane": "steady",
+          "ns_median": 117606.32186502355,
+          "ns_range": [114772.92813868119, 129308.48139293083],
+          "interval_envelope_ns": [113943.28396338937, 130605.748290331]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2",
+          "lane": "compile",
+          "ns_median": 4825.232684011675,
+          "ns_range": [4823.010284402809, 5056.605795066137],
+          "interval_envelope_ns": [4728.205626008177, 5105.588503645806]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2",
+          "lane": "first_use",
+          "ns_median": 5196.967795683865,
+          "ns_range": [5053.807578170547, 5275.888276151904],
+          "interval_envelope_ns": [4986.462289307998, 5392.242999063211]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "ns_median": 32825.042213548164,
+          "ns_range": [31984.190312075985, 34555.34257152711],
+          "interval_envelope_ns": [31614.55451408709, 34952.24308372219]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "ns_median": 13082.71558997547,
+          "ns_range": [12638.852008282207, 13123.860103411538],
+          "interval_envelope_ns": [12414.872054335254, 13317.057726551886]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2_jit",
+          "lane": "first_use",
+          "ns_median": 14607.730055327334,
+          "ns_range": [13947.791493378223, 15426.020367840314],
+          "interval_envelope_ns": [13641.181419025776, 15570.296572412366]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust",
+          "lane": "steady",
+          "ns_median": 91306.45777944579,
+          "ns_range": [88610.96865378016, 92501.86264250678],
+          "interval_envelope_ns": [86798.59867750849, 94659.43021986583]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust",
+          "lane": "compile",
+          "ns_median": 59394.97701610962,
+          "ns_range": [58246.18322478188, 60732.55989433389],
+          "interval_envelope_ns": [57536.8397590227, 61442.48728889772]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust",
+          "lane": "first_use",
+          "ns_median": 59828.1616113192,
+          "ns_range": [58595.35670516477, 61631.94792833128],
+          "interval_envelope_ns": [57708.06705130937, 62430.255724341754]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust_erroraware",
+          "lane": "steady",
+          "ns_median": 96070.4316917643,
+          "ns_range": [94523.85719544353, 96410.70961971694],
+          "interval_envelope_ns": [93759.00733253318, 97318.39159199527]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust_erroraware",
+          "lane": "compile",
+          "ns_median": 60192.7766271574,
+          "ns_range": [54036.985807573794, 60442.08794919001],
+          "interval_envelope_ns": [52927.68041176646, 61406.830078017505]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust_erroraware",
+          "lane": "first_use",
+          "ns_median": 58873.069332854175,
+          "ns_range": [55516.33296268261, 62859.287318346345],
+          "interval_envelope_ns": [54335.36603356701, 63989.54069340805]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "c",
+          "lane": "steady",
+          "ns_median": 257959.87235249378,
+          "ns_range": [237894.58085397552, 264356.0560342175],
+          "interval_envelope_ns": [230064.3052114132, 269405.62124761654]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "c",
+          "lane": "compile",
+          "ns_median": 376317.07234167063,
+          "ns_range": [356186.72777494794, 386367.5860324603],
+          "interval_envelope_ns": [349598.35511801834, 393907.65432862926]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "c",
+          "lane": "first_use",
+          "ns_median": 371408.609093245,
+          "ns_range": [361507.2807546688, 413260.1930271057],
+          "interval_envelope_ns": [354648.17358481965, 420688.35516210395]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "ns_median": 100639.82293279245,
+          "ns_range": [93744.49482286607, 101408.00009955153],
+          "interval_envelope_ns": [91701.42546765876, 102119.66746085206]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "ns_median": 1475843.7220782016,
+          "ns_range": [1390605.5969241087, 1519724.5344204654],
+          "interval_envelope_ns": [1353352.1229463748, 1541367.2948046408]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "ns_median": 1485471.3091470334,
+          "ns_range": [1442035.9667866868, 1548084.6936704742],
+          "interval_envelope_ns": [1405190.9056683246, 1562712.1815136627]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "ns_median": 143012.24429899832,
+          "ns_range": [136009.73483034942, 144324.46469675144],
+          "interval_envelope_ns": [133901.02387687852, 146060.93399355945]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "compile",
+          "ns_median": 2958888.5378519287,
+          "ns_range": [2858439.9751205053, 2973799.9899555957],
+          "interval_envelope_ns": [2806255.8460126785, 3010182.5941980616]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "first_use",
+          "ns_median": 3354595.1939421827,
+          "ns_range": [3206938.831237158, 3499803.9468670664],
+          "interval_envelope_ns": [3152704.792116674, 3529078.839155608]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "onigmo",
+          "lane": "steady",
+          "ns_median": 159054.239324395,
+          "ns_range": [149849.0233407313, 163385.24104690706],
+          "interval_envelope_ns": [147082.2757298123, 164973.20480088086]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "onigmo",
+          "lane": "compile",
+          "ns_median": 366202.17459342146,
+          "ns_range": [365549.52796929906, 386573.8208833165],
+          "interval_envelope_ns": [358525.63640109333, 394385.10716881]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "onigmo",
+          "lane": "first_use",
+          "ns_median": 377401.09110702877,
+          "ns_range": [358410.5595286953, 385707.0189404434],
+          "interval_envelope_ns": [350385.16026423493, 388239.55101281253]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2",
+          "lane": "steady",
+          "ns_median": 245222.8639409053,
+          "ns_range": [235663.8839216308, 251914.83227645193],
+          "interval_envelope_ns": [231411.63385801404, 254635.57586466207]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2",
+          "lane": "compile",
+          "ns_median": 16873.78006913069,
+          "ns_range": [16181.958470991587, 17398.921144064003],
+          "interval_envelope_ns": [15886.306676714688, 17619.995384687427]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2",
+          "lane": "first_use",
+          "ns_median": 17965.24165805285,
+          "ns_range": [16922.186611313144, 18136.490552098283],
+          "interval_envelope_ns": [16588.3094113638, 18447.37317335581]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "ns_median": 41117.28566323768,
+          "ns_range": [39426.647256360986, 44080.43378757041],
+          "interval_envelope_ns": [38758.002014162754, 44799.1936839292]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "ns_median": 29287.309367581012,
+          "ns_range": [28707.673943657544, 29988.689639844342],
+          "interval_envelope_ns": [28089.19607506228, 30263.59003439385]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2_jit",
+          "lane": "first_use",
+          "ns_median": 31799.09489068943,
+          "ns_range": [30704.2666131848, 32661.43521066034],
+          "interval_envelope_ns": [30454.69752911787, 33127.64045196462]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust",
+          "lane": "steady",
+          "ns_median": 85288.44465219704,
+          "ns_range": [80152.3907727398, 86079.77374448696],
+          "interval_envelope_ns": [78629.26857282962, 86865.44227517743]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust",
+          "lane": "compile",
+          "ns_median": 187362.0185017018,
+          "ns_range": [181790.93405447333, 188885.5285510059],
+          "interval_envelope_ns": [178219.46874462607, 190620.54156434146]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust",
+          "lane": "first_use",
+          "ns_median": 190000.57032088534,
+          "ns_range": [181722.98790413985, 196150.44060217132],
+          "interval_envelope_ns": [177828.03926304806, 198189.32700843853]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust_erroraware",
+          "lane": "steady",
+          "ns_median": 88687.14000447412,
+          "ns_range": [87205.95809758062, 92328.79779439895],
+          "interval_envelope_ns": [86015.3127290987, 93415.85999740654]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust_erroraware",
+          "lane": "compile",
+          "ns_median": 196293.786951993,
+          "ns_range": [191862.7622487609, 199765.79427655478],
+          "interval_envelope_ns": [189130.51276847415, 203132.49520338874]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust_erroraware",
+          "lane": "first_use",
+          "ns_median": 181346.25973145477,
+          "ns_range": [176092.76021187712, 186711.56716340347],
+          "interval_envelope_ns": [172327.45503032123, 189452.60535803653]
+        }
+      ],
+      "comparisons": [
+        {
+          "engine": "rust_erroraware",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0559024187818202,
+              "ratio_range": [1.038578348017153, 1.0667286300047814],
+              "interval_envelope": [1.0044385517315353, 1.0986417540876579],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0302901151637165,
+              "ratio_range": [1.022482687463737, 1.1519157058731229],
+              "interval_envelope": [0.9910523805716553, 1.1880545462645502],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.043017653085684,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "rust_erroraware",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0134321057289306,
+              "ratio_range": [0.889753139034326, 1.0377004054657755],
+              "interval_envelope": [0.8614182587189982, 1.067261085857395],
+              "conclusion": "inconclusive"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.057602431530962,
+              "ratio_range": [1.0240216442107675, 1.0797776466299136],
+              "interval_envelope": [0.9980921771655238, 1.120011767672032],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.0352817293908263,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "rust_erroraware",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0047394988836194,
+              "ratio_range": [0.9279297820205659, 1.0199140126390662],
+              "interval_envelope": [0.8931310848439782, 1.0520978765950504],
+              "conclusion": "inconclusive"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.9690175263063981,
+              "ratio_range": [0.924526395019718, 0.982689509026593],
+              "interval_envelope": [0.8988463646697423, 1.0150994253213212],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.9867168711390998,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.5832646964231465,
+              "ratio_range": [2.227510876941173, 2.7794408029253965],
+              "interval_envelope": [2.1970392660017675, 2.896340027247119],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.9967536057681032,
+              "ratio_range": [2.9680285087002614, 3.099553018140396],
+              "interval_envelope": [2.815078089651897, 3.1983451542702195],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 2.782338547635695,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.3387028452088277,
+              "ratio_range": [1.3290082944805448, 1.4820130481264622],
+              "interval_envelope": [1.2881940881632759, 1.535638967889489],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.0085024454316103,
+              "ratio_range": [1.9593206318430447, 2.045511845170961],
+              "interval_envelope": [1.8836867066589744, 2.104771608701635],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.63975240152536,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.4479016734072894,
+              "ratio_range": [1.3569819976586712, 1.4787221945024942],
+              "interval_envelope": [1.3106684113651543, 1.537528465290683],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.9893315915835945,
+              "ratio_range": [1.9547762854921222, 2.106853248753452],
+              "interval_envelope": [1.9014469184154827, 2.165529730330222],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.6971613183241812,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.331208385988001,
+              "ratio_range": [1.1778402762382914, 1.335621226495754],
+              "interval_envelope": [1.1681228411130404, 1.3965664426137665],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.8695515117647077,
+              "ratio_range": [1.864897876529605, 1.8980677334479075],
+              "interval_envelope": [1.79970591875455, 1.942388394968197],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.5775812658933688,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.30794931734141,
+              "ratio_range": [1.2505475630229004, 1.3802072786057789],
+              "interval_envelope": [1.238761673717507, 1.4188484862423945],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.010823751308538,
+              "ratio_range": [1.9545165958494157, 2.0466036961583725],
+              "interval_envelope": [1.917629760356574, 2.1073227883282892],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.6217446015997388,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.2854026520894957,
+              "ratio_range": [1.276370210946689, 1.3987819708981362],
+              "interval_envelope": [1.2423170885294794, 1.4440661648113589],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.9722907028017798,
+              "ratio_range": [1.924038966970595, 2.030030848270804],
+              "interval_envelope": [1.8838659747073276, 2.073415456803685],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.5922272765132692,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.37043994340928404,
+              "ratio_range": [0.3502949417809528, 0.3735637487114569],
+              "interval_envelope": [0.34433442367806333, 0.3862687969831042],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.49189608539749474,
+              "ratio_range": [0.48209679319293924, 0.5120881697298092],
+              "interval_envelope": [0.47009012985292375, 0.5252514507298616],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.42686995448016285,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.21609265485013654,
+              "ratio_range": [0.2127932805640145, 0.2246106931931841],
+              "interval_envelope": [0.20731823939557953, 0.23066689190484144],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.15791587238918825,
+              "ratio_range": [0.155053219758296, 0.16005746457931097],
+              "interval_envelope": [0.15134866761449817, 0.16486349501822004],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.18472807070814948,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.24929842357354853,
+              "ratio_range": [0.23313087211323186, 0.25029259801715925],
+              "interval_envelope": [0.22422528913859596, 0.25973141715850595],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.1719017745867793,
+              "ratio_range": [0.15653427297397013, 0.17498663904570882],
+              "interval_envelope": [0.1536646699840762, 0.18294237102827948],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.20701410921475755,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.3272208130861736,
+              "ratio_range": [1.240763427459247, 1.4162030215352388],
+              "interval_envelope": [1.2037182528854533, 1.4386638932279787],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.9265275838690967,
+              "ratio_range": [2.8752179142311087, 2.9401978113144587],
+              "interval_envelope": [2.8078531175527384, 3.0545814596262506],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.9708242741000166,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08280388546301816,
+              "ratio_range": [0.07945050714817391, 0.08513524289595467],
+              "interval_envelope": [0.07695335645799181, 0.08667008887517164],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08933336607930852,
+              "ratio_range": [0.08901411148557437, 0.09286258380006708],
+              "interval_envelope": [0.08559772741131194, 0.09518532458929924],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.0860066846986729,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08447205199122132,
+              "ratio_range": [0.08432262763667894, 0.0900393576012973],
+              "interval_envelope": [0.08196437788294166, 0.09344002103326148],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.09312078128629338,
+              "ratio_range": [0.0915890966285904, 0.09545492690610452],
+              "interval_envelope": [0.08918800001238356, 0.09851924816850846],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.08869105636014789,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.0442035697487246,
+              "ratio_range": [1.9983283582617117, 2.2393060810969287],
+              "interval_envelope": [1.9344722694556724, 2.2956129822156437],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.1780700121327432,
+              "ratio_range": [1.1695782735747042, 1.1799936479460698],
+              "interval_envelope": [1.1220631265968604, 1.2196909006842422],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.5518424289262351,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 10.202627870673844,
+              "ratio_range": [9.740941153402416, 10.438760739745996],
+              "interval_envelope": [9.415128370881789, 10.747097917464297],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 7.813429294450531,
+              "ratio_range": [7.649477154385576, 8.111166535103601],
+              "interval_envelope": [7.292057774591621, 8.326650663870904],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 8.928466356833093,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 10.115485336739853,
+              "ratio_range": [9.554081762565975, 10.895283646840694],
+              "interval_envelope": [9.283276392381568, 11.19512424315131],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 7.9353525022787474,
+              "ratio_range": [7.573122469604026, 8.147789720083303],
+              "interval_envelope": [7.413667299080792, 8.345753499954217],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 8.959349411573507,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.702064397326935,
+              "ratio_range": [2.6105131211538257, 2.7544497691925565],
+              "interval_envelope": [2.5053726901750553, 2.7983331268620923],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.676806804042408,
+              "ratio_range": [1.676636199406772, 1.6968893069700792],
+              "interval_envelope": [1.6294490801997887, 1.7566846157500984],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 2.128576981553299,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 19.809220921501087,
+              "ratio_range": [17.661972623445433, 20.204066946184973],
+              "interval_envelope": [17.116848266938877, 20.766114802974336],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 15.792360487539545,
+              "ratio_range": [15.133186735100374, 16.358351451478335],
+              "interval_envelope": [14.721686461400928, 16.89031291251018],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 17.68712406723194,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 22.398793566769182,
+              "ratio_range": [22.386484241883675, 22.411367158611956],
+              "interval_envelope": [21.670117741219286, 23.147667430499748],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 18.419965481979183,
+              "ratio_range": [16.349383776003908, 18.45993857261336],
+              "interval_envelope": [15.90754073241511, 19.355896594104227],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 20.312188565929226,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "steady",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "compile",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "first_use",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        }
+      ],
+      "production_comparisons": [
+        {
+          "engine": "rust_erroraware",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0559024187818202,
+              "ratio_range": [1.038578348017153, 1.0667286300047814],
+              "interval_envelope": [1.0044385517315353, 1.0986417540876579],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0302901151637165,
+              "ratio_range": [1.022482687463737, 1.1519157058731229],
+              "interval_envelope": [0.9910523805716553, 1.1880545462645502],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.043017653085684,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "rust_erroraware",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0134321057289306,
+              "ratio_range": [0.889753139034326, 1.0377004054657755],
+              "interval_envelope": [0.8614182587189982, 1.067261085857395],
+              "conclusion": "inconclusive"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.057602431530962,
+              "ratio_range": [1.0240216442107675, 1.0797776466299136],
+              "interval_envelope": [0.9980921771655238, 1.120011767672032],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.0352817293908263,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "rust_erroraware",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0047394988836194,
+              "ratio_range": [0.9279297820205659, 1.0199140126390662],
+              "interval_envelope": [0.8931310848439782, 1.0520978765950504],
+              "conclusion": "inconclusive"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.9690175263063981,
+              "ratio_range": [0.924526395019718, 0.982689509026593],
+              "interval_envelope": [0.8988463646697423, 1.0150994253213212],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.9867168711390998,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.5832646964231465,
+              "ratio_range": [2.227510876941173, 2.7794408029253965],
+              "interval_envelope": [2.1970392660017675, 2.896340027247119],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.9967536057681032,
+              "ratio_range": [2.9680285087002614, 3.099553018140396],
+              "interval_envelope": [2.815078089651897, 3.1983451542702195],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 2.782338547635695,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.3387028452088277,
+              "ratio_range": [1.3290082944805448, 1.4820130481264622],
+              "interval_envelope": [1.2881940881632759, 1.535638967889489],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.0085024454316103,
+              "ratio_range": [1.9593206318430447, 2.045511845170961],
+              "interval_envelope": [1.8836867066589744, 2.104771608701635],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.63975240152536,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.4479016734072894,
+              "ratio_range": [1.3569819976586712, 1.4787221945024942],
+              "interval_envelope": [1.3106684113651543, 1.537528465290683],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.9893315915835945,
+              "ratio_range": [1.9547762854921222, 2.106853248753452],
+              "interval_envelope": [1.9014469184154827, 2.165529730330222],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.6971613183241812,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.331208385988001,
+              "ratio_range": [1.1778402762382914, 1.335621226495754],
+              "interval_envelope": [1.1681228411130404, 1.3965664426137665],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.8695515117647077,
+              "ratio_range": [1.864897876529605, 1.8980677334479075],
+              "interval_envelope": [1.79970591875455, 1.942388394968197],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.5775812658933688,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.30794931734141,
+              "ratio_range": [1.2505475630229004, 1.3802072786057789],
+              "interval_envelope": [1.238761673717507, 1.4188484862423945],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.010823751308538,
+              "ratio_range": [1.9545165958494157, 2.0466036961583725],
+              "interval_envelope": [1.917629760356574, 2.1073227883282892],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.6217446015997388,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.2854026520894957,
+              "ratio_range": [1.276370210946689, 1.3987819708981362],
+              "interval_envelope": [1.2423170885294794, 1.4440661648113589],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.9722907028017798,
+              "ratio_range": [1.924038966970595, 2.030030848270804],
+              "interval_envelope": [1.8838659747073276, 2.073415456803685],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.5922272765132692,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.37043994340928404,
+              "ratio_range": [0.3502949417809528, 0.3735637487114569],
+              "interval_envelope": [0.34433442367806333, 0.3862687969831042],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.49189608539749474,
+              "ratio_range": [0.48209679319293924, 0.5120881697298092],
+              "interval_envelope": [0.47009012985292375, 0.5252514507298616],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.42686995448016285,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.21609265485013654,
+              "ratio_range": [0.2127932805640145, 0.2246106931931841],
+              "interval_envelope": [0.20731823939557953, 0.23066689190484144],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.15791587238918825,
+              "ratio_range": [0.155053219758296, 0.16005746457931097],
+              "interval_envelope": [0.15134866761449817, 0.16486349501822004],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.18472807070814948,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.24929842357354853,
+              "ratio_range": [0.23313087211323186, 0.25029259801715925],
+              "interval_envelope": [0.22422528913859596, 0.25973141715850595],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.1719017745867793,
+              "ratio_range": [0.15653427297397013, 0.17498663904570882],
+              "interval_envelope": [0.1536646699840762, 0.18294237102827948],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.20701410921475755,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.3272208130861736,
+              "ratio_range": [1.240763427459247, 1.4162030215352388],
+              "interval_envelope": [1.2037182528854533, 1.4386638932279787],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.9265275838690967,
+              "ratio_range": [2.8752179142311087, 2.9401978113144587],
+              "interval_envelope": [2.8078531175527384, 3.0545814596262506],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.9708242741000166,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08280388546301816,
+              "ratio_range": [0.07945050714817391, 0.08513524289595467],
+              "interval_envelope": [0.07695335645799181, 0.08667008887517164],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08933336607930852,
+              "ratio_range": [0.08901411148557437, 0.09286258380006708],
+              "interval_envelope": [0.08559772741131194, 0.09518532458929924],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.0860066846986729,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08447205199122132,
+              "ratio_range": [0.08432262763667894, 0.0900393576012973],
+              "interval_envelope": [0.08196437788294166, 0.09344002103326148],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.09312078128629338,
+              "ratio_range": [0.0915890966285904, 0.09545492690610452],
+              "interval_envelope": [0.08918800001238356, 0.09851924816850846],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.08869105636014789,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.0442035697487246,
+              "ratio_range": [1.9983283582617117, 2.2393060810969287],
+              "interval_envelope": [1.9344722694556724, 2.2956129822156437],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.1780700121327432,
+              "ratio_range": [1.1695782735747042, 1.1799936479460698],
+              "interval_envelope": [1.1220631265968604, 1.2196909006842422],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.5518424289262351,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 10.202627870673844,
+              "ratio_range": [9.740941153402416, 10.438760739745996],
+              "interval_envelope": [9.415128370881789, 10.747097917464297],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 7.813429294450531,
+              "ratio_range": [7.649477154385576, 8.111166535103601],
+              "interval_envelope": [7.292057774591621, 8.326650663870904],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 8.928466356833093,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 10.115485336739853,
+              "ratio_range": [9.554081762565975, 10.895283646840694],
+              "interval_envelope": [9.283276392381568, 11.19512424315131],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 7.9353525022787474,
+              "ratio_range": [7.573122469604026, 8.147789720083303],
+              "interval_envelope": [7.413667299080792, 8.345753499954217],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 8.959349411573507,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.702064397326935,
+              "ratio_range": [2.6105131211538257, 2.7544497691925565],
+              "interval_envelope": [2.5053726901750553, 2.7983331268620923],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.676806804042408,
+              "ratio_range": [1.676636199406772, 1.6968893069700792],
+              "interval_envelope": [1.6294490801997887, 1.7566846157500984],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 2.128576981553299,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 19.809220921501087,
+              "ratio_range": [17.661972623445433, 20.204066946184973],
+              "interval_envelope": [17.116848266938877, 20.766114802974336],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 15.792360487539545,
+              "ratio_range": [15.133186735100374, 16.358351451478335],
+              "interval_envelope": [14.721686461400928, 16.89031291251018],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 17.68712406723194,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 22.398793566769182,
+              "ratio_range": [22.386484241883675, 22.411367158611956],
+              "interval_envelope": [21.670117741219286, 23.147667430499748],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 18.419965481979183,
+              "ratio_range": [16.349383776003908, 18.45993857261336],
+              "interval_envelope": [15.90754073241511, 19.355896594104227],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 20.312188565929226,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "steady",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "compile",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "first_use",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        }
+      ]
+    },
+    {
+      "profile": "linux-x86-64",
+      "context": {
+        "format_version": 1,
+        "started_utc": "2026-10-15T08:26:51.196500+00:00",
+        "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
+        "machine": "x86_64",
+        "cpu_count": 4,
+        "corpus": "tokenizer",
+        "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus.",
+        "commit": "a51a2fd917eb4eacd679d565842b0ec695e3d2e6",
+        "git_status": "",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+        "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+        "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+        "build_profile": "bench, thin LTO, features onigmo",
+        "binary_sha256": "368c497f2eed1d310a60a3d2e39489332a2d93c158b32a790fb756406d2ab201",
+        "corpus_sha256": "7ddd65db06761271466aa0300e38ff35d333fc06b420b3aa71f14fd1019d3db8",
+        "cargo_lock_sha256": "c4c87fd71e93937225980a7b0cbeea0f53b00f7fd1dc5859451aaf3f98f5c6c6",
+        "rustflags": "",
+        "engines": [
+          "rust",
+          "rust_erroraware",
+          "c",
+          "onigmo",
+          "pcre2_jit",
+          "pcre2",
+          "fancy_regex",
+          "fancy_regex_seek",
+          "regex"
+        ],
+        "profiles": {
+          "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
+          "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
+          "c": "C Oniguruma UTF-8/Oniguruma syntax, -O3; public C API plus output adapters",
+          "onigmo": "pinned Ruby Onigmo standalone build; public C API plus output adapters",
+          "pcre2_jit": "PCRE2 UTF/UCP, JIT required, NO_UTF_CHECK on trusted &str subjects",
+          "pcre2": "PCRE2 UTF/UCP interpreter, NO_UTF_CHECK on trusted &str subjects",
+          "fancy_regex": "fancy-regex Oniguruma mode, seek off, explicit source flags",
+          "fancy_regex_seek": "fancy-regex Oniguruma mode, seek on, explicit source flags",
+          "regex": "Rust regex public API with explicit source flags; default limits"
+        },
+        "cases": ["tiktoken_cl100k_base", "tiktoken_o200k_base"],
+        "repetitions": 3,
+        "samples": 30,
+        "measure_seconds": 3.0,
+        "warmup_seconds": 1,
+        "lane_budgets": {
+          "steady": {
+            "warmup_seconds": 1,
+            "measure_seconds": 3.0
+          },
+          "compile": {
+            "warmup_seconds": 0.5,
+            "measure_seconds": 1
+          },
+          "first_use": {
+            "warmup_seconds": 0.5,
+            "measure_seconds": 1
+          }
+        },
+        "timeout": 120.0,
+        "seed": 20261013,
+        "diagnostic": false,
+        "command": [
+          "scripts/compare-production.py",
+          "run",
+          "/home/runner/_work/_temp/tokenizers",
+          "--corpus",
+          "tokenizer",
+          "--only-run",
+          "1",
+          "--measure-seconds",
+          "3",
+          "--timeout",
+          "120",
+          "--host-note",
+          "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus."
+        ],
+        "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions",
+        "engine_source_overrides": {
+          "FERRONI_ONIGURUMA_DIR": null,
+          "FERRONI_ONIGMO_DIR": null,
+          "CC": null,
+          "CFLAGS": null,
+          "CARGO_PROFILE_BENCH_LTO": null
+        },
+        "pcre2_build": "PCRE2_SYS_STATIC=1; bundled source from locked pcre2-sys",
+        "source_snapshot_sha256": "276ea36d7fe36f150c5db3e465a4fcbfffa43ebe5efc4c6642111e7261c3f641",
+        "native_sources": {
+          "oniguruma": {
+            "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+            "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+          },
+          "onigmo": {
+            "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+            "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+          }
+        },
+        "hosts": [
+          {
+            "only_run": 1,
+            "started_utc": "2026-10-15T08:26:51.196500+00:00",
+            "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
+            "cpu_count": 4,
+            "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus.",
+            "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+            "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+            "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+            "binary_sha256": "368c497f2eed1d310a60a3d2e39489332a2d93c158b32a790fb756406d2ab201",
+            "source_snapshot_sha256": "276ea36d7fe36f150c5db3e465a4fcbfffa43ebe5efc4c6642111e7261c3f641",
+            "native_sources": {
+              "oniguruma": {
+                "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+                "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+              },
+              "onigmo": {
+                "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+                "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+              }
+            },
+            "command": [
+              "scripts/compare-production.py",
+              "run",
+              "/home/runner/_work/_temp/tokenizers",
+              "--corpus",
+              "tokenizer",
+              "--only-run",
+              "1",
+              "--measure-seconds",
+              "3",
+              "--timeout",
+              "120",
+              "--host-note",
+              "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus."
+            ]
+          },
+          {
+            "only_run": 2,
+            "started_utc": "2026-10-15T08:26:30.560473+00:00",
+            "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
+            "cpu_count": 4,
+            "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus.",
+            "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+            "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+            "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+            "binary_sha256": "812736991736c46bb406889f3a6b83799885d2a5f26721b1083c6d7c5dcc02fd",
+            "source_snapshot_sha256": "f810fac11065cb186fba13b7c7df4f05e3f1185ad07eb09b226ccdc31ee16627",
+            "native_sources": {
+              "oniguruma": {
+                "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+                "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+              },
+              "onigmo": {
+                "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+                "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+              }
+            },
+            "command": [
+              "scripts/compare-production.py",
+              "run",
+              "/home/runner/_work/_temp/tokenizers",
+              "--corpus",
+              "tokenizer",
+              "--only-run",
+              "2",
+              "--measure-seconds",
+              "3",
+              "--timeout",
+              "120",
+              "--host-note",
+              "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus."
+            ]
+          },
+          {
+            "only_run": 3,
+            "started_utc": "2026-10-15T08:27:12.192641+00:00",
+            "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
+            "cpu_count": 4,
+            "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus.",
+            "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+            "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+            "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+            "binary_sha256": "0b1ca1aa405651abe35c831f841dd7da6c52a4bea5e8f1521f82ce7855c39d83",
+            "source_snapshot_sha256": "101f8f481f0b1bb0067b92bf1eb6de7c06bd19fc5c7cfab8d6cdae331e460560",
+            "native_sources": {
+              "oniguruma": {
+                "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
+                "revision_stamp": "f95747b462de672b6f8dbdeb478245ddf061ca53"
+              },
+              "onigmo": {
+                "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/onigmo-ruby",
+                "revision_stamp": "229531a6cfbf07e3caef30dbac24a2a3f3fed482 1d7ee878b3e4a9e41bf9825c937ae6cf0a9cd68c"
+              }
+            },
+            "command": [
+              "scripts/compare-production.py",
+              "run",
+              "/home/runner/_work/_temp/tokenizers",
+              "--corpus",
+              "tokenizer",
+              "--only-run",
+              "3",
+              "--measure-seconds",
+              "3",
+              "--timeout",
+              "120",
+              "--host-note",
+              "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 38702442347, attempt 1. Separate LLM pre-tokenization corpus."
+            ]
+          }
+        ]
+      },
+      "eligibility": [
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust_erroraware",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "c",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "onigmo",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2_jit",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex_seek",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "regex",
+          "reason": "regex parse error:\n    '(?i:[sdmt]|ll|ve|re)|[^\\r\\n\\p{L}\\p{N}]?+\\p{L}++|(?>\\p{N}{1,3})| ?[^\\s\\p{L}\\p{N}]++[\\r\\n]*+|\\s++$|\\s*[\\r\\n]|\\s+(?!\\S)|\\s\n                                                       ^\nerror: unrecognized flag",
+          "status": "syntax_rejected"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "rust",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "rust_erroraware",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "c",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "onigmo",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2_jit",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "bytes": 6856,
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex_seek",
+          "inputs": 11,
+          "status": "eligible"
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "regex",
+          "reason": "regex parse error:\n    [^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+\n                                                                                                                                                                                                                                                                            ^^^\nerror: look-around, including look-ahead and look-behind, is not supported",
+          "status": "syntax_rejected"
+        }
+      ],
+      "estimates": [
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "c",
+          "lane": "steady",
+          "ns_median": 147397.28055661384,
+          "ns_range": [146996.2165747701, 183894.64465460082],
+          "interval_envelope_ns": [145282.4557969643, 193910.53754053096]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "c",
+          "lane": "compile",
+          "ns_median": 51465.87556293748,
+          "ns_range": [48738.92298896416, 53096.58884635859],
+          "interval_envelope_ns": [47326.90223207111, 56073.442972231715]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "c",
+          "lane": "first_use",
+          "ns_median": 48420.67797506697,
+          "ns_range": [48418.120115265636, 51874.483582322515],
+          "interval_envelope_ns": [47097.62736531228, 53748.5620322053]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "ns_median": 182688.68123634523,
+          "ns_range": [182091.34427846907, 195429.4888530398],
+          "interval_envelope_ns": [181500.8327416046, 199742.4097570217]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "ns_median": 610972.1378137753,
+          "ns_range": [586230.6268049099, 682831.756613905],
+          "interval_envelope_ns": [583290.5123028633, 688144.6694042593]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "ns_median": 656793.1693945397,
+          "ns_range": [607528.0143340729, 715026.9429761575],
+          "interval_envelope_ns": [604152.7323009052, 731081.6992527269]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "ns_median": 244675.52172766518,
+          "ns_range": [237563.5140685421, 266497.0039004892],
+          "interval_envelope_ns": [236029.06305907026, 274054.3983592656]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "compile",
+          "ns_median": 1205086.4179332077,
+          "ns_range": [1127534.983131951, 1317020.6842764465],
+          "interval_envelope_ns": [1123546.9373837758, 1330105.08828998]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "first_use",
+          "ns_median": 1366839.6041822438,
+          "ns_range": [1290581.466342102, 1489780.216961309],
+          "interval_envelope_ns": [1283645.2972436019, 1498816.2642114763]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "onigmo",
+          "lane": "steady",
+          "ns_median": 117038.27492084421,
+          "ns_range": [114174.9256955524, 126539.8188281068],
+          "interval_envelope_ns": [113826.44404584545, 129457.5422880974]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "onigmo",
+          "lane": "compile",
+          "ns_median": 47041.53157159419,
+          "ns_range": [46978.4868643118, 51963.072940712234],
+          "interval_envelope_ns": [46755.64933880252, 52132.041066321086]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "onigmo",
+          "lane": "first_use",
+          "ns_median": 47966.02516804182,
+          "ns_range": [47437.799092866815, 54322.92218918817],
+          "interval_envelope_ns": [47322.591549236626, 55875.40417982421]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2",
+          "lane": "steady",
+          "ns_median": 109648.61203769658,
+          "ns_range": [106523.43084851715, 117989.72372401241],
+          "interval_envelope_ns": [106202.96967168232, 118395.91223128153]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2",
+          "lane": "compile",
+          "ns_median": 5398.681735336399,
+          "ns_range": [5150.909822722672, 6748.573240711127],
+          "interval_envelope_ns": [5113.324101879711, 6838.886101495655]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2",
+          "lane": "first_use",
+          "ns_median": 6710.502337383164,
+          "ns_range": [6048.780387155843, 7866.076561704774],
+          "interval_envelope_ns": [5953.202307367306, 8044.1038187292015]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "ns_median": 38662.16931613671,
+          "ns_range": [38225.58475978498, 43016.957230264205],
+          "interval_envelope_ns": [38157.2887744717, 45368.30785909943]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "ns_median": 15697.367091417218,
+          "ns_range": [14431.935175443634, 17321.609673545325],
+          "interval_envelope_ns": [14281.51747643604, 17437.438400036724]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "pcre2_jit",
+          "lane": "first_use",
+          "ns_median": 17882.97375294779,
+          "ns_range": [15717.453240764078, 21157.18417936115],
+          "interval_envelope_ns": [15504.683579835559, 22536.677618673653]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust",
+          "lane": "steady",
+          "ns_median": 92750.70600679274,
+          "ns_range": [88759.72385018428, 99455.12213223526],
+          "interval_envelope_ns": [88513.42520853019, 101383.05381593818]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust",
+          "lane": "compile",
+          "ns_median": 79042.49465673607,
+          "ns_range": [76033.38997410872, 81160.08813817847],
+          "interval_envelope_ns": [75387.84866268212, 81536.77160246452]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust",
+          "lane": "first_use",
+          "ns_median": 78599.29608354042,
+          "ns_range": [77714.53124117346, 82920.62059625116],
+          "interval_envelope_ns": [77110.23774324796, 83766.58291545259]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust_erroraware",
+          "lane": "steady",
+          "ns_median": 101262.22185538802,
+          "ns_range": [99995.90999338141, 110761.58680923734],
+          "interval_envelope_ns": [99045.43265165034, 113247.44083636734]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust_erroraware",
+          "lane": "compile",
+          "ns_median": 81637.4214218326,
+          "ns_range": [77436.64916480877, 82340.73644513302],
+          "interval_envelope_ns": [76170.04708953442, 86380.67067705686]
+        },
+        {
+          "case": "tiktoken_cl100k_base",
+          "engine": "rust_erroraware",
+          "lane": "first_use",
+          "ns_median": 82593.91098500002,
+          "ns_range": [77004.68077142294, 84570.72114535811],
+          "interval_envelope_ns": [76474.34183519053, 86673.19404633123]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "c",
+          "lane": "steady",
+          "ns_median": 172726.93368154092,
+          "ns_range": [170463.17717482147, 191605.49840731834],
+          "interval_envelope_ns": [168340.8250227037, 195913.98395668474]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "c",
+          "lane": "compile",
+          "ns_median": 133172.1589162688,
+          "ns_range": [125059.82730504198, 140231.11934579216],
+          "interval_envelope_ns": [123557.24301330978, 145003.53064707524]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "c",
+          "lane": "first_use",
+          "ns_median": 131646.89754181288,
+          "ns_range": [124985.93645347146, 138000.62652718407],
+          "interval_envelope_ns": [124108.58809989979, 139574.55749482076]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "ns_median": 97359.11728586508,
+          "ns_range": [93590.00467924781, 102452.9821715071],
+          "interval_envelope_ns": [93147.01251538504, 104307.57250764042]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "ns_median": 1586717.8626259745,
+          "ns_range": [1453730.6120771982, 1638650.7480244786],
+          "interval_envelope_ns": [1444063.3242769567, 1644597.1106609902]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "ns_median": 1602934.2070268358,
+          "ns_range": [1504284.5625453435, 1683212.2665973946],
+          "interval_envelope_ns": [1490734.7801401059, 1695797.7413754887]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "ns_median": 140547.8910918204,
+          "ns_range": [140323.0596365389, 161183.81022100334],
+          "interval_envelope_ns": [139109.94020933728, 168888.53240077122]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "compile",
+          "ns_median": 3011291.8412574385,
+          "ns_range": [2976844.0028432976, 3308422.331686489],
+          "interval_envelope_ns": [2967101.425089015, 3345982.824623399]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "fancy_regex_seek",
+          "lane": "first_use",
+          "ns_median": 3543661.793208539,
+          "ns_range": [3473772.25906277, 3714783.659798192],
+          "interval_envelope_ns": [3454661.2764728214, 3746936.3927756767]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "onigmo",
+          "lane": "steady",
+          "ns_median": 157118.58557130658,
+          "ns_range": [156549.51011944914, 158324.1798482346],
+          "interval_envelope_ns": [154968.22021949248, 161163.21311581868]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "onigmo",
+          "lane": "compile",
+          "ns_median": 135047.4676616064,
+          "ns_range": [130228.76823411367, 148822.3403825392],
+          "interval_envelope_ns": [129092.26811453297, 150954.47328599627]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "onigmo",
+          "lane": "first_use",
+          "ns_median": 141349.69671131644,
+          "ns_range": [132832.17544049074, 168130.79726913373],
+          "interval_envelope_ns": [130866.51339572216, 178524.99596926785]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2",
+          "lane": "steady",
+          "ns_median": 212717.38083070738,
+          "ns_range": [206583.09824809307, 232781.7775566906],
+          "interval_envelope_ns": [204931.19795437393, 235449.26162155048]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2",
+          "lane": "compile",
+          "ns_median": 20274.743748181798,
+          "ns_range": [19364.052776557834, 23911.978322145707],
+          "interval_envelope_ns": [19160.530124046367, 24246.726354217248]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2",
+          "lane": "first_use",
+          "ns_median": 21696.66900215865,
+          "ns_range": [20473.78447369314, 26578.23310397052],
+          "interval_envelope_ns": [20270.527728438014, 27530.33149508862]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "ns_median": 42293.54418205023,
+          "ns_range": [41729.305915857556, 45441.32581223315],
+          "interval_envelope_ns": [41525.26775404307, 46232.309030678734]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "ns_median": 37906.50604977804,
+          "ns_range": [35815.44956924946, 42047.36237420763],
+          "interval_envelope_ns": [35445.80612673568, 43081.52919037508]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "pcre2_jit",
+          "lane": "first_use",
+          "ns_median": 39673.704961133786,
+          "ns_range": [37245.25600801314, 43463.54595648937],
+          "interval_envelope_ns": [36892.865602374164, 44077.27371742906]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust",
+          "lane": "steady",
+          "ns_median": 81640.82359658899,
+          "ns_range": [80183.21019588085, 99929.49402454992],
+          "interval_envelope_ns": [79941.8100427532, 107667.49881218154]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust",
+          "lane": "compile",
+          "ns_median": 236996.84981638522,
+          "ns_range": [231910.70645930825, 256935.87425876074],
+          "interval_envelope_ns": [230937.50889243587, 259251.33017704598]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust",
+          "lane": "first_use",
+          "ns_median": 236620.03754253138,
+          "ns_range": [235120.1298159172, 257828.43203465323],
+          "interval_envelope_ns": [234369.8430423313, 261719.63810546498]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust_erroraware",
+          "lane": "steady",
+          "ns_median": 90231.66528236728,
+          "ns_range": [87437.1546194786, 98364.08491141898],
+          "interval_envelope_ns": [86952.35656144946, 99604.80672035788]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust_erroraware",
+          "lane": "compile",
+          "ns_median": 240130.383229718,
+          "ns_range": [220996.57541997507, 266709.9231370292],
+          "interval_envelope_ns": [219953.11417891132, 271320.7073907636]
+        },
+        {
+          "case": "tiktoken_o200k_base",
+          "engine": "rust_erroraware",
+          "lane": "first_use",
+          "ns_median": 260996.18703873092,
+          "ns_range": [220757.70863616827, 261102.89213532128],
+          "interval_envelope_ns": [219861.5891905926, 274587.46355345316]
+        }
+      ],
+      "comparisons": [
+        {
+          "engine": "rust_erroraware",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.1136840861948671,
+              "ratio_range": [1.0917676664150884, 1.1265910444039062],
+              "interval_envelope": [1.0742426288013858, 1.1584470382533645],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0709979489125558,
+              "ratio_range": [0.9843348640117565, 1.125318692802881],
+              "interval_envelope": [0.905358771287003, 1.1332268278628383],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.0921324883233063,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "rust_erroraware",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0058813795623465,
+              "ratio_range": [0.979683770117566, 1.082954955358062],
+              "interval_envelope": [0.9440915342435714, 1.1458168950219203],
+              "conclusion": "inconclusive"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0354432828734106,
+              "ratio_range": [0.9324873963143119, 1.0380408104024625],
+              "interval_envelope": [0.9191245383610851, 1.0645871447278583],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.020555298763997,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "rust_erroraware",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.01989976120827,
+              "ratio_range": [0.9797120916907115, 1.0627859380465703],
+              "interval_envelope": [0.9551319767466911, 1.1067354547440524],
+              "conclusion": "inconclusive"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0122862904571048,
+              "ratio_range": [0.9329628670880761, 1.1105084551448094],
+              "interval_envelope": [0.9194068402987594, 1.1715989565426208],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.0160858949476697,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.6606324824241532,
+              "ratio_range": [1.5848528049371895, 1.8490213546778917],
+              "interval_envelope": [1.5462389899288147, 1.9835776088267107],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.0879649379473375,
+              "ratio_range": [1.9174068704905698, 2.1541533852234593],
+              "interval_envelope": [1.7499521914759757, 2.1736375097022056],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.862080126664285,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6511165391026978,
+              "ratio_range": [0.6410199914216765, 0.6542204433780235],
+              "interval_envelope": [0.6111503263117501, 0.7102353625724034],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.5457825605332366,
+              "ratio_range": [0.5276856101755482, 0.5742389428650013],
+              "interval_envelope": [0.5163122803226267, 0.5846427874484619],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.5961275466852792,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6230582260710272,
+              "ratio_range": [0.6160121340502047, 0.6255920808275736],
+              "interval_envelope": [0.5882293177815839, 0.6572662885920776],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.5352420810930433,
+              "ratio_range": [0.5282136616642443, 0.5599133415113512],
+              "interval_envelope": [0.5189914493884293, 0.5667886976336238],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.5774833171308037,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.2723308374189093,
+              "ratio_range": [1.2618585880335265, 1.2863370991133989],
+              "interval_envelope": [1.2245135221783683, 1.324265743540282],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.9245100508499906,
+              "ratio_range": [1.584358866155559, 1.9523976370740437],
+              "interval_envelope": [1.4497336583511367, 1.9896232260424647],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.564804615477305,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6186957018174911,
+              "ratio_range": [0.5943446884910312, 0.6402540230395377],
+              "interval_envelope": [0.5809687016042793, 0.6447841553287454],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.5792197793004953,
+              "ratio_range": [0.5494957774122703, 0.5823252825341302],
+              "interval_envelope": [0.5394416522797824, 0.5941886635084386],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.5986324313473939,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6104109274705898,
+              "ratio_range": [0.610260238425805, 0.6551195806130292],
+              "interval_envelope": [0.5955093320677921, 0.6795386420708739],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6011807530983565,
+              "ratio_range": [0.5613733174081453, 0.6521034004757716],
+              "interval_envelope": [0.5472514231568394, 0.7010676998419152],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.6057782606500793,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.43066362874568154,
+              "ratio_range": [0.4168396229059995, 0.43252631245144896],
+              "interval_envelope": [0.4064049466716392, 0.46408803132143644],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.5180440656874667,
+              "ratio_range": [0.45473387267496296, 0.5204244855489867],
+              "interval_envelope": [0.41627540399425805, 0.5365697126110794],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.47233752463585893,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.20645360014544353,
+              "ratio_range": [0.18258451024500566, 0.21342522009161147],
+              "interval_envelope": [0.1770126219011806, 0.21567127931095498],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.1634530230557908,
+              "ratio_range": [0.15112204907785778, 0.16364924709525627],
+              "interval_envelope": [0.14811843112424583, 0.16903996231012555],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.18369938776306302,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.23011106761296812,
+              "ratio_range": [0.19996938934489375, 0.2551498532841138],
+              "interval_envelope": [0.1936468980452966, 0.2740838036087515],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.16857545777049013,
+              "ratio_range": [0.15740533386281147, 0.16873801912322672],
+              "interval_envelope": [0.15427684807482034, 0.17363594731203041],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.19695450886159552,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.186361458257862,
+              "ratio_range": [1.1821862793116238, 1.200132517630585],
+              "interval_envelope": [1.1573535758934206, 1.2111125236270102],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.530389689218229,
+              "ratio_range": [2.329460184192492, 2.6528918000546082],
+              "interval_envelope": [2.1390568284229583, 2.7021024709198747],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.732615595468769,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.0710040909286668,
+              "ratio_range": [0.0651663367292736, 0.08315137890463348],
+              "interval_envelope": [0.06337722216127561, 0.08458532043149015],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08742478541731002,
+              "ratio_range": [0.08170595006456943, 0.09306593869435256],
+              "interval_envelope": [0.08006666998446291, 0.09513742399785803],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.07878779990068172,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08634810286069014,
+              "ratio_range": [0.07695718267917828, 0.09486273143088848],
+              "interval_envelope": [0.07435296272392602, 0.09782979588056682],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.0922790788655384,
+              "ratio_range": [0.08652599621878206, 0.10308495806388915],
+              "interval_envelope": [0.08476633830675964, 0.10811161805302444],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.08926434559089787,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.9650017481572972,
+              "ratio_range": [1.9632340509099018, 2.0582385040393065],
+              "interval_envelope": [1.8965731005687574, 2.072328405281703],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.1463628189458646,
+              "ratio_range": [1.0252526861222497, 1.2142082743759564],
+              "interval_envelope": [0.9362060281803976, 1.2272704240455443],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.5008680632391214,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 8.035576712044888,
+              "ratio_range": [7.416651376588995, 8.413393482906956],
+              "interval_envelope": [7.229608694116076, 8.51117221444167],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 6.377664281999754,
+              "ratio_range": [6.133965971292382, 6.841934496475629],
+              "interval_envelope": [6.03434982607529, 6.954607032956236],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 7.1587855521504276,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 8.451355993595289,
+              "ratio_range": [7.729433272383926, 8.623029324125486],
+              "interval_envelope": [7.54561045720493, 8.891179803446533],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 6.528419900452111,
+              "ratio_range": [6.357384514719955, 6.817511577089645],
+              "interval_envelope": [6.233884504236655, 6.886845554483703],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 7.427920345183617,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.6795704252029924,
+              "ratio_range": [2.5613121915335477, 2.756605260970032],
+              "interval_envelope": [2.51205376489738, 2.8033967368704267],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.7187854489307441,
+              "ratio_range": [1.6129753462116492, 1.7528344244196972],
+              "interval_envelope": [1.4461072925937797, 1.8027228716144397],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 2.1460677193937916,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 15.849436916380682,
+              "ratio_range": [14.264921521373838, 16.22744275528833],
+              "interval_envelope": [13.92583032884926, 16.451124266561227],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 12.836164609612897,
+              "ratio_range": [12.70604163553421, 12.876451531850195],
+              "interval_envelope": [12.520643294949652, 13.128707852158358],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 14.263449135056284,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 17.587954046077897,
+              "ratio_range": [16.419758581175948, 17.966341861033563],
+              "interval_envelope": [16.03218335425666, 18.228119936603047],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 14.680803431274812,
+              "ratio_range": [14.407967463025603, 15.071707369262603],
+              "interval_envelope": [14.095864465813262, 15.293417120227012],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 16.068767722161027,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "steady",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "compile",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "first_use",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        }
+      ],
+      "production_comparisons": [
+        {
+          "engine": "rust_erroraware",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.1136840861948671,
+              "ratio_range": [1.0917676664150884, 1.1265910444039062],
+              "interval_envelope": [1.0742426288013858, 1.1584470382533645],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0709979489125558,
+              "ratio_range": [0.9843348640117565, 1.125318692802881],
+              "interval_envelope": [0.905358771287003, 1.1332268278628383],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.0921324883233063,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "rust_erroraware",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0058813795623465,
+              "ratio_range": [0.979683770117566, 1.082954955358062],
+              "interval_envelope": [0.9440915342435714, 1.1458168950219203],
+              "conclusion": "inconclusive"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0354432828734106,
+              "ratio_range": [0.9324873963143119, 1.0380408104024625],
+              "interval_envelope": [0.9191245383610851, 1.0645871447278583],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.020555298763997,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "rust_erroraware",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.01989976120827,
+              "ratio_range": [0.9797120916907115, 1.0627859380465703],
+              "interval_envelope": [0.9551319767466911, 1.1067354547440524],
+              "conclusion": "inconclusive"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.0122862904571048,
+              "ratio_range": [0.9329628670880761, 1.1105084551448094],
+              "interval_envelope": [0.9194068402987594, 1.1715989565426208],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.0160858949476697,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.6606324824241532,
+              "ratio_range": [1.5848528049371895, 1.8490213546778917],
+              "interval_envelope": [1.5462389899288147, 1.9835776088267107],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.0879649379473375,
+              "ratio_range": [1.9174068704905698, 2.1541533852234593],
+              "interval_envelope": [1.7499521914759757, 2.1736375097022056],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.862080126664285,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6511165391026978,
+              "ratio_range": [0.6410199914216765, 0.6542204433780235],
+              "interval_envelope": [0.6111503263117501, 0.7102353625724034],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.5457825605332366,
+              "ratio_range": [0.5276856101755482, 0.5742389428650013],
+              "interval_envelope": [0.5163122803226267, 0.5846427874484619],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.5961275466852792,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "c",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6230582260710272,
+              "ratio_range": [0.6160121340502047, 0.6255920808275736],
+              "interval_envelope": [0.5882293177815839, 0.6572662885920776],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.5352420810930433,
+              "ratio_range": [0.5282136616642443, 0.5599133415113512],
+              "interval_envelope": [0.5189914493884293, 0.5667886976336238],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.5774833171308037,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.2723308374189093,
+              "ratio_range": [1.2618585880335265, 1.2863370991133989],
+              "interval_envelope": [1.2245135221783683, 1.324265743540282],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.9245100508499906,
+              "ratio_range": [1.584358866155559, 1.9523976370740437],
+              "interval_envelope": [1.4497336583511367, 1.9896232260424647],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.564804615477305,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6186957018174911,
+              "ratio_range": [0.5943446884910312, 0.6402540230395377],
+              "interval_envelope": [0.5809687016042793, 0.6447841553287454],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.5792197793004953,
+              "ratio_range": [0.5494957774122703, 0.5823252825341302],
+              "interval_envelope": [0.5394416522797824, 0.5941886635084386],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.5986324313473939,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "onigmo",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6104109274705898,
+              "ratio_range": [0.610260238425805, 0.6551195806130292],
+              "interval_envelope": [0.5955093320677921, 0.6795386420708739],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.6011807530983565,
+              "ratio_range": [0.5613733174081453, 0.6521034004757716],
+              "interval_envelope": [0.5472514231568394, 0.7010676998419152],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.6057782606500793,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.43066362874568154,
+              "ratio_range": [0.4168396229059995, 0.43252631245144896],
+              "interval_envelope": [0.4064049466716392, 0.46408803132143644],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.5180440656874667,
+              "ratio_range": [0.45473387267496296, 0.5204244855489867],
+              "interval_envelope": [0.41627540399425805, 0.5365697126110794],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.47233752463585893,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.20645360014544353,
+              "ratio_range": [0.18258451024500566, 0.21342522009161147],
+              "interval_envelope": [0.1770126219011806, 0.21567127931095498],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.1634530230557908,
+              "ratio_range": [0.15112204907785778, 0.16364924709525627],
+              "interval_envelope": [0.14811843112424583, 0.16903996231012555],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.18369938776306302,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.23011106761296812,
+              "ratio_range": [0.19996938934489375, 0.2551498532841138],
+              "interval_envelope": [0.1936468980452966, 0.2740838036087515],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.16857545777049013,
+              "ratio_range": [0.15740533386281147, 0.16873801912322672],
+              "interval_envelope": [0.15427684807482034, 0.17363594731203041],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.19695450886159552,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.186361458257862,
+              "ratio_range": [1.1821862793116238, 1.200132517630585],
+              "interval_envelope": [1.1573535758934206, 1.2111125236270102],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.530389689218229,
+              "ratio_range": [2.329460184192492, 2.6528918000546082],
+              "interval_envelope": [2.1390568284229583, 2.7021024709198747],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.732615595468769,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.0710040909286668,
+              "ratio_range": [0.0651663367292736, 0.08315137890463348],
+              "interval_envelope": [0.06337722216127561, 0.08458532043149015],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08742478541731002,
+              "ratio_range": [0.08170595006456943, 0.09306593869435256],
+              "interval_envelope": [0.08006666998446291, 0.09513742399785803],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.07878779990068172,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "pcre2",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.08634810286069014,
+              "ratio_range": [0.07695718267917828, 0.09486273143088848],
+              "interval_envelope": [0.07435296272392602, 0.09782979588056682],
+              "conclusion": "comparator faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 0.0922790788655384,
+              "ratio_range": [0.08652599621878206, 0.10308495806388915],
+              "interval_envelope": [0.08476633830675964, 0.10811161805302444],
+              "conclusion": "comparator faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 0.08926434559089787,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.9650017481572972,
+              "ratio_range": [1.9632340509099018, 2.0582385040393065],
+              "interval_envelope": [1.8965731005687574, 2.072328405281703],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.1463628189458646,
+              "ratio_range": [1.0252526861222497, 1.2142082743759564],
+              "interval_envelope": [0.9362060281803976, 1.2272704240455443],
+              "conclusion": "inconclusive"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 1.5008680632391214,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 8.035576712044888,
+              "ratio_range": [7.416651376588995, 8.413393482906956],
+              "interval_envelope": [7.229608694116076, 8.51117221444167],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 6.377664281999754,
+              "ratio_range": [6.133965971292382, 6.841934496475629],
+              "interval_envelope": [6.03434982607529, 6.954607032956236],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 7.1587855521504276,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 8.451355993595289,
+              "ratio_range": [7.729433272383926, 8.623029324125486],
+              "interval_envelope": [7.54561045720493, 8.891179803446533],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 6.528419900452111,
+              "ratio_range": [6.357384514719955, 6.817511577089645],
+              "interval_envelope": [6.233884504236655, 6.886845554483703],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 7.427920345183617,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 2.6795704252029924,
+              "ratio_range": [2.5613121915335477, 2.756605260970032],
+              "interval_envelope": [2.51205376489738, 2.8033967368704267],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 1.7187854489307441,
+              "ratio_range": [1.6129753462116492, 1.7528344244196972],
+              "interval_envelope": [1.4461072925937797, 1.8027228716144397],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 2.1460677193937916,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "compile",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 15.849436916380682,
+              "ratio_range": [14.264921521373838, 16.22744275528833],
+              "interval_envelope": [13.92583032884926, 16.451124266561227],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 12.836164609612897,
+              "ratio_range": [12.70604163553421, 12.876451531850195],
+              "interval_envelope": [12.520643294949652, 13.128707852158358],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 14.263449135056284,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "first_use",
+          "cases": [
+            {
+              "case": "tiktoken_cl100k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 17.587954046077897,
+              "ratio_range": [16.419758581175948, 17.966341861033563],
+              "interval_envelope": [16.03218335425666, 18.228119936603047],
+              "conclusion": "Ferroni faster in every run interval"
+            },
+            {
+              "case": "tiktoken_o200k_base",
+              "family": "llm_pre_tokenization",
+              "ratio_median": 14.680803431274812,
+              "ratio_range": [14.407967463025603, 15.071707369262603],
+              "interval_envelope": [14.095864465813262, 15.293417120227012],
+              "conclusion": "Ferroni faster in every run interval"
+            }
+          ],
+          "family_count": 1,
+          "case_count": 2,
+          "family_weighted_ratio": 16.068767722161027,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "steady",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "compile",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        },
+        {
+          "engine": "regex",
+          "lane": "first_use",
+          "cases": [],
+          "family_count": 0,
+          "case_count": 0,
+          "family_weighted_ratio": null,
+          "aggregate_scope": "This pair's listed common cases only. Different comparator subsets are not a ranking."
+        }
+      ]
+    }
+  ]
 }

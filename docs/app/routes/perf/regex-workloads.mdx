@@ -41,9 +41,10 @@ different output and inconclusive timings remain visible in the tables.
 Some compile and first-use measurements vary substantially between processes;
 the displayed ranges include every run. Interval envelopes retain each process's
 95% Criterion confidence interval. They are a descriptive screening aid, not a
-cross-process significance test. Each platform used one VM,
-so these results do not establish consistency across independent hosts. Host
-power and thermal state were unavailable. This run did not measure memory.
+cross-process significance test. Each repetition ran on its own VM of the
+platform's runner type, so the ranges include variation between hosts; a
+Ferroni time is only divided by a comparator time from the same VM. Host power
+and thermal state were unavailable. This run did not measure memory.
 
 ## Patterns with a source
 
@@ -150,8 +151,10 @@ batch. These are fresh-pattern costs in a warmed process; they do not measure
 OS-process startup. Memory, where selected, is whole-process peak RSS including
 runtime, catalog, allocator and output, rather than isolated pattern storage.
 
-The runner starts with three independent processes per pair, 30 Criterion
-samples per lane and three seconds measurement. It rotates/reverses engine order,
+The runner starts with three independent processes per pair, each on its own
+VM, and 30 Criterion samples per lane. Steady reuse measures three seconds after
+a one-second warm-up; compile and first use, whose iterations are single
+constructions, measure one second after half a second. It rotates/reverses engine order,
 keeps raw samples and intervals, and reports inconsistent differences as
 inconclusive. Short diagnostic runs cannot establish publication claims. Review
 host conditions and stability before interpreting a publication candidate.
