@@ -1662,14 +1662,7 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
     if is_infinite_repeat(qn.upper) {
         if qn.lower <= 1 {
             // *, +, *?, +?
-            // Use appropriate opsize based on head_exact/next_head_exact
-            let push_size = if qn.greedy && qn.head_exact.is_some() {
-                OPSIZE_PUSH_OR_JUMP_EXACT1
-            } else if qn.greedy && qn.next_head_exact.is_some() {
-                OPSIZE_PUSH_IF_PEEK_NEXT
-            } else {
-                OPSIZE_PUSH
-            };
+            let push_size = infinite_loop_push_size(qn);
             // C: a `+` over a large body jumps into the loop body instead of
             // emitting the body once more for the mandatory first pass.
             let first_pass = if qn.lower == 1 && c_body_len > QUANTIFIER_EXPAND_LIMIT_SIZE as i32 {
@@ -1681,7 +1674,7 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
         } else if expand_infinite_quantifier(qn, c_body_len) {
             // {n,} or {n,}?
             let n_body_len = compile_length_tree_n_times(body, qn.lower, reg, env);
-            n_body_len + OPSIZE_PUSH + mod_tlen + OPSIZE_JUMP
+            n_body_len + infinite_loop_push_size(qn) + mod_tlen + OPSIZE_JUMP
         } else {
             OPSIZE_REPEAT + mod_tlen + OPSIZE_REPEAT_INC
         }
@@ -1737,6 +1730,63 @@ fn compile_length_tree_n_times(node: &Node, n: i32, reg: &RegexType, env: &Parse
         return len;
     }
     len * n
+}
+
+/// The size of the push that enters an infinite quantifier's loop: C's
+/// `PUSH_OR_JUMP_EXACT1` or `PUSH_IF_PEEK_NEXT` for a greedy loop with a head
+/// or next literal, `PUSH` otherwise (a lazy loop's `JUMP` and `PUSH` add up
+/// to the same size).
+fn infinite_loop_push_size(qn: &QuantNode) -> i32 {
+    if qn.greedy && qn.head_exact.is_some() {
+        OPSIZE_PUSH_OR_JUMP_EXACT1
+    } else if qn.greedy && qn.next_head_exact.is_some() {
+        OPSIZE_PUSH_IF_PEEK_NEXT
+    } else {
+        OPSIZE_PUSH
+    }
+}
+
+/// C: the greedy loop of an infinite quantifier in `compile_quantifier_node`,
+/// after its mandatory iterations: the push picked from `head_exact` and
+/// `next_head_exact`, the body, and the jump back.
+fn compile_greedy_infinite_loop(
+    qn: &QuantNode,
+    body: &Node,
+    mod_tlen: i32,
+    reg: &mut RegexType,
+    env: &ParseEnv,
+) -> i32 {
+    let addr = SIZE_INC + mod_tlen + OPSIZE_JUMP;
+    if let Some(c) = qn.head_exact {
+        // Push the alternative only if the next char is the head literal,
+        // otherwise jump out of the loop
+        add_op(
+            reg,
+            OpCode::PushOrJumpExact1,
+            OperationPayload::PushOrJumpExact1 {
+                addr,
+                c,
+                skipped_retries: 0,
+                skip_gate: None,
+            },
+        );
+    } else if let Some(c) = qn.next_head_exact {
+        // Push the alternative only if the next char starts the follower
+        add_op(
+            reg,
+            OpCode::PushIfPeekNext,
+            OperationPayload::PushIfPeekNext { addr, c },
+        );
+    } else {
+        add_op(reg, OpCode::Push, OperationPayload::Push { addr });
+    }
+    let r = compile_quant_body_with_empty_check(body, reg, env, qn.emptiness, qn.empty_status_mem);
+    if r != 0 {
+        return r;
+    }
+    let addr = -(mod_tlen + infinite_loop_push_size(qn));
+    add_op(reg, OpCode::Jump, OperationPayload::Jump { addr });
+    0
 }
 
 /// Compile a quantifier node to bytecode.
@@ -1958,74 +2008,10 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                     compile_tree_n_times(body, 1, reg, env);
                 }
 
-                // Emit PUSH variant based on head_exact / next_head_exact
-                let addr;
-                if let Some(c) = qn.head_exact {
-                    // PushOrJumpExact1: push alt if char matches, else jump
-                    add_op(
-                        reg,
-                        OpCode::PushOrJumpExact1,
-                        OperationPayload::PushOrJumpExact1 {
-                            addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
-                            c,
-                            skipped_retries: 0,
-                            skip_gate: None,
-                        },
-                    );
-                    let r = compile_quant_body_with_empty_check(
-                        body,
-                        reg,
-                        env,
-                        qn.emptiness,
-                        qn.empty_status_mem,
-                    );
-                    if r != 0 {
-                        return r;
-                    }
-                    addr = -(mod_tlen + OPSIZE_PUSH_OR_JUMP_EXACT1);
-                } else if let Some(c) = qn.next_head_exact {
-                    // PushIfPeekNext: push alt only if next char matches peek
-                    add_op(
-                        reg,
-                        OpCode::PushIfPeekNext,
-                        OperationPayload::PushIfPeekNext {
-                            addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
-                            c,
-                        },
-                    );
-                    let r = compile_quant_body_with_empty_check(
-                        body,
-                        reg,
-                        env,
-                        qn.emptiness,
-                        qn.empty_status_mem,
-                    );
-                    if r != 0 {
-                        return r;
-                    }
-                    addr = -(mod_tlen + OPSIZE_PUSH_IF_PEEK_NEXT);
-                } else {
-                    // Regular PUSH
-                    add_op(
-                        reg,
-                        OpCode::Push,
-                        OperationPayload::Push {
-                            addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
-                        },
-                    );
-                    let r = compile_quant_body_with_empty_check(
-                        body,
-                        reg,
-                        env,
-                        qn.emptiness,
-                        qn.empty_status_mem,
-                    );
-                    if r != 0 {
-                        return r;
-                    }
-                    addr = -(mod_tlen + OPSIZE_PUSH);
+                let r = compile_greedy_infinite_loop(qn, body, mod_tlen, reg, env);
+                if r != 0 {
+                    return r;
                 }
-                add_op(reg, OpCode::Jump, OperationPayload::Jump { addr });
             } else {
                 // a*? or a+?
                 if qn.lower == 1 && !jump_into_body {
@@ -2068,31 +2054,11 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             }
 
             if qn.greedy {
-                add_op(
-                    reg,
-                    OpCode::Push,
-                    OperationPayload::Push {
-                        addr: SIZE_INC + mod_tlen + OPSIZE_JUMP,
-                    },
-                );
-                let r = compile_quant_body_with_empty_check(
-                    body,
-                    reg,
-                    env,
-                    qn.emptiness,
-                    qn.empty_status_mem,
-                );
+                // C picks the push of a `{n,}` loop as for `*` and `+`.
+                let r = compile_greedy_infinite_loop(qn, body, mod_tlen, reg, env);
                 if r != 0 {
                     return r;
                 }
-                // C: addr = -(mod_tlen + (int)OPSIZE_PUSH);
-                add_op(
-                    reg,
-                    OpCode::Jump,
-                    OperationPayload::Jump {
-                        addr: -(mod_tlen + OPSIZE_PUSH),
-                    },
-                );
             } else {
                 // C: COP(reg)->jump.addr = mod_tlen + SIZE_INC;
                 add_op(
@@ -8465,11 +8431,12 @@ pub(crate) fn tune_tree(
 
             // Set head_exact: extract leading literal byte from body
             if qn.greedy && qn.emptiness == BodyEmptyType::NotEmpty {
-                if let Some(ref body) = qn.body {
-                    if let NodeInner::Quant(ref tqn) = body.inner {
-                        // Propagate head_exact from nested quantifier
+                if let Some(ref mut body) = qn.body {
+                    if let NodeInner::Quant(ref mut tqn) = body.inner {
+                        // Move head_exact from the nested quantifier, as C
+                        // does (`tqn->head_exact = NULL`)
                         if tqn.head_exact.is_some() {
-                            qn.head_exact = tqn.head_exact;
+                            qn.head_exact = tqn.head_exact.take();
                         }
                     } else {
                         qn.head_exact = get_head_literal_byte(body, true, reg);
@@ -15594,6 +15561,175 @@ mod tests {
                             };
                             assert_eq!(limited, (r, spans), "C completes: {context}");
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A loop whose body is a quantifier takes over that quantifier's head
+    /// literal, as `tune_tree` does in C (`tqn->head_exact = NULL`), and a
+    /// `{n,}` loop enters through C's `PUSH_OR_JUMP_EXACT1` or
+    /// `PUSH_IF_PEEK_NEXT` like `*` and `+`. Before, the inner loop of
+    /// `(?:(?:xy)+){2,}` left without a backtrack where C's `Push` takes one,
+    /// and every `{n,}` loop pushed where C does not: at a retry limit in
+    /// match of 4, `a(?:(?:xy){2,})*?$` stopped on `axyxy@` where C reports
+    /// no match (ADR-017).
+    #[test]
+    fn quantifier_loops_take_their_head_literal_as_in_c() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::{
+            ONIG_MISMATCH, ONIG_OPTION_NONE, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER,
+        };
+        use crate::regexec::{
+            onig_new_match_param, onig_search, onig_search_with_param,
+            onig_set_retry_limit_in_match_of_match_param,
+        };
+        use crate::regsyntax::OnigSyntaxOniguruma;
+        let _limits = crate::regexec::shared_limits();
+
+        let compile = |pattern: &str| {
+            onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        // The `skipped_retries` of each `PushOrJumpExact1` on `x`: 0 for C's
+        // own instruction, 1 for a guarded `Push`.
+        let exact1 = |pattern: &str| -> Vec<u32> {
+            compile(pattern)
+                .ops
+                .iter()
+                .filter_map(|op| match op.payload {
+                    OperationPayload::PushOrJumpExact1 {
+                        c: b'x',
+                        skipped_retries,
+                        ..
+                    } => Some(skipped_retries),
+                    _ => None,
+                })
+                .collect()
+        };
+        // Two mandatory iterations, then the outer loop with the head literal;
+        // each inner `+` keeps C's `Push`.
+        assert_eq!(exact1(r"a(?:(?:xy)+){2,}$"), [1, 1, 0, 1]);
+        assert_eq!(exact1(r"a(?:x\d){2,}$"), [0]);
+        assert!(
+            compile(r"a(?:[xy]\d){2,}@")
+                .ops
+                .iter()
+                .any(|op| matches!(op.payload, OperationPayload::PushIfPeekNext { c: b'@', .. }))
+        );
+
+        let search = |reg: &RegexType, subject: &[u8], limit: Option<u64>| {
+            let end = subject.len();
+            let (r, region) = match limit {
+                None => onig_search(
+                    reg,
+                    subject,
+                    end,
+                    0,
+                    end,
+                    Some(OnigRegion::new()),
+                    ONIG_OPTION_NONE,
+                ),
+                Some(limit) => {
+                    let mut mp = onig_new_match_param();
+                    onig_set_retry_limit_in_match_of_match_param(&mut mp, limit);
+                    onig_search_with_param(
+                        reg,
+                        subject,
+                        end,
+                        0,
+                        end,
+                        Some(OnigRegion::new()),
+                        ONIG_OPTION_NONE,
+                        &mp,
+                    )
+                }
+            };
+            let spans: Vec<(i32, i32)> = match region {
+                Some(region) if r >= 0 => region
+                    .beg
+                    .iter()
+                    .zip(&region.end)
+                    .take(region.num_regs as usize)
+                    .map(|(&b, &e)| (b, e))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            (r, spans)
+        };
+        let reg = compile(r"a(?:(?:xy){2,})*?$");
+        assert_eq!(search(&reg, b"axyxy@", Some(4)).0, ONIG_MISMATCH);
+        let reg = compile(r"a(?:(?:xy)+){2,}$");
+        assert_eq!(
+            search(&reg, b"axy", Some(2)).0,
+            ONIGERR_RETRY_LIMIT_IN_MATCH_OVER
+        );
+
+        #[cfg(feature = "ffi")]
+        for pattern in [
+            r"a(?:(?:xy){2,})*$",
+            r"a(?:(?:xy){2,})*@",
+            r"a(?:(?:xy){2,})+$",
+            r"a(?:(?:xy)+){2,}$",
+            r"a(?:(?:xy)+){2,}?$",
+            r"a(?:(?:xy)+){3,}x",
+            r"a(?:(?:xy){2,}){2,}$",
+            r"(a)(?:(?:xy){2,})*$",
+            r"a(?:(?:xy){2,})*?$",
+            r"a(?:(?:xy){2,}){0,3}$",
+            r"a(?:(?:x[yz]){2,})*$",
+            r"a(?:x\d){2,}$",
+            r"a(?:[xy]\d){2,}@",
+            r"a(?:(x)y){2,}@",
+        ] {
+            let reg = compile(pattern);
+            let c = crate::ffi::CRegex::new(pattern.as_bytes(), 0).unwrap();
+            for subject in [
+                "a",
+                "axy",
+                "axyxy",
+                "axyxyxy",
+                "axyxy@",
+                "axyxyxy@",
+                "axyxyxyxy@x",
+                "ax1x2",
+                "ax1x2@",
+                "ay1x2y3@",
+                "ax@",
+                "baxyxy",
+            ] {
+                let subject = subject.as_bytes();
+                let unlimited = search(&reg, subject, None);
+                for limit in 1..=10 {
+                    let limited = search(&reg, subject, Some(limit));
+                    let context = format!("{pattern} on {subject:?} at limit {limit}");
+                    let mut region = crate::ffi::CRegion::new();
+                    let r = c.search_with_retry_limit(
+                        subject,
+                        0,
+                        subject.len(),
+                        Some(&mut region),
+                        0,
+                        limit,
+                    );
+                    if r == ONIGERR_RETRY_LIMIT_IN_MATCH_OVER {
+                        assert!(
+                            limited.0 == r || limited == unlimited,
+                            "C stops, Ferroni gives a third answer: {context}"
+                        );
+                    } else {
+                        let spans = if r >= 0 {
+                            region.capture_ranges()
+                        } else {
+                            Vec::new()
+                        };
+                        assert_eq!(limited, (r, spans), "C completes: {context}");
                     }
                 }
             }
