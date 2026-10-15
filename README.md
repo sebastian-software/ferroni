@@ -11,24 +11,45 @@ Part of [Ferramenta](https://ferramenta.dev), a family of Rust tools.
 [![MSRV 1.94](https://img.shields.io/badge/MSRV-1.94-blue?style=flat-square&logo=rust)](CONTRIBUTING.md#getting-started)
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue?style=flat-square)](https://github.com/sebastian-software/ferroni/blob/main/LICENSE)
 
-**Match, extract and replace text with Oniguruma patterns in pure Rust.**
-Ferroni ports Oniguruma's parser, compiler and optimizer line by line,
-verifies UTF-8 behavior against the upstream test suite, and adds an
-idiomatic Rust API. No C compiler or bindgen required.
+**Oniguruma-compatible regex engine.**
+Ferroni runs Oniguruma's full syntax in Rust, including look-behind,
+backreferences and recursion, and ships the scanner that TextMate syntax
+highlighters drive. Cargo builds it like any other crate, with no C compiler
+and no bindgen.
 
-Use it when your patterns need lookaround, backreferences or subexpression
-calls, or to replace C Oniguruma in a Rust application. The
-TextMate Scanner API is also available for grammar consumers such as Ferriki.
+## Why Ferroni
 
-Ferroni includes Oniguruma's absent repeaters and recursion-level backreferences,
-alongside Unicode grapheme matching with `\X`. PCRE2 also supports lookaround,
-backreferences and recursion, but uses C and a different regex dialect. Choose
-Ferroni when your application needs Oniguruma pattern behavior with a Rust-only
-build. The [feature matrix](https://ferroni.dev/perf/regex-workloads) compares
-selected syntax across the measured library configurations.
+**Oniguruma ended; the engine goes on.** Oniguruma matches the patterns in
+every TextMate grammar, in PHP's mbstring and in jq. Its C project closed in
+April 2025. Ferroni continues the engine in memory-safe Rust, ported function
+by function, and [passes all 2,974 UTF-8 tests](https://ferroni.dev/guide/compatibility)
+of the C original.
 
-**[Explore Ferroni →](https://ferroni.dev)** — matching examples, compatibility
-evidence, benchmarks from real projects and a separate TextMate Scanner walkthrough.
+**Only a JIT is faster.** Once a pattern is compiled, Ferroni matches
+2.7–3.3× faster than C Oniguruma, and it generates no machine code at runtime.
+Of the engines measured on regex tasks from Django, Rails, WordPress and other
+projects, only PCRE2's JIT is faster. C still compiles patterns faster, so a
+pattern used once favors C. The
+[benchmark summary](https://ferroni.dev/perf/regex-workloads) gives the method;
+the [full results](benches/production_results/README.md) are in the repository.
+
+**It runs the patterns `regex` rejects.** Rust's [`regex`](https://crates.io/crates/regex)
+crate leaves out look-around and backreferences to guarantee linear time.
+Ferroni runs them as Oniguruma does, in all twelve of its syntax modes, and is
+the only Rust engine with every feature in the
+[feature matrix](https://ferroni.dev/perf/regex-workloads). For untrusted
+patterns, that linear-time guarantee keeps `regex` the safer choice.
+
+**The scanner highlighters expect, in safe Rust.** VS Code and Shiki highlight
+code with TextMate grammars written for Oniguruma. Ferroni's Scanner keeps
+vscode-oniguruma's API, UTF-16 offsets included, and
+[Ferriki](https://ferriki.dev) runs on it. C Oniguruma fixed five memory-safety
+CVEs in 2019; Ferroni's engine is safe Rust, with
+[10 unsafe sites](https://ferroni.dev/adr/002-unsafe-code-policy) left, all
+linking parse-tree nodes, none in buffer or string code.
+
+**[Explore Ferroni →](https://ferroni.dev)** — examples, compatibility
+evidence, benchmarks and a Scanner walkthrough.
 
 ## Quick start
 
@@ -50,52 +71,34 @@ fn main() -> Result<(), RegexError> {
 }
 ```
 
-## Scope and safety
+## Scope
 
-Ferroni supports ASCII and UTF-8. Other encodings and the POSIX/GNU APIs
-are outside its scope. It uses backtracking: set timeouts and retry limits
-for untrusted patterns or input. See [compatibility](https://ferroni.dev/guide/compatibility)
-and [untrusted input](https://ferroni.dev/guide/untrusted-input).
-
-When your patterns fit Rust's [`regex`](https://crates.io/crates/regex)
-crate, prefer its guaranteed linear-time matching.
-
-## Performance
-
-The [regex benchmarks](https://ferroni.dev/perf/regex-workloads) compare patterns
-and test inputs from real projects, including Django, Fluent Bit, Rails and
-WordPress. Preparing a regex, its first use and repeated use are measured
-separately on ARM64/macOS and x86-64/Linux.
-
-Ferroni's standard API takes less time than C Oniguruma for repeated use in
-this corpus's aggregate on both platforms, and no case favors C. PCRE2 JIT is
-faster in most source-backed reuse cases and in the aggregate, while Ferroni
-leads in a few; on Rust `regex`'s smaller supported subset, Ferroni takes less
-time in the aggregate. The tables include cases that favor each engine, unsupported patterns and inconclusive results. Ferroni's fallible
-API is a separate profile because its match-workspace allocation affects reuse
-costs.
-
-These measurements cover isolated regex steps. TextMate Scanner calls and
-Ferriki's complete highlighting are separate workloads.
+Ferroni covers ASCII and UTF-8, two of Oniguruma's 29 encodings, and leaves
+out the POSIX and GNU APIs. It backtracks like C Oniguruma, so give searches
+over untrusted input a time or retry limit. See
+[compatibility](https://ferroni.dev/guide/compatibility) and
+[untrusted input](https://ferroni.dev/guide/untrusted-input).
 
 ## Documentation
 
 - [Getting started](https://ferroni.dev/guide/getting-started) — captures, iteration, options, errors and the Scanner API.
 - [API reference](https://docs.rs/ferroni) — every public type and function.
-- [Regex benchmarks](https://ferroni.dev/perf/regex-workloads) — the results, original patterns, input sources, API profiles and comparison rules.
+- [Regex benchmarks](https://ferroni.dev/perf/regex-workloads) — the speed summary, source projects, method and feature matrix.
+- [Benchmark results](benches/production_results/README.md) — per-platform aggregates, with every case and timing in [`publication.json`](benches/production_results/publication.json) and tiktoken pre-tokenization in [`additional_results`](benches/additional_results/README.md).
 - [Migrating to 2.0](https://ferroni.dev/guide/migrating-to-2) — breaking changes with before and after code.
 
 ## Project status and contributing
 
-Ferroni is feature-complete for its scope and maintained, with no feature
-work planned. Bug fixes, Unicode updates, toolchain upkeep and security fixes
-continue. See the [project status](https://ferroni.dev/#project-status) for
-maintenance scope and contribution opportunities.
+Ferroni is feature-complete and maintained. No feature work is planned; bug
+fixes, Unicode updates, toolchain upkeep and security fixes continue. See the
+[project status](https://ferroni.dev/#project-status) for the maintenance
+scope.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers builds, tests and benchmarks;
-[architecture decisions](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original)
-define the port's constraints. Report vulnerabilities privately as described
-in [SECURITY.md](SECURITY.md).
+[CONTRIBUTING.md](CONTRIBUTING.md) covers builds, tests and benchmarks; pull
+requests keep the
+[structural parity with C Oniguruma](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original)
+that the port is built on. Report vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md).
 
 ## Acknowledgments and license
 
