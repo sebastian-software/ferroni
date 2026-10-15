@@ -101,6 +101,70 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "successfully"):
             publication.validate_receipt({"conclusion": "failure"})
 
+    def sharded_receipt(self):
+        labels = {"macos-arm64": "blacksmith-6vcpu-macos-26", "linux-x86-64": "blacksmith-4vcpu-ubuntu-2404"}
+        jobs = [{"name": f"{profile} run {run}", "conclusion": "success", "labels": [label]}
+                for profile, label in labels.items() for run in (1, 2, 3)]
+        jobs += [{"name": f"merge {profile}", "conclusion": "success", "labels": ["ubuntu-latest"]} for profile in labels]
+        return {"id": 7, "conclusion": "success", "event": "workflow_dispatch", "head_sha": "a" * 40,
+                "path": ".github/workflows/blacksmith-comparison.yml",
+                "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/7", "jobs": jobs}
+
+    def test_sharded_runs_need_every_repetition_job_and_merge(self):
+        receipt = self.sharded_receipt()
+        publication.validate_receipt(receipt)
+        missing = dict(receipt, jobs=[job for job in receipt["jobs"] if job["name"] != "merge linux-x86-64"])
+        with self.assertRaisesRegex(ValueError, "measuring and merging"):
+            publication.validate_receipt(missing)
+        relabeled = dict(receipt, jobs=[dict(job, labels=["ubuntu-latest"]) if job["name"] == "macos-arm64 run 2" else job
+                                        for job in receipt["jobs"]])
+        with self.assertRaisesRegex(ValueError, "runner label"):
+            publication.validate_receipt(relabeled)
+
+    def test_a_single_repetition_shard_cannot_be_published(self):
+        catalog = {"cases": [{"id": "case"}]}
+        context = {"diagnostic": False, "git_status": "", "commit": "a" * 40, "machine": "x86_64",
+                   "platform": "Linux-6.8", "engines": list(publication.BASE_ENGINES), "cases": ["case"],
+                   "repetitions": 3, "samples": 30, "measure_seconds": 3, "warmup_seconds": 1,
+                   "lane_budgets": {"steady": {"warmup_seconds": 1, "measure_seconds": 3},
+                                    "compile": {"warmup_seconds": 0.5, "measure_seconds": 1},
+                                    "first_use": {"warmup_seconds": 0.5, "measure_seconds": 1}},
+                   "only_run": 2}
+        with self.assertRaisesRegex(ValueError, "shard"):
+            publication.verify_context(context, catalog, {"head_sha": "a" * 40, "id": 7}, "linux-x86-64")
+        short = dict(context, only_run=None, lane_budgets=dict(context["lane_budgets"],
+                     compile={"warmup_seconds": 0.5, "measure_seconds": 0.5}))
+        with self.assertRaisesRegex(ValueError, "measurement budget"):
+            publication.verify_context(short, catalog, {"head_sha": "a" * 40, "id": 7}, "linux-x86-64")
+
+    def test_merge_needs_one_matching_shard_per_repetition(self):
+        comparison = publication.comparison
+        with tempfile.TemporaryDirectory() as scratch:
+            shards = []
+            for run in (1, 2, 3):
+                shard = Path(scratch) / f"run{run}"
+                (shard / "raw" / f"run-{run}").mkdir(parents=True)
+                context = {key: None for key in comparison.SHARED_CONTEXT} | {
+                    "repetitions": 3, "engines": ["rust"], "only_run": run, "host_note": f"host {run}",
+                    "cases": [], "platform": "Linux", "diagnostic": True, "machine": "x86_64"}
+                for name, value in (("context.json", context), ("catalog.json", {"cases": []}),
+                                    ("eligibility.json", []), ("order.json", []), ("measurements.json", [])):
+                    (shard / name).write_text(json.dumps(value))
+                for name in ("Cargo.lock", "engine-inputs.toml", "source-snapshot.tar.gz"):
+                    (shard / name).write_text(name)
+                shards.append(shard)
+            with self.assertRaises(SystemExit):
+                comparison.merge(Path(scratch) / "two", shards[:2])
+            seed = json.loads((shards[2] / "context.json").read_text()) | {"seed": 1}
+            (shards[2] / "context.json").write_text(json.dumps(seed))
+            with self.assertRaises(SystemExit):
+                comparison.merge(Path(scratch) / "different", shards)
+            (shards[2] / "context.json").write_text(json.dumps(seed | {"seed": None}))
+            comparison.merge(Path(scratch) / "merged", list(reversed(shards)))
+            merged = json.loads((Path(scratch) / "merged/context.json").read_text())
+            self.assertNotIn("only_run", merged)
+            self.assertEqual([host["only_run"] for host in merged["hosts"]], [1, 2, 3])
+
     def test_retained_estimate_must_match_raw_criterion_data(self):
         with tempfile.TemporaryDirectory() as scratch:
             raw = Path(scratch) / "new"

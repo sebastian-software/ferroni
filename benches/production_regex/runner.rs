@@ -1,7 +1,9 @@
 use std::cell::RefCell;
 use std::hint::black_box;
+use std::time::Duration;
 
-use criterion::{BatchSize, Criterion, Throughput};
+use criterion::measurement::WallTime;
+use criterion::{BatchSize, BenchmarkGroup, Criterion, Throughput};
 use ferroni::api::{Regex, SearchOptions};
 use ferroni::ffi::{CRegex, CRegion};
 use ferroni::oniguruma::{
@@ -543,6 +545,17 @@ fn eligibility(engine: &str, case: &Case) -> Result<Library, Value> {
     Ok(library)
 }
 
+/// Applies the harness's window for `lane`, when it set one.
+fn lane_budget(group: &mut BenchmarkGroup<'_, WallTime>, budgets: Option<&Value>, lane: &str) {
+    if let Some(budgets) = budgets {
+        let seconds = |key: &str| {
+            Duration::from_secs_f64(budgets[lane][key].as_f64().expect("lane budget in seconds"))
+        };
+        group.warm_up_time(seconds("warmup_seconds"));
+        group.measurement_time(seconds("measure_seconds"));
+    }
+}
+
 fn engines() -> Vec<&'static str> {
     let mut result = vec!["rust", "rust_erroraware", "c", "regex"];
     result.extend(Engine::PER_PATTERN.iter().map(|engine| engine.id()));
@@ -617,6 +630,11 @@ pub fn main() {
     }
     let mut criterion = Criterion::default().configure_from_args();
     let mut group = criterion.benchmark_group("production_regex");
+    // The harness sets each lane's window here; without it, the command-line
+    // window applies to every lane.
+    let budgets: Option<Value> = std::env::var("PRODUCTION_LANE_BUDGETS")
+        .ok()
+        .map(|text| serde_json::from_str(&text).expect("lane budgets must be valid JSON"));
     for case in &cases {
         for engine in &engines {
             let library = match eligibility(engine, case) {
@@ -627,6 +645,7 @@ pub fn main() {
                 }
             };
             group.throughput(Throughput::Elements(case.inputs.len() as u64));
+            lane_budget(&mut group, budgets.as_ref(), "steady");
             group.bench_function(format!("{}/steady/{engine}", case.id), |b| {
                 b.iter(|| library.run(case).expect("validated execution must succeed"));
             });
@@ -634,6 +653,7 @@ pub fn main() {
             // routine. Both construction lanes include each engine's required
             // search contexts and any selected JIT compilation.
             group.throughput(Throughput::Elements(1));
+            lane_budget(&mut group, budgets.as_ref(), "compile");
             group.bench_function(format!("{}/compile/{engine}", case.id), |b| {
                 b.iter_batched(
                     || (),
@@ -641,6 +661,7 @@ pub fn main() {
                     BatchSize::SmallInput,
                 );
             });
+            lane_budget(&mut group, budgets.as_ref(), "first_use");
             group.bench_function(format!("{}/first_use/{engine}", case.id), |b| {
                 b.iter_batched(
                     || (),

@@ -237,6 +237,13 @@ and Criterion raw samples and intervals. Short runs require `--diagnostic` and
 cannot support publication. See the corpus guide for filters, optional memory
 measurements, operation contracts and interpretation limits.
 
+Steady reuse measures 3 s after a 1 s warm-up; compile and first use measure
+1 s after 0.5 s, since each of their iterations is one construction. The
+Blacksmith workflow runs each repetition on its own VM with `run --only-run N`
+and joins a platform's repetitions with
+`compare-production.py merge OUT RUN1 RUN2 RUN3`. A Ferroni time is only ever
+divided by a comparator time from the same repetition, and so from the same VM.
+
 Published tables describe their linked measured commit. Publication requires
 the run's library source to match the current tree; `--check` verifies the
 retained snapshot and raw results after later engine changes. Local diagnostic

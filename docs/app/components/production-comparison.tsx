@@ -84,18 +84,45 @@ function ComparisonIntro({
   );
 }
 
+type LaneBudget = { warmup_seconds: number; measure_seconds: number };
+
+function isLaneBudget(value: unknown): value is LaneBudget {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "warmup_seconds" in value &&
+    typeof value.warmup_seconds === "number" &&
+    "measure_seconds" in value &&
+    typeof value.measure_seconds === "number"
+  );
+}
+
+function laneBudget(context: Platform["context"]) {
+  const processes = `${context.repetitions} processes, ${context.samples} samples`;
+  const steady = `${context.warmup_seconds} s warmup, ${context.measure_seconds} s measurement`;
+  // Runs before per-lane budgets used the steady window for every lane.
+  const budgets: unknown = "lane_budgets" in context ? context.lane_budgets : undefined;
+  const compile =
+    typeof budgets === "object" && budgets !== null && "compile" in budgets
+      ? budgets.compile
+      : undefined;
+  if (!isLaneBudget(compile)) return `${processes}, ${steady}`;
+  return `${processes}; steady reuse ${steady}; compile and first use ${compile.warmup_seconds} s warmup, ${compile.measure_seconds} s measurement`;
+}
+
 function RunnerContext({ context, engine }: { context: Platform["context"]; engine: string }) {
+  const hosts =
+    "hosts" in context && Array.isArray(context.hosts)
+      ? `, one VM per repetition (${context.hosts.length} VMs)`
+      : "";
   const entries = [
-    ["Recorded host", `${context.platform}; ${context.cpu_count} visible CPUs`],
+    ["Recorded host", `${context.platform}; ${context.cpu_count} visible CPUs${hosts}`],
     ["Measurement started", context.started_utc],
     ["Toolchain", context.rustc],
     ["Build", `${context.build_profile}; ${context.pcre2_build}`],
     ["Ferroni baseline", (context.profiles as Record<string, string>).rust],
     ["Comparator", (context.profiles as Record<string, string>)[engine]],
-    [
-      "Budget per lane",
-      `${context.repetitions} processes, ${context.samples} samples, ${context.warmup_seconds} s warmup, ${context.measure_seconds} s measurement`,
-    ],
+    ["Budget per lane", laneBudget(context)],
     ["Host limits", context.host_note],
   ];
   return (
