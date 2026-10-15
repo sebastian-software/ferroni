@@ -274,15 +274,13 @@ fn get_tree_head_literal<'a>(node: &'a Node, exact: bool, _reg: &RegexType) -> O
 
         NodeInner::Quant(qn) => {
             if qn.lower > 0 {
-                if let Some(he) = qn.head_exact {
-                    // head_exact is already extracted; but it's a u8, not a node ref.
-                    // For the recursive case, re-derive from body.
-                    None // Fall through to body check
-                } else {
-                    qn.body
-                        .as_ref()
-                        .and_then(|b| get_tree_head_literal(b, exact, _reg))
-                }
+                // C returns the `head_exact` node. Here `head_exact` holds only
+                // its byte, so find the node again in the body the way
+                // `tune_tree` found it (exact).
+                let exact = exact || qn.head_exact.is_some();
+                qn.body
+                    .as_ref()
+                    .and_then(|b| get_tree_head_literal(b, exact, _reg))
             } else {
                 None
             }
@@ -15483,6 +15481,122 @@ mod tests {
             }
             assert_eq!(fast.map, reference.map, "round {round}");
             assert_eq!(fast.value, reference.value, "round {round}");
+        }
+    }
+
+    /// A loop whose body starts with a quantifier that already has a head
+    /// literal takes that literal as its own, as `get_tree_head_literal` does
+    /// in C. The loop then compiles to C's `PUSH_OR_JUMP_EXACT1`, which
+    /// leaves the loop without a backtrack, rather than to a `Push` whose
+    /// guard counts the backtrack C's `Push` would take: at a retry limit in
+    /// match of 1, `a(?:x+@x)*` stopped on `a` where C matches (ADR-017).
+    #[test]
+    fn loop_takes_the_head_literal_of_a_leading_quantifier() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::{ONIG_OPTION_NONE, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER};
+        use crate::regexec::{
+            onig_new_match_param, onig_search, onig_search_with_param,
+            onig_set_retry_limit_in_match_of_match_param,
+        };
+        use crate::regsyntax::OnigSyntaxOniguruma;
+        let _limits = crate::regexec::shared_limits();
+
+        let compile = |pattern: &str| {
+            onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        let reg = compile(r"a(?:x+@x)*");
+        assert!(reg.ops.iter().any(|op| matches!(
+            op.payload,
+            OperationPayload::PushOrJumpExact1 {
+                c: b'x',
+                skipped_retries: 0,
+                ..
+            }
+        )));
+
+        let search = |reg: &RegexType, subject: &[u8], limit: Option<u64>| {
+            let end = subject.len();
+            let (r, region) = match limit {
+                None => onig_search(
+                    reg,
+                    subject,
+                    end,
+                    0,
+                    end,
+                    Some(OnigRegion::new()),
+                    ONIG_OPTION_NONE,
+                ),
+                Some(limit) => {
+                    let mut mp = onig_new_match_param();
+                    onig_set_retry_limit_in_match_of_match_param(&mut mp, limit);
+                    onig_search_with_param(
+                        reg,
+                        subject,
+                        end,
+                        0,
+                        end,
+                        Some(OnigRegion::new()),
+                        ONIG_OPTION_NONE,
+                        &mp,
+                    )
+                }
+            };
+            let spans: Vec<(i32, i32)> = match region {
+                Some(region) if r >= 0 => region
+                    .beg
+                    .iter()
+                    .zip(&region.end)
+                    .take(region.num_regs as usize)
+                    .map(|(&b, &e)| (b, e))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            (r, spans)
+        };
+        for pattern in [r"a(?:x+@x)*$", r"a(?:x+@x)*", r"(a)(?:x+@x)*$"] {
+            let reg = compile(pattern);
+            assert_eq!(search(&reg, b"a", Some(1)).0, 0, "{pattern}");
+            assert_eq!(search(&reg, b"ba", Some(1)).0, 1, "{pattern}");
+            #[cfg(feature = "ffi")]
+            {
+                let c = crate::ffi::CRegex::new(pattern.as_bytes(), 0).unwrap();
+                for subject in ["a", "ba", "ax@x", "axx@x", "ax@xx@x", "ax@", "axx", "bax@x"] {
+                    let subject = subject.as_bytes();
+                    let unlimited = search(&reg, subject, None);
+                    for limit in [1, 2, 3] {
+                        let limited = search(&reg, subject, Some(limit));
+                        let context = format!("{pattern} on {subject:?} at limit {limit}");
+                        let mut region = crate::ffi::CRegion::new();
+                        let r = c.search_with_retry_limit(
+                            subject,
+                            0,
+                            subject.len(),
+                            Some(&mut region),
+                            0,
+                            limit,
+                        );
+                        if r == ONIGERR_RETRY_LIMIT_IN_MATCH_OVER {
+                            assert!(
+                                limited.0 == r || limited == unlimited,
+                                "C stops, Ferroni gives a third answer: {context}"
+                            );
+                        } else {
+                            let spans = if r >= 0 {
+                                region.capture_ranges()
+                            } else {
+                                Vec::new()
+                            };
+                            assert_eq!(limited, (r, spans), "C completes: {context}");
+                        }
+                    }
+                }
+            }
         }
     }
 }
