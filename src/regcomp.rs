@@ -644,6 +644,14 @@ fn tune_next_inner(node: &mut Node, next_node: &Node, reg: &RegexType, called: b
     match &mut node.inner {
         NodeInner::Quant(qn) => {
             let mut replacement = None;
+            // Rust-only (ADR-008): a finite range records the exact byte of
+            // its follower as well. Only the counted character repeats read
+            // it for those; the other expansions keep their code.
+            if qn.greedy && !is_infinite_repeat(qn.upper) && !called {
+                if let Some(byte) = get_head_literal_byte(next_node, true, reg) {
+                    qn.next_head_exact = Some(byte);
+                }
+            }
             if qn.greedy && is_infinite_repeat(qn.upper) {
                 if !called {
                     if let Some(byte) = get_head_literal_byte(next_node, true, reg) {
@@ -1154,6 +1162,196 @@ fn is_alt_cclass_first_infinite_greedy(qn: &QuantNode) -> Option<(&CClassNode, &
     None
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Compiles bounded character repeats the upstream way (`Repeat` /
+    /// `RepeatInc`), as the reference for `CClassRepeat` and `AnyCharRepeat`
+    /// in differential tests.
+    pub(crate) static COUNTED_CHAR_REPEAT_DISABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Whether bounded character repeats compile to counted loops (ADR-008).
+fn counted_char_repeat_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !COUNTED_CHAR_REPEAT_DISABLED.with(|disabled| disabled.get())
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
+/// The character instruction a counted repeat runs (ADR-008).
+enum CountedChar {
+    /// A single-byte class test: `CClass` with `not` false, `CClassNot` with
+    /// it true. A one-byte literal is the one-member class of that byte.
+    Class {
+        bsp: BitSet,
+        ascii_fast: CClassAsciiFastKind,
+        not: bool,
+    },
+    /// `.`: `AnyChar`, or `AnyCharMl` when `multiline`.
+    AnyChar { multiline: bool },
+}
+
+/// A counted repeat compiled for `counted_char_repeat`.
+struct CountedRepeat {
+    body: CountedChar,
+    min: u32,
+    /// `CHAR_REPEAT_UNBOUNDED` for `{n,}`.
+    max: u32,
+    /// The byte the follower must start with, when the run only holds
+    /// one-byte characters (an ASCII-only class or a one-byte literal);
+    /// otherwise 0. Give-backs are tried only where the byte is.
+    peek: u8,
+    /// The run holds one-byte characters only (see `CClassRepeat`).
+    ascii_only: bool,
+}
+
+/// Rust-only (ADR-008): a greedy `C{min,max}` whose body is one character
+/// instruction, which the counted loop runs without `Repeat` / `RepeatInc`
+/// and their stack scan for the count.
+///
+/// The counted loop tries the same alternatives in the same order: as many
+/// characters as allowed, then one fewer at a time down to `min`. It takes
+/// the body's single-character test as the upstream opcode does, so it
+/// matches exactly what the counter loop matches.
+///
+/// The body must be one instruction that consumes one character and cannot
+/// be empty. Ranges that C expands inline are left as they are: `{n,}` with
+/// `n >= 2` gets an expansion for every body that cannot be empty (only a
+/// body that may be empty switches to REPEAT), and a finite range is left to
+/// `can_expand_finite_greedy_quantifier`.
+///
+/// The retry count stays at or below C's. C's finite ranges (`REPEAT`) count
+/// every give-back, as this loop does. C's `{n,}` expansion pushes only where
+/// the follower can start, when its first byte is known: an ASCII-only run
+/// does the same here (`peek`); for other bodies such a `{n,}` keeps its
+/// expansion.
+fn counted_char_repeat(qn: &QuantNode, reg: &RegexType) -> Option<CountedRepeat> {
+    if !counted_char_repeat_enabled()
+        || !qn.greedy
+        || qn.include_referred != 0
+        || qn.emptiness != BodyEmptyType::NotEmpty
+    {
+        return None;
+    }
+    let infinite = is_infinite_repeat(qn.upper);
+    let (min, max) = if infinite {
+        // `*` and `+` have their own star opcodes.
+        if qn.lower < 2 {
+            return None;
+        }
+        (qn.lower as u32, CHAR_REPEAT_UNBOUNDED)
+    } else {
+        // The body is one instruction: C's `tlen` of 1 decides the expansion.
+        if qn.upper < 2 || qn.lower >= qn.upper || can_expand_finite_greedy_quantifier(1, qn.upper)
+        {
+            return None;
+        }
+        (qn.lower as u32, qn.upper as u32)
+    };
+    let body = qn.body.as_deref()?;
+    let (body, ascii_only) = match &body.inner {
+        NodeInner::CClass(cc) if cc.mbuf.is_none() => {
+            // The bits compile_cclass_node tests for a single-byte class.
+            let bsp = single_byte_cclass_bits(cc, reg.enc);
+            let ascii_only = !cc.is_not() && bsp[128 / BITS_IN_ROOM..].iter().all(|&b| b == 0);
+            let ascii_fast = detect_cclass_ascii_fast(&bsp);
+            let body = CountedChar::Class {
+                bsp,
+                ascii_fast,
+                not: cc.is_not(),
+            };
+            (body, ascii_only)
+        }
+        NodeInner::CType(ct) if ct.ctype == CTYPE_ANYCHAR => (
+            CountedChar::AnyChar {
+                multiline: is_anychar_multiline(body),
+            },
+            false,
+        ),
+        NodeInner::String(sn)
+            if sn.s.len() == 1
+                && sn.s[0] < 0x80
+                && !body.has_status(ND_ST_IGNORECASE)
+                && !body.has_status(ND_ST_LITERAL_ALT) =>
+        {
+            let mut bsp: BitSet = [0; BITSET_REAL_SIZE];
+            bitset_set_bit(&mut bsp, sn.s[0] as usize);
+            let body = CountedChar::Class {
+                bsp,
+                ascii_fast: CClassAsciiFastKind::Eq(sn.s[0]),
+                not: false,
+            };
+            (body, true)
+        }
+        _ => return None,
+    };
+    // C's `{n,}` expansion pushes its give-backs only where the follower's
+    // first byte is; the other bodies keep that expansion.
+    if infinite && qn.next_head_exact.is_some() && !ascii_only {
+        return None;
+    }
+    let peek = if ascii_only {
+        qn.next_head_exact.unwrap_or(0)
+    } else {
+        0
+    };
+    Some(CountedRepeat {
+        body,
+        min,
+        max,
+        peek,
+        ascii_only,
+    })
+}
+
+/// Emit the counted loop of `counted_char_repeat`.
+fn compile_counted_char_repeat(repeat: CountedRepeat, reg: &mut RegexType) {
+    let CountedRepeat {
+        body,
+        min,
+        max,
+        peek,
+        ascii_only,
+    } = repeat;
+    match body {
+        CountedChar::Class {
+            bsp,
+            ascii_fast,
+            not,
+        } => {
+            add_op(
+                reg,
+                OpCode::CClassRepeat,
+                OperationPayload::CClassRepeat {
+                    bsp: Box::new(bsp),
+                    ascii_fast,
+                    not,
+                    min,
+                    max,
+                    peek,
+                    ascii_only,
+                },
+            );
+        }
+        CountedChar::AnyChar { multiline } => {
+            add_op(
+                reg,
+                OpCode::AnyCharRepeat,
+                OperationPayload::AnyCharRepeat {
+                    multiline,
+                    min,
+                    max,
+                },
+            );
+        }
+    }
+}
+
 /// Rust-only (ADR-008): whether a greedy repeat compiles to one of the star
 /// instructions above (`CClassStar` and its class forms, or `WordStar` /
 /// `WordAsciiStar`) and nothing else, which `crate::possessify` needs to make
@@ -1292,6 +1490,11 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
 
     // The Rust-only star forms below are skipped when measuring C's length.
     let rust_only = !upstream_length();
+
+    // Rust-only (ADR-008): a counted character repeat is one instruction.
+    if rust_only && counted_char_repeat(qn, reg).is_some() {
+        return SIZE_INC;
+    }
 
     // CClass star/plus optimization: [class]* or [class]+ (negated too)
     if rust_only && is_cclass_infinite_greedy(qn) && body.as_cclass().is_some() {
@@ -1432,6 +1635,12 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
             );
             return compile_tree(body, reg, env);
         }
+        return 0;
+    }
+
+    // Rust-only (ADR-008): a bounded repeat of one character instruction.
+    if let Some(repeat) = counted_char_repeat(qn, reg) {
+        compile_counted_char_repeat(repeat, reg);
         return 0;
     }
 
@@ -12539,7 +12748,9 @@ mod tests {
         let _limits = crate::regexec::shared_limits();
         // This is intentionally small enough to stay safe on the vulnerable
         // compiler path, while exceeding the upstream 10-op expansion budget.
-        let reg = parse_and_compile(b"a{6,7}").unwrap();
+        // A body of two characters is not one instruction, so it keeps the
+        // counter loop (see `compile_bounded_character_repeat_uses_counted_loop`).
+        let reg = parse_and_compile(b"(?:ab){6,7}").unwrap();
         assert!(
             reg.ops.iter().any(|op| op.opcode == OpCode::Repeat),
             "over-limit interval should use bounded repeat bytecode"
@@ -12547,6 +12758,23 @@ mod tests {
         assert_eq!(reg.repeat_range.len(), 1);
         assert_eq!(reg.repeat_range[0].lower, 6);
         assert_eq!(reg.repeat_range[0].upper, 7);
+
+        let re = crate::api::Regex::new("(?:ab){6,7}").unwrap();
+        assert!(re.is_match("abababababab"));
+        assert!(re.is_match("ababababababab"));
+        assert!(!re.is_match("ababababab"));
+    }
+
+    #[test]
+    fn compile_bounded_character_repeat_uses_counted_loop() {
+        let _limits = crate::regexec::shared_limits();
+        let reg = parse_and_compile(b"a{6,7}").unwrap();
+        assert!(
+            reg.ops.iter().any(|op| op.opcode == OpCode::CClassRepeat),
+            "over-limit interval of one character should use the counted loop"
+        );
+        assert!(!reg.ops.iter().any(|op| op.opcode == OpCode::Repeat));
+        assert!(reg.repeat_range.is_empty());
 
         let re = crate::api::Regex::new("a{6,7}").unwrap();
         assert!(re.is_match("aaaaaa"));
@@ -12558,7 +12786,10 @@ mod tests {
     fn compile_over_limit_interval_with_unrelated_call_uses_repeat_bytecode() {
         let _limits = crate::regexec::shared_limits();
         let mut reg = make_test_context().0;
-        assert_eq!(onig_compile(&mut reg, b"(?<digit>\\d)\\g<digit>a{6,7}"), 0);
+        assert_eq!(
+            onig_compile(&mut reg, b"(?<digit>\\d)\\g<digit>(?:ab){6,7}"),
+            0
+        );
 
         assert!(
             reg.ops.iter().any(|op| op.opcode == OpCode::Repeat),
@@ -12568,10 +12799,10 @@ mod tests {
         assert_eq!(reg.repeat_range[0].lower, 6);
         assert_eq!(reg.repeat_range[0].upper, 7);
 
-        let re = crate::api::Regex::new(r"(?<digit>\d)\g<digit>a{6,7}").unwrap();
-        assert!(re.is_match("11aaaaaa"));
-        assert!(re.is_match("11aaaaaaa"));
-        assert!(!re.is_match("11aaaaa"));
+        let re = crate::api::Regex::new(r"(?<digit>\d)\g<digit>(?:ab){6,7}").unwrap();
+        assert!(re.is_match("11abababababab"));
+        assert!(re.is_match("11ababababababab"));
+        assert!(!re.is_match("11ababababa"));
     }
 
     #[test]

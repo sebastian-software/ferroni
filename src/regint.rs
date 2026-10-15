@@ -42,6 +42,9 @@ pub(crate) const STEP_BACK_MAX_CHAR_LEN: i32 = 65535;
 pub(crate) const LOOK_BEHIND_MAX_CHAR_LEN: i32 = STEP_BACK_MAX_CHAR_LEN;
 pub(crate) const INFINITE_REPEAT: i32 = -1;
 
+/// The `max` of a counted character repeat without an upper bound (`{n,}`).
+pub(crate) const CHAR_REPEAT_UNBOUNDED: u32 = u32::MAX;
+
 #[inline]
 pub(crate) fn is_infinite_repeat(n: i32) -> bool {
     n == INFINITE_REPEAT
@@ -360,6 +363,12 @@ pub(crate) enum OpCode {
     /// cluster boundary, the steps of upstream's `\O(?:\Y\O)*` in one
     /// dispatch, and never pushes a backtrack entry.
     GraphemeCluster = 102,
+    /// Rust-only (ADR-008): a greedy bounded repeat `[class]{min,max}` run as a
+    /// counted star loop instead of a `Repeat` counter loop.
+    CClassRepeat = 103,
+    /// Rust-only (ADR-008): a greedy bounded repeat `.{min,max}` (`AnyChar`
+    /// or `AnyCharMl`) run as a counted star loop.
+    AnyCharRepeat = 104,
 }
 
 // === SaveType ===
@@ -477,6 +486,29 @@ pub(crate) enum OperationPayload {
     CClassStarPeekNext {
         bsp: Box<BitSet>,
         c: u8,
+    },
+    /// Rust-only (ADR-008): `CClassRepeat`. The character test is the
+    /// single-character opcode's (`CClass`, or `CClassNot` when `not`), and
+    /// the run takes between `min` and `max` characters, `max` being
+    /// `CHAR_REPEAT_UNBOUNDED` for `{n,}`. A non-zero `peek` is the byte the
+    /// follower starts with, for a run of one-byte characters: only the
+    /// positions holding it are given back to the follower.
+    CClassRepeat {
+        bsp: Box<BitSet>,
+        ascii_fast: CClassAsciiFastKind,
+        not: bool,
+        min: u32,
+        max: u32,
+        peek: u8,
+        /// Only one-byte characters match (a non-negated class without
+        /// multibyte bits), so the run is a plain byte scan.
+        ascii_only: bool,
+    },
+    /// Rust-only (ADR-008): `AnyCharRepeat`, `.{min,max}` with the same bounds.
+    AnyCharRepeat {
+        multiline: bool,
+        min: u32,
+        max: u32,
     },
     WordAsciiStarPeekNext {
         c: u8,
