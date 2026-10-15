@@ -813,7 +813,9 @@ mod tests {
     #[test]
     fn accept_seeks_are_absent_where_the_walk_says() {
         for pattern in [
-            "^[0-9]+:[a-z]+$",
+            // `tune_next`'s `[0-9]+` alone is exact in the seek (ADR-008);
+            // the Unicode class keeps this one inexact.
+            "^[0-9]+:[a-zé-ü]+$",
             "[é-ü]+x",
             r"\.(?!-)[a-z-]{1,3}(?<!-)",
             "x(?!-)ab",
@@ -1022,7 +1024,9 @@ mod tests {
             (r"(?!a)(?:ab|cd|e?f)x", false, true),
             (r"x(?:ab|c*d)(?<!d)", false, true),
             (r"(?:-|a)(?<!-)b", false, true),
-            (r"^[0-9]+:[a-z]+$", false, true),
+            (r"^[0-9]+:[a-zé-ü]+$", false, true),
+            // Exact seek: answered without an accept seek.
+            (r"^[0-9]+:[a-z]+$", false, false),
             (r"(?i)straße[é-ü]", false, true),
             (r"(?i)[ßà-ÿ]+x", false, true),
             (r"(?i)\Ak[a-zà-ÿ]*\z", false, true),
