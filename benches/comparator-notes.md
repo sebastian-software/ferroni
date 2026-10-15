@@ -4,30 +4,20 @@ The comparison tests source-backed regex operations with required outputs. A
 library's benchmark example is a lead for a workload, not evidence of production
 usage or a reason to change the input mix to favor an engine.
 
-## regexr 0.6.1
+## regexr (removed)
 
-[regexr](https://github.com/ml-rust/regexr/tree/247a10d35f35fc1900333ca97f497920f784746a)
-positions itself as a Rust engine for tokenization and LLM text processing. Its
-examples include cl100k_base and o200k_base; its generic email, URL, log and
-lookaround examples overlap questions already represented by production cases.
-The comparison uses the current original tiktoken definitions, with documented
-syntax translation and original Python-regex oracles, rather than assuming the
-older expressions in a benchmark are current.
-
-The measured profiles keep default SIMD and explicitly enable `(?u)` for Unicode
-word/digit classes and boundaries. Source inspection shows whitespace is already
-Unicode-aware, despite the feature guide's ASCII shorthand descriptions. JIT
-is off or enabled through `RegexBuilder::jit`; the recorded backend makes any
-fallback visible. This compares the library's supported configurations, not a
-claim that every JIT-enabled pattern receives generated machine code.
-
-The published crate records source revision
-`54a9116abb64b38ae63c687f68489fad57db682f`. The reviewed repository examples
-have their own pinned revision in the tokenizer catalog. A source-oracle
-segmentation difference does not imply a missing grapheme implementation:
-regexr implements GB9c for Indic conjuncts, whereas the retained Symfony oracle
-splits the illustrated conjunct. Its matrix cell remains supported; the
-specific mismatching task is not timed.
+regexr 0.6.1 was compared in one Blacksmith run
+([38571723690](https://github.com/sebastian-software/ferroni/actions/runs/38571723690),
+measured at `7b9933c`) with JIT off and on, Unicode mode and default SIMD. It
+returned the required output for 10 of the 21 production tasks in the
+aggregate and for one of the two tokenizer cases, and its public API has no context-preserving offset
+search. On the common production cases it took about 7 times Ferroni's time for
+steady reuse and about 4 times for compilation on both platforms; on the
+`o200k_base` tokenizer case it took about 17% less time. JIT made no material
+difference. It is also far less widely used than the other comparators. With
+neither speed, adoption nor coverage to inform a choice, it was removed from
+the comparison. The tokenizer corpus keeps its regexr provenance: its inputs
+were selected from regexr's tokenizer examples.
 
 ## fancy-regex 0.19.2
 

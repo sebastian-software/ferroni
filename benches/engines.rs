@@ -37,17 +37,11 @@ pub enum Engine {
     /// fancy-regex's `RegexSet` over all patterns of one scanner. It has no
     /// single-pattern form, so only the scanner replays run it.
     FancySet,
-    /// regexr's Unicode mode, default SIMD, and JIT disabled.
-    Regexr,
-    /// regexr with JIT enabled; its selector may retain a non-JIT backend.
-    RegexrJit,
     #[cfg(feature = "onigmo")]
     Onigmo,
 }
 
 impl Engine {
-    /// Additional profiles for the production harness, which uses native iteration.
-    pub const PRODUCTION_EXTRA: &[Engine] = &[Engine::Regexr, Engine::RegexrJit];
     /// Every engine a scanner replay runs.
     pub const ALL: &[Engine] = &[
         Engine::Pcre2Jit,
@@ -78,8 +72,6 @@ impl Engine {
             Engine::Fancy => "fancy_regex",
             Engine::FancySeek => "fancy_regex_seek",
             Engine::FancySet => "fancy_regex_set",
-            Engine::Regexr => "regexr",
-            Engine::RegexrJit => "regexr_jit",
             #[cfg(feature = "onigmo")]
             Engine::Onigmo => "onigmo",
         }
@@ -111,10 +103,6 @@ impl Engine {
         options: CompileOptions,
     ) -> Result<Compiled, String> {
         match self {
-            Engine::Regexr | Engine::RegexrJit => {
-                regexr_adapter::Regex::new(pattern, options, self == Engine::RegexrJit)
-                    .map(|regex| Compiled::Regexr(Box::new(regex)))
-            }
             Engine::Pcre2Jit | Engine::Pcre2 => {
                 pcre2::Regex::new(pattern, options, self == Engine::Pcre2Jit).map(Compiled::Pcre2)
             }
@@ -139,7 +127,6 @@ impl Engine {
 }
 
 pub enum Compiled {
-    Regexr(Box<regexr_adapter::Regex>),
     Pcre2(pcre2::Regex),
     Fancy(fancy_regex::Regex),
     #[cfg(feature = "onigmo")]
@@ -147,20 +134,14 @@ pub enum Compiled {
 }
 
 impl Compiled {
-    /// Boolean matching through regexr's native API, or the other search adapters.
+    /// Boolean matching through the search adapters.
     pub fn is_match(&self, text: &str, start: usize) -> Result<bool, String> {
-        match self {
-            Self::Regexr(regex) => {
-                regexr_adapter::Regex::check_start(start)?;
-                Ok(regex.inner.is_match(text))
-            }
-            _ => self.search(text, start).map(|found| found.is_some()),
-        }
+        self.search(text, start).map(|found| found.is_some())
     }
+
     /// First match span, without materializing subgroup captures.
     pub fn find(&self, text: &str, start: usize) -> Result<Option<(usize, usize)>, String> {
         match self {
-            Compiled::Regexr(regex) => regex.find(text, start),
             Compiled::Pcre2(regex) => regex.search(text, start, |v| (v[0], v[1])),
             Compiled::Fancy(regex) => regex
                 .find_from_pos(text, start)
@@ -177,9 +158,6 @@ impl Compiled {
     /// documented adapter because their public API has no replacement method.
     pub fn native_replace(&self, text: &str, replacement: &str) -> Option<Result<String, String>> {
         match self {
-            Compiled::Regexr(regex) => {
-                Some(Ok(regex.inner.replace_all(text, replacement).into_owned()))
-            }
             Compiled::Fancy(regex) => Some(
                 regex
                     .try_replacen(text, 0, replacement)
@@ -193,7 +171,6 @@ impl Compiled {
     /// Start of the first match at or after `start`, without capture output.
     pub fn search(&self, text: &str, start: usize) -> Result<Option<usize>, String> {
         match self {
-            Compiled::Regexr(regex) => regex.search(text, start),
             Compiled::Pcre2(regex) => regex.search(text, start, |ovector| ovector[0]),
             Compiled::Fancy(regex) => regex
                 .find_from_pos(text, start)
@@ -210,7 +187,6 @@ impl Compiled {
             range.map_or((-1, -1), |(beg, end)| (beg as i32, end as i32))
         };
         match self {
-            Compiled::Regexr(regex) => regex.captures(text, start),
             Compiled::Pcre2(regex) => regex.search(text, start, |ovector| {
                 ovector
                     .as_chunks::<2>()
@@ -236,28 +212,9 @@ impl Compiled {
         }
     }
 
-    /// Native whole-subject iteration where an engine lacks public offset searches.
-    pub fn native_all_captures(&self, text: &str) -> Option<Vec<Captures>> {
-        match self {
-            Self::Regexr(regex) => Some(
-                regex
-                    .inner
-                    .captures_iter(text)
-                    .map(regexr_adapter::bounds)
-                    .collect(),
-            ),
-            _ => None,
-        }
-    }
-
     /// Whole-match spans through each engine's public iterator, where available.
     pub fn native_all_matches(&self, text: &str) -> Option<Result<Vec<(usize, usize)>, String>> {
         match self {
-            Self::Regexr(regex) => Some(Ok(regex
-                .inner
-                .find_iter(text)
-                .map(|m| (m.start(), m.end()))
-                .collect())),
             Self::Fancy(regex) => Some(
                 regex
                     .find_iter(text)
@@ -270,96 +227,6 @@ impl Compiled {
             ),
             _ => None,
         }
-    }
-
-    /// Untimed execution-error check for regexr's otherwise infallible public APIs.
-    pub fn check_execution(&self, text: &str) -> Result<(), String> {
-        if let Self::Regexr(regex) = self {
-            regex
-                .inner
-                .try_find(text)
-                .map_err(|error| error.to_string())?;
-            regex
-                .inner
-                .try_captures(text)
-                .map_err(|error| error.to_string())?;
-        }
-        Ok(())
-    }
-
-    /// The backend selected by regexr, including a possible JIT fallback.
-    pub fn backend(&self) -> Option<&str> {
-        match self {
-            Self::Regexr(regex) => Some(regex.inner.engine_name()),
-            _ => None,
-        }
-    }
-}
-
-/// regexr 0.6.1's public Regex API; Unicode shorthand classes are explicitly enabled.
-mod regexr_adapter {
-    pub struct Regex {
-        pub inner: regexr::Regex,
-    }
-
-    impl Regex {
-        pub fn new(pattern: &str, flags: super::CompileOptions, jit: bool) -> Result<Self, String> {
-            let mut modifiers = String::from("u");
-            for (enabled, flag) in [
-                (flags.ignore_case, 'i'),
-                (flags.multiline, 'm'),
-                (flags.dotall, 's'),
-                (flags.extended, 'x'),
-            ] {
-                if enabled {
-                    modifiers.push(flag);
-                }
-            }
-            regexr::RegexBuilder::new(&format!("(?{modifiers}){pattern}"))
-                .jit(jit)
-                .build()
-                .map(|inner| Self { inner })
-                .map_err(|error| error.to_string())
-        }
-
-        pub fn check_start(start: usize) -> Result<(), String> {
-            if start != 0 {
-                return Err(
-                    "API unsupported: regexr's public Regex has no preserved-context offset search"
-                        .to_owned(),
-                );
-            }
-            Ok(())
-        }
-
-        pub fn find(&self, text: &str, start: usize) -> Result<Option<(usize, usize)>, String> {
-            Self::check_start(start)?;
-            Ok(self.inner.find(text).map(|m| (m.start(), m.end())))
-        }
-
-        pub fn search(&self, text: &str, start: usize) -> Result<Option<usize>, String> {
-            self.find(text, start)
-                .map(|found| found.map(|(begin, _)| begin))
-        }
-
-        pub fn captures(
-            &self,
-            text: &str,
-            start: usize,
-        ) -> Result<Option<super::Captures>, String> {
-            Self::check_start(start)?;
-            Ok(self.inner.captures(text).map(bounds))
-        }
-    }
-
-    pub fn bounds(captures: regexr::Captures<'_>) -> super::Captures {
-        (0..captures.len())
-            .map(|index| {
-                captures
-                    .get(index)
-                    .map_or((-1, -1), |m| (m.start() as i32, m.end() as i32))
-            })
-            .collect()
     }
 }
 

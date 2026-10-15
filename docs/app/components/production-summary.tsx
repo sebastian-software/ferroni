@@ -1,16 +1,8 @@
-// cspell:ignore regexr
 import { useId } from "react";
 
 import data from "../data/production-summary.json";
-import additionalResults from "../data/regexr-summary.json";
-import tokenizer from "../data/tokenizer-highlights.json";
 import { BenchmarkFactor } from "./benchmark-factor";
 import "./production-summary.css";
-
-function publishedSummary(summary: typeof data): typeof data | undefined {
-  return summary.platforms.length > 0 ? summary : undefined;
-}
-const additional = publishedSummary(additionalResults);
 
 type Platform = (typeof data.platforms)[number];
 type Comparison = Platform["comparisons"][number];
@@ -23,17 +15,10 @@ const comparators = [
   ["fancy_regex", "fancy-regex, seek off", "Rust"],
   ["fancy_regex_seek", "fancy-regex, seek on", "Rust"],
   ["onigmo", "Ruby Onigmo", "C"],
-  ...(additional === undefined
-    ? []
-    : [
-        ["regexr", "regexr, JIT off", "Rust"],
-        ["regexr_jit", "regexr, JIT enabled", "Rust"],
-      ]),
 ];
 
 function comparison(profile: string, engine: string, lane = "steady"): Comparison {
-  const source = engine.startsWith("regexr") && additional !== undefined ? additional : data;
-  const platform = source.platforms.find((entry) => entry.profile === profile);
+  const platform = data.platforms.find((entry) => entry.profile === profile);
   const pair = platform?.comparisons.find(
     (entry) => entry.engine === engine && entry.lane === lane,
   );
@@ -151,22 +136,6 @@ function RunNote() {
   );
 }
 
-function TokenizerNote() {
-  const throughput = (profile: string) => {
-    const result = tokenizer.platforms.find((entry) => entry.profile === profile);
-    if (result === undefined) throw new Error("Tokenizer evidence is incomplete.");
-    return (1 / result.regexr_ratio).toFixed(2);
-  };
-  return (
-    <p className="production-summary-note">
-      In the separate <a href="/perf/regex-workloads">o200k_base pre-tokenization case</a>,
-      regexr&rsquo;s JIT-off profile reaches {throughput("macos-arm64")}× Ferroni&rsquo;s throughput
-      on ARM and {throughput("linux-x86-64")}× on Linux. These tokenizer results have their own
-      scope and do not enter the 21-task aggregate above.
-    </p>
-  );
-}
-
 export function ProductionSummary() {
   return (
     <div className="production-summary">
@@ -185,14 +154,6 @@ export function ProductionSummary() {
       </p>
       <CostNotes />
       <RunNote />
-      <TokenizerNote />
-      {additional !== undefined && (
-        <p className="production-summary-note">
-          regexr uses a <a href={additional.run.html_url}>separate paired Blacksmith run</a> with a
-          freshly measured Ferroni baseline. Unicode mode is enabled. Its JIT-enabled selector can
-          fall back to a non-JIT backend; the detailed evidence records the choice.
-        </p>
-      )}
     </div>
   );
 }

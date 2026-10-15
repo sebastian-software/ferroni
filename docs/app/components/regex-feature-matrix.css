@@ -19,7 +19,7 @@
 .regex-feature-matrix .fam-compare-table {
   display: table;
   overflow: visible;
-  min-width: 46rem;
+  min-width: 40rem;
   table-layout: fixed;
 }
 

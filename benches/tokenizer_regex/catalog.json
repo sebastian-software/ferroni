@@ -75,7 +75,7 @@
       },
       "adaptations": [
         "Replace the bounded possessive \\p{N}{1,3}+ with the equivalent atomic group (?>\\p{N}{1,3}) for Oniguruma-family syntax. Its default dialect otherwise parses the trailing + as another repetition. Preserve all other source constructs and match spans.",
-        "Enable Unicode shorthand classes in PCRE2 and regexr; preserve Unicode properties and inline case options.",
+        "Enable Unicode shorthand classes in PCRE2; preserve Unicode properties and inline case options.",
         "Use native whole-match iteration where available, preserving every match span without requesting subgroup capture output."
       ],
       "inputs": [
@@ -6675,7 +6675,7 @@
       },
       "adaptations": [
         "Import the current upstream pattern verbatim, including possessive quantifiers. All captures are group 0 because both production patterns use only noncapturing groups.",
-        "Enable Unicode shorthand classes in PCRE2 and regexr; preserve Unicode properties and inline case options.",
+        "Enable Unicode shorthand classes in PCRE2; preserve Unicode properties and inline case options.",
         "Use native whole-match iteration where available, preserving every match span without requesting subgroup capture output."
       ],
       "inputs": [

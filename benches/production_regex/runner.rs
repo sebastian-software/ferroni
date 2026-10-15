@@ -156,15 +156,6 @@ enum Library {
 impl Library {
     fn compile(engine: &str, case: &Case) -> Result<Self, String> {
         let flags = case.flags;
-        if engine.starts_with("regexr")
-            && !case.slice_at_start
-            && case.inputs.iter().any(|input| input.start != 0)
-        {
-            return Err(
-                "API unsupported: regexr's public Regex has no preserved-context offset search"
-                    .to_owned(),
-            );
-        }
         match engine {
             "rust" | "rust_erroraware" => Regex::builder(&case.pattern)
                 .case_insensitive(flags.ignore_case)
@@ -202,7 +193,6 @@ impl Library {
                 .map_err(|error| error.to_string()),
             _ => Engine::PER_PATTERN
                 .iter()
-                .chain(Engine::PRODUCTION_EXTRA)
                 .find(|candidate| candidate.id() == engine)
                 .ok_or_else(|| format!("engine {engine} was not built"))?
                 .compile_with_options(&case.pattern, flags)
@@ -289,19 +279,6 @@ impl Library {
     }
 
     fn all_captures(&self, input: &Input) -> Result<Vec<Bounds>, String> {
-        if let Self::Other(regex) = self {
-            if let Some(captures) = regex.native_all_captures(&input.text) {
-                return Ok(captures
-                    .into_iter()
-                    .map(|groups| {
-                        groups
-                            .into_iter()
-                            .map(|(s, e)| (s >= 0).then_some((s as usize, e as usize)))
-                            .collect()
-                    })
-                    .collect());
-            }
-        }
         match self {
             Self::Ferroni(regex, true) => regex
                 .captures_iter_with(&input.text, Self::options())
@@ -545,11 +522,6 @@ fn eligibility(engine: &str, case: &Case) -> Result<Library, Value> {
     let error_check = (engine == "rust")
         .then(|| Library::compile("rust_erroraware", case).expect("same Ferroni compiler"));
     for (index, input) in case.inputs.iter().enumerate() {
-        if let Library::Other(regex) = &library {
-            regex
-                .check_execution(&input.text)
-                .map_err(|reason| failure("execution_error", reason))?;
-        }
         if let Some(check) = &error_check {
             check
                 .execute(case, input)
@@ -573,12 +545,7 @@ fn eligibility(engine: &str, case: &Case) -> Result<Library, Value> {
 
 fn engines() -> Vec<&'static str> {
     let mut result = vec!["rust", "rust_erroraware", "c", "regex"];
-    result.extend(
-        Engine::PER_PATTERN
-            .iter()
-            .chain(Engine::PRODUCTION_EXTRA)
-            .map(|engine| engine.id()),
-    );
+    result.extend(Engine::PER_PATTERN.iter().map(|engine| engine.id()));
     result
 }
 
@@ -638,7 +605,7 @@ pub fn main() {
                         }
                         println!(
                             "{}",
-                            json!({"case":case.id,"engine":engine,"status":"eligible","inputs":case.inputs.len(),"bytes":case.bytes(), "backend": match &library { Library::Other(regex) => regex.backend(), _ => None }})
+                            json!({"case":case.id,"engine":engine,"status":"eligible","inputs":case.inputs.len(),"bytes":case.bytes()})
                         );
                         black_box(library);
                     }

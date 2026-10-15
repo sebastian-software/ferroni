@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish independently paired regexr and LLM pre-tokenization Blacksmith evidence."""
+"""Publish the LLM pre-tokenization Blacksmith evidence."""
 import argparse
 import importlib.util
 import json
@@ -15,17 +15,14 @@ spec = importlib.util.spec_from_file_location("publication", ROOT / "scripts/pub
 publication = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publication)
 SCOPES = {
-    "regexr": ("production", "production_regex", ("rust", "regexr", "regexr_jit"), "regexr"),
     "tokenizers": ("tokenizers", "tokenizer_regex", publication.comparison.ENGINES, "tokenizer"),
 }
 
 
 def document(datasets):
-    run = datasets["regexr"]["run"]
+    run = datasets["tokenizers"]["run"]
     lines = ["# Additional source-backed regex comparisons", "",
              f"Measured revision: `{run['head_sha']}`. [Blacksmith run]({run['html_url']}).", "",
-             "The regexr rows use a freshly measured Ferroni standard-API baseline on the same VM and process-repetition schedule. They do not divide new regexr timings by an older Ferroni run. The earlier engines retain their own recorded comparison run.", "",
-             "regexr 0.6.1 uses Unicode mode (`(?u)`), default SIMD and separate JIT-off/JIT-enabled profiles. JIT-enabled selection may fall back to a non-JIT backend; eligibility records retain the actual backend. Native Regex methods, capture iteration and literal replacement are timed. Its public API lacks context-preserving offset searches, which are reported as API gaps. First-match/capture fallible checks run outside timing; iteration/replacement do not expose all execution errors.", "",
              "The separate tiktoken corpus measures complete regex pre-tokenization spans for the current cl100k_base and o200k_base patterns. It excludes BPE merges, token IDs, special-token processing and complete tokenizer throughput. Every profile must reproduce every original Python-regex oracle before timing.", ""]
     for scope, data in datasets.items():
         lines += [f"## {scope}", ""]
@@ -35,7 +32,7 @@ def document(datasets):
                 value = "—" if row["family_weighted_ratio"] is None else f"{row['family_weighted_ratio']:.3f}"
                 lines.append(f"| {row['engine']} | {row['lane']} | {row['case_count']} | {value} |")
             lines.append("")
-    lines += ["Raw samples, logs, source snapshots, dependency locks, eligibility and selected backends are retained per scope/platform in evidence.tar.gz. Three process repetitions run on one VM per platform for this additional run; host power/thermal state is unavailable. Memory is not measured.", "", "```sh", "python3 scripts/publish-additional-comparisons.py --check", "```", ""]
+    lines += ["Raw samples, logs, source snapshots, dependency locks and eligibility are retained per scope/platform in evidence.tar.gz. Three process repetitions run on one VM per platform; host power/thermal state is unavailable. Memory is not measured.", "", "```sh", "python3 scripts/publish-additional-comparisons.py --check", "```", ""]
     return "\n".join(lines)
 
 
@@ -43,16 +40,6 @@ def generate(directories, receipt, current_source=True):
     return {scope: publication.generate(directories[scope], receipt,
                 ROOT / f"benches/{catalog}/catalog.json", engines, current_lock=True, current_source=current_source)
             for scope, (_, catalog, engines, _) in SCOPES.items()}
-
-
-def tokenizer_highlights(data):
-    """Keep the homepage's case-specific evidence small and outside its aggregate."""
-    platforms = []
-    for platform in data["platforms"]:
-        pair = next(row for row in platform["comparisons"] if row["engine"] == "regexr" and row["lane"] == "steady")
-        case = next(row for row in pair["cases"] if row["case"] == "tiktoken_o200k_base")
-        platforms.append({"profile": platform["profile"], "regexr_ratio": case["ratio_median"]})
-    return {"run": {key: data["run"][key] for key in ("head_sha", "html_url")}, "case": "tiktoken_o200k_base", "platforms": platforms}
 
 
 def write_data(datasets):
@@ -64,20 +51,13 @@ def write_data(datasets):
         path = ROOT / f"docs/app/data/{name}-comparison.json"
         path.write_text(publication.encoded(data))
         paths.append(str(path))
-        if scope == "regexr":
-            summary = ROOT / "docs/app/data/regexr-summary.json"
-            summary.write_text(publication.encoded(publication.overview(data)))
-            paths.append(str(summary))
-    highlights = ROOT / "docs/app/data/tokenizer-highlights.json"
-    highlights.write_text(publication.encoded(tokenizer_highlights(datasets["tokenizers"])))
-    paths.append(str(highlights))
     subprocess.run([str(formatter), "--write", *paths], cwd=ROOT / "docs", check=True)
     (RESULTS / "README.md").write_text(document(datasets))
 
 
 def check():
     if not RESULTS.exists():
-        for name in ("regexr-comparison", "regexr-summary", "tokenizer-comparison"):
+        for name in ("tokenizer-comparison",):
             data = publication.read(ROOT / f"docs/app/data/{name}.json")
             publication.require(not data["run"]["head_sha"] and not data["platforms"], "Unverified additional numbers cannot be published")
         print("Additional comparisons have not been published yet.")
@@ -99,8 +79,6 @@ def check():
         datasets = generate(directories, receipt, current_source=False)
     for scope, (_, _, _, name) in SCOPES.items():
         publication.require(publication.equivalent(publication.read(ROOT / f"docs/app/data/{name}-comparison.json"), datasets[scope]), f"{scope} public data has drifted")
-    publication.require(publication.equivalent(publication.read(ROOT / "docs/app/data/regexr-summary.json"), publication.overview(datasets["regexr"])), "regexr summary has drifted")
-    publication.require(publication.equivalent(publication.read(ROOT / "docs/app/data/tokenizer-highlights.json"), tokenizer_highlights(datasets["tokenizers"])), "Tokenizer homepage evidence has drifted")
     publication.require((RESULTS / "README.md").read_text() == document(datasets), "Additional result tables have drifted")
     print("Additional publication check: paired baselines, both platforms, raw samples and website data agree.")
 
@@ -123,7 +101,7 @@ def publish(run_id):
                 shutil.copyfile(directory / "context.json", destination / "context.json")
         (RESULTS / "run.json").write_text(publication.encoded(receipt))
         write_data(datasets)
-    print("Published independently paired regexr and tokenizer comparisons.")
+    print("Published the tokenizer comparison.")
 
 
 def main():

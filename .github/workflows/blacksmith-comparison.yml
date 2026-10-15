@@ -19,11 +19,6 @@ on:
         type: choice
         options: ["3", "5"]
         default: "3"
-      comparison:
-        description: Full production suite or targeted regexr plus tokenizer comparisons
-        type: choice
-        options: [full, regexr-and-tokenizers]
-        default: full
 
 permissions:
   contents: read
@@ -46,9 +41,10 @@ jobs:
     if: github.repository == 'sebastian-software/ferroni'
     name: ${{ matrix.profile }}
     runs-on: ${{ matrix.profile == 'macos-arm64' && 'blacksmith-6vcpu-macos-26' || 'blacksmith-4vcpu-ubuntu-2404' }}
-    # The full profile matrix can exceed three hours at the five-second window.
-    # Keep the default budget shorter, but let the selected window finish.
-    timeout-minutes: ${{ inputs.measure_seconds == '5' && 240 || 180 }}
+    # The production and tokenizer corpora take about two and a half hours at
+    # the three-second window and longer at five seconds. Keep the default
+    # budget shorter, but let the selected window finish.
+    timeout-minutes: ${{ inputs.measure_seconds == '5' && 330 || 210 }}
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +52,6 @@ jobs:
     env:
       CASES: ${{ inputs.cases }}
       MEASURE_SECONDS: ${{ inputs.measure_seconds }}
-      COMPARISON: ${{ inputs.comparison }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,15 +75,11 @@ jobs:
         run: |
           arguments=()
           if [[ -n "$CASES" ]]; then arguments+=(--cases "$CASES"); fi
-          if [[ "$COMPARISON" == "regexr-and-tokenizers" ]]; then
-            arguments+=(--engines rust,regexr,regexr_jit)
-          fi
           python3 scripts/compare-production.py run "$RUNNER_TEMP/production" \
             --measure-seconds "$MEASURE_SECONDS" --timeout 120 \
             --host-note "Dedicated Blacksmith VM; host power/thermal state unavailable. Workflow $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT." \
             "${arguments[@]}"
       - name: Validate and measure separate tokenizer cases
-        if: inputs.comparison == 'regexr-and-tokenizers'
         run: |
           python3 scripts/compare-production.py run "$RUNNER_TEMP/tokenizers" \
             --corpus tokenizer --measure-seconds "$MEASURE_SECONDS" --timeout 120 \
@@ -101,7 +92,7 @@ jobs:
           path: ${{ runner.temp }}/production/
           retention-days: 30
       - name: Retain separate tokenizer evidence
-        if: always() && inputs.comparison == 'regexr-and-tokenizers'
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tokenizers-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}

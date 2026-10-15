@@ -1,4 +1,4 @@
-// cspell:ignore rustc regexr
+// cspell:ignore rustc
 import { useId, useState } from "react";
 
 import {
@@ -9,7 +9,6 @@ import {
   laneNames,
   type Platform,
   ratio,
-  regexrData,
   required,
   tokenizerData,
 } from "./production-comparison-model";
@@ -114,9 +113,7 @@ function RunnerContext({ context, engine }: { context: Platform["context"]; engi
   );
 }
 
-function EvidenceLinks({ run }: { run: Dataset["run"] }) {
-  const directory =
-    run.head_sha === data.run.head_sha ? "production_results" : "additional_results";
+function EvidenceLinks({ run, directory }: { run: Dataset["run"]; directory: string }) {
   return (
     <p>
       Measured revision{" "}
@@ -135,9 +132,6 @@ function EvidenceLinks({ run }: { run: Dataset["run"] }) {
 
 function comparisonOptions(dataset: Dataset) {
   const available = new Set(dataset.platforms[0].comparisons.map((entry) => entry.engine));
-  if (dataset === data && regexrData) {
-    for (const entry of regexrData.platforms[0].comparisons) available.add(entry.engine);
-  }
   return Object.fromEntries(Object.entries(engineNames).filter(([key]) => available.has(key)));
 }
 
@@ -145,13 +139,11 @@ function selectedComparison(
   dataset: Dataset,
   { profile, engine, lane }: { profile: string; engine: string; lane: string },
 ) {
-  const measured =
-    dataset === data && engine.startsWith("regexr") && regexrData ? regexrData : dataset;
-  const platform = required(measured.platforms.find((entry) => entry.profile === profile));
+  const platform = required(dataset.platforms.find((entry) => entry.profile === profile));
   const matches = (entry: Comparison) => entry.engine === engine && entry.lane === lane;
   const comparison = required(platform.comparisons.find(matches));
   const production = required(platform.production_comparisons.find(matches));
-  return { measured, platform, comparison, production };
+  return { platform, comparison, production };
 }
 
 type ControlsProps = {
@@ -201,7 +193,7 @@ export function ProductionComparison({ dataset = data }: { dataset?: Dataset }) 
   const [profile, setProfile] = useState("macos-arm64");
   const [lane, setLane] = useState("steady");
   const [engine, setEngine] = useState("c");
-  const { measured, platform, comparison, production } = selectedComparison(dataset, {
+  const { platform, comparison, production } = selectedComparison(dataset, {
     profile,
     engine,
     lane,
@@ -221,7 +213,7 @@ export function ProductionComparison({ dataset = data }: { dataset?: Dataset }) 
       />
       <ComparisonIntro production={production} repetitions={platform.context.repetitions} />
       <CaseTable
-        cases={measured.cases}
+        cases={dataset.cases}
         platform={platform}
         comparison={comparison}
         lane={lane}
@@ -229,7 +221,10 @@ export function ProductionComparison({ dataset = data }: { dataset?: Dataset }) 
         id={id}
       />
       <RunnerContext context={platform.context} engine={engine} />
-      <EvidenceLinks run={measured.run} />
+      <EvidenceLinks
+        run={dataset.run}
+        directory={dataset === data ? "production_results" : "additional_results"}
+      />
     </div>
   );
 }

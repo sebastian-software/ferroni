@@ -49,7 +49,7 @@ class PublicationTests(unittest.TestCase):
 
     def test_existing_dependencies_cannot_change_when_adding_a_comparator(self):
         original = '\n[[package]]\nname = "regex"\nversion = "1.13.1"\nchecksum = "old"\n'
-        extra = '\n[[package]]\nname = "regexr"\nversion = "0.6.1"\nchecksum = "new"\n'
+        extra = '\n[[package]]\nname = "newcomparator"\nversion = "1.0.0"\nchecksum = "new"\n'
         publication.verify_lock_additions(original, original + extra)
         with self.assertRaisesRegex(ValueError, "changed"):
             publication.verify_lock_additions(original, original.replace('"old"', '"altered"') + extra)
