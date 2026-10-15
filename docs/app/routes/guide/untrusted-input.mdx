@@ -68,6 +68,13 @@ timeout bounds wall-clock time but depends on load: the engine reads the clock
 every 512 backtracks and rounds durations up to whole milliseconds. For untrusted input, a retry limit for reproducible behavior and
 a timeout as a backstop work well together.
 
+On `wasm32-unknown-unknown`, the WebAssembly target for browsers, the standard
+library has no clock, and a search with a time limit panics when it starts.
+This applies to a `timeout` and to a process-wide `onig_set_time_limit` alike.
+There, bound searches with `retry_limit_in_search` and leave the time limit
+unset; a search without one never reads the clock. `wasm32-wasip1` has a clock,
+and timeouts work there.
+
 To iterate under limits, `find_iter_with` yields a `Result` per match. A search
 that reaches a limit yields its error once and ends the iteration:
 

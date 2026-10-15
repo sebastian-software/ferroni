@@ -75,12 +75,17 @@ regex-syntax = { version = "0.8", optional = true, default-features = false, fea
 cc = { version = "1", optional = true }
 
 [dev-dependencies]
-criterion = { version = "0.8", features = ["html_reports"] }
 fancy-regex = "0.19"
 libc = "0.2"
-pcre2-sys = "0.2"
 regex = "1"
 serde_json = "1"
+
+# Only the benches use these: Criterion's default rayon feature and PCRE2's C
+# sources do not build for WebAssembly, so the wasm test job (ci.yml) leaves
+# them out.
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+pcre2-sys = "0.2"
 
 [profile.release]
 lto = "thin"

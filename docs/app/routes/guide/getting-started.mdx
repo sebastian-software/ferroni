@@ -38,6 +38,13 @@ only sets cfg flags, so no C toolchain is needed. It compiles C only when the
 benchmark-only `ffi` feature is enabled, and you never need that feature to use
 the crate.
 
+CI tests the crate on Linux, macOS and Windows. It also builds it for
+WebAssembly: for `wasm32-unknown-unknown`, the browser target, and for
+`wasm32-wasip1`, where the library and API tests run under Wasmtime. On
+`wasm32-unknown-unknown` a search must not set a time limit
+([Untrusted input](./untrusted-input#limit-each-search) explains why and what to
+use instead).
+
 ## Your first match
 
 The idiomatic API lives behind one import.
