@@ -218,9 +218,11 @@ fn bitset_is_empty(bs: &BitSet) -> bool {
 /// Check if a node is a "strict real" node (actually matches characters).
 fn is_strict_real_node(node: &Node) -> bool {
     match node.inner {
-        // A literal alternation compiled to a trie (Rust-only, ADR-008) is
-        // an alternation in C.
-        NodeInner::String(_) => !node.has_status(ND_ST_LITERAL_ALT),
+        // C: `sn->end != sn->s`. A possessive repeat of an empty string
+        // would compile to a PUSH/POP loop that never advances. A literal
+        // alternation compiled to a trie (Rust-only, ADR-008) is an
+        // alternation in C.
+        NodeInner::String(ref sn) => !sn.s.is_empty() && !node.has_status(ND_ST_LITERAL_ALT),
         NodeInner::CClass(_) | NodeInner::CType(_) => true,
         _ => false,
     }
@@ -15736,5 +15738,81 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// An empty string is not a strict real node, as in C: a possessive
+    /// repeat of an empty group keeps the mark and cut. As C's PUSH/POP loop
+    /// it never advanced, so `(?:)++` searched forever under every limit
+    /// (found by the `pattern_match` fuzz target).
+    #[test]
+    fn possessive_repeats_of_an_empty_body_end() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::{ONIG_MISMATCH, ONIG_OPTION_NONE};
+        use crate::regexec::{
+            onig_new_match_param, onig_search, onig_search_with_param,
+            onig_set_match_stack_limit_size_of_match_param,
+            onig_set_retry_limit_in_match_of_match_param,
+            onig_set_retry_limit_in_search_of_match_param,
+        };
+        use crate::regsyntax::OnigSyntaxOniguruma;
+        let _limits = crate::regexec::shared_limits();
+
+        let compile = |pattern: &[u8]| {
+            onig_new(
+                pattern,
+                ONIG_OPTION_NONE,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap()
+        };
+        for (pattern, expected) in [
+            (&b"a(?:)++b"[..], 1),
+            (b"(?:)*+", 0),
+            (b"a(?>(?:)+)b", 1),
+            (b"a(?>(?:)*)b", 1),
+            (b"(?:)++z", ONIG_MISMATCH),
+        ] {
+            let reg = compile(pattern);
+            let subject = b"xab";
+            let (r, _) = onig_search(
+                &reg,
+                subject,
+                subject.len(),
+                0,
+                subject.len(),
+                None,
+                ONIG_OPTION_NONE,
+            );
+            assert_eq!(r, expected, "{pattern:?}");
+            #[cfg(feature = "ffi")]
+            {
+                let c = crate::ffi::CRegex::new(pattern, 0).unwrap();
+                assert_eq!(
+                    c.search(subject, 0, subject.len(), None, 0),
+                    expected,
+                    "C: {pattern:?}"
+                );
+            }
+        }
+
+        // The fuzz input, with the fuzz target's limits.
+        let reg = compile(b"\0(?:)++\0");
+        let subject = b"\xea*\xbb\0\0*(;\xbb\0\0*";
+        let mut mp = onig_new_match_param();
+        onig_set_retry_limit_in_match_of_match_param(&mut mp, 100_000);
+        onig_set_retry_limit_in_search_of_match_param(&mut mp, 100_000);
+        onig_set_match_stack_limit_size_of_match_param(&mut mp, 8192);
+        let (r, _) = onig_search_with_param(
+            &reg,
+            subject,
+            subject.len(),
+            0,
+            subject.len(),
+            None,
+            ONIG_OPTION_NONE,
+            &mp,
+        );
+        assert_eq!(r, 3);
     }
 }
