@@ -562,6 +562,10 @@ pub(crate) struct QuantNode {
     pub next_head_exact: Option<u8>,
     pub include_referred: i32,
     pub empty_status_mem: MemStatusType,
+    /// Rust-only (ADR-008): a greedy single-character star that
+    /// `crate::possessify` proved never has to give anything back. Its star
+    /// instruction is followed by `PopStarChoices`.
+    pub possessive_star: bool,
 }
 
 pub(crate) struct BagNode {
@@ -1050,6 +1054,7 @@ pub(crate) fn node_new_quantifier(lower: i32, upper: i32, greedy: bool) -> Box<N
         next_head_exact: None,
         include_referred: 0,
         empty_status_mem: 0,
+        possessive_star: false,
     }))
 }
 

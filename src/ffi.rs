@@ -6,7 +6,7 @@
 #![allow(non_camel_case_types, non_upper_case_globals, dead_code)]
 
 use std::ffi::c_void;
-use std::os::raw::{c_int, c_uint};
+use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr;
 use std::sync::Once;
 
@@ -31,6 +31,11 @@ pub type OnigEncoding = *const OnigEncodingType;
 
 #[repr(C)]
 pub struct OnigRegSetType {
+    _opaque: [u8; 0],
+}
+
+#[repr(C)]
+pub struct OnigMatchParamType {
     _opaque: [u8; 0],
 }
 
@@ -104,6 +109,26 @@ unsafe extern "C" {
         at: *const u8,
         region: *mut OnigRegion,
         option: c_uint,
+    ) -> c_int;
+
+    pub fn onig_new_match_param() -> *mut OnigMatchParamType;
+
+    pub fn onig_free_match_param(mp: *mut OnigMatchParamType);
+
+    pub fn onig_set_retry_limit_in_match_of_match_param(
+        mp: *mut OnigMatchParamType,
+        limit: c_ulong,
+    ) -> c_int;
+
+    pub fn onig_search_with_param(
+        reg: OnigRegex,
+        str: *const u8,
+        end: *const u8,
+        start: *const u8,
+        range: *const u8,
+        region: *mut OnigRegion,
+        option: c_uint,
+        mp: *mut OnigMatchParamType,
     ) -> c_int;
 
     pub fn onig_region_new() -> *mut OnigRegion;
@@ -238,6 +263,38 @@ impl CRegex {
             onig_search(
                 self.raw, str_ptr, end_ptr, start_ptr, range_ptr, region_ptr, option,
             )
+        }
+    }
+
+    /// `search` with a retry limit per match, through a match parameter
+    /// (`onig_search_with_param`), which leaves the process-wide limits alone.
+    pub fn search_with_retry_limit(
+        &self,
+        text: &[u8],
+        start: usize,
+        range: usize,
+        region: Option<&mut CRegion>,
+        option: c_uint,
+        retry_limit_in_match: u64,
+    ) -> c_int {
+        let Some((str_ptr, end_ptr, start_ptr, range_ptr)) = text_pointers(text, start, range)
+        else {
+            return -1;
+        };
+        let region_ptr = region.map_or(ptr::null_mut(), |r| r.raw);
+        // SAFETY: `self.raw` is owned by this wrapper, the subject pointers
+        // were derived from validated slice offsets, `region_ptr` is null or
+        // an owned C region that outlives the call, and the match parameter
+        // is allocated, used and freed within this block.
+        unsafe {
+            let mp = onig_new_match_param();
+            assert!(!mp.is_null(), "onig_new_match_param failed");
+            onig_set_retry_limit_in_match_of_match_param(mp, retry_limit_in_match as c_ulong);
+            let r = onig_search_with_param(
+                self.raw, str_ptr, end_ptr, start_ptr, range_ptr, region_ptr, option, mp,
+            );
+            onig_free_match_param(mp);
+            r
         }
     }
 
