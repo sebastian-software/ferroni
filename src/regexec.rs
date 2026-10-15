@@ -9104,7 +9104,8 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
         if r < ONIG_MISMATCH {
             return r;
         }
-        if r != ONIG_MISMATCH {
+        // C: `goto mismatch`, see `search_returns_longest`.
+        if r != ONIG_MISMATCH && (!find_longest || search_returns_longest(reg)) {
             return start as i32;
         }
         return ONIG_MISMATCH;
@@ -9420,7 +9421,8 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
             if r < ONIG_MISMATCH {
                 return r;
             } // error
-            if r != ONIG_MISMATCH {
+            // C: `goto mismatch`, see `search_returns_longest`.
+            if r != ONIG_MISMATCH && (!find_longest || search_returns_longest(reg)) {
                 return s as i32;
             }
         }
@@ -10345,10 +10347,21 @@ fn finish_search(
     upper_range: usize,
     msa: &mut MatchArg,
 ) -> i32 {
-    if find_longest && best_start != ONIG_MISMATCH {
+    if find_longest && best_start != ONIG_MISMATCH && search_returns_longest(reg) {
         return finish_longest_search(best_start, reg, str_data, end, upper_range, msa);
     }
     ONIG_MISMATCH
+}
+
+/// Whether a FIND_LONGEST search returns the longest match its attempts
+/// collected. C's attempts collect it under the search's options
+/// (`msa->options`) and then fail, but `search_in_range` returns it
+/// (`mismatch:`) only for a FIND_LONGEST compiled into the expression
+/// (`OPTON_FIND_LONGEST(reg->options)`). With FIND_LONGEST passed to the
+/// search alone, the search reports no match.
+#[inline]
+fn search_returns_longest(reg: &RegexType) -> bool {
+    opton_find_longest(reg.options)
 }
 
 /// `finish_search` with a FIND_LONGEST match.
