@@ -110,17 +110,25 @@ def verify_raw(directory, record, lane, estimate, samples):
 
 
 def verify_lock_additions(retained, current):
-    """Keep prior evidence valid only when existing packages remain unchanged."""
-    blocks = lambda text: {re.search(r'^name = "([^"]+)"', block, re.M)[1] + "@" + re.search(r'^version = "([^"]+)"', block, re.M)[1]: block for block in text.split("\n[[package]]\n")[1:]}
+    """Keep prior evidence valid only when existing packages remain unchanged.
+
+    Ferroni's own package is matched by name: a release changes only its
+    version line, which says nothing about the measured dependencies.
+    """
+    def key(block):
+        name = re.search(r'^name = "([^"]+)"', block, re.M)[1]
+        return name if name == "ferroni" else name + "@" + re.search(r'^version = "([^"]+)"', block, re.M)[1]
+    blocks = lambda text: {key(block): block for block in text.split("\n[[package]]\n")[1:]}
     before, after = blocks(retained), blocks(current)
     for key, old in before.items():
         require(key in after, "A retained dependency is missing from the current lock")
         new = after[key]
-        if key.startswith("ferroni@"):
+        if key == "ferroni":
             pattern = r'dependencies = \[\n(.*?)\n\]'
             old_deps, new_deps = (set(re.search(pattern, block, re.S)[1].splitlines()) for block in (old, new))
             require(old_deps == new_deps, "The retained root dependencies changed")
-            require(re.sub(pattern, "", old, flags=re.S) == re.sub(pattern, "", new, flags=re.S), "The retained root package changed")
+            strip = lambda block: re.sub(r'^version = ".*"$', "", re.sub(pattern, "", block, flags=re.S), flags=re.M)
+            require(strip(old) == strip(new), "The retained root package changed")
         else:
             require(old == new, f"The retained dependency {key} changed")
 
@@ -138,6 +146,9 @@ def verify_source_snapshot(path, checksum, current_source=True):
 
     Publishing a new run still requires byte-for-byte current implementation
     equality. Checking existing tables verifies the measured snapshot instead.
+    The dependency lock follows the same rule where a caller requires it: a
+    release that only bumps Ferroni's own version leaves the retained lock
+    verifiable by its checksum.
     """
     require(sha256(path) == checksum, "Checksum mismatch: source-snapshot.tar.gz")
     with tarfile.open(path) as archive:
