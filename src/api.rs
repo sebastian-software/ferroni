@@ -162,7 +162,9 @@ impl SearchOptions {
     }
 
     /// Stop the search with [`RegexError::MatchStackLimitOver`] once the
-    /// backtracking stack holds `limit` entries. Zero removes the limit.
+    /// backtracking stack needs more than `limit` entries. As in C Oniguruma,
+    /// a limit below 320 lets the stack hold 321 entries. Zero removes the
+    /// limit.
     pub const fn match_stack_limit(mut self, limit: u32) -> Self {
         self.match_stack_limit = Some(limit);
         self
@@ -3391,6 +3393,9 @@ mod tests {
             "one two three four five six".to_owned(),
             "mail user@example.com and more".to_owned(),
             format!("{}z", "a".repeat(20)),
+            // Deep enough for a stack limit: any limit below 320 holds 321
+            // entries.
+            format!("{}b", "a".repeat(400)),
         ];
         let limits = [
             SearchOptions::new().retry_limit_in_match(1),
@@ -3400,6 +3405,7 @@ mod tests {
             SearchOptions::new().retry_limit_in_search(50),
             SearchOptions::new().match_stack_limit(4),
             SearchOptions::new().match_stack_limit(40),
+            SearchOptions::new().match_stack_limit(320),
         ];
         for pattern in patterns {
             let re = Regex::new(pattern).unwrap();

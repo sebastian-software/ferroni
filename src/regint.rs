@@ -23,6 +23,9 @@ pub(crate) const DEFAULT_PARSE_DEPTH_LIMIT: u32 = 256;
 pub(crate) const DEFAULT_AST_NODE_LIMIT: u32 = 4096;
 pub(crate) const INIT_MATCH_STACK_SIZE: usize = 160;
 pub(crate) const DEFAULT_MATCH_STACK_LIMIT_SIZE: u32 = 0;
+/// The stack size up to which C does not check `match_stack_limit`: its
+/// first stack doubles once without a check. See `match_stack_cap`.
+pub(crate) const MATCH_STACK_LIMIT_FLOOR: usize = 2 * INIT_MATCH_STACK_SIZE;
 /// Rust-only (ADR-008): the backtrack stack never grows past this many
 /// entries unless a larger `match_stack_limit` is set. C lets it grow without
 /// bound when the limit is 0, so one hostile line can exhaust memory. This

@@ -99,6 +99,15 @@ observes and adds tests for the three cases above.
   so Ferroni can stop where C matches (ADR-008, _Consequences_). It violates
   rule 3 and stays documented until it is fixed; new code must not add such
   cases.
+- C checks the match stack limit only when it reallocates a heap stack, and
+  its first stack grows from 160 to 320 entries without that check. Under
+  any limit below 320, C therefore completes every search that holds at most
+  321 entries, while the entries it allows below that depend on its
+  allocation history: the start position, an earlier attempt of the same
+  search, and the number of captures. Ferroni takes the 321 entries as the
+  cap for every limit below 320, so it never stops where C completes (rule 3)
+  and may complete where C stops earlier (rule 2). At 320 and above, a
+  search stops at the push that needs one entry more than the limit, as in C.
 - The guides describe the current behavior. Where an optimization starts to
   leave out work under a limit, the [untrusted input guide](/guide/untrusted-input)
   and the [compatibility guide](/guide/compatibility) change with it.

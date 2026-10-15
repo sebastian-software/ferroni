@@ -62,9 +62,10 @@ distinguishable from "no match". The plain methods (`find`, `is_match`,
 | `match_stack_limit(u32)`     | `RegexError::MatchStackLimitOver`    |
 
 Retry limits count backtracks, so they stop a search at the same point on
-every machine. A timeout bounds wall-clock time but depends on load: the engine
-reads the clock every 512 backtracks and rounds durations up to whole
-milliseconds. For untrusted input, a retry limit for reproducible behavior and
+every machine. A stack limit counts the entries of the backtracking stack; as
+in C Oniguruma, any stack limit below 320 lets the stack hold 321 entries. A
+timeout bounds wall-clock time but depends on load: the engine reads the clock
+every 512 backtracks and rounds durations up to whole milliseconds. For untrusted input, a retry limit for reproducible behavior and
 a timeout as a backstop work well together.
 
 To iterate under limits, `find_iter_with` yields a `Result` per match. A search
