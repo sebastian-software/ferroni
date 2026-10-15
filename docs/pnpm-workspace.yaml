@@ -4,3 +4,10 @@
 allowBuilds:
   esbuild: false
   unrs-resolver: false
+
+# Temporary: react and react-dom 19.3.1 (published 2026-10-14T16:46Z) are
+# younger than pnpm's default one-day minimumReleaseAge, which fails every
+# frozen install. Remove this list once that release is a day old.
+minimumReleaseAgeExclude:
+  - react@19.3.1
+  - react-dom@19.3.1
