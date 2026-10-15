@@ -211,28 +211,6 @@ struct Compiled {
 /// with the `dfa-prefilter` feature, yes (ADR-008).
 const DFA_DEFAULT: bool = cfg!(feature = "dfa-prefilter");
 
-/// Whether the process-wide limits cannot stop the matcher short of the
-/// static bound `bound` on the attempts of a pattern (`dfa_prefilter::
-/// retry_bound`), so that a seek match is the matcher's match. The matcher
-/// reads each limit after counting: it stops when the retries of an attempt
-/// reach the retry limit, which is why the limit must exceed the bound, and
-/// when the stack of an attempt reaches the hard cap, which the bound stays
-/// under. The other limits must be the defaults. A retry limit of zero is no
-/// limit.
-#[cfg(feature = "dfa-prefilter")]
-fn process_wide_limits_allow(bound: u64) -> bool {
-    use crate::regint::{
-        DEFAULT_MATCH_STACK_LIMIT_SIZE, DEFAULT_RETRY_LIMIT_IN_SEARCH, DEFAULT_TIME_LIMIT_MSEC,
-        HARD_MATCH_STACK_CAP,
-    };
-    let limits = SearchLimits::process_wide();
-    limits.match_stack_limit == DEFAULT_MATCH_STACK_LIMIT_SIZE
-        && limits.retry_limit_in_search == DEFAULT_RETRY_LIMIT_IN_SEARCH
-        && limits.time_limit == DEFAULT_TIME_LIMIT_MSEC
-        && bound < HARD_MATCH_STACK_CAP as u64
-        && (limits.retry_limit_in_match == 0 || limits.retry_limit_in_match > bound)
-}
-
 /// Whether `start` is a character boundary of valid UTF-8 `text` (or the
 /// end of it). The seek reads characters from there.
 #[cfg(feature = "dfa-prefilter")]
@@ -345,11 +323,12 @@ impl Regex {
     /// a match into "no match".
     ///
     /// `Some(true)` is "match", given with `accept` only when the seek is
-    /// exact (`SeekCode::exact`), the pattern has a static retry bound
-    /// (`SingleSeek::retry_bound`), and the process-wide limits cannot stop
-    /// the matcher short of that bound (`process_wide_limits_allow`). Then the
-    /// matcher finds the same match without a limit error, so the answer is
-    /// the matcher's. Every other case goes to the matcher. `find` does not
+    /// exact (`SeekCode::exact`). An exact seek's match is a match the
+    /// matcher finds when no limit stops it. Under ADR-017 that is the answer
+    /// wherever the matcher would stop at a process-wide limit: C then stops
+    /// with an error, and Ferroni answers the result C gives without the
+    /// limit (rule 2), and it never reports an error where C completes
+    /// (rule 3). Every other case goes to the matcher. `find` does not
     /// accept, since it needs the match's bounds.
     ///
     /// `utf8` says whether `text` is known to be valid UTF-8; otherwise it is
@@ -362,11 +341,8 @@ impl Regex {
     fn seek_answer(&self, text: &[u8], start: usize, utf8: bool, accept: bool) -> Option<bool> {
         let seek = self.inner.seek.as_ref()?;
         let found = seek.search(text, start)?;
-        if found {
-            let bound = seek.retry_bound()?;
-            if !(accept && seek.exact() && process_wide_limits_allow(bound)) {
-                return None;
-            }
+        if found && !(accept && seek.exact()) {
+            return None;
         }
         if !(utf8 || std::str::from_utf8(text).is_ok()) || !is_char_boundary(text, start) {
             return None;
@@ -406,12 +382,6 @@ impl Regex {
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn seek_exact(&self) -> Option<bool> {
         self.inner.seek.as_deref().map(SingleSeek::exact)
-    }
-
-    /// The static retry bound of the seek. For the tests.
-    #[cfg(all(test, feature = "dfa-prefilter"))]
-    pub(crate) fn seek_retry_bound(&self) -> Option<u64> {
-        self.inner.seek.as_ref()?.retry_bound()
     }
 
     /// The seek's answer to `is_match` on `text` from 0, accepting where it
@@ -720,7 +690,8 @@ impl Regex {
     ///
     /// A search that stops at a process-wide limit (time, retry or stack) is
     /// reported as no match. Use [`Regex::is_match_with`] with [`SearchOptions`] to tell
-    /// the two apart.
+    /// the two apart. The single-pattern seek ([`RegexBuilder::dfa`]) can
+    /// report a match that the matcher reaches only without the limit.
     pub fn is_match(&self, text: &str) -> bool {
         self.is_match_from(text.as_bytes(), 0, true)
     }
@@ -1493,13 +1464,15 @@ impl RegexBuilder {
     /// it is by default, and off otherwise. With `true`, [`RegexBuilder::build`]
     /// derives the seek from the compiled tree and builds its lazy DFA in the
     /// same compilation, so the cost is paid once, and the clones and searches
-    /// of the returned [`Regex`] share the automaton. A standard search then
+    /// of the returned [`Regex`] share the automaton. A standard `is_match`
     /// asks the automaton first. The automaton answers "no match" whenever
-    /// it can, and answers "match" only when the pattern has a static bound
-    /// on its retries that the process-wide retry limit cannot undercut. In
-    /// every other case the matcher answers, so the results, including the
-    /// limit errors of [`Regex::find_with`] and the other `*_with` methods,
-    /// are the same with the option on or off.
+    /// it can, and answers "match" for an exact seek's match, which is the
+    /// matcher's match with no limit. Where a process-wide limit would stop
+    /// the matcher, `is_match` can therefore report the match that the
+    /// matcher finds without the limit (ADR-017). In every other case the
+    /// matcher answers, so the results, including the limit errors of
+    /// [`Regex::find_with`] and the other `*_with` methods, are the same with
+    /// the option on or off.
     ///
     /// The cost is compile time and memory. The seek is derived in the same
     /// compilation as the program, so `build` does not compile the pattern
@@ -1510,7 +1483,8 @@ impl RegexBuilder {
     /// regex keeps a lazy DFA cache of at most 1 MiB for the seek.
     ///
     /// Use `dfa(false)` for patterns that are compiled once and searched
-    /// rarely, or in a memory-constrained process; the results do not change.
+    /// rarely, or in a memory-constrained process; the results do not change
+    /// except as the paragraph above describes.
     ///
     /// ```
     /// use ferroni::api::Regex;
@@ -2364,7 +2338,6 @@ mod tests {
         let re = Regex::new(r"^[0-9A-F]{8}$").unwrap();
         assert!(re.seek_present());
         assert_eq!(re.seek_exact(), Some(true));
-        assert!(re.seek_retry_bound().is_some());
         assert!(re.clone().seek_present());
         assert!(!re.is_match("zzzz"));
 
@@ -2394,88 +2367,99 @@ mod tests {
         assert!(off.is_match("0123ABCD"));
     }
 
-    /// A pattern without a static retry bound never gets an accepting seek.
+    /// An exact seek answers "match" for unbounded repetitions, which have no
+    /// static retry bound: the seek decides, so the matcher is not run, and
+    /// its answer is the matcher's without limits. A rejection holds as well.
     #[cfg(feature = "dfa-prefilter")]
     #[test]
-    fn unbounded_retries_have_no_static_bound() {
-        for pattern in ["(x+x+)+y|.*", r"[a-z0-9._%+-]+@[a-z0-9.-]+"] {
-            let re = Regex::new(pattern).unwrap();
-            assert_eq!(re.seek_retry_bound(), None, "{pattern}");
-        }
+    fn exact_seek_answers_match_for_an_unbounded_repetition() {
+        let pattern = r"^[a-z@.]+@[a-z.]+\.com$";
+        let re = Regex::new(pattern).unwrap();
+        let matcher = RegexBuilder::new(pattern).dfa(false).build().unwrap();
+        assert_eq!(re.seek_exact(), Some(true));
+        assert_eq!(re.seek_decides_is_match("john@doe.com"), Some(true));
+        assert_eq!(re.seek_decides_is_match("john@doe.org"), Some(false));
+        assert!(re.is_match("john@doe.com"));
+        assert!(matcher.is_match("john@doe.com"));
+        assert!(!re.is_match("john@doe.org"));
     }
 
-    /// The static retry bound (ADR-008) is provable for the catalog's uuid
-    /// and IPv4 validators. It is not provable for the IPv6 validator, whose
-    /// path-count model exceeds the default retry limit (37,590,549 without
-    /// its unbounded zone-id suffix), nor for the django local part, which
-    /// has unbounded repeats. The values are printed for the ADR.
+    /// Where a tiny process-wide retry limit stops the matcher, an exact seek
+    /// still answers "match", and the answer is the matcher's without the
+    /// limit (ADR-017, rule 2). The limit is restored when the guard drops.
     #[cfg(feature = "dfa-prefilter")]
     #[test]
-    fn catalog_validators_have_a_static_retry_bound() {
-        let cases: &[(&str, &str, bool)] = &[
+    fn exact_seek_answers_where_a_tiny_retry_limit_stops_the_matcher() {
+        let _limits = crate::regexec::exclusive_limits();
+        let re = Regex::new(r"^[a-z]+ab\z").unwrap();
+        let text = "xaaab";
+        assert_eq!(re.seek_exact(), Some(true));
+        crate::regexec::onig_set_retry_limit_in_match(1);
+        // The premise: under the limit the matcher stops on this subject.
+        assert!(
+            re.is_match_bytes_at_with(text.as_bytes(), 0, SearchOptions::new())
+                .is_err()
+        );
+        assert_eq!(re.seek_decides_is_match(text), Some(true));
+        assert!(re.is_match(text));
+        // The matcher without the limit finds the same match.
+        crate::regexec::onig_set_retry_limit_in_match(0);
+        assert!(
+            re.is_match_bytes_at_with(text.as_bytes(), 0, SearchOptions::new())
+                .unwrap()
+        );
+        // A subject without the match stays a rejection under the limit.
+        crate::regexec::onig_set_retry_limit_in_match(1);
+        assert!(!re.is_match("xaaac"));
+    }
+
+    /// The catalog's validators have exact seeks, so a standard `is_match`
+    /// answers their matches from the seek. The django local part has
+    /// unbounded repeats, and the IPv6 validator a zone suffix with no bound.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn catalog_validators_have_exact_seeks() {
+        let cases: &[(&str, &str, bool, &str)] = &[
             (
                 "uuid_shape",
                 "^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$",
                 true,
+                "0123ABCD-0123-0123-0123-0123456789AB",
             ),
             (
                 "uuid_v4",
                 "^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$",
                 true,
+                "0123ABCD-0123-4123-8123-0123456789AB",
             ),
             (
                 "ipv4_validation",
                 "^((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$",
                 false,
+                "192.168.0.1",
             ),
             (
                 "ipv6_validation",
                 "^((?:(?:[0-9a-fA-F]{1,4}):){7}(?:(?:[0-9a-fA-F]{1,4})|:)|(?:(?:[0-9a-fA-F]{1,4}):){6}(?:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|:(?:[0-9a-fA-F]{1,4})|:)|(?:(?:[0-9a-fA-F]{1,4}):){5}(?::((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,2}|:)|(?:(?:[0-9a-fA-F]{1,4}):){4}(?:(:(?:[0-9a-fA-F]{1,4})){0,1}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,3}|:)|(?:(?:[0-9a-fA-F]{1,4}):){3}(?:(:(?:[0-9a-fA-F]{1,4})){0,2}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,4}|:)|(?:(?:[0-9a-fA-F]{1,4}):){2}(?:(:(?:[0-9a-fA-F]{1,4})){0,3}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,5}|:)|(?:(?:[0-9a-fA-F]{1,4}):){1}(?:(:(?:[0-9a-fA-F]{1,4})){0,4}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(:(?:[0-9a-fA-F]{1,4})){1,6}|:)|(?::((?::(?:[0-9a-fA-F]{1,4})){0,5}:((?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])[.]){3}(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|(?::(?:[0-9a-fA-F]{1,4})){1,7}|:)))(%[0-9a-zA-Z.]{1,})?$",
                 false,
+                "fe80::1",
             ),
             (
                 "django_email_local_part",
                 "(^[-!#$%&'*+/=?^_`{}|~0-9A-Z]+(\\.[-!#$%&'*+/=?^_`{}|~0-9A-Z]+)*\\z|^\"([\\001-\\010\\013\\014\\016-\\037!#-\\[\\]-\\177]|\\\\[\\001-\\011\\013\\014\\016-\\177])*\"\\z)",
                 true,
+                "john.doe",
             ),
         ];
-        for &(name, pattern, ignore_case) in cases {
+        for &(name, pattern, ignore_case, matching) in cases {
             let re = RegexBuilder::new(pattern)
                 .case_insensitive(ignore_case)
                 .multi_line_anchors(false)
                 .build()
                 .unwrap();
-            eprintln!(
-                "{name}: retry bound {:?}, exact {:?}",
-                re.seek_retry_bound(),
-                re.seek_exact()
-            );
-            let provable = matches!(name, "uuid_shape" | "uuid_v4" | "ipv4_validation");
-            assert_eq!(re.seek_retry_bound().is_some(), provable, "{name}");
+            assert_eq!(re.seek_exact(), Some(true), "{name}");
+            assert_eq!(re.seek_decides_is_match(matching), Some(true), "{name}");
         }
-    }
-
-    /// An exact seek accepts a match only when the process-wide retry limit
-    /// is no obstacle to the static bound; a rejection holds under any limit.
-    #[cfg(feature = "dfa-prefilter")]
-    #[test]
-    fn exact_seek_accepts_only_when_the_limits_cannot_undercut_the_bound() {
-        let _limits = crate::regexec::exclusive_limits();
-        let old_retry = crate::regexec::onig_get_retry_limit_in_match();
-        let re = Regex::new(r"^[0-9A-F]{8}$").unwrap();
-        let bound = re.seek_retry_bound().unwrap();
-        assert_eq!(re.seek_decides_is_match("0123ABCD"), Some(true));
-        // A limit at the bound can stop the matcher, so the seek must not
-        // accept; one above it cannot.
-        crate::regexec::onig_set_retry_limit_in_match(bound);
-        let at_bound = re.seek_decides_is_match("0123ABCD");
-        crate::regexec::onig_set_retry_limit_in_match(bound + 1);
-        let above_bound = re.seek_decides_is_match("0123ABCD");
-        let rejected = re.seek_decides_is_match("0123ABCZ");
-        crate::regexec::onig_set_retry_limit_in_match(old_retry);
-        assert_eq!(at_bound, None);
-        assert_eq!(above_bound, Some(true));
-        assert_eq!(rejected, Some(false));
     }
 
     /// Text the seek reads as UTF-8 and the matcher may read otherwise is

@@ -216,10 +216,12 @@ Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic, POSIX Extended, ASIS).
 a lazy DFA built with the regex. It is on by default when the `dfa-prefilter`
 feature is enabled, which is the default, and it has no effect without that
 feature. A standard `is_match` or `find` asks the DFA first: it answers "no
-match" for most texts that do not match, and it answers "match" only for a
-pattern whose backtracking has a static bound that the retry limits cannot
-undercut. Every other search runs the matcher, so the results are the same
-with the option on or off. The DFA is built during `build`, so the compile
+match" for most texts that do not match. For a pattern whose seek is exact,
+`is_match` can also answer "match" without running the matcher; where a retry
+limit would stop the matcher, that is the match it finds without the limit
+([ADR-017](../adr/017-limit-outcomes-relative-to-c)). Every other search runs
+the matcher, so apart from that case the results are the same with the option
+on or off. The DFA is built during `build`, so the compile
 takes longer, and each thread that searches with the regex keeps a cache of
 at most 1 MiB for it. Use `dfa(false)` for a pattern that is compiled once and
 searched rarely, or where memory is tight:
