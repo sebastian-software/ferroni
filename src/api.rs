@@ -16,7 +16,7 @@ use crate::dfa_prefilter::SingleSeek;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
-use crate::regcomp::{ScannerSeek, onig_new_for_single_seek};
+use crate::regcomp::{AcceptSeek, ScannerSeek, onig_new_for_single_seek};
 use crate::regexec::{
     MatchArg, SearchLimits, cache_msa, onig_name_to_backref_number, onig_search,
     onig_search_bounds, pure_literal_first, search_in_range, take_cached_msa,
@@ -275,7 +275,7 @@ impl Regex {
     /// UTF-8 (encoded surrogates, for example), and [`Regex::as_str`] returns
     /// `None` for those.
     pub fn new_bytes(pattern: &[u8]) -> Result<Regex, RegexError> {
-        let (program, seek) = onig_new_for_single_seek(
+        let (program, seek, accept) = onig_new_for_single_seek(
             pattern,
             ONIG_OPTION_NONE,
             &ONIG_ENCODING_UTF8,
@@ -283,13 +283,18 @@ impl Regex {
             false,
             DFA_DEFAULT,
         )?;
-        Ok(Self::from_parts(program, pattern.into(), seek))
+        Ok(Self::from_parts(program, pattern.into(), seek, accept))
     }
 
-    /// Wraps a compiled program and its seek. The seek is built with the
-    /// regex (ADR-008), so a clone or a search never builds it.
+    /// Wraps a compiled program, its seek and its accept seek. The seek is
+    /// built with the regex (ADR-008), so a clone or a search never builds it.
     #[cfg_attr(not(feature = "dfa-prefilter"), allow(unused_variables))]
-    fn from_parts(program: RegexType, pattern: Box<[u8]>, seek: ScannerSeek) -> Regex {
+    fn from_parts(
+        program: RegexType,
+        pattern: Box<[u8]>,
+        seek: ScannerSeek,
+        accept: AcceptSeek,
+    ) -> Regex {
         // A pure literal is found by a literal search, so it has no automaton.
         // The automaton is boxed: inline, it grew every compiled regex, and
         // the compile and search costs of the others with it.
@@ -297,7 +302,9 @@ impl Regex {
         let seek = AssertUnwindSafe(if program.pure_literal {
             None
         } else {
-            seek.as_ref().and_then(SingleSeek::build).map(Box::new)
+            seek.as_ref()
+                .and_then(|seek| SingleSeek::build(seek, accept.as_ref()))
+                .map(Box::new)
         });
         Regex {
             inner: Arc::new(Compiled {
@@ -323,13 +330,16 @@ impl Regex {
     /// a match into "no match".
     ///
     /// `Some(true)` is "match", given with `accept` only when the seek is
-    /// exact (`SeekCode::exact`). An exact seek's match is a match the
-    /// matcher finds when no limit stops it. Under ADR-017 that is the answer
+    /// exact (`SeekCode::exact`) or the accept seek, an under-approximation
+    /// of the pattern, matches. A match of either is a match the matcher
+    /// finds when no limit stops it. Under ADR-017 that is the answer
     /// wherever the matcher would stop at a process-wide limit: C then stops
     /// with an error, and Ferroni answers the result C gives without the
     /// limit (rule 2), and it never reports an error where C completes
-    /// (rule 3). Every other case goes to the matcher. `find` does not
-    /// accept, since it needs the match's bounds.
+    /// (rule 3). With `accept`, the accept seek also answers "no match" where
+    /// it is exact on the text (`SingleSeek::accept_answer`), which is the
+    /// matcher's answer under every limit. Every other case goes to the
+    /// matcher. `find` does not accept, since it needs the match's bounds.
     ///
     /// `utf8` says whether `text` is known to be valid UTF-8; otherwise it is
     /// checked. A seek reads characters, so the answer is only the matcher's
@@ -338,8 +348,19 @@ impl Regex {
     /// errors are the matcher's.
     #[cfg(feature = "dfa-prefilter")]
     #[inline]
-    fn seek_answer(&self, text: &[u8], start: usize, utf8: bool, accept: bool) -> Option<bool> {
+    fn seek_answer(&self, text: &[u8], start: usize, mut utf8: bool, accept: bool) -> Option<bool> {
         let seek = self.inner.seek.as_ref()?;
+        if accept && seek.has_accept() {
+            if !(utf8 || std::str::from_utf8(text).is_ok()) || !is_char_boundary(text, start) {
+                return None;
+            }
+            utf8 = true;
+            if let Some(answer) = seek.accept_answer(text, start) {
+                #[cfg(feature = "prefilter-self-check")]
+                self.check_accept_answer(text, start, answer);
+                return Some(answer);
+            }
+        }
         let found = seek.search(text, start)?;
         if found && !(accept && seek.exact()) {
             return None;
@@ -348,6 +369,31 @@ impl Regex {
             return None;
         }
         Some(found)
+    }
+
+    /// Validation (feature `prefilter-self-check`): an answer of the accept
+    /// seek is the matcher's wherever the matcher completes under the
+    /// process-wide limits.
+    #[cfg(feature = "prefilter-self-check")]
+    fn check_accept_answer(&self, text: &[u8], start: usize, answer: bool) {
+        let (result, _) = onig_search(
+            self.program(),
+            text,
+            text.len(),
+            start,
+            text.len(),
+            None,
+            ONIG_OPTION_NONE,
+        );
+        if result >= 0 || result == ONIG_MISMATCH {
+            assert_eq!(
+                result >= 0,
+                answer,
+                "the accept seek of {:?} answers {answer} on {:?} from {start}",
+                String::from_utf8_lossy(self.as_bytes()),
+                String::from_utf8_lossy(text),
+            );
+        }
     }
 
     #[cfg(not(feature = "dfa-prefilter"))]
@@ -389,6 +435,35 @@ impl Regex {
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn seek_decides_is_match(&self, text: &str) -> Option<bool> {
         self.seek_answer(text.as_bytes(), 0, true, true)
+    }
+
+    /// Whether the regex has an accept seek. For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn accept_seek_present(&self) -> bool {
+        self.inner
+            .seek
+            .as_deref()
+            .is_some_and(SingleSeek::has_accept)
+    }
+
+    /// The accept seek's own answer on `text` from `start`
+    /// (`SingleSeek::accept_answer`). For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn accept_answer(&self, text: &str, start: usize) -> Option<bool> {
+        self.inner
+            .seek
+            .as_deref()?
+            .accept_answer(text.as_bytes(), start)
+    }
+
+    /// Heap memory of the seek's automata and this thread's caches. For the
+    /// tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn seek_memory_usage(&self) -> usize {
+        self.inner
+            .seek
+            .as_deref()
+            .map_or(0, SingleSeek::memory_usage)
     }
 
     /// The pattern this regex was compiled from, or `None` if the pattern is
@@ -1467,7 +1542,12 @@ impl RegexBuilder {
     /// of the returned [`Regex`] share the automaton. A standard `is_match`
     /// asks the automaton first. The automaton answers "no match" whenever
     /// it can, and answers "match" for an exact seek's match, which is the
-    /// matcher's match with no limit. Where a process-wide limit would stop
+    /// matcher's match with no limit. A pattern whose classes have
+    /// multi-character case folds (`(?i)[a-zß]`) and whose seek is not exact
+    /// may get a second automaton, an accept seek, whose matches are matches
+    /// of the pattern: `is_match` answers "match" from it, and "no match"
+    /// on a text that holds none of the strings the folds add (`ss`, `ff`,
+    /// or any non-ASCII character). Where a process-wide limit would stop
     /// the matcher, `is_match` can therefore report the match that the
     /// matcher finds without the limit (ADR-017). In every other case the
     /// matcher answers, so the results, including the limit errors of
@@ -1480,7 +1560,8 @@ impl RegexBuilder {
     /// with the option on is higher than with it off by the time of that
     /// build. The automaton's NFA is at most 16 MiB, and the seek is absent
     /// for a pattern too large for it. Each thread that searches with the
-    /// regex keeps a lazy DFA cache of at most 1 MiB for the seek.
+    /// regex keeps a lazy DFA cache of at most 1 MiB for the seek, and one
+    /// more for an accept seek.
     ///
     /// Use `dfa(false)` for patterns that are compiled once and searched
     /// rarely, or in a memory-constrained process; the results do not change
@@ -1506,7 +1587,7 @@ impl RegexBuilder {
 
     /// Compile the pattern into a [`Regex`].
     pub fn build(self) -> Result<Regex, RegexError> {
-        let (inner, seek) = onig_new_for_single_seek(
+        let (inner, seek, accept) = onig_new_for_single_seek(
             &self.pattern,
             self.options,
             &ONIG_ENCODING_UTF8,
@@ -1521,6 +1602,7 @@ impl RegexBuilder {
             inner,
             self.pattern.into_boxed_slice(),
             seek,
+            accept,
         ))
     }
 }

@@ -43,6 +43,10 @@
 //! limit of the caller's own keeps C's attempts (see `prefilter_decides` in
 //! `regset.rs`).
 
+mod accept;
+
+pub(crate) use accept::{AcceptCode, derive_accept};
+
 use crate::oniguruma::{
     ONIG_OPTION_FIND_NOT_EMPTY, ONIG_OPTION_NOTBOL, ONIG_OPTION_NOTEOL, ONIGENC_CTYPE_WORD,
 };
@@ -61,6 +65,7 @@ use regex_syntax::hir::{
     Class, ClassBytes, ClassBytesRange, ClassUnicode, ClassUnicodeRange, Hir, HirKind, Look,
     Repetition,
 };
+use regex_syntax::utf8::Utf8Sequences;
 use std::sync::{Arc, OnceLock};
 
 const MIB: usize = 1 << 20;
@@ -2318,42 +2323,65 @@ impl SetPrefilter {
 ///
 /// Without an exact seek, "no seek match" proves "no match" and nothing else:
 /// a seek match leaves the answer to the matcher. An exact seek's match is a
-/// match of the pattern (`SeekCode::exact`). A search that the lazy DFA gives
-/// up on answers nothing, and the matcher runs.
+/// match of the pattern (`SeekCode::exact`). An inexact seek may come with
+/// an accept seek ([`accept`]), whose match is a match of the pattern, and
+/// whose "no match" is the pattern's where its `AcceptRejects` says so. A
+/// search that a lazy DFA gives up on answers nothing, and the matcher runs.
 pub(crate) struct SingleSeek {
     dfa: hybrid::DFA,
-    /// The lazy DFA's caches, one per thread that searches (the pool's owner
-    /// fast path), so a search takes no lock.
-    caches: Pool<hybrid::Cache, CacheMaker>,
+    /// The accept seek's lazy DFA, and where its "no match" holds.
+    accept: Option<(hybrid::DFA, accept::AcceptRejects)>,
+    /// The lazy DFAs' caches, one pair per thread that searches (the pool's
+    /// owner fast path), so a search takes no lock.
+    caches: Pool<SingleCaches, CacheMaker>,
     exact: bool,
 }
 
-/// The cache constructor of a `SingleSeek`'s pool.
-type CacheMaker = Box<dyn Fn() -> hybrid::Cache + Send + Sync>;
+/// The caches of a `SingleSeek`'s lazy DFAs.
+struct SingleCaches {
+    seek: hybrid::Cache,
+    accept: Option<hybrid::Cache>,
+}
 
-/// Lazy DFA cache of a single `Regex`'s seek.
+/// The cache constructor of a `SingleSeek`'s pool.
+type CacheMaker = Box<dyn Fn() -> SingleCaches + Send + Sync>;
+
+/// Lazy DFA cache of a single `Regex`'s seek, and of its accept seek.
 const SINGLE_CACHE_CAPACITY: usize = MIB;
 
 /// An estimate of the NFA states `hir` compiles to, from above: a repetition
 /// counts its body once per copy its bound makes, and the parts add up.
 /// Saturating, so a nested bound cannot overflow it.
 fn nfa_states_estimate(hir: &Hir) -> usize {
+    states_estimate(hir, false)
+}
+
+/// `nfa_states_estimate`, with `utf8_classes` counting a Unicode class as
+/// the UTF-8 sequences it compiles to, a state per byte of each (the accept
+/// seek's classes; the seek's own are bytes or a few members).
+fn states_estimate(hir: &Hir, utf8_classes: bool) -> usize {
     match hir.kind() {
         HirKind::Empty | HirKind::Look(_) => 1,
         HirKind::Literal(literal) => literal.0.len() + 1,
+        HirKind::Class(Class::Unicode(class)) if utf8_classes => {
+            class.ranges().iter().fold(2usize, |sum, range| {
+                Utf8Sequences::new(range.start(), range.end())
+                    .fold(sum, |sum, sequence| sum.saturating_add(sequence.len()))
+            })
+        }
         HirKind::Class(_) => 2,
-        HirKind::Capture(capture) => nfa_states_estimate(&capture.sub) + 2,
+        HirKind::Capture(capture) => states_estimate(&capture.sub, utf8_classes) + 2,
         HirKind::Repetition(rep) => {
             let copies = rep.max.unwrap_or(rep.min).max(rep.min).max(1) as usize;
-            nfa_states_estimate(&rep.sub)
+            states_estimate(&rep.sub, utf8_classes)
                 .saturating_mul(copies)
                 .saturating_add(2)
         }
         HirKind::Concat(parts) => parts.iter().fold(0usize, |sum, part| {
-            sum.saturating_add(nfa_states_estimate(part))
+            sum.saturating_add(states_estimate(part, utf8_classes))
         }),
         HirKind::Alternation(branches) => branches.iter().fold(2usize, |sum, branch| {
-            sum.saturating_add(nfa_states_estimate(branch))
+            sum.saturating_add(states_estimate(branch, utf8_classes))
         }),
     }
 }
@@ -2361,43 +2389,27 @@ fn nfa_states_estimate(hir: &Hir) -> usize {
 impl SingleSeek {
     /// The lazy DFA of `seek`, or `None` for a seek that matches everywhere
     /// (it rejects nothing), one whose automaton would exceed
-    /// `MAX_NFA_STATES`, or one that does not build.
-    pub(crate) fn build(seek: &Seek) -> Option<Self> {
+    /// `MAX_NFA_STATES`, or one that does not build. The lazy DFA of
+    /// `accept`, the pattern's accept seek, is built beside it where it
+    /// builds within the same bounds.
+    pub(crate) fn build(seek: &Seek, accept: Option<&AcceptCode>) -> Option<Self> {
         let Seek::Pattern(code) = seek else {
             return None;
         };
-        let hir = code.decode();
-        // Cut a seek that is clearly too large before compiling it: a compile
-        // of a seek with nested counted repetitions can take far longer than
-        // the automaton it would keep.
-        if nfa_states_estimate(&hir) > MAX_NFA_STATES {
-            return None;
-        }
-        // The seeks use ASCII look-arounds only, so the DFA never quits.
-        let nfa = thompson::Compiler::new()
-            .configure(
-                thompson::Config::new()
-                    .utf8(false)
-                    .which_captures(thompson::WhichCaptures::None)
-                    .nfa_size_limit(Some(NFA_SIZE_LIMIT)),
-            )
-            .build_from_hir(&hir)
-            .ok()?;
-        if nfa.states().len() > MAX_NFA_STATES {
-            return None;
-        }
-        let dfa = hybrid::Builder::new()
-            .configure(
-                hybrid::Config::new()
-                    .match_kind(MatchKind::LeftmostFirst)
-                    .cache_capacity(SINGLE_CACHE_CAPACITY),
-            )
-            .build_from_nfa(nfa)
-            .ok()?;
-        let make = dfa.clone();
-        let caches = Pool::new(Box::new(move || make.create_cache()) as CacheMaker);
+        let dfa = single_dfa(&code.decode())?;
+        let accept = accept.and_then(|accept| {
+            let dfa = single_dfa(&accept.code.decode())?;
+            Some((dfa, accept.rejects.clone()))
+        });
+        let make_seek = dfa.clone();
+        let make_accept = accept.as_ref().map(|(dfa, _)| dfa.clone());
+        let caches = Pool::new(Box::new(move || SingleCaches {
+            seek: make_seek.create_cache(),
+            accept: make_accept.as_ref().map(hybrid::DFA::create_cache),
+        }) as CacheMaker);
         Some(SingleSeek {
             dfa,
+            accept,
             caches,
             exact: code.exact(),
         })
@@ -2409,9 +2421,9 @@ impl SingleSeek {
     /// matcher reads them.
     pub(crate) fn search(&self, text: &[u8], start: usize) -> Option<bool> {
         let input = Input::new(text).span(start..text.len()).earliest(true);
-        let mut cache = self.caches.get();
+        let mut caches = self.caches.get();
         self.dfa
-            .try_search_fwd(&mut cache, &input)
+            .try_search_fwd(&mut caches.seek, &input)
             .ok()
             .map(|found| found.is_some())
     }
@@ -2420,6 +2432,86 @@ impl SingleSeek {
     pub(crate) fn exact(&self) -> bool {
         self.exact
     }
+
+    /// Whether the seek has an accept seek.
+    pub(crate) fn has_accept(&self) -> bool {
+        self.accept.is_some()
+    }
+
+    /// The accept seek's answer for a search of `text` from `start`, read as
+    /// `search` reads it: `Some(true)` where an accept seek match starts in
+    /// `text[start..]`, which is a match of the pattern; `Some(false)` where
+    /// none does and the accept seek is exact on this text (its
+    /// `AcceptRejects`); `None` otherwise, or when the lazy DFA gives up.
+    pub(crate) fn accept_answer(&self, text: &[u8], start: usize) -> Option<bool> {
+        let (dfa, rejects) = self.accept.as_ref()?;
+        let input = Input::new(text).span(start..text.len()).earliest(true);
+        let mut caches = self.caches.get();
+        let found = dfa
+            .try_search_fwd(caches.accept.as_mut()?, &input)
+            .ok()?
+            .is_some();
+        if found {
+            return Some(true);
+        }
+        match rejects {
+            // A match starts at or after `start` and reads only from there.
+            accept::AcceptRejects::Unless(triggers) => {
+                (!triggers.occur_in(&text[start..])).then_some(false)
+            }
+            accept::AcceptRejects::Never => None,
+        }
+    }
+
+    /// Heap memory of the lazy DFAs and of this thread's caches, in bytes.
+    #[cfg(test)]
+    pub(crate) fn memory_usage(&self) -> usize {
+        let caches = self.caches.get();
+        let accept = self
+            .accept
+            .as_ref()
+            .map_or(0, |(dfa, _)| dfa.memory_usage());
+        self.dfa.memory_usage()
+            + accept
+            + caches.seek.memory_usage()
+            + caches
+                .accept
+                .as_ref()
+                .map_or(0, hybrid::Cache::memory_usage)
+    }
+}
+
+/// The lazy DFA of a single regex's seek or accept seek, or `None` for one
+/// whose automaton would exceed `MAX_NFA_STATES` or that does not build.
+fn single_dfa(hir: &Hir) -> Option<hybrid::DFA> {
+    // Cut a seek that is clearly too large before compiling it: a compile
+    // of a seek with nested counted repetitions can take far longer than
+    // the automaton it would keep. (`derive_accept` estimated the accept
+    // seek's Unicode classes already.)
+    if nfa_states_estimate(hir) > MAX_NFA_STATES {
+        return None;
+    }
+    // The seeks use ASCII look-arounds only, so the DFA never quits.
+    let nfa = thompson::Compiler::new()
+        .configure(
+            thompson::Config::new()
+                .utf8(false)
+                .which_captures(thompson::WhichCaptures::None)
+                .nfa_size_limit(Some(NFA_SIZE_LIMIT)),
+        )
+        .build_from_hir(hir)
+        .ok()?;
+    if nfa.states().len() > MAX_NFA_STATES {
+        return None;
+    }
+    hybrid::Builder::new()
+        .configure(
+            hybrid::Config::new()
+                .match_kind(MatchKind::LeftmostFirst)
+                .cache_capacity(SINGLE_CACHE_CAPACITY),
+        )
+        .build_from_nfa(nfa)
+        .ok()
 }
 
 #[cfg(test)]
