@@ -15019,6 +15019,8 @@ mod tests {
     /// sequence does, at every limit: in particular at the least limit that
     /// lets a search succeed and at the one below it (ADR-008). Guards of
     /// alternations push under a limit, so the alternation is covered too.
+    /// A limit below 320 allows 321 entries (`match_stack_cap`), so a run of
+    /// `-` in front of each subject fills the stack beyond that.
     #[test]
     fn fused_look_behinds_match_the_upstream_stack_limit_boundary() {
         use crate::oniguruma::OnigRegion;
@@ -15063,14 +15065,21 @@ mod tests {
             r"(?:(?<![a-c])a|b)+",
         ];
         let subjects: [&[u8]; 6] = [b"x", b"ax", b" x", b"abcx xb", b"aaaa bbb", b"cab a"];
+        // `(?:-|=)*?` holds one entry per `-`: the searches from the first
+        // positions reach the look-behind past the 321 entries.
+        const FILL: usize = 330;
         let mut boundary_cases = 0;
         for pattern in patterns {
+            let pattern = format!("(?:-|=)*?{pattern}");
+            let pattern = pattern.as_str();
             let fused = compile(pattern, true);
             let reference = compile(pattern, false);
             for subject in subjects {
-                for start in 0..=subject.len() {
+                let subject = [&[b'-'; FILL][..], subject].concat();
+                let subject = subject.as_slice();
+                for start in (0..4).chain(FILL..=subject.len()) {
                     let mut minimal = None;
-                    for limit in 1..=24 {
+                    for limit in (1..4).chain(320..=360) {
                         let want = search(&reference, subject, start, limit);
                         assert_eq!(
                             search(&fused, subject, start, limit),

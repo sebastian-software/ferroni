@@ -1748,14 +1748,26 @@ impl MatchArg {
 // Stack limit check
 // ============================================================================
 
-/// Check stack size against match_stack_limit. Returns Err with error code if exceeded.
+/// The number of entries the backtrack stack may hold under
+/// `match_stack_limit` (C: `stack_double`), bottom sentinel included. A push
+/// beyond it stops the match with `ONIGERR_MATCH_STACK_LIMIT_OVER`.
+///
+/// C checks the limit only when it reallocates a heap stack. Its first
+/// stack of `INIT_MATCH_STACK_SIZE` entries lives on the C stack and doubles
+/// to the heap without a check, and a limit below that size grants the push
+/// that finds it full before the limit applies. Under any limit below
+/// `2 * INIT_MATCH_STACK_SIZE` C therefore completes every search that holds
+/// at most `2 * INIT_MATCH_STACK_SIZE + 1` entries, and Ferroni takes that
+/// count as its cap (ADR-017, rule 3). C's allowance below it depends on its
+/// allocation history, so a search that C stops there may complete in
+/// Ferroni with the result C returns without the limit (rule 2).
 #[inline]
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn check_stack_limit(stack_len: usize, limit: u32) -> Result<(), i32> {
-    if limit != 0 && stack_len >= limit as usize {
-        return Err(ONIGERR_MATCH_STACK_LIMIT_OVER);
+pub(crate) fn match_stack_cap(match_stack_limit: u32) -> usize {
+    match match_stack_limit {
+        0 => HARD_MATCH_STACK_CAP,
+        limit if (limit as usize) < MATCH_STACK_LIMIT_FLOOR => MATCH_STACK_LIMIT_FLOOR + 1,
+        limit => limit as usize,
     }
-    Ok(())
 }
 
 /// Count `backtracks` backtracks against the retry and time limits (C's
@@ -4437,11 +4449,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     let mut retry_limit_in_match = retry_limit_of_attempt(msa);
     let mut retry_in_match_counter: u64 = 0;
     let match_stack_limit = msa.match_stack_limit;
-    let stack_cap = if match_stack_limit != 0 {
-        match_stack_limit as usize
-    } else {
-        HARD_MATCH_STACK_CAP
-    };
+    let stack_cap = match_stack_cap(match_stack_limit);
     let time_limit_ms = msa.time_limit;
 
     // Subexpression call limits (C: `subexp_call_nest_counter`,
@@ -4586,8 +4594,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             break;
         };
 
-        // Stack limit check (checked once per opcode, like C's STACK_PUSH macro)
-        if stack.len() >= stack_cap {
+        // Stack limit check, once per opcode: C's STACK_PUSH stops at the push
+        // that needs one entry more than the cap.
+        if stack.len() > stack_cap {
             best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
             break;
         }
@@ -6784,13 +6793,12 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     ascii_compatible,
                 } = op.payload
                 {
-                    // Rust-only (ADR-008): the upstream sequence checks the
-                    // stack limit at its MARK, its PUSH (negative only) and
-                    // its STEP_BACK_START, where it holds one entry (two for
-                    // a negative look-behind). The first of those checks
-                    // fails when this count is reached.
+                    // Rust-only (ADR-008): the upstream sequence pushes at its
+                    // MARK and its PUSH (negative only), so it holds one entry
+                    // more (two for a negative look-behind) and fails when
+                    // that exceeds the cap.
                     let pushed = if not { 2 } else { 1 };
-                    if stack.len() + pushed >= stack_cap {
+                    if stack.len() + pushed > stack_cap {
                         best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
                         break;
                     }
@@ -13430,12 +13438,12 @@ mod tests {
         // stack limit must still trip exactly where a region-tracking run
         // (and C) trips it.
         let reg = compile_full(b"(?:(a)|b)*c");
-        let mut text = vec![b'a'; 64];
+        let mut text = vec![b'a'; 160];
         text.push(b'c');
 
         let mut saw_limit = false;
         let mut saw_match = false;
-        for limit in 1..400 {
+        for limit in (1..8).chain(300..1000) {
             let mut mp = onig_new_match_param();
             onig_set_match_stack_limit_size_of_match_param(&mut mp, limit);
             let (without_region, _) = onig_search_with_param(
@@ -14410,7 +14418,8 @@ mod tests {
         let r = regcomp::compile_from_tree(&root, &mut reg, &env);
         assert_eq!(r, 0);
 
-        let input = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; // 30 chars
+        // Deeper than the 321 entries any limit below 320 allows.
+        let input = &[b'a'; 400];
 
         // Set very low stack limit, disable retry limit
         let old_retry = onig_get_retry_limit_in_match();

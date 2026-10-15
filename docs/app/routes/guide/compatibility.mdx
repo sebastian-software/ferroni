@@ -78,7 +78,9 @@ These parts of the C library are not ported:
   limit, Ferroni may finish the search with the result C would return without
   that limit, because some of its optimizations do less work. Where C finishes,
   the results are identical
-  ([ADR-017](../adr/017-limit-outcomes-relative-to-c)).
+  ([ADR-017](../adr/017-limit-outcomes-relative-to-c)). Under any stack limit
+  below 320, C lets a search hold 321 stack entries, so Ferroni applies such
+  a limit as 321 entries.
 - **Additions C never had.** The Scanner, per-search limits, the compile-time
   backtracking check and the idiomatic `Regex` API sit beside the port and do
   not change how a pattern matches.
