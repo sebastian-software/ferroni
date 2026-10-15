@@ -4375,9 +4375,11 @@ mod tests {
                 capture_tracking: 0,
                 fused_look_behinds: 64,
                 stepping_look_behinds: 11,
-                // A positive look-behind ends a guard (#259).
-                byte_set_push_guards: 1264,
-                unguarded_pushes: 81,
+                // A positive look-behind ends a guard (#259). The counted
+                // character repeats (ADR-008) replace 16 `{n,}` loops that
+                // pushed; their first bytes let 18 more pushes take a guard.
+                byte_set_push_guards: 1282,
+                unguarded_pushes: 65,
             }
         );
         assert_eq!(

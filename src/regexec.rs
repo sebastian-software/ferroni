@@ -3430,6 +3430,227 @@ fn greedy_char_loop(
     s
 }
 
+/// Greedy run of a bounded single-character loop (`C{min,max}`, Rust-only
+/// ADR-008) from `start`: up to `max` characters, and `None` when fewer than
+/// `min` match.
+///
+/// The backtrack points are those of `greedy_char_loop`, from the position
+/// after the first `min` characters on: the counter loop tries the exit after
+/// `min` characters last, and nothing before it. `ascii_member(b)` and
+/// `member_end(x)` mirror the body's single-character opcode, as in
+/// `greedy_char_loop`.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn greedy_char_repeat(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    enc: OnigEncoding,
+    str_data: &[u8],
+    start: usize,
+    right_range: usize,
+    min: usize,
+    max: usize,
+    ascii_member: impl Fn(u8) -> bool,
+    member_end: impl Fn(usize) -> Option<usize>,
+) -> Option<usize> {
+    let mut s = start;
+    let mut count = 0;
+    // The first position that may be given back: after `min` characters.
+    let mut floor = start;
+    let mut single_byte = true;
+    let mut exact_heads = true;
+    while count < max && s < right_range {
+        let b = str_data[s];
+        let next = if b < 0x80 {
+            if !ascii_member(b) {
+                break;
+            }
+            s + 1
+        } else {
+            let Some(next) = member_end(s) else {
+                break;
+            };
+            if next <= s {
+                break;
+            }
+            single_byte &= next == s + 1;
+            exact_heads &= steps_back_to(enc, str_data, floor, s, next);
+            next
+        };
+        s = next;
+        count += 1;
+        if count == min {
+            floor = s;
+            single_byte = true;
+            exact_heads = true;
+        }
+    }
+    if count < min {
+        return None;
+    }
+    push_char_run(
+        stack,
+        pcode,
+        enc,
+        str_data,
+        floor,
+        s,
+        single_byte,
+        exact_heads,
+    );
+    Some(s)
+}
+
+/// Rust-only (ADR-008): the run of a counted character repeat (`CClassRepeat`
+/// or `AnyCharRepeat`) from `start`, with its backtrack points pushed. `None`
+/// when the run is shorter than the minimum. Out of line: the VM's dispatch
+/// stays as it was for the patterns without these loops.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn counted_char_repeat_run(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    enc: OnigEncoding,
+    str_data: &[u8],
+    start: usize,
+    right_range: usize,
+    end: usize,
+    payload: &OperationPayload,
+) -> Option<usize> {
+    match *payload {
+        OperationPayload::CClassRepeat {
+            ref bsp,
+            ascii_fast,
+            not,
+            min,
+            max,
+            peek,
+            ascii_only,
+        } => {
+            let excluded = |b: u8| match ascii_fast {
+                CClassAsciiFastKind::Eq(c) => b == c,
+                CClassAsciiFastKind::EqFoldLower(lower) => b < 0x80 && (b | 0x20) == lower,
+                CClassAsciiFastKind::None => bitset_at(bsp, b as usize),
+            };
+            let member = |b: u8| excluded(b) != not;
+            if ascii_only {
+                greedy_ascii_repeat(
+                    stack,
+                    pcode,
+                    str_data,
+                    start,
+                    right_range,
+                    min as usize,
+                    max as usize,
+                    peek,
+                    member,
+                )
+            } else {
+                greedy_char_repeat(
+                    stack,
+                    pcode,
+                    enc,
+                    str_data,
+                    start,
+                    right_range,
+                    min as usize,
+                    max as usize,
+                    member,
+                    |x| member(str_data[x]).then(|| advance_char_to_end(enc, str_data, x, end)),
+                )
+            }
+        }
+        OperationPayload::AnyCharRepeat {
+            multiline,
+            min,
+            max,
+        } => {
+            let member_end = |x: usize| {
+                let n = enclen(enc, str_data, x);
+                if right_range.saturating_sub(x) < n
+                    || (!multiline && enc.is_mbc_newline(&str_data[x..], end))
+                {
+                    None
+                } else {
+                    Some(x + n)
+                }
+            };
+            greedy_char_repeat(
+                stack,
+                pcode,
+                enc,
+                str_data,
+                start,
+                right_range,
+                min as usize,
+                max as usize,
+                |b| multiline || b != b'\n',
+                member_end,
+            )
+        }
+        _ => None,
+    }
+}
+
+/// `greedy_char_repeat` for a body that matches one-byte characters only
+/// (`CClassRepeat` with `ascii_only`): the run is a plain byte scan, and its
+/// backtrack points are one `AltLazy` range from `start + min`, or, with a
+/// follower byte `peek`, only the positions holding it. Inlined into
+/// `counted_char_repeat_run`, its only caller, so the run is one call.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn greedy_ascii_repeat(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    str_data: &[u8],
+    start: usize,
+    right_range: usize,
+    min: usize,
+    max: usize,
+    peek: u8,
+    member: impl Fn(u8) -> bool,
+) -> Option<usize> {
+    let limit = right_range.min(start.saturating_add(max));
+    let mut s = start;
+    while s < limit && member(str_data[s]) {
+        s += 1;
+    }
+    if s - start < min {
+        return None;
+    }
+    // The first position that may be given back: after `min` characters.
+    let floor = start + min;
+    if s > floor {
+        if peek == 0 {
+            stack.push(StackEntry::AltLazy {
+                pcode,
+                pstr: s - 1,
+                pstr_start: floor,
+                ascii: true,
+                peek_byte: 0,
+            });
+        } else {
+            // Runs are mostly a few bytes: a short scan beats the `memrchr` call.
+            let run = &str_data[floor..s];
+            let found = if run.len() <= 16 {
+                run.iter().rposition(|&b| b == peek)
+            } else {
+                memchr::memrchr(peek, run)
+            };
+            if let Some(at) = found {
+                stack.push(StackEntry::AltLazy {
+                    pcode,
+                    pstr: floor + at,
+                    pstr_start: floor,
+                    ascii: true,
+                    peek_byte: peek,
+                });
+            }
+        }
+    }
+    Some(s)
+}
+
 /// Cache ASCII compatibility for one dot-star run while retaining every
 /// original backtrack entry and encoded-character boundary.
 #[inline(never)]
@@ -5199,6 +5420,27 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     p += 1;
                 } else {
                     goto_fail = true;
+                }
+            }
+
+            // Rust-only (ADR-008): `[class]{min,max}` and `.{min,max}`, the
+            // counted loops of `CClassRepeat` and `AnyCharRepeat`.
+            OpCode::CClassRepeat | OpCode::AnyCharRepeat => {
+                match counted_char_repeat_run(
+                    &mut stack,
+                    p + 1,
+                    enc,
+                    str_data,
+                    s,
+                    right_range,
+                    end,
+                    &op.payload,
+                ) {
+                    Some(run_end) => {
+                        s = run_end;
+                        p += 1;
+                    }
+                    None => goto_fail = true,
                 }
             }
 
