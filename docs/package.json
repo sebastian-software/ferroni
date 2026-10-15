@@ -35,7 +35,7 @@
     "eslint": "^10.12.0",
     "eslint-config-setup": "^0.5.2",
     "jiti": "^2.7.0",
-    "oxfmt": "^0.72.0",
+    "oxfmt": "^0.73.0",
     "oxlint": "^1.87.0",
     "typescript": "^6.0.3",
     "vite": "^8.3.2"
