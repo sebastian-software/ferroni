@@ -21,6 +21,7 @@ use fold_data::*;
 use property_data::{
     CODE_RANGES, CODE_RANGES_NUM, PROP_INDEX_EXTENDEDPICTOGRAPHIC, PROPERTY_NAMES,
 };
+use std::collections::HashMap;
 use wb_data::{WB_RANGES, WbType};
 
 // === Unicode ISO 8859-1 Ctype Table ===
@@ -995,8 +996,81 @@ enum EgcbBreakType {
     BreakUndefRiRi,
 }
 
-/// Binary search EGCB_RANGES for the EGCB type of a codepoint.
+/// The EGCB property of a code point: the two-stage table below Basic
+/// Multilingual Plane, the binary search above it.
+#[inline]
 fn egcb_get_type(code: u32) -> EgcbType {
+    if code < BMP_END {
+        return egcb_bmp_type(code);
+    }
+    egcb_get_type_search(code)
+}
+
+/// Rust-only (ADR-008): the EGCB property of the BMP as a two-stage table,
+/// derived on first use from [`EGCB_RANGES`] (ADR-015). The table keeps one
+/// block of 256 properties for each high byte that occurs, and the blocks
+/// that are equal are stored once: 256 bytes per block and one byte per high
+/// byte. A lookup is two loads. The binary search takes about eleven steps
+/// over the 1,392 ranges.
+struct EgcbBmpTable {
+    /// The index into `blocks` of the block for each high byte.
+    block_of_high: [u8; 256],
+    /// The distinct blocks; each holds the property of the 256 codes of one
+    /// high byte, by low byte.
+    blocks: Vec<[EgcbType; 256]>,
+}
+
+/// Rust-only (ADR-008): the BMP table, built on first use. See
+/// [`EgcbBmpTable`].
+fn egcb_bmp_table() -> &'static EgcbBmpTable {
+    static TABLE: std::sync::OnceLock<EgcbBmpTable> = std::sync::OnceLock::new();
+    TABLE.get_or_init(build_egcb_bmp_table)
+}
+
+fn build_egcb_bmp_table() -> EgcbBmpTable {
+    let mut block_of_high = [0u8; 256];
+    let mut blocks: Vec<[EgcbType; 256]> = Vec::new();
+    // A block is keyed by its discriminants, so that equal blocks hash alike.
+    let mut ids: HashMap<[u8; 256], u8> = HashMap::new();
+    // The first range that may reach the current block. EGCB_RANGES is sorted
+    // and disjoint, so the ranges pass through the blocks in order.
+    let mut next = 0;
+    for (high, slot) in block_of_high.iter_mut().enumerate() {
+        let first = (high as u32) << 8;
+        let last = first | 0xFF;
+        let mut block = [EgcbType::Other; 256];
+        while let Some(range) = EGCB_RANGES.get(next).filter(|range| range.start <= last) {
+            let from = range.start.max(first) - first;
+            let to = range.end.min(last) - first;
+            block[from as usize..=to as usize].fill(range.prop);
+            if range.end > last {
+                // The range goes on into the next block, which reads it again.
+                break;
+            }
+            next += 1;
+        }
+        let key = block.map(|prop| prop as u8);
+        *slot = *ids.entry(key).or_insert_with(|| {
+            blocks.push(block);
+            (blocks.len() - 1) as u8
+        });
+    }
+    EgcbBmpTable {
+        block_of_high,
+        blocks,
+    }
+}
+
+/// The EGCB property of a code point below [`BMP_END`], from the table.
+#[inline]
+fn egcb_bmp_type(code: u32) -> EgcbType {
+    let table = egcb_bmp_table();
+    let block = table.block_of_high[(code >> 8) as usize] as usize;
+    table.blocks[block][(code & 0xFF) as usize]
+}
+
+/// Binary search EGCB_RANGES for the EGCB type of a codepoint.
+fn egcb_get_type_search(code: u32) -> EgcbType {
     let mut low: usize = 0;
     let mut high: usize = EGCB_RANGES.len();
     while low < high {
@@ -1126,7 +1200,33 @@ pub(crate) fn onigenc_egcb_is_break_position(
     if s == end || s >= str_data.len() {
         return true;
     }
+    // Rust-only (ADR-008): two ASCII bytes inside the logical end form two
+    // one-byte characters of the built-in UTF-8 or ASCII encoding. Of the rules
+    // below, only GB3 joins them (CR x LF): GB4 and GB5 break around the
+    // other Control, CR and LF pairs, and no ASCII code point has a class
+    // that GB6-GB13 act on (see the test `egcb_ascii_fast_path_matches`).
+    // The check is by address: a user-defined ASCII-compatible encoding can
+    // have ASCII-valued trail bytes (Shift_JIS), so its flag is not enough.
+    if s < end
+        && str_data[s - 1] < 0x80
+        && str_data[s] < 0x80
+        && (std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
+            || std::ptr::addr_eq(enc, &crate::encodings::ascii::ONIG_ENCODING_ASCII))
+    {
+        return !(str_data[s - 1] == b'\r' && str_data[s] == b'\n');
+    }
+    egcb_is_break_position_general(enc, str_data, s, start, end)
+}
 
+/// The GB3-GB13 rules for a position past GB1 and GB2, for any character
+/// pair. [`onigenc_egcb_is_break_position`] answers ASCII pairs without it.
+fn egcb_is_break_position_general(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    start: usize,
+    end: usize,
+) -> bool {
     let mut prev = enc.left_adjust_char_head(start, s - 1, str_data);
     if prev < start {
         return true;
@@ -1622,5 +1722,158 @@ mod bmp_bitmap_tests {
             }
         }
         assert!(bitmaps > 50, "{bitmaps}");
+    }
+}
+
+#[cfg(test)]
+mod egcb_ascii_tests {
+    use super::*;
+    use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+
+    /// The public check with the ASCII fast path must answer as the general
+    /// GB3-GB13 rules do, for every `s`, `start` and logical `end`.
+    fn reference(enc: OnigEncoding, data: &[u8], s: usize, start: usize, end: usize) -> bool {
+        if s <= start || s == end || s >= data.len() {
+            return true;
+        }
+        egcb_is_break_position_general(enc, data, s, start, end)
+    }
+
+    fn assert_all_positions(enc: OnigEncoding, data: &[u8]) {
+        let len = data.len();
+        for start in 0..=len {
+            for end in start..=len {
+                for s in 0..=len {
+                    assert_eq!(
+                        onigenc_egcb_is_break_position(enc, data, s, start, end),
+                        reference(enc, data, s, start, end),
+                        "data {data:x?} s {s} start {start} end {end}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn egcb_ascii_fast_path_matches() {
+        let enc: OnigEncoding = &ONIG_ENCODING_UTF8;
+        let ascii: OnigEncoding = &crate::encodings::ascii::ONIG_ENCODING_ASCII;
+        // Among ASCII code points only CR, LF, Control and Other occur, so no
+        // ASCII pair can take part in the GB6-GB13 rules.
+        for code in 0..0x80 {
+            assert!(
+                matches!(
+                    egcb_get_type(code),
+                    EgcbType::CR | EgcbType::LF | EgcbType::Control | EgcbType::Other
+                ),
+                "{code:#x}"
+            );
+        }
+        // Every ASCII pair: a break except CR x LF.
+        for a in 0..0x80u8 {
+            for b in 0..0x80u8 {
+                let data = [a, b];
+                assert_eq!(
+                    onigenc_egcb_is_break_position(enc, &data, 1, 0, 2),
+                    !(a == b'\r' && b == b'\n'),
+                    "{a:#x} {b:#x}"
+                );
+                assert_eq!(
+                    onigenc_egcb_is_break_position(enc, &data, 1, 0, 2),
+                    reference(enc, &data, 1, 0, 2),
+                    "{a:#x} {b:#x}"
+                );
+                assert_eq!(
+                    onigenc_egcb_is_break_position(ascii, &data, 1, 0, 2),
+                    !(a == b'\r' && b == b'\n'),
+                    "ascii {a:#x} {b:#x}"
+                );
+            }
+        }
+        assert_all_positions(ascii, &[b'\r', b'\n', b'a', b'\r', 0x7F, b'\n', 0x80, 0xFF]);
+    }
+
+    #[test]
+    fn egcb_ascii_fast_path_matches_mixed_strings() {
+        let enc: OnigEncoding = &ONIG_ENCODING_UTF8;
+        let samples = [
+            "a\r\nb",
+            "\r\n\r\n",
+            "\r\r\n\n",
+            "e\u{301}\r\n",
+            "\r\u{301}\n",
+            "\u{1F468}\u{200D}\u{1F469}",
+            "\u{1F1FA}\u{1F1F8}\u{1F1E9}\u{1F1EA}",
+            "a\u{200D}b",
+            "x\u{903}y",
+            "\u{1100}\u{1161}\u{11A8}a",
+            "\u{0}\u{7F}\u{AD}\u{9F}",
+            "tab\there\x0c\x0b",
+        ];
+        for sample in samples {
+            assert_all_positions(enc, sample.as_bytes());
+        }
+        // Invalid UTF-8 keeps the same answers: the fast path only looks at
+        // ASCII bytes, and the general rules see what they always saw.
+        assert_all_positions(enc, &[0x80, b'\r', b'\n', 0xC3, b'\n', 0xFF, b'a']);
+        assert_all_positions(enc, &[0xE3, 0x81, b'\r', b'\n', 0xF0, b'\r']);
+        // The ASCII encoding takes the same fast path, and its bytes above
+        // 0x7F are single characters that the general rules see.
+        let ascii: OnigEncoding = &crate::encodings::ascii::ONIG_ENCODING_ASCII;
+        for sample in samples {
+            assert_all_positions(ascii, sample.as_bytes());
+        }
+        assert_all_positions(ascii, &[0x80, b'\r', b'\n', 0xC3, b'\n', 0xFF, b'a']);
+    }
+}
+
+#[cfg(test)]
+mod egcb_table_tests {
+    use super::*;
+
+    /// The ranges are sorted and disjoint, which the table build relies on.
+    #[test]
+    fn egcb_ranges_are_sorted_and_disjoint() {
+        for range in EGCB_RANGES.iter() {
+            assert!(range.start <= range.end, "{:#x}", range.start);
+        }
+        for pair in EGCB_RANGES.windows(2) {
+            assert!(pair[0].end < pair[1].start, "{:#x}", pair[1].start);
+        }
+    }
+
+    /// For every code point (surrogates excepted, as no encoding decodes
+    /// them), the table answers as the binary search does.
+    #[test]
+    fn egcb_table_matches_the_binary_search_for_every_code_point() {
+        for code in 0..=0x10_FFFFu32 {
+            if (0xD800..=0xDFFF).contains(&code) {
+                continue;
+            }
+            assert_eq!(
+                egcb_get_type(code),
+                egcb_get_type_search(code),
+                "code {code:#x}"
+            );
+        }
+    }
+
+    /// The table stores each distinct block once.
+    #[test]
+    fn egcb_table_blocks_are_distinct() {
+        let table = egcb_bmp_table();
+        for (i, block) in table.blocks.iter().enumerate() {
+            assert!(
+                !table.blocks[..i].contains(block),
+                "block {i} repeats an earlier block"
+            );
+        }
+        let used = table
+            .block_of_high
+            .iter()
+            .map(|&id| id as usize)
+            .max()
+            .unwrap_or(0);
+        assert!(used < table.blocks.len());
     }
 }
