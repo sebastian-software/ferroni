@@ -1,7 +1,7 @@
 //! The idiomatic Rust API. [`Regex`] compiles and searches a pattern,
 //! [`RegexBuilder`] sets its options and syntax, and [`Match`], [`Captures`] and
 //! [`FindIter`] report what a search found. It wraps the C-port functions
-//! [`onig_new`] and [`onig_search`].
+//! [`onig_new`](crate::regcomp::onig_new) and [`onig_search`].
 
 use std::cell::RefCell;
 use std::fmt;

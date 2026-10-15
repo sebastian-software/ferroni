@@ -377,26 +377,26 @@ The DFA pre-filter above serves a scanner's sets. A `Regex` searched in a steady
 - **Guards**: a seek reads characters. Its answers are the matcher's only for valid UTF-8 and a `start` on a character boundary, so the `_bytes` methods check the text (only when the seek decides, in the `is_match` case, and the `&str` methods know it), and any other text goes to the matcher. A lazy DFA that gives up answers nothing.
 - **Automaton**: regex-automata's `hybrid` lazy DFA over the seek (1 MiB cache, `earliest` search). Its caches sit in a `util::pool::Pool`, so a thread that searches takes no lock (the pool's owner fast path). The seek reads ASCII look-arounds only, so the DFA never quits. The automaton is shared by the clones of a `Regex`.
 - **Validation**: `tests/single_regex_reject.rs` compares every standard answer with `*_with(SearchOptions::new())`, which runs the matcher without this path, for each pattern built both with the option on and with `dfa(false)`, over 50 hand-written patterns (anchors and multi-line anchors, folds, non-ASCII classes, look-arounds, back references, atomic groups, absent operators, `\K`, `\G`, `$` at the end of a pattern, `(x+x+)+y|.*`), the production and tokenizer catalogs, and random UTF-8 and byte subjects. The pathological pattern on thirty `x`s has no bound, so its seek never accepts, and both builds agree with the matcher and with each other, errors included. Unit tests pin the eager build, the option, the bounds of the catalog validators, the gate at and above the bound, and the guards. The scanner's suites, the compat differential and `prefilter-self-check` are unchanged.
-- **Impact** (callgrind instructions, net of the empty loop; 200 iterations unless noted; baseline `regex-integration`, the commit before this change; the seek is built during `build`, so the compile rows include it):
+- **Impact** (callgrind instructions of the timed loop, net of the empty loop; 200 iterations unless noted; baseline `main` at `3b38e91`, the commit before this change; the harness compiles each case once inside the measured window, so every row includes one automaton build):
 
-| case | operation | baseline | seek on | change | path |
-| --- | --- | ---: | ---: | ---: | --- |
-| uuid_shape | `is_match`, 200 | 30,702,658 | 10,363,865 | -66.2% | exact, bounded: accepts |
-| uuid_v4 | `is_match`, 200 | 14,850,230 | 5,440,798 | -63.4% | exact, bounded: accepts |
-| ipv4_validation | `is_match`, 200 | 26,701,293 | 5,135,767 | -80.8% | exact, bounded: accepts |
-| ipv6_validation | `is_match`, 200 | 92,411,807 | 62,361,330 | -32.5% | exact, unbounded: rejects only |
-| django_email_local_part | `is_match`, 200 | 76,132,524 | 83,074,399 | +9.1% | unbounded: rejects only; matches run the seek and then the matcher |
-| django_email_domain | `is_match`, 20 | 548,043,742 | 492,789,705 | -10.1% | rejects only |
-| django_url_regex | `is_match`, 5 | 871,513,069 | 804,826,337 | -7.7% | rejects only |
-| jinja_string_token | `captures_at`, 200 | 5,788,827 | 6,153,362 | +6.3% | control: no seek on captures |
-| fluent_bit_apache | `captures_at`, 200 | 20,824,487 | 21,363,752 | +2.6% | control: no seek on captures |
-| literal_first | `find`, 200 | 271,086 | 256,686 | -5.3% | control: pure literal, no seek |
-| uuid_v4 (compile) | compile, 200 | 163,249,057 | 356,203,623 | +118.2% | the automaton is built with the regex |
-| ipv6_validation (compile) | compile, 200 | 2,397,017,266 | 5,655,448,974 | +135.9% | |
-| fluent_bit_apache (compile) | compile, 200 | 254,246,465 | 762,686,404 | +200.0% | |
-| jinja_string_token (compile) | compile, 200 | 103,282,814 | 390,402,055 | +278.0% | |
+| case                         | operation          |      baseline |       seek on |  change | path                                                               |
+| ---------------------------- | ------------------ | ------------: | ------------: | ------: | ------------------------------------------------------------------ |
+| uuid_shape                   | `is_match`, 200    |    28,891,873 |    10,364,316 |  -64.1% | exact, bounded: accepts                                            |
+| uuid_v4                      | `is_match`, 200    |    13,331,552 |     5,440,706 |  -59.2% | exact, bounded: accepts                                            |
+| ipv4_validation              | `is_match`, 200    |    26,392,812 |     5,137,614 |  -80.5% | exact, bounded: accepts                                            |
+| ipv6_validation              | `is_match`, 200    |    91,688,884 |    61,838,059 |  -32.6% | exact, unbounded: rejects only                                     |
+| django_email_local_part      | `is_match`, 200    |    76,516,926 |    83,283,820 |   +8.8% | unbounded: rejects only; matches run the seek and then the matcher |
+| django_email_domain          | `is_match`, 20     |   252,795,642 |   252,364,636 |   -0.2% | rejects only                                                       |
+| django_url_regex             | `is_match`, 5      |   716,291,091 |   720,627,135 |   +0.6% | rejects only                                                       |
+| jinja_string_token           | `captures_at`, 200 |     5,523,254 |     5,849,954 |   +5.9% | control: no seek on captures                                       |
+| fluent_bit_apache            | `captures_at`, 200 |    20,625,914 |    21,145,834 |   +2.5% | control: no seek on captures                                       |
+| literal_first                | `find`, 200        |       271,291 |       254,446 |   -6.2% | control: pure literal, no seek                                     |
+| uuid_v4 (compile)            | compile, 200       |   163,825,159 |   356,399,061 | +117.5% | the automaton is built with the regex                              |
+| ipv6_validation (compile)    | compile, 200       | 2,439,415,181 | 5,693,048,962 | +133.4% |                                                                    |
+| jinja_string_token (compile) | compile, 200       |   103,925,093 |   390,042,218 | +275.3% |                                                                    |
 
-  With `dfa(false)` the compile of `uuid_v4` is 163,310,130 (+0.04%, the same program and the same compilation path). The standard `is_match` of `uuid_v4` is 15,178,264 (+2.2%) and `jinja_string_token` 5,876,097 (+1.5%): the option-off build is not exactly the baseline. The residue is in the standard methods' code (an inline check of the seek and the code layout around it); a split of the automaton search out of line removed part of it (15,110,905) and cost the seek-on path 4.8% (5,700,494), so it was reverted. The seek-on captures controls differ from the option-off ones by about 4.7% although captures never consult the seek; the cause is not identified.
+The captures controls never consult the seek: most of their difference is the one automaton build inside the measured window (about 280,000 instructions for `jinja_string_token`); what remains per search is under 1%, code layout around the standard methods. With `dfa(false)` the compile is the baseline's (+0.04% for `uuid_v4`).
+
 - **Bounds**: per regex one lazy DFA over at most `MAX_NFA_STATES` NFA states, with a cache of at most 1 MiB per thread that searches with it, built with the regex. Compile time is the cost that matters: the rows above, and the option lets a pattern that is compiled once and searched rarely pay none of it.
 
 #### Per-search limits on the cached MatchArg (`src/api.rs`, `src/regexec.rs`)
