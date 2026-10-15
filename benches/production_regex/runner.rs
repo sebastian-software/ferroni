@@ -628,6 +628,28 @@ pub fn main() {
         }
         return;
     }
+    // `--steady N` runs each validated pair's steady batch once as a warm-up
+    // and then N times, without Criterion, so a profiler can count the lane:
+    // the difference between two counts isolates N batches.
+    if let Some(index) = args.iter().position(|arg| arg == "--steady") {
+        let count: usize = args
+            .get(index + 1)
+            .and_then(|value| value.parse().ok())
+            .expect("--steady takes a batch count");
+        for case in &cases {
+            for engine in &engines {
+                match eligibility(engine, case) {
+                    Ok(library) => {
+                        for _ in 0..=count {
+                            library.run(case).expect("validated execution must succeed");
+                        }
+                    }
+                    Err(record) => println!("ELIGIBILITY {record}"),
+                }
+            }
+        }
+        return;
+    }
     let mut criterion = Criterion::default().configure_from_args();
     let mut group = criterion.benchmark_group("production_regex");
     // The harness sets each lane's window here; without it, the command-line

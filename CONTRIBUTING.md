@@ -237,6 +237,11 @@ and Criterion raw samples and intervals. Short runs require `--diagnostic` and
 cannot support publication. See the corpus guide for filters, optional memory
 measurements, operation contracts and interpretation limits.
 
+To profile one case's steady lane without Criterion, run the benchmark binary
+with `PRODUCTION_CASE=<id> PRODUCTION_ENGINE=<engine>` and `--steady N`: it
+validates the pair, runs one warm-up batch and then N batches. Under a profiler,
+the difference between `--steady N` and `--steady 0` is N batches.
+
 Steady reuse measures 3 s after a 1 s warm-up; compile and first use measure
 1 s after 0.5 s, since each of their iterations is one construction. The
 Blacksmith workflow runs each repetition on its own VM with `run --only-run N`
