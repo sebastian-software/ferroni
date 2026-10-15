@@ -7572,7 +7572,8 @@ fn sunday_quick_search_step_forward(
 }
 
 /// Character map search. Mirrors C's map_search.
-/// Uses SIMD-accelerated memchr when the map has 1-3 distinct ASCII bytes.
+/// Uses SIMD-accelerated memchr when the map has 1-3 distinct ASCII bytes
+/// and the text it skips is valid UTF-8.
 fn map_search(
     enc: OnigEncoding,
     reg: &RegexType,
@@ -7587,38 +7588,55 @@ fn map_search(
         return None;
     }
     let haystack = &text[text_start..text_range];
-    match reg.map_byte_count {
-        1 => memchr::memchr(reg.map_bytes[0], haystack).map(|i| text_start + i),
-        2 => memchr::memchr2(reg.map_bytes[0], reg.map_bytes[1], haystack).map(|i| text_start + i),
+    let found = match reg.map_byte_count {
+        1 => memchr::memchr(reg.map_bytes[0], haystack),
+        2 => memchr::memchr2(reg.map_bytes[0], reg.map_bytes[1], haystack),
         3 => memchr::memchr3(
             reg.map_bytes[0],
             reg.map_bytes[1],
             reg.map_bytes[2],
             haystack,
-        )
-        .map(|i| text_start + i),
-        _ => {
-            let map = &reg.map;
-            let mut s = text_start;
-            // Rust-only (ADR-008): after 16 bytes without a candidate the
-            // search goes on eight bytes at a time.
-            let chunks_from = if reg.map_ascii_ranges.usable() {
-                text_start.saturating_add(16)
-            } else {
-                usize::MAX
-            };
-            while s < text_range {
-                if map[text[s] as usize] != 0 {
-                    return Some(s);
-                }
-                s += enclen(enc, text, s);
-                if s >= chunks_from && onigenc_is_ascii_compatible_encoding(enc) {
-                    return map_search_ascii_chunks(enc, reg, text, s, text_range);
-                }
-            }
-            None
+        ),
+        _ => return map_search_chars(enc, reg, text, text_start, text_range),
+    };
+    // The byte search stops where C's character loop stops only if the bytes
+    // it skips are valid UTF-8 in a multibyte encoding: C steps over a map
+    // byte that a malformed lead byte's length covers.
+    match found {
+        Some(at) if enc.max_enc_len() > 1 && std::str::from_utf8(&haystack[..at]).is_err() => {
+            map_search_chars(enc, reg, text, text_start, text_range)
+        }
+        found => found.map(|at| text_start + at),
+    }
+}
+
+/// `map_search`'s character loop, as C's map_search steps.
+fn map_search_chars(
+    enc: OnigEncoding,
+    reg: &RegexType,
+    text: &[u8],
+    text_start: usize,
+    text_range: usize,
+) -> Option<usize> {
+    let map = &reg.map;
+    let mut s = text_start;
+    // Rust-only (ADR-008): after 16 bytes without a candidate the
+    // search goes on eight bytes at a time.
+    let chunks_from = if reg.map_ascii_ranges.usable() {
+        text_start.saturating_add(16)
+    } else {
+        usize::MAX
+    };
+    while s < text_range {
+        if map[text[s] as usize] != 0 {
+            return Some(s);
+        }
+        s += enclen(enc, text, s);
+        if s >= chunks_from && onigenc_is_ascii_compatible_encoding(enc) {
+            return map_search_ascii_chunks(enc, reg, text, s, text_range);
         }
     }
+    None
 }
 
 /// Rust-only (ADR-008): `map_search`'s loop for an ASCII-compatible

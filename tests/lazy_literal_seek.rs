@@ -7,6 +7,8 @@
 
 use ferroni::api::Regex;
 use ferroni::ffi::{CRegex, CRegion};
+use ferroni::oniguruma::ONIG_OPTION_NONE;
+use ferroni::regexec::onig_match;
 
 type Trace = Option<Vec<Option<(usize, usize)>>>;
 
@@ -98,6 +100,19 @@ fn c_trace(re: &CRegex, text: &[u8]) -> Trace {
     })
 }
 
+/// Whether C's `\w` agrees with Ferroni's at every byte of `text`.
+/// Ferroni's Unicode data is newer than C's (ADR-015): a malformed sequence
+/// such as `e2 82 5f` decodes to U+209F, a word character only since
+/// Unicode 17.
+fn word_tables_agree(text: &[u8]) -> bool {
+    let ours = Regex::new(r"\w").unwrap();
+    let c = CRegex::new(br"\w", 0).unwrap();
+    (0..text.len()).all(|at| {
+        let (result, _) = onig_match(ours.as_raw(), text, text.len(), at, None, ONIG_OPTION_NONE);
+        (result >= 0) == (c.match_at(text, at, None, 0) >= 0)
+    })
+}
+
 #[test]
 fn lazy_literal_seek_agrees_with_c() {
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -115,13 +130,9 @@ fn lazy_literal_seek_agrees_with_c() {
                 .collect(),
         );
     }
-    // Subjects that are not valid UTF-8 are left out: a look-behind steps
-    // back over malformed bytes differently from C, also before the seek
-    // existed. The seek's malformed-input behavior is checked against the
-    // instruction loop in `lazy_literal_seek_matches_the_instruction_loop`.
     let subjects: Vec<Vec<u8>> = subjects
         .into_iter()
-        .filter(|subject| std::str::from_utf8(subject).is_ok())
+        .filter(|subject| word_tables_agree(subject))
         .collect();
     let mut comparisons = 0;
     for pattern in PATTERNS {
