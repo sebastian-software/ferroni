@@ -367,10 +367,10 @@ fn catalog_patterns_agree_with_the_matcher() {
     assert!(compared > 10_000, "{compared} comparisons");
 }
 
-/// `(x+x+)+y|.*` on thirty `x`s: the seek finds the `.*` alternative, but the
-/// matcher takes a long backtracking path to it, so the pattern has no static
-/// retry bound and the seek must not answer. Both builds agree with the
-/// matcher, and with each other on the standard methods, errors included.
+/// `(x+x+)+y|.*` on thirty `x`s: the `.*` alternative matches everywhere, so
+/// the pattern has no seek and both builds answer with the matcher, which
+/// stops at the retry limit on this subject. Both builds agree with each other
+/// on the standard methods, errors included.
 #[test]
 fn unbounded_retries_are_left_to_the_matcher() {
     let text = "x".repeat(30);
@@ -383,4 +383,24 @@ fn unbounded_retries_are_left_to_the_matcher() {
         off.find_bytes(text).map(|m| m.range())
     );
     let _ = check_search(&on, text, 0);
+}
+
+/// An exact seek answers "match" where the retry limit stops the matcher: the
+/// answer is the one the matcher gives without the limit (ADR-017, rule 2),
+/// while the matcher alone, under the limit, reports no match.
+#[test]
+fn exact_seek_answers_match_where_the_retry_limit_stops_the_matcher() {
+    let pattern = r"^[a-z@.]+@[a-z.]+\.com$";
+    let on = Regex::new(pattern).unwrap();
+    let off = RegexBuilder::new(pattern).dfa(false).build().unwrap();
+    let text = b"john@doe.com";
+    let tight = SearchOptions::new().retry_limit_in_match(1);
+    let unlimited = SearchOptions::new().retry_limit_in_match(0);
+    assert!(off.is_match_bytes_at_with(text, 0, tight).is_err());
+    assert_eq!(off.is_match_bytes_at_with(text, 0, unlimited), Ok(true));
+    assert!(on.is_match_bytes(text));
+    assert!(on.is_match("john@doe.com"));
+    assert!(!on.is_match_bytes(b"john@doe.org"));
+    // The `*_with` methods run the matcher under the caller's limit.
+    assert!(on.is_match_bytes_at_with(text, 0, tight).is_err());
 }

@@ -193,19 +193,12 @@ pub(crate) fn derive(root: &Node, reg: &RegexType, precise: bool) -> Option<Seek
     if reg.enc.name() != utf8.name() || reg.enc.max_enc_len() != utf8.max_enc_len() {
         return None;
     }
-    // The static retry bound describes the matcher, not the seek, so it is
-    // taken from the tree whichever seek the walk writes (ADR-008).
-    let bound = if precise {
-        retry_bound(root).unwrap_or(0)
-    } else {
-        0
-    };
-    walk_seek(root, reg, precise, bound)
+    walk_seek(root, reg, precise)
 }
 
-/// `derive` with the retry bound given. A precise seek whose automaton would
-/// be too large falls back to the scanner's seek, which is smaller.
-fn walk_seek(root: &Node, reg: &RegexType, precise: bool, bound: u64) -> Option<Seek> {
+/// The walk of `derive`. A precise seek whose automaton would be too large
+/// falls back to the scanner's seek, which is smaller.
+fn walk_seek(root: &Node, reg: &RegexType, precise: bool) -> Option<Seek> {
     // The tail rewrite of `\Z` is exact, and the scanner's seeks keep their
     // approximation of it (`$`), so only a single regex's seek takes it.
     let mut tails = Vec::new();
@@ -224,7 +217,7 @@ fn walk_seek(root: &Node, reg: &RegexType, precise: bool, bound: u64) -> Option<
         return Some(Seek::Everywhere);
     }
     if precise && nfa_states_estimate(&hir) > MAX_NFA_STATES {
-        return walk_seek(root, reg, false, bound);
+        return walk_seek(root, reg, false);
     }
     // Exact when the seek matches exactly where the pattern does, so that a
     // match of the seek is a match of the pattern (`SeekCode::exact`). The
@@ -237,7 +230,7 @@ fn walk_seek(root: &Node, reg: &RegexType, precise: bool, bound: u64) -> Option<
             .intersects(ONIG_OPTION_NOTBOL | ONIG_OPTION_NOTEOL | ONIG_OPTION_FIND_NOT_EMPTY);
     // A node the encoding has no tag for leaves the entry on its own, which
     // is always right; the walk writes none.
-    let code = SeekCode::encode(&hir, exact, bound)?;
+    let code = SeekCode::encode(&hir, exact)?;
     debug_assert_eq!(code.decode(), hir, "the seek code round-trips");
     Some(Seek::Pattern(code))
 }
@@ -278,9 +271,8 @@ mod tag {
 impl SeekCode {
     /// `hir` encoded, or `None` for a node kind the walk never writes
     /// (a capture).
-    fn encode(hir: &Hir, exact: bool, bound: u64) -> Option<SeekCode> {
+    fn encode(hir: &Hir, exact: bool) -> Option<SeekCode> {
         let mut out = vec![u8::from(exact)];
-        Self::varint(bound as usize, &mut out);
         Self::write(hir, &mut out)?;
         Some(SeekCode(out.into_boxed_slice()))
     }
@@ -289,22 +281,11 @@ impl SeekCode {
     /// purposes of existence: no construct was approximated, no line start
     /// the matcher would not see is admitted, and no option changes a match
     /// the seek describes. A match of an exact seek is a match of the
-    /// pattern, which is what a standard `is_match` may answer from it.
+    /// pattern, which is what a standard `is_match` may answer from it. The
+    /// matcher finds that match with no limit; under a limit it may stop
+    /// instead, and the answer is then the one without the limit (ADR-017).
     pub(crate) fn exact(&self) -> bool {
         self.0[0] != 0
-    }
-
-    /// The static bound on the retries of one match attempt of the pattern
-    /// (`retry_bound`), or `None` when it is not provable.
-    pub(crate) fn retry_bound(&self) -> Option<u64> {
-        let mut reader = SeekReader {
-            code: &self.0,
-            at: 1,
-        };
-        match reader.varint() as u64 {
-            0 => None,
-            bound => Some(bound),
-        }
     }
 
     fn write(hir: &Hir, out: &mut Vec<u8>) -> Option<()> {
@@ -376,7 +357,6 @@ impl SeekCode {
             code: &self.0,
             at: 1,
         };
-        reader.varint();
         let hir = reader.hir();
         debug_assert_eq!(reader.at, self.0.len(), "the seek code is read whole");
         hir
@@ -956,81 +936,6 @@ fn collect_tails(node: &Node, out: &mut Vec<*const Node>) {
         }
         _ => {}
     }
-}
-
-/// Rust-only (ADR-008): a static upper bound on the retries one match
-/// attempt of the tuned tree can make, for a pattern the matcher can run
-/// without reaching the retry limit in match (the default is 10,000,000
-/// retries per start position). `None` when the bound is not provable: an
-/// unbounded repetition, a back reference, a call, a condition, a look-around,
-/// a literal trie, or a count that overflows.
-///
-/// Each retry of the matcher follows one failed path through the tree, and
-/// every path ends in one failure or in the match. So the paths bound the
-/// retries: a repetition with at most `n` iterations of a body with `p` paths
-/// has `1 + p + … + p^n`, a sequence of items has the product of its items'
-/// paths (the failure of a later item retries each path of the earlier ones),
-/// and an alternation the sum of its branches'.
-pub(crate) fn retry_bound(root: &Node) -> Option<u64> {
-    paths(root)
-}
-
-/// The paths of `node` (`retry_bound`), `None` when they are not provable.
-fn paths(node: &Node) -> Option<u64> {
-    if node.has_status(ND_ST_LITERAL_ALT) {
-        return None;
-    }
-    Some(match &node.inner {
-        NodeInner::String(_) | NodeInner::CClass(_) | NodeInner::CType(_) => 1,
-        NodeInner::Gimmick(_) => 1,
-        NodeInner::Anchor(an) => match an.anchor_type {
-            ANCR_PREC_READ | ANCR_PREC_READ_NOT | ANCR_LOOK_BEHIND | ANCR_LOOK_BEHIND_NOT => {
-                return None;
-            }
-            _ => 1,
-        },
-        NodeInner::BackRef(_) | NodeInner::Call(_) => return None,
-        NodeInner::Quant(qn) => {
-            if qn.upper < 0 {
-                return None;
-            }
-            let Some(body) = qn.body.as_deref() else {
-                return Some(1);
-            };
-            let body = paths(body)?;
-            // The iteration counts 0 to `upper`, each a sequence of bodies.
-            let mut total = 1u64;
-            let mut power = 1u64;
-            for _ in 0..qn.upper {
-                power = power.checked_mul(body)?;
-                total = total.checked_add(power)?;
-            }
-            total
-        }
-        NodeInner::Bag(bn) => {
-            if matches!(bn.bag_data, BagData::IfElse { .. }) {
-                return None;
-            }
-            match bn.body.as_deref() {
-                Some(body) => paths(body)?,
-                None => 1,
-            }
-        }
-        NodeInner::List(_) => {
-            let mut total = 1u64;
-            for item in cons_items(node) {
-                total = total.checked_mul(paths(item)?)?;
-            }
-            total
-        }
-        NodeInner::Alt(_) => {
-            let mut total = 0u64;
-            for branch in cons_items(node) {
-                total = total.checked_add(paths(branch)?)?;
-            }
-            total
-        }
-    })
 }
 
 /// One walk over a tuned parse tree, writing the seek HIR.
@@ -2421,8 +2326,6 @@ pub(crate) struct SingleSeek {
     /// fast path), so a search takes no lock.
     caches: Pool<hybrid::Cache, CacheMaker>,
     exact: bool,
-    /// The static retry bound of the pattern (`retry_bound`).
-    retry_bound: Option<u64>,
 }
 
 /// The cache constructor of a `SingleSeek`'s pool.
@@ -2497,7 +2400,6 @@ impl SingleSeek {
             dfa,
             caches,
             exact: code.exact(),
-            retry_bound: code.retry_bound(),
         })
     }
 
@@ -2517,11 +2419,6 @@ impl SingleSeek {
     /// Whether the seek is exact (`SeekCode::exact`).
     pub(crate) fn exact(&self) -> bool {
         self.exact
-    }
-
-    /// The static retry bound of the pattern (`retry_bound`).
-    pub(crate) fn retry_bound(&self) -> Option<u64> {
-        self.retry_bound
     }
 }
 
@@ -2861,8 +2758,7 @@ mod tests {
                 continue;
             };
             let hir = code.decode();
-            let again = SeekCode::encode(&hir, code.exact(), code.retry_bound().unwrap_or(0))
-                .expect("the walk's nodes encode");
+            let again = SeekCode::encode(&hir, code.exact()).expect("the walk's nodes encode");
             assert_eq!(again, code, "{pattern}");
             assert_eq!(again.decode(), hir, "{pattern}");
             codes += 1;
