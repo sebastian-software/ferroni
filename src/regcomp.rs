@@ -10925,6 +10925,9 @@ fn compile_parsed(
     // Rust-only (ADR-008): a program that is only its exact string answers
     // the forward literal search (`pure_literal_first`).
     reg.pure_literal = detect_pure_literal(reg);
+    // Rust-only (ADR-008): whether the iterators may step past an empty match
+    // without searching again from its end.
+    reg.skip_repeated_empty_search = detect_skip_repeated_empty_search(reg);
     // Rust-only (ADR-008): the seek approximation for the scanner's DFA
     // pre-filter, read from the same tuned tree, for scanner patterns only.
     #[cfg(feature = "dfa-prefilter")]
@@ -11335,6 +11338,22 @@ fn detect_pure_literal(reg: &RegexType) -> bool {
     bytes == reg.exact.as_slice()
 }
 
+/// Rust-only (ADR-008): whether a search from the end of an empty match can
+/// only find that match again, so an iterator may step past it. The match
+/// attempt at a position depends on the text and not on where the search
+/// started, unless the program reads the search start (`\G`), keeps a
+/// different match start (`\K`) or runs callouts, which observe every search.
+fn detect_skip_repeated_empty_search(reg: &RegexType) -> bool {
+    !reg.keep_moves_match_start
+        && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
+        && !reg.ops.iter().any(|op| {
+            matches!(
+                op.opcode,
+                OpCode::CheckPosition | OpCode::CalloutContents | OpCode::CalloutName
+            )
+        })
+}
+
 /// Create and compile a new regex - mirrors C's onig_new().
 /// This is the main public API entry point.
 pub fn onig_new(
@@ -11463,6 +11482,7 @@ fn onig_new_with_choices(
         exact: Vec::new(),
         exact_finder: None,
         pure_literal: false,
+        skip_repeated_empty_search: false,
         map: [0u8; CHAR_MAP_SIZE],
         map_offset: 0,
         map_bytes: [0u8; 3],
@@ -11957,6 +11977,7 @@ mod tests {
             exact: Vec::new(),
             exact_finder: None,
             pure_literal: false,
+            skip_repeated_empty_search: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],
