@@ -21,8 +21,8 @@ use crate::oniguruma::*;
 use crate::regcomp::{AcceptSeek, ScannerSeek, onig_new_for_single_seek};
 use crate::regexec::{
     MatchArg, SearchLimits, cache_msa, onig_name_to_backref_number, onig_search,
-    onig_search_bounds, pure_literal_first, release_oversized_stack, search_in_range,
-    search_in_range_inner, take_cached_msa,
+    onig_search_bounds, onig_search_captures, pure_literal_first, release_oversized_stack,
+    search_in_range, search_in_range_inner, take_cached_msa,
 };
 use crate::regint::RegexType;
 use crate::regparse_types::NameTable;
@@ -1136,15 +1136,8 @@ impl Regex {
         if self.seek_rejects_capture(text, start, utf8) {
             return None;
         }
-        let (result, region) = onig_search(
-            self.program(),
-            text,
-            text.len(),
-            start,
-            text.len(),
-            Some(take_cached_region()),
-            ONIG_OPTION_NONE,
-        );
+        let (result, region) =
+            onig_search_captures(self.program(), text, start, take_cached_region());
         let region = region?;
         if result < 0 {
             cache_region(region);
@@ -2776,7 +2769,6 @@ mod tests {
     }
 
     /// The bounds of every group of a capture result, `None` for no match.
-    #[cfg(feature = "dfa-prefilter")]
     fn capture_spans(found: Option<Captures<'_>>) -> Option<Vec<Option<Range<usize>>>> {
         found.map(|caps| {
             (0..caps.len())
@@ -2840,6 +2832,53 @@ mod tests {
                 let expected = capture_spans(re.captures_with(text, SearchOptions::new()).unwrap());
                 let expected_bytes = capture_spans(re.captures_bytes(text.as_bytes()));
                 assert_eq!(expected_bytes, expected, "{pattern} on {text:?}");
+                assert_eq!(
+                    capture_spans(re.captures(text)),
+                    expected,
+                    "{pattern} on {text:?}"
+                );
+            }
+        }
+    }
+
+    /// The capture methods of a pattern that matches only at its start (`\A`,
+    /// `\G`, `^`) give the matcher's answer of `captures_*_with`, at every
+    /// character boundary, through the direct path of `onig_search_captures`.
+    /// The patterns share the thread's cached region, one with groups and one
+    /// without, so a region reused from another pattern cannot leak into a result.
+    #[test]
+    fn anchored_captures_match_the_general_path_through_the_api() {
+        let _limits = crate::regexec::shared_limits();
+        let patterns = [
+            r"\A(\d+)-(\w+)?",
+            r"\A",
+            r"\Gab(c)?",
+            r"^(\w+)\s*=\s*(\S*)$",
+            r"\A(?:(a)|b)",
+            r"(\d+)",
+            r"\Ab",
+        ];
+        let texts = ["", "12-ab", "a=b", "ab", "abc", "bb", "é", "x\nab", "abab"];
+        for text in texts {
+            for pattern in patterns {
+                let re = Regex::new(pattern).unwrap();
+                for start in (0..=text.len()).filter(|&at| text.is_char_boundary(at)) {
+                    let expected = capture_spans(
+                        re.captures_at_with(text, start, SearchOptions::new())
+                            .unwrap(),
+                    );
+                    assert_eq!(
+                        capture_spans(re.captures_at(text, start)),
+                        expected,
+                        "{pattern} on {text:?} from {start}"
+                    );
+                    assert_eq!(
+                        capture_spans(re.captures_bytes_at(text.as_bytes(), start)),
+                        expected,
+                        "{pattern} on {text:?} from {start} (bytes)"
+                    );
+                }
+                let expected = capture_spans(re.captures_with(text, SearchOptions::new()).unwrap());
                 assert_eq!(
                     capture_spans(re.captures(text)),
                     expected,
