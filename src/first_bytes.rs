@@ -155,6 +155,28 @@ fn record_first_bytes(reg: &RegexType, op: &Operation, map: &mut ByteMap) -> Opt
             add_high_bytes(map);
             FirstBytes::ConsumesOrFallsThrough
         }
+        OpCode::CClassRepeat => {
+            let OperationPayload::CClassRepeat { bsp, not, min, .. } = &op.payload else {
+                return None;
+            };
+            add_bitset(map, bsp, *not);
+            if *min == 0 {
+                FirstBytes::ConsumesOrFallsThrough
+            } else {
+                FirstBytes::Consumes
+            }
+        }
+        OpCode::AnyCharRepeat => {
+            let OperationPayload::AnyCharRepeat { min, .. } = &op.payload else {
+                return None;
+            };
+            add_all(map);
+            if *min == 0 {
+                FirstBytes::ConsumesOrFallsThrough
+            } else {
+                FirstBytes::Consumes
+            }
+        }
         OpCode::WordStar => {
             add_all(map);
             FirstBytes::ConsumesOrFallsThrough

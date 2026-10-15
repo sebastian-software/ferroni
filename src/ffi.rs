@@ -6,7 +6,7 @@
 #![allow(non_camel_case_types, non_upper_case_globals, dead_code)]
 
 use std::ffi::c_void;
-use std::os::raw::{c_int, c_uint};
+use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr;
 use std::sync::Once;
 
@@ -63,6 +63,32 @@ pub const ONIG_OPTION_CAPTURE_GROUP: c_uint = 1 << 8;
 pub const ONIG_REGSET_POSITION_LEAD: c_int = 0;
 pub const ONIG_REGSET_REGEX_LEAD: c_int = 1;
 
+// --- Process-wide limits, for the tests of the counted repeats ---
+
+/// Sets C's retry limit in match for every later search (process-wide).
+pub fn set_retry_limit_in_match(limit: u64) {
+    // SAFETY: the setter stores one process-wide limit read by later searches.
+    unsafe { onig_set_retry_limit_in_match(limit as c_ulong) };
+}
+
+/// C's retry limit in match (process-wide).
+pub fn retry_limit_in_match() -> u64 {
+    // SAFETY: the getter reads one process-wide value.
+    unsafe { onig_get_retry_limit_in_match() as u64 }
+}
+
+/// Sets C's match stack limit for every later search (process-wide).
+pub fn set_match_stack_limit_size(size: u32) {
+    // SAFETY: the setter stores one process-wide limit read by later searches.
+    unsafe { onig_set_match_stack_limit_size(size as c_uint) };
+}
+
+/// C's match stack limit (process-wide).
+pub fn match_stack_limit_size() -> u32 {
+    // SAFETY: the getter reads one process-wide value.
+    unsafe { onig_get_match_stack_limit_size() as u32 }
+}
+
 // --- Extern functions ---
 
 unsafe extern "C" {
@@ -74,6 +100,10 @@ unsafe extern "C" {
     pub fn onig_end() -> c_int;
 
     pub fn onig_set_default_case_fold_flag(case_fold_flag: c_uint) -> c_int;
+    pub fn onig_set_retry_limit_in_match(n: c_ulong) -> c_int;
+    pub fn onig_set_match_stack_limit_size(size: c_uint) -> c_int;
+    pub fn onig_get_retry_limit_in_match() -> c_ulong;
+    pub fn onig_get_match_stack_limit_size() -> c_uint;
 
     pub fn onig_new(
         reg: *mut OnigRegex,

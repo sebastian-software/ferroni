@@ -359,6 +359,10 @@ pub mod scanner;
 #[allow(missing_debug_implementations)]
 pub mod unicode;
 
+// Crate-private tests of the counted character repeats (ADR-008).
+#[cfg(test)]
+mod counted_repeat_tests;
+
 // The prelude types are also at the crate root: `use ferroni::Regex;`.
 pub use prelude::*;
 
