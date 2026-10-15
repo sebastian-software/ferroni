@@ -7647,6 +7647,7 @@ fn map_search(
 }
 
 /// `map_search`'s character loop, as C's map_search steps.
+#[inline(always)]
 fn map_search_chars(
     enc: OnigEncoding,
     reg: &RegexType,
