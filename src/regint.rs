@@ -580,6 +580,13 @@ pub(crate) enum OperationPayload {
         /// Fixed encoding property, cached for the short ASCII backward walk.
         ascii_compatible: bool,
     },
+    /// Rust-only (ADR-008): `PushLazyAnyChar`. `c` is the byte that the
+    /// literal after the loop's capture end must start with (see
+    /// `lazy_literal_byte`).
+    PushLazyAnyChar {
+        addr: RelAddrType,
+        c: u8,
+    },
     PushOrJumpByteSet {
         addr: RelAddrType,
         /// The bytes the main path can consume first.
