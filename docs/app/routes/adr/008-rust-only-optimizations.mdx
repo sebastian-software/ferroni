@@ -254,6 +254,17 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Validation**: `egcb_table_matches_the_binary_search_for_every_code_point` compares every code point from 0 to U+10FFFF, surrogates excepted, with the binary search. `egcb_ranges_are_sorted_and_disjoint` checks the precondition of the build, and `egcb_table_blocks_are_distinct` the deduplication.
 - **Impact** (callgrind instructions per steady batch, production lane; before = the base without this entry or the ASCII entry above, after = both): `symfony_grapheme_chunks_1` 31,041 → 28,827 (−7.1%), `symfony_grapheme_chunks_2` 8,058 → 7,385 (−8.3%). Controls: `mastodon_hashtag_regex_step` 101,393 → 101,393, `uuid_v4` 5,341 → 5,327, `tiktoken_o200k_base` (tokenizer corpus, 5 batches) 2,072,394 → 2,072,394.
 
+#### `\X` as one grapheme-boundary instruction (`src/regparse.rs`, `src/regcomp.rs`, `src/regexec.rs`)
+
+Upstream's `\X` is the atomic group `(?>\O(?:\Y\O)*)`: a multiline any-character, then a loop that takes each further character while no extended grapheme cluster boundary lies before it. Its compiled form is `Mark`, `AnyCharMl`, `Push`, `TextSegmentBoundary`, `AnyCharMl`, `Jump`, `CutToMark`, with a stack entry and a dispatch per character.
+
+- **Trigger**: `\X` (not `(?y{w})\X`) outside look-behinds. The parser marks the group with `BagData::TextSegment` only when no look-behind body encloses it (`look_behind_depth`), and the compiler checks the shape before it emits the instruction; any other shape keeps the atomic group.
+- **Execution**: `GraphemeCluster` runs `grapheme_cluster_end`, which takes the same steps as the loop: the first character where one fits before the range end, then each further character while `onigenc_egcb_is_break_position` (judged against the string end) reports no boundary and the character fits before the range end. The atomic group keeps that position, so the instruction pushes no entries and never gives back.
+- **Observability**: none for results. Stack entries and retries that the loop counted are not counted; ADR-017 allows that where C stops at a limit, and Ferroni never stops at one where C finishes. A long cluster no longer reaches a match stack limit that upstream's loop reaches (`a_long_cluster_needs_no_stack_entries`).
+- **Bounds**: no allocation, no data, no unsafe code; one loop per `\X` step, over the characters the cluster covers.
+- **Validation**: `grapheme_cluster_matches_the_upstream_sequence` compares the instruction with the atomic group (switched off in tests) for 24 patterns over 15 subjects (CRLF, combining marks, ZWJ emoji, regional indicators, Hangul, prepended and variation-selector code points, malformed UTF-8), at every start and every range end, with captures, alternations and anchors. With the `ffi` feature it also compares with C where the range is past the start. The look-behind and word-variant cases check the emitted instructions.
+- **Impact** (callgrind instructions per steady batch, production lane; base `origin/main` 2a692ca): `symfony_grapheme_chunks_1` 28,791 → 26,383 (−8.4%), `symfony_grapheme_chunks_2` 7,383 → 6,671 (−9.6%). Controls: `mastodon_hashtag_regex_step` 101,393 → 101,424 (+0.03%), `wordpress_shortcode_captures` 48,444 → 48,470 (+0.05%), `uuid_v4` 5,110 → 5,107, `tiktoken_o200k_base` (tokenizer corpus, 5 batches) 2,072,888 → 2,072,888.
+
 #### Bitmaps for Unicode ctypes (`src/unicode/mod.rs`)
 
 - **Trigger**: `onigenc_unicode_is_code_ctype` for a code below U+10000 and a table with at least 16 ranges.
@@ -307,6 +318,18 @@ Where C finds no optimizer, the extra class and type byte maps (`optimize_nodes`
 - **Bytecode start maps**: the window and fall-through filters (`window_start_map`, `search_start_map`) cost one table lookup per position, not a search. Dropping their weak maps measured no gain, so they stay.
 - **Impact** (instructions retired, a search from every start of every line of a mixed 213-line corpus, all 14,950 Shiki patterns): the 51 patterns whose map is dropped take 15% fewer in total (−35% to +2.2%); `[^\\]$` and `(?=[^\\])$` go from 1.84× and 1.95× C's instructions to 1.20× and 1.46×. All patterns together −0.08%, with unchanged results. Scanner replays (C++, Java, SCSS) and grammar compilation stay within ±0.2%, their run-to-run spread.
 - **Bounds**: one pass over the 256 map bytes per expression with an extra map; no new data.
+
+#### Exact lead bytes of multibyte class members after a look-behind (`src/regcomp.rs`)
+
+The extra start map of a class with multibyte members takes every byte from 0x80 up, because any lead byte may start one. After a leading look-behind, every such byte before the first match costs a failed attempt (700–1,000 instructions each), though a UTF-8 character of a small explicit set has few lead bytes.
+
+- **Trigger** (`utf8_class_lead_bytes`, `narrow_leads`): the extra map of a pattern whose leading node is a fixed-length positive look-behind (`look_behind_reach` above 0), in UTF-8, for a class that is not negated and whose multibyte part is at most 16 single code points. Other classes keep every byte from 0x80 up.
+- **Rule**: a byte from 0x80 up is a lead when it is a character of its own (length 1) that the bitset holds, or the lead of a longer character whose decoded code is a multibyte member. The decoder masks every continuation byte to its low six bits, so a lead of length n reaches the codes from its base up to `base + 2^(6(n-1)) - 1`, overlong forms included. U+FF03 is reached from `EF` and from the overlong `F0 8F BC 83`, which both this engine and C match, so `F0` stays in the set.
+- **Execution**: compile time only; the map is a superset of the bytes a match can start with, so the search makes the same attempts from the bytes it keeps. Nothing changes at match time.
+- **Observability**: none. A look-behind still restricts the start positions as before (`start_map_may_skip`).
+- **Bounds**: one pass over at most 16 code points and the class's bitset, into a 256-bit set; no allocation at match time.
+- **Validation**: `narrowed_class_leads_match_the_full_high_bytes` compares every search of 14 patterns (look-behinds, `(?i)`, negated and range classes, an emoji, an overlong sequence) over nine mixed subjects, from every start, with the map that keeps every byte from 0x80 up; with the `ffi` feature it also compares with C. It also checks that U+FF03 gives exactly `EF` and `F0`.
+- **Impact** (callgrind instructions per steady batch, production lane; base `origin/main` 2a692ca): `mastodon_hashtag_regex_step` 101,393 → 98,589 (−2.8%). The search stops at the first match, so only the attempts before it are saved: the benchmark inputs have a few non-ASCII bytes before their hashtags. Controls: `wordpress_shortcode_captures` 48,444 → 48,470 (+0.05%), `uuid_v4` 5,110 → 5,108, `tiktoken_o200k_base` (tokenizer corpus, 5 batches) 2,072,888 → 2,072,888.
 
 #### Attempts continued in the VM (`src/regexec.rs`)
 
