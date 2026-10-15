@@ -3307,6 +3307,26 @@ fn push_char_run(
     }
 }
 
+/// Rust-only (ADR-008): `PopStarChoices` at `pc`. Out of line, so that the
+/// matcher's loop keeps its code for the patterns without it.
+#[inline(never)]
+fn pop_star_choices(stack: &mut Vec<StackEntry>, pc: usize) {
+    while let Some(
+        StackEntry::Alt {
+            pcode,
+            is_super: false,
+            ..
+        }
+        | StackEntry::AltLazy { pcode, .. },
+    ) = stack.last()
+    {
+        if *pcode != pc {
+            break;
+        }
+        stack.pop();
+    }
+}
+
 /// Greedy run of a negated single-character loop (`[^class]*`) from `start`.
 ///
 /// `ascii_member(b)` and `member_end(x)` (for a non-ASCII byte at `x`, the
@@ -6018,6 +6038,16 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::Pop => {
                 stack.pop();
+                p += 1;
+            }
+
+            // Rust-only (ADR-008): the star just before this instruction
+            // resumes here on backtracking, so the entries on top that resume
+            // here are exactly its choices. Dropping them makes it possessive
+            // where `possessify` proved that no shorter run can match; the
+            // backtracks they would take are not counted (ADR-017).
+            OpCode::PopStarChoices => {
+                pop_star_choices(&mut stack, p);
                 p += 1;
             }
 
