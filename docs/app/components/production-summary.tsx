@@ -100,10 +100,10 @@ function CostNotes() {
         {Math.round((1 - x86Compile.family_weighted_ratio) * 100)}% less on Linux in this corpus.
         Ferroni builds a lazy DFA alongside each regex by default, which adds to its compile time;{" "}
         <code>RegexBuilder::dfa(false)</code> skips it for a pattern used only a few times. PCRE2
-        JIT leads almost every source-backed reuse case on both platforms; Ferroni takes less
-        aggregate reuse time than fancy-regex. The tested Rust <code>regex</code> configuration
-        covers fewer of these tasks, is about even with Ferroni on them in the aggregate and offers
-        guaranteed linear-time matching for its supported syntax.
+        JIT leads most source-backed reuse cases and the aggregate on both platforms, while Ferroni
+        leads a few; Ferroni takes less aggregate reuse time than fancy-regex. The tested Rust{" "}
+        <code>regex</code> configuration covers fewer of these tasks, takes more aggregate time than
+        Ferroni on them and offers guaranteed linear-time matching for its supported syntax.
       </p>
       <p>
         <strong>The API path also matters.</strong> Ferroni&rsquo;s standard methods can reuse
