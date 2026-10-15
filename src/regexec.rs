@@ -4288,6 +4288,8 @@ thread_local! {
     static PURE_LITERAL_FAST_PATH_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Differential reference for captured zero-distance map searches.
     static CAPTURE_MAP_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Differential reference for the atomic class prefix filter.
+    static ATOMIC_CLASS_PREFIX_DISABLED: Cell<bool> = const { Cell::new(false) };
     /// Runs dot stars with the original per-character encoding queries.
     static DOT_STAR_ASCII_CACHE_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Differential reference for one-byte BackRef1 comparisons.
@@ -9920,45 +9922,43 @@ fn next_optimizer_map_start(
 
 /// A leading atomic `[class]+literal` has only one possible exit from its
 /// ASCII run. A run ending at a different byte cannot match from any suffix.
-/// Recognize the exact auto-possessive sequence, leaving captures, anchors,
-/// alternations, and every other prefix on the ordinary VM path.
+/// Recognize the exact auto-possessive sequence (the class, its star and
+/// `PopStarChoices`, as `compile_strict_real_repeat` emits it), leaving
+/// captures, anchors, alternations, and every other prefix on the ordinary VM
+/// path.
 fn atomic_ascii_class_prefix<'a>(reg: &'a RegexType, msa: &MatchArg) -> Option<(&'a BitSet, u8)> {
-    let [mark, head, star, cut, literal, ..] = reg.ops.as_slice() else {
+    let [head, star, pop, literal, ..] = reg.ops.as_slice() else {
         return None;
     };
     let (
-        OpCode::Mark,
-        OperationPayload::Mark { id, save_pos: true },
         OpCode::CClass,
         OperationPayload::CClass { bsp, .. },
-        OpCode::CClassStarPeekNext,
-        OperationPayload::CClassStarPeekNext { bsp: tail, c },
-        OpCode::CutToMark,
-        OperationPayload::CutToMark {
-            id: cut_id,
-            restore_pos: false,
-        },
+        OpCode::CClassStar,
+        OperationPayload::CClass { bsp: tail, .. },
+        OpCode::PopStarChoices,
         OpCode::Str1,
         OperationPayload::Exact { s },
     ) = (
-        mark.opcode,
-        &mark.payload,
         head.opcode,
         &head.payload,
         star.opcode,
         &star.payload,
-        cut.opcode,
-        &cut.payload,
+        pop.opcode,
         literal.opcode,
         &literal.payload,
     )
     else {
         return None;
     };
+    #[cfg(test)]
+    if ATOMIC_CLASS_PREFIX_DISABLED.with(Cell::get) {
+        return None;
+    }
     // Every rejected prefix fails before reaching the tail and pops only the
-    // bottom sentinel: the atomic cut removes its lazy star choice. That costs
-    // one retry per attempt. A per-match limit of one or an accumulating search
-    // budget can therefore observe the attempts; so can stack/time limits.
+    // bottom sentinel: `PopStarChoices` removes the lazy star choice. That
+    // costs one retry per attempt. A per-match limit of one or an
+    // accumulating search budget can therefore observe the attempts; so can
+    // stack/time limits.
     if msa.retry_limit_in_search != 0
         || msa.retry_limit_in_match == 1
         || msa.match_stack_limit != 0
@@ -9968,12 +9968,14 @@ fn atomic_ascii_class_prefix<'a>(reg: &'a RegexType, msa: &MatchArg) -> Option<(
     {
         return None;
     }
-    (*id == *cut_id
-        && bsp == tail
-        && s[0] == *c
-        && !bitset_at(bsp, *c as usize)
+    // C's `tune_next` gives a star no peek-next byte `\0`, and the filter
+    // keeps to the literals the peek-next sequence had.
+    let c = s[0];
+    (bsp == tail
+        && c != 0
+        && !bitset_at(bsp, c as usize)
         && bsp[128 / BITS_IN_ROOM..].iter().all(|&bits| bits == 0))
-    .then_some((bsp, *c))
+    .then_some((bsp, c))
 }
 
 fn skip_nonmatching_class_prefix(
@@ -12468,7 +12470,14 @@ mod tests {
                                         };
                                         assert_eq!(
                                             search(&optimized),
-                                            search(&reference),
+                                            {
+                                                ATOMIC_CLASS_PREFIX_DISABLED
+                                                    .with(|disabled| disabled.set(true));
+                                                let result = search(&reference);
+                                                ATOMIC_CLASS_PREFIX_DISABLED
+                                                    .with(|disabled| disabled.set(false));
+                                                result
+                                            },
                                             "{} {pattern:?} {input:?} end={end} start={start} range={range} {option:?} retry={retry} search_retry={search_retry} stack={stack}",
                                             enc.name()
                                         );
@@ -12748,7 +12757,7 @@ mod tests {
                     .unwrap()
                 };
                 let optimized = compile();
-                let mut reference = compile();
+                let reference = compile();
                 assert!(
                     atomic_ascii_class_prefix(
                         &optimized,
@@ -12756,19 +12765,6 @@ mod tests {
                     )
                     .is_some(),
                     "{pattern}"
-                );
-                // CUT_TO_MARK has restore_pos=false. Omitting the unused position
-                // preserves the original bytecode's behavior but disables the filter.
-                let OperationPayload::Mark { save_pos, .. } = &mut reference.ops[0].payload else {
-                    panic!("expected the compiler's atomic prefix");
-                };
-                *save_pos = false;
-                assert!(
-                    atomic_ascii_class_prefix(
-                        &reference,
-                        &MatchArg::new(&reference, ONIG_OPTION_NONE, None, 0),
-                    )
-                    .is_none()
                 );
                 for &input in inputs {
                     for end in 0..=input.len() {

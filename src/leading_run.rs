@@ -674,17 +674,21 @@ fn plan_leading_run(reg: &RegexType) -> Option<LeadingRun> {
     {
         literal_pc += 1;
     }
-    if let (Some((mark_pc, id)), Some(cut), Some(literal)) =
-        (mark, reg.ops.get(cut_pc), reg.ops.get(literal_pc))
-    {
-        let atomic = mark_pc + 1 == pc
-            && matches!(
-                cut.payload,
-                OperationPayload::CutToMark {
-                    id: cut_id,
-                    restore_pos: false,
-                } if cut_id == id
-            );
+    if let (Some(cut), Some(literal)) = (reg.ops.get(cut_pc), reg.ops.get(literal_pc)) {
+        // A star followed by `PopStarChoices` (a possessive repeat of one
+        // character, or a star `possessify` made possessive) keeps no
+        // choice, as a run between a mark and its cut does.
+        let atomic = cut.opcode == OpCode::PopStarChoices
+            || mark.is_some_and(|(mark_pc, id)| {
+                mark_pc + 1 == pc
+                    && matches!(
+                        cut.payload,
+                        OperationPayload::CutToMark {
+                            id: cut_id,
+                            restore_pos: false,
+                        } if cut_id == id
+                    )
+            });
         let bytes = match (literal.opcode, &literal.payload) {
             (
                 OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,

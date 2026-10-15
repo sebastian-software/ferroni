@@ -217,10 +217,13 @@ fn bitset_is_empty(bs: &BitSet) -> bool {
 
 /// Check if a node is a "strict real" node (actually matches characters).
 fn is_strict_real_node(node: &Node) -> bool {
-    matches!(
-        node.inner,
-        NodeInner::String(_) | NodeInner::CClass(_) | NodeInner::CType(_)
-    )
+    match node.inner {
+        // A literal alternation compiled to a trie (Rust-only, ADR-008) is
+        // an alternation in C.
+        NodeInner::String(_) => !node.has_status(ND_ST_LITERAL_ALT),
+        NodeInner::CClass(_) | NodeInner::CType(_) => true,
+        _ => false,
+    }
 }
 
 // ============================================================================
@@ -1359,13 +1362,133 @@ fn compile_counted_char_repeat(repeat: CountedRepeat, reg: &mut RegexType) {
 /// `compile_quantifier_node` that end in such an instruction; a known next
 /// byte selects a peek-next form instead, which is left alone.
 pub(crate) fn compiles_to_plain_star(qn: &QuantNode) -> bool {
+    qn.next_head_exact.is_none() && has_star_instruction(qn)
+}
+
+/// Rust-only (ADR-008): whether a greedy repeat has one of the star
+/// instructions of `compiles_to_plain_star`, regardless of a known next byte.
+fn has_star_instruction(qn: &QuantNode) -> bool {
     let Some(body) = qn.body.as_deref() else {
         return false;
     };
-    qn.next_head_exact.is_none()
-        && ((is_cclass_infinite_greedy(qn) && body.as_cclass().is_some())
-            || single_ascii_byte_star(qn).is_some()
-            || matches!(is_word_ctype_infinite_greedy(qn), Some((false, _))))
+    (is_cclass_infinite_greedy(qn) && body.as_cclass().is_some())
+        || single_ascii_byte_star(qn).is_some()
+        || matches!(is_word_ctype_infinite_greedy(qn), Some((false, _)))
+}
+
+/// Rust-only (ADR-008): emit the star instruction of a repeat for which
+/// `has_star_instruction` holds, without its mandatory first pass and without
+/// a peek-next form.
+fn add_star_instruction(qn: &QuantNode, reg: &mut RegexType) -> i32 {
+    if let Some(cc) = qn.body.as_deref().and_then(Node::as_cclass) {
+        return compile_cclass_star_node(cc, reg);
+    }
+    if let Some(c) = single_ascii_byte_star(qn) {
+        let mut bs: BitSet = [0; BITSET_REAL_SIZE];
+        bitset_set_bit(&mut bs, c as usize);
+        add_op(
+            reg,
+            OpCode::CClassStar,
+            OperationPayload::CClass {
+                bsp: Box::new(bs),
+                ascii_fast: CClassAsciiFastKind::Eq(c),
+            },
+        );
+        return 0;
+    }
+    let Some((false, ascii_mode)) = is_word_ctype_infinite_greedy(qn) else {
+        unreachable!("the repeat has a star instruction");
+    };
+    let opcode = if ascii_mode {
+        OpCode::WordAsciiStar
+    } else {
+        OpCode::WordStar
+    };
+    add_op(reg, opcode, OperationPayload::None);
+    0
+}
+
+/// C's `ND_IS_STRICT_REAL_REPEAT` on a stop-backtrack bag: its body is a
+/// greedy `*` or `+` over one strict real node. C sets the flag where it
+/// tests this shape: in `tune_next` on the bag of an automatic
+/// possessification, and in `tune_tree` on `(?>a*)`, `a*+` and `a++`. It is
+/// read from the shape here because every status bit is in use and
+/// `ND_ST_STRICT_REAL_REPEAT` marks only the automatic bags
+/// (`dfa_prefilter::automatic_possessive`).
+fn strict_real_repeat(bag: &BagNode) -> Option<&QuantNode> {
+    let NodeInner::Quant(qn) = &bag.body.as_deref()?.inner else {
+        return None;
+    };
+    (qn.greedy
+        && is_infinite_repeat(qn.upper)
+        && qn.lower <= 1
+        && qn.body.as_deref().is_some_and(is_strict_real_node))
+    .then_some(qn)
+}
+
+/// The length `compile_strict_real_repeat` emits.
+fn compile_length_strict_real_repeat(qn: &QuantNode, reg: &RegexType, env: &ParseEnv) -> i32 {
+    let body = qn.body.as_deref().expect("strict real repeat has a body");
+    let tlen = compile_length_tree(body, reg, env);
+    if tlen < 0 {
+        return tlen;
+    }
+    let Some(mandatory) = tlen.checked_mul(qn.lower) else {
+        return ONIGERR_TOO_BIG_NUMBER_FOR_REPEAT_RANGE;
+    };
+    if !upstream_length() && has_star_instruction(qn) {
+        return mandatory + SIZE_INC + SIZE_INC;
+    }
+    mandatory + OPSIZE_PUSH + tlen + OPSIZE_POP + OPSIZE_JUMP
+}
+
+/// C's `BAG_STOP_BACKTRACK` with `STRICT_REAL_REPEAT`: the body `lower`
+/// times, then a loop whose every pass pops the choice it pushed
+/// (PUSH, body, POP, JUMP), so the repeat leaves nothing on the stack. C
+/// needs no stack per iteration here; a mark and cut would leave the mark and
+/// the voided choices behind.
+///
+/// Rust-only (ADR-008): a body with a star instruction runs as that
+/// instruction followed by `PopStarChoices`, which pops the choices it just
+/// pushed: one entry per run over valid UTF-8, where C's loop also holds one.
+fn compile_strict_real_repeat(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) -> i32 {
+    let body = qn.body.as_deref().expect("strict real repeat has a body");
+    let r = compile_tree_n_times(body, qn.lower, reg, env);
+    if r != 0 {
+        return r;
+    }
+    if has_star_instruction(qn) {
+        let r = add_star_instruction(qn, reg);
+        if r != 0 {
+            return r;
+        }
+        add_op(reg, OpCode::PopStarChoices, OperationPayload::None);
+        return 0;
+    }
+    let len = compile_length_tree(body, reg, env);
+    if len < 0 {
+        return len;
+    }
+    add_op(
+        reg,
+        OpCode::Push,
+        OperationPayload::Push {
+            addr: SIZE_INC + len + OPSIZE_POP + OPSIZE_JUMP,
+        },
+    );
+    let r = compile_tree(body, reg, env);
+    if r != 0 {
+        return r;
+    }
+    add_op(reg, OpCode::Pop, OperationPayload::None);
+    add_op(
+        reg,
+        OpCode::Jump,
+        OperationPayload::Jump {
+            addr: -(OPSIZE_PUSH + len + OPSIZE_POP),
+        },
+    );
+    0
 }
 
 /// Rust-only (ADR-008): `PopStarChoices` after the star instruction of a
@@ -2267,6 +2390,9 @@ fn compile_length_bag_node(
             {
                 return length;
             }
+            if let Some(qn) = strict_real_repeat(bag) {
+                return compile_length_strict_real_repeat(qn, reg, env);
+            }
             let body_len = if let Some(b) = body {
                 compile_length_tree(b, reg, env)
             } else {
@@ -2482,6 +2608,9 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
                 crate::backtrack_rewrite::lowering::compile(bag, node_status, reg, env)
             {
                 return result;
+            }
+            if let Some(qn) = strict_real_repeat(bag) {
+                return compile_strict_real_repeat(qn, reg, env);
             }
             let id = reg.num_call; // use call count as mark ID
             reg.num_call += 1;

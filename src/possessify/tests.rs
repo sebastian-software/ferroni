@@ -20,22 +20,31 @@ fn compile(
     reg.ok()
 }
 
-fn possessive_stars(reg: &RegexType) -> usize {
-    reg.ops
-        .iter()
-        .filter(|op| op.opcode == OpCode::PopStarChoices)
-        .count()
+/// The stars this pass made possessive: the `PopStarChoices` instructions
+/// of `fast` beyond those of `plain`, the program compiled without the pass,
+/// which has them only after the star of a possessive repeat of one
+/// character (C's `STRICT_REAL_REPEAT`).
+fn possessive_stars(fast: &RegexType, plain: &RegexType) -> usize {
+    let count = |reg: &RegexType| {
+        reg.ops
+            .iter()
+            .filter(|op| op.opcode == OpCode::PopStarChoices)
+            .count()
+    };
+    count(fast) - count(plain)
+}
+
+/// `possessive_stars` of a pattern under a syntax.
+fn stars_with(pattern: &[u8], syntax: &OnigSyntaxType) -> usize {
+    let compiled = |possessify| {
+        compile(pattern, ONIG_OPTION_NONE, syntax, possessify)
+            .unwrap_or_else(|| panic!("{pattern:?} compiles"))
+    };
+    possessive_stars(&compiled(true), &compiled(false))
 }
 
 fn stars_in(pattern: &str) -> usize {
-    let reg = compile(
-        pattern.as_bytes(),
-        ONIG_OPTION_NONE,
-        &OnigSyntaxOniguruma,
-        true,
-    )
-    .unwrap_or_else(|| panic!("{pattern} compiles"));
-    possessive_stars(&reg)
+    stars_with(pattern.as_bytes(), &OnigSyntaxOniguruma)
 }
 
 /// A search result: the return value and the capture spans.
@@ -185,7 +194,7 @@ fn shorter_runs_that_match_keep_the_star_greedy() {
             false,
         )
         .unwrap();
-        assert_eq!(possessive_stars(&fast), possessive, "{pattern}");
+        assert_eq!(possessive_stars(&fast, &plain), possessive, "{pattern}");
         let subject = subject.as_bytes();
         for start in 0..=subject.len() {
             let expected = search(&plain, subject, start, ONIG_OPTION_NONE, None);
@@ -262,7 +271,7 @@ fn generated_patterns_match_the_greedy_program_and_c() {
             continue;
         };
         patterns += 1;
-        if possessive_stars(&fast) > 0 {
+        if possessive_stars(&fast, &plain) > 0 {
             possessive += 1;
         }
         #[cfg(feature = "ffi")]
@@ -344,30 +353,8 @@ fn perl_syntax_end_anchors_keep_their_results() {
             }
         }
     }
-    assert_eq!(
-        possessive_stars(
-            &compile(
-                b"[a-z]+(?::[0-9]*)?$",
-                ONIG_OPTION_NONE,
-                &OnigSyntaxPerl,
-                true
-            )
-            .unwrap()
-        ),
-        2
-    );
-    assert_eq!(
-        possessive_stars(
-            &compile(
-                b"(?m)[^ ]+(?:,x)?$",
-                ONIG_OPTION_NONE,
-                &OnigSyntaxPerl,
-                true
-            )
-            .unwrap()
-        ),
-        0
-    );
+    assert_eq!(stars_with(b"[a-z]+(?::[0-9]*)?$", &OnigSyntaxPerl), 2);
+    assert_eq!(stars_with(b"(?m)[^ ]+(?:,x)?$", &OnigSyntaxPerl), 0);
 }
 
 /// ADR-017: the possessive star leaves out backtracks. Where C stops at the
@@ -391,7 +378,7 @@ fn retry_limits_follow_adr_017() {
         false,
     )
     .unwrap();
-    assert_eq!(possessive_stars(&fast), 3);
+    assert_eq!(possessive_stars(&fast, &plain), 3);
     let subject = format!("{}!", "a".repeat(5_000));
     let subject = subject.as_bytes();
     // The greedy program gives the run back one character at a time.
@@ -427,7 +414,14 @@ fn retry_limits_follow_adr_017() {
         ) else {
             continue;
         };
-        if possessive_stars(&fast) == 0 {
+        let plain = compile(
+            pattern.as_bytes(),
+            ONIG_OPTION_NONE,
+            &OnigSyntaxOniguruma,
+            false,
+        )
+        .unwrap();
+        if possessive_stars(&fast, &plain) == 0 {
             continue;
         }
         #[cfg(feature = "ffi")]
@@ -483,7 +477,7 @@ fn possessive_stars_leave_no_stack_entries() {
     let pattern = br"(?:[a-z]+(?:,x)?;)*z";
     let fast = compile(pattern, ONIG_OPTION_NONE, &OnigSyntaxOniguruma, true).unwrap();
     let plain = compile(pattern, ONIG_OPTION_NONE, &OnigSyntaxOniguruma, false).unwrap();
-    assert_eq!(possessive_stars(&fast), 1);
+    assert_eq!(possessive_stars(&fast, &plain), 1);
     for unit in ["a;", "abc;"] {
         let subject = format!("{}z", unit.repeat(2_000));
         let run = |reg: &RegexType, stack: u32| {

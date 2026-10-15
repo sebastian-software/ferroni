@@ -4353,7 +4353,7 @@ mod tests {
                 // A positive look-behind on a push's path ends its guard
                 // (#259): over malformed UTF-8 it goes on where its body
                 // ends, which is not the byte the guard reads.
-                byte_set_push_guards: 2136,
+                byte_set_push_guards: 2186,
                 unguarded_pushes: 237,
             }
         );

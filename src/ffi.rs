@@ -150,6 +150,11 @@ unsafe extern "C" {
         limit: c_ulong,
     ) -> c_int;
 
+    pub fn onig_set_match_stack_limit_size_of_match_param(
+        mp: *mut OnigMatchParamType,
+        limit: c_uint,
+    ) -> c_int;
+
     pub fn onig_search_with_param(
         reg: OnigRegex,
         str: *const u8,
@@ -320,6 +325,37 @@ impl CRegex {
             let mp = onig_new_match_param();
             assert!(!mp.is_null(), "onig_new_match_param failed");
             onig_set_retry_limit_in_match_of_match_param(mp, retry_limit_in_match as c_ulong);
+            let r = onig_search_with_param(
+                self.raw, str_ptr, end_ptr, start_ptr, range_ptr, region_ptr, option, mp,
+            );
+            onig_free_match_param(mp);
+            r
+        }
+    }
+
+    /// `search` with a match stack limit, through a match parameter
+    /// (`onig_search_with_param`), which leaves the process-wide limits alone.
+    pub fn search_with_match_stack_limit(
+        &self,
+        text: &[u8],
+        start: usize,
+        range: usize,
+        region: Option<&mut CRegion>,
+        option: c_uint,
+        match_stack_limit: u32,
+    ) -> c_int {
+        let Some((str_ptr, end_ptr, start_ptr, range_ptr)) = text_pointers(text, start, range)
+        else {
+            return -1;
+        };
+        let region_ptr = region.map_or(ptr::null_mut(), |r| r.raw);
+        // SAFETY: as in `search_with_retry_limit`: owned regex, validated
+        // subject pointers, a null or owned region, and a match parameter
+        // allocated, used and freed within this block.
+        unsafe {
+            let mp = onig_new_match_param();
+            assert!(!mp.is_null(), "onig_new_match_param failed");
+            onig_set_match_stack_limit_size_of_match_param(mp, match_stack_limit as c_uint);
             let r = onig_search_with_param(
                 self.raw, str_ptr, end_ptr, start_ptr, range_ptr, region_ptr, option, mp,
             );
