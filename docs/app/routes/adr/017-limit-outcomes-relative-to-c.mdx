@@ -1,0 +1,106 @@
+---
+order: 17
+title: "Limit Outcomes Relative to C"
+---
+
+# Limit Outcomes Relative to C
+
+## Status
+
+Accepted. Amends [ADR-008](/adr/008-rust-only-optimizations) for searches that
+reach a retry, stack or time limit. Applies to `Regex` and the Scanner alike.
+
+## Context
+
+Oniguruma stops a search when it reaches a limit: the retry limit per match
+(10,000,000 backtracks by default), the retry budget of a search, the match
+stack limit and the time limit. ADR-008 required Rust-only optimizations to
+leave every result unchanged, and in practice that included the limit errors:
+an optimization that leaves out work C does had to count the work it left out,
+or switch itself off wherever a limit could observe the difference.
+
+This rule kept C Oniguruma a complete test oracle: results and errors could be
+compared one to one. It also has a cost that grows with every optimization:
+
+- Optimizations count the backtracks they save (`skipped_retries`, the skip
+  gates of guarded pushes) or turn themselves off under a limit. The retry
+  limit per match is always set by default, so every optimization that saves
+  backtracks needs this bookkeeping.
+- The single-pattern seek answers "match" only for patterns with a static
+  retry bound, so a pattern with an unbounded repetition pays for the
+  automaton and still runs the matcher (`django_email_local_part`, +8.8%).
+- The stack-limit parity of the fused paths costs 1–2% on the default path.
+- PCRE2's interpreter is two to four times faster than Ferroni on the
+  backtracking-heavy production cases (`django_url_regex`,
+  `django_email_domain`). The techniques that could close that gap leave out
+  backtracks by design: automatic possessification, which PCRE2 applies, or
+  memoization of failed states. Under the old rule they would need exact
+  counts of the work they avoid.
+
+The rule was already not absolute. ADR-008's consequences accept that a
+pre-filter can report "no match" where C reaches the retry limit, and that
+Rust-only instructions can take fewer backtracks than C's sequence.
+
+Limits exist to bound work on hostile or unlucky input. Equal error positions
+with C are not what users rely on; they rely on a limit stopping a runaway
+search and on getting the same answer on every machine.
+
+## Decision
+
+**Ferroni never does more work than C Oniguruma, and never returns a different
+result.** For every search:
+
+1. **No limit reached in C:** where C completes without a limit error, Ferroni
+   returns the identical result: the same match or no match, the same
+   captures, the same order of matches. This is unchanged.
+2. **C reaches a limit:** where C stops with a limit error, Ferroni either
+   stops with the same error or completes with the result C would return with
+   that limit removed. It never returns a third answer.
+3. **Never stricter than C:** an optimization may only leave out work. It must
+   not make Ferroni stop at a limit where C completes.
+
+A time limit depends on the load of the machine in C and in Ferroni alike;
+for it, rule 3 means that an optimization adds no work, not that the clock stops
+at the same point.
+
+The limits keep their meaning as bounds on Ferroni's own work. A retry limit
+counts the backtracks Ferroni performs; a search that Ferroni can decide with
+fewer backtracks counts fewer. The counts stay deterministic: the same Ferroni
+version stops the same search at the same point on every machine. They are no
+longer guaranteed to equal C's counts.
+
+The rule covers the standard `Regex` methods, the `*_with` methods with
+caller-set limits, the C-compatible API and the Scanner, including its RegSet
+routes.
+
+### Test oracle
+
+Tests that compare Ferroni with C keep C as the oracle:
+
+- Where C completes, results and captures must be equal, as before.
+- Where C reports a limit error, Ferroni must report the same error or the
+  result of the same search in C with that limit removed (or, where that run is
+  infeasible, the result of Ferroni's own unoptimized path without the limit).
+- A Ferroni limit error where C completes is a failure.
+
+Each optimization that uses the new latitude states which limits it no longer
+observes and adds tests for the three cases above.
+
+## Consequences
+
+- New optimizations may leave out backtracks, stack entries and attempts
+  without counting them. Existing optimizations keep their counts and gates
+  until each one is revisited; revisiting one is a measured change of its own.
+- Highlighting with the Scanner can differ from vscode-oniguruma where C gives
+  up at a limit on a line: Ferroni may then tokenize the line the way C would
+  without the limit. Lines that C completes are tokenized identically.
+- One known exception predates this rule: at a retry limit per match of 1, the
+  RegSet table scan can attempt an entry at a position C's optimizer excludes,
+  so Ferroni can stop where C matches (ADR-008, _Consequences_). It violates
+  rule 3 and stays documented until it is fixed; new code must not add such
+  cases.
+- The guides describe the current behavior. Where an optimization starts to
+  leave out work under a limit, the [untrusted input guide](/guide/untrusted-input)
+  and the [compatibility guide](/guide/compatibility) change with it.
+- A future change of C Oniguruma's limits or their defaults applies to the
+  C-ported core as before; this rule only concerns the Rust-only layers.
