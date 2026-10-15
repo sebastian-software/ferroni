@@ -15460,7 +15460,9 @@ mod tests {
     #[test]
     fn loop_takes_the_head_literal_of_a_leading_quantifier() {
         use crate::encodings::utf8::ONIG_ENCODING_UTF8;
-        use crate::oniguruma::{ONIG_OPTION_NONE, ONIGERR_RETRY_LIMIT_IN_MATCH_OVER};
+        use crate::oniguruma::ONIG_OPTION_NONE;
+        #[cfg(feature = "ffi")]
+        use crate::oniguruma::ONIGERR_RETRY_LIMIT_IN_MATCH_OVER;
         use crate::regexec::{
             onig_new_match_param, onig_search, onig_search_with_param,
             onig_set_retry_limit_in_match_of_match_param,
