@@ -21,6 +21,7 @@ use fold_data::*;
 use property_data::{
     CODE_RANGES, CODE_RANGES_NUM, PROP_INDEX_EXTENDEDPICTOGRAPHIC, PROPERTY_NAMES,
 };
+use std::collections::HashMap;
 use wb_data::{WB_RANGES, WbType};
 
 // === Unicode ISO 8859-1 Ctype Table ===
@@ -995,8 +996,81 @@ enum EgcbBreakType {
     BreakUndefRiRi,
 }
 
-/// Binary search EGCB_RANGES for the EGCB type of a codepoint.
+/// The EGCB property of a code point: the two-stage table below Basic
+/// Multilingual Plane, the binary search above it.
+#[inline]
 fn egcb_get_type(code: u32) -> EgcbType {
+    if code < BMP_END {
+        return egcb_bmp_type(code);
+    }
+    egcb_get_type_search(code)
+}
+
+/// Rust-only (ADR-008): the EGCB property of the BMP as a two-stage table,
+/// derived on first use from [`EGCB_RANGES`] (ADR-015). The table keeps one
+/// block of 256 properties for each high byte that occurs, and the blocks
+/// that are equal are stored once: 256 bytes per block and one byte per high
+/// byte. A lookup is two loads. The binary search takes about eleven steps
+/// over the 1,392 ranges.
+struct EgcbBmpTable {
+    /// The index into `blocks` of the block for each high byte.
+    block_of_high: [u8; 256],
+    /// The distinct blocks; each holds the property of the 256 codes of one
+    /// high byte, by low byte.
+    blocks: Vec<[EgcbType; 256]>,
+}
+
+/// Rust-only (ADR-008): the BMP table, built on first use. See
+/// [`EgcbBmpTable`].
+fn egcb_bmp_table() -> &'static EgcbBmpTable {
+    static TABLE: std::sync::OnceLock<EgcbBmpTable> = std::sync::OnceLock::new();
+    TABLE.get_or_init(build_egcb_bmp_table)
+}
+
+fn build_egcb_bmp_table() -> EgcbBmpTable {
+    let mut block_of_high = [0u8; 256];
+    let mut blocks: Vec<[EgcbType; 256]> = Vec::new();
+    // A block is keyed by its discriminants, so that equal blocks hash alike.
+    let mut ids: HashMap<[u8; 256], u8> = HashMap::new();
+    // The first range that may reach the current block. EGCB_RANGES is sorted
+    // and disjoint, so the ranges pass through the blocks in order.
+    let mut next = 0;
+    for (high, slot) in block_of_high.iter_mut().enumerate() {
+        let first = (high as u32) << 8;
+        let last = first | 0xFF;
+        let mut block = [EgcbType::Other; 256];
+        while let Some(range) = EGCB_RANGES.get(next).filter(|range| range.start <= last) {
+            let from = range.start.max(first) - first;
+            let to = range.end.min(last) - first;
+            block[from as usize..=to as usize].fill(range.prop);
+            if range.end > last {
+                // The range goes on into the next block, which reads it again.
+                break;
+            }
+            next += 1;
+        }
+        let key = block.map(|prop| prop as u8);
+        *slot = *ids.entry(key).or_insert_with(|| {
+            blocks.push(block);
+            (blocks.len() - 1) as u8
+        });
+    }
+    EgcbBmpTable {
+        block_of_high,
+        blocks,
+    }
+}
+
+/// The EGCB property of a code point below [`BMP_END`], from the table.
+#[inline]
+fn egcb_bmp_type(code: u32) -> EgcbType {
+    let table = egcb_bmp_table();
+    let block = table.block_of_high[(code >> 8) as usize] as usize;
+    table.blocks[block][(code & 0xFF) as usize]
+}
+
+/// Binary search EGCB_RANGES for the EGCB type of a codepoint.
+fn egcb_get_type_search(code: u32) -> EgcbType {
     let mut low: usize = 0;
     let mut high: usize = EGCB_RANGES.len();
     while low < high {
@@ -1750,5 +1824,56 @@ mod egcb_ascii_tests {
             assert_all_positions(ascii, sample.as_bytes());
         }
         assert_all_positions(ascii, &[0x80, b'\r', b'\n', 0xC3, b'\n', 0xFF, b'a']);
+    }
+}
+
+#[cfg(test)]
+mod egcb_table_tests {
+    use super::*;
+
+    /// The ranges are sorted and disjoint, which the table build relies on.
+    #[test]
+    fn egcb_ranges_are_sorted_and_disjoint() {
+        for range in EGCB_RANGES.iter() {
+            assert!(range.start <= range.end, "{:#x}", range.start);
+        }
+        for pair in EGCB_RANGES.windows(2) {
+            assert!(pair[0].end < pair[1].start, "{:#x}", pair[1].start);
+        }
+    }
+
+    /// For every code point (surrogates excepted, as no encoding decodes
+    /// them), the table answers as the binary search does.
+    #[test]
+    fn egcb_table_matches_the_binary_search_for_every_code_point() {
+        for code in 0..=0x10_FFFFu32 {
+            if (0xD800..=0xDFFF).contains(&code) {
+                continue;
+            }
+            assert_eq!(
+                egcb_get_type(code),
+                egcb_get_type_search(code),
+                "code {code:#x}"
+            );
+        }
+    }
+
+    /// The table stores each distinct block once.
+    #[test]
+    fn egcb_table_blocks_are_distinct() {
+        let table = egcb_bmp_table();
+        for (i, block) in table.blocks.iter().enumerate() {
+            assert!(
+                !table.blocks[..i].contains(block),
+                "block {i} repeats an earlier block"
+            );
+        }
+        let used = table
+            .block_of_high
+            .iter()
+            .map(|&id| id as usize)
+            .max()
+            .unwrap_or(0);
+        assert!(used < table.blocks.len());
     }
 }
