@@ -517,6 +517,116 @@ fn option_find_longest_respects_search_upper_range() {
     }
 }
 
+// C's search returns the longest match (`search_in_range`, `mismatch:`) only
+// for a FIND_LONGEST compiled into the expression. Passed to the search
+// alone, the option makes every attempt fail, so nothing matches. Includes
+// the empty subject and the `start == range` attempt, which end there too.
+#[test]
+fn option_find_longest_at_search_only_does_not_match() {
+    // (pattern, subject, start, range)
+    for (pattern, input, start, range) in [
+        (&b"\\Aab"[..], &b"ab"[..], 0, 2),
+        (b"ab", b"xab", 0, 3),
+        (b"ab", b"xab", 3, 0),
+        (b"a", b"ab", 0, 0),
+        (b"", b"", 0, 0),
+    ] {
+        let reg = onig_new(
+            pattern,
+            ONIG_OPTION_NONE,
+            &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        for option in [ONIG_OPTION_FIND_LONGEST, ONIG_OPTION_NONE] {
+            let (result, _) = onig_search(
+                &reg,
+                input,
+                input.len(),
+                start,
+                range,
+                Some(OnigRegion::new()),
+                option,
+            );
+            assert_eq!(
+                result >= 0,
+                option == ONIG_OPTION_NONE,
+                "{:?} on {input:?} start={start} range={range} option={:#x}",
+                std::str::from_utf8(pattern).unwrap(),
+                option.bits()
+            );
+        }
+    }
+}
+
+/// FIND_LONGEST compiled in, passed to the search, or both, against C
+/// Oniguruma over every start and range of the subjects, forward and
+/// backward: equal results and match spans.
+#[cfg(feature = "ffi")]
+#[test]
+fn option_find_longest_placement_agrees_with_c() {
+    use ferroni::ffi::{CRegex, CRegion};
+
+    let patterns: [&[u8]; 10] = [
+        b"\\Aab", b"\\Gab", b"ab", b"^ab", b"a|ab", b"\\w+", b"", b"a*", b"(?m).*$", b"x*\\Z",
+    ];
+    let subjects: [&[u8]; 5] = [b"", b"ab", b"xab", b"abab", b"a\nb\n"];
+    let mut compared = 0;
+    for pattern in patterns {
+        for (compiled, searched) in [
+            (ONIG_OPTION_FIND_LONGEST, ONIG_OPTION_NONE),
+            (ONIG_OPTION_NONE, ONIG_OPTION_FIND_LONGEST),
+            (ONIG_OPTION_FIND_LONGEST, ONIG_OPTION_FIND_LONGEST),
+        ] {
+            let c = CRegex::new(pattern, compiled.bits()).unwrap();
+            let reg = onig_new(
+                pattern,
+                compiled,
+                &ferroni::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            for input in subjects {
+                for start in 0..=input.len() {
+                    for range in 0..=input.len() {
+                        let mut c_region = CRegion::new();
+                        let c_result =
+                            c.search(input, start, range, Some(&mut c_region), searched.bits());
+                        let c_span = if c_result >= 0 {
+                            c_region.match_range()
+                        } else {
+                            None
+                        };
+                        let (result, region) = onig_search(
+                            &reg,
+                            input,
+                            input.len(),
+                            start,
+                            range,
+                            Some(OnigRegion::new()),
+                            searched,
+                        );
+                        let span = region
+                            .filter(|_| result >= 0)
+                            .map(|region| (region.beg[0], region.end[0]));
+                        assert_eq!(
+                            (result, span),
+                            (c_result, c_span),
+                            "{:?} on {input:?} start={start} range={range} \
+                             compiled={:#x} searched={:#x}",
+                            std::str::from_utf8(pattern).unwrap(),
+                            compiled.bits(),
+                            searched.bits()
+                        );
+                        compared += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(compared > 1_000, "{compared} comparisons");
+}
+
 #[test]
 fn option_find_not_empty() {
     x2(
