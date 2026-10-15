@@ -404,6 +404,111 @@ fn catalog_patterns_agree_with_the_matcher() {
     assert!(compared > 10_000, "{compared} comparisons");
 }
 
+/// Patterns whose repeats the compiler makes possessive (`tune_next`: a
+/// greedy repeat before an item that no body iteration can start), next to
+/// user-written atomic groups and possessive quantifiers, which keep their
+/// seeks inexact. The first group's seeks are exact (asserted in the unit
+/// tests of `api.rs`), so their answers come from the seek.
+const AUTO_POSSESSIVE: &[&str] = &[
+    "^[a-z]+@[a-z]+\\.com$",
+    "[a-z]*@",
+    "^[0-9]*\\.[0-9]+$",
+    "\\d+\\.\\d+",
+    "\\w+:\\s",
+    "([a-z]+)@([a-z]+)\\.(com|org)",
+    "(?:[a-z]+@)+x",
+    "[^\"]*\"",
+    "(?:ab)*c",
+    "[^a]+a",
+    "é+x",
+    "(?i)[a-z]+1",
+    "(?i)k+s",
+    "x+y*z",
+    "^[a-z]+@(?>[a-z]+)\\.com$",
+    "(?>[a-z]+)@",
+    "[a-z]++@",
+    "a*+b",
+    "(?>a+)a",
+    "[a-z]*+[a-z]",
+    "^[a-z]+@[a-z]+\\.com(?=\\s|$)",
+];
+
+/// Subjects that match some of the patterns above and miss others, at the
+/// ends and in the middle of the subject.
+const AUTO_POSSESSIVE_SUBJECTS: &[&str] = &[
+    "john@doe.com",
+    "john@doe.org",
+    "john@doe.co",
+    "JOHN@DOE.COM",
+    "@doe.com",
+    "john@doe.com.",
+    "john@doe.com x",
+    "john@doe.com\n",
+    "a@b.com",
+    "12.5",
+    "12.x",
+    ".5",
+    "1.2.3",
+    "1.25",
+    "ab1",
+    "a1b",
+    "aab",
+    "abab c",
+    "ccab",
+    "\"x\"",
+    "\"x\"\"",
+    "\"\"",
+    "é+x",
+    "ééx",
+    "éx",
+    "ax",
+    "a1",
+    "1a",
+    "k1",
+    "K1",
+    "\u{212A}1",
+    "ks",
+    "KSs",
+    "x+y*z",
+    "xyz",
+    "a:",
+    "a: ",
+    "é€:\n",
+    "a bc",
+    "a+b",
+    "ab",
+    "aa",
+    "bbb",
+    "ba",
+];
+
+/// The patterns of `AUTO_POSSESSIVE` agree with the matcher on the listed
+/// subjects and on random ones, from every start, built with the seek and
+/// without it.
+#[test]
+fn auto_possessive_repeats_agree_with_the_matcher() {
+    let mut rng = Lcg(0x5eed_0003);
+    let mut subjects: Vec<(Vec<u8>, usize)> = AUTO_POSSESSIVE_SUBJECTS
+        .iter()
+        .map(|s| (s.as_bytes().to_vec(), 0))
+        .collect();
+    subjects.extend((0..150).map(|_| (random_subject(&mut rng), 0)));
+    let mut compared = 0;
+    for pattern in AUTO_POSSESSIVE {
+        for ignore_case in [false, true] {
+            // The `(?i)` patterns are checked with and without the flag too.
+            let case = Case::new(pattern).flags(ignore_case, false, None);
+            for dfa in [true, false] {
+                let re = case
+                    .compile(dfa)
+                    .unwrap_or_else(|| panic!("{pattern} compiles"));
+                compared += check_regex(&re, &subjects, true);
+            }
+        }
+    }
+    assert!(compared > 50_000, "{compared} comparisons");
+}
+
 /// `(x+x+)+y|.*` on thirty `x`s: the `.*` alternative matches everywhere, so
 /// the pattern has no seek and both builds answer with the matcher, which
 /// stops at the retry limit on this subject. Both builds agree with each other
