@@ -493,6 +493,7 @@ impl ParseEnv {
         self.mem_env_dynamic = None;
         self.mem_env_static = Default::default();
         self.parse_depth = 0;
+        self.look_behind_depth = 0;
         self.ast_node_count = 0;
         self.backref_num = 0;
         self.keep_num = 0;
@@ -6363,7 +6364,7 @@ fn prs_bag(
                     if r < 0 {
                         Err(r)
                     } else {
-                        let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                        let (target, _) = prs_look_behind_body(tok, term, p, end, pattern, env)?;
                         np.set_body(Some(target));
                         Ok((np, 0))
                     }
@@ -6375,7 +6376,7 @@ fn prs_bag(
                     if r < 0 {
                         Err(r)
                     } else {
-                        let (target, _) = prs_alts(tok, term, p, end, pattern, env, false)?;
+                        let (target, _) = prs_look_behind_body(tok, term, p, end, pattern, env)?;
                         np.set_body(Some(target));
                         Ok((np, 0))
                     }
@@ -7320,6 +7321,11 @@ fn prs_exp(
             let mut bag = node_new_bag(BagType::StopBacktrack);
             if let NodeInner::Bag(ref mut bn) = bag.inner {
                 bn.body = Some(seq);
+                // Rust-only (ADR-008): outside look-behinds the group compiles
+                // to one `GraphemeCluster` instruction.
+                if env.look_behind_depth == 0 {
+                    bn.bag_data = BagData::TextSegment;
+                }
             }
             bag
         }
@@ -7636,6 +7642,22 @@ fn list_cell_count(node: &Node) -> usize {
         }
     }
     count
+}
+
+/// Parses the body of a look-behind. `\X` inside it keeps the atomic group
+/// of its expansion, which compiles as before (ADR-008).
+fn prs_look_behind_body(
+    tok: &mut PToken,
+    term: i32,
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &mut ParseEnv,
+) -> Result<(Box<Node>, i32), i32> {
+    env.look_behind_depth += 1;
+    let parsed = prs_alts(tok, term, p, end, pattern, env, false);
+    env.look_behind_depth -= 1;
+    parsed
 }
 
 /// Parse alternations (top-level: handles |)
@@ -8133,6 +8155,7 @@ mod tests {
             saves: None,
             unset_addr_list: None,
             parse_depth: 0,
+            look_behind_depth: 0,
             ast_node_count: 0,
             flags: 0,
             recursive_mem: Vec::new(),

@@ -355,6 +355,11 @@ pub(crate) enum OpCode {
     /// Emitted only after a star `crate::possessify` proved never has to
     /// give anything back.
     PopStarChoices = 101,
+    /// Rust-only (ADR-008): `\X` outside look-behinds as one instruction. It
+    /// advances over one character and then to the next extended grapheme
+    /// cluster boundary, the steps of upstream's `\O(?:\Y\O)*` in one
+    /// dispatch, and never pushes a backtrack entry.
+    GraphemeCluster = 102,
 }
 
 // === SaveType ===
