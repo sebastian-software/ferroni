@@ -74,6 +74,11 @@ These parts of the C library are not ported:
   backtracking stack grow until memory runs out. Ferroni stops at 10 million
   entries and reports the limit
   ([untrusted input](./untrusted-input#limit-each-search)).
+- **Searches that reach a limit.** Where C stops at a retry, stack or time
+  limit, Ferroni may finish the search with the result C would return without
+  that limit, because some of its optimizations do less work. Where C finishes,
+  the results are identical
+  ([ADR-017](../adr/017-limit-outcomes-relative-to-c)).
 - **Additions C never had.** The Scanner, per-search limits, the compile-time
   backtracking check and the idiomatic `Regex` API sit beside the port and do
   not change how a pattern matches.
