@@ -235,6 +235,22 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Execution**: after 16 bytes without a candidate, the search tests eight ASCII bytes at a time against the ranges (SWAR). Chunks holding a non-ASCII byte are walked character by character, as before.
 - **Impact**: `\d+` over prose and `[A-Z][A-Z_]+` over code take 42–44% fewer instructions. Searches with close matches stay at their cost because of the 16-byte start.
 
+#### Grapheme breaks between ASCII bytes (`src/unicode/mod.rs`)
+
+- **Trigger**: `onigenc_egcb_is_break_position` at a position strictly inside the logical end, with both the byte before it and the byte at it below 0x80, in the built-in UTF-8 or ASCII encoding (ADR-003). The check is by address: a user-defined ASCII-compatible encoding may have ASCII-valued trail bytes.
+- **Execution**: the answer is "no break" only for CR LF (GB3); every other ASCII pair breaks. No ASCII code point has a Grapheme_Cluster_Break class that GB6-GB13 act on, and a test checks the answer against the general rules for every ASCII pair and for mixed and invalid byte strings.
+- **Bounds**: a comparison of two bytes before the general rules; no memory.
+- **Impact**: an ASCII-only `\X{1}` scan takes 25% fewer instructions (callgrind, on a scratch ASCII text outside the catalog). Pairs that are not ASCII-only gain nothing: `symfony_grapheme` pays about 0.6% more (layout of the guard, measured).
+
+#### Two-stage grapheme break property table (`src/unicode/mod.rs`)
+
+- **Trigger**: `egcb_get_type` for a code point below U+10000. Every grapheme break decision that is not an ASCII pair (see above) asks it for both characters, and the GB11 and GB12/GB13 look-behinds ask it again (`\X`, `\y`, `\Y`).
+- **Execution**: a 256-entry index from each high byte to a block of 256 properties by low byte. Equal blocks are stored once. The table is built on first use by one sweep over `EGCB_RANGES`, which is generated from the UCD ([ADR-015](/adr/015-unicode-data-from-ucd)), so it follows the Unicode version of the data. Code points above U+FFFF keep the binary search.
+- **Observability**: none. The table answers the binary search for every code point.
+- **Bounds**: 45 distinct blocks for Unicode 18.0.0, about 11.5 KiB on the heap per process that searches with a grapheme break (`\X` and the other EGCB users). The one-time build takes about 0.36M instructions (release, callgrind, net of an empty test). No allocation after the build, no unsafe code.
+- **Validation**: `egcb_table_matches_the_binary_search_for_every_code_point` compares every code point from 0 to U+10FFFF, surrogates excepted, with the binary search. `egcb_ranges_are_sorted_and_disjoint` checks the precondition of the build, and `egcb_table_blocks_are_distinct` the deduplication.
+- **Impact** (callgrind instructions per steady batch, production lane; before = the base without this entry or the ASCII entry above, after = both): `symfony_grapheme_chunks_1` 31,041 → 28,827 (−7.1%), `symfony_grapheme_chunks_2` 8,058 → 7,385 (−8.3%). Controls: `mastodon_hashtag_regex_step` 101,393 → 101,393, `uuid_v4` 5,341 → 5,327, `tiktoken_o200k_base` (tokenizer corpus, 5 batches) 2,072,394 → 2,072,394.
+
 #### Bitmaps for Unicode ctypes (`src/unicode/mod.rs`)
 
 - **Trigger**: `onigenc_unicode_is_code_ctype` for a code below U+10000 and a table with at least 16 ranges.
