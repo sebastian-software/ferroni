@@ -9,6 +9,8 @@ use std::ops::{Index, Range};
 use std::panic::AssertUnwindSafe;
 use std::str::FromStr;
 use std::sync::Arc;
+#[cfg(feature = "dfa-prefilter")]
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 #[cfg(feature = "dfa-prefilter")]
@@ -205,6 +207,124 @@ struct Compiled {
     /// like `program`: the lazy DFA's cache pool is not `RefUnwindSafe`.
     #[cfg(feature = "dfa-prefilter")]
     seek: AssertUnwindSafe<Option<Box<SingleSeek>>>,
+    /// Rust-only (ADR-008): decides whether the capture methods consult the
+    /// seek, from the rejections they measure. Shared by the clones with the
+    /// seek, as is the seek's cache pool.
+    #[cfg(feature = "dfa-prefilter")]
+    seek_gate: SeekGate,
+}
+
+/// While the [`SeekGate`] is closed, one capture search in this many consults
+/// the seek anyway, so that the rejection rate is still measured.
+#[cfg(feature = "dfa-prefilter")]
+const SEEK_GATE_PROBE_INTERVAL: u32 = 32;
+
+/// Estimated instructions of one consultation: a seek search of the text from
+/// the start, about 250 to 410 on the production patterns that consult it.
+#[cfg(feature = "dfa-prefilter")]
+const SEEK_CONSULT_COST_IR: u32 = 300;
+
+/// Estimated instructions one rejection saves: the matcher's attempts on a
+/// text the seek rejects. Estimated from the production cases that reject:
+/// about 800 for `jinja_float_token` and about 5,000 for
+/// `fluent_bit_nginx`, so this is the low end.
+#[cfg(feature = "dfa-prefilter")]
+const SEEK_REJECT_SAVING_IR: u32 = 800;
+
+/// The rejection rate, in permille, at which a closed [`SeekGate`] opens: the
+/// break-even of a consultation, `SEEK_CONSULT_COST_IR / SEEK_REJECT_SAVING_IR`.
+#[cfg(feature = "dfa-prefilter")]
+const SEEK_GATE_OPEN_PERMILLE: u32 = SEEK_CONSULT_COST_IR * 1000 / SEEK_REJECT_SAVING_IR;
+
+/// The rate, in permille, below which an open [`SeekGate`] closes: two thirds
+/// of the break-even. The gap keeps a run of accepted searches from closing
+/// the gate on a pattern that rejects often.
+#[cfg(feature = "dfa-prefilter")]
+const SEEK_GATE_CLOSE_PERMILLE: u32 = SEEK_GATE_OPEN_PERMILLE * 2 / 3;
+
+/// The adaptive gate of the seek's consultations by the standard capture
+/// methods (ADR-008). A consultation costs about [`SEEK_CONSULT_COST_IR`]
+/// instructions and saves [`SEEK_REJECT_SAVING_IR`] for each rejection, so it
+/// pays at a rejection rate of about [`SEEK_GATE_OPEN_PERMILLE`] per mille.
+///
+/// The gate keeps an exponentially weighted rate of the consultations' answers
+/// (each new answer weighs 1/8, a memory of about eight searches). It starts
+/// open, so the first searches consult the seek and the rate settles within
+/// a few of them. An open gate closes below [`SEEK_GATE_CLOSE_PERMILLE`]; a
+/// closed one consults one search in [`SEEK_GATE_PROBE_INTERVAL`], so the rate
+/// keeps being measured, and opens again at [`SEEK_GATE_OPEN_PERMILLE`].
+///
+/// The gate changes only which search runs the seek: a rejection is the
+/// matcher's answer under every limit, so no result depends on it. Its state
+/// is relaxed atomics, shared by the clones of a `Regex` as the seek's cache
+/// pool is. Two threads may lose an update to the rate, which costs time at
+/// most.
+#[cfg(feature = "dfa-prefilter")]
+struct SeekGate {
+    /// The rejection rate of the consultations, in permille.
+    rate: AtomicU32,
+    /// Whether every search consults the seek.
+    open: AtomicBool,
+    /// Searches the closed gate has passed without consulting, modulo
+    /// [`SEEK_GATE_PROBE_INTERVAL`].
+    passed: AtomicU32,
+    /// Test-only override: 0 is the adaptive gate, 1 consults on every search,
+    /// 2 on none.
+    #[cfg(test)]
+    forced: std::sync::atomic::AtomicU8,
+}
+
+#[cfg(feature = "dfa-prefilter")]
+impl SeekGate {
+    const fn new() -> Self {
+        SeekGate {
+            rate: AtomicU32::new(400),
+            open: AtomicBool::new(true),
+            passed: AtomicU32::new(0),
+            #[cfg(test)]
+            forced: std::sync::atomic::AtomicU8::new(0),
+        }
+    }
+
+    /// Whether this search consults the seek.
+    #[inline]
+    fn consults(&self) -> bool {
+        #[cfg(test)]
+        match self.forced.load(Ordering::Relaxed) {
+            1 => return true,
+            2 => return false,
+            _ => {}
+        }
+        self.open.load(Ordering::Relaxed)
+            || self
+                .passed
+                .fetch_add(1, Ordering::Relaxed)
+                .is_multiple_of(SEEK_GATE_PROBE_INTERVAL)
+    }
+
+    /// Records the answer of one consultation and sets the state for the next
+    /// search.
+    fn record(&self, rejected: bool) {
+        let sample = if rejected { 1000 } else { 0 };
+        let rate = (self.rate.load(Ordering::Relaxed) * 7 + sample) / 8;
+        self.rate.store(rate, Ordering::Relaxed);
+        let threshold = if self.open.load(Ordering::Relaxed) {
+            SEEK_GATE_CLOSE_PERMILLE
+        } else {
+            SEEK_GATE_OPEN_PERMILLE
+        };
+        self.open.store(rate >= threshold, Ordering::Relaxed);
+    }
+
+    /// Whether the gate is open and the rejection rate, in permille. For the
+    /// tests.
+    #[cfg(test)]
+    fn state(&self) -> (bool, u32) {
+        (
+            self.open.load(Ordering::Relaxed),
+            self.rate.load(Ordering::Relaxed),
+        )
+    }
 }
 
 /// Whether a builder and `Regex::new` build the seek automaton by default:
@@ -305,6 +425,8 @@ impl Regex {
                 pattern,
                 #[cfg(feature = "dfa-prefilter")]
                 seek,
+                #[cfg(feature = "dfa-prefilter")]
+                seek_gate: SeekGate::new(),
             }),
         }
     }
@@ -372,6 +494,29 @@ impl Regex {
         false
     }
 
+    /// Whether the seek rejects a capture search from `start`: the answer of
+    /// [`Regex::seek_answer`] is "no match", and the adaptive gate
+    /// ([`SeekGate`]) lets this search consult the seek. The rejection is the
+    /// matcher's answer under every limit, so the capture methods return `None`
+    /// for it without running the matcher.
+    #[cfg(feature = "dfa-prefilter")]
+    #[inline]
+    fn seek_rejects_capture(&self, text: &[u8], start: usize, utf8: bool) -> bool {
+        if self.inner.seek.is_none() || !self.inner.seek_gate.consults() {
+            return false;
+        }
+        let rejected = self.seek_answer(text, start, utf8, false) == Some(false);
+        self.inner.seek_gate.record(rejected);
+        rejected
+    }
+
+    #[cfg(not(feature = "dfa-prefilter"))]
+    #[inline(always)]
+    fn seek_rejects_capture(&self, text: &[u8], start: usize, utf8: bool) -> bool {
+        let _ = (text, start, utf8);
+        false
+    }
+
     /// Whether the regex has a seek automaton. For the tests.
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn seek_present(&self) -> bool {
@@ -389,6 +534,28 @@ impl Regex {
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn seek_decides_is_match(&self, text: &str) -> Option<bool> {
         self.seek_answer(text.as_bytes(), 0, true, true)
+    }
+
+    /// The adaptive gate of the capture methods: whether it is open and its
+    /// rejection rate in permille. For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn seek_gate_state(&self) -> (bool, u32) {
+        self.inner.seek_gate.state()
+    }
+
+    /// Forces the gate on (`Some(true)`), off (`Some(false)`) or back to the
+    /// adaptive rule (`None`). For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn seek_gate_force(&self, mode: Option<bool>) {
+        let value = match mode {
+            None => 0,
+            Some(true) => 1,
+            Some(false) => 2,
+        };
+        self.inner
+            .seek_gate
+            .forced
+            .store(value, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The pattern this regex was compiled from, or `None` if the pattern is
@@ -840,12 +1007,12 @@ impl Regex {
     /// reported as no match. Use [`Regex::captures_with`] with [`SearchOptions`] to tell
     /// the two apart.
     pub fn captures<'t>(&self, text: &'t str) -> Option<Captures<'t>> {
-        self.captures_bytes(text.as_bytes())
+        self.captures_from(text.as_bytes(), 0, true)
     }
 
     /// Return the first match with all capture groups (bytes), or `None`.
     pub fn captures_bytes<'t>(&self, text: &'t [u8]) -> Option<Captures<'t>> {
-        self.captures_from(text, 0)
+        self.captures_from(text, 0, false)
     }
 
     /// Return the first match at or after byte offset `start`, with all
@@ -870,7 +1037,7 @@ impl Regex {
     /// ```
     pub fn captures_at<'t>(&self, text: &'t str, start: usize) -> Option<Captures<'t>> {
         check_str_start(text, start);
-        self.captures_from(text.as_bytes(), start)
+        self.captures_from(text.as_bytes(), start, true)
     }
 
     /// Return the first match at or after byte offset `start` (as bytes), with
@@ -881,11 +1048,16 @@ impl Regex {
     /// Panics if `start` is greater than `text.len()`.
     pub fn captures_bytes_at<'t>(&self, text: &'t [u8], start: usize) -> Option<Captures<'t>> {
         check_bytes_start(text, start);
-        self.captures_from(text, start)
+        self.captures_from(text, start, false)
     }
 
+    /// The search behind the capture methods that report no limit: the seek
+    /// answers a rejection first (see [`Regex::seek_rejects_capture`]).
     #[inline]
-    fn captures_from<'t>(&self, text: &'t [u8], start: usize) -> Option<Captures<'t>> {
+    fn captures_from<'t>(&self, text: &'t [u8], start: usize, utf8: bool) -> Option<Captures<'t>> {
+        if self.seek_rejects_capture(text, start, utf8) {
+            return None;
+        }
         let (result, region) = onig_search(
             self.program(),
             text,
@@ -2353,6 +2525,27 @@ mod tests {
         assert!(!re.is_match("john@doe.org"));
     }
 
+    /// The repeats `tune_next` makes possessive keep the language of the
+    /// repeat, so the seek of `^[a-z]+@[a-z]+\.com$` is exact and answers
+    /// "match" for it. A user-written atomic group next to them is not: its
+    /// seek stays inexact and answers "match" only from the matcher.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn automatic_possessive_repeats_keep_the_seek_exact() {
+        let re = Regex::new(r"^[a-z]+@[a-z]+\.com$").unwrap();
+        assert_eq!(re.seek_exact(), Some(true));
+        assert_eq!(re.seek_decides_is_match("john@doe.com"), Some(true));
+        assert_eq!(re.seek_decides_is_match("john@doe.org"), Some(false));
+        assert!(re.is_match("john@doe.com"));
+        assert!(!re.is_match("john@doe.org"));
+
+        let atomic = Regex::new(r"^[a-z]+@(?>[a-z]+)\.com$").unwrap();
+        assert_eq!(atomic.seek_exact(), Some(false));
+        assert_eq!(atomic.seek_decides_is_match("john@doe.com"), None);
+        assert_eq!(atomic.seek_decides_is_match("john@doe.org"), Some(false));
+        assert!(atomic.is_match("john@doe.com"));
+    }
+
     /// Where a tiny process-wide retry limit stops the matcher, an exact seek
     /// still answers "match", and the answer is the matcher's without the
     /// limit (ADR-017, rule 2). The limit is restored when the guard drops.
@@ -2450,6 +2643,150 @@ mod tests {
             .unwrap();
         assert_eq!(re.is_match_bytes(&invalid), expected);
         assert_eq!(re.find_bytes(&invalid).is_some(), expected);
+    }
+
+    /// The bounds of every group of a capture result, `None` for no match.
+    #[cfg(feature = "dfa-prefilter")]
+    fn capture_spans(found: Option<Captures<'_>>) -> Option<Vec<Option<Range<usize>>>> {
+        found.map(|caps| {
+            (0..caps.len())
+                .map(|group| caps.get(group).map(|m| m.range()))
+                .collect()
+        })
+    }
+
+    /// The capture methods with the seek gate forced on, forced off and left
+    /// adaptive give the matcher's answer (`captures_*_with`, which never
+    /// reaches the seek), at every character boundary and for every method.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn capture_gate_never_changes_a_capture_result() {
+        let _limits = crate::regexec::shared_limits();
+        let patterns = [
+            r#"\A(?:('[^'\\]*(?:\\.[^'\\]*)*')|("[^"\\]*(?:\\.[^"\\]*)*"))"#,
+            r"(\d+)-(\d+)",
+            r"x(?=y)(.)",
+            r"\Gab(c)?",
+            r"^(\w+)\s*=\s*(\S*)$",
+            r"(?<=é)a(b)?",
+            r"\A(a|b)\1",
+            r"(?i)\bfoo\b(.)",
+        ];
+        let texts = [
+            "",
+            "x",
+            "ab",
+            "abc",
+            "'it''s'",
+            "\"q\\\"\"",
+            "12-34 x",
+            "xy",
+            "é",
+            "éab",
+            "Foo foo",
+            "a=b",
+            "bb",
+            "a\u{1F600}b",
+        ];
+        for pattern in patterns {
+            let re = Regex::new(pattern).unwrap();
+            for text in texts {
+                for start in (0..=text.len()).filter(|&at| text.is_char_boundary(at)) {
+                    let expected = re
+                        .captures_at_with(text, start, SearchOptions::new())
+                        .unwrap();
+                    let expected = capture_spans(expected);
+                    for mode in [Some(true), Some(false), None] {
+                        re.seek_gate_force(mode);
+                        assert_eq!(
+                            capture_spans(re.captures_at(text, start)),
+                            expected,
+                            "{pattern} on {text:?} from {start}, gate {mode:?}"
+                        );
+                    }
+                    re.seek_gate_force(None);
+                }
+                // The other entry points of the capture family.
+                let expected = capture_spans(re.captures_with(text, SearchOptions::new()).unwrap());
+                let expected_bytes = capture_spans(re.captures_bytes(text.as_bytes()));
+                assert_eq!(expected_bytes, expected, "{pattern} on {text:?}");
+                assert_eq!(
+                    capture_spans(re.captures(text)),
+                    expected,
+                    "{pattern} on {text:?}"
+                );
+            }
+        }
+    }
+
+    /// The adaptive gate changes state with the rejections it measures: a
+    /// pattern the seek rejects keeps the gate open, one whose seek finds a
+    /// match closes it, and the state of a clone is the original's.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn capture_gate_follows_the_rejection_rate() {
+        let _limits = crate::regexec::shared_limits();
+        let rejecting = Regex::new(r"\Aabc(d)").unwrap();
+        for _ in 0..32 {
+            assert!(rejecting.captures("xyz").is_none());
+        }
+        let (open, rate) = rejecting.seek_gate_state();
+        assert!(open, "rate {rate}");
+        assert!(rate >= SEEK_GATE_OPEN_PERMILLE, "rate {rate}");
+
+        // A pure literal has no seek, so the accepting pattern is not one.
+        let accepting = Regex::new(r"x\d").unwrap();
+        for _ in 0..32 {
+            assert!(accepting.captures("x1").is_some());
+        }
+        let (open, rate) = accepting.seek_gate_state();
+        assert!(!open, "rate {rate}");
+        assert!(rate < SEEK_GATE_CLOSE_PERMILLE, "rate {rate}");
+        // A closed gate still measures: its probes run the seek, and rejections
+        // among them reopen it.
+        for _ in 0..SEEK_GATE_PROBE_INTERVAL * 16 {
+            assert!(accepting.captures("y").is_none());
+        }
+        let (open, rate) = accepting.seek_gate_state();
+        assert!(open, "rate {rate}");
+
+        let original = Regex::new(r"\Aabc").unwrap();
+        let clone = original.clone();
+        let before = original.seek_gate_state();
+        assert!(clone.captures("xyz").is_none());
+        assert_ne!(original.seek_gate_state(), before);
+        assert_eq!(original.seek_gate_state(), clone.seek_gate_state());
+    }
+
+    /// Clones of a regex share its gate and seek: captures on several threads
+    /// give the matcher's answers, and nothing panics or deadlocks.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn capture_gate_is_shared_and_thread_safe() {
+        let _limits = crate::regexec::shared_limits();
+        let re = Regex::new(r"\Aabc(d)?").unwrap();
+        std::thread::scope(|scope| {
+            for thread in 0..4 {
+                let re = re.clone();
+                scope.spawn(move || {
+                    for round in 0..500 {
+                        let (text, matches) = if (round + thread) % 3 == 0 {
+                            ("abcd", true)
+                        } else {
+                            ("xyz", false)
+                        };
+                        let found = re.captures(text);
+                        assert_eq!(found.is_some(), matches, "{text}");
+                        let expected = re
+                            .captures_with(text, SearchOptions::new())
+                            .unwrap()
+                            .is_some();
+                        assert_eq!(found.is_some(), expected, "{text}");
+                    }
+                });
+            }
+        });
+        assert_eq!(re.seek_gate_state(), re.clone().seek_gate_state());
     }
 
     #[test]

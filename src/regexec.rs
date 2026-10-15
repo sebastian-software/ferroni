@@ -4006,6 +4006,9 @@ thread_local! {
     pub(crate) static FORWARD_SEARCH_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Keeps the original per-attempt calls for bounded optimizer windows.
     static OPTIMIZER_WINDOW_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Searches start-anchored patterns with the general forward search, as before
+    /// `anchored_start_search`.
+    static ANCHORED_START_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Searches pure literal patterns with the VM, as before `pure_literal_first`.
     static PURE_LITERAL_FAST_PATH_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Differential reference for captured zero-distance map searches.
@@ -4061,6 +4064,25 @@ fn pure_literal_fast_path_enabled() -> bool {
     #[cfg(test)]
     {
         !PURE_LITERAL_FAST_PATH_DISABLED.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
+/// Sets the test-only toggle of the anchored-start search (`true` keeps the
+/// general path). For the tests of other modules.
+#[cfg(test)]
+pub(crate) fn set_anchored_start_disabled(disabled: bool) {
+    ANCHORED_START_DISABLED.with(|v| v.set(disabled));
+}
+
+#[inline(always)]
+fn anchored_start_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !ANCHORED_START_DISABLED.with(std::cell::Cell::get)
     }
     #[cfg(not(test))]
     {
@@ -8598,6 +8620,94 @@ fn onig_search_inner_core_with_right_range(
     }
 }
 
+/// Rust-only (ADR-008): a forward search from `start` (with `start < end`,
+/// `start` before the search range, and no FIND_LONGEST across positions)
+/// whose pattern begins with `\A` (`ANCR_BEGIN_BUF`) or `\G`
+/// (`ANCR_BEGIN_POSITION`) can match only at `start`, so it makes that one
+/// attempt. The caller has applied the threshold check. The optimizer's
+/// answer on `start` comes first, as C's forward search would give it: an
+/// O(1) byte test of the map where the map is the only filter, and otherwise
+/// `forward_search` over `start` alone. A rejection is the result, as the
+/// general loop would reach it, without the loop's setup and its attempts.
+/// Returns `None` for a pattern with callouts or where the map search is
+/// bypassed (both keep the general path), so it never answers a search the
+/// general path would not reach.
+///
+/// Results are those of the general loop, which attempts `start` and no
+/// position that an anchor excludes. The retry budget of the search is checked
+/// after the one attempt, as the loop checks it, so a limit reached there is
+/// reported; attempts the loop would make at other positions are not made.
+#[inline(never)]
+fn anchored_start_search(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    data_range: usize,
+    msa: &mut MatchArg,
+) -> Option<i32> {
+    if !anchored_start_enabled()
+        || map_search_bypassed(reg)
+        || reg.extp.as_ref().is_some_and(|ext| ext.callout_num != 0)
+    {
+        return None;
+    }
+    // The threshold check of the general path (`map_search_bypassed` is off).
+    if (end as i32 - start as i32) < reg.threshold_len {
+        return Some(ONIG_MISMATCH);
+    }
+    // The optimizer's answer on `start`, as the general loop's forward search
+    // gives it. The attempt ends at `start + 1`, the bound that loop gives
+    // its optimizer for a pattern with no distance (`cur_range`).
+    let admitted = match reg.optimize {
+        OptimizeType::None => true,
+        // With no distance before `start` and no sub-anchor, a map candidate
+        // at `start` is the match start the forward search returns.
+        OptimizeType::Map
+            if reg.dist_min == 0
+                && reg.sub_anchor == 0
+                && reg.map[str_data[start] as usize] != 0 =>
+        {
+            true
+        }
+        // Distance 0 and no candidate byte: the forward search has nothing to find
+        // in `[start, start + 1)`.
+        OptimizeType::Map if reg.dist_min == 0 && reg.dist_max == 0 && reg.sub_anchor == 0 => false,
+        _ => {
+            let range = start + 1;
+            let sch_range = if reg.dist_max != 0 {
+                if reg.dist_max == INFINITE_LEN || end.saturating_sub(range) < reg.dist_max as usize
+                {
+                    end
+                } else {
+                    range + reg.dist_max as usize
+                }
+            } else {
+                range
+            };
+            matches!(
+                forward_search(reg, str_data, end, start, sch_range),
+                Some((low, high)) if low <= start && start <= high
+            )
+        }
+    };
+    if !admitted {
+        return Some(ONIG_MISMATCH);
+    }
+    msa.best_len = ONIG_MISMATCH;
+    msa.best_s = 0;
+    let r = match_at(reg, str_data, end, data_range, start, msa);
+    if r != ONIG_MISMATCH {
+        return Some(if r < 0 { r } else { start as i32 });
+    }
+    if msa.retry_limit_in_search != 0
+        && msa.retry_limit_in_search_counter >= msa.retry_limit_in_search
+    {
+        return Some(ONIGERR_RETRY_LIMIT_IN_SEARCH_OVER);
+    }
+    Some(ONIG_MISMATCH)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
     reg: &RegexType,
@@ -8858,9 +8968,18 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
 
     // === Anchor optimization: narrow search range ===
     if reg.anchor != 0 && start < end {
+        // Rust-only (ADR-008): a start-anchored pattern attempts only `start`;
+        // see `anchored_start_search`. The general path below is unchanged.
+        let anchored_start = !find_longest && start_filter.is_none() && range > start;
         if (reg.anchor & ANCR_BEGIN_POSITION) != 0 {
             // search start-position only
             if range > start {
+                if anchored_start
+                    && let Some(result) =
+                        anchored_start_search(reg, str_data, end, start, data_range, msa)
+                {
+                    return result;
+                }
                 cur_range = start + 1;
             } else {
                 cur_range = start;
@@ -8870,6 +8989,12 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
             if range > start {
                 if start != 0 {
                     return ONIG_MISMATCH;
+                }
+                if anchored_start
+                    && let Some(result) =
+                        anchored_start_search(reg, str_data, end, start, data_range, msa)
+                {
+                    return result;
                 }
                 cur_range = 1;
             } else {
@@ -14401,5 +14526,216 @@ mod tests {
             OnigCalloutArgs::new(OnigCalloutIn::Progress, 0, 1, &reg, subject, 4, 0, 4, 3, 0);
         assert_eq!(onig_builtin_skip(&bare, user), ONIG_CALLOUT_SUCCESS);
         assert_eq!(skip.get(), 2);
+    }
+
+    /// Patterns whose first checks anchor them at the search start: `\A` and
+    /// `\G` with and without optimizer maps, literal prefixes, distances,
+    /// alternations, look-arounds, `\K`, folds and multibyte classes.
+    const ANCHORED_PATTERNS: [&str; 22] = [
+        r"\Aab",
+        r"\Aa|\Ab",
+        r"\A(a)(b?)",
+        r"\Ax*",
+        r"\A.",
+        r"\A(?=b)",
+        r"\A\b",
+        r"\A[^a]+",
+        r"\Aé+",
+        r"\A\w+X",
+        r"(?i)\Aabc",
+        r"\A\d{1,3}\.",
+        r"\A.{0,3}x",
+        r"\A(?:ab|a)c",
+        r"\A(?!x)a",
+        r"\A\Kab",
+        r"\Gab",
+        r"\G(?<=a)b",
+        r"\Gb|\Ga",
+        r"\G[^\n]*\n",
+        r"\A(a|b)\1",
+        r"\A\x{1F600}|é",
+    ];
+
+    /// Subjects for the anchored patterns: empty, short, multibyte, with a
+    /// newline, and one malformed UTF-8 sequence.
+    const ANCHORED_SUBJECTS: [&[u8]; 14] = [
+        b"",
+        b"a",
+        b"ab",
+        b"abc",
+        b"xab",
+        b"aab",
+        "é".as_bytes(),
+        "éab".as_bytes(),
+        "aéb".as_bytes(),
+        b"ab\nab",
+        b"x\n",
+        b"1.x",
+        "\u{1F600}a\u{e9}".as_bytes(),
+        b"a\xffb",
+    ];
+
+    /// The search of `reg` with the anchored-start path on or off, returning
+    /// the result and the bounds of every register.
+    fn anchored_search(
+        reg: &RegexType,
+        subject: &[u8],
+        start: usize,
+        range: usize,
+        option: OnigOptionType,
+        enabled: bool,
+    ) -> (i32, Vec<i32>, Vec<i32>) {
+        ANCHORED_START_DISABLED.with(|v| v.set(!enabled));
+        let (r, region) = onig_search(
+            reg,
+            subject,
+            subject.len(),
+            start,
+            range,
+            Some(OnigRegion::new()),
+            option,
+        );
+        ANCHORED_START_DISABLED.with(|v| v.set(false));
+        match region {
+            Some(region) if r >= 0 => {
+                let len = region.num_regs as usize;
+                (r, region.beg[..len].to_vec(), region.end[..len].to_vec())
+            }
+            _ => (r, Vec::new(), Vec::new()),
+        }
+    }
+
+    /// Anchored-start searches equal the general path (the test toggle) at
+    /// every start and range, under the options the search reads, on
+    /// multibyte and malformed subjects, and through the bounds-only path.
+    #[test]
+    fn anchored_start_search_matches_the_general_path() {
+        let _limits = shared_limits();
+        let options = [
+            ONIG_OPTION_NONE,
+            ONIG_OPTION_FIND_NOT_EMPTY,
+            ONIG_OPTION_FIND_LONGEST,
+            ONIG_OPTION_MATCH_WHOLE_STRING,
+        ];
+        for pattern in ANCHORED_PATTERNS {
+            let reg = compile_full(pattern.as_bytes());
+            for subject in ANCHORED_SUBJECTS {
+                for option in options {
+                    for start in 0..=subject.len() {
+                        for range in start + 1..=subject.len() {
+                            let fast = anchored_search(&reg, subject, start, range, option, true);
+                            let general =
+                                anchored_search(&reg, subject, start, range, option, false);
+                            assert_eq!(
+                                fast, general,
+                                "{pattern} on {subject:?} {start}..{range} option {option:?}"
+                            );
+                        }
+                    }
+                }
+                // The bounds-only path (`find`) takes the core directly.
+                if reg.keep_moves_match_start {
+                    continue;
+                }
+                for option in [ONIG_OPTION_NONE, ONIG_OPTION_FIND_NOT_EMPTY] {
+                    for start in 0..=subject.len() {
+                        let bounds = |enabled: bool| {
+                            ANCHORED_START_DISABLED.with(|v| v.set(!enabled));
+                            let mut msa = take_cached_msa(&reg, option, None, start, None);
+                            let found = onig_search_bounds(&reg, subject, start, &mut msa);
+                            cache_msa(msa);
+                            ANCHORED_START_DISABLED.with(|v| v.set(false));
+                            found
+                        };
+                        assert_eq!(
+                            bounds(true),
+                            bounds(false),
+                            "{pattern} bounds on {subject:?} from {start} option {option:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// `\A` cannot match from a later start, and the fast path answers that
+    /// without an attempt; an unanchored pattern from the same start matches.
+    #[test]
+    fn begin_buf_pattern_does_not_match_a_later_start() {
+        let _limits = shared_limits();
+        let subject = b"xab";
+        let anchored = compile_full(br"\Aab");
+        assert_eq!(
+            anchored_search(&anchored, subject, 1, 3, ONIG_OPTION_NONE, true).0,
+            ONIG_MISMATCH
+        );
+        let plain = compile_full(br"ab");
+        assert_eq!(
+            anchored_search(&plain, subject, 1, 3, ONIG_OPTION_NONE, true).0,
+            1
+        );
+    }
+
+    /// Anchored-start searches equal C's `onig_search`, its match and every
+    /// group, at every start and range.
+    #[cfg(feature = "ffi")]
+    #[test]
+    fn anchored_start_search_matches_c() {
+        let _limits = shared_limits();
+        // FIND_LONGEST is left to the general path (see `anchored_start_search`).
+        let options = [ONIG_OPTION_NONE, ONIG_OPTION_FIND_NOT_EMPTY];
+        for pattern in ANCHORED_PATTERNS {
+            let reg = compile_full(pattern.as_bytes());
+            let c =
+                crate::ffi::CRegex::new(pattern.as_bytes(), crate::ffi::ONIG_OPTION_NONE).unwrap();
+            for subject in ANCHORED_SUBJECTS {
+                // Valid UTF-8 only: the malformed subject is the general
+                // path's own comparison above.
+                if std::str::from_utf8(subject).is_err() {
+                    continue;
+                }
+                for option in options {
+                    for start in 0..=subject.len() {
+                        if start < subject.len() && !is_char_head(subject, start) {
+                            continue;
+                        }
+                        for range in start + 1..=subject.len() {
+                            let (r, region) = onig_search(
+                                &reg,
+                                subject,
+                                subject.len(),
+                                start,
+                                range,
+                                Some(OnigRegion::new()),
+                                option,
+                            );
+                            let mut c_region = crate::ffi::CRegion::new();
+                            let c_r =
+                                c.search(subject, start, range, Some(&mut c_region), option.bits());
+                            let context =
+                                format!("{pattern} on {subject:?} {start}..{range} {option:?}");
+                            assert_eq!(r, c_r, "{context}");
+                            if r >= 0 {
+                                let region = region.unwrap();
+                                let spans: Vec<(i32, i32)> = region
+                                    .beg
+                                    .iter()
+                                    .zip(&region.end)
+                                    .map(|(&b, &e)| (b, e))
+                                    .take(region.num_regs as usize)
+                                    .collect();
+                                assert_eq!(spans, c_region.capture_ranges(), "{context}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether `at` is the start of a UTF-8 character in `text`.
+    #[cfg(feature = "ffi")]
+    fn is_char_head(text: &[u8], at: usize) -> bool {
+        text.get(at).is_none_or(|&byte| (byte as i8) >= -0x40)
     }
 }
