@@ -2116,7 +2116,8 @@ impl fmt::Debug for CaptureNames<'_> {
 
 /// Where a match iterator searches next, and whether its previous match was
 /// empty. Shared by every iterator that yields matches, so they all apply the
-/// same empty-match rule.
+/// same empty-match rule. A `last_end` past the end of the text ends the
+/// iteration.
 #[derive(Clone, Copy, Debug, Default)]
 struct MatchCursor {
     last_end: usize,
@@ -2140,6 +2141,12 @@ impl MatchCursor {
     /// skipped: the cursor moves one character on, and the search runs again.
     /// That keeps the iteration moving without yielding the same empty match
     /// twice.
+    ///
+    /// Where the program allows it (`skip_repeated_empty_search`), the step
+    /// past an empty match is taken with the match: the search from its end
+    /// would only find that match again, so the iterator does not run it
+    /// (Rust-only, ADR-008). The rule is the same either way: the next
+    /// search starts one character on, after an empty match.
     #[inline]
     fn accept(&mut self, program: &RegexType, text: &[u8], start: usize, end: usize) -> Verdict {
         if start == end {
@@ -2158,6 +2165,16 @@ impl MatchCursor {
         }
 
         self.last_end = end;
+        if start == end && program.skip_repeated_empty_search {
+            if end >= text.len() {
+                // Nothing follows: the search from the end would find this
+                // empty match again and finish the iteration.
+                self.last_end = text.len() + 1;
+            } else {
+                self.last_end += program.enc.mbc_enc_len(&text[end..]);
+                self.last_was_empty = false;
+            }
+        }
         Verdict::Yield
     }
 }
@@ -2331,6 +2348,19 @@ pub struct CaptureMatches<'r, 't> {
 }
 
 impl<'r, 't> CaptureMatches<'r, 't> {
+    /// The region for the next search. A yielded [`Captures`] takes this
+    /// iterator's region, and returns it to the thread cache when it is
+    /// dropped, so the search takes the cached region then, instead of
+    /// allocating a new one (Rust-only, ADR-008).
+    fn next_region(&mut self) -> OnigRegion {
+        let region = std::mem::take(&mut self.region);
+        if region.beg.capacity() == 0 {
+            take_cached_region()
+        } else {
+            region
+        }
+    }
+
     /// The next match with its captures, or the code of a limit that a search
     /// reached.
     fn try_next(&mut self) -> Result<Option<Captures<'t>>, i32> {
@@ -2341,6 +2371,7 @@ impl<'r, 't> CaptureMatches<'r, 't> {
 
             let program = self.regex.program();
             let len = self.text.len();
+            let region = self.next_region();
             let (result, region) = search_in_range(
                 program,
                 self.text,
@@ -2348,7 +2379,7 @@ impl<'r, 't> CaptureMatches<'r, 't> {
                 self.cursor.last_end,
                 len,
                 len,
-                Some(std::mem::take(&mut self.region)),
+                Some(region),
                 ONIG_OPTION_NONE,
                 self.limits,
             );
@@ -3462,5 +3493,286 @@ mod tests {
         assert_eq!(matches[0].start(), 0);
         assert_eq!(matches[1].start(), 1);
         assert_eq!(matches[2].start(), 2);
+    }
+
+    /// The iteration as the search loop ran it before an empty match stepped
+    /// past its own search: every search starts at the end of the previous
+    /// match, and an empty match right after an empty match is skipped by a
+    /// search one character on. `search(at)` returns the match found from
+    /// `at` with the item that the iterator yields for it.
+    fn repeated_search_iteration<T>(
+        re: &Regex,
+        text: &[u8],
+        search: impl Fn(usize) -> Option<(usize, usize, T)>,
+    ) -> Vec<T> {
+        let mut found = Vec::new();
+        let mut last_end = 0;
+        let mut last_was_empty = false;
+        while last_end <= text.len() {
+            let Some((start, end, item)) = search(last_end) else {
+                break;
+            };
+            if start == end {
+                if last_was_empty {
+                    if last_end >= text.len() {
+                        break;
+                    }
+                    last_end += re.program().enc.mbc_enc_len(&text[last_end..]);
+                    last_was_empty = false;
+                    continue;
+                }
+                last_was_empty = true;
+            } else {
+                last_was_empty = false;
+            }
+            last_end = end;
+            found.push(item);
+        }
+        found
+    }
+
+    /// The spans of the groups of a match, `None` for a group that did not
+    /// participate.
+    type Groups = Vec<Option<(usize, usize)>>;
+
+    fn group_spans(caps: &Captures<'_>) -> Groups {
+        caps.iter()
+            .map(|group| group.map(|m| (m.start(), m.end())))
+            .collect()
+    }
+
+    /// Patterns with empty matches, and with `\G` and `\K`, which keep the
+    /// searches of the iteration.
+    const EMPTY_MATCH_PATTERNS: &[&str] = &[
+        "",
+        "a*",
+        "a*?",
+        "x*",
+        r"\b",
+        r"\B",
+        "(?=x)",
+        "(?!x)",
+        "|",
+        "a|",
+        "|a",
+        "(a|)",
+        "(a)?(b*)",
+        r"(\w*)",
+        "(?<=a)",
+        "^",
+        "$",
+        r"\b\w*",
+        "(?:)",
+        r"\d*",
+        "é*",
+        "(?i)k*",
+        r"a*?$",
+        r"(?=\w)|\s",
+        r"\b|é",
+        // \G reads the search start: the step is not taken. The search from
+        // the end of the empty match at 1 matches "b" there, which the
+        // iterator must yield.
+        r"(?<=a)(?!\G)|b",
+        r"\Ga*",
+        r"\G",
+        r"\Gx*",
+        // \K moves the match start: the step is not taken.
+        r"a\K",
+        r"\K",
+        r"x*\K",
+        r"(a)\K|b*",
+    ];
+
+    const EMPTY_MATCH_TEXTS: &[&str] = &[
+        "",
+        "a",
+        "ab",
+        "aXa",
+        "xéx日本",
+        "a\nb\n",
+        "ééé",
+        "\u{1F600}x",
+        "bbb",
+        "x  x",
+    ];
+
+    #[test]
+    fn empty_match_step_only_where_the_program_allows_it() {
+        let _limits = crate::regexec::shared_limits();
+        for pattern in ["", "a*", r"\b", "(?=x)", "|", r"(\w*)", "(a)?(b*)"] {
+            let re = Regex::new(pattern).unwrap();
+            assert!(
+                re.program().skip_repeated_empty_search,
+                "{pattern:?} has no \\G, \\K or callout"
+            );
+        }
+        for pattern in [r"\Ga*", r"\G", r"a\K", r"\K", r"(a)\K|b*"] {
+            let re = Regex::new(pattern).unwrap();
+            assert!(
+                !re.program().skip_repeated_empty_search,
+                "{pattern:?} reads the search start or keeps the match start"
+            );
+        }
+    }
+
+    /// The iterators yield what the repeated search yields, for empty matches
+    /// over ASCII, multibyte and invalid text, with and without `\G` and `\K`.
+    #[test]
+    fn empty_match_step_yields_what_the_repeated_search_yields() {
+        let _limits = crate::regexec::shared_limits();
+        for pattern in EMPTY_MATCH_PATTERNS {
+            let re = Regex::new(pattern).unwrap();
+            for text in EMPTY_MATCH_TEXTS {
+                let bytes = text.as_bytes();
+                let expected = repeated_search_iteration(&re, bytes, |at| {
+                    re.find_bytes_at(bytes, at)
+                        .map(|m| (m.start(), m.end(), (m.start(), m.end())))
+                });
+                let found: Vec<_> = re.find_iter(text).map(|m| (m.start(), m.end())).collect();
+                assert_eq!(found, expected, "find_iter: {pattern:?} on {text:?}");
+                let found: Vec<_> = re
+                    .find_iter_bytes(bytes)
+                    .map(|m| (m.start(), m.end()))
+                    .collect();
+                assert_eq!(found, expected, "find_iter_bytes: {pattern:?} on {text:?}");
+
+                let expected = repeated_search_iteration(&re, bytes, |at| {
+                    re.captures_bytes_at(bytes, at).map(|caps| {
+                        let spans = group_spans(&caps);
+                        let (start, end) = spans[0].expect("whole match");
+                        (start, end, spans)
+                    })
+                });
+                let found: Vec<_> = re.captures_iter(text).map(|c| group_spans(&c)).collect();
+                assert_eq!(found, expected, "captures_iter: {pattern:?} on {text:?}");
+            }
+        }
+    }
+
+    /// Invalid UTF-8 is searched by the bytes API, one byte character at a time
+    /// where the encoding cannot read a character.
+    #[test]
+    fn empty_match_step_on_invalid_utf8() {
+        let _limits = crate::regexec::shared_limits();
+        let text: &[u8] = b"a\xffb\xe6\x97";
+        for pattern in ["", "a*", r"\b", "x*", r"(\w*)"] {
+            let re = Regex::new(pattern).unwrap();
+            let expected = repeated_search_iteration(&re, text, |at| {
+                re.find_bytes_at(text, at)
+                    .map(|m| (m.start(), m.end(), (m.start(), m.end())))
+            });
+            let found: Vec<_> = re
+                .find_iter_bytes(text)
+                .map(|m| (m.start(), m.end()))
+                .collect();
+            assert_eq!(found, expected, "{pattern:?} on invalid UTF-8");
+        }
+    }
+
+    /// An empty match costs one search, not two: the search from its end is
+    /// not run again.
+    #[test]
+    fn empty_match_step_takes_one_search_per_match() {
+        let _limits = crate::regexec::shared_limits();
+        let re = Regex::new("x*").unwrap();
+        let before = crate::regexec::VM_ATTEMPTS.with(std::cell::Cell::get);
+        let matches = re.find_iter("abcd").count();
+        let attempts = crate::regexec::VM_ATTEMPTS.with(std::cell::Cell::get) - before;
+        assert_eq!(matches, 5);
+        assert_eq!(attempts, 5);
+    }
+
+    /// The captures of every match, including the matches found by a search
+    /// whose first attempt fails, and by a map search that starts at a later
+    /// candidate.
+    #[test]
+    fn captures_iter_records_the_captures_of_every_match() {
+        let _limits = crate::regexec::shared_limits();
+        let re = Regex::new(r"#(\w+)").unwrap();
+        let found: Vec<_> = re
+            .captures_iter("x #ab #c")
+            .map(|c| group_spans(&c))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                vec![Some((2, 5)), Some((3, 5))],
+                vec![Some((6, 8)), Some((7, 8))],
+            ]
+        );
+
+        let re = Regex::new(r"(a)|(b)").unwrap();
+        let found: Vec<_> = re.captures_iter("cba").map(|c| group_spans(&c)).collect();
+        assert_eq!(
+            found,
+            vec![
+                vec![Some((1, 2)), None, Some((1, 2))],
+                vec![Some((2, 3)), Some((2, 3)), None],
+            ]
+        );
+
+        let re = Regex::new(r"(\d)(\d)?").unwrap();
+        let found: Vec<_> = re
+            .captures_iter("a1 22b")
+            .map(|c| group_spans(&c))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                vec![Some((1, 2)), Some((1, 2)), None],
+                vec![Some((3, 5)), Some((3, 4)), Some((4, 5))],
+            ]
+        );
+
+        // The first attempt fails and a later one matches, untracked: the
+        // captures are recorded by a second pass.
+        let cases: [(&str, &str, Vec<Groups>); 4] = [
+            (
+                r"(a)b|(c)",
+                "axc ac",
+                vec![
+                    vec![Some((2, 3)), None, Some((2, 3))],
+                    vec![Some((5, 6)), None, Some((5, 6))],
+                ],
+            ),
+            (
+                r"(?<=z)(a)|(b)",
+                "zaxb",
+                vec![
+                    vec![Some((1, 2)), Some((1, 2)), None],
+                    vec![Some((3, 4)), None, Some((3, 4))],
+                ],
+            ),
+            (
+                r"\w(\d)|(x)",
+                "1x2",
+                vec![vec![Some((1, 3)), Some((2, 3)), None]],
+            ),
+            (
+                r"(a)(b)?c|(d)e",
+                "ab de",
+                vec![vec![Some((3, 5)), None, None, Some((3, 4))]],
+            ),
+        ];
+        for (pattern, text, expected) in cases {
+            let re = Regex::new(pattern).unwrap();
+            let found: Vec<_> = re.captures_iter(text).map(|c| group_spans(&c)).collect();
+            assert_eq!(found, expected, "{pattern:?} on {text:?}");
+        }
+    }
+
+    /// Each yielded `Captures` returns its region to the thread cache when it
+    /// is dropped, and the next search takes it from there.
+    #[test]
+    fn captures_iter_reuses_the_region_of_a_dropped_match() {
+        let _limits = crate::regexec::shared_limits();
+        clear_cached_region();
+        let re = Regex::new(r"(\w)(\w?)").unwrap();
+        let mut matches = re.captures_iter("ab cd ef");
+        let first = matches.next().unwrap().region.beg.as_ptr();
+        let second = matches.next().unwrap().region.beg.as_ptr();
+        assert_eq!(second, first);
+        let third = matches.next().unwrap().region.beg.as_ptr();
+        assert_eq!(third, first);
     }
 }

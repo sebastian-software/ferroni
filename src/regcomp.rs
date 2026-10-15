@@ -8427,6 +8427,9 @@ struct BackrefPushScan {
     /// Per group number: the path to its capture node, and whether every
     /// container on it is linear.
     groups: Vec<Option<(Vec<TreeStep>, bool)>>,
+    /// Per group number: the first byte of its capture when the capture is a
+    /// plain, case-sensitive, non-empty string (Rust-only, ADR-008).
+    literal_first: Vec<Option<u8>>,
     /// Back references and conditions: group number and the path to them.
     reads: Vec<(usize, Vec<TreeStep>)>,
     /// Groups that need a push whatever their reads (capture seen twice,
@@ -8439,6 +8442,16 @@ struct BackrefPushScan {
 }
 
 impl BackrefPushScan {
+    /// Whether the read at `read` of group `g` always sees the capture of
+    /// `g` written on its path: the group is linear and occurs once, and the
+    /// read follows it (`read_follows_group`).
+    fn read_sees_group_set(&self, g: usize, read: &[TreeStep]) -> bool {
+        match self.groups.get(g) {
+            Some(Some((group, true))) => read_follows_group(group, read),
+            _ => false,
+        }
+    }
+
     fn enter(&mut self, container: usize, child: u32, ordered: bool, linear: bool) {
         self.path.push(TreeStep {
             container,
@@ -8505,6 +8518,11 @@ impl BackrefPushScan {
                             mem_status_on(&mut self.forced, g);
                         } else {
                             self.groups[g] = Some((self.path.clone(), self.non_linear == 0));
+                            if self.literal_first.len() <= g {
+                                self.literal_first.resize(g + 1, None);
+                            }
+                            self.literal_first[g] =
+                                bn.body.as_deref().and_then(plain_literal_first_byte);
                         }
                     }
                 }
@@ -8612,15 +8630,64 @@ fn backref_groups_needing_push(root: &Node, env: &ParseEnv) -> MemStatusType {
     }
     let mut needed = scan.forced;
     for (g, read) in &scan.reads {
-        let safe = match scan.groups.get(*g) {
-            Some(Some((group, true))) => read_follows_group(group, read),
-            _ => false,
-        };
-        if !safe {
+        if !scan.read_sees_group_set(*g, read) {
             mem_status_on(&mut needed, *g);
         }
     }
     needed & env.backrefed_mem
+}
+
+/// Rust-only (ADR-008): the first byte of each back-referenced group whose
+/// capture is a plain, case-sensitive, non-empty string, and whose every read
+/// sees the capture written on its path (the analysis of
+/// `backref_groups_needing_push`). Such a group reads the same bytes at every
+/// attempt: a back reference to it compares its first byte with the byte at
+/// the position first, so a failed comparison there is the whole failure.
+/// Index 0 and every other group are `None`.
+fn backref_literal_first_bytes(root: &Node, env: &ParseEnv) -> [Option<u8>; MEM_STATUS_BITS_NUM] {
+    let mut first = [None; MEM_STATUS_BITS_NUM];
+    if env.backrefed_mem == 0 || env.num_call > 0 {
+        return first;
+    }
+    let mut scan = BackrefPushScan {
+        backrefed: env.backrefed_mem,
+        ..BackrefPushScan::default()
+    };
+    scan.scan(root);
+    if scan.give_up {
+        return first;
+    }
+    let mut unsafe_reads: MemStatusType = 0;
+    for (g, read) in &scan.reads {
+        if !scan.read_sees_group_set(*g, read) {
+            mem_status_on(&mut unsafe_reads, *g);
+        }
+    }
+    for (g, slot) in first.iter_mut().enumerate().skip(1) {
+        if mem_status_at(scan.forced, g) || mem_status_at(unsafe_reads, g) {
+            continue;
+        }
+        if let Some(Some((_, true))) = scan.groups.get(g) {
+            *slot = scan.literal_first.get(g).copied().flatten();
+        }
+    }
+    first
+}
+
+/// The first byte of a group body that is a plain string: case-sensitive
+/// (no `(?i)` status, whose strings compile to folded instructions) and
+/// non-empty.
+fn plain_literal_first_byte(body: &Node) -> Option<u8> {
+    match &body.inner {
+        NodeInner::String(sn)
+            if !sn.s.is_empty()
+                && !body.has_status(ND_ST_IGNORECASE)
+                && !body.has_status(ND_ST_LITERAL_ALT) =>
+        {
+            Some(sn.s[0])
+        }
+        _ => None,
+    }
 }
 
 // ============================================================================
@@ -11123,7 +11190,7 @@ fn compile_parsed(
     }
 
     refresh_capture_tracking_requirement(reg);
-    guard_backtrack_pushes(reg);
+    guard_backtrack_pushes(reg, &backref_literal_first_bytes(&root, env));
     fuse_ascii_class_runs(reg);
     crate::leading_run::plan(reg);
     reg.literal_prefix = crate::leading_run::plan_literal_prefix(&root, reg).map(Box::new);
@@ -11134,6 +11201,9 @@ fn compile_parsed(
     // Rust-only (ADR-008): a program that is only its exact string answers
     // the forward literal search (`pure_literal_first`).
     reg.pure_literal = detect_pure_literal(reg);
+    // Rust-only (ADR-008): whether the iterators may step past an empty match
+    // without searching again from its end.
+    reg.skip_repeated_empty_search = detect_skip_repeated_empty_search(reg);
     // Rust-only (ADR-008): the seek approximation for the scanner's DFA
     // pre-filter, read from the same tuned tree, for scanner patterns only.
     #[cfg(feature = "dfa-prefilter")]
@@ -11199,6 +11269,50 @@ thread_local! {
         const { std::cell::Cell::new(false) };
 }
 
+/// Rust-only (ADR-008): the byte that the path from `pc` must consume first,
+/// for the lazy dot loop of `PushLazyAnyChar`, which sits in front of `pc`.
+/// The path runs capture ends (`MemEnd`), then negative one-character
+/// look-behinds, and then a plain string, or a back reference to a literal
+/// group (`literal_first`). The capture ends come first: each position the
+/// loop visits then writes them, so the last write is the loop's stop, as in
+/// the instruction loop. A look-behind only rejects a position. `None` for
+/// anything else, including a back reference to the loop's own group.
+fn lazy_literal_byte(
+    reg: &RegexType,
+    mut pc: usize,
+    literal_first: &[Option<u8>; MEM_STATUS_BITS_NUM],
+) -> Option<u8> {
+    let mut look_behind = false;
+    loop {
+        let op = reg.ops.get(pc)?;
+        match (op.opcode, &op.payload) {
+            (OpCode::MemEnd, OperationPayload::MemoryEnd { .. }) if !look_behind => pc += 1,
+            (
+                OpCode::LookBehindOp,
+                OperationPayload::LookBehindOp {
+                    char_len: 1,
+                    not: true,
+                    ..
+                },
+            ) => {
+                look_behind = true;
+                pc += 2;
+            }
+            (
+                OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5,
+                OperationPayload::Exact { s },
+            ) => return Some(s[0]),
+            (OpCode::StrN, OperationPayload::ExactN { s, .. }) => return s.first().copied(),
+            (OpCode::BackRef1, _) => return literal_first[1],
+            (OpCode::BackRef2, _) => return literal_first[2],
+            (OpCode::BackRefN, OperationPayload::BackRefN { n1 }) => {
+                return literal_first.get(*n1 as usize).copied().flatten();
+            }
+            _ => return None,
+        }
+    }
+}
+
 /// Rust-only (ADR-008): turn a `Push` whose main path can only start with
 /// some bytes into `PushOrJumpByteSet`, upstream's `PUSH_OR_JUMP_EXACT1`
 /// generalized to a byte set. When the current byte cannot start the main
@@ -11215,7 +11329,7 @@ thread_local! {
 /// a loop that grows the stack without consuming input, so a guard that
 /// skipped the count would let such a loop push several times as many
 /// entries as C before the limit trips.
-fn guard_backtrack_pushes(reg: &mut RegexType) {
+fn guard_backtrack_pushes(reg: &mut RegexType, literal_first: &[Option<u8>; MEM_STATUS_BITS_NUM]) {
     use crate::first_bytes::GuardRetries;
     #[cfg(test)]
     if PUSH_GUARDS_DISABLED.with(|disabled| disabled.get()) {
@@ -11239,22 +11353,16 @@ fn guard_backtrack_pushes(reg: &mut RegexType) {
                 .ops
                 .get(pc + 1)
                 .is_some_and(|op| op.opcode == OpCode::MemEnd)
-            && reg.ops.get(pc + 2).is_some_and(|op| {
-                matches!(
-                    op.opcode,
-                    OpCode::Str1
-                        | OpCode::Str2
-                        | OpCode::Str3
-                        | OpCode::Str4
-                        | OpCode::Str5
-                        | OpCode::StrN
-                )
-            })
             && (std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
                 || std::ptr::addr_eq(reg.enc, &crate::encodings::ascii::ONIG_ENCODING_ASCII))
         {
-            reg.ops[pc].opcode = OpCode::PushLazyAnyChar;
-            continue;
+            if let Some(c) = lazy_literal_byte(reg, pc + 1, literal_first) {
+                reg.ops[pc] = Operation {
+                    opcode: OpCode::PushLazyAnyChar,
+                    payload: OperationPayload::PushLazyAnyChar { addr, c },
+                };
+                continue;
+            }
         }
         // Most branches start with a literal (only string instructions carry
         // these payloads), whose first byte is the whole guard.
@@ -11544,6 +11652,22 @@ fn detect_pure_literal(reg: &RegexType) -> bool {
     bytes == reg.exact.as_slice()
 }
 
+/// Rust-only (ADR-008): whether a search from the end of an empty match can
+/// only find that match again, so an iterator may step past it. The match
+/// attempt at a position depends on the text and not on where the search
+/// started, unless the program reads the search start (`\G`), keeps a
+/// different match start (`\K`) or runs callouts, which observe every search.
+fn detect_skip_repeated_empty_search(reg: &RegexType) -> bool {
+    !reg.keep_moves_match_start
+        && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
+        && !reg.ops.iter().any(|op| {
+            matches!(
+                op.opcode,
+                OpCode::CheckPosition | OpCode::CalloutContents | OpCode::CalloutName
+            )
+        })
+}
+
 /// Create and compile a new regex - mirrors C's onig_new().
 /// This is the main public API entry point.
 pub fn onig_new(
@@ -11672,6 +11796,7 @@ fn onig_new_with_choices(
         exact: Vec::new(),
         exact_finder: None,
         pure_literal: false,
+        skip_repeated_empty_search: false,
         map: [0u8; CHAR_MAP_SIZE],
         map_offset: 0,
         map_bytes: [0u8; 3],
@@ -12166,6 +12291,7 @@ mod tests {
             exact: Vec::new(),
             exact_finder: None,
             pure_literal: false,
+            skip_repeated_empty_search: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],
