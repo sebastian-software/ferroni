@@ -86,6 +86,8 @@ pub(crate) const ND_ST_FIXED_MAX: u32 = 1 << 1;
 pub(crate) const ND_ST_FIXED_CLEN: u32 = 1 << 2;
 pub(crate) const ND_ST_MARK1: u32 = 1 << 3;
 pub(crate) const ND_ST_MARK2: u32 = 1 << 4;
+/// Set by `tune_next` on the bag it makes for automatic possessification,
+/// and on no other node (`dfa_prefilter::automatic_possessive` reads it).
 pub(crate) const ND_ST_STRICT_REAL_REPEAT: u32 = 1 << 5;
 pub(crate) const ND_ST_RECURSION: u32 = 1 << 6;
 pub(crate) const ND_ST_CALLED: u32 = 1 << 7;
