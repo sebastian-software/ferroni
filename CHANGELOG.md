@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.2.1](https://github.com/sebastian-software/ferroni/compare/v2.2.0...v2.2.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **bench:** keep retained evidence valid across a release version bump ([#397](https://github.com/sebastian-software/ferroni/issues/397)) ([afcefda](https://github.com/sebastian-software/ferroni/commit/afcefda1574740d1587d7c20c83dbcbb8e725917))
+
+
+### Performance Improvements
+
+* **api:** keep one search state across an iterator's searches ([#400](https://github.com/sebastian-software/ferroni/issues/400)) ([1c8d45f](https://github.com/sebastian-software/ferroni/commit/1c8d45f57677ddd9f52bd45c75297c113ceb9bd6))
+* **regexec:** answer anchored captures without the search wrappers ([#399](https://github.com/sebastian-software/ferroni/issues/399)) ([1f2d2e1](https://github.com/sebastian-software/ferroni/commit/1f2d2e12e6a8b04888c69e01cae5b1c3219c5c26))
+* **regexec:** inline map_search's character loop again ([#396](https://github.com/sebastian-software/ferroni/issues/396)) ([29d37cf](https://github.com/sebastian-software/ferroni/commit/29d37cfef03eddcc6e7cbfa2b8f3e24fe3162520))
+
 ## [2.2.0](https://github.com/sebastian-software/ferroni/compare/v2.1.3...v2.2.0) (2026-10-15)
 
 
