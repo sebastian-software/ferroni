@@ -65,10 +65,11 @@ and test inputs from real projects, including Django, Fluent Bit, Rails and
 WordPress. Preparing a regex, its first use and repeated use are measured
 separately on ARM64/macOS and x86-64/Linux.
 
-Ferroni's standard API is competitive with C Oniguruma for repeated use in this
-corpus, with a stronger aggregate advantage on ARM and mixed results on Linux.
-PCRE2 JIT is faster in every source-backed reuse case; Rust `regex` is faster in the
-aggregate on its smaller supported subset. The tables include cases that favor
+Ferroni's standard API takes less time than C Oniguruma for repeated use in
+this corpus's aggregate on both platforms, with a stronger advantage on ARM; a
+few cases favor C on Linux. PCRE2 JIT is faster in almost every source-backed
+reuse case; Rust `regex` is about even in the aggregate on its smaller supported
+subset. The tables include cases that favor
 each engine, unsupported patterns and inconclusive results. Ferroni's fallible
 API is a separate profile because its match-workspace allocation affects reuse
 costs.

@@ -98,9 +98,12 @@ function CostNotes() {
         <strong>Preparation changes the comparison.</strong> C Oniguruma takes about{" "}
         {Math.round((1 - armCompile.family_weighted_ratio) * 100)}% less time to compile on ARM and{" "}
         {Math.round((1 - x86Compile.family_weighted_ratio) * 100)}% less on Linux in this corpus.
-        PCRE2 JIT leads every source-backed reuse case on both platforms; fancy-regex has a similar
-        aggregate reuse time to Ferroni. The tested Rust <code>regex</code> configuration covers
-        fewer of these tasks and offers guaranteed linear-time matching for its supported syntax.
+        Ferroni builds a lazy DFA alongside each regex by default, which adds to its compile time;{" "}
+        <code>RegexBuilder::dfa(false)</code> skips it for a pattern used only a few times. PCRE2
+        JIT leads almost every source-backed reuse case on both platforms; Ferroni takes less
+        aggregate reuse time than fancy-regex. The tested Rust <code>regex</code> configuration
+        covers fewer of these tasks, is about even with Ferroni on them in the aggregate and offers
+        guaranteed linear-time matching for its supported syntax.
       </p>
       <p>
         <strong>The API path also matters.</strong> Ferroni&rsquo;s standard methods can reuse
@@ -129,9 +132,9 @@ function RunNote() {
         {data.run.head_sha.slice(0, 7)}
       </a>
       . Later engine changes are outside these results. {data.case_count} source-backed regex tasks,{" "}
-      {data.input_count} test inputs, {data.platforms[0].repetitions} process repetitions on one VM
-      per platform. Only engines that return the required output are timed. Scanner calls, full
-      highlighting and memory usage are outside this measurement.
+      {data.input_count} test inputs, {data.platforms[0].repetitions} process repetitions per
+      platform, each on its own VM. Only engines that return the required output are timed. Scanner
+      calls, full highlighting and memory usage are outside this measurement.
     </p>
   );
 }
