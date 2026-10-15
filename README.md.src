@@ -66,11 +66,10 @@ WordPress. Preparing a regex, its first use and repeated use are measured
 separately on ARM64/macOS and x86-64/Linux.
 
 Ferroni's standard API takes less time than C Oniguruma for repeated use in
-this corpus's aggregate on both platforms, with a stronger advantage on ARM; a
-few cases favor C on Linux. PCRE2 JIT is faster in almost every source-backed
-reuse case; Rust `regex` is about even in the aggregate on its smaller supported
-subset. The tables include cases that favor
-each engine, unsupported patterns and inconclusive results. Ferroni's fallible
+this corpus's aggregate on both platforms, and no case favors C. PCRE2 JIT is
+faster in most source-backed reuse cases and in the aggregate, while Ferroni
+leads in a few; on Rust `regex`'s smaller supported subset, Ferroni takes less
+time in the aggregate. The tables include cases that favor each engine, unsupported patterns and inconclusive results. Ferroni's fallible
 API is a separate profile because its match-workspace allocation affects reuse
 costs.
 
