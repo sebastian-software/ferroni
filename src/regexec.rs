@@ -1556,6 +1556,10 @@ impl From<&OnigMatchParam> for SearchLimits {
     }
 }
 
+/// The position `MatchArg::capture_position` holds before the first attempt of a
+/// two-pass search: that attempt records captures.
+const FIRST_ATTEMPT: usize = usize::MAX;
+
 pub(crate) struct MatchArg {
     pub options: OnigOptionType,
     pub region: Option<OnigRegion>,
@@ -1585,9 +1589,11 @@ pub(crate) struct MatchArg {
     /// this length (`onig_search_bounds`).
     pub(crate) match_len: i32,
     /// Rust-only: while set, a search with a region records captures only in
-    /// an attempt at this position. Other attempts run untracked and leave
-    /// the region alone; a match there runs again to record its captures
-    /// (`onig_search_inner_two_pass`).
+    /// one attempt: the attempt at this position, or, while it is
+    /// `FIRST_ATTEMPT`, the first attempt the search makes, which then sets
+    /// its own position. Other attempts run untracked and leave the region
+    /// alone; a match at a position that did not record its captures runs
+    /// again to record them (`onig_search_inner_two_pass`).
     pub(crate) capture_position: Option<usize>,
     // Reusable VM state (avoids heap allocation per match_at call)
     stack: Vec<StackEntry>,
@@ -3930,6 +3936,14 @@ fn match_at_in_scan(
     msa: &mut MatchArg,
     scan: Option<&mut ForwardScan<'_>>,
 ) -> i32 {
+    // Rust-only (ADR-008): the first attempt of a two-pass search records its
+    // captures and makes no further attempt. The scan goes on from its
+    // position as the search loop does, so the attempts after it stay
+    // untracked.
+    if msa.region.is_some() && reg.num_mem > 0 && msa.capture_position == Some(FIRST_ATTEMPT) {
+        msa.capture_position = Some(sstart);
+        return match_at_impl::<true, false>(reg, str_data, end, in_right_range, sstart, msa, None);
+    }
     // Untracked runs skip the MemStartPush/MemEndPush stack entries. With a
     // match stack limit configured that would change when the limit trips,
     // so such runs keep the bookkeeping to stay observably identical to C.
@@ -8284,10 +8298,10 @@ fn onig_search_inner_two_pass(
         );
     }
 
-    // The attempt at `start` records its captures as it matches: a match
-    // there, the common case of a scanner search, needs no second pass.
-    // Later attempts run untracked.
-    msa.capture_position = Some(start);
+    // The first attempt the search makes records its captures as it matches:
+    // a match there, the common case of a scanner search, needs no second
+    // pass. Later attempts run untracked.
+    msa.capture_position = Some(FIRST_ATTEMPT);
     // Rust-only (ADR-008): the map search's own first checks, read here so
     // that a pattern they reject does not pay for the call.
     let mapped = if capture_map_may_apply(reg) {
@@ -8317,8 +8331,8 @@ fn onig_search_inner_two_pass(
             msa,
         )
     });
-    msa.capture_position = None;
-    if match_start < 0 || match_start as usize == start {
+    let tracked_at = msa.capture_position.take();
+    if match_start < 0 || Some(match_start as usize) == tracked_at {
         return match_start;
     }
 
@@ -8448,7 +8462,10 @@ fn capture_map_search(
         msa.best_len = ONIG_MISMATCH;
         msa.best_s = 0;
         // The first candidate may be the attempt that records captures.
-        let result = if msa.capture_position == Some(at) {
+        let result = if msa
+            .capture_position
+            .is_some_and(|tracked| tracked == at || tracked == FIRST_ATTEMPT)
+        {
             match_at(reg, text, end, right_range, at, msa)
         } else {
             scan.at = at;
@@ -11526,6 +11543,7 @@ mod tests {
             exact: Vec::new(),
             exact_finder: None,
             pure_literal: false,
+            skip_repeated_empty_search: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],

@@ -99,8 +99,10 @@ cannot change the result, as [ADR-008](../adr/008-rust-only-optimizations)
 describes; the `*_with` methods never use it. A retry limit per match other
 than the default, a search retry budget, a stack limit or a timeout make the
 engine attempt what C Oniguruma attempts, so the limit stops the search where
-C's does. Set them where untrusted input calls for it,
-and leave them unset where it does not.
+C's does. The iterators are the exception: after an empty match they do not
+search again from its end, so an iteration under a limit can finish where a C
+search loop stops on that repeated search. Set them where untrusted input calls
+for it, and leave them unset where it does not.
 
 The process-wide values can be changed for every search at once with
 `onig_set_time_limit`, `onig_set_retry_limit_in_match`,

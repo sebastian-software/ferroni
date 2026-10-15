@@ -719,6 +719,12 @@ pub struct RegexType {
     /// search answers a search that sees all of its subject without entering
     /// the VM (`pure_literal_first`). Set by `detect_pure_literal`.
     pub(crate) pure_literal: bool,
+    /// Rust-only (ADR-008): the program has no `\G` (`CheckPosition`), no `\K`
+    /// and no callout, so a search from the end of an empty match finds that
+    /// same empty match again. The match iterators then step past it without
+    /// that search (`MatchCursor::accept`). Set by
+    /// `detect_skip_repeated_empty_search` when compilation ends.
+    pub(crate) skip_repeated_empty_search: bool,
     pub(crate) map: [u8; CHAR_MAP_SIZE],
     pub(crate) map_offset: i32,
     pub(crate) map_bytes: [u8; 3],
