@@ -43,7 +43,7 @@ Host: macOS-26.3-arm64-arm-64bit-Mach-O; 6 visible CPUs.
 | regex | compile | 10 | 5 | 1.776 | 6 | 4 | 0 |
 | regex | first_use | 10 | 5 | 1.801 | 6 | 4 | 0 |
 
-The exact common cases and all absolute timings are available in `publication.json` and in the website's case tables.
+The exact common cases and all absolute timings are available in `publication.json`.
 
 ## linux-x86-64
 
@@ -76,7 +76,7 @@ Host: Linux-6.6.141-x86_64-with-glibc2.39; 4 visible CPUs.
 | regex | compile | 10 | 5 | 1.665 | 6 | 4 | 0 |
 | regex | first_use | 10 | 5 | 1.645 | 5 | 4 | 1 |
 
-The exact common cases and all absolute timings are available in `publication.json` and in the website's case tables.
+The exact common cases and all absolute timings are available in `publication.json`.
 
 ## Regenerate and check
 

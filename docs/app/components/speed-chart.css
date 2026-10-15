@@ -1,0 +1,151 @@
+/*
+ * The kit's bar list, with bars that grow from 1× in both directions on a
+ * log scale. One column template is shared by the rows, the axis and the side
+ * labels, so every track lines up with the ticks under it.
+ */
+.fr-speed {
+  --fr-columns: 11.5rem minmax(0, 1fr) 4.5rem;
+}
+
+.fr-speed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.75rem 2rem;
+  margin-bottom: 1rem;
+}
+
+.fr-speed-head .fam-compare-caption {
+  max-width: 46ch;
+  margin: 0;
+}
+
+.fr-speed-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line-heavy);
+}
+
+.fr-speed-toggle button {
+  min-height: 2.75rem;
+  padding: 0.5rem 0.875rem;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font:
+    600 0.8125rem/1 var(--display),
+    var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.fr-speed-toggle button + button {
+  border-left: 1px solid var(--line-heavy);
+}
+
+.fr-speed-toggle button[aria-pressed="true"] {
+  background: var(--iron);
+  color: var(--iron-ink);
+}
+
+.fr-speed-toggle button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.fr-speed .fam-bars-list,
+.fr-speed-axis,
+.fr-speed-legend {
+  grid-template-columns: var(--fr-columns);
+  column-gap: 1.25rem;
+}
+
+.fr-speed-axis,
+.fr-speed-legend {
+  display: grid;
+}
+
+.fr-speed-track {
+  position: relative;
+  display: block;
+  height: 1.25rem;
+}
+
+/* 1× is the baseline every bar grows from. */
+.fr-speed-parity {
+  position: absolute;
+  inset-block: -0.75rem;
+  border-left: 2px solid var(--ink);
+}
+
+.fr-speed-fill {
+  position: absolute;
+  inset-block: 0;
+  background: var(--rust);
+  border-radius: 0 4px 4px 0;
+}
+
+.fam-bar[data-direction="slower"] .fr-speed-fill {
+  background: var(--ink-soft);
+  border-radius: 4px 0 0 4px;
+}
+
+.fr-speed-ticks,
+.fr-speed-sides {
+  position: relative;
+  grid-column: 2;
+}
+
+.fr-speed-ticks {
+  height: 1.75rem;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-speed-ticks span {
+  position: absolute;
+  top: 0.5rem;
+  transform: translateX(-50%);
+}
+
+/* The outer ticks sit at the track's edges: keep their labels inside it. */
+.fr-speed-ticks span:first-child {
+  transform: none;
+}
+
+.fr-speed-ticks span:last-child {
+  transform: translateX(-100%);
+}
+
+.fr-speed-sides {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.25rem;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 40rem) {
+  .fr-speed {
+    --fr-columns: minmax(0, 1fr) 4rem;
+  }
+
+  /* The label sits on its own line above the bar: the baseline must not cross it. */
+  .fr-speed-parity {
+    inset-block: -0.25rem;
+  }
+
+  .fr-speed-axis > span:first-child,
+  .fr-speed-legend > span:first-child {
+    display: none;
+  }
+
+  .fr-speed-ticks,
+  .fr-speed-sides {
+    grid-column: 1;
+  }
+}

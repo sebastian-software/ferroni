@@ -1,77 +1,68 @@
-// cspell:words subexpression Onigmo syntect
-import { Ledger, Principles, Section } from "ferramenta-family";
+import { Section } from "ferramenta-family";
 import { Link } from "react-router";
 import { patternHtml } from "virtual:ferroni-sample";
 
+import capabilities from "../data/regex-capabilities.json";
 import walkthrough from "../data/regex-walkthrough.json";
 import { PatternExample } from "./pattern-example";
+import { RegexFeatureMatrix } from "./regex-feature-matrix";
 
-export function FitSection() {
-  return (
-    <Section
-      id="fr-fit"
-      title="Does Ferroni fit your project?"
-      intro="Start with the behavior your application needs."
-    >
-      <Principles
-        items={[
-          {
-            heading: "Use richer regex syntax",
-            text: (
-              <>
-                Use lookaround, backreferences, conditionals and subexpression calls.{" "}
-                <a href="#fr-syntax">Explore matching examples</a>.
-              </>
-            ),
-          },
-          {
-            heading: "Replace C Oniguruma",
-            text: (
-              <>
-                Keep compatible ASCII and UTF-8 patterns while removing the C toolchain from your
-                build. <Link to="/guide/compatibility">Check compatibility and scope</Link>.
-              </>
-            ),
-          },
-          {
-            heading: "Run TextMate grammars",
-            text: (
-              <>
-                Build editors and highlighters with the multi-pattern Scanner and UTF-16 offsets.{" "}
-                <a href="#fr-scanner">See how scanning works</a>.
-              </>
-            ),
-          },
-        ]}
-      />
-      <p className="fam-note">
-        For patterns that fit Rust&rsquo;s <code>regex</code> crate, prefer its guaranteed
-        linear-time matching. Ferroni uses backtracking;{" "}
-        <Link to="/guide/untrusted-input">set limits for untrusted input</Link>.
-      </p>
-    </Section>
+type Feature = (typeof capabilities.features)[number];
+
+function supports(feature: Feature, engine: string) {
+  return Object.entries(feature.support).some(([id, supported]) => id === engine && supported);
+}
+
+/* The Rust engines of the matrix that hold every feature it lists, Ferroni among them. */
+function completeRustEngines() {
+  return capabilities.engines.filter(
+    (engine) =>
+      engine.language === "Rust" &&
+      capabilities.features.every((feature) => supports(feature, engine.id)),
   );
 }
 
 export function SyntaxSection() {
+  const complete = completeRustEngines();
+  if (complete.length !== 1 || complete[0].id !== "rust") {
+    throw new Error(
+      "Revise the syntax section: Ferroni is no longer the one complete Rust engine.",
+    );
+  }
   return (
     <Section
       id="fr-syntax"
-      title="See what the pattern selects"
-      intro="Each highlighted match below comes from running Ferroni. Look-behind and backreferences extend the syntax available in Rust’s regex crate; Unicode properties are useful in both engines."
+      title="Run the patterns regex rejects"
+      intro={
+        <>
+          Rust&rsquo;s <code>regex</code> crate leaves out look-around and backreferences to
+          guarantee linear time. When your patterns need them, Ferroni runs them as Oniguruma does,
+          in all twelve of its syntax modes. Of the Rust engines below, it is the only one with
+          every feature in the table.
+        </>
+      }
+      note={
+        <>
+          Each mark is an executable check against the pinned engines.{" "}
+          <Link to="/perf/regex-workloads">The matrix with its notes</Link>
+          {" · "}
+          <Link to="/guide/coming-from-regex#syntax-beyond-the-regex-crate">Worked examples</Link>
+        </>
+      }
     >
-      <div className="fr-examples">
-        {walkthrough.syntax.map((example, index) => (
-          <PatternExample key={example.title} example={example} html={patternHtml[index]} />
-        ))}
-      </div>
-      <p className="fam-note">
-        <Link to="/guide/getting-started">Use these patterns with the Regex API</Link> ·{" "}
-        <a href="https://github.com/sebastian-software/ferroni/blob/main/examples/website_walkthrough.rs">
-          Run the walkthrough example
-        </a>
-      </p>
+      <RegexFeatureMatrix />
     </Section>
+  );
+}
+
+/** Three matches with syntax the regex crate rejects, each from running Ferroni. */
+export function SyntaxExamples() {
+  return (
+    <div className="fr-examples">
+      {walkthrough.syntax.map((example, index) => (
+        <PatternExample key={example.title} example={example} html={patternHtml[index]} />
+      ))}
+    </div>
   );
 }
 
@@ -92,105 +83,24 @@ export function ScannerWalkthrough() {
           {scanner.input.slice(scanner.steps.at(-1)?.end ?? 0)}
         </code>
       </pre>
-      <ul className="fr-patterns">
-        {scanner.patterns.map((pattern, index) => (
-          <li key={pattern}>
-            <strong>
-              {index}: {names[index]}
-            </strong>{" "}
-            <code>{pattern}</code>
-          </li>
-        ))}
-      </ul>
       <ol className="fr-steps">
         {scanner.steps.map((step) => (
           <li key={step.from}>
-            Search from <code>{step.from}</code>: pattern <code>{step.index}</code> selects{" "}
-            <code>{step.matched}</code> at UTF-16 offsets{" "}
-            <code>
-              {step.start}–{step.end}
-            </code>
-            .
+            <strong>{names[step.index]}</strong> <code>{scanner.patterns[step.index]}</code>
+            <span>
+              From offset <code>{step.from}</code>, it selects <code>{step.matched}</code> at{" "}
+              <code>
+                {step.start}–{step.end}
+              </code>
+              .
+            </span>
           </li>
         ))}
       </ol>
       <p className="fam-note">
-        All patterns compete on each search. The earliest match wins; a tie goes to the earlier
-        pattern in the list. Continue at the previous match&rsquo;s end. This ASCII line has the
-        same byte and UTF-16 offsets.
+        All patterns compete on each search; the earliest match wins, and the next search starts
+        where it ended.
       </p>
     </figure>
-  );
-}
-
-const maintenance = [
-  {
-    name: "Bug fixes and compatibility",
-    status: "Maintained",
-    settled: true,
-    detail: "Fix bugs and parity differences against C Oniguruma.",
-  },
-  {
-    name: "Unicode tables",
-    status: "Annual update",
-    settled: true,
-    detail: "Follow the annual Unicode Character Database release.",
-  },
-  {
-    name: "Toolchain and dependencies",
-    status: "Maintained",
-    settled: true,
-    detail:
-      "Keep the Rust toolchain and dependencies working. Raise the MSRV only when a fix or dependency requires it, with release notes.",
-  },
-  {
-    name: "Security",
-    status: "Latest release",
-    settled: true,
-    detail:
-      "Security fixes target the latest release. Report suspected vulnerabilities privately through the security policy.",
-  },
-];
-
-export function StatusSection() {
-  return (
-    <Section
-      id="project-status"
-      title="Feature-complete and maintained"
-      intro="Ferroni’s scope is Oniguruma syntax for ASCII and UTF-8, plus the vscode-oniguruma scanner. No feature work is planned."
-    >
-      <Ledger entries={maintenance} />
-      <p className="fam-note">
-        The other 27 encodings (
-        <Link to="/adr/003-encoding-scope-ascii-and-utf8-only">ADR-003</Link>), the POSIX and GNU
-        APIs (<Link to="/adr/012-posix-and-gnu-api-not-ported">ADR-012</Link>) and{" "}
-        <a href="https://github.com/sebastian-software/ferroni/issues/159">opt-in Onigmo syntax</a>{" "}
-        are outside the planned scope.
-      </p>
-      <p className="fam-note">
-        Issues are welcome and triaged as time allows. Pull requests must keep{" "}
-        <Link to="/adr/001-one-to-one-parity-with-c-original">
-          structural parity with C Oniguruma
-        </Link>
-        . The{" "}
-        <a href="https://github.com/sebastian-software/ferroni/labels/help%20wanted">
-          help wanted issues
-        </a>{" "}
-        identify contribution opportunities, including the{" "}
-        <a href="https://github.com/sebastian-software/ferroni/issues/252">
-          syntect backend integration
-        </a>
-        .
-      </p>
-      <p className="fam-note">
-        <a href="https://github.com/sebastian-software/ferroni/blob/main/CONTRIBUTING.md">
-          Contributing
-        </a>{" "}
-        ·{" "}
-        <a href="https://github.com/sebastian-software/ferroni/blob/main/SECURITY.md">
-          Security policy and private reporting
-        </a>
-      </p>
-    </Section>
   );
 }

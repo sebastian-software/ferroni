@@ -3,55 +3,22 @@ order: 1
 title: "Regex Benchmarks"
 ---
 
-import { ProductionComparison, TokenizerComparison } from "../../components/production-comparison";
-import { ProductionSummary } from "../../components/production-summary";
 import { RegexFeatureMatrix } from "../../components/regex-feature-matrix";
+import { SpeedSummary } from "../../components/speed-summary";
 
 # Regex Benchmarks
 
-How quickly can each engine validate text, extract captures, replace matches or
-split graphemes? These comparisons use patterns and test inputs from real
-projects, from simple expressions to complex patterns and advanced Oniguruma
-features. Every engine has to return the required output before it is timed.
+Ferroni is compared with C Oniguruma, Ruby's Onigmo, PCRE2 (interpreter and
+JIT), fancy-regex and Rust's `regex` crate on regex tasks taken from ten
+open-source projects. Every engine has to reproduce each task's expected output
+before it is timed. This page shows the summary; every table and the raw
+measurements are [in the repository](#all-numbers-and-raw-data).
 
-The results come from repeated Blacksmith measurements on ARM64/macOS and
-x86-64/Linux. They measure isolated regex steps. Complete applications,
-TextMate Scanner calls and Ferriki highlighting have separate boundaries.
+## Results
 
-## Results at a glance
+<SpeedSummary />
 
-<RegexFeatureMatrix />
-
-<ProductionSummary />
-
-## Inspect individual cases
-
-Choose a platform, phase and comparator to inspect the work that matters to your
-application. **Compile** measures preparing one pattern. **Compile + first use**
-adds its first input. **Steady reuse** applies a prepared regex to the complete
-input batch. These phases measure different amounts of work; their absolute
-times cannot be compared as though each were one search.
-
-The baseline is Ferroni's **standard public API**. Select **Ferroni error-aware
-API** to compare the fallible `*_with` methods directly. Unsupported syntax,
-different output and inconclusive timings remain visible in the tables.
-
-<ProductionComparison />
-
-Some compile and first-use measurements vary substantially between processes;
-the displayed ranges include every run. Interval envelopes retain each process's
-95% Criterion confidence interval. They are a descriptive screening aid, not a
-cross-process significance test. Each repetition ran on its own VM of the
-platform's runner type, so the ranges include variation between hosts; a
-Ferroni time is only divided by a comparator time from the same VM. Host power
-and thermal state were unavailable. This run did not measure memory.
-
-## Patterns with a source
-
-The checked-in
-[catalog](https://github.com/sebastian-software/ferroni/blob/main/benches/production_regex/catalog.json)
-records each original pattern, pinned source/hash, flags, dialect recipe,
-operation, fixture source, oracle runtime, expected byte output and license.
+## What is measured
 
 | Application                                                                                                                                 | Measured regex work                                                 |
 | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -66,108 +33,55 @@ operation, fixture source, oracle runtime, expected byte output and license.
 | [WordPress](https://github.com/WordPress/wordpress-develop/blob/5744bc5803c71ad1bf3d4da5f8fc580bf4f995b9/src/wp-includes/shortcodes.php)    | Shortcode matches and all six captures                              |
 | [Symfony String](https://github.com/symfony/string/blob/02470500a9cddcebc6d6092fc7f97bb673ed9d7d/UnicodeString.php)                         | Grapheme chunk strings on already normalized input                  |
 
-These are isolated regex steps. They do not time the complete validators,
-parsers, templates, entity extraction or rendering applications. The 513
-upstream-derived inputs establish expected semantics, not a production traffic
-distribution. Four additional literal probes vary match position explicitly on
-a controlled derivative of a real log record.
+These are isolated regex steps, not the complete validators, parsers or
+renderers. The 513 upstream-derived inputs define the expected output; they are
+not a model of production traffic.
 
-Linkify-it's UTF-16 HTTP-tail expression and PHP-CS-Fixer's recursive type
-grammar remain documented candidates. The former needs a faithful native UTF-8
-translation. The latter already exposes a consumed recursive-capture difference;
-whole-match agreement would not be enough to admit it.
+- **Same output first.** An engine that rejects a pattern or returns a
+  different result is left out of that task instead of being timed.
+- **Three phases.** Compile prepares one pattern, first use adds its first
+  input, and steady reuse runs a prepared pattern over all of its inputs. The
+  chart shows steady reuse.
+- **Repeated on separate machines.** Three processes per platform, each on its
+  own Blacksmith VM, with 30 Criterion samples per phase. A task counts for one
+  engine only when all three runs agree; otherwise it is inconclusive.
+- **One aggregate per pair.** The geometric mean of the median case ratios
+  within each task family, then across families. Each pair covers only the
+  tasks both engines can run, so rows with different task counts are not a
+  ranking.
+- **Standard API.** The baseline uses Ferroni's standard `Regex` methods. The
+  fallible `*_with` methods currently allocate fresh match workspace per search
+  and are slower on reuse; the repository tables list them as
+  `rust_erroraware`.
 
-## Comparable work before comparable speed
+## Syntax coverage
 
-An engine must reproduce every fixture's defined output before timing: boolean,
-first span, captures with unset groups preserved, all captures, replacement string
-or grapheme chunks. Missing syntax, semantic differences, execution errors and
-timeouts have separate statuses. A missing result is not a slow timing or a
-negative match.
+The performance tasks use only part of each engine's syntax. This matrix checks
+selected features directly, one executable example per cell.
 
-Patterns share one documented dialect recipe. Python strict-end anchors,
-ECMAScript ASCII digits and PHP ASCII word classes are explicit. Match-at-offset
-preserves the complete subject when lookbehind needs preceding context. Future
-alternative solutions to the same task need their own profile and must include
-necessary preprocessing and output work.
+<RegexFeatureMatrix />
 
-The Ferroni baseline uses the standard public `Regex` methods, including
-`is_match`, `find_at`, `captures_at` and `captures_iter`. A separate **Ferroni
-error-aware API** profile uses the fallible `*_with` searches and iteration with
-`SearchOptions::new()`. Both use standard `replace_all` for replacement because
-there is no fallible replacement API. Both profiles must pass the source oracles;
-the baseline also receives a fallible preflight check to expose execution errors.
+A check means the illustrated syntax returns the expected match; a cross means
+it is rejected or behaves differently, though a rewritten pattern may still
+solve the task. Variable-length look-behind here includes an unbounded `\s*`;
+multi-character case folding means `strasse` matching `straße` with case
+ignored. The checks live in
+[`tests/regex_feature_matrix.rs`](https://github.com/sebastian-software/ferroni/blob/main/tests/regex_feature_matrix.rs).
 
-The two API paths currently manage match state differently: standard searches
-can reuse the engine's cached workspace, while the parameterized searches create
-fresh workspace. This can affect reuse costs even with empty search options.
-Compilation uses the same builder in both profiles. The measured engine
-implementation is unchanged; these rows expose the API cost separately.
+## All numbers and raw data
 
-The other comparators are C Oniguruma, pinned Ruby
-Onigmo, PCRE2 interpreter/JIT, fancy-regex in Oniguruma mode with seek off/on,
-and Rust regex. Construction includes each profile's contexts and selected JIT.
-PCRE2's bundled source is pinned through the locked `pcre2-sys` dependency.
-Both PCRE2 profiles enable UTF and UCP. Skipping repeated UTF-8 validation for
-already-valid Rust strings does not disable Unicode character classes.
-Replacement/output assembly stays within the operation boundary.
+| What                                                                | Where in the repository                                                                                                                              |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aggregates for every engine, phase and platform                     | [`benches/production_results/README.md`](https://github.com/sebastian-software/ferroni/blob/main/benches/production_results/README.md)               |
+| Every case, timing and range                                        | [`benches/production_results/publication.json`](https://github.com/sebastian-software/ferroni/blob/main/benches/production_results/publication.json) |
+| Raw Criterion samples, logs and source snapshots                    | `evidence.tar.gz` in [`benches/production_results/`](https://github.com/sebastian-software/ferroni/tree/main/benches/production_results)             |
+| Patterns, sources, flags and expected output                        | [`benches/production_regex/catalog.json`](https://github.com/sebastian-software/ferroni/blob/main/benches/production_regex/catalog.json)             |
+| Method, commands and how to add a case                              | [`benches/regex_corpus.md`](https://github.com/sebastian-software/ferroni/blob/main/benches/regex_corpus.md)                                         |
+| LLM pre-tokenization with tiktoken's `cl100k_base` and `o200k_base` | [`benches/additional_results/README.md`](https://github.com/sebastian-software/ferroni/blob/main/benches/additional_results/README.md)               |
 
-## LLM regex pre-tokenization
+Check the published numbers against the raw evidence:
 
-The current [tiktoken patterns](https://github.com/openai/tiktoken/blob/4e71bbe0c078468e00fefbf94b39849389f346e5/tiktoken_ext/openai_public.py)
-for `cl100k_base` and `o200k_base` add a separate application family, inspired
-by regexr's tokenizer examples. Eleven shared upstream inputs per pattern cover
-whitespace, contractions, numbers, multilingual text, emoji and the original
-longer benchmark strings. Every complete match span is checked against Python
-`regex` 2026.1.15 using the original expression.
-
-The bounded possessive number quantifier in `cl100k_base` is written as an
-equivalent atomic group for the Oniguruma-family dialect. Its other constructs
-are preserved. Rejections and semantic differences remain visible; acceptance
-of an older tokenizer example does not establish support for the current pattern.
-
-These timings measure regex pre-tokenization, excluding BPE merges, vocabulary
-lookups, special tokens and complete tokenizer throughput. They have their own
-tables and aggregate and do not change the earlier 21-task aggregate.
-
-<TokenizerComparison />
-
-Eligibility describes these configurations. Rust regex, for example, disables
-octal escapes by default and offers `RegexBuilder::octal(true)`; its rejection
-of Django's email local-part expression in this profile is a dialect-option
-difference. Other configurations or task-equivalent expressions need separate,
-named profiles with the same checked output contract.
-
-A different result is not necessarily a missing feature or a library defect.
-A workload requires its specific retained output, so a result that differs from
-it cannot enter the timing comparison, even where the feature matrix shows
-support for the construct.
-
-## Measurement and interpretation
-
-Compile, compile-plus-first-use and steady reuse are separate lanes. First use
-concerns the first fixture, while steady reuse executes the complete fixture
-batch. These are fresh-pattern costs in a warmed process; they do not measure
-OS-process startup. Memory, where selected, is whole-process peak RSS including
-runtime, catalog, allocator and output, rather than isolated pattern storage.
-
-The runner starts with three independent processes per pair, each on its own
-VM, and 30 Criterion samples per lane. Steady reuse measures three seconds after
-a one-second warm-up; compile and first use, whose iterations are single
-constructions, measure one second after half a second. It rotates/reverses engine order,
-keeps raw samples and intervals, and reports inconsistent differences as
-inconclusive. Short diagnostic runs cannot establish publication claims. Review
-host conditions and stability before interpreting a publication candidate.
-
-Each comparison lists its exact common tasks. Families carry equal aggregate
-weight regardless of fixture or variant count. Aggregates with different supported
-task pools do not establish an engine ranking. ARM and x86 results are reported
-separately.
-
-The aggregate takes the geometric mean of the median case ratios within each
-family, then the geometric mean across families. It describes this selected
-corpus rather than a production traffic mix.
-
-The [corpus guide](https://github.com/sebastian-software/ferroni/blob/main/benches/regex_corpus.md)
-contains runnable commands, case selection, measured
-boundaries, current coverage limits and the requirements for adding cases.
+```sh
+python3 scripts/publish-production.py --check
+python3 scripts/publish-additional-comparisons.py --check
+```

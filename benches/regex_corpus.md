@@ -191,8 +191,8 @@ python3 scripts/publish-production.py --check
 
 The publisher downloads the workflow artifacts with `gh`, rejects incomplete or
 diagnostic evidence, compares estimates against the original Criterion samples,
-and regenerates the website data and repository tables. It formats the generated
-website JSON with the repository's installed formatter. Verification with
+and regenerates the repository tables and the website's summary. It formats that
+summary JSON with the repository's installed formatter. Verification with
 `--check` needs only Python's standard library. Complete evidence stays
 compressed in the current results directory so artifact expiry does not break
 reproduction. The public production aggregates exclude the four controlled

@@ -149,27 +149,42 @@
 .fr-scanner-walkthrough pre {
   overflow: auto;
   padding: 1rem;
-  background: var(--bg-dim);
+  border: 1px solid var(--line);
+  background: var(--bg);
 }
 
-.fr-patterns,
+/* One row per search: which pattern won, then where it matched. */
 .fr-steps {
-  padding-left: 1.5rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
 }
 
-.fr-patterns li,
 .fr-steps li {
-  padding-block: 0.4rem;
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+  padding-block: 0.625rem;
+  border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
 
-.fr-patterns strong {
-  display: block;
+.fr-steps li > span {
+  grid-column: 2;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
 }
 
-.fr-patterns {
-  list-style: none;
-  padding-left: 0;
+.fr-scanner-walkthrough .fam-note {
+  margin-top: 0;
+}
+
+/* The one cost the speed section owns up to, set apart from the chart's notes. */
+.fr-speed-tradeoff {
+  max-width: 70ch;
+  margin-top: 2rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--ink);
 }
 
 .fr-rust pre {
@@ -178,49 +193,8 @@
   overflow-wrap: anywhere;
 }
 
-/* Local reading path; shared family typography and surfaces stay intact. */
-.fr-jump {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 2rem;
-  padding-block: 1rem;
-  border-bottom: 1px solid var(--line);
-}
-
-.fr-jump > span {
-  font-weight: 700;
-}
-
-.fr-jump ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.5rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.fr-jump a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  text-underline-offset: 0.25em;
-}
-
 .ferroni-home section[id] {
-  scroll-margin-top: 6rem;
-}
-
-.fr-jump a:focus-visible {
-  outline: 2px solid var(--rust);
-  outline-offset: 4px;
-}
-
-@media (max-width: 42rem) {
-  .ferroni-home section[id] {
-    scroll-margin-top: 8rem;
-  }
+  scroll-margin-top: 5rem;
 }
 
 /* Keep display type for the forge identity, with a smaller scale for reading. */

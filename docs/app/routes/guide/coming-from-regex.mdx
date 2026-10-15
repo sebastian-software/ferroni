@@ -3,6 +3,8 @@ order: 4
 title: Coming from regex or onig
 ---
 
+import { SyntaxExamples } from "../../components/home-examples";
+
 # Coming from regex or onig
 
 Ferroni keeps Oniguruma's semantics, so a few defaults differ from the
@@ -116,6 +118,15 @@ let m = re.find_bytes(&b"\xff"[..]).unwrap();
 assert_eq!(m.as_bytes(), &[0xff][..]);
 // m.as_str() would panic here: the matched byte is not valid UTF-8.
 ```
+
+## Syntax beyond the regex crate
+
+The `regex` crate leaves out look-behind and backreferences to guarantee
+linear-time matching; Ferroni runs them as Oniguruma does. Unicode properties
+work in both. Each highlighted match below comes from running the
+[walkthrough example](https://github.com/sebastian-software/ferroni/blob/main/examples/website_walkthrough.rs).
+
+<SyntaxExamples />
 
 ## Why the defaults follow Oniguruma
 

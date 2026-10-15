@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Keep retained measurements outside the source tree archived by the runner.
 # Otherwise future source snapshots would recursively include previous runs.
 RESULTS = ROOT / "benches/production_results"
-DATA = ROOT / "docs/app/data/production-comparison.json"
+# The website shows only this summary; every case and timing stays in RESULTS.
 SUMMARY = ROOT / "docs/app/data/production-summary.json"
 PROFILES = {"macos-arm64": ("arm64", "macOS"), "linux-x86-64": ("x86_64", "Linux")}
 BASE_ENGINES = ("rust", "rust_erroraware", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex")
@@ -262,7 +262,7 @@ def document(data):
         for row in platform["production_comparisons"]:
             conclusions = [case["conclusion"] for case in row["cases"]]
             lines.append(f"| {row['engine']} | {row['lane']} | {row['case_count']} | {row['family_count']} | {row['family_weighted_ratio']:.3f} | {conclusions.count('Ferroni faster in every run interval')} | {conclusions.count('comparator faster in every run interval')} | {conclusions.count('inconclusive')} |")
-        lines += ["", "The exact common cases and all absolute timings are available in `publication.json` and in the website's case tables.", ""]
+        lines += ["", "The exact common cases and all absolute timings are available in `publication.json`.", ""]
     lines += ["## Regenerate and check", "", "```sh", "python3 scripts/publish-production.py --check", "```", "",
               "Host power and thermal state were unavailable. " + hosts_sentence(data) + " Memory was not measured in this run.", ""]
     return "\n".join(lines)
@@ -337,7 +337,7 @@ def publish(artifacts, receipt):
     directories = {profile: artifacts / f"production-{profile}-{receipt['id']}-{receipt['run_attempt']}" for profile in PROFILES}
     data = generate(directories, receipt)
     formatter = ROOT / "docs/node_modules/.bin/oxfmt"
-    require(formatter.is_file(), "Install the documentation dependencies before publishing website data")
+    require(formatter.is_file(), "Install the documentation dependencies before publishing the website summary")
     RESULTS.mkdir(parents=True, exist_ok=True)
     for profile, directory in directories.items():
         destination = RESULTS / profile
@@ -349,10 +349,9 @@ def publish(artifacts, receipt):
     (RESULTS / "run.json").write_text(encoded(receipt))
     (RESULTS / "publication.json").write_text(encoded(data))
     (RESULTS / "README.md").write_text(document(data))
-    DATA.write_text(encoded(data))
     SUMMARY.write_text(encoded(overview(data)))
-    subprocess.run([str(formatter), "--write", str(DATA), str(SUMMARY)], cwd=ROOT / "docs", check=True)
-    print(f"Verified both platforms; updated {DATA} and {RESULTS}.")
+    subprocess.run([str(formatter), "--write", str(SUMMARY)], cwd=ROOT / "docs", check=True)
+    print(f"Verified both platforms; updated {SUMMARY} and {RESULTS}.")
 
 
 def main():
@@ -377,7 +376,7 @@ def main():
                                 and (member.isfile() or member.isdir()), "Unsafe evidence archive member")
                     archive.extractall(directories[profile])
             data = generate(directories, receipt, current_source=False)
-        require(equivalent(read(DATA), data) and equivalent(read(RESULTS / "publication.json"), data), "Generated public data has drifted")
+        require(equivalent(read(RESULTS / "publication.json"), data), "Generated public data has drifted")
         require(equivalent(read(SUMMARY), overview(data)), "Generated homepage summary has drifted")
         require((RESULTS / "README.md").read_text() == document(data), "Generated result tables have drifted")
         print("Publication check: both complete Blacksmith runs, raw estimates, coverage and public tables agree.")
