@@ -9447,8 +9447,8 @@ fn utf8_class_lead_bytes(cc: &CClassNode, enc: OnigEncoding) -> Option<BitSet> {
     if count > MAX_NARROWED_CLASS_CODES || words.len() < 1 + 2 * count {
         return None;
     }
-    for pair in words[1..1 + 2 * count].chunks_exact(2) {
-        if pair[0] != pair[1] {
+    for &[low, high] in words[1..1 + 2 * count].as_chunks::<2>().0 {
+        if low != high {
             return None;
         }
         for lead in 0xC2..=0xF4_u8 {
@@ -9459,7 +9459,7 @@ fn utf8_class_lead_bytes(cc: &CClassNode, enc: OnigEncoding) -> Option<BitSet> {
             };
             let shift = 6 * (len - 1);
             let base = (u32::from(lead) & ((1 << mask_bits) - 1)) << shift;
-            if (base..base + (1 << shift)).contains(&pair[0]) {
+            if (base..base + (1 << shift)).contains(&low) {
                 bitset_set_bit(&mut leads, lead as usize);
             }
         }
