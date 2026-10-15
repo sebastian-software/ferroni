@@ -38,7 +38,7 @@ def document(datasets):
 
 def generate(directories, receipt, current_source=True):
     return {scope: publication.generate(directories[scope], receipt,
-                ROOT / f"benches/{catalog}/catalog.json", engines, current_lock=True, current_source=current_source)
+                ROOT / f"benches/{catalog}/catalog.json", engines, current_lock=current_source, current_source=current_source)
             for scope, (_, catalog, engines, _) in SCOPES.items()}
 
 
