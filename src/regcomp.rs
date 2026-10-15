@@ -1923,6 +1923,65 @@ fn compile_range_repeat_node(
 // Bag (group) compilation
 // ============================================================================
 
+#[cfg(test)]
+thread_local! {
+    /// Compiles `\X` as upstream's atomic group, as the reference for
+    /// `GraphemeCluster` in differential tests.
+    pub(crate) static GRAPHEME_CLUSTER_DISABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Whether a bag is the `\X` group that the parser marks with
+/// [`BagData::TextSegment`] and that has the shape it builds, `(?>\O(?:\Y\O)*)`
+/// with `\O` the multiline any-character and `\Y` the negated extended
+/// grapheme cluster boundary. Rust-only (ADR-008): such a group compiles to
+/// one `GraphemeCluster` instruction. Any other shape keeps the atomic group.
+fn is_text_segment_cluster(bag: &BagNode) -> bool {
+    #[cfg(test)]
+    if GRAPHEME_CLUSTER_DISABLED.with(|disabled| disabled.get()) {
+        return false;
+    }
+    fn cells(node: &Node) -> Option<(&Node, Option<&Node>)> {
+        match &node.inner {
+            NodeInner::List(cons) => Some((&cons.car, cons.cdr.as_deref())),
+            _ => None,
+        }
+    }
+    fn multiline_anychar(node: &Node) -> bool {
+        matches!(&node.inner, NodeInner::CType(ct) if ct.ctype == CTYPE_ANYCHAR && !ct.not)
+            && node.has_status(ND_ST_MULTILINE)
+    }
+    fn shape(bag: &BagNode) -> Option<()> {
+        if bag.bag_type != BagType::StopBacktrack {
+            return None;
+        }
+        // (\O . (quant . nil))
+        let (first, rest) = cells(bag.body.as_deref()?)?;
+        let (quant, tail) = cells(rest?)?;
+        if !multiline_anychar(first) || tail.is_some() {
+            return None;
+        }
+        let NodeInner::Quant(qn) = &quant.inner else {
+            return None;
+        };
+        if !qn.greedy || qn.lower != 0 || !is_infinite_repeat(qn.upper) {
+            return None;
+        }
+        // (\Y . (\O . nil)), with the character boundary, not the word one.
+        let (boundary, after) = cells(qn.body.as_deref()?)?;
+        let NodeInner::Anchor(an) = &boundary.inner else {
+            return None;
+        };
+        let (loop_char, end) = cells(after?)?;
+        (an.anchor_type == ANCR_NO_TEXT_SEGMENT_BOUNDARY
+            && !boundary.has_status(ND_ST_TEXT_SEGMENT_WORD)
+            && multiline_anychar(loop_char)
+            && end.is_none())
+        .then_some(())
+    }
+    matches!(bag.bag_data, BagData::TextSegment) && shape(bag).is_some()
+}
+
 /// Calculate bytecode length for a bag node.
 fn compile_length_bag_node(
     bag: &BagNode,
@@ -1958,6 +2017,9 @@ fn compile_length_bag_node(
             len
         }
         BagType::StopBacktrack => {
+            if is_text_segment_cluster(bag) {
+                return SIZE_INC;
+            }
             if let Some(length) =
                 crate::backtrack_rewrite::lowering::compile_length(bag, node_status, reg, env)
             {
@@ -2170,6 +2232,10 @@ fn compile_bag_node(bag: &BagNode, node_status: u32, reg: &mut RegexType, env: &
     match bag.bag_type {
         BagType::Memory => compile_bag_memory_node(bag, node_status, reg, env),
         BagType::StopBacktrack => {
+            if is_text_segment_cluster(bag) {
+                add_op(reg, OpCode::GraphemeCluster, OperationPayload::None);
+                return 0;
+            }
             if let Some(result) =
                 crate::backtrack_rewrite::lowering::compile(bag, node_status, reg, env)
             {
@@ -4412,10 +4478,12 @@ fn node_char_len1(
                 /* can't optimize look-behind if capture exists. */
                 ci.min_is_sure = false;
             }
-            BagData::Option { .. } | BagData::StopBacktrack => match bn.body.as_deref() {
-                Some(body) => r = node_char_len1(body, reg, ci, env, marks, level),
-                None => mmcl_set(ci, 0),
-            },
+            BagData::Option { .. } | BagData::StopBacktrack | BagData::TextSegment => {
+                match bn.body.as_deref() {
+                    Some(body) => r = node_char_len1(body, reg, ci, env, marks, level),
+                    None => mmcl_set(ci, 0),
+                }
+            }
             BagData::IfElse {
                 then_node,
                 else_node,
@@ -10636,6 +10704,7 @@ fn compile_recording_name_with_choices(
         saves: None,
         unset_addr_list: None,
         parse_depth: 0,
+        look_behind_depth: 0,
         ast_node_count: 0,
         flags: 0,
         recursive_mem: Vec::new(),
@@ -11975,6 +12044,7 @@ mod tests {
             saves: None,
             unset_addr_list: None,
             parse_depth: 0,
+            look_behind_depth: 0,
             ast_node_count: 0,
             flags: 0,
             recursive_mem: Vec::new(),
@@ -13583,6 +13653,153 @@ mod tests {
             }
         }
         assert!(tries_used > 500, "only {tries_used} patterns used a trie");
+    }
+
+    /// `\X` outside look-behinds compiles to one `GraphemeCluster`
+    /// instruction. It must match exactly like upstream's atomic
+    /// `\O(?:\Y\O)*` from every start and up to every range end: on CRLF,
+    /// combining marks, ZWJ emoji, regional indicators, Hangul, prepended and
+    /// variation-selector code points, and malformed UTF-8. Look-behinds,
+    /// the word variant and `\X` in other syntaxes keep the upstream sequence.
+    #[test]
+    fn grapheme_cluster_matches_the_upstream_sequence() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{onig_search, shared_limits};
+
+        let _limits = shared_limits();
+        let compile = |pattern: &str, instruction: bool| {
+            GRAPHEME_CLUSTER_DISABLED.with(|disabled| disabled.set(!instruction));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            GRAPHEME_CLUSTER_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+        let uses_instruction = |reg: &RegexType| {
+            reg.ops
+                .iter()
+                .any(|op| op.opcode == OpCode::GraphemeCluster)
+        };
+
+        // The instruction is emitted where the sequence is outside look-behinds.
+        assert!(uses_instruction(&compile(r"\X", true)));
+        assert!(uses_instruction(&compile(r"(?:a|\X)+b", true)));
+        assert!(!uses_instruction(&compile(r"(?<=a\X)b", true)));
+        assert!(!uses_instruction(&compile(r"(?<!\X)b", true)));
+        assert!(!uses_instruction(&compile(r"(?y{w})\X", true)));
+
+        let patterns = [
+            r"\X",
+            r"\X+",
+            r"\X*?b",
+            r"\X{2}",
+            r"\X{1,3}\d",
+            r"(\X)",
+            r"(\X)\1",
+            r"(\X)+x",
+            r"(?:a|\X)+b",
+            r"(\X|x)\X",
+            r"(?>\X)\X",
+            r"\X\X$",
+            r"^\X",
+            r"\X$",
+            r"(?=\X)\X",
+            r"(?!\X)\X",
+            r"(?i)\X",
+            r"a\X(?<=\X)",
+            r"(?<=a)\X",
+            r"(?<=\r)\X",
+            r"\X\Z",
+            r"\X*",
+            r"(?y{w})\X",
+            r"(?y{w})\X\y",
+        ];
+        let subjects: [&[u8]; 15] = [
+            b"",
+            b"a",
+            b"\r\n",
+            b"a\r\nb\n\r\r\n",
+            b"e\xcc\x81x",
+            b"a\xcc\x88\xcc\x88b",
+            "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}x".as_bytes(),
+            "\u{1f1e9}\u{1f1ea}\u{1f1eb}\u{1f1f7}\u{1f1fa}".as_bytes(),
+            "\u{1100}\u{1161}\u{11a8}\u{ac00}\u{1100}".as_bytes(),
+            b"\xe3\x81",
+            b"a\x80\x80b\xcc",
+            b"\xff\xfe\xe3\x81\x82\xe3",
+            b"\xe0\xae\xa8\xe0\xae\xbf\xe0",
+            "\u{600}1\u{fe0f}\u{1f1e6}\u{1f1e8}\u{308}".as_bytes(),
+            "\u{e9}\u{200d}\u{1f600}\u{fe0f}\u{20e3}\u{ff3f}\u{3099}".as_bytes(),
+        ];
+        for pattern in patterns {
+            let with = compile(pattern, true);
+            let upstream = compile(pattern, false);
+            #[cfg(feature = "ffi")]
+            let c =
+                crate::ffi::CRegex::new(pattern.as_bytes(), crate::ffi::ONIG_OPTION_NONE).unwrap();
+            for subject in subjects {
+                for start in 0..=subject.len() {
+                    for range in start..=subject.len() {
+                        let search = |reg: &RegexType| {
+                            onig_search(
+                                reg,
+                                subject,
+                                subject.len(),
+                                start,
+                                range,
+                                Some(OnigRegion::new()),
+                                ONIG_OPTION_NONE,
+                            )
+                        };
+                        let (r, region) = search(&with);
+                        let (r_upstream, region_upstream) = search(&upstream);
+                        let context = format!("{pattern} on {subject:?} from {start} to {range}");
+                        assert_eq!(r, r_upstream, "{context}");
+                        if r >= 0 {
+                            let spans = |region: &OnigRegion| -> Vec<(i32, i32)> {
+                                region
+                                    .beg
+                                    .iter()
+                                    .zip(&region.end)
+                                    .take(region.num_regs as usize)
+                                    .map(|(&b, &e)| (b, e))
+                                    .collect()
+                            };
+                            assert_eq!(
+                                spans(&region.unwrap()),
+                                spans(&region_upstream.unwrap()),
+                                "{context}"
+                            );
+                        }
+                        // C matches a character past a zero-length range (its
+                        // match_at reads the subject end when range == start),
+                        // as `(?m).` does on malformed UTF-8 (#259 class). Both
+                        // paths agree there, so C is compared where range > start.
+                        #[cfg(feature = "ffi")]
+                        if range > start {
+                            let mut c_region = crate::ffi::CRegion::new();
+                            let c_r = c.search(subject, start, range, Some(&mut c_region), 0);
+                            assert_eq!(r, c_r, "C: {context}");
+                            if c_r >= 0 {
+                                let (_, region) = search(&with);
+                                let region = region.unwrap();
+                                let spans: Vec<(i32, i32)> = region
+                                    .beg
+                                    .iter()
+                                    .zip(&region.end)
+                                    .take(region.num_regs as usize)
+                                    .map(|(&b, &e)| (b, e))
+                                    .collect();
+                                assert_eq!(spans, c_region.capture_ranges(), "C: {context}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Over malformed UTF-8 a fixed-length positive look-behind steps back

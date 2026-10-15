@@ -584,6 +584,10 @@ pub(crate) enum BagData {
         options: OnigOptionType,
     },
     StopBacktrack,
+    /// Rust-only (ADR-008): the atomic group of `\X` outside look-behinds.
+    /// Its shape is checked again where it is compiled, and it keeps the
+    /// `StopBacktrack` meaning everywhere else.
+    TextSegment,
     IfElse {
         then_node: Option<Box<Node>>,
         else_node: Option<Box<Node>>,
@@ -882,6 +886,9 @@ pub(crate) struct ParseEnv {
     pub saves: Option<Vec<SaveItem>>,
     pub unset_addr_list: Option<Vec<UnsetAddr>>,
     pub parse_depth: u32,
+    /// Number of look-behind bodies the parser is inside. `\X` is marked
+    /// with [`BagData::TextSegment`] only outside them (ADR-008).
+    pub look_behind_depth: u32,
     /// Number of AST-producing expressions accepted in this parse.
     pub ast_node_count: u32,
     pub flags: u32,

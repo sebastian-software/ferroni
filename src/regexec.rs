@@ -2885,6 +2885,46 @@ pub(crate) fn is_in_code_range(data: &[u32], code: OnigCodePoint) -> bool {
     false
 }
 
+/// Rust-only (ADR-008): where `\X` from `s` ends. The group is upstream's
+/// atomic `\O(?:\Y\O)*`, and this takes the same steps without the loop's
+/// instructions and backtrack entries. `\O` takes the first character, which
+/// fails where no whole character fits before `right_range`. Each further
+/// character is taken only where `\Y` passes (no extended grapheme cluster
+/// boundary at the position, judged against `end`) and `\O` fits before
+/// `right_range`. The loop ends at the first boundary, at `right_range` or
+/// where a character does not fit, and the atomic group keeps that position.
+#[inline]
+fn grapheme_cluster_end(
+    enc: OnigEncoding,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    end: usize,
+) -> Option<usize> {
+    if right_range.saturating_sub(s) < 1 {
+        return None;
+    }
+    let n = enclen(enc, str_data, s);
+    if right_range.saturating_sub(s) < n {
+        return None;
+    }
+    let mut s = s + n;
+    loop {
+        // `\O` cannot take a character at `right_range`, and `\Y` has no
+        // effect there, so the loop ends without asking for the boundary.
+        if s >= right_range
+            || crate::unicode::onigenc_egcb_is_break_position(enc, str_data, s, 0, end)
+        {
+            return Some(s);
+        }
+        let n = enclen(enc, str_data, s);
+        if right_range - s < n {
+            return Some(s);
+        }
+        s += n;
+    }
+}
+
 /// Get the character length at position s for the given encoding.
 #[inline]
 fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
@@ -5409,6 +5449,19 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     goto_fail = true;
                 } else {
                     p += 1;
+                }
+            }
+
+            // ================================================================
+            // Rust-only (ADR-008): `\X` outside look-behinds, one instruction
+            // ================================================================
+            OpCode::GraphemeCluster => {
+                match grapheme_cluster_end(enc, str_data, s, right_range, end) {
+                    Some(at) => {
+                        s = at;
+                        p += 1;
+                    }
+                    None => goto_fail = true,
                 }
             }
 
@@ -11581,6 +11634,7 @@ mod tests {
             saves: None,
             unset_addr_list: None,
             parse_depth: 0,
+            look_behind_depth: 0,
             ast_node_count: 0,
             flags: 0,
             recursive_mem: Vec::new(),

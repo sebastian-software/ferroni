@@ -251,6 +251,17 @@ Short-circuit encoding-aware functions (`enclen`, `prev_char_head`, `WordStar` t
 - **Validation**: `egcb_table_matches_the_binary_search_for_every_code_point` compares every code point from 0 to U+10FFFF, surrogates excepted, with the binary search. `egcb_ranges_are_sorted_and_disjoint` checks the precondition of the build, and `egcb_table_blocks_are_distinct` the deduplication.
 - **Impact** (callgrind instructions per steady batch, production lane; before = the base without this entry or the ASCII entry above, after = both): `symfony_grapheme_chunks_1` 31,041 → 28,827 (−7.1%), `symfony_grapheme_chunks_2` 8,058 → 7,385 (−8.3%). Controls: `mastodon_hashtag_regex_step` 101,393 → 101,393, `uuid_v4` 5,341 → 5,327, `tiktoken_o200k_base` (tokenizer corpus, 5 batches) 2,072,394 → 2,072,394.
 
+#### `\X` as one grapheme-boundary instruction (`src/regparse.rs`, `src/regcomp.rs`, `src/regexec.rs`)
+
+Upstream's `\X` is the atomic group `(?>\O(?:\Y\O)*)`: a multiline any-character, then a loop that takes each further character while no extended grapheme cluster boundary lies before it. Its compiled form is `Mark`, `AnyCharMl`, `Push`, `TextSegmentBoundary`, `AnyCharMl`, `Jump`, `CutToMark`, with a stack entry and a dispatch per character.
+
+- **Trigger**: `\X` (not `(?y{w})\X`) outside look-behinds. The parser marks the group with `BagData::TextSegment` only when no look-behind body encloses it (`look_behind_depth`), and the compiler checks the shape before it emits the instruction; any other shape keeps the atomic group.
+- **Execution**: `GraphemeCluster` runs `grapheme_cluster_end`, which takes the same steps as the loop: the first character where one fits before the range end, then each further character while `onigenc_egcb_is_break_position` (judged against the string end) reports no boundary and the character fits before the range end. The atomic group keeps that position, so the instruction pushes no entries and never gives back.
+- **Observability**: none for results. Stack entries and retries that the loop counted are not counted; ADR-017 allows that where C stops at a limit, and Ferroni never stops at one where C finishes. A long cluster no longer reaches a match stack limit that upstream's loop reaches (`a_long_cluster_needs_no_stack_entries`).
+- **Bounds**: no allocation, no data, no unsafe code; one loop per `\X` step, over the characters the cluster covers.
+- **Validation**: `grapheme_cluster_matches_the_upstream_sequence` compares the instruction with the atomic group (switched off in tests) for 24 patterns over 15 subjects (CRLF, combining marks, ZWJ emoji, regional indicators, Hangul, prepended and variation-selector code points, malformed UTF-8), at every start and every range end, with captures, alternations and anchors. With the `ffi` feature it also compares with C where the range is past the start. The look-behind and word-variant cases check the emitted instructions.
+- **Impact** (callgrind instructions per steady batch, production lane; base `origin/main` 2a692ca): `symfony_grapheme_chunks_1` 28,791 → 26,383 (−8.4%), `symfony_grapheme_chunks_2` 7,383 → 6,671 (−9.6%). Controls: `mastodon_hashtag_regex_step` 101,393 → 101,424 (+0.03%), `wordpress_shortcode_captures` 48,444 → 48,470 (+0.05%), `uuid_v4` 5,110 → 5,107, `tiktoken_o200k_base` (tokenizer corpus, 5 batches) 2,072,888 → 2,072,888.
+
 #### Bitmaps for Unicode ctypes (`src/unicode/mod.rs`)
 
 - **Trigger**: `onigenc_unicode_is_code_ctype` for a code below U+10000 and a table with at least 16 ranges.

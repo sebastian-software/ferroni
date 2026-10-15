@@ -1041,7 +1041,7 @@ impl Walk<'_> {
                 // An atomic group keeps only the first way its body matches,
                 // which the seek, keeping every way, does not: `(?>abc|ab)c`
                 // has no match in `abc`, its seek does.
-                BagData::StopBacktrack => {
+                BagData::StopBacktrack | BagData::TextSegment => {
                     self.inexact = true;
                     bn.body
                         .as_deref()

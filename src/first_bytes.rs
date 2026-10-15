@@ -109,7 +109,11 @@ fn record_first_bytes(reg: &RegexType, op: &Operation, map: &mut ByteMap) -> Opt
             add_high_bytes(map);
             FirstBytes::Consumes
         }
-        OpCode::Word | OpCode::NoWord | OpCode::AnyChar | OpCode::AnyCharMl => {
+        OpCode::Word
+        | OpCode::NoWord
+        | OpCode::AnyChar
+        | OpCode::AnyCharMl
+        | OpCode::GraphemeCluster => {
             add_all(map);
             FirstBytes::Consumes
         }
