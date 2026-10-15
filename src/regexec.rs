@@ -1669,9 +1669,35 @@ impl MatchArg {
         start: usize,
         limits: Option<SearchLimits>,
     ) {
+        self.region = region;
+        self.reset_search_state(reg, option, start, limits);
+    }
+
+    /// The reset of one search of an iterator that holds its `MatchArg` for
+    /// all its searches (Rust-only, ADR-008). It is `reset_with_limits` without
+    /// the region: the caller sets the region of the search, and takes it back
+    /// after. Limits are read per search, as in every other search.
+    #[inline]
+    pub(crate) fn reset_for_iteration(
+        &mut self,
+        reg: &RegexType,
+        start: usize,
+        limits: Option<SearchLimits>,
+    ) {
+        self.reset_search_state(reg, ONIG_OPTION_NONE, start, limits);
+    }
+
+    /// The state of `reset_with_limits` other than the region.
+    #[inline]
+    fn reset_search_state(
+        &mut self,
+        reg: &RegexType,
+        option: OnigOptionType,
+        start: usize,
+        limits: Option<SearchLimits>,
+    ) {
         let limits = limits.unwrap_or_else(SearchLimits::process_wide);
         self.options = option | reg.options;
-        self.region = region;
         self.start = start;
         self.best_len = ONIG_MISMATCH;
         self.best_s = 0;
@@ -7303,7 +7329,7 @@ const MAX_CACHED_STACK_ENTRIES: usize = 1 << 16;
 /// that ran into a limit (up to gigabytes under the default retry limit) for
 /// the rest of the thread.
 #[inline]
-fn release_oversized_stack(msa: &mut MatchArg) {
+pub(crate) fn release_oversized_stack(msa: &mut MatchArg) {
     if msa.stack.capacity() > MAX_CACHED_STACK_ENTRIES {
         msa.stack = Vec::with_capacity(INIT_MATCH_STACK_SIZE);
     }
@@ -8486,6 +8512,7 @@ pub(crate) fn cache_msa(mut msa: Box<MatchArg>) {
 /// reset for this search first (`take_cached_msa` or `reset_with_limits`).
 /// Not for expressions whose match can start away from its attempt (`\K`) or
 /// with FIND_LONGEST, where only the region carries the match.
+#[inline]
 pub(crate) fn onig_search_bounds(
     reg: &RegexType,
     text: &[u8],
@@ -8494,7 +8521,11 @@ pub(crate) fn onig_search_bounds(
 ) -> Result<Option<(usize, usize)>, i32> {
     debug_assert!(!reg.keep_moves_match_start && !opton_find_longest(reg.options));
     let end = text.len();
-    if let Some(found) = pure_literal_first(reg, text, end, start, end, end, reg.options) {
+    // The guard keeps the call out of the common case; `pure_literal_first`
+    // answers `None` for any other pattern.
+    if reg.pure_literal
+        && let Some(found) = pure_literal_first(reg, text, end, start, end, end, reg.options)
+    {
         return Ok(found);
     }
     // Rust-only (ADR-008): the search runs the core directly. With no region
@@ -8980,7 +9011,7 @@ fn capture_map_search(
     }
 }
 
-fn search_in_range_inner(
+pub(crate) fn search_in_range_inner(
     reg: &RegexType,
     str_data: &[u8],
     end: usize,
@@ -9275,8 +9306,9 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
 
     // Rust-only (ADR-008): a pure literal pattern is answered by the literal
     // search, with the region filled as its one attempt would fill it.
-    if let Some(found) =
-        pure_literal_first(reg, str_data, end, start, range, right_range, msa.options)
+    if reg.pure_literal
+        && let Some(found) =
+            pure_literal_first(reg, str_data, end, start, range, right_range, msa.options)
     {
         let Some((match_start, match_end)) = found else {
             return ONIG_MISMATCH;
@@ -9781,14 +9813,18 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
             // Fall through to normal position loop below. Only this path
             // looks up the Rust-only filter, which keeps it off the others.
             if msa.retry_limit_in_search == 0 {
-                start_filter = start_filter
-                    .or_else(|| unbounded_optimizer_start_bytes(reg))
-                    .or_else(|| {
-                        reg.search_start_map
-                            .as_deref()
-                            .filter(|map| start_map_applies(map, find_longest, msa))
-                            .map(|map| &map.bytes)
-                    });
+                // The same as `or_else` on each source in turn, without the
+                // closure calls on every search.
+                if start_filter.is_none() {
+                    start_filter = unbounded_optimizer_start_bytes(reg);
+                }
+                if start_filter.is_none() {
+                    start_filter = reg
+                        .search_start_map
+                        .as_deref()
+                        .filter(|map| start_map_applies(map, find_longest, msa))
+                        .map(|map| &map.bytes);
+                }
             }
         }
     }
