@@ -484,6 +484,7 @@ pub(crate) fn guard_skipped_retries(
                             addr,
                             c,
                             skipped_retries: 0,
+                            ..
                         },
                     ) => {
                         if !bitset_at(map, c as usize) {

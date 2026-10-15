@@ -1518,6 +1518,44 @@ const FINISH_PCODE: usize = usize::MAX;
 // MatchArg - runtime match state (port of C's MatchArg)
 // ============================================================================
 
+/// Rust-only (ADR-008): the four limits one search applies. A search takes
+/// them from `OnigMatchParam` (`onig_search_with_param`) or, where a caller
+/// passes `None`, from the process-wide settings read when the search starts.
+/// Keeping them out of `OnigMatchParam` lets the per-search API reuse the
+/// thread-cached `MatchArg` without building the parameter block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SearchLimits {
+    pub(crate) match_stack_limit: u32,
+    pub(crate) retry_limit_in_match: u64,
+    pub(crate) retry_limit_in_search: u64,
+    pub(crate) time_limit: u64,
+}
+
+impl SearchLimits {
+    /// The process-wide limits, as `onig_initialize_match_param` reads them.
+    #[inline]
+    pub(crate) fn process_wide() -> Self {
+        SearchLimits {
+            match_stack_limit: MATCH_STACK_LIMIT.load(Ordering::Relaxed),
+            retry_limit_in_match: RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed),
+            retry_limit_in_search: RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed),
+            time_limit: TIME_LIMIT.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl From<&OnigMatchParam> for SearchLimits {
+    #[inline]
+    fn from(mp: &OnigMatchParam) -> Self {
+        SearchLimits {
+            match_stack_limit: mp.match_stack_limit,
+            retry_limit_in_match: mp.retry_limit_in_match,
+            retry_limit_in_search: mp.retry_limit_in_search,
+            time_limit: mp.time_limit,
+        }
+    }
+}
+
 pub(crate) struct MatchArg {
     pub options: OnigOptionType,
     pub region: Option<OnigRegion>,
@@ -1566,29 +1604,7 @@ impl MatchArg {
         region: Option<OnigRegion>,
         start: usize,
     ) -> Self {
-        let mut msa = MatchArg {
-            options: option | reg.options,
-            region,
-            start,
-            best_len: ONIG_MISMATCH,
-            best_s: 0,
-            skip_search: 0,
-            retry_limit_in_match: RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed),
-            retry_limit_in_search: RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed),
-            retry_limit_in_search_counter: 0,
-            match_stack_limit: MATCH_STACK_LIMIT.load(Ordering::Relaxed),
-            time_limit: TIME_LIMIT.load(Ordering::Relaxed),
-            time_counter: 0,
-            time_end: None,
-            subexp_call_in_search_counter: 0,
-            match_len: 0,
-            capture_position: None,
-            stack: Vec::with_capacity(INIT_MATCH_STACK_SIZE),
-            mem_start_stk: Vec::new(),
-            mem_end_stk: Vec::new(),
-        };
-        msa.start_time_limit();
-        msa
+        Self::with_limits(reg, option, region, start, None)
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
@@ -1599,6 +1615,19 @@ impl MatchArg {
         start: usize,
         mp: &OnigMatchParam,
     ) -> Self {
+        Self::with_limits(reg, option, region, start, Some(SearchLimits::from(mp)))
+    }
+
+    /// A new MatchArg for a search under `limits`; `None` reads the
+    /// process-wide limits.
+    fn with_limits(
+        reg: &RegexType,
+        option: OnigOptionType,
+        region: Option<OnigRegion>,
+        start: usize,
+        limits: Option<SearchLimits>,
+    ) -> Self {
+        let limits = limits.unwrap_or_else(SearchLimits::process_wide);
         let mut msa = MatchArg {
             options: option | reg.options,
             region,
@@ -1606,11 +1635,11 @@ impl MatchArg {
             best_len: ONIG_MISMATCH,
             best_s: 0,
             skip_search: 0,
-            retry_limit_in_match: mp.retry_limit_in_match,
-            retry_limit_in_search: mp.retry_limit_in_search,
+            retry_limit_in_match: limits.retry_limit_in_match,
+            retry_limit_in_search: limits.retry_limit_in_search,
             retry_limit_in_search_counter: 0,
-            match_stack_limit: mp.match_stack_limit,
-            time_limit: mp.time_limit,
+            match_stack_limit: limits.match_stack_limit,
+            time_limit: limits.time_limit,
             time_counter: 0,
             time_end: None,
             subexp_call_in_search_counter: 0,
@@ -1624,26 +1653,29 @@ impl MatchArg {
         msa
     }
 
-    /// Full reset for thread-local reuse: re-reads global limits, keeps allocated buffers.
-    pub(crate) fn reset_full(
+    /// Full reset for thread-local reuse under `limits` (`None`: the
+    /// process-wide limits, re-read here). Keeps allocated buffers.
+    pub(crate) fn reset_with_limits(
         &mut self,
         reg: &RegexType,
         option: OnigOptionType,
         region: Option<OnigRegion>,
         start: usize,
+        limits: Option<SearchLimits>,
     ) {
+        let limits = limits.unwrap_or_else(SearchLimits::process_wide);
         self.options = option | reg.options;
         self.region = region;
         self.start = start;
         self.best_len = ONIG_MISMATCH;
         self.best_s = 0;
         self.skip_search = 0;
-        self.retry_limit_in_match = RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed);
-        self.retry_limit_in_search = RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed);
+        self.retry_limit_in_match = limits.retry_limit_in_match;
+        self.retry_limit_in_search = limits.retry_limit_in_search;
         self.retry_limit_in_search_counter = 0;
         self.subexp_call_in_search_counter = 0;
-        self.match_stack_limit = MATCH_STACK_LIMIT.load(Ordering::Relaxed);
-        self.time_limit = TIME_LIMIT.load(Ordering::Relaxed);
+        self.match_stack_limit = limits.match_stack_limit;
+        self.time_limit = limits.time_limit;
         self.start_time_limit();
     }
 
@@ -3527,66 +3559,33 @@ fn guard_retries(skipped_retries: u32) -> u64 {
     u64::from(skipped_retries & !GUARD_RETRIES_BY_CHECKS)
 }
 
-/// Rust-only (ADR-008): execute a bounded chain of failed forward guards
-/// without returning to the main VM dispatch between alternatives. Fixed
-/// retry charges always qualify; check-dependent charges retain the existing
-/// upper-bound/restart guard. The original instructions and byte tests remain
-/// the semantic reference. No input or stack state changes.
-#[inline(never)]
-fn skip_failed_ascii_guards(
-    reg: &RegexType,
-    mut p: usize,
-    byte: Option<u8>,
-    by_checks_allowed: bool,
-    mut retry_budget: u64,
-) -> (usize, u64) {
-    #[cfg(test)]
-    if GUARD_CHAIN_BATCHING_DISABLED.with(Cell::get) {
-        return (p, 0);
-    }
-    if byte.is_some_and(|byte| byte >= 0x80) {
-        return (p, 0);
-    }
-    let mut retries = 0;
-    const MAX_BATCHED_GUARDS: usize = 1024;
-    for _ in 0..MAX_BATCHED_GUARDS {
-        let Some(op) = reg.ops.get(p) else { break };
-        let (addr, skipped) = match (&op.opcode, &op.payload) {
-            (
-                OpCode::PushOrJumpExact1,
-                OperationPayload::PushOrJumpExact1 {
-                    addr,
-                    c,
-                    skipped_retries,
-                },
-            ) if byte != Some(*c) => (*addr, *skipped_retries),
-            (
-                OpCode::PushOrJumpByteSet,
-                OperationPayload::PushOrJumpByteSet {
-                    addr,
-                    bsp,
-                    skipped_retries,
-                },
-            ) if byte.is_none_or(|byte| !bitset_at(bsp, byte as usize)) => {
-                (*addr, *skipped_retries)
-            }
-            _ => break,
-        };
-        if addr <= 0 || (skipped & GUARD_RETRIES_BY_CHECKS != 0 && !by_checks_allowed) {
-            break;
-        }
-        let charge = guard_retries(skipped);
-        // Leave the guard that reaches a limit to the original dispatcher.
-        // Combining charges across it could change which error wins when
-        // match and search limits are both active.
-        if charge >= retry_budget {
-            break;
-        }
-        retry_budget -= charge;
-        retries += charge;
-        p += addr as usize;
-    }
-    (p, retries)
+/// Rust-only (ADR-008): the skip gate a guard refers to (`GuardSkipGate`).
+#[inline(always)]
+fn skip_gate_of(reg: &RegexType, index: Option<u32>) -> Option<&GuardSkipGate> {
+    index.and_then(|index| reg.skip_gates.get(index as usize))
+}
+
+/// Rust-only (ADR-008): whether a guard chain's skip gate jumps at `s`
+/// (`GuardSkipGate`). It does when the current byte is outside the gate's
+/// set. Then the walk would miss every guard of the chain and count their
+/// backtracks one by one, so the gate counts the sum at once. It does so only
+/// when no count can reach the retry limit in match or a time limit is set:
+/// `count_retry` then does no more than add, and the sum equals the one-by-one
+/// counts. Otherwise the guard runs as before.
+#[inline(always)]
+fn skip_gate_taken(
+    gate: &GuardSkipGate,
+    str_data: &[u8],
+    s: usize,
+    right_range: usize,
+    retry_in_match_counter: u64,
+    retry_limit_in_match: u64,
+    time_limit_ms: u64,
+) -> bool {
+    (s >= right_range || !bitset_at(&gate.bsp, str_data[s] as usize))
+        && time_limit_ms == 0
+        && (retry_limit_in_match == 0
+            || retry_in_match_counter + u64::from(gate.skipped_retries) < retry_limit_in_match)
 }
 
 /// Where the single-character or string instruction `op` ends if it matches
@@ -3911,6 +3910,8 @@ thread_local! {
     pub(crate) static FORWARD_SEARCH_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Keeps the original per-attempt calls for bounded optimizer windows.
     static OPTIMIZER_WINDOW_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Searches pure literal patterns with the VM, as before `pure_literal_first`.
+    static PURE_LITERAL_FAST_PATH_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Differential reference for captured zero-distance map searches.
     static CAPTURE_MAP_SCANS_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Runs dot stars with the original per-character encoding queries.
@@ -3919,8 +3920,6 @@ thread_local! {
     static SINGLE_BYTE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
     /// Differential reference for ASCII case-insensitive backref comparisons.
     static ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
-    /// Differential reference for batching failed alternative guards.
-    static GUARD_CHAIN_BATCHING_DISABLED: Cell<bool> = const { Cell::new(false) };
     /// Differential reference for fused look-behind character walks.
     static FUSED_LOOK_BEHIND_ASCII_BATCHES_DISABLED: Cell<bool> = const { Cell::new(false) };
 }
@@ -3954,6 +3953,18 @@ fn single_byte_backrefs_enabled() -> bool {
     #[cfg(test)]
     {
         !SINGLE_BYTE_BACKREFS_DISABLED.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
+#[inline(always)]
+fn pure_literal_fast_path_enabled() -> bool {
+    #[cfg(test)]
+    {
+        !PURE_LITERAL_FAST_PATH_DISABLED.with(std::cell::Cell::get)
     }
     #[cfg(not(test))]
     {
@@ -4063,7 +4074,6 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     // Set once the attempt starts over because guards counted an upper
     // bound of their backtracks (see `guard_may_jump`).
     let mut exact_guard_retries = false;
-    let guard_upper_bounds_allowed = guards_may_count_upper_bounds(reg, msa);
     // Leaves the loop with a retry or time limit error. A retry limit that
     // an upper bound of the guards' backtracks reached may not be reached by
     // the exact count: the attempt then starts over from the same state with
@@ -4162,17 +4172,24 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     }
 
     // ---- Main dispatch loop ----
+    // Rust-only (ADR-008): the operation is fetched once per opcode, with one
+    // bounds check, and the arms read the fetched one instead of indexing
+    // `reg.ops[p]` again.
+    let ops = &reg.ops[..];
     #[cfg(test)]
     let mut vm_previous = s;
+    // Not a `while let`: the test-only byte count below must run before the
+    // end-of-program check, as it did when this loop began with that check.
+    #[allow(clippy::while_let_loop)]
     loop {
         #[cfg(test)]
         {
             VM_BYTES.with(|bytes| bytes.set(bytes.get() + s.abs_diff(vm_previous) as u64));
             vm_previous = s;
         }
-        if p >= reg.ops.len() {
+        let Some(op) = ops.get(p) else {
             break;
-        }
+        };
 
         // Stack limit check (checked once per opcode, like C's STACK_PUSH macro)
         if stack.len() >= stack_cap {
@@ -4180,7 +4197,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             break;
         }
 
-        let opcode = reg.ops[p].opcode;
+        let opcode = op.opcode;
         let mut goto_fail = false;
 
         match opcode {
@@ -4264,7 +4281,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str1 => {
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s] {
                         goto_fail = true;
                     } else {
@@ -4279,7 +4296,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str2 => {
                 if right_range.saturating_sub(s) < 2 {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s] || exact[1] != str_data[s + 1] {
                         goto_fail = true;
                     } else {
@@ -4294,7 +4311,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str3 => {
                 if right_range.saturating_sub(s) < 3 {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s]
                         || exact[1] != str_data[s + 1]
                         || exact[2] != str_data[s + 2]
@@ -4312,7 +4329,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str4 => {
                 if right_range.saturating_sub(s) < 4 {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s]
                         || exact[1] != str_data[s + 1]
                         || exact[2] != str_data[s + 2]
@@ -4331,7 +4348,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::Str5 => {
                 if right_range.saturating_sub(s) < 5 {
                     goto_fail = true;
-                } else if let OperationPayload::Exact { s: ref exact } = reg.ops[p].payload {
+                } else if let OperationPayload::Exact { s: ref exact } = op.payload {
                     if exact[0] != str_data[s]
                         || exact[1] != str_data[s + 1]
                         || exact[2] != str_data[s + 2]
@@ -4349,7 +4366,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::StrN => {
-                if let OperationPayload::ExactN { s: ref exact, n } = reg.ops[p].payload {
+                if let OperationPayload::ExactN { s: ref exact, n } = op.payload {
                     let n = n as usize;
                     if right_range.saturating_sub(s) < n || !exact_eq_at(str_data, s, exact, n) {
                         goto_fail = true;
@@ -4372,7 +4389,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 // Multi-byte string comparison. ExactLenN.n = total byte count.
                 if let OperationPayload::ExactLenN {
                     s: ref exact, n, ..
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let byte_len = n as usize;
                     if right_range.saturating_sub(s) < byte_len
@@ -4392,7 +4409,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_CCLASS / OP_CCLASS_NOT - character class matching
             // ================================================================
             OpCode::CClassRun => {
-                if let OperationPayload::CClassRun { ref bsp, len } = reg.ops[p].payload {
+                if let OperationPayload::CClassRun { ref bsp, len } = op.payload {
                     // A backward search can extend past the logical end
                     // when its start is a truncated multibyte character.
                     // Keep the original per-instruction clamp in that mode.
@@ -4428,7 +4445,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else if let OperationPayload::CClass {
                     ref bsp,
                     ascii_fast,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     match ascii_fast {
                         CClassAsciiFastKind::Eq(c) => {
@@ -4469,7 +4486,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else if let OperationPayload::CClass {
                     ref bsp,
                     ascii_fast,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     match ascii_fast {
                         CClassAsciiFastKind::Eq(c) => {
@@ -4509,7 +4526,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::CClassMb => {
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                } else if let OperationPayload::CClassMb { ref mb } = op.payload {
                     let b = str_data[s];
                     if b < 0x80 {
                         if !is_in_code_range(mb, b as OnigCodePoint) {
@@ -4542,7 +4559,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::CClassMbNot => {
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                } else if let OperationPayload::CClassMb { ref mb } = op.payload {
                     let b = str_data[s];
                     if b < 0x80 {
                         if is_in_code_range(mb, b as OnigCodePoint) {
@@ -4584,7 +4601,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 let not = opcode == OpCode::CClassMixNot;
                 if s >= right_range {
                     goto_fail = true;
-                } else if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
+                } else if let OperationPayload::CClassMix { ref bsp, ref mb } = op.payload {
                     let b = str_data[s];
                     if b < 0x80 {
                         let in_class = bitset_at(bsp, b as usize);
@@ -4716,7 +4733,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::AnyCharStarPeekNext => {
-                if let OperationPayload::AnyCharStarPeekNext { c } = reg.ops[p].payload {
+                if let OperationPayload::AnyCharStarPeekNext { c } = op.payload {
                     // Find newline boundary with SIMD
                     // See AnyCharStar: right_range can be below s here.
                     let nl_limit = if s < right_range {
@@ -4766,7 +4783,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::AnyCharMlStarPeekNext => {
-                if let OperationPayload::AnyCharStarPeekNext { c } = reg.ops[p].payload {
+                if let OperationPayload::AnyCharStarPeekNext { c } = op.payload {
                     if c < 0x80 {
                         // ASCII peek byte: use SIMD to find all occurrences directly.
                         // No newline check needed in multiline mode.
@@ -4812,7 +4829,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Opt-in decimal prefix: reserve the final digit for the original
             // tail and record only the last successful repeated-body captures.
             OpCode::DecimalTailPrefix => {
-                if let OperationPayload::DecimalTailPrefix { ref captures } = reg.ops[p].payload {
+                if let OperationPayload::DecimalTailPrefix { ref captures } = op.payload {
                     let (prefix_end, last) = decimal_tail_prefix_bounds(str_data, right_range, s);
                     s = prefix_end;
                     if TRACK_CAPTURES {
@@ -4838,7 +4855,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // first character is compiled separately, just like [class]+.
             // No alternative is created, so no mark or cut is needed.
             OpCode::CClassPossessiveStar => {
-                if let OperationPayload::CClass { ref bsp, .. } = reg.ops[p].payload {
+                if let OperationPayload::CClass { ref bsp, .. } = op.payload {
                     while s < right_range && bitset_at(bsp, str_data[s] as usize) {
                         s += 1;
                     }
@@ -4852,7 +4869,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::CClass {
                     ref bsp,
                     ascii_fast,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let start = s;
                     match ascii_fast {
@@ -4899,7 +4916,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CClassMixStar => {
-                if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
+                if let OperationPayload::CClassMix { ref bsp, ref mb } = op.payload {
                     let start = s;
                     let mut exact_heads = true;
                     while s < right_range {
@@ -4946,7 +4963,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CClassMbStar => {
-                if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                if let OperationPayload::CClassMb { ref mb } = op.payload {
                     let start = s;
                     let mut exact_heads = true;
                     while s < right_range {
@@ -4987,7 +5004,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::CClass {
                     ref bsp,
                     ascii_fast,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let excluded = |b: u8| match ascii_fast {
                         CClassAsciiFastKind::Eq(c) => b == c,
@@ -5014,7 +5031,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CClassMbNotStar => {
-                if let OperationPayload::CClassMb { ref mb } = reg.ops[p].payload {
+                if let OperationPayload::CClassMb { ref mb } = op.payload {
                     s = greedy_char_loop(
                         &mut stack,
                         p + 1,
@@ -5046,7 +5063,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CClassMixNotStar => {
-                if let OperationPayload::CClassMix { ref bsp, ref mb } = reg.ops[p].payload {
+                if let OperationPayload::CClassMix { ref bsp, ref mb } = op.payload {
                     s = greedy_char_loop(
                         &mut stack,
                         p + 1,
@@ -5177,7 +5194,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // PeekNext star variants - only backtrack to positions matching peek byte
             // ================================================================
             OpCode::CClassStarPeekNext => {
-                if let OperationPayload::CClassStarPeekNext { ref bsp, c } = reg.ops[p].payload {
+                if let OperationPayload::CClassStarPeekNext { ref bsp, c } = op.payload {
                     let start = s;
                     while s < right_range {
                         let ch = str_data[s];
@@ -5202,7 +5219,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::WordAsciiStarPeekNext => {
-                if let OperationPayload::WordAsciiStarPeekNext { c } = reg.ops[p].payload {
+                if let OperationPayload::WordAsciiStarPeekNext { c } = op.payload {
                     let start = s;
                     while s < right_range {
                         if !is_word_ascii(str_data[s]) {
@@ -5268,7 +5285,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Word boundary opcodes
             // ================================================================
             OpCode::WordBoundary => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                let mode = if let OperationPayload::WordBoundary { mode } = op.payload {
                     mode
                 } else {
                     0
@@ -5281,7 +5298,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::NoWordBoundary => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                let mode = if let OperationPayload::WordBoundary { mode } = op.payload {
                     mode
                 } else {
                     0
@@ -5294,7 +5311,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::WordBegin => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                let mode = if let OperationPayload::WordBoundary { mode } = op.payload {
                     mode
                 } else {
                     0
@@ -5307,7 +5324,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::WordEnd => {
-                let mode = if let OperationPayload::WordBoundary { mode } = reg.ops[p].payload {
+                let mode = if let OperationPayload::WordBoundary { mode } = op.payload {
                     mode
                 } else {
                     0
@@ -5320,9 +5337,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::TextSegmentBoundary => {
-                if let OperationPayload::TextSegmentBoundary { boundary_type, not } =
-                    reg.ops[p].payload
-                {
+                if let OperationPayload::TextSegmentBoundary { boundary_type, not } = op.payload {
                     let is_break = match boundary_type {
                         TextSegmentBoundaryType::ExtendedGraphemeCluster => {
                             crate::unicode::onigenc_egcb_is_break_position(enc, str_data, s, 0, end)
@@ -5407,7 +5422,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::CheckPosition => {
-                if let OperationPayload::CheckPosition { check_type } = reg.ops[p].payload {
+                if let OperationPayload::CheckPosition { check_type } = op.payload {
                     match check_type {
                         CheckPositionType::SearchStart => {
                             if s != msa.start || opton_not_begin_position(options) {
@@ -5485,7 +5500,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefN => {
-                if let OperationPayload::BackRefN { n1 } = reg.ops[p].payload {
+                if let OperationPayload::BackRefN { n1 } = op.payload {
                     let n1 = n1 as usize;
                     if n1 > num_mem {
                         goto_fail = true;
@@ -5515,7 +5530,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefNIc => {
-                if let OperationPayload::BackRefN { n1 } = reg.ops[p].payload {
+                if let OperationPayload::BackRefN { n1 } = op.payload {
                     let n1 = n1 as usize;
                     if n1 > num_mem {
                         goto_fail = true;
@@ -5552,7 +5567,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefMulti => {
-                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &op.payload {
                     let tlen = *num as usize;
                     let mut matched = false;
                     let mut participated = false;
@@ -5595,7 +5610,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefMultiIc => {
-                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &op.payload {
                     let tlen = *num as usize;
                     let mut matched = false;
                     let mut participated = false;
@@ -5646,7 +5661,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::BackRefCheck => {
-                if let OperationPayload::BackRefGeneral { num, ns, .. } = &reg.ops[p].payload {
+                if let OperationPayload::BackRefGeneral { num, ns, .. } = &op.payload {
                     let tlen = *num as usize;
                     let mut found = false;
                     for mem in ns.iter().take(tlen).map(|mem| *mem as usize) {
@@ -5675,9 +5690,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     num,
                     ns,
                     nest_level,
-                } = &reg.ops[p].payload
+                } = &op.payload
                 {
-                    let ignore_case = reg.ops[p].opcode == OpCode::BackRefWithLevelIc;
+                    let ignore_case = op.opcode == OpCode::BackRefWithLevelIc;
                     if backref_match_at_nested_level(
                         reg,
                         &stack,
@@ -5704,7 +5719,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     num,
                     ns,
                     nest_level,
-                } = &reg.ops[p].payload
+                } = &op.payload
                 {
                     let found = if backref_check_at_nested_level(&stack, *nest_level, *num, ns) {
                         true
@@ -5742,7 +5757,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Memory (capture group) operations
             // ================================================================
             OpCode::MemStart => {
-                if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryStart { num } = op.payload {
                     // C sets only the start (regexec.c OP_MEM_START); the end
                     // of an earlier pass stays in place until MEM_END, so a
                     // capture can read as start > end if the pass fails.
@@ -5756,7 +5771,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::MemStartPush => {
-                if let OperationPayload::MemoryStart { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryStart { num } = op.payload {
                     // The pushed entry only restores this capture on
                     // backtracking. Opcodes that read captures while matching
                     // force TRACK_CAPTURES (see `needs_capture_tracking`), so
@@ -5782,7 +5797,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::MemEnd => {
-                if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryEnd { num } = op.payload {
                     if TRACK_CAPTURES {
                         let num = num as usize;
                         mem_end_stk[num] = MemPtr::pos(s);
@@ -5794,7 +5809,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::MemEndPush => {
-                if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryEnd { num } = op.payload {
                     // See OpCode::MemStartPush for why untracked runs skip this.
                     if TRACK_CAPTURES {
                         let num = num as usize;
@@ -5818,7 +5833,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::MemEndPushRec => {
                 // Recursive capture end (push variant): find matching MEM_START,
                 // push MEM_END, update start/end tracking
-                if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryEnd { num } = op.payload {
                     let mem = num as usize;
                     let (start_ptr, _) =
                         stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
@@ -5840,7 +5855,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::MemEndRec => {
                 // Recursive capture end (non-push variant): find matching MEM_START,
                 // update start/end, push MemEndMark for level tracking
-                if let OperationPayload::MemoryEnd { num } = reg.ops[p].payload {
+                if let OperationPayload::MemoryEnd { num } = op.payload {
                     let mem = num as usize;
                     mem_end_stk[mem] = MemPtr::pos(s);
                     let (start_ptr, _) =
@@ -5864,7 +5879,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_JUMP - unconditional jump
             // ================================================================
             OpCode::Jump => {
-                if let OperationPayload::Jump { addr } = reg.ops[p].payload {
+                if let OperationPayload::Jump { addr } = op.payload {
                     p = (p as i32 + addr) as usize;
                 } else {
                     goto_fail = true;
@@ -5875,9 +5890,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_PUSH / OP_PUSH_SUPER - push choice point (alternation)
             // ================================================================
             OpCode::Push | OpCode::PushSuper => {
-                if let OperationPayload::Push { addr } = reg.ops[p].payload {
+                if let OperationPayload::Push { addr } = op.payload {
                     let alt_target = (p as i32 + addr) as usize;
-                    let is_super = reg.ops[p].opcode == OpCode::PushSuper;
+                    let is_super = op.opcode == OpCode::PushSuper;
                     stack.push(StackEntry::Alt {
                         pcode: alt_target,
                         pstr: s,
@@ -5893,7 +5908,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Rust-only (ADR-008): the original lazy push, with a seek over
             // failed literal attempts across the following capture end.
             OpCode::PushLazyAnyChar => {
-                if let OperationPayload::Push { addr } = reg.ops[p].payload {
+                if let OperationPayload::Push { addr } = op.payload {
                     if stack.len() + 1 < stack_cap {
                         if let Some(at) = lazy_captured_any_char_stop(
                             reg,
@@ -5932,7 +5947,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_POP_TO_MARK - pop until Mark with matching id
             // ================================================================
             OpCode::PopToMark => {
-                if let OperationPayload::PopToMark { id } = reg.ops[p].payload {
+                if let OperationPayload::PopToMark { id } = op.payload {
                     stack_pop_to_mark(
                         &mut stack,
                         id as usize,
@@ -5954,7 +5969,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     addr,
                     c,
                     skipped_retries,
-                } = reg.ops[p].payload
+                    skip_gate,
+                } = op.payload
                 {
                     // Rust-only (ADR-008): the lazy `.*?c` loop (`AnyChar`
                     // before this instruction, which jumps back to it) runs
@@ -5980,6 +5996,21 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     }
                     if goto_fail {
                         // The loop's `AnyChar` fails before any `c`.
+                    } else if let Some(gate) = skip_gate_of(reg, skip_gate).filter(|gate| {
+                        skip_gate_taken(
+                            gate,
+                            str_data,
+                            s,
+                            right_range,
+                            retry_in_match_counter,
+                            retry_limit_in_match,
+                            time_limit_ms,
+                        )
+                    }) {
+                        // Rust-only (ADR-008): the rest of the chain misses
+                        // as well; see `skip_gate_taken`.
+                        p = (p as i32 + gate.addr) as usize;
+                        retry_in_match_counter += u64::from(gate.skipped_retries);
                     } else if (s < right_range && str_data[s] == c)
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
@@ -5995,30 +6026,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     } else {
                         // Character doesn't match: jump
                         p = (p as i32 + addr) as usize;
-                        let (next, batched_retries) = if time_limit_ms == 0 {
-                            skip_failed_ascii_guards(
-                                reg,
-                                p,
-                                (s < right_range).then(|| str_data[s]),
-                                !exact_guard_retries && guard_upper_bounds_allowed,
-                                if retry_limit_in_match == 0 {
-                                    u64::MAX
-                                } else {
-                                    retry_limit_in_match.saturating_sub(
-                                        retry_in_match_counter
-                                            .saturating_add(guard_retries(skipped_retries)),
-                                    )
-                                },
-                            )
-                        } else {
-                            (p, 0)
-                        };
-                        p = next;
                         // A guarded `Push` counts the backtracks the push
                         // would take (see `guard_backtrack_pushes`).
-                        if skipped_retries != 0 || batched_retries != 0 {
+                        if skipped_retries != 0 {
                             if let Err(err) = count_retry(
-                                guard_retries(skipped_retries) + batched_retries,
+                                guard_retries(skipped_retries),
                                 &mut retry_in_match_counter,
                                 retry_limit_in_match,
                                 time_limit_ms,
@@ -6041,9 +6053,25 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     addr,
                     ref bsp,
                     skipped_retries,
-                } = reg.ops[p].payload
+                    skip_gate,
+                } = op.payload
                 {
-                    if (s < right_range && bitset_at(bsp, str_data[s] as usize))
+                    if let Some(gate) = skip_gate_of(reg, skip_gate).filter(|gate| {
+                        skip_gate_taken(
+                            gate,
+                            str_data,
+                            s,
+                            right_range,
+                            retry_in_match_counter,
+                            retry_limit_in_match,
+                            time_limit_ms,
+                        )
+                    }) {
+                        // Rust-only (ADR-008): the rest of the chain misses
+                        // as well; see `skip_gate_taken`.
+                        p = (p as i32 + gate.addr) as usize;
+                        retry_in_match_counter += u64::from(gate.skipped_retries);
+                    } else if (s < right_range && bitset_at(bsp, str_data[s] as usize))
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
                         stack.push(StackEntry::Alt {
@@ -6055,29 +6083,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         p += 1;
                     } else {
                         p = (p as i32 + addr) as usize;
-                        let (next, batched_retries) = if time_limit_ms == 0 {
-                            skip_failed_ascii_guards(
-                                reg,
-                                p,
-                                (s < right_range).then(|| str_data[s]),
-                                !exact_guard_retries && guard_upper_bounds_allowed,
-                                if retry_limit_in_match == 0 {
-                                    u64::MAX
-                                } else {
-                                    retry_limit_in_match.saturating_sub(
-                                        retry_in_match_counter
-                                            .saturating_add(guard_retries(skipped_retries)),
-                                    )
-                                },
-                            )
-                        } else {
-                            (p, 0)
-                        };
-                        p = next;
                         // Counts the backtracks the push would take (see
                         // `guard_backtrack_pushes`).
                         if let Err(err) = count_retry(
-                            guard_retries(skipped_retries) + batched_retries,
+                            guard_retries(skipped_retries),
                             &mut retry_in_match_counter,
                             retry_limit_in_match,
                             time_limit_ms,
@@ -6095,7 +6104,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_PUSH_IF_PEEK_NEXT - push only if next char matches
             // ================================================================
             OpCode::PushIfPeekNext => {
-                if let OperationPayload::PushIfPeekNext { addr, c } = reg.ops[p].payload {
+                if let OperationPayload::PushIfPeekNext { addr, c } = op.payload {
                     if s < right_range && str_data[s] == c {
                         let alt_target = (p as i32 + addr) as usize;
                         stack.push(StackEntry::Alt {
@@ -6115,7 +6124,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_REPEAT / OP_REPEAT_NG - initialize repeat counter
             // ================================================================
             OpCode::Repeat | OpCode::RepeatNg => {
-                if let OperationPayload::Repeat { id, addr } = reg.ops[p].payload {
+                if let OperationPayload::Repeat { id, addr } = op.payload {
                     let id = id as usize;
                     // Push initial repeat count = 0
                     stack.push(StackEntry::RepeatInc { zid: id, count: 0 });
@@ -6153,7 +6162,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_REPEAT_INC / OP_REPEAT_INC_NG - increment and check repeat
             // ================================================================
             OpCode::RepeatInc => {
-                if let OperationPayload::RepeatInc { id } = reg.ops[p].payload {
+                if let OperationPayload::RepeatInc { id } = op.payload {
                     let id = id as usize;
                     let count = stack_get_repeat_count(&stack, id) + 1;
                     let lower = reg.repeat_range[id].lower;
@@ -6183,7 +6192,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::RepeatIncNg => {
-                if let OperationPayload::RepeatInc { id } = reg.ops[p].payload {
+                if let OperationPayload::RepeatInc { id } = op.payload {
                     let id = id as usize;
                     let count = stack_get_repeat_count(&stack, id) + 1;
                     let lower = reg.repeat_range[id].lower;
@@ -6216,7 +6225,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_EMPTY_CHECK_START / END - detect empty match in loops
             // ================================================================
             OpCode::EmptyCheckStart => {
-                if let OperationPayload::EmptyCheckStart { mem } = reg.ops[p].payload {
+                if let OperationPayload::EmptyCheckStart { mem } = op.payload {
                     let mem = mem as usize;
                     stack.push(StackEntry::EmptyCheckStart { zid: mem, pstr: s });
                     p += 1;
@@ -6226,7 +6235,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::EmptyCheckEnd => {
-                if let OperationPayload::EmptyCheckEnd { mem, .. } = reg.ops[p].payload {
+                if let OperationPayload::EmptyCheckEnd { mem, .. } = op.payload {
                     let mem = mem as usize;
                     let is_empty = stack_empty_check(&stack, mem, s);
                     p += 1;
@@ -6245,7 +6254,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::EmptyCheckEnd {
                     mem,
                     empty_status_mem,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let is_empty = stack_empty_check_mem(&stack, mem as usize, s, empty_status_mem);
                     p += 1;
@@ -6262,7 +6271,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::EmptyCheckEnd {
                     mem,
                     empty_status_mem,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let mem = mem as usize;
                     let is_empty = stack_empty_check_mem_rec(&stack, mem, s, empty_status_mem);
@@ -6284,7 +6293,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_MOVE - move string position
             // ================================================================
             OpCode::Move => {
-                if let OperationPayload::Move { n } = reg.ops[p].payload {
+                if let OperationPayload::Move { n } = op.payload {
                     if n < 0 {
                         // Step back n characters (encoding-aware)
                         match onigenc_step_back(enc, 0, s, str_data, (-n) as usize) {
@@ -6321,7 +6330,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     char_len,
                     not,
                     ascii_compatible,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let body_end = look_behind_body_end(
                         &reg.ops[p + 1],
@@ -6357,7 +6366,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     initial,
                     remaining,
                     addr,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let initial = initial as usize;
                     // Step back 'initial' characters (encoding-aware)
@@ -6421,7 +6430,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_MARK - push a named checkpoint
             // ================================================================
             OpCode::Mark => {
-                if let OperationPayload::Mark { id, save_pos } = reg.ops[p].payload {
+                if let OperationPayload::Mark { id, save_pos } = op.payload {
                     let id = id as usize;
                     let pos = if save_pos { Some(s) } else { None };
                     stack.push(StackEntry::Mark { zid: id, pos });
@@ -6436,7 +6445,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // C always uses STACK_TO_VOID_TO_MARK (not POP_TO_MARK)
             // ================================================================
             OpCode::CutToMark => {
-                if let OperationPayload::CutToMark { id, restore_pos } = reg.ops[p].payload {
+                if let OperationPayload::CutToMark { id, restore_pos } = op.payload {
                     let id = id as usize;
                     let saved_pos = stack_void_to_mark(&mut stack, id);
                     if restore_pos {
@@ -6454,7 +6463,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_SAVE_VAL - save a value on the stack
             // ================================================================
             OpCode::SaveVal => {
-                if let OperationPayload::SaveVal { save_type, id } = reg.ops[p].payload {
+                if let OperationPayload::SaveVal { save_type, id } = op.payload {
                     let id = id as usize;
                     let v = match save_type {
                         SaveType::Keep => s,
@@ -6480,7 +6489,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     var_type,
                     id,
                     clear,
-                } = reg.ops[p].payload
+                } = op.payload
                 {
                     let id = id as usize;
                     match var_type {
@@ -6523,7 +6532,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_CALL / OP_RETURN - subroutine call/return
             // ================================================================
             OpCode::Call => {
-                if let OperationPayload::Call { addr } = reg.ops[p].payload {
+                if let OperationPayload::Call { addr } = op.payload {
                     if subexp_call_nest_counter
                         == onig_get_subexp_call_max_nest_level() as i64 as u64
                     {
@@ -6581,7 +6590,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::CalloutContents => {
                 // Callout of contents: always succeeds (we don't execute user code)
-                let num = match &reg.ops[p].payload {
+                let num = match &op.payload {
                     OperationPayload::CalloutContents { num } => *num,
                     _ => 0,
                 };
@@ -6599,7 +6608,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 p += 1;
             }
             OpCode::AltLiterals => {
-                if let OperationPayload::AltLiterals { trie_idx } = reg.ops[p].payload {
+                if let OperationPayload::AltLiterals { trie_idx } = op.payload {
                     let trie = &reg.literal_tries[trie_idx as usize];
                     if let Some(match_len) =
                         match_literal_trie(&mut stack, trie, str_data, s, right_range, p + 1)
@@ -6614,7 +6623,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 }
             }
             OpCode::CalloutName => {
-                let (num, id) = match &reg.ops[p].payload {
+                let (num, id) = match &op.payload {
                     OperationPayload::CalloutName { num, id } => (*num, *id),
                     _ => (0, 0),
                 };
@@ -6778,7 +6787,7 @@ pub fn onig_match(
 
     let mut msa = match CACHED_MSA.with(|c| c.borrow_mut().take()) {
         Some(mut cached) => {
-            cached.reset_full(reg, option, region, at);
+            cached.reset_with_limits(reg, option, region, at, None);
             cached
         }
         None => Box::new(MatchArg::new(reg, option, region, at)),
@@ -7359,6 +7368,56 @@ pub(crate) fn forward_search(
     found
 }
 
+/// Rust-only (ADR-008): the match bounds of a pure literal pattern
+/// (`RegexType::pure_literal`) from `start`, found by the forward literal
+/// search alone. `Some(None)` is no match and `None` leaves the search to the
+/// VM. Only a search whose attempts may consume the whole subject is
+/// answered (`right_range == end`), with a start before `range`. Then the
+/// first occurrence of the string at or after `start` is the match the
+/// optimizer loop would attempt first, and the attempt succeeds: nothing
+/// consumes or backtracks, and no failed attempt can count toward a limit.
+/// A later occurrence is never tried, as the first success ends the search.
+/// The options that change a success (FIND_LONGEST, FIND_NOT_EMPTY,
+/// MATCH_WHOLE_STRING) and the string validity check keep the VM.
+#[inline]
+pub(crate) fn pure_literal_first(
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    right_range: usize,
+    options: OnigOptionType,
+) -> Option<Option<(usize, usize)>> {
+    if !reg.pure_literal
+        || right_range != end
+        || start >= range
+        || range > end
+        || opton_find_longest(options)
+        || opton_find_not_empty(options)
+        || opton_match_whole_string(options)
+        || opton_check_validity_of_string(options)
+        || !pure_literal_fast_path_enabled()
+    {
+        return None;
+    }
+    let haystack = str_data.get(start..end)?;
+    let literal = reg.exact.as_slice();
+    // The same finder as the optimizer's `StrFast` search (`sunday_quick_search`).
+    let at = if literal.len() == 1 {
+        memchr::memchr(literal[0], haystack)
+    } else if let Some(finder) = &reg.exact_finder {
+        finder.find(haystack)
+    } else {
+        memchr::memmem::find(haystack, literal)
+    };
+    Some(
+        at.map(|i| start + i)
+            .filter(|&pos| pos < range)
+            .map(|pos| (pos, pos + literal.len())),
+    )
+}
+
 fn forward_search_impl(
     reg: &RegexType,
     str_data: &[u8],
@@ -7807,15 +7866,9 @@ pub(crate) fn search_in_range(
     data_range: usize,
     region: Option<OnigRegion>,
     option: OnigOptionType,
-    mp: Option<&OnigMatchParam>,
+    limits: Option<SearchLimits>,
 ) -> (i32, Option<OnigRegion>) {
-    if let Some(mp) = mp {
-        let mut msa = MatchArg::from_param(reg, option, region, start, mp);
-        let r = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
-        return (r, msa.region.take());
-    }
-
-    let mut msa = take_cached_msa(reg, option, region, start);
+    let mut msa = take_cached_msa(reg, option, region, start, limits);
     let r = search_in_range_inner(reg, str_data, end, start, range, data_range, &mut msa);
     let region = msa.region.take();
     cache_msa(msa);
@@ -7825,29 +7878,28 @@ pub(crate) fn search_in_range(
 // Box the cached state so each warm call moves only a pointer. Taking
 // ownership still leaves the cache available to re-entrant calls.
 thread_local! {
-    static CACHED_MSA: RefCell<Option<Box<MatchArg>>> = const { RefCell::new(None) };
+    static CACHED_MSA: Cell<Option<Box<MatchArg>>> = const { Cell::new(None) };
 }
 
-/// The thread's cached MatchArg, reset for a search, or a new one. Reusing
-/// it avoids a heap allocation per search; `.take()` makes this safe for
-/// re-entrant calls (e.g. from callouts).
+/// The thread's cached MatchArg, reset for a search under `limits` (`None`:
+/// the process-wide limits), or a new one. Reusing it avoids a heap
+/// allocation per search; `.take()` makes this safe for re-entrant calls
+/// (e.g. from callouts). Every reset writes all four limits, so a search's
+/// limits never reach a later search that takes the cache.
 #[inline]
 pub(crate) fn take_cached_msa(
     reg: &RegexType,
     option: OnigOptionType,
     region: Option<OnigRegion>,
     start: usize,
+    limits: Option<SearchLimits>,
 ) -> Box<MatchArg> {
-    match CACHED_MSA
-        .try_with(|c| c.borrow_mut().take())
-        .ok()
-        .flatten()
-    {
+    match CACHED_MSA.try_with(Cell::take).ok().flatten() {
         Some(mut cached) => {
-            cached.reset_full(reg, option, region, start);
+            cached.reset_with_limits(reg, option, region, start, limits);
             cached
         }
-        None => Box::new(MatchArg::new(reg, option, region, start)),
+        None => Box::new(MatchArg::with_limits(reg, option, region, start, limits)),
     }
 }
 
@@ -7857,16 +7909,15 @@ pub(crate) fn cache_msa(mut msa: Box<MatchArg>) {
     release_oversized_stack(&mut msa);
     // Drop can run after this thread-local's destructor during thread
     // teardown; the MatchArg is then simply freed.
-    let _ = CACHED_MSA.try_with(|c| {
-        *c.borrow_mut() = Some(msa);
-    });
+    let _ = CACHED_MSA.try_with(|c| c.set(Some(msa)));
 }
 
 /// Rust-only (API layer): the bounds of the first match from `start` to the
 /// end of `text`, as `onig_search` with no options would find it, without a
-/// region. `msa` is reused across the searches of one iteration. Not for
-/// expressions whose match can start away from its attempt (`\K`) or with
-/// FIND_LONGEST, where only the region carries the match.
+/// region. `msa` is reused across the searches of one iteration and must be
+/// reset for this search first (`take_cached_msa` or `reset_with_limits`).
+/// Not for expressions whose match can start away from its attempt (`\K`) or
+/// with FIND_LONGEST, where only the region carries the match.
 pub(crate) fn onig_search_bounds(
     reg: &RegexType,
     text: &[u8],
@@ -7874,9 +7925,20 @@ pub(crate) fn onig_search_bounds(
     msa: &mut MatchArg,
 ) -> Result<Option<(usize, usize)>, i32> {
     debug_assert!(!reg.keep_moves_match_start && !opton_find_longest(reg.options));
-    msa.reset_full(reg, ONIG_OPTION_NONE, None, start);
     let end = text.len();
-    let r = search_in_range_inner(reg, text, end, start, end, end, msa);
+    if let Some(found) = pure_literal_first(reg, text, end, start, end, end, reg.options) {
+        return Ok(found);
+    }
+    // Rust-only (ADR-008): the search runs the core directly. With no region
+    // `search_in_range_inner` only clamps the bounds (already `end`) and
+    // takes the core's `right_range == end`; a start past `end` is no match.
+    let r = if start > end {
+        ONIG_MISMATCH
+    } else if can_use_two_pass_capture_fill(reg, start, end, msa) {
+        search_in_range_inner(reg, text, end, start, end, end, msa)
+    } else {
+        onig_search_inner_core_with_right_range(reg, text, end, start, end, end, true, None, msa)
+    };
     release_oversized_stack(msa);
     match r {
         r if r >= 0 => Ok(Some((r as usize, r as usize + msa.match_len as usize))),
@@ -7975,7 +8037,7 @@ pub fn onig_search_with_param(
         data_range,
         region,
         option,
-        Some(mp),
+        Some(SearchLimits::from(mp)),
     )
 }
 
@@ -7987,6 +8049,23 @@ pub fn onig_search_with_param(
 #[inline]
 pub(crate) fn map_search_bypassed(reg: &RegexType) -> bool {
     map_search_bypassed_for(reg, false)
+}
+
+/// Rust-only (ADR-008): whether the map optimizer's check from `start` (the
+/// `forward_search` call of an unbounded search) finds `start` itself, so
+/// that the call would return `Some` with `low == high == start` and read no
+/// bytes. The map has a candidate at `start` when its byte is set; the
+/// distance and sub-anchor checks then pass at `start`. Only then is the
+/// search called away.
+#[inline]
+fn map_candidate_at(reg: &RegexType, str_data: &[u8], start: usize, range: usize) -> bool {
+    reg.optimize == OptimizeType::Map
+        && reg.dist_min == 0
+        && reg.dist_max == INFINITE_LEN
+        && reg.sub_anchor == 0
+        && start < range
+        && start < str_data.len()
+        && reg.map[str_data[start] as usize] != 0
 }
 
 /// `map_search_bypassed` for a subject that is (`subject_utf8`) or may not
@@ -8068,17 +8147,23 @@ fn onig_search_inner_two_pass(
     // there, the common case of a scanner search, needs no second pass.
     // Later attempts run untracked.
     msa.capture_position = Some(start);
-    let match_start = capture_map_search(
-        reg,
-        str_data,
-        end,
-        start,
-        range,
-        right_range,
-        start_filter,
-        msa,
-    )
-    .unwrap_or_else(|| {
+    // Rust-only (ADR-008): the map search's own first checks, read here so
+    // that a pattern they reject does not pay for the call.
+    let mapped = if capture_map_may_apply(reg) {
+        capture_map_search(
+            reg,
+            str_data,
+            end,
+            start,
+            range,
+            right_range,
+            start_filter,
+            msa,
+        )
+    } else {
+        None
+    };
+    let match_start = mapped.unwrap_or_else(|| {
         onig_search_inner_core_with_right_range(
             reg,
             str_data,
@@ -8142,6 +8227,21 @@ fn capture_map_scans_enabled() -> bool {
     {
         true
     }
+}
+
+/// Rust-only (ADR-008): necessary conditions of `capture_map_search`, the
+/// fields it tests first and that do not change during a search. A pattern
+/// that fails one of them is searched by the core loop as before.
+#[inline(always)]
+fn capture_map_may_apply(reg: &RegexType) -> bool {
+    reg.optimize == OptimizeType::Map
+        && reg.anchor == 0
+        && reg.sub_anchor == 0
+        && reg.dist_min == 0
+        && reg.dist_max == 0
+        && reg.ac_alt.is_none()
+        && !reg.needs_capture_tracking
+        && !reg.anychar_run
 }
 
 /// Continue a captured zero-distance map search on C's admitted positions.
@@ -8408,6 +8508,22 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
             return ONIG_MISMATCH;
         }
         // backward search or find_longest: fall through to normal path
+    }
+
+    // Rust-only (ADR-008): a pure literal pattern is answered by the literal
+    // search, with the region filled as its one attempt would fill it.
+    if let Some(found) =
+        pure_literal_first(reg, str_data, end, start, range, right_range, msa.options)
+    {
+        let Some((match_start, match_end)) = found else {
+            return ONIG_MISMATCH;
+        };
+        msa.match_len = (match_end - match_start) as i32;
+        if let Some(ref mut r) = msa.region {
+            r.beg[0] = match_start as i32;
+            r.end[0] = match_end as i32;
+        }
+        return match_start as i32;
     }
 
     if start > range {
@@ -8821,7 +8937,9 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
             );
         } else {
             // Infinite dist_max: just check once, then fall through to normal loop
-            if forward_search(reg, str_data, end, s, sch_range).is_none() {
+            if !map_candidate_at(reg, str_data, s, sch_range)
+                && forward_search(reg, str_data, end, s, sch_range).is_none()
+            {
                 return finish_search(
                     find_longest,
                     best_start,
@@ -9618,22 +9736,27 @@ fn finish_longest_search(
 mod tests {
 
     #[test]
-    fn guard_chain_batches_preserve_captures_unicode_and_retry_limits() {
+    fn guard_chain_skip_gates_preserve_captures_unicode_and_retry_limits() {
         let _limits = shared_limits();
         // Django's broad domain character class generates full case-fold
         // alternatives. The final class forces the greedy repeat to backtrack.
-        let reg = regcomp::onig_new(
-            r"\A([a-z¡-\x{ffff}0-9]{1,63})[a-z¡-\x{ffff}0-9]\z".as_bytes(),
-            ONIG_OPTION_IGNORECASE | ONIG_OPTION_CAPTURE_GROUP,
-            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
-            &crate::regsyntax::OnigSyntaxOniguruma,
-        )
-        .unwrap();
+        let compile = |gated: bool| {
+            regcomp::SKIP_GATES_DISABLED.with(|disabled| disabled.set(!gated));
+            let reg = regcomp::onig_new(
+                r"\A([a-z¡-\x{ffff}0-9]{1,63})[a-z¡-\x{ffff}0-9]\z".as_bytes(),
+                ONIG_OPTION_IGNORECASE | ONIG_OPTION_CAPTURE_GROUP,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            regcomp::SKIP_GATES_DISABLED.with(|disabled| disabled.set(false));
+            reg
+        };
+        let gated = compile(true);
+        let ungated = compile(false);
         assert!(
-            reg.ops.iter().enumerate().any(|(pc, _)| {
-                skip_failed_ascii_guards(&reg, pc, Some(b'a'), true, u64::MAX).0 != pc
-            }),
-            "the regression must exercise a batched chain"
+            !gated.skip_gates.is_empty() && ungated.skip_gates.is_empty(),
+            "the regression must exercise a gated chain"
         );
         let mut texts = vec![
             b"".to_vec(),
@@ -9664,10 +9787,9 @@ mod tests {
                             params.retry_limit_in_search = search;
                             params.match_stack_limit = stack;
                             params.time_limit = 0;
-                            let run = |disabled| {
-                                GUARD_CHAIN_BATCHING_DISABLED.with(|v| v.set(disabled));
+                            let run = |reg: &RegexType| {
                                 let (result, region) = onig_search_with_param(
-                                    &reg,
+                                    reg,
                                     &text,
                                     text.len(),
                                     0,
@@ -9676,7 +9798,6 @@ mod tests {
                                     option,
                                     &params,
                                 );
-                                GUARD_CHAIN_BATCHING_DISABLED.with(|v| v.set(false));
                                 let captures = region.map(|region| {
                                     (
                                         region.beg[..region.num_regs as usize].to_vec(),
@@ -9686,8 +9807,8 @@ mod tests {
                                 (result, captures)
                             };
                             assert_eq!(
-                                run(false),
-                                run(true),
+                                run(&gated),
+                                run(&ungated),
                                 "{text:?}, match={retry}, search={search}, stack={stack}, option={option:?}"
                             );
                         }
@@ -11263,6 +11384,7 @@ mod tests {
             sub_anchor: 0,
             exact: Vec::new(),
             exact_finder: None,
+            pure_literal: false,
             map: [0u8; CHAR_MAP_SIZE],
             map_offset: 0,
             map_bytes: [0u8; 3],
@@ -11280,6 +11402,7 @@ mod tests {
             extp: None,
             literal_tries: Vec::new(),
             check_dependent_guards: false,
+            skip_gates: Vec::new(),
             ac_alt: None,
             ac_alt_has_capture: false,
             leading_run: None,
@@ -13613,6 +13736,224 @@ mod tests {
             ONIG_OPTION_NONE,
         );
         assert_eq!(result, ONIG_MISMATCH);
+    }
+
+    /// Compiles `pattern` as UTF-8 with the given compile options.
+    fn compile_utf8(pattern: &[u8], option: OnigOptionType) -> RegexType {
+        regcomp::onig_new(
+            pattern,
+            option,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap()
+    }
+
+    /// Runs `search` with the pure literal fast path on or off.
+    fn with_pure_literal_fast_path<T>(enabled: bool, search: impl FnOnce() -> T) -> T {
+        PURE_LITERAL_FAST_PATH_DISABLED.with(|v| v.set(!enabled));
+        let out = search();
+        PURE_LITERAL_FAST_PATH_DISABLED.with(|v| v.set(false));
+        out
+    }
+
+    #[test]
+    fn pure_literal_flag_follows_the_program() {
+        let _limits = shared_limits();
+        let cases: &[(&[u8], OnigOptionType, bool)] = &[
+            (b"GET", ONIG_OPTION_NONE, true),
+            (b"a", ONIG_OPTION_NONE, true),
+            (b"12345678901", ONIG_OPTION_NONE, true),
+            // Multibyte string ops (`StrMb*`) keep the VM.
+            ("caf\u{e9}".as_bytes(), ONIG_OPTION_NONE, false),
+            (b"", ONIG_OPTION_NONE, false),
+            (b"GET", ONIG_OPTION_IGNORECASE, false),
+            (b"(?i)get", ONIG_OPTION_NONE, false),
+            (b"G.T", ONIG_OPTION_NONE, false),
+            (b"GET$", ONIG_OPTION_NONE, false),
+            (b"^GET", ONIG_OPTION_NONE, false),
+            (b"(GET)", ONIG_OPTION_NONE, false),
+            (b"GE+T", ONIG_OPTION_NONE, false),
+            (b"GET|PUT", ONIG_OPTION_NONE, false),
+            (b"GET(?=X)", ONIG_OPTION_NONE, false),
+            (b"GET\\b", ONIG_OPTION_NONE, false),
+            (b"G\\Ket", ONIG_OPTION_NONE, false),
+        ];
+        for &(pattern, option, expected) in cases {
+            let reg = compile_utf8(pattern, option);
+            assert_eq!(
+                reg.pure_literal,
+                expected,
+                "{}",
+                String::from_utf8_lossy(pattern)
+            );
+        }
+    }
+
+    #[test]
+    fn pure_literal_search_matches_the_vm_path() {
+        let _limits = shared_limits();
+        let patterns: &[&[u8]] = &[b"GET", b"a", b"aa", b"ab", b"12345678901"];
+        let subjects: &[&[u8]] = &[
+            b"",
+            b"G",
+            b"GET",
+            b"xGETGET",
+            b"GETGE",
+            b"aaaa",
+            b"aabaab",
+            b"12345678901 1234567890",
+            b"ab\xffab\xc3",
+        ];
+        let options = [
+            ONIG_OPTION_NONE,
+            ONIG_OPTION_FIND_LONGEST,
+            ONIG_OPTION_FIND_NOT_EMPTY,
+            ONIG_OPTION_MATCH_WHOLE_STRING,
+            ONIG_OPTION_CHECK_VALIDITY_OF_STRING,
+        ];
+        for pattern in patterns {
+            let reg = compile_utf8(pattern, ONIG_OPTION_NONE);
+            assert!(reg.pure_literal, "{}", String::from_utf8_lossy(pattern));
+            for subject in subjects {
+                // A subject cut at `end` checks the right range as well.
+                for end in 0..=subject.len() {
+                    let text = &subject[..end];
+                    for start in 0..=end {
+                        for range in 0..=end {
+                            for option in options {
+                                // A narrower start range with the whole subject as the
+                                // right range: the RegSet route (`onig_search_with_msa_and_right_range`).
+                                let narrowed = |enabled| {
+                                    with_pure_literal_fast_path(enabled, || {
+                                        let mut msa = MatchArg::new(
+                                            &reg,
+                                            option,
+                                            Some(OnigRegion::new()),
+                                            start,
+                                        );
+                                        let (result, region) = onig_search_with_msa_and_right_range(
+                                            &reg, text, end, start, range, end, None, &mut msa,
+                                        );
+                                        (result, region.map(|r| (r.num_regs, r.beg, r.end)))
+                                    })
+                                };
+                                assert_eq!(
+                                    narrowed(true),
+                                    narrowed(false),
+                                    "{} on {:?} end {end} start {start} range {range} option {option:?} narrowed",
+                                    String::from_utf8_lossy(pattern),
+                                    String::from_utf8_lossy(text),
+                                );
+                                // With and without a region, as `is_match` searches.
+                                for with_region in [true, false] {
+                                    let run = |enabled| {
+                                        with_pure_literal_fast_path(enabled, || {
+                                            let region = with_region.then(OnigRegion::new);
+                                            let (result, region) = onig_search(
+                                                &reg, text, end, start, range, region, option,
+                                            );
+                                            (result, region.map(|r| (r.num_regs, r.beg, r.end)))
+                                        })
+                                    };
+                                    assert_eq!(
+                                        run(true),
+                                        run(false),
+                                        "{} on {:?} end {end} start {start} range {range} option {option:?} region {with_region}",
+                                        String::from_utf8_lossy(pattern),
+                                        String::from_utf8_lossy(text),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pure_literal_bounds_and_region_match_the_vm_path() {
+        let _limits = shared_limits();
+        let reg = compile_utf8(b"GET", ONIG_OPTION_NONE);
+        let text = b"xGETGET GE";
+        for start in 0..=text.len() {
+            let bounds = |enabled| {
+                with_pure_literal_fast_path(enabled, || {
+                    let mut msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, start);
+                    onig_search_bounds(&reg, text, start, &mut msa).unwrap()
+                })
+            };
+            assert_eq!(bounds(true), bounds(false), "start {start}");
+        }
+    }
+
+    #[test]
+    fn pure_literal_bounds_keep_the_validity_check() {
+        let _limits = shared_limits();
+        // The validity option comes with the compile options, so the bounds
+        // search (which takes `reg.options`) sees it as well.
+        let reg = compile_utf8(b"ab", ONIG_OPTION_CHECK_VALIDITY_OF_STRING);
+        assert!(reg.pure_literal);
+        let text = b"ab\xff";
+        let bounds = |enabled| {
+            with_pure_literal_fast_path(enabled, || {
+                let mut msa = MatchArg::new(&reg, ONIG_OPTION_NONE, None, 0);
+                onig_search_bounds(&reg, text, 0, &mut msa)
+            })
+        };
+        assert_eq!(bounds(true), bounds(false));
+        assert_eq!(bounds(false), Err(ONIGERR_INVALID_WIDE_CHAR_VALUE));
+    }
+
+    #[test]
+    fn pure_literal_search_keeps_the_vm_for_limits_it_cannot_skip() {
+        let _limits = exclusive_limits();
+        let reg = compile_utf8(b"GET", ONIG_OPTION_NONE);
+        let text = b"xxGET";
+        // A matching search answers without an attempt in the VM.
+        VM_ATTEMPTS.with(|v| v.set(0));
+        let (result, _) = onig_search(
+            &reg,
+            text,
+            text.len(),
+            0,
+            text.len(),
+            None,
+            ONIG_OPTION_NONE,
+        );
+        assert_eq!(result, 2);
+        assert_eq!(VM_ATTEMPTS.with(std::cell::Cell::get), 0);
+
+        // The disabled path runs the VM, which finds the same match.
+        VM_ATTEMPTS.with(|v| v.set(0));
+        let (result, _) = with_pure_literal_fast_path(false, || {
+            onig_search(
+                &reg,
+                text,
+                text.len(),
+                0,
+                text.len(),
+                None,
+                ONIG_OPTION_NONE,
+            )
+        });
+        assert_eq!(result, 2);
+        assert_eq!(VM_ATTEMPTS.with(std::cell::Cell::get), 1);
+
+        // Under a search retry limit, the answer is still the same.
+        onig_set_retry_limit_in_search(1);
+        let limited = onig_search(
+            &reg,
+            text,
+            text.len(),
+            0,
+            text.len(),
+            None,
+            ONIG_OPTION_NONE,
+        );
+        onig_set_retry_limit_in_search(0);
+        assert_eq!(limited.0, 2);
     }
 
     #[test]

@@ -508,6 +508,9 @@ pub(crate) enum OperationPayload {
         /// counts for the push it skips (see `guard_skipped_retries`).
         /// Upstream's own instruction counts none.
         skipped_retries: u32,
+        /// Rust-only (ADR-008): the skip path of the guard chain from here on,
+        /// an index into `RegexType::skip_gates` (see `GuardSkipGate`).
+        skip_gate: Option<u32>,
     },
     PushIfPeekNext {
         addr: RelAddrType,
@@ -584,7 +587,31 @@ pub(crate) enum OperationPayload {
         /// The backtracks the jump counts for the push it skips (see
         /// `guard_skipped_retries`).
         skipped_retries: u32,
+        /// Rust-only (ADR-008): the skip path of the guard chain from here on,
+        /// an index into `RegexType::skip_gates` (see `GuardSkipGate`).
+        skip_gate: Option<u32>,
     },
+}
+
+/// Rust-only (ADR-008): the skip path of a chain of guards, composed into one
+/// jump. A guard whose byte set misses the current byte jumps to the next
+/// guard of its chain (`addr` is both its push target and its skip target),
+/// so a run of such guards that all miss ends at the first instruction that
+/// is not a guard. The gate holds the union of those byte sets, the sum of
+/// their skipped retries and the relative address of that instruction. When
+/// the current byte is outside the union, the gate jumps there and counts the
+/// sum; the VM otherwise runs the guard as before.
+#[derive(Clone, Debug)]
+pub(crate) struct GuardSkipGate {
+    /// The bytes that some guard of the chain from this one on can take.
+    pub(crate) bsp: BitSet,
+    /// The sum of the chain's `skipped_retries` from this guard on.
+    pub(crate) skipped_retries: u32,
+    /// Relative address, from this guard, of the first non-guard instruction
+    /// the skip path reaches.
+    pub(crate) addr: RelAddrType,
+    /// The number of guards the gate covers, this one included.
+    pub(crate) links: u32,
 }
 
 // === Callout constants ===
@@ -687,6 +714,11 @@ pub struct RegexType {
     pub(crate) exact: Vec<u8>,
     /// Reuse the forward literal search plan across haystacks (ADR-008).
     pub(crate) exact_finder: Option<Box<memchr::memmem::Finder<'static>>>,
+    /// Rust-only (ADR-008): the whole program is `exact` (a string op and
+    /// `End`, no captures, anchors or distances), so the forward literal
+    /// search answers a search that sees all of its subject without entering
+    /// the VM (`pure_literal_first`). Set by `detect_pure_literal`.
+    pub(crate) pure_literal: bool,
     pub(crate) map: [u8; CHAR_MAP_SIZE],
     pub(crate) map_offset: i32,
     pub(crate) map_bytes: [u8; 3],
@@ -733,6 +765,10 @@ pub struct RegexType {
     /// Rust-only (ADR-008): some guarded push carries
     /// `GUARD_RETRIES_BY_CHECKS`.
     pub(crate) check_dependent_guards: bool,
+
+    /// Rust-only (ADR-008): the skip gates of the guard chains, which the
+    /// guards' `skip_gate` indexes (see `GuardSkipGate`).
+    pub(crate) skip_gates: Vec<GuardSkipGate>,
 
     // Aho-Corasick automaton for pure literal alternation fast path.
     // `ac_alt_has_capture` is true when the alternation is wrapped in a single
