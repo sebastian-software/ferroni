@@ -353,12 +353,17 @@ pub(crate) enum OpCode {
     DecimalTailPrefix = 99,
     /// Rust-only (ADR-008): lazy dot push across a plain capture end to a literal.
     PushLazyAnyChar = 100,
+    /// Rust-only (ADR-008): pops the backtracking choices the star
+    /// instruction just before it pushed, which makes that star possessive.
+    /// Emitted only after a star `crate::possessify` proved never has to
+    /// give anything back.
+    PopStarChoices = 101,
     /// Rust-only (ADR-008): a greedy bounded repeat `[class]{min,max}` run as a
     /// counted star loop instead of a `Repeat` counter loop.
-    CClassRepeat = 101,
+    CClassRepeat = 103,
     /// Rust-only (ADR-008): a greedy bounded repeat `.{min,max}` (`AnyChar`
     /// or `AnyCharMl`) run as a counted star loop.
-    AnyCharRepeat = 102,
+    AnyCharRepeat = 104,
 }
 
 // === SaveType ===

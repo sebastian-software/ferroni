@@ -406,7 +406,7 @@ fn get_tree_tail_literal(node: &Node, nest_level: i32) -> GetValue<'_> {
 }
 
 /// Check if a codepoint is in a character class.
-fn onig_is_code_in_cc(enc: OnigEncoding, code: OnigCodePoint, cc: &CClassNode) -> bool {
+pub(crate) fn onig_is_code_in_cc(enc: OnigEncoding, code: OnigCodePoint, cc: &CClassNode) -> bool {
     let len = if enc.min_enc_len() > 1 {
         2
     } else {
@@ -472,7 +472,7 @@ fn onig_is_in_code_range_bbuf(mbuf: &BBuf, code: OnigCodePoint) -> bool {
 
 /// Check if two head-literal nodes are mutually exclusive.
 /// If they are, a quantifier before x followed by y can be made possessive.
-fn is_exclusive(x: &Node, y: &Node, reg: &RegexType) -> bool {
+pub(crate) fn is_exclusive(x: &Node, y: &Node, reg: &RegexType) -> bool {
     // Dispatch on x type, with swap for certain y types
     match (&x.inner, &y.inner) {
         // CType × CType
@@ -681,6 +681,7 @@ fn tune_next_inner(node: &mut Node, next_node: &Node, reg: &RegexType, called: b
                                     next_head_exact: qn.next_head_exact.take(),
                                     include_referred: qn.include_referred,
                                     empty_status_mem: qn.empty_status_mem,
+                                    possessive_star: false,
                                 }),
                                 status,
                                 parent: std::ptr::null_mut(),
@@ -1351,6 +1352,35 @@ fn compile_counted_char_repeat(repeat: CountedRepeat, reg: &mut RegexType) {
     }
 }
 
+/// Rust-only (ADR-008): whether a greedy repeat compiles to one of the star
+/// instructions above (`CClassStar` and its class forms, or `WordStar` /
+/// `WordAsciiStar`) and nothing else, which `crate::possessify` needs to make
+/// it possessive with `PopStarChoices`. Mirrors the branches of
+/// `compile_quantifier_node` that end in such an instruction; a known next
+/// byte selects a peek-next form instead, which is left alone.
+pub(crate) fn compiles_to_plain_star(qn: &QuantNode) -> bool {
+    let Some(body) = qn.body.as_deref() else {
+        return false;
+    };
+    qn.next_head_exact.is_none()
+        && ((is_cclass_infinite_greedy(qn) && body.as_cclass().is_some())
+            || single_ascii_byte_star(qn).is_some()
+            || matches!(is_word_ctype_infinite_greedy(qn), Some((false, _))))
+}
+
+/// Rust-only (ADR-008): `PopStarChoices` after the star instruction of a
+/// repeat that `crate::possessify` made possessive.
+fn add_pop_star_choices(qn: &QuantNode, reg: &mut RegexType) {
+    if qn.possessive_star {
+        add_op(reg, OpCode::PopStarChoices, OperationPayload::None);
+    }
+}
+
+/// The length `add_pop_star_choices` adds.
+fn pop_star_choices_length(qn: &QuantNode) -> i32 {
+    if qn.possessive_star { SIZE_INC } else { 0 }
+}
+
 /// Compile a character class star node (CClassStar/CClassMixStar/CClassMbStar,
 /// or their negated `*NotStar` forms). Mirrors the payload selection of
 /// `compile_cclass_node`, so each star opcode matches exactly the characters
@@ -1469,20 +1499,20 @@ fn compile_length_quantifier_node(qn: &QuantNode, reg: &RegexType, env: &ParseEn
     // CClass star/plus optimization: [class]* or [class]+ (negated too)
     if rust_only && is_cclass_infinite_greedy(qn) && body.as_cclass().is_some() {
         let tlen = compile_length_tree(body, reg, env);
-        return SIZE_INC + tlen * qn.lower;
+        return SIZE_INC + tlen * qn.lower + pop_star_choices_length(qn);
     }
 
     // Single ASCII byte star/plus: c* or c+ (runs as [c]*)
     if rust_only && single_ascii_byte_star(qn).is_some() {
         let tlen = compile_length_tree(body, reg, env);
-        return SIZE_INC + tlen * qn.lower;
+        return SIZE_INC + tlen * qn.lower + pop_star_choices_length(qn);
     }
 
     // Word ctype star/plus optimization: \w* or \w+
     if let Some((not, _ascii_mode)) = is_word_ctype_infinite_greedy(qn).filter(|_| rust_only) {
         if !not {
             let tlen = compile_length_tree(body, reg, env);
-            return SIZE_INC + tlen * qn.lower;
+            return SIZE_INC + tlen * qn.lower + pop_star_choices_length(qn);
         }
     }
 
@@ -1662,6 +1692,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 }
             }
             compile_cclass_star_node(cc, reg);
+            add_pop_star_choices(qn, reg);
             return 0;
         }
     }
@@ -1692,6 +1723,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                     ascii_fast: CClassAsciiFastKind::Eq(c),
                 },
             );
+            add_pop_star_choices(qn, reg);
         }
         return 0;
     }
@@ -1719,6 +1751,7 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
                 OpCode::WordStar
             };
             add_op(reg, opcode, OperationPayload::None);
+            add_pop_star_choices(qn, reg);
             return 0;
         }
     }
@@ -10968,6 +11001,10 @@ fn compile_parsed(
         return r;
     }
     refresh_node_references(&mut root, env);
+
+    // Rust-only (ADR-008): extend C's automatic possessification (tune_next)
+    // to stars whose next node is optional, an alternation or an end anchor.
+    crate::possessify::apply(&mut root, reg, env);
 
     // Lengths of the tuned groups for the optimizer's back-references (C
     // reads them from the group nodes, tuned by then, in optimize_nodes).

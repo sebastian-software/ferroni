@@ -806,6 +806,18 @@ fn is_capture_check(node: &Node) -> bool {
     matches!(node.inner, NodeInner::BackRef(_)) && node.has_status(ND_ST_CHECKER)
 }
 
+/// Whether a stop-backtrack bag is one `tune_next` made for automatic
+/// possessification: a greedy repeat followed by an item that cannot start
+/// where its body does is `(?>a*)` followed by that item (C: `tune_next`).
+/// Only that pass sets `ND_ST_STRICT_REAL_REPEAT`, and it sets it on that
+/// bag alone, so a user-written atomic group or possessive quantifier never
+/// has it. The bag keeps the language of its repetition (the item cannot
+/// match at any position the repeat could give back to), so the seek writes
+/// the plain repetition and stays exact.
+fn automatic_possessive(node: &Node) -> bool {
+    node.has_status(ND_ST_STRICT_REAL_REPEAT)
+}
+
 /// A node that produces nothing in the seek and consumes nothing, so a
 /// positive look-ahead before it may keep its body in place.
 fn droppable(node: &Node) -> bool {
@@ -1040,9 +1052,13 @@ impl Walk<'_> {
                 }
                 // An atomic group keeps only the first way its body matches,
                 // which the seek, keeping every way, does not: `(?>abc|ab)c`
-                // has no match in `abc`, its seek does.
+                // has no match in `abc`, its seek does. The bag `tune_next`
+                // makes for automatic possessification is the repetition
+                // itself, see `automatic_possessive`.
                 BagData::StopBacktrack => {
-                    self.inexact = true;
+                    if !automatic_possessive(node) {
+                        self.inexact = true;
+                    }
                     bn.body
                         .as_deref()
                         .map_or_else(Hir::empty, |body| self.item(body, rest_droppable))
@@ -2510,11 +2526,23 @@ mod tests {
             "(?i)s",
             "[\u{e9}]",
             "(a)(b)",
+            // Repeats that `tune_next` makes possessive: their bags keep the
+            // language of the repeat, so the seek is exact.
+            "^[a-z]+@[a-z]+\\.com$",
+            "[a-z]*@",
+            "[^\"]*\"",
+            "(?:ab)*c",
+            "([a-z]+)@([a-z]+)",
         ];
         let inexact = [
             "(?>abc|ab)c",
             "(?>a+)b",
             "a++b",
+            "a*+b",
+            "[a-z]++@",
+            // A user-written atomic group stays inexact beside an automatic one.
+            "^[a-z]+@(?>[a-z]+)\\.com$",
+            "(?>[a-z]+)@",
             "\\b",
             "\\B",
             "(?=a)b",
@@ -2547,6 +2575,10 @@ mod tests {
                 "{pattern}"
             );
         }
+        // ASCII word characters: the repeat before `:` is possessive and exact.
+        let ascii_word = ONIG_OPTION_CAPTURE_GROUP | crate::oniguruma::ONIG_OPTION_WORD_IS_ASCII;
+        assert_eq!(exact_with("\\w+:", ascii_word), Some(true));
+        assert_eq!(exact_with("\\w+:", ONIG_OPTION_CAPTURE_GROUP), Some(false));
         // Without multi-line anchors `$` is `\Z`, which is exact at the end of
         // the pattern (where it is `(?:\n)?\z`) and approximated elsewhere.
         let singleline = ONIG_OPTION_CAPTURE_GROUP | crate::oniguruma::ONIG_OPTION_SINGLELINE;
