@@ -2353,6 +2353,27 @@ mod tests {
         assert!(!re.is_match("john@doe.org"));
     }
 
+    /// The repeats `tune_next` makes possessive keep the language of the
+    /// repeat, so the seek of `^[a-z]+@[a-z]+\.com$` is exact and answers
+    /// "match" for it. A user-written atomic group next to them is not: its
+    /// seek stays inexact and answers "match" only from the matcher.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn automatic_possessive_repeats_keep_the_seek_exact() {
+        let re = Regex::new(r"^[a-z]+@[a-z]+\.com$").unwrap();
+        assert_eq!(re.seek_exact(), Some(true));
+        assert_eq!(re.seek_decides_is_match("john@doe.com"), Some(true));
+        assert_eq!(re.seek_decides_is_match("john@doe.org"), Some(false));
+        assert!(re.is_match("john@doe.com"));
+        assert!(!re.is_match("john@doe.org"));
+
+        let atomic = Regex::new(r"^[a-z]+@(?>[a-z]+)\.com$").unwrap();
+        assert_eq!(atomic.seek_exact(), Some(false));
+        assert_eq!(atomic.seek_decides_is_match("john@doe.com"), None);
+        assert_eq!(atomic.seek_decides_is_match("john@doe.org"), Some(false));
+        assert!(atomic.is_match("john@doe.com"));
+    }
+
     /// Where a tiny process-wide retry limit stops the matcher, an exact seek
     /// still answers "match", and the answer is the matcher's without the
     /// limit (ADR-017, rule 2). The limit is restored when the guard drops.
