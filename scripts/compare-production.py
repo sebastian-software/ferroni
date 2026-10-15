@@ -23,7 +23,7 @@ import sys
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINES = ("rust", "rust_erroraware", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex", "regexr", "regexr_jit")
+ENGINES = ("rust", "rust_erroraware", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex")
 PROFILES = {
     "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
     "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
@@ -34,8 +34,6 @@ PROFILES = {
     "fancy_regex": "fancy-regex Oniguruma mode, seek off, explicit source flags",
     "fancy_regex_seek": "fancy-regex Oniguruma mode, seek on, explicit source flags",
     "regex": "Rust regex public API with explicit source flags; default limits",
-    "regexr": "regexr 0.6.1 public Regex API; (?u) Unicode shorthand classes; default SIMD; JIT off; fallible first-match/capture preflight",
-    "regexr_jit": "regexr 0.6.1 public Regex API; (?u) Unicode shorthand classes; default SIMD; jit(true); selected backend recorded, non-JIT fallback allowed",
 }
 LANES = ("steady", "compile", "first_use")
 

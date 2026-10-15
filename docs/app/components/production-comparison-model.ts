@@ -1,6 +1,5 @@
-// cspell:ignore onigmo erroraware regexr
+// cspell:ignore onigmo erroraware
 import data from "../data/production-comparison.json";
-import regexrResults from "../data/regexr-comparison.json";
 import tokenizerResults from "../data/tokenizer-comparison.json";
 
 export { data };
@@ -12,7 +11,6 @@ export type Dataset = {
 function publishedDataset(dataset: Dataset): Dataset | undefined {
   return dataset.platforms.length > 0 ? dataset : undefined;
 }
-export const regexrData = publishedDataset(regexrResults);
 export const tokenizerData = publishedDataset(tokenizerResults);
 
 export const engineNames: Record<string, string> = {
@@ -24,8 +22,6 @@ export const engineNames: Record<string, string> = {
   fancy_regex: "fancy-regex, seek off",
   fancy_regex_seek: "fancy-regex, seek on",
   regex: "Rust regex",
-  regexr: "regexr, JIT off",
-  regexr_jit: "regexr, JIT enabled",
 };
 export const laneNames: Record<string, string> = {
   steady: "Steady reuse · complete fixture batch",
@@ -41,8 +37,6 @@ export const engineLanguages: Record<string, string> = {
   fancy_regex: "Rust",
   fancy_regex_seek: "Rust",
   regex: "Rust",
-  regexr: "Rust",
-  regexr_jit: "Rust",
 };
 export const operationNames: Record<string, string | undefined> = {
   is_match: "Boolean match",

@@ -29,11 +29,6 @@
       "id": "regex",
       "label": "Rust regex",
       "language": "Rust"
-    },
-    {
-      "id": "regexr",
-      "label": "regexr",
-      "language": "Rust"
     }
   ],
   "features": [
@@ -49,8 +44,7 @@
         "onigmo": true,
         "pcre2": true,
         "fancy_regex": true,
-        "regex": true,
-        "regexr": true
+        "regex": true
       }
     },
     {
@@ -65,8 +59,7 @@
         "onigmo": true,
         "pcre2": true,
         "fancy_regex": true,
-        "regex": false,
-        "regexr": true
+        "regex": false
       }
     },
     {
@@ -81,8 +74,7 @@
         "onigmo": false,
         "pcre2": false,
         "fancy_regex": true,
-        "regex": false,
-        "regexr": true
+        "regex": false
       }
     },
     {
@@ -97,14 +89,12 @@
         "onigmo": true,
         "pcre2": false,
         "fancy_regex": false,
-        "regex": false,
-        "regexr": false
+        "regex": false
       },
       "failures": {
         "pcre2": "semantic_difference",
         "fancy_regex": "semantic_difference",
-        "regex": "semantic_difference",
-        "regexr": "semantic_difference"
+        "regex": "semantic_difference"
       }
     },
     {
@@ -119,8 +109,7 @@
         "onigmo": false,
         "pcre2": false,
         "fancy_regex": false,
-        "regex": false,
-        "regexr": false
+        "regex": false
       }
     },
     {
@@ -135,8 +124,7 @@
         "onigmo": true,
         "pcre2": true,
         "fancy_regex": true,
-        "regex": false,
-        "regexr": true
+        "regex": false
       }
     },
     {
@@ -151,8 +139,7 @@
         "onigmo": true,
         "pcre2": true,
         "fancy_regex": true,
-        "regex": false,
-        "regexr": false
+        "regex": false
       }
     },
     {
@@ -167,8 +154,7 @@
         "onigmo": true,
         "pcre2": true,
         "fancy_regex": false,
-        "regex": false,
-        "regexr": true
+        "regex": false
       }
     },
     {
@@ -183,8 +169,7 @@
         "onigmo": true,
         "pcre2": false,
         "fancy_regex": true,
-        "regex": false,
-        "regexr": false
+        "regex": false
       }
     },
     {
@@ -199,8 +184,7 @@
         "onigmo": true,
         "pcre2": false,
         "fancy_regex": false,
-        "regex": false,
-        "regexr": false
+        "regex": false
       }
     }
   ]

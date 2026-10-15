@@ -1,4 +1,4 @@
-// cspell:ignore regexr strasse straße
+// cspell:ignore strasse straße
 import { type ComparisonRow, ComparisonTable } from "ferramenta-family";
 import { Link } from "react-router";
 
@@ -15,8 +15,7 @@ function MatrixSources() {
     <p className="regex-feature-note">
       Sources: <a href="https://github.com/kkos/oniguruma/blob/master/doc/RE">Oniguruma syntax</a>,{" "}
       <a href="https://www.pcre.org/current/doc/html/pcre2syntax.html">PCRE2 syntax</a>,{" "}
-      <a href="https://docs.rs/regex/latest/regex/">Rust regex</a>,{" "}
-      <a href="https://docs.rs/regexr/0.6.1/regexr/">regexr 0.6.1</a>. The{" "}
+      <a href="https://docs.rs/regex/latest/regex/">Rust regex</a>. The{" "}
       <a href="https://github.com/sebastian-software/ferroni/blob/main/tests/regex_feature_matrix.rs">
         executable matrix checks
       </a>{" "}
@@ -55,9 +54,8 @@ export function RegexFeatureMatrix() {
         Yes means the illustrated syntax returns the expected match. No means that syntax is
         rejected or its behavior differs; a rewritten expression may solve the same task. PCRE2 uses
         UTF and UCP, and its interpreter and JIT both pass its supported examples. fancy-regex uses
-        Oniguruma mode; regexr uses Unicode mode with JIT off. This is a feature comparison, not a
-        claim that all accepted patterns have identical semantics. On small screens, scroll the
-        matrix horizontally.
+        Oniguruma mode. This is a feature comparison, not a claim that all accepted patterns have
+        identical semantics. On small screens, scroll the matrix horizontally.
       </p>
       <p className="regex-feature-note">
         Variable-length lookbehind here includes an unbounded <code>\s*</code>. PCRE2 supports

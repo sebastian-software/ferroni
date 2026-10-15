@@ -14,12 +14,7 @@ mod engines;
 
 #[test]
 fn comparison_profiles_use_unicode_shorthand_classes() {
-    for profile in [
-        engines::Engine::Pcre2,
-        engines::Engine::Pcre2Jit,
-        engines::Engine::Regexr,
-        engines::Engine::RegexrJit,
-    ] {
+    for profile in [engines::Engine::Pcre2, engines::Engine::Pcre2Jit] {
         for (pattern, input, span) in [
             (r"\A\w+\z", "κόσμος", (0, 12)),
             (r"\A\d+\z", "٣٤", (0, 4)),
@@ -71,7 +66,6 @@ fn compiled_match(
                 "pcre2" => engines::Engine::Pcre2,
                 "pcre2_jit" => engines::Engine::Pcre2Jit,
                 "fancy_regex" => engines::Engine::Fancy,
-                "regexr" => engines::Engine::Regexr,
                 "onigmo" => engines::Engine::Onigmo,
                 _ => panic!("Unknown matrix engine: {other}"),
             };

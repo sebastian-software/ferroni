@@ -108,7 +108,7 @@ def verify_lock_additions(retained, current):
         if key.startswith("ferroni@"):
             pattern = r'dependencies = \[\n(.*?)\n\]'
             old_deps, new_deps = (set(re.search(pattern, block, re.S)[1].splitlines()) for block in (old, new))
-            require(old_deps <= new_deps and new_deps - old_deps <= {' "regexr",'}, "The retained root dependencies changed beyond the added comparator")
+            require(old_deps == new_deps, "The retained root dependencies changed")
             require(re.sub(pattern, "", old, flags=re.S) == re.sub(pattern, "", new, flags=re.S), "The retained root package changed")
         else:
             require(old == new, f"The retained dependency {key} changed")
