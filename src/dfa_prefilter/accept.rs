@@ -631,7 +631,9 @@ impl AcceptWalk<'_> {
                                 ND_ST_POSSESSIVE_CLASS_REPEAT | ND_ST_DECIMAL_TAIL_PREFIX,
                             )
                     }
-                    BagData::IfElse { .. } => false,
+                    // `\X` keeps only the first way its body matches, as an
+                    // atomic group does.
+                    BagData::IfElse { .. } | BagData::TextSegment => false,
                 };
                 if !transparent {
                     return None;
@@ -843,6 +845,8 @@ mod tests {
             // User atomic groups and possessive quantifiers.
             ("(?>abc|ab)c", ONIG_OPTION_NONE),
             ("a++", ONIG_OPTION_NONE),
+            // `\X`, compiled as one instruction outside look-behinds.
+            (r"a\X", ONIG_OPTION_NONE),
             // Back references, calls and conditions.
             (r"(\w)\1", ONIG_OPTION_NONE),
             (r"(?<n>a|b\g<n>c)", ONIG_OPTION_NONE),
