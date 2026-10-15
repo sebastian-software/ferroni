@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Validate, measure, and report the production regex corpus on one host.
+"""Validate, measure, and report the production regex corpus.
 
 Only Python's standard library is needed. Criterion estimates and raw samples
 are retained unchanged, alongside the exact compiled corpus and run order.
+`run --only-run N` measures one repetition, so each repetition can run on its
+own host; `merge` combines those shards into one evidence directory.
 """
 
 import argparse
@@ -36,6 +38,9 @@ PROFILES = {
     "regex": "Rust regex public API with explicit source flags; default limits",
 }
 LANES = ("steady", "compile", "first_use")
+# The construction lanes time single compilations, so a shorter window still
+# collects enough iterations; the steady lane carries the published claims.
+CONSTRUCTION_LANES = ("compile", "first_use")
 
 
 def write_json(path, value):
@@ -235,9 +240,63 @@ def report(directory):
     (directory / "summary.md").write_text("\n".join(lines))
 
 
+def lane_budgets(args):
+    steady = {"warmup_seconds": args.warmup_seconds, "measure_seconds": args.measure_seconds}
+    construction = {"warmup_seconds": args.construction_warmup_seconds,
+                    "measure_seconds": args.construction_measure_seconds}
+    return {lane: dict(construction if lane in CONSTRUCTION_LANES else steady) for lane in LANES}
+
+
+SHARED_CONTEXT = ("format_version", "corpus", "commit", "git_status", "build_profile", "corpus_sha256",
+                  "cargo_lock_sha256", "rustflags", "engines", "profiles", "cases", "repetitions", "samples",
+                  "measure_seconds", "warmup_seconds", "lane_budgets", "timeout", "seed", "diagnostic",
+                  "order_policy", "engine_source_overrides", "pcre2_build", "machine")
+HOST_CONTEXT = ("only_run", "started_utc", "platform", "cpu_count", "host_note", "rustc", "cargo", "python",
+                "binary_sha256", "source_snapshot_sha256", "native_sources", "command")
+
+
+def merge(directory, shards):
+    """Combine one-repetition shards from separate hosts into one evidence directory.
+
+    The shards must agree on everything that defines the measurement. Host
+    facts stay per shard; the first shard's snapshot, corpus and lock remain.
+    """
+    contexts = [json.loads((shard / "context.json").read_text()) for shard in shards]
+    contexts, shards = zip(*sorted(zip(contexts, shards), key=lambda pair: pair[0].get("only_run") or 0))
+    first = contexts[0]
+    if [context.get("only_run") for context in contexts] != list(range(1, first["repetitions"] + 1)):
+        raise SystemExit("merge needs exactly one shard per repetition")
+    for context, shard in zip(contexts, shards):
+        if any(context.get(key) != first.get(key) for key in SHARED_CONTEXT):
+            raise SystemExit(f"{shard} measured a different configuration")
+        for name in ("catalog.json", "Cargo.lock", "engine-inputs.toml", "eligibility.json"):
+            if (shard / name).read_bytes() != (shards[0] / name).read_bytes():
+                raise SystemExit(f"{shard} differs in {name}")
+    if directory.exists() and any(directory.iterdir()):
+        raise SystemExit("use a new empty output directory; retained evidence must not be overwritten")
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in ("catalog.json", "Cargo.lock", "engine-inputs.toml", "eligibility.json", "source-snapshot.tar.gz"):
+        shutil.copyfile(shards[0] / name, directory / name)
+    context = {key: value for key, value in first.items() if key != "only_run"}
+    context["hosts"] = [{key: shard_context.get(key) for key in HOST_CONTEXT} for shard_context in contexts]
+    context["host_note"] = " ".join(dict.fromkeys(shard_context["host_note"] for shard_context in contexts))
+    write_json(directory / "context.json", context)
+    order, measurements = [], []
+    for run, shard in enumerate(shards, 1):
+        order += json.loads((shard / "order.json").read_text())
+        measurements += json.loads((shard / "measurements.json").read_text())
+        shutil.copytree(shard / "raw" / f"run-{run}", directory / "raw" / f"run-{run}")
+    write_json(directory / "order.json", order)
+    write_json(directory / "measurements.json", measurements)
+    report(directory)
+    print(f"Evidence: {directory / 'summary.md'}")
+    if any(r["status"] != "measured" for r in measurements):
+        raise SystemExit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("validate", "run", "report", "memory-worker"))
+    parser.add_argument("command", choices=("validate", "run", "merge", "report", "memory-worker"))
     parser.add_argument("directory", type=Path)
     parser.add_argument("worker_arguments", nargs="*")
     parser.add_argument("--binary", type=Path)
@@ -248,6 +307,11 @@ def main():
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--measure-seconds", type=float, default=3)
     parser.add_argument("--warmup-seconds", type=float, default=1)
+    parser.add_argument("--construction-measure-seconds", type=float, default=1,
+                        help="measurement window of the compile and first-use lanes")
+    parser.add_argument("--construction-warmup-seconds", type=float, default=0.5,
+                        help="warm-up of the compile and first-use lanes")
+    parser.add_argument("--only-run", type=int, help="measure only this repetition (1-based), for one host per repetition")
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--seed", type=int, default=20261013)
     parser.add_argument("--diagnostic", action="store_true", help="allow a short smoke run; cannot support publication")
@@ -261,10 +325,19 @@ def main():
     if args.command == "report":
         report(directory)
         return
-    if args.repetitions < 1 or args.samples < 10 or min(args.measure_seconds, args.warmup_seconds, args.timeout) <= 0:
+    if args.command == "merge":
+        merge(directory, [Path(shard).resolve() for shard in args.worker_arguments])
+        return
+    if args.repetitions < 1 or args.samples < 10 or min(args.measure_seconds, args.warmup_seconds, args.timeout,
+                                                         args.construction_measure_seconds, args.construction_warmup_seconds) <= 0:
         parser.error("positive durations, at least one repetition and ten samples required")
-    if args.command == "run" and not args.diagnostic and (args.repetitions < 3 or args.samples < 30 or args.measure_seconds < 3):
-        parser.error("publication candidates require >=3 processes, >=30 samples, >=3 seconds per lane; use --diagnostic for smoke runs")
+    if args.only_run is not None and not 1 <= args.only_run <= args.repetitions:
+        parser.error("--only-run must name one of the repetitions")
+    if args.command == "run" and not args.diagnostic and (args.repetitions < 3 or args.samples < 30 or args.measure_seconds < 3
+                                                          or args.warmup_seconds < 1 or args.construction_measure_seconds < 1
+                                                          or args.construction_warmup_seconds < 0.5):
+        parser.error("publication candidates require >=3 processes, >=30 samples, a 1 s warmup and 3 s window for steady reuse, "
+                     "and a 0.5 s warmup and 1 s window for construction; use --diagnostic for smoke runs")
     if directory.exists() and any(directory.iterdir()):
         parser.error("use a new empty output directory; retained evidence must not be overwritten")
     directory.mkdir(parents=True, exist_ok=True)
@@ -298,6 +371,7 @@ def main():
                "rustflags": os.environ.get("RUSTFLAGS", ""), "engines": engines, "profiles": PROFILES,
                "cases": cases, "repetitions": args.repetitions, "samples": args.samples,
                "measure_seconds": args.measure_seconds, "warmup_seconds": args.warmup_seconds,
+               "lane_budgets": lane_budgets(args), "only_run": args.only_run,
                "timeout": args.timeout, "seed": args.seed, "diagnostic": args.diagnostic or args.command == "validate" or bool(args.binary),
                "command": sys.argv, "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions"}
     write_json(directory / "context.json", context)
@@ -329,13 +403,16 @@ def main():
     memory = []
     if args.command == "run":
         for rep in range(args.repetitions):
+            if args.only_run is not None and rep != args.only_run - 1:
+                continue
             for case, engine in ordered_pairs(cases, engines, rep, args.seed):
                 if (case, engine) not in eligible:
                     continue
                 relative = f"raw/run-{rep + 1}/{case}/{engine}"
                 raw = directory / relative
                 raw.mkdir(parents=True)
-                env = dict(environment(case, engine), CRITERION_HOME=str(raw))
+                env = dict(environment(case, engine), CRITERION_HOME=str(raw),
+                           PRODUCTION_LANE_BUDGETS=json.dumps(context["lane_budgets"]))
                 command = [str(binary), "--bench", "--noplot", "--sample-size", str(args.samples),
                            "--measurement-time", str(args.measure_seconds), "--warm-up-time", str(args.warmup_seconds)]
                 record = {"case": case, "engine": engine, "repetition": rep, "raw": relative}

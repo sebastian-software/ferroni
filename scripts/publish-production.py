@@ -66,9 +66,20 @@ def verify_context(context, catalog, receipt, profile, engines=BASE_ENGINES):
     require(context["machine"] == machine and context["platform"].startswith(platform), "Unexpected runner architecture/OS")
     require(context["engines"] == list(engines), "Publication requires the declared engine profiles")
     require(context["cases"] == [case["id"] for case in catalog["cases"]], "Publication requires the complete corpus")
+    # Runs before per-lane budgets used the steady window for every lane.
+    budgets = context.get("lane_budgets") or {lane: {"warmup_seconds": context["warmup_seconds"],
+                                                     "measure_seconds": context["measure_seconds"]}
+                                              for lane in comparison.LANES}
     require(context["repetitions"] >= 3 and context["samples"] >= 30
-            and context["measure_seconds"] >= 3 and context["warmup_seconds"] >= 1,
+            and budgets["steady"]["measure_seconds"] >= 3 and budgets["steady"]["warmup_seconds"] >= 1
+            and all(budgets[lane]["measure_seconds"] >= 1 and budgets[lane]["warmup_seconds"] >= 0.5
+                    for lane in comparison.CONSTRUCTION_LANES),
             "Publication requires the agreed measurement budget")
+    require(context.get("only_run") is None, "A single-repetition shard cannot be published")
+    if "hosts" in context:
+        require([host["only_run"] for host in context["hosts"]] == list(range(1, context["repetitions"] + 1))
+                and all(host["platform"].startswith(platform) and str(receipt["id"]) in host["host_note"]
+                        for host in context["hosts"]), "Every repetition must come from its own host of this run")
     features = "onigmo" if "onigmo" in engines else "ffi"
     require(context["build_profile"] == f"bench, thin LTO, features {features}", "Unexpected build profile")
     require(context["pcre2_build"] == "PCRE2_SYS_STATIC=1; bundled source from locked pcre2-sys", "Unverified PCRE2 build")
@@ -206,10 +217,24 @@ def validate_receipt(receipt):
     require(re.fullmatch(r"[a-f0-9]{40}", receipt["head_sha"]), "Invalid measured revision")
     require(receipt["html_url"] == f"https://github.com/sebastian-software/ferroni/actions/runs/{receipt['id']}", "Unexpected workflow URL")
     jobs = receipt["jobs"]
-    require(len(jobs) == len(PROFILES) and {job["name"] for job in jobs} == set(PROFILES)
-            and all(job["conclusion"] == "success" for job in jobs), "Both platform jobs must succeed")
     labels = {"macos-arm64": "blacksmith-6vcpu-macos-26", "linux-x86-64": "blacksmith-4vcpu-ubuntu-2404"}
-    require(all(labels[job["name"]] in job["labels"] for job in jobs), "Unexpected provider runner label")
+    # Earlier runs measured every repetition in one job per platform; later
+    # runs measure each repetition in its own job and merge them per platform.
+    measuring = {profile: profile for profile in PROFILES}
+    merging = set()
+    if {job["name"] for job in jobs} != set(PROFILES):
+        measuring = {f"{profile} run {run}": profile for profile in PROFILES for run in (1, 2, 3)}
+        merging = {f"merge {profile}" for profile in PROFILES}
+    require(len(jobs) == len(measuring) + len(merging) and {job["name"] for job in jobs} == set(measuring) | merging
+            and all(job["conclusion"] == "success" for job in jobs), "Every measuring and merging job must succeed")
+    require(all(labels[measuring[job["name"]]] in job["labels"] for job in jobs if job["name"] in measuring),
+            "Unexpected provider runner label")
+
+
+def hosts_sentence(data):
+    if all("hosts" in platform["context"] for platform in data["platforms"]):
+        return "Each of the three process repetitions ran on its own VM per platform; they are not a model of production traffic."
+    return "These are three process repetitions on one VM per platform, not measurements across multiple independent hosts or a model of production traffic."
 
 
 def document(data):
@@ -228,7 +253,7 @@ def document(data):
             lines.append(f"| {row['engine']} | {row['lane']} | {row['case_count']} | {row['family_count']} | {row['family_weighted_ratio']:.3f} | {conclusions.count('Ferroni faster in every run interval')} | {conclusions.count('comparator faster in every run interval')} | {conclusions.count('inconclusive')} |")
         lines += ["", "The exact common cases and all absolute timings are available in `publication.json` and in the website's case tables.", ""]
     lines += ["## Regenerate and check", "", "```sh", "python3 scripts/publish-production.py --check", "```", "",
-              "Host power and thermal state were unavailable. These are three process repetitions on one VM per platform, not measurements across multiple independent hosts or a model of production traffic. Memory was not measured in this run.", ""]
+              "Host power and thermal state were unavailable. " + hosts_sentence(data) + " Memory was not measured in this run.", ""]
     return "\n".join(lines)
 
 

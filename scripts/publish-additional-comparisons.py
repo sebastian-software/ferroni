@@ -32,7 +32,7 @@ def document(datasets):
                 value = "—" if row["family_weighted_ratio"] is None else f"{row['family_weighted_ratio']:.3f}"
                 lines.append(f"| {row['engine']} | {row['lane']} | {row['case_count']} | {value} |")
             lines.append("")
-    lines += ["Raw samples, logs, source snapshots, dependency locks and eligibility are retained per scope/platform in evidence.tar.gz. Three process repetitions run on one VM per platform; host power/thermal state is unavailable. Memory is not measured.", "", "```sh", "python3 scripts/publish-additional-comparisons.py --check", "```", ""]
+    lines += ["Raw samples, logs, source snapshots, dependency locks and eligibility are retained per scope/platform in evidence.tar.gz. " + publication.hosts_sentence(datasets["tokenizers"]) + " Host power/thermal state is unavailable. Memory is not measured.", "", "```sh", "python3 scripts/publish-additional-comparisons.py --check", "```", ""]
     return "\n".join(lines)
 
 
