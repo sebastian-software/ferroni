@@ -1,9 +1,9 @@
 {
   "format_version": 1,
   "run": {
-    "head_sha": "80ff3b4b73cbcdd02407b34a8422eec1565061ee",
-    "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38772515949",
-    "created_at": "2026-10-15T16:51:48Z"
+    "head_sha": "1c8d45f57677ddd9f52bd45c75297c113ceb9bd6",
+    "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38808376508",
+    "created_at": "2026-10-15T21:14:48Z"
   },
   "case_count": 21,
   "input_count": 513,
@@ -18,37 +18,37 @@
           "lane": "steady",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 1.816248242906941,
-          "ferroni_cases": 12,
+          "family_weighted_ratio": 1.845037047571512,
+          "ferroni_cases": 17,
           "comparator_cases": 0,
-          "inconclusive_cases": 9
+          "inconclusive_cases": 4
         },
         {
           "engine": "rust_erroraware",
           "lane": "compile",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 1.000501754731103,
-          "ferroni_cases": 1,
+          "family_weighted_ratio": 0.9999987148063086,
+          "ferroni_cases": 0,
           "comparator_cases": 0,
-          "inconclusive_cases": 20
+          "inconclusive_cases": 21
         },
         {
           "engine": "rust_erroraware",
           "lane": "first_use",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.9498914145794267,
-          "ferroni_cases": 0,
+          "family_weighted_ratio": 0.9501158546878795,
+          "ferroni_cases": 1,
           "comparator_cases": 7,
-          "inconclusive_cases": 14
+          "inconclusive_cases": 13
         },
         {
           "engine": "c",
           "lane": "steady",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 3.289458990762939,
+          "family_weighted_ratio": 3.440860650459098,
           "ferroni_cases": 21,
           "comparator_cases": 0,
           "inconclusive_cases": 0
@@ -58,7 +58,7 @@
           "lane": "compile",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.3724633970552734,
+          "family_weighted_ratio": 0.3847832391393747,
           "ferroni_cases": 5,
           "comparator_cases": 16,
           "inconclusive_cases": 0
@@ -68,7 +68,7 @@
           "lane": "first_use",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.3966791998558377,
+          "family_weighted_ratio": 0.40375351493955847,
           "ferroni_cases": 5,
           "comparator_cases": 16,
           "inconclusive_cases": 0
@@ -78,17 +78,17 @@
           "lane": "steady",
           "case_count": 20,
           "family_count": 12,
-          "family_weighted_ratio": 3.794228031958726,
-          "ferroni_cases": 19,
+          "family_weighted_ratio": 3.9157364581830096,
+          "ferroni_cases": 20,
           "comparator_cases": 0,
-          "inconclusive_cases": 1
+          "inconclusive_cases": 0
         },
         {
           "engine": "onigmo",
           "lane": "compile",
           "case_count": 20,
           "family_count": 12,
-          "family_weighted_ratio": 0.5194830469796035,
+          "family_weighted_ratio": 0.5256367216823232,
           "ferroni_cases": 6,
           "comparator_cases": 14,
           "inconclusive_cases": 0
@@ -98,7 +98,7 @@
           "lane": "first_use",
           "case_count": 20,
           "family_count": 12,
-          "family_weighted_ratio": 0.5173122067001236,
+          "family_weighted_ratio": 0.5098579887593689,
           "ferroni_cases": 6,
           "comparator_cases": 14,
           "inconclusive_cases": 0
@@ -108,7 +108,7 @@
           "lane": "steady",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.6765222763929687,
+          "family_weighted_ratio": 0.7044741868848711,
           "ferroni_cases": 4,
           "comparator_cases": 16,
           "inconclusive_cases": 1
@@ -118,7 +118,7 @@
           "lane": "compile",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.25380033335363744,
+          "family_weighted_ratio": 0.25710842975266546,
           "ferroni_cases": 0,
           "comparator_cases": 21,
           "inconclusive_cases": 0
@@ -128,77 +128,77 @@
           "lane": "first_use",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.29067694827250434,
+          "family_weighted_ratio": 0.28849960842082095,
           "ferroni_cases": 0,
-          "comparator_cases": 20,
+          "comparator_cases": 21,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "pcre2",
+          "lane": "steady",
+          "case_count": 21,
+          "family_count": 12,
+          "family_weighted_ratio": 2.073499601546723,
+          "ferroni_cases": 18,
+          "comparator_cases": 3,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "pcre2",
+          "lane": "compile",
+          "case_count": 21,
+          "family_count": 12,
+          "family_weighted_ratio": 0.0823627529627046,
+          "ferroni_cases": 0,
+          "comparator_cases": 21,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "pcre2",
+          "lane": "first_use",
+          "case_count": 21,
+          "family_count": 12,
+          "family_weighted_ratio": 0.09525563485692108,
+          "ferroni_cases": 0,
+          "comparator_cases": 21,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "case_count": 17,
+          "family_count": 10,
+          "family_weighted_ratio": 3.102054681942961,
+          "ferroni_cases": 15,
+          "comparator_cases": 0,
+          "inconclusive_cases": 2
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "case_count": 17,
+          "family_count": 10,
+          "family_weighted_ratio": 1.8737006523468893,
+          "ferroni_cases": 12,
+          "comparator_cases": 4,
           "inconclusive_cases": 1
         },
         {
-          "engine": "pcre2",
-          "lane": "steady",
-          "case_count": 21,
-          "family_count": 12,
-          "family_weighted_ratio": 1.9712982960668843,
-          "ferroni_cases": 16,
-          "comparator_cases": 3,
-          "inconclusive_cases": 2
-        },
-        {
-          "engine": "pcre2",
-          "lane": "compile",
-          "case_count": 21,
-          "family_count": 12,
-          "family_weighted_ratio": 0.0815955074522298,
-          "ferroni_cases": 0,
-          "comparator_cases": 21,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "pcre2",
-          "lane": "first_use",
-          "case_count": 21,
-          "family_count": 12,
-          "family_weighted_ratio": 0.09507361034498384,
-          "ferroni_cases": 0,
-          "comparator_cases": 21,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "fancy_regex",
-          "lane": "steady",
-          "case_count": 17,
-          "family_count": 10,
-          "family_weighted_ratio": 2.959896474044363,
-          "ferroni_cases": 14,
-          "comparator_cases": 0,
-          "inconclusive_cases": 3
-        },
-        {
-          "engine": "fancy_regex",
-          "lane": "compile",
-          "case_count": 17,
-          "family_count": 10,
-          "family_weighted_ratio": 1.8762289506003103,
-          "ferroni_cases": 10,
-          "comparator_cases": 5,
-          "inconclusive_cases": 2
-        },
-        {
           "engine": "fancy_regex",
           "lane": "first_use",
           "case_count": 17,
           "family_count": 10,
-          "family_weighted_ratio": 1.8977886802738686,
+          "family_weighted_ratio": 1.9074754404681051,
           "ferroni_cases": 12,
-          "comparator_cases": 5,
-          "inconclusive_cases": 0
+          "comparator_cases": 4,
+          "inconclusive_cases": 1
         },
         {
           "engine": "fancy_regex_seek",
           "lane": "steady",
           "case_count": 17,
           "family_count": 10,
-          "family_weighted_ratio": 2.9361835537234313,
+          "family_weighted_ratio": 3.0603051963714236,
           "ferroni_cases": 15,
           "comparator_cases": 0,
           "inconclusive_cases": 2
@@ -208,7 +208,7 @@
           "lane": "compile",
           "case_count": 17,
           "family_count": 10,
-          "family_weighted_ratio": 2.056687338618324,
+          "family_weighted_ratio": 2.0763114629262693,
           "ferroni_cases": 12,
           "comparator_cases": 5,
           "inconclusive_cases": 0
@@ -218,7 +218,7 @@
           "lane": "first_use",
           "case_count": 17,
           "family_count": 10,
-          "family_weighted_ratio": 2.0801991346872475,
+          "family_weighted_ratio": 2.1174522313366166,
           "ferroni_cases": 12,
           "comparator_cases": 5,
           "inconclusive_cases": 0
@@ -228,17 +228,17 @@
           "lane": "steady",
           "case_count": 10,
           "family_count": 5,
-          "family_weighted_ratio": 1.3128557029237022,
-          "ferroni_cases": 6,
+          "family_weighted_ratio": 1.3642280287377129,
+          "ferroni_cases": 5,
           "comparator_cases": 3,
-          "inconclusive_cases": 1
+          "inconclusive_cases": 2
         },
         {
           "engine": "regex",
           "lane": "compile",
           "case_count": 10,
           "family_count": 5,
-          "family_weighted_ratio": 1.7657176150169873,
+          "family_weighted_ratio": 1.7764265798307557,
           "ferroni_cases": 6,
           "comparator_cases": 4,
           "inconclusive_cases": 0
@@ -248,7 +248,7 @@
           "lane": "first_use",
           "case_count": 10,
           "family_count": 5,
-          "family_weighted_ratio": 1.7659442933857414,
+          "family_weighted_ratio": 1.8006554442849172,
           "ferroni_cases": 6,
           "comparator_cases": 4,
           "inconclusive_cases": 0
@@ -264,47 +264,47 @@
           "lane": "steady",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 1.8103643551222304,
-          "ferroni_cases": 9,
+          "family_weighted_ratio": 1.8014588158093734,
+          "ferroni_cases": 13,
           "comparator_cases": 0,
-          "inconclusive_cases": 12
+          "inconclusive_cases": 8
         },
         {
           "engine": "rust_erroraware",
           "lane": "compile",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 1.008878214537122,
-          "ferroni_cases": 0,
+          "family_weighted_ratio": 0.9841160485497572,
+          "ferroni_cases": 1,
           "comparator_cases": 0,
-          "inconclusive_cases": 21
+          "inconclusive_cases": 20
         },
         {
           "engine": "rust_erroraware",
           "lane": "first_use",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.9292797904355532,
+          "family_weighted_ratio": 0.9351606303689968,
           "ferroni_cases": 0,
-          "comparator_cases": 4,
-          "inconclusive_cases": 17
+          "comparator_cases": 3,
+          "inconclusive_cases": 18
         },
         {
           "engine": "c",
           "lane": "steady",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 2.687502602237271,
-          "ferroni_cases": 14,
+          "family_weighted_ratio": 2.7500302871063522,
+          "ferroni_cases": 16,
           "comparator_cases": 0,
-          "inconclusive_cases": 7
+          "inconclusive_cases": 5
         },
         {
           "engine": "c",
           "lane": "compile",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.3313233115969051,
+          "family_weighted_ratio": 0.3192719282835117,
           "ferroni_cases": 4,
           "comparator_cases": 17,
           "inconclusive_cases": 0
@@ -314,7 +314,7 @@
           "lane": "first_use",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.34463572293030476,
+          "family_weighted_ratio": 0.34102950928984516,
           "ferroni_cases": 4,
           "comparator_cases": 17,
           "inconclusive_cases": 0
@@ -324,9 +324,9 @@
           "lane": "steady",
           "case_count": 20,
           "family_count": 12,
-          "family_weighted_ratio": 3.547336317387087,
-          "ferroni_cases": 17,
-          "comparator_cases": 1,
+          "family_weighted_ratio": 3.6126008904639466,
+          "ferroni_cases": 18,
+          "comparator_cases": 0,
           "inconclusive_cases": 2
         },
         {
@@ -334,7 +334,7 @@
           "lane": "compile",
           "case_count": 20,
           "family_count": 12,
-          "family_weighted_ratio": 0.41052643354689133,
+          "family_weighted_ratio": 0.4210236709485504,
           "ferroni_cases": 5,
           "comparator_cases": 15,
           "inconclusive_cases": 0
@@ -344,7 +344,7 @@
           "lane": "first_use",
           "case_count": 20,
           "family_count": 12,
-          "family_weighted_ratio": 0.4069379285108421,
+          "family_weighted_ratio": 0.42166859898864867,
           "ferroni_cases": 5,
           "comparator_cases": 15,
           "inconclusive_cases": 0
@@ -354,27 +354,27 @@
           "lane": "steady",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.6202549227994614,
+          "family_weighted_ratio": 0.6250146478282453,
           "ferroni_cases": 4,
-          "comparator_cases": 15,
-          "inconclusive_cases": 2
+          "comparator_cases": 14,
+          "inconclusive_cases": 3
         },
         {
           "engine": "pcre2_jit",
           "lane": "compile",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.24469700647484935,
+          "family_weighted_ratio": 0.24170333794039117,
           "ferroni_cases": 0,
-          "comparator_cases": 21,
-          "inconclusive_cases": 0
+          "comparator_cases": 20,
+          "inconclusive_cases": 1
         },
         {
           "engine": "pcre2_jit",
           "lane": "first_use",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 0.24899684411112213,
+          "family_weighted_ratio": 0.26913018402950895,
           "ferroni_cases": 0,
           "comparator_cases": 20,
           "inconclusive_cases": 1
@@ -384,67 +384,67 @@
           "lane": "steady",
           "case_count": 21,
           "family_count": 12,
-          "family_weighted_ratio": 1.8161837952187851,
+          "family_weighted_ratio": 1.8532049921154545,
           "ferroni_cases": 16,
+          "comparator_cases": 2,
+          "inconclusive_cases": 3
+        },
+        {
+          "engine": "pcre2",
+          "lane": "compile",
+          "case_count": 21,
+          "family_count": 12,
+          "family_weighted_ratio": 0.0638456962843128,
+          "ferroni_cases": 0,
+          "comparator_cases": 21,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "pcre2",
+          "lane": "first_use",
+          "case_count": 21,
+          "family_count": 12,
+          "family_weighted_ratio": 0.0986382513354305,
+          "ferroni_cases": 0,
+          "comparator_cases": 21,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "steady",
+          "case_count": 17,
+          "family_count": 10,
+          "family_weighted_ratio": 2.910602952336107,
+          "ferroni_cases": 14,
+          "comparator_cases": 0,
+          "inconclusive_cases": 3
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "case_count": 17,
+          "family_count": 10,
+          "family_weighted_ratio": 1.363198173775366,
+          "ferroni_cases": 8,
+          "comparator_cases": 4,
+          "inconclusive_cases": 5
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "case_count": 17,
+          "family_count": 10,
+          "family_weighted_ratio": 1.4140440805438828,
+          "ferroni_cases": 9,
           "comparator_cases": 3,
-          "inconclusive_cases": 2
-        },
-        {
-          "engine": "pcre2",
-          "lane": "compile",
-          "case_count": 21,
-          "family_count": 12,
-          "family_weighted_ratio": 0.06307206041253714,
-          "ferroni_cases": 0,
-          "comparator_cases": 21,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "pcre2",
-          "lane": "first_use",
-          "case_count": 21,
-          "family_count": 12,
-          "family_weighted_ratio": 0.09470615723537129,
-          "ferroni_cases": 0,
-          "comparator_cases": 21,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "fancy_regex",
-          "lane": "steady",
-          "case_count": 17,
-          "family_count": 10,
-          "family_weighted_ratio": 2.9501037645097457,
-          "ferroni_cases": 15,
-          "comparator_cases": 0,
-          "inconclusive_cases": 2
-        },
-        {
-          "engine": "fancy_regex",
-          "lane": "compile",
-          "case_count": 17,
-          "family_count": 10,
-          "family_weighted_ratio": 1.388235679727627,
-          "ferroni_cases": 8,
-          "comparator_cases": 6,
-          "inconclusive_cases": 3
-        },
-        {
-          "engine": "fancy_regex",
-          "lane": "first_use",
-          "case_count": 17,
-          "family_count": 10,
-          "family_weighted_ratio": 1.4414603421459562,
-          "ferroni_cases": 8,
-          "comparator_cases": 5,
-          "inconclusive_cases": 4
+          "inconclusive_cases": 5
         },
         {
           "engine": "fancy_regex_seek",
           "lane": "steady",
           "case_count": 17,
           "family_count": 10,
-          "family_weighted_ratio": 3.0070028335708443,
+          "family_weighted_ratio": 2.9833591456215527,
           "ferroni_cases": 15,
           "comparator_cases": 0,
           "inconclusive_cases": 2
@@ -454,17 +454,17 @@
           "lane": "compile",
           "case_count": 17,
           "family_count": 10,
-          "family_weighted_ratio": 1.5509517450463557,
-          "ferroni_cases": 9,
+          "family_weighted_ratio": 1.5546686120815678,
+          "ferroni_cases": 10,
           "comparator_cases": 5,
-          "inconclusive_cases": 3
+          "inconclusive_cases": 2
         },
         {
           "engine": "fancy_regex_seek",
           "lane": "first_use",
           "case_count": 17,
           "family_count": 10,
-          "family_weighted_ratio": 1.5965677993155478,
+          "family_weighted_ratio": 1.5711993200274954,
           "ferroni_cases": 9,
           "comparator_cases": 5,
           "inconclusive_cases": 3
@@ -474,17 +474,17 @@
           "lane": "steady",
           "case_count": 10,
           "family_count": 5,
-          "family_weighted_ratio": 1.3639446920435723,
-          "ferroni_cases": 8,
+          "family_weighted_ratio": 1.27846586656722,
+          "ferroni_cases": 7,
           "comparator_cases": 1,
-          "inconclusive_cases": 1
+          "inconclusive_cases": 2
         },
         {
           "engine": "regex",
           "lane": "compile",
           "case_count": 10,
           "family_count": 5,
-          "family_weighted_ratio": 1.668864720625661,
+          "family_weighted_ratio": 1.6648460243466041,
           "ferroni_cases": 6,
           "comparator_cases": 4,
           "inconclusive_cases": 0
@@ -494,10 +494,10 @@
           "lane": "first_use",
           "case_count": 10,
           "family_count": 5,
-          "family_weighted_ratio": 1.7123425296303656,
+          "family_weighted_ratio": 1.6449284464741938,
           "ferroni_cases": 5,
-          "comparator_cases": 3,
-          "inconclusive_cases": 2
+          "comparator_cases": 4,
+          "inconclusive_cases": 1
         }
       ]
     }
