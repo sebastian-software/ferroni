@@ -2408,7 +2408,8 @@ impl SetPrefilter {
 
 /// Rust-only (ADR-008): the seek of one `Regex` as a lazy DFA, which answers
 /// whether any seek match starts in a subject from a position on. A `Regex`
-/// searches with it after its warm-up (`api.rs`, `WarmState`).
+/// builds it with the pattern and searches with it from the first search
+/// (`RegexBuilder::dfa`).
 ///
 /// Without an exact seek, "no seek match" proves "no match" and nothing else:
 /// a seek match leaves the answer to the matcher. An exact seek's match is a
