@@ -9397,6 +9397,76 @@ fn add_high_bytes_opt_map(m: &mut OptMap, enc: OnigEncoding) {
     m.value += added * map_position_value(enc, 0x80);
 }
 
+/// Whether the extra maps narrow multibyte class members to their lead bytes.
+#[cfg(test)]
+fn narrow_class_leads_enabled() -> bool {
+    !NARROW_CLASS_LEADS_DISABLED.with(|disabled| disabled.get())
+}
+
+#[cfg(not(test))]
+fn narrow_class_leads_enabled() -> bool {
+    true
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Keeps every byte from 0x80 up in the extra maps, as the reference for
+    /// `utf8_class_lead_bytes` in differential tests.
+    pub(crate) static NARROW_CLASS_LEADS_DISABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Most multibyte code points whose lead bytes `utf8_class_lead_bytes` takes
+/// one by one.
+const MAX_NARROWED_CLASS_CODES: usize = 16;
+
+/// Rust-only (ADR-008): the lead bytes a UTF-8 character of a non-negated
+/// class can start with, when the class's multibyte part is a small set of
+/// single code points (at most `MAX_NARROWED_CLASS_CODES`). `CClassMix` reads
+/// a lead byte that makes a character of its own (`enclen` 1) against the
+/// bitset, and a longer character against the code ranges, at the code that
+/// `mbc_to_code` decodes. The decoder masks every continuation byte to its
+/// low six bits, so a lead byte of length n reaches the codes from its base
+/// up to `base + 2^(6(n-1)) - 1`, overlong forms included: U+FF03 is reached
+/// from `EF` and from `F0 8F BC 83`. `None` for any other class or encoding,
+/// where the caller keeps every byte from 0x80 up.
+fn utf8_class_lead_bytes(cc: &CClassNode, enc: OnigEncoding) -> Option<BitSet> {
+    if cc.is_not() || !std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
+        return None;
+    }
+    let mut leads: BitSet = [0; BITSET_REAL_SIZE];
+    for lead in 0x80..0x100 {
+        if bitset_at(&cc.bs, lead) {
+            bitset_set_bit(&mut leads, lead);
+        }
+    }
+    // The buffer holds the number of ranges, then each range's bounds.
+    let ranges = cc.mbuf.as_ref().map_or(&[][..], |mbuf| &mbuf.data[..]);
+    let words = bbuf_to_u32_vec(ranges);
+    let count = words.first().map_or(0, |&n| n as usize);
+    if count > MAX_NARROWED_CLASS_CODES || words.len() < 1 + 2 * count {
+        return None;
+    }
+    for pair in words[1..1 + 2 * count].chunks_exact(2) {
+        if pair[0] != pair[1] {
+            return None;
+        }
+        for lead in 0xC2..=0xF4_u8 {
+            let (len, mask_bits) = match lead {
+                0xC2..=0xDF => (2, 5),
+                0xE0..=0xEF => (3, 4),
+                _ => (4, 3),
+            };
+            let shift = 6 * (len - 1);
+            let base = (u32::from(lead) & ((1 << mask_bits) - 1)) << shift;
+            if (base..base + (1 << shift)).contains(&pair[0]) {
+                bitset_set_bit(&mut leads, lead as usize);
+            }
+        }
+    }
+    Some(leads)
+}
+
 /// The bytes of an optimizer map as a bitset. Rust-only: map bytes are 0 or
 /// 1 (every writer stores 1), so bit 0 of eight bytes at a time gathers into
 /// one byte of the result, and the map operations below visit only the
@@ -9951,6 +10021,9 @@ fn compute_group_max_lens(root: &Node, env: &ParseEnv) -> Vec<OnigLen> {
 /// there was one to add, that is, whether a pass with `extra` could differ.
 struct StartMaps {
     extra: bool,
+    /// Whether the pattern begins with a look-behind, so the extra maps take
+    /// the exact lead bytes of multibyte class members (`utf8_class_lead_bytes`).
+    narrow_leads: bool,
     skipped: std::cell::Cell<bool>,
 }
 
@@ -9958,6 +10031,7 @@ impl StartMaps {
     fn new(extra: bool) -> Self {
         StartMaps {
             extra,
+            narrow_leads: false,
             skipped: std::cell::Cell::new(false),
         }
     }
@@ -10060,9 +10134,17 @@ fn optimize_nodes(
                 let max = enc.max_enc_len() as OnigLen;
                 if start_maps.extra {
                     // The ASCII part of the map from the bitset; any lead
-                    // byte from 0x80 up may start a multibyte member.
+                    // byte from 0x80 up may start a multibyte member, unless
+                    // a leading look-behind asks for the exact lead bytes.
                     add_cclass_bitset_opt_map(&mut opt.map, cc, enc, 0x80);
-                    add_high_bytes_opt_map(&mut opt.map, enc);
+                    match start_maps
+                        .narrow_leads
+                        .then(|| utf8_class_lead_bytes(cc, enc))
+                        .flatten()
+                    {
+                        Some(leads) => add_bitset_opt_map(&mut opt.map, &leads, enc),
+                        None => add_high_bytes_opt_map(&mut opt.map, enc),
+                    }
                 } else {
                     start_maps.skipped.set(true);
                 }
@@ -10525,7 +10607,8 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
     {
         let mut start_mm = MinMaxLen::new();
         let mut start_opt = OptNode::new();
-        let extra_maps = StartMaps::new(true);
+        let mut extra_maps = StartMaps::new(true);
+        extra_maps.narrow_leads = reg.look_behind_reach > 0 && narrow_class_leads_enabled();
         if optimize_nodes(
             root,
             &mut start_opt,
@@ -13796,6 +13879,113 @@ mod tests {
                                 assert_eq!(spans, c_region.capture_ranges(), "C: {context}");
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Rust-only (ADR-008): the extra start map of a pattern that begins with a
+    /// look-behind takes the exact lead bytes of its multibyte class members.
+    /// From every start of mixed text, each search matches the search whose
+    /// map keeps every byte from 0x80 up, and C where the ffi feature is on.
+    #[test]
+    fn narrowed_class_leads_match_the_full_high_bytes() {
+        use crate::oniguruma::OnigRegion;
+        use crate::regexec::{onig_search, shared_limits};
+
+        let _limits = shared_limits();
+        let compile = |pattern: &str, narrow: bool| {
+            NARROW_CLASS_LEADS_DISABLED.with(|disabled| disabled.set(!narrow));
+            let reg = onig_new(
+                pattern.as_bytes(),
+                ONIG_OPTION_NONE,
+                &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+            );
+            NARROW_CLASS_LEADS_DISABLED.with(|disabled| disabled.set(false));
+            reg.unwrap()
+        };
+
+        // U+FF03 is reached from EF and, as the overlong `F0 8F BC 83`, from F0.
+        let narrowed = compile("(?<=a)[\u{ff03}]", true);
+        assert_eq!(narrowed.optimize, OptimizeType::Map);
+        let leads: Vec<usize> = (0x80..0x100).filter(|&b| narrowed.map[b] != 0).collect();
+        assert_eq!(leads, [0xEF, 0xF0]);
+
+        let patterns = [
+            "(?<=a)[\u{ff03}]",
+            "(?<=a)[\u{ff03}\u{e9}]",
+            "(?<=^|[[:space:]])[#\u{ff03}](([[:word:]_][[:word:]_\u{b7}\u{30fb}]*[[:alpha:]_\u{b7}\u{30fb}][[:word:]_\u{b7}\u{30fb}]*[[:word:]_])|([[:word:]_]*[[:alpha:]][[:word:]_]*))",
+            "(?<=\\s)[\u{ff21}\u{ff22}\u{65e5}\u{672c}\u{8a9e}]+",
+            "(?<!x)[\u{e9}#]",
+            "(?<=b)[\\x{80}\u{ff03}\u{1f600}]",
+            "(?<=b)[\u{ff03}\\x{85}]",
+            "(?<=b)[\\x{80}-\\x{ff}]",
+            "(?<=b)[^\u{ff03}]",
+            "(?<=b)[a\\x{10000}-\\x{10ffff}]",
+            "(?i)(?<=a)[\u{e9}\u{df}]",
+            "(?<=\\w)(?:[\u{ff03}]|x)",
+            "(?<=a)[\u{1f600}\u{ff03}]+",
+            "(?<=[ab])[\u{e9}\u{ff3f}]\\w*",
+        ];
+        let subjects: [&[u8]; 9] = [
+            "a\u{ff03}b #x \u{ff03}x  \u{e9}\u{ff03} \u{c9} \u{df} \u{65e5} \u{1f600} #y\u{ff03}\u{ff03}".as_bytes(),
+            b"a\xef\xbc\x83 b\xf0\x8f\xbc\x83x a\xf0\x0f\xbc\x83",
+            b"\xf0\x8f\xbc\x83\xef\xbc\x83\xef\xbc",
+            b"b\x80\x85\xff\xfe x\x85 b\xc2\x80 b\xe2\x80\x8d\xef\xbc\x83",
+            b"a\xf0\x9f\x98\x80b\xf0\x9f\x98\x80 a\xc3\xa9\xe9\x80\x83 b\xc3\xa9",
+            b"a\xef\xbc b\xef x\xf0\x8f\xbc",
+            "a\u{ff21}\u{ff22}\u{65e5}\u{672c}\u{8a9e} ab\u{ff3f}\u{e9}\u{301}x".as_bytes(),
+            "xa\u{1f600}\u{ff03}\u{1f600}\u{80}\u{ff}b\u{85}".as_bytes(),
+            b"ab\xc3\xa9\xe9\xc3\x89 ss\xc3\x9f b\xc2\xa0\xc2\x85",
+        ];
+        for pattern in patterns {
+            let with = compile(pattern, true);
+            let full = compile(pattern, false);
+            #[cfg(feature = "ffi")]
+            let c =
+                crate::ffi::CRegex::new(pattern.as_bytes(), crate::ffi::ONIG_OPTION_NONE).unwrap();
+            for subject in subjects {
+                for start in 0..=subject.len() {
+                    let search = |reg: &RegexType| {
+                        onig_search(
+                            reg,
+                            subject,
+                            subject.len(),
+                            start,
+                            subject.len(),
+                            Some(OnigRegion::new()),
+                            ONIG_OPTION_NONE,
+                        )
+                    };
+                    let (r, region) = search(&with);
+                    let (r_full, region_full) = search(&full);
+                    let context = format!("{pattern} on {subject:x?} from {start}");
+                    assert_eq!(r, r_full, "{context}");
+                    if r >= 0 {
+                        let spans = |region: &OnigRegion| -> Vec<(i32, i32)> {
+                            region
+                                .beg
+                                .iter()
+                                .zip(&region.end)
+                                .take(region.num_regs as usize)
+                                .map(|(&b, &e)| (b, e))
+                                .collect()
+                        };
+                        assert_eq!(
+                            spans(&region.unwrap()),
+                            spans(&region_full.unwrap()),
+                            "{context}"
+                        );
+                    }
+                    // C matches a character past a zero-length range, so C is
+                    // compared where the subject has a position left to start at.
+                    #[cfg(feature = "ffi")]
+                    if start < subject.len() {
+                        let mut c_region = crate::ffi::CRegion::new();
+                        let c_r = c.search(subject, start, subject.len(), Some(&mut c_region), 0);
+                        assert_eq!(r, c_r, "C: {context}");
                     }
                 }
             }
