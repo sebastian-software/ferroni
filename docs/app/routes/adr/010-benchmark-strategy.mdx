@@ -66,12 +66,46 @@ metric on selected tasks. Whole-process peak RSS is not compiled-pattern size.
 ### TextMate Scanner and full highlighting
 
 TextMate Scanner is a separate application workload for the API Ferroni provides.
-Publication candidates use complete captured document calls, including failed
-calls and original pattern order, for C, Java, PHP, C++, SCSS, JSON, TSX, Rust and HTML.
-Hot scanner groups remain diagnostics. The Astro replay remains a local regression replay
-for issue #327: no comparison engine reproduces it. Input preparation, start-offset
-conversion and output materialization need equivalent boundaries before new
-cross-engine claims.
+Its replays keep complete captured document calls, including failed calls and
+original pattern order. Publication candidates are four of them, one per
+complexity tier: JSON, Rust, TSX and HTML. Ferroni is a regex engine first;
+this lane shows its scanner against the other engines and guards against
+regressions, while highlighting breadth belongs to Ferriki. The C, Java, PHP,
+C++ and SCSS replays and the hot scanner groups remain local diagnostics. The
+Astro replay remains a local regression replay for issue #327: no comparison
+engine reproduces it. Each replay has a `document` lane, which reuses scanners compiled
+before timing, and a `cold_document` lane, which compiles every scanner of the
+trace and replays the document once, with the compiled scanners dropped outside
+timing.
+
+Every engine has the call boundary of Ferroni's `find_next_match_utf16`. Input
+preparation stays outside timing: trace parsing, validation, the subjects with
+their UTF-16/UTF-8 offset tables (`OnigString` for Ferroni, the same tables for
+the comparators) and fresh string identities for each replay. Inside each timed
+call the engine converts the UTF-16 start through those tables, searches, and
+materializes the winning pattern index with every capture in UTF-16 code units,
+inline for up to eight groups as in `ScannerMatch`. Engines that search pattern
+by pattern keep each candidate's captures in their own match storage and read
+only the winner's, as vscode-oniguruma does. The result is consumed and dropped
+inside timing.
+
+The remaining differences are each engine's own search, named in every report:
+Ferroni's DFA pre-filter and position-lead set search; the vscode-oniguruma C
+scanner's RegSet search, which every captured line takes because none reaches
+1000 bytes, so its per-pattern string cache does not apply; an earliest-match
+loop over the patterns for Onigmo, PCRE2 and fancy-regex; and fancy-regex's
+RegexSet. Each engine is called as its client calls it: Ferroni without a
+caller cache ID, as Ferriki does, the C scanner with vscode-oniguruma's string
+cache IDs. Shiki's JavaScript engine runs in Node under another harness and
+remains a local diagnostic.
+
+An engine is timed only where it reproduces every captured result, including
+the difference between an empty and an unset capture; otherwise the report
+gives the reason. Ferroni and C Oniguruma must reproduce every call.
+`compare-scanner-replays.py` follows the measurement rules below with one
+process per case and engine, and the manual Blacksmith workflow runs it as a
+separate lane. Its per-platform, per-case reports have no cross-case aggregate
+and do not enter the regex ranking or the website.
 
 Full grammar execution and highlighting belong to Ferriki's separate benchmark.
 So do effects of the consumer's build: Ferriki's TypeScript/TSX regression

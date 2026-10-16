@@ -324,9 +324,11 @@ group covers syntax only Oniguruma runs (atomic and possessive groups,
 recursive subexpression calls, the absent operator, conditionals,
 case-insensitive backreferences, and alternating lookbehind) against C.
 
-With `--features ffi`, the C++, Java and SCSS scanner replays add a `_c`
-case per replay: the same captured Shiki calls through the vscode-oniguruma C
-scanner, checked against every captured result before timing.
+With `--features ffi`, every scanner replay adds a `_c` case: the same
+captured calls through the vscode-oniguruma C scanner, checked against every
+captured result before timing. Every engine of a replay has the call boundary
+of Ferroni's `find_next_match_utf16`, recorded in
+[ADR-010](https://ferroni.dev/adr/010-benchmark-strategy).
 
 `battle_bench` and the scanner replays also time further engines where they
 reproduce Oniguruma's results (or the captured Shiki ones): PCRE2 with and
@@ -361,6 +363,32 @@ pnpm install --frozen-lockfile --dir benches/shiki_js
 ./scripts/compare-engines.py report /tmp/ferroni-compare.md /tmp/ferroni-compare
 ```
 
+The Blacksmith workflow measures four scanner replays as a separate lane, one
+per complexity tier: JSON, Rust, TSX and HTML (`REPLAYS` in
+`scripts/compare-scanner-replays.py`); `lanes: scanner` runs it alone. The
+other replays stay local diagnostics. It times each replay's `document` and
+`cold_document` lanes for Ferroni, the C scanner, Onigmo, PCRE2 with and
+without JIT and the fancy-regex variants. An engine is timed only where it
+reproduces every captured result; the others are listed with the reason. Each
+platform gets its own per-case report without an aggregate, outside the regex
+ranking and the website.
+
+```sh
+./scripts/prepare-onigmo-sources.sh
+python3 -m unittest discover -s scripts/tests -p 'test_scanner*.py'
+python3 scripts/compare-scanner-replays.py validate /tmp/scanner-validation
+python3 scripts/compare-scanner-replays.py run /tmp/scanner-results
+```
+
+`compare-scanner-replays.py` follows `compare-production.py`: a fresh output
+directory, validation of every case and engine before any timing, three
+process repetitions with balanced order, one process per case and engine,
+retained Criterion samples, and `--diagnostic` for short runs. On Blacksmith
+each repetition runs on its own VM (`run --only-run N`), and
+`compare-scanner-replays.py merge OUT RUN1 RUN2 RUN3` rejects a missing cell or
+a repetition built from different inputs. The lane measures the default scanner
+configuration, so it refuses to run with `FERRONI_BENCH_PREFILTER` set.
+
 For process-isolated memory comparison on the large TypeScript scanner
 workload, use:
 
@@ -389,7 +417,9 @@ cargo bench --locked --bench java_scanner_bench
 The C++, SCSS, Java, JSON, Astro, TSX, Rust and HTML replays also have a
 `cold_document` case: each iteration compiles fresh scanners and replays the
 whole document once, so it measures one-shot highlighting, including the
-pre-filter warm-up and build. Run only the cold cases with, for example:
+pre-filter warm-up and build. The C scanner and the other engines have the
+same lane (`cold_document_c`, `cold_document_<engine>`), with PCRE2's JIT
+compilation timed. Run only the cold cases with, for example:
 
 ```sh
 cargo bench --locked --bench cpp_scanner_bench -- cold

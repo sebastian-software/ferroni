@@ -5,6 +5,10 @@ name: Source-backed regex comparison
 # Each process repetition runs on its own VM. A Ferroni measurement and the
 # comparator it is divided by always share a repetition, and so a VM; the
 # merge job only joins the repetitions of one platform.
+#
+# The TextMate scanner replays are a separate lane on the same VMs, with
+# their own artifacts and reports (ADR-010); they never enter the regex
+# results that scripts/publish-production.py publishes.
 on:
   workflow_dispatch:
     inputs:
@@ -13,8 +17,17 @@ on:
         type: choice
         options: [both, macos-arm64, linux-x86-64]
         default: both
+      lanes:
+        description: Regex corpora, TextMate scanner replays, or both
+        type: choice
+        options: [all, regex, scanner]
+        default: all
       cases:
-        description: Comma-separated case IDs (empty means complete corpus)
+        description: Comma-separated regex case IDs (empty means complete corpus)
+        type: string
+        default: ""
+      scanner_cases:
+        description: Comma-separated scanner cases such as tsx_scanner/cold_document (empty means both lanes of every replay)
         type: string
         default: ""
       measure_seconds:
@@ -45,8 +58,9 @@ jobs:
     name: ${{ matrix.profile }} run ${{ matrix.run }}
     runs-on: ${{ matrix.profile == 'macos-arm64' && 'blacksmith-6vcpu-macos-26' || 'blacksmith-4vcpu-ubuntu-2404' }}
     # One repetition of both corpora takes about half an hour at the
-    # three-second window, including the build and validation.
-    timeout-minutes: ${{ inputs.measure_seconds == '5' && 90 || 60 }}
+    # three-second window, including the build and validation; the scanner
+    # lane adds about ten minutes.
+    timeout-minutes: ${{ inputs.measure_seconds == '5' && 120 || 90 }}
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +68,7 @@ jobs:
         run: [1, 2, 3]
     env:
       CASES: ${{ inputs.cases }}
+      SCANNER_CASES: ${{ inputs.scanner_cases }}
       MEASURE_SECONDS: ${{ inputs.measure_seconds }}
       RUN: ${{ matrix.run }}
     steps:
@@ -75,7 +90,9 @@ jobs:
           python3 scripts/check-production-corpus.py
           python3 -c 'import importlib.util,json,pathlib; s=importlib.util.spec_from_file_location("corpus","scripts/check-production-corpus.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); p=pathlib.Path("benches/tokenizer_regex/catalog.json"); m.check(json.loads(p.read_text()),p.parent)'
           python3 -m unittest discover -s scripts/tests -p 'test_production*.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_scanner*.py'
       - name: Validate and measure one repetition
+        if: inputs.lanes != 'scanner'
         run: |
           arguments=()
           if [[ -n "$CASES" ]]; then arguments+=(--cases "$CASES"); fi
@@ -84,23 +101,40 @@ jobs:
             --host-note "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT." \
             "${arguments[@]}"
       - name: Validate and measure one tokenizer repetition
+        if: inputs.lanes != 'scanner'
         run: |
           python3 scripts/compare-production.py run "$RUNNER_TEMP/tokenizers" \
             --corpus tokenizer --only-run "$RUN" --measure-seconds "$MEASURE_SECONDS" --timeout 120 \
             --host-note "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT. Separate LLM pre-tokenization corpus."
+      - name: Validate and measure one scanner replay repetition
+        if: inputs.lanes != 'regex'
+        run: |
+          arguments=()
+          if [[ -n "$SCANNER_CASES" ]]; then arguments+=(--cases "$SCANNER_CASES"); fi
+          python3 scripts/compare-scanner-replays.py run "$RUNNER_TEMP/scanner-replays" \
+            --only-run "$RUN" --measure-seconds "$MEASURE_SECONDS" --timeout 300 \
+            --host-note "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT. Separate TextMate scanner replay lane." \
+            "${arguments[@]}"
       - name: Retain the repetition's evidence, including unsuccessful calls
-        if: always()
+        if: always() && inputs.lanes != 'scanner'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-production-${{ matrix.profile }}-run${{ matrix.run }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/production/
           retention-days: 7
       - name: Retain the repetition's tokenizer evidence
-        if: always()
+        if: always() && inputs.lanes != 'scanner'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-tokenizers-${{ matrix.profile }}-run${{ matrix.run }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/tokenizers/
+          retention-days: 7
+      - name: Retain the repetition's scanner replay evidence
+        if: always() && inputs.lanes != 'regex'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shard-scanner-replays-${{ matrix.profile }}-run${{ matrix.run }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scanner-replays/
           retention-days: 7
 
   merge:
@@ -125,6 +159,7 @@ jobs:
           pattern: shard-*-${{ matrix.profile }}-run*-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/shards
       - name: Merge the repetitions of this platform
+        if: inputs.lanes != 'scanner'
         run: |
           for corpus in production tokenizers; do
             python3 scripts/compare-production.py merge "$RUNNER_TEMP/$corpus" \
@@ -132,15 +167,32 @@ jobs:
               "$RUNNER_TEMP/shards/shard-$corpus-$PROFILE-run2-$SUFFIX" \
               "$RUNNER_TEMP/shards/shard-$corpus-$PROFILE-run3-$SUFFIX"
           done
+      - name: Merge the scanner replay repetitions of this platform
+        if: inputs.lanes != 'regex'
+        run: |
+          python3 scripts/compare-scanner-replays.py merge "$RUNNER_TEMP/scanner-replays" \
+            "$RUNNER_TEMP/shards/shard-scanner-replays-$PROFILE-run1-$SUFFIX" \
+            "$RUNNER_TEMP/shards/shard-scanner-replays-$PROFILE-run2-$SUFFIX" \
+            "$RUNNER_TEMP/shards/shard-scanner-replays-$PROFILE-run3-$SUFFIX"
+          cat "$RUNNER_TEMP/scanner-replays/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Retain complete evidence
+        if: inputs.lanes != 'scanner'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: production-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/production/
           retention-days: 30
       - name: Retain separate tokenizer evidence
+        if: inputs.lanes != 'scanner'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tokenizers-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/tokenizers/
+          retention-days: 30
+      - name: Retain separate scanner replay evidence
+        if: inputs.lanes != 'regex'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scanner-replays-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scanner-replays/
           retention-days: 30

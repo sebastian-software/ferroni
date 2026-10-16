@@ -1,77 +1,49 @@
 //! Replays of the scanner calls Ferriki's tokenizer makes for the curated
 //! JSON, Astro, TSX, Rust and HTML fixtures, recorded with
-//! benches/json_scanner/capture.patch. See benches/json_scanner,
-//! benches/astro_scanner, benches/tsx_scanner, benches/rust_scanner and
-//! benches/html_scanner.
+//! benches/json_scanner/capture.patch, with their one-shot `cold_document`
+//! lanes. See benches/json_scanner, benches/astro_scanner, benches/tsx_scanner,
+//! benches/rust_scanner and benches/html_scanner.
 #[path = "engine_replay.rs"]
 mod engine_replay;
 #[path = "engines.rs"]
 mod engines;
 #[path = "cpp_scanner/mod.rs"]
 mod scanner_replay;
-use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
-#[cfg(feature = "ffi")]
-use scanner_replay::CReplay;
-use scanner_replay::{Corpus, bench_cold_document, replay};
+use criterion::{Criterion, criterion_group, criterion_main};
+use engine_replay::bench_replays;
+use scanner_replay::Corpus;
 
-fn bench_language(c: &mut Criterion, language: &str, trace: &str) {
-    let corpus = Corpus::from_json(trace);
-    corpus.validate();
-    let mut group = c.benchmark_group(format!("{language}_scanner"));
-    for selected in std::iter::once(None).chain(corpus.hot_groups.iter().copied().map(Some)) {
-        let calls = corpus.selected(selected);
-        let mut scanners = corpus.scanners();
-        let name = selected.map_or_else(|| "document".to_owned(), |id| format!("group_{id}"));
-        group.throughput(Throughput::Elements(calls.len() as u64));
-        group.bench_function(&name, |b| {
-            b.iter_batched_ref(
-                || corpus.strings(),
-                |strings| replay(&mut scanners, strings, &calls),
-                BatchSize::LargeInput,
-            );
-        });
-        #[cfg(feature = "ffi")]
-        {
-            let c_replay = CReplay::new(&corpus, &calls);
-            group.bench_function(format!("{name}_c"), |b| {
-                b.iter_batched(
-                    || c_replay.fresh_ids(),
-                    |ids| c_replay.replay(ids),
-                    BatchSize::SmallInput,
-                );
-            });
-        }
-        for &engine in engines::Engine::ALL {
-            match engine_replay::EngineReplay::new(engine, &corpus, &calls) {
-                Ok(replay) => {
-                    let id = format!("{language}_scanner/{name}_{}", engine.id());
-                    if replay.empty_capture_differences > 0 {
-                        println!(
-                            "EQUIVALENT {}",
-                            serde_json::json!({"id": id, "empty_capture_differences": replay.empty_capture_differences})
-                        );
-                    }
-                    group.bench_function(format!("{name}_{}", engine.id()), |b| {
-                        b.iter(|| replay.replay());
-                    });
-                }
-                Err(reason) => engines::unsupported(
-                    &format!("{language}_scanner/{name}_{}", engine.id()),
-                    engine,
-                    &reason,
-                ),
-            }
-        }
-    }
-    bench_cold_document(&mut group, &corpus);
-    group.finish();
-}
 fn bench_ferriki(c: &mut Criterion) {
-    bench_language(c, "json", include_str!("json_scanner/trace.json"));
-    bench_language(c, "astro", include_str!("astro_scanner/trace.json"));
-    bench_language(c, "tsx", include_str!("tsx_scanner/trace.json"));
-    bench_language(c, "rust", include_str!("rust_scanner/trace.json"));
-    bench_language(c, "html", include_str!("html_scanner/trace.json"));
+    bench_replays(
+        c,
+        "json",
+        &Corpus::from_json(include_str!("json_scanner/trace.json")),
+        true,
+    );
+    bench_replays(
+        c,
+        "astro",
+        &Corpus::from_json(include_str!("astro_scanner/trace.json")),
+        true,
+    );
+    bench_replays(
+        c,
+        "tsx",
+        &Corpus::from_json(include_str!("tsx_scanner/trace.json")),
+        true,
+    );
+    bench_replays(
+        c,
+        "rust",
+        &Corpus::from_json(include_str!("rust_scanner/trace.json")),
+        true,
+    );
+    bench_replays(
+        c,
+        "html",
+        &Corpus::from_json(include_str!("html_scanner/trace.json")),
+        true,
+    );
 }
 
 criterion_group!(benches, bench_ferriki);
