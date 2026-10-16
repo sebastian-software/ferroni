@@ -4,6 +4,7 @@ use ferroni::scanner::{
     OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch, ScannerPatternCache,
 };
 use serde_json::Value;
+use smallvec::SmallVec;
 use std::hint::black_box;
 
 pub type Match = Option<(usize, Vec<(usize, usize)>)>;
@@ -320,15 +321,96 @@ pub fn bench_cold_document(group: &mut BenchmarkGroup<'_, WallTime>, corpus: &Co
     });
 }
 
+/// A scanner result as the comparator replays return it from each timed call:
+/// the pattern index and every capture in UTF-16 code units, with the inline
+/// capacity of Ferroni's `ScannerMatch`, so that neither side allocates for
+/// up to eight groups.
+pub type Utf16Match = Option<(usize, SmallVec<[(usize, usize); 8]>)>;
+
+/// A subject with the offset tables `OnigString::new` builds, for the
+/// comparator replays. They are built outside timing, as `Corpus::strings`
+/// builds Ferroni's; the comparators then convert the UTF-16 start and the
+/// returned captures with the same lookups inside their timed calls as
+/// `find_next_match_utf16` does, and as vscode-oniguruma does in JavaScript.
+pub struct Subject {
+    pub text: String,
+    ascii: bool,
+    /// UTF-16 code unit -> UTF-8 byte offset, with an end sentinel.
+    utf16_to_utf8: Vec<u32>,
+    /// UTF-8 byte offset -> UTF-16 code unit, with an end sentinel.
+    utf8_to_utf16: Vec<u32>,
+}
+
+impl Subject {
+    pub fn new(text: &str) -> Self {
+        let mut subject = Self {
+            text: text.to_owned(),
+            ascii: text.is_ascii(),
+            utf16_to_utf8: Vec::new(),
+            utf8_to_utf16: Vec::new(),
+        };
+        if subject.ascii {
+            return subject;
+        }
+        subject.utf8_to_utf16 = vec![0; text.len() + 1];
+        for (byte, ch) in text.char_indices() {
+            let utf16 = subject.utf16_to_utf8.len() as u32;
+            subject.utf8_to_utf16[byte..byte + ch.len_utf8()].fill(utf16);
+            subject.utf16_to_utf8.push(byte as u32);
+            // The low surrogate maps to the byte after the character.
+            if ch.len_utf16() == 2 {
+                subject.utf16_to_utf8.push((byte + ch.len_utf8()) as u32);
+            }
+        }
+        subject.utf8_to_utf16[text.len()] = subject.utf16_to_utf8.len() as u32;
+        subject.utf16_to_utf8.push(text.len() as u32);
+        subject
+    }
+
+    /// The byte offset of a UTF-16 start position.
+    #[inline]
+    pub fn utf8_offset(&self, utf16: usize) -> usize {
+        if self.ascii {
+            utf16.min(self.text.len())
+        } else {
+            self.utf16_to_utf8
+                .get(utf16)
+                .map_or(self.text.len(), |&byte| byte as usize)
+        }
+    }
+
+    /// A capture in UTF-16 code units. An unset group (-1) reads as (0, 0),
+    /// as in Ferroni's scanner and the traces.
+    #[inline]
+    pub fn utf16_span(&self, beg: i32, end: i32) -> (usize, usize) {
+        if beg < 0 || end < beg {
+            (0, 0)
+        } else if self.ascii {
+            (beg as usize, end as usize)
+        } else {
+            (
+                self.utf8_to_utf16[beg as usize] as usize,
+                self.utf8_to_utf16[end as usize] as usize,
+            )
+        }
+    }
+}
+
+/// A [`Utf16Match`] in the trace's form, for comparison with `Call::expected`.
+pub fn expected_form(found: Utf16Match) -> Match {
+    found.map(|(index, captures)| (index, captures.into_vec()))
+}
+
 /// The same calls through the vscode-oniguruma C scanner
 /// (`benches/vscode_scanner_native.c`), the native counterpart of Shiki's WASM
-/// engine. UTF-16 starts become byte offsets outside timing; vscode-oniguruma
-/// performs that conversion in JavaScript, Ferroni inside its timed call.
+/// engine. Each timed call converts the UTF-16 start through the subject's
+/// table, searches, and reads the winner's captures from the scanner's result
+/// buffer into a [`Utf16Match`], the boundary Ferroni's
+/// `find_next_match_utf16` has.
 #[cfg(feature = "ffi")]
 pub struct CReplay {
-    scanners: Vec<ferroni::ffi::CScanner>,
-    subjects: Vec<String>,
-    /// (scanner, subject, byte start, Oniguruma search options)
+    subjects: Vec<Subject>,
+    /// (scanner, subject, UTF-16 start, Oniguruma search options)
     calls: Vec<(usize, usize, usize, std::os::raw::c_uint)>,
 }
 
@@ -337,57 +419,50 @@ static NEXT_C_STR_CACHE_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::At
 
 #[cfg(feature = "ffi")]
 impl CReplay {
-    /// Builds the C scanners and checks every selected call against the
-    /// captured Shiki result before anything is timed.
+    /// Prepares the subjects and calls; [`Self::compile`] builds the scanners.
     pub fn new(corpus: &Corpus, calls: &[&Call]) -> Self {
-        let scanners = corpus
+        Self {
+            subjects: corpus.subjects.iter().map(|s| Subject::new(s)).collect(),
+            calls: calls
+                .iter()
+                .map(|call| {
+                    (
+                        call.scanner,
+                        call.subject,
+                        call.start_utf16,
+                        call.option_bits << 22,
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    /// Every scanner of the trace, as `Corpus::scanners` builds Ferroni's.
+    pub fn compile(corpus: &Corpus) -> Vec<ferroni::ffi::CScanner> {
+        corpus
             .patterns
             .iter()
             .map(|patterns| {
                 let refs: Vec<_> = patterns.iter().map(String::as_bytes).collect();
                 ferroni::ffi::CScanner::new(&refs).expect("C scanner compiles")
             })
-            .collect();
-        let replay = Self {
-            scanners,
-            subjects: corpus.subjects.clone(),
-            calls: calls
-                .iter()
-                .map(|call| {
-                    let text = &corpus.subjects[call.subject];
-                    (
-                        call.scanner,
-                        call.subject,
-                        byte_offset(text, call.start_utf16),
-                        call.option_bits << 22,
-                    )
-                })
-                .collect(),
-        };
-        let ids = replay.fresh_ids();
+            .collect()
+    }
+
+    /// Checks every call against the captured result, through the code the
+    /// timed replay runs, before anything is timed.
+    pub fn validate(&self, scanners: &[ferroni::ffi::CScanner], calls: &[&Call]) {
+        let ids = self.fresh_ids();
         for (i, (&(scanner, subject, start, options), call)) in
-            replay.calls.iter().zip(calls).enumerate()
+            self.calls.iter().zip(calls).enumerate()
         {
-            let text = &replay.subjects[subject];
-            let actual = replay.scanners[scanner]
-                .find_next_match_with_options(text.as_bytes(), ids + subject as i32, start, options)
-                .map(|(index, captures)| {
-                    let utf16 = |byte: i32| text[..byte as usize].encode_utf16().count();
-                    let captures = captures
-                        .into_iter()
-                        .map(|(beg, end)| {
-                            if beg >= 0 && end >= beg {
-                                (utf16(beg), utf16(end))
-                            } else {
-                                (0, 0)
-                            }
-                        })
-                        .collect();
-                    (index, captures)
-                });
-            assert_eq!(actual, call.expected, "C scanner trace differs at call {i}");
+            let actual = self.find(scanners, scanner, subject, ids, start, options);
+            assert_eq!(
+                expected_form(actual),
+                call.expected,
+                "C scanner trace differs at call {i}"
+            );
         }
-        replay
     }
 
     /// New string-cache identities for one replay, like `Corpus::strings`.
@@ -398,26 +473,45 @@ impl CReplay {
         )
     }
 
-    pub fn replay(&self, ids: i32) {
+    #[inline]
+    fn find(
+        &self,
+        scanners: &[ferroni::ffi::CScanner],
+        scanner: usize,
+        subject: usize,
+        ids: i32,
+        start_utf16: usize,
+        options: std::os::raw::c_uint,
+    ) -> Utf16Match {
+        let subject_text = &self.subjects[subject];
+        let start = subject_text.utf8_offset(start_utf16);
+        scanners[scanner].find_next_match_encoded(
+            subject_text.text.as_bytes(),
+            ids + subject as i32,
+            start,
+            options,
+            |index, bounds| {
+                let captures = bounds
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|&[beg, end]| subject_text.utf16_span(beg, end))
+                    .collect();
+                (index, captures)
+            },
+        )
+    }
+
+    pub fn replay(&self, scanners: &[ferroni::ffi::CScanner], ids: i32) {
         for &(scanner, subject, start, options) in &self.calls {
-            black_box(self.scanners[scanner].find_next_match_with_options(
-                black_box(self.subjects[subject].as_bytes()),
-                ids + subject as i32,
+            black_box(self.find(
+                scanners,
+                scanner,
+                black_box(subject),
+                ids,
                 black_box(start),
                 options,
             ));
         }
     }
-}
-
-#[cfg(feature = "ffi")]
-fn byte_offset(text: &str, start_utf16: usize) -> usize {
-    let mut utf16 = 0;
-    text.char_indices()
-        .find_map(|(byte, ch)| {
-            let at = utf16;
-            utf16 += ch.len_utf16();
-            (start_utf16 >= at && start_utf16 < utf16).then_some(byte)
-        })
-        .unwrap_or(text.len())
 }

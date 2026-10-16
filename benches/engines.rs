@@ -212,6 +212,63 @@ impl Compiled {
         }
     }
 
+    /// The start of the first match at or after `start`. Its captures stay in
+    /// the engine's own result storage, for [`Self::read_found`], until the
+    /// next search with this pattern: a scanner loop reads only the winner's,
+    /// as vscode-oniguruma keeps one region per pattern.
+    pub fn search_found<'t>(
+        &self,
+        text: &'t str,
+        start: usize,
+    ) -> Result<Option<(usize, Found<'t>)>, String> {
+        match self {
+            Compiled::Pcre2(regex) => {
+                regex.search(text, start, |ovector| (ovector[0], Found::Kept))
+            }
+            Compiled::Fancy(regex) => Ok(regex
+                .captures_from_pos(text, start)
+                .map_err(|error| error.to_string())?
+                .map(|captures| {
+                    (
+                        captures.get(0).map_or(start, |m| m.start()),
+                        Found::Fancy(captures),
+                    )
+                })),
+            #[cfg(feature = "onigmo")]
+            Compiled::Onigmo(regex) => Ok(regex
+                .search(text.as_bytes(), start, true)?
+                .map(|at| (at, Found::Kept))),
+        }
+    }
+
+    /// Calls `bound` with every capture of a match from
+    /// [`Self::search_found`] on this pattern, in group order, with -1
+    /// bounds for an unset group.
+    pub fn read_found(&self, found: &Found<'_>, mut bound: impl FnMut(i32, i32)) {
+        match (self, found) {
+            (Compiled::Pcre2(regex), Found::Kept) => regex.read_last(|ovector| {
+                for &[beg, end] in ovector.as_chunks::<2>().0 {
+                    if beg == usize::MAX {
+                        bound(-1, -1);
+                    } else {
+                        bound(beg as i32, end as i32);
+                    }
+                }
+            }),
+            (Compiled::Fancy(_), Found::Fancy(captures)) => {
+                for group in 0..captures.len() {
+                    match captures.get(group) {
+                        Some(m) => bound(m.start() as i32, m.end() as i32),
+                        None => bound(-1, -1),
+                    }
+                }
+            }
+            #[cfg(feature = "onigmo")]
+            (Compiled::Onigmo(regex), Found::Kept) => regex.read_region(bound),
+            _ => unreachable!("a match is read with the pattern that found it"),
+        }
+    }
+
     /// Whole-match spans through each engine's public iterator, where available.
     pub fn native_all_matches(&self, text: &str) -> Option<Result<Vec<(usize, usize)>, String>> {
         match self {
@@ -228,6 +285,15 @@ impl Compiled {
             _ => None,
         }
     }
+}
+
+/// A match from [`Compiled::search_found`].
+pub enum Found<'t> {
+    /// The captures are in the pattern's own match data (PCRE2) or region
+    /// (Onigmo).
+    Kept,
+    /// fancy-regex returns them as a value.
+    Fancy(fancy_regex::Captures<'t, str>),
 }
 
 /// Prints why `engine` has no timing for the benchmark `id`.
@@ -386,6 +452,20 @@ mod pcre2 {
             self.busy.set(false);
             result
         }
+
+        /// Calls `read` with the capture offsets the last successful
+        /// [`Self::search`] left in the match data.
+        pub fn read_last<R>(&self, read: impl FnOnce(&[usize]) -> R) -> R {
+            assert!(!self.busy.get(), "PCRE2 match data read during a search");
+            // SAFETY: the match data is owned by `self` and holds the last
+            // match's ovector, which no search overwrites while `read`
+            // borrows it: searches take `&self` and `busy` is clear.
+            let ovector = unsafe {
+                let count = pcre2_get_ovector_count_8(self.match_data) as usize;
+                std::slice::from_raw_parts(pcre2_get_ovector_pointer_8(self.match_data), 2 * count)
+            };
+            read(ovector)
+        }
     }
 
     impl Drop for Regex {
@@ -507,6 +587,21 @@ mod onigmo {
                         )
                     })
                     .collect()
+            }
+        }
+
+        /// Calls `bound` with each group of the region, -1 for an unset one,
+        /// without collecting them as [`Self::captures`] does.
+        pub fn read_region(&self, mut bound: impl FnMut(i32, i32)) {
+            // SAFETY: the region belongs to `self.0` and was filled by the
+            // preceding successful search with `want_region`.
+            unsafe {
+                for group in 0..ferroni_onigmo_num_regs(self.0) {
+                    bound(
+                        ferroni_onigmo_beg(self.0, group) as i32,
+                        ferroni_onigmo_end(self.0, group) as i32,
+                    );
+                }
             }
         }
 

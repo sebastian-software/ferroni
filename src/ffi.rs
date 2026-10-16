@@ -601,6 +601,28 @@ impl CScanner {
         position: usize,
         options: c_uint,
     ) -> Option<(usize, Vec<(i32, i32)>)> {
+        self.find_next_match_encoded(text, str_cache_id, position, options, |index, bounds| {
+            let captures = bounds
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|&[beg, end]| (beg, end));
+            (index, captures.collect())
+        })
+    }
+
+    /// [`Self::find_next_match_with_options`] without copying the result:
+    /// `read` gets the pattern index and the capture bounds
+    /// `[beg0, end0, beg1, end1, ...]` in the scanner's own result buffer,
+    /// as vscode-oniguruma's JavaScript side reads them.
+    pub fn find_next_match_encoded<R>(
+        &self,
+        text: &[u8],
+        str_cache_id: i32,
+        position: usize,
+        options: c_uint,
+        read: impl FnOnce(usize, &[c_int]) -> R,
+    ) -> Option<R> {
         // SAFETY: `self.handle` is owned by this wrapper and `text` remains
         // live for the synchronous C call.
         let encoded = unsafe {
@@ -616,19 +638,17 @@ impl CScanner {
         if encoded.is_null() {
             return None;
         }
-        // Decode the encoded region: [index, num_regs, beg0, end0, beg1, end1, ...]
+        // The encoded region: [index, num_regs, beg0, end0, beg1, end1, ...]
         // SAFETY: a non-null result is the scanner's documented encoded region
         // layout, containing `num_regs` begin/end pairs following its header.
+        // The buffer is only rewritten by the next search, after `read`.
         unsafe {
             let index = *encoded as usize;
             let num_regs = *encoded.add(1) as usize;
-            let mut captures = Vec::with_capacity(num_regs);
-            for i in 0..num_regs {
-                let beg = *encoded.add(2 + 2 * i);
-                let end = *encoded.add(3 + 2 * i);
-                captures.push((beg, end));
-            }
-            Some((index, captures))
+            Some(read(
+                index,
+                std::slice::from_raw_parts(encoded.add(2), 2 * num_regs),
+            ))
         }
     }
 }
