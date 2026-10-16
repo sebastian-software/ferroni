@@ -60,6 +60,15 @@ for (const platform of summary.platforms) {
       "Revise the README: Ferroni no longer leads C's shared reuse aggregate with no case favoring C.",
     );
   }
+  // The homepage says only PCRE2 JIT is faster; the checks above cover the other engines.
+  for (const engine of ["onigmo", "pcre2"]) {
+    const other = pair(engine);
+    if (!other || other.family_weighted_ratio <= 1) {
+      errors.push(
+        `Revise the homepage: ${engine} now leads the reuse aggregate, so PCRE2 JIT is no longer the only faster engine.`,
+      );
+    }
+  }
   const errorAware = pair("rust_erroraware");
   if (!errorAware || errorAware.family_weighted_ratio <= 1) {
     errors.push(
@@ -73,10 +82,26 @@ if (
   errors.push("The overview must describe differing platform repetition counts.");
 }
 
+// The homepage names three source projects and counts the rest; the
+// workload page states the total.
+const flat = (text) => text.replaceAll(/\s+/g, " ");
+const projects = new Set(
+  catalog.cases
+    .filter((entry) => entry.pattern_origin === "production" && !entry.pending_reason)
+    .map((entry) => catalog.sources[entry.source.file].repository),
+);
+if (
+  projects.size !== 10 ||
+  !flat(home).includes("Django, Rails, WordPress and seven other projects") ||
+  !flat(page).includes("taken from ten open-source projects")
+) {
+  errors.push("Update the homepage's and workload page's project counts from catalog.json.");
+}
+
 const productionInputs = catalog.cases
   .filter((entry) => entry.pattern_origin === "production" && !entry.pending_reason)
   .reduce((total, entry) => total + entry.inputs.length, 0);
-if (!page.includes(`The ${productionInputs}\nupstream-derived inputs`)) {
+if (!flat(page).includes(`The ${productionInputs} upstream-derived inputs`)) {
   errors.push("Update the workload page's fixture count from catalog.json.");
 }
 for (const [name, content] of [
@@ -120,8 +145,8 @@ if (existsSync(publication)) {
   if (check.status !== 0) {
     errors.push(`Published benchmark evidence did not verify: ${check.stderr || check.error}`);
   }
-  if (!page.includes("<ProductionComparison />")) {
-    errors.push("The workload page must expose the generated per-case results.");
+  if (!page.includes("benches/production_results/publication.json")) {
+    errors.push("The workload page must link to the per-case results in the repository.");
   }
 } else if (!page.includes("it makes no new performance claim")) {
   errors.push("Do not replace the measurement-status note without verified publication evidence.");

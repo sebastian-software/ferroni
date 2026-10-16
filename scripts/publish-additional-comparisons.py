@@ -15,7 +15,7 @@ spec = importlib.util.spec_from_file_location("publication", ROOT / "scripts/pub
 publication = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publication)
 SCOPES = {
-    "tokenizers": ("tokenizers", "tokenizer_regex", publication.comparison.ENGINES, "tokenizer"),
+    "tokenizers": ("tokenizers", "tokenizer_regex", publication.comparison.ENGINES),
 }
 
 
@@ -39,27 +39,18 @@ def document(datasets):
 def generate(directories, receipt, current_source=True):
     return {scope: publication.generate(directories[scope], receipt,
                 ROOT / f"benches/{catalog}/catalog.json", engines, current_lock=current_source, current_source=current_source)
-            for scope, (_, catalog, engines, _) in SCOPES.items()}
+            for scope, (_, catalog, engines) in SCOPES.items()}
 
 
+# Every case and timing stays in the repository; the website links here.
 def write_data(datasets):
-    formatter = ROOT / "docs/node_modules/.bin/oxfmt"
-    publication.require(formatter.is_file(), "Install documentation dependencies before publication")
-    paths = []
-    for scope, (_, _, _, name) in SCOPES.items():
-        data = datasets[scope]
-        path = ROOT / f"docs/app/data/{name}-comparison.json"
-        path.write_text(publication.encoded(data))
-        paths.append(str(path))
-    subprocess.run([str(formatter), "--write", *paths], cwd=ROOT / "docs", check=True)
+    for scope in SCOPES:
+        (RESULTS / scope / "publication.json").write_text(publication.encoded(datasets[scope]))
     (RESULTS / "README.md").write_text(document(datasets))
 
 
 def check():
     if not RESULTS.exists():
-        for name in ("tokenizer-comparison",):
-            data = publication.read(ROOT / f"docs/app/data/{name}.json")
-            publication.require(not data["run"]["head_sha"] and not data["platforms"], "Unverified additional numbers cannot be published")
         print("Additional comparisons have not been published yet.")
         return
     receipt = publication.read(RESULTS / "run.json")
@@ -77,10 +68,10 @@ def check():
                     archive.extractall(destination)
                 directories[scope][profile] = destination
         datasets = generate(directories, receipt, current_source=False)
-    for scope, (_, _, _, name) in SCOPES.items():
-        publication.require(publication.equivalent(publication.read(ROOT / f"docs/app/data/{name}-comparison.json"), datasets[scope]), f"{scope} public data has drifted")
+    for scope in SCOPES:
+        publication.require(publication.equivalent(publication.read(RESULTS / scope / "publication.json"), datasets[scope]), f"{scope} public data has drifted")
     publication.require((RESULTS / "README.md").read_text() == document(datasets), "Additional result tables have drifted")
-    print("Additional publication check: paired baselines, both platforms, raw samples and website data agree.")
+    print("Additional publication check: paired baselines, both platforms, raw samples and published data agree.")
 
 
 def publish(run_id):
@@ -88,7 +79,7 @@ def publish(run_id):
         scratch = Path(scratch)
         receipt = publication.fetch_run(run_id, scratch)
         subprocess.run(["gh", "run", "download", str(run_id), "--repo", "sebastian-software/ferroni", "--dir", str(scratch), "--pattern", f"tokenizers-*-{run_id}-{receipt['run_attempt']}"], cwd=ROOT, check=True)
-        directories = {scope: {profile: scratch / f"{artifact}-{profile}-{run_id}-{receipt['run_attempt']}" for profile in publication.PROFILES} for scope, (artifact, _, _, _) in SCOPES.items()}
+        directories = {scope: {profile: scratch / f"{artifact}-{profile}-{run_id}-{receipt['run_attempt']}" for profile in publication.PROFILES} for scope, (artifact, _, _) in SCOPES.items()}
         datasets = generate(directories, receipt)
         RESULTS.mkdir(parents=True, exist_ok=True)
         for scope, profiles in directories.items():

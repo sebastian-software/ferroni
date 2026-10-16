@@ -1,19 +1,18 @@
-// cspell:words subexpression
-import { family, Mark, ProjectHero, Relations, Section, WorkWithUs } from "ferramenta-family";
+// cspell:words mbstring
+import { EvidenceFigures, family, Mark, ProjectHero, Section, WorkWithUs } from "ferramenta-family";
 import { Link, type MetaFunction } from "react-router";
 import config from "virtual:ardo/config";
 
-import { FitSection, StatusSection, SyntaxSection } from "../components/home-examples";
-import { HomeNavigation } from "../components/home-navigation";
-import { HomeRunSample } from "../components/home-run-sample";
-import { ProductionSummary } from "../components/production-summary";
-import { RegexFeatureMatrix } from "../components/regex-feature-matrix";
+import { comparison, factor, runDate, summary } from "../components/benchmark-summary";
+import { SyntaxSection } from "../components/home-examples";
+import { SpeedSummary } from "../components/speed-summary";
 import {
   ClosingSection,
-  CoverageSection,
-  ProofSection,
+  FitSection,
   SafetySection,
   ScannerSection,
+  StartSection,
+  StatusSection,
 } from "./home-bottom-sections";
 // React Router requires `meta` as a named route export.
 // oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
@@ -22,7 +21,7 @@ export const meta: MetaFunction = () => [
   {
     name: "description",
     content:
-      "Match, extract and replace UTF-8 text with Oniguruma patterns in pure Rust. Lookaround, backreferences, upstream compatibility tests and benchmarks from real projects. No C compiler required.",
+      "Oniguruma's regex engine in memory-safe Rust: look-behind, backreferences, recursion and the TextMate scanner, checked against every upstream UTF-8 test and faster than the C original on reused patterns. No C compiler required.",
   },
 ];
 
@@ -30,6 +29,14 @@ function ferroni() {
   const tool = family.find((entry) => entry.name === "ferroni");
   if (tool === undefined) throw new Error("Ferroni is missing from the family registry.");
   return tool;
+}
+
+/* Ferroni's reuse throughput against C Oniguruma, low to high across the two platforms. */
+function speedupOverC() {
+  const values = [comparison("linux-x86-64", "c"), comparison("macos-arm64", "c")]
+    .map((pair) => pair.family_weighted_ratio)
+    .sort((a, b) => a - b);
+  return `${values[0].toFixed(1)}–${factor(values[1])}`;
 }
 
 /*
@@ -43,18 +50,18 @@ function HeroSection() {
     <ProjectHero
       icon="ferroni"
       title={<span translate="no">Ferroni</span>}
-      what="Oniguruma regex in pure Rust."
+      what="Oniguruma’s regex engine, in memory-safe Rust."
       lede={
         <>
-          Match, extract and replace UTF-8 text with look-behind, backreferences and subexpression
-          calls. Ferroni ports Oniguruma&rsquo;s engine to Rust, checked against its upstream tests.
-          Add it with Cargo; no C compiler required.
+          Run Oniguruma&rsquo;s full syntax, from look-behind to recursion, and the scanner that
+          syntax highlighters drive. Ferroni passes every upstream UTF-8 test and, once a pattern is
+          compiled, matches {speedupOverC()} faster than the C original.
         </>
       }
       actions={
         <>
           <Link to="/guide/getting-started" className="fam-btn fam-btn-primary">
-            Read the quickstart <Mark name="arrow" className="icon" size={18} />
+            Get started <Mark name="arrow" className="icon" size={18} />
           </Link>
           <a href="https://github.com/sebastian-software/ferroni" className="fam-btn fam-btn-ghost">
             <Mark name="github" className="icon" size={18} /> GitHub
@@ -71,67 +78,81 @@ function HeroSection() {
   );
 }
 
-function SampleSection() {
+/*
+ * The four claims the page then argues one by one. The parity count is the
+ * total of the table in guide/compatibility.mdx; the unsafe count is the
+ * output of scripts/count-unsafe.sh, as in ADR-002.
+ */
+function WhySection() {
+  const arm = comparison("macos-arm64", "c").family_weighted_ratio;
+  const x86 = comparison("linux-x86-64", "c").family_weighted_ratio;
   return (
     <Section
-      id="fr-run"
-      title="Look-behind and named captures, in Rust"
+      id="fr-why"
+      layout="split"
+      title="Oniguruma ended. The engine goes on."
       intro={
         <>
-          Select a date with look-behind, then read its named captures with a familiar Rust API. The
-          output below comes from running this example.
-        </>
-      }
-      note={
-        <a href="https://github.com/sebastian-software/ferroni/blob/main/examples/website_sample.rs">
-          Run the example: cargo run --example website_sample
-        </a>
-      }
-    >
-      <HomeRunSample />
-    </Section>
-  );
-}
-
-function PerformanceSection() {
-  return (
-    <Section
-      id="fr-evidence"
-      title="See how Ferroni compares"
-      intro={
-        <>
-          Measure the regex work your application needs: validation, capture extraction, replacement
-          and Unicode text processing. These comparisons use patterns and test inputs from projects
-          including Django, Fluent Bit, Rails and WordPress, covering simple expressions, complex
-          patterns and advanced Oniguruma features.
+          Oniguruma matches the patterns in every TextMate grammar, in PHP&rsquo;s mbstring and in
+          jq. Its C project closed in April 2025. Ferroni continues the engine in Rust, ported
+          function by function, and makes it faster and safer than it was.
         </>
       }
       note={
         <>
-          The measured work is each project&rsquo;s regex step. Complete validators, parsers and
-          rendering pipelines include additional work.
+          Speed from the {runDate()} benchmark run.{" "}
+          <Link to="/guide/compatibility">How compatibility is checked</Link>
         </>
       }
     >
-      <RegexFeatureMatrix />
-      <ProductionSummary />
-      <p>
-        <Link to="/perf/regex-workloads">
-          Inspect every case, preparation costs and measurement ranges
-        </Link>
-      </p>
+      <EvidenceFigures
+        figures={[
+          {
+            label: "Faster than C",
+            value: factor(arm),
+            detail: <>Reused patterns on ARM64; {factor(x86)} on x86-64</>,
+          },
+          {
+            label: "Upstream tests",
+            value: "2,974",
+            detail: "Every UTF-8 test of C Oniguruma passes",
+          },
+          {
+            label: "Unsafe sites",
+            value: "10",
+            detail: "None in buffer or string code",
+          },
+          {
+            label: "Unicode",
+            value: "18.0",
+            detail: "C Oniguruma ships 16.0",
+          },
+        ]}
+      />
     </Section>
   );
 }
 
-function RelationsSection() {
+function SpeedSection() {
+  const jitWins = [comparison("macos-arm64", "pcre2_jit"), comparison("linux-x86-64", "pcre2_jit")]
+    .map((pair) => pair.ferroni_cases)
+    .sort((a, b) => a - b);
   return (
     <Section
-      id="fr-relations"
-      title="Where Ferroni sits"
-      intro="Ferroni supplies the regex engine for Ferriki, whose Shiki-compatible highlighter tokenizes code with TextMate grammars. Each tool also works on its own."
+      id="fr-speed"
+      tone="dim"
+      title="Only a JIT is faster"
+      intro={
+        <>
+          Ferroni runs compiled patterns in an interpreter and generates no machine code at runtime.
+          On {summary.case_count} regex tasks taken from Django, Rails, WordPress and seven other
+          projects, it outpaces every engine measured except PCRE2&rsquo;s JIT, and still wins{" "}
+          {jitWins[0] === jitWins[1] ? jitWins[0] : jitWins.join(" to ")} of those tasks.
+        </>
+      }
+      note={<Link to="/perf/regex-workloads">How the benchmarks work</Link>}
     >
-      <Relations current="ferroni" />
+      <SpeedSummary />
     </Section>
   );
 }
@@ -140,17 +161,14 @@ export default function HomePage() {
   return (
     <div className="fam-page ferroni-home">
       <HeroSection />
-      <HomeNavigation />
-      <FitSection />
-      <SampleSection />
+      <WhySection />
+      <SpeedSection />
       <SyntaxSection />
-      <PerformanceSection />
       <ScannerSection />
       <SafetySection />
-      <ProofSection />
-      <CoverageSection />
+      <StartSection />
+      <FitSection />
       <StatusSection />
-      <RelationsSection />
       <ClosingSection />
       <WorkWithUs />
     </div>
