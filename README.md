@@ -26,7 +26,7 @@ by function, and [passes all 2,974 UTF-8 tests](https://ferroni.dev/guide/compat
 of the C original.
 
 **Only a JIT is faster.** Once a pattern is compiled, Ferroni matches
-2.7–3.3× faster than C Oniguruma, and it generates no machine code at runtime.
+2.8–3.4× faster than C Oniguruma, and it generates no machine code at runtime.
 Of the engines measured on regex tasks from Django, Rails, WordPress and other
 projects, only PCRE2's JIT is faster. C still compiles patterns faster, so a
 pattern used once favors C. The
