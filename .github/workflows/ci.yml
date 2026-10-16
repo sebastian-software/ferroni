@@ -378,6 +378,11 @@ jobs:
         run: pnpm format:check
       - name: Build documentation
         run: pnpm build
+        # Ferriki retired the legacy asset CDN routes (ferriki#269) that the
+        # pinned ferromark still downloads from; its pinned GitHub files serve
+        # the same content until that dependency adopts immutable assets.
+        env:
+          FERRIKI_ASSETS_BASE_URL: https://raw.githubusercontent.com/sebastian-software/ferriki
 
   fmt:
     name: Format
