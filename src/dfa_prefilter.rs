@@ -1492,6 +1492,42 @@ struct CandidateMemo {
     store: Vec<u16>,
 }
 
+/// Records the patterns of the match state `sid`. Out of line on purpose:
+/// inlined into the byte walk, the bitset's fields kept the walk's state ID
+/// on the stack in Ferriki's arm64 addon, and a walk reaches a match state
+/// far less often than it reads a byte. Rust-only (ADR-008).
+#[inline(never)]
+fn record_match(
+    dfa: &hybrid::DFA,
+    cache: &hybrid::Cache,
+    patset: &mut PatternBits,
+    sid: LazyStateID,
+) {
+    for k in 0..dfa.match_len(cache, sid) {
+        patset.insert(dfa.match_pattern(cache, sid, k));
+    }
+}
+
+/// `record_match`, counting the newly recorded patterns stamped `stamp`.
+#[inline(never)]
+fn record_needed(
+    dfa: &hybrid::DFA,
+    cache: &hybrid::Cache,
+    patset: &mut PatternBits,
+    sid: LazyStateID,
+    stamps: &[u32],
+    stamp: u32,
+) -> usize {
+    let mut found = 0;
+    for k in 0..dfa.match_len(cache, sid) {
+        let pid = dfa.match_pattern(cache, sid, k);
+        if patset.insert(pid) && stamps[pid.as_usize()] == stamp {
+            found += 1;
+        }
+    }
+    found
+}
+
 /// The covered entries a walk recorded, as a bitset over their pattern IDs.
 /// `regex_automata::PatternSet` keeps one bool per pattern, which a walk
 /// pays for in every `clear` and every ascending scan of the set;
@@ -2193,18 +2229,11 @@ impl SetPrefilter {
         // The match state last recorded, with the cache's clear count: a
         // clear reassigns state IDs, so the same ID may name another state.
         let mut recorded: Option<(LazyStateID, usize)> = None;
-        macro_rules! record {
-            ($state:expr) => {
-                for k in 0..dfa.match_len(cache, $state) {
-                    patset.insert(dfa.match_pattern(cache, $state, k));
-                }
-            };
-        }
         macro_rules! at_end {
             ($asked:expr) => {
                 if let Ok(eoi) = dfa.next_eoi_state(cache, sid) {
                     if eoi.is_match() {
-                        record!(eoi);
+                        record_match(dfa, cache, patset, eoi);
                     }
                     return (ScanEnd::Finished, $asked);
                 }
@@ -2223,7 +2252,7 @@ impl SetPrefilter {
             // byte it was reached by (or at the end of the haystack).
             if sid.is_match() && recorded != Some((sid, cache.clear_count())) {
                 recorded = Some((sid, cache.clear_count()));
-                record!(sid);
+                record_match(dfa, cache, patset, sid);
                 if patset.is_full() {
                     return (ScanEnd::Settled, false);
                 }
@@ -2286,12 +2315,7 @@ impl SetPrefilter {
             }
             if sid.is_match() && recorded != Some((sid, cache.clear_count())) {
                 recorded = Some((sid, cache.clear_count()));
-                for k in 0..dfa.match_len(cache, sid) {
-                    let pid = dfa.match_pattern(cache, sid, k);
-                    if patset.insert(pid) && stamps[pid.as_usize()] == *stamp {
-                        needed -= 1;
-                    }
-                }
+                needed -= record_needed(dfa, cache, patset, sid, stamps, *stamp);
                 if needed == 0 || patset.is_full() {
                     return (ScanEnd::Settled, true);
                 }
