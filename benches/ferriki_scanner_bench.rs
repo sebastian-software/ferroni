@@ -1,7 +1,8 @@
 //! Replays of the scanner calls Ferriki's tokenizer makes for the curated
-//! JSON, Astro, TSX and Rust fixtures, recorded with
+//! JSON, Astro, TSX, Rust and HTML fixtures, recorded with
 //! benches/json_scanner/capture.patch. See benches/json_scanner,
-//! benches/astro_scanner, benches/tsx_scanner and benches/rust_scanner.
+//! benches/astro_scanner, benches/tsx_scanner, benches/rust_scanner and
+//! benches/html_scanner.
 #[path = "engine_replay.rs"]
 mod engine_replay;
 #[path = "engines.rs"]
@@ -70,6 +71,7 @@ fn bench_ferriki(c: &mut Criterion) {
     bench_language(c, "astro", include_str!("astro_scanner/trace.json"));
     bench_language(c, "tsx", include_str!("tsx_scanner/trace.json"));
     bench_language(c, "rust", include_str!("rust_scanner/trace.json"));
+    bench_language(c, "html", include_str!("html_scanner/trace.json"));
 }
 
 criterion_group!(benches, bench_ferriki);
