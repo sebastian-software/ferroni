@@ -1,0 +1,41 @@
+{
+  "format_version": 1,
+  "ferroni_commit": "8f14fde906cb53f93ead25ef307ece5428fc3113",
+  "ferriki_commit": "09782d016d066d1ae96b6856eb23b3ab72520ea3",
+  "capture": "benches/json_scanner/capture.patch on Ferriki's scanner adapter and benches/json_scanner/capture.rs as examples/trace_curated.rs: Highlighter::highlight_with_options, lang=rust, theme=github-dark, tokenize time limit off, the second (warm) pass of the document; Ferriki's ferroni dependency patched to the Ferroni commit above",
+  "capture_command": "cargo run --release --example trace_curated -- assets/shiki rust node/benchmarks/curated/fixtures/orders.rs 16 /tmp/rust.jsonl && python3 benches/cpp_scanner/compact.py /tmp/rust.jsonl trace.json (hot groups trimmed to three)",
+  "compile_options": "ONIG_OPTION_CAPTURE_GROUP, ScannerSyntax::Oniguruma, backtracking optimization off; Ferriki compiles through one shared ScannerPatternCache, the replay compiles each instance on its own",
+  "find_api": "find_next_match_utf16 (without caller-provided cache ID)",
+  "grammar_source": "Ferriki's curated Rust grammar: microsoft/vscode extensions/rust/syntaxes/rust.tmLanguage.json at f0efecdc5acaa068eadb11403c4420e846c632ed (MIT, LICENSE-vscode.txt)",
+  "grammar_paths": {
+    "assets/grammars/sources.json#rust (sha256 of the grammar)": "03c369e6edf0e659a44598705cfdf9e1aa0008bb8da5097802c3d91445f1e0d7",
+    "assets/shiki/languages/rust.fkgram": "f2e7decec9584bd4ad56004f5225492c7de2130738e26c960fd7805b1ec1de43"
+  },
+  "document": "orders.rs",
+  "document_origin": "sebastian-software/ferriki node/benchmarks/curated/fixtures/orders.rs at 09782d016d066d1ae96b6856eb23b3ab72520ea3 (MIT or Apache-2.0)",
+  "source_sha256": "fd4293c89219bd08c7617ab35337d1fe40a3c5fddd8b6d2be918e9def74937c9",
+  "copies": 16,
+  "document_sha256": "47be3e432c0fb4117aa538709156076cc16d3b82674f62b9f85e36195e7580a5",
+  "document_bytes": 15440,
+  "document_lines": 480,
+  "calls": 3936,
+  "scanners": 8,
+  "distinct_pattern_lists": 8,
+  "scanners_created_during_the_pass": 0,
+  "subjects": 432,
+  "hot_groups": [
+    {
+      "id": 0,
+      "calls": 2800
+    },
+    {
+      "id": 5,
+      "calls": 416
+    },
+    {
+      "id": 3,
+      "calls": 240
+    }
+  ],
+  "trace_sha256": "5a1b15d53a9efa7be2985108f13ce6d852c0d74c99d975c2f85c402e36087e9c"
+}
