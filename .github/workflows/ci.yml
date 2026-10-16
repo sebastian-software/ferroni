@@ -150,6 +150,7 @@ jobs:
         run: |
           python3 scripts/check-production-corpus.py
           python3 -m unittest discover -s scripts/tests -p 'test_production*.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_scanner*.py'
       - name: Validate production regex tasks against source oracles
         run: python3 scripts/compare-production.py validate "$RUNNER_TEMP/production-validation" --engines rust,rust_erroraware,c,pcre2_jit,pcre2,fancy_regex,fancy_regex_seek,regex
       # The original breakage only showed in the published layout (benches/
