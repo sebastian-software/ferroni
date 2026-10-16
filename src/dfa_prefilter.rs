@@ -1530,7 +1530,9 @@ impl PatternBits {
     }
 
     /// Adds `pid`, and reports whether it was not in the set.
-    #[inline]
+    // Inlining this into the byte walk increases register pressure on arm64.
+    // Keep its bitset fields out of the loop; see benches/diagnostics/scanner-inlining.
+    #[inline(never)]
     fn insert(&mut self, pid: PatternID) -> bool {
         let i = pid.as_usize();
         assert!(i < self.capacity, "pattern ID {i} outside the set");
