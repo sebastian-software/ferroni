@@ -6,7 +6,7 @@
   "capture_command": "cargo run --release --example trace_curated -- assets/shiki tsx node/benchmarks/curated/fixtures/Orders.tsx 16 /tmp/tsx.jsonl && python3 benches/cpp_scanner/compact.py /tmp/tsx.jsonl trace.json (hot groups trimmed to three)",
   "compile_options": "ONIG_OPTION_CAPTURE_GROUP, ScannerSyntax::Oniguruma, backtracking optimization off; Ferriki compiles through one shared ScannerPatternCache, the replay compiles each instance on its own",
   "find_api": "find_next_match_utf16 (without caller-provided cache ID)",
-  "grammar_source": "Ferriki's curated TSX grammar: microsoft/vscode extensions/typescript-basics/syntaxes/TypeScriptReact.tmLanguage.json at f0efecdc5acaa068eadb11403c4420e846c632ed (MIT, LICENSE-vscode.txt)",
+  "grammar_source": "Ferriki's curated TSX grammar: microsoft/vscode extensions/typescript-basics/syntaxes/TypeScriptReact.tmLanguage.json at f0efecdc5acaa068eadb11403c4420e846c632ed (MIT, LICENSE-vscode.txt); its template injections es-tag-css from styled-components/vscode-styled-components (MIT, LICENSE-vscode-styled-components.txt) and es-tag-html from 0x00000001A/es6-string-html (MIT, LICENSE-es6-string-html.txt)",
   "grammar_paths": {
     "assets/grammars/sources.json#tsx (sha256 of the grammar)": "8ebe0886edc97878bda5bd27e1a45b26f859eb0b21071969fc312b85b9a6e3eb",
     "assets/shiki/languages/tsx.fkgram": "9c10727eaf4606c966adf8c09683238a1f02337242dfd8654c103de9a9c7ac5b"
