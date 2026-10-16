@@ -1,11 +1,12 @@
-//! Capture driver for the JSON and Astro scanner replays, placed as
+//! Capture driver for the JSON, Astro and TSX scanner replays, placed as
 //! `examples/trace_curated.rs` in a Ferriki checkout with `capture.patch`
 //! applied (see README.md). It highlights one curated fixture the way the
-//! paired native benchmark does (`github-dark`, `tokenizeTimeLimit` 500,
-//! the fixture repeated `copies` times for the `large` size) and records
-//! every scanner call of the second, warm pass into a JSONL trace through
-//! the instrumented adapter (`FERRIKI_TRACE`). The `bench` mode times the
-//! whole tokenizing pipeline instead, for the pre-filter on against off.
+//! paired native benchmark does (`github-dark`, the fixture repeated
+//! `copies` times for the `large` size) and records every scanner call of
+//! the second, warm pass into a JSONL trace through the instrumented adapter
+//! (`FERRIKI_TRACE`). The `bench` mode times the whole tokenizing pipeline
+//! instead, for the pre-filter on against off, with the benchmark's
+//! `tokenizeTimeLimit` of 500 ms.
 //!
 //! ```sh
 //! cargo run --release --example trace_curated -- assets/shiki json \
@@ -70,7 +71,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .load_themes(["github-dark"])
         .build()?;
     let code = std::fs::read_to_string(fixture)?.repeat(copies);
-    let options = TokenizeOptions::default().with_time_limit_millis(500);
+    // Without the time limit: logging every call slows the recorded pass
+    // enough for long TSX lines to pass the 500 ms limit, which would cut
+    // the recorded line short.
+    let options = TokenizeOptions::default().with_time_limit_millis(0);
 
     // The cold pass compiles the scanners; the harness renders once for
     // validation and warms up three times before timing.

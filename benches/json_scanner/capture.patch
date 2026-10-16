@@ -1,6 +1,18 @@
+diff --git a/crates/ferriki-textmate/src/grammar.rs b/crates/ferriki-textmate/src/grammar.rs
+--- a/crates/ferriki-textmate/src/grammar.rs
++++ b/crates/ferriki-textmate/src/grammar.rs
+@@ -409,6 +409,7 @@ impl Grammar {
+ 
+         let line_text = format!("{line_text}\n");
+         let onig_line_text = OnigString::new(&line_text);
++        crate::regexp::trace_register(&onig_line_text);
+         let line_length = onig_line_text.utf16_len();
+         let mut line_tokens = LineTokens::new(
+             !matches!(output, TokenOutput::Scopes),
+diff --git a/crates/ferriki-textmate/src/regexp.rs b/crates/ferriki-textmate/src/regexp.rs
 --- a/crates/ferriki-textmate/src/regexp.rs
 +++ b/crates/ferriki-textmate/src/regexp.rs
-@@ -21,6 +21,41 @@
+@@ -75,6 +75,41 @@ pub(crate) struct CaptureIndex {
      pub(crate) length: usize,
  }
  
@@ -42,7 +54,7 @@
  #[cfg(test)]
  std::thread_local! {
      // Count actual regex searches, including injections and capture retokenization.
-@@ -524,6 +559,8 @@
+@@ -599,6 +634,8 @@ pub(crate) struct CompiledRule<T> {
      rules: Vec<T>,
      backtracking_warnings: Vec<CompiledBacktrackingWarning<T>>,
      backtracking_warnings_recorded: OnceLock<()>,
@@ -51,15 +63,15 @@
  }
  
  struct CompiledBacktrackingWarning<T> {
-@@ -550,6 +587,7 @@
-             .options(ONIG_OPTION_CAPTURE_GROUP)
-             .syntax(ScannerSyntax::Oniguruma);
-         let scanner = Scanner::with_config(&scanner_reg_exps, &config).map_err(RegexError::new)?;
+@@ -631,6 +668,7 @@ impl<T: Copy> CompiledRule<T> {
+         let scanner = pattern_cache
+             .compile(&scanner_reg_exps, &config, share_patterns)
+             .map_err(RegexError::new)?;
 +        let trace_patterns = compiled_reg_exps.clone();
          let mut backtracking_warnings = Vec::new();
          for (index, warnings) in scanner.warnings().iter().enumerate() {
              for warning in warnings {
-@@ -566,6 +604,8 @@
+@@ -647,6 +685,8 @@ impl<T: Copy> CompiledRule<T> {
              rules,
              backtracking_warnings,
              backtracking_warnings_recorded: OnceLock::new(),
@@ -68,7 +80,7 @@
          })
      }
  
-@@ -592,11 +632,40 @@
+@@ -673,11 +713,40 @@ impl<T: Copy> CompiledRule<T> {
      ) -> Option<FindNextMatchResult<T>> {
          #[cfg(test)]
          SCANNER_CALL_COUNT.with(|count| count.set(count.get() + 1));
@@ -110,19 +122,10 @@
  
          // Ferroni reports line-guard matches at the synthetic end position
          // used by TextMate's line scanner. These guards are valid at the
---- a/crates/ferriki-textmate/src/grammar.rs
-+++ b/crates/ferriki-textmate/src/grammar.rs
-@@ -371,6 +371,7 @@
- 
-         let line_text = format!("{line_text}\n");
-         let onig_line_text = OnigString::new(&line_text);
-+        crate::regexp::trace_register(&onig_line_text);
-         let line_length = onig_line_text.utf16_len();
-         let mut line_tokens = LineTokens::new(
-             !matches!(output, TokenOutput::Scopes),
+diff --git a/crates/ferriki-textmate/src/tokenize_string.rs b/crates/ferriki-textmate/src/tokenize_string.rs
 --- a/crates/ferriki-textmate/src/tokenize_string.rs
 +++ b/crates/ferriki-textmate/src/tokenize_string.rs
-@@ -564,6 +564,7 @@
+@@ -565,6 +565,7 @@ fn handle_captures<G: TokenizerGrammar>(
              );
              let prefix = utf16_prefix(line_text_content, capture_index.end);
              let substring = OnigString::new(prefix);
