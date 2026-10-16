@@ -28,7 +28,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-const TRACES: [&str; 8] = [
+const TRACES: [&str; 9] = [
     "benches/cpp_scanner/trace.json",
     "benches/java_scanner/trace.json",
     "benches/scss_scanner/trace.json",
@@ -37,6 +37,7 @@ const TRACES: [&str; 8] = [
     "benches/json_scanner/trace.json",
     "benches/astro_scanner/trace.json",
     "benches/tsx_scanner/trace.json",
+    "benches/rust_scanner/trace.json",
 ];
 
 const USAGE: &str = "usage: prefilter_census census [REPS] [TRACE.json ...] | groups TRACE.json [REPS] | replay TRACE.json ITERATIONS on|off [--group N] [--cached] | replay-id TRACE.json ITERATIONS on|off";

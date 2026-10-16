@@ -337,11 +337,12 @@ differently prints an `UNSUPPORTED` line with the reason instead of a timing.
 `benches/shiki_js` replays the same Shiki calls through Shiki's JavaScript
 engine in Node, and its `capture.mjs` records new traces from Shiki itself: the
 C and PHP replays (`shiki_scanner_bench`) come from it and run in every engine.
-The JSON, Astro and TSX replays (`ferriki_scanner_bench`,
-`benches/json_scanner`, `benches/astro_scanner` and `benches/tsx_scanner`)
-were recorded from Ferriki's own tokenizer. JSON and Astro keep the simple
-grammars, where the pre-filter has the least to save, in the comparison, and
-TSX the large TypeScript statement and expression scanners.
+The JSON, Astro, TSX and Rust replays (`ferriki_scanner_bench`,
+`benches/json_scanner`, `benches/astro_scanner`, `benches/tsx_scanner` and
+`benches/rust_scanner`) were recorded from Ferriki's own tokenizer. JSON and
+Astro keep the simple grammars, where the pre-filter has the least to save, in
+the comparison, TSX the large TypeScript statement and expression scanners, and
+Rust a few dense scanners of more than 70 patterns.
 
 `scripts/compare-engines.py` validates and times a selection of cases for
 every engine in an ordinary release build. The `shared` set holds everyday text
@@ -383,10 +384,10 @@ cargo bench --locked --features ffi --bench java_scanner_bench -- --test
 cargo bench --locked --bench java_scanner_bench
 ```
 
-The C++, SCSS, Java, JSON, Astro and TSX replays also have a `cold_document`
-case: each iteration compiles fresh scanners and replays the whole document
-once, so it measures one-shot highlighting, including the pre-filter warm-up
-and build. Run only the cold cases with, for example:
+The C++, SCSS, Java, JSON, Astro, TSX and Rust replays also have a
+`cold_document` case: each iteration compiles fresh scanners and replays the
+whole document once, so it measures one-shot highlighting, including the
+pre-filter warm-up and build. Run only the cold cases with, for example:
 
 ```sh
 cargo bench --locked --bench cpp_scanner_bench -- cold
