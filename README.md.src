@@ -12,8 +12,8 @@
 **Oniguruma-compatible regex engine.**
 Ferroni runs Oniguruma's full syntax in Rust, including look-behind,
 backreferences and recursion, and ships the scanner that TextMate syntax
-highlighters drive. Cargo builds it like any other crate, with no C compiler
-and no bindgen.
+highlighters drive. Cargo builds it like any other crate, WebAssembly
+included, with no C compiler and no bindgen.
 
 ## Why Ferroni
 
@@ -73,8 +73,9 @@ fn main() -> Result<(), RegexError> {
 
 Ferroni covers ASCII and UTF-8, two of Oniguruma's 29 encodings, and leaves
 out the POSIX and GNU APIs. It backtracks like C Oniguruma, so give searches
-over untrusted input a time or retry limit. See
-[compatibility](https://ferroni.dev/guide/compatibility) and
+over untrusted input a time or retry limit. On `wasm32-unknown-unknown`, the
+browser target, use a retry limit; that target has no clock for a time limit.
+See [compatibility](https://ferroni.dev/guide/compatibility) and
 [untrusted input](https://ferroni.dev/guide/untrusted-input).
 
 ## Documentation

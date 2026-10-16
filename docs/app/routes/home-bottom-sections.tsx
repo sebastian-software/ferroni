@@ -84,9 +84,9 @@ export function StartSection() {
       title="From cargo add to first match"
       intro={
         <>
-          No C compiler, no bindgen: Cargo builds Ferroni like any other crate, and CI tests it on
-          Linux, macOS and Windows. Its <code>Regex</code> API will look familiar if you know the{" "}
-          <code>regex</code> crate.
+          No C compiler, no bindgen: Cargo builds Ferroni like any other crate. CI tests it on
+          Linux, macOS, Windows and WASI, and builds it for the browser. Its <code>Regex</code> API
+          will look familiar if you know the <code>regex</code> crate.
         </>
       }
       note={
@@ -132,6 +132,12 @@ const fit = [
     name: "PHP mbregex",
     status: "UTF-8 only",
     detail: "Shift_JIS, EUC-JP and the other non-UTF-8 encodings are not covered.",
+  },
+  {
+    name: "Browsers and WebAssembly",
+    status: "Crate only",
+    detail:
+      "Cargo builds it for wasm32; there is no npm package. In the browser, set a retry limit: that target has no clock for timeouts.",
   },
   {
     name: "Ruby",
