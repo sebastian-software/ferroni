@@ -52,3 +52,11 @@ python3 /path/to/ferroni/benches/cpp_scanner/compact.py /tmp/json.jsonl trace.js
 The raw JSONL duplicates the pattern lists per call and is not retained.
 On recapture, update the provenance and the hot groups together, then
 repeat the Rust and C validation.
+
+`capture.patch` applies to Ferriki `09782d0`, the revision of the
+[TSX replay](../tsx_scanner/README.md). The JSON and Astro traces were
+recorded at `75bef63` with the earlier version of the patch, which Git
+history keeps; Ferriki's adapter has compiled through a shared pattern cache
+since. The trace mode of `capture.rs` turns Ferriki's tokenize time limit
+off: logging every call slows the recorded pass enough for long TSX lines to
+pass the 500 ms limit, which would cut those lines short.

@@ -1,6 +1,6 @@
 //! Replays of the scanner calls Ferriki's tokenizer makes for the curated
-//! JSON and Astro fixtures, recorded with benches/json_scanner/capture.patch.
-//! See benches/json_scanner and benches/astro_scanner.
+//! JSON, Astro and TSX fixtures, recorded with benches/json_scanner/capture.patch.
+//! See benches/json_scanner, benches/astro_scanner and benches/tsx_scanner.
 #[path = "engine_replay.rs"]
 mod engine_replay;
 #[path = "engines.rs"]
@@ -10,7 +10,7 @@ mod scanner_replay;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 #[cfg(feature = "ffi")]
 use scanner_replay::CReplay;
-use scanner_replay::{Corpus, replay};
+use scanner_replay::{Corpus, bench_cold_document, replay};
 
 fn bench_language(c: &mut Criterion, language: &str, trace: &str) {
     let corpus = Corpus::from_json(trace);
@@ -61,11 +61,13 @@ fn bench_language(c: &mut Criterion, language: &str, trace: &str) {
             }
         }
     }
+    bench_cold_document(&mut group, &corpus);
     group.finish();
 }
 fn bench_ferriki(c: &mut Criterion) {
     bench_language(c, "json", include_str!("json_scanner/trace.json"));
     bench_language(c, "astro", include_str!("astro_scanner/trace.json"));
+    bench_language(c, "tsx", include_str!("tsx_scanner/trace.json"));
 }
 
 criterion_group!(benches, bench_ferriki);
