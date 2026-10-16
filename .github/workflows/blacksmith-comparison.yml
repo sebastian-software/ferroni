@@ -75,6 +75,7 @@ jobs:
           python3 scripts/check-production-corpus.py
           python3 -c 'import importlib.util,json,pathlib; s=importlib.util.spec_from_file_location("corpus","scripts/check-production-corpus.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); p=pathlib.Path("benches/tokenizer_regex/catalog.json"); m.check(json.loads(p.read_text()),p.parent)'
           python3 -m unittest discover -s scripts/tests -p 'test_production*.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_scanner_clients*.py'
       - name: Validate and measure one repetition
         run: |
           arguments=()
@@ -94,6 +95,18 @@ jobs:
         with:
           name: shard-production-${{ matrix.profile }}-run${{ matrix.run }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/production/
+          retention-days: 7
+      - name: Validate and measure the separate scanner application lane
+        run: |
+          python3 scripts/compare-scanner-clients.py run "$RUNNER_TEMP/scanner-clients" \
+            --only-run "$RUN" --measure-seconds "$MEASURE_SECONDS" --timeout 180 \
+            --host-note "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT. Separate Scanner application lane."
+      - name: Retain the repetition's scanner application evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shard-scanner-clients-${{ matrix.profile }}-run${{ matrix.run }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scanner-clients/
           retention-days: 7
       - name: Retain the repetition's tokenizer evidence
         if: always()
@@ -132,6 +145,10 @@ jobs:
               "$RUNNER_TEMP/shards/shard-$corpus-$PROFILE-run2-$SUFFIX" \
               "$RUNNER_TEMP/shards/shard-$corpus-$PROFILE-run3-$SUFFIX"
           done
+          python3 scripts/compare-scanner-clients.py merge "$RUNNER_TEMP/scanner-clients" \
+            "$RUNNER_TEMP/shards/shard-scanner-clients-$PROFILE-run1-$SUFFIX" \
+            "$RUNNER_TEMP/shards/shard-scanner-clients-$PROFILE-run2-$SUFFIX" \
+            "$RUNNER_TEMP/shards/shard-scanner-clients-$PROFILE-run3-$SUFFIX"
       - name: Retain complete evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -143,4 +160,10 @@ jobs:
         with:
           name: tokenizers-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/tokenizers/
+          retention-days: 30
+      - name: Retain separate scanner application evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scanner-clients-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scanner-clients/
           retention-days: 30

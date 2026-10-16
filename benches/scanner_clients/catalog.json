@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "tsx",
+      "trace": "tsx.json",
+      "lanes": ["compile", "first_use", "steady"],
+      "modes": ["recorded"],
+      "purpose": "Many ordered competing patterns and complete UTF-16 captures; fixed-call warmed search separately from construction."
+    },
+    {
+      "id": "astro",
+      "trace": "astro.json",
+      "lanes": ["compile", "first_use"],
+      "modes": ["recorded"],
+      "purpose": "Interleaved construction, search and destruction of short-lived scanners; no flattened warmed lifecycle claim."
+    },
+    {
+      "id": "related",
+      "trace": "related.json",
+      "lanes": ["compile", "first_use"],
+      "modes": ["recorded", "uncached"],
+      "purpose": "TypeScript followed by TSX in one registry; recorded shared-cache policy versus an explicitly uncached control."
+    }
+  ]
+}

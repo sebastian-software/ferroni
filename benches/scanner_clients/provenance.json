@@ -1,0 +1,20 @@
+{
+  "ferroni_revision": "8f14fde906cb53f93ead25ef307ece5428fc3113",
+  "ferriki_revision": "513a27aa967980d701d2acc1e485ad5a05a0f100",
+  "capture_patch_sha256": "c3d43e65723ea975a5d238d1e13a22f63570bc5d9cdc1504323d2dd357b434e1",
+  "asset_catalog_sha256": "ad9bcfdb8e3ca49d6572bd89f958974bf0021351d0a8c65c163c9a3cd326f544",
+  "fixture_sha256": {
+    "orders.ts": "8a0dcbf03baebf972d1f22058485e71f2597bf100193cbbf37fd1cd4a1f72dd9",
+    "Orders.tsx": "1e602f48aee24d46f6a7dd37f12745b6aaa20f8c75d9a9edbde67e7415de17a5",
+    "Orders.astro": "04e99d8d655a8fbf782ed2ed5b83b5d4a50d320e603506c0dcf2f8ee3c56eb62"
+  },
+  "copies": 16,
+  "boundary": "Actual Scanner constructor, UTF-16 search, drop, pattern-cache clear/drop events; captures before TextMate postprocessing.",
+  "tsx_trace_sha256": "608982bdb3ba3869106374b7a54fe8e1bfefadb457e9b5ff31aef0789c8c4230",
+  "astro_trace_sha256": "7e58f06f9d23b77cb60361f5b8b6f3c88f56a46b316d004299892c33bc524563",
+  "related_trace_sha256": "8735040eb9759c6f7e4fd7bdb9a95192bdadd3acbd4e30b7c7be4f38e6c4bdb1",
+  "GRAMMAR-NOTICES.md_sha256": "e31975d7c5978b17fccbe632fbff94e0df74644ae15c3a803d9d34a42e7f9a74",
+  "LICENSE-ferriki-MIT_sha256": "aaca9ba40a4864fb4394b2f0f936b2d0c5a9035f2ed27385c35e2c92d461b463",
+  "LICENSE-ferriki-APACHE_sha256": "a78f6c03b8daefb8f45c2c405f3000a7a309d386f2869833a6a4bd053ae7e757",
+  "capture_driver_sha256": "49e09b6c2793676d07675e1c29bc442b0248e0a2226a5e433289f4e740960b26"
+}

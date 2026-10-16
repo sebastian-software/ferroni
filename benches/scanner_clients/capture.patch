@@ -1,0 +1,64 @@
+--- a/src/scanner.rs
++++ b/src/scanner.rs
+@@ -401,0 +402 @@
++    trace_cache_id: u64,
+@@ -422,0 +424,5 @@
++    fn trace_id(&mut self) -> u64 {
++        if self.trace_cache_id == 0 { self.trace_cache_id = NEXT_TRACE_ID.fetch_add(1, Ordering::Relaxed); }
++        self.trace_cache_id
++    }
++
+@@ -442,0 +449 @@
++        if self.trace_cache_id != 0 { trace_event(serde_json::json!({"kind":"clear", "cache":self.trace_cache_id})); }
+@@ -910,0 +918 @@
++    trace_scanner_id: u64,
+@@ -940,0 +949,14 @@
++static NEXT_TRACE_ID: AtomicU64 = AtomicU64::new(1);
++fn trace_event(event: serde_json::Value) {
++    if let Ok(path) = std::env::var("FERRONI_CLIENT_TRACE") {
++        use std::io::Write;
++        let mut file = std::fs::OpenOptions::new().append(true).create(true).open(path).unwrap();
++        writeln!(file, "{event}").unwrap();
++    }
++}
++impl Drop for Scanner {
++    fn drop(&mut self) { if self.trace_scanner_id != 0 { trace_event(serde_json::json!({"kind":"drop", "scanner":self.trace_scanner_id})); } }
++}
++impl Drop for ScannerPatternCache {
++    fn drop(&mut self) { if self.trace_cache_id != 0 { trace_event(serde_json::json!({"kind":"drop_cache", "cache":self.trace_cache_id})); } }
++}
+@@ -941,0 +964,9 @@
++    fn trace_created(mut self, patterns: &[&str], cache: Option<u64>) -> Self {
++        self.trace_scanner_id = NEXT_TRACE_ID.fetch_add(1, Ordering::Relaxed);
++        trace_event(serde_json::json!({"kind":"create", "scanner":self.trace_scanner_id,
++            "patterns":patterns, "cache":cache, "options":self.settings.options.bits(),
++            "syntax":format!("{:?}",self.settings.syntax), "prefilter":self.settings.prefilter,
++            "warmup":self.settings.prefilter_warmup}));
++        self
++    }
++
+@@ -969 +1000 @@
+-        Self::compile(patterns, settings, |pattern| settings.compile(pattern))
++        Self::compile(patterns, settings, |pattern| settings.compile(pattern)).map(|scanner| scanner.trace_created(patterns, None))
+@@ -1019 +1050,2 @@
+-        cache.scanner(patterns, PatternSettings::of(config, false))
++        let id = cache.trace_id();
++        cache.scanner(patterns, PatternSettings::of(config, false)).map(|scanner| scanner.trace_created(patterns, Some(id)))
+@@ -1104,0 +1137 @@
++            trace_scanner_id: 0,
+@@ -1258,0 +1292,11 @@
++        &mut self, string: &OnigString, start_position: usize, options: ScannerFindOptions,
++    ) -> Option<ScannerMatch> {
++        let result = self.trace_find_next_match_utf16(string, start_position, options);
++        trace_event(serde_json::json!({"kind":"find", "scanner":self.trace_scanner_id,
++            "subject_id":string.cache_id, "subject":string.content(), "start":start_position,
++            "options":options.0, "expected":result.as_ref().map(|m| serde_json::json!({
++                "index":m.index, "captures":m.captures().iter().map(|c| [c.start,c.end]).collect::<Vec<_>>() }))}));
++        result
++    }
++
++    fn trace_find_next_match_utf16(
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -62,0 +63 @@
++serde_json = "1"

@@ -76,6 +76,23 @@ Full grammar execution and highlighting belong to Ferriki's separate benchmark.
 A flattened expression list with deduplication or compile failures filtered out
 is not full TextMate execution. Its old measurements remain engine diagnostics.
 
+The small `scanner_clients_bench` lane additionally retains actual Scanner and
+pattern-cache lifetimes from three Ferriki sessions: ordered TSX searches,
+short-lived Astro scanners, and TypeScript followed by TSX with a shared cache.
+Its compile lane replays construction/destruction without searches; first use
+replays all events, including searches and destruction, with fresh scanners.
+Only TSX has a separate persistent-scanner search lane. The related-language case
+also has an explicitly uncached control. Fixtures preserve original pattern
+order, UTF-16 offsets, subject identities, misses and captures. With `ffi`, every
+captured match is checked against C Oniguruma before timing. C is an oracle,
+not a timed comparator in this lane.
+
+`compare-scanner-clients.py` retains each repetition's source/build context,
+eligibility and raw Criterion evidence. The manual Blacksmith workflow runs
+the same three repetitions per platform and emits separate per-case/phase/cache
+tables. This application lane produces no aggregate or general regex ranking;
+full highlighting remains in Ferriki.
+
 ### Internal diagnostics
 
 `regression_bench` and compiler/executor/scanner microbenchmarks remain internal

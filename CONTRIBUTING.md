@@ -258,6 +258,22 @@ The agreed 20-format selection for the next Ferriki highlighting corpus is
 recorded in [`benches/highlighting_corpus.md`](benches/highlighting_corpus.md),
 including its rationale and fixture requirements.
 
+Three small [Scanner application workloads](benches/scanner_clients/README.md)
+cover ordered TSX searches, short-lived Astro scanners, and TypeScript-to-TSX
+pattern-cache reuse. They replay captured public API calls without a Ferriki
+dependency and retain separate reports in the manual Blacksmith workflow:
+
+```sh
+python3 -m unittest discover -s scripts/tests -p 'test_scanner_clients*.py'
+cargo test --features ffi --test scanner_clients
+python3 scripts/compare-scanner-clients.py validate /tmp/scanner-client-validation
+python3 scripts/compare-scanner-clients.py run /tmp/scanner-client-run1 --only-run 1
+```
+
+Run repetitions 2 and 3 in fresh directories and join the same platform with
+`compare-scanner-clients.py merge OUT RUN1 RUN2 RUN3`. These reports do not enter
+the general regex comparison or measure full highlighting.
+
 The website's compact feature matrix is checked separately with untimed syntax
 examples. These are capability checks, not production benchmark cases or speed
 measurements. With the pinned C sources prepared, verify every advertised cell:

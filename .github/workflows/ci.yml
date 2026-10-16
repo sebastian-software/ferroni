@@ -150,6 +150,11 @@ jobs:
         run: |
           python3 scripts/check-production-corpus.py
           python3 -m unittest discover -s scripts/tests -p 'test_production*.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_scanner_clients*.py'
+      - name: Test scanner-client replay contracts
+        run: cargo test --features ffi --test scanner_clients
+      - name: Validate scanner application traces against C
+        run: python3 scripts/compare-scanner-clients.py validate "$RUNNER_TEMP/scanner-client-validation"
       - name: Validate production regex tasks against source oracles
         run: python3 scripts/compare-production.py validate "$RUNNER_TEMP/production-validation" --engines rust,rust_erroraware,c,pcre2_jit,pcre2,fancy_regex,fancy_regex_seek,regex
       # The original breakage only showed in the published layout (benches/
