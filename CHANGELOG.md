@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.2](https://github.com/sebastian-software/ferroni/compare/v2.2.1...v2.2.2) (2026-10-16)
+
+
+### Performance Improvements
+
+* **scanner:** record DFA match states out of line ([86d5604](https://github.com/sebastian-software/ferroni/commit/86d56043b89518678a4e83fffd59f774ce699eae))
+
 ## [2.2.1](https://github.com/sebastian-software/ferroni/compare/v2.2.0...v2.2.1) (2026-10-15)
 
 
