@@ -67,12 +67,13 @@ metric on selected tasks. Whole-process peak RSS is not compiled-pattern size.
 
 TextMate Scanner is a separate application workload for the API Ferroni provides.
 Its replays keep complete captured document calls, including failed calls and
-original pattern order. Publication candidates are three of them, one per
-complexity tier: JSON, Rust and TSX. Ferroni is a regex engine first; this
-lane shows its scanner against the other engines and guards against
+original pattern order. Publication candidates are four of them, one per
+complexity tier: JSON, Rust, TSX and HTML. Ferroni is a regex engine first;
+this lane shows its scanner against the other engines and guards against
 regressions, while highlighting breadth belongs to Ferriki. The C, Java, PHP,
-C++, SCSS and Astro replays and the hot scanner groups remain local
-diagnostics. Each replay has a `document` lane, which reuses scanners compiled
+C++ and SCSS replays and the hot scanner groups remain local diagnostics. The
+Astro replay remains a local regression replay for issue #327: no comparison
+engine reproduces it. Each replay has a `document` lane, which reuses scanners compiled
 before timing, and a `cold_document` lane, which compiles every scanner of the
 trace and replays the document once, with the compiled scanners dropped outside
 timing.

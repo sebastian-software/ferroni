@@ -1,0 +1,47 @@
+{
+  "format_version": 1,
+  "ferroni_commit": "86d56043b89518678a4e83fffd59f774ce699eae",
+  "ferriki_commit": "09782d016d066d1ae96b6856eb23b3ab72520ea3",
+  "capture": "benches/json_scanner/capture.patch on Ferriki's scanner adapter and benches/json_scanner/capture.rs as examples/trace_curated.rs: Highlighter::highlight_with_options, lang=html (embedded javascript and css through Ferriki's loader), theme=github-dark, tokenize time limit off, the second (warm) pass of the document; Ferriki's ferroni dependency patched to the Ferroni commit above",
+  "capture_command": "cargo run --release --example trace_curated -- assets/shiki html node/benchmarks/curated/fixtures/orders.html 16 /tmp/html.jsonl && python3 benches/cpp_scanner/compact.py /tmp/html.jsonl trace.json (hot groups trimmed to three)",
+  "compile_options": "ONIG_OPTION_CAPTURE_GROUP, ScannerSyntax::Oniguruma, backtracking optimization off; Ferriki compiles through one shared ScannerPatternCache, the replay compiles each instance on its own",
+  "find_api": "find_next_match_utf16 (without caller-provided cache ID)",
+  "grammar_source": "Ferriki's curated grammars: microsoft/vscode extensions/html, extensions/javascript and extensions/css syntaxes at f0efecdc5acaa068eadb11403c4420e846c632ed (MIT, LICENSE-vscode.txt); the JavaScript grammar's template injections es-tag-css from styled-components/vscode-styled-components (MIT, LICENSE-vscode-styled-components.txt) and es-tag-html from 0x00000001A/es6-string-html (MIT, LICENSE-es6-string-html.txt)",
+  "grammar_paths": {
+    "assets/grammars/sources.json#html (sha256 of the grammar)": "a66d9bcca6d77e53b210c5fe9c99d09bbfb7388a405fe7a016bd007f1663b85f",
+    "assets/grammars/sources.json#javascript (sha256 of the grammar)": "6921689f7d7cf722fcd2dacb7dbadc264411b753a606048abd693f99180fb2a7",
+    "assets/grammars/sources.json#css (sha256 of the grammar)": "ad57ae3a701022032308923a8bc48d2268e66289f3fb69b5f3aecc8f1f0b9e5e",
+    "assets/grammars/sources.json#es-tag-css (sha256 of the grammar)": "c6c33aecac0ed21255f2ac2a7f3ba0d81c989d0d19a1982f3d93c9008b0ccdb0",
+    "assets/grammars/sources.json#es-tag-html (sha256 of the grammar)": "62d254a53ba131da36e85a22c665571c4ea1785b54df5820d484c8881be08c33",
+    "assets/shiki/languages/html.fkgram": "63cd10a6dcec861f41d0746d32a56a2bc765bcf56102e6032359a81c64f0e688",
+    "assets/shiki/languages/javascript.fkgram": "9be3c5cf08b3bb95b22f05129e6bc135518eedda35ee6175bdd6d2979e518522",
+    "assets/shiki/languages/css.fkgram": "fb87e4ad68a5e50a043f2c02f6aaadcda690879d6c721f7d886aa769ce674525"
+  },
+  "document": "orders.html",
+  "document_origin": "sebastian-software/ferriki node/benchmarks/curated/fixtures/orders.html at 09782d016d066d1ae96b6856eb23b3ab72520ea3 (MIT or Apache-2.0)",
+  "source_sha256": "07344110f85e24e26acf01721b16302f33012b3e19d3c625a6593eedf124a653",
+  "copies": 16,
+  "document_sha256": "afb35a0236fb4eb1fe13038e8a0ae5e1b8b53a77a4b6ecd937a279e78d0997a1",
+  "document_bytes": 22352,
+  "document_lines": 720,
+  "calls": 16176,
+  "scanners": 74,
+  "distinct_pattern_lists": 60,
+  "scanners_created_during_the_pass": 0,
+  "subjects": 784,
+  "hot_groups": [
+    {
+      "id": 51,
+      "calls": 3360
+    },
+    {
+      "id": 16,
+      "calls": 3008
+    },
+    {
+      "id": 0,
+      "calls": 976
+    }
+  ],
+  "trace_sha256": "e6a07dd2c17c12e5e33b183c5a530e4fbc0ddac47f92bdffd2f43ffea1f8de46"
+}

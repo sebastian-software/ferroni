@@ -32,6 +32,11 @@ the C++ replay. Scanner group 22, the TypeScript expression scanner of the
 frontmatter, has the most calls (735) and gets its own benchmark, with
 groups 23 and 34.
 
+It is a local regression replay. No comparison engine reproduces it: PCRE2
+rejects the `\uFEFF` escape of a CSS pattern, and fancy-regex finds a match at
+call 575 where Shiki finds none. The engine comparison uses the
+[HTML replay](../html_scanner/README.md) for embedded languages instead.
+
 ```sh
 cargo bench --locked --features ffi --bench ferriki_scanner_bench -- astro_scanner --test
 cargo bench --locked --bench ferriki_scanner_bench -- astro_scanner

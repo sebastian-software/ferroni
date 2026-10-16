@@ -25,8 +25,11 @@ with `benches/json_scanner/capture.patch` and `capture.rs` at the pinned
 Ferriki revision (language `tsx`, 16 copies, tokenize time limit off),
 compacted with hot groups trimmed to three. `provenance.json` pins both
 repositories and the hashes. The grammar is Ferriki's curated copy of VS
-Code's `TypeScriptReact.tmLanguage.json`; its MIT license is retained in
-`LICENSE-vscode.txt`. The fixture is Ferriki's own (MIT or Apache-2.0).
+Code's `TypeScriptReact.tmLanguage.json`, with the template injections of
+vscode-styled-components and es6-string-html; their MIT licenses are retained
+in `LICENSE-vscode.txt`, `LICENSE-vscode-styled-components.txt` and
+`LICENSE-es6-string-html.txt`. The fixture is Ferriki's own (MIT or
+Apache-2.0).
 
 The replay, its measurement boundary and the engine comparison work as for
 the C++ replay; `cold_document` compiles fresh scanners and replays the
