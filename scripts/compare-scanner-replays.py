@@ -58,6 +58,7 @@ REPLAYS = {
     "json_scanner": "ferriki_scanner_bench",
     "rust_scanner": "ferriki_scanner_bench",
     "tsx_scanner": "ferriki_scanner_bench",
+    "html_scanner": "ferriki_scanner_bench",
 }
 
 ENGINES = ("rust", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "fancy_regex_set")
