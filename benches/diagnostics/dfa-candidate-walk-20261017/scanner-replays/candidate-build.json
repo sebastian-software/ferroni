@@ -1,0 +1,55 @@
+{
+  "head": "adb31da5001459a10d5456209823dbeb8bff38ae",
+  "baseline": "92c2363ed48c99f281805b6cfa4278126588a4c5",
+  "root": "/private/tmp/ferroni-dfa-candidate-walk-20261017",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "hardware": "Apple M1 Ultra",
+  "lock_sha256": "a0f89c02e4603b7127e24f718f0b56df0e53cf097ce54f5cdb17b729fec7e9aa",
+  "traces": {
+    "cpp": "44276a8387359c14676eda1a1a3f880d5810de5369c7934c0c078c1571b5d4eb",
+    "tsx": "7a177d10b6bfb0d7b2bd06119f0e4223877a6d160c3911f0a0933073d65beb10"
+  },
+  "environment": {
+    "CARGO_TARGET_DIR": "/private/tmp/ferroni-dfa-replay-20261017/target",
+    "FERRONI_ONIGURUMA_DIR": "/Users/sebastian/Workspace/ferroni/.cache/upstream/oniguruma-orig"
+  },
+  "variant": "candidate",
+  "source_sha256": "fc88c66cac4fe8bfb2cd5039b72e7aab3177cd2686b4d4943ee908785028dd22",
+  "dfa_prefilter_sha256": "794ca41fb336e299ef1af18e2e3a0659240c86a16241f796c9bb2f88dbf3197e",
+  "executables": {
+    "cpp_scanner_bench": "94f8036be95e9b7edad66556ed16cfb77d7a336cc2fe6a4f30e122b245401c29",
+    "ferriki_scanner_bench": "8eb43f7a497cc3e6d61a9dd147083d328e92f9193f1bc33bfa50c55f15b750bd",
+    "profile_cpp_scanner": "53c305098a217e85020af7af9bad1ccd7173083e4bb9fccd796260f0165ab1e8"
+  },
+  "commands": [
+    [
+      "cargo",
+      "bench",
+      "--offline",
+      "--locked",
+      "--no-run",
+      "--features",
+      "ffi",
+      "--bench",
+      "cpp_scanner_bench",
+      "--bench",
+      "ferriki_scanner_bench",
+      "--message-format=json-render-diagnostics"
+    ],
+    [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "--features",
+      "ffi",
+      "--example",
+      "profile_cpp_scanner"
+    ]
+  ],
+  "built_at": 1792270306.572771
+}

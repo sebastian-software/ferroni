@@ -1,0 +1,16 @@
+{
+  "ferroni/fmt": 0,
+  "ferroni/onigmo-prepare": 0,
+  "ferroni/clippy": 0,
+  "ferroni/workspace-tests": 0,
+  "ferroni/self-check": 0,
+  "ferroni/feature-matrix": 0,
+  "ferroni/docs": 0,
+  "ferroni/deny": 0,
+  "ferroni/workflow-pins": 0,
+  "ferroni/readme-family": 0,
+  "ferroni/readme-figures": 0,
+  "consumer/core-compat": 0,
+  "consumer/curated-parity": 0,
+  "consumer/tiobe-parity": 0
+}

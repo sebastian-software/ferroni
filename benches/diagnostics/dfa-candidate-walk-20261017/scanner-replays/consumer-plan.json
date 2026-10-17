@@ -1,0 +1,29 @@
+{
+  "frozen_at": 1792271680.465324,
+  "question": "Does the confirmed TSX scanner hotspot gain produce at least 3% lower native HTML latency in current Ferriki main?",
+  "ferriki_commit": "e7a4fb17e1eb34b45d4ed1bcb8d36d8de4ce85d8",
+  "baseline_ferroni": "92c2363ed48c99f281805b6cfa4278126588a4c5",
+  "candidate_ferroni": "adb31da5001459a10d5456209823dbeb8bff38ae",
+  "boundary": "Native full HTML over the two curated TSX fixtures; includes tokenization and Rust rendering, excludes the unchanged Node facade.",
+  "processes": 8,
+  "rounds": 60,
+  "warmups": 12,
+  "themes": "html",
+  "corpus": "curated",
+  "language": "tsx",
+  "sizes": [
+    "example",
+    "large"
+  ],
+  "order": "Existing paired native harness rotates engine order each round inside each independent process.",
+  "summary": "Median paired worker latency ratios and a fixed-seed 10,000-resample bootstrap 95% interval over the eight worker ratios.",
+  "decision": "A target-case runtime reduction of at least 3% with an upper 95% endpoint below zero triggers the homepage guard. Otherwise retain the draft and stop latency measurements.",
+  "conditional_homepage_guard": {
+    "processes": 8,
+    "rounds": 60,
+    "warmups": 12,
+    "cold_pairs": 40,
+    "corpus_root": "/private/tmp/ferriki-style-ascii-20261017/published-corpus",
+    "rule": "Every document warm and cold upper 95% endpoint must be at most +2%; no optional cohort extension."
+  }
+}
