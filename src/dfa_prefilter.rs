@@ -2240,7 +2240,10 @@ impl SetPrefilter {
                 return (ScanEnd::GaveUp, $asked);
             };
         }
-        // Up to `ask_i`, the plain walk.
+        // Up to `ask_i`, the plain walk. All three byte limits are fixed
+        // during the walk; compare their minimum once per byte, then retain
+        // end-of-input's precedence over the scan bound at that boundary.
+        let plain_end = cut.min(ask_i);
         loop {
             if sid.is_dead() {
                 return (ScanEnd::Finished, false);
@@ -2257,13 +2260,13 @@ impl SetPrefilter {
                     return (ScanEnd::Settled, false);
                 }
             }
-            if *i == end {
-                at_end!(false);
-            }
-            if *i == cut {
-                return (ScanEnd::Bound, false);
-            }
-            if *i >= ask_i {
+            if *i >= plain_end {
+                if *i == end {
+                    at_end!(false);
+                }
+                if *i == cut {
+                    return (ScanEnd::Bound, false);
+                }
                 break;
             }
             #[cfg(test)]
@@ -2320,10 +2323,10 @@ impl SetPrefilter {
                     return (ScanEnd::Settled, true);
                 }
             }
-            if *i == end {
-                at_end!(true);
-            }
             if *i == cut {
+                if *i == end {
+                    at_end!(true);
+                }
                 return (ScanEnd::Bound, true);
             }
         }

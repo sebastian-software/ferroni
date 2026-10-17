@@ -132,6 +132,55 @@ fn winner_without_captures_on_a_long_subject() {
     compare_from(&[r".+abc"], &text, 1, (0, last_line, last_line + 6));
 }
 
+/// Keep EOF, long-seek admission, and the candidate scan bound distinct,
+/// including when EOF coincides with either bound. Compare every capture
+/// from every character boundary, with and without a multibyte prefix.
+fn candidate_walk_boundaries_preserve_captures() {
+    let patterns = [
+        r"(x+)(z)\z",
+        r"(x+)\z",
+        r"(x{1,64})\z",
+        r"(x{1,256})\z",
+        r"\z",
+    ];
+    let mut plain =
+        Scanner::with_config(&patterns, &ScannerConfig::default().prefilter(false)).unwrap();
+    let mut filtered =
+        Scanner::with_config(&patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
+    let capture = |found: Option<ferroni::scanner::ScannerMatch>| {
+        found.map(|m| {
+            (
+                m.index,
+                m.captures()
+                    .iter()
+                    .map(|c| (c.start, c.end))
+                    .collect::<Vec<_>>(),
+            )
+        })
+    };
+    for len in [0, 1, 63, 64, 65, 255, 256, 257, 320] {
+        for prefix in ["", "é"] {
+            for suffix in ["", "z", "\n"] {
+                let text = format!("{prefix}{}{suffix}", "x".repeat(len));
+                for start in (0..=text.len()).filter(|&at| text.is_char_boundary(at)) {
+                    let want =
+                        capture(plain.find_next_match(&text, start, ScannerFindOptions::NONE));
+                    let got =
+                        capture(filtered.find_next_match(&text, start, ScannerFindOptions::NONE));
+                    assert_eq!(
+                        got, want,
+                        "len={len}, prefix={prefix:?}, suffix={suffix:?}, start={start}"
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(
+        filtered.prefilter_stats().built,
+        cfg!(feature = "dfa-prefilter")
+    );
+}
+
 #[test]
 fn review_findings_of_the_prefilter() {
     unicode_non_word_is_not_ascii_only();
@@ -142,5 +191,6 @@ fn review_findings_of_the_prefilter() {
     interior_byte_offset();
     conditional_optimizer_admission();
     winner_without_captures_on_a_long_subject();
+    candidate_walk_boundaries_preserve_captures();
     explicit_subexpression_call_limit_disables_skipping();
 }
