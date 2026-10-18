@@ -1,0 +1,125 @@
+{
+  "decision": "merge",
+  "warm_total_change_pct": 0.0063708690672070745,
+  "worst_warm_upper95_pct": 0.656449532389658,
+  "worst_warm_path": "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.py",
+  "cold_change_pct": -0.10831789113008305,
+  "cold_interval95_pct": [
+    -0.5399298633994798,
+    0.24802725884427446
+  ],
+  "rows": [
+    {
+      "path": "src/highlighter.rs",
+      "runtime_change_pct": -0.5246102538585373,
+      "interval95_pct": [
+        -0.8134112991450504,
+        -0.2064060174499338
+      ]
+    },
+    {
+      "path": "node/ferriki/src/api.mts",
+      "runtime_change_pct": -0.5461517105466829,
+      "interval95_pct": [
+        -0.9514456362970658,
+        -0.27427365008884097
+      ]
+    },
+    {
+      "path": "node/ferriki/src/index.mjs",
+      "runtime_change_pct": 0.040002930615479215,
+      "interval95_pct": [
+        -0.1827639762381872,
+        0.31238378686491153
+      ]
+    },
+    {
+      "path": "docs/ferriki-api.md",
+      "runtime_change_pct": -0.3392727202845558,
+      "interval95_pct": [
+        -0.6668552165266739,
+        -0.01577599198333557
+      ]
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "runtime_change_pct": 0.28893132214498074,
+      "interval95_pct": [
+        0.06871945119291123,
+        0.44807631195216135
+      ]
+    },
+    {
+      "path": "node/compat/upstream/shiki/packages/twoslash/style-rich.css",
+      "runtime_change_pct": -0.47288155097311435,
+      "interval95_pct": [
+        -0.7398657714866586,
+        -0.03844978649774067
+      ]
+    },
+    {
+      "path": "node/package.json",
+      "runtime_change_pct": -0.3814240797007207,
+      "interval95_pct": [
+        -0.5155350258888247,
+        -0.09068361719848372
+      ]
+    },
+    {
+      "path": "Cargo.toml",
+      "runtime_change_pct": 0.010203330387725806,
+      "interval95_pct": [
+        -0.27586805831212313,
+        0.20123940475147428
+      ]
+    },
+    {
+      "path": "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.py",
+      "runtime_change_pct": 0.0891843110839563,
+      "interval95_pct": [
+        -0.4925305741874553,
+        0.656449532389658
+      ]
+    },
+    {
+      "path": "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.html",
+      "runtime_change_pct": -0.3260583856062871,
+      "interval95_pct": [
+        -0.5706116882236767,
+        0.01961308445899146
+      ]
+    },
+    {
+      "path": "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.go",
+      "runtime_change_pct": -0.9629556824652608,
+      "interval95_pct": [
+        -1.1419345393612224,
+        -0.8121646214688361
+      ]
+    },
+    {
+      "path": "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.php",
+      "runtime_change_pct": -0.34623655620054095,
+      "interval95_pct": [
+        -0.5773730789413678,
+        -0.08990684637508739
+      ]
+    },
+    {
+      "path": "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.sh",
+      "runtime_change_pct": -0.24274737530158852,
+      "interval95_pct": [
+        -0.4863844234510917,
+        0.15814508997840093
+      ]
+    },
+    {
+      "path": "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.sql",
+      "runtime_change_pct": -0.19473068676838512,
+      "interval95_pct": [
+        -0.797286963110655,
+        -0.022241529048994124
+      ]
+    }
+  ]
+}

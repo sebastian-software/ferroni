@@ -1,0 +1,27 @@
+{
+  "driver_head": "ec10cb9b1d6c22f4fc701665d12a30394f81108f",
+  "driver_common_git": "/Users/sebastian/Workspace/ferriki/.git",
+  "driver_root": "/Users/sebastian/Workspace/ferriki",
+  "helper_sha256": {
+    "node/ferriki/platforms.mjs": "511a9fa9e1c6f45c128c9c921ecb9f3a094d1b7529cbd66c22ad57b256378657",
+    "node/scripts/shiki-comparison-corpus.mjs": "3c24e7ab3c58eba31f5992aa7eba42c2087ee10398ee55baa20dd15872f4b417",
+    "node/scripts/standard-grammar-reference.mjs": "815ccd334abd0942b7d731f891fe1c62b20b217a3bca76e5467df7ef57497425",
+    "node/scripts/test-asset-env.mjs": "730133df6d0c0c8f6952522b52d48a3f7b168c83b68cc095e4c3942bf6f2626f"
+  },
+  "corpus": {
+    ".github/workflows/ci.yml": "5b6a6a213a89230c0a0b718913b3fe2bffe5ade9e20ec7c0499269abd3894253",
+    "Cargo.toml": "0a4e121ffafb5f099b4cfac2b5dce6c958fcf7164508d9815b046a9a7ec92f0f",
+    "docs/ferriki-api.md": "a556277cf01e45b2daafa4d6531cb533ab91ea71835eafac19231a640ffd3aca",
+    "node/compat/upstream/shiki/packages/twoslash/style-rich.css": "a0b29f777e13d43d05474fe2de94e536905dc50aa65817c1dda2d3cc84a2aa83",
+    "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.go": "001f75b294ce4783e30c77793e45f245fbfedcc728ca554d02a2a6f09fe78156",
+    "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.html": "b2ba047d8dead253f8b34b4585b5457be99e2b559f366ef4957cf94034abe487",
+    "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.php": "9cf1f1d40eaf14fe45de4b47b12723f5b7d925c93673c0fc0b401954f1c91b68",
+    "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.py": "dca30556748c8e87336aa707c2b2204e88476fabaab1e2ab664fdc4bc4829fce",
+    "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.sh": "8cfe4bb2a98bdf1bf6326b5aaf6166ea571b1d436047805cb8e832fdad0c41f1",
+    "node/compat/upstream/vscode-textmate/test-cases/themes/tests/test.sql": "65c2946d148989654c3273d28a84280d4fef7de781f9a139d318f36b6e5da6f6",
+    "node/ferriki/src/api.mts": "9ff6293e2edd0fb4c7f1f3056661b068cf42769a0da5270f7a1655e97de3510c",
+    "node/ferriki/src/index.mjs": "8a73b1de411c5957ca919d7baffe9b2ac062db0c6cf3e0cfc48a798e1eb8d926",
+    "node/package.json": "47333913fe6de649b59d851760b6efe7954a7a5730287b6ba048b3386cf3f84e",
+    "src/highlighter.rs": "ce75bbb7e98f2a8756dce2844588a204884266e38461def08df24b768713895b"
+  }
+}

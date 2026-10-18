@@ -1,6 +1,6 @@
 # DFA candidate-walk boundaries: independent measurements
 
-The [scanner replay follow-up](scanner-replays/README.md) confirms a local TSX injection-group benefit and lower instruction counts, but current Ferriki HTML improves by only 0.63% on the TSX example and 0.15% on the large fixture. The PR remains a draft. The original measurements below are retained unchanged.
+The [current-main homepage guard](homepage-current-main/README.md) passes the 2% regression limit, so I am keeping this small scanner optimization. The [scanner replay follow-up](scanner-replays/README.md) confirms a 3.35% local TSX injection-group benefit; complete native TSX HTML gains remain below 1%. The October 18 decision supersedes the earlier draft recommendation. The original measurements and decision below are retained as history.
 
 This October 17, 2026 experiment compares the candidate with `92c2363ed48c99f281805b6cfa4278126588a4c5`. Each branch starts directly from its repository's main; none includes Ferriki PR #279 or either of the other candidates. The packages use Node 24.21.0, rustc 1.99.0, Ferriki 1.1.1, Ferroni 2.2.2, and the ordinary stripped release profile (fat LTO, one codegen unit, no profiling flags) on an Apple M1 Ultra/macOS arm64 host. Control and candidate were built sequentially at the same worktree path and saved as independent packages and sidecars. Receipts record compiler, lockfile, source fingerprints, and addon SHA-256.
 

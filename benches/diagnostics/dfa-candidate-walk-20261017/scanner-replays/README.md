@@ -1,6 +1,6 @@
 # Scanner replay follow-up for #415
 
-I found a repeatable local benefit in a TSX injection scanner, but the change still does not meet the 3% full-Ferriki latency target. I am keeping the PR as a draft.
+I found a repeatable local benefit in a TSX injection scanner, while complete Ferriki gains remain below 1%. The [October 18 current-main homepage guard](../homepage-current-main/README.md) passes the 2% regression limit, and I am keeping the small runtime change. That decision supersedes this investigation's earlier draft recommendation; the original experiment and its fixed decision rule are retained below.
 
 The isolated TSX group 2 replay takes 3.35% less time at the central estimate. Complete TSX scanner replay uses about 8.40% fewer retired instructions in a separate diagnostic. In current Ferriki, however, full native HTML takes only 0.63% less time on the TSX example and 0.15% less time on the large TSX fixture. The large fixture's interval includes a small slowdown.
 
@@ -49,7 +49,7 @@ The existing paired native-boundary harness runs eight independent processes, 12
 | `curated/tsx/example/html` | -0.63% | -1.31% to -0.21% |
 | `curated/tsx/large/html` | -0.15% | -0.31% to +0.63% |
 
-Neither target case reaches a 3% reduction. Under the fixed decision rule I therefore did not run the conditional new homepage regression guard. The earlier homepage experiment remains in the parent report, including its unresolved +2% bound; these new results do not establish that bound on current main.
+Neither target case reached a 3% reduction. Under this investigation's original fixed decision rule I therefore did not run the conditional homepage regression guard at that stage. The separate [October 18 comparison](../homepage-current-main/README.md) accepts a useful local gain from a small change, reruns the complete guard on current Ferriki, and establishes the 2% bound in that experiment. The earlier homepage experiment remains in the parent report as history.
 
 ## Why the hotspot benefit is real but limited
 
