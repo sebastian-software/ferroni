@@ -1,0 +1,30 @@
+{
+  "recorded_at": "2026-10-18T07:12:30.093339+00:00",
+  "question": "Does Ferroni #415 stay within the 2% homepage regression limit on current Ferriki after #279 and #281?",
+  "decision": "Accept the small simple scanner optimization only if every homepage document and cold startup has a paired 95% upper endpoint <= +2%. Otherwise close the PR; do not extend the cohort.",
+  "ferriki_commit": "e7a4fb17e1eb34b45d4ed1bcb8d36d8de4ce85d8",
+  "ferroni_baseline": "92c2363ed48c99f281805b6cfa4278126588a4c5",
+  "ferroni_runtime_candidate": "adb31da5001459a10d5456209823dbeb8bff38ae",
+  "processes": 32,
+  "rounds": 60,
+  "warmups": 12,
+  "cold_runs": 60,
+  "bootstrap": {
+    "seed": 20261017,
+    "resamples": 10000,
+    "unit": "independent warm worker ratios or cold process-pair ratios"
+  },
+  "fixed_cohort": true,
+  "harness_sha256": "44b986d6657bd6d5f759ff4edbfb76308f63d46bfda6e22d6c0a80262be360b2",
+  "driver_checkout": "ec10cb9b1d6c22f4fc701665d12a30394f81108f",
+  "driver_helpers_identical_to_consumer_commit": [
+    "node/ferriki/platforms.mjs",
+    "node/scripts/shiki-comparison-corpus.mjs",
+    "node/scripts/standard-grammar-reference.mjs",
+    "node/scripts/test-asset-env.mjs"
+  ],
+  "consumer_packages": "/private/tmp/ferroni-dfa-replay-20261017/consumer/{baseline,candidate}",
+  "corpus_revision": "aea84dc7b911c79a86dd3631c698c991c36184b8",
+  "boundary": "Public Node codeToHtml; separate cold imports, corpus read, grammar load and first highlights; spawn excluded. Exact HTML against Shiki/WASM checked before warm timing.",
+  "retention": "All workers and cold pairs retained; no exclusions, concurrent builds, profiler, or instrumentation."
+}

@@ -1,0 +1,68 @@
+{
+  "question": "Does PR #415 reduce the cost of real C++ or TSX scanner replays by at least 3%?",
+  "phase": "fixed confirmation; no screening or optional extension",
+  "repetitions": 8,
+  "cases": [
+    [
+      "cpp_document",
+      "cpp_scanner_bench",
+      "cpp_scanner/document",
+      false
+    ],
+    [
+      "cpp_group_78",
+      "cpp_scanner_bench",
+      "cpp_scanner/group_78",
+      false
+    ],
+    [
+      "tsx_document",
+      "ferriki_scanner_bench",
+      "tsx_scanner/document",
+      false
+    ],
+    [
+      "tsx_group_2",
+      "ferriki_scanner_bench",
+      "tsx_scanner/group_2",
+      false
+    ],
+    [
+      "tsx_group_1",
+      "ferriki_scanner_bench",
+      "tsx_scanner/group_1",
+      false
+    ],
+    [
+      "tsx_group_29",
+      "ferriki_scanner_bench",
+      "tsx_scanner/group_29",
+      false
+    ],
+    [
+      "cpp_document_prefilter_off",
+      "cpp_scanner_bench",
+      "cpp_scanner/document",
+      true
+    ],
+    [
+      "tsx_document_prefilter_off",
+      "ferriki_scanner_bench",
+      "tsx_scanner/document",
+      true
+    ]
+  ],
+  "samples_per_process": 50,
+  "warmup_seconds": 1,
+  "measurement_seconds": 3,
+  "ordering": "Rotate case order by repetition; alternate baseline/candidate within each case and repetition",
+  "primary_cases": [
+    "cpp_document",
+    "tsx_document"
+  ],
+  "secondary_cases": "The four hot groups locate a causal effect; prefilter-off documents are layout/noise controls.",
+  "summary": "Median paired process mean-latency ratio minus one, with a deterministic 10,000-resample paired bootstrap 95% interval over process pairs.",
+  "decision": "A document reduction of at least 3% with its interval wholly below zero warrants a separate confirmation in current Ferriki. A hot-group reduction alone cannot qualify this PR as a public highlighting improvement.",
+  "limits": "Local Apple Silicon, thin-LTO scanner build; no cross-platform or Ferriki end-to-end performance claim.",
+  "frozen_at": 1792270354.681728
+}

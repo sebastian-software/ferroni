@@ -1,0 +1,37 @@
+{
+  "builtAt": "2026-10-17T21:14:10.217Z",
+  "binarySha256": "24190400a71084240bd54b55a9d17d041d70d3daa7d98dc41a24e3e272d8beb8",
+  "ferriki": {
+    "commit": "e7a4fb17e1eb34b45d4ed1bcb8d36d8de4ce85d8",
+    "status": "M Cargo.lock"
+  },
+  "rustSourceSha256": "77cafe85daa4f2816d89249a901813655b6c8bd2d9632d940ec91090130233a3",
+  "ferroni": {
+    "version": "2.2.2",
+    "source": null,
+    "manifestPath": "/private/tmp/ferroni-dfa-candidate-walk-20261017/Cargo.toml",
+    "revision": {
+      "commit": "adb31da5001459a10d5456209823dbeb8bff38ae",
+      "status": "M src/dfa_prefilter.rs"
+    },
+    "sourceSha256": "cd9e05c08fd7ecee882595f55554bd73ec906dc9c3a6a529e358781512907a53",
+    "features": [
+      "default",
+      "dfa-prefilter"
+    ]
+  },
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+  "cargoArgs": [
+    "build",
+    "--release",
+    "--manifest-path",
+    "/Users/sebastian/Workspace/.codex/dfa-replay-consumer/ferriki/crates/ferriki-core/Cargo.toml",
+    "--config",
+    "patch.crates-io.ferroni.path=\"/private/tmp/ferroni-dfa-candidate-walk-20261017\""
+  ],
+  "rustflags": null,
+  "encodedRustflags": null,
+  "targetRustflags": {},
+  "cargoProfileEnv": {},
+  "cargoLockSha256": "b2e5a45fb0c1696641dd0dc1b0c4de74d22ac023643892a51b0f2c46ea39bdee"
+}
