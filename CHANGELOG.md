@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.3](https://github.com/sebastian-software/ferroni/compare/v2.2.2...v2.2.3) (2026-10-18)
+
+
+### Performance Improvements
+
+* **scanner:** hoist candidate-walk byte bounds ([#415](https://github.com/sebastian-software/ferroni/issues/415)) ([3a1b53b](https://github.com/sebastian-software/ferroni/commit/3a1b53bf0810de08f0a81c10dc9dd734bd6e6d0f))
+
 ## [2.2.2](https://github.com/sebastian-software/ferroni/compare/v2.2.1...v2.2.2) (2026-10-16)
 
 
