@@ -217,14 +217,14 @@ struct Compiled {
     /// like `program`: the lazy DFA's cache pool is not `RefUnwindSafe`.
     #[cfg(feature = "dfa-prefilter")]
     seek: AssertUnwindSafe<Option<Box<SingleSeek>>>,
-    /// Rust-only (ADR-008): decides whether the capture methods consult the
+    /// Rust-only (ADR-008): decides whether the capture and find methods consult the
     /// seek, from the rejections they measure. Shared by the clones with the
     /// seek, as is the seek's cache pool.
     #[cfg(feature = "dfa-prefilter")]
     seek_gate: SeekGate,
 }
 
-/// While the [`SeekGate`] is closed, one capture search in this many consults
+/// While the [`SeekGate`] is closed, one capture or find search in this many consults
 /// the seek anyway, so that the rejection rate is still measured.
 #[cfg(feature = "dfa-prefilter")]
 const SEEK_GATE_PROBE_INTERVAL: u32 = 32;
@@ -565,29 +565,14 @@ impl Regex {
         None
     }
 
-    /// Whether a seek might answer a search. False when the regex has no seek
-    /// automaton (a pure literal, or a seek too large or matching everywhere),
-    /// which keeps such a pattern on the matcher's own path.
-    #[cfg(feature = "dfa-prefilter")]
-    #[inline(always)]
-    fn seek_may_answer(&self) -> bool {
-        self.inner.seek.is_some()
-    }
-
-    #[cfg(not(feature = "dfa-prefilter"))]
-    #[inline(always)]
-    fn seek_may_answer(&self) -> bool {
-        false
-    }
-
-    /// Whether the seek rejects a capture search from `start`: the answer of
+    /// Whether the seek rejects a capture or find search from `start`: the answer of
     /// [`Regex::seek_answer`] is "no match", and the adaptive gate
     /// ([`SeekGate`]) lets this search consult the seek. The rejection is the
-    /// matcher's answer under every limit, so the capture methods return `None`
+    /// matcher's answer under every limit, so the capture and find methods return `None`
     /// for it without running the matcher.
     #[cfg(feature = "dfa-prefilter")]
     #[inline]
-    fn seek_rejects_capture(&self, text: &[u8], start: usize, utf8: bool) -> bool {
+    fn seek_rejects_search(&self, text: &[u8], start: usize, utf8: bool) -> bool {
         if self.inner.seek.is_none() || !self.inner.seek_gate.consults() {
             return false;
         }
@@ -598,7 +583,7 @@ impl Regex {
 
     #[cfg(not(feature = "dfa-prefilter"))]
     #[inline(always)]
-    fn seek_rejects_capture(&self, text: &[u8], start: usize, utf8: bool) -> bool {
+    fn seek_rejects_search(&self, text: &[u8], start: usize, utf8: bool) -> bool {
         let _ = (text, start, utf8);
         false
     }
@@ -801,7 +786,10 @@ impl Regex {
     /// with all of `text` visible.
     #[inline]
     fn find_from<'t>(&self, text: &'t [u8], start: usize, utf8: bool) -> Option<Match<'t>> {
-        if self.seek_may_answer() && self.seek_answer(text, start, utf8, false) == Some(false) {
+        // The adaptive gate decides, as for the capture methods: a seek that
+        // keeps finding matches only repeats the matcher's scan up to the
+        // match, so a search consults it only while it rejects often enough.
+        if self.seek_rejects_search(text, start, utf8) {
             return None;
         }
         // A standard search reports a limit it reached as no match.
@@ -1167,10 +1155,10 @@ impl Regex {
     }
 
     /// The search behind the capture methods that report no limit: the seek
-    /// answers a rejection first (see [`Regex::seek_rejects_capture`]).
+    /// answers a rejection first (see [`Regex::seek_rejects_search`]).
     #[inline]
     fn captures_from<'t>(&self, text: &'t [u8], start: usize, utf8: bool) -> Option<Captures<'t>> {
-        if self.seek_rejects_capture(text, start, utf8) {
+        if self.seek_rejects_search(text, start, utf8) {
             return None;
         }
         let (result, region) =
@@ -2872,12 +2860,21 @@ mod tests {
                         .captures_at_with(text, start, SearchOptions::new())
                         .unwrap();
                     let expected = capture_spans(expected);
+                    let expected_find = re
+                        .find_at_with(text, start, SearchOptions::new())
+                        .unwrap()
+                        .map(|found| found.range());
                     for mode in [Some(true), Some(false), None] {
                         re.seek_gate_force(mode);
                         assert_eq!(
                             capture_spans(re.captures_at(text, start)),
                             expected,
                             "{pattern} on {text:?} from {start}, gate {mode:?}"
+                        );
+                        assert_eq!(
+                            re.find_at(text, start).map(|found| found.range()),
+                            expected_find,
+                            "find: {pattern} on {text:?} from {start}, gate {mode:?}"
                         );
                     }
                     re.seek_gate_force(None);
