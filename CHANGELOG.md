@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.2.4](https://github.com/sebastian-software/ferroni/compare/v2.2.3...v2.2.4) (2026-10-21)
+
+
+### Performance Improvements
+
+* **api:** let the seek gate decide when find consults the seek ([#418](https://github.com/sebastian-software/ferroni/issues/418)) ([c5fdd3e](https://github.com/sebastian-software/ferroni/commit/c5fdd3ec41808ad34801ac9da295773698651c4f))
+* **api:** slice str matches in as_str instead of validating them ([#420](https://github.com/sebastian-software/ferroni/issues/420)) ([c5fc87f](https://github.com/sebastian-software/ferroni/commit/c5fc87f2b2e64ed8d2e85c9b6db4460e09b60944))
+* **api:** stop capture searches from writing shared state per match ([#417](https://github.com/sebastian-software/ferroni/issues/417)) ([1d6e4e7](https://github.com/sebastian-software/ferroni/commit/1d6e4e72c01b33d2ceac75e15ea33e522e6c0626))
+
 ## [2.2.3](https://github.com/sebastian-software/ferroni/compare/v2.2.2...v2.2.3) (2026-10-18)
 
 
