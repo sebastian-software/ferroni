@@ -45,7 +45,10 @@ pub fn onig_set_verb_warn_func(f: OnigWarnFunc) {
 // Global Callout Name Registry (port of C's GlobalCalloutNameList)
 // ============================================================================
 
+#[derive(Clone)]
 pub(crate) struct CalloutNameListEntry {
+    pub encoding_name: String,
+    pub name_id: i32,
     pub callout_type: OnigCalloutType,
     pub callout_in: i32,
     pub start_func: Option<OnigCalloutFunc>,
@@ -59,12 +62,32 @@ pub(crate) struct CalloutNameListEntry {
 
 static CALLOUT_NAME_REGISTRY: Mutex<Vec<CalloutNameListEntry>> = Mutex::new(Vec::new());
 
+// C's built-in callout names occupy IDs 1 through 8. Custom names begin at 9.
+const CUSTOM_CALLOUT_NAME_ID_BASE: i32 = 9;
+const BUILTIN_CALLOUT_NAMES: [&[u8]; 8] = [
+    b"FAIL",
+    b"MISMATCH",
+    b"SKIP",
+    b"MAX",
+    b"ERROR",
+    b"COUNT",
+    b"TOTAL_COUNT",
+    b"CMP",
+];
+
+fn builtin_callout_name_id(name: &[u8]) -> Option<i32> {
+    BUILTIN_CALLOUT_NAMES
+        .iter()
+        .position(|builtin| *builtin == name)
+        .map(|id| id as i32 + 1)
+}
+
 /// Register a user-defined named callout.
 /// Port of C's onig_set_callout_of_name.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[allow(clippy::too_many_arguments)]
 pub fn onig_set_callout_of_name(
-    _enc: OnigEncoding,
+    enc: OnigEncoding,
     callout_type: OnigCalloutType,
     name: &[u8],
     callout_in: i32,
@@ -81,7 +104,13 @@ pub fn onig_set_callout_of_name(
     if arg_num < 0 || arg_num > ONIG_CALLOUT_MAX_ARGS_NUM as i32 {
         return ONIGERR_INVALID_CALLOUT_ARG;
     }
+    if arg_types.len() != arg_num as usize {
+        return ONIGERR_INVALID_CALLOUT_ARG;
+    }
     if opt_arg_num < 0 || opt_arg_num > arg_num {
+        return ONIGERR_INVALID_CALLOUT_ARG;
+    }
+    if opt_defaults.len() != opt_arg_num as usize {
         return ONIGERR_INVALID_CALLOUT_ARG;
     }
     if start_func.is_none() && end_func.is_none() {
@@ -92,11 +121,103 @@ pub fn onig_set_callout_of_name(
     {
         return ONIGERR_INVALID_CALLOUT_ARG;
     }
-    if name.is_empty() {
+    if !is_allowed_callout_name(enc, name) {
         return ONIGERR_INVALID_CALLOUT_NAME;
     }
 
-    let entry = CalloutNameListEntry {
+    let required_arg_num = (arg_num - opt_arg_num) as usize;
+    for (index, &arg_type) in arg_types.iter().enumerate() {
+        let optional = index >= required_arg_num;
+        let valid_type = if optional {
+            matches!(
+                arg_type,
+                value if value == OnigType::Long as u32
+                    || value == OnigType::Char as u32
+                    || value == OnigType::String as u32
+                    || value == OnigType::Tag as u32
+            )
+        } else {
+            arg_type == OnigType::Long as u32
+                || matches!(
+                    arg_type & !(OnigType::Long as u32),
+                    value if value == OnigType::Char as u32
+                        || value == OnigType::String as u32
+                        || value == OnigType::Tag as u32
+                )
+        };
+        if !valid_type {
+            return ONIGERR_INVALID_CALLOUT_ARG;
+        }
+    }
+    for (default, &arg_type) in opt_defaults.iter().zip(&arg_types[required_arg_num..]) {
+        let matches_type = matches!(
+            (arg_type, default),
+            (t, OnigValue::Long(_)) if t == OnigType::Long as u32
+        ) || matches!(
+            (arg_type, default),
+            (t, OnigValue::Char(_)) if t == OnigType::Char as u32
+        ) || matches!(
+            (arg_type, default),
+            (t, OnigValue::String { .. }) if t == OnigType::String as u32
+        ) || matches!(
+            (arg_type, default),
+            (t, OnigValue::Tag(_)) if t == OnigType::Tag as u32
+        );
+        if !matches_type {
+            return ONIGERR_INVALID_CALLOUT_ARG;
+        }
+    }
+
+    let mut registry = CALLOUT_NAME_REGISTRY.lock().unwrap();
+    let exact = registry
+        .iter()
+        .position(|existing| existing.encoding_name == enc.name() && existing.name == name);
+    let ascii_name = crate::encodings::ascii::ONIG_ENCODING_ASCII.name();
+    let ascii_fallback =
+        if exact.is_none() && enc.name() != ascii_name && onigenc_is_ascii_compatible_encoding(enc)
+        {
+            registry
+                .iter()
+                .position(|existing| existing.encoding_name == ascii_name && existing.name == name)
+        } else {
+            None
+        };
+    if let Some(index) = exact.or(ascii_fallback) {
+        let existing = &mut registry[index];
+        let name_id = existing.name_id;
+        // A fallback registration updates the ASCII entry while keeping its
+        // key. New names remain scoped to the encoding used to register them.
+        let encoding_name = existing.encoding_name.clone();
+        *existing = CalloutNameListEntry {
+            encoding_name,
+            name_id,
+            callout_type,
+            callout_in,
+            start_func,
+            end_func,
+            arg_num,
+            opt_arg_num,
+            arg_types: arg_types.to_vec(),
+            opt_defaults: opt_defaults.to_vec(),
+            name: name.to_vec(),
+        };
+        return name_id;
+    }
+    let name_id = builtin_callout_name_id(name)
+        .filter(|_| onigenc_is_ascii_compatible_encoding(enc))
+        .unwrap_or_else(|| {
+            registry
+                .iter()
+                .filter_map(|entry| {
+                    (entry.name_id >= CUSTOM_CALLOUT_NAME_ID_BASE).then_some(entry.name_id)
+                })
+                .max()
+                .unwrap_or(CUSTOM_CALLOUT_NAME_ID_BASE - 1)
+                + 1
+        });
+    registry.push(CalloutNameListEntry {
+        encoding_name: enc.name().to_owned(),
+        name_id,
         callout_type,
         callout_in,
         start_func,
@@ -106,30 +227,45 @@ pub fn onig_set_callout_of_name(
         arg_types: arg_types.to_vec(),
         opt_defaults: opt_defaults.to_vec(),
         name: name.to_vec(),
-    };
-
-    let mut registry = CALLOUT_NAME_REGISTRY.lock().unwrap();
-    // Check if name already exists — update in place
-    for (i, existing) in registry.iter_mut().enumerate() {
-        if existing.name == name {
-            *existing = entry;
-            return i as i32;
-        }
-    }
-    let id = registry.len() as i32;
-    registry.push(entry);
-    id
+    });
+    name_id
 }
 
 /// Get the name of a registered callout by its name ID.
 /// Port of C's onig_get_callout_name_by_name_id.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_callout_name_by_name_id(name_id: i32) -> Option<Vec<u8>> {
-    let registry = CALLOUT_NAME_REGISTRY.lock().unwrap();
-    if name_id < 0 || name_id as usize >= registry.len() {
-        return None;
+    if (1..CUSTOM_CALLOUT_NAME_ID_BASE).contains(&name_id) {
+        return Some(BUILTIN_CALLOUT_NAMES[(name_id - 1) as usize].to_vec());
     }
-    Some(registry[name_id as usize].name.clone())
+    let registry = CALLOUT_NAME_REGISTRY.lock().unwrap();
+    registry
+        .iter()
+        .find(|entry| entry.name_id == name_id)
+        .map(|entry| entry.name.clone())
+}
+
+/// Look up and snapshot a registered single-callout entry by its byte name.
+/// The registry lock is released before callbacks are ever invoked.
+fn callout_name_by_name(enc: OnigEncoding, name: &[u8]) -> Option<(i32, CalloutNameListEntry)> {
+    let registry = CALLOUT_NAME_REGISTRY.lock().unwrap();
+    let exact = registry
+        .iter()
+        .position(|entry| entry.encoding_name == enc.name() && entry.name == name);
+    let fallback = if exact.is_none()
+        && enc.name() != crate::encodings::ascii::ONIG_ENCODING_ASCII.name()
+        && onigenc_is_ascii_compatible_encoding(enc)
+    {
+        registry.iter().position(|entry| {
+            entry.encoding_name == crate::encodings::ascii::ONIG_ENCODING_ASCII.name()
+                && entry.name == name
+        })
+    } else {
+        None
+    };
+    exact
+        .or(fallback)
+        .map(|index| (registry[index].name_id, registry[index].clone()))
 }
 
 // ============================================================================
@@ -5197,11 +5333,15 @@ fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
         of: 0,
         callout_in: CALLOUT_IN_PROGRESS,
         builtin_id: -1,
+        name_id: ONIG_NON_NAME_ID,
+        start_func: None,
+        end_func: None,
+        passed_args_num: 0,
         tag: None,
         tag_start: 0,
         tag_end: 0,
         args: Vec::new(),
-        content_end: None,
+        content: None,
     });
     Ok(num)
 }
@@ -5286,100 +5426,174 @@ fn prs_callout_of_name(
         }
     }
 
-    // Identify builtin
-    let (builtin_id, callout_in) = if name == b"FAIL" {
-        (CALLOUT_BUILTIN_FAIL, CALLOUT_IN_PROGRESS)
+    // Callout names share one namespace in C: registering a name can replace
+    // an existing entry. Check user registrations first so they can override
+    // Ferroni's builtins too.
+    let registered = callout_name_by_name(enc, name);
+    let builtin = if registered.is_some() {
+        None
+    } else if name == b"FAIL" {
+        Some((CALLOUT_BUILTIN_FAIL, CALLOUT_IN_PROGRESS))
+    } else if name == b"MISMATCH" {
+        Some((CALLOUT_BUILTIN_MISMATCH, CALLOUT_IN_PROGRESS))
     } else if name == b"MAX" {
-        (CALLOUT_BUILTIN_MAX, CALLOUT_IN_BOTH)
+        Some((CALLOUT_BUILTIN_MAX, CALLOUT_IN_BOTH))
+    } else if name == b"ERROR" {
+        Some((CALLOUT_BUILTIN_ERROR, CALLOUT_IN_PROGRESS))
     } else if name == b"COUNT" {
-        (CALLOUT_BUILTIN_COUNT, CALLOUT_IN_BOTH)
+        Some((CALLOUT_BUILTIN_COUNT, CALLOUT_IN_BOTH))
     } else if name == b"CMP" {
-        (CALLOUT_BUILTIN_CMP, CALLOUT_IN_PROGRESS)
+        Some((CALLOUT_BUILTIN_CMP, CALLOUT_IN_PROGRESS))
     } else if name == b"SKIP" {
-        (CALLOUT_BUILTIN_SKIP, CALLOUT_IN_PROGRESS)
+        Some((CALLOUT_BUILTIN_SKIP, CALLOUT_IN_PROGRESS))
     } else {
-        return Err(ONIGERR_UNDEFINED_CALLOUT_NAME);
+        None
     };
 
+    if builtin.is_none() && registered.is_none() {
+        return Err(ONIGERR_UNDEFINED_CALLOUT_NAME);
+    }
+
     // Parse args: {arg1,arg2,...}
-    let args = if c == '{' as u32 {
-        let mut args = Vec::new();
-        loop {
-            // Skip leading whitespace
-            while !p_end(*p, end) {
-                let ch = ppeek(*p, pattern, end, enc);
-                if ch == ' ' as u32 || ch == '\t' as u32 {
-                    pinc(p, pattern, enc);
-                } else {
-                    break;
-                }
-            }
+    let passed_args_num;
+    let mut final_args = if let Some((name_id, callout)) = registered.as_ref() {
+        let mut args = if c == '{' as u32 {
+            let args = prs_callout_args_typed(p, end, pattern, env, &callout.arg_types)?;
             if p_end(*p, end) {
                 return Err(ONIGERR_END_PATTERN_IN_GROUP);
             }
-            let ch = ppeek(*p, pattern, end, enc);
-            if ch == '}' as u32 {
-                pinc(p, pattern, enc);
-                break;
-            }
-            // Parse one argument
-            let arg = prs_callout_one_arg(p, end, pattern, env)?;
-            args.push(arg);
-            // Expect ',' or '}'
-            if p_end(*p, end) {
-                return Err(ONIGERR_END_PATTERN_IN_GROUP);
-            }
-            let sep = ppeek(*p, pattern, end, enc);
-            if sep == ',' as u32 {
-                pinc(p, pattern, enc);
-            } else if sep == '}' as u32 {
-                pinc(p, pattern, enc);
-                break;
-            } else {
-                return Err(ONIGERR_INVALID_CALLOUT_ARG);
-            }
+            c = pfetch_s(p, pattern, end, enc);
+            args
+        } else {
+            Vec::new()
+        };
+        passed_args_num = args.len() as i32;
+        let required_arg_num = (callout.arg_num - callout.opt_arg_num) as usize;
+        if args.len() < required_arg_num || args.len() > callout.arg_num as usize {
+            return Err(ONIGERR_INVALID_CALLOUT_ARG);
         }
-        // Read cterm after }
-        if p_end(*p, end) {
-            return Err(ONIGERR_END_PATTERN_IN_GROUP);
+        for default in callout
+            .opt_defaults
+            .iter()
+            .skip(args.len() - required_arg_num)
+        {
+            args.push(callout_default_arg(default));
         }
-        c = pfetch_s(p, pattern, end, enc);
+        let _ = name_id;
         args
     } else {
-        Vec::new()
+        let args = if c == '{' as u32 {
+            let mut args = Vec::new();
+            loop {
+                // Skip leading whitespace
+                while !p_end(*p, end) {
+                    let ch = ppeek(*p, pattern, end, enc);
+                    if ch == ' ' as u32 || ch == '\t' as u32 {
+                        pinc(p, pattern, enc);
+                    } else {
+                        break;
+                    }
+                }
+                if p_end(*p, end) {
+                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                }
+                let ch = ppeek(*p, pattern, end, enc);
+                if ch == '}' as u32 {
+                    pinc(p, pattern, enc);
+                    break;
+                }
+                // Parse one argument
+                let arg = prs_callout_one_arg(p, end, pattern, env)?;
+                args.push(arg);
+                // Expect ',' or '}'
+                if p_end(*p, end) {
+                    return Err(ONIGERR_END_PATTERN_IN_GROUP);
+                }
+                let sep = ppeek(*p, pattern, end, enc);
+                if sep == ',' as u32 {
+                    pinc(p, pattern, enc);
+                } else if sep == '}' as u32 {
+                    pinc(p, pattern, enc);
+                    break;
+                } else {
+                    return Err(ONIGERR_INVALID_CALLOUT_ARG);
+                }
+            }
+            // Read cterm after }
+            if p_end(*p, end) {
+                return Err(ONIGERR_END_PATTERN_IN_GROUP);
+            }
+            c = pfetch_s(p, pattern, end, enc);
+            args
+        } else {
+            Vec::new()
+        };
+        passed_args_num = args.len() as i32;
+        args
     };
+
+    let (builtin_id, callout_in, name_id, start_func, end_func) =
+        if let Some((id, callout_in)) = builtin {
+            (
+                id,
+                callout_in,
+                builtin_callout_name_id(name).unwrap_or(ONIG_NON_NAME_ID),
+                None,
+                None,
+            )
+        } else {
+            let (name_id, callout) = registered.as_ref().unwrap();
+            (
+                -1,
+                callout.callout_in,
+                *name_id,
+                callout.start_func,
+                callout.end_func,
+            )
+        };
 
     // Fill in default args for builtins that have optional args. As in C,
     // the argument count is checked before the closing character.
-    let mut final_args = args;
-    match builtin_id {
-        CALLOUT_BUILTIN_FAIL | CALLOUT_BUILTIN_SKIP => {
-            if !final_args.is_empty() {
-                return Err(ONIGERR_INVALID_CALLOUT_ARG);
+    if builtin.is_some() {
+        match builtin_id {
+            CALLOUT_BUILTIN_FAIL | CALLOUT_BUILTIN_MISMATCH | CALLOUT_BUILTIN_SKIP => {
+                if !final_args.is_empty() {
+                    return Err(ONIGERR_INVALID_CALLOUT_ARG);
+                }
             }
+            CALLOUT_BUILTIN_ERROR => {
+                if final_args.len() > 1 {
+                    return Err(ONIGERR_INVALID_CALLOUT_ARG);
+                }
+                if final_args.is_empty() {
+                    final_args.push(CalloutArg::Long(ONIG_ABORT as i64));
+                } else if !matches!(final_args[0], CalloutArg::Long(_)) {
+                    return Err(ONIGERR_INVALID_CALLOUT_ARG);
+                }
+            }
+            CALLOUT_BUILTIN_MAX => {
+                // args: [TAG|LONG, CHAR]. Arg 0 is required, arg 1 defaults to 'X'
+                if final_args.is_empty() {
+                    return Err(ONIGERR_INVALID_CALLOUT_ARG);
+                }
+                if final_args.len() < 2 {
+                    final_args.push(CalloutArg::Char(b'X'));
+                }
+            }
+            CALLOUT_BUILTIN_COUNT => {
+                // args: [CHAR]. Arg 0 defaults to '>'
+                if final_args.is_empty() {
+                    final_args.push(CalloutArg::Char(b'>'));
+                }
+            }
+            CALLOUT_BUILTIN_CMP => {
+                // args: [TAG|LONG, STRING, TAG|LONG]. All 3 required
+                if final_args.len() != 3 {
+                    return Err(ONIGERR_INVALID_CALLOUT_ARG);
+                }
+            }
+            _ => {}
         }
-        CALLOUT_BUILTIN_MAX => {
-            // args: [TAG|LONG, CHAR]. Arg 0 is required, arg 1 defaults to 'X'
-            if final_args.is_empty() {
-                return Err(ONIGERR_INVALID_CALLOUT_ARG);
-            }
-            if final_args.len() < 2 {
-                final_args.push(CalloutArg::Char(b'X'));
-            }
-        }
-        CALLOUT_BUILTIN_COUNT => {
-            // args: [CHAR]. Arg 0 defaults to '>'
-            if final_args.is_empty() {
-                final_args.push(CalloutArg::Char(b'>'));
-            }
-        }
-        CALLOUT_BUILTIN_CMP => {
-            // args: [TAG|LONG, STRING, TAG|LONG]. All 3 required
-            if final_args.len() != 3 {
-                return Err(ONIGERR_INVALID_CALLOUT_ARG);
-            }
-        }
-        _ => {}
     }
 
     if c != cterm {
@@ -5392,6 +5606,10 @@ fn prs_callout_of_name(
     entry.of = OnigCalloutOf::Name as i32;
     entry.callout_in = callout_in;
     entry.builtin_id = builtin_id;
+    entry.name_id = name_id;
+    entry.start_func = start_func;
+    entry.end_func = end_func;
+    entry.passed_args_num = passed_args_num;
     entry.args = final_args;
 
     // Register tag
@@ -5414,8 +5632,159 @@ fn prs_callout_of_name(
     Ok(node_new_callout(
         OnigCalloutOf::Name as i32,
         num,
-        builtin_id,
+        if builtin_id >= 0 { builtin_id } else { name_id },
     ))
+}
+
+/// Convert a registration default to the value returned by the callout-args
+/// accessors. `CodePoint` preserves the full C `OnigCodePoint` range.
+fn callout_default_arg(value: &OnigValue) -> CalloutArg {
+    match value {
+        OnigValue::Long(value) => CalloutArg::Long(*value),
+        OnigValue::Char(value) => CalloutArg::CodePoint(*value),
+        OnigValue::String { start } => CalloutArg::Str(start.clone()),
+        OnigValue::Tag(value) => CalloutArg::TagId(*value),
+        OnigValue::Void => CalloutArg::Long(0),
+    }
+}
+
+/// Parse typed arguments for a registered callout. This follows C's
+/// `prs_callout_args`: `LONG` is preferred when its mask permits it, while
+/// `CHAR`, `STRING`, and `TAG` retain their registered type.
+fn prs_callout_args_typed(
+    p: &mut usize,
+    end: usize,
+    pattern: &[u8],
+    env: &ParseEnv,
+    types: &[u32],
+) -> Result<Vec<CalloutArg>, i32> {
+    const MAX_CALLOUT_ARG_BYTE_LENGTH: usize = 128;
+
+    let enc = env.enc;
+    let mut args = Vec::with_capacity(types.len());
+    let mut delimiter;
+    loop {
+        if p_end(*p, end) {
+            return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+        }
+
+        let mut bytes = Vec::new();
+        let mut char_count = 0;
+        let mut escaped = false;
+        let mut escaped_start = 0;
+        let mut contained_escape = false;
+        loop {
+            if p_end(*p, end) {
+                return Err(ONIGERR_INVALID_CALLOUT_PATTERN);
+            }
+            let char_start = *p;
+            let codepoint = pfetch_s(p, pattern, end, enc);
+            if escaped {
+                escaped = false;
+                char_count += 1;
+                if codepoint != '\\' as u32 && codepoint != '}' as u32 && codepoint != ',' as u32 {
+                    char_count += 1;
+                }
+                let copy_start = if codepoint == '\\' as u32
+                    || codepoint == '}' as u32
+                    || codepoint == ',' as u32
+                {
+                    char_start
+                } else {
+                    escaped_start
+                };
+                bytes.extend_from_slice(&pattern[copy_start..*p]);
+            } else if codepoint == '\\' as u32 {
+                escaped = true;
+                contained_escape = true;
+                escaped_start = char_start;
+            } else if codepoint == '}' as u32 || codepoint == ',' as u32 {
+                delimiter = codepoint;
+                break;
+            } else {
+                char_count += 1;
+                bytes.extend_from_slice(&pattern[char_start..*p]);
+            }
+            if bytes.len() > MAX_CALLOUT_ARG_BYTE_LENGTH {
+                return Err(ONIGERR_INVALID_CALLOUT_ARG);
+            }
+        }
+
+        if char_count != 0 {
+            if args.len() >= types.len() || args.len() >= ONIG_CALLOUT_MAX_ARGS_NUM {
+                return Err(ONIGERR_INVALID_CALLOUT_ARG);
+            }
+            let mut arg_type = types[args.len()];
+            let parsed = if arg_type & OnigType::Long as u32 != 0 {
+                match parse_callout_long(enc, &bytes) {
+                    Some(value) => {
+                        arg_type = OnigType::Long as u32;
+                        Some(CalloutArg::Long(value))
+                    }
+                    None => {
+                        arg_type &= !(OnigType::Long as u32);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            let arg = if let Some(arg) = parsed {
+                arg
+            } else if arg_type == OnigType::Char as u32 {
+                if char_count != 1 || bytes.is_empty() {
+                    return Err(ONIGERR_INVALID_CALLOUT_ARG);
+                }
+                CalloutArg::CodePoint(enc.mbc_to_code(&bytes, bytes.len()))
+            } else if arg_type == OnigType::String as u32 {
+                CalloutArg::Str(bytes)
+            } else if arg_type == OnigType::Tag as u32 {
+                if contained_escape || !is_allowed_callout_tag_name(enc, &bytes) {
+                    return Err(ONIGERR_INVALID_CALLOUT_TAG_NAME);
+                }
+                CalloutArg::Tag(bytes)
+            } else {
+                return Err(ONIGERR_INVALID_CALLOUT_ARG);
+            };
+            args.push(arg);
+        }
+
+        if delimiter == '}' as u32 {
+            break;
+        }
+    }
+
+    if args.len() > types.len() {
+        return Err(ONIGERR_INVALID_CALLOUT_ARG);
+    }
+    Ok(args)
+}
+
+fn parse_callout_long(enc: OnigEncoding, bytes: &[u8]) -> Option<i64> {
+    if bytes.is_empty() {
+        return None;
+    }
+    let mut value = 0_i64;
+    let mut sign = 1_i64;
+    let mut first = true;
+    let mut p = 0;
+    while p < bytes.len() {
+        let codepoint = enc.mbc_to_code(&bytes[p..], bytes.len() - p);
+        p += enc.mbc_enc_len(&bytes[p..]);
+        if first && (codepoint == '+' as u32 || codepoint == '-' as u32) {
+            if codepoint == '-' as u32 {
+                sign = -1;
+            }
+        } else if (b'0' as u32..=b'9' as u32).contains(&codepoint) {
+            value = value
+                .checked_mul(10)?
+                .checked_add((codepoint - b'0' as u32) as i64)?;
+        } else {
+            return None;
+        }
+        first = false;
+    }
+    value.checked_mul(sign)
 }
 
 /// Scan callout arguments up to `cterm` and count them - C's
@@ -5712,6 +6081,7 @@ fn prs_callout_of_contents(
     entry.of = OnigCalloutOf::Contents as i32;
     entry.callout_in = callout_in;
     entry.builtin_id = -1;
+    entry.content = Some(pattern[code_start..code_end].to_vec());
 
     if let Some((tag_start, tag_end)) = tag {
         let tag_bytes = &pattern[tag_start..tag_end];
