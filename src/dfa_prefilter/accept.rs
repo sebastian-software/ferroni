@@ -5,10 +5,10 @@
 //! no match, the pattern has none, and only an exact seek's match is a match
 //! of the pattern. Under `(?i)`, a class such as `[a-z¡-￿0-9]` holds
 //! characters with multi-character case folds (`ß`, `ﬀ`), and the parser
-//! adds the strings they fold to (`ss`, `ff`, ...) as alternatives beside
-//! the class: some seventy alternations of strings per occurrence. Kept, they
-//! push a precise seek past `MAX_NFA_STATES`; the scanner's seek, which
-//! stands in for it, approximates the class bytewise and is inexact.
+//! adds the strings they fold to as alternatives beside the class, as C
+//! does (`ss` as `[sSſ][sSſ]`, `ff`, ...): some seventy per occurrence.
+//! Kept, they push a precise seek past `MAX_NFA_STATES`; the scanner's seek,
+//! which stands in for it, approximates the class bytewise and is inexact.
 //!
 //! [`derive_accept`] reads the same tuned tree into a seek whose every match
 //! is a match of the pattern at the same start: its language is a subset of
@@ -18,9 +18,10 @@
 //! exactly leaves the pattern without an accept seek:
 //!
 //! - The strings a class's case folds add beside it are left out (a branch
-//!   of an alternation led by a class that is a string or an alternation of
-//!   strings). Leaving out branches of an alternation outside any negative
-//!   look-around or atomic group only removes ways to match.
+//!   of an alternation led by a class that is a string, an alternation of
+//!   strings, or a short sequence of strings and small classes, see
+//!   `fold_strings`). Leaving out branches of an alternation outside any
+//!   negative look-around or atomic group only removes ways to match.
 //! - Classes are sets of code points, written as UTF-8 exactly
 //!   (`ClassUnicode`), not as the seek's byte approximation.
 //! - A negative look-ahead or look-behind of one character (`(?!-)`,
@@ -506,10 +507,16 @@ fn one_char_set(node: &Node) -> Option<ClassUnicode> {
     }
 }
 
-/// The literal strings of a branch that is a string or an alternation of
-/// strings, the shape of the case folds a class adds beside itself, or
-/// `None` for another branch.
-fn fold_strings(node: &Node) -> Option<Vec<&[u8]>> {
+/// The most strings a sequence of classes in a fold branch may stand for.
+/// A case fold reads at most three characters, each with a few case
+/// variants: `ffi` as `[fF][fF][iI]` stands for eight.
+const MAX_FOLD_STRINGS: usize = 64;
+
+/// The literal strings of a branch that is a string, an alternation of
+/// strings, or a sequence of strings and small positive classes, or `None`
+/// for another branch. The parser adds a class's multi-character case folds
+/// beside it as such sequences, as C does (`ß` as `[sSſ][sSſ]`).
+fn fold_strings(node: &Node) -> Option<Vec<Vec<u8>>> {
     fn literal(node: &Node) -> Option<&[u8]> {
         match &node.inner {
             NodeInner::String(sn)
@@ -520,9 +527,48 @@ fn fold_strings(node: &Node) -> Option<Vec<&[u8]>> {
             _ => None,
         }
     }
+    // The strings one item of a sequence reads.
+    fn item_strings(node: &Node) -> Option<Vec<Vec<u8>>> {
+        if let Some(text) = literal(node) {
+            return Some(vec![text.to_vec()]);
+        }
+        let NodeInner::CClass(cc) = &node.inner else {
+            return None;
+        };
+        if cc.is_not() {
+            return None;
+        }
+        let mut strings = Vec::new();
+        for (lo, hi) in class_members(cc) {
+            for code in lo..=hi {
+                if strings.len() == MAX_FOLD_STRINGS {
+                    return None;
+                }
+                strings.push(char::from_u32(code)?.to_string().into_bytes());
+            }
+        }
+        Some(strings)
+    }
     match &node.inner {
-        NodeInner::Alt(_) => cons_items(node).into_iter().map(literal).collect(),
-        _ => literal(node).map(|s| vec![s]),
+        NodeInner::Alt(_) => cons_items(node)
+            .into_iter()
+            .map(|branch| literal(branch).map(<[u8]>::to_vec))
+            .collect(),
+        NodeInner::List(_) => {
+            let mut strings = vec![Vec::new()];
+            for item in cons_items(node) {
+                let next = item_strings(item)?;
+                if strings.len() * next.len() > MAX_FOLD_STRINGS {
+                    return None;
+                }
+                strings = strings
+                    .iter()
+                    .flat_map(|head| next.iter().map(move |tail| [&head[..], tail].concat()))
+                    .collect();
+            }
+            Some(strings)
+        }
+        _ => literal(node).map(|text| vec![text.to_vec()]),
     }
 }
 
@@ -658,7 +704,7 @@ impl AcceptWalk<'_> {
                     if class_led && k > 0 {
                         if let Some(strings) = fold_strings(branch) {
                             for string in strings {
-                                self.left_out.add(string);
+                                self.left_out.add(&string);
                             }
                             continue;
                         }

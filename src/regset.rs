@@ -4371,14 +4371,20 @@ mod tests {
                 folded_literal_tries: 33,
                 // Four of them have a start map too weak to search
                 // (`extra_start_map_filters`), which still dispatches them.
-                without_optimizer: 10,
+                // The case folds of `(?<![-\w])(start|end)` merge into a start
+                // map at their first items (`branch_start_map`).
+                without_optimizer: 9,
                 capture_tracking: 0,
                 fused_look_behinds: 64,
                 stepping_look_behinds: 11,
                 // A positive look-behind ends a guard (#259). The counted
                 // character repeats (ADR-008) replace 16 `{n,}` loops that
                 // pushed; their first bytes let 18 more pushes take a guard.
-                byte_set_push_guards: 1282,
+                // A class's multi-character case folds are sequences led by
+                // a class, as in C (`[sSſ][sSſ]`), not strings: their pushes
+                // take a byte-set guard where one-byte guards led the
+                // unravelled strings, 11,305 of them before and 288 after.
+                byte_set_push_guards: 1880,
                 unguarded_pushes: 65,
             }
         );
@@ -4488,12 +4494,14 @@ mod tests {
             },
             Operation {
                 opcode: OpCode::CClassMb,
-                payload: OperationPayload::CClassMb { mb: Vec::new() },
+                payload: OperationPayload::CClassMb {
+                    mb: vec![1, 0xE9, 0xE9],
+                },
             },
             Operation {
                 opcode: OpCode::CClassMix,
                 payload: OperationPayload::CClassMix {
-                    mb: Vec::new(),
+                    mb: vec![1, 0xE9, 0xE9],
                     bsp: Box::new([0; BITSET_REAL_SIZE]),
                 },
             },

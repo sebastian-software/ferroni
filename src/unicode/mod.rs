@@ -181,6 +181,14 @@ pub(crate) fn case_fold_group_1(code: OnigCodePoint) -> Option<(OnigCodePoint, &
     None
 }
 
+/// The other members of the single-char fold group whose fold target is
+/// `code`, or None when `code` is not a fold target. C:
+/// `onigenc_unicode_fold1_key` and `FOLDS1_UNFOLDS`.
+#[inline]
+pub(crate) fn fold1_unfolds(code: OnigCodePoint) -> Option<&'static [u32]> {
+    fold1_key(code).map(folds1_unfolds)
+}
+
 /// Find UNFOLD_KEY entries with codepoints in [lo, hi].
 /// Returns a slice of (codepoint, folds1_index, fold_len) tuples.
 #[inline]

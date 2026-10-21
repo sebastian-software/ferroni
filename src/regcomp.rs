@@ -5303,12 +5303,13 @@ fn alt_reduce_in_look_behind(node: &mut Node) {
 
 /// Strip redundant multi-char case-fold alternatives from a CClass body in a lookbehind.
 ///
-/// When `(?i)` is active, the parser wraps a CClass into `Alt(CClass, str1, str2, ...)`
-/// where each string is a multi-char case fold (e.g., ß→"ss"). In a lookbehind, this
-/// causes O(N) separate lookbehind anchors to be created, each costing ~7 ops.
+/// When `(?i)` is active, the parser wraps a CClass into `Alt(CClass, f1, f2, ...)`
+/// where each branch reads a multi-char case fold (e.g., ß→"ss" as `[sSſ][sSſ]`). In a
+/// lookbehind, this causes O(N) separate lookbehind anchors to be created, each costing
+/// ~7 ops.
 ///
-/// If the last codepoint of every multi-char fold string is already in the CClass,
-/// the multi-char alternatives are redundant: the single-char CClass check already
+/// If every character a fold branch can end with is already in the CClass, the
+/// multi-char alternatives are redundant: the single-char CClass check already
 /// rejects/accepts those positions. We can safely collapse back to just the CClass.
 fn strip_redundant_casefold_alts_in_lookbehind(node: &mut Node, enc: OnigEncoding) {
     let body = if let NodeInner::Anchor(ref mut an) = node.inner {
@@ -5351,25 +5352,19 @@ fn strip_redundant_casefold_alts_in_lookbehind(node: &mut Node, enc: OnigEncodin
                 next
             };
 
-            // Check if this branch is a String node (multi-char fold)
-            if let NodeInner::String(ref sn) = branch.inner {
-                if sn.s.is_empty() {
-                    covered = false;
-                    break;
+            // A fold branch is a string or a list ending in one or in a class.
+            let mut last = branch;
+            while let NodeInner::List(ref cons) = last.inner {
+                match cons.cdr.as_deref() {
+                    Some(next) => last = next,
+                    None => last = &cons.car,
                 }
-                has_alts = true;
-                // Decode the last codepoint from the string
-                let bytes = &sn.s;
-                let last_code = decode_last_codepoint(bytes, enc);
-                if !onig_is_code_in_cc(enc, last_code, cc) {
-                    covered = false;
-                    break;
-                }
-            } else {
-                // Non-string alternative — don't optimize
+            }
+            if !ends_in_cc(last, cc, enc) {
                 covered = false;
                 break;
             }
+            has_alts = true;
 
             // Move to next in chain
             if let NodeInner::Alt(_) = next.inner {
@@ -5393,6 +5388,37 @@ fn strip_redundant_casefold_alts_in_lookbehind(node: &mut Node, enc: OnigEncodin
         if let NodeInner::Alt(cons) = old_inner {
             **body = *cons.car;
         }
+    }
+}
+
+/// Whether every character `node`, a string or a positive class read as the
+/// end of a case-fold branch, can end with is in `cc`. False for anything
+/// else, and for a class of more than a few members.
+fn ends_in_cc(node: &Node, cc: &CClassNode, enc: OnigEncoding) -> bool {
+    match &node.inner {
+        NodeInner::String(sn) => {
+            !sn.s.is_empty() && onig_is_code_in_cc(enc, decode_last_codepoint(&sn.s, enc), cc)
+        }
+        NodeInner::CClass(last) if !last.is_not() => {
+            // The fold classes hold a character's case variants: a few codes.
+            let mut codes: Vec<OnigCodePoint> = (0..SINGLE_BYTE_SIZE)
+                .filter(|&code| {
+                    bitset_at(&last.bs, code) && enc.code_to_mbclen(code as OnigCodePoint) == 1
+                })
+                .map(|code| code as OnigCodePoint)
+                .collect();
+            let ranges = last.mbuf.as_ref().map(crate::regparse::code_ranges_of);
+            for (from, to) in ranges.unwrap_or_default() {
+                if to - from >= 8 {
+                    return false;
+                }
+                codes.extend(from..=to);
+            }
+            !codes.is_empty()
+                && codes.len() <= 8
+                && codes.iter().all(|&code| onig_is_code_in_cc(enc, code, cc))
+        }
+        _ => false,
     }
 }
 
@@ -9830,11 +9856,8 @@ const MAX_NARROWED_CLASS_CODES: usize = 16;
 /// single code points (at most `MAX_NARROWED_CLASS_CODES`). `CClassMix` reads
 /// a lead byte that makes a character of its own (`enclen` 1) against the
 /// bitset, and a longer character against the code ranges, at the code that
-/// `mbc_to_code` decodes. The decoder masks every continuation byte to its
-/// low six bits, so a lead byte of length n reaches the codes from its base
-/// up to `base + 2^(6(n-1)) - 1`, overlong forms included: U+FF03 is reached
-/// from `EF` and from `F0 8F BC 83`. `None` for any other class or encoding,
-/// where the caller keeps every byte from 0x80 up.
+/// `mbc_to_code` decodes (`first_bytes::utf8_lead_bytes`). `None` for any
+/// other class or encoding, where the caller keeps every byte from 0x80 up.
 fn utf8_class_lead_bytes(cc: &CClassNode, enc: OnigEncoding) -> Option<BitSet> {
     if cc.is_not() || !std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
         return None;
@@ -9852,22 +9875,13 @@ fn utf8_class_lead_bytes(cc: &CClassNode, enc: OnigEncoding) -> Option<BitSet> {
     if count > MAX_NARROWED_CLASS_CODES || words.len() < 1 + 2 * count {
         return None;
     }
-    for &[low, high] in words[1..1 + 2 * count].as_chunks::<2>().0 {
-        if low != high {
-            return None;
-        }
-        for lead in 0xC2..=0xF4_u8 {
-            let (len, mask_bits) = match lead {
-                0xC2..=0xDF => (2, 5),
-                0xE0..=0xEF => (3, 4),
-                _ => (4, 3),
-            };
-            let shift = 6 * (len - 1);
-            let base = (u32::from(lead) & ((1 << mask_bits) - 1)) << shift;
-            if (base..base + (1 << shift)).contains(&low) {
-                bitset_set_bit(&mut leads, lead as usize);
-            }
-        }
+    let codes = words[1..1 + 2 * count].as_chunks::<2>().0;
+    if codes.iter().any(|&[low, high]| low != high) {
+        return None;
+    }
+    let decodable = crate::first_bytes::utf8_lead_bytes(codes);
+    for (word, lead_word) in leads.iter_mut().zip(decodable) {
+        *word |= lead_word;
     }
     Some(leads)
 }
@@ -10442,6 +10456,44 @@ impl StartMaps {
     }
 }
 
+/// Rust-only: the map of an alternation branch at its start, for the extra
+/// maps. C's merge drops an alternation's map where the branches' best maps
+/// sit at different distances, and a sequence often prefers the map of a
+/// later item: a class's multi-character case folds (`[aA]ʾ`, `[ἀἈ][ιΙ]`)
+/// are such sequences beside the class. Where that merge leaves no map, the
+/// branches' maps at their start, each the map of the branch's first item
+/// where that item reads a character, still give every byte a match can
+/// start with. `None` where a branch has no such map.
+fn branch_start_map(
+    node: &Node,
+    branch: &OptNode,
+    enc: OnigEncoding,
+    env_mm: &MinMaxLen,
+    scan_env: &ParseEnv,
+    start_maps: &StartMaps,
+) -> Option<OptMap> {
+    if branch.map.value > 0 && branch.map.mm.max == 0 {
+        return Some(branch.map);
+    }
+    let NodeInner::List(cons) = &node.inner else {
+        return None;
+    };
+    let mut first = OptNode::new();
+    let mut first_mm = *env_mm;
+    if optimize_nodes(
+        &cons.car,
+        &mut first,
+        enc,
+        &mut first_mm,
+        scan_env,
+        start_maps,
+    ) != 0
+    {
+        return None;
+    }
+    (first.len.min > 0 && first.map.value > 0 && first.map.mm.max == 0).then_some(first.map)
+}
+
 /// `start_maps` can add the Rust-only byte maps C does not compute: the
 /// ASCII half of a class with multibyte members or a negated class, and the
 /// `\w` / `\s` / `\d` types in a multibyte encoding. Only
@@ -10506,12 +10558,40 @@ fn optimize_nodes(
         }
         NodeInner::Alt(_) => {
             let mut first = true;
+            // Rust-only: with the extra maps, the branches' maps at their
+            // start (`branch_start_map`), merged from the branch at which
+            // C's merge drops the map; `None` while C's merge holds one.
+            let mut start_map: Option<OptMap> = None;
+            let mut start_maps_hold = start_maps.extra;
             let mut cur = node;
             while let NodeInner::Alt(cons) = &cur.inner {
                 let mut xo = OptNode::new();
                 let r = optimize_nodes(&cons.car, &mut xo, enc, env_mm, scan_env, start_maps);
                 if r != 0 {
                     return r;
+                }
+                // `alt_merge_opt_map` keeps no map from here on.
+                let c_drops = if first {
+                    xo.map.value == 0
+                } else {
+                    start_map.is_some()
+                        || (opt.map.value > 0
+                            && (xo.map.value == 0 || opt.map.mm.max < xo.map.mm.min))
+                };
+                if start_maps_hold && c_drops {
+                    // C's map so far merges the branches' start maps where
+                    // it sits at the start.
+                    if start_map.is_none() && !first {
+                        start_map = (opt.map.mm.max == 0).then_some(opt.map);
+                        start_maps_hold = start_map.is_some();
+                    }
+                    match branch_start_map(&cons.car, &xo, enc, env_mm, scan_env, start_maps) {
+                        Some(map) if start_maps_hold => match &mut start_map {
+                            Some(to) => alt_merge_opt_map(enc, to, &map),
+                            None => start_map = Some(map),
+                        },
+                        _ => start_maps_hold = false,
+                    }
                 }
                 if first {
                     *opt = xo;
@@ -10522,6 +10602,11 @@ fn optimize_nodes(
                 match &cons.cdr {
                     Some(next) => cur = next,
                     None => break,
+                }
+            }
+            if start_maps_hold && opt.map.value == 0 {
+                if let Some(map) = start_map.filter(|map| map.value > 0) {
+                    opt.map = map;
                 }
             }
         }
@@ -11650,15 +11735,17 @@ fn guard_backtrack_pushes(reg: &mut RegexType, literal_first: &[Option<u8>; MEM_
             }
             None => match crate::first_bytes::guard_byte_map(reg, pc + 1, &mut walk) {
                 Some(bits) if bits.iter().all(|&word| word == !0) => continue,
-                Some(bits) => match crate::first_bytes::guard_skipped_retries(reg, pc + 1, &bits) {
-                    Some(GuardRetries::Fixed(retries)) => (bits, retries),
-                    Some(GuardRetries::ByChecks(max)) if max < GUARD_RETRIES_BY_CHECKS => {
-                        reg.check_dependent_guards = true;
-                        (bits, GUARD_RETRIES_BY_CHECKS | max)
+                Some(bits) => {
+                    match crate::first_bytes::guard_skipped_retries(reg, pc + 1, &bits, &mut walk) {
+                        Some(GuardRetries::Fixed(retries)) => (bits, retries),
+                        Some(GuardRetries::ByChecks(max)) if max < GUARD_RETRIES_BY_CHECKS => {
+                            reg.check_dependent_guards = true;
+                            (bits, GUARD_RETRIES_BY_CHECKS | max)
+                        }
+                        Some(GuardRetries::ByChecks(_)) => continue,
+                        None => continue,
                     }
-                    Some(GuardRetries::ByChecks(_)) => continue,
-                    None => continue,
-                },
+                }
                 None => continue,
             },
         };
@@ -14912,8 +14999,11 @@ mod tests {
                 }
             }
         }
-        // The gates exist where the fold classes make chains of guards.
-        assert!(gated_patterns >= 30, "only {gated_patterns} patterns gated");
+        // The gates exist where the fold classes make chains of guards: a
+        // class with many multi-character folds (`[[:word:]]`, a Greek
+        // range). A class with a few has as many alternatives, too few to
+        // gate.
+        assert!(gated_patterns >= 12, "only {gated_patterns} patterns gated");
     }
 
     /// A fused look-behind must also give the upstream sequence's retry-limit

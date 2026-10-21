@@ -30,6 +30,93 @@ fn add_high_bytes(map: &mut ByteMap) {
     map[0x80 / BITS_IN_ROOM..].fill(!0);
 }
 
+/// The UTF-8 lead bytes whose characters can decode into one of the code
+/// `ranges` (sorted and disjoint, as in a code range buffer). The decoder
+/// masks every continuation byte to its low six bits (`mbc_to_code`), so a
+/// lead byte of length n reaches the codes from its base up to
+/// `base + 2^(6(n-1)) - 1`, overlong forms included: U+FF03 is reached from
+/// `EF` and from `F0 8F BC 83`. A byte of length 1 in the table (a
+/// continuation byte, `C0`, `C1`, `F5`-`FF`) starts no multibyte character.
+pub(crate) fn utf8_lead_bytes(ranges: &[[u32; 2]]) -> BitSet {
+    // Per length: its lead bytes and the bits its continuation bytes add.
+    const LENGTHS: [(u32, u32, u32); 3] = [(0xC2, 0xDF, 6), (0xE0, 0xEF, 12), (0xF0, 0xF4, 18)];
+    let mut leads = [0; BITSET_REAL_SIZE];
+    for (first, last, shift) in LENGTHS {
+        // The ranges not yet passed; both they and the blocks ascend.
+        let mut rest = ranges;
+        for lead in first..=last {
+            let base = (lead & (0xFF >> (shift / 6 + 2))) << shift;
+            let block_end = base | ((1 << shift) - 1);
+            // Skip the ranges that end before the block, galloping.
+            let mut bound = 1;
+            while bound < rest.len() && rest[bound][1] < base {
+                bound *= 2;
+            }
+            let passed = rest[..bound.min(rest.len())].partition_point(|&[_, to]| to < base);
+            rest = &rest[passed..];
+            let Some(&[from, _]) = rest.first() else {
+                break;
+            };
+            if from <= block_end {
+                bitset_set_bit(&mut leads, lead as usize);
+            }
+        }
+    }
+    leads
+}
+
+/// The UTF-8 lead bytes of the multibyte class instructions a pattern's
+/// guard analysis has read, by the address of their code ranges. The
+/// analysis reads the same instructions for every push it guards, and a
+/// class can hold hundreds of ranges (`[[:alnum:]]`). The instructions live
+/// as long as the analysis, which only replaces pushes.
+#[derive(Default)]
+pub(crate) struct ClassHeads(Vec<(*const u32, BitSet)>);
+
+/// Classes with fewer ranges are cheaper to read again than to look up.
+const CACHED_CLASS_RANGES: usize = 16;
+
+/// The bytes a multibyte class's code ranges `mb` (C's layout: the count,
+/// then the pairs) can start: with `ascii`, the ASCII codes in them, which
+/// `CClassMb` looks up there; in UTF-8 the lead bytes that decode into them
+/// (`utf8_lead_bytes`), in another encoding every byte from 0x80 up.
+fn add_code_range_heads(
+    reg: &RegexType,
+    map: &mut ByteMap,
+    mb: &[u32],
+    ascii: bool,
+    heads: Option<&mut ClassHeads>,
+) {
+    let count = mb.first().map_or(0, |&n| n as usize);
+    let pairs = mb.get(1..).unwrap_or_default().as_chunks::<2>().0;
+    let ranges = &pairs[..count.min(pairs.len())];
+    if ascii {
+        for &[from, to] in ranges.iter().take_while(|&&[from, _]| from < 0x80) {
+            for code in from..=to.min(0x7F) {
+                add_exact(map, code as u8);
+            }
+        }
+    }
+    if !std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
+        add_high_bytes(map);
+        return;
+    }
+    let leads = match heads {
+        Some(ClassHeads(known)) if count >= CACHED_CLASS_RANGES => {
+            match known.iter().find(|(at, _)| *at == mb.as_ptr()) {
+                Some((_, leads)) => *leads,
+                None => {
+                    let leads = utf8_lead_bytes(ranges);
+                    known.push((mb.as_ptr(), leads));
+                    leads
+                }
+            }
+        }
+        _ => utf8_lead_bytes(ranges),
+    };
+    add_bitset(map, &leads, false);
+}
+
 /// `[0-9A-Za-z_]`, or its complement.
 fn add_ascii_word(map: &mut ByteMap, inverted: bool) {
     let mut word = [0; BITSET_REAL_SIZE];
@@ -57,6 +144,16 @@ enum FirstBytes {
 /// Records the bytes `op` can consume first. `None` when the payload does not
 /// fit the opcode.
 fn record_first_bytes(reg: &RegexType, op: &Operation, map: &mut ByteMap) -> Option<FirstBytes> {
+    record_first_bytes_with(reg, op, map, None)
+}
+
+/// [`record_first_bytes`], reading multibyte classes through `heads`.
+fn record_first_bytes_with(
+    reg: &RegexType,
+    op: &Operation,
+    map: &mut ByteMap,
+    mut heads: Option<&mut ClassHeads>,
+) -> Option<FirstBytes> {
     Some(match op.opcode {
         OpCode::Str1 | OpCode::Str2 | OpCode::Str3 | OpCode::Str4 | OpCode::Str5 => {
             let OperationPayload::Exact { s } = &op.payload else {
@@ -94,18 +191,29 @@ fn record_first_bytes(reg: &RegexType, op: &Operation, map: &mut ByteMap) -> Opt
             FirstBytes::Consumes
         }
         OpCode::CClassMb => {
-            add_high_bytes(map);
+            let OperationPayload::CClassMb { mb } = &op.payload else {
+                return None;
+            };
+            add_code_range_heads(reg, map, mb, true, heads.take());
             FirstBytes::Consumes
         }
         OpCode::CClassMbNot => {
             add_all(map);
             FirstBytes::Consumes
         }
-        OpCode::CClassMix | OpCode::CClassMixNot => {
+        OpCode::CClassMix => {
+            let OperationPayload::CClassMix { bsp, mb } = &op.payload else {
+                return None;
+            };
+            add_bitset(map, bsp, false);
+            add_code_range_heads(reg, map, mb, false, heads.take());
+            FirstBytes::Consumes
+        }
+        OpCode::CClassMixNot => {
             let OperationPayload::CClassMix { bsp, .. } = &op.payload else {
                 return None;
             };
-            add_bitset(map, bsp, op.opcode == OpCode::CClassMixNot);
+            add_bitset(map, bsp, true);
             add_high_bytes(map);
             FirstBytes::Consumes
         }
@@ -129,15 +237,18 @@ fn record_first_bytes(reg: &RegexType, op: &Operation, map: &mut ByteMap) -> Opt
             FirstBytes::ConsumesOrFallsThrough
         }
         OpCode::CClassMixStar => {
-            let OperationPayload::CClassMix { bsp, .. } = &op.payload else {
+            let OperationPayload::CClassMix { bsp, mb } = &op.payload else {
                 return None;
             };
             add_bitset(map, bsp, false);
-            add_high_bytes(map);
+            add_code_range_heads(reg, map, mb, false, heads.take());
             FirstBytes::ConsumesOrFallsThrough
         }
         OpCode::CClassMbStar => {
-            add_high_bytes(map);
+            let OperationPayload::CClassMb { mb } = &op.payload else {
+                return None;
+            };
+            add_code_range_heads(reg, map, mb, true, heads.take());
             FirstBytes::ConsumesOrFallsThrough
         }
         OpCode::CClassNotStar => {
@@ -291,6 +402,7 @@ fn skips_negative_look_around(reg: &RegexType, pc: usize, op: &Operation, alt: u
 pub(crate) struct GuardWalk {
     pending: Vec<usize>,
     visited: Vec<usize>,
+    heads: ClassHeads,
 }
 
 /// The bytes the main path of a push can consume first, when it starts at
@@ -323,7 +435,7 @@ pub(crate) fn guard_byte_map(
         walk.visited.push(pc);
         let op = reg.ops.get(pc)?;
 
-        match record_first_bytes(reg, op, &mut map)? {
+        match record_first_bytes_with(reg, op, &mut map, Some(&mut walk.heads))? {
             FirstBytes::Consumes => {
                 saw_consumer = true;
                 continue;
@@ -443,6 +555,7 @@ pub(crate) fn guard_skipped_retries(
     reg: &RegexType,
     entry: usize,
     map: &ByteMap,
+    walk: &mut GuardWalk,
 ) -> Option<GuardRetries> {
     /// Instructions one run may execute.
     const MAX_RUN_STEPS: usize = 4096;
@@ -476,14 +589,15 @@ pub(crate) fn guard_skipped_retries(
     }
 
     // One run with the check outcomes in `passes`.
-    let run = |passes: u32, checks: &mut Vec<usize>| -> Option<u32> {
+    let mut run = |passes: u32, checks: &mut Vec<usize>| -> Option<u32> {
         let mut stack: Vec<Entry> = Vec::new();
         let mut pc = entry;
         let mut failures = 0u32;
         for _ in 0..MAX_RUN_STEPS {
             let op = reg.ops.get(pc)?;
             let mut scratch: ByteMap = [0; BITSET_REAL_SIZE];
-            let next = match record_first_bytes(reg, op, &mut scratch)? {
+            let next = match record_first_bytes_with(reg, op, &mut scratch, Some(&mut walk.heads))?
+            {
                 // Cannot consume the current byte, which is outside `map`.
                 // Inside a negative look-around the walk for `map` skipped,
                 // an instruction may consume other bytes: give up there, as
@@ -957,4 +1071,61 @@ fn first_byte_map_from(
     }
 
     saw_consumer.then_some(map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+    use crate::regenc::Encoding;
+
+    /// A lead byte is in the set exactly where the block of codes its
+    /// characters decode to, malformed continuation bytes included, meets
+    /// the ranges. The decoder reads six bits from every continuation byte,
+    /// so a lead byte's characters decode to every code from the one with
+    /// all-zero bits to the one with all-one bits, and to no other.
+    #[test]
+    fn utf8_lead_bytes_are_the_decodable_ones() {
+        let classes: [&[[u32; 2]]; 7] = [
+            &[[0xE9, 0xE9]],
+            &[[0x3A9, 0x3A9], [0x3C9, 0x3C9], [0x2126, 0x2126]],
+            &[[0x80, 0x7FF]],
+            &[[0x800, 0xFFFF]],
+            &[[0x10000, 0x10FFFF]],
+            &[[0x41, 0x5A], [0xFF03, 0xFF03]],
+            &[[0x7FF, 0x800], [0xFFFF, 0x10000]],
+        ];
+        let decode = |lead: u8, tail: u8, len: usize| {
+            let bytes = [lead, tail, tail, tail];
+            ONIG_ENCODING_UTF8.mbc_to_code(&bytes[..len], len)
+        };
+        for ranges in classes {
+            let leads = utf8_lead_bytes(ranges);
+            for lead in 0x80..=0xFF_u8 {
+                let len = ONIG_ENCODING_UTF8.mbc_enc_len(&[lead]);
+                let decodable = len > 1 && {
+                    let (first, last) = (decode(lead, 0x80, len), decode(lead, 0xBF, len));
+                    assert_eq!(decode(lead, 0x00, len), first, "lead {lead:#x}");
+                    assert_eq!(decode(lead, 0xFF, len), last, "lead {lead:#x}");
+                    ranges.iter().any(|&[from, to]| from <= last && first <= to)
+                };
+                assert_eq!(
+                    bitset_at(&leads, lead as usize),
+                    decodable,
+                    "{ranges:x?} lead {lead:#x}"
+                );
+            }
+        }
+        // `ΩωΩ`: their own lead bytes, and the overlong forms from `E0` and
+        // `F0` (`E0 8E A9` decodes to `Ω`).
+        assert_eq!(
+            bitset_members(&utf8_lead_bytes(&[
+                [0x3A9, 0x3A9],
+                [0x3C9, 0x3C9],
+                [0x2126, 0x2126]
+            ]))
+            .collect::<Vec<_>>(),
+            [0xCE, 0xCF, 0xE0, 0xE2, 0xF0]
+        );
+    }
 }
