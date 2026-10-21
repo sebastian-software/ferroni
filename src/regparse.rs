@@ -977,76 +977,78 @@ fn add_code_range_to_buf(pbuf: &mut Option<BBuf>, from: OnigCodePoint, to: OnigC
         std::mem::swap(&mut from, &mut to);
     }
 
-    if pbuf.is_none() {
-        *pbuf = Some(new_code_range());
-    }
-    let bbuf = pbuf.as_mut().unwrap();
+    let bbuf = pbuf.get_or_insert_with(new_code_range);
     let n = bbuf_read_code_point(bbuf, 0) as usize;
+    // C: `data[i]`, the range code points after the count.
+    let data = |bbuf: &BBuf, i: usize| bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + i));
 
-    // Read existing range data
-    let mut data = Vec::with_capacity(n * 2);
-    for i in 0..n * 2 {
-        data.push(bbuf_read_code_point(bbuf, SIZE_CODE_POINT * (1 + i)));
-    }
-
-    // Binary search for insertion point
     let mut low = 0usize;
     let mut bound = n;
     while low < bound {
         let x = (low + bound) >> 1;
-        if from > data[x * 2 + 1] {
+        if from > data(bbuf, x * 2 + 1) {
             low = x + 1;
         } else {
             bound = x;
         }
     }
 
-    let mut high = if to == u32::MAX { n } else { low };
+    let mut high = if to == OnigCodePoint::MAX { n } else { low };
     bound = n;
     while high < bound {
         let x = (high + bound) >> 1;
-        if to + 1 >= data[x * 2] {
+        if to.wrapping_add(1) >= data(bbuf, x * 2) {
             high = x + 1;
         } else {
             bound = x;
         }
     }
 
-    let inc_n: i32 = low as i32 + 1 - high as i32;
-    if (n as i32 + inc_n) > ONIG_MAX_MULTI_BYTE_RANGES_NUM {
+    let inc_n = low as i64 + 1 - high as i64;
+    if n as i64 + inc_n > ONIG_MAX_MULTI_BYTE_RANGES_NUM as i64 {
         return ONIGERR_TOO_MANY_MULTI_BYTE_RANGES;
     }
 
+    // `inc_n != 1` means `high > low`, so both ranges exist.
     if inc_n != 1 {
-        if low < data.len() / 2 && from > data[low * 2] {
-            from = data[low * 2];
+        if from > data(bbuf, low * 2) {
+            from = data(bbuf, low * 2);
         }
-        if high > 0 && high - 1 < data.len() / 2 && to < data[(high - 1) * 2 + 1] {
-            to = data[(high - 1) * 2 + 1];
+        if to < data(bbuf, (high - 1) * 2 + 1) {
+            to = data(bbuf, (high - 1) * 2 + 1);
         }
     }
 
-    // Rebuild the data array with the merged range
-    let new_n = (n as i32 + inc_n) as usize;
-    let mut new_data = Vec::with_capacity(new_n * 2);
-    for i in 0..low {
-        new_data.push(data[i * 2]);
-        new_data.push(data[i * 2 + 1]);
-    }
-    new_data.push(from);
-    new_data.push(to);
-    for i in high..n {
-        new_data.push(data[i * 2]);
-        new_data.push(data[i * 2 + 1]);
+    // Move the ranges after the merged one in place, as C does, instead of
+    // rebuilding the buffer: `or_code_range_buf` adds every range of one class
+    // to the other, and a rebuild per range made nested classes of Unicode
+    // properties compile about 20 times slower than C (issue #419).
+    if inc_n != 0 && high < n {
+        let from_pos = SIZE_CODE_POINT * (1 + high * 2);
+        let to_pos = SIZE_CODE_POINT * (1 + (low + 1) * 2);
+        if inc_n > 0 {
+            // BB_MOVE_RIGHT
+            let size = (n - high) * 2 * SIZE_CODE_POINT;
+            if bbuf.data.len() < to_pos + size {
+                bbuf.data.resize(to_pos + size, 0);
+            }
+            bbuf.data.copy_within(from_pos..from_pos + size, to_pos);
+        } else {
+            // BB_MOVE_LEFT_REDUCE
+            let used = bbuf.data.len();
+            bbuf.data.copy_within(from_pos..used, to_pos);
+            bbuf.data.truncate(used - (from_pos - to_pos));
+        }
     }
 
-    // Write back to bbuf
-    let total_size = SIZE_CODE_POINT * (1 + new_n * 2);
-    bbuf.data.resize(total_size, 0);
+    let pos = SIZE_CODE_POINT * (1 + low * 2);
+    bbuf_write_code_point(bbuf, pos, from);
+    bbuf_write_code_point(bbuf, pos + SIZE_CODE_POINT, to);
+    let new_n = (n as i64 + inc_n) as usize;
     bbuf_write_code_point(bbuf, 0, new_n as OnigCodePoint);
-    for (i, code) in new_data.iter().enumerate() {
-        bbuf_write_code_point(bbuf, SIZE_CODE_POINT * (1 + i), *code);
-    }
+    // C keeps stale bytes past the last range when a merge at the end shrinks
+    // the count; the buffer here always ends after its last range.
+    bbuf.data.truncate(SIZE_CODE_POINT * (1 + new_n * 2));
 
     0
 }
@@ -7834,6 +7836,68 @@ fn parse_pattern_tree(pattern: &[u8], env: &mut ParseEnv) -> Result<Box<Node>, i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `add_code_range_to_buf` merges as C does: a new range absorbs every
+    /// range it overlaps and a range that starts right after it, but not one
+    /// that ends right before it. Random insertions, in place, agree with that
+    /// rule, and the buffer always ends after its last range.
+    #[test]
+    fn add_code_range_to_buf_merges_as_c_does() {
+        // The overlap test uses the new range's own bounds, not the merged
+        // extent: `[5, 20]` absorbs `[21, 30]`, but `[5, 15]` added to
+        // `[10, 20], [21, 30]` leaves `[21, 30]` apart.
+        fn insert(model: &mut Vec<(u32, u32)>, from: u32, to: u32) {
+            let (from, to) = (from.min(to), from.max(to));
+            let (mut merged_from, mut merged_to) = (from, to);
+            model.retain(|&(f, t)| {
+                let merged = t >= from && f <= to.saturating_add(1);
+                if merged {
+                    merged_from = merged_from.min(f);
+                    merged_to = merged_to.max(t);
+                }
+                !merged
+            });
+            model.push((merged_from, merged_to));
+            model.sort_unstable();
+        }
+        let mut seed = 0x2545_f491u32;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        for round in 0..300 {
+            let mut buf = None;
+            let mut model = Vec::new();
+            for _ in 0..1 + round % 50 {
+                let a = next() % 400;
+                let b = a + next() % 24;
+                let (from, to) = if next() % 2 == 0 { (a, b) } else { (b, a) };
+                assert_eq!(add_code_range_to_buf(&mut buf, from, to), 0);
+                insert(&mut model, from, to);
+                let bbuf = buf.as_ref().unwrap();
+                assert_eq!(code_ranges_of(bbuf), model, "round {round}");
+                assert_eq!(bbuf.data.len(), SIZE_CODE_POINT * (1 + model.len() * 2));
+            }
+        }
+
+        let mut buf = None;
+        assert_eq!(add_code_range_to_buf(&mut buf, 10, 20), 0);
+        assert_eq!(add_code_range_to_buf(&mut buf, 21, 30), 0);
+        assert_eq!(code_ranges_of(buf.as_ref().unwrap()), [(10, 20), (21, 30)]);
+        assert_eq!(add_code_range_to_buf(&mut buf, 5, 9), 0);
+        assert_eq!(code_ranges_of(buf.as_ref().unwrap()), [(5, 20), (21, 30)]);
+        assert_eq!(add_code_range_to_buf(&mut buf, 3, 15), 0);
+        assert_eq!(code_ranges_of(buf.as_ref().unwrap()), [(3, 20), (21, 30)]);
+        assert_eq!(add_code_range_to_buf(&mut buf, 40, 50), 0);
+        assert_eq!(add_code_range_to_buf(&mut buf, 15, OnigCodePoint::MAX), 0);
+        assert_eq!(
+            code_ranges_of(buf.as_ref().unwrap()),
+            [(3, OnigCodePoint::MAX)]
+        );
+    }
+
     use crate::regsyntax::OnigSyntaxOniguruma;
 
     /// A kept case-fold expansion is the one `fold_cclass` computes, for
