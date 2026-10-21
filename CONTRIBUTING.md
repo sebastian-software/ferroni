@@ -232,7 +232,8 @@ python3 scripts/compare-production.py run /tmp/production-results
 ```
 
 Use a fresh output directory. The runner retains per-engine eligibility reasons,
-source/corpus/build context, three process repetitions, balanced execution order,
+source/corpus/build context, three process repetitions with environments padded
+to one size and offset per repetition, balanced execution order,
 and Criterion raw samples and intervals. Short runs require `--diagnostic` and
 cannot support publication. See the corpus guide for filters, optional memory
 measurements, operation contracts and interpretation limits.

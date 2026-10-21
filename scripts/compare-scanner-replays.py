@@ -267,11 +267,17 @@ def estimate(raw, benchmark):
     return found[0]
 
 
-def measure(binary, benchmark, raw, args):
+def timed_environment(benchmark, raw):
+    return dict(os.environ, SCANNER_REPLAY_ID=benchmark, CRITERION_HOME=str(raw))
+
+
+def measure(binary, benchmark, raw, args, environment_size):
     raw.mkdir(parents=True)
     command = [str(binary), "--exact", benchmark, "--bench", "--noplot", "--sample-size", str(args.samples),
                "--measurement-time", str(args.measure_seconds), "--warm-up-time", str(args.warmup_seconds)]
-    env = dict(os.environ, SCANNER_REPLAY_ID=benchmark, CRITERION_HOME=str(raw))
+    # One environment size per repetition, as in the regex comparison; see
+    # ALIGNMENT_VARIABLE in compare-production.py.
+    env = PRODUCTION.aligned_environment(timed_environment(benchmark, raw), environment_size)
     with (raw / "process.log").open("w") as log:
         result = subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=args.timeout)
     if result.returncode:
@@ -395,9 +401,9 @@ SHARED_CONTEXT = ("format_version", "lane", "commit", "git_status", "build_profi
                   "trace_sha256", "cargo_lock_sha256", "rustflags", "rustc", "cargo", "cc", "native_sources",
                   "engine_source_overrides", "pcre2_build", "engines", "profiles", "cases", "repetitions", "samples",
                   "measure_seconds", "warmup_seconds", "timeout", "seed", "diagnostic", "order_policy", "machine",
-                  "system")
+                  "system", "environment_alignment")
 HOST_CONTEXT = ("only_run", "started_utc", "platform", "host", "host_note", "python", "binaries",
-                "source_snapshot_sha256", "command")
+                "source_snapshot_sha256", "command", "environment_sizes")
 
 
 def admit(context, eligibility, measurements, repetitions, directory):
@@ -548,7 +554,10 @@ def main():
                "warmup_seconds": args.warmup_seconds, "only_run": args.only_run, "timeout": args.timeout,
                "seed": args.seed, "diagnostic": args.diagnostic or args.command == "validate", "command": sys.argv,
                "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions; "
-                               "one process per case and engine"}
+                               "one process per case and engine",
+               "environment_alignment": {"variable": PRODUCTION.ALIGNMENT_VARIABLE,
+                                         "offsets_bytes": list(PRODUCTION.ALIGNMENT_OFFSETS),
+                                         "rounding_bytes": PRODUCTION.ALIGNMENT_ROUNDING}}
     context["source_snapshot_sha256"], context["native_sources"] = snapshot_source(directory, paths)
     shutil.copyfile(ROOT / "Cargo.lock", directory / "Cargo.lock")
 
@@ -571,9 +580,14 @@ def main():
     eligible = {(r["case"], r["engine"]) for r in eligibility if r["status"] == TIMED_STATUS}
     measurements, order = [], []
     if args.command == "run":
-        for rep in range(args.repetitions):
-            if args.only_run is not None and rep != args.only_run - 1:
-                continue
+        repetitions = [rep for rep in range(args.repetitions) if args.only_run is None or rep == args.only_run - 1]
+        sizes = {rep: PRODUCTION.aligned_size([timed_environment(bench_id(case, engine), directory / f"raw/run-{rep + 1}/{case}/{engine}")
+                                               for case, engine in PRODUCTION.ordered_pairs(cases, engines, rep, args.seed)
+                                               if (case, engine) in eligible], rep)
+                 for rep in repetitions if eligible}
+        context["environment_sizes"] = {str(rep + 1): size for rep, size in sizes.items()}
+        write_json(directory / "context.json", context)
+        for rep in repetitions:
             for case, engine in PRODUCTION.ordered_pairs(cases, engines, rep, args.seed):
                 if (case, engine) not in eligible:
                     continue
@@ -582,7 +596,8 @@ def main():
                 record = {"case": case, "engine": engine, "repetition": rep, "raw": relative}
                 print(f"run {rep + 1}: {benchmark}", flush=True)
                 try:
-                    command, value = measure(binaries[REPLAYS[scanner_group(case)]], benchmark, directory / relative, args)
+                    command, value = measure(binaries[REPLAYS[scanner_group(case)]], benchmark, directory / relative, args,
+                                             sizes[rep])
                     record.update(status="measured", estimate=value)
                 except (subprocess.TimeoutExpired, RuntimeError) as error:
                     command = None
