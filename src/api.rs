@@ -3136,8 +3136,7 @@ mod tests {
 
     /// The seek's automaton is built by the first search that consults it,
     /// not by the builder: iterating and the `*_with` methods never build
-    /// it, the first standard search does, and a clone shares it. Threads
-    /// that race to the first search all get the one automaton.
+    /// it, the first standard search does, and a clone shares it.
     #[cfg(feature = "dfa-prefilter")]
     #[test]
     fn seek_automaton_is_built_by_the_first_search_that_consults_it() {
@@ -3157,18 +3156,6 @@ mod tests {
         assert!(re.is_match(text));
         assert!(re.seek_built() && clone.seek_built());
 
-        let re = Regex::new(pattern).unwrap();
-        std::thread::scope(|scope| {
-            for _ in 0..4 {
-                let re = re.clone();
-                scope.spawn(move || {
-                    assert!(re.is_match(text));
-                    assert!(!re.is_match("no match here"));
-                });
-            }
-        });
-        assert!(re.seek_built());
-
         // A pure literal has no automaton to build, and one that does not
         // build stays unbuilt.
         let literal = Regex::new("sing").unwrap();
@@ -3177,6 +3164,25 @@ mod tests {
         let unseekable = RegexBuilder::new(pattern).dfa(false).build().unwrap();
         assert!(unseekable.is_match(text));
         assert!(!unseekable.seek_built());
+    }
+
+    /// Threads that race to a regex's first search get the one automaton and
+    /// the matcher's answers.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn seek_automaton_is_built_once_for_racing_threads() {
+        let _limits = crate::regexec::shared_limits();
+        let re = Regex::new(r"\b[a-z]+ing\b").unwrap();
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let re = re.clone();
+                scope.spawn(move || {
+                    assert!(re.is_match("nothing here but sing and ring"));
+                    assert!(!re.is_match("no match here"));
+                });
+            }
+        });
+        assert!(re.seek_built());
     }
 
     /// A match of a `&str` search slices the text in `as_str` instead of
