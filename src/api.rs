@@ -199,6 +199,9 @@ impl SearchOptions {
             time_limit: self
                 .timeout
                 .map_or(process_wide.time_limit, timeout_to_millis),
+            progress_callout: process_wide.progress_callout,
+            retraction_callout: process_wide.retraction_callout,
+            callout_user_data: process_wide.callout_user_data,
         })
     }
 }

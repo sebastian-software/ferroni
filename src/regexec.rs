@@ -741,10 +741,13 @@ pub fn onig_get_name_id_by_callout_args(args: &OnigCalloutArgs) -> i32 {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onig_get_contents_by_callout_args<'a>(_args: &OnigCalloutArgs<'a>) -> Option<&'a [u8]> {
-    // Contents of (?{...}) callouts are not stored in CalloutListEntry
-    // in the current implementation. Returns None.
-    None
+pub fn onig_get_contents_by_callout_args<'a>(args: &OnigCalloutArgs<'a>) -> Option<&'a [u8]> {
+    let ext = args.reg.extp.as_ref()?;
+    let idx = (args.num - 1) as usize;
+    let entry = ext.callout_list.get(idx)?;
+    (entry.of == OnigCalloutOf::Contents as i32)
+        .then_some(entry.content.as_deref())
+        .flatten()
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -765,7 +768,7 @@ pub fn onig_get_passed_args_num_by_callout_args(args: &OnigCalloutArgs) -> i32 {
     if let Some(ref ext) = reg.extp {
         let idx = (args.num - 1) as usize;
         if idx < ext.callout_list.len() {
-            return ext.callout_list[idx].args.len() as i32;
+            return ext.callout_list[idx].passed_args_num;
         }
     }
     0
@@ -835,8 +838,8 @@ pub fn onig_get_contents_end_by_callout_args(args: &OnigCalloutArgs) -> *const u
         if idx < ext.callout_list.len() {
             let entry = &ext.callout_list[idx];
             if entry.of == OnigCalloutOf::Contents as i32 {
-                if let Some(ref content_end) = entry.content_end {
-                    return content_end.as_ptr();
+                if let Some(ref content) = entry.content {
+                    return content.as_ptr().wrapping_add(content.len());
                 }
             }
         }
@@ -1470,7 +1473,9 @@ pub(crate) enum StackEntry {
     /// Callout entry (STK_CALLOUT) - for retraction callbacks
     Callout {
         num: i32, // callout list index (1-based)
-        id: i32,  // builtin id (for name callouts) or ONIG_NON_NAME_ID
+        builtin_id: i32,
+        name_id: i32,
+        callback: Option<OnigCalloutFunc>,
     },
     /// Lazy choice point for star opcodes - represents a range of backtrack positions.
     /// Instead of pushing one Alt per matched character, we push a single AltLazy
@@ -1518,21 +1523,27 @@ const FINISH_PCODE: usize = usize::MAX;
 // MatchArg - runtime match state (port of C's MatchArg)
 // ============================================================================
 
-/// Rust-only (ADR-008): the four limits one search applies. A search takes
-/// them from `OnigMatchParam` (`onig_search_with_param`) or, where a caller
-/// passes `None`, from the process-wide settings read when the search starts.
-/// Keeping them out of `OnigMatchParam` lets the per-search API reuse the
-/// thread-cached `MatchArg` without building the parameter block.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Rust-only (ADR-008): the limits and callout settings one search applies.
+/// A search takes them from `OnigMatchParam` (`onig_search_with_param`) or,
+/// where a caller passes `None`, from the process-wide settings read when the
+/// search starts. Keeping them out of `OnigMatchParam` lets the per-search API
+/// reuse the thread-cached `MatchArg` without building the parameter block.
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct SearchLimits {
     pub(crate) match_stack_limit: u32,
     pub(crate) retry_limit_in_match: u64,
     pub(crate) retry_limit_in_search: u64,
     pub(crate) time_limit: u64,
+    pub(crate) progress_callout: Option<OnigCalloutFunc>,
+    pub(crate) retraction_callout: Option<OnigCalloutFunc>,
+    // Store the opaque C user-data pointer as an integer so cached MatchArg
+    // remains Send + Sync. It is cast back only for the callback invocation.
+    pub(crate) callout_user_data: usize,
 }
 
 impl SearchLimits {
-    /// The process-wide limits, as `onig_initialize_match_param` reads them.
+    /// The process-wide limits and callout settings, as
+    /// `onig_initialize_match_param` reads them.
     #[inline]
     pub(crate) fn process_wide() -> Self {
         SearchLimits {
@@ -1540,6 +1551,9 @@ impl SearchLimits {
             retry_limit_in_match: RETRY_LIMIT_IN_MATCH.load(Ordering::Relaxed),
             retry_limit_in_search: RETRY_LIMIT_IN_SEARCH.load(Ordering::Relaxed),
             time_limit: TIME_LIMIT.load(Ordering::Relaxed),
+            progress_callout: onig_get_progress_callout(),
+            retraction_callout: onig_get_retraction_callout(),
+            callout_user_data: 0,
         }
     }
 }
@@ -1552,6 +1566,9 @@ impl From<&OnigMatchParam> for SearchLimits {
             retry_limit_in_match: mp.retry_limit_in_match,
             retry_limit_in_search: mp.retry_limit_in_search,
             time_limit: mp.time_limit,
+            progress_callout: mp.progress_callout,
+            retraction_callout: mp.retraction_callout,
+            callout_user_data: mp.callout_user_data as usize,
         }
     }
 }
@@ -1566,6 +1583,11 @@ pub(crate) struct MatchArg {
     pub start: usize, // search start position (for \G anchor)
     pub best_len: i32,
     pub best_s: usize,
+    /// Best match length reported to CALLBACK_EACH_MATCH during this search.
+    /// C only invokes the callback for FIND_LONGEST when a search-level best
+    /// improves, even when one attempt finds several progressively longer
+    /// alternatives.
+    callout_each_match_best_len: i32,
     /// Skip target position set by `onig_builtin_skip`. The search loop
     /// advances past this position after a mismatch.
     pub skip_search: usize,
@@ -1575,6 +1597,10 @@ pub(crate) struct MatchArg {
     pub retry_limit_in_search_counter: u64,
     pub match_stack_limit: u32,
     pub time_limit: u64, // milliseconds, 0 = unlimited
+    /// Progress and retraction callbacks copied from the match parameters.
+    pub progress_callout: Option<OnigCalloutFunc>,
+    pub retraction_callout: Option<OnigCalloutFunc>,
+    pub callout_user_data: usize,
     /// OP_CALLs made by this search (C: `msa->subexp_call_in_search_counter`),
     /// counted only while `onig_set_subexp_call_limit_in_search` is non-zero.
     subexp_call_in_search_counter: u64,
@@ -1640,12 +1666,16 @@ impl MatchArg {
             start,
             best_len: ONIG_MISMATCH,
             best_s: 0,
+            callout_each_match_best_len: ONIG_MISMATCH,
             skip_search: 0,
             retry_limit_in_match: limits.retry_limit_in_match,
             retry_limit_in_search: limits.retry_limit_in_search,
             retry_limit_in_search_counter: 0,
             match_stack_limit: limits.match_stack_limit,
             time_limit: limits.time_limit,
+            progress_callout: limits.progress_callout,
+            retraction_callout: limits.retraction_callout,
+            callout_user_data: limits.callout_user_data,
             time_counter: 0,
             time_end: None,
             subexp_call_in_search_counter: 0,
@@ -1701,6 +1731,7 @@ impl MatchArg {
         self.start = start;
         self.best_len = ONIG_MISMATCH;
         self.best_s = 0;
+        self.callout_each_match_best_len = ONIG_MISMATCH;
         self.skip_search = 0;
         self.retry_limit_in_match = limits.retry_limit_in_match;
         self.retry_limit_in_search = limits.retry_limit_in_search;
@@ -1708,6 +1739,9 @@ impl MatchArg {
         self.subexp_call_in_search_counter = 0;
         self.match_stack_limit = limits.match_stack_limit;
         self.time_limit = limits.time_limit;
+        self.progress_callout = limits.progress_callout;
+        self.retraction_callout = limits.retraction_callout;
+        self.callout_user_data = limits.callout_user_data;
         self.start_time_limit();
     }
 
@@ -1724,7 +1758,12 @@ impl MatchArg {
         self.start = start;
         self.best_len = ONIG_MISMATCH;
         self.best_s = 0;
+        self.callout_each_match_best_len = ONIG_MISMATCH;
         self.skip_search = 0;
+        let callbacks = SearchLimits::process_wide();
+        self.progress_callout = callbacks.progress_callout;
+        self.retraction_callout = callbacks.retraction_callout;
+        self.callout_user_data = callbacks.callout_user_data;
         self.retry_limit_in_search_counter = 0;
         self.subexp_call_in_search_counter = 0;
         self.start_time_limit();
@@ -1742,6 +1781,7 @@ impl MatchArg {
         self.start = start;
         self.best_len = ONIG_MISMATCH;
         self.best_s = 0;
+        self.callout_each_match_best_len = ONIG_MISMATCH;
     }
 
     /// Start the time limit for a new search (C: `TIME_LIMIT_INIT`).
@@ -1844,15 +1884,23 @@ fn stack_pop(
     reg: &RegexType,
     callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
     str_data: &[u8],
+    end: usize,
+    start: usize,
+    right_range: usize,
+    current_s: usize,
+    retry_counter: u64,
+    msa: &mut MatchArg,
     subexp_call_nest_counter: &mut u64,
-) -> Option<(usize, usize, i32)> {
+) -> Result<Option<(usize, usize, i32)>, i32> {
     loop {
-        let entry = stack.pop()?;
+        let Some(entry) = stack.pop() else {
+            return Ok(None);
+        };
         match entry {
             StackEntry::Alt {
                 pcode, pstr, zid, ..
             } => {
-                return Some((pcode, pstr, zid));
+                return Ok(Some((pcode, pstr, zid)));
             }
             StackEntry::AltLazy {
                 pcode,
@@ -1891,7 +1939,7 @@ fn stack_pop(
                         }
                     }
                 }
-                return Some((pcode, pstr, -1));
+                return Ok(Some((pcode, pstr, -1)));
             }
             _ => match pop_level {
                 StackPopLevel::Free => {
@@ -1931,9 +1979,47 @@ fn stack_pop(
                             mem_start_stk[*zid] = *prev_start;
                             mem_end_stk[*zid] = *prev_end;
                         }
-                        StackEntry::Callout { num, id } => {
-                            // Retraction callback
-                            run_builtin_callout_retraction(reg, *num, *id, callout_data);
+                        StackEntry::Callout {
+                            num,
+                            builtin_id,
+                            name_id,
+                            callback,
+                        } => {
+                            // Builtin state and user callbacks share the C
+                            // STK_CALLOUT entry, but keep their dispatch data
+                            // separate in the Rust stack value.
+                            if *builtin_id >= 0 {
+                                run_builtin_callout_retraction(
+                                    reg,
+                                    *num,
+                                    *builtin_id,
+                                    callout_data,
+                                );
+                            }
+                            if let Some(callback) = callback {
+                                let result = invoke_callout(
+                                    *callback,
+                                    OnigCalloutIn::Retraction,
+                                    *name_id,
+                                    *num,
+                                    reg,
+                                    str_data,
+                                    end,
+                                    start,
+                                    right_range,
+                                    current_s,
+                                    retry_counter,
+                                    msa,
+                                    callout_data,
+                                );
+                                match result {
+                                    ONIG_CALLOUT_SUCCESS | ONIG_CALLOUT_FAIL => {}
+                                    result if result > 0 => {
+                                        return Err(ONIGERR_INVALID_ARGUMENT);
+                                    }
+                                    result => return Err(result),
+                                }
+                            }
                         }
                         // C: POP_CALL
                         StackEntry::Return => {
@@ -3062,7 +3148,7 @@ fn string_cmp_ic(
 // ============================================================================
 
 /// Run a builtin callout in the progress direction.
-/// Returns ONIG_CALLOUT_SUCCESS or ONIG_CALLOUT_FAIL.
+/// Returns a callout result or an error/mismatch code from the builtin.
 fn run_builtin_callout(
     reg: &RegexType,
     num: i32,
@@ -3088,6 +3174,18 @@ fn run_builtin_callout(
             builtin_max(entry, is_retraction, &mut callout_data[idx], max_val)
         }
         CALLOUT_BUILTIN_COUNT => builtin_count(entry, is_retraction, &mut callout_data[idx]),
+        CALLOUT_BUILTIN_MISMATCH => ONIG_MISMATCH,
+        CALLOUT_BUILTIN_ERROR => {
+            let Some(CalloutArg::Long(value)) = entry.args.first() else {
+                return ONIGERR_INVALID_CALLOUT_ARG;
+            };
+            let code = *value as i32;
+            if code >= 0 || crate::regerror::onig_is_error_code_needs_param(code) {
+                ONIGERR_INVALID_CALLOUT_BODY
+            } else {
+                code
+            }
+        }
         CALLOUT_BUILTIN_CMP => {
             let lv = resolve_callout_arg(&entry.args[0], &ext.callout_list, callout_data);
             let rv = resolve_callout_arg(&entry.args[2], &ext.callout_list, callout_data);
@@ -3100,6 +3198,64 @@ fn run_builtin_callout(
             ONIG_CALLOUT_SUCCESS
         }
         _ => ONIG_CALLOUT_SUCCESS,
+    }
+}
+
+/// Invoke a registered callback with the same match context as the C
+/// `CALLOUT_BODY` macro. The temporary cell lets the public callout-args
+/// accessors update the VM's callout-data and skip-search state without unsafe
+/// pointers or holding a registry lock across user code.
+#[allow(clippy::too_many_arguments)]
+fn invoke_callout(
+    callback: OnigCalloutFunc,
+    callout_in: OnigCalloutIn,
+    name_id: i32,
+    num: i32,
+    reg: &RegexType,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    right_range: usize,
+    current: usize,
+    retry_counter: u64,
+    msa: &mut MatchArg,
+    callout_data: &mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+) -> i32 {
+    let data = std::mem::take(callout_data);
+    let restore = CalloutDataRestore {
+        destination: callout_data,
+        data: RefCell::new(data),
+    };
+    let skip_search = Cell::new(msa.skip_search);
+    let args = OnigCalloutArgs::new(
+        callout_in,
+        name_id,
+        num,
+        reg,
+        str_data,
+        end,
+        start,
+        right_range,
+        current,
+        retry_counter,
+    )
+    .with_callout_data(&restore.data)
+    .with_skip_search(&skip_search);
+    let result = callback(&args, msa.callout_user_data as *mut std::ffi::c_void);
+    msa.skip_search = skip_search.get();
+    result
+}
+
+/// Restores the callout-data vector even if user code unwinds. C callbacks
+/// cannot unwind through the ABI, but Rust callbacks can panic.
+struct CalloutDataRestore<'a> {
+    destination: &'a mut Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>,
+    data: RefCell<Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]>>,
+}
+
+impl Drop for CalloutDataRestore<'_> {
+    fn drop(&mut self) {
+        *self.destination = std::mem::take(self.data.get_mut());
     }
 }
 
@@ -4261,7 +4417,9 @@ fn match_at_in_scan(
     // untracked.
     if msa.region.is_some() && reg.num_mem > 0 && msa.capture_position == Some(FIRST_ATTEMPT) {
         msa.capture_position = Some(sstart);
-        return match_at_impl::<true, false>(reg, str_data, end, in_right_range, sstart, msa, None);
+        let result =
+            match_at_impl::<true, false>(reg, str_data, end, in_right_range, sstart, msa, None);
+        return result;
     }
     // Untracked runs skip the MemStartPush/MemEndPush stack entries. With a
     // match stack limit configured that would change when the limit trips,
@@ -4272,6 +4430,8 @@ fn match_at_in_scan(
         && reg.num_mem > 0
         && msa.capture_position.is_none_or(|at| at == sstart))
         || reg.needs_capture_tracking
+        || (msa.options.contains(ONIG_OPTION_CALLBACK_EACH_MATCH)
+            && onig_get_callback_each_match().is_some())
         || (msa.match_stack_limit != 0 && (reg.push_mem_start | reg.push_mem_end) != 0)
     {
         match_at_impl::<true, false>(reg, str_data, end, in_right_range, sstart, msa, scan)
@@ -4484,7 +4644,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     // never trips. Like C, OP_CALL reads both limits where it checks them.
     let mut subexp_call_nest_counter: u64 = 0;
 
-    // Callout data: per-callout mutable slots (indexed by callout num - 1)
+    // Callout data: per-callout mutable slots (indexed by callout num - 1).
+    // This is still attempt-local; C keeps these slots in MatchParam across
+    // candidate starts. TOTAL_COUNT remains unsupported until that lifetime
+    // is ported, so it is not recognized by prs_callout_of_name.
     let callout_count = reg.extp.as_ref().map_or(0, |e| e.callout_num as usize);
     let mut callout_data: Vec<[i64; ONIG_CALLOUT_DATA_SLOT_NUM]> = if callout_count == 0 {
         Vec::new()
@@ -4680,8 +4843,60 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             }
                         }
 
-                        // For non-FIND_LONGEST, return immediately
-                        if !opton_find_longest(options) {
+                        let each_match = if options.contains(ONIG_OPTION_CALLBACK_EACH_MATCH)
+                            && (!opton_find_longest(options) || n > msa.callout_each_match_best_len)
+                        {
+                            onig_get_callback_each_match()
+                        } else {
+                            None
+                        };
+                        if let Some(callback) = each_match {
+                            // The C callback accepts a nullable region. The
+                            // Rust callback type is non-null, so synthesize a
+                            // fully populated region when the caller omitted
+                            // one.
+                            let mut callback_region = OnigRegion::new();
+                            let region = if let Some(region) = msa.region.as_ref() {
+                                region
+                            } else {
+                                if let Err(err) = populate_region_for_match(
+                                    &mut callback_region,
+                                    reg,
+                                    num_mem,
+                                    keep.min(s),
+                                    s,
+                                    &stack,
+                                    mem_start_stk,
+                                    mem_end_stk,
+                                ) {
+                                    best_len = err;
+                                    break;
+                                }
+                                &callback_region
+                            };
+                            let result = callback(
+                                str_data,
+                                region,
+                                msa.callout_user_data as *mut std::ffi::c_void,
+                            );
+                            if result < 0 {
+                                best_len = result;
+                                break;
+                            }
+                            if !opton_find_longest(options) {
+                                // C treats any nonnegative callback result as
+                                // a request to backtrack and report the next
+                                // match, rather than returning this one.
+                                best_len = ONIG_MISMATCH;
+                            } else {
+                                msa.callout_each_match_best_len = n;
+                                msa.best_len = best_len;
+                                msa.best_s = sstart;
+                            }
+                            goto_fail = true;
+                        // For non-FIND_LONGEST, return immediately when no
+                        // each-match callback is installed.
+                        } else if !opton_find_longest(options) {
                             msa.match_len = best_len;
                             // C leaves through match_at_end, which adds
                             // this match's retries to the search's count.
@@ -4692,12 +4907,12 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                                 msa.mem_end_stk = mem_end_vec;
                             }
                             return best_len;
+                        } else {
+                            // FIND_LONGEST: save best and continue searching
+                            msa.best_len = best_len;
+                            msa.best_s = sstart;
+                            goto_fail = true; // backtrack to try longer matches
                         }
-
-                        // FIND_LONGEST: save best and continue searching
-                        msa.best_len = best_len;
-                        msa.best_s = sstart;
-                        goto_fail = true; // backtrack to try longer matches
                     } else {
                         // FIND_LONGEST but shorter/equal match: backtrack for more
                         goto_fail = true;
@@ -7167,23 +7382,59 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Callout opcodes
             // ================================================================
             OpCode::CalloutContents => {
-                // Callout of contents: always succeeds (we don't execute user code)
                 let num = match &op.payload {
                     OperationPayload::CalloutContents { num } => *num,
                     _ => 0,
                 };
-                if let Some(ref ext) = reg.extp {
-                    if num >= 1 && (num as usize) <= ext.callout_list.len() {
-                        let entry = &ext.callout_list[(num - 1) as usize];
-                        if (entry.callout_in & CALLOUT_IN_RETRACTION) != 0 {
+                let callout_in = reg
+                    .extp
+                    .as_ref()
+                    .and_then(|ext| ext.callout_list.get((num - 1) as usize))
+                    .map_or(0, |entry| entry.callout_in);
+                let mut call_result = ONIG_CALLOUT_SUCCESS;
+                if (callout_in & CALLOUT_IN_PROGRESS) != 0
+                    && let Some(callback) = msa.progress_callout
+                {
+                    call_result = invoke_callout(
+                        callback,
+                        OnigCalloutIn::Progress,
+                        ONIG_NON_NAME_ID,
+                        num,
+                        reg,
+                        str_data,
+                        end,
+                        sstart,
+                        right_range,
+                        s,
+                        retry_in_match_counter,
+                        msa,
+                        &mut callout_data,
+                    );
+                }
+                match call_result {
+                    ONIG_CALLOUT_FAIL => goto_fail = true,
+                    ONIG_CALLOUT_SUCCESS => {
+                        if (callout_in & CALLOUT_IN_RETRACTION) != 0
+                            && let Some(callback) = msa.retraction_callout
+                        {
                             stack.push(StackEntry::Callout {
                                 num,
-                                id: ONIG_NON_NAME_ID,
+                                builtin_id: -1,
+                                name_id: ONIG_NON_NAME_ID,
+                                callback: Some(callback),
                             });
                         }
+                        p += 1;
+                    }
+                    result => {
+                        best_len = if result > 0 {
+                            ONIGERR_INVALID_ARGUMENT
+                        } else {
+                            result
+                        };
+                        break;
                     }
                 }
-                p += 1;
             }
             OpCode::AltLiterals => {
                 if let OperationPayload::AltLiterals { trie_idx } = op.payload {
@@ -7205,21 +7456,69 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     OperationPayload::CalloutName { num, id } => (*num, *id),
                     _ => (0, 0),
                 };
-                let call_result =
-                    run_builtin_callout(reg, num, id, false, &mut callout_data, s, msa);
-                if call_result == ONIG_CALLOUT_FAIL {
-                    goto_fail = true;
-                } else {
-                    // Push retraction entry if needed
-                    if let Some(ref ext) = reg.extp {
-                        if num >= 1 && (num as usize) <= ext.callout_list.len() {
-                            let entry = &ext.callout_list[(num - 1) as usize];
-                            if (entry.callout_in & CALLOUT_IN_RETRACTION) != 0 {
-                                stack.push(StackEntry::Callout { num, id });
-                            }
-                        }
-                    }
+                let callout = reg
+                    .extp
+                    .as_ref()
+                    .and_then(|ext| ext.callout_list.get((num - 1) as usize))
+                    .map(|entry| {
+                        (
+                            entry.callout_in,
+                            entry.builtin_id,
+                            entry.name_id,
+                            entry.start_func,
+                        )
+                    });
+                let Some((callout_in, builtin_id, name_id, start_func)) = callout else {
                     p += 1;
+                    continue;
+                };
+                let mut call_result = ONIG_CALLOUT_SUCCESS;
+                if (callout_in & CALLOUT_IN_PROGRESS) != 0 {
+                    if builtin_id >= 0 {
+                        call_result =
+                            run_builtin_callout(reg, num, id, false, &mut callout_data, s, msa);
+                    } else if let Some(callback) = start_func {
+                        call_result = invoke_callout(
+                            callback,
+                            OnigCalloutIn::Progress,
+                            name_id,
+                            num,
+                            reg,
+                            str_data,
+                            end,
+                            sstart,
+                            right_range,
+                            s,
+                            retry_in_match_counter,
+                            msa,
+                            &mut callout_data,
+                        );
+                    }
+                }
+                match call_result {
+                    ONIG_CALLOUT_FAIL => goto_fail = true,
+                    ONIG_CALLOUT_SUCCESS => {
+                        let callback = if builtin_id >= 0 { None } else { start_func };
+                        if (callout_in & CALLOUT_IN_RETRACTION) != 0
+                            && (builtin_id >= 0 || callback.is_some())
+                        {
+                            stack.push(StackEntry::Callout {
+                                num,
+                                builtin_id,
+                                name_id,
+                                callback,
+                            });
+                        }
+                        p += 1;
+                    }
+                    result => {
+                        best_len = if result > 0 {
+                            ONIGERR_INVALID_ARGUMENT
+                        } else {
+                            result
+                        };
+                        break;
+                    }
                 }
             }
         }
@@ -7282,10 +7581,16 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 reg,
                 &mut callout_data,
                 str_data,
+                end,
+                sstart,
+                right_range,
+                s,
+                retry_in_match_counter,
+                msa,
                 &mut subexp_call_nest_counter,
             );
             match pop_result {
-                Some((pcode, pstr, alt_zid)) => {
+                Ok(Some((pcode, pstr, alt_zid))) => {
                     if pcode == FINISH_PCODE {
                         // Hit bottom sentinel - no more alternatives
                         attempt_failed!();
@@ -7294,9 +7599,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     s = pstr;
                     last_alt_zid = alt_zid;
                 }
-                None => {
+                Ok(None) => {
                     // Stack empty - match failed
                     attempt_failed!();
+                }
+                Err(err) => {
+                    best_len = err;
+                    break;
                 }
             }
         }
@@ -7994,6 +8303,8 @@ pub(crate) fn pure_literal_first(
         || opton_find_not_empty(options)
         || opton_match_whole_string(options)
         || opton_check_validity_of_string(options)
+        || (options.contains(ONIG_OPTION_CALLBACK_EACH_MATCH)
+            && onig_get_callback_each_match().is_some())
         || !pure_literal_fast_path_enabled()
     {
         return None;
@@ -8770,6 +9081,8 @@ fn can_use_two_pass_capture_fill(
         && reg.num_mem > 0
         && msa.region.is_some()
         && !opton_find_longest(msa.options)
+        && !(msa.options.contains(ONIG_OPTION_CALLBACK_EACH_MATCH)
+            && onig_get_callback_each_match().is_some())
         && !reg.needs_capture_tracking
         && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
         // Keep this off when wall-time limiting is active: second pass is extra work.
@@ -8954,6 +9267,8 @@ fn capture_map_search(
         || reg.search_start_map.is_some()
         || start_filter.is_some()
         || opton_find_longest(msa.options)
+        || (msa.options.contains(ONIG_OPTION_CALLBACK_EACH_MATCH)
+            && onig_get_callback_each_match().is_some())
         || msa.match_stack_limit != 0
     {
         return None;
@@ -9278,7 +9593,11 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
     // Single-pass scan replaces the position-by-position loop entirely.
     // Works for both bare `alpha|beta` and captured `(alpha|beta)`.
     if let Some(ref ac) = reg.ac_alt {
-        if start <= range && !find_longest {
+        if start <= range
+            && !find_longest
+            && !(msa.options.contains(ONIG_OPTION_CALLBACK_EACH_MATCH)
+                && onig_get_callback_each_match().is_some())
+        {
             // Matches start in `[start, range]` and may extend to
             // `right_range` (C's `data_range`).
             let search_end = right_range.min(end);
@@ -15124,7 +15443,14 @@ mod tests {
             OnigCalloutIn::Progress
         ));
         assert_eq!(onig_get_args_num_by_callout_args(&args), max_args);
-        assert_eq!(onig_get_passed_args_num_by_callout_args(&args), max_args);
+        assert_eq!(
+            onig_get_passed_args_num_by_callout_args(&args),
+            list[1].passed_args_num
+        );
+        assert_eq!(
+            onig_get_passed_args_num_by_callout_args(&args),
+            max_args - 1
+        );
         assert_eq!(
             onig_get_arg_by_callout_args(&args, 0).is_some(),
             max_args > 0
