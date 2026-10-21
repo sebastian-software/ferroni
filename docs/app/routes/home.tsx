@@ -145,7 +145,7 @@ function SpeedSection() {
       intro={
         <>
           Ferroni runs compiled patterns in an interpreter and generates no machine code at runtime.
-          On {summary.case_count} regex tasks taken from Django, Rails, WordPress and seven other
+          On {summary.case_count} regex tasks taken from Django, Rails, WordPress and eight other
           projects, it outpaces every engine measured except PCRE2&rsquo;s JIT, and still wins{" "}
           {jitWins[0] === jitWins[1] ? jitWins[0] : jitWins.join(" to ")} of those tasks.
         </>

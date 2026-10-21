@@ -15,8 +15,8 @@ highlighting, including grammar state, belongs to Ferriki's separate benchmarks.
 [`production_regex/catalog.json`](production_regex/catalog.json) is the complete
 machine-readable record: pinned source files and hashes, original and normalized
 patterns, flags, measured boundary, fixture provenance, source-runtime oracles,
-expected UTF-8 byte output, and license notices. It contains 21 production regex
-steps with 513 upstream-derived inputs, four explicitly controlled literal probes,
+expected UTF-8 byte output, and license notices. It contains 23 production regex
+steps with 743 upstream-derived inputs, four explicitly controlled literal probes,
 and two candidates awaiting admission. Selection precedes timing the new corpus.
 
 | Family | Cases | Operation and boundary |
@@ -34,6 +34,16 @@ and two candidates awaiting admission. Selection precedes timing the new corpus.
 | Markup | Python-Markdown smart emphasis and strong/emphasis | Capture match at an actual candidate offset; excludes tree construction. Coverage is currently only five and two fixtures respectively. |
 | Shortcodes | WordPress | All six captures and whole spans for the upstream registered tag set; excludes shortcode callbacks/rendering. |
 | Graphemes | Symfony String chunk(1) and chunk(2) | Chunk strings including an unmatched tail; already NFC input, with normalization/object construction excluded. |
+| HTML scanning | ferrolink markup scan and attribute split | All spans of comments and start tags over one document slice; all captures over one start tag's attribute text. Excludes ferrolink's slicing, raw-text skipping and character reference decoding. |
+
+The HTML scanning steps are Ferroni's own production use: ferrolink runs them
+through Ferroni, so Ruby's Onigmo, an independent implementation of the same
+syntax, provides their oracle. Their page fixtures are two real documentation
+pages, sliced where ferrolink restarts after a raw-text element, which makes
+them the corpus's largest inputs. How one `Regex` behaves when several threads
+search with it is outside this single-thread comparison; the
+`shared_regex_threads` group of `regression_bench` runs the same two steps on
+1, 4 and 8 threads.
 
 Upstream regression fixtures establish expected semantics. They do **not**
 establish production traffic frequencies, typical document sizes, or a realistic

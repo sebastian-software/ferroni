@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Replay original patterns in Node, Python, Ruby, and the PCRE2 C API.
 
+ferrolink's Oniguruma-syntax steps replay in Ruby's Onigmo, an independent
+implementation of the same syntax.
+
 This verifies isolated regex steps, not complete applications. Requires Node
 with match indices, Ruby, and libpcre2-8 on the host. No network access or
 upstream package installation is needed. Runtime versions are printed.
@@ -42,6 +45,13 @@ results = cases.map do |c|
     position = text.byteslice(0, i['start']).length
     if c['operation'] == 'replace'
       text.gsub(regex) { c['replacement'] }
+    elsif c['operation'] == 'all_matches'
+      spans = []
+      text.scan(regex) do
+        m = Regexp.last_match
+        spans << [text[0...m.begin(0)].bytesize, text[0...m.end(0)].bytesize]
+      end
+      spans
     elsif c['operation'] == 'all_captures'
       groups = []
       text.scan(regex) do
@@ -142,7 +152,7 @@ def pcre_outputs(case, library):
 def main():
     cases = [c for c in json.loads(CATALOG.read_text())["cases"] if not c.get("pending_reason")]
     node_cases = [c for c in cases if c.get("source_runtime") == "ECMAScript RegExp"]
-    ruby_cases = [c for c in cases if c["id"].startswith(("fluent_bit", "rails", "mastodon"))]
+    ruby_cases = [c for c in cases if c["id"].startswith(("fluent_bit", "rails", "mastodon", "ferrolink"))]
     pcre_cases = [c for c in cases if c["id"].startswith(("wordpress", "symfony"))]
     python_cases = [c for c in cases if c not in node_cases + ruby_cases + pcre_cases]
     observations = []
