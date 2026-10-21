@@ -113,17 +113,20 @@ fallible replacement API. Both profiles pass the complete output oracle; the
 baseline additionally receives a fallible preflight check so execution errors
 cannot silently become negative matches.
 
-Standard searches can reuse the engine's cached match workspace. Parameterized
-searches currently create fresh workspace, even with empty options. The API
-profiles expose this cost without changing the engine implementation; both
-compile through the same builder. Rust regex and fancy-regex
-also use their library APIs; C libraries use their public C APIs through the
-existing safe wrappers. Capture outputs materialize every requested span. Native
-replacement APIs are used where available; C replacement loops search spans and
-build the same owned string. Grapheme splitting includes assembling owned chunk
-strings and the unmatched tail. Fixture loading, source checks and serialization
-are outside timing. Each fixture's output is consumed and dropped inside timing;
-the harness does not add a batch-result vector to boolean or first-span calls.
+Both the standard and fallible `*_with` paths reuse the thread-cached
+`MatchArg` when they enter the matcher. Standard single-result find and capture
+methods can consult the adaptive seek gate first; their `*_with` counterparts
+go directly through limit-aware search. That is a source-level work difference,
+but the retained measurements do not isolate its contribution to the observed
+steady-use gap. Both profiles compile through the same builder. Rust regex and
+fancy-regex also use their library APIs; C libraries use their public C APIs
+through the existing safe wrappers. Capture outputs materialize every requested
+span. Native replacement APIs are used where available; C replacement loops
+search spans and build the same owned string. Grapheme splitting includes
+assembling owned chunk strings and the unmatched tail. Fixture loading, source
+checks and serialization are outside timing. Each fixture's output is consumed
+and dropped inside timing; the harness does not add a batch-result vector to
+boolean or first-span calls.
 Input `&str` is trusted UTF-8; validation policy is recorded per engine.
 
 Compile means fresh pattern/context construction, including selected PCRE2 JIT,

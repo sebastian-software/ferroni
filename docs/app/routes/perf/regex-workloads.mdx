@@ -50,10 +50,10 @@ not a model of production traffic.
   within each task family, then across families. Each pair covers only the
   tasks both engines can run, so rows with different task counts are not a
   ranking.
-- **Standard API.** The baseline uses Ferroni's standard `Regex` methods. The
-  fallible `*_with` methods currently allocate fresh match workspace per search
-  and are slower on reuse; the repository tables list them as
-  `rust_erroraware`.
+- **Standard API.** The baseline uses Ferroni's standard `Regex` methods. Both
+  standard and fallible `*_with` searches reuse Ferroni's thread-cached
+  `MatchArg` workspace. The retained measurements show the `rust_erroraware`
+  profile slower on reuse, but do not establish why.
 
 ## Syntax coverage
 
