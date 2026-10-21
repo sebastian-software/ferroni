@@ -17,10 +17,10 @@ use crate::regcomp::onig_new_for_scanner;
 use crate::regexec::{onig_get_global_limit_revision, onig_get_retry_limit_in_search};
 use crate::regint::{ANCR_ANYCHAR_INF, RegexType};
 use crate::regset::{
-    FallbackMemoIdentity, OnigRegSet, OnigRegSetLead, RegSetEntryEvent, SharedAutomata, SharedSeek,
-    onig_regset_entry_search, onig_regset_get_regex, onig_regset_last_match_len,
-    onig_regset_new_shared, onig_regset_number_of_regex, onig_regset_prefilter_decides,
-    onig_regset_search_utf8, onig_regset_swap_region,
+    FallbackMemoIdentity, MAX_REGSET_ENTRIES, OnigRegSet, OnigRegSetLead, RegSetEntryEvent,
+    SharedAutomata, SharedSeek, onig_regset_entry_search, onig_regset_get_regex,
+    onig_regset_last_match_len, onig_regset_new_shared, onig_regset_number_of_regex,
+    onig_regset_prefilter_decides, onig_regset_search_utf8, onig_regset_swap_region,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -1040,6 +1040,10 @@ impl Scanner {
         settings: PatternSettings,
         mut regex: impl FnMut(&'p str) -> Result<(Arc<RegexType>, SharedSeek), RegexError>,
     ) -> Result<Scanner, RegexError> {
+        if patterns.len() > MAX_REGSET_ENTRIES {
+            return Err(ONIGERR_INVALID_ARGUMENT.into());
+        }
+
         let parts = patterns
             .iter()
             .map(|pattern| regex(pattern))
@@ -1718,6 +1722,15 @@ fn convert_match_to_utf16(string: &OnigString, m: ScannerMatch) -> ScannerMatch 
 mod tests {
     use super::*;
     use smallvec::smallvec;
+
+    #[test]
+    fn scanner_rejects_more_patterns_than_regset_indices_can_address() {
+        let patterns = vec!["a"; MAX_REGSET_ENTRIES + 1];
+        assert!(matches!(
+            Scanner::new(&patterns),
+            Err(RegexError::InvalidArgument)
+        ));
+    }
 
     /// Group 1 of `((?=(a|ab))a?){2}` on "a" ends before it starts (1..0, as
     /// in C Oniguruma). The scanner reports it like an unmatched group

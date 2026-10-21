@@ -19,6 +19,10 @@ use crate::regexec::{
 use crate::regint::*;
 use std::sync::Arc;
 
+/// The first-byte dispatch tables store entry indexes as `u16`, so they can
+/// address indexes 0 through 65,535 inclusive.
+pub(crate) const MAX_REGSET_ENTRIES: usize = u16::MAX as usize + 1;
+
 /// Search lead mode for regset search.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnigRegSetLead {
@@ -610,10 +614,14 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
 /// Create a new regex set from an array of compiled regexes.
 /// Returns (Some(set), ONIG_NORMAL) on success, (None, error_code) on failure.
 pub fn onig_regset_new(regs: Vec<Box<RegexType>>) -> (Option<Box<OnigRegSet>>, i32) {
+    if regs.len() > MAX_REGSET_ENTRIES {
+        return (None, ONIGERR_INVALID_ARGUMENT);
+    }
+
     let mut set = regset_alloc();
 
     for reg in regs {
-        let r = onig_regset_add(&mut set, reg);
+        let r = onig_regset_add_shared_impl(&mut set, Arc::from(reg), false);
         if r != ONIG_NORMAL {
             return (None, r);
         }
@@ -645,10 +653,14 @@ pub(crate) fn onig_regset_new_shared(
     warmup: u32,
 ) -> (Option<Box<OnigRegSet>>, i32) {
     debug_assert_eq!(regs.len(), seeks.len());
+    if regs.len() > MAX_REGSET_ENTRIES {
+        return (None, ONIGERR_INVALID_ARGUMENT);
+    }
+
     let mut set = regset_alloc();
 
     for reg in regs {
-        let r = onig_regset_add_shared(&mut set, reg);
+        let r = onig_regset_add_shared_impl(&mut set, reg, false);
         if r != ONIG_NORMAL {
             return (None, r);
         }
@@ -811,6 +823,22 @@ pub fn onig_regset_add(set: &mut OnigRegSet, reg: Box<RegexType>) -> i32 {
 /// Rust-only: `onig_regset_add` for a compiled regex that other sets may
 /// hold as well (`onig_regset_new_shared`).
 pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) -> i32 {
+    onig_regset_add_shared_impl(set, reg, true)
+}
+
+/// Add one entry, optionally deferring dispatch-table and scratch rebuilding
+/// while a new set is being assembled. Bulk constructors rebuild those once
+/// after validating and appending all entries.
+fn onig_regset_add_shared_impl(
+    set: &mut OnigRegSet,
+    reg: Arc<RegexType>,
+    update_dispatch: bool,
+) -> i32 {
+    // Check before mutating the set or narrowing the new index to `u16`.
+    if set.entries.len() >= MAX_REGSET_ENTRIES {
+        return ONIGERR_INVALID_ARGUMENT;
+    }
+
     if opton_find_longest(reg.options) {
         return ONIGERR_INVALID_ARGUMENT;
     }
@@ -842,56 +870,58 @@ pub(crate) fn onig_regset_add_shared(set: &mut OnigRegSet, reg: Arc<RegexType>) 
         .extp
         .as_ref()
         .is_some_and(|ext| ext.callout_num != 0);
-    set.table_start_bytes = None;
-    #[cfg(feature = "dfa-prefilter")]
-    {
-        set.prefilter = None;
-        set.prefilter_pending = None;
-        set.prefilter_own_fallback = false;
-        set.prefilter_retired = false;
-        set.prefilter_requests = 0;
-    }
-    set.fallback_memo_key = None;
-    set.fallback_memos.resize_with(set.entries.len(), Vec::new);
-    set.scratch_limits = None;
-    set.scratch_limits_revision = None;
-    set.scratch_table_retry_counters
-        .resize(set.entries.len(), 0);
-    set.scratch_table_retry_counters.fill(0);
-    set.scratch_msa = None;
+    if update_dispatch {
+        set.table_start_bytes = None;
+        #[cfg(feature = "dfa-prefilter")]
+        {
+            set.prefilter = None;
+            set.prefilter_pending = None;
+            set.prefilter_own_fallback = false;
+            set.prefilter_retired = false;
+            set.prefilter_requests = 0;
+        }
+        set.fallback_memo_key = None;
+        set.fallback_memos.resize_with(set.entries.len(), Vec::new);
+        set.scratch_limits = None;
+        set.scratch_limits_revision = None;
+        set.scratch_table_retry_counters
+            .resize(set.entries.len(), 0);
+        set.scratch_table_retry_counters.fill(0);
+        set.scratch_msa = None;
 
-    // Add the new entry to the first-byte dispatch table
-    let new_idx = (set.entries.len() - 1) as u16;
-    if has_variable_optimizer(&set.entries[new_idx as usize].reg) {
-        let start_map = table_routes_by_start_map(&set.entries[new_idx as usize].reg)
-            .then(|| table_start_map(&set.entries[new_idx as usize].reg))
-            .flatten();
-        if let Some(start_map) = start_map {
-            add_entry_by_start_map(&mut set.first_byte_candidates, &start_map, new_idx);
+        // Add the new entry to the first-byte dispatch table.
+        let new_idx = (set.entries.len() - 1) as u16;
+        if has_variable_optimizer(&set.entries[new_idx as usize].reg) {
+            let start_map = table_routes_by_start_map(&set.entries[new_idx as usize].reg)
+                .then(|| table_start_map(&set.entries[new_idx as usize].reg))
+                .flatten();
+            if let Some(start_map) = start_map {
+                add_entry_by_start_map(&mut set.first_byte_candidates, &start_map, new_idx);
+                set.table_entry_count += 1;
+                set.table_entries.push(new_idx);
+                set.entries[new_idx as usize].gated = true;
+                set.has_gated = true;
+                set.has_gated_callouts |= set.entries[new_idx as usize].has_callouts;
+                set.gates.resize(set.entries.len(), EntryGate::STALE);
+                set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
+                refresh_look_behind_entries(set);
+            } else {
+                set.entries[new_idx as usize].fallback = true;
+                let candidate =
+                    FallbackCandidate::new(new_idx as usize, &set.entries[new_idx as usize]);
+                set.fallback_search_candidates.push(candidate);
+            }
+        } else {
+            add_entry_to_first_byte_table(
+                &mut set.first_byte_candidates,
+                &set.entries[new_idx as usize].reg,
+                new_idx,
+            );
             set.table_entry_count += 1;
             set.table_entries.push(new_idx);
-            set.entries[new_idx as usize].gated = true;
-            set.has_gated = true;
-            set.has_gated_callouts |= set.entries[new_idx as usize].has_callouts;
-            set.gates.resize(set.entries.len(), EntryGate::STALE);
             set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
             refresh_look_behind_entries(set);
-        } else {
-            set.entries[new_idx as usize].fallback = true;
-            let candidate =
-                FallbackCandidate::new(new_idx as usize, &set.entries[new_idx as usize]);
-            set.fallback_search_candidates.push(candidate);
         }
-    } else {
-        add_entry_to_first_byte_table(
-            &mut set.first_byte_candidates,
-            &set.entries[new_idx as usize].reg,
-            new_idx,
-        );
-        set.table_entry_count += 1;
-        set.table_entries.push(new_idx);
-        set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
-        refresh_look_behind_entries(set);
     }
 
     // Recompute: pass field values to avoid borrow conflict
@@ -4422,6 +4452,72 @@ mod tests {
                 e
             ),
         }
+    }
+
+    #[test]
+    fn regset_rejects_indexes_beyond_u16_without_wrapping_or_mutating() {
+        let first: Arc<RegexType> = Arc::from(compile(b"a"));
+        let last: Arc<RegexType> = Arc::from(compile(b"b"));
+
+        let oversized = vec![first.clone(); MAX_REGSET_ENTRIES + 1];
+        let oversized_seeks: Vec<SharedSeek> = std::iter::repeat_with(Default::default)
+            .take(MAX_REGSET_ENTRIES + 1)
+            .collect();
+        let (too_many, status) =
+            onig_regset_new_shared(oversized, oversized_seeks, SharedAutomata::default(), 0);
+        assert!(too_many.is_none());
+        assert_eq!(status, ONIGERR_INVALID_ARGUMENT);
+
+        let regs = std::iter::repeat_n(first.clone(), MAX_REGSET_ENTRIES - 1)
+            .chain(std::iter::once(last))
+            .collect();
+        let seeks: Vec<SharedSeek> = std::iter::repeat_with(Default::default)
+            .take(MAX_REGSET_ENTRIES)
+            .collect();
+        let (set, status) = onig_regset_new_shared(regs, seeks, SharedAutomata::default(), 0);
+        assert_eq!(status, ONIG_NORMAL);
+        let mut set = set.unwrap();
+        assert_eq!(set.entries.len(), MAX_REGSET_ENTRIES);
+        assert_eq!(set.first_byte_candidates[b'b' as usize], vec![u16::MAX]);
+
+        let input = b"b";
+        assert_eq!(
+            onig_regset_search(
+                &mut set,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            ),
+            (u16::MAX as i32, 0)
+        );
+
+        let entries_before = set.entries.len();
+        let candidates_before = set.first_byte_candidates[b'b' as usize].clone();
+        assert_eq!(
+            onig_regset_add_shared(&mut set, first.clone()),
+            ONIGERR_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            onig_regset_add(&mut set, compile(b"c")),
+            ONIGERR_INVALID_ARGUMENT
+        );
+        assert_eq!(set.entries.len(), entries_before);
+        assert_eq!(set.first_byte_candidates[b'b' as usize], candidates_before);
+        assert_eq!(
+            onig_regset_search(
+                &mut set,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+            ),
+            (u16::MAX as i32, 0)
+        );
     }
 
     #[test]
