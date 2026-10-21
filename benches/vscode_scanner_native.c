@@ -20,6 +20,7 @@ typedef struct OnigRegExp_ {
     regex_t *regex;
     OnigRegion *region;
     int hasGAnchor;
+    int lastSearchCacheValid;
     int lastSearchStrCacheId;
     int lastSearchPosition;
     int lastSearchOnigOption;
@@ -88,6 +89,7 @@ static OnigRegExp *createOnigRegExp(unsigned char *data, int length, int options
     result->regex = regex;
     result->region = onig_region_new();
     result->hasGAnchor = hasGAnchor(data, length);
+    result->lastSearchCacheValid = 0;
     result->lastSearchStrCacheId = 0;
     result->lastSearchPosition = 0;
     result->lastSearchOnigOption = ONIG_OPTION_NONE;
@@ -119,10 +121,12 @@ static OnigRegion *_searchOnigRegExp(OnigRegExp *regex, unsigned char *strData,
 static OnigRegion *searchOnigRegExp(OnigRegExp *regex, int strCacheId,
                                      unsigned char *strData, int strLength,
                                      int position, OnigOptionType onigOption) {
+    OnigRegion *result;
     if (regex->hasGAnchor) {
         return _searchOnigRegExp(regex, strData, strLength, position, onigOption);
     }
-    if (regex->lastSearchStrCacheId == strCacheId &&
+    if (regex->lastSearchCacheValid &&
+        regex->lastSearchStrCacheId == strCacheId &&
         regex->lastSearchOnigOption == (int)onigOption &&
         regex->lastSearchPosition <= position) {
         if (!regex->lastSearchMatched) {
@@ -135,7 +139,9 @@ static OnigRegion *searchOnigRegExp(OnigRegExp *regex, int strCacheId,
     regex->lastSearchStrCacheId = strCacheId;
     regex->lastSearchPosition = position;
     regex->lastSearchOnigOption = (int)onigOption;
-    return _searchOnigRegExp(regex, strData, strLength, position, onigOption);
+    result = _searchOnigRegExp(regex, strData, strLength, position, onigOption);
+    regex->lastSearchCacheValid = 1;
+    return result;
 }
 
 /* ---- OnigScanner (public API) ---- */
