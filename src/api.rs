@@ -229,6 +229,35 @@ struct Compiled {
 #[cfg(feature = "dfa-prefilter")]
 const SEEK_GATE_PROBE_INTERVAL: u32 = 32;
 
+#[cfg(feature = "dfa-prefilter")]
+thread_local! {
+    /// Per-thread state of [`probe_closed_gate`]: a xorshift32 generator with
+    /// a fixed nonzero seed, so a thread's probe sequence is reproducible.
+    static GATE_PROBE: std::cell::Cell<u32> = const { std::cell::Cell::new(0x9E37_79B9) };
+}
+
+/// Whether a search through a closed [`SeekGate`] consults the seek: one in
+/// [`SEEK_GATE_PROBE_INTERVAL`] on average.
+///
+/// The gate is shared by every thread that searches with the regex. Counting
+/// the passed searches in one shared atomic made every search write it, which
+/// serialized those threads. A thread-local counter would avoid that but would
+/// alias with regexes a thread alternates between (two regexes taking turns
+/// would always land the probe on the same one); independent draws from a
+/// per-thread generator do neither.
+#[cfg(feature = "dfa-prefilter")]
+fn probe_closed_gate() -> bool {
+    GATE_PROBE.with(|state| {
+        let mut x = state.get();
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        state.set(x);
+        // The high bits decide: xorshift's low bits are its weakest.
+        (u64::from(x) * u64::from(SEEK_GATE_PROBE_INTERVAL)) >> 32 == 0
+    })
+}
+
 /// Estimated instructions of one consultation: a seek search of the text from
 /// the start, about 250 to 410 on the production patterns that consult it.
 #[cfg(feature = "dfa-prefilter")]
@@ -275,9 +304,6 @@ struct SeekGate {
     rate: AtomicU32,
     /// Whether every search consults the seek.
     open: AtomicBool,
-    /// Searches the closed gate has passed without consulting, modulo
-    /// [`SEEK_GATE_PROBE_INTERVAL`].
-    passed: AtomicU32,
     /// Test-only override: 0 is the adaptive gate, 1 consults on every search,
     /// 2 on none.
     #[cfg(test)]
@@ -290,7 +316,6 @@ impl SeekGate {
         SeekGate {
             rate: AtomicU32::new(400),
             open: AtomicBool::new(true),
-            passed: AtomicU32::new(0),
             #[cfg(test)]
             forced: std::sync::atomic::AtomicU8::new(0),
         }
@@ -305,25 +330,30 @@ impl SeekGate {
             2 => return false,
             _ => {}
         }
-        self.open.load(Ordering::Relaxed)
-            || self
-                .passed
-                .fetch_add(1, Ordering::Relaxed)
-                .is_multiple_of(SEEK_GATE_PROBE_INTERVAL)
+        self.open.load(Ordering::Relaxed) || probe_closed_gate()
     }
 
     /// Records the answer of one consultation and sets the state for the next
     /// search.
     fn record(&self, rejected: bool) {
         let sample = if rejected { 1000 } else { 0 };
-        let rate = (self.rate.load(Ordering::Relaxed) * 7 + sample) / 8;
-        self.rate.store(rate, Ordering::Relaxed);
-        let threshold = if self.open.load(Ordering::Relaxed) {
+        let previous = self.rate.load(Ordering::Relaxed);
+        let rate = (previous * 7 + sample) / 8;
+        // Stores only on a change: a steady rejection rate reaches a fixed
+        // point (0 or 993), and threads that keep rewriting the same value
+        // still take the cache line from each other.
+        if rate != previous {
+            self.rate.store(rate, Ordering::Relaxed);
+        }
+        let open = self.open.load(Ordering::Relaxed);
+        let threshold = if open {
             SEEK_GATE_CLOSE_PERMILLE
         } else {
             SEEK_GATE_OPEN_PERMILLE
         };
-        self.open.store(rate >= threshold, Ordering::Relaxed);
+        if (rate >= threshold) != open {
+            self.open.store(!open, Ordering::Relaxed);
+        }
     }
 
     /// Whether the gate is open and the rejection rate, in permille. For the
@@ -1153,7 +1183,7 @@ impl Regex {
         Some(Captures {
             text,
             region,
-            compiled: Arc::clone(&self.inner),
+            compiled: name_lookup(&self.inner),
         })
     }
 
@@ -1262,7 +1292,7 @@ impl Regex {
         Ok(Some(Captures {
             text,
             region,
-            compiled: Arc::clone(&self.inner),
+            compiled: name_lookup(&self.inner),
         }))
     }
 
@@ -1978,7 +2008,24 @@ impl<'t> Match<'t> {
 pub struct Captures<'t> {
     text: &'t [u8],
     region: OnigRegion,
-    compiled: Arc<Compiled>,
+    /// The compiled regex, kept only for [`Captures::name`] and so only when
+    /// the pattern has named groups. Cloning the `Arc` for every match writes
+    /// its shared reference count, which serializes threads that search with
+    /// the same regex; see [`name_lookup`].
+    compiled: Option<Arc<Compiled>>,
+}
+
+/// The compiled regex a [`Captures`] keeps for name lookups: a clone of
+/// `inner` when the pattern has named groups, `None` otherwise.
+///
+/// Every `Arc` clone and drop is an atomic write to one reference count. When
+/// threads search with the same regex, each match moved that cache line
+/// between their cores, and `captures_iter` stopped scaling at about four
+/// threads. Patterns without named groups now leave the count alone; with
+/// named groups the clone remains, because [`Captures::name`] needs the
+/// compiled name table and `Captures` does not borrow the regex.
+fn name_lookup(inner: &Arc<Compiled>) -> Option<Arc<Compiled>> {
+    (crate::regexec::onig_number_of_names(&inner.program) > 0).then(|| Arc::clone(inner))
 }
 
 impl<'t> Captures<'t> {
@@ -2003,12 +2050,12 @@ impl<'t> Captures<'t> {
 
     /// Get the last capture group with the given name that participated, or `None`.
     pub fn name(&self, name: &str) -> Option<Match<'t>> {
-        let num = onig_name_to_backref_number(
-            &self.compiled.program,
-            name.as_bytes(),
-            Some(&self.region),
-        )
-        .ok()?;
+        // Without named groups there is no compiled regex to ask, and no name
+        // it could resolve.
+        let compiled = self.compiled.as_deref()?;
+        let num =
+            onig_name_to_backref_number(&compiled.program, name.as_bytes(), Some(&self.region))
+                .ok()?;
         self.get(num as usize)
     }
 
@@ -2499,7 +2546,7 @@ impl<'r, 't> CaptureMatches<'r, 't> {
                     return Ok(Some(Captures {
                         text: self.text,
                         region,
-                        compiled: Arc::clone(&self.regex.inner),
+                        compiled: name_lookup(&self.regex.inner),
                     }));
                 }
                 Verdict::Retry => msa.region = Some(region),
@@ -2963,6 +3010,33 @@ mod tests {
             }
         });
         assert_eq!(re.seek_gate_state(), re.clone().seek_gate_state());
+    }
+
+    /// Captures keep the compiled regex only to resolve names. A pattern
+    /// without named groups must not touch the shared reference count per
+    /// match: that write serialized threads iterating with the same regex.
+    #[test]
+    fn captures_hold_the_regex_only_for_named_groups() {
+        let _limits = crate::regexec::shared_limits();
+        let unnamed = Regex::new(r"<(\w+)>").unwrap();
+        let held: Vec<Captures<'_>> = unnamed.captures_iter("<a><b><c>").collect();
+        assert_eq!(held.len(), 3);
+        assert_eq!(Arc::strong_count(&unnamed.inner), 1);
+        let single = unnamed.captures("<d>").unwrap();
+        assert_eq!(Arc::strong_count(&unnamed.inner), 1);
+        assert!(single.name("tag").is_none());
+        assert_eq!(&single[1], "d");
+
+        let named = Regex::new(r"<(?<tag>\w+)>").unwrap();
+        let held: Vec<Captures<'_>> = named.captures_iter("<a><b>").collect();
+        assert_eq!(Arc::strong_count(&named.inner), 3);
+        let tags: Vec<&str> = held
+            .iter()
+            .map(|caps| caps.name("tag").unwrap().as_str())
+            .collect();
+        assert_eq!(tags, ["a", "b"]);
+        drop(held);
+        assert_eq!(Arc::strong_count(&named.inner), 1);
     }
 
     #[test]
