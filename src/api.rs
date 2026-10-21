@@ -213,15 +213,76 @@ struct Compiled {
     program: AssertUnwindSafe<RegexType>,
     pattern: Box<[u8]>,
     /// Rust-only (ADR-008): the seek automaton that standard searches consult,
-    /// built with the regex when the builder's `dfa` option is on. Wrapped
-    /// like `program`: the lazy DFA's cache pool is not `RefUnwindSafe`.
+    /// when the builder's `dfa` option is on, built on the first search that
+    /// consults it. Wrapped like `program`: the lazy DFA's cache pool is not
+    /// `RefUnwindSafe`.
     #[cfg(feature = "dfa-prefilter")]
-    seek: AssertUnwindSafe<Option<Box<SingleSeek>>>,
+    seek: AssertUnwindSafe<LazySeek>,
     /// Rust-only (ADR-008): decides whether the capture and find methods consult the
     /// seek, from the rejections they measure. Shared by the clones with the
     /// seek, as is the seek's cache pool.
     #[cfg(feature = "dfa-prefilter")]
     seek_gate: SeekGate,
+}
+
+/// Rust-only (ADR-008): a regex's seek automaton, built from its encoded seek
+/// and accept seek by the first search that consults it. Building decodes the
+/// seeks and compiles their NFAs and lazy DFAs, which costs a large part of
+/// a compilation, while the iterators and the `*_with` methods never consult
+/// the seek and many regexes are never searched at all. Every clone shares
+/// the one automaton.
+#[cfg(feature = "dfa-prefilter")]
+struct LazySeek {
+    /// The seek and the accept seek, until the automaton is built.
+    codes: std::sync::Mutex<Option<(crate::dfa_prefilter::Seek, AcceptSeek)>>,
+    /// The automaton, or `None` where it does not build (`SingleSeek::build`).
+    automaton: std::sync::OnceLock<Option<Box<SingleSeek>>>,
+}
+
+#[cfg(feature = "dfa-prefilter")]
+impl LazySeek {
+    /// A seek to build from `codes`, or none.
+    fn new(codes: Option<(crate::dfa_prefilter::Seek, AcceptSeek)>) -> LazySeek {
+        let automaton = std::sync::OnceLock::new();
+        if codes.is_none() {
+            let _ = automaton.set(None);
+        }
+        LazySeek {
+            codes: std::sync::Mutex::new(codes),
+            automaton,
+        }
+    }
+
+    /// The automaton, built on the first call; a concurrent first call waits
+    /// for it.
+    #[inline]
+    fn get(&self) -> Option<&SingleSeek> {
+        self.automaton
+            .get_or_init(|| {
+                let codes = self
+                    .codes
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take();
+                codes
+                    .and_then(|(seek, accept)| SingleSeek::build(&seek, accept.as_ref()))
+                    .map(Box::new)
+            })
+            .as_deref()
+    }
+
+    /// Whether the regex may have an automaton: none was built yet, or one
+    /// was. Does not build it.
+    #[inline]
+    fn may_exist(&self) -> bool {
+        self.automaton.get().is_none_or(Option::is_some)
+    }
+
+    /// Whether the automaton was built. For the tests.
+    #[cfg(test)]
+    fn built(&self) -> bool {
+        self.automaton.get().is_some_and(Option::is_some)
+    }
 }
 
 /// While the [`SeekGate`] is closed, one capture or find search in this many consults
@@ -446,8 +507,9 @@ impl Regex {
         Ok(Self::from_parts(program, pattern.into(), seek, accept))
     }
 
-    /// Wraps a compiled program, its seek and its accept seek. The seek is
-    /// built with the regex (ADR-008), so a clone or a search never builds it.
+    /// Wraps a compiled program, its seek and its accept seek. The seek's
+    /// automaton is built by the first search that consults it (ADR-008,
+    /// `LazySeek`), once for every clone.
     #[cfg_attr(not(feature = "dfa-prefilter"), allow(unused_variables))]
     fn from_parts(
         program: RegexType,
@@ -459,13 +521,11 @@ impl Regex {
         // The automaton is boxed: inline, it grew every compiled regex, and
         // the compile and search costs of the others with it.
         #[cfg(feature = "dfa-prefilter")]
-        let seek = AssertUnwindSafe(if program.pure_literal {
+        let seek = AssertUnwindSafe(LazySeek::new(if program.pure_literal {
             None
         } else {
-            seek.as_ref()
-                .and_then(|seek| SingleSeek::build(seek, accept.as_ref()))
-                .map(Box::new)
-        });
+            seek.map(|seek| (seek, accept))
+        }));
         Regex {
             inner: Arc::new(Compiled {
                 program: AssertUnwindSafe(program),
@@ -511,7 +571,7 @@ impl Regex {
     #[cfg(feature = "dfa-prefilter")]
     #[inline]
     fn seek_answer(&self, text: &[u8], start: usize, mut utf8: bool, accept: bool) -> Option<bool> {
-        let seek = self.inner.seek.as_ref()?;
+        let seek = self.inner.seek.get()?;
         if accept && seek.has_accept() {
             if !(utf8 || std::str::from_utf8(text).is_ok()) || !is_char_boundary(text, start) {
                 return None;
@@ -573,7 +633,7 @@ impl Regex {
     #[cfg(feature = "dfa-prefilter")]
     #[inline]
     fn seek_rejects_search(&self, text: &[u8], start: usize, utf8: bool) -> bool {
-        if self.inner.seek.is_none() || !self.inner.seek_gate.consults() {
+        if !self.inner.seek.may_exist() || !self.inner.seek_gate.consults() {
             return false;
         }
         let rejected = self.seek_answer(text, start, utf8, false) == Some(false);
@@ -591,13 +651,19 @@ impl Regex {
     /// Whether the regex has a seek automaton. For the tests.
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn seek_present(&self) -> bool {
-        self.inner.seek.is_some()
+        self.inner.seek.get().is_some()
+    }
+
+    /// Whether the seek's automaton was built. For the tests.
+    #[cfg(all(test, feature = "dfa-prefilter"))]
+    pub(crate) fn seek_built(&self) -> bool {
+        self.inner.seek.built()
     }
 
     /// Whether the seek automaton is exact. For the tests.
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn seek_exact(&self) -> Option<bool> {
-        self.inner.seek.as_deref().map(SingleSeek::exact)
+        self.inner.seek.get().map(SingleSeek::exact)
     }
 
     /// The seek's answer to `is_match` on `text` from 0, accepting where it
@@ -610,30 +676,21 @@ impl Regex {
     /// Whether the regex has an accept seek. For the tests.
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn accept_seek_present(&self) -> bool {
-        self.inner
-            .seek
-            .as_deref()
-            .is_some_and(SingleSeek::has_accept)
+        self.inner.seek.get().is_some_and(SingleSeek::has_accept)
     }
 
     /// The accept seek's own answer on `text` from `start`
     /// (`SingleSeek::accept_answer`). For the tests.
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn accept_answer(&self, text: &str, start: usize) -> Option<bool> {
-        self.inner
-            .seek
-            .as_deref()?
-            .accept_answer(text.as_bytes(), start)
+        self.inner.seek.get()?.accept_answer(text.as_bytes(), start)
     }
 
     /// Heap memory of the seek's automata and this thread's caches. For the
     /// tests.
     #[cfg(all(test, feature = "dfa-prefilter"))]
     pub(crate) fn seek_memory_usage(&self) -> usize {
-        self.inner
-            .seek
-            .as_deref()
-            .map_or(0, SingleSeek::memory_usage)
+        self.inner.seek.get().map_or(0, SingleSeek::memory_usage)
     }
 
     /// The adaptive gate of the capture methods: whether it is open and its
@@ -3075,6 +3132,51 @@ mod tests {
             }
         });
         assert_eq!(re.seek_gate_state(), re.clone().seek_gate_state());
+    }
+
+    /// The seek's automaton is built by the first search that consults it,
+    /// not by the builder: iterating and the `*_with` methods never build
+    /// it, the first standard search does, and a clone shares it. Threads
+    /// that race to the first search all get the one automaton.
+    #[cfg(feature = "dfa-prefilter")]
+    #[test]
+    fn seek_automaton_is_built_by_the_first_search_that_consults_it() {
+        let _limits = crate::regexec::shared_limits();
+        let pattern = r"\b[a-z]+ing\b";
+        let text = "nothing here but sing and ring";
+        let re = Regex::new(pattern).unwrap();
+        assert!(!re.seek_built());
+        assert_eq!(re.find_iter(text).count(), 3);
+        assert!(
+            re.captures_with(text, SearchOptions::new())
+                .unwrap()
+                .is_some()
+        );
+        assert!(!re.seek_built());
+        let clone = re.clone();
+        assert!(re.is_match(text));
+        assert!(re.seek_built() && clone.seek_built());
+
+        let re = Regex::new(pattern).unwrap();
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let re = re.clone();
+                scope.spawn(move || {
+                    assert!(re.is_match(text));
+                    assert!(!re.is_match("no match here"));
+                });
+            }
+        });
+        assert!(re.seek_built());
+
+        // A pure literal has no automaton to build, and one that does not
+        // build stays unbuilt.
+        let literal = Regex::new("sing").unwrap();
+        assert!(literal.is_match(text));
+        assert!(!literal.seek_built() && !literal.seek_present());
+        let unseekable = RegexBuilder::new(pattern).dfa(false).build().unwrap();
+        assert!(unseekable.is_match(text));
+        assert!(!unseekable.seek_built());
     }
 
     /// A match of a `&str` search slices the text in `as_str` instead of
