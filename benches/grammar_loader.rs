@@ -13,6 +13,16 @@ const TYPESCRIPT_JSON: &str = include_str!("grammars/typescript.json");
 const CSS_JSON: &str = include_str!("grammars/css.json");
 #[allow(dead_code)]
 const RUST_JSON: &str = include_str!("grammars/rust.json");
+/// Julia from tm-grammars 1.32.3 (`grammars/julia.json`, sha256
+/// 9a1dfbc84de9803b03309b7635f21bebbd3b866e1865d763832b1db97fbfa2fd), which
+/// packages microsoft/vscode's grammar at 84f7ab5aa01c31d5352c7db89051e8c391fd9ae1
+/// under the MIT license; Shiki's `@shikijs/langs` 4.x ships the same file.
+/// Its identifier classes nest negated Unicode property classes
+/// (`[^\x01-¡\P{Mn}]`), the compile-time case of issue #419. Its pin lives
+/// here rather than in battle_inputs.toml, which the published regex results
+/// retain byte for byte.
+#[allow(dead_code)]
+const JULIA_JSON: &str = include_str!("grammars/julia.json");
 
 /// All compilable patterns from the full Shiki TypeScript grammar.
 pub fn typescript_patterns() -> Vec<String> {
@@ -29,6 +39,12 @@ pub fn css_patterns() -> Vec<String> {
 /// All compilable patterns from the full Shiki Rust grammar.
 pub fn rust_patterns() -> Vec<String> {
     extract_patterns(RUST_JSON)
+}
+
+#[allow(dead_code)]
+/// All compilable patterns from the full Julia grammar.
+pub fn julia_patterns() -> Vec<String> {
+    extract_patterns(JULIA_JSON)
 }
 
 /// Extract and deduplicate all `match` and `begin` patterns from a TextMate

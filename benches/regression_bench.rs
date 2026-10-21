@@ -6,7 +6,7 @@ mod grammar_loader;
 mod scanner_css_workload;
 mod scanner_documents;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use scanner_css_workload::{CSS_INPUT, CSS_PATTERNS};
 use std::hint::black_box;
 
@@ -74,6 +74,38 @@ fn bench_regression_compile(c: &mut Criterion) {
             b.iter(|| {
                 let reg = rust_compile(black_box(pat), ONIG_OPTION_NONE);
                 black_box(&reg);
+            });
+        });
+    }
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
+// regression: grammar_compile -- every pattern of a committed grammar
+// ---------------------------------------------------------------------------
+//
+// Compiling a grammar's patterns is the delay before a highlighter colours a
+// file's first line. Julia's identifier classes nest negated Unicode property
+// classes, which once compiled about 20 times slower than in C because every
+// range added to a class rebuilt its range buffer (issue #419).
+
+fn bench_regression_grammar_compile(c: &mut Criterion) {
+    let grammars = [
+        ("typescript", grammar_loader::typescript_patterns()),
+        ("css", grammar_loader::css_patterns()),
+        ("rust", grammar_loader::rust_patterns()),
+        ("julia", grammar_loader::julia_patterns()),
+    ];
+    let mut group = c.benchmark_group("regression_grammar_compile");
+    group.sample_size(20);
+    for (name, patterns) in &grammars {
+        group.throughput(Throughput::Elements(patterns.len() as u64));
+        group.bench_function(*name, |b| {
+            b.iter(|| {
+                for pattern in patterns {
+                    let reg = rust_compile(black_box(pattern.as_bytes()), ONIG_OPTION_NONE);
+                    black_box(&reg);
+                }
             });
         });
     }
@@ -989,6 +1021,7 @@ fn bench_regression_shared_regex_threads(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_regression_compile,
+    bench_regression_grammar_compile,
     bench_regression_literal,
     bench_regression_quantifiers,
     bench_regression_alternation,
