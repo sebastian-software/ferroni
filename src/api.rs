@@ -721,12 +721,12 @@ impl Regex {
     /// reported as no match. Use [`Regex::find_with`] with [`SearchOptions`] to tell
     /// the two apart.
     pub fn find<'t>(&self, text: &'t str) -> Option<Match<'t>> {
-        self.find_from(text.as_bytes(), 0, true)
+        self.find_from(Subject::Str(text), 0)
     }
 
     /// Return the first match in `text` (as bytes), or `None` if no match.
     pub fn find_bytes<'t>(&self, text: &'t [u8]) -> Option<Match<'t>> {
-        self.find_from(text, 0, false)
+        self.find_from(Subject::Bytes(text), 0)
     }
 
     /// Return the first match in `text` at or after byte offset `start`, or
@@ -765,7 +765,7 @@ impl Regex {
     #[inline]
     pub fn find_at<'t>(&self, text: &'t str, start: usize) -> Option<Match<'t>> {
         check_str_start(text, start);
-        self.find_from(text.as_bytes(), start, true)
+        self.find_from(Subject::Str(text), start)
     }
 
     /// Return the first match in `text` (as bytes) at or after byte offset
@@ -779,21 +779,21 @@ impl Regex {
     /// Panics if `start` is greater than `text.len()`.
     pub fn find_bytes_at<'t>(&self, text: &'t [u8], start: usize) -> Option<Match<'t>> {
         check_bytes_start(text, start);
-        self.find_from(text, start, false)
+        self.find_from(Subject::Bytes(text), start)
     }
 
     /// The search behind the `find` family: the first match from `start`,
     /// with all of `text` visible.
     #[inline]
-    fn find_from<'t>(&self, text: &'t [u8], start: usize, utf8: bool) -> Option<Match<'t>> {
+    fn find_from<'t>(&self, subject: Subject<'t>, start: usize) -> Option<Match<'t>> {
         // The adaptive gate decides, as for the capture methods: a seek that
         // keeps finding matches only repeats the matcher's scan up to the
         // match, so a search consults it only while it rejects often enough.
-        if self.seek_rejects_search(text, start, utf8) {
+        if self.seek_rejects_search(subject.bytes(), start, subject.is_str()) {
             return None;
         }
         // A standard search reports a limit it reached as no match.
-        self.find_from_limited(text, start, None).ok().flatten()
+        self.find_from_limited(subject, start, None).ok().flatten()
     }
 
     /// The search behind the `find` family under `limits` (`None`: the
@@ -801,10 +801,11 @@ impl Regex {
     #[inline]
     fn find_from_limited<'t>(
         &self,
-        text: &'t [u8],
+        subject: Subject<'t>,
         start: usize,
         limits: Option<SearchLimits>,
     ) -> Result<Option<Match<'t>>, i32> {
+        let text = subject.bytes();
         // Only the bounds are returned: where they follow from the attempt
         // position and the match length, no region is needed (see
         // `find_iter_bytes`).
@@ -823,7 +824,7 @@ impl Regex {
                 self.program().options,
             ) {
                 return Ok(found.map(|(match_start, match_end)| Match {
-                    text,
+                    subject,
                     start: match_start,
                     end: match_end,
                 }));
@@ -835,7 +836,7 @@ impl Regex {
                 return Ok(None);
             };
             return Ok((match_end <= text.len()).then_some(Match {
-                text,
+                subject,
                 start: match_start,
                 end: match_end,
             }));
@@ -867,7 +868,7 @@ impl Regex {
             cache_region(region);
             return Ok(None);
         }
-        let m = Match::from_region(text, region.beg[0], region.end[0]);
+        let m = Match::from_region(subject, region.beg[0], region.end[0]);
         cache_region(region);
         Ok(m)
     }
@@ -884,7 +885,7 @@ impl Regex {
         text: &'t str,
         options: SearchOptions,
     ) -> Result<Option<Match<'t>>, RegexError> {
-        self.find_bytes_with(text.as_bytes(), options)
+        self.find_from_with(Subject::Str(text), 0, options)
     }
 
     /// Return the first match in `text` (as bytes) under per-search `options`.
@@ -898,7 +899,7 @@ impl Regex {
         text: &'t [u8],
         options: SearchOptions,
     ) -> Result<Option<Match<'t>>, RegexError> {
-        self.find_from_with(text, 0, options)
+        self.find_from_with(Subject::Bytes(text), 0, options)
     }
 
     /// Return the first match in `text` at or after byte offset `start` under
@@ -922,7 +923,7 @@ impl Regex {
         options: SearchOptions,
     ) -> Result<Option<Match<'t>>, RegexError> {
         check_str_start(text, start);
-        self.find_from_with(text.as_bytes(), start, options)
+        self.find_from_with(Subject::Str(text), start, options)
     }
 
     /// Return the first match in `text` (as bytes) at or after byte offset
@@ -943,16 +944,16 @@ impl Regex {
         options: SearchOptions,
     ) -> Result<Option<Match<'t>>, RegexError> {
         check_bytes_start(text, start);
-        self.find_from_with(text, start, options)
+        self.find_from_with(Subject::Bytes(text), start, options)
     }
 
     fn find_from_with<'t>(
         &self,
-        text: &'t [u8],
+        subject: Subject<'t>,
         start: usize,
         options: SearchOptions,
     ) -> Result<Option<Match<'t>>, RegexError> {
-        self.find_from_limited(text, start, options.limits())
+        self.find_from_limited(subject, start, options.limits())
             .map_err(RegexError::from)
     }
 
@@ -1110,12 +1111,12 @@ impl Regex {
     /// reported as no match. Use [`Regex::captures_with`] with [`SearchOptions`] to tell
     /// the two apart.
     pub fn captures<'t>(&self, text: &'t str) -> Option<Captures<'t>> {
-        self.captures_from(text.as_bytes(), 0, true)
+        self.captures_from(Subject::Str(text), 0)
     }
 
     /// Return the first match with all capture groups (bytes), or `None`.
     pub fn captures_bytes<'t>(&self, text: &'t [u8]) -> Option<Captures<'t>> {
-        self.captures_from(text, 0, false)
+        self.captures_from(Subject::Bytes(text), 0)
     }
 
     /// Return the first match at or after byte offset `start`, with all
@@ -1140,7 +1141,7 @@ impl Regex {
     /// ```
     pub fn captures_at<'t>(&self, text: &'t str, start: usize) -> Option<Captures<'t>> {
         check_str_start(text, start);
-        self.captures_from(text.as_bytes(), start, true)
+        self.captures_from(Subject::Str(text), start)
     }
 
     /// Return the first match at or after byte offset `start` (as bytes), with
@@ -1151,14 +1152,15 @@ impl Regex {
     /// Panics if `start` is greater than `text.len()`.
     pub fn captures_bytes_at<'t>(&self, text: &'t [u8], start: usize) -> Option<Captures<'t>> {
         check_bytes_start(text, start);
-        self.captures_from(text, start, false)
+        self.captures_from(Subject::Bytes(text), start)
     }
 
     /// The search behind the capture methods that report no limit: the seek
     /// answers a rejection first (see [`Regex::seek_rejects_search`]).
     #[inline]
-    fn captures_from<'t>(&self, text: &'t [u8], start: usize, utf8: bool) -> Option<Captures<'t>> {
-        if self.seek_rejects_search(text, start, utf8) {
+    fn captures_from<'t>(&self, subject: Subject<'t>, start: usize) -> Option<Captures<'t>> {
+        let text = subject.bytes();
+        if self.seek_rejects_search(text, start, subject.is_str()) {
             return None;
         }
         let (result, region) =
@@ -1169,7 +1171,7 @@ impl Regex {
             return None;
         }
         Some(Captures {
-            text,
+            text: subject,
             region,
             compiled: name_lookup(&self.inner),
         })
@@ -1187,7 +1189,7 @@ impl Regex {
         text: &'t str,
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
-        self.captures_bytes_with(text.as_bytes(), options)
+        self.captures_from_with(Subject::Str(text), 0, options)
     }
 
     /// Return the first match with all capture groups (bytes) under
@@ -1202,7 +1204,7 @@ impl Regex {
         text: &'t [u8],
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
-        self.captures_from_with(text, 0, options)
+        self.captures_from_with(Subject::Bytes(text), 0, options)
     }
 
     /// Return the first match at or after byte offset `start`, with all
@@ -1224,7 +1226,7 @@ impl Regex {
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
         check_str_start(text, start);
-        self.captures_from_with(text.as_bytes(), start, options)
+        self.captures_from_with(Subject::Str(text), start, options)
     }
 
     /// Return the first match at or after byte offset `start` (as bytes), with
@@ -1245,15 +1247,16 @@ impl Regex {
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
         check_bytes_start(text, start);
-        self.captures_from_with(text, start, options)
+        self.captures_from_with(Subject::Bytes(text), start, options)
     }
 
     fn captures_from_with<'t>(
         &self,
-        text: &'t [u8],
+        subject: Subject<'t>,
         start: usize,
         options: SearchOptions,
     ) -> Result<Option<Captures<'t>>, RegexError> {
+        let text = subject.bytes();
         let len = text.len();
         let (result, region) = search_in_range(
             self.program(),
@@ -1278,7 +1281,7 @@ impl Regex {
             };
         }
         Ok(Some(Captures {
-            text,
+            text: subject,
             region,
             compiled: name_lookup(&self.inner),
         }))
@@ -1292,19 +1295,19 @@ impl Regex {
     /// Iteration ends early when a search stops at a process-wide limit. Use
     /// [`Regex::find_iter_with`] with [`SearchOptions`] to see that error.
     pub fn find_iter<'r, 't>(&'r self, text: &'t str) -> FindIter<'r, 't> {
-        self.find_iter_bytes(text.as_bytes())
+        self.find_iter_limited(Subject::Str(text), None)
     }
 
     /// Iterate over all non-overlapping matches in `text` (as bytes).
     pub fn find_iter_bytes<'r, 't>(&'r self, text: &'t [u8]) -> FindIter<'r, 't> {
-        self.find_iter_limited(text, None)
+        self.find_iter_limited(Subject::Bytes(text), None)
     }
 
     /// The iterator behind the `find_iter` family under `limits` (`None`: the
     /// process-wide limits).
     fn find_iter_limited<'r, 't>(
         &'r self,
-        text: &'t [u8],
+        subject: Subject<'t>,
         limits: Option<SearchLimits>,
     ) -> FindIter<'r, 't> {
         // An iterator yields match bounds only. Where they follow from the
@@ -1315,7 +1318,8 @@ impl Regex {
         FindIter {
             regex: self,
             program: self.program(),
-            text,
+            text: subject.bytes(),
+            subject,
             cursor: MatchCursor::default(),
             region: if bounds_only {
                 OnigRegion::new()
@@ -1339,7 +1343,10 @@ impl Regex {
         text: &'t str,
         options: SearchOptions,
     ) -> TryFindIter<'r, 't> {
-        self.find_iter_bytes_with(text.as_bytes(), options)
+        TryFindIter {
+            iter: self.find_iter_limited(Subject::Str(text), options.limits()),
+            finished: false,
+        }
     }
 
     /// Iterate over all non-overlapping matches in `text` (as bytes) under
@@ -1351,7 +1358,7 @@ impl Regex {
         options: SearchOptions,
     ) -> TryFindIter<'r, 't> {
         TryFindIter {
-            iter: self.find_iter_limited(text, options.limits()),
+            iter: self.find_iter_limited(Subject::Bytes(text), options.limits()),
             finished: false,
         }
     }
@@ -1375,13 +1382,13 @@ impl Regex {
     /// assert_eq!(years, ["2025", "2026"]);
     /// ```
     pub fn captures_iter<'r, 't>(&'r self, text: &'t str) -> CaptureMatches<'r, 't> {
-        self.captures_iter_bytes(text.as_bytes())
+        CaptureMatches::new(self, Subject::Str(text), None)
     }
 
     /// Iterate over the capture groups of all non-overlapping matches in
     /// `text` (as bytes).
     pub fn captures_iter_bytes<'r, 't>(&'r self, text: &'t [u8]) -> CaptureMatches<'r, 't> {
-        CaptureMatches::new(self, text, None)
+        CaptureMatches::new(self, Subject::Bytes(text), None)
     }
 
     /// Iterate over the capture groups of all non-overlapping matches in
@@ -1395,7 +1402,10 @@ impl Regex {
         text: &'t str,
         options: SearchOptions,
     ) -> TryCaptureMatches<'r, 't> {
-        self.captures_iter_bytes_with(text.as_bytes(), options)
+        TryCaptureMatches {
+            iter: CaptureMatches::new(self, Subject::Str(text), options.limits()),
+            finished: false,
+        }
     }
 
     /// Iterate over the capture groups of all non-overlapping matches in
@@ -1407,7 +1417,7 @@ impl Regex {
         options: SearchOptions,
     ) -> TryCaptureMatches<'r, 't> {
         TryCaptureMatches {
-            iter: CaptureMatches::new(self, text, options.limits()),
+            iter: CaptureMatches::new(self, Subject::Bytes(text), options.limits()),
             finished: false,
         }
     }
@@ -1905,14 +1915,53 @@ impl Syntax {
     }
 }
 
+// === Subject ===
+
+/// The text of a search as the caller passed it. A `&str` keeps its type, so
+/// that [`Match::as_str`] slices it at the match's bounds, two character
+/// boundary checks, instead of validating the matched bytes as UTF-8 again on
+/// every call.
+#[derive(Clone, Copy)]
+enum Subject<'t> {
+    Str(&'t str),
+    Bytes(&'t [u8]),
+}
+
+impl<'t> Subject<'t> {
+    #[inline(always)]
+    fn bytes(self) -> &'t [u8] {
+        match self {
+            Subject::Str(text) => text.as_bytes(),
+            Subject::Bytes(text) => text,
+        }
+    }
+
+    /// Whether the text is known to be valid UTF-8.
+    #[inline(always)]
+    fn is_str(self) -> bool {
+        matches!(self, Subject::Str(_))
+    }
+}
+
 // === Match ===
 
 /// A single match result referencing the original text.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Match<'t> {
-    text: &'t [u8],
+    subject: Subject<'t>,
     start: usize,
     end: usize,
+}
+
+impl fmt::Debug for Match<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The layout a derived `Debug` printed before `Subject`.
+        f.debug_struct("Match")
+            .field("text", &self.subject.bytes())
+            .field("start", &self.start)
+            .field("end", &self.end)
+            .finish()
+    }
 }
 
 impl<'t> Match<'t> {
@@ -1921,10 +1970,14 @@ impl<'t> Match<'t> {
     /// Oniguruma can report start > end for a capture whose group started
     /// again but failed before closing; every `Match` upholds
     /// `start <= end <= text.len()`, so its accessors never panic on slicing.
-    fn from_region(text: &'t [u8], beg: i32, end: i32) -> Option<Self> {
+    fn from_region(subject: Subject<'t>, beg: i32, end: i32) -> Option<Self> {
         let start = usize::try_from(beg).ok()?;
         let end = usize::try_from(end).ok()?;
-        (start <= end && end <= text.len()).then_some(Match { text, start, end })
+        (start <= end && end <= subject.bytes().len()).then_some(Match {
+            subject,
+            start,
+            end,
+        })
     }
 
     /// Byte offset of the start of the match.
@@ -1944,7 +1997,7 @@ impl<'t> Match<'t> {
 
     /// The matched text as a byte slice.
     pub fn as_bytes(&self) -> &'t [u8] {
-        &self.text[self.start..self.end]
+        &self.subject.bytes()[self.start..self.end]
     }
 
     /// The matched text as a `&str`.
@@ -1952,11 +2005,20 @@ impl<'t> Match<'t> {
     /// Use [`Match::as_bytes`] when the match may be invalid UTF-8; see
     /// [the guide](https://ferroni.dev/guide/coming-from-regex).
     ///
+    /// A match of a `&str` search costs two character-boundary checks; a match
+    /// of a `_bytes` search validates its bytes.
+    ///
     /// # Panics
     ///
     /// Panics if the matched bytes are not valid UTF-8.
     pub fn as_str(&self) -> &'t str {
-        std::str::from_utf8(self.as_bytes()).expect("match is not valid UTF-8")
+        match self.subject {
+            // Valid UTF-8 already: the slice is valid exactly when both bounds
+            // are character boundaries, which `get` checks.
+            Subject::Str(text) => text.get(self.start..self.end),
+            Subject::Bytes(text) => std::str::from_utf8(&text[self.start..self.end]).ok(),
+        }
+        .expect("match is not valid UTF-8")
     }
 
     /// Returns the length of the match in bytes.
@@ -1994,7 +2056,7 @@ impl<'t> Match<'t> {
 /// assert_eq!(year(&re, "published 2026-10"), Some("2026"));
 /// ```
 pub struct Captures<'t> {
-    text: &'t [u8],
+    text: Subject<'t>,
     region: OnigRegion,
     /// The compiled regex, kept only for [`Captures::name`] and so only when
     /// the pattern has named groups. Cloning the `Arc` for every match writes
@@ -2296,6 +2358,8 @@ pub struct FindIter<'r, 't> {
     /// `regex`'s program, read once so that each search does not deref it.
     program: &'r RegexType,
     text: &'t [u8],
+    /// `text` as the caller passed it, for the matches.
+    subject: Subject<'t>,
     cursor: MatchCursor,
     region: OnigRegion,
     /// Set when the searches need no region (`onig_search_bounds`).
@@ -2324,7 +2388,7 @@ impl<'r, 't> FindIter<'r, 't> {
                     return Ok(None);
                 }
                 Match {
-                    text: self.text,
+                    subject: self.subject,
                     start,
                     end,
                 }
@@ -2357,7 +2421,8 @@ impl<'r, 't> FindIter<'r, 't> {
                     return Ok(None);
                 }
 
-                let Some(m) = Match::from_region(self.text, self.region.beg[0], self.region.end[0])
+                let Some(m) =
+                    Match::from_region(self.subject, self.region.beg[0], self.region.end[0])
                 else {
                     return Ok(None);
                 };
@@ -2447,6 +2512,8 @@ pub struct CaptureMatches<'r, 't> {
     /// `regex`'s program, read once so that each search does not deref it.
     program: &'r RegexType,
     text: &'t [u8],
+    /// `text` as the caller passed it, for the captures.
+    subject: Subject<'t>,
     cursor: MatchCursor,
     /// Rust-only (ADR-008): the search state of every search of this
     /// iterator, kept from one search to the next. Between searches it holds
@@ -2458,12 +2525,13 @@ pub struct CaptureMatches<'r, 't> {
 }
 
 impl<'r, 't> CaptureMatches<'r, 't> {
-    fn new(regex: &'r Regex, text: &'t [u8], limits: Option<SearchLimits>) -> Self {
+    fn new(regex: &'r Regex, subject: Subject<'t>, limits: Option<SearchLimits>) -> Self {
         let program = regex.program();
         CaptureMatches {
             regex,
             program,
-            text,
+            text: subject.bytes(),
+            subject,
             cursor: MatchCursor::default(),
             msa: Some(take_cached_msa(program, ONIG_OPTION_NONE, None, 0, limits)),
             limits,
@@ -2524,7 +2592,7 @@ impl<'r, 't> CaptureMatches<'r, 't> {
                 msa.region = Some(region);
                 return Ok(None);
             }
-            let Some(m) = Match::from_region(self.text, region.beg[0], region.end[0]) else {
+            let Some(m) = Match::from_region(self.subject, region.beg[0], region.end[0]) else {
                 msa.region = Some(region);
                 return Ok(None);
             };
@@ -2532,7 +2600,7 @@ impl<'r, 't> CaptureMatches<'r, 't> {
             match self.cursor.accept(program, self.text, m.start, m.end) {
                 Verdict::Yield => {
                     return Ok(Some(Captures {
-                        text: self.text,
+                        text: self.subject,
                         region,
                         compiled: name_lookup(&self.regex.inner),
                     }));
@@ -3009,6 +3077,38 @@ mod tests {
         assert_eq!(re.seek_gate_state(), re.clone().seek_gate_state());
     }
 
+    /// A match of a `&str` search slices the text in `as_str` instead of
+    /// validating the bytes; every route must give what validation gives, and
+    /// `Debug` keeps the layout it had before matches knew their subject.
+    #[test]
+    fn str_matches_slice_what_validation_returns() {
+        let _limits = crate::regexec::shared_limits();
+        let re = Regex::new(r"(\w+)(?:é|ü)?").unwrap();
+        let text = "Grüße café x 12 naïve";
+        let validated = |m: Match<'_>| std::str::from_utf8(m.as_bytes()).unwrap().to_owned();
+        for m in re.find_iter(text) {
+            assert_eq!(m.as_str(), validated(m));
+        }
+        for caps in re.captures_iter(text) {
+            for m in caps.iter().flatten() {
+                assert_eq!(m.as_str(), validated(m));
+            }
+        }
+        let m = re.find_at(text, 7).unwrap();
+        assert_eq!(m.as_str(), validated(m));
+        let caps = re
+            .captures_at_with(text, 7, SearchOptions::new())
+            .unwrap()
+            .unwrap();
+        assert_eq!(&caps[1], validated(caps.get(1).unwrap()));
+        let bytes = re.find_bytes(text.as_bytes()).unwrap();
+        assert_eq!(bytes.as_str(), "Grüße");
+        assert_eq!(
+            format!("{:?}", Regex::new("ab").unwrap().find("xab").unwrap()),
+            "Match { text: [120, 97, 98], start: 1, end: 3 }"
+        );
+    }
+
     /// Captures keep the compiled regex only to resolve names. A pattern
     /// without named groups must not touch the shared reference count per
     /// match: that write serialized threads iterating with the same regex.
@@ -3242,6 +3342,7 @@ mod tests {
                     regex: &re,
                     program: re.program(),
                     text: text.as_bytes(),
+                    subject: Subject::Str(text),
                     cursor: MatchCursor::default(),
                     region: OnigRegion::new(),
                     msa: None,
